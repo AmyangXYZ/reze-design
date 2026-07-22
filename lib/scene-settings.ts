@@ -8,11 +8,6 @@
 
 import { DEFAULT_BLOOM_OPTIONS, Vec3 } from "reze-engine"
 
-// The engine's world/sun defaults (DEFAULT_ENGINE_OPTIONS is not exported from
-// the package index — mirror of engine.js; ask reze-engine to export it).
-const ENGINE_WORLD_DEFAULT = { color: new Vec3(0.4014, 0.4944, 0.647), strength: 0.3 }
-const ENGINE_SUN_DEFAULT = { color: new Vec3(1.0, 1.0, 1.0), strength: 2.0, direction: new Vec3(-0.0873, -0.3844, 0.919) }
-
 export type SceneColors = {
   background: string
   ground: string
@@ -57,22 +52,55 @@ export function azElToDirection(azimuth: number, elevation: number): Vec3 {
   return new Vec3(-Math.cos(el) * Math.sin(az), -Math.sin(el), -Math.cos(el) * Math.cos(az))
 }
 
-const defaultSunDir = ENGINE_SUN_DEFAULT.direction
+// The app's curated first-open look (used when there's no stored config yet) —
+// deliberately richer than the engine's neutral defaults.
 export const DEFAULT_SCENE_SETTINGS: SceneSettings = {
+  colors: {
+    background: "#0c0a09",
+    ground: "#8e51ff",
+    grid: "#fafaf9",
+  },
+  world: {
+    color: "#7008e7",
+    strength: 1.5,
+  },
+  sun: {
+    color: "#ffffff",
+    strength: 2.0,
+    azimuth: 230,
+    elevation: 30,
+  },
+  bloom: {
+    enabled: true,
+    threshold: 0.5,
+    knee: 0.5,
+    radius: 4.0,
+    intensity: 0.05,
+    color: "#ffddd3",
+  },
+}
+
+// The engine's real neutral defaults — what "Reset to defaults" restores (an
+// escape hatch when a model doesn't suit the curated purple first-open look).
+// DEFAULT_ENGINE_OPTIONS isn't exported from the package index, so world/sun are
+// mirrored from engine.js; bloom comes from the exported DEFAULT_BLOOM_OPTIONS.
+const ENGINE_WORLD = { color: new Vec3(0.4014, 0.4944, 0.647), strength: 0.3 }
+const ENGINE_SUN_DIR = new Vec3(-0.0873, -0.3844, 0.919)
+export const ENGINE_DEFAULT_SCENE_SETTINGS: SceneSettings = {
   colors: {
     background: "#0d1116",
     ground: "#494d57",
     grid: "#ededed",
   },
   world: {
-    color: linearVec3ToHex(ENGINE_WORLD_DEFAULT.color),
-    strength: ENGINE_WORLD_DEFAULT.strength,
+    color: linearVec3ToHex(ENGINE_WORLD.color),
+    strength: ENGINE_WORLD.strength,
   },
   sun: {
-    color: linearVec3ToHex(ENGINE_SUN_DEFAULT.color),
-    strength: ENGINE_SUN_DEFAULT.strength,
-    azimuth: Math.round((Math.atan2(-defaultSunDir.x, -defaultSunDir.z) * 180) / Math.PI + 360) % 360,
-    elevation: Math.round((Math.asin(-defaultSunDir.y) * 180) / Math.PI),
+    color: "#ffffff",
+    strength: 2.0,
+    azimuth: (Math.round((Math.atan2(-ENGINE_SUN_DIR.x, -ENGINE_SUN_DIR.z) * 180) / Math.PI) + 360) % 360,
+    elevation: Math.round((Math.asin(-ENGINE_SUN_DIR.y) * 180) / Math.PI),
   },
   bloom: {
     enabled: DEFAULT_BLOOM_OPTIONS.enabled,
@@ -87,8 +115,7 @@ export const DEFAULT_SCENE_SETTINGS: SceneSettings = {
 // Color presets now live in one shared picker (components/color-picker.tsx),
 // sourced from the Tailwind palette — every color setting draws from that list.
 
-const STORAGE_KEY = "reze-design.scene-settings.v1"
-const LEGACY_COLORS_KEY = "reze-design.scene-colors.v1"
+const STORAGE_KEY = "reze-design.scene"
 
 export function loadSceneSettings(): SceneSettings {
   if (typeof window === "undefined") return DEFAULT_SCENE_SETTINGS
@@ -101,14 +128,6 @@ export function loadSceneSettings(): SceneSettings {
         world: { ...DEFAULT_SCENE_SETTINGS.world, ...stored.world },
         sun: { ...DEFAULT_SCENE_SETTINGS.sun, ...stored.sun },
         bloom: { ...DEFAULT_SCENE_SETTINGS.bloom, ...stored.bloom },
-      }
-    }
-    // Migrate the earlier colors-only key.
-    const legacy = window.localStorage.getItem(LEGACY_COLORS_KEY)
-    if (legacy) {
-      return {
-        ...DEFAULT_SCENE_SETTINGS,
-        colors: { ...DEFAULT_SCENE_SETTINGS.colors, ...(JSON.parse(legacy) as Partial<SceneColors>) },
       }
     }
     return DEFAULT_SCENE_SETTINGS

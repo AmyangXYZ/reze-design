@@ -55,7 +55,7 @@
 }
 
 :root {
-  --radius: 0.625rem;
+  --radius: 0.45rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -166,4 +166,11 @@
 }
 ::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+/* Heavier Figma-style drop shadow for floating panels / pills / popovers. */
+@utility shadow-float {
+  box-shadow:
+    0 20px 50px -12px rgb(0 0 0 / 0.7),
+    0 8px 20px -8px rgb(0 0 0 / 0.55);
 }

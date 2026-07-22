@@ -9,6 +9,8 @@ import {
   CLOTH_ROUGH_GRAPH,
   CLOTH_SMOOTH_GRAPH,
   DEFAULT_GRAPH,
+  EYE_GRAPH,
+  FACE_GRAPH,
   HAIR_GRAPH,
   METAL_GRAPH,
   STOCKINGS_GRAPH,
@@ -33,10 +35,12 @@ export const MODEL_PRESETS: MaterialPresetMap = {
   metal: ["metal01", "earring"],
 }
 
-/** Slots with an editable graph preset; face/eye stay on built-in shaders for now. */
+/** Every slot ships an editable graph preset (engine 0.18.1 added face + eye). */
 export const SLOT_GRAPHS: Partial<Record<MaterialPreset, StyleGraph>> = {
   hair: HAIR_GRAPH,
   body: BODY_GRAPH,
+  face: FACE_GRAPH,
+  eye: EYE_GRAPH,
   cloth_smooth: CLOTH_SMOOTH_GRAPH,
   cloth_rough: CLOTH_ROUGH_GRAPH,
   stockings: STOCKINGS_GRAPH,
