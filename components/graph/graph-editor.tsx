@@ -7,7 +7,7 @@
 // on the model. ⌘/Ctrl+Z undo, ⇧ redo. The page remounts this component per
 // slot (key={slot}), so all state here belongs to a single graph.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Background,
   Controls,
@@ -23,15 +23,14 @@ import {
   type NodeChange,
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
-import { compileGraph, validateGraph, type Diagnostic, type Engine, type StyleGraph } from "reze-engine"
-import { ChevronDown, CircleDashed, Code, Download, RotateCcw, Upload } from "lucide-react"
+import { compileGraph, validateGraph, type CompileOptions, type Diagnostic, type StyleGraph } from "reze-engine"
+import { ChevronDown, Code, Download, RotateCcw, Upload, Workflow } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
 import { RezeNode } from "@/components/graph/reze-node"
 import { WgslView } from "@/components/graph/wgsl-view"
-import { SLOT_ICONS } from "@/components/scene/slot-icons"
 import { fromFlow, socketsOf, toFlow, type RezeFlowNode } from "@/lib/graph-flow"
 import { cn } from "@/lib/utils"
 
@@ -55,26 +54,27 @@ export function GraphEditor({
   presetGraph,
   getInitialGraph,
   slotLabel,
-  engineRef,
   engineReady,
   engineError,
   open,
   onClose,
+  onApply,
   onGraphChange,
   onApplyStateChange,
 }: {
-  /** The slot's built-in preset — what Reset returns to. */
+  /** The group's factory preset — what Reset returns to. */
   presetGraph: StyleGraph
   /** Lazily resolves what the editor opens with — the preset, or a cached
    *  work-in-progress. Called once on mount (state initializer). */
   getInitialGraph: () => StyleGraph
   slotLabel: string
-  engineRef: RefObject<Engine | null>
   engineReady: boolean
   engineError: string | null
   open: boolean
   onClose: () => void
-  /** Fires with the rebuilt StyleGraph on every edit — the page caches it per slot. */
+  /** Compile + swap this graph onto the active group (parent upserts the group). */
+  onApply: (graph: StyleGraph, opts?: CompileOptions) => Promise<{ ok: boolean; diagnostics: Diagnostic[] }>
+  /** Fires with the rebuilt StyleGraph on every edit — the page caches it per group. */
   onGraphChange?: (graph: StyleGraph) => void
   /** Mirrors the compile/apply status dot — the page shows it on the collapsed pill. */
   onApplyStateChange?: (state: "ok" | "error" | "compiling") => void
@@ -206,31 +206,28 @@ export function GraphEditor({
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
-    a.download = `${graph.slot}.graph.json`
+    a.download = `${graph.name || slotLabel || "graph"}.graph.json`
     a.click()
     URL.revokeObjectURL(url)
-  }, [base, nodes, edges])
+  }, [base, nodes, edges, slotLabel])
 
   const onImportFile = useCallback(
     async (file: File) => {
       try {
+        // A graph is pure shading now (no slot) — it applies to whatever group is
+        // being edited, so no retargeting is needed.
         const graph = JSON.parse(await file.text()) as StyleGraph
-        // Retarget to THIS editor's slot. `applyStyleGraph` routes by `graph.slot`,
-        // so an imported file exported from another slot (e.g. face.graph.json) must
-        // be re-slotted to the slot being edited — otherwise the engine restyles the
-        // wrong slot (import shows the graph here but the wrong material changes).
-        const retargeted: StyleGraph = { ...graph, slot: presetGraph.slot }
-        const diags = validateGraph(retargeted)
+        const diags = validateGraph(graph)
         if (diags.some((d) => d.severity === "error")) {
           setDiagnostics(diags)
           return
         }
-        loadGraph(retargeted)
+        loadGraph(graph)
       } catch (e) {
         setDiagnostics([{ severity: "error", message: `import failed: ${e instanceof Error ? e.message : e}` }])
       }
     },
-    [loadGraph, presetGraph.slot],
+    [loadGraph],
   )
 
   const currentGraph: StyleGraph = useMemo(() => fromFlow(base, nodes, edges), [base, nodes, edges])
@@ -238,6 +235,10 @@ export function GraphEditor({
   const onGraphChangeRef = useRef(onGraphChange)
   useEffect(() => {
     onGraphChangeRef.current = onGraphChange
+  })
+  const onApplyRef = useRef(onApply)
+  useEffect(() => {
+    onApplyRef.current = onApply
   })
   useEffect(() => {
     onGraphChangeRef.current?.(currentGraph)
@@ -258,16 +259,15 @@ export function GraphEditor({
     const timer = setTimeout(async () => {
       const local = compileGraph(currentGraph, opts)
       setFsBody(local.fsBody)
-      const engine = engineRef.current
       // Before the GPU device is up, applying would explode — engineReady is in
       // the deps, so the pending graph re-applies the moment boot completes.
-      if (!engine || !engineReady) {
+      if (!engineReady) {
         setDiagnostics(local.diagnostics)
         return
       }
       setApplyState("compiling")
       try {
-        const result = await engine.applyStyleGraph(currentGraph, opts)
+        const result = await onApplyRef.current(currentGraph, opts)
         setDiagnostics(result.diagnostics)
         setApplyState(result.ok ? "ok" : "error")
       } catch (e) {
@@ -283,7 +283,6 @@ export function GraphEditor({
   }, [currentGraph, previewId, engineReady, engineError])
 
   const errors = diagnostics.filter((d) => d.severity === "error")
-  const HeaderIcon = SLOT_ICONS[base.slot] ?? CircleDashed
 
   // Mount React Flow only once its host has real dimensions — the drawer's
   // panels measure asynchronously, and RF warns (error #004) if it mounts into
@@ -305,7 +304,7 @@ export function GraphEditor({
       {/* ── Header — same language as the pill: slot icon + label, icons for
           everything else. The icon carries compile status (red on error). ── */}
       <header className="flex pt-1 shrink-0 items-center gap-2 pr-2 pl-3.5">
-        <HeaderIcon
+        <Workflow
           className={cn(
             "size-3.5",
             applyState === "error" ? "text-red-400" : "text-zinc-400",

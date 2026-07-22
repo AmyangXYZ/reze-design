@@ -61,8 +61,8 @@ export const DEFAULT_SCENE_SETTINGS: SceneSettings = {
     grid: "#fafaf9",
   },
   world: {
-    color: "#7008e7",
-    strength: 1.5,
+    color: "#7f22fe",
+    strength: 0.7,
   },
   sun: {
     color: "#ffffff",

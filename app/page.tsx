@@ -7,13 +7,15 @@
 // pill's single toggle. The node-graph editor lives in a bottom drawer, narrowed
 // to sit between the docks, and collapses on its own into a status pill.
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   parsePmxFolderInput,
   pmxFileAtRelativePath,
+  type CompileOptions,
+  type Diagnostic,
   type MaterialPreset,
-  type MaterialPresetMap,
   type StyleGraph,
+  type StyleGroup,
 } from "reze-engine"
 import { Clapperboard, Package, Sun, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -29,7 +31,7 @@ import { NodeLibrary } from "@/components/editor/node-library"
 import { RenderPanel } from "@/components/editor/render-panel"
 import { useEngine } from "@/hooks/use-engine"
 import { MaterialSphereIcon } from "@/components/scene/slot-icons"
-import { MODEL_ID, SLOT_GRAPHS, SLOT_LABELS, SLOT_ORDER, slotOfMaterial } from "@/lib/materials"
+import { SLOT_GRAPHS } from "@/lib/materials"
 import {
   azElToDirection,
   hexToLinearVec3,
@@ -44,6 +46,17 @@ import { cn } from "@/lib/utils"
 // Paths are %20-encoded (the filenames contain a space).
 const DEFAULT_ANIM = { name: "IRIS OUT.vmd", url: "/animations/IRIS%20OUT.vmd" }
 const DEFAULT_AUDIO = { name: "IRIS OUT.wav", url: "/audios/IRIS%20OUT.wav" }
+
+// Unique kebab id for a new (peeled / created) style group. CJK material names
+// slugify to empty → "group", which is fine (id is internal; label is shown).
+const newGroupId = (material: string, groups: StyleGroup[]): string => {
+  const base = material.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "group"
+  const ids = new Set(groups.map((g) => g.id))
+  if (!ids.has(base)) return base
+  let i = 1
+  while (ids.has(`${base}-${i}`)) i++
+  return `${base}-${i}`
+}
 
 const fmtSize = (bytes: number) =>
   bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
@@ -75,20 +88,12 @@ function saveUiState(state: { docks: boolean; leftTab: string; rightTab: string 
 
 export default function Home() {
   const [selected, setSelected] = useState<string | null>(null)
-  const [activeSlot, setActiveSlot] = useState<MaterialPreset>("hair")
-  // Whether we've defaulted the editor slot for the current model yet (see below).
-  const [slotInited, setSlotInited] = useState(false)
-  // Node-graph library popup + the display name of the graph applied per role.
-  const [library, setLibrary] = useState<{ open: boolean; role: MaterialPreset | null; material: string | null }>({
-    open: false,
-    role: null,
-    material: null,
-  })
-  const [slotGraphName, setSlotGraphName] = useState<Partial<Record<MaterialPreset, string>>>({})
+  // Which style group the node-graph editor is bound to.
+  const [activeGroupId, setActiveGroupId] = useState<string | null>(null)
+  // Node-graph library popup, opened for a specific material.
+  const [library, setLibrary] = useState<{ open: boolean; material: string | null }>({ open: false, material: null })
   // Bumped on library-pick to remount the graph editor with the new graph.
   const [libVersion, setLibVersion] = useState(0)
-  // Material → slot mapping: the demo model's curated map, plus user overrides.
-  const [slotOverrides, setSlotOverrides] = useState<Record<string, MaterialPreset | null>>({})
 
   // Dock + tab state persists; panels render only after mount (see `mounted`),
   // so reading localStorage in the initializer can't cause a hydration mismatch.
@@ -123,6 +128,9 @@ export default function Home() {
     modelName,
     modelFile,
     modelStats,
+    groups,
+    upsertGroup,
+    applyGroups,
     highlight,
     toggleVisible,
     loadFromFiles,
@@ -131,24 +139,25 @@ export default function Home() {
     stopAnimation,
   } = useEngine((m) => pickRef.current(m), sceneSettings)
 
-  const isCustomModel = modelName !== MODEL_ID
-  const assignments = useMemo<Record<string, MaterialPreset | null>>(
-    () =>
-      Object.fromEntries(
-        materials.map((m) => [
-          m.name,
-          m.name in slotOverrides ? slotOverrides[m.name] : isCustomModel ? null : slotOfMaterial(m.name),
-        ]),
-      ),
-    [materials, slotOverrides, isCustomModel],
+  // material → its style group (a material is in at most one group; else ungrouped).
+  const groupOfMaterial = useCallback(
+    (name: string | null): StyleGroup | null => (name ? (groups.find((g) => g.materials.includes(name)) ?? null) : null),
+    [groups],
   )
+
+  // Display look per material = its group's label (falls back to "—" when ungrouped).
+  const lookByMaterial = useMemo(() => {
+    const m: Record<string, string> = {}
+    for (const g of groups) for (const mat of g.materials) m[mat] = g.label ?? g.id
+    return m
+  }, [groups])
 
   const pick = (material: string | null) => {
     setSelected(material)
     highlight(material)
     if (!material) return // clicked empty space — deselect, keep the editor
-    const slot = assignments[material]
-    if (slot) setActiveSlot(slot)
+    const g = groupOfMaterial(material)
+    if (g) setActiveGroupId(g.id)
   }
   useEffect(() => {
     pickRef.current = pick
@@ -160,76 +169,51 @@ export default function Home() {
     highlight(leftTab === "materials" ? selected : null)
   }, [leftTab, selected, highlight])
 
-  // Default the node-graph slot to the first material that actually HAS an
-  // editable graph (instead of a hard-coded slot), so the bottom pill reflects
-  // the loaded model. Set during render, guarded so it runs once per model —
-  // React's recommended alternative to a syncing effect. Reset on upload.
-  if (!slotInited && materials.length > 0) {
-    const firstEditable = materials.map((m) => assignments[m.name]).find((s) => s && s in SLOT_GRAPHS)
-    if (firstEditable) {
-      setActiveSlot(firstEditable)
-      setSlotInited(true)
-    }
-  }
+  // Bind the editor to the first group once they load (or when a model swap makes
+  // the active id stale). Set during render, guarded — no syncing effect.
+  if (groups.length > 0 && !groups.some((g) => g.id === activeGroupId)) setActiveGroupId(groups[0].id)
 
-  // Per-slot edit cache: switching slots remounts the editor (key={slot}), this
-  // keeps each slot's work-in-progress instead of resetting to the preset.
-  const edited = useRef(new Map<MaterialPreset, StyleGraph>())
+  const activeGroup = groups.find((g) => g.id === activeGroupId) ?? null
+  // Factory preset for the active group (for Reset) — auto-group ids are role keys.
+  const presetGraph = (activeGroup && SLOT_GRAPHS[activeGroup.id as MaterialPreset]) || activeGroup?.graph || null
 
-  const assign = (name: string, slot: MaterialPreset | null) => {
-    const next = { ...assignments, [name]: slot }
-    setSlotOverrides((prev) => ({ ...prev, [name]: slot }))
-    const engine = engineRef.current
-    if (engine) {
-      const map: MaterialPresetMap = {}
-      for (const [mat, s] of Object.entries(next)) {
-        if (s) (map[s] ??= []).push(mat)
-      }
-      engine.setMaterialPresets(modelName, map)
-    }
-    if (slot && slot in SLOT_GRAPHS) {
-      setActiveSlot(slot)
-      const graph = edited.current.get(slot) ?? SLOT_GRAPHS[slot]
-      if (graph && ready) void engine?.applyStyleGraph(graph).catch(() => {})
-    }
-  }
+  // Graph editor's onApply: compile + swap the edited graph onto the active group.
+  const applyActiveGraph = useCallback(
+    (graph: StyleGraph, opts?: CompileOptions): Promise<{ ok: boolean; diagnostics: Diagnostic[] }> =>
+      activeGroup ? upsertGroup({ ...activeGroup, graph }, opts) : Promise.resolve({ ok: false, diagnostics: [] }),
+    [activeGroup, upsertGroup],
+  )
 
-  // Apply a library look. By default it targets the material's whole role group
-  // (the engine shades per role). Opting out of "apply to similar" moves just
-  // this material to a free slot so only it changes — a free slot may not exist
-  // (≤9 roles), in which case we fall back to the group.
+  // Apply a library look to the target material. Default: its whole group (all its
+  // materials). Opting out peels just this material into its own group — unlimited
+  // groups now, no slot ceiling.
   const applyLibrary = (graph: StyleGraph, name: string, applyToSimilar: boolean) => {
-    const { role, material } = library
-    if (!role) return
+    const material = library.material
+    if (!material) return
+    const group = groupOfMaterial(material)
+    const styled: StyleGraph = { ...graph, name }
 
-    let targetSlot = role
-    if (!applyToSimilar && material) {
-      const usedByOthers = new Set(
-        Object.entries(assignments)
-          .filter(([m]) => m !== material)
-          .map(([, s]) => s),
-      )
-      const free = SLOT_ORDER.find((s) => s in SLOT_GRAPHS && !usedByOthers.has(s))
-      if (free) {
-        targetSlot = free
-        const next = { ...assignments, [material]: free }
-        setSlotOverrides((prev) => ({ ...prev, [material]: free }))
-        const engine = engineRef.current
-        if (engine) {
-          const map: MaterialPresetMap = {}
-          for (const [mat, s] of Object.entries(next)) if (s) (map[s] ??= []).push(mat)
-          engine.setMaterialPresets(modelName, map)
-        }
+    if (group && (applyToSimilar || group.materials.length === 1)) {
+      void upsertGroup({ ...group, graph: styled, label: name })
+      setActiveGroupId(group.id)
+    } else {
+      const peeled: StyleGroup = {
+        id: newGroupId(material, groups),
+        label: name,
+        materials: [material],
+        graph: styled,
+        renderClass: group?.renderClass ?? "auto",
       }
+      const next = group
+        ? groups
+            .map((g) => (g.id === group.id ? { ...g, materials: g.materials.filter((m) => m !== material) } : g))
+            .concat(peeled)
+        : [...groups, peeled]
+      void applyGroups(next)
+      setActiveGroupId(peeled.id)
     }
-
-    const retargeted: StyleGraph = { ...graph, slot: targetSlot }
-    edited.current.set(targetSlot, retargeted)
-    setSlotGraphName((prev) => ({ ...prev, [targetSlot]: name }))
-    setActiveSlot(targetSlot)
     setLibVersion((v) => v + 1)
-    if (ready) void engineRef.current?.applyStyleGraph(retargeted).catch(() => {})
-    setLibrary({ open: false, role: null, material: null })
+    setLibrary({ open: false, material: null })
   }
 
   // ── Model upload ──
@@ -240,9 +224,8 @@ export default function Home() {
   const loadCustom = async (files: File[], pmxFile: File) => {
     setUpload(null)
     setSelected(null)
-    setSlotOverrides({}) // stale overrides must not leak onto the new model's materials
+    setActiveGroupId(null) // the new model brings a fresh group set (re-inited on load)
     setAnimName(null) // the new model starts in bind pose
-    setSlotInited(false) // re-pick the default editable slot for the new model
     setModelSize(pmxFile.size)
     await loadFromFiles(files, pmxFile)
   }
@@ -398,8 +381,6 @@ export default function Home() {
     setResizing(false)
   }
 
-  const presetGraph = SLOT_GRAPHS[activeSlot]
-
   // ── Dock tab definitions ── LEFT = styling (materials, scene look); RIGHT =
   // ingredients & output (assets in, render out).
   const leftTabs: DockTab[] = [
@@ -410,16 +391,13 @@ export default function Home() {
       content: (
         <MaterialsPanel
           materials={materials}
-          assignments={assignments}
           selected={selected}
-          activeSlot={activeSlot}
+          lookByMaterial={lookByMaterial}
           onSelect={pick}
           onHover={(name) => highlight(name ?? selected)}
-          onAssign={assign}
           onToggleVisible={toggleVisible}
           onEditGraph={() => setDrawerOpen(true)}
-          slotGraphName={slotGraphName}
-          onOpenLibrary={(role, material) => setLibrary({ open: true, role, material })}
+          onOpenLibrary={(material) => setLibrary({ open: true, material })}
         />
       ),
     },
@@ -554,15 +532,13 @@ export default function Home() {
           >
             <span className="h-0.5 w-10 rounded-full bg-white/15" />
           </div>
-          {presetGraph ? (
+          {activeGroup && presetGraph ? (
             <GraphEditor
-              key={`${activeSlot}-${libVersion}`}
-              slotLabel={SLOT_LABELS[activeSlot]}
+              key={`${activeGroup.id}-${libVersion}`}
+              slotLabel={activeGroup.label ?? activeGroup.id}
               presetGraph={presetGraph}
-              getInitialGraph={() => edited.current.get(activeSlot) ?? presetGraph}
-              onGraphChange={(g) => edited.current.set(activeSlot, g)}
-              onApplyStateChange={() => {}}
-              engineRef={engineRef}
+              getInitialGraph={() => activeGroup.graph ?? presetGraph}
+              onApply={applyActiveGraph}
               engineReady={ready}
               engineError={error}
               open={drawerOpen}
@@ -570,7 +546,7 @@ export default function Home() {
             />
           ) : (
             <div className="relative flex flex-1 items-center justify-center text-xs text-muted-foreground">
-              {SLOT_LABELS[activeSlot]} uses a built-in shader — no editable graph for this slot yet
+              Select a material to edit its look
               <Button
                 variant="ghost"
                 size="icon"
@@ -598,8 +574,8 @@ export default function Home() {
         open={library.open}
         onOpenChange={(o) => setLibrary((s) => ({ ...s, open: o }))}
         targetMaterial={library.material}
-        canApply={library.role !== null}
-        affects={library.role ? Object.values(assignments).filter((s) => s === library.role).length : 0}
+        canApply={library.material !== null}
+        affects={groupOfMaterial(library.material)?.materials.length ?? 1}
         onApply={applyLibrary}
       />
 

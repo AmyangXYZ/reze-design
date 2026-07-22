@@ -7,7 +7,7 @@
 // means; hover temporarily overrides it.
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Engine, Vec3 } from "reze-engine"
+import { Engine, Vec3, type ApplyStyleGroupResult, type CompileOptions, type StyleGroup } from "reze-engine"
 import { MODEL_ID, MODEL_PATH, MODEL_PRESETS } from "@/lib/materials"
 import { azElToDirection, hexToLinearVec3, type SceneSettings } from "@/lib/scene-settings"
 
@@ -37,6 +37,9 @@ export function useEngine(
   const [modelFile, setModelFile] = useState(() => MODEL_PATH.split("/").pop() ?? `${MODEL_ID}.pmx`)
   // High-level model stats for the Assets panel (VERTEX_STRIDE = 8 floats/vertex).
   const [modelStats, setModelStats] = useState({ vertices: 0, bones: 0, materials: 0 })
+  // Style groups — the host is the source of truth (0.19). Seeded from the engine's
+  // auto-created defaults after load; the app mutates and pushes them down.
+  const [groups, setGroups] = useState<StyleGroup[]>([])
 
   // Raycast fires from inside the engine's event handlers; route through a ref
   // so the boot effect never depends on the callback identity.
@@ -78,6 +81,11 @@ export function useEngine(
           bones: model.getSkeleton().bones.length,
           materials: model.getMaterials().length,
         })
+        // Auto-group from the curated preset map + name hints → compiled-graph looks.
+        // Awaited (compiles finish) so getStyleGroups is populated + first frame is styled.
+        await engine.autoStyleGroups(MODEL_ID)
+        if (disposed) return
+        setGroups(engine.getStyleGroups(MODEL_ID))
         // Bind pose until the user loads a VMD — material evaluation doesn't need motion.
         engine.runRenderLoop()
         setReady(true)
@@ -123,6 +131,9 @@ export function useEngine(
         bones: model.getSkeleton().bones.length,
         materials: model.getMaterials().length,
       })
+      // Uploaded models have no curated map — auto-group from name hints alone.
+      await engine.autoStyleGroups(name)
+      setGroups(engine.getStyleGroups(name))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -161,6 +172,30 @@ export function useEngine(
     }
   }, [])
 
+  // ── Style-group mutators (host owns the set; these mirror to state + engine). ──
+
+  /** Add/replace one group's graph or definition (compile + swap just that group). */
+  const upsertGroup = useCallback(async (group: StyleGroup, opts?: CompileOptions): Promise<ApplyStyleGroupResult> => {
+    setGroups((prev) => {
+      const i = prev.findIndex((g) => g.id === group.id)
+      return i >= 0 ? prev.map((g) => (g.id === group.id ? group : g)) : [...prev, group]
+    })
+    const engine = engineRef.current
+    if (!engine) return { ok: false, diagnostics: [], slotMap: [] }
+    return engine.upsertStyleGroup(modelNameRef.current, group, opts)
+  }, [])
+
+  /** Replace the whole set (structural changes: create/move/remove groups). */
+  const applyGroups = useCallback(async (next: StyleGroup[]) => {
+    setGroups(next)
+    await engineRef.current?.applyStyleGroups(modelNameRef.current, next)
+  }, [])
+
+  /** Instant adjust-tier: write one exposed param on a group's graph (no recompile). */
+  const setGroupParam = useCallback((groupId: string, paramId: string, value: number | [number, number, number]) => {
+    engineRef.current?.setStyleParam(modelNameRef.current, groupId, paramId, value)
+  }, [])
+
   const stopAnimation = useCallback(() => {
     const model = engineRef.current?.getModel(modelNameRef.current)
     if (!model) return
@@ -180,6 +215,10 @@ export function useEngine(
     modelName,
     modelFile,
     modelStats,
+    groups,
+    upsertGroup,
+    applyGroups,
+    setGroupParam,
     highlight,
     toggleVisible,
     loadFromFiles,
