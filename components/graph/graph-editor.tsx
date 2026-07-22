@@ -215,17 +215,22 @@ export function GraphEditor({
     async (file: File) => {
       try {
         const graph = JSON.parse(await file.text()) as StyleGraph
-        const diags = validateGraph(graph)
+        // Retarget to THIS editor's slot. `applyStyleGraph` routes by `graph.slot`,
+        // so an imported file exported from another slot (e.g. face.graph.json) must
+        // be re-slotted to the slot being edited — otherwise the engine restyles the
+        // wrong slot (import shows the graph here but the wrong material changes).
+        const retargeted: StyleGraph = { ...graph, slot: presetGraph.slot }
+        const diags = validateGraph(retargeted)
         if (diags.some((d) => d.severity === "error")) {
           setDiagnostics(diags)
           return
         }
-        loadGraph(graph)
+        loadGraph(retargeted)
       } catch (e) {
         setDiagnostics([{ severity: "error", message: `import failed: ${e instanceof Error ? e.message : e}` }])
       }
     },
-    [loadGraph],
+    [loadGraph, presetGraph.slot],
   )
 
   const currentGraph: StyleGraph = useMemo(() => fromFlow(base, nodes, edges), [base, nodes, edges])

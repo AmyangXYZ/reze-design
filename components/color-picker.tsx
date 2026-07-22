@@ -50,14 +50,16 @@ export function ColorField({ value, onChange }: { value: string; onChange: (hex:
 
   return (
     <>
-      <span className="flex items-center gap-1.5">
-        <button
-          className="size-4 shrink-0 cursor-pointer rounded-md ring-1 ring-white/15 transition-transform hover:scale-110"
+      {/* One button — hovering either the swatch or the hex triggers both effects. */}
+      <button className="group flex cursor-pointer items-center gap-1.5" onClick={() => setOpen(true)} aria-label="Pick color">
+        <span
+          className="size-4 shrink-0 rounded-md ring-1 ring-white/15 transition-transform group-hover:scale-110"
           style={{ background: value }}
-          onClick={() => setOpen(true)}
         />
-        <span className="w-14 font-mono text-xs text-muted-foreground">{active}</span>
-      </span>
+        <span className="w-14 text-left font-mono text-xs text-muted-foreground underline-offset-2 group-hover:text-foreground group-hover:underline">
+          {active}
+        </span>
+      </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="gap-3 rounded-xl border-white/10 bg-zinc-950 sm:max-w-2xl">

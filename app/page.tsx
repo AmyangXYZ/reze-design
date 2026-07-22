@@ -25,10 +25,11 @@ import { ScenePanel } from "@/components/scene/scene-sidebar"
 import { AssetsPanel } from "@/components/editor/assets-panel"
 import { BrandPill, RailLogo, TopRightCluster } from "@/components/editor/editor-chrome"
 import { LeftDock, RightDock, type DockTab } from "@/components/editor/dock"
+import { NodeLibrary } from "@/components/editor/node-library"
 import { RenderPanel } from "@/components/editor/render-panel"
 import { useEngine } from "@/hooks/use-engine"
 import { MaterialSphereIcon } from "@/components/scene/slot-icons"
-import { MODEL_ID, SLOT_GRAPHS, SLOT_LABELS, slotOfMaterial } from "@/lib/materials"
+import { MODEL_ID, SLOT_GRAPHS, SLOT_LABELS, SLOT_ORDER, slotOfMaterial } from "@/lib/materials"
 import {
   azElToDirection,
   hexToLinearVec3,
@@ -77,6 +78,15 @@ export default function Home() {
   const [activeSlot, setActiveSlot] = useState<MaterialPreset>("hair")
   // Whether we've defaulted the editor slot for the current model yet (see below).
   const [slotInited, setSlotInited] = useState(false)
+  // Node-graph library popup + the display name of the graph applied per role.
+  const [library, setLibrary] = useState<{ open: boolean; role: MaterialPreset | null; material: string | null }>({
+    open: false,
+    role: null,
+    material: null,
+  })
+  const [slotGraphName, setSlotGraphName] = useState<Partial<Record<MaterialPreset, string>>>({})
+  // Bumped on library-pick to remount the graph editor with the new graph.
+  const [libVersion, setLibVersion] = useState(0)
   // Material → slot mapping: the demo model's curated map, plus user overrides.
   const [slotOverrides, setSlotOverrides] = useState<Record<string, MaterialPreset | null>>({})
 
@@ -182,6 +192,44 @@ export default function Home() {
       const graph = edited.current.get(slot) ?? SLOT_GRAPHS[slot]
       if (graph && ready) void engine?.applyStyleGraph(graph).catch(() => {})
     }
+  }
+
+  // Apply a library look. By default it targets the material's whole role group
+  // (the engine shades per role). Opting out of "apply to similar" moves just
+  // this material to a free slot so only it changes — a free slot may not exist
+  // (≤9 roles), in which case we fall back to the group.
+  const applyLibrary = (graph: StyleGraph, name: string, applyToSimilar: boolean) => {
+    const { role, material } = library
+    if (!role) return
+
+    let targetSlot = role
+    if (!applyToSimilar && material) {
+      const usedByOthers = new Set(
+        Object.entries(assignments)
+          .filter(([m]) => m !== material)
+          .map(([, s]) => s),
+      )
+      const free = SLOT_ORDER.find((s) => s in SLOT_GRAPHS && !usedByOthers.has(s))
+      if (free) {
+        targetSlot = free
+        const next = { ...assignments, [material]: free }
+        setSlotOverrides((prev) => ({ ...prev, [material]: free }))
+        const engine = engineRef.current
+        if (engine) {
+          const map: MaterialPresetMap = {}
+          for (const [mat, s] of Object.entries(next)) if (s) (map[s] ??= []).push(mat)
+          engine.setMaterialPresets(modelName, map)
+        }
+      }
+    }
+
+    const retargeted: StyleGraph = { ...graph, slot: targetSlot }
+    edited.current.set(targetSlot, retargeted)
+    setSlotGraphName((prev) => ({ ...prev, [targetSlot]: name }))
+    setActiveSlot(targetSlot)
+    setLibVersion((v) => v + 1)
+    if (ready) void engineRef.current?.applyStyleGraph(retargeted).catch(() => {})
+    setLibrary({ open: false, role: null, material: null })
   }
 
   // ── Model upload ──
@@ -370,6 +418,8 @@ export default function Home() {
           onAssign={assign}
           onToggleVisible={toggleVisible}
           onEditGraph={() => setDrawerOpen(true)}
+          slotGraphName={slotGraphName}
+          onOpenLibrary={(role, material) => setLibrary({ open: true, role, material })}
         />
       ),
     },
@@ -506,7 +556,7 @@ export default function Home() {
           </div>
           {presetGraph ? (
             <GraphEditor
-              key={activeSlot}
+              key={`${activeSlot}-${libVersion}`}
               slotLabel={SLOT_LABELS[activeSlot]}
               presetGraph={presetGraph}
               getInitialGraph={() => edited.current.get(activeSlot) ?? presetGraph}
@@ -542,6 +592,16 @@ export default function Home() {
           <AnimPlayer engineRef={engineRef} modelName={modelName} clipName={animName} />
         </div>
       )}
+
+      {/* ── Node-graph library popup ── */}
+      <NodeLibrary
+        open={library.open}
+        onOpenChange={(o) => setLibrary((s) => ({ ...s, open: o }))}
+        targetMaterial={library.material}
+        canApply={library.role !== null}
+        affects={library.role ? Object.values(assignments).filter((s) => s === library.role).length : 0}
+        onApply={applyLibrary}
+      />
 
       {/* ── Uploads ── */}
       <input
