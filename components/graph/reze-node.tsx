@@ -41,12 +41,12 @@ export function RezeNode({ id, data, selected }: NodeProps<RezeFlowNode>) {
 
   return (
     <div
-      className={`rounded-md border bg-zinc-900/95 text-zinc-200 shadow-lg min-w-44 text-[11px] ${
+      className={`rounded-md border bg-zinc-900/95 text-zinc-200 shadow-lg min-w-44 text-xs ${
         selected ? "border-pink-400" : isContext ? "border-emerald-700" : "border-zinc-700"
       }`}
     >
       <div
-        className={`px-2 py-1 rounded-t-md font-medium text-[12px] ${isContext ? "bg-emerald-900/60" : "bg-zinc-800"}`}
+        className={`px-2 py-1 rounded-t-md font-medium text-xs ${isContext ? "bg-emerald-900/60" : "bg-zinc-800"}`}
       >
         {graphNode.id}
         <span className="ml-2 text-zinc-500 font-normal">{graphNode.type}</span>
@@ -83,7 +83,7 @@ export function RezeNode({ id, data, selected }: NodeProps<RezeFlowNode>) {
                   value={round4(literal as number)}
                   onChange={(e) => setLiteral(name, Number(e.target.value))}
                   onDoubleClick={(e) => e.stopPropagation()}
-                  className="nodrag ml-auto h-4.5 w-16 rounded-sm border-zinc-700 bg-zinc-950/80 px-1 py-0 text-right !text-[10.5px] tabular-nums shadow-none focus-visible:ring-1 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  className="nodrag ml-auto h-4.5 w-16 rounded-sm border-zinc-700 bg-zinc-950/80 px-1 py-0 text-right !text-xs tabular-nums shadow-none focus-visible:ring-1 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
               ) : (
                 !linked &&

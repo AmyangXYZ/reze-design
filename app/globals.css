@@ -41,6 +41,17 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  /* Panel-morph motion (iOS-sheet feel): a gentle spring with ~2% overshoot
+     for geometry, and a pure decelerate for opacity crossfades. */
+  --ease-spring: linear(
+    0, 0.0047, 0.0185 2.75%, 0.0715, 0.1568 7.42%, 0.5292 16.15%, 0.6866, 0.8123 22.9%,
+    0.8657, 0.9098, 0.9448 29.9%, 0.9717, 0.9911 34.8%, 1.0075 37.9%, 1.0175 41.5%,
+    1.0225 45.7%, 1.0221 50.4%, 1.0056 62.3%, 0.9995 71.2%, 0.9984 77.6%, 1
+  );
+  --ease-out-soft: linear(
+    0, 0.1301 3.44%, 0.3164 7.78%, 0.5584 13.99%, 0.7484 20.66%, 0.8709 27.55%,
+    0.9407 34.72%, 0.9772 42.83%, 0.9936 52.6%, 0.9992 65.72%, 1
+  );
 }
 
 :root {
