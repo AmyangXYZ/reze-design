@@ -97,7 +97,7 @@ export function BrandPill({
   // Expanded header: title over scene name (two lines). Collapsed pill: one line.
   if (asHeader) {
     return (
-      <div className="flex w-full items-center gap-2 px-3 py-2.5 pt-5.5">
+      <div className="flex w-full items-center gap-2 px-4 py-2.5 pt-5.5">
         <div className="flex min-w-0 flex-1 flex-col leading-tight">
           <span className="truncate text-sm font-semibold tracking-tight text-foreground">Reze Design</span>
           <span className="truncate text-xs text-muted-foreground ">{sceneName}</span>
