@@ -23,11 +23,13 @@ import {
   type Edge,
   type EdgeChange,
   type NodeChange,
+  type OnConnectEnd,
+  type OnConnectStart,
   type ReactFlowInstance,
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
 import { compileGraph, validateGraph, type CompileOptions, type Diagnostic, type ShaderGraph } from "reze-engine"
-import { Check, Code, FileDown, FileUp, Maximize2, Minimize2, RotateCcw, Workflow, X } from "lucide-react"
+import { Check, Code, FileDown, FileUp, Grip, Maximize2, Minimize2, RotateCcw, Workflow, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -37,10 +39,14 @@ import { WgslView } from "@/components/graph/wgsl-view"
 import { AddNodeMenu } from "@/components/graph/add-node-menu"
 import { NodeContextMenu, type MenuAction } from "@/components/graph/node-context-menu"
 import { makeGraphNode, uniqueNodeId } from "@/lib/node-catalog"
-import { fromFlow, socketsOf, toFlow, type RezeFlowNode } from "@/lib/graph-flow"
+import { canConnect, fromFlow, socketsOf, socketType, toFlow, type RezeFlowNode } from "@/lib/graph-flow"
 import { cn } from "@/lib/utils"
 
 const nodeTypes = { reze: RezeNode }
+
+// Copy/paste clipboard at module scope so it survives the per-group remount — you can
+// copy nodes in one style group's graph and paste them into another's.
+let clipboard: { nodes: RezeFlowNode[]; edges: Edge[] } | null = null
 
 // Undo history compares graphs by content (positions, literals, links) so selection
 // changes and sub-pixel drags don't pollute the stack.
@@ -123,41 +129,134 @@ export function GraphEditor({
     [],
   )
   const onEdgesChange = useCallback((changes: EdgeChange[]) => setEdges((e) => applyEdgeChanges(changes, e)), [])
-  const onConnect = useCallback((conn: Connection) => setEdges((e) => addEdge(conn, e)), [])
+  // A new link into an occupied input replaces the old one (Blender/Unreal behavior;
+  // the compiler also rejects two links into one socket).
+  const onConnect = useCallback(
+    (conn: Connection) =>
+      setEdges((e) =>
+        addEdge(conn, e.filter((el) => !(el.target === conn.target && el.targetHandle === conn.targetHandle))),
+      ),
+    [],
+  )
+
+  // Reject incompatible links mid-drag (React Flow dims the invalid target handles):
+  // the source output type must be able to feed the target input type.
+  const isValidConnection = useCallback(
+    (c: Connection | Edge) => {
+      if (c.source === c.target) return false // no self-connection (immediate cycle)
+      const from = nodes.find((n) => n.id === c.source)?.data.graphNode.type
+      const to = nodes.find((n) => n.id === c.target)?.data.graphNode.type
+      if (!from || !to) return false
+      const fromT = socketType(from, c.sourceHandle, "source")
+      const toT = socketType(to, c.targetHandle, "target")
+      return !!fromT && !!toT && canConnect(fromT, toT)
+    },
+    [nodes],
+  )
 
   // ── Node ops: right-click pane → Add palette; right-click node → actions menu. ──
   const rfRef = useRef<ReactFlowInstance<RezeFlowNode, Edge> | null>(null)
-  const [addMenu, setAddMenu] = useState<{ x: number; y: number } | null>(null)
+  // A wire dragged onto empty canvas remembers its source socket so the Add palette
+  // can auto-connect the node you pick (Blender/Unreal/Unity's core building gesture).
+  type PendingConnect = { nodeId: string; handleId: string | null; handleType: "source" | "target" }
+  const [addMenu, setAddMenu] = useState<{ x: number; y: number; connect?: PendingConnect } | null>(null)
   const [nodeMenu, setNodeMenu] = useState<{ x: number; y: number; nodeId: string } | null>(null)
+  const [edgeMenu, setEdgeMenu] = useState<{ x: number; y: number; edgeId: string } | null>(null)
+  const connectingRef = useRef<PendingConnect | null>(null)
+  // Last cursor position over the canvas, so ⌘V pastes where you're looking.
+  const lastPointer = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
   const openAddMenu = useCallback((e: React.MouseEvent | MouseEvent) => {
     e.preventDefault()
     setNodeMenu(null)
+    setEdgeMenu(null)
     setAddMenu({ x: e.clientX, y: e.clientY })
   }, [])
   const openNodeMenu = useCallback((e: React.MouseEvent, node: RezeFlowNode) => {
     e.preventDefault()
     setAddMenu(null)
+    setEdgeMenu(null)
+    // Right-clicking outside the current selection selects just this node, so the
+    // menu's actions have an unambiguous target (matches most node editors).
+    if (!node.selected) setNodes((cur) => cur.map((n) => ({ ...n, selected: n.id === node.id })))
     setNodeMenu({ x: e.clientX, y: e.clientY, nodeId: node.id })
+  }, [])
+  const openEdgeMenu = useCallback((e: React.MouseEvent, edge: Edge) => {
+    e.preventDefault()
+    setAddMenu(null)
+    setNodeMenu(null)
+    setEdgeMenu({ x: e.clientX, y: e.clientY, edgeId: edge.id })
+  }, [])
+
+  const onConnectStart = useCallback<OnConnectStart>((_e, params) => {
+    connectingRef.current =
+      params.nodeId && params.handleType ? { nodeId: params.nodeId, handleId: params.handleId, handleType: params.handleType } : null
+  }, [])
+  const onConnectEnd = useCallback<OnConnectEnd>((e) => {
+    const pending = connectingRef.current
+    connectingRef.current = null
+    // Only a drop on empty canvas opens the palette; a drop on a handle is a normal
+    // connect (already handled by onConnect) or an invalid target (ignored).
+    if (!pending || !(e.target as HTMLElement)?.classList?.contains("react-flow__pane")) return
+    const point = "changedTouches" in e ? e.changedTouches[0] : e
+    setNodeMenu(null)
+    setAddMenu({ x: point.clientX, y: point.clientY, connect: pending })
   }, [])
 
   const addNode = useCallback(
     (type: string) => {
-      const pos = rfRef.current?.screenToFlowPosition(addMenu ?? { x: 0, y: 0 }) ?? { x: 0, y: 0 }
-      setNodes((cur) => {
-        const id = uniqueNodeId(type, new Set(cur.map((n) => n.id)))
-        const node: RezeFlowNode = {
-          id,
-          type: "reze",
-          position: pos,
-          selected: true, // select the fresh node, deselect the rest
-          data: { graphNode: makeGraphNode(type, id, pos), linkedInputs: [] },
+      if (!addMenu) return
+      const pos = rfRef.current?.screenToFlowPosition({ x: addMenu.x, y: addMenu.y }) ?? { x: 0, y: 0 }
+      const id = uniqueNodeId(type, new Set(nodes.map((n) => n.id)))
+      const node: RezeFlowNode = {
+        id,
+        type: "reze",
+        position: pos,
+        selected: true, // select the fresh node, deselect the rest
+        data: { graphNode: makeGraphNode(type, id, pos), linkedInputs: [] },
+      }
+      setNodes((cur) => [...cur.map((n) => (n.selected ? { ...n, selected: false } : n)), node])
+
+      // Auto-wire the new node to the socket the drag started from (first compatible).
+      const c = addMenu.connect
+      const other = c && nodes.find((n) => n.id === c.nodeId)?.data.graphNode.type
+      if (c && other) {
+        const socks = socketsOf(type)
+        if (c.handleType === "source") {
+          // Dragged from an output → wire to the new node's first same-type input,
+          // else the first convertible one (so color lands on color, not float `fac`).
+          const fromT = socketType(other, c.handleId, "source")
+          const input =
+            socks.inputs.find(([, t]) => t === fromT) ?? socks.inputs.find(([, t]) => fromT && canConnect(fromT, t))
+          if (input) onConnect({ source: c.nodeId, sourceHandle: c.handleId, target: id, targetHandle: input[0] })
+        } else {
+          // Dragged from an input → wire the new node's first same-type output, else convertible.
+          const toT = socketType(other, c.handleId, "target")
+          const output =
+            socks.outputs.find(([, t]) => t === toT) ?? socks.outputs.find(([, t]) => toT && canConnect(t, toT))
+          if (output) onConnect({ source: id, sourceHandle: output[0], target: c.nodeId, targetHandle: c.handleId })
         }
-        return [...cur.map((n) => (n.selected ? { ...n, selected: false } : n)), node]
-      })
+      }
       setAddMenu(null)
     },
-    [addMenu],
+    [addMenu, nodes, onConnect],
   )
+
+  // When the palette opened from a dragged wire, offer only type-compatible nodes.
+  const connectAccept = useMemo(() => {
+    const c = addMenu?.connect
+    if (!c) return undefined
+    const other = nodes.find((n) => n.id === c.nodeId)?.data.graphNode.type
+    return (type: string) => {
+      if (!other) return true
+      const socks = socketsOf(type)
+      if (c.handleType === "source") {
+        const fromT = socketType(other, c.handleId, "source")
+        return !!fromT && socks.inputs.some(([, t]) => canConnect(fromT, t))
+      }
+      const toT = socketType(other, c.handleId, "target")
+      return !!toT && socks.outputs.some(([, t]) => canConnect(t, toT))
+    }
+  }, [addMenu, nodes])
 
   // Duplicate node(s) with a small offset; links aren't copied (single-node case
   // has none, and multi-select duplication keeping wires is a later refinement).
@@ -187,11 +286,59 @@ export function GraphEditor({
     })
   }, [])
 
-  const deleteNode = useCallback((nodeId: string) => {
-    setNodes((cur) => cur.filter((n) => n.id !== nodeId))
-    setEdges((cur) => cur.filter((e) => e.source !== nodeId && e.target !== nodeId))
-    setPreviewId((p) => (p === nodeId ? null : p))
+  const deleteNodes = useCallback((ids: string[]) => {
+    const gone = new Set(ids)
+    setNodes((cur) => cur.filter((n) => !gone.has(n.id)))
+    setEdges((cur) => cur.filter((e) => !gone.has(e.source) && !gone.has(e.target)))
+    setPreviewId((p) => (p && gone.has(p) ? null : p))
   }, [])
+
+  // Break every link touching these nodes (Unreal's "Break All Pin Links").
+  const disconnectNodes = useCallback((ids: string[]) => {
+    const set = new Set(ids)
+    setEdges((cur) => cur.filter((e) => !set.has(e.source) && !set.has(e.target)))
+  }, [])
+
+  // ── Copy / cut / paste (cross-graph via the module clipboard). ──
+  const copyNodes = useCallback(
+    (ids: string[]) => {
+      const set = new Set(ids)
+      const picked = nodes.filter((n) => set.has(n.id))
+      if (!picked.length) return
+      clipboard = {
+        nodes: picked.map((n) => ({ ...n, data: { ...n.data, graphNode: { ...n.data.graphNode } } })),
+        edges: edges.filter((e) => set.has(e.source) && set.has(e.target)).map((e) => ({ ...e })), // internal only
+      }
+    },
+    [nodes, edges],
+  )
+
+  const paste = useCallback(() => {
+    if (!clipboard?.nodes.length) return
+    const anchor = rfRef.current?.screenToFlowPosition(lastPointer.current) ?? { x: 0, y: 0 }
+    const minX = Math.min(...clipboard.nodes.map((n) => n.position.x))
+    const minY = Math.min(...clipboard.nodes.map((n) => n.position.y))
+    const taken = new Set(nodes.map((n) => n.id))
+    const idMap = new Map<string, string>()
+    const pastedNodes = clipboard.nodes.map((n) => {
+      const nid = uniqueNodeId(n.data.graphNode.type, taken)
+      taken.add(nid)
+      idMap.set(n.id, nid)
+      const position = { x: anchor.x + (n.position.x - minX), y: anchor.y + (n.position.y - minY) }
+      return { ...n, id: nid, position, selected: true, data: { ...n.data, graphNode: { ...n.data.graphNode, id: nid, ui: { position } } } }
+    })
+    const pastedEdges: Edge[] = clipboard.edges.map((e) => {
+      const source = idMap.get(e.source)!
+      const target = idMap.get(e.target)!
+      return { ...e, id: `${source}.${e.sourceHandle}→${target}.${e.targetHandle}`, source, target }
+    })
+    // Recompute linkedInputs from the pasted (internal) edges so literal controls show correctly.
+    const linkedBy = new Map<string, string[]>()
+    for (const e of pastedEdges) linkedBy.set(e.target, [...(linkedBy.get(e.target) ?? []), e.targetHandle ?? ""])
+    for (const n of pastedNodes) n.data = { ...n.data, linkedInputs: linkedBy.get(n.id) ?? [] }
+    setNodes((cur) => [...cur.map((n) => (n.selected ? { ...n, selected: false } : n)), ...pastedNodes])
+    setEdges((cur) => [...cur, ...pastedEdges])
+  }, [nodes])
 
   // Point the graph's final output at a node's primary output socket.
   const setOutputNode = useCallback(
@@ -293,6 +440,29 @@ export function GraphEditor({
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [open, duplicateNodes])
+
+  // ⌘/Ctrl+C copy · X cut · V paste, on the current selection.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return
+      const k = e.key.toLowerCase()
+      if (k !== "c" && k !== "x" && k !== "v") return
+      const t = e.target as HTMLElement
+      if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t.isContentEditable) return
+      const sel = rfRef.current?.getNodes().filter((n) => n.selected).map((n) => n.id) ?? []
+      if (k === "v") {
+        e.preventDefault()
+        paste()
+      } else if (sel.length) {
+        e.preventDefault()
+        copyNodes(sel)
+        if (k === "x") deleteNodes(sel)
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [open, paste, copyNodes, deleteNodes])
 
   // Swap the editor to another graph (import / reset): fresh flow state + history.
   const loadGraph = useCallback((graph: ShaderGraph) => {
@@ -424,7 +594,19 @@ export function GraphEditor({
     <div className="flex h-full flex-col">
       {/* ── Header — same language as the pill: slot icon + label, icons for
           everything else. The icon carries compile status (red on error). ── */}
-      <header className="flex shrink-0 items-center gap-2 pt-1 pb-1 pr-2 pl-3.5">
+      {/* The whole header is the window drag surface (buttons still work — see
+          FloatingPanel.onContainerDown); a centered grip is the affordance. */}
+      <header
+        data-drag-handle
+        // Solid (opaque, no backdrop) — it's a thin, non-focal strip, and keeping it
+        // out of the panel's translucent/blurred layer is cheaper and reads crisper.
+        className={cn(
+          // border-b (not a separate <Separator>) so the divider is part of the solid
+          // header's box — no sub-pixel seam letting the glass panel bleed through.
+          "relative flex shrink-0 items-center gap-2 border-b border-white/10 bg-zinc-950 pt-1 pb-1 pr-2 pl-3",
+          !fullscreen && "cursor-grab active:cursor-grabbing",
+        )}
+      >
         <Workflow
           className={cn(
             "size-3.5",
@@ -433,6 +615,11 @@ export function GraphEditor({
           )}
         />
         <span className="text-xs font-medium text-zinc-200">{slotLabel}</span>
+        {!fullscreen && (
+          <span className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-zinc-600">
+            <Grip className="size-4" />
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-0.5">
           {/* ── Tools: code view + reset ── */}
           <Tooltip>
@@ -521,13 +708,16 @@ export function GraphEditor({
           </Button>
         </div>
       </header>
-      <Separator className="bg-white/10" />
 
       {/* ── Graph canvas + optional WGSL pane ── */}
       <div className="min-h-0 flex-1">
         <ResizablePanelGroup orientation="horizontal">
           <ResizablePanel defaultSize="70" minSize="40">
-            <div ref={flowHostRef} className="relative h-full">
+            <div
+              ref={flowHostRef}
+              className="relative h-full"
+              onMouseMove={(e) => (lastPointer.current = { x: e.clientX, y: e.clientY })}
+            >
               {flowSized && (
                 <ReactFlow
                 onInit={(inst) => (rfRef.current = inst)}
@@ -537,12 +727,16 @@ export function GraphEditor({
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
+                onConnectStart={onConnectStart}
+                onConnectEnd={onConnectEnd}
+                isValidConnection={isValidConnection}
                 onReconnectStart={onReconnectStart}
                 onReconnect={onReconnect}
                 onReconnectEnd={onReconnectEnd}
                 onNodeDoubleClick={(_, n) => setPreviewId((prev) => (prev === n.id ? null : n.id))}
                 onPaneContextMenu={openAddMenu}
                 onNodeContextMenu={openNodeMenu}
+                onEdgeContextMenu={openEdgeMenu}
                 deleteKeyCode={["Backspace", "Delete"]}
                 colorMode="dark"
                 defaultViewport={{ x: 24, y: 24, zoom: 0.7 }}
@@ -579,31 +773,51 @@ export function GraphEditor({
               )}
 
               {addMenu && (
-                <AddNodeMenu x={addMenu.x} y={addMenu.y} onPick={addNode} onClose={() => setAddMenu(null)} />
+                <AddNodeMenu
+                  x={addMenu.x}
+                  y={addMenu.y}
+                  accept={connectAccept}
+                  onPick={addNode}
+                  onClose={() => setAddMenu(null)}
+                />
               )}
 
               {nodeMenu &&
                 (() => {
                   const node = nodes.find((n) => n.id === nodeMenu.nodeId)
                   if (!node) return null
+                  // openNodeMenu guarantees the clicked node is selected; act on the
+                  // whole selection (single- or multi-node).
+                  const sel = nodes.filter((n) => n.selected).map((n) => n.id)
+                  const targets = sel.length ? sel : [nodeMenu.nodeId]
+                  const single = targets.length === 1
                   const isOutput = base.output.node === nodeMenu.nodeId
                   const isPreview = previewId === nodeMenu.nodeId
                   const hasOutput = socketsOf(node.data.graphNode.type).outputs.length > 0
+                  const plural = single ? "" : ` ${targets.length}`
                   const actions: (MenuAction | "separator")[] = [
-                    {
-                      label: "Set as output",
-                      checked: isOutput,
-                      disabled: isOutput || !hasOutput,
-                      onSelect: () => setOutputNode(nodeMenu.nodeId),
-                    },
-                    {
-                      label: isPreview ? "Stop preview" : "Preview output",
-                      disabled: !hasOutput,
-                      onSelect: () => setPreviewId(isPreview ? null : nodeMenu.nodeId),
-                    },
-                    { label: "Duplicate", shortcut: "⇧D", onSelect: () => duplicateNodes([nodeMenu.nodeId]) },
+                    // Output/preview are single-node concepts — hidden in a multi-select.
+                    ...(single
+                      ? ([
+                          {
+                            label: "Set as output",
+                            checked: isOutput,
+                            disabled: isOutput || !hasOutput,
+                            onSelect: () => setOutputNode(nodeMenu.nodeId),
+                          },
+                          {
+                            label: isPreview ? "Stop preview" : "Preview output",
+                            disabled: !hasOutput,
+                            onSelect: () => setPreviewId(isPreview ? null : nodeMenu.nodeId),
+                          },
+                          "separator",
+                        ] as (MenuAction | "separator")[])
+                      : []),
+                    { label: `Copy${plural}`, shortcut: "⌘C", onSelect: () => copyNodes(targets) },
+                    { label: `Duplicate${plural}`, shortcut: "⇧D", onSelect: () => duplicateNodes(targets) },
+                    { label: "Disconnect", onSelect: () => disconnectNodes(targets) },
                     "separator",
-                    { label: "Delete", shortcut: "⌫", danger: true, onSelect: () => deleteNode(nodeMenu.nodeId) },
+                    { label: `Delete${plural}`, shortcut: "⌫", danger: true, onSelect: () => deleteNodes(targets) },
                   ]
                   return (
                     <NodeContextMenu
@@ -614,6 +828,22 @@ export function GraphEditor({
                     />
                   )
                 })()}
+
+              {edgeMenu && (
+                <NodeContextMenu
+                  x={edgeMenu.x}
+                  y={edgeMenu.y}
+                  actions={[
+                    {
+                      label: "Delete link",
+                      shortcut: "⌫",
+                      danger: true,
+                      onSelect: () => setEdges((cur) => cur.filter((el) => el.id !== edgeMenu.edgeId)),
+                    },
+                  ]}
+                  onClose={() => setEdgeMenu(null)}
+                />
+              )}
             </div>
           </ResizablePanel>
           {showWgsl && (

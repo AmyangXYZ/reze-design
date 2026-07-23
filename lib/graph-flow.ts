@@ -23,8 +23,10 @@ const edgeId = (l: ShaderGraph["links"][number]) => `${l.from.node}.${l.from.soc
 
 /** Layered auto-layout for graphs without saved ui positions: x by topological
  *  depth, y stacked with per-node height estimates so tall nodes (principled,
- *  ramps) don't overlap their column neighbors. */
-function autoLayout(graph: ShaderGraph): Map<string, { x: number; y: number }> {
+ *  ramps) don't overlap their column neighbors. Exported so the minimap lays a graph
+ *  out identically to the editor — otherwise opening the editor (which writes these
+ *  positions back) would make the minimap visibly jump from a different layout. */
+export function autoLayout(graph: ShaderGraph): Map<string, { x: number; y: number }> {
   const depth = new Map<string, number>()
   const deps = new Map<string, string[]>()
   for (const n of graph.nodes) deps.set(n.id, [])
@@ -103,4 +105,24 @@ export function socketsOf(type: string): { inputs: [string, string][]; outputs: 
     inputs: Object.entries(spec.inputs).map(([name, s]) => [name, s.type]),
     outputs: Object.entries(spec.outputs).map(([name, t]) => [name, t as string]),
   }
+}
+
+/** Can an output socket of type `from` feed an input socket of type `to`? Mirrors the
+ *  engine compiler's `canConvert` (not exported) — Blender-faithful implicit conversions
+ *  — plus the rule that vec4 inputs (ramp stop colors) are literal-only, never linkable.
+ *  Used for drag-time connection validation and compatible-node filtering. */
+export function canConnect(from: string, to: string): boolean {
+  if (to === "vec4") return false
+  if (from === to) return true
+  if (from === "color" && to === "float") return true // BT.601 luminance
+  if (from === "float" && (to === "color" || to === "vector")) return true // splat
+  if ((from === "color" && to === "vector") || (from === "vector" && to === "color")) return true
+  return false
+}
+
+/** The type of a node's socket by handle id and direction (or undefined if unknown). */
+export function socketType(nodeType: string, handle: string | null | undefined, dir: "source" | "target"): string | undefined {
+  if (!handle) return undefined
+  const socks = socketsOf(nodeType)
+  return (dir === "source" ? socks.outputs : socks.inputs).find(([name]) => name === handle)?.[1]
 }

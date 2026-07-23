@@ -14,11 +14,15 @@ import { cn } from "@/lib/utils"
 export function AddNodeMenu({
   x,
   y,
+  accept,
   onPick,
   onClose,
 }: {
   x: number
   y: number
+  /** When set (drag-to-create), show only node types this predicate accepts — i.e.
+   *  those with a socket compatible with the dragged wire. */
+  accept?: (type: string) => boolean
   onPick: (type: string) => void
   onClose: () => void
 }) {
@@ -29,15 +33,19 @@ export function AddNodeMenu({
   const [pos, setPos] = useState({ left: x, top: y, ready: false })
 
   // When searching, collapse to a single flat, filtered list (no headers); otherwise
-  // show the curated groups. `flat` is the keyboard-navigable order either way.
+  // show the curated groups. `flat` is the keyboard-navigable order either way. When
+  // `accept` is set (drag-to-create), incompatible node types are dropped throughout.
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return NODE_CATALOG
-    const items = NODE_CATALOG.flatMap((g) => g.items).filter(
+    const base = accept
+      ? NODE_CATALOG.map((g) => ({ ...g, items: g.items.filter((i) => accept(i.type)) })).filter((g) => g.items.length)
+      : NODE_CATALOG
+    if (!q) return base
+    const items = base.flatMap((g) => g.items).filter(
       (i) => i.label.toLowerCase().includes(q) || i.type.toLowerCase().includes(q),
     )
     return [{ category: "", items }]
-  }, [query])
+  }, [query, accept])
   const flat = useMemo(() => groups.flatMap((g) => g.items), [groups])
 
   // Reset the highlight to the top whenever the filtered set changes.
@@ -100,7 +108,7 @@ export function AddNodeMenu({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="Add node…"
+          placeholder={accept ? "Connect to…" : "Add node…"}
           className="h-7 w-full rounded-md bg-white/5 px-2 text-xs text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-400/40"
         />
       </div>
