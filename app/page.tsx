@@ -166,8 +166,19 @@ export default function Home() {
     if (leftTab !== "materials") highlight(null)
   }, [leftTab, highlight])
 
-  // Selection is explicit now (single-click a group to select/deselect), so no
-  // auto-select on load — a stale/absent id just resolves to no active group.
+  // Selection is explicit (single-click a group to select/deselect), so we don't
+  // re-select on every null. But on the FIRST load, select the first non-empty group
+  // (sidebar order = sorted by label/id) so the shader-graph inspector isn't empty.
+  const didAutoSelect = useRef(false)
+  useEffect(() => {
+    if (didAutoSelect.current || !groups.length) return
+    didAutoSelect.current = true
+    const first = [...groups]
+      .sort((a, b) => (a.label ?? a.id).localeCompare(b.label ?? b.id, undefined, { sensitivity: "base" }))
+      .find((g) => g.materials.length > 0)
+    if (first) setActiveGroupId(first.id)
+  }, [groups])
+
   const activeGroup = groups.find((g) => g.id === activeGroupId) ?? null
   // Factory preset for the active group (for Reset) — auto-group ids are role keys.
   const presetGraph = (activeGroup && SLOT_GRAPHS[activeGroup.id as MaterialPreset]) || activeGroup?.graph || null

@@ -8,7 +8,6 @@
 
 import { useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { TAILWIND_PALETTE } from "@/lib/tailwind-palette"
 import { cn } from "@/lib/utils"
 
@@ -61,7 +60,36 @@ export function ColorField({ value, onChange }: { value: string; onChange: (hex:
         </span>
       </button>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <ColorPickerDialog open={open} onOpenChange={setOpen} value={value} onChange={onChange} />
+    </>
+  )
+}
+
+/** The palette + hex picker on its own, so any trigger (the ColorField chip, a node
+ *  socket swatch) can open the same one control. Value/onChange are sRGB hex. */
+export function ColorPickerDialog({
+  open,
+  onOpenChange,
+  value,
+  onChange,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  value: string
+  onChange: (hex: string) => void
+}) {
+  const active = value.toLowerCase()
+
+  // Hovering a swatch previews its name+hex+color in the bottom bar (event-delegated,
+  // so no per-swatch component cost). Instant, no floating tooltip.
+  const [hover, setHover] = useState<{ name: string; hex: string } | null>(null)
+  const onGridOver = (e: React.MouseEvent) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>("button[data-hex]")
+    setHover(btn ? { name: btn.dataset.name!, hex: btn.dataset.hex! } : null)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent
           // Don't autofocus the first swatch on open — Radix shows a tooltip on
           // focus, which made "red-50" pop up every time the picker opened.
@@ -85,54 +113,57 @@ export function ColorField({ value, onChange }: { value: string; onChange: (hex:
                 ))}
               </div>
 
-              {/* Tooltips only open on hover-settle (delay), never during a fast
-                  sweep — so they don't affect scrub smoothness. The jank fix was
-                  removing the per-swatch box-shadow + dialog backdrop-blur, not the
-                  tooltips; hover here is a composited transform only (no paint). */}
-              <TooltipProvider delayDuration={150} skipDelayDuration={400}>
-                <div className="space-y-[5px]">
-                  {TAILWIND_PALETTE.map((row) => {
-                    const hue = row[0].name.split("-")[0]
-                    return (
-                      <div key={hue} className={cn(GRID, "items-center")}>
-                        <span className="truncate text-xs text-muted-foreground">{cap(hue)}</span>
-                        {row.map(({ name, hex }) => (
-                          <Tooltip key={name}>
-                            <TooltipTrigger asChild>
-                              <button
-                                className={cn(
-                                  "h-5 w-full cursor-pointer rounded-xs transition-transform duration-75 ease-out hover:z-10 hover:scale-110",
-                                  active === hex.toLowerCase()
-                                    ? "z-10 ring-2 ring-blue-400 ring-offset-1 ring-offset-zinc-950"
-                                    : "ring-1 ring-white/10",
-                                )}
-                                style={{ background: hex }}
-                                onClick={() => {
-                                  onChange(hex)
-                                  setOpen(false)
-                                }}
-                              />
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className="font-mono text-xs">
-                              {name} {hex}
-                            </TooltipContent>
-                          </Tooltip>
-                        ))}
-                      </div>
-                    )
-                  })}
-                </div>
-              </TooltipProvider>
+              {/* Hover previews in the bottom bar via one delegated handler (no Radix
+                  Tooltip per swatch — 242 Tooltip trees were the dialog's open-lag).
+                  Hover is a composited transform only, so scrubbing stays smooth. */}
+              <div className="space-y-[5px]" onMouseOver={onGridOver} onMouseLeave={() => setHover(null)}>
+                {TAILWIND_PALETTE.map((row) => {
+                  const hue = row[0].name.split("-")[0]
+                  return (
+                    <div key={hue} className={cn(GRID, "items-center")}>
+                      <span className="truncate text-xs text-muted-foreground">{cap(hue)}</span>
+                      {row.map(({ name, hex }) => (
+                        <button
+                          key={name}
+                          data-name={name}
+                          data-hex={hex}
+                          className={cn(
+                            "h-5 w-full cursor-pointer rounded-xs transition-transform duration-75 ease-out hover:z-10 hover:scale-115",
+                            active === hex.toLowerCase()
+                              ? "z-10 ring-2 ring-blue-400 ring-offset-1 ring-offset-zinc-950"
+                              : "ring-1 ring-white/10",
+                          )}
+                          style={{ background: hex }}
+                          onClick={() => {
+                            onChange(hex)
+                            onOpenChange(false)
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           </div>
 
           <div className="flex items-center gap-2 border-t border-white/10 pt-3">
             <span className="text-xs text-muted-foreground">Custom hex</span>
             <HexField value={value} onChange={onChange} />
-            <span className="size-6 rounded-md ring-1 ring-white/15" style={{ background: value }} />
+            {/* Right side previews the hovered swatch (name + hex + chip); falls back
+                to the current value when nothing is hovered. */}
+            <div className="ml-auto flex items-center gap-2">
+              {hover && <span className="text-xs text-muted-foreground">{cap(hover.name)}</span>}
+              <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                {(hover?.hex ?? value).toLowerCase()}
+              </span>
+              <span
+                className="size-6 rounded-md ring-1 ring-white/15"
+                style={{ background: hover?.hex ?? value }}
+              />
+            </div>
           </div>
         </DialogContent>
       </Dialog>
-    </>
   )
 }
