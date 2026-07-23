@@ -56,13 +56,18 @@ export function ColorField({ value, onChange }: { value: string; onChange: (hex:
           className="size-4 shrink-0 rounded-md ring-1 ring-white/15 transition-transform group-hover:scale-110"
           style={{ background: value }}
         />
-        <span className="w-14 text-left font-mono text-xs text-muted-foreground underline-offset-2 group-hover:text-foreground group-hover:underline">
+        <span className="font-mono text-xs text-muted-foreground underline-offset-2 group-hover:text-foreground group-hover:underline">
           {active}
         </span>
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="gap-3 rounded-xl border-white/10 bg-zinc-950 sm:max-w-2xl">
+        <DialogContent
+          // Don't autofocus the first swatch on open — Radix shows a tooltip on
+          // focus, which made "red-50" pop up every time the picker opened.
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          className="gap-3 rounded-xl border-white/10 bg-zinc-950 sm:max-w-2xl"
+        >
           <DialogHeader>
             <DialogTitle className="text-sm font-medium">Pick a color</DialogTitle>
           </DialogHeader>
@@ -121,7 +126,7 @@ export function ColorField({ value, onChange }: { value: string; onChange: (hex:
             </div>
           </div>
 
-          <div className="flex items-center gap-2 border-t border-white/5 pt-3">
+          <div className="flex items-center gap-2 border-t border-white/10 pt-3">
             <span className="text-xs text-muted-foreground">Custom hex</span>
             <HexField value={value} onChange={onChange} />
             <span className="size-6 rounded-md ring-1 ring-white/15" style={{ background: value }} />

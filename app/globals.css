@@ -168,6 +168,17 @@
   background: transparent;
 }
 
+/* Opt-out: fully hide the scrollbar (scroll still works via wheel/trackpad).
+   Plain rules (not @utility) with !important so they beat the global themed bar. */
+.no-scrollbar {
+  scrollbar-width: none !important;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
 /* Heavier Figma-style drop shadow for floating panels / pills / popovers. */
 @utility shadow-float {
   box-shadow:

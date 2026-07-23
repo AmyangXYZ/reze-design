@@ -33,7 +33,9 @@ export default function RootLayout({
       className={`dark ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col text-foreground">
-        <TooltipProvider>{children}</TooltipProvider>
+        {/* A small delay lets hover-revealed triggers finish laying out before the
+            tooltip opens — avoids the first-open flash at the top-left corner. */}
+        <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
         <Analytics/>
       </body>
     </html>

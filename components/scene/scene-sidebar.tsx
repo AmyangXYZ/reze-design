@@ -34,7 +34,7 @@ export function SliderRow({
   // Single line: label · slider · value.
   return (
     <div className="mt-2.5 flex items-center gap-2 first:mt-0">
-      <span className="w-16 shrink-0 text-xs">{label}</span>
+      <span className="w-14 shrink-0 truncate text-xs">{label}</span>
       <Slider
         className="flex-1 [&_[data-slot=slider-thumb]]:size-2.5 [&_[data-slot=slider-thumb]]:hover:ring-2 [&_[data-slot=slider-track]]:h-1"
         value={[value]}
@@ -43,7 +43,7 @@ export function SliderRow({
         step={step}
         onValueChange={([v]) => onChange(v)}
       />
-      <span className="w-11 shrink-0 text-right text-[11px] text-muted-foreground tabular-nums">{fmt ? fmt(value) : value}</span>
+      <span className="w-8 shrink-0 text-right text-[11px] text-muted-foreground tabular-nums">{fmt ? fmt(value) : value}</span>
     </div>
   )
 }
@@ -59,7 +59,7 @@ export function Section({
 }) {
   // Full-bleed hairline between sections (-mx cancels the panel padding).
   return (
-    <div className="-mx-4 mt-4 border-t border-white/5 px-4 pt-3.5 first:mt-0 first:border-t-0 first:pt-0">
+    <div className="-mx-4 mt-4 border-t border-white/10 px-4 pt-3.5 first:mt-0 first:border-t-0 first:pt-0">
       <div className="mb-2 flex items-center justify-between">
         <div className="text-xs font-medium tracking-[0.14em] text-muted-foreground uppercase">{title}</div>
         {action}
@@ -134,16 +134,12 @@ export function ScenePanel({
           />
         </Section>
 
-        <Section
-          title="Bloom"
-          action={
-            <span className="flex items-center gap-2">
-              <ColorField value={bloom.color} onChange={(hex) => patch("bloom", { color: hex })} />
-              <Switch checked={bloom.enabled} onCheckedChange={(v) => patch("bloom", { enabled: v })} className="scale-75" />
-            </span>
-          }
-        >
-          <div className={cn(!bloom.enabled && "pointer-events-none opacity-40")}>
+        <Section title="Bloom" action={<ColorField value={bloom.color} onChange={(hex) => patch("bloom", { color: hex })} />}>
+          <div className="flex items-center justify-between">
+            <span className="text-xs">Enabled</span>
+            <Switch checked={bloom.enabled} onCheckedChange={(v) => patch("bloom", { enabled: v })} className="scale-75" />
+          </div>
+          <div className={cn("mt-2.5", !bloom.enabled && "pointer-events-none opacity-40")}>
             <SliderRow
               label="Threshold"
               value={bloom.threshold}
@@ -190,7 +186,7 @@ export function ScenePanel({
         </Section>
 
         {/* Reset to the app's curated defaults (not the engine's neutral ones). */}
-        <div className="-mx-4 mt-4 border-t border-white/5 px-4 pt-3">
+        <div className="-mx-4 mt-4 border-t border-white/10 px-4 pt-3">
           <Button
             variant="ghost"
             size="sm"

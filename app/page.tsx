@@ -7,8 +7,9 @@
 // pill's single toggle. The node-graph editor lives in a bottom drawer, narrowed
 // to sit between the docks, and collapses on its own into a status pill.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import {
+  DEFAULT_GRAPH,
   parsePmxFolderInput,
   pmxFileAtRelativePath,
   type CompileOptions,
@@ -87,13 +88,15 @@ function saveUiState(state: { docks: boolean; leftTab: string; rightTab: string 
 }
 
 export default function Home() {
-  const [selected, setSelected] = useState<string | null>(null)
   // Which style group the node-graph editor is bound to.
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null)
   // Node-graph library popup, opened for a specific material.
   const [library, setLibrary] = useState<{ open: boolean; material: string | null }>({ open: false, material: null })
   // Bumped on library-pick to remount the graph editor with the new graph.
   const [libVersion, setLibVersion] = useState(0)
+  // The graph the editing session started from — restored on "Back to library"
+  // so a fresh fork / new graph (which previews live) can be cleanly abandoned.
+  const [editBaseline, setEditBaseline] = useState<{ groupId: string; graph: StyleGraph; label?: string } | null>(null)
 
   // Dock + tab state persists; panels render only after mount (see `mounted`),
   // so reading localStorage in the initializer can't cause a hydration mismatch.
@@ -110,7 +113,7 @@ export default function Home() {
   }, [mounted, docksOpen, leftTab, rightTab])
 
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [drawerH, setDrawerH] = useState(380)
+  const [drawerH, setDrawerH] = useState(460)
   const [animName, setAnimName] = useState<string | null>(null)
   // Read stored settings synchronously (SSR-safe: falls back to defaults) so the
   // page background AND the engine boot already match the user's config.
@@ -145,17 +148,11 @@ export default function Home() {
     [groups],
   )
 
-  // Display look per material = its group's label (falls back to "—" when ungrouped).
-  const lookByMaterial = useMemo(() => {
-    const m: Record<string, string> = {}
-    for (const g of groups) for (const mat of g.materials) m[mat] = g.label ?? g.id
-    return m
-  }, [groups])
-
+  // Clicking a material in the 3D scene highlights it and focuses its group (so the
+  // editor targets that group). No persistent selection — the tree is hover + drag.
   const pick = (material: string | null) => {
-    setSelected(material)
     highlight(material)
-    if (!material) return // clicked empty space — deselect, keep the editor
+    if (!material) return
     const g = groupOfMaterial(material)
     if (g) setActiveGroupId(g.id)
   }
@@ -163,11 +160,10 @@ export default function Home() {
     pickRef.current = pick
   })
 
-  // Highlight follows selection only while the Materials tab is active — leaving
-  // it clears the on-model highlight so styling other panels isn't visually noisy.
+  // Leaving the Materials tab clears any lingering hover/pick highlight.
   useEffect(() => {
-    highlight(leftTab === "materials" ? selected : null)
-  }, [leftTab, selected, highlight])
+    if (leftTab !== "materials") highlight(null)
+  }, [leftTab, highlight])
 
   // Bind the editor to the first group once they load (or when a model swap makes
   // the active id stale). Set during render, guarded — no syncing effect.
@@ -184,36 +180,99 @@ export default function Home() {
     [activeGroup, upsertGroup],
   )
 
-  // Apply a library look to the target material. Default: its whole group (all its
-  // materials). Opting out peels just this material into its own group — unlimited
-  // groups now, no slot ceiling.
-  const applyLibrary = (graph: StyleGraph, name: string, applyToSimilar: boolean) => {
+  // Apply a library look to the target material's whole group — the group is the
+  // styling unit, so there's no per-material opt-out here (splitting a material
+  // into its own group is a group-management action). `edit` opens the editor on
+  // the result and snapshots a baseline so the fork can be abandoned cleanly.
+  const applyLibrary = (graph: StyleGraph, name: string, edit = false) => {
     const material = library.material
     if (!material) return
     const group = groupOfMaterial(material)
     const styled: StyleGraph = { ...graph, name }
 
-    if (group && (applyToSimilar || group.materials.length === 1)) {
+    if (group) {
+      if (edit) setEditBaseline({ groupId: group.id, graph: group.graph, label: group.label })
       void upsertGroup({ ...group, graph: styled, label: name })
       setActiveGroupId(group.id)
     } else {
-      const peeled: StyleGroup = {
-        id: newGroupId(material, groups),
-        label: name,
-        materials: [material],
-        graph: styled,
-        renderClass: group?.renderClass ?? "auto",
-      }
-      const next = group
-        ? groups
-            .map((g) => (g.id === group.id ? { ...g, materials: g.materials.filter((m) => m !== material) } : g))
-            .concat(peeled)
-        : [...groups, peeled]
-      void applyGroups(next)
-      setActiveGroupId(peeled.id)
+      // Ungrouped material — wrap it in its own group (nothing to revert to).
+      const created: StyleGroup = { id: newGroupId(material, groups), label: name, materials: [material], graph: styled, renderClass: "auto" }
+      if (edit) setEditBaseline(null)
+      void applyGroups([...groups, created])
+      setActiveGroupId(created.id)
     }
     setLibVersion((v) => v + 1)
     setLibrary({ open: false, material: null })
+    if (edit) setDrawerOpen(true) // pop the node-graph editor on the fresh fork
+  }
+
+  // ── Graph-editor session lifecycle ──
+  // Edits preview live on the active group. Opening the editor snapshots the current
+  // graph as the baseline; "Save & close" keeps the edits; "Back to library" restores
+  // the baseline and returns to the picker (so a fresh fork/new graph can be undone).
+  const saveGraphEdit = () => {
+    setEditBaseline(null)
+    setDrawerOpen(false)
+  }
+  const backToLibrary = () => {
+    const baseline = editBaseline
+    setEditBaseline(null)
+    setDrawerOpen(false)
+    let material = activeGroup?.materials[0] ?? null
+    if (baseline) {
+      const g = groups.find((x) => x.id === baseline.groupId)
+      if (g) {
+        void upsertGroup({ ...g, graph: baseline.graph, label: baseline.label }) // revert the live preview
+        material = g.materials[0] ?? material
+      }
+      setLibVersion((v) => v + 1)
+    }
+    if (material) setLibrary({ open: true, material })
+  }
+
+  // ── Group operations (structural edits go through applyGroups) ──
+  const createGroup = () => {
+    const id = newGroupId("group", groups)
+    void applyGroups([
+      ...groups,
+      { id, label: "New group", materials: [], graph: structuredClone(DEFAULT_GRAPH), renderClass: "auto" },
+    ])
+    setActiveGroupId(id)
+  }
+  // Non-empty groups compile through upsertGroup (one group); empty folders exist
+  // in UI state only, so their edits go through applyGroups (which withholds them
+  // from the engine) rather than upsertGroup (which would compile an empty group).
+  const patchGroup = (id: string, patch: Partial<StyleGroup>) => {
+    const g = groups.find((x) => x.id === id)
+    if (!g) return
+    const updated = { ...g, ...patch }
+    if (updated.materials.length) void upsertGroup(updated)
+    else void applyGroups(groups.map((x) => (x.id === id ? updated : x)))
+  }
+  const renameGroup = (id: string, label: string) => patchGroup(id, { label: label.trim() || id })
+  const deleteGroup = (id: string) => {
+    const g = groups.find((x) => x.id === id)
+    if (!g || g.renderClass === "eye" || g.renderClass === "hair") return // Eye/Hair are pinned
+    void applyGroups(groups.filter((x) => x.id !== id)) // its materials fall back to hand-shaded
+    if (activeGroupId === id) setActiveGroupId(null)
+  }
+  // Move a material into a group (target=null → ungroup). Removes it from wherever
+  // it was first; each material lives in at most one group.
+  const moveMaterial = (material: string, targetId: string | null) => {
+    const next = groups.map((g) => ({ ...g, materials: g.materials.filter((m) => m !== material) }))
+    if (targetId) {
+      const t = next.find((g) => g.id === targetId)
+      if (t) t.materials = [...t.materials, material]
+    }
+    void applyGroups(next)
+  }
+  // Focus a group and open the node-graph editor on it (snapshots a baseline).
+  const editGroupGraph = (id: string) => {
+    const g = groups.find((x) => x.id === id)
+    if (!g) return
+    setActiveGroupId(id)
+    setEditBaseline({ groupId: id, graph: g.graph, label: g.label })
+    setDrawerOpen(true)
   }
 
   // ── Model upload ──
@@ -223,7 +282,6 @@ export default function Home() {
 
   const loadCustom = async (files: File[], pmxFile: File) => {
     setUpload(null)
-    setSelected(null)
     setActiveGroupId(null) // the new model brings a fresh group set (re-inited on load)
     setAnimName(null) // the new model starts in bind pose
     setModelSize(pmxFile.size)
@@ -391,13 +449,16 @@ export default function Home() {
       content: (
         <MaterialsPanel
           materials={materials}
-          selected={selected}
-          lookByMaterial={lookByMaterial}
-          onSelect={pick}
-          onHover={(name) => highlight(name ?? selected)}
+          groups={groups}
+          activeGroupId={activeGroupId}
+          onHover={(name) => highlight(name)}
           onToggleVisible={toggleVisible}
-          onEditGraph={() => setDrawerOpen(true)}
           onOpenLibrary={(material) => setLibrary({ open: true, material })}
+          onCreateGroup={createGroup}
+          onRenameGroup={renameGroup}
+          onDeleteGroup={deleteGroup}
+          onSetActiveGroup={setActiveGroupId}
+          onMoveMaterial={moveMaterial}
         />
       ),
     },
@@ -439,8 +500,9 @@ export default function Home() {
   // The node-graph drawer opens ABOVE the persistent transport bar (when a clip
   // is loaded), independent of the docks — opening it never shrinks them.
   const graphBottom = animName ? 64 : 12
-  // Drawer width: full-bleed when docks are hidden, else inset to clear both docks.
-  const drawerWidth = docksOpen ? "max(360px, calc(100vw - 640px))" : "calc(100vw - 24px)"
+  // Drawer width: full-bleed when docks are hidden, else inset to clear both docks
+  // (2×264 dock + 2×24 gap = 576).
+  const drawerWidth = docksOpen ? "max(360px, calc(100vw - 648px))" : "calc(100vw - 24px)"
 
   return (
     <div
@@ -470,7 +532,7 @@ export default function Home() {
           header); a floating pill on its own when collapsed. ── */}
       {mounted &&
         (docksOpen ? (
-          <div className="fixed inset-y-0 left-0 z-20 w-[296px]">
+          <div className="fixed inset-y-0 left-0 z-20 w-[300px]">
             <LeftDock
               railTop={<RailLogo />}
               header={<BrandPill sceneName="Untitled scene" docksOpen onToggleDocks={() => setDocksOpen(false)} asHeader />}
@@ -489,7 +551,7 @@ export default function Home() {
           cluster is its header); floating pills when collapsed. ── */}
       {mounted &&
         (docksOpen ? (
-          <div className="fixed inset-y-0 right-0 z-20 w-[296px]">
+          <div className="fixed inset-y-0 right-0 z-20 w-[300px]">
             <RightDock
               header={<TopRightCluster shareName="untitled-scene" asHeader />}
               tabs={rightTabs}
@@ -543,6 +605,8 @@ export default function Home() {
               engineError={error}
               open={drawerOpen}
               onClose={() => setDrawerOpen(false)}
+              onSave={saveGraphEdit}
+              onBack={backToLibrary}
             />
           ) : (
             <div className="relative flex flex-1 items-center justify-center text-xs text-muted-foreground">
@@ -569,14 +633,22 @@ export default function Home() {
         </div>
       )}
 
-      {/* ── Node-graph library popup ── */}
+      {/* ── Shader-graph library popup ── */}
       <NodeLibrary
         open={library.open}
         onOpenChange={(o) => setLibrary((s) => ({ ...s, open: o }))}
-        targetMaterial={library.material}
+        targetLabel={groupOfMaterial(library.material)?.label ?? groupOfMaterial(library.material)?.id ?? library.material}
         canApply={library.material !== null}
         affects={groupOfMaterial(library.material)?.materials.length ?? 1}
+        currentGraphName={groupOfMaterial(library.material)?.graph.name ?? null}
         onApply={applyLibrary}
+        onEditCurrent={() => {
+          const g = groupOfMaterial(library.material)
+          if (g) {
+            setLibrary({ open: false, material: null })
+            editGroupGraph(g.id)
+          }
+        }}
       />
 
       {/* ── Uploads ── */}

@@ -7,9 +7,25 @@
 // means; hover temporarily overrides it.
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Engine, Vec3, type ApplyStyleGroupResult, type CompileOptions, type StyleGroup } from "reze-engine"
-import { MODEL_ID, MODEL_PATH, MODEL_PRESETS } from "@/lib/materials"
+import { Engine, Vec3, type ApplyStyleGroupResult, type CompileOptions, type RenderClass, type StyleGroup } from "reze-engine"
+import { MODEL_ID, MODEL_PATH, MODEL_PRESETS, SLOT_GRAPHS } from "@/lib/materials"
 import { azElToDirection, hexToLinearVec3, type SceneSettings } from "@/lib/scene-settings"
+
+// Eye and Hair are pinned, non-deletable groups: they own the special render
+// classes (stencil so eyes read through hair), so membership IS the assignment —
+// users drag eye/hair materials here instead of picking a render class. Seeded
+// empty when the engine's auto-grouping didn't already produce them, so there's
+// always a drop target. Empty seeds are UI-only (withheld from the engine).
+const SPECIAL_GROUPS: { id: string; label: string; renderClass: RenderClass; preset: "eye" | "hair" }[] = [
+  { id: "eye", label: "Eye", renderClass: "eye", preset: "eye" },
+  { id: "hair", label: "Hair", renderClass: "hair", preset: "hair" },
+]
+function withSpecialGroups(list: StyleGroup[]): StyleGroup[] {
+  const seeds = SPECIAL_GROUPS.filter((s) => !list.some((g) => (g.renderClass ?? "auto") === s.renderClass)).map(
+    (s): StyleGroup => ({ id: s.id, label: s.label, materials: [], graph: structuredClone(SLOT_GRAPHS[s.preset]!), renderClass: s.renderClass }),
+  )
+  return [...list, ...seeds]
+}
 
 export type MaterialRow = {
   name: string
@@ -85,7 +101,7 @@ export function useEngine(
         // Awaited (compiles finish) so getStyleGroups is populated + first frame is styled.
         await engine.autoStyleGroups(MODEL_ID)
         if (disposed) return
-        setGroups(engine.getStyleGroups(MODEL_ID))
+        setGroups(withSpecialGroups(engine.getStyleGroups(MODEL_ID)))
         // Bind pose until the user loads a VMD — material evaluation doesn't need motion.
         engine.runRenderLoop()
         setReady(true)
@@ -133,7 +149,7 @@ export function useEngine(
       })
       // Uploaded models have no curated map — auto-group from name hints alone.
       await engine.autoStyleGroups(name)
-      setGroups(engine.getStyleGroups(name))
+      setGroups(withSpecialGroups(engine.getStyleGroups(name)))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -185,10 +201,14 @@ export function useEngine(
     return engine.upsertStyleGroup(modelNameRef.current, group, opts)
   }, [])
 
-  /** Replace the whole set (structural changes: create/move/remove groups). */
+  /** Replace the whole set (structural changes: create/move/remove groups). Empty
+   *  folders are kept in UI state but withheld from the engine (nothing to shade). */
   const applyGroups = useCallback(async (next: StyleGroup[]) => {
     setGroups(next)
-    await engineRef.current?.applyStyleGroups(modelNameRef.current, next)
+    await engineRef.current?.applyStyleGroups(
+      modelNameRef.current,
+      next.filter((g) => g.materials.length > 0),
+    )
   }, [])
 
   /** Instant adjust-tier: write one exposed param on a group's graph (no recompile). */

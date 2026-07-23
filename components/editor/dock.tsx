@@ -42,7 +42,7 @@ export function LeftDock({
       {/* Vertical rail — logo · divider · icon+label tabs (room to grow). Figma
           style: the active highlight boxes only the ICON; the label sits plain
           below it. */}
-      <nav className="flex w-14 shrink-0 flex-col items-center gap-2 border-r border-white/5 py-1.5">
+      <nav className="flex w-12 shrink-0 flex-col items-center gap-2 border-r border-white/10 py-1.5">
         {railTop}
         {railTop && <Separator className="w-7 bg-white/10" />}
         {tabs.map((t) => {
@@ -83,9 +83,9 @@ export function LeftDock({
           <TooltipContent side="right">github.com/AmyangXYZ/reze-design</TooltipContent>
         </Tooltip>
       </nav>
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {header}
-        <Separator className="bg-white/5" />
+        <Separator className="bg-white/10" />
         {current.content}
       </div>
     </aside>
@@ -107,7 +107,7 @@ export function RightDock({
   return (
     <aside className={cn(shell, "flex-col border-l border-white/10")}>
       {header}
-      <Separator className="bg-white/5" />
+      <Separator className="bg-white/10" />
       <div className="flex items-center gap-1 p-1">
         {tabs.map((t) => {
           const on = t.id === current.id
@@ -125,7 +125,7 @@ export function RightDock({
           )
         })}
       </div>
-      <Separator className="bg-white/5" />
+      <Separator className="bg-white/10" />
       {current.content}
     </aside>
   )

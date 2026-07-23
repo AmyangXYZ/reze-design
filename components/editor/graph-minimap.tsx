@@ -1,25 +1,49 @@
-// A cheap, static schematic of a StyleGraph — nodes as rounded rects at their
-// editor positions, links as faint wires. Far lighter than a real React Flow
-// instance (safe to render dozens in a grid) and honest (it IS the graph, not a
-// random color). Falls back to an auto-grid when a node lacks a saved position.
+// A compact but honest schematic of a StyleGraph — it IS the graph, not a random
+// picture. Each node is a titled card (type label + a header strip), with input
+// sockets down the left edge and outputs down the right, colored by socket type
+// (yellow=color, indigo=vector, zinc=float) exactly like the real editor. Links
+// run socket→socket in the source socket's color. Far lighter than a live React
+// Flow instance, so it's safe to render dozens in a grid.
 
 import type { StyleGraph } from "reze-engine"
+import { socketsOf } from "@/lib/graph-flow"
 
-const NW = 150 // approx node width in graph space
-const NH = 46 // approx node height
+const NW = 150 // node width in graph space
+const NH = 46 // node height
+const HEADER = 15 // title strip height
+
+// Socket type → color (mirrors components/graph/reze-node.tsx).
+const SOCKET: Record<string, string> = {
+  color: "#facc15", // yellow
+  vector: "#818cf8", // indigo
+  vec4: "#818cf8",
+  float: "#a1a1aa", // zinc
+}
+
+type Meta = { x: number; y: number; ins: [string, string][]; outs: [string, string][] }
 
 export function GraphMinimap({ graph, className }: { graph: StyleGraph; className?: string }) {
-  const pos = new Map<string, { x: number; y: number }>()
+  const meta = new Map<string, Meta>()
   graph.nodes.forEach((n, i) => {
     const p = n.ui?.position
-    pos.set(n.id, p ? { x: p.x, y: p.y } : { x: (i % 6) * (NW + 40), y: Math.floor(i / 6) * (NH + 40) })
+    const x = p ? p.x : (i % 6) * (NW + 40)
+    const y = p ? p.y : Math.floor(i / 6) * (NH + 40)
+    const { inputs, outputs } = socketsOf(n.type)
+    meta.set(n.id, { x, y, ins: inputs, outs: outputs })
   })
-  const pts = [...pos.values()]
-  if (pts.length === 0) return <div className={className} />
-  const minX = Math.min(...pts.map((p) => p.x)) - 8
-  const minY = Math.min(...pts.map((p) => p.y)) - 8
-  const maxX = Math.max(...pts.map((p) => p.x)) + NW + 8
-  const maxY = Math.max(...pts.map((p) => p.y)) + NH + 8
+  const nodes = [...meta.values()]
+  if (nodes.length === 0) return <div className={className} />
+
+  // Socket y-position: sockets are distributed down the node body (below the header).
+  const socketY = (m: Meta, list: [string, string][], socket: string) => {
+    const idx = Math.max(0, list.findIndex(([name]) => name === socket))
+    return m.y + HEADER + ((idx + 0.5) * (NH - HEADER)) / Math.max(list.length, 1)
+  }
+
+  const minX = Math.min(...nodes.map((n) => n.x)) - 10
+  const minY = Math.min(...nodes.map((n) => n.y)) - 8
+  const maxX = Math.max(...nodes.map((n) => n.x)) + NW + 10
+  const maxY = Math.max(...nodes.map((n) => n.y)) + NH + 8
 
   return (
     <svg
@@ -28,39 +52,48 @@ export function GraphMinimap({ graph, className }: { graph: StyleGraph; classNam
       className={className}
       aria-hidden
     >
+      {/* Links first, so nodes draw on top. */}
       {graph.links.map((l, i) => {
-        const a = pos.get(l.from.node)
-        const b = pos.get(l.to.node)
+        const a = meta.get(l.from.node)
+        const b = meta.get(l.to.node)
         if (!a || !b) return null
+        const [, socketType] = a.outs.find(([name]) => name === l.from.socket) ?? []
         return (
           <line
             key={i}
             x1={a.x + NW}
-            y1={a.y + NH / 2}
+            y1={socketY(a, a.outs, l.from.socket)}
             x2={b.x}
-            y2={b.y + NH / 2}
-            stroke="currentColor"
-            strokeOpacity={0.18}
-            strokeWidth={3}
+            y2={socketY(b, b.ins, l.to.socket)}
+            stroke={SOCKET[socketType ?? "float"] ?? "currentColor"}
+            strokeOpacity={0.55}
+            strokeWidth={2.5}
           />
         )
       })}
+
       {graph.nodes.map((n) => {
-        const p = pos.get(n.id)!
+        const m = meta.get(n.id)!
         return (
-          <rect
-            key={n.id}
-            x={p.x}
-            y={p.y}
-            width={NW}
-            height={NH}
-            rx={10}
-            fill="currentColor"
-            fillOpacity={0.12}
-            stroke="currentColor"
-            strokeOpacity={0.25}
-            strokeWidth={2}
-          />
+          <g key={n.id}>
+            <rect x={m.x} y={m.y} width={NW} height={NH} rx={8} fill="currentColor" fillOpacity={0.14} stroke="currentColor" strokeOpacity={0.5} strokeWidth={1.5} />
+            {/* Header strip + type label */}
+            <path
+              d={`M ${m.x} ${m.y + HEADER} V ${m.y + 8} Q ${m.x} ${m.y} ${m.x + 8} ${m.y} H ${m.x + NW - 8} Q ${m.x + NW} ${m.y} ${m.x + NW} ${m.y + 8} V ${m.y + HEADER} Z`}
+              fill="currentColor"
+              fillOpacity={0.22}
+            />
+            <text x={m.x + 8} y={m.y + 11} fontSize={11} fontWeight={600} fill="currentColor" fillOpacity={0.95}>
+              {n.type}
+            </text>
+            {/* Input sockets (left) + output sockets (right) */}
+            {m.ins.map(([name, t], j) => (
+              <circle key={`i${j}`} cx={m.x} cy={socketY(m, m.ins, name)} r={3.5} fill={SOCKET[t] ?? "#a1a1aa"} />
+            ))}
+            {m.outs.map(([name, t], j) => (
+              <circle key={`o${j}`} cx={m.x + NW} cy={socketY(m, m.outs, name)} r={3.5} fill={SOCKET[t] ?? "#a1a1aa"} />
+            ))}
+          </g>
         )
       })}
     </svg>

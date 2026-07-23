@@ -39,7 +39,7 @@ function AppMenu({ children }: { children: React.ReactNode }) {
             {l.label}
           </Link>
         ))}
-        <Separator className="my-1 bg-white/5" />
+        <Separator className="my-1 bg-white/10" />
         <a
           href="https://github.com/AmyangXYZ/reze-design"
           target="_blank"
@@ -78,34 +78,44 @@ export function BrandPill({
    *  vs a floating pill with its own logo menu (collapsed). */
   asHeader?: boolean
 }) {
+  const toggle = (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn("size-7 shrink-0 rounded-md text-muted-foreground hover:bg-white/5 hover:text-foreground", asHeader ? "ml-auto" : "ml-1")}
+          onClick={onToggleDocks}
+        >
+          {docksOpen ? <PanelLeftClose className="size-4" /> : <PanelLeft className="size-4" />}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{docksOpen ? "Hide panels" : "Show panels"}</TooltipContent>
+    </Tooltip>
+  )
+
+  // Expanded header: title over scene name (two lines). Collapsed pill: one line.
+  if (asHeader) {
+    return (
+      <div className="flex w-full items-center gap-2 px-3 py-2.5 pt-5.5">
+        <div className="flex min-w-0 flex-1 flex-col leading-tight">
+          <span className="truncate text-sm font-semibold tracking-tight text-foreground">Reze Design</span>
+          <span className="truncate text-xs text-muted-foreground ">{sceneName}</span>
+        </div>
+        {toggle}
+      </div>
+    )
+  }
   return (
-    <div className={cn("flex items-center gap-1.5", asHeader ? "w-full px-3 py-2.5 pt-4.5" : cn(floating, "py-1.5 pr-1.5 pl-2"))}>
-      {!asHeader && (
-        <AppMenu>
-          <Button variant="ghost" size="icon" className="size-7 rounded-lg text-pink-400 hover:bg-white/5" aria-label="Menu">
-            <WandSparkles className="size-4.5" />
-          </Button>
-        </AppMenu>
-      )}
-
+    <div className={cn("flex items-center gap-1.5", floating, "py-1.5 pr-1.5 pl-2")}>
+      <AppMenu>
+        <Button variant="ghost" size="icon" className="size-7 rounded-lg text-pink-400 hover:bg-white/5" aria-label="Menu">
+          <WandSparkles className="size-4.5" />
+        </Button>
+      </AppMenu>
       <span className="whitespace-nowrap pb-0.5 text-sm font-semibold tracking-tight text-foreground">Reze Design</span>
-      <span className="ml-1.5 max-w-28 truncate text-xs text-muted-foreground" title={sceneName}>
-        {sceneName}
-      </span>
-
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={cn("size-7 rounded-md text-muted-foreground hover:bg-white/5 hover:text-foreground", asHeader ? "ml-auto" : "ml-1")}
-            onClick={onToggleDocks}
-          >
-            {docksOpen ? <PanelLeftClose className="size-4" /> : <PanelLeft className="size-4" />}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">{docksOpen ? "Hide panels" : "Show panels"}</TooltipContent>
-      </Tooltip>
+      <span className="ml-1.5 max-w-28 truncate text-xs text-muted-foreground">{sceneName}</span>
+      {toggle}
     </div>
   )
 }

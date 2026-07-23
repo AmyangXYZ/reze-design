@@ -1,11 +1,13 @@
 "use client"
 
-// The node-graph editor for one style slot, hosted inside the bottom drawer.
+// The node-graph editor for one style group, hosted inside the bottom drawer.
 // Ported from the original full-page editor: every edit (rewire, literal change,
 // node deletion) recompiles through the engine's graph→WGSL compiler (debounced)
-// and hot-swaps the slot's pipeline. Double-click a node to preview its output
-// on the model. ⌘/Ctrl+Z undo, ⇧ redo. The page remounts this component per
-// slot (key={slot}), so all state here belongs to a single graph.
+// and hot-swaps the group's pipeline live. Double-click a node to preview its
+// output on the model. ⌘/Ctrl+Z undo, ⇧ redo. The page remounts this component
+// per group (key includes the group id), so all state here is one graph. Save
+// keeps the live edits; Back-to-library discards them (the page reverts) — both
+// are page-owned; this component just fires the callbacks.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
@@ -24,7 +26,7 @@ import {
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
 import { compileGraph, validateGraph, type CompileOptions, type Diagnostic, type StyleGraph } from "reze-engine"
-import { ChevronDown, Code, Download, RotateCcw, Upload, Workflow } from "lucide-react"
+import { Check, ChevronDown, Code, Download, LibraryBig, RotateCcw, Upload, Workflow } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -58,6 +60,8 @@ export function GraphEditor({
   engineError,
   open,
   onClose,
+  onSave,
+  onBack,
   onApply,
   onGraphChange,
   onApplyStateChange,
@@ -71,7 +75,12 @@ export function GraphEditor({
   engineReady: boolean
   engineError: string | null
   open: boolean
+  /** Minimize the drawer (keeps the live edits and the session). */
   onClose: () => void
+  /** Save & close — keep the current graph, end the editing session. */
+  onSave: () => void
+  /** Discard this session's edits (restore the baseline) and reopen the library. */
+  onBack: () => void
   /** Compile + swap this graph onto the active group (parent upserts the group). */
   onApply: (graph: StyleGraph, opts?: CompileOptions) => Promise<{ ok: boolean; diagnostics: Diagnostic[] }>
   /** Fires with the rebuilt StyleGraph on every edit — the page caches it per group. */
@@ -386,6 +395,19 @@ export function GraphEditor({
                 variant="ghost"
                 size="icon"
                 className="size-6 text-zinc-400 hover:text-zinc-100"
+                onClick={onBack}
+              >
+                <LibraryBig className="size-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Discard &amp; back to library</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-6 text-zinc-400 hover:text-zinc-100"
                 onClick={onClose}
               >
                 <ChevronDown className="size-3.5" />
@@ -393,9 +415,22 @@ export function GraphEditor({
             </TooltipTrigger>
             <TooltipContent>Minimize</TooltipContent>
           </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="sm"
+                onClick={onSave}
+                className="ml-1 h-6 gap-1 bg-blue-400 px-2 text-xs font-medium text-white hover:bg-blue-300"
+              >
+                <Check className="size-3.5" />
+                Save
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Save &amp; close</TooltipContent>
+          </Tooltip>
         </div>
       </header>
-      <Separator className="bg-white/5" />
+      <Separator className="bg-white/10" />
 
       {/* ── Graph canvas + optional WGSL pane ── */}
       <div className="min-h-0 flex-1">
@@ -455,7 +490,7 @@ export function GraphEditor({
               <ResizableHandle className="bg-white/5" />
               <ResizablePanel defaultSize="30" minSize="15">
                 <div className="flex h-full flex-col">
-                  <h3 className="shrink-0 border-b border-white/5 px-3 py-1.5 text-xs tracking-wide text-zinc-500 uppercase">
+                  <h3 className="shrink-0 border-b border-white/10 px-3 py-1.5 text-xs tracking-wide text-zinc-500 uppercase">
                     Generated WGSL · fs body
                   </h3>
                   <div className="flex-1 cursor-text overflow-auto select-text">
