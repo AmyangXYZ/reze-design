@@ -165,10 +165,8 @@ export default function Home() {
     if (leftTab !== "materials") highlight(null)
   }, [leftTab, highlight])
 
-  // Bind the editor to the first group once they load (or when a model swap makes
-  // the active id stale). Set during render, guarded — no syncing effect.
-  if (groups.length > 0 && !groups.some((g) => g.id === activeGroupId)) setActiveGroupId(groups[0].id)
-
+  // Selection is explicit now (single-click a group to select/deselect), so no
+  // auto-select on load — a stale/absent id just resolves to no active group.
   const activeGroup = groups.find((g) => g.id === activeGroupId) ?? null
   // Factory preset for the active group (for Reset) — auto-group ids are role keys.
   const presetGraph = (activeGroup && SLOT_GRAPHS[activeGroup.id as MaterialPreset]) || activeGroup?.graph || null
@@ -567,8 +565,10 @@ export default function Home() {
         ))}
 
       {/* ── Node-graph editor drawer: opened from the Materials tab, expands up
-          from the bottom (above the transport), independent of the docks. Kept
-          mounted while closed (height 0) so edits/undo/live-compile survive.
+          from the bottom (above the transport), independent of the docks. The editor
+          only mounts while OPEN — mounting it while closed made switching groups
+          remount + auto-reapply the graph (a spurious second setGroups → minimap
+          double-refresh). Edits are live-applied, so the graph persists on close.
           Client-only (React Flow isn't SSR-safe), so gated behind `mounted`. ── */}
       {mounted && (
       <div
@@ -595,7 +595,7 @@ export default function Home() {
           >
             <span className="h-0.5 w-10 rounded-full bg-white/15" />
           </div>
-          {activeGroup && presetGraph ? (
+          {!drawerOpen ? null : activeGroup && presetGraph ? (
             <GraphEditor
               key={`${activeGroup.id}-${libVersion}`}
               slotLabel={activeGroup.label ?? activeGroup.id}
