@@ -28,7 +28,7 @@ function fmtLiteral(v: number | number[]): string {
 
 export function RezeNode({ id, data, selected }: NodeProps<RezeFlowNode>) {
   const { updateNodeData } = useReactFlow()
-  const { graphNode, linkedInputs } = data
+  const { graphNode, linkedInputs, isOutput, isPreview } = data
   const { inputs, outputs } = socketsOf(graphNode.type)
   const isContext = inputs.length === 0 && (graphNode.type === "texture" || graphNode.type === "geometry")
 
@@ -42,14 +42,32 @@ export function RezeNode({ id, data, selected }: NodeProps<RezeFlowNode>) {
   return (
     <div
       className={`rounded-md border bg-zinc-900/95 text-zinc-200 shadow-lg min-w-44 text-xs ${
-        selected ? "border-pink-400" : isContext ? "border-emerald-700" : "border-zinc-700"
+        selected
+          ? "border-pink-400"
+          : isOutput
+            ? "border-blue-400"
+            : isContext
+              ? "border-emerald-700"
+              : "border-zinc-700"
       }`}
     >
       <div
-        className={`px-2 py-1 rounded-t-md font-medium text-xs ${isContext ? "bg-emerald-900/60" : "bg-zinc-800"}`}
+        className={`flex items-center gap-2 px-2 py-1 rounded-t-md font-medium text-xs ${isContext ? "bg-emerald-900/60" : "bg-zinc-800"}`}
       >
-        {graphNode.id}
-        <span className="ml-2 text-zinc-500 font-normal">{graphNode.type}</span>
+        <span>{graphNode.id}</span>
+        <span className="text-zinc-500 font-normal">{graphNode.type}</span>
+        <span className="ml-auto flex items-center gap-1">
+          {isPreview && (
+            <span className="rounded-sm bg-pink-500/20 px-1 text-[9px] font-semibold tracking-wide text-pink-300">
+              PREVIEW
+            </span>
+          )}
+          {isOutput && (
+            <span className="rounded-sm bg-blue-400/20 px-1 text-[9px] font-semibold tracking-wide text-blue-300">
+              OUT
+            </span>
+          )}
+        </span>
       </div>
       <div className="py-1">
         {outputs.map(([name, type]) => (

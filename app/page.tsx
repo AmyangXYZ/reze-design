@@ -114,6 +114,7 @@ export default function Home() {
 
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [drawerH, setDrawerH] = useState(460)
+  const [drawerFull, setDrawerFull] = useState(false) // graph editor full-screen
   const [animName, setAnimName] = useState<string | null>(null)
   // Read stored settings synchronously (SSR-safe: falls back to defaults) so the
   // page background AND the engine boot already match the user's config.
@@ -211,21 +212,20 @@ export default function Home() {
   const saveGraphEdit = () => {
     setEditBaseline(null)
     setDrawerOpen(false)
+    setDrawerFull(false)
   }
-  const backToLibrary = () => {
+  // Close (discard): revert the live-previewed edits to the baseline and close —
+  // no library navigation (you may have arrived via the group's Edit graph).
+  const closeGraphEdit = () => {
     const baseline = editBaseline
     setEditBaseline(null)
     setDrawerOpen(false)
-    let material = activeGroup?.materials[0] ?? null
+    setDrawerFull(false)
     if (baseline) {
       const g = groups.find((x) => x.id === baseline.groupId)
-      if (g) {
-        void upsertGroup({ ...g, graph: baseline.graph, label: baseline.label }) // revert the live preview
-        material = g.materials[0] ?? material
-      }
+      if (g) void upsertGroup({ ...g, graph: baseline.graph, label: baseline.label })
       setLibVersion((v) => v + 1)
     }
-    if (material) setLibrary({ open: true, material })
   }
 
   // ── Group operations (structural edits go through applyGroups) ──
@@ -513,7 +513,7 @@ export default function Home() {
 
       {!ready && !error && (
         <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
-          <div className="flex items-center gap-2.5 rounded-full border border-white/10 bg-zinc-950/90 px-4 py-2 text-xs text-muted-foreground backdrop-blur-md">
+          <div className="flex items-center gap-2.5 rounded-full border border-white/10 bg-zinc-950/90 px-4 py-2 text-xs text-muted-foreground backdrop-blur-xs">
             <span className="size-2 animate-pulse rounded-full bg-blue-400" />
             loading model…
           </div>
@@ -521,7 +521,7 @@ export default function Home() {
       )}
       {error && (
         <div className="absolute inset-0 z-30 flex items-center justify-center p-6">
-          <div className="max-w-md rounded-xl border border-red-400/20 bg-zinc-950/90 px-5 py-4 text-xs text-red-400 backdrop-blur-md">
+          <div className="max-w-md rounded-xl border border-red-400/20 bg-zinc-950/90 px-5 py-4 text-xs text-red-400 backdrop-blur-xs">
             Engine: {error}
           </div>
         </div>
@@ -534,7 +534,18 @@ export default function Home() {
           <div className="fixed inset-y-0 left-0 z-20 w-[300px]">
             <LeftDock
               railTop={<RailLogo />}
-              header={<BrandPill sceneName="Untitled scene" docksOpen onToggleDocks={() => setDocksOpen(false)} asHeader />}
+              header={
+                <BrandPill
+                  sceneName="Untitled scene"
+                  docksOpen
+                  onToggleDocks={() => {
+                    setDocksOpen(false)
+                    setDrawerOpen(false) // collapsing the docks hides the graph editor too
+                    setDrawerFull(false)
+                  }}
+                  asHeader
+                />
+              }
               tabs={leftTabs}
               active={leftTab}
               onActive={setLeftTab}
@@ -574,16 +585,16 @@ export default function Home() {
       <div
         ref={graphDrawerRef}
         className={cn(
-          "fixed left-1/2 z-20 -translate-x-1/2 overflow-hidden rounded-xl border border-white/10 bg-zinc-950/70 shadow-float backdrop-blur-md",
-          "transition-[height,opacity,bottom] duration-[420ms] ease-out-soft",
+          "fixed left-1/2 z-20 -translate-x-1/2 overflow-hidden rounded-xl border border-white/10 bg-zinc-950/70 shadow-float backdrop-blur-xs",
+          "transition-[height,width,opacity,bottom] duration-[420ms] ease-out-soft",
           resizing && "transition-none",
           !drawerOpen && "pointer-events-none",
         )}
         style={{
-          width: drawerWidth,
-          height: drawerOpen ? drawerH : 0,
+          width: drawerFull ? "calc(100vw - 24px)" : drawerWidth,
+          height: drawerOpen ? (drawerFull ? "calc(100dvh - 24px)" : drawerH) : 0,
           opacity: drawerOpen ? 1 : 0,
-          bottom: graphBottom,
+          bottom: drawerFull ? 12 : graphBottom,
         }}
       >
         <div className="flex h-full flex-col">
@@ -605,9 +616,10 @@ export default function Home() {
               engineReady={ready}
               engineError={error}
               open={drawerOpen}
-              onClose={() => setDrawerOpen(false)}
               onSave={saveGraphEdit}
-              onBack={backToLibrary}
+              onClose={closeGraphEdit}
+              fullscreen={drawerFull}
+              onToggleFullscreen={() => setDrawerFull((v) => !v)}
             />
           ) : (
             <div className="relative flex flex-1 items-center justify-center text-xs text-muted-foreground">
@@ -628,7 +640,7 @@ export default function Home() {
 
       {/* ── Persistent transport bar (always visible while a clip is loaded, even
           when the docks are collapsed). ── */}
-      {animName && (
+      {animName && !drawerFull && (
         <div className="fixed bottom-3 left-1/2 z-20 -translate-x-1/2">
           <AnimPlayer engineRef={engineRef} modelName={modelName} clipName={animName} />
         </div>
@@ -704,7 +716,7 @@ export default function Home() {
         onLoadedMetadata={(e) => setAudioDuration(e.currentTarget.duration)}
       />
       <Dialog open={upload !== null} onOpenChange={(o) => !o && setUpload(null)}>
-        <DialogContent className="max-w-sm rounded-xl border-white/10 bg-zinc-950/95 backdrop-blur-md">
+        <DialogContent className="max-w-sm rounded-xl border-white/10 bg-zinc-950/95 backdrop-blur-xs">
           <DialogHeader>
             <DialogTitle className="text-sm">
               {upload?.kind === "pick" ? "Multiple models found — pick one" : "Can't load that folder"}

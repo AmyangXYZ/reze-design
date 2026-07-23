@@ -102,7 +102,7 @@ export function AnimPlayer({
 
   return (
     <div
-      className="flex items-center gap-2 rounded-full border border-white/10 bg-zinc-950/70 py-1 pr-3 pl-3 shadow-float backdrop-blur-md"
+      className="flex items-center gap-2 rounded-full border border-white/10 bg-zinc-950/70 py-1 pr-3 pl-3 shadow-float backdrop-blur-xs"
       title={clipName}
     >
       <Button variant="ghost" size="icon" className="size-7 shrink-0 rounded-full hover:bg-white/5 hover:text-foreground" onClick={toggle}>

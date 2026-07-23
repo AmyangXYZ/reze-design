@@ -17,7 +17,7 @@ import { GithubMark } from "@/components/icons"
 import { NAV_LINKS } from "@/components/site-nav"
 import { cn } from "@/lib/utils"
 
-const floating = "rounded-lg border border-white/10 bg-zinc-950/70 shadow-float backdrop-blur-md"
+const floating = "rounded-lg border border-white/10 bg-zinc-950/70 shadow-float backdrop-blur-xs"
 
 /** App menu: nav + higher-level ops (placeholder). Reused by RailLogo and the
  *  floating brand pill so the two never drift. */
@@ -28,7 +28,7 @@ function AppMenu({ children }: { children: React.ReactNode }) {
       <PopoverContent
         align="start"
         sideOffset={6}
-        className="w-48 rounded-xl border-white/10 bg-zinc-950/90 p-1 shadow-float backdrop-blur-md"
+        className="w-48 rounded-xl border-white/10 bg-zinc-950/90 p-1 shadow-float backdrop-blur-xs"
       >
         {NAV_LINKS.map((l) => (
           <Link
@@ -97,7 +97,7 @@ export function BrandPill({
   // Expanded header: title over scene name (two lines). Collapsed pill: one line.
   if (asHeader) {
     return (
-      <div className="flex w-full items-center gap-2 px-4 py-2.5 pt-5.5">
+      <div className="flex w-full items-center gap-2 py-2.5 pt-5.5 pr-1.5 pl-4">
         <div className="flex min-w-0 flex-1 flex-col leading-tight">
           <span className="truncate text-sm font-semibold tracking-tight text-foreground">Reze Design</span>
           <span className="truncate text-xs text-muted-foreground ">{sceneName}</span>
@@ -143,7 +143,7 @@ export function TopRightCluster({
       <PopoverContent
         align={asHeader ? "start" : "end"}
         sideOffset={6}
-        className="w-52 rounded-xl border-white/10 bg-zinc-950/90 p-3 text-center shadow-float backdrop-blur-md"
+        className="w-52 rounded-xl border-white/10 bg-zinc-950/90 p-3 text-center shadow-float backdrop-blur-xs"
       >
         <CircleUserRound className="mx-auto size-8 text-muted-foreground"/>
         <div className="mt-2 text-xs">Accounts are coming soon.</div>
@@ -168,7 +168,7 @@ export function TopRightCluster({
       <PopoverContent
         align="end"
         sideOffset={6}
-        className="w-64 rounded-xl border-white/10 bg-zinc-950/90 p-3 shadow-float backdrop-blur-md"
+        className="w-64 rounded-xl border-white/10 bg-zinc-950/90 p-3 shadow-float backdrop-blur-xs"
       >
         <div className="text-xs font-medium">Permanent link</div>
         <div className="mt-2 truncate rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-muted-foreground">

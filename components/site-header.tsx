@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils"
 export function SiteHeader() {
   const pathname = usePathname()
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-1 border-b border-white/10 bg-zinc-950/70 px-4 backdrop-blur-md">
+    <header className="sticky top-0 z-30 flex h-14 items-center gap-1 border-b border-white/10 bg-zinc-950/70 px-4 backdrop-blur-xs">
       <Link href="/" className="mr-4 flex items-center gap-2">
         <WandSparkles className="size-4 text-pink-400" />
         <span className="text-sm font-semibold tracking-tight text-zinc-100">Reze Design</span>

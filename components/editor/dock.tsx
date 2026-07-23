@@ -20,7 +20,7 @@ export type DockTab = {
   content: ReactNode
 }
 
-const shell = "flex h-full min-h-0 w-full overflow-hidden shadow-float bg-zinc-950/70 backdrop-blur-md"
+const shell = "flex h-full min-h-0 w-full overflow-hidden shadow-float bg-zinc-950/70 backdrop-blur-xs"
 
 export function LeftDock({
   railTop,

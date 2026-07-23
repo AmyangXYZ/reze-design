@@ -10,6 +10,10 @@ export type RezeNodeData = {
   /** Input sockets currently fed by a link (handles render dots either way; the
    *  inspector uses this to know which literals are editable). */
   linkedInputs: string[]
+  /** Editor-only badges, injected per-render from graph state (not persisted):
+   *  the graph's final output node, and the node whose output is being previewed. */
+  isOutput?: boolean
+  isPreview?: boolean
   [key: string]: unknown
 }
 
