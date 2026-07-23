@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { NoNativeContextMenu } from "@/components/no-native-context-menu";
 import "./globals.css";
 import { Analytics } from "@vercel/analytics/next"
 
@@ -35,6 +36,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col text-foreground">
         {/* A small delay lets hover-revealed triggers finish laying out before the
             tooltip opens — avoids the first-open flash at the top-left corner. */}
+        <NoNativeContextMenu />
         <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
         <Analytics/>
       </body>
