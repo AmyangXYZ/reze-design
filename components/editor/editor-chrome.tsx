@@ -28,7 +28,7 @@ function AppMenu({ children }: { children: React.ReactNode }) {
       <PopoverContent
         align="start"
         sideOffset={6}
-        className="w-48 rounded-xl border-white/10 bg-zinc-950/90 p-1 shadow-float backdrop-blur-xl"
+        className="w-48 rounded-xl border-white/10 bg-zinc-950/90 p-1 shadow-float backdrop-blur-md"
       >
         {NAV_LINKS.map((l) => (
           <Link
@@ -143,7 +143,7 @@ export function TopRightCluster({
       <PopoverContent
         align={asHeader ? "start" : "end"}
         sideOffset={6}
-        className="w-52 rounded-xl border-white/10 bg-zinc-950/90 p-3 text-center shadow-float backdrop-blur-xl"
+        className="w-52 rounded-xl border-white/10 bg-zinc-950/90 p-3 text-center shadow-float backdrop-blur-md"
       >
         <CircleUserRound className="mx-auto size-8 text-muted-foreground"/>
         <div className="mt-2 text-xs">Accounts are coming soon.</div>
@@ -168,7 +168,7 @@ export function TopRightCluster({
       <PopoverContent
         align="end"
         sideOffset={6}
-        className="w-64 rounded-xl border-white/10 bg-zinc-950/90 p-3 shadow-float backdrop-blur-xl"
+        className="w-64 rounded-xl border-white/10 bg-zinc-950/90 p-3 shadow-float backdrop-blur-md"
       >
         <div className="text-xs font-medium">Permanent link</div>
         <div className="mt-2 truncate rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-muted-foreground">

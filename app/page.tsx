@@ -513,7 +513,7 @@ export default function Home() {
 
       {!ready && !error && (
         <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
-          <div className="flex items-center gap-2.5 rounded-full border border-white/10 bg-zinc-950/60 px-4 py-2 text-xs text-muted-foreground backdrop-blur-sm">
+          <div className="flex items-center gap-2.5 rounded-full border border-white/10 bg-zinc-950/90 px-4 py-2 text-xs text-muted-foreground backdrop-blur-md">
             <span className="size-2 animate-pulse rounded-full bg-blue-400" />
             loading model…
           </div>
@@ -521,7 +521,7 @@ export default function Home() {
       )}
       {error && (
         <div className="absolute inset-0 z-30 flex items-center justify-center p-6">
-          <div className="max-w-md rounded-xl border border-red-400/20 bg-zinc-950/90 px-5 py-4 text-xs text-red-400 backdrop-blur-xl">
+          <div className="max-w-md rounded-xl border border-red-400/20 bg-zinc-950/90 px-5 py-4 text-xs text-red-400 backdrop-blur-md">
             Engine: {error}
           </div>
         </div>
@@ -704,7 +704,7 @@ export default function Home() {
         onLoadedMetadata={(e) => setAudioDuration(e.currentTarget.duration)}
       />
       <Dialog open={upload !== null} onOpenChange={(o) => !o && setUpload(null)}>
-        <DialogContent className="max-w-sm rounded-xl border-white/10 bg-zinc-950/90 backdrop-blur-xl">
+        <DialogContent className="max-w-sm rounded-xl border-white/10 bg-zinc-950/95 backdrop-blur-md">
           <DialogHeader>
             <DialogTitle className="text-sm">
               {upload?.kind === "pick" ? "Multiple models found — pick one" : "Can't load that folder"}

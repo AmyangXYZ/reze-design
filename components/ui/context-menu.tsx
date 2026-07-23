@@ -11,7 +11,7 @@ const ContextMenuTrigger = ContextMenuPrimitive.Trigger
 const ContextMenuSub = ContextMenuPrimitive.Sub
 
 const menuSurface =
-  "z-50 min-w-36 overflow-hidden rounded-lg border border-white/10 bg-zinc-950/95 p-1 text-xs shadow-float backdrop-blur-md " +
+  "z-50 min-w-36 overflow-hidden rounded-lg border border-white/10 bg-zinc-950/90 p-1 text-xs shadow-float backdrop-blur-md " +
   "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
 
 const itemBase =
