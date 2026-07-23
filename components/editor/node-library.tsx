@@ -3,15 +3,16 @@
 // Node-graph library — a "pick a shader for this group" browser. Left ~70%: a
 // sortable table — click a column header to sort (chevron shows the active column
 // + direction) — each row with a real graph minimap. Right ~30%: the selected
-// look's larger preview (live sphere later) + Apply / Fork & edit; a toolbar
-// "New graph" starts a blank look. A look always styles the target material's
+// look's larger preview (live sphere later) which doubles as the fork-&-edit button
+// (hover → Edit graph), plus Apply; a toolbar "New graph" starts a blank look. A
+// look always styles the target material's
 // whole group (the styling unit); per-material splits live in group management.
 // Also mounts at /library later.
 
 import { useEffect, useMemo, useState } from "react"
 import { DEFAULT_GRAPH, type ShaderGraph } from "reze-engine"
-import { ChevronDown, ChevronUp, Plus, Search, SquarePen } from "lucide-react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { ChevronDown, ChevronUp, Plus, Search, SquarePen, X } from "lucide-react"
+import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -54,23 +55,20 @@ export function NodeLibrary({
   affects,
   currentGraphName,
   onApply,
-  onEditCurrent,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** The target group's name — shown in the title and the "applies to" line. */
+  /** The target group's name — shown on the Apply button and the "applies to" line. */
   targetLabel: string | null
   /** Whether a target group exists yet for the material. */
   canApply: boolean
   /** How many materials the target's group holds (shown as info — the whole
    *  group shares one shader graph). */
   affects: number
-  /** The group's currently-applied shader graph (pre-selected + drives "Edit current"). */
+  /** The group's currently-applied shader graph (pre-selected + tagged "current"). */
   currentGraphName: string | null
   /** `edit` pops the shader-graph editor on the fork so the user can customize it. */
   onApply: (graph: ShaderGraph, name: string, edit: boolean) => void
-  /** Open the editor on the group's current shader graph. */
-  onEditCurrent: () => void
 }) {
   const [query, setQuery] = useState("")
   const [sortKey, setSortKey] = useState<SortKey>("name")
@@ -111,54 +109,36 @@ export function NodeLibrary({
   const selected = useMemo(() => ROWS.find((r) => r.id === selectedId) ?? null, [selectedId])
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    // Non-modal + no backdrop so it coexists with the (higher-z) floating editor as an
+    // independent panel — open a look's editor without the library closing or blocking.
+    <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
       <DialogContent
-        showCloseButton
-        className="flex h-[78vh] max-h-[78vh] w-[92vw] max-w-5xl flex-col gap-0 overflow-hidden border-white/10 bg-zinc-950/95 p-0 sm:max-w-5xl"
+        showCloseButton={false}
+        overlay={false}
+        onInteractOutside={(e) => e.preventDefault()}
+        className="z-40 flex h-[78vh] max-h-[78vh] w-[92vw] max-w-5xl flex-col gap-0 overflow-hidden border-white/10 bg-zinc-950/95 p-0 sm:max-w-5xl"
       >
-        <DialogHeader className="border-b border-white/10 px-4 py-2.5">
-          <DialogTitle className="flex items-baseline gap-2 text-sm font-medium">
-            Shader graph library
-            {targetLabel && <span className="truncate text-xs font-normal text-muted-foreground">· {targetLabel}</span>}
-          </DialogTitle>
+        {/* Title · search · close, all vertically centered in one bar. */}
+        <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-white/10 px-4 py-2 text-left">
+          <DialogTitle className="shrink-0 text-sm font-medium">Shader graph library</DialogTitle>
+          <div className="relative ml-auto w-64 max-w-[45%]">
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search graphs, packs, authors…"
+              className="h-7 border-white/10 bg-white/5 pl-8 text-xs"
+            />
+          </div>
+          <DialogClose className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
+            <X className="size-4" />
+            <span className="sr-only">Close</span>
+          </DialogClose>
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1">
-          {/* ── Left: search + sortable table ── */}
+          {/* ── Left: sortable table ── */}
           <div className="flex min-h-0 flex-1 flex-col border-r border-white/10">
-            <div className="flex items-center gap-2 border-b border-white/10 px-4 py-2">
-              <div className="relative flex-1">
-                <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search shader graphs, packs, authors…"
-                  className="h-7 border-white/10 bg-white/5 pl-8 text-xs"
-                />
-              </div>
-              {/* Edit the group's current shader graph directly (no re-pick). */}
-              {currentGraphName && (
-                <Button
-                  size="sm"
-                  onClick={onEditCurrent}
-                  className="h-7 shrink-0 gap-1 border border-white/10 bg-white/5 text-xs font-medium text-foreground hover:bg-white/10"
-                >
-                  <SquarePen className="size-3.5" />
-                  Edit current
-                </Button>
-              )}
-              {/* Start a blank shader graph from the default and jump into the editor. */}
-              <Button
-                size="sm"
-                disabled={!canApply}
-                onClick={() => onApply(structuredClone(DEFAULT_GRAPH), "Untitled shader", true)}
-                className="h-7 shrink-0 gap-1 border border-white/10 bg-white/5 text-xs font-medium text-foreground hover:bg-white/10 disabled:opacity-40"
-              >
-                <Plus className="size-3.5" />
-                New graph
-              </Button>
-            </div>
-
             {/* Column headers (fixed above the scrolling body). */}
             <div className={cn(GRID, "border-b border-white/10 px-3 py-1.5")}>
               <span />
@@ -207,15 +187,42 @@ export function NodeLibrary({
                 {rows.length === 0 && <div className="py-16 text-center text-xs text-muted-foreground">No shader graphs match “{query}”.</div>}
               </div>
             </ScrollArea>
+
+            {/* Start a blank graph — pinned to the bottom of the list. */}
+            <button
+              disabled={!canApply}
+              onClick={() => onApply(structuredClone(DEFAULT_GRAPH), "Untitled shader", true)}
+              className="flex shrink-0 items-center justify-center gap-1.5 border-t border-white/10 px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+            >
+              <Plus className="size-3.5" />
+              New graph
+            </button>
           </div>
 
           {/* ── Right: preview + apply ── */}
           <div className="flex w-[30%] min-w-[260px] flex-col p-4">
-            <div className="aspect-square w-full rounded-lg border border-white/10 bg-zinc-900/60 text-zinc-200">
+            <div className="aspect-square w-full">
               {selected ? (
-                <GraphMinimap graph={selected.graph} className="h-full w-full p-4" />
+                // The preview IS the edit affordance: hover → "Edit graph", click forks
+                // this look onto the group and opens the editor (replaces the old Edit button).
+                <button
+                  type="button"
+                  disabled={!canApply}
+                  onClick={() => canApply && onApply(selected.graph, selected.name, true)}
+                  className="group/prev relative block h-full w-full overflow-hidden rounded-lg border border-white/10 bg-zinc-900/60 text-zinc-200 disabled:cursor-default"
+                >
+                  <GraphMinimap graph={selected.graph} className="h-full w-full p-4" />
+                  {canApply && (
+                    <div className="absolute inset-0 flex items-center justify-center gap-1.5 bg-zinc-950/70 text-xs font-medium text-foreground opacity-0 transition-opacity group-hover/prev:opacity-100">
+                      <SquarePen className="size-4" />
+                      Edit graph
+                    </div>
+                  )}
+                </button>
               ) : (
-                <div className="flex h-full items-center justify-center text-xs text-muted-foreground">Select a shader graph</div>
+                <div className="flex h-full w-full items-center justify-center rounded-lg border border-white/10 bg-zinc-900/60 text-xs text-muted-foreground">
+                  Select a shader graph
+                </div>
               )}
             </div>
             <div className="mt-1 text-center text-xs text-muted-foreground">graph preview · live sphere coming soon</div>
@@ -237,33 +244,22 @@ export function NodeLibrary({
                   ))}
                 </div>
                 <div className="mt-auto space-y-2 pt-4">
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      disabled={!canApply}
-                      onClick={() => onApply(selected.graph, selected.name, false)}
-                      className="h-8 flex-1 bg-blue-400 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-40"
-                    >
-                      {canApply ? "Apply" : "Select a material first"}
-                    </Button>
-                    {/* Edit = the group gets its own editable copy, editor opens on it. */}
-                    <Button
-                      size="sm"
-                      disabled={!canApply}
-                      onClick={() => onApply(selected.graph, selected.name, true)}
-                      className="h-8 shrink-0 gap-1.5 border border-white/10 bg-white/5 text-xs font-medium text-foreground hover:bg-white/10 disabled:opacity-40"
-                    >
-                      <SquarePen className="size-3.5" />
-                      Edit
-                    </Button>
-                  </div>
+                  {/* Group name lives on the button (not a separate badge); to fork &
+                      edit instead, click the preview above. */}
+                  <Button
+                    size="sm"
+                    disabled={!canApply}
+                    onClick={() => onApply(selected.graph, selected.name, false)}
+                    className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-40"
+                  >
+                    <span className="truncate">{canApply ? `Apply to group ${targetLabel}` : "Select a material first"}</span>
+                  </Button>
                   {canApply && (
                     <div className="text-center text-xs text-muted-foreground">
-                      → applies to{" "}
+                      Applies to{" "}
                       <span className="text-foreground">
                         {affects} material{affects === 1 ? "" : "s"}
-                      </span>{" "}
-                      of the {targetLabel} group
+                      </span>
                     </div>
                   )}
                 </div>

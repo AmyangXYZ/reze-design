@@ -28,6 +28,7 @@ import { ScenePanel } from "@/components/scene/scene-sidebar"
 import { AssetsPanel } from "@/components/editor/assets-panel"
 import { BrandPill, RailLogo, TopRightCluster } from "@/components/editor/editor-chrome"
 import { LeftDock, RightDock, type DockTab } from "@/components/editor/dock"
+import { FloatingPanel, type Rect } from "@/components/editor/floating-panel"
 import { NodeLibrary } from "@/components/editor/node-library"
 import { RenderPanel } from "@/components/editor/render-panel"
 import { useEngine } from "@/hooks/use-engine"
@@ -87,6 +88,33 @@ function saveUiState(state: { docks: boolean; leftTab: string; rightTab: string 
   }
 }
 
+// The graph editor is a free-floating window; its position/size persist across sessions.
+const PANEL_KEY = "reze-design.graphPanel"
+function loadPanelRect(): Rect | null {
+  try {
+    const raw = window.localStorage.getItem(PANEL_KEY)
+    return raw ? (JSON.parse(raw) as Rect) : null
+  } catch {
+    return null
+  }
+}
+function savePanelRect(r: Rect) {
+  try {
+    window.localStorage.setItem(PANEL_KEY, JSON.stringify(r))
+  } catch {
+    // non-fatal
+  }
+}
+// First-open default: bottom-centered, roughly where the old docked drawer sat, clamped
+// to the viewport so it always lands on-screen.
+function defaultPanelRect(): Rect {
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const w = Math.max(360, Math.min(vw - 648, 1200, vw - 48))
+  const h = Math.min(460, vh - 96)
+  return { x: Math.round((vw - w) / 2), y: Math.max(8, vh - h - 76), w, h }
+}
+
 export default function Home() {
   // Which style group the node-graph editor is bound to.
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null)
@@ -113,8 +141,31 @@ export default function Home() {
   }, [mounted, docksOpen, leftTab, rightTab])
 
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [drawerH, setDrawerH] = useState(460)
   const [drawerFull, setDrawerFull] = useState(false) // graph editor full-screen
+  // Free-floating editor window rect (null until initialized post-mount from storage).
+  const [panelRect, setPanelRect] = useState<Rect | null>(null)
+  useEffect(() => {
+    setPanelRect(loadPanelRect() ?? defaultPanelRect())
+  }, [])
+  const updatePanelRect = useCallback((r: Rect) => {
+    setPanelRect(r)
+    savePanelRect(r)
+  }, [])
+  // Keep the floating editor on-screen if the window shrinks (never lose it off-edge).
+  useEffect(() => {
+    const onResize = () =>
+      setPanelRect((r) => {
+        if (!r) return r
+        const pad = 8
+        const w = Math.min(r.w, window.innerWidth - 2 * pad)
+        const h = Math.min(r.h, window.innerHeight - 2 * pad)
+        const x = Math.min(Math.max(pad, r.x), window.innerWidth - w - pad)
+        const y = Math.min(Math.max(pad, r.y), window.innerHeight - h - pad)
+        return { x, y, w, h }
+      })
+    window.addEventListener("resize", onResize)
+    return () => window.removeEventListener("resize", onResize)
+  }, [])
   const [animName, setAnimName] = useState<string | null>(null)
   // Read stored settings synchronously (SSR-safe: falls back to defaults) so the
   // page background AND the engine boot already match the user's config.
@@ -212,8 +263,11 @@ export default function Home() {
       setActiveGroupId(created.id)
     }
     setLibVersion((v) => v + 1)
-    setLibrary({ open: false, material: null })
-    if (edit) setDrawerOpen(true) // pop the node-graph editor on the fresh fork
+    if (edit) {
+      setDrawerOpen(true) // pop the editor; keep the library open (independent panels)
+    } else {
+      setLibrary({ open: false, material: null })
+    }
   }
 
   // ── Graph-editor session lifecycle ──
@@ -422,32 +476,6 @@ export default function Home() {
     }
   }, [sceneSettings, ready, engineRef])
 
-  // ── Drawer drag-resize. Resize the container via the DOM during the drag (no
-  // setState per pointer move) so React Flow isn't re-rendered every frame — its
-  // ResizeObserver handles the smooth resize. Commit to state on pointer up. ──
-  const graphDrawerRef = useRef<HTMLDivElement>(null)
-  const [resizing, setResizing] = useState(false)
-  const dragStart = useRef<{ y: number; h: number } | null>(null)
-  const dragHeightRef = useRef(drawerH)
-  const onDragDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    dragStart.current = { y: e.clientY, h: drawerH }
-    dragHeightRef.current = drawerH
-    setResizing(true)
-    e.currentTarget.setPointerCapture(e.pointerId)
-  }
-  const onDragMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragStart.current) return
-    const next = Math.min(Math.max(dragStart.current.h + (dragStart.current.y - e.clientY), 220), window.innerHeight - 160)
-    dragHeightRef.current = next
-    if (graphDrawerRef.current) graphDrawerRef.current.style.height = `${next}px`
-  }
-  const onDragUp = () => {
-    if (!dragStart.current) return
-    dragStart.current = null
-    setDrawerH(dragHeightRef.current)
-    setResizing(false)
-  }
-
   // ── Dock tab definitions ── LEFT = styling (materials, scene look); RIGHT =
   // ingredients & output (assets in, render out).
   const leftTabs: DockTab[] = [
@@ -506,13 +534,6 @@ export default function Home() {
     },
     { id: "render", label: "Render", icon: Clapperboard, content: <RenderPanel /> },
   ]
-
-  // The node-graph drawer opens ABOVE the persistent transport bar (when a clip
-  // is loaded), independent of the docks — opening it never shrinks them.
-  const graphBottom = animName ? 64 : 12
-  // Drawer width: full-bleed when docks are hidden, else inset to clear both docks
-  // (2×264 dock + 2×24 gap = 576).
-  const drawerWidth = docksOpen ? "max(360px, calc(100vw - 648px))" : "calc(100vw - 24px)"
 
   return (
     <div
@@ -586,37 +607,26 @@ export default function Home() {
           </div>
         ))}
 
-      {/* ── Node-graph editor drawer: opened from the Materials tab, expands up
-          from the bottom (above the transport), independent of the docks. The editor
-          only mounts while OPEN — mounting it while closed made switching groups
-          remount + auto-reapply the graph (a spurious second setGroups → minimap
-          double-refresh). Edits are live-applied, so the graph persists on close.
-          Client-only (React Flow isn't SSR-safe), so gated behind `mounted`. ── */}
-      {mounted && (
-      <div
-        ref={graphDrawerRef}
-        className={cn(
-          "fixed left-1/2 z-20 -translate-x-1/2 overflow-hidden rounded-xl border border-white/10 bg-zinc-950/70 shadow-float backdrop-blur-xs",
-          "transition-[height,width,opacity,bottom] duration-[420ms] ease-out-soft",
-          resizing && "transition-none",
-          !drawerOpen && "pointer-events-none",
-        )}
-        style={{
-          width: drawerFull ? "calc(100vw - 24px)" : drawerWidth,
-          height: drawerOpen ? (drawerFull ? "calc(100dvh - 24px)" : drawerH) : 0,
-          opacity: drawerOpen ? 1 : 0,
-          bottom: drawerFull ? 12 : graphBottom,
-        }}
-      >
-        <div className="flex h-full flex-col">
-          <div
-            className="absolute inset-x-0 top-0 z-10 flex h-2 cursor-row-resize touch-none items-start justify-center pt-[3px]"
-            onPointerDown={onDragDown}
-            onPointerMove={onDragMove}
-            onPointerUp={onDragUp}
-          >
-            <span className="h-0.5 w-10 rounded-full bg-white/15" />
-          </div>
+      {/* ── Node-graph editor: a free-floating, draggable + resizable window (drag by
+          the header grip; resize from any edge/corner). Position/size persist across
+          sessions; first open lands bottom-centered. The editor only MOUNTS while OPEN
+          — mounting it while closed made switching groups remount + auto-reapply the
+          graph (a spurious second setGroups → minimap double-refresh). Edits are
+          live-applied, so the graph persists on close. Client-only (React Flow isn't
+          SSR-safe), so gated behind `mounted` + an initialized rect. ── */}
+      {mounted && panelRect && (
+        <FloatingPanel
+          rect={panelRect}
+          onRectChange={updatePanelRect}
+          open={drawerOpen}
+          fullscreen={drawerFull}
+          className={cn(
+            // z-50: above the docks/transport (z-20) and the non-modal library (z-40),
+            // so editing from the library floats on top of it as an independent panel.
+            "z-50 overflow-hidden rounded-xl border border-white/10 bg-zinc-950/70 shadow-float backdrop-blur-xs transition-opacity duration-300",
+            !drawerOpen && "pointer-events-none opacity-0",
+          )}
+        >
           {!drawerOpen ? null : activeGroup && presetGraph ? (
             <GraphEditor
               key={`${activeGroup.id}-${libVersion}`}
@@ -633,7 +643,7 @@ export default function Home() {
               onToggleFullscreen={() => setDrawerFull((v) => !v)}
             />
           ) : (
-            <div className="relative flex flex-1 items-center justify-center text-xs text-muted-foreground">
+            <div className="relative flex h-full items-center justify-center text-xs text-muted-foreground">
               Select a material to edit its look
               <Button
                 variant="ghost"
@@ -645,8 +655,7 @@ export default function Home() {
               </Button>
             </div>
           )}
-        </div>
-      </div>
+        </FloatingPanel>
       )}
 
       {/* ── Persistent transport bar (always visible while a clip is loaded, even
@@ -666,13 +675,6 @@ export default function Home() {
         affects={groupOfMaterial(library.material)?.materials.length ?? 1}
         currentGraphName={groupOfMaterial(library.material)?.graph.name ?? null}
         onApply={applyLibrary}
-        onEditCurrent={() => {
-          const g = groupOfMaterial(library.material)
-          if (g) {
-            setLibrary({ open: false, material: null })
-            editGroupGraph(g.id)
-          }
-        }}
       />
 
       {/* ── Uploads ── */}
