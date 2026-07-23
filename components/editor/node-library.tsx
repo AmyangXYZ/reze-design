@@ -9,7 +9,7 @@
 // Also mounts at /library later.
 
 import { useEffect, useMemo, useState } from "react"
-import { DEFAULT_GRAPH, type StyleGraph } from "reze-engine"
+import { DEFAULT_GRAPH, type ShaderGraph } from "reze-engine"
 import { ChevronDown, ChevronUp, Plus, Search, SquarePen } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -20,7 +20,7 @@ import { LIBRARY_PACKS } from "@/lib/node-library"
 import { SLOT_LABELS } from "@/lib/materials"
 import { cn } from "@/lib/utils"
 
-type Row = { id: string; name: string; description: string; category: string; pack: string; author: string; created: string; tags: string[]; graph: StyleGraph }
+type Row = { id: string; name: string; description: string; category: string; pack: string; author: string; created: string; tags: string[]; graph: ShaderGraph }
 
 const ROWS: Row[] = LIBRARY_PACKS.flatMap((p) =>
   p.entries.map((e) => ({
@@ -68,7 +68,7 @@ export function NodeLibrary({
   /** The group's currently-applied shader graph (pre-selected + drives "Edit current"). */
   currentGraphName: string | null
   /** `edit` pops the shader-graph editor on the fork so the user can customize it. */
-  onApply: (graph: StyleGraph, name: string, edit: boolean) => void
+  onApply: (graph: ShaderGraph, name: string, edit: boolean) => void
   /** Open the editor on the group's current shader graph. */
   onEditCurrent: () => void
 }) {

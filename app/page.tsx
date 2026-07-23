@@ -15,7 +15,7 @@ import {
   type CompileOptions,
   type Diagnostic,
   type MaterialPreset,
-  type StyleGraph,
+  type ShaderGraph,
   type StyleGroup,
 } from "reze-engine"
 import { Clapperboard, Package, Sun, X } from "lucide-react"
@@ -96,7 +96,7 @@ export default function Home() {
   const [libVersion, setLibVersion] = useState(0)
   // The graph the editing session started from — restored on "Back to library"
   // so a fresh fork / new graph (which previews live) can be cleanly abandoned.
-  const [editBaseline, setEditBaseline] = useState<{ groupId: string; graph: StyleGraph; label?: string } | null>(null)
+  const [editBaseline, setEditBaseline] = useState<{ groupId: string; graph: ShaderGraph; label?: string } | null>(null)
 
   // Dock + tab state persists; panels render only after mount (see `mounted`),
   // so reading localStorage in the initializer can't cause a hydration mismatch.
@@ -175,7 +175,7 @@ export default function Home() {
 
   // Graph editor's onApply: compile + swap the edited graph onto the active group.
   const applyActiveGraph = useCallback(
-    (graph: StyleGraph, opts?: CompileOptions): Promise<{ ok: boolean; diagnostics: Diagnostic[] }> =>
+    (graph: ShaderGraph, opts?: CompileOptions): Promise<{ ok: boolean; diagnostics: Diagnostic[] }> =>
       activeGroup ? upsertGroup({ ...activeGroup, graph }, opts) : Promise.resolve({ ok: false, diagnostics: [] }),
     [activeGroup, upsertGroup],
   )
@@ -184,11 +184,11 @@ export default function Home() {
   // styling unit, so there's no per-material opt-out here (splitting a material
   // into its own group is a group-management action). `edit` opens the editor on
   // the result and snapshots a baseline so the fork can be abandoned cleanly.
-  const applyLibrary = (graph: StyleGraph, name: string, edit = false) => {
+  const applyLibrary = (graph: ShaderGraph, name: string, edit = false) => {
     const material = library.material
     if (!material) return
     const group = groupOfMaterial(material)
-    const styled: StyleGraph = { ...graph, name }
+    const styled: ShaderGraph = { ...graph, name }
 
     if (group) {
       if (edit) setEditBaseline({ groupId: group.id, graph: group.graph, label: group.label })

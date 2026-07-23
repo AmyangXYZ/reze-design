@@ -1,9 +1,9 @@
-// Bijection between the engine's StyleGraph JSON and React Flow's node/edge model.
+// Bijection between the engine's ShaderGraph JSON and React Flow's node/edge model.
 // The engine schema is the source of truth; React Flow state is a projection of it.
 // Socket names double as handle ids, so links ↔ edges is a mechanical mapping.
 
 import type { Edge, Node } from "@xyflow/react"
-import { NODE_REGISTRY, type GraphNode, type StyleGraph } from "reze-engine"
+import { NODE_REGISTRY, type GraphNode, type ShaderGraph } from "reze-engine"
 
 export type RezeNodeData = {
   graphNode: GraphNode
@@ -15,12 +15,12 @@ export type RezeNodeData = {
 
 export type RezeFlowNode = Node<RezeNodeData, "reze">
 
-const edgeId = (l: StyleGraph["links"][number]) => `${l.from.node}.${l.from.socket}→${l.to.node}.${l.to.socket}`
+const edgeId = (l: ShaderGraph["links"][number]) => `${l.from.node}.${l.from.socket}→${l.to.node}.${l.to.socket}`
 
 /** Layered auto-layout for graphs without saved ui positions: x by topological
  *  depth, y stacked with per-node height estimates so tall nodes (principled,
  *  ramps) don't overlap their column neighbors. */
-function autoLayout(graph: StyleGraph): Map<string, { x: number; y: number }> {
+function autoLayout(graph: ShaderGraph): Map<string, { x: number; y: number }> {
   const depth = new Map<string, number>()
   const deps = new Map<string, string[]>()
   for (const n of graph.nodes) deps.set(n.id, [])
@@ -52,7 +52,7 @@ function autoLayout(graph: StyleGraph): Map<string, { x: number; y: number }> {
   return pos
 }
 
-export function toFlow(graph: StyleGraph): { nodes: RezeFlowNode[]; edges: Edge[] } {
+export function toFlow(graph: ShaderGraph): { nodes: RezeFlowNode[]; edges: Edge[] } {
   const layout = autoLayout(graph)
   const linkedByNode = new Map<string, string[]>()
   for (const l of graph.links) {
@@ -76,9 +76,9 @@ export function toFlow(graph: StyleGraph): { nodes: RezeFlowNode[]; edges: Edge[
   return { nodes, edges }
 }
 
-/** Rebuild a StyleGraph from React Flow state; `base` supplies everything the flow
+/** Rebuild a ShaderGraph from React Flow state; `base` supplies everything the flow
  *  doesn't model (version, name, slot, output, params). */
-export function fromFlow(base: StyleGraph, nodes: RezeFlowNode[], edges: Edge[]): StyleGraph {
+export function fromFlow(base: ShaderGraph, nodes: RezeFlowNode[], edges: Edge[]): ShaderGraph {
   return {
     ...base,
     nodes: nodes.map((n) => ({

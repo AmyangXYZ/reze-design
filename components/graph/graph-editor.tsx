@@ -25,7 +25,7 @@ import {
   type NodeChange,
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
-import { compileGraph, validateGraph, type CompileOptions, type Diagnostic, type StyleGraph } from "reze-engine"
+import { compileGraph, validateGraph, type CompileOptions, type Diagnostic, type ShaderGraph } from "reze-engine"
 import { Check, ChevronDown, Code, Download, LibraryBig, RotateCcw, Upload, Workflow } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -67,10 +67,10 @@ export function GraphEditor({
   onApplyStateChange,
 }: {
   /** The group's factory preset — what Reset returns to. */
-  presetGraph: StyleGraph
+  presetGraph: ShaderGraph
   /** Lazily resolves what the editor opens with — the preset, or a cached
    *  work-in-progress. Called once on mount (state initializer). */
-  getInitialGraph: () => StyleGraph
+  getInitialGraph: () => ShaderGraph
   slotLabel: string
   engineReady: boolean
   engineError: string | null
@@ -82,9 +82,9 @@ export function GraphEditor({
   /** Discard this session's edits (restore the baseline) and reopen the library. */
   onBack: () => void
   /** Compile + swap this graph onto the active group (parent upserts the group). */
-  onApply: (graph: StyleGraph, opts?: CompileOptions) => Promise<{ ok: boolean; diagnostics: Diagnostic[] }>
-  /** Fires with the rebuilt StyleGraph on every edit — the page caches it per group. */
-  onGraphChange?: (graph: StyleGraph) => void
+  onApply: (graph: ShaderGraph, opts?: CompileOptions) => Promise<{ ok: boolean; diagnostics: Diagnostic[] }>
+  /** Fires with the rebuilt ShaderGraph on every edit — the page caches it per group. */
+  onGraphChange?: (graph: ShaderGraph) => void
   /** Mirrors the compile/apply status dot — the page shows it on the collapsed pill. */
   onApplyStateChange?: (state: "ok" | "error" | "compiling") => void
 }) {
@@ -195,7 +195,7 @@ export function GraphEditor({
   }, [open, undo, redo])
 
   // Swap the editor to another graph (import / reset): fresh flow state + history.
-  const loadGraph = useCallback((graph: StyleGraph) => {
+  const loadGraph = useCallback((graph: ShaderGraph) => {
     const flow = toFlow(graph)
     setBase(graph)
     setNodes(flow.nodes)
@@ -207,7 +207,7 @@ export function GraphEditor({
     restoring.current = true // the state swap itself is not an undo step
   }, [])
 
-  // ── Preset JSON export/import — the file format IS the StyleGraph schema. ──
+  // ── Preset JSON export/import — the file format IS the ShaderGraph schema. ──
   const importFileRef = useRef<HTMLInputElement>(null)
   const onExport = useCallback(() => {
     const graph = fromFlow(base, nodes, edges) // include current edits + layout
@@ -225,7 +225,7 @@ export function GraphEditor({
       try {
         // A graph is pure shading now (no slot) — it applies to whatever group is
         // being edited, so no retargeting is needed.
-        const graph = JSON.parse(await file.text()) as StyleGraph
+        const graph = JSON.parse(await file.text()) as ShaderGraph
         const diags = validateGraph(graph)
         if (diags.some((d) => d.severity === "error")) {
           setDiagnostics(diags)
@@ -239,7 +239,7 @@ export function GraphEditor({
     [loadGraph],
   )
 
-  const currentGraph: StyleGraph = useMemo(() => fromFlow(base, nodes, edges), [base, nodes, edges])
+  const currentGraph: ShaderGraph = useMemo(() => fromFlow(base, nodes, edges), [base, nodes, edges])
 
   const onGraphChangeRef = useRef(onGraphChange)
   useEffect(() => {

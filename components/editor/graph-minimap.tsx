@@ -1,11 +1,11 @@
-// A compact but honest schematic of a StyleGraph — it IS the graph, not a random
+// A compact but honest schematic of a ShaderGraph — it IS the graph, not a random
 // picture. Each node is a titled card (type label + a header strip), with input
 // sockets down the left edge and outputs down the right, colored by socket type
 // (yellow=color, indigo=vector, zinc=float) exactly like the real editor. Links
 // run socket→socket in the source socket's color. Far lighter than a live React
 // Flow instance, so it's safe to render dozens in a grid.
 
-import type { StyleGraph } from "reze-engine"
+import type { ShaderGraph } from "reze-engine"
 import { socketsOf } from "@/lib/graph-flow"
 
 const NW = 150 // node width in graph space
@@ -22,7 +22,7 @@ const SOCKET: Record<string, string> = {
 
 type Meta = { x: number; y: number; ins: [string, string][]; outs: [string, string][] }
 
-export function GraphMinimap({ graph, className }: { graph: StyleGraph; className?: string }) {
+export function GraphMinimap({ graph, className }: { graph: ShaderGraph; className?: string }) {
   const meta = new Map<string, Meta>()
   graph.nodes.forEach((n, i) => {
     const p = n.ui?.position

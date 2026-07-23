@@ -1,8 +1,7 @@
-// Material → slot resolution for the demo model. The engine resolves presets
-// internally from the same map (setMaterialPresets) but exposes no per-material
-// getter, so the UI owns this mapping and derives the sidebar grouping from it.
-// Materials not listed here fall back to the engine's mmd_classic shader and
-// have no editable style graph.
+// Material → category hints for the demo model. Passed to engine.autoStyleGroups
+// as `overrides` (engine 0.21 — there's no setMaterialPresets anymore) so the demo
+// auto-buckets into the shipped starter graphs. A material not matched here stays
+// ungrouped and renders the engine's neutral default (DEFAULT_GRAPH) — no toon.
 
 import {
   BODY_GRAPH,
@@ -16,7 +15,7 @@ import {
   STOCKINGS_GRAPH,
   type MaterialPreset,
   type MaterialPresetMap,
-  type StyleGraph,
+  type ShaderGraph,
 } from "reze-engine"
 
 export const MODEL_ID = "serqet"
@@ -36,7 +35,7 @@ export const MODEL_PRESETS: MaterialPresetMap = {
 }
 
 /** Every slot ships an editable graph preset (engine 0.18.1 added face + eye). */
-export const SLOT_GRAPHS: Partial<Record<MaterialPreset, StyleGraph>> = {
+export const SLOT_GRAPHS: Partial<Record<MaterialPreset, ShaderGraph>> = {
   hair: HAIR_GRAPH,
   body: BODY_GRAPH,
   face: FACE_GRAPH,

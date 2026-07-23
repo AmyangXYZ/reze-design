@@ -86,7 +86,6 @@ export function useEngine(
         if (disposed) return
         const model = await engine.loadModel(MODEL_ID, MODEL_PATH)
         if (disposed) return
-        engine.setMaterialPresets(MODEL_ID, MODEL_PRESETS)
         engine.addGround({
           diffuseColor: hexToLinearVec3(s.colors.ground),
           gridLineColor: hexToLinearVec3(s.colors.grid),
@@ -97,9 +96,10 @@ export function useEngine(
           bones: model.getSkeleton().bones.length,
           materials: model.getMaterials().length,
         })
-        // Auto-group from the curated preset map + name hints → compiled-graph looks.
-        // Awaited (compiles finish) so getStyleGroups is populated + first frame is styled.
-        await engine.autoStyleGroups(MODEL_ID)
+        // Auto-group from the curated name→category overrides (0.21: overrides feed
+        // autoStyleGroups directly; there's no separate setMaterialPresets). Awaited so
+        // getStyleGroups is populated + the first frame is styled.
+        await engine.autoStyleGroups(MODEL_ID, MODEL_PRESETS)
         if (disposed) return
         setGroups(withSpecialGroups(engine.getStyleGroups(MODEL_ID)))
         // Bind pose until the user loads a VMD — material evaluation doesn't need motion.

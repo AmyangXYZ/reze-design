@@ -3,7 +3,7 @@
 // slot being edited (see the graph editor's import path). The built-ins ship as
 // one official pack; user/community packs slot in later with the same shape.
 
-import type { MaterialPreset, StyleGraph } from "reze-engine"
+import type { MaterialPreset, ShaderGraph } from "reze-engine"
 import { SLOT_GRAPHS, SLOT_LABELS } from "@/lib/materials"
 
 export type LibraryEntry = {
@@ -16,7 +16,7 @@ export type LibraryEntry = {
   author: string
   /** ISO-ish date for the "created" column. */
   created: string
-  graph: StyleGraph
+  graph: ShaderGraph
 }
 
 // Author notes per built-in look — shown in the library detail panel.
@@ -53,7 +53,7 @@ const AETHER_GAZER: LibraryPack = {
     tags: [role],
     author: "Amyang",
     created: "2026-07-22",
-    graph: SLOT_GRAPHS[role] as StyleGraph,
+    graph: SLOT_GRAPHS[role] as ShaderGraph,
   })),
 }
 
