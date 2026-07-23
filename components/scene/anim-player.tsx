@@ -66,10 +66,15 @@ export function AnimPlayer({
     if (!model) return
     const p = model.getAnimationProgress()
     if (p.playing) model.pause()
-    else if (p.paused) model.play()
-    else {
-      if (p.duration > 0 && p.current >= p.duration - AT_END_EPS) model.seek(0)
-      model.play(clipName)
+    else if (p.paused) model.play() // resume from where it was paused
+    else if (p.duration > 0) {
+      // Clip loaded but stopped (ended, or scrubbed while stopped). Resume from the
+      // current position; only restart from 0 when sitting at the very end. `play()`
+      // keeps currentFrame — `play(clipName)` would reset it to 0 (the from-start bug).
+      if (p.current >= p.duration - AT_END_EPS) model.seek(0)
+      model.play()
+    } else {
+      model.play(clipName) // first-ever start: load and play the clip
     }
   }
 
