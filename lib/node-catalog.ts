@@ -92,6 +92,24 @@ export const NODE_CATALOG: CatalogGroup[] = [
 export const nodeLabel = (type: string): string =>
   NODE_CATALOG.flatMap((g) => g.items).find((i) => i.type === type)?.label ?? type
 
+// Category accent color — shared by the node-card header and the graph minimap so both
+// speak the same visual language (Blender-style colored headers by node family).
+export const CATEGORY_COLORS: Record<string, string> = {
+  Input: "#2dd4bf", // teal
+  Color: "#fbbf24", // amber (matches the color socket)
+  Texture: "#f472b6", // pink
+  Vector: "#818cf8", // indigo (matches the vector socket)
+  Math: "#94a3b8", // slate (converters, à la Blender)
+  Mix: "#a78bfa", // violet
+  Shader: "#4ade80", // green
+}
+const TYPE_TO_CATEGORY: Record<string, string> = Object.fromEntries(
+  NODE_CATALOG.flatMap((g) => g.items.map((i) => [i.type, g.category])),
+)
+export const categoryOf = (type: string): string | undefined => TYPE_TO_CATEGORY[type]
+/** Accent hex for a node type via its category (neutral gray if uncatalogued). */
+export const nodeColor = (type: string): string => CATEGORY_COLORS[categoryOf(type) ?? ""] ?? "#a1a1aa"
+
 /** Unique node id from a type: slugify (`math/power` → `math_power`), then suffix on
  *  collision. Result matches the engine's id rule `/^[a-z0-9_]+$/`. */
 export function uniqueNodeId(type: string, existing: Set<string>): string {

@@ -11,6 +11,7 @@ import { Handle, Position, useReactFlow, type NodeProps } from "@xyflow/react"
 import { Input } from "@/components/ui/input"
 import { NODE_REGISTRY } from "reze-engine"
 import { ColorPickerDialog } from "@/components/color-picker"
+import { nodeColor } from "@/lib/node-catalog"
 import { hexToLinearVec3, linearVec3ToHex } from "@/lib/scene-settings"
 import { socketsOf, type RezeFlowNode } from "@/lib/graph-flow"
 
@@ -94,7 +95,7 @@ export function RezeNode({ id, data, selected }: NodeProps<RezeFlowNode>) {
   const { updateNodeData } = useReactFlow()
   const { graphNode, linkedInputs, isOutput, isPreview } = data
   const { inputs, outputs } = socketsOf(graphNode.type)
-  const isContext = inputs.length === 0 && (graphNode.type === "texture" || graphNode.type === "geometry")
+  const accent = nodeColor(graphNode.type) // category color (Blender-style header)
 
   const setInput = (socket: string, value: number | number[]) => {
     updateNodeData(id, {
@@ -104,33 +105,24 @@ export function RezeNode({ id, data, selected }: NodeProps<RezeFlowNode>) {
 
   return (
     <div
+      // Preview is shown as a pink ring (the "previewing …" pill already names it) —
+      // no header text that would break the node's layout.
       className={`rounded-md border bg-zinc-900/95 text-zinc-200 shadow-lg min-w-44 text-xs ${
-        selected
-          ? "border-pink-400"
-          : isOutput
-            ? "border-blue-400"
-            : isContext
-              ? "border-emerald-700"
-              : "border-zinc-700"
-      }`}
+        selected ? "border-pink-400" : isOutput ? "border-blue-400" : "border-zinc-700"
+      }${isPreview ? " ring-2 ring-pink-500/80" : ""}`}
     >
       <div
-        className={`flex items-center gap-2 px-2 py-1 rounded-t-md font-medium text-xs ${isContext ? "bg-emerald-900/60" : "bg-zinc-800"}`}
+        className="flex items-center gap-2 px-2 py-1 rounded-t-md font-medium text-xs"
+        // Category-tinted header with a colored underline — the family cue.
+        style={{ backgroundColor: `${accent}26`, boxShadow: `inset 0 -1.5px 0 ${accent}59` }}
       >
         <span>{graphNode.id}</span>
         <span className="text-zinc-500 font-normal">{graphNode.type}</span>
-        <span className="ml-auto flex items-center gap-1">
-          {isPreview && (
-            <span className="rounded-sm bg-pink-500/20 px-1 text-[9px] font-semibold tracking-wide text-pink-300">
-              PREVIEW
-            </span>
-          )}
-          {isOutput && (
-            <span className="rounded-sm bg-blue-400/20 px-1 text-[9px] font-semibold tracking-wide text-blue-300">
-              OUT
-            </span>
-          )}
-        </span>
+        {isOutput && (
+          <span className="ml-auto rounded-sm bg-blue-400/20 px-1 text-[9px] font-semibold tracking-wide text-blue-300">
+            OUT
+          </span>
+        )}
       </div>
       <div className="py-1">
         {outputs.map(([name, type]) => (

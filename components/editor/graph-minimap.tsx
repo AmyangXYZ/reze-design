@@ -6,7 +6,8 @@
 // Flow instance, so it's safe to render dozens in a grid.
 
 import type { ShaderGraph } from "reze-engine"
-import { socketsOf } from "@/lib/graph-flow"
+import { nodeColor } from "@/lib/node-catalog"
+import { autoLayout, socketsOf } from "@/lib/graph-flow"
 
 const NW = 150 // node width in graph space
 const NH = 46 // node height
@@ -23,13 +24,15 @@ const SOCKET: Record<string, string> = {
 type Meta = { x: number; y: number; ins: [string, string][]; outs: [string, string][] }
 
 export function GraphMinimap({ graph, className }: { graph: ShaderGraph; className?: string }) {
+  // Same layout source as the editor (ui.position ?? autoLayout), so a graph looks
+  // identical here and in the editor — and opening the editor (which persists the
+  // autoLayout positions) no longer makes this minimap jump.
+  const layout = autoLayout(graph)
   const meta = new Map<string, Meta>()
-  graph.nodes.forEach((n, i) => {
-    const p = n.ui?.position
-    const x = p ? p.x : (i % 6) * (NW + 40)
-    const y = p ? p.y : Math.floor(i / 6) * (NH + 40)
+  graph.nodes.forEach((n) => {
+    const p = n.ui?.position ?? layout.get(n.id)!
     const { inputs, outputs } = socketsOf(n.type)
-    meta.set(n.id, { x, y, ins: inputs, outs: outputs })
+    meta.set(n.id, { x: p.x, y: p.y, ins: inputs, outs: outputs })
   })
   const nodes = [...meta.values()]
   if (nodes.length === 0) return <div className={className} />
@@ -73,17 +76,20 @@ export function GraphMinimap({ graph, className }: { graph: ShaderGraph; classNa
       })}
 
       {graph.nodes.map((n) => {
+        const accent = nodeColor(n.type)
         const m = meta.get(n.id)!
         return (
           <g key={n.id}>
             <rect x={m.x} y={m.y} width={NW} height={NH} rx={8} fill="currentColor" fillOpacity={0.14} stroke="currentColor" strokeOpacity={0.5} strokeWidth={1.5} />
-            {/* Header strip + type label */}
+            {/* Header tint + colored underline — same subtle palette as the node card
+                (a faint fill, not a saturated strip), so preview matches the editor. */}
             <path
               d={`M ${m.x} ${m.y + HEADER} V ${m.y + 8} Q ${m.x} ${m.y} ${m.x + 8} ${m.y} H ${m.x + NW - 8} Q ${m.x + NW} ${m.y} ${m.x + NW} ${m.y + 8} V ${m.y + HEADER} Z`}
-              fill="currentColor"
-              fillOpacity={0.22}
+              fill={accent}
+              fillOpacity={0.16}
             />
-            <text x={m.x + 8} y={m.y + 11} fontSize={11} fontWeight={600} fill="currentColor" fillOpacity={0.95}>
+            <line x1={m.x} y1={m.y + HEADER} x2={m.x + NW} y2={m.y + HEADER} stroke={accent} strokeOpacity={0.5} strokeWidth={1.5} />
+            <text x={m.x + 8} y={m.y + 11} fontSize={11} fontWeight={600} fill="currentColor" fillOpacity={0.9}>
               {n.type}
             </text>
             {/* Input sockets (left) + output sockets (right) */}
