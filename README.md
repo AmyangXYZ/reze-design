@@ -1,6 +1,6 @@
 # Reze Design
 
-Web-native scene composing and styling for MMD. Bring a model, a motion, and a song — style the materials, light the scene, and ship a finished "MMD" as a video and a permanent live-3D link. Built on the headless WebGPU engine [reze-engine](https://github.com/AmyangXYZ/reze-engine).
+Compose and style MMD scenes, then ship them. Bring a model, a motion, and a song — style the materials, light the scene, and export a finished "MMD" as a video and a permanent live-3D link. Built on the MMD WebGPU engine [reze-engine](https://github.com/AmyangXYZ/reze-engine).
 
 Reze Design
 
