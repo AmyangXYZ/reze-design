@@ -458,6 +458,7 @@ export default function Home() {
           onRenameGroup={renameGroup}
           onDeleteGroup={deleteGroup}
           onSetActiveGroup={setActiveGroupId}
+          onEditGroupGraph={editGroupGraph}
           onMoveMaterial={moveMaterial}
         />
       ),
