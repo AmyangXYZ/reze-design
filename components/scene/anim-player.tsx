@@ -8,7 +8,7 @@
 
 import { useEffect, useRef, useState, type RefObject } from "react"
 import type { Engine } from "reze-engine"
-import { Pause, Play, Repeat, RepeatOff } from "lucide-react"
+import { Orbit, Pause, Play, Repeat, RepeatOff, Video } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -27,10 +27,13 @@ export function AnimPlayer({
   engineRef,
   modelName,
   clipName,
+  hasCamera,
 }: {
   engineRef: RefObject<Engine | null>
   modelName: string
   clipName: string
+  /** A camera VMD is loaded — show the Follow/Free toggle. */
+  hasCamera: boolean
 }) {
   const [progress, setProgress] = useState<Progress>({ current: 0, duration: 0, playing: false, paused: false })
   const [loop, setLoop] = useState(true)
@@ -39,6 +42,19 @@ export function AnimPlayer({
     loopRef.current = loop
   })
   const [dragVal, setDragVal] = useState<number | null>(null)
+  // Whether the loaded camera VMD is currently driving the view (vs. free orbit).
+  const [following, setFollowing] = useState(true)
+  // Camera VMD is default-on when loaded — mirror the engine's actual state.
+  useEffect(() => {
+    if (hasCamera) setFollowing(engineRef.current?.isCameraVmdEnabled() ?? true)
+  }, [hasCamera, engineRef])
+  const toggleCamera = () => {
+    const engine = engineRef.current
+    if (!engine) return
+    const next = !following
+    engine.setCameraVmdEnabled(next) // off falls back to orbit
+    setFollowing(next)
+  }
 
   useEffect(() => {
     let raf = 0
@@ -124,6 +140,21 @@ export function AnimPlayer({
         onValueCommit={() => setDragVal(null)}
       />
       <span className="shrink-0 text-xs leading-none text-muted-foreground tabular-nums">{fmt(progress.duration)}</span>
+      {hasCamera && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={following ? "size-7 shrink-0 rounded-full text-blue-400" : "size-7 shrink-0 rounded-full text-muted-foreground hover:text-foreground"}
+              onClick={toggleCamera}
+            >
+              {following ? <Video className="size-4" /> : <Orbit className="size-4" />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">{following ? "Following camera — click to free-orbit" : "Free orbit — click to follow camera"}</TooltipContent>
+        </Tooltip>
+      )}
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
