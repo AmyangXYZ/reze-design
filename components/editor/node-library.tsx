@@ -229,8 +229,8 @@ export function NodeLibrary({
 
             {selected && (
               <div className="mt-3 flex min-h-0 flex-1 flex-col">
-                <div className="text-sm font-medium">{selected.name}</div>
-                <div className="mt-0.5 text-xs text-muted-foreground">
+                <div className="truncate text-sm font-medium">{selected.name}</div>
+                <div className="mt-0.5 truncate text-xs text-muted-foreground">
                   {selected.pack} · {selected.author} · {selected.created.slice(0, 7)}
                 </div>
                 {selected.description && (

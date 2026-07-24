@@ -614,13 +614,13 @@ export function GraphEditor({
             applyState === "compiling" && "animate-pulse",
           )}
         />
-        <span className="text-xs font-medium text-zinc-200">{slotLabel}</span>
+        <span className="min-w-0 truncate text-xs font-medium text-zinc-200">{slotLabel}</span>
         {!fullscreen && (
           <span className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-zinc-600">
             <Grip className="size-4" />
           </span>
         )}
-        <div className="ml-auto flex items-center gap-0.5">
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
           {/* ── Tools: code view + reset ── */}
           <Tooltip>
             <TooltipTrigger asChild>
