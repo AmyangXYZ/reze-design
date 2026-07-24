@@ -6,7 +6,7 @@
 // inline on the card (Blender-style); edits flow through updateNodeData →
 // onNodesChange → recompile.
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { Handle, Position, useReactFlow, type NodeProps } from "@xyflow/react"
 import { Input } from "@/components/ui/input"
 import { NODE_REGISTRY } from "reze-engine"
@@ -34,6 +34,45 @@ function fmtLiteral(v: number | number[]): string {
 // Shared inline number-field styling (float literal + vector components).
 const NUM_FIELD =
   "nodrag h-4.5 rounded-sm border-zinc-700 bg-zinc-950/80 px-1 py-0 text-right !text-xs tabular-nums shadow-none focus-visible:ring-1 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+
+// A number input that edits smoothly: it holds the raw TEXT locally, so the caret
+// never jumps and intermediate states (`0.`, `-`, `1.20`) are allowed. A finite value
+// commits on each edit; the text only re-syncs when `value` changes from OUTSIDE (not
+// from our own typing), and normalizes on blur. (`type=number` + a reformatted value
+// prop is what caused the caret-to-end jump.)
+function NumberField({ value, onCommit, className }: { value: number; onCommit: (n: number) => void; className?: string }) {
+  const [text, setText] = useState(() => String(round4(value)))
+  const last = useRef(value)
+  const focused = useRef(false)
+  // Only re-sync the text from an OUTSIDE change (reset/preview) and only while NOT
+  // editing. While focused we leave the text alone — otherwise the intermediate render
+  // from React Flow's store update (stale `value`) would reformat and jump the caret.
+  if (!focused.current && value !== last.current) {
+    last.current = value
+    setText(String(round4(value)))
+  }
+  return (
+    <Input
+      type="text"
+      inputMode="decimal"
+      value={text}
+      onFocus={() => (focused.current = true)}
+      onChange={(e) => {
+        const raw = e.target.value
+        setText(raw)
+        const n = Number(raw)
+        if (raw.trim() !== "" && Number.isFinite(n)) onCommit(n)
+      }}
+      onBlur={() => {
+        focused.current = false
+        last.current = value
+        setText(String(round4(value)))
+      }}
+      onDoubleClick={(e) => e.stopPropagation()}
+      className={className}
+    />
+  )
+}
 
 // A color socket's literal is a linear vec3 (or vec4 rgb); the picker speaks sRGB
 // hex, so convert on the boundary. `nodrag` keeps clicks from dragging the node.
@@ -68,14 +107,10 @@ function VectorSocketInput({ value, onChange }: { value: [number, number, number
   return (
     <div className="nodrag mt-0.5 mb-1 flex gap-1 pl-3" onDoubleClick={(e) => e.stopPropagation()}>
       {([0, 1, 2] as const).map((i) => (
-        <Input
+        <NumberField
           key={i}
-          type="number"
-          step={0.1}
-          value={round4(value[i])}
-          onChange={(e) => {
-            const n = Number(e.target.value)
-            if (!Number.isFinite(n)) return
+          value={value[i]}
+          onCommit={(n) => {
             const next: [number, number, number] = [...value]
             next[i] = n
             onChange(next)
@@ -157,14 +192,7 @@ export function RezeNode({ id, data, selected }: NodeProps<RezeFlowNode>) {
                 />
                 <span className="text-zinc-400">{name}</span>
                 {!linked && type === "float" && typeof literal === "number" && (
-                  <Input
-                    type="number"
-                    step={0.01}
-                    value={round4(literal)}
-                    onChange={(e) => setInput(name, Number(e.target.value))}
-                    onDoubleClick={(e) => e.stopPropagation()}
-                    className={`${NUM_FIELD} ml-auto w-16`}
-                  />
+                  <NumberField value={literal} onCommit={(n) => setInput(name, n)} className={`${NUM_FIELD} ml-auto w-16`} />
                 )}
                 {!linked && type === "color" && literal !== undefined && (
                   <ColorSocketButton rgb={asRgb(literal)} onChange={(rgb) => setInput(name, rgb)} />

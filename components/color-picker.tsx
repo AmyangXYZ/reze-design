@@ -6,7 +6,7 @@
 // swatch titled with its name and hex, plus a free hex field. Every color
 // setting reuses this one component and this one palette.
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { TAILWIND_PALETTE } from "@/lib/tailwind-palette"
 import { cn } from "@/lib/utils"
@@ -18,14 +18,14 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 const GRID = "grid grid-cols-[3.75rem_repeat(11,minmax(0,1fr))] gap-x-3"
 
 function HexField({ value, onChange }: { value: string; onChange: (hex: string) => void }) {
-  // Controlled text so the preview refreshes live while typing; a valid 6-digit
-  // hex applies immediately (no need to blur/enter). When `value` changes from
-  // outside (a swatch click), reset the field in-render — React's recommended
-  // alternative to a syncing effect.
+  // Controlled text so the preview refreshes live while typing; a valid 6-digit hex
+  // applies immediately. Re-sync from an OUTSIDE change (a swatch click) only while NOT
+  // focused — otherwise committing a hex would reformat the text and jump the caret.
   const [text, setText] = useState(value)
-  const [lastValue, setLastValue] = useState(value)
-  if (value !== lastValue) {
-    setLastValue(value)
+  const last = useRef(value)
+  const focused = useRef(false)
+  if (!focused.current && value !== last.current) {
+    last.current = value
     setText(value)
   }
   return (
@@ -33,6 +33,12 @@ function HexField({ value, onChange }: { value: string; onChange: (hex: string) 
       value={text}
       spellCheck={false}
       className="h-7 w-28 rounded-md border border-white/10 bg-black/30 px-2 font-mono text-xs outline-none focus:border-blue-400/50"
+      onFocus={() => (focused.current = true)}
+      onBlur={() => {
+        focused.current = false
+        last.current = value
+        setText(value)
+      }}
       onChange={(e) => {
         const raw = e.target.value
         setText(raw)
