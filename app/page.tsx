@@ -354,42 +354,6 @@ export default function Home() {
     setAnimName(await loadVmdFile(file))
   }
 
-  // ── Stage upload: a second model placed in the scene (0.22 multi-model). Loaded
-  // ungrouped, so it renders the engine's neutral default rather than toon. ──
-  const STAGE_ID = "stage"
-  const stageInputRef = useRef<HTMLInputElement | null>(null)
-  const [stageName, setStageName] = useState<string | null>(null)
-  const [stageMeta, setStageMeta] = useState("")
-  const loadStage = async (files: File[], pmxFile: File) => {
-    const engine = engineRef.current
-    if (!engine) return
-    try {
-      if (engine.getModel(STAGE_ID)) engine.removeModel(STAGE_ID) // reload replaces
-      const m = await engine.loadModel(STAGE_ID, { files, pmxFile })
-      setStageName(pmxFile.name)
-      setStageMeta(
-        `${Math.round(m.getVertices().length / 8).toLocaleString("en-US")} vertices · ${m.getMaterials().length} materials · ${fmtSize(pmxFile.size)}`,
-      )
-    } catch (e) {
-      setUpload({ kind: "notice", message: `Couldn't load that stage: ${e instanceof Error ? e.message : String(e)}` })
-    }
-  }
-  const onStagePicked = (fileList: FileList | null) => {
-    const result = parsePmxFolderInput(fileList)
-    if (result.status === "single") void loadStage(result.files, result.pmxFile)
-    else if (result.status === "multiple") {
-      const pmx = pmxFileAtRelativePath(result.files, result.pmxRelativePaths[0]) // stages are ~1 pmx; take the first
-      if (pmx) void loadStage(result.files, pmx)
-    } else if (result.status === "no_pmx") setUpload({ kind: "notice", message: "No .pmx file found in that folder." })
-    else if (result.status === "not_directory")
-      setUpload({ kind: "notice", message: "Please pick the stage's folder itself, textures included." })
-  }
-  const removeStage = () => {
-    engineRef.current?.removeModel(STAGE_ID)
-    setStageName(null)
-    setStageMeta("")
-  }
-
   // ── Camera VMD upload: drives the shot (target/rotation/distance/fov); default-on
   // once loaded, toggled Follow/Free from the transport. ──
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
@@ -568,7 +532,6 @@ export default function Home() {
         <AssetsPanel
           modelFile={modelFile}
           animName={animName}
-          stageName={stageName}
           cameraName={cameraName}
           audioName={audioName}
           modelMeta={`${modelStats.vertices.toLocaleString("en-US")} vertices · ${modelStats.bones} bones · ${modelStats.materials} materials${modelSize ? ` · ${fmtSize(modelSize)}` : ""}`}
@@ -579,19 +542,16 @@ export default function Home() {
                   .join(" · ")
               : ""
           }
-          stageMeta={stageMeta}
           cameraMeta={cameraName && cameraSize != null ? fmtSize(cameraSize) : ""}
           audioMeta={audioName ? [fmtDur(audioDuration), audioSize ? fmtSize(audioSize) : ""].filter(Boolean).join(" · ") : ""}
           onUploadModel={() => folderInputRef.current?.click()}
           onUploadAnimation={() => vmdInputRef.current?.click()}
-          onUploadStage={() => stageInputRef.current?.click()}
           onUploadCamera={() => cameraInputRef.current?.click()}
           onUploadMusic={() => audioInputRef.current?.click()}
           onRemoveAnimation={() => {
             stopAnimation()
             setAnimName(null)
           }}
-          onRemoveStage={removeStage}
           onRemoveCamera={removeCamera}
         />
       ),
@@ -762,19 +722,6 @@ export default function Home() {
         className="hidden"
         onChange={(e) => {
           void onVmdPicked(e.target.files?.[0])
-          e.target.value = ""
-        }}
-      />
-      <input
-        ref={(el) => {
-          stageInputRef.current = el
-          el?.setAttribute("webkitdirectory", "")
-        }}
-        type="file"
-        multiple
-        className="hidden"
-        onChange={(e) => {
-          onStagePicked(e.target.files)
           e.target.value = ""
         }}
       />
