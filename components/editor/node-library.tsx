@@ -58,7 +58,7 @@ export function NodeLibrary({
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** The target group's name — shown on the Apply button and the "applies to" line. */
+  /** The target group's name — the library is scoped to the group it opened from. */
   targetLabel: string | null
   /** Whether a target group exists yet for the material. */
   canApply: boolean
@@ -75,15 +75,14 @@ export function NodeLibrary({
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
-  // On open, pre-select the group's currently-applied shader graph so the list
-  // shows what's live and "Edit current" reads in context. Match on the display
-  // name (set when applied from the library) OR the underlying graph name (what
-  // auto-grouped presets carry).
+  // Pre-select the target group's applied graph on OPEN only (not when the user
+  // switches the target below — that shouldn't yank their browsing selection).
   useEffect(() => {
-    if (!open || !currentGraphName) return
+    if (!open) return
     const row = ROWS.find((r) => r.name === currentGraphName || r.graph.name === currentGraphName)
     setSelectedId(row?.id ?? null)
-  }, [open, currentGraphName])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   const toggleSort = (key: SortKey) => {
     if (key === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"))
@@ -225,7 +224,6 @@ export function NodeLibrary({
                 </div>
               )}
             </div>
-            <div className="mt-1 text-center text-xs text-muted-foreground">graph preview · live sphere coming soon</div>
 
             {selected && (
               <div className="mt-3 flex min-h-0 flex-1 flex-col">
@@ -244,22 +242,18 @@ export function NodeLibrary({
                   ))}
                 </div>
                 <div className="mt-auto space-y-2 pt-4">
-                  {/* Group name lives on the button (not a separate badge); to fork &
-                      edit instead, click the preview above. */}
+                  {/* Scoped to the group you opened from; to fork & edit, click the preview. */}
                   <Button
                     size="sm"
                     disabled={!canApply}
                     onClick={() => onApply(selected.graph, selected.name, false)}
                     className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-40"
                   >
-                    <span className="truncate">{canApply ? `Apply to group ${targetLabel}` : "Select a material first"}</span>
+                    <span className="truncate">{canApply ? `Apply to ${targetLabel}` : "Select a material first"}</span>
                   </Button>
                   {canApply && (
-                    <div className="text-center text-xs text-muted-foreground">
-                      Applies to{" "}
-                      <span className="text-foreground">
-                        {affects} material{affects === 1 ? "" : "s"}
-                      </span>
+                    <div className="text-center text-[11px] text-muted-foreground">
+                      {affects} material{affects === 1 ? "" : "s"}
                     </div>
                   )}
                 </div>

@@ -251,7 +251,9 @@ export default function Home() {
     if (!group) return
     const styled: ShaderGraph = { ...graph, name }
     if (edit) setEditBaseline({ groupId: group.id, graph: group.graph, label: group.label })
-    const updated: StyleGroup = { ...group, graph: styled, label: name }
+    // Apply the look's graph but keep the group's own name — the group label and the
+    // shader-graph name are separate (renaming the group here was the bug).
+    const updated: StyleGroup = { ...group, graph: styled }
     // Empty groups can't compile — store via applyGroups (withheld from the engine)
     // until they gain materials; non-empty groups compile through upsertGroup.
     if (updated.materials.length) void upsertGroup(updated)
