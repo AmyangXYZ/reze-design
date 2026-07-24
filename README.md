@@ -21,10 +21,12 @@ npm run dev
 
 ## Roadmap
 
-- **Video export** — frame-accurate capture and encode.
-- **Accounts** — save models and scenes behind a permanent, always-on link at `reze.design/<user>/<scene>`.
-- **Gallery & library** — browse shared scenes and drop-in shader-graph packs.
-- **Environment effects** — particles, weather, sky, and water as the engine gains the nodes.
+reze-design is a curated MMD platform — an aesthetic with built-in looks (think camera filters), not a general 3D DCC. Next up:
+
+- **Scenes, not a void** — curated backgrounds (sky / ocean / indoor, including 360° images) and stage support, so a model lives in a scene instead of on a debug ground.
+- **Built-in looks** — a growing shader-graph library plus post filters (bloom, rim light, color grade) tuned for the MMD aesthetic.
+- **Share a live link** — publish a scene as a real-time, interactive 3D page at `reze.design/<user>/<scene>`, not a flat video.
+- **Gallery** — browse and remix shared scenes and looks.
 
 ## License
 
