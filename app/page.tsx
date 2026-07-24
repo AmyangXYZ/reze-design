@@ -119,7 +119,9 @@ export default function Home() {
   // Which style group the node-graph editor is bound to.
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null)
   // Node-graph library popup, opened for a specific material.
-  const [library, setLibrary] = useState<{ open: boolean; material: string | null }>({ open: false, material: null })
+  // The shader-graph library targets a style GROUP (the styling unit) — a group can be
+  // empty (a freshly created one), so keying on a material would lock those out.
+  const [library, setLibrary] = useState<{ open: boolean; groupId: string | null }>({ open: false, groupId: null })
   // Bumped on library-pick to remount the graph editor with the new graph.
   const [libVersion, setLibVersion] = useState(0)
   // The graph the editing session started from — restored on "Back to library"
@@ -231,6 +233,7 @@ export default function Home() {
   }, [groups])
 
   const activeGroup = groups.find((g) => g.id === activeGroupId) ?? null
+  const libGroup = groups.find((g) => g.id === library.groupId) ?? null
   // Factory preset for the active group (for Reset) — auto-group ids are role keys.
   const presetGraph = (activeGroup && SLOT_GRAPHS[activeGroup.id as MaterialPreset]) || activeGroup?.graph || null
 
@@ -241,32 +244,24 @@ export default function Home() {
     [activeGroup, upsertGroup],
   )
 
-  // Apply a library look to the target material's whole group — the group is the
-  // styling unit, so there's no per-material opt-out here (splitting a material
-  // into its own group is a group-management action). `edit` opens the editor on
-  // the result and snapshots a baseline so the fork can be abandoned cleanly.
+  // Apply a library look to the target group (the styling unit). `edit` opens the
+  // editor on the result and snapshots a baseline so the fork can be abandoned cleanly.
   const applyLibrary = (graph: ShaderGraph, name: string, edit = false) => {
-    const material = library.material
-    if (!material) return
-    const group = groupOfMaterial(material)
+    const group = groups.find((g) => g.id === library.groupId)
+    if (!group) return
     const styled: ShaderGraph = { ...graph, name }
-
-    if (group) {
-      if (edit) setEditBaseline({ groupId: group.id, graph: group.graph, label: group.label })
-      void upsertGroup({ ...group, graph: styled, label: name })
-      setActiveGroupId(group.id)
-    } else {
-      // Ungrouped material — wrap it in its own group (nothing to revert to).
-      const created: StyleGroup = { id: newGroupId(material, groups), label: name, materials: [material], graph: styled, renderClass: "auto" }
-      if (edit) setEditBaseline(null)
-      void applyGroups([...groups, created])
-      setActiveGroupId(created.id)
-    }
+    if (edit) setEditBaseline({ groupId: group.id, graph: group.graph, label: group.label })
+    const updated: StyleGroup = { ...group, graph: styled, label: name }
+    // Empty groups can't compile — store via applyGroups (withheld from the engine)
+    // until they gain materials; non-empty groups compile through upsertGroup.
+    if (updated.materials.length) void upsertGroup(updated)
+    else void applyGroups(groups.map((x) => (x.id === group.id ? updated : x)))
+    setActiveGroupId(group.id)
     setLibVersion((v) => v + 1)
     if (edit) {
       setDrawerOpen(true) // pop the editor; keep the library open (independent panels)
     } else {
-      setLibrary({ open: false, material: null })
+      setLibrary({ open: false, groupId: null })
     }
   }
 
@@ -490,7 +485,7 @@ export default function Home() {
           activeGroupId={activeGroupId}
           onHover={(name) => highlight(name)}
           onToggleVisible={toggleVisible}
-          onOpenLibrary={(material) => setLibrary({ open: true, material })}
+          onOpenLibrary={(groupId) => setLibrary({ open: true, groupId })}
           onCreateGroup={createGroup}
           onRenameGroup={renameGroup}
           onDeleteGroup={deleteGroup}
@@ -670,10 +665,10 @@ export default function Home() {
       <NodeLibrary
         open={library.open}
         onOpenChange={(o) => setLibrary((s) => ({ ...s, open: o }))}
-        targetLabel={groupOfMaterial(library.material)?.label ?? groupOfMaterial(library.material)?.id ?? library.material}
-        canApply={library.material !== null}
-        affects={groupOfMaterial(library.material)?.materials.length ?? 1}
-        currentGraphName={groupOfMaterial(library.material)?.graph.name ?? null}
+        targetLabel={libGroup?.label ?? libGroup?.id ?? null}
+        canApply={libGroup !== null}
+        affects={libGroup?.materials.length ?? 0}
+        currentGraphName={libGroup?.graph.name ?? null}
         onApply={applyLibrary}
       />
 
