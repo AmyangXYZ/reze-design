@@ -127,7 +127,6 @@ export function BrandPill({
         </Button>
       </AppMenu>
       <span className="whitespace-nowrap pb-0.5 text-sm font-semibold tracking-tight text-foreground">Reze Design</span>
-      {tag}
       <span className="ml-1 max-w-24 truncate text-xs text-muted-foreground">{sceneName}</span>
       {toggle}
     </div>
