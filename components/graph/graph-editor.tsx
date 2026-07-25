@@ -34,12 +34,13 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
-import { RezeNode } from "@/components/graph/reze-node"
+import { RezeNode, RenameNodeProvider } from "@/components/graph/reze-node"
 import { WgslView } from "@/components/graph/wgsl-view"
 import { AddNodeMenu } from "@/components/graph/add-node-menu"
 import { NodeContextMenu, type MenuAction } from "@/components/graph/node-context-menu"
 import { makeGraphNode, uniqueNodeId } from "@/lib/node-catalog"
 import { canConnect, fromFlow, socketsOf, socketType, toFlow, type RezeFlowNode } from "@/lib/graph-flow"
+import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 const nodeTypes = { reze: RezeNode }
@@ -100,6 +101,7 @@ export function GraphEditor({
   fullscreen: boolean
   onToggleFullscreen: () => void
 }) {
+  const t = useT()
   // `base` supplies what the flow doesn't model (name, slot, output, params);
   // importing a JSON graph swaps it, reset returns to the slot's preset.
   const [initial] = useState(() => {
@@ -349,6 +351,39 @@ export function GraphEditor({
     [nodes],
   )
 
+  // Rename a node's id — its title doubles as its identity (Blender-nickname style),
+  // so this rewrites every reference: links, the graph output, and any live preview.
+  // The id must fit the engine's `^[a-z0-9_]+$` rule and stay unique, so we sanitize
+  // + guard; a no-op (empty/duplicate/unchanged) is silently ignored.
+  const renameNode = useCallback((oldId: string, raw: string) => {
+    const next = raw.trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "")
+    if (!next || next === oldId) return
+    if (rfRef.current?.getNodes().some((n) => n.id === next)) return // id already taken
+    setNodes((cur) =>
+      cur.map((n) =>
+        n.id === oldId ? { ...n, id: next, data: { ...n.data, graphNode: { ...n.data.graphNode, id: next } } } : n,
+      ),
+    )
+    setEdges((cur) =>
+      cur.map((e) => {
+        if (e.source !== oldId && e.target !== oldId) return e
+        const source = e.source === oldId ? next : e.source
+        const target = e.target === oldId ? next : e.target
+        return { ...e, source, target, id: `${source}.${e.sourceHandle}→${target}.${e.targetHandle}` }
+      }),
+    )
+    setBase((b) => (b.output.node === oldId ? { ...b, output: { ...b.output, node: next } } : b))
+    setPreviewId((p) => (p === oldId ? next : p))
+  }, [])
+
+  // Which node's title is in rename mode — lifted here so both a title double-click
+  // (in RezeNode) and the node context menu can start it. Handed to nodes via context.
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const nodeRenameOps = useMemo(
+    () => ({ rename: renameNode, renamingId, setRenaming: setRenamingId }),
+    [renameNode, renamingId],
+  )
+
   // ── Edge reconnect: drag either end of an existing edge to a new socket;
   //    dropping it on empty canvas deletes it (Blender-like). ──
   const reconnectDidConnect = useRef(false)
@@ -413,9 +448,9 @@ export function GraphEditor({
     if (!open) return // drawer hidden — don't swallow the page's shortcuts
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return
-      const t = e.target as HTMLElement
+      const el = e.target as HTMLElement
       // Inputs keep their native text undo.
-      if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t.isContentEditable) return
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el.isContentEditable) return
       e.preventDefault()
       if (e.shiftKey) redo()
       else undo()
@@ -430,8 +465,8 @@ export function GraphEditor({
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
       if (!e.shiftKey || e.metaKey || e.ctrlKey || e.key.toLowerCase() !== "d") return
-      const t = e.target as HTMLElement
-      if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t.isContentEditable) return
+      const el = e.target as HTMLElement
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el.isContentEditable) return
       const sel = rfRef.current?.getNodes().filter((n) => n.selected).map((n) => n.id) ?? []
       if (!sel.length) return
       e.preventDefault()
@@ -448,8 +483,8 @@ export function GraphEditor({
       if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return
       const k = e.key.toLowerCase()
       if (k !== "c" && k !== "x" && k !== "v") return
-      const t = e.target as HTMLElement
-      if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t.isContentEditable) return
+      const el = e.target as HTMLElement
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el.isContentEditable) return
       const sel = rfRef.current?.getNodes().filter((n) => n.selected).map((n) => n.id) ?? []
       if (k === "v") {
         e.preventDefault()
@@ -633,7 +668,7 @@ export function GraphEditor({
                 <Code className="size-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Generated WGSL</TooltipContent>
+            <TooltipContent>{t.graph.generatedWgsl}</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -641,7 +676,7 @@ export function GraphEditor({
                 <RotateCcw className="size-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Reset to preset</TooltipContent>
+            <TooltipContent>{t.graph.resetToPreset}</TooltipContent>
           </Tooltip>
 
           <Separator orientation="vertical" className="mx-1 h-4 bg-white/10" />
@@ -653,7 +688,7 @@ export function GraphEditor({
                 <FileUp className="size-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Import graph (.json)</TooltipContent>
+            <TooltipContent>{t.graph.importGraph}</TooltipContent>
           </Tooltip>
           <input
             ref={importFileRef}
@@ -672,7 +707,7 @@ export function GraphEditor({
                 <FileDown className="size-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Export graph (.json)</TooltipContent>
+            <TooltipContent>{t.graph.exportGraph}</TooltipContent>
           </Tooltip>
 
           <Separator orientation="vertical" className="mx-1 h-4 bg-white/10" />
@@ -684,7 +719,7 @@ export function GraphEditor({
                 {fullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
               </Button>
             </TooltipTrigger>
-            <TooltipContent>{fullscreen ? "Exit full screen" : "Full screen"}</TooltipContent>
+            <TooltipContent>{fullscreen ? t.graph.exitFullScreen : t.graph.fullScreen}</TooltipContent>
           </Tooltip>
 
           <Separator orientation="vertical" className="mx-1 h-4 bg-white/10" />
@@ -696,7 +731,7 @@ export function GraphEditor({
                 <X className="size-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Discard changes &amp; close</TooltipContent>
+            <TooltipContent>{t.graph.discardClose}</TooltipContent>
           </Tooltip>
           <Button
             size="sm"
@@ -704,7 +739,7 @@ export function GraphEditor({
             className="ml-1 h-6 gap-1 bg-blue-400 px-2 text-xs font-medium text-white hover:bg-blue-300"
           >
             <Check className="size-3.5" />
-            Save
+            {t.graph.save}
           </Button>
         </div>
       </header>
@@ -719,6 +754,7 @@ export function GraphEditor({
               onMouseMove={(e) => (lastPointer.current = { x: e.clientX, y: e.clientY })}
             >
               {flowSized && (
+                <RenameNodeProvider value={nodeRenameOps}>
                 <ReactFlow
                 onInit={(inst) => (rfRef.current = inst)}
                 nodes={displayNodes}
@@ -747,13 +783,14 @@ export function GraphEditor({
                   <Controls showInteractive={false} />
                   <MiniMap pannable zoomable style={{ width: 120, height: 80 }} bgColor="transparent" />
                 </ReactFlow>
+                </RenameNodeProvider>
               )}
 
               {previewId && (
                 <div className="absolute top-2 right-2 z-10 rounded-md bg-pink-600/90 px-2.5 py-1 text-xs">
-                  previewing “{previewId}”
+                  {t.graph.previewing(previewId)}
                   <button className="ml-2 cursor-pointer underline" onClick={() => setPreviewId(null)}>
-                    exit
+                    {t.graph.exit}
                   </button>
                 </div>
               )}
@@ -800,24 +837,28 @@ export function GraphEditor({
                     ...(single
                       ? ([
                           {
-                            label: "Set as output",
+                            label: t.graph.rename,
+                            onSelect: () => setRenamingId(nodeMenu.nodeId),
+                          },
+                          {
+                            label: t.graph.setAsOutput,
                             checked: isOutput,
                             disabled: isOutput || !hasOutput,
                             onSelect: () => setOutputNode(nodeMenu.nodeId),
                           },
                           {
-                            label: isPreview ? "Stop preview" : "Preview output",
+                            label: isPreview ? t.graph.stopPreview : t.graph.previewOutput,
                             disabled: !hasOutput,
                             onSelect: () => setPreviewId(isPreview ? null : nodeMenu.nodeId),
                           },
                           "separator",
                         ] as (MenuAction | "separator")[])
                       : []),
-                    { label: `Copy${plural}`, shortcut: "⌘C", onSelect: () => copyNodes(targets) },
-                    { label: `Duplicate${plural}`, shortcut: "⇧D", onSelect: () => duplicateNodes(targets) },
-                    { label: "Disconnect", onSelect: () => disconnectNodes(targets) },
+                    { label: `${t.graph.copy}${plural}`, shortcut: "⌘C", onSelect: () => copyNodes(targets) },
+                    { label: `${t.graph.duplicate}${plural}`, shortcut: "⇧D", onSelect: () => duplicateNodes(targets) },
+                    { label: t.graph.disconnect, onSelect: () => disconnectNodes(targets) },
                     "separator",
-                    { label: `Delete${plural}`, shortcut: "⌫", danger: true, onSelect: () => deleteNodes(targets) },
+                    { label: `${t.graph.deleteNode}${plural}`, shortcut: "⌫", danger: true, onSelect: () => deleteNodes(targets) },
                   ]
                   return (
                     <NodeContextMenu
@@ -835,7 +876,7 @@ export function GraphEditor({
                   y={edgeMenu.y}
                   actions={[
                     {
-                      label: "Delete link",
+                      label: t.graph.deleteLink,
                       shortcut: "⌫",
                       danger: true,
                       onSelect: () => setEdges((cur) => cur.filter((el) => el.id !== edgeMenu.edgeId)),

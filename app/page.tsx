@@ -32,6 +32,7 @@ import { FloatingPanel, type Rect } from "@/components/editor/floating-panel"
 import { NodeLibrary } from "@/components/editor/node-library"
 import { RenderPanel } from "@/components/editor/render-panel"
 import { useEngine } from "@/hooks/use-engine"
+import { useT } from "@/lib/i18n"
 import { MaterialSphereIcon } from "@/components/scene/slot-icons"
 import { SLOT_GRAPHS } from "@/lib/materials"
 import {
@@ -116,6 +117,7 @@ function defaultPanelRect(): Rect {
 }
 
 export default function Home() {
+  const t = useT()
   // Which style group the node-graph editor is bound to.
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null)
   // Node-graph library popup, opened for a specific material.
@@ -369,7 +371,7 @@ export default function Home() {
       setCameraName(name)
       setCameraSize(buffer.byteLength)
     } catch (e) {
-      setUpload({ kind: "notice", message: `Couldn't load that camera: ${e instanceof Error ? e.message : String(e)}` })
+      setUpload({ kind: "notice", message: t.upload.cantLoadCamera(e instanceof Error ? e.message : String(e)) })
     }
   }
   const onCameraPicked = async (file: File | undefined) => {
@@ -465,9 +467,9 @@ export default function Home() {
     const result = parsePmxFolderInput(fileList)
     if (result.status === "single") void loadCustom(result.files, result.pmxFile)
     else if (result.status === "multiple") setUpload({ kind: "pick", files: result.files, paths: result.pmxRelativePaths })
-    else if (result.status === "no_pmx") setUpload({ kind: "notice", message: "No .pmx file found in that folder." })
+    else if (result.status === "no_pmx") setUpload({ kind: "notice", message: t.upload.noPmx })
     else if (result.status === "not_directory")
-      setUpload({ kind: "notice", message: "Please pick the model's folder itself, textures included." })
+      setUpload({ kind: "notice", message: t.upload.notDirectory })
   }
 
   // ── Scene settings → engine ──
@@ -503,7 +505,7 @@ export default function Home() {
   const leftTabs: DockTab[] = [
     {
       id: "materials",
-      label: "Materials",
+      label: t.tabs.materials,
       icon: MaterialSphereIcon,
       content: (
         <MaterialsPanel
@@ -522,13 +524,13 @@ export default function Home() {
         />
       ),
     },
-    { id: "scene", label: "Scene", icon: Sun, content: <ScenePanel settings={sceneSettings} onChange={setSceneSettings} /> },
+    { id: "scene", label: t.tabs.scene, icon: Sun, content: <ScenePanel settings={sceneSettings} onChange={setSceneSettings} /> },
   ]
 
   const rightTabs: DockTab[] = [
     {
       id: "assets",
-      label: "Assets",
+      label: t.tabs.assets,
       icon: Package,
       content: (
         <AssetsPanel
@@ -536,10 +538,10 @@ export default function Home() {
           animName={animName}
           cameraName={cameraName}
           audioName={audioName}
-          modelMeta={`${modelStats.vertices.toLocaleString("en-US")} vertices · ${modelStats.bones} bones · ${modelStats.materials} materials${modelSize ? ` · ${fmtSize(modelSize)}` : ""}`}
+          modelMeta={`${t.assets.metaModel(modelStats.vertices.toLocaleString("en-US"), modelStats.bones, modelStats.materials)}${modelSize ? ` · ${fmtSize(modelSize)}` : ""}`}
           animMeta={
             animName
-              ? [fmtDur(animDuration), animKeyframes ? `${animKeyframes.toLocaleString("en-US")} keyframes` : "", animSize ? fmtSize(animSize) : ""]
+              ? [fmtDur(animDuration), animKeyframes ? t.assets.metaKeyframes(animKeyframes.toLocaleString("en-US")) : "", animSize ? fmtSize(animSize) : ""]
                   .filter(Boolean)
                   .join(" · ")
               : ""
@@ -558,7 +560,7 @@ export default function Home() {
         />
       ),
     },
-    { id: "render", label: "Render", icon: Clapperboard, content: <RenderPanel /> },
+    { id: "render", label: t.tabs.render, icon: Clapperboard, content: <RenderPanel /> },
   ]
 
   return (
@@ -573,14 +575,14 @@ export default function Home() {
         <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
           <div className="flex items-center gap-2.5 rounded-full border border-white/10 bg-zinc-950/90 px-4 py-2 text-xs text-muted-foreground backdrop-blur-xs">
             <span className="size-2 animate-pulse rounded-full bg-blue-400" />
-            loading model…
+            {t.editor.loadingModel}
           </div>
         </div>
       )}
       {error && (
         <div className="absolute inset-0 z-30 flex items-center justify-center p-6">
           <div className="max-w-md rounded-xl border border-red-400/20 bg-zinc-950/90 px-5 py-4 text-xs text-red-400 backdrop-blur-xs">
-            Engine: {error}
+            {t.editor.engineError(error)}
           </div>
         </div>
       )}
@@ -594,7 +596,7 @@ export default function Home() {
               railTop={<RailLogo />}
               header={
                 <BrandPill
-                  sceneName="Untitled scene"
+                  sceneName={t.brand.untitledScene}
                   docksOpen
                   onToggleDocks={() => {
                     setDocksOpen(false)
@@ -611,7 +613,7 @@ export default function Home() {
           </div>
         ) : (
           <div className="fixed top-3 left-3 z-20">
-            <BrandPill sceneName="Untitled scene" docksOpen={false} onToggleDocks={() => setDocksOpen(true)} />
+            <BrandPill sceneName={t.brand.untitledScene} docksOpen={false} onToggleDocks={() => setDocksOpen(true)} />
           </div>
         ))}
 
@@ -670,7 +672,7 @@ export default function Home() {
             />
           ) : (
             <div className="relative flex h-full items-center justify-center text-xs text-muted-foreground">
-              Select a material to edit its look
+              {t.editor.selectMaterial}
               <Button
                 variant="ghost"
                 size="icon"
@@ -768,7 +770,7 @@ export default function Home() {
         <DialogContent className="max-w-sm rounded-xl border-white/10 bg-zinc-950/95 backdrop-blur-xs">
           <DialogHeader>
             <DialogTitle className="text-sm">
-              {upload?.kind === "pick" ? "Multiple models found — pick one" : "Can't load that folder"}
+              {upload?.kind === "pick" ? t.upload.pickModel : t.upload.cantLoad}
             </DialogTitle>
           </DialogHeader>
           {upload?.kind === "pick" ? (

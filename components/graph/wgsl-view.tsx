@@ -4,10 +4,14 @@
 // (prismjs ≥1.27), so no rust-approximation needed. The outer container in the
 // page owns scrolling; the highlighter's <pre> stays overflow-visible.
 
+import { memo } from "react"
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism"
 
-export function WgslView({ code }: { code: string }) {
+// Memoized: Prism highlighting is expensive, and the editor re-renders on every
+// drag frame. Without memo the whole shader re-highlights each frame while the
+// pane is open, even though `code` only changes on (debounced) recompile.
+export const WgslView = memo(function WgslView({ code }: { code: string }) {
   return (
     <SyntaxHighlighter
       language="wgsl"
@@ -32,4 +36,4 @@ export function WgslView({ code }: { code: string }) {
       {code}
     </SyntaxHighlighter>
   )
-}
+})

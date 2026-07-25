@@ -1,0 +1,864 @@
+"use client"
+
+// The whole i18n layer in one file: the string dictionaries + a tiny context that
+// holds the current locale (so switching re-renders) and persists the choice.
+// No URL routing — this is a client editor, the locale is just app state.
+//
+// English is the source of truth: its shape defines `Dictionary`, so `zh`/`ja` are
+// compile-time-checked to have every key. Values are strings, or a function when a
+// string interpolates a runtime value (keeps interpolation typed, no ICU library).
+// To add a language: add it to LOCALES + LOCALE_LABELS and a dict typed `: Dictionary`.
+//
+// NODE VOCABULARY: node names (`nodeLabel`) and categories (`nodeCategory`) are
+// translated to match Blender's Interface translation. They're keyed by the stable
+// node `type` / English category — display only, so the graph data, the compiler, and
+// the category colors (keyed by English) are untouched. Socket names stay English:
+// they're the engine's handle ids (see lib/graph-flow.ts), not display strings.
+
+import { createContext, useCallback, useContext, useEffect, useState } from "react"
+
+export const LOCALES = ["en", "zh", "ja"] as const
+export type Locale = (typeof LOCALES)[number]
+
+/** Native names for the switcher (each shown in its own script). */
+export const LOCALE_LABELS: Record<Locale, string> = {
+  en: "English",
+  zh: "中文",
+  ja: "日本語",
+}
+
+// No `as const`: leaves infer as `string`, so `Dictionary` = this shape with
+// translatable values. Missing/misspelled keys in another locale are build errors.
+const en = {
+  brand: {
+    // Product name is intentionally NOT translated (kept as a wordmark).
+    preRelease: "Pre-release",
+    hidePanels: "Hide panels",
+    showPanels: "Show panels",
+    untitledScene: "Untitled scene",
+    menu: "Menu",
+    language: "Language",
+  },
+  account: {
+    label: "Account",
+    comingSoon: "Accounts are coming soon.",
+    savePrompt: "Save scenes and get a permanent URL.",
+    signIn: "Sign in",
+  },
+  share: {
+    label: "Share",
+    permanentLink: "Permanent link",
+    publishPrompt: "Sign in to publish a live, always-on 3D scene at your own URL — coming soon.",
+  },
+  editor: {
+    loadingModel: "loading model…",
+    selectMaterial: "Select a material to edit its look",
+    engineError: (message: string) => `Engine: ${message}`,
+  },
+  // Dock tab labels (ids stay fixed; only the display text is translated).
+  tabs: {
+    materials: "Materials",
+    scene: "Scene",
+    assets: "Assets",
+    render: "Render",
+  },
+  // Shared column / metadata field labels (materials inspector + library table).
+  field: {
+    name: "Name",
+    pack: "Pack",
+    author: "Author",
+    date: "Date",
+  },
+  materials: {
+    styleGroups: "Style groups",
+    newGroup: "New group",
+    collapseAll: "Collapse all",
+    moveTo: "Move to",
+    ungrouped: "Ungrouped",
+    hide: "Hide",
+    show: "Show",
+    rename: "Rename",
+    delete: "Delete",
+    dragHere: "Drag materials here",
+    empty: "No materials — load a model.",
+    shaderGraph: "Shader graph",
+    library: "Library",
+    editGraph: "Edit graph",
+    editShaderGraph: "Edit shader graph",
+    nodesLinks: (nodes: number, links: number) => `${nodes} nodes · ${links} links`,
+  },
+  scene: {
+    // Display name is the full "World light"; the engine key stays abbreviated `world`.
+    world: "World light",
+    sun: "Sun",
+    bloom: "Bloom",
+    colors: "Colors",
+    strength: "Strength",
+    azimuth: "Azimuth",
+    elevation: "Elevation",
+    enabled: "Enabled",
+    threshold: "Threshold",
+    knee: "Knee",
+    radius: "Radius",
+    intensity: "Intensity",
+    background: "Background",
+    ground: "Ground",
+    gridLines: "Grid lines",
+    resetDefaults: "Reset to defaults",
+  },
+  assets: {
+    model: "Model",
+    animation: "Animation",
+    camera: "Camera",
+    music: "Music",
+    uploadModel: "Upload PMX model",
+    uploadAnimation: "Upload VMD animation",
+    uploadCamera: "Upload camera motion",
+    uploadMusic: "Upload audio track",
+    noModel: "No model",
+    noMotion: "No motion",
+    noCamera: "No camera motion",
+    noAudio: "No audio",
+    metaModel: (vertices: string, bones: number, materials: number) =>
+      `${vertices} vertices · ${bones} bones · ${materials} materials`,
+    metaKeyframes: (count: string) => `${count} keyframes`,
+  },
+  render: {
+    output: "Output",
+    export: "Export",
+    resolution: "Resolution",
+    frameRate: "Frame rate",
+    format: "Format",
+    fps: (n: string) => `${n} fps`,
+    renderVideo: "Render video",
+    comingSoon: "Frame-accurate capture + encode — coming soon.",
+  },
+  library: {
+    title: "Shader graph library",
+    searchPlaceholder: "Search graphs, packs, authors…",
+    close: "Close",
+    current: "current",
+    noMatch: (query: string) => `No shader graphs match “${query}”.`,
+    newGraph: "New graph",
+    untitledShader: "Untitled shader",
+    selectGraph: "Select a shader graph",
+    editGraph: "Edit graph",
+    applyTo: (target: string) => `Apply to ${target}`,
+    selectFirst: "Select a material first",
+    materialCount: (n: number) => `${n} material${n === 1 ? "" : "s"}`,
+  },
+  transport: {
+    followCamera: "Following camera — click to free-orbit",
+    freeOrbit: "Free orbit — click to follow camera",
+    loopOn: "Loop on",
+    loopOff: "Loop off",
+  },
+  graph: {
+    generatedWgsl: "Generated WGSL",
+    resetToPreset: "Reset to preset",
+    importGraph: "Import graph (.json)",
+    exportGraph: "Export graph (.json)",
+    fullScreen: "Full screen",
+    exitFullScreen: "Exit full screen",
+    discardClose: "Discard changes & close",
+    save: "Save",
+    rename: "Rename",
+    setAsOutput: "Set as output",
+    previewOutput: "Preview output",
+    stopPreview: "Stop preview",
+    copy: "Copy",
+    duplicate: "Duplicate",
+    deleteNode: "Delete",
+    disconnect: "Disconnect",
+    deleteLink: "Delete link",
+    addNode: "Add node…",
+    connectTo: "Connect to…",
+    noMatchingNodes: "No matching nodes",
+    pickColor: "Pick color",
+    previewing: (id: string) => `previewing “${id}”`,
+    exit: "exit",
+  },
+  upload: {
+    pickModel: "Multiple models found — pick one",
+    cantLoad: "Can't load that folder",
+    noPmx: "No .pmx file found in that folder.",
+    notDirectory: "Please pick the model's folder itself, textures included.",
+    cantLoadCamera: (message: string) => `Couldn't load that camera: ${message}`,
+  },
+  // Add-node menu category headers — keyed by the English category (also the color key).
+  nodeCategory: {
+    Input: "Input",
+    Color: "Color",
+    Texture: "Texture",
+    Vector: "Vector",
+    Math: "Math",
+    Mix: "Mix",
+    Shader: "Shader",
+  } as Record<string, string>,
+  // Node display names — keyed by the stable node `type`. Falls back to the catalog's
+  // English label for any type not listed here (see nodeLabel() usage).
+  nodeLabel: {
+    texture: "Image Texture",
+    geometry: "Geometry",
+    material_diffuse: "Material Diffuse",
+    value: "Value",
+    rgb: "RGB",
+    hue_sat: "Hue / Saturation",
+    bright_contrast: "Bright / Contrast",
+    invert: "Invert",
+    ramp_linear: "Color Ramp · Linear",
+    ramp_constant: "Color Ramp · Constant",
+    ramp_cardinal: "Color Ramp · Cardinal",
+    ramp_constant_aa: "Color Ramp · Constant AA",
+    ramp_tri: "Color Ramp · Triangle",
+    tex_noise: "Noise Texture",
+    tex_gradient: "Gradient Texture",
+    "tex_voronoi/f1": "Voronoi · F1",
+    "tex_voronoi/color": "Voronoi · Color",
+    mapping: "Mapping",
+    bump: "Bump",
+    separate_xyz: "Separate XYZ",
+    vect_cross: "Vector Cross",
+    "math/add": "Add",
+    "math/multiply": "Multiply",
+    "math/power": "Power",
+    "math/greater_than": "Greater Than",
+    "math/clamp01": "Clamp 0–1",
+    "mix/blend": "Mix Color",
+    "mix/multiply": "Multiply",
+    "mix/overlay": "Overlay",
+    "mix/lighten": "Lighten",
+    "mix/linear_light": "Linear Light",
+    "mix/add_emit": "Add Emission",
+    principled: "Principled BSDF",
+    emission: "Emission",
+    add_shader: "Add Shader",
+    mix_shader: "Mix Shader",
+    shader_to_rgb_diffuse: "Shader to RGB · Diffuse",
+    fresnel: "Fresnel",
+    "layer_weight/fresnel": "Layer Weight · Fresnel",
+    "layer_weight/facing": "Layer Weight · Facing",
+  } as Record<string, string>,
+  // Socket (port) display names — keyed by the engine's socket id (which stays the
+  // React Flow handle id; only the visible label is translated). Also gives the
+  // terse engine ids friendlier English names (loc → Location). Falls back to the id.
+  socket: {
+    color: "Color",
+    alpha: "Alpha",
+    normal: "Normal",
+    view: "View",
+    world_pos: "Position",
+    rest_pos: "Rest Position",
+    uv: "UV",
+    reflection: "Reflection",
+    value: "Value",
+    hue: "Hue",
+    saturation: "Saturation",
+    fac: "Factor",
+    fac_out: "Fac",
+    bright: "Bright",
+    contrast: "Contrast",
+    pos0: "Pos 0",
+    color0: "Color 0",
+    pos1: "Pos 1",
+    color1: "Color 1",
+    edge: "Edge",
+    a: "A",
+    b: "B",
+    strength: "Strength",
+    ior: "IOR",
+    blend: "Blend",
+    vector: "Vector",
+    loc: "Location",
+    rot: "Rotation",
+    scl: "Scale",
+    x: "X",
+    y: "Y",
+    z: "Z",
+    scale: "Scale",
+    detail: "Detail",
+    roughness: "Roughness",
+    distortion: "Distortion",
+    height: "Height",
+    base: "Base Color",
+    metallic: "Metallic",
+    specular: "Specular",
+    spec_clamp: "Spec Clamp",
+    sheen: "Sheen",
+    sheen_tint: "Sheen Tint",
+  } as Record<string, string>,
+}
+
+export type Dictionary = typeof en
+
+const zh: Dictionary = {
+  brand: {
+    preRelease: "预发布",
+    hidePanels: "隐藏面板",
+    showPanels: "显示面板",
+    untitledScene: "未命名场景",
+    menu: "菜单",
+    language: "语言",
+  },
+  account: {
+    label: "账户",
+    comingSoon: "账户功能即将推出。",
+    savePrompt: "保存场景并获得永久链接。",
+    signIn: "登录",
+  },
+  share: {
+    label: "分享",
+    permanentLink: "永久链接",
+    publishPrompt: "登录即可在你的专属链接上发布始终在线的实时 3D 场景 —— 即将推出。",
+  },
+  editor: {
+    loadingModel: "正在加载模型…",
+    selectMaterial: "选择一个材质以编辑其外观",
+    engineError: (message: string) => `引擎：${message}`,
+  },
+  tabs: {
+    materials: "材质",
+    scene: "场景",
+    assets: "资源",
+    render: "渲染",
+  },
+  field: {
+    name: "名称",
+    pack: "包",
+    author: "作者",
+    date: "日期",
+  },
+  materials: {
+    styleGroups: "样式组",
+    newGroup: "新建组",
+    collapseAll: "全部折叠",
+    moveTo: "移动到",
+    ungrouped: "未分组",
+    hide: "隐藏",
+    show: "显示",
+    rename: "重命名",
+    delete: "删除",
+    dragHere: "将材质拖到此处",
+    empty: "暂无材质 —— 请加载模型。",
+    shaderGraph: "着色器图",
+    library: "素材库",
+    editGraph: "编辑图",
+    editShaderGraph: "编辑着色器图",
+    nodesLinks: (nodes: number, links: number) => `${nodes} 个节点 · ${links} 条连接`,
+  },
+  scene: {
+    world: "世界光",
+    sun: "太阳",
+    bloom: "泛光",
+    colors: "颜色",
+    strength: "强度",
+    azimuth: "方位角",
+    elevation: "仰角",
+    enabled: "启用",
+    threshold: "阈值",
+    knee: "拐点",
+    radius: "半径",
+    intensity: "强度",
+    background: "背景",
+    ground: "地面",
+    gridLines: "网格线",
+    resetDefaults: "恢复默认",
+  },
+  assets: {
+    model: "模型",
+    animation: "动作",
+    camera: "相机",
+    music: "音乐",
+    uploadModel: "上传 PMX 模型",
+    uploadAnimation: "上传 VMD 动作",
+    uploadCamera: "上传相机动作",
+    uploadMusic: "上传音频",
+    noModel: "无模型",
+    noMotion: "无动作",
+    noCamera: "无相机动作",
+    noAudio: "无音频",
+    metaModel: (vertices: string, bones: number, materials: number) =>
+      `${vertices} 顶点 · ${bones} 骨骼 · ${materials} 材质`,
+    metaKeyframes: (count: string) => `${count} 关键帧`,
+  },
+  render: {
+    output: "输出",
+    export: "导出",
+    resolution: "分辨率",
+    frameRate: "帧率",
+    format: "格式",
+    fps: (n: string) => `${n} fps`,
+    renderVideo: "渲染视频",
+    comingSoon: "逐帧捕获 + 编码 —— 即将推出。",
+  },
+  library: {
+    title: "着色器图库",
+    searchPlaceholder: "搜索图、包、作者…",
+    close: "关闭",
+    current: "当前",
+    noMatch: (query: string) => `没有匹配 “${query}” 的着色器图。`,
+    newGraph: "新建图",
+    untitledShader: "未命名着色器",
+    selectGraph: "选择一个着色器图",
+    editGraph: "编辑图",
+    applyTo: (target: string) => `应用到 ${target}`,
+    selectFirst: "请先选择材质",
+    materialCount: (n: number) => `${n} 个材质`,
+  },
+  transport: {
+    followCamera: "跟随相机 —— 点击自由环绕",
+    freeOrbit: "自由环绕 —— 点击跟随相机",
+    loopOn: "循环开",
+    loopOff: "循环关",
+  },
+  graph: {
+    generatedWgsl: "生成的 WGSL",
+    resetToPreset: "重置为预设",
+    importGraph: "导入图 (.json)",
+    exportGraph: "导出图 (.json)",
+    fullScreen: "全屏",
+    exitFullScreen: "退出全屏",
+    discardClose: "放弃更改并关闭",
+    save: "保存",
+    rename: "重命名",
+    setAsOutput: "设为输出",
+    previewOutput: "预览输出",
+    stopPreview: "停止预览",
+    copy: "拷贝",
+    duplicate: "复制",
+    deleteNode: "删除",
+    disconnect: "断开连接",
+    deleteLink: "删除连接",
+    addNode: "添加节点…",
+    connectTo: "连接到…",
+    noMatchingNodes: "无匹配节点",
+    pickColor: "选择颜色",
+    previewing: (id: string) => `正在预览 “${id}”`,
+    exit: "退出",
+  },
+  upload: {
+    pickModel: "找到多个模型 —— 请选择一个",
+    cantLoad: "无法加载该文件夹",
+    noPmx: "该文件夹中未找到 .pmx 文件。",
+    notDirectory: "请选择模型所在的文件夹（包含贴图）。",
+    cantLoadCamera: (message: string) => `无法加载该相机：${message}`,
+  },
+  nodeCategory: {
+    Input: "输入",
+    Color: "颜色",
+    Texture: "纹理",
+    Vector: "矢量",
+    Math: "数学",
+    Mix: "混合",
+    Shader: "着色器",
+  },
+  nodeLabel: {
+    texture: "图像纹理",
+    geometry: "几何",
+    material_diffuse: "材质漫射",
+    value: "值",
+    rgb: "RGB",
+    hue_sat: "色相/饱和度",
+    bright_contrast: "明度/对比度",
+    invert: "反转",
+    ramp_linear: "颜色渐变 · 线性",
+    ramp_constant: "颜色渐变 · 恒定",
+    ramp_cardinal: "颜色渐变 · 基数",
+    ramp_constant_aa: "颜色渐变 · 恒定 AA",
+    ramp_tri: "颜色渐变 · 三角",
+    tex_noise: "噪波纹理",
+    tex_gradient: "渐变纹理",
+    "tex_voronoi/f1": "沃罗诺伊 · F1",
+    "tex_voronoi/color": "沃罗诺伊 · 颜色",
+    mapping: "映射",
+    bump: "凹凸",
+    separate_xyz: "分离 XYZ",
+    vect_cross: "矢量叉积",
+    "math/add": "相加",
+    "math/multiply": "相乘",
+    "math/power": "乘方",
+    "math/greater_than": "大于",
+    "math/clamp01": "钳制 0–1",
+    "mix/blend": "混合颜色",
+    "mix/multiply": "正片叠底",
+    "mix/overlay": "叠加",
+    "mix/lighten": "变亮",
+    "mix/linear_light": "线性光",
+    "mix/add_emit": "增加自发光",
+    principled: "原理化 BSDF",
+    emission: "自发光",
+    add_shader: "相加着色器",
+    mix_shader: "混合着色器",
+    shader_to_rgb_diffuse: "着色器转 RGB · 漫射",
+    fresnel: "菲涅尔",
+    "layer_weight/fresnel": "层权重 · 菲涅尔",
+    "layer_weight/facing": "层权重 · 朝向",
+  },
+  socket: {
+    color: "颜色",
+    alpha: "透明度",
+    normal: "法向",
+    view: "视线",
+    world_pos: "位置",
+    rest_pos: "静止位置",
+    uv: "UV",
+    reflection: "反射",
+    value: "值",
+    hue: "色相",
+    saturation: "饱和度",
+    fac: "系数",
+    fac_out: "系数",
+    bright: "明度",
+    contrast: "对比度",
+    pos0: "位置 0",
+    color0: "颜色 0",
+    pos1: "位置 1",
+    color1: "颜色 1",
+    edge: "边缘",
+    a: "A",
+    b: "B",
+    strength: "强度",
+    ior: "IOR",
+    blend: "混合",
+    vector: "矢量",
+    loc: "位置",
+    rot: "旋转",
+    scl: "缩放",
+    x: "X",
+    y: "Y",
+    z: "Z",
+    scale: "缩放",
+    detail: "细节",
+    roughness: "粗糙度",
+    distortion: "扭曲",
+    height: "高度",
+    base: "基础色",
+    metallic: "金属度",
+    specular: "高光",
+    spec_clamp: "高光钳制",
+    sheen: "光泽",
+    sheen_tint: "光泽染色",
+  },
+}
+
+const ja: Dictionary = {
+  brand: {
+    preRelease: "プレリリース",
+    hidePanels: "パネルを隠す",
+    showPanels: "パネルを表示",
+    untitledScene: "無題のシーン",
+    menu: "メニュー",
+    language: "言語",
+  },
+  account: {
+    label: "アカウント",
+    comingSoon: "アカウント機能は近日公開予定です。",
+    savePrompt: "シーンを保存して固定URLを取得できます。",
+    signIn: "サインイン",
+  },
+  share: {
+    label: "共有",
+    permanentLink: "固定リンク",
+    publishPrompt: "サインインすると、専用URLで常時公開のライブ3Dシーンを公開できます（近日公開）。",
+  },
+  editor: {
+    loadingModel: "モデルを読み込み中…",
+    selectMaterial: "マテリアルを選択して見た目を編集",
+    engineError: (message: string) => `エンジン：${message}`,
+  },
+  tabs: {
+    materials: "マテリアル",
+    scene: "シーン",
+    assets: "アセット",
+    render: "レンダー",
+  },
+  field: {
+    name: "名前",
+    pack: "パック",
+    author: "作者",
+    date: "日付",
+  },
+  materials: {
+    styleGroups: "スタイルグループ",
+    newGroup: "新規グループ",
+    collapseAll: "すべて折りたたむ",
+    moveTo: "移動先",
+    ungrouped: "未グループ化",
+    hide: "非表示",
+    show: "表示",
+    rename: "名前を変更",
+    delete: "削除",
+    dragHere: "ここにマテリアルをドラッグ",
+    empty: "マテリアルがありません — モデルを読み込んでください。",
+    shaderGraph: "シェーダーグラフ",
+    library: "ライブラリ",
+    editGraph: "グラフを編集",
+    editShaderGraph: "シェーダーグラフを編集",
+    nodesLinks: (nodes: number, links: number) => `${nodes} ノード・${links} リンク`,
+  },
+  scene: {
+    world: "ワールドライト",
+    sun: "太陽",
+    bloom: "ブルーム",
+    colors: "カラー",
+    strength: "強さ",
+    azimuth: "方位角",
+    elevation: "仰角",
+    enabled: "有効",
+    threshold: "しきい値",
+    knee: "ニー",
+    radius: "半径",
+    intensity: "強度",
+    background: "背景",
+    ground: "地面",
+    gridLines: "グリッド線",
+    resetDefaults: "デフォルトに戻す",
+  },
+  assets: {
+    model: "モデル",
+    animation: "アニメーション",
+    camera: "カメラ",
+    music: "音楽",
+    uploadModel: "PMXモデルをアップロード",
+    uploadAnimation: "VMDアニメーションをアップロード",
+    uploadCamera: "カメラモーションをアップロード",
+    uploadMusic: "オーディオをアップロード",
+    noModel: "モデルなし",
+    noMotion: "モーションなし",
+    noCamera: "カメラモーションなし",
+    noAudio: "オーディオなし",
+    metaModel: (vertices: string, bones: number, materials: number) =>
+      `${vertices} 頂点・${bones} ボーン・${materials} マテリアル`,
+    metaKeyframes: (count: string) => `${count} キーフレーム`,
+  },
+  render: {
+    output: "出力",
+    export: "書き出し",
+    resolution: "解像度",
+    frameRate: "フレームレート",
+    format: "フォーマット",
+    fps: (n: string) => `${n} fps`,
+    renderVideo: "動画をレンダリング",
+    comingSoon: "フレーム単位のキャプチャ + エンコード — 近日公開。",
+  },
+  library: {
+    title: "シェーダーグラフライブラリ",
+    searchPlaceholder: "グラフ・パック・作者を検索…",
+    close: "閉じる",
+    current: "現在",
+    noMatch: (query: string) => `「${query}」に一致するシェーダーグラフはありません。`,
+    newGraph: "新規グラフ",
+    untitledShader: "無題のシェーダー",
+    selectGraph: "シェーダーグラフを選択",
+    editGraph: "グラフを編集",
+    applyTo: (target: string) => `${target} に適用`,
+    selectFirst: "先にマテリアルを選択",
+    materialCount: (n: number) => `${n} 個のマテリアル`,
+  },
+  transport: {
+    followCamera: "カメラに追従中 — クリックで自由回転",
+    freeOrbit: "自由回転 — クリックでカメラに追従",
+    loopOn: "ループ オン",
+    loopOff: "ループ オフ",
+  },
+  graph: {
+    generatedWgsl: "生成された WGSL",
+    resetToPreset: "プリセットに戻す",
+    importGraph: "グラフを読み込み (.json)",
+    exportGraph: "グラフを書き出し (.json)",
+    fullScreen: "全画面",
+    exitFullScreen: "全画面を終了",
+    discardClose: "変更を破棄して閉じる",
+    save: "保存",
+    rename: "名前を変更",
+    setAsOutput: "出力に設定",
+    previewOutput: "出力をプレビュー",
+    stopPreview: "プレビューを停止",
+    copy: "コピー",
+    duplicate: "複製",
+    deleteNode: "削除",
+    disconnect: "接続を解除",
+    deleteLink: "リンクを削除",
+    addNode: "ノードを追加…",
+    connectTo: "接続先…",
+    noMatchingNodes: "一致するノードなし",
+    pickColor: "色を選択",
+    previewing: (id: string) => `「${id}」をプレビュー中`,
+    exit: "終了",
+  },
+  upload: {
+    pickModel: "複数のモデルが見つかりました — 1つ選択してください",
+    cantLoad: "そのフォルダを読み込めません",
+    noPmx: "そのフォルダに .pmx ファイルが見つかりません。",
+    notDirectory: "テクスチャを含むモデルのフォルダ自体を選択してください。",
+    cantLoadCamera: (message: string) => `そのカメラを読み込めませんでした：${message}`,
+  },
+  nodeCategory: {
+    Input: "入力",
+    Color: "カラー",
+    Texture: "テクスチャ",
+    Vector: "ベクトル",
+    Math: "数学",
+    Mix: "ミックス",
+    Shader: "シェーダー",
+  },
+  nodeLabel: {
+    texture: "画像テクスチャ",
+    geometry: "ジオメトリ",
+    material_diffuse: "マテリアル拡散",
+    value: "値",
+    rgb: "RGB",
+    hue_sat: "色相/彩度",
+    bright_contrast: "明るさ/コントラスト",
+    invert: "反転",
+    ramp_linear: "カラーランプ · リニア",
+    ramp_constant: "カラーランプ · 一定",
+    ramp_cardinal: "カラーランプ · カーディナル",
+    ramp_constant_aa: "カラーランプ · 一定 AA",
+    ramp_tri: "カラーランプ · 三角",
+    tex_noise: "ノイズテクスチャ",
+    tex_gradient: "グラデーションテクスチャ",
+    "tex_voronoi/f1": "ボロノイ · F1",
+    "tex_voronoi/color": "ボロノイ · カラー",
+    mapping: "マッピング",
+    bump: "バンプ",
+    separate_xyz: "XYZ を分離",
+    vect_cross: "ベクトル外積",
+    "math/add": "加算",
+    "math/multiply": "乗算",
+    "math/power": "べき乗",
+    "math/greater_than": "より大きい",
+    "math/clamp01": "クランプ 0–1",
+    "mix/blend": "カラーミックス",
+    "mix/multiply": "乗算",
+    "mix/overlay": "オーバーレイ",
+    "mix/lighten": "比較(明)",
+    "mix/linear_light": "リニアライト",
+    "mix/add_emit": "エミッションを追加",
+    principled: "プリンシプル BSDF",
+    emission: "放射",
+    add_shader: "シェーダー加算",
+    mix_shader: "シェーダーミックス",
+    shader_to_rgb_diffuse: "シェーダー → RGB · 拡散",
+    fresnel: "フレネル",
+    "layer_weight/fresnel": "レイヤーウェイト · フレネル",
+    "layer_weight/facing": "レイヤーウェイト · 面向き",
+  },
+  socket: {
+    color: "カラー",
+    alpha: "アルファ",
+    normal: "法線",
+    view: "視線",
+    world_pos: "位置",
+    rest_pos: "静止位置",
+    uv: "UV",
+    reflection: "反射",
+    value: "値",
+    hue: "色相",
+    saturation: "彩度",
+    fac: "係数",
+    fac_out: "係数",
+    bright: "明るさ",
+    contrast: "コントラスト",
+    pos0: "位置 0",
+    color0: "カラー 0",
+    pos1: "位置 1",
+    color1: "カラー 1",
+    edge: "エッジ",
+    a: "A",
+    b: "B",
+    strength: "強さ",
+    ior: "IOR",
+    blend: "ブレンド",
+    vector: "ベクトル",
+    loc: "位置",
+    rot: "回転",
+    scl: "スケール",
+    x: "X",
+    y: "Y",
+    z: "Z",
+    scale: "スケール",
+    detail: "ディテール",
+    roughness: "粗さ",
+    distortion: "歪み",
+    height: "高さ",
+    base: "ベースカラー",
+    metallic: "メタリック",
+    specular: "スペキュラー",
+    spec_clamp: "スペキュラークランプ",
+    sheen: "光沢",
+    sheen_tint: "光沢の色合い",
+  },
+}
+
+const dictionaries: Record<Locale, Dictionary> = { en, zh, ja }
+
+// ── The tiny reactive layer ──────────────────────────────────────────────────
+
+const STORAGE_KEY = "reze-design.locale"
+const isLocale = (v: string): v is Locale => (LOCALES as readonly string[]).includes(v)
+
+/** Saved choice wins; otherwise map the browser language onto a supported locale. */
+function detectLocale(): Locale {
+  if (typeof window === "undefined") return "en"
+  try {
+    const saved = window.localStorage.getItem(STORAGE_KEY)
+    if (saved && isLocale(saved)) return saved
+  } catch {
+    // localStorage can throw in private mode — fall through to language detection.
+  }
+  const nav = navigator.language.toLowerCase()
+  if (nav.startsWith("zh")) return "zh"
+  if (nav.startsWith("ja")) return "ja"
+  return "en"
+}
+
+type I18nContextValue = {
+  locale: Locale
+  setLocale: (locale: Locale) => void
+  /** The active dictionary — access keys directly, e.g. `t.share.label`. */
+  t: Dictionary
+}
+
+const I18nContext = createContext<I18nContextValue | null>(null)
+
+export function I18nProvider({ children }: { children: React.ReactNode }) {
+  // SSR/first render is "en" to match `<html lang="en">` (no hydration flash);
+  // a post-mount effect corrects to the saved/browser locale.
+  const [locale, setLocaleState] = useState<Locale>("en")
+
+  useEffect(() => {
+    setLocaleState(detectLocale())
+  }, [])
+
+  // Deliberately NOT syncing `document.documentElement.lang` to the UI locale:
+  // it drives CJK glyph selection (Han unification), so switching the UI language
+  // would silently reshape user data like CJK model names. Keeping <html lang="en">
+  // fixed keeps that content rendering consistently regardless of UI language.
+
+  const setLocale = useCallback((next: Locale) => {
+    setLocaleState(next)
+    try {
+      window.localStorage.setItem(STORAGE_KEY, next)
+    } catch {
+      // Non-fatal: the in-memory choice still applies for this session.
+    }
+  }, [])
+
+  return (
+    <I18nContext.Provider value={{ locale, setLocale, t: dictionaries[locale] }}>
+      {children}
+    </I18nContext.Provider>
+  )
+}
+
+export function useI18n(): I18nContextValue {
+  const ctx = useContext(I18nContext)
+  if (!ctx) throw new Error("useI18n must be used within <I18nProvider>")
+  return ctx
+}
+
+/** Shorthand for components that only read strings: `const t = useT()`. */
+export function useT(): Dictionary {
+  return useI18n().t
+}

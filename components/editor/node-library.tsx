@@ -19,6 +19,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { GraphMinimap } from "@/components/editor/graph-minimap"
 import { LIBRARY_PACKS } from "@/lib/node-library"
 import { SLOT_LABELS } from "@/lib/materials"
+import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 type Row = { id: string; name: string; description: string; category: string; pack: string; author: string; created: string; tags: string[]; graph: ShaderGraph }
@@ -70,6 +71,13 @@ export function NodeLibrary({
   /** `edit` pops the shader-graph editor on the fork so the user can customize it. */
   onApply: (graph: ShaderGraph, name: string, edit: boolean) => void
 }) {
+  const t = useT()
+  const colLabel: Record<SortKey, string> = {
+    name: t.field.name,
+    pack: t.field.pack,
+    author: t.field.author,
+    created: t.field.date,
+  }
   const [query, setQuery] = useState("")
   const [sortKey, setSortKey] = useState<SortKey>("name")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
@@ -119,19 +127,19 @@ export function NodeLibrary({
       >
         {/* Title · search · close, all vertically centered in one bar. */}
         <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-white/10 px-4 py-2 text-left">
-          <DialogTitle className="shrink-0 text-sm font-medium">Shader graph library</DialogTitle>
+          <DialogTitle className="shrink-0 text-sm font-medium">{t.library.title}</DialogTitle>
           <div className="relative ml-auto w-64 max-w-[45%]">
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search graphs, packs, authors…"
+              placeholder={t.library.searchPlaceholder}
               className="h-7 border-white/10 bg-white/5 pl-8 text-xs"
             />
           </div>
           <DialogClose className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
             <X className="size-4" />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">{t.library.close}</span>
           </DialogClose>
         </DialogHeader>
 
@@ -150,7 +158,7 @@ export function NodeLibrary({
                     c.end && "justify-end",
                   )}
                 >
-                  <span className="truncate">{c.label}</span>
+                  <span className="truncate">{colLabel[c.key]}</span>
                   {sortKey === c.key &&
                     (sortDir === "asc" ? <ChevronUp className="size-3 shrink-0" /> : <ChevronDown className="size-3 shrink-0" />)}
                 </button>
@@ -175,7 +183,7 @@ export function NodeLibrary({
                     <span className="flex min-w-0 items-center gap-1.5">
                       <span className="truncate font-medium">{r.name}</span>
                       {(r.name === currentGraphName || r.graph.name === currentGraphName) && (
-                        <span className="shrink-0 rounded-full bg-blue-400/15 px-2 py-0.5 text-[11px] font-medium text-blue-400">current</span>
+                        <span className="shrink-0 rounded-full bg-blue-400/15 px-2 py-0.5 text-[11px] font-medium text-blue-400">{t.library.current}</span>
                       )}
                     </span>
                     <span className="truncate text-muted-foreground">{r.pack}</span>
@@ -183,18 +191,18 @@ export function NodeLibrary({
                     <span className="text-right text-muted-foreground tabular-nums">{r.created.slice(0, 7)}</span>
                   </button>
                 ))}
-                {rows.length === 0 && <div className="py-16 text-center text-xs text-muted-foreground">No shader graphs match “{query}”.</div>}
+                {rows.length === 0 && <div className="py-16 text-center text-xs text-muted-foreground">{t.library.noMatch(query)}</div>}
               </div>
             </ScrollArea>
 
             {/* Start a blank graph — pinned to the bottom of the list. */}
             <button
               disabled={!canApply}
-              onClick={() => onApply(structuredClone(DEFAULT_GRAPH), "Untitled shader", true)}
+              onClick={() => onApply(structuredClone(DEFAULT_GRAPH), t.library.untitledShader, true)}
               className="flex shrink-0 items-center justify-center gap-1.5 border-t border-white/10 px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
             >
               <Plus className="size-3.5" />
-              New graph
+              {t.library.newGraph}
             </button>
           </div>
 
@@ -214,13 +222,13 @@ export function NodeLibrary({
                   {canApply && (
                     <div className="absolute inset-0 flex items-center justify-center gap-1.5 bg-zinc-950/70 text-xs font-medium text-foreground opacity-0 transition-opacity group-hover/prev:opacity-100">
                       <SquarePen className="size-4" />
-                      Edit graph
+                      {t.library.editGraph}
                     </div>
                   )}
                 </button>
               ) : (
                 <div className="flex h-full w-full items-center justify-center rounded-lg border border-white/10 bg-zinc-900/60 text-xs text-muted-foreground">
-                  Select a shader graph
+                  {t.library.selectGraph}
                 </div>
               )}
             </div>
@@ -249,11 +257,11 @@ export function NodeLibrary({
                     onClick={() => onApply(selected.graph, selected.name, false)}
                     className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-40"
                   >
-                    <span className="truncate">{canApply ? `Apply to ${targetLabel}` : "Select a material first"}</span>
+                    <span className="truncate">{canApply ? t.library.applyTo(targetLabel ?? "") : t.library.selectFirst}</span>
                   </Button>
                   {canApply && (
                     <div className="text-center text-[11px] text-muted-foreground">
-                      {affects} material{affects === 1 ? "" : "s"}
+                      {t.library.materialCount(affects)}
                     </div>
                   )}
                 </div>

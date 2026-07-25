@@ -6,12 +6,13 @@
 // with a change check, so it's idle while paused. Space toggles play/pause
 // (reze-engine-web parity). Removing the clip lives in the Assets tab, not here.
 
-import { useEffect, useRef, useState, type RefObject } from "react"
+import { memo, useEffect, useRef, useState, type RefObject } from "react"
 import type { Engine } from "reze-engine"
 import { Orbit, Pause, Play, Repeat, RepeatOff, Video } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { useT } from "@/lib/i18n"
 
 const fmt = (s: number) => {
   const m = Math.floor(s / 60)
@@ -23,7 +24,10 @@ const AT_END_EPS = 0.02
 
 type Progress = { current: number; duration: number; playing: boolean; paused: boolean }
 
-export function AnimPlayer({
+// Memoized: props are stable across unrelated Home re-renders (e.g. scene-slider
+// drags), so this avoids re-rendering the transport 60×/s for no reason. Its own
+// per-frame progress state still updates it during playback (memo doesn't block that).
+export const AnimPlayer = memo(function AnimPlayer({
   engineRef,
   modelName,
   clipName,
@@ -35,6 +39,7 @@ export function AnimPlayer({
   /** A camera VMD is loaded — show the Follow/Free toggle. */
   hasCamera: boolean
 }) {
+  const t = useT()
   const [progress, setProgress] = useState<Progress>({ current: 0, duration: 0, playing: false, paused: false })
   const [loop, setLoop] = useState(true)
   const loopRef = useRef(loop)
@@ -152,7 +157,7 @@ export function AnimPlayer({
               {following ? <Video className="size-4" /> : <Orbit className="size-4" />}
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="top">{following ? "Following camera — click to free-orbit" : "Free orbit — click to follow camera"}</TooltipContent>
+          <TooltipContent side="top">{following ? t.transport.followCamera : t.transport.freeOrbit}</TooltipContent>
         </Tooltip>
       )}
       <Tooltip>
@@ -166,8 +171,8 @@ export function AnimPlayer({
             {loop ? <Repeat className="size-4" strokeWidth={2.4} /> : <RepeatOff className="size-4" />}
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="top">Loop {loop ? "on" : "off"}</TooltipContent>
+        <TooltipContent side="top">{loop ? t.transport.loopOn : t.transport.loopOff}</TooltipContent>
       </Tooltip>
     </div>
   )
-}
+})

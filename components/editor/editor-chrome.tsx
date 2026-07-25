@@ -15,6 +15,7 @@ import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { GithubMark } from "@/components/icons"
 import { NAV_LINKS } from "@/components/site-nav"
+import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 const floating = "rounded-lg border border-white/10 bg-zinc-950/70 shadow-float backdrop-blur-xs"
@@ -56,9 +57,10 @@ function AppMenu({ children }: { children: React.ReactNode }) {
 
 /** Top of the left rail — the logo/home button for app-level operations. */
 export function RailLogo() {
+  const t = useT()
   return (
     <AppMenu>
-      <Button variant="ghost" size="icon" className="mt-1.5 rounded-lg text-pink-400 hover:bg-white/5" aria-label="Menu">
+      <Button variant="ghost" size="icon" className="mt-1.5 rounded-lg text-pink-400 hover:bg-white/5" aria-label={t.brand.menu}>
         <WandSparkles className="size-4.5" />
       </Button>
     </AppMenu>
@@ -78,6 +80,7 @@ export function BrandPill({
    *  vs a floating pill with its own logo menu (collapsed). */
   asHeader?: boolean
 }) {
+  const t = useT()
   const toggle = (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -90,14 +93,14 @@ export function BrandPill({
           {docksOpen ? <PanelLeftClose className="size-4" /> : <PanelLeft className="size-4" />}
         </Button>
       </TooltipTrigger>
-      <TooltipContent side="bottom">{docksOpen ? "Hide panels" : "Show panels"}</TooltipContent>
+      <TooltipContent side="bottom">{docksOpen ? t.brand.hidePanels : t.brand.showPanels}</TooltipContent>
     </Tooltip>
   )
 
   // A small tag by the title so visitors know it's a live work-in-progress.
   const tag = (
     <span className="shrink-0 rounded-full bg-blue-400/15 px-1.5 py-px text-[10px] leading-none font-medium tracking-wide text-blue-400">
-      Pre-release
+      {t.brand.preRelease}
     </span>
   )
 
@@ -119,7 +122,7 @@ export function BrandPill({
   return (
     <div className={cn("flex items-center gap-1.5", floating, "py-1.5 pr-1.5 pl-2")}>
       <AppMenu>
-        <Button variant="ghost" size="icon" className="size-7 rounded-lg text-pink-400 hover:bg-white/5" aria-label="Menu">
+        <Button variant="ghost" size="icon" className="size-7 rounded-lg text-pink-400 hover:bg-white/5" aria-label={t.brand.menu}>
           <WandSparkles className="size-4.5" />
         </Button>
       </AppMenu>
@@ -139,6 +142,7 @@ export function TopRightCluster({
   shareName: string
   asHeader?: boolean
 }) {
+  const t = useT()
   const accountBtn = (
     <Popover>
       <PopoverTrigger asChild>
@@ -146,7 +150,7 @@ export function TopRightCluster({
           variant="ghost"
           size="icon"
           className={cn("rounded-md hover:bg-white/5 hover:text-foreground", asHeader ? "size-8" : "size-7")}
-          aria-label="Account"
+          aria-label={t.account.label}
         >
           <CircleUserRound className={asHeader ? "size-5" : "size-4"} />
         </Button>
@@ -157,10 +161,10 @@ export function TopRightCluster({
         className="w-52 rounded-xl border-white/10 bg-zinc-950/90 p-3 text-center shadow-float backdrop-blur-xs"
       >
         <CircleUserRound className="mx-auto size-8 text-muted-foreground"/>
-        <div className="mt-2 text-xs">Accounts are coming soon.</div>
-        <div className="mt-0.5 text-xs text-muted-foreground">Save scenes and get a permanent URL.</div>
+        <div className="mt-2 text-xs">{t.account.comingSoon}</div>
+        <div className="mt-0.5 text-xs text-muted-foreground">{t.account.savePrompt}</div>
         <Button size="sm" disabled className="mt-3 h-7 w-full bg-white/10 text-xs hover:bg-white/15">
-          Sign in
+          {t.account.signIn}
         </Button>
       </PopoverContent>
     </Popover>
@@ -173,7 +177,7 @@ export function TopRightCluster({
           size="sm"
           className="h-7 rounded-md bg-blue-400 px-3 text-xs font-medium text-white hover:bg-blue-300"
         >
-          Share
+          {t.share.label}
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -181,12 +185,12 @@ export function TopRightCluster({
         sideOffset={6}
         className="w-64 rounded-xl border-white/10 bg-zinc-950/90 p-3 shadow-float backdrop-blur-xs"
       >
-        <div className="text-xs font-medium">Permanent link</div>
+        <div className="text-xs font-medium">{t.share.permanentLink}</div>
         <div className="mt-2 truncate rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-muted-foreground">
           reze.design/you/{shareName}
         </div>
         <div className="mt-2 text-xs text-muted-foreground">
-          Sign in to publish a live, always-on 3D scene at your own URL — coming soon.
+          {t.share.publishPrompt}
         </div>
       </PopoverContent>
     </Popover>

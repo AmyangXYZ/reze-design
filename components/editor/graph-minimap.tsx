@@ -5,6 +5,7 @@
 // run socket→socket in the source socket's color. Far lighter than a live React
 // Flow instance, so it's safe to render dozens in a grid.
 
+import { memo } from "react"
 import type { ShaderGraph } from "reze-engine"
 import { nodeColor } from "@/lib/node-catalog"
 import { autoLayout, socketsOf } from "@/lib/graph-flow"
@@ -23,7 +24,11 @@ const SOCKET: Record<string, string> = {
 
 type Meta = { x: number; y: number; ins: [string, string][]; outs: [string, string][] }
 
-export function GraphMinimap({ graph, className }: { graph: ShaderGraph; className?: string }) {
+// Memoized: it recomputes autoLayout (a topological sort) on every render, and the
+// library renders one per row — without memo, each keystroke in the library search
+// re-lays-out every graph. Library/preset graph refs are stable, so memo skips the
+// work entirely; the active group's graph ref changes on edit, so it still updates.
+export const GraphMinimap = memo(function GraphMinimap({ graph, className }: { graph: ShaderGraph; className?: string }) {
   // Same layout source as the editor (ui.position ?? autoLayout), so a graph looks
   // identical here and in the editor — and opening the editor (which persists the
   // autoLayout positions) no longer makes this minimap jump.
@@ -104,4 +109,4 @@ export function GraphMinimap({ graph, className }: { graph: ShaderGraph; classNa
       })}
     </svg>
   )
-}
+})

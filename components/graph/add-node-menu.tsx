@@ -9,6 +9,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { NODE_CATALOG, type CatalogItem } from "@/lib/node-catalog"
+import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 export function AddNodeMenu({
@@ -26,6 +27,7 @@ export function AddNodeMenu({
   onPick: (type: string) => void
   onClose: () => void
 }) {
+  const t = useT()
   const ref = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState("")
@@ -42,10 +44,13 @@ export function AddNodeMenu({
       : NODE_CATALOG
     if (!q) return base
     const items = base.flatMap((g) => g.items).filter(
-      (i) => i.label.toLowerCase().includes(q) || i.type.toLowerCase().includes(q),
+      (i) =>
+        (t.nodeLabel[i.type] ?? i.label).toLowerCase().includes(q) ||
+        i.label.toLowerCase().includes(q) ||
+        i.type.toLowerCase().includes(q),
     )
     return [{ category: "", items }]
-  }, [query, accept])
+  }, [query, accept, t])
   const flat = useMemo(() => groups.flatMap((g) => g.items), [groups])
 
   // Reset the highlight to the top whenever the filtered set changes.
@@ -108,19 +113,19 @@ export function AddNodeMenu({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder={accept ? "Connect to…" : "Add node…"}
+          placeholder={accept ? t.graph.connectTo : t.graph.addNode}
           className="h-7 w-full rounded-md bg-white/5 px-2 text-xs text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-400/40"
         />
       </div>
       <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto p-1">
         {flat.length === 0 && (
-          <div className="px-2 py-3 text-center text-xs text-muted-foreground/60">No matching nodes</div>
+          <div className="px-2 py-3 text-center text-xs text-muted-foreground/60">{t.graph.noMatchingNodes}</div>
         )}
         {groups.map((g) => (
           <div key={g.category || "results"}>
             {g.category && (
               <div className="px-2 pt-1.5 pb-0.5 text-[10px] font-medium tracking-wide text-muted-foreground/50 uppercase">
-                {g.category}
+                {t.nodeCategory[g.category] ?? g.category}
               </div>
             )}
             {g.items.map((item) => {
@@ -137,7 +142,7 @@ export function AddNodeMenu({
                     on ? "bg-blue-400/[0.12] text-blue-400" : "text-foreground/90 hover:bg-white/5",
                   )}
                 >
-                  {item.label}
+                  {t.nodeLabel[item.type] ?? item.label}
                 </button>
               )
             })}

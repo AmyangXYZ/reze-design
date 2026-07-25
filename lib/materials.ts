@@ -27,8 +27,25 @@ export const MODEL_PRESETS: MaterialPresetMap = {
   body: ["皮肤", "skin"],
   hair: ["头发", "hair_f"],
   cloth_smooth: [
-    "衣服", "裙子", "裙带", "裙布", "外套", "外套饰", "裤子", "裤子0", "腿环", "发饰",
-    "鞋子", "鞋子饰", "shirt", "shoes", "shorts", "trigger", "dress", "hair_accessory", "cloth01_shoes",
+    "衣服",
+    "裙子",
+    "裙带",
+    "裙布",
+    "外套",
+    "外套饰",
+    "裤子",
+    "裤子0",
+    "腿环",
+    "发饰",
+    "鞋子",
+    "鞋子饰",
+    "shirt",
+    "shoes",
+    "shorts",
+    "trigger",
+    "dress",
+    "hair_accessory",
+    "cloth01_shoes",
   ],
   stockings: ["袜子", "stockings"],
   metal: ["metal01", "earring"],
@@ -48,7 +65,15 @@ export const SLOT_GRAPHS: Partial<Record<MaterialPreset, ShaderGraph>> = {
 }
 
 export const SLOT_ORDER: MaterialPreset[] = [
-  "hair", "body", "face", "eye", "cloth_smooth", "cloth_rough", "stockings", "metal", "default",
+  "hair",
+  "body",
+  "face",
+  "eye",
+  "cloth_smooth",
+  "cloth_rough",
+  "stockings",
+  "metal",
+  "default",
 ]
 
 export const SLOT_LABELS: Record<MaterialPreset, string> = {

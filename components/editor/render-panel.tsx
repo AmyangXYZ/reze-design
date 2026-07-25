@@ -6,7 +6,7 @@
 // (see roadmap). Kept here (not the header) because it is output configuration,
 // not a one-tap action.
 
-import { useState } from "react"
+import { memo, useState } from "react"
 import { Clapperboard } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { useT } from "@/lib/i18n"
 
 const RESOLUTIONS = ["720p", "1080p", "1440p", "2160p"]
 const FPS = ["24", "30", "60"]
@@ -35,7 +36,10 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 const triggerCls =
   "h-6 w-24 border-white/10 bg-white/5 px-2 text-xs [&_svg]:size-3"
 
-export function RenderPanel() {
+// Memoized: takes no props, so it never needs to re-render from a Home update — only
+// its own local output-setting state changes it.
+export const RenderPanel = memo(function RenderPanel() {
+  const t = useT()
   const [res, setRes] = useState("1080p")
   const [fps, setFps] = useState("30")
   const [fmt, setFmt] = useState("mp4")
@@ -43,8 +47,8 @@ export function RenderPanel() {
   return (
     <ScrollArea className="min-h-0 flex-1">
       <div className="px-4 py-3.5">
-        <Section title="Output">
-          <Row label="Resolution">
+        <Section title={t.render.output}>
+          <Row label={t.render.resolution}>
             <Select value={res} onValueChange={setRes}>
               <SelectTrigger className={triggerCls}>
                 <SelectValue />
@@ -58,7 +62,7 @@ export function RenderPanel() {
               </SelectContent>
             </Select>
           </Row>
-          <Row label="Frame rate">
+          <Row label={t.render.frameRate}>
             <Select value={fps} onValueChange={setFps}>
               <SelectTrigger className={triggerCls}>
                 <SelectValue />
@@ -66,13 +70,13 @@ export function RenderPanel() {
               <SelectContent>
                 {FPS.map((f) => (
                   <SelectItem key={f} value={f} className="text-xs">
-                    {f} fps
+                    {t.render.fps(f)}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </Row>
-          <Row label="Format">
+          <Row label={t.render.format}>
             <Select value={fmt} onValueChange={setFmt}>
               <SelectTrigger className={triggerCls}>
                 <SelectValue />
@@ -88,18 +92,18 @@ export function RenderPanel() {
           </Row>
         </Section>
 
-        <Section title="Export">
+        <Section title={t.render.export}>
           <Button
             size="sm"
             disabled
             className="h-8 w-full gap-1.5 bg-blue-400 text-xs font-medium text-white hover:bg-blue-300"
           >
             <Clapperboard className="size-3.5" />
-            Render video
+            {t.render.renderVideo}
           </Button>
-          <div className="mt-1.5 text-xs text-muted-foreground">Frame-accurate capture + encode — coming soon.</div>
+          <div className="mt-1.5 text-xs text-muted-foreground">{t.render.comingSoon}</div>
         </Section>
       </div>
     </ScrollArea>
   )
-}
+})

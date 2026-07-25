@@ -11,6 +11,7 @@ import { Footprints, Music, PersonStanding, Video, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Section } from "@/components/scene/scene-sidebar"
+import { useT } from "@/lib/i18n"
 
 function AssetRow({
   icon: Icon,
@@ -95,50 +96,51 @@ export function AssetsPanel({
   onRemoveAnimation: () => void
   onRemoveCamera: () => void
 }) {
+  const t = useT()
   return (
     <ScrollArea className="min-h-0 flex-1">
       <div className="px-4 py-3.5">
-        <Section title="Model">
+        <Section title={t.assets.model}>
           <AssetRow
             icon={PersonStanding}
-            label="Upload PMX model"
+            label={t.assets.uploadModel}
             value={modelFile}
-            placeholder="No model"
+            placeholder={t.assets.noModel}
             meta={modelMeta}
             onClick={onUploadModel}
           />
         </Section>
 
-        <Section title="Animation">
+        <Section title={t.assets.animation}>
           <AssetRow
             icon={Footprints}
-            label="Upload VMD animation"
+            label={t.assets.uploadAnimation}
             value={animName}
-            placeholder="No motion"
+            placeholder={t.assets.noMotion}
             meta={animMeta}
             onClick={onUploadAnimation}
             onRemove={onRemoveAnimation}
           />
         </Section>
 
-        <Section title="Camera">
+        <Section title={t.assets.camera}>
           <AssetRow
             icon={Video}
-            label="Upload camera motion"
+            label={t.assets.uploadCamera}
             value={cameraName}
-            placeholder="No camera"
+            placeholder={t.assets.noCamera}
             meta={cameraMeta}
             onClick={onUploadCamera}
             onRemove={onRemoveCamera}
           />
         </Section>
 
-        <Section title="Music">
+        <Section title={t.assets.music}>
           <AssetRow
             icon={Music}
-            label="Upload audio track"
+            label={t.assets.uploadMusic}
             value={audioName}
-            placeholder="No audio"
+            placeholder={t.assets.noAudio}
             meta={audioMeta}
             onClick={onUploadMusic}
           />

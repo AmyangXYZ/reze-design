@@ -11,6 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { ColorField } from "@/components/color-picker"
+import { useT } from "@/lib/i18n"
 import { ENGINE_DEFAULT_SCENE_SETTINGS, type SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 
@@ -85,6 +86,7 @@ export function ScenePanel({
   settings: SceneSettings
   onChange: (settings: SceneSettings) => void
 }) {
+  const t = useT()
   const { colors, world, sun, bloom } = settings
   const patch = <K extends keyof SceneSettings>(key: K, value: Partial<SceneSettings[K]>) =>
     onChange({ ...settings, [key]: { ...settings[key], ...value } })
@@ -92,9 +94,9 @@ export function ScenePanel({
   return (
     <ScrollArea className="min-h-0 flex-1">
       <div className="px-4 py-3.5">
-        <Section title="World" action={<ColorField value={world.color} onChange={(hex) => patch("world", { color: hex })} />}>
+        <Section title={t.scene.world} action={<ColorField value={world.color} onChange={(hex) => patch("world", { color: hex })} />}>
           <SliderRow
-            label="Strength"
+            label={t.scene.strength}
             value={world.strength}
             min={0}
             max={2}
@@ -104,9 +106,9 @@ export function ScenePanel({
           />
         </Section>
 
-        <Section title="Sun" action={<ColorField value={sun.color} onChange={(hex) => patch("sun", { color: hex })} />}>
+        <Section title={t.scene.sun} action={<ColorField value={sun.color} onChange={(hex) => patch("sun", { color: hex })} />}>
           <SliderRow
-            label="Strength"
+            label={t.scene.strength}
             value={sun.strength}
             min={0}
             max={6}
@@ -115,7 +117,7 @@ export function ScenePanel({
             fmt={(v) => v.toFixed(2)}
           />
           <SliderRow
-            label="Azimuth"
+            label={t.scene.azimuth}
             value={sun.azimuth}
             min={0}
             max={360}
@@ -124,7 +126,7 @@ export function ScenePanel({
             fmt={(v) => `${v}°`}
           />
           <SliderRow
-            label="Elevation"
+            label={t.scene.elevation}
             value={sun.elevation}
             min={0}
             max={90}
@@ -134,14 +136,14 @@ export function ScenePanel({
           />
         </Section>
 
-        <Section title="Bloom" action={<ColorField value={bloom.color} onChange={(hex) => patch("bloom", { color: hex })} />}>
+        <Section title={t.scene.bloom} action={<ColorField value={bloom.color} onChange={(hex) => patch("bloom", { color: hex })} />}>
           <div className="flex items-center justify-between">
-            <span className="text-xs">Enabled</span>
+            <span className="text-xs">{t.scene.enabled}</span>
             <Switch checked={bloom.enabled} onCheckedChange={(v) => patch("bloom", { enabled: v })} className="scale-75" />
           </div>
           <div className={cn("mt-2.5", !bloom.enabled && "pointer-events-none opacity-40")}>
             <SliderRow
-              label="Threshold"
+              label={t.scene.threshold}
               value={bloom.threshold}
               min={0}
               max={2}
@@ -150,7 +152,7 @@ export function ScenePanel({
               fmt={(v) => v.toFixed(2)}
             />
             <SliderRow
-              label="Knee"
+              label={t.scene.knee}
               value={bloom.knee}
               min={0}
               max={1}
@@ -159,7 +161,7 @@ export function ScenePanel({
               fmt={(v) => v.toFixed(2)}
             />
             <SliderRow
-              label="Radius"
+              label={t.scene.radius}
               value={bloom.radius}
               min={0}
               max={8}
@@ -168,7 +170,7 @@ export function ScenePanel({
               fmt={(v) => v.toFixed(1)}
             />
             <SliderRow
-              label="Intensity"
+              label={t.scene.intensity}
               value={bloom.intensity}
               min={0}
               max={1}
@@ -179,10 +181,10 @@ export function ScenePanel({
           </div>
         </Section>
 
-        <Section title="Colors">
-          <ColorRow label="Background" value={colors.background} onChange={(hex) => patch("colors", { background: hex })} />
-          <ColorRow label="Ground" value={colors.ground} onChange={(hex) => patch("colors", { ground: hex })} />
-          <ColorRow label="Grid lines" value={colors.grid} onChange={(hex) => patch("colors", { grid: hex })} />
+        <Section title={t.scene.colors}>
+          <ColorRow label={t.scene.background} value={colors.background} onChange={(hex) => patch("colors", { background: hex })} />
+          <ColorRow label={t.scene.ground} value={colors.ground} onChange={(hex) => patch("colors", { ground: hex })} />
+          <ColorRow label={t.scene.gridLines} value={colors.grid} onChange={(hex) => patch("colors", { grid: hex })} />
         </Section>
 
         {/* Reset to the app's curated defaults (not the engine's neutral ones). */}
@@ -194,7 +196,7 @@ export function ScenePanel({
             onClick={() => onChange(ENGINE_DEFAULT_SCENE_SETTINGS)}
           >
             <RotateCcw className="size-3" />
-            Reset to defaults
+            {t.scene.resetDefaults}
           </Button>
         </div>
       </div>

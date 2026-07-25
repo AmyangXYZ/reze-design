@@ -11,6 +11,7 @@ import type { ComponentType, ReactNode } from "react"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { GithubMark } from "@/components/icons"
+import { LanguageSwitcher } from "@/components/editor/language-switcher"
 import { cn } from "@/lib/utils"
 
 export type DockTab = {
@@ -68,20 +69,23 @@ export function LeftDock({
             </button>
           )
         })}
-        {/* GitHub pinned to the bottom of the rail. */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <a
-              href="https://github.com/AmyangXYZ/reze-design"
-              target="_blank"
-              rel="noreferrer"
-              className="mt-auto flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/[0.05] hover:text-foreground mb-1"
-            >
-              <GithubMark className="size-[20px]" />
-            </a>
-          </TooltipTrigger>
-          <TooltipContent side="right">github.com/AmyangXYZ/reze-design</TooltipContent>
-        </Tooltip>
+        {/* Utilities pinned to the bottom of the rail: language above GitHub. */}
+        <div className="mt-auto mb-1 flex flex-col items-center gap-2">
+          <LanguageSwitcher />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <a
+                href="https://github.com/AmyangXYZ/reze-design"
+                target="_blank"
+                rel="noreferrer"
+                className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/[0.05] hover:text-foreground"
+              >
+                <GithubMark className="size-[20px]" />
+              </a>
+            </TooltipTrigger>
+            <TooltipContent side="right">github.com/AmyangXYZ/reze-design</TooltipContent>
+          </Tooltip>
+        </div>
       </nav>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {header}
