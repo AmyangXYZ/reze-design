@@ -16,6 +16,7 @@ import {
 } from "mediabunny"
 import type { Engine } from "reze-engine"
 import { coverCrop, type BackdropMedia } from "./backdrop"
+import type { SceneColors } from "./scene-settings"
 
 export type ExportAudioSource = "music" | "none"
 
@@ -27,7 +28,13 @@ export type ExportSettings = {
   /** Draw the Reze Design wordmark bottom-right. Default-on, freely removable —
    *  it's advertising users choose to carry, never a paywall. */
   watermark: boolean
+  /** Chroma-key mode: pure #00FF00 background replaces the scene background,
+   *  backdrop, and skybox for this export only — for compositing the character
+   *  into other footage in an external editor (the classic MMD PV workflow). */
+  greenScreen: boolean
 }
+
+const GREEN = "#00ff00"
 
 export type ExportPhase = "audio" | "video"
 
@@ -107,14 +114,15 @@ export async function exportVideo(opts: {
   duration: number
   settings: ExportSettings
   backdrop: BackdropMedia | null
-  /** Scene background color (hex) — the bottom composite layer, as in the live view. */
-  bgColor: string
+  /** Scene appearance colors — background is the bottom composite layer. */
+  colors: SceneColors
   /** Object/blob URL of the music track (used when audioSource === "music"). */
   musicUrl: string | null
   onProgress?: (p: ExportProgress) => void
   signal?: AbortSignal
 }): Promise<Blob> {
-  const { engine, canvas, modelName, duration, settings, backdrop, bgColor, musicUrl } = opts
+  const { engine, canvas, modelName, duration, settings, backdrop, colors, musicUrl } = opts
+  const bgColor = colors.background
   const { width, height, fps } = settings
   const total = Math.max(1, Math.round(duration * fps))
   const model = engine.getModel(modelName)
@@ -155,9 +163,9 @@ export async function exportVideo(opts: {
     }
   }
 
-  // ── Backdrop layer ──
+  // ── Backdrop layer (skipped entirely in green-screen mode) ──
   let bgImage: HTMLImageElement | null = null
-  if (backdrop) {
+  if (backdrop && !settings.greenScreen) {
     bgImage = await new Promise<HTMLImageElement>((resolve, reject) => {
       const el = new Image()
       el.onload = () => resolve(el)
@@ -170,6 +178,11 @@ export async function exportVideo(opts: {
   const prior = model.getAnimationProgress()
   engine.stopRenderLoop()
   engine.setRenderSize(width, height)
+  // Green-screen state (background, ground surface, skybox suspension) is LIVE
+  // page state — toggling the switch previews it in the viewport, and the export
+  // renders exactly that (WYSIWYG). Here it only affects the composite fill and
+  // skips the flat backdrop layer.
+  const fillColor = settings.greenScreen ? GREEN : bgColor
 
   try {
     await output.start()
@@ -192,7 +205,7 @@ export async function exportVideo(opts: {
       // dt=0 renders the t=0 pose itself; afterwards each call advances one frame.
       engine.renderFrame(i === 0 ? 0 : 1 / fps)
 
-      ctx.fillStyle = bgColor
+      ctx.fillStyle = fillColor
       ctx.fillRect(0, 0, width, height)
       if (bgImage) {
         const c = coverCrop(bgImage.naturalWidth, bgImage.naturalHeight, width, height)
@@ -218,7 +231,8 @@ export async function exportVideo(opts: {
     if (output.state === "started") await output.cancel().catch(() => {})
     throw e
   } finally {
-    // Restore the live session: viewport-tracked size, prior playhead + play state.
+    // Restore the live session: viewport-tracked size, background/skybox (green-
+    // screen mode suspended them), prior playhead + play state.
     engine.setRenderSize(null)
     model.pause()
     model.seek(prior.current)

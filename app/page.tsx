@@ -75,7 +75,10 @@ const fmtDur = (s: number) => {
 
 const UI_KEY = "reze-design.ui"
 function loadUiState(): { docks: boolean; leftTab: string; rightTab: string } {
-  const def = { docks: true, leftTab: "materials", rightTab: "assets" }
+  // Mobile first-open: docks closed — two 300px docks bury a phone viewport; the
+  // collapsed pills work fine there. (Stored per device, so a desktop stays open.)
+  const coarse = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches
+  const def = { docks: !coarse, leftTab: "materials", rightTab: "assets" }
   if (typeof window === "undefined") return def
   try {
     const raw = window.localStorage.getItem(UI_KEY)
@@ -433,6 +436,30 @@ export default function Home() {
   // While an export runs it drives the same model clock the live mirrors watch —
   // suspend them (music + backdrop video) or they'd play, out of sync, during render.
   const [exporting, setExporting] = useState(false)
+  // Green-screen (chroma-key) mode — LIVE, not export-only: the viewport previews
+  // exactly what renders (pure green background; ground surface hidden, shadow per
+  // the Ground > Shadow switch; backdrop/skybox suspended).
+  const [greenScreen, setGreenScreen] = useState(false)
+  // Green mode suspends the skybox live (it renders inside the canvas and would
+  // cover the green); leaving green mode restores it from the kept file.
+  const skyboxRef = useRef(skybox)
+  useEffect(() => {
+    skyboxRef.current = skybox
+  })
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine) return
+    if (greenScreen) engine.setBackdropEquirect(null)
+    else if (skyboxRef.current) {
+      let stale = false
+      void createImageBitmap(skyboxRef.current.file).then((b) => {
+        if (!stale) engine.setBackdropEquirect(b)
+      })
+      return () => {
+        stale = true
+      }
+    }
+  }, [greenScreen, engineRef])
   const onBackdropPicked = async (file: File | undefined) => {
     if (!file) return
     try {
@@ -544,8 +571,16 @@ export default function Home() {
     if (result.status === "single") void loadCustom(result.files, result.pmxFile)
     else if (result.status === "multiple") setUpload({ kind: "pick", files: result.files, paths: result.pmxRelativePaths })
     else if (result.status === "no_pmx") setUpload({ kind: "notice", message: t.upload.noPmx })
-    else if (result.status === "not_directory")
-      setUpload({ kind: "notice", message: t.upload.notDirectory })
+    else if (result.status === "not_directory") {
+      // Flat multi-file selection (mobile pickers can't select folders). The engine
+      // maps files by name and falls back to basename matching for subdir texture
+      // paths, so a flat pick still loads — accept it instead of rejecting.
+      const files = fileList ? Array.from(fileList) : []
+      const pmxs = files.filter((f) => f.name.toLowerCase().endsWith(".pmx"))
+      if (pmxs.length === 1) void loadCustom(files, pmxs[0])
+      else if (pmxs.length > 1) setUpload({ kind: "pick", files, paths: pmxs.map((f) => f.name) })
+      else setUpload({ kind: "notice", message: t.upload.notDirectory })
+    }
   }
 
   // ── Scene settings → engine ──
@@ -558,8 +593,10 @@ export default function Home() {
     const { world, sun, bloom, colors } = sceneSettings
     // The engine paints the background (post-tonemap, exact CSS-hex match) — except
     // while a backdrop image is set, where the canvas must stay transparent so the
-    // DOM image layer behind it shows through.
-    engine.setBackgroundColor(backdrop ? null : hexToSrgbVec3(colors.background))
+    // DOM image layer behind it shows through. Green-screen mode overrides both.
+    engine.setBackgroundColor(
+      greenScreen ? hexToSrgbVec3("#00ff00") : backdrop ? null : hexToSrgbVec3(colors.background),
+    )
     engine.setWorld({ color: hexToLinearVec3(world.color), strength: world.strength })
     engine.setSun({
       color: hexToLinearVec3(sun.color),
@@ -574,18 +611,20 @@ export default function Home() {
       intensity: bloom.intensity,
       color: hexToLinearVec3(bloom.color),
     })
-    const groundKey = `${colors.ground}|${colors.grid}|${colors.groundOpacity}|${colors.groundShadow}|${colors.gridEnabled}`
+    // Green mode hides the ground SURFACE (it would occlude the key) but keeps the
+    // shadow-catcher shadow per the user's Shadow switch.
+    const groundKey = `${colors.ground}|${colors.grid}|${colors.groundOpacity}|${colors.groundShadow}|${colors.gridEnabled}|${greenScreen}`
     if (prevGround.current !== groundKey) {
       engine.addGround({
         diffuseColor: hexToLinearVec3(colors.ground),
         gridLineColor: hexToLinearVec3(colors.grid),
-        opacity: colors.groundOpacity,
+        opacity: greenScreen ? 0 : colors.groundOpacity,
         shadowStrength: colors.groundShadow ? 1 : 0,
-        gridLineOpacity: colors.gridEnabled ? 0.4 : 0,
+        gridLineOpacity: greenScreen || !colors.gridEnabled ? 0 : 0.4,
       })
       prevGround.current = groundKey
     }
-  }, [sceneSettings, ready, engineRef, backdrop])
+  }, [sceneSettings, ready, engineRef, backdrop, greenScreen])
 
   // ── Dock tab definitions ── LEFT = styling (materials, scene look); RIGHT =
   // ingredients & output (assets in, render out).
@@ -668,10 +707,12 @@ export default function Home() {
           animName={animName}
           animDuration={animDuration}
           backdrop={backdrop}
-          bgColor={sceneSettings.colors.background}
+          colors={sceneSettings.colors}
           musicUrl={audioSrc}
           audioSource={audioSource}
           onAudioSourceChange={setAudioSource}
+          greenScreen={greenScreen}
+          onGreenScreenChange={setGreenScreen}
           onExportingChange={setExporting}
         />
       ),
@@ -688,7 +729,7 @@ export default function Home() {
       {/* ── Backdrop layer: page bg color → image (cover) → transparent canvas.
           Export composites the SAME stack (lib/video-export), so live and
           rendered output match. ── */}
-      {backdrop && (
+      {backdrop && !greenScreen && (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={backdrop.url} alt="" className="absolute inset-0 h-full w-full object-cover" />
       )}
@@ -717,7 +758,7 @@ export default function Home() {
           header); a floating pill on its own when collapsed. ── */}
       {mounted &&
         (docksOpen ? (
-          <div className="fixed inset-y-0 left-0 z-20 w-[300px]">
+          <div className="fixed inset-y-0 left-0 z-20 w-[min(300px,88vw)]">
             <LeftDock
               railTop={<RailLogo />}
               header={
@@ -747,7 +788,7 @@ export default function Home() {
           cluster is its header); floating pills when collapsed. ── */}
       {mounted &&
         (docksOpen ? (
-          <div className="fixed inset-y-0 right-0 z-20 w-[300px]">
+          <div className="fixed inset-y-0 right-0 z-20 w-[min(300px,88vw)]">
             <RightDock
               header={<TopRightCluster shareName="untitled-scene" asHeader />}
               tabs={rightTabs}
@@ -835,7 +876,11 @@ export default function Home() {
       <input
         ref={(el) => {
           folderInputRef.current = el
-          el?.setAttribute("webkitdirectory", "")
+          // Folder picker on desktop; mobile browsers can't pick folders, so there
+          // the input stays a plain multi-file select (flat picks are accepted —
+          // the engine falls back to basename matching for subdir texture paths).
+          const mobile = typeof navigator !== "undefined" && /Android|iPhone|iPad/i.test(navigator.userAgent)
+          if (!mobile) el?.setAttribute("webkitdirectory", "")
         }}
         type="file"
         multiple
@@ -929,7 +974,9 @@ export default function Home() {
                   key={path}
                   className="block w-full cursor-pointer truncate rounded-lg px-3 py-2 text-left text-xs transition-colors hover:bg-white/5 hover:text-foreground"
                   onClick={() => {
-                    const pmx = pmxFileAtRelativePath(upload.files, path)
+                    // Relative-path match for folder picks; bare-name fallback for
+                    // flat mobile multi-file picks (no webkitRelativePath there).
+                    const pmx = pmxFileAtRelativePath(upload.files, path) ?? upload.files.find((f) => f.name === path)
                     if (pmx) void loadCustom(upload.files, pmx)
                   }}
                 >

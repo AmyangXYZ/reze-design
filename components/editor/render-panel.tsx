@@ -24,20 +24,27 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import type { BackdropMedia } from "@/lib/backdrop"
+import type { SceneColors } from "@/lib/scene-settings"
 import { exportVideo, type ExportAudioSource, type ExportProgress } from "@/lib/video-export"
 import { useT } from "@/lib/i18n"
 
-// Minimal config, maximum quality: output is always 60 fps (VMD samples
-// continuously, so in-betweens are true) at a hardcoded 2× supersample (retina-
-// style DPR) — horizontal encodes as 3840×2160 (4K), vertical (the TikTok /
-// Shorts / Reels 9:16 standard) as 2160×3840. The user only picks orientation;
-// the pixel math is ours — the caption states the resulting file.
+// Minimal config, iMovie-export style: 60 fps always (VMD samples continuously,
+// so in-betweens are true); the user picks an aspect ratio + a quality tier
+// (some platforms reject 4K uploads, so 1080p/1440p exist as deliberate steps —
+// never freeform W×H fields). The caption under the Render button states the
+// exact resulting file.
 const VIDEO_FPS = 60
-const SCALE = 2
-const ORIENTATIONS: { id: "horizontal" | "vertical"; w: number; h: number }[] = [
-  { id: "horizontal", w: 1920, h: 1080 },
-  { id: "vertical", w: 1080, h: 1920 },
-]
+type Aspect = "16:9" | "9:16" | "1:1" | "4:3"
+const ASPECTS: Aspect[] = ["16:9", "9:16", "1:1", "4:3"]
+type Quality = "1080p" | "1440p" | "4k"
+const QUALITIES: Quality[] = ["1080p", "1440p", "4k"]
+const QUALITY_LABELS: Record<Quality, string> = { "1080p": "1080p", "1440p": "1440p", "4k": "4K" }
+const DIMS: Record<Aspect, Record<Quality, [number, number]>> = {
+  "16:9": { "1080p": [1920, 1080], "1440p": [2560, 1440], "4k": [3840, 2160] },
+  "9:16": { "1080p": [1080, 1920], "1440p": [1440, 2560], "4k": [2160, 3840] },
+  "1:1": { "1080p": [1080, 1080], "1440p": [1440, 1440], "4k": [2160, 2160] },
+  "4:3": { "1080p": [1440, 1080], "1440p": [1920, 1440], "4k": [2880, 2160] },
+}
 
 // min-h-6 keeps every row the height of a select trigger, so the switch row (whose
 // control is shorter) doesn't collapse and the vertical rhythm stays even.
@@ -64,10 +71,12 @@ export const RenderPanel = memo(function RenderPanel({
   animName,
   animDuration,
   backdrop,
-  bgColor,
+  colors,
   musicUrl,
   audioSource,
   onAudioSourceChange,
+  greenScreen,
+  onGreenScreenChange,
   onExportingChange,
 }: {
   engineRef: RefObject<Engine | null>
@@ -79,26 +88,29 @@ export const RenderPanel = memo(function RenderPanel({
   /** Clip length in seconds — defines the exported video length. */
   animDuration: number
   backdrop: BackdropMedia | null
-  bgColor: string
+  /** Scene appearance colors (background + ground fields for green-screen suspend). */
+  colors: SceneColors
   musicUrl: string | null
   /** Lifted to the page: also routes live audio (music element / backdrop video). */
   audioSource: ExportAudioSource
   onAudioSourceChange: (s: ExportAudioSource) => void
+  /** Lifted to the page: toggling it repaints the LIVE scene green too (WYSIWYG). */
+  greenScreen: boolean
+  onGreenScreenChange: (on: boolean) => void
   /** The page suspends live audio/video mirrors while an export runs (the export
    *  drives the same model clock, so the mirrors would play, out of sync). */
   onExportingChange: (exporting: boolean) => void
 }) {
   const t = useT()
-  const [orientation, setOrientation] = useState<"horizontal" | "vertical">("horizontal")
+  const [aspect, setAspect] = useState<Aspect>("16:9")
+  const [quality, setQuality] = useState<Quality>("4k")
   const [watermark, setWatermark] = useState(true)
   const [exporting, setExporting] = useState(false)
   const [progress, setProgress] = useState<ExportProgress | null>(null)
   const [result, setResult] = useState<{ ok: boolean; message?: string } | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
-  const preset = ORIENTATIONS.find((p) => p.id === orientation) ?? ORIENTATIONS[0]
-  const width = preset.w * SCALE
-  const height = preset.h * SCALE
+  const [width, height] = DIMS[aspect][quality]
   const upscaled = backdrop !== null && backdrop.width > 0 && backdrop.width < width
   const canRender = !!animName && animDuration > 0 && !exporting
 
@@ -118,9 +130,9 @@ export const RenderPanel = memo(function RenderPanel({
         canvas,
         modelName,
         duration: animDuration,
-        settings: { width, height, fps: VIDEO_FPS, audioSource, watermark },
+        settings: { width, height, fps: VIDEO_FPS, audioSource, watermark: greenScreen ? false : watermark, greenScreen },
         backdrop,
-        bgColor,
+        colors,
         musicUrl,
         onProgress: setProgress,
         signal: ac.signal,
@@ -158,23 +170,32 @@ export const RenderPanel = memo(function RenderPanel({
     <ScrollArea className="min-h-0 flex-1">
       <div className="px-4 py-3.5">
         <Section title={t.render.output}>
-          <Row label={t.render.orientation}>
-            <Select
-              value={orientation}
-              onValueChange={(v) => setOrientation(v as "horizontal" | "vertical")}
-              disabled={exporting}
-            >
+          <Row label={t.render.aspect}>
+            <Select value={aspect} onValueChange={(v) => setAspect(v as Aspect)} disabled={exporting}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {/* Aspect notation is universal — no translation needed. */}
-                <SelectItem value="horizontal" className="tabular-nums">
-                  16:9
-                </SelectItem>
-                <SelectItem value="vertical" className="tabular-nums">
-                  9:16
-                </SelectItem>
+                {ASPECTS.map((a) => (
+                  <SelectItem key={a} value={a} className="tabular-nums">
+                    {a}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Row>
+          <Row label={t.render.quality}>
+            <Select value={quality} onValueChange={(v) => setQuality(v as Quality)} disabled={exporting}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {QUALITIES.map((q) => (
+                  <SelectItem key={q} value={q} className="tabular-nums">
+                    {QUALITY_LABELS[q]}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </Row>
@@ -197,10 +218,24 @@ export const RenderPanel = memo(function RenderPanel({
               </SelectContent>
             </Select>
           </Row>
-          <Row label={t.render.watermark}>
-            <Switch checked={watermark} onCheckedChange={setWatermark} disabled={exporting} className="scale-75" />
+          {/* Chroma-key mode for external compositing (the classic MMD PV flow) —
+              pure #00FF00 replaces background/backdrop/skybox and the ground
+              surface hides (shadow follows Scene > Ground > Shadow). Lifted to the
+              page: the LIVE scene previews it too — what you see is what renders. */}
+          <Row label={t.render.greenScreen}>
+            <Switch checked={greenScreen} onCheckedChange={onGreenScreenChange} disabled={exporting} className="scale-75" />
           </Row>
-          {upscaled && <div className="mt-2 text-[11px] text-amber-400/90">{t.render.upscaleWarn}</div>}
+          {/* Disabled (not hidden — layout stays put) in green mode: keying material
+              shouldn't carry a mark that survives into their composite. */}
+          <Row label={t.render.watermark}>
+            <Switch
+              checked={greenScreen ? false : watermark}
+              onCheckedChange={setWatermark}
+              disabled={exporting || greenScreen}
+              className="scale-75"
+            />
+          </Row>
+          {upscaled && !greenScreen && <div className="mt-2 text-[11px] text-amber-400/90">{t.render.upscaleWarn}</div>}
         </Section>
 
         <Section title={t.render.export}>
