@@ -205,8 +205,9 @@ export function TopRightCluster({
     )
   }
   // Collapsed: a single pill holding account + Share together (Figma parity).
+  // py matches the brand pill's so the two floating pills sit at equal height.
   return (
-    <div className={cn("flex items-center gap-1.5 py-1 pr-1 pl-1", floating)}>
+    <div className={cn("flex items-center gap-1.5 py-1.5 pr-1.5 pl-1.5", floating)}>
       {accountBtn}
       {shareBtn}
     </div>

@@ -225,7 +225,10 @@ export function useEngine(
   const stopAnimation = useCallback(() => {
     const model = engineRef.current?.getModel(modelNameRef.current)
     if (!model) return
-    model.stopAnimation()
+    // clearAnimation (not stop): stop() keeps the clip current and update()
+    // re-applies its frame-0 pose every frame, silently overwriting the bone
+    // resets below — the "removed the animation but the pose stuck" bug.
+    model.clearAnimation()
     // Back to the default bind pose (not the animation's frame 0).
     model.resetAllBones()
     model.resetAllMorphs()

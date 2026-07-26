@@ -10,8 +10,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
   DEFAULT_GRAPH,
-  parsePmxFolderInput,
-  pmxFileAtRelativePath,
   type CompileOptions,
   type Diagnostic,
   type MaterialPreset,
@@ -33,6 +31,7 @@ import { NodeLibrary } from "@/components/editor/node-library"
 import { RenderPanel } from "@/components/editor/render-panel"
 import { useEngine } from "@/hooks/use-engine"
 import { probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
+import { expandUploadFiles, readDroppedFiles } from "@/lib/uploads"
 import { useT } from "@/lib/i18n"
 import type { ExportAudioSource } from "@/lib/video-export"
 import { MaterialSphereIcon } from "@/components/scene/slot-icons"
@@ -307,13 +306,20 @@ export default function Home() {
   }
 
   // ── Group operations (structural edits go through applyGroups) ──
-  const createGroup = () => {
+  // Returns the new id — the materials panel drops it straight into rename mode.
+  // The label is still made unique ("New group 2") for whoever Escapes out.
+  const createGroup = (): string => {
     const id = newGroupId("group", groups)
+    const base = t.materials.newGroup
+    const labels = new Set(groups.map((g) => g.label ?? g.id))
+    let label = base
+    for (let n = 2; labels.has(label); n++) label = `${base} ${n}`
     void applyGroups([
       ...groups,
-      { id, label: "New group", materials: [], graph: structuredClone(DEFAULT_GRAPH), renderClass: "auto" },
+      { id, label, materials: [], graph: structuredClone(DEFAULT_GRAPH), renderClass: "auto" },
     ])
     setActiveGroupId(id)
+    return id
   }
   // Non-empty groups compile through upsertGroup (one group); empty folders exist
   // in UI state only, so their edits go through applyGroups (which withholds them
@@ -355,20 +361,35 @@ export default function Home() {
   type UploadState = { kind: "pick"; files: File[]; paths: string[] } | { kind: "notice"; message: string } | null
   const [upload, setUpload] = useState<UploadState>(null)
   const folderInputRef = useRef<HTMLInputElement | null>(null)
+  const zipInputRef = useRef<HTMLInputElement | null>(null)
+  // Mobile: no folder pickers exist, so the model button is zip-only there.
+  const [isMobile] = useState(() => typeof navigator !== "undefined" && /Android|iPhone|iPad/i.test(navigator.userAgent))
 
   const loadCustom = async (files: File[], pmxFile: File) => {
     setUpload(null)
     setActiveGroupId(null) // the new model brings a fresh group set (re-inited on load)
-    setAnimName(null) // the new model starts in bind pose
     setModelSize(pmxFile.size)
     await loadFromFiles(files, pmxFile)
+    // The new model inherits the current animation (clips are per model instance,
+    // so the retained source reloads into it; posed at frame 0, paused).
+    const src = animSourceRef.current
+    if (src) {
+      const name = src.kind === "file" ? await loadVmdFile(src.file) : await loadVmdUrl(src.name, src.url)
+      setAnimName(name)
+    } else {
+      setAnimName(null)
+    }
   }
 
   // ── VMD animation upload ──
   const vmdInputRef = useRef<HTMLInputElement | null>(null)
+  // The clip's SOURCE, retained so a newly uploaded model inherits the current
+  // animation (clips live per model instance — the file/url must reload there).
+  const animSourceRef = useRef<{ kind: "file"; file: File } | { kind: "url"; name: string; url: string } | null>(null)
   const onVmdPicked = async (file: File | undefined) => {
     if (!file) return
     setAnimSize(file.size)
+    animSourceRef.current = { kind: "file", file }
     setAnimName(await loadVmdFile(file))
   }
 
@@ -492,6 +513,25 @@ export default function Home() {
   const audioElRef = useRef<HTMLAudioElement | null>(null)
   const [audioName, setAudioName] = useState<string | null>(DEFAULT_AUDIO.name)
   const [audioSrc, setAudioSrc] = useState<string>(DEFAULT_AUDIO.url)
+  const setMusicFile = (f: File) => {
+    setAudioName(f.name)
+    setAudioSize(f.size)
+    setAudioSrc((prev) => {
+      if (prev.startsWith("blob:")) URL.revokeObjectURL(prev)
+      return URL.createObjectURL(f)
+    })
+  }
+  const removeAudio = () => {
+    setAudioName(null)
+    setAudioDuration(0)
+    setAudioSize(null)
+    setAudioSrc((prev) => {
+      if (prev.startsWith("blob:")) URL.revokeObjectURL(prev)
+      return ""
+    })
+    // No source left for the "music" audio option — exports fall back to silent.
+    setAudioSource((s) => (s === "music" ? "none" : s))
+  }
 
   // High-level asset metadata (size for uploads; duration read from the engine /
   // audio element once available). Sizes are unknown for the bundled defaults.
@@ -541,6 +581,7 @@ export default function Home() {
   useEffect(() => {
     if (!ready || defaultAnimLoaded.current) return
     defaultAnimLoaded.current = true
+    animSourceRef.current = { kind: "url", name: DEFAULT_ANIM.name, url: DEFAULT_ANIM.url }
     void loadVmdUrl(DEFAULT_ANIM.name, DEFAULT_ANIM.url).then((n) => {
       if (n) setAnimName(n)
     })
@@ -587,21 +628,26 @@ export default function Home() {
     return () => cancelAnimationFrame(raf)
   }, [animName, modelName, engineRef, exporting])
 
-  const onFolderPicked = (fileList: FileList | null) => {
-    const result = parsePmxFolderInput(fileList)
-    if (result.status === "single") void loadCustom(result.files, result.pmxFile)
-    else if (result.status === "multiple") setUpload({ kind: "pick", files: result.files, paths: result.pmxRelativePaths })
-    else if (result.status === "no_pmx") setUpload({ kind: "notice", message: t.upload.noPmx })
-    else if (result.status === "not_directory") {
-      // Flat multi-file selection (mobile pickers can't select folders). The engine
-      // maps files by name and falls back to basename matching for subdir texture
-      // paths, so a flat pick still loads — accept it instead of rejecting.
-      const files = fileList ? Array.from(fileList) : []
-      const pmxs = files.filter((f) => f.name.toLowerCase().endsWith(".pmx"))
-      if (pmxs.length === 1) void loadCustom(files, pmxs[0])
-      else if (pmxs.length > 1) setUpload({ kind: "pick", files, paths: pmxs.map((f) => f.name) })
-      else setUpload({ kind: "notice", message: t.upload.notDirectory })
+  // The file's path: folder picks carry webkitRelativePath; zip-expanded /
+  // dropped / flat files carry the path (or bare name) in `name`.
+  const relPath = (f: File) => (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name
+
+  // ONE model pipeline for every source — folder pick (desktop dialog), flat
+  // multi-select (mobile), .zip (mobile's sane path: models ship as zips, and a
+  // zip preserves the subfolder structure a flat pick can't), and drag & drop.
+  const handleModelFiles = async (list: File[]) => {
+    if (!list.length) return
+    let files: File[]
+    try {
+      files = await expandUploadFiles(list)
+    } catch (e) {
+      setUpload({ kind: "notice", message: e instanceof Error ? e.message : String(e) })
+      return
     }
+    const pmxs = files.filter((f) => f.name.toLowerCase().endsWith(".pmx"))
+    if (pmxs.length === 0) setUpload({ kind: "notice", message: t.upload.noPmx })
+    else if (pmxs.length === 1) await loadCustom(files, pmxs[0])
+    else setUpload({ kind: "pick", files, paths: pmxs.map(relPath).sort((a, b) => a.localeCompare(b)) })
   }
 
   // ── Scene settings → engine ──
@@ -699,15 +745,19 @@ export default function Home() {
           backdropMeta={backdrop ? `${backdrop.width}×${backdrop.height}` : ""}
           skyboxName={skybox?.name ?? null}
           skyboxMeta={skybox ? `${skybox.width}×${skybox.height} · 360°` : ""}
-          onUploadModel={() => folderInputRef.current?.click()}
+          modelUploadLabel={isMobile ? t.assets.uploadModelZip : t.assets.uploadModelFolder}
+          onUploadModel={() => (isMobile ? zipInputRef.current : folderInputRef.current)?.click()}
+          onUploadModelZip={isMobile ? undefined : () => zipInputRef.current?.click()}
           onUploadAnimation={() => vmdInputRef.current?.click()}
           onUploadCamera={() => cameraInputRef.current?.click()}
           onUploadMusic={() => audioInputRef.current?.click()}
+          onRemoveMusic={removeAudio}
           onUploadBackdrop={() => backdropInputRef.current?.click()}
           onUploadSkybox={() => skyboxInputRef.current?.click()}
           onRemoveAnimation={() => {
             stopAnimation()
             setAnimName(null)
+            animSourceRef.current = null // don't resurrect it on the next model upload
           }}
           onRemoveCamera={removeCamera}
           onRemoveBackdrop={removeBackdrop}
@@ -729,7 +779,7 @@ export default function Home() {
           animDuration={animDuration}
           backdrop={backdrop}
           colors={sceneSettings.colors}
-          musicUrl={audioSrc}
+          musicUrl={audioSrc || null}
           audioSource={audioSource}
           onAudioSourceChange={setAudioSource}
           greenScreen={greenScreen}
@@ -740,12 +790,44 @@ export default function Home() {
     },
   ]
 
+  // Drag & drop anywhere: a single .vmd routes to the animation, audio to music,
+  // an image to the backdrop; anything else (folder, zip, file set) is a model.
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    const dt = e.dataTransfer
+    void (async () => {
+      const files = dt.items?.length ? await readDroppedFiles(dt.items) : Array.from(dt.files ?? [])
+      if (!files.length) return
+      if (files.length === 1) {
+        const f = files[0]
+        const n = f.name.toLowerCase()
+        if (n.endsWith(".vmd")) {
+          setAnimSize(f.size)
+          animSourceRef.current = { kind: "file", file: f }
+          setAnimName(await loadVmdFile(f))
+          return
+        }
+        if (f.type.startsWith("audio/")) {
+          setMusicFile(f)
+          return
+        }
+        if (f.type.startsWith("image/")) {
+          await onBackdropPicked(f)
+          return
+        }
+      }
+      await handleModelFiles(files)
+    })()
+  }
+
   return (
     <div
       ref={rootRef}
       className="fixed inset-0 overflow-hidden text-sm text-foreground select-none"
       style={{ backgroundColor: sceneSettings.colors.background }}
       suppressHydrationWarning
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={onDrop}
     >
       {/* ── Backdrop layer: page bg color → image (cover) → transparent canvas.
           Export composites the SAME stack (lib/video-export), so live and
@@ -874,9 +956,9 @@ export default function Home() {
         </FloatingPanel>
       )}
 
-      {/* ── Persistent transport bar (always visible while a clip is loaded, even
-          when the docks are collapsed). ── */}
-      {animName && !drawerFull && (
+      {/* ── Persistent transport bar — always present (inert with no clip, so
+          removing the animation doesn't blink the UI away). ── */}
+      {mounted && !drawerFull && (
         <div className="fixed bottom-3 left-1/2 z-20 -translate-x-1/2">
           <AnimPlayer engineRef={engineRef} modelName={modelName} clipName={animName} hasCamera={cameraName !== null} />
         </div>
@@ -894,20 +976,32 @@ export default function Home() {
       />
 
       {/* ── Uploads ── */}
+      {/* Model upload — two COMPLETE paths only (flat multi-select was dropped:
+          it can't carry subfolders). Desktop: folder picker; a .zip also works
+          via drag & drop. Mobile: the model's .zip (extracted in-app, subfolders
+          preserved — models are distributed as zips anyway). */}
       <input
         ref={(el) => {
           folderInputRef.current = el
-          // Folder picker on desktop; mobile browsers can't pick folders, so there
-          // the input stays a plain multi-file select (flat picks are accepted —
-          // the engine falls back to basename matching for subdir texture paths).
-          const mobile = typeof navigator !== "undefined" && /Android|iPhone|iPad/i.test(navigator.userAgent)
-          if (!mobile) el?.setAttribute("webkitdirectory", "")
+          el?.setAttribute("webkitdirectory", "")
         }}
         type="file"
         multiple
         className="hidden"
         onChange={(e) => {
-          onFolderPicked(e.target.files)
+          void handleModelFiles(Array.from(e.target.files ?? []))
+          e.target.value = ""
+        }}
+      />
+      {/* Model .zip picker — the mobile primary, and desktop's ZIP button (a
+          folder dialog can't pick files, hence the separate input). */}
+      <input
+        ref={zipInputRef}
+        type="file"
+        accept=".zip,application/zip,application/x-zip-compressed"
+        className="hidden"
+        onChange={(e) => {
+          void handleModelFiles(Array.from(e.target.files ?? []))
           e.target.value = ""
         }}
       />
@@ -958,14 +1052,7 @@ export default function Home() {
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0]
-          if (f) {
-            setAudioName(f.name)
-            setAudioSize(f.size)
-            setAudioSrc((prev) => {
-              if (prev.startsWith("blob:")) URL.revokeObjectURL(prev)
-              return URL.createObjectURL(f)
-            })
-          }
+          if (f) setMusicFile(f)
           e.target.value = ""
         }}
       />
@@ -974,7 +1061,7 @@ export default function Home() {
           you hear is what renders. */}
       <audio
         ref={audioElRef}
-        src={audioSrc}
+        src={audioSrc || undefined}
         preload="auto"
         playsInline
         muted={audioSource !== "music"}
@@ -995,9 +1082,7 @@ export default function Home() {
                   key={path}
                   className="block w-full cursor-pointer truncate rounded-lg px-3 py-2 text-left text-xs transition-colors hover:bg-white/5 hover:text-foreground"
                   onClick={() => {
-                    // Relative-path match for folder picks; bare-name fallback for
-                    // flat mobile multi-file picks (no webkitRelativePath there).
-                    const pmx = pmxFileAtRelativePath(upload.files, path) ?? upload.files.find((f) => f.name === path)
+                    const pmx = upload.files.find((f) => relPath(f) === path)
                     if (pmx) void loadCustom(upload.files, pmx)
                   }}
                 >

@@ -21,6 +21,9 @@ function AssetRow({
   meta,
   onClick,
   onRemove,
+  secondaryLabel,
+  onSecondaryClick,
+  secondaryJoiner,
 }: {
   icon: ComponentType<{ className?: string }>
   label: string
@@ -31,18 +34,38 @@ function AssetRow({
   onClick?: () => void
   /** When set and a value is present, shows a remove (✕) button at the line's right edge. */
   onRemove?: () => void
+  /** Optional compact second action beside the main button (e.g. "ZIP"). */
+  secondaryLabel?: string
+  onSecondaryClick?: () => void
+  /** Word between the two actions ("or") — clarifies they're alternatives. */
+  secondaryJoiner?: string
 }) {
   return (
     <>
-      <Button
-        variant="outline"
-        size="sm"
-        className="h-7 w-full gap-1.5 border-white/10 bg-white/5 text-xs hover:bg-white/10 hover:text-foreground"
-        onClick={onClick}
-      >
-        <Icon className="size-4" />
-        {label}
-      </Button>
+      <div className="flex items-center gap-1.5">
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 min-w-0 flex-1 gap-1.5 border-white/10 bg-white/5 text-xs hover:bg-white/10 hover:text-foreground"
+          onClick={onClick}
+        >
+          <Icon className="size-4" />
+          <span className="truncate">{label}</span>
+        </Button>
+        {secondaryLabel && onSecondaryClick && (
+          <>
+            {secondaryJoiner && <span className="shrink-0 text-[11px] text-muted-foreground/70">{secondaryJoiner}</span>}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 shrink-0 border-white/10 bg-white/5 px-2.5 text-xs hover:bg-white/10 hover:text-foreground"
+              onClick={onSecondaryClick}
+            >
+              {secondaryLabel}
+            </Button>
+          </>
+        )}
+      </div>
       {/* Own line: filename (truncated — clips with … instead of widening the dock) + optional remove. */}
       <div className="mt-1.5 flex items-center gap-1">
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={value ?? undefined}>
@@ -77,12 +100,15 @@ export function AssetsPanel({
   audioMeta,
   backdropMeta,
   skyboxMeta,
+  modelUploadLabel,
   onUploadModel,
+  onUploadModelZip,
   onUploadAnimation,
   onUploadCamera,
   onUploadMusic,
   onUploadBackdrop,
   onUploadSkybox,
+  onRemoveMusic,
   onRemoveAnimation,
   onRemoveCamera,
   onRemoveBackdrop,
@@ -103,12 +129,17 @@ export function AssetsPanel({
   audioMeta: string
   backdropMeta: string
   skyboxMeta: string
+  /** Platform-specific label (desktop: folder wording; mobile: zip wording). */
+  modelUploadLabel: string
   onUploadModel: () => void
+  /** Desktop only: opens the .zip file dialog (folder dialogs can't pick zips). */
+  onUploadModelZip?: () => void
   onUploadAnimation: () => void
   onUploadCamera: () => void
   onUploadMusic: () => void
   onUploadBackdrop: () => void
   onUploadSkybox: () => void
+  onRemoveMusic: () => void
   onRemoveAnimation: () => void
   onRemoveCamera: () => void
   onRemoveBackdrop: () => void
@@ -121,11 +152,14 @@ export function AssetsPanel({
         <Section title={t.assets.model}>
           <AssetRow
             icon={PersonStanding}
-            label={t.assets.uploadModel}
+            label={modelUploadLabel}
             value={modelFile}
             placeholder={t.assets.noModel}
             meta={modelMeta}
             onClick={onUploadModel}
+            secondaryLabel={onUploadModelZip ? "ZIP" : undefined}
+            onSecondaryClick={onUploadModelZip}
+            secondaryJoiner={t.assets.or}
           />
         </Section>
 
@@ -161,6 +195,7 @@ export function AssetsPanel({
             placeholder={t.assets.noAudio}
             meta={audioMeta}
             onClick={onUploadMusic}
+            onRemove={onRemoveMusic}
           />
         </Section>
 

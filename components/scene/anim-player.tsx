@@ -35,7 +35,8 @@ export const AnimPlayer = memo(function AnimPlayer({
 }: {
   engineRef: RefObject<Engine | null>
   modelName: string
-  clipName: string
+  /** Null = no clip loaded — the transport stays visible but inert. */
+  clipName: string | null
   /** A camera VMD is loaded — show the Follow/Free toggle. */
   hasCamera: boolean
 }) {
@@ -94,7 +95,7 @@ export const AnimPlayer = memo(function AnimPlayer({
       // keeps currentFrame — `play(clipName)` would reset it to 0 (the from-start bug).
       if (p.current >= p.duration - AT_END_EPS) model.seek(0)
       model.play()
-    } else {
+    } else if (clipName) {
       model.play(clipName) // first-ever start: load and play the clip
     }
   }
@@ -126,12 +127,16 @@ export const AnimPlayer = memo(function AnimPlayer({
 
   const current = dragVal ?? progress.current
 
+  const hasClip = clipName !== null
   return (
-    <div
-      className="flex items-center gap-2 rounded-full border border-white/10 bg-zinc-950/70 py-1 pr-3 pl-3 shadow-float backdrop-blur-xs"
-      title={clipName}
-    >
-      <Button variant="ghost" size="icon" className="size-7 shrink-0 rounded-full hover:bg-white/5 hover:text-foreground" onClick={toggle}>
+    <div className="flex items-center gap-2 rounded-full border border-white/10 bg-zinc-950/70 py-1 pr-3 pl-3 shadow-float backdrop-blur-xs">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-7 shrink-0 rounded-full hover:bg-white/5 hover:text-foreground disabled:opacity-40"
+        disabled={!hasClip}
+        onClick={toggle}
+      >
         {progress.playing ? <Pause className="size-4" /> : <Play className="size-4 translate-x-px" />}
       </Button>
       <span className="shrink-0 text-xs leading-none text-muted-foreground tabular-nums">{fmt(current)}</span>
@@ -141,6 +146,7 @@ export const AnimPlayer = memo(function AnimPlayer({
         min={0}
         max={Math.max(progress.duration, 0.01)}
         step={0.01}
+        disabled={!hasClip}
         onValueChange={([v]) => seek(v)}
         onValueCommit={() => setDragVal(null)}
       />
