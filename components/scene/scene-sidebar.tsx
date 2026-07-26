@@ -60,8 +60,8 @@ export function Section({
 }) {
   // Full-bleed hairline between sections (-mx cancels the panel padding).
   return (
-    <div className="-mx-4 mt-4 border-t border-white/10 px-4 pt-3.5 first:mt-0 first:border-t-0 first:pt-0">
-      <div className="mb-2 flex items-center justify-between">
+    <div className="-mx-4 mt-3 border-t border-white/10 px-4 pt-2.5 first:mt-0 first:border-t-0 first:pt-0">
+      <div className="mb-1.5 flex items-center justify-between">
         <div className="text-xs font-medium tracking-[0.14em] text-muted-foreground uppercase">{title}</div>
         {action}
       </div>
@@ -181,10 +181,46 @@ export function ScenePanel({
           </div>
         </Section>
 
-        <Section title={t.scene.colors}>
-          <ColorRow label={t.scene.background} value={colors.background} onChange={(hex) => patch("colors", { background: hex })} />
-          <ColorRow label={t.scene.ground} value={colors.ground} onChange={(hex) => patch("colors", { ground: hex })} />
-          <ColorRow label={t.scene.gridLines} value={colors.grid} onChange={(hex) => patch("colors", { grid: hex })} />
+        {/* Background: one color today; grows later (gradients, environments). */}
+        <Section title={t.scene.background}>
+          <ColorRow label={t.scene.color} value={colors.background} onChange={(hex) => patch("colors", { background: hex })} />
+        </Section>
+
+        {/* Ground: its own domain — color, opacity, shadow, grid; presets later. */}
+        <Section title={t.scene.ground}>
+          <ColorRow label={t.scene.color} value={colors.ground} onChange={(hex) => patch("colors", { ground: hex })} />
+          <SliderRow
+            label={t.scene.opacity}
+            value={colors.groundOpacity}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(v) => patch("colors", { groundOpacity: v })}
+            fmt={(v) => v.toFixed(2)}
+          />
+          {/* Shadow persists below opacity (shadow catcher) — this turns it off entirely. */}
+          <div className="mt-2.5 flex items-center justify-between">
+            <span className="text-xs">{t.scene.shadow}</span>
+            <Switch
+              checked={colors.groundShadow}
+              onCheckedChange={(v) => patch("colors", { groundShadow: v })}
+              className="scale-75"
+            />
+          </div>
+          {/* Grid lines: toggle + color chip in one row (chip only while on). */}
+          <div className="mt-2.5 flex items-center justify-between">
+            <span className="text-xs">{t.scene.gridLines}</span>
+            <div className="flex items-center gap-2">
+              {colors.gridEnabled && (
+                <ColorField value={colors.grid} onChange={(hex) => patch("colors", { grid: hex })} />
+              )}
+              <Switch
+                checked={colors.gridEnabled}
+                onCheckedChange={(v) => patch("colors", { gridEnabled: v })}
+                className="scale-75"
+              />
+            </div>
+          </div>
         </Section>
 
         {/* Reset to the app's curated defaults (not the engine's neutral ones). */}

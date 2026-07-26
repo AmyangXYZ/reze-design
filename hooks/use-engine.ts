@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Engine, Vec3, type ApplyStyleGroupResult, type CompileOptions, type RenderClass, type StyleGroup } from "reze-engine"
 import { MODEL_ID, MODEL_PATH, MODEL_PRESETS, SLOT_GRAPHS } from "@/lib/materials"
-import { azElToDirection, hexToLinearVec3, type SceneSettings } from "@/lib/scene-settings"
+import { azElToDirection, hexToLinearVec3, hexToSrgbVec3, type SceneSettings } from "@/lib/scene-settings"
 
 // Eye and Hair are pinned, non-deletable groups: they own the special render
 // classes (stencil so eyes read through hair), so membership IS the assignment —
@@ -72,6 +72,9 @@ export function useEngine(
         const s = initialSettingsRef.current
         const engine = new Engine(canvasRef.current, {
           camera: { distance: 28.8, target: new Vec3(0, 12.5, 0) },
+          // The engine paints the background itself (composited post-tonemap, so it
+          // matches the CSS hex) — the first frame is correct regardless of DOM state.
+          background: hexToSrgbVec3(s.colors.background),
           world: { color: hexToLinearVec3(s.world.color), strength: s.world.strength },
           sun: {
             color: hexToLinearVec3(s.sun.color),
@@ -89,6 +92,9 @@ export function useEngine(
         engine.addGround({
           diffuseColor: hexToLinearVec3(s.colors.ground),
           gridLineColor: hexToLinearVec3(s.colors.grid),
+          opacity: s.colors.groundOpacity,
+          shadowStrength: s.colors.groundShadow ? 1 : 0,
+          gridLineOpacity: s.colors.gridEnabled ? 0.4 : 0,
         })
         setMaterials(model.getMaterials().map((m) => ({ name: m.name, diffuse: m.diffuse, visible: true })))
         setModelStats({

@@ -12,6 +12,12 @@ export type SceneColors = {
   background: string
   ground: string
   grid: string
+  /** Whole-ground opacity 0–1 (1 = solid; shadow persists — shadow catcher). */
+  groundOpacity: number
+  /** Ground receives the model's shadow. */
+  groundShadow: boolean
+  /** Show the ground grid lines. */
+  gridEnabled: boolean
 }
 
 export type SceneSettings = {
@@ -27,6 +33,14 @@ export type SceneSettings = {
     intensity: number
     color: string
   }
+}
+
+/** sRGB hex → display-space Vec3 (0–1 per channel, NO linearization) — for the
+ *  engine's background color, which is composited post-tonemap and must match
+ *  the CSS color of the same hex exactly. */
+export function hexToSrgbVec3(hex: string): Vec3 {
+  const n = parseInt(hex.replace("#", ""), 16)
+  return new Vec3(((n >> 16) & 0xff) / 255, ((n >> 8) & 0xff) / 255, (n & 0xff) / 255)
 }
 
 /** sRGB hex → linear-light Vec3 (what the engine's Blender-style colors expect). */
@@ -59,6 +73,9 @@ export const DEFAULT_SCENE_SETTINGS: SceneSettings = {
     background: "#0c0a09",
     ground: "#8e51ff",
     grid: "#fafaf9",
+    groundOpacity: 1,
+    groundShadow: true,
+    gridEnabled: true,
   },
   world: {
     color: "#7f22fe",
@@ -91,6 +108,9 @@ export const ENGINE_DEFAULT_SCENE_SETTINGS: SceneSettings = {
     background: "#0d1116",
     ground: "#494d57",
     grid: "#ededed",
+    groundOpacity: 1,
+    groundShadow: true,
+    gridEnabled: true,
   },
   world: {
     color: linearVec3ToHex(ENGINE_WORLD.color),

@@ -68,6 +68,7 @@ export const RenderPanel = memo(function RenderPanel({
   musicUrl,
   audioSource,
   onAudioSourceChange,
+  onExportingChange,
 }: {
   engineRef: RefObject<Engine | null>
   canvasRef: RefObject<HTMLCanvasElement | null>
@@ -83,6 +84,9 @@ export const RenderPanel = memo(function RenderPanel({
   /** Lifted to the page: also routes live audio (music element / backdrop video). */
   audioSource: ExportAudioSource
   onAudioSourceChange: (s: ExportAudioSource) => void
+  /** The page suspends live audio/video mirrors while an export runs (the export
+   *  drives the same model clock, so the mirrors would play, out of sync). */
+  onExportingChange: (exporting: boolean) => void
 }) {
   const t = useT()
   const [orientation, setOrientation] = useState<"horizontal" | "vertical">("horizontal")
@@ -95,7 +99,6 @@ export const RenderPanel = memo(function RenderPanel({
   const preset = ORIENTATIONS.find((p) => p.id === orientation) ?? ORIENTATIONS[0]
   const width = preset.w * SCALE
   const height = preset.h * SCALE
-  const backdropHasAudio = backdrop?.kind === "video" && backdrop.hasAudio
   const upscaled = backdrop !== null && backdrop.width > 0 && backdrop.width < width
   const canRender = !!animName && animDuration > 0 && !exporting
 
@@ -104,6 +107,7 @@ export const RenderPanel = memo(function RenderPanel({
     const canvas = canvasRef.current
     if (!engine || !canvas || !animName) return
     setExporting(true)
+    onExportingChange(true)
     setResult(null)
     setProgress(null)
     const ac = new AbortController()
@@ -142,6 +146,7 @@ export const RenderPanel = memo(function RenderPanel({
         setResult({ ok: false, message: e instanceof Error ? e.message : String(e) })
     } finally {
       setExporting(false)
+      onExportingChange(false)
       abortRef.current = null
       setProgress(null)
     }
@@ -185,9 +190,6 @@ export const RenderPanel = memo(function RenderPanel({
               <SelectContent>
                 <SelectItem value="music" disabled={!musicUrl}>
                   {t.render.audioMusic}
-                </SelectItem>
-                <SelectItem value="backdrop" disabled={!backdropHasAudio}>
-                  {t.render.audioBackdrop}
                 </SelectItem>
                 <SelectItem value="none">
                   {t.render.audioNone}

@@ -7,7 +7,7 @@
 // dock). Environment/backgrounds live in the Scene tab, not here.
 
 import type { ComponentType } from "react"
-import { Footprints, Image as ImageIcon, Music, PersonStanding, Video, X } from "lucide-react"
+import { Footprints, Globe, Image as ImageIcon, Music, PersonStanding, Video, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Section } from "@/components/scene/scene-sidebar"
@@ -70,40 +70,49 @@ export function AssetsPanel({
   cameraName,
   audioName,
   backdropName,
+  skyboxName,
   modelMeta,
   animMeta,
   cameraMeta,
   audioMeta,
   backdropMeta,
+  skyboxMeta,
   onUploadModel,
   onUploadAnimation,
   onUploadCamera,
   onUploadMusic,
   onUploadBackdrop,
+  onUploadSkybox,
   onRemoveAnimation,
   onRemoveCamera,
   onRemoveBackdrop,
+  onRemoveSkybox,
 }: {
   /** The loaded model's actual .pmx filename (not the internal id). */
   modelFile: string
   animName: string | null
   cameraName: string | null
   audioName: string | null
-  /** Background image/video filename (the scene's environment layer). */
+  /** Flat background image filename (DOM layer behind the scene). */
   backdropName: string | null
+  /** 360° equirect skybox filename (engine-rendered, follows the camera). */
+  skyboxName: string | null
   modelMeta: string
   animMeta: string
   cameraMeta: string
   audioMeta: string
   backdropMeta: string
+  skyboxMeta: string
   onUploadModel: () => void
   onUploadAnimation: () => void
   onUploadCamera: () => void
   onUploadMusic: () => void
   onUploadBackdrop: () => void
+  onUploadSkybox: () => void
   onRemoveAnimation: () => void
   onRemoveCamera: () => void
   onRemoveBackdrop: () => void
+  onRemoveSkybox: () => void
 }) {
   const t = useT()
   return (
@@ -164,6 +173,18 @@ export function AssetsPanel({
             meta={backdropMeta}
             onClick={onUploadBackdrop}
             onRemove={onRemoveBackdrop}
+          />
+        </Section>
+
+        <Section title={t.assets.skybox}>
+          <AssetRow
+            icon={Globe}
+            label={t.assets.uploadSkybox}
+            value={skyboxName}
+            placeholder={t.assets.noSkybox}
+            meta={skyboxMeta}
+            onClick={onUploadSkybox}
+            onRemove={onRemoveSkybox}
           />
         </Section>
       </div>

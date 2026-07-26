@@ -40,6 +40,7 @@ import { SLOT_GRAPHS } from "@/lib/materials"
 import {
   azElToDirection,
   hexToLinearVec3,
+  hexToSrgbVec3,
   loadSceneSettings,
   saveSceneSettings,
   type SceneSettings,
@@ -176,6 +177,14 @@ export default function Home() {
   // Read stored settings synchronously (SSR-safe: falls back to defaults) so the
   // page background AND the engine boot already match the user's config.
   const [sceneSettings, setSceneSettings] = useState<SceneSettings>(() => loadSceneSettings())
+  // suppressHydrationWarning makes React SKIP patching the server-rendered style
+  // (SSR uses defaults; the client initializer read localStorage), and since the
+  // state never changes after mount the stale server color stuck — a stored light
+  // background rendered black after refresh. Sync the DOM imperatively instead.
+  const rootRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    rootRef.current?.style.setProperty("background-color", sceneSettings.colors.background)
+  }, [sceneSettings.colors.background])
 
   // The engine hook needs a pick handler at construction; route through a ref
   // (synced in an effect) so the handler can use everything defined below.
@@ -385,15 +394,45 @@ export default function Home() {
     setCameraSize(null)
   }
 
-  // ── Backdrop: a static image or video behind the 3D scene. Lives as runtime
-  // state (object URL + original File kept for export demux). A video backdrop
-  // mirrors the animation clock below, and loops when shorter than the clip. ──
+  // ── Backdrop: a static image behind the 3D scene. Lives as runtime state
+  // (object URL; original File kept on the object). Mutually exclusive with the
+  // 360 skybox — a flat layer behind an opaque skybox canvas would be invisible.
   const backdropInputRef = useRef<HTMLInputElement | null>(null)
-  const bgVideoRef = useRef<HTMLVideoElement | null>(null)
   const [backdrop, setBackdrop] = useState<BackdropMedia | null>(null)
+  // ── Skybox: a 360° equirect image rendered BY THE ENGINE (PhotoDome-style,
+  // follows the camera; display-only, no lighting influence). ──
+  const skyboxInputRef = useRef<HTMLInputElement | null>(null)
+  const [skybox, setSkybox] = useState<BackdropMedia | null>(null)
+  const onSkyboxPicked = async (file: File | undefined) => {
+    if (!file) return
+    try {
+      const next = await probeBackdrop(file)
+      engineRef.current?.setBackdropEquirect(await createImageBitmap(file))
+      setSkybox((prev) => {
+        releaseBackdrop(prev)
+        return next
+      })
+      setBackdrop((prev) => {
+        releaseBackdrop(prev)
+        return null
+      })
+    } catch (e) {
+      setUpload({ kind: "notice", message: e instanceof Error ? e.message : String(e) })
+    }
+  }
+  const removeSkybox = () => {
+    engineRef.current?.setBackdropEquirect(null)
+    setSkybox((prev) => {
+      releaseBackdrop(prev)
+      return null
+    })
+  }
   // Audio routing — one choice drives BOTH live playback and export (consistency):
-  // "music" = the audio element, "backdrop" = the video's own sound, "none" = silent.
+  // "music" = the audio element, "none" = silent.
   const [audioSource, setAudioSource] = useState<ExportAudioSource>("music")
+  // While an export runs it drives the same model clock the live mirrors watch —
+  // suspend them (music + backdrop video) or they'd play, out of sync, during render.
+  const [exporting, setExporting] = useState(false)
   const onBackdropPicked = async (file: File | undefined) => {
     if (!file) return
     try {
@@ -401,6 +440,12 @@ export default function Home() {
       setBackdrop((prev) => {
         releaseBackdrop(prev)
         return next
+      })
+      // Flat backdrop replaces the skybox (mutual exclusion, no layering surprises).
+      engineRef.current?.setBackdropEquirect(null)
+      setSkybox((prev) => {
+        releaseBackdrop(prev)
+        return null
       })
     } catch (e) {
       setUpload({ kind: "notice", message: e instanceof Error ? e.message : String(e) })
@@ -411,8 +456,6 @@ export default function Home() {
       releaseBackdrop(prev)
       return null
     })
-    // Without a backdrop the video-audio option has no source — fall back to music.
-    setAudioSource((s) => (s === "backdrop" ? "music" : s))
   }
 
   // ── Music: a bundled default track, replaceable via upload. An <audio>
@@ -472,7 +515,7 @@ export default function Home() {
   useEffect(() => {
     const audio = audioElRef.current
     if (!audio) return
-    if (!animName) {
+    if (!animName || exporting) {
       audio.pause()
       return
     }
@@ -494,40 +537,8 @@ export default function Home() {
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [animName, modelName, engineRef])
+  }, [animName, modelName, engineRef, exporting])
 
-  // Mirror the animation clock onto a video backdrop the same way (model is the
-  // master; the video loops via modulo when shorter than the clip). With no clip
-  // loaded it just free-runs as a muted looping ambience.
-  useEffect(() => {
-    const video = bgVideoRef.current
-    if (!video || backdrop?.kind !== "video") return
-    if (!animName) {
-      void video.play().catch(() => {})
-      return
-    }
-    let raf = 0
-    const tick = () => {
-      raf = requestAnimationFrame(tick)
-      const p = engineRef.current?.getModel(modelName)?.getAnimationProgress()
-      const dur = video.duration || backdrop.duration
-      if (!p || !dur) return
-      const target = p.current % dur
-      if (p.playing && userInteracted.current) {
-        if (video.paused) {
-          video.currentTime = target
-          void video.play().catch(() => {})
-        } else if (Math.abs(video.currentTime - target) > 0.25) {
-          video.currentTime = target // drift correction (seek / loop restart)
-        }
-      } else if (!p.playing) {
-        if (!video.paused) video.pause()
-        if (Math.abs(video.currentTime - target) > 0.1) video.currentTime = target // scrub follows
-      }
-    }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [backdrop, animName, modelName, engineRef])
   const onFolderPicked = (fileList: FileList | null) => {
     const result = parsePmxFolderInput(fileList)
     if (result.status === "single") void loadCustom(result.files, result.pmxFile)
@@ -538,13 +549,17 @@ export default function Home() {
   }
 
   // ── Scene settings → engine ──
-  const prevGround = useRef<{ ground: string; grid: string } | null>(null)
+  const prevGround = useRef<string | null>(null)
   useEffect(() => {
     saveSceneSettings(sceneSettings)
     if (!ready) return
     const engine = engineRef.current
     if (!engine) return
     const { world, sun, bloom, colors } = sceneSettings
+    // The engine paints the background (post-tonemap, exact CSS-hex match) — except
+    // while a backdrop image is set, where the canvas must stay transparent so the
+    // DOM image layer behind it shows through.
+    engine.setBackgroundColor(backdrop ? null : hexToSrgbVec3(colors.background))
     engine.setWorld({ color: hexToLinearVec3(world.color), strength: world.strength })
     engine.setSun({
       color: hexToLinearVec3(sun.color),
@@ -559,11 +574,18 @@ export default function Home() {
       intensity: bloom.intensity,
       color: hexToLinearVec3(bloom.color),
     })
-    if (prevGround.current?.ground !== colors.ground || prevGround.current?.grid !== colors.grid) {
-      engine.addGround({ diffuseColor: hexToLinearVec3(colors.ground), gridLineColor: hexToLinearVec3(colors.grid) })
-      prevGround.current = { ground: colors.ground, grid: colors.grid }
+    const groundKey = `${colors.ground}|${colors.grid}|${colors.groundOpacity}|${colors.groundShadow}|${colors.gridEnabled}`
+    if (prevGround.current !== groundKey) {
+      engine.addGround({
+        diffuseColor: hexToLinearVec3(colors.ground),
+        gridLineColor: hexToLinearVec3(colors.grid),
+        opacity: colors.groundOpacity,
+        shadowStrength: colors.groundShadow ? 1 : 0,
+        gridLineOpacity: colors.gridEnabled ? 0.4 : 0,
+      })
+      prevGround.current = groundKey
     }
-  }, [sceneSettings, ready, engineRef])
+  }, [sceneSettings, ready, engineRef, backdrop])
 
   // ── Dock tab definitions ── LEFT = styling (materials, scene look); RIGHT =
   // ingredients & output (assets in, render out).
@@ -614,22 +636,22 @@ export default function Home() {
           cameraMeta={cameraName && cameraSize != null ? fmtSize(cameraSize) : ""}
           audioMeta={audioName ? [fmtDur(audioDuration), audioSize ? fmtSize(audioSize) : ""].filter(Boolean).join(" · ") : ""}
           backdropName={backdrop?.name ?? null}
-          backdropMeta={
-            backdrop
-              ? `${backdrop.width}×${backdrop.height}${backdrop.kind === "video" ? ` · ${fmtDur(backdrop.duration)}${backdrop.hasAudio ? " · ♪" : ""}` : ""}`
-              : ""
-          }
+          backdropMeta={backdrop ? `${backdrop.width}×${backdrop.height}` : ""}
+          skyboxName={skybox?.name ?? null}
+          skyboxMeta={skybox ? `${skybox.width}×${skybox.height} · 360°` : ""}
           onUploadModel={() => folderInputRef.current?.click()}
           onUploadAnimation={() => vmdInputRef.current?.click()}
           onUploadCamera={() => cameraInputRef.current?.click()}
           onUploadMusic={() => audioInputRef.current?.click()}
           onUploadBackdrop={() => backdropInputRef.current?.click()}
+          onUploadSkybox={() => skyboxInputRef.current?.click()}
           onRemoveAnimation={() => {
             stopAnimation()
             setAnimName(null)
           }}
           onRemoveCamera={removeCamera}
           onRemoveBackdrop={removeBackdrop}
+          onRemoveSkybox={removeSkybox}
         />
       ),
     },
@@ -650,6 +672,7 @@ export default function Home() {
           musicUrl={audioSrc}
           audioSource={audioSource}
           onAudioSourceChange={setAudioSource}
+          onExportingChange={setExporting}
         />
       ),
     },
@@ -657,26 +680,17 @@ export default function Home() {
 
   return (
     <div
+      ref={rootRef}
       className="fixed inset-0 overflow-hidden text-sm text-foreground select-none"
       style={{ backgroundColor: sceneSettings.colors.background }}
       suppressHydrationWarning
     >
-      {/* ── Backdrop media layer: page bg color → image/video (cover) → transparent
-          canvas. Export composites the SAME stack (lib/video-export), so live and
+      {/* ── Backdrop layer: page bg color → image (cover) → transparent canvas.
+          Export composites the SAME stack (lib/video-export), so live and
           rendered output match. ── */}
-      {backdrop?.kind === "image" && (
+      {backdrop && (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={backdrop.url} alt="" className="absolute inset-0 h-full w-full object-cover" />
-      )}
-      {backdrop?.kind === "video" && (
-        <video
-          ref={bgVideoRef}
-          src={backdrop.url}
-          muted={audioSource !== "backdrop"}
-          loop
-          playsInline
-          className="absolute inset-0 h-full w-full object-cover"
-        />
       )}
       {/* object-contain: normally a no-op (buffer aspect ≡ box aspect), but during
           video export the buffer is pinned to the OUTPUT aspect (e.g. 9:16 on a wide
@@ -854,10 +868,20 @@ export default function Home() {
       <input
         ref={backdropInputRef}
         type="file"
-        accept="image/*,video/*"
+        accept="image/*"
         className="hidden"
         onChange={(e) => {
           void onBackdropPicked(e.target.files?.[0])
+          e.target.value = ""
+        }}
+      />
+      <input
+        ref={skyboxInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          void onSkyboxPicked(e.target.files?.[0])
           e.target.value = ""
         }}
       />
@@ -880,8 +904,8 @@ export default function Home() {
         }}
       />
       {/* Audio source — driven (play/pause/seek) by the animation-clock mirror above.
-          Muted when the backdrop video (or nothing) owns the audio — same routing
-          the export uses, so what you hear is what renders. */}
+          Muted when audio is set to None — same routing the export uses, so what
+          you hear is what renders. */}
       <audio
         ref={audioElRef}
         src={audioSrc}

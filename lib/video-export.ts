@@ -2,32 +2,22 @@
 // — deterministic: animation, physics, and the camera VMD all advance exactly one
 // frame regardless of wall time) at an explicit resolution (engine.setRenderSize),
 // composites the same layer stack the live view shows (background color → backdrop
-// image/video → transparent engine canvas), and encodes via mediabunny (WebCodecs
-// hardware encode under the hood) into an mp4 with the chosen audio track.
-//
-// The backdrop video is sampled frame-accurately with a linear decoder (CanvasSink
-// iterator — export time moves forward, so no seeking), looping when shorter than
-// the clip; its audio (or the music track) is assembled into one AudioBuffer.
+// image → transparent engine canvas), and encodes via mediabunny (WebCodecs
+// hardware encode under the hood) into an mp4 with the music track.
 
 import {
-  ALL_FORMATS,
-  AudioBufferSink,
   AudioBufferSource,
-  BlobSource,
   BufferTarget,
-  CanvasSink,
   CanvasSource,
   getFirstEncodableAudioCodec,
   getFirstEncodableVideoCodec,
-  Input,
   Mp4OutputFormat,
   Output,
-  type WrappedCanvas,
 } from "mediabunny"
 import type { Engine } from "reze-engine"
 import { coverCrop, type BackdropMedia } from "./backdrop"
 
-export type ExportAudioSource = "music" | "backdrop" | "none"
+export type ExportAudioSource = "music" | "none"
 
 export type ExportSettings = {
   width: number
@@ -86,58 +76,6 @@ function drawWatermark(ctx: CanvasRenderingContext2D, w: number, h: number, font
   ctx.restore()
 }
 
-/** Frame-accurate, forward-only sampler over the backdrop video, looping at its
- *  duration. Decodes linearly (no seeks); a loop wrap restarts the iterator. */
-async function createBackdropSampler(backdrop: BackdropMedia) {
-  const input = new Input({ source: new BlobSource(backdrop.file), formats: ALL_FORMATS })
-  const track = await input.getPrimaryVideoTrack()
-  if (!track) {
-    input.dispose()
-    return null
-  }
-  const sink = new CanvasSink(track, { poolSize: 3 })
-  const cycle = backdrop.duration
-  let iter: AsyncGenerator<WrappedCanvas, void, unknown> | null = null
-  let current: WrappedCanvas | null = null
-  let pending: WrappedCanvas | null = null
-  let prevLocal = Infinity
-
-  return {
-    /** Latest frame at export time `t` (seconds), or null before the first sample. */
-    async frameAt(t: number): Promise<WrappedCanvas | null> {
-      const local = cycle > 0 ? t % cycle : 0
-      if (local < prevLocal) {
-        // First call or loop wrap — restart the linear decode from the top.
-        await iter?.return()
-        iter = sink.canvases(0)
-        current = null
-        pending = null
-      }
-      prevLocal = local
-      for (;;) {
-        if (pending) {
-          if (pending.timestamp > local) break
-          current = pending
-          pending = null
-          continue
-        }
-        const r = await iter!.next()
-        if (r.done) break
-        if (r.value.timestamp <= local) current = r.value
-        else {
-          pending = r.value
-          break
-        }
-      }
-      return current
-    },
-    dispose() {
-      void iter?.return()
-      input.dispose()
-    },
-  }
-}
-
 /** Decode the music track and trim it to the clip length (shorter tracks are kept
  *  as-is — the tail of the video is simply silent). */
 async function buildMusicAudio(url: string, exportDuration: number): Promise<AudioBuffer | null> {
@@ -157,39 +95,6 @@ async function buildMusicAudio(url: string, exportDuration: number): Promise<Aud
     return out
   } finally {
     void ac.close()
-  }
-}
-
-/** Extract the backdrop video's audio and loop it to the clip length — matching the
- *  looping video layer, so picture and sound stay consistent. */
-async function buildBackdropAudio(backdrop: BackdropMedia, exportDuration: number): Promise<AudioBuffer | null> {
-  const input = new Input({ source: new BlobSource(backdrop.file), formats: ALL_FORMATS })
-  try {
-    const track = await input.getPrimaryAudioTrack()
-    if (!track) return null
-    const sink = new AudioBufferSink(track)
-    const chunks: { buffer: AudioBuffer; timestamp: number }[] = []
-    for await (const w of sink.buffers(0, backdrop.duration)) chunks.push({ buffer: w.buffer, timestamp: w.timestamp })
-    if (!chunks.length) return null
-    const rate = chunks[0].buffer.sampleRate
-    const channels = chunks[0].buffer.numberOfChannels
-    const out = new AudioBuffer({ length: Math.ceil(exportDuration * rate), numberOfChannels: channels, sampleRate: rate })
-    const cycle = backdrop.duration > 0 ? backdrop.duration : exportDuration
-    for (let base = 0; base < exportDuration; base += cycle) {
-      for (const c of chunks) {
-        const start = Math.round((base + c.timestamp) * rate)
-        if (start >= out.length) break
-        for (let ch = 0; ch < channels; ch++) {
-          const src = c.buffer.getChannelData(Math.min(ch, c.buffer.numberOfChannels - 1))
-          const n = Math.min(src.length, out.length - start)
-          out.getChannelData(ch).set(src.subarray(0, n), start)
-        }
-      }
-      if (cycle <= 0) break
-    }
-    return out
-  } finally {
-    input.dispose()
   }
 }
 
@@ -238,8 +143,6 @@ export async function exportVideo(opts: {
   progress({ phase: "audio", frame: 0, total, encodeFps: 0, etaSeconds: 0 })
   let audioBuffer: AudioBuffer | null = null
   if (settings.audioSource === "music" && musicUrl) audioBuffer = await buildMusicAudio(musicUrl, duration)
-  else if (settings.audioSource === "backdrop" && backdrop?.kind === "video" && backdrop.hasAudio)
-    audioBuffer = await buildBackdropAudio(backdrop, duration)
   let audioSource: AudioBufferSource | null = null
   if (audioBuffer) {
     const audioCodec = await getFirstEncodableAudioCodec(["aac", "opus"], {
@@ -252,9 +155,9 @@ export async function exportVideo(opts: {
     }
   }
 
-  // ── Backdrop layers ──
+  // ── Backdrop layer ──
   let bgImage: HTMLImageElement | null = null
-  if (backdrop?.kind === "image") {
+  if (backdrop) {
     bgImage = await new Promise<HTMLImageElement>((resolve, reject) => {
       const el = new Image()
       el.onload = () => resolve(el)
@@ -262,7 +165,6 @@ export async function exportVideo(opts: {
       el.src = backdrop.url
     })
   }
-  const sampler = backdrop?.kind === "video" ? await createBackdropSampler(backdrop) : null
 
   // ── Engine: remember live state, switch to offline stepping ──
   const prior = model.getAnimationProgress()
@@ -295,12 +197,6 @@ export async function exportVideo(opts: {
       if (bgImage) {
         const c = coverCrop(bgImage.naturalWidth, bgImage.naturalHeight, width, height)
         ctx.drawImage(bgImage, c.sx, c.sy, c.sw, c.sh, 0, 0, width, height)
-      } else if (sampler) {
-        const f = await sampler.frameAt(t)
-        if (f) {
-          const c = coverCrop(f.canvas.width, f.canvas.height, width, height)
-          ctx.drawImage(f.canvas, c.sx, c.sy, c.sw, c.sh, 0, 0, width, height)
-        }
       }
       ctx.drawImage(canvas, 0, 0, width, height)
       if (settings.watermark) drawWatermark(ctx, width, height, watermarkFont)
@@ -322,7 +218,6 @@ export async function exportVideo(opts: {
     if (output.state === "started") await output.cancel().catch(() => {})
     throw e
   } finally {
-    sampler?.dispose()
     // Restore the live session: viewport-tracked size, prior playhead + play state.
     engine.setRenderSize(null)
     model.pause()
