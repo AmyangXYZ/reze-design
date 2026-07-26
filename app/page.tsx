@@ -517,14 +517,22 @@ export default function Home() {
   }, [animName, modelName, engineRef])
 
   // Browsers block audio until the user interacts — start the track on the first
-  // pointer down, synced to wherever the animation already is.
+  // gesture, synced to wherever the animation already is. Keydown counts too:
+  // a Space-press IS a valid user activation (autoplay-wise), and gating on
+  // pointerdown alone left Space-started playback silent until the first click.
   const userInteracted = useRef(false)
   useEffect(() => {
     const on = () => {
       userInteracted.current = true
+      window.removeEventListener("pointerdown", on)
+      window.removeEventListener("keydown", on)
     }
-    window.addEventListener("pointerdown", on, { once: true })
-    return () => window.removeEventListener("pointerdown", on)
+    window.addEventListener("pointerdown", on)
+    window.addEventListener("keydown", on)
+    return () => {
+      window.removeEventListener("pointerdown", on)
+      window.removeEventListener("keydown", on)
+    }
   }, [])
 
   // Load the bundled default motion once the demo model is ready (custom uploads
@@ -539,6 +547,12 @@ export default function Home() {
   }, [ready, loadVmdUrl])
 
   // Mirror the animation clock onto the audio element (model is the master).
+  // Audio FREE-RUNS while playing — currentTime is written only at discrete
+  // events: play start, a master-clock jump (scrub while playing / transport
+  // loop restart), or drift beyond 0.5s. Per-frame drift-threshold seeking
+  // (the old 0.2s check) was a seek storm on iOS, where currentTime is coarse
+  // and the audio pipeline laggy — audible flicker/jitter. Same policy that
+  // fixed the video backdrop; also how the engine's web preview stays smooth.
   useEffect(() => {
     const audio = audioElRef.current
     if (!audio) return
@@ -547,20 +561,27 @@ export default function Home() {
       return
     }
     let raf = 0
+    let wasPlaying = false
+    let lastModelTime = -1
     const tick = () => {
       raf = requestAnimationFrame(tick)
       const p = engineRef.current?.getModel(modelName)?.getAnimationProgress()
       if (!p) return
-      if (p.playing && userInteracted.current) {
-        if (audio.paused) {
+      const playing = p.playing && userInteracted.current
+      // A frame advances the clock ≤ ~0.05s — anything bigger is a discrete jump.
+      const jumped = lastModelTime >= 0 && Math.abs(p.current - lastModelTime) > 0.35
+      lastModelTime = p.current
+      if (playing) {
+        if (!wasPlaying) {
           audio.currentTime = p.current
           void audio.play().catch(() => {})
-        } else if (Math.abs(audio.currentTime - p.current) > 0.2) {
-          audio.currentTime = p.current // drift correction (seek / loop restart)
+        } else if (!audio.seeking && (jumped || Math.abs(audio.currentTime - p.current) > 0.5)) {
+          audio.currentTime = p.current
         }
-      } else if (!p.playing && !audio.paused) {
+      } else if (!audio.paused) {
         audio.pause()
       }
+      wasPlaying = playing
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
