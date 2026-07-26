@@ -1,9 +1,9 @@
 "use client"
 
 // Scene panel (chromeless): world / sun / bloom lighting and scene appearance
-// colors. Lives in the LEFT dock's "Scene" tab now. Model / animation / music
-// uploads moved to the Assets tab. The Section / SliderRow / ColorRow helpers
-// are exported so the Assets panel and right dock can reuse the same rows.
+// colors. Lives in the LEFT dock's "Scene" tab now. Model / animation / music /
+// backdrop uploads live in the Assets tab. The Section / SliderRow / ColorRow
+// helpers are exported so the Assets panel and right dock can reuse the same rows.
 
 import { RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"

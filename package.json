@@ -16,13 +16,14 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.25.0",
+    "mediabunny": "^1.51.0",
     "next": "16.2.11",
     "radix-ui": "^1.6.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-resizable-panels": "^4.12.2",
     "react-syntax-highlighter": "^16.1.1",
-    "reze-engine": "^0.22.1",
+    "reze-engine": "^0.23.0",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {

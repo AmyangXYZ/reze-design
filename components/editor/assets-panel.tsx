@@ -7,7 +7,7 @@
 // dock). Environment/backgrounds live in the Scene tab, not here.
 
 import type { ComponentType } from "react"
-import { Footprints, Music, PersonStanding, Video, X } from "lucide-react"
+import { Footprints, Image as ImageIcon, Music, PersonStanding, Video, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Section } from "@/components/scene/scene-sidebar"
@@ -69,32 +69,41 @@ export function AssetsPanel({
   animName,
   cameraName,
   audioName,
+  backdropName,
   modelMeta,
   animMeta,
   cameraMeta,
   audioMeta,
+  backdropMeta,
   onUploadModel,
   onUploadAnimation,
   onUploadCamera,
   onUploadMusic,
+  onUploadBackdrop,
   onRemoveAnimation,
   onRemoveCamera,
+  onRemoveBackdrop,
 }: {
   /** The loaded model's actual .pmx filename (not the internal id). */
   modelFile: string
   animName: string | null
   cameraName: string | null
   audioName: string | null
+  /** Background image/video filename (the scene's environment layer). */
+  backdropName: string | null
   modelMeta: string
   animMeta: string
   cameraMeta: string
   audioMeta: string
+  backdropMeta: string
   onUploadModel: () => void
   onUploadAnimation: () => void
   onUploadCamera: () => void
   onUploadMusic: () => void
+  onUploadBackdrop: () => void
   onRemoveAnimation: () => void
   onRemoveCamera: () => void
+  onRemoveBackdrop: () => void
 }) {
   const t = useT()
   return (
@@ -143,6 +152,18 @@ export function AssetsPanel({
             placeholder={t.assets.noAudio}
             meta={audioMeta}
             onClick={onUploadMusic}
+          />
+        </Section>
+
+        <Section title={t.assets.backdrop}>
+          <AssetRow
+            icon={ImageIcon}
+            label={t.assets.uploadBackdrop}
+            value={backdropName}
+            placeholder={t.assets.noBackdrop}
+            meta={backdropMeta}
+            onClick={onUploadBackdrop}
+            onRemove={onRemoveBackdrop}
           />
         </Section>
       </div>

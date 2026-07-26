@@ -32,7 +32,9 @@ import { FloatingPanel, type Rect } from "@/components/editor/floating-panel"
 import { NodeLibrary } from "@/components/editor/node-library"
 import { RenderPanel } from "@/components/editor/render-panel"
 import { useEngine } from "@/hooks/use-engine"
+import { probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
 import { useT } from "@/lib/i18n"
+import type { ExportAudioSource } from "@/lib/video-export"
 import { MaterialSphereIcon } from "@/components/scene/slot-icons"
 import { SLOT_GRAPHS } from "@/lib/materials"
 import {
@@ -383,6 +385,36 @@ export default function Home() {
     setCameraSize(null)
   }
 
+  // ── Backdrop: a static image or video behind the 3D scene. Lives as runtime
+  // state (object URL + original File kept for export demux). A video backdrop
+  // mirrors the animation clock below, and loops when shorter than the clip. ──
+  const backdropInputRef = useRef<HTMLInputElement | null>(null)
+  const bgVideoRef = useRef<HTMLVideoElement | null>(null)
+  const [backdrop, setBackdrop] = useState<BackdropMedia | null>(null)
+  // Audio routing — one choice drives BOTH live playback and export (consistency):
+  // "music" = the audio element, "backdrop" = the video's own sound, "none" = silent.
+  const [audioSource, setAudioSource] = useState<ExportAudioSource>("music")
+  const onBackdropPicked = async (file: File | undefined) => {
+    if (!file) return
+    try {
+      const next = await probeBackdrop(file)
+      setBackdrop((prev) => {
+        releaseBackdrop(prev)
+        return next
+      })
+    } catch (e) {
+      setUpload({ kind: "notice", message: e instanceof Error ? e.message : String(e) })
+    }
+  }
+  const removeBackdrop = () => {
+    setBackdrop((prev) => {
+      releaseBackdrop(prev)
+      return null
+    })
+    // Without a backdrop the video-audio option has no source — fall back to music.
+    setAudioSource((s) => (s === "backdrop" ? "music" : s))
+  }
+
   // ── Music: a bundled default track, replaceable via upload. An <audio>
   // element (below) is the source; a rAF loop mirrors the model's animation
   // clock onto it so play/pause/seek/loop from the transport drive both. ──
@@ -463,6 +495,39 @@ export default function Home() {
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
   }, [animName, modelName, engineRef])
+
+  // Mirror the animation clock onto a video backdrop the same way (model is the
+  // master; the video loops via modulo when shorter than the clip). With no clip
+  // loaded it just free-runs as a muted looping ambience.
+  useEffect(() => {
+    const video = bgVideoRef.current
+    if (!video || backdrop?.kind !== "video") return
+    if (!animName) {
+      void video.play().catch(() => {})
+      return
+    }
+    let raf = 0
+    const tick = () => {
+      raf = requestAnimationFrame(tick)
+      const p = engineRef.current?.getModel(modelName)?.getAnimationProgress()
+      const dur = video.duration || backdrop.duration
+      if (!p || !dur) return
+      const target = p.current % dur
+      if (p.playing && userInteracted.current) {
+        if (video.paused) {
+          video.currentTime = target
+          void video.play().catch(() => {})
+        } else if (Math.abs(video.currentTime - target) > 0.25) {
+          video.currentTime = target // drift correction (seek / loop restart)
+        }
+      } else if (!p.playing) {
+        if (!video.paused) video.pause()
+        if (Math.abs(video.currentTime - target) > 0.1) video.currentTime = target // scrub follows
+      }
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [backdrop, animName, modelName, engineRef])
   const onFolderPicked = (fileList: FileList | null) => {
     const result = parsePmxFolderInput(fileList)
     if (result.status === "single") void loadCustom(result.files, result.pmxFile)
@@ -548,19 +613,46 @@ export default function Home() {
           }
           cameraMeta={cameraName && cameraSize != null ? fmtSize(cameraSize) : ""}
           audioMeta={audioName ? [fmtDur(audioDuration), audioSize ? fmtSize(audioSize) : ""].filter(Boolean).join(" · ") : ""}
+          backdropName={backdrop?.name ?? null}
+          backdropMeta={
+            backdrop
+              ? `${backdrop.width}×${backdrop.height}${backdrop.kind === "video" ? ` · ${fmtDur(backdrop.duration)}${backdrop.hasAudio ? " · ♪" : ""}` : ""}`
+              : ""
+          }
           onUploadModel={() => folderInputRef.current?.click()}
           onUploadAnimation={() => vmdInputRef.current?.click()}
           onUploadCamera={() => cameraInputRef.current?.click()}
           onUploadMusic={() => audioInputRef.current?.click()}
+          onUploadBackdrop={() => backdropInputRef.current?.click()}
           onRemoveAnimation={() => {
             stopAnimation()
             setAnimName(null)
           }}
           onRemoveCamera={removeCamera}
+          onRemoveBackdrop={removeBackdrop}
         />
       ),
     },
-    { id: "render", label: t.tabs.render, icon: Clapperboard, content: <RenderPanel /> },
+    {
+      id: "render",
+      label: t.tabs.render,
+      icon: Clapperboard,
+      content: (
+        <RenderPanel
+          engineRef={engineRef}
+          canvasRef={canvasRef}
+          modelName={modelName}
+          sceneName={t.brand.untitledScene}
+          animName={animName}
+          animDuration={animDuration}
+          backdrop={backdrop}
+          bgColor={sceneSettings.colors.background}
+          musicUrl={audioSrc}
+          audioSource={audioSource}
+          onAudioSourceChange={setAudioSource}
+        />
+      ),
+    },
   ]
 
   return (
@@ -569,7 +661,27 @@ export default function Home() {
       style={{ backgroundColor: sceneSettings.colors.background }}
       suppressHydrationWarning
     >
-      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none" />
+      {/* ── Backdrop media layer: page bg color → image/video (cover) → transparent
+          canvas. Export composites the SAME stack (lib/video-export), so live and
+          rendered output match. ── */}
+      {backdrop?.kind === "image" && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={backdrop.url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+      )}
+      {backdrop?.kind === "video" && (
+        <video
+          ref={bgVideoRef}
+          src={backdrop.url}
+          muted={audioSource !== "backdrop"}
+          loop
+          playsInline
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      )}
+      {/* object-contain: normally a no-op (buffer aspect ≡ box aspect), but during
+          video export the buffer is pinned to the OUTPUT aspect (e.g. 9:16 on a wide
+          screen) — contain letterboxes it instead of stretching. */}
+      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none object-contain" />
 
       {!ready && !error && (
         <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
@@ -740,6 +852,16 @@ export default function Home() {
         }}
       />
       <input
+        ref={backdropInputRef}
+        type="file"
+        accept="image/*,video/*"
+        className="hidden"
+        onChange={(e) => {
+          void onBackdropPicked(e.target.files?.[0])
+          e.target.value = ""
+        }}
+      />
+      <input
         ref={audioInputRef}
         type="file"
         accept="audio/*"
@@ -757,12 +879,15 @@ export default function Home() {
           e.target.value = ""
         }}
       />
-      {/* Audio source — driven (play/pause/seek) by the animation-clock mirror above. */}
+      {/* Audio source — driven (play/pause/seek) by the animation-clock mirror above.
+          Muted when the backdrop video (or nothing) owns the audio — same routing
+          the export uses, so what you hear is what renders. */}
       <audio
         ref={audioElRef}
         src={audioSrc}
         preload="auto"
         playsInline
+        muted={audioSource !== "music"}
         className="hidden"
         onLoadedMetadata={(e) => setAudioDuration(e.currentTarget.duration)}
       />

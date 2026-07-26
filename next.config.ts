@@ -1,7 +1,9 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from "next"
+// import { join } from "path"
 
 const nextConfig: NextConfig = {
-    devIndicators: false
-};
+  //   outputFileTracingRoot: join(__dirname, ".."),
+  devIndicators: false,
+}
 
-export default nextConfig;
+export default nextConfig
