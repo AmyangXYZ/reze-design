@@ -5,6 +5,7 @@
 // backdrop uploads live in the Assets tab. The Section / SliderRow / ColorRow
 // helpers are exported so the Assets panel and right dock can reuse the same rows.
 
+import { memo } from "react"
 import { Redo2, RotateCcw, Undo2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -79,7 +80,10 @@ export function ColorRow({ label, value, onChange }: { label: string; value: str
   )
 }
 
-export function ScenePanel({
+// Memoized for the same keep-alive reason as AssetsPanel/MaterialsPanel: hidden
+// tabs re-render with the page otherwise. When Scene IS the visible tab its
+// `settings` prop changes per edit, so memo never blocks a real update.
+export const ScenePanel = memo(function ScenePanel({
   settings,
   onChange,
   onUndo,
@@ -271,4 +275,4 @@ export function ScenePanel({
       </div>
     </ScrollArea>
   )
-}
+})

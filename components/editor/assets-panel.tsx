@@ -6,7 +6,7 @@
 // its current filename truncated on the line below (so a long name never widens the
 // dock). Environment/backgrounds live in the Scene tab, not here.
 
-import type { ComponentType } from "react"
+import { memo, type ComponentType } from "react"
 import { Footprints, Globe, Image as ImageIcon, Music, PersonStanding, Video, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -87,7 +87,11 @@ function AssetRow({
   )
 }
 
-export function AssetsPanel({
+// Memoized: the dock keeps tabs mounted (useKeepAlive), so without memo the
+// hidden Assets tab re-rendered on every page render — every settings-slider
+// tick included. All handler props are useCallback'd in page.tsx; the meta
+// strings are primitives, so recomputing them doesn't break the bailout.
+export const AssetsPanel = memo(function AssetsPanel({
   modelFile,
   animName,
   cameraName,
@@ -225,4 +229,4 @@ export function AssetsPanel({
       </div>
     </ScrollArea>
   )
-}
+})

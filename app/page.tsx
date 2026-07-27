@@ -449,11 +449,11 @@ export default function Home() {
   const onCameraPicked = async (file: File | undefined) => {
     if (file) await loadCameraBuffer(await file.arrayBuffer(), file.name)
   }
-  const removeCamera = () => {
+  const removeCamera = useCallback(() => {
     engineRef.current?.clearCameraVmd()
     setCameraName(null)
     setCameraSize(null)
-  }
+  }, [engineRef])
 
   // ── Backdrop: a static image behind the 3D scene. Lives as runtime state
   // (object URL; original File kept on the object). Mutually exclusive with the
@@ -481,13 +481,13 @@ export default function Home() {
       setUpload({ kind: "notice", message: e instanceof Error ? e.message : String(e) })
     }
   }
-  const removeSkybox = () => {
+  const removeSkybox = useCallback(() => {
     engineRef.current?.setBackdropEquirect(null)
     setSkybox((prev) => {
       releaseBackdrop(prev)
       return null
     })
-  }
+  }, [engineRef])
   // Audio routing — one choice drives BOTH live playback and export (consistency):
   // "music" = the audio element, "none" = silent.
   const [audioSource, setAudioSource] = useState<ExportAudioSource>("music")
@@ -585,12 +585,12 @@ export default function Home() {
       setUpload({ kind: "notice", message: e instanceof Error ? e.message : String(e) })
     }
   }
-  const removeBackdrop = () => {
+  const removeBackdrop = useCallback(() => {
     setBackdrop((prev) => {
       releaseBackdrop(prev)
       return null
     })
-  }
+  }, [])
 
   // ── Music: the scene's track, replaceable via upload. An <audio> element
   // (below) is the source; a rAF loop mirrors the model's animation clock onto it
@@ -599,26 +599,6 @@ export default function Home() {
   const audioElRef = useRef<HTMLAudioElement | null>(null)
   const [audioName, setAudioName] = useState<string | null>(bootScene.assets.audio?.name ?? null)
   const [audioSrc, setAudioSrc] = useState<string>(bootScene.assets.audio?.url ?? "")
-  const setMusicFile = (f: File) => {
-    setAudioName(f.name)
-    setAudioSize(f.size)
-    setAudioSrc((prev) => {
-      if (prev.startsWith("blob:")) URL.revokeObjectURL(prev)
-      return URL.createObjectURL(f)
-    })
-  }
-  const removeAudio = () => {
-    setAudioName(null)
-    setAudioDuration(0)
-    setAudioSize(null)
-    setAudioSrc((prev) => {
-      if (prev.startsWith("blob:")) URL.revokeObjectURL(prev)
-      return ""
-    })
-    // No source left for the "music" audio option — exports fall back to silent.
-    setAudioSource((s) => (s === "music" ? "none" : s))
-  }
-
   // High-level asset metadata (size for uploads; duration read from the engine /
   // audio element once available). Sizes are unknown for the bundled defaults.
   const [modelSize, setModelSize] = useState<number | null>(null)
@@ -627,6 +607,27 @@ export default function Home() {
   const [animSize, setAnimSize] = useState<number | null>(null)
   const [audioDuration, setAudioDuration] = useState(0)
   const [audioSize, setAudioSize] = useState<number | null>(null)
+
+  const setMusicFile = (f: File) => {
+    setAudioName(f.name)
+    setAudioSize(f.size)
+    setAudioSrc((prev) => {
+      if (prev.startsWith("blob:")) URL.revokeObjectURL(prev)
+      return URL.createObjectURL(f)
+    })
+  }
+  const removeAudio = useCallback(() => {
+    setAudioName(null)
+    setAudioDuration(0)
+    setAudioSize(null)
+    // Revoke OUTSIDE the updater — a side effect inside setState's updater is
+    // impure (updaters can re-run), and the compiler lint rejects memoizing it.
+    if (audioSrc.startsWith("blob:")) URL.revokeObjectURL(audioSrc)
+    setAudioSrc("")
+    // No source left for the "music" audio option — exports fall back to silent.
+    setAudioSource((s) => (s === "music" ? "none" : s))
+  }, [audioSrc, setAudioName, setAudioDuration, setAudioSize, setAudioSrc, setAudioSource])
+
 
   // Animation duration + total bone keyframes appear whenever the async load
   // (VMD parse + setAnimation, or a fresh model the clip carries over to)
@@ -752,46 +753,72 @@ export default function Home() {
     else setUpload({ kind: "pick", files, paths: pmxs.map(relPath).sort((a, b) => a.localeCompare(b)) })
   }
 
-  // ── Scene settings → engine ──
-  const prevGround = useRef<string | null>(null)
+  // ── Scene settings → engine, guarded PER SECTION by object identity. patch()
+  // in the Scene panel replaces only the edited section, so untouched sections
+  // keep their identity and their pushes are skipped. This is not a micro-opt:
+  // setSun marks the shadow map dirty (an extra full scene pass per frame), so
+  // the old unguarded push re-rendered shadows on every tick of ANY slider —
+  // bloom included. First run after `ready` pushes everything (prev starts null).
+  const prevPushed = useRef<{ settings: SceneSettings; backdrop: boolean; greenScreen: boolean } | null>(null)
+  // addGround has no light-update path — it recreates GPU buffers + a bind group
+  // per call — so ground edits coalesce to at most one rebuild per frame, applied
+  // from the latest options at frame time (a drag can tick faster than rAF).
+  const groundOptsRef = useRef<Parameters<NonNullable<typeof engineRef.current>["addGround"]>[0] | null>(null)
+  const groundRaf = useRef(0)
+  useEffect(() => () => cancelAnimationFrame(groundRaf.current), [])
   useEffect(() => {
     if (!ready) return
     const engine = engineRef.current
     if (!engine) return
     const { world, sun, bloom, background, ground } = sceneSettings
+    const prev = prevPushed.current
+    const modeChanged = !prev || prev.backdrop !== !!backdrop || prev.greenScreen !== greenScreen
     // The engine paints the background (post-tonemap, exact CSS-hex match) — except
     // while a backdrop image is set, where the canvas must stay transparent so the
     // DOM image layer behind it shows through. Green-screen mode overrides both.
-    engine.setBackgroundColor(
-      greenScreen ? hexToSrgbVec3("#00ff00") : backdrop ? null : hexToSrgbVec3(background.color),
-    )
-    engine.setWorld({ color: hexToLinearVec3(world.color), strength: world.strength })
-    engine.setSun({
-      color: hexToLinearVec3(sun.color),
-      strength: sun.strength,
-      direction: azElToDirection(sun.azimuth, sun.elevation),
-    })
-    engine.setBloomOptions({
-      enabled: bloom.enabled,
-      threshold: bloom.threshold,
-      knee: bloom.knee,
-      radius: bloom.radius,
-      intensity: bloom.intensity,
-      color: hexToLinearVec3(bloom.color),
-    })
+    if (modeChanged || prev.settings.background !== background) {
+      engine.setBackgroundColor(
+        greenScreen ? hexToSrgbVec3("#00ff00") : backdrop ? null : hexToSrgbVec3(background.color),
+      )
+    }
+    if (!prev || prev.settings.world !== world) {
+      engine.setWorld({ color: hexToLinearVec3(world.color), strength: world.strength })
+    }
+    if (!prev || prev.settings.sun !== sun) {
+      engine.setSun({
+        color: hexToLinearVec3(sun.color),
+        strength: sun.strength,
+        direction: azElToDirection(sun.azimuth, sun.elevation),
+      })
+    }
+    if (!prev || prev.settings.bloom !== bloom) {
+      engine.setBloomOptions({
+        enabled: bloom.enabled,
+        threshold: bloom.threshold,
+        knee: bloom.knee,
+        radius: bloom.radius,
+        intensity: bloom.intensity,
+        color: hexToLinearVec3(bloom.color),
+      })
+    }
     // Green mode hides the ground SURFACE (it would occlude the key) but keeps the
     // shadow-catcher shadow per the user's Shadow switch.
-    const groundKey = `${ground.color}|${ground.grid}|${ground.opacity}|${ground.shadow}|${ground.gridEnabled}|${greenScreen}`
-    if (prevGround.current !== groundKey) {
-      engine.addGround({
+    if (modeChanged || prev.settings.ground !== ground) {
+      groundOptsRef.current = {
         diffuseColor: hexToLinearVec3(ground.color),
         gridLineColor: hexToLinearVec3(ground.grid),
         opacity: greenScreen ? 0 : ground.opacity,
         shadowStrength: ground.shadow ? 1 : 0,
         gridLineOpacity: greenScreen || !ground.gridEnabled ? 0 : 0.4,
-      })
-      prevGround.current = groundKey
+      }
+      if (!groundRaf.current) {
+        groundRaf.current = requestAnimationFrame(() => {
+          groundRaf.current = 0
+          if (groundOptsRef.current) engineRef.current?.addGround(groundOptsRef.current)
+        })
+      }
     }
+    prevPushed.current = { settings: sceneSettings, backdrop: !!backdrop, greenScreen }
   }, [sceneSettings, ready, engineRef, backdrop, greenScreen])
 
   // ── Working scene → localStorage. The `state` half only: assets are blob: URLs
@@ -836,6 +863,24 @@ export default function Home() {
       if (idle && typeof cancelIdleCallback === "function") cancelIdleCallback(idle)
     }
   }, [ready, sceneSettings, groups, modelName, bootScene])
+
+  // Stable handlers for the memoized AssetsPanel. These were inline arrows on
+  // the JSX — new identity every render, which defeats memo, and with keep-alive
+  // docks a defeated memo means the HIDDEN Assets tab re-rendered on every page
+  // render (each tick of a settings slider drag included). They only touch refs
+  // and setters, so identity never needs to change.
+  const pickModel = useCallback(() => (isMobile ? zipInputRef.current : folderInputRef.current)?.click(), [isMobile])
+  const pickModelZip = useCallback(() => zipInputRef.current?.click(), [])
+  const pickAnimation = useCallback(() => vmdInputRef.current?.click(), [])
+  const pickCamera = useCallback(() => cameraInputRef.current?.click(), [])
+  const pickMusic = useCallback(() => audioInputRef.current?.click(), [])
+  const pickBackdrop = useCallback(() => backdropInputRef.current?.click(), [])
+  const pickSkybox = useCallback(() => skyboxInputRef.current?.click(), [])
+  const removeAnimation = useCallback(() => {
+    stopAnimation()
+    setAnimName(null)
+    animSourceRef.current = null // don't resurrect it on the next model upload
+  }, [stopAnimation])
 
   // ── Dock tab definitions ── LEFT = styling (materials, scene look); RIGHT =
   // ingredients & output (assets in, render out).
@@ -897,19 +942,15 @@ export default function Home() {
           skyboxName={skybox?.name ?? null}
           skyboxMeta={skybox ? `${skybox.width}×${skybox.height} · 360°` : ""}
           modelUploadLabel={isMobile ? t.assets.uploadModelZip : t.assets.uploadModelFolder}
-          onUploadModel={() => (isMobile ? zipInputRef.current : folderInputRef.current)?.click()}
-          onUploadModelZip={isMobile ? undefined : () => zipInputRef.current?.click()}
-          onUploadAnimation={() => vmdInputRef.current?.click()}
-          onUploadCamera={() => cameraInputRef.current?.click()}
-          onUploadMusic={() => audioInputRef.current?.click()}
+          onUploadModel={pickModel}
+          onUploadModelZip={isMobile ? undefined : pickModelZip}
+          onUploadAnimation={pickAnimation}
+          onUploadCamera={pickCamera}
+          onUploadMusic={pickMusic}
           onRemoveMusic={removeAudio}
-          onUploadBackdrop={() => backdropInputRef.current?.click()}
-          onUploadSkybox={() => skyboxInputRef.current?.click()}
-          onRemoveAnimation={() => {
-            stopAnimation()
-            setAnimName(null)
-            animSourceRef.current = null // don't resurrect it on the next model upload
-          }}
+          onUploadBackdrop={pickBackdrop}
+          onUploadSkybox={pickSkybox}
+          onRemoveAnimation={removeAnimation}
           onRemoveCamera={removeCamera}
           onRemoveBackdrop={removeBackdrop}
           onRemoveSkybox={removeSkybox}
