@@ -17,6 +17,7 @@
 // path into storage, where it would restore as a dead blob: URL.
 
 import type { MaterialPresetMap, StyleGroup } from "reze-engine"
+import type { AppliedBackgroundEffect } from "@/lib/background-effects"
 import { loadLegacySceneSettings, type SceneSettings } from "@/lib/scene-settings"
 
 export const SCENE_FORMAT_VERSION = 1
@@ -62,10 +63,14 @@ export type ModelRef = {
   presets?: MaterialPresetMap
 }
 
-/** Backdrop (flat image behind the canvas) and skybox (360° equirect, drawn by
- *  the engine) are mutually exclusive — a flat layer behind an opaque skybox is
- *  invisible. One tagged field makes that state unrepresentable rather than an
- *  invariant each setter has to remember to maintain. */
+/** The background's BASE layer: a backdrop (flat image behind the canvas) or a
+ *  skybox (360° equirect, drawn by the engine) — mutually exclusive, since a
+ *  flat layer behind an opaque skybox is invisible; one tagged field makes that
+ *  state unrepresentable. `null` = the solid background color from settings.
+ *
+ *  This is only HALF the background: a WGSL effect layer can float over it
+ *  (state.backgroundEffect — a value, so it lives on the other side of the
+ *  durability boundary from these file-backed assets). */
 export type SceneBackground = { kind: "backdrop" | "skybox"; asset: AssetRef } | null
 
 export type SceneAssets = {
@@ -82,6 +87,11 @@ export type SceneState = {
   /** Boot framing. `target` is the orbit centre — tune to the model's height. */
   camera: { distance: number; target: [number, number, number] }
   settings: SceneSettings
+  /** WGSL effect layered between the base background and the model (stars,
+   *  water…). Stored as a full snapshot (wgsl + params), not a library
+   *  reference, so a saved or shared scene reproduces exactly even if the
+   *  library entry changes later — same philosophy as `groups`. */
+  backgroundEffect: AppliedBackgroundEffect | null
   /** Per-group shader graphs — the user's actual creative work. `null` means
    *  "auto-group from the model's material names at load", which is what the
    *  demo wants: it re-derives whenever the bundled model is swapped. */
@@ -133,6 +143,7 @@ export function serializeScene(live: {
   name: string
   camera: SceneState["camera"]
   settings: SceneSettings
+  backgroundEffect: AppliedBackgroundEffect | null
   groups: StyleGroup[]
 }): Scene {
   return {
@@ -148,6 +159,7 @@ export function serializeScene(live: {
       name: live.name,
       camera: live.camera,
       settings: live.settings,
+      backgroundEffect: live.backgroundEffect,
       groups: live.groups,
       groupsFor: live.model.id,
     },
@@ -156,7 +168,11 @@ export function serializeScene(live: {
 
 // ── Local persistence: the `state` half only. ──────────────────────────────────
 
-const STATE_KEY = "reze-design.sceneState"
+// ".2": earlier builds autosaved backgroundEffect:null before effects existed,
+// and the explicit-null-preserving hydrate (correctly) kept honoring it — so the
+// demo's default effect could never land for anyone who had run an old build.
+// Bumping the key re-seeds everyone from the current defaults once.
+const STATE_KEY = "reze-design.sceneState.2"
 
 export function saveSceneState(state: SceneState) {
   try {
@@ -198,6 +214,11 @@ export function hydrateScene(base: Scene): Scene {
       ...base.state,
       name: stored?.name ?? base.state.name,
       camera: stored?.camera ?? base.state.camera,
+      // Model-independent (unlike groups) — restores across model swaps. `in`
+      // check, not ??: a stored NULL is the user having REMOVED the effect, and
+      // must not resurrect the demo default on reload; only a blob from before
+      // the field existed falls through.
+      backgroundEffect: stored && "backgroundEffect" in stored ? stored.backgroundEffect ?? null : base.state.backgroundEffect,
       settings: {
         world: { ...base.state.settings.world, ...settingsBase.world },
         sun: { ...base.state.settings.sun, ...settingsBase.sun },

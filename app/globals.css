@@ -131,6 +131,19 @@
     @apply bg-background text-foreground;
     background-color: #0d1116;
   }
+  /* Tailwind v4's preflight leaves buttons at cursor:default — every enabled
+     button in this app is clickable and should say so. */
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  /* Focus rings are for KEYBOARD focus only. Pointer clicks and programmatic
+     focus (Radix returning focus on dialog close, the browser restoring focus
+     on tab return) kept leaving a "stuck" ring on random buttons. */
+  :focus:not(:focus-visible) {
+    outline: none;
+    box-shadow: none;
+  }
 }
 
 @keyframes ripple {

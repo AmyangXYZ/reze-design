@@ -1,17 +1,18 @@
 "use client"
 
-// Node-graph library — a "pick a shader for this group" browser. Left ~70%: a
-// sortable table — click a column header to sort (chevron shows the active column
-// + direction) — each row with a real graph minimap. Right ~30%: the selected
-// look's larger preview (live sphere later) which doubles as the fork-&-edit button
-// (hover → Edit graph), plus Apply; a toolbar "New graph" starts a blank look. A
-// look always styles the target material's
-// whole group (the styling unit); per-material splits live in group management.
-// Also mounts at /library later.
+// Shader-graph library — the shared library shell (category rail · thumbnail
+// grid · slim inspector), same language as the Backgrounds library. Cards carry
+// real graph minimaps; the inspector's big preview doubles as the fork-&-edit
+// button (hover → Edit graph), with Apply pinned at the bottom. A look always
+// styles the target material's whole GROUP (the styling unit); per-material
+// splits live in group management. Also mounts at /library later.
+//
+// Mobile rules baked in (the old table layout's lesson): dvh height, scrolling
+// inspector, shrink-0 pinned actions, rail hidden on narrow screens.
 
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { DEFAULT_GRAPH, type ShaderGraph } from "reze-engine"
-import { ChevronDown, ChevronUp, Plus, Search, SquarePen, X } from "lucide-react"
+import { Plus, Search, SquarePen, X } from "lucide-react"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -38,25 +39,7 @@ const ROWS: Row[] = LIBRARY_PACKS.flatMap((p) =>
   })),
 )
 
-type SortKey = "name" | "pack" | "author" | "created"
-const COLUMNS: { key: SortKey; label: string; end?: boolean }[] = [
-  { key: "name", label: "Name" },
-  { key: "pack", label: "Pack" },
-  { key: "author", label: "Author" },
-  { key: "created", label: "Date", end: true },
-]
-// Preview · Name · Pack · Author · Date — shared by header and rows.
-const GRID = "grid grid-cols-[3.25rem_minmax(0,1.5fr)_minmax(0,1.4fr)_minmax(0,0.9fr)_4rem] items-center gap-2"
-
-export function NodeLibrary({
-  open,
-  onOpenChange,
-  targetLabel,
-  canApply,
-  affects,
-  currentGraphName,
-  onApply,
-}: {
+type LibraryProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   /** The target group's name — the library is scoped to the group it opened from. */
@@ -70,155 +53,159 @@ export function NodeLibrary({
   currentGraphName: string | null
   /** `edit` pops the shader-graph editor on the fork so the user can customize it. */
   onApply: (graph: ShaderGraph, name: string, edit: boolean) => void
-}) {
+}
+
+export function NodeLibrary(props: LibraryProps) {
+  return (
+    // Non-modal + no backdrop so it coexists with the (higher-z) floating editor
+    // as an independent panel — open a look's editor without the library closing
+    // or blocking. Content mounts fresh per open: browsing state seeds itself.
+    <Dialog open={props.open} onOpenChange={props.onOpenChange} modal={false}>
+      {props.open && <LibraryContent {...props} />}
+    </Dialog>
+  )
+}
+
+function LibraryContent({ targetLabel, canApply, affects, currentGraphName, onApply }: LibraryProps) {
   const t = useT()
-  const colLabel: Record<SortKey, string> = {
-    name: t.field.name,
-    pack: t.field.pack,
-    author: t.field.author,
-    created: t.field.date,
-  }
   const [query, setQuery] = useState("")
-  const [sortKey, setSortKey] = useState<SortKey>("name")
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [category, setCategory] = useState<string | null>(null)
+  const isCurrent = (r: Row) => r.name === currentGraphName || r.graph.name === currentGraphName
+  const [selectedId, setSelectedId] = useState<string | null>(() => ROWS.find(isCurrent)?.id ?? ROWS[0]?.id ?? null)
 
-  // Pre-select the target group's applied graph on OPEN only (not when the user
-  // switches the target below — that shouldn't yank their browsing selection).
-  useEffect(() => {
-    if (!open) return
-    const row = ROWS.find((r) => r.name === currentGraphName || r.graph.name === currentGraphName)
-    setSelectedId(row?.id ?? null)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
-
-  const toggleSort = (key: SortKey) => {
-    if (key === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"))
-    else {
-      setSortKey(key)
-      setSortDir(key === "created" ? "desc" : "asc")
-    }
-  }
-
+  const categories = useMemo(() => [...new Set(ROWS.map((r) => r.category))], [])
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
-    const filtered = ROWS.filter(
+    return ROWS.filter(
       (r) =>
-        !q ||
-        r.name.toLowerCase().includes(q) ||
-        r.category.toLowerCase().includes(q) ||
-        r.pack.toLowerCase().includes(q) ||
-        r.author.toLowerCase().includes(q),
-    )
-    const dir = sortDir === "asc" ? 1 : -1
-    return filtered.sort((a, b) => dir * String(a[sortKey]).localeCompare(String(b[sortKey])))
-  }, [query, sortKey, sortDir])
+        (!category || r.category === category) &&
+        (!q ||
+          r.name.toLowerCase().includes(q) ||
+          r.category.toLowerCase().includes(q) ||
+          r.pack.toLowerCase().includes(q) ||
+          r.author.toLowerCase().includes(q)),
+    ).sort((a, b) => a.name.localeCompare(b.name))
+  }, [query, category])
   const selected = useMemo(() => ROWS.find((r) => r.id === selectedId) ?? null, [selectedId])
 
   return (
-    // Non-modal + no backdrop so it coexists with the (higher-z) floating editor as an
-    // independent panel — open a look's editor without the library closing or blocking.
-    <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
-      <DialogContent
-        showCloseButton={false}
-        overlay={false}
-        onInteractOutside={(e) => e.preventDefault()}
-        className="z-40 flex h-[78vh] max-h-[78vh] w-[92vw] max-w-5xl flex-col gap-0 overflow-hidden border-white/10 bg-zinc-950/95 p-0 sm:max-w-5xl"
-      >
-        {/* Title · search · close, all vertically centered in one bar. */}
-        <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-white/10 px-4 py-2 text-left">
-          <DialogTitle className="shrink-0 text-sm font-medium">{t.library.title}</DialogTitle>
-          <div className="relative ml-auto w-64 max-w-[45%]">
-            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t.library.searchPlaceholder}
-              className="h-7 border-white/10 bg-white/5 pl-8 text-xs"
-            />
+    <DialogContent
+      showCloseButton={false}
+      overlay={false}
+      onInteractOutside={(e) => e.preventDefault()}
+      // Don't return focus to the opener on close — it drew a stuck-looking
+      // focus ring on the Library pill (see globals.css focus-visible rule).
+      onCloseAutoFocus={(e) => e.preventDefault()}
+      // sm:max-w repeat is load-bearing (DialogContent base carries sm:max-w-lg).
+      className="z-40 flex h-[74dvh] max-h-[74dvh] w-[88vw] max-w-4xl flex-col gap-0 overflow-hidden border-white/10 bg-zinc-950/95 p-0 sm:max-w-4xl"
+    >
+      <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-white/10 px-4 py-2 text-left">
+        <DialogTitle className="shrink-0 text-sm font-medium">{t.library.title}</DialogTitle>
+        <div className="relative ml-auto w-64 max-w-[45%]">
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t.library.searchPlaceholder}
+            className="h-7 border-white/10 bg-white/5 pl-8 text-xs"
+          />
+        </div>
+        {/* Creation lives in the header — same spot as the Backgrounds library. */}
+        <button
+          disabled={!canApply}
+          onClick={() => onApply(structuredClone(DEFAULT_GRAPH), t.library.untitledShader, true)}
+          className="flex shrink-0 items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90 disabled:opacity-40 disabled:hover:bg-white"
+        >
+          <Plus className="size-3.5" />
+          {t.library.newGraph}
+        </button>
+        <DialogClose className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
+          <X className="size-4" />
+          <span className="sr-only">{t.library.close}</span>
+        </DialogClose>
+      </DialogHeader>
+
+      <div className="flex min-h-0 flex-1">
+        {/* ── Category rail (hidden on narrow screens — search still filters) ── */}
+        <div className="hidden w-36 shrink-0 flex-col gap-0.5 border-r border-white/10 p-2 md:flex">
+          <div className="px-2 py-1.5 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground/70 uppercase">
+            {t.bgLibrary.browse}
           </div>
-          <DialogClose className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
-            <X className="size-4" />
-            <span className="sr-only">{t.library.close}</span>
-          </DialogClose>
-        </DialogHeader>
+          {[null, ...categories].map((c) => {
+            const count = c === null ? ROWS.length : ROWS.filter((r) => r.category === c).length
+            const on = category === c
+            return (
+              <button
+                key={c ?? "all"}
+                onClick={() => setCategory(c)}
+                className={cn(
+                  "flex h-7 items-center gap-2 rounded-md px-2 text-xs transition-colors",
+                  on ? "bg-blue-400/15 font-medium text-blue-400" : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
+                )}
+              >
+                <span className="min-w-0 flex-1 truncate text-left">{c ?? t.bgLibrary.all}</span>
+                <span className={cn("font-mono text-[11px]", on ? "text-blue-400/80" : "text-muted-foreground/60")}>{count}</span>
+              </button>
+            )
+          })}
+        </div>
 
-        <div className="flex min-h-0 flex-1">
-          {/* ── Left: sortable table ── */}
-          <div className="flex min-h-0 flex-1 flex-col border-r border-white/10">
-            {/* Column headers (fixed above the scrolling body). */}
-            <div className={cn(GRID, "border-b border-white/10 px-3 py-1.5")}>
-              <span />
-              {COLUMNS.map((c) => (
-                <button
-                  key={c.key}
-                  onClick={() => toggleSort(c.key)}
-                  className={cn(
-                    "flex min-w-0 items-center gap-0.5 text-xs font-medium text-muted-foreground hover:text-foreground",
-                    c.end && "justify-end",
-                  )}
-                >
-                  <span className="truncate">{colLabel[c.key]}</span>
-                  {sortKey === c.key &&
-                    (sortDir === "asc" ? <ChevronUp className="size-3 shrink-0" /> : <ChevronDown className="size-3 shrink-0" />)}
-                </button>
-              ))}
-            </div>
-
-            <ScrollArea className="min-h-0 flex-1">
-              <div className="py-1">
-                {rows.map((r) => (
+        {/* ── Minimap grid ── */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] content-start gap-3 p-3">
+              {rows.map((r) => {
+                const sel = r.id === selectedId
+                return (
                   <button
                     key={r.id}
                     onClick={() => setSelectedId(r.id)}
+                    // Double-click forks straight into the graph editor (same as
+                    // the inspector preview's hover affordance, one step sooner).
+                    onDoubleClick={() => canApply && onApply(r.graph, r.name, true)}
                     className={cn(
-                      GRID,
-                      "w-full px-3 py-1 text-left text-xs transition-colors",
-                      r.id === selectedId ? "bg-blue-400/[0.08]" : "hover:bg-white/[0.03]",
+                      "overflow-hidden rounded-md border text-left transition-colors",
+                      sel ? "border-blue-400 ring-1 ring-blue-400" : "border-white/10 hover:border-white/25",
                     )}
                   >
-                    <div className="h-8 w-11 shrink-0 rounded bg-zinc-900/60 text-zinc-200">
-                      <GraphMinimap graph={r.graph} className="h-full w-full p-0.5" />
-                    </div>
-                    <span className="flex min-w-0 items-center gap-1.5">
-                      <span className="truncate font-medium">{r.name}</span>
-                      {(r.name === currentGraphName || r.graph.name === currentGraphName) && (
-                        <span className="shrink-0 rounded-full bg-blue-400/15 px-2 py-0.5 text-[11px] font-medium text-blue-400">{t.library.current}</span>
+                    <div className="relative aspect-[16/10] border-b border-white/5 bg-zinc-900/80 text-zinc-200">
+                      <GraphMinimap graph={r.graph} className="h-full w-full p-1.5" />
+                      {isCurrent(r) && (
+                        <span className="absolute top-1.5 left-1.5 rounded border border-blue-400/40 bg-zinc-950/70 px-1.5 py-0.5 font-mono text-[9px] font-semibold tracking-wide text-blue-400 uppercase">
+                          {t.library.current}
+                        </span>
                       )}
-                    </span>
-                    <span className="truncate text-muted-foreground">{r.pack}</span>
-                    <span className="truncate text-muted-foreground">{r.author}</span>
-                    <span className="text-right text-muted-foreground tabular-nums">{r.created.slice(0, 7)}</span>
+                    </div>
+                    <div className="px-2 py-1.5">
+                      <div className="truncate text-xs font-medium">{r.name}</div>
+                      <div className="truncate font-mono text-[11px] text-muted-foreground/70">
+                        {r.pack} · {r.author}
+                      </div>
+                    </div>
                   </button>
-                ))}
-                {rows.length === 0 && <div className="py-16 text-center text-xs text-muted-foreground">{t.library.noMatch(query)}</div>}
-              </div>
-            </ScrollArea>
+                )
+              })}
+              {rows.length === 0 && (
+                <div className="col-span-full py-16 text-center text-xs text-muted-foreground">{t.library.noMatch(query)}</div>
+              )}
+            </div>
+          </ScrollArea>
+        </div>
 
-            {/* Start a blank graph — pinned to the bottom of the list. */}
-            <button
-              disabled={!canApply}
-              onClick={() => onApply(structuredClone(DEFAULT_GRAPH), t.library.untitledShader, true)}
-              className="flex shrink-0 items-center justify-center gap-1.5 border-t border-white/10 px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-            >
-              <Plus className="size-3.5" />
-              {t.library.newGraph}
-            </button>
-          </div>
-
-          {/* ── Right: preview + apply ── */}
-          <div className="flex w-[30%] min-w-[260px] flex-col p-4">
-            <div className="aspect-square w-full">
-              {selected ? (
-                // The preview IS the edit affordance: hover → "Edit graph", click forks
-                // this look onto the group and opens the editor (replaces the old Edit button).
+        {/* ── Inspector: preview (= fork-&-edit) · meta · Apply pinned ── */}
+        <div className="flex w-[15.5rem] shrink-0 flex-col overflow-y-auto border-l border-white/10 sm:w-[16.5rem]">
+          {selected ? (
+            <>
+              <div className="p-3 pb-0">
+                {/* The preview IS the edit affordance: hover → "Edit graph", click
+                    forks this look onto the group and opens the editor. */}
                 <button
                   type="button"
                   disabled={!canApply}
                   onClick={() => canApply && onApply(selected.graph, selected.name, true)}
-                  className="group/prev relative block h-full w-full overflow-hidden rounded-lg border border-white/10 bg-zinc-900/60 text-zinc-200 disabled:cursor-default"
+                  className="group/prev relative block aspect-[16/10] w-full overflow-hidden rounded-md border border-white/10 bg-zinc-900/60 text-zinc-200 disabled:cursor-default"
                 >
-                  <GraphMinimap graph={selected.graph} className="h-full w-full p-4" />
+                  <GraphMinimap graph={selected.graph} className="h-full w-full p-2" />
                   {canApply && (
                     <div className="absolute inset-0 flex items-center justify-center gap-1.5 bg-zinc-950/70 text-xs font-medium text-foreground opacity-0 transition-opacity group-hover/prev:opacity-100">
                       <SquarePen className="size-4" />
@@ -226,17 +213,10 @@ export function NodeLibrary({
                     </div>
                   )}
                 </button>
-              ) : (
-                <div className="flex h-full w-full items-center justify-center rounded-lg border border-white/10 bg-zinc-900/60 text-xs text-muted-foreground">
-                  {t.library.selectGraph}
-                </div>
-              )}
-            </div>
-
-            {selected && (
-              <div className="mt-3 flex min-h-0 flex-1 flex-col">
-                <div className="truncate text-sm font-medium">{selected.name}</div>
-                <div className="mt-0.5 truncate text-xs text-muted-foreground">
+              </div>
+              <div className="min-h-0 p-3">
+                <div className="truncate text-sm font-semibold">{selected.name}</div>
+                <div className="mt-0.5 font-mono text-[11px] text-muted-foreground/70">
                   {selected.pack} · {selected.author} · {selected.created.slice(0, 7)}
                 </div>
                 {selected.description && (
@@ -245,32 +225,31 @@ export function NodeLibrary({
                 <div className="mt-2 flex flex-wrap gap-1">
                   {/* Indexed key: role labels could repeat once entries carry several tags. */}
                   {selected.tags.map((tag, i) => (
-                    <span key={`${tag}-${i}`} className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-muted-foreground">
+                    <span key={`${tag}-${i}`} className="rounded border border-white/5 bg-white/5 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
                       {tag}
                     </span>
                   ))}
                 </div>
-                <div className="mt-auto space-y-2 pt-4">
-                  {/* Scoped to the group you opened from; to fork & edit, click the preview. */}
-                  <Button
-                    size="sm"
-                    disabled={!canApply}
-                    onClick={() => onApply(selected.graph, selected.name, false)}
-                    className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-40"
-                  >
-                    <span className="truncate">{canApply ? t.library.applyTo(targetLabel ?? "") : t.library.selectFirst}</span>
-                  </Button>
-                  {canApply && (
-                    <div className="text-center text-[11px] text-muted-foreground">
-                      {t.library.materialCount(affects)}
-                    </div>
-                  )}
-                </div>
               </div>
-            )}
-          </div>
+              <div className="mt-auto shrink-0 space-y-1.5 border-t border-white/10 p-3">
+                <Button
+                  size="sm"
+                  disabled={!canApply}
+                  onClick={() => onApply(selected.graph, selected.name, false)}
+                  className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-40"
+                >
+                  <span className="truncate">{canApply ? t.library.applyTo(targetLabel ?? "") : t.library.selectFirst}</span>
+                </Button>
+                {canApply && <div className="text-center text-[11px] text-muted-foreground">{t.library.materialCount(affects)}</div>}
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-1 items-center justify-center p-4 text-center text-xs text-muted-foreground">
+              {t.library.selectGraph}
+            </div>
+          )}
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </DialogContent>
   )
 }

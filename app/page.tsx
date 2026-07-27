@@ -27,6 +27,8 @@ import { AssetsPanel } from "@/components/editor/assets-panel"
 import { BrandPill, RailLogo, TopRightCluster } from "@/components/editor/editor-chrome"
 import { LeftDock, RightDock, type DockTab } from "@/components/editor/dock"
 import { FloatingPanel, type Rect } from "@/components/editor/floating-panel"
+import { BackgroundLibrary } from "@/components/editor/background-library"
+import { WgslEditorPanel } from "@/components/editor/wgsl-editor"
 import { NodeLibrary } from "@/components/editor/node-library"
 import { RenderPanel, type FramePreview } from "@/components/editor/render-panel"
 import { useEngine } from "@/hooks/use-engine"
@@ -38,6 +40,7 @@ import type { ExportAudioSource } from "@/lib/video-export"
 import { MaterialSphereIcon } from "@/components/scene/slot-icons"
 import { DEFAULT_SCENE } from "@/lib/default-scene"
 import { SLOT_GRAPHS } from "@/lib/materials"
+import type { AppliedBackgroundEffect } from "@/lib/background-effects"
 import { hydrateScene, saveSceneState } from "@/lib/scene"
 import {
   azElToDirection,
@@ -118,6 +121,26 @@ function savePanelRect(r: Rect) {
     // non-fatal
   }
 }
+// The WGSL editor floats like the graph editor; its rect persists the same way.
+const WGSL_PANEL_KEY = "reze-design.wgslPanel"
+function loadWgslPanelRect(): Rect | null {
+  try {
+    const raw = window.localStorage.getItem(WGSL_PANEL_KEY)
+    return raw ? (JSON.parse(raw) as Rect) : null
+  } catch {
+    return null
+  }
+}
+// Default: a right-side column beside the scene (the point of the floating
+// panel is editing WITH the scene in view), clamped on-screen.
+function defaultWgslPanelRect(): Rect {
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const w = Math.min(560, vw - 48)
+  const h = Math.min(Math.max(360, vh - 160), 640)
+  return { x: Math.max(8, vw - w - 340), y: Math.max(8, (vh - h) / 2 - 20), w, h }
+}
+
 // First-open default: bottom-centered, roughly where the old docked drawer sat, clamped
 // to the viewport so it always lands on-screen.
 function defaultPanelRect(): Rect {
@@ -192,7 +215,9 @@ export default function Home() {
   // Undo/redo for the Scene panel. The graph editor runs its OWN history and only
   // yields ⌘Z while closed, so gate on the same `drawerOpen` it gates on —
   // whichever surface is open owns the shortcut, and neither double-handles it.
-  const sceneHistory = useHistory(sceneSettings, setSceneSettings, { shortcutsEnabled: !drawerOpen })
+  // Keyboard-only history (⌘/Ctrl+Z · ⇧⌘Z) — the hook registers the listener;
+  // no UI surfaces it (the buttons were removed as visual noise).
+  useHistory(sceneSettings, setSceneSettings, { shortcutsEnabled: !drawerOpen })
   // suppressHydrationWarning makes React SKIP patching the server-rendered style
   // (SSR uses defaults; the client initializer read localStorage), and since the
   // state never changes after mount the stale server color stuck — a stored light
@@ -567,6 +592,82 @@ export default function Home() {
       }
     }
   }, [greenScreen, engineRef])
+
+  // ── Background effect layer (WGSL, engine 0.25): floats between the base
+  // background (color / image / 360) and the model. A VALUE, not an asset —
+  // restored from localStorage at boot (bootScene) and persisted with the rest
+  // of the working state. Suspended in green-screen mode like the skybox: it
+  // renders in-canvas and would cover the key.
+  const [bgEffect, setBgEffect] = useState<AppliedBackgroundEffect | null>(bootScene.state.backgroundEffect)
+  const [effectsOpen, setEffectsOpen] = useState(false)
+  const openEffects = useCallback(() => setEffectsOpen(true), [setEffectsOpen])
+  // Recompile ONLY when the shader (or green-screen suspension) actually changes.
+  // Code is the effect's whole surface — there is no separate params tier in the
+  // app (a deliberate call; the engine still has one for future needs).
+  const lastFxWgsl = useRef<string | null>(null)
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!ready || !engine) return
+    const wgsl = greenScreen ? null : (bgEffect?.wgsl ?? null)
+    if (wgsl === lastFxWgsl.current) return
+    lastFxWgsl.current = wgsl
+    let stale = false
+    void engine.setBackgroundEffect(wgsl).then((r) => {
+      // Curated effects should never fail to compile — surface loudly if one does.
+      if (!stale && !r.ok) console.error("background effect failed:", r.diagnostics)
+    })
+    return () => {
+      stale = true
+    }
+  }, [bgEffect, greenScreen, ready, engineRef])
+  // Library callbacks — stable so the (memoizable) dialog doesn't re-render idly.
+  const applyBgEffect = useCallback((fx: AppliedBackgroundEffect) => setBgEffect(fx), [setBgEffect])
+  const removeBgEffect = useCallback(() => setBgEffect(null), [setBgEffect])
+  // ── Floating WGSL editor (page-owned, like the graph editor's panel — it
+  // coexists with the library and outlives it). Compile = live engine preview,
+  // Apply = commit to bgEffect; closing reverts any un-applied preview.
+  const [fxEditor, setFxEditor] = useState<{ sessionId: number; subject: AppliedBackgroundEffect } | null>(null)
+  const fxSessionRef = useRef(0)
+  // Rect initializes lazily on first OPEN (an event handler, so no
+  // setState-in-effect) — it needs window, which the useState initializer
+  // can't touch under SSR.
+  const [fxPanelRect, setFxPanelRect] = useState<Rect | null>(null)
+  const updateFxPanelRect = useCallback((r: Rect) => {
+    setFxPanelRect(r)
+    try {
+      window.localStorage.setItem(WGSL_PANEL_KEY, JSON.stringify(r))
+    } catch {
+      // non-fatal
+    }
+  }, [])
+  // Compile + apply in one step — the scene MIRRORS the editor (no separate
+  // preview/commit tier; effects are cheap to re-apply). The guard update keeps
+  // the apply hook from re-compiling what the engine already has.
+  const commitFxCode = useCallback(
+    async (subject: AppliedBackgroundEffect, wgsl: string) => {
+      const engine = engineRef.current
+      if (!engine) return { ok: false, diagnostics: ["engine not ready"] }
+      const r = await engine.setBackgroundEffect(wgsl)
+      if (r.ok) {
+        lastFxWgsl.current = wgsl
+        setBgEffect({ ...subject, wgsl })
+      }
+      return r
+    },
+    [engineRef, setBgEffect],
+  )
+  // Opening auto-applies the subject — picking "New effect" (or double-clicking
+  // a card) puts its code on the scene immediately, before any edit.
+  const openFxEditor = useCallback(
+    (subject: AppliedBackgroundEffect) => {
+      fxSessionRef.current += 1
+      setFxEditor({ sessionId: fxSessionRef.current, subject })
+      setFxPanelRect((r) => r ?? loadWgslPanelRect() ?? defaultWgslPanelRect())
+      void commitFxCode(subject, subject.wgsl)
+    },
+    [commitFxCode],
+  )
+  const closeFxEditor = useCallback(() => setFxEditor(null), [])
   const onBackdropPicked = async (file: File | undefined) => {
     if (!file) return
     try {
@@ -616,6 +717,19 @@ export default function Home() {
       return URL.createObjectURL(f)
     })
   }
+  // The bundled track's METADATA can finish loading before hydration attaches
+  // the onLoadedMetadata handler (the SSR'd <audio src> starts fetching
+  // immediately), leaving duration stuck at 0 — visible now that meta rows
+  // render a placeholder dash instead of collapsing. If the element already
+  // knows its duration, read it directly. (Deferred a tick: setState-in-effect.)
+  useEffect(() => {
+    const el = audioElRef.current
+    const t = setTimeout(() => {
+      if (el && el.readyState >= 1 && isFinite(el.duration) && el.duration > 0) setAudioDuration(el.duration)
+    }, 0)
+    return () => clearTimeout(t)
+  }, [audioSrc])
+
   const removeAudio = useCallback(() => {
     setAudioName(null)
     setAudioDuration(0)
@@ -850,6 +964,7 @@ export default function Home() {
           name: bootScene.state.name,
           camera: bootScene.state.camera,
           settings: sceneSettings,
+          backgroundEffect: bgEffect,
           groups,
           groupsFor: modelName,
         })
@@ -862,7 +977,7 @@ export default function Home() {
       clearTimeout(timer)
       if (idle && typeof cancelIdleCallback === "function") cancelIdleCallback(idle)
     }
-  }, [ready, sceneSettings, groups, modelName, bootScene])
+  }, [ready, sceneSettings, bgEffect, groups, modelName, bootScene])
 
   // Stable handlers for the memoized AssetsPanel. These were inline arrows on
   // the JSX — new identity every render, which defeats memo, and with keep-alive
@@ -909,10 +1024,8 @@ export default function Home() {
     { id: "scene", label: t.tabs.scene, icon: Sun, content: <ScenePanel
           settings={sceneSettings}
           onChange={setSceneSettings}
-          onUndo={sceneHistory.undo}
-          onRedo={sceneHistory.redo}
-          canUndo={sceneHistory.canUndo}
-          canRedo={sceneHistory.canRedo}
+          effectName={bgEffect?.name ?? null}
+          onOpenEffects={openEffects}
         /> },
   ]
 
@@ -1198,6 +1311,32 @@ export default function Home() {
         <div className="fixed bottom-3 left-1/2 z-20 -translate-x-1/2">
           <AnimPlayer engineRef={engineRef} modelName={modelName} clipName={animName} hasCamera={cameraName !== null} />
         </div>
+      )}
+
+      {/* ── Backgrounds library — the three-column shell (rail · grid ·
+          inspector). Applied-effect params edit LIVE (instant tier); Apply/Remove
+          swap the effect layer. ── */}
+      <BackgroundLibrary
+        open={effectsOpen}
+        onOpenChange={setEffectsOpen}
+        applied={bgEffect}
+        onApply={applyBgEffect}
+        onRemove={removeBgEffect}
+        onEdit={openFxEditor}
+      />
+
+      {/* ── Floating WGSL editor (drag it aside; the scene is the preview). ── */}
+      {mounted && fxEditor && (
+        <WgslEditorPanel
+          open
+          sessionId={fxEditor.sessionId}
+          rect={fxPanelRect}
+          onRectChange={updateFxPanelRect}
+          title={fxEditor.subject.name}
+          initial={fxEditor.subject.wgsl}
+          onCompile={(wgsl) => commitFxCode(fxEditor.subject, wgsl)}
+          onClose={closeFxEditor}
+        />
       )}
 
       {/* ── Shader-graph library popup ── */}

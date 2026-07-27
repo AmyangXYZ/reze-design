@@ -6,14 +6,15 @@
 // helpers are exported so the Assets panel and right dock can reuse the same rows.
 
 import { memo } from "react"
-import { Redo2, RotateCcw, Undo2 } from "lucide-react"
+import { RotateCcw, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { ColorField } from "@/components/color-picker"
 import { useT } from "@/lib/i18n"
-import { ENGINE_DEFAULT_SCENE_SETTINGS, type SceneSettings } from "@/lib/scene-settings"
+import { DEFAULT_SCENE } from "@/lib/default-scene"
+import type { SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 
 export function SliderRow({
@@ -86,18 +87,14 @@ export function ColorRow({ label, value, onChange }: { label: string; value: str
 export const ScenePanel = memo(function ScenePanel({
   settings,
   onChange,
-  onUndo,
-  onRedo,
-  canUndo,
-  canRedo,
+  effectName,
+  onOpenEffects,
 }: {
   settings: SceneSettings
   onChange: (settings: SceneSettings) => void
-  /** History is owned by the page (it holds the settings state) — see useHistory. */
-  onUndo: () => void
-  onRedo: () => void
-  canUndo: boolean
-  canRedo: boolean
+  /** Applied background-effect name (null = none) — the row opens the library. */
+  effectName: string | null
+  onOpenEffects: () => void
 }) {
   const t = useT()
   const { background, ground, world, sun, bloom } = settings
@@ -194,11 +191,6 @@ export const ScenePanel = memo(function ScenePanel({
           </div>
         </Section>
 
-        {/* Background: one color today; grows later (gradients, environments). */}
-        <Section title={t.scene.background}>
-          <ColorRow label={t.scene.color} value={background.color} onChange={(hex) => patch("background", { color: hex })} />
-        </Section>
-
         {/* Ground: its own domain — color, opacity, shadow, grid; presets later. */}
         <Section title={t.scene.ground}>
           <ColorRow label={t.scene.color} value={ground.color} onChange={(hex) => patch("ground", { color: hex })} />
@@ -236,37 +228,53 @@ export const ScenePanel = memo(function ScenePanel({
           </div>
         </Section>
 
-        {/* Undo/redo sit beside Reset: all three step the whole panel at once,
-            unlike the per-section controls above. ⌘/Ctrl+Z works too (a slider
-            drag is one step) — these make it discoverable and reachable on touch,
-            where there's no keyboard. */}
-        <div className="-mx-4 mt-4 flex items-center gap-1 border-t border-white/10 px-4 pt-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground disabled:opacity-30"
-            onClick={onUndo}
-            disabled={!canUndo}
-            title={t.scene.undo}
-          >
-            <Undo2 className="size-3" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground disabled:opacity-30"
-            onClick={onRedo}
-            disabled={!canRedo}
-            title={t.scene.redo}
-          >
-            <Redo2 className="size-3" />
-          </Button>
-          {/* Reset to the ENGINE's neutral defaults (not the demo's curated look). */}
+
+        {/* Background & effect — last section: the most advanced one. The Library
+            pill lives in the SECTION TITLE row, mirroring the shader-graph
+            library's placement in the materials inspector (same pill, same
+            "Library" label — the sparkles icon is the only difference). Rows are
+            values: base color, and the applied effect's name (a link into the
+            same library). Image/360 uploads stay in the Assets tab for now —
+            when the image layer moves here it becomes the third row. */}
+        <Section
+          title={t.scene.background}
+          action={
+            <button
+              onClick={onOpenEffects}
+              className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90"
+            >
+              <Sparkles className="size-3.5" />
+              {t.materials.library}
+            </button>
+          }
+        >
+          <ColorRow label={t.scene.color} value={background.color} onChange={(hex) => patch("background", { color: hex })} />
+          <div className="mt-2.5 flex min-w-0 items-center justify-between gap-2">
+            <span className="shrink-0 text-xs">{t.scene.effects}</span>
+            <button
+              onClick={onOpenEffects}
+              className={cn(
+                "min-w-0 cursor-pointer truncate text-xs underline decoration-current/40 underline-offset-2 transition-colors hover:decoration-current",
+                effectName ? "text-blue-400" : "text-muted-foreground/50",
+              )}
+            >
+              {effectName ?? t.scene.noEffect}
+            </button>
+          </div>
+        </Section>
+
+        {/* Undo/redo is keyboard-only (⌘/Ctrl+Z, ⇧⌘Z via useHistory) — buttons
+            added visual noise for a shortcut people reach for by habit anyway. */}
+        <div className="-mx-4 mt-4 flex items-center gap-1 border-t border-white/10 px-4 pt-2">
+          {/* Reset restores the CURATED first-open look — the "default" users
+              actually met — not the engine's neutral gray, which only developers
+              have seen (it stays exported in scene-settings for a future
+              "Neutral" preset). */}
           <Button
             variant="ghost"
             size="sm"
             className="h-7 flex-1 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-            onClick={() => onChange(ENGINE_DEFAULT_SCENE_SETTINGS)}
+            onClick={() => onChange(DEFAULT_SCENE.state.settings)}
           >
             <RotateCcw className="size-3" />
             {t.scene.resetDefaults}

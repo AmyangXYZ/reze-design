@@ -12,12 +12,12 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Section } from "@/components/scene/scene-sidebar"
 import { useT } from "@/lib/i18n"
+import { cn } from "@/lib/utils"
 
 function AssetRow({
   icon: Icon,
   label,
   value,
-  placeholder,
   meta,
   onClick,
   onRemove,
@@ -28,7 +28,6 @@ function AssetRow({
   icon: ComponentType<{ className?: string }>
   label: string
   value?: string | null
-  placeholder?: string
   /** High-level metadata line (size / duration / count) shown under the filename. */
   meta?: string
   onClick?: () => void
@@ -68,8 +67,11 @@ function AssetRow({
       </div>
       {/* Own line: filename (truncated — clips with … instead of widening the dock) + optional remove. */}
       <div className="mt-1.5 flex items-center gap-1">
-        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={value ?? undefined}>
-          {value ?? placeholder}
+        {/* Quiet dash placeholders (not "No motion" captions), and the meta line
+            always renders — every row keeps a constant height, so loading an
+            asset never shifts the layout below it. */}
+        <span className={cn("min-w-0 flex-1 truncate text-xs", value ? "text-muted-foreground" : "text-muted-foreground/40")} title={value ?? undefined}>
+          {value ?? "—"}
         </span>
         {onRemove && value && (
           <Button
@@ -82,7 +84,9 @@ function AssetRow({
           </Button>
         )}
       </div>
-      {value && meta && <div className="mt-0.5 text-[11px] text-muted-foreground tabular-nums">{meta}</div>}
+      <div className={cn("mt-0.5 truncate text-[11px] tabular-nums", value && meta ? "text-muted-foreground" : "text-muted-foreground/40")}>
+        {(value && meta) || "—"}
+      </div>
     </>
   )
 }
@@ -158,7 +162,6 @@ export const AssetsPanel = memo(function AssetsPanel({
             icon={PersonStanding}
             label={modelUploadLabel}
             value={modelFile}
-            placeholder={t.assets.noModel}
             meta={modelMeta}
             onClick={onUploadModel}
             secondaryLabel={onUploadModelZip ? "ZIP" : undefined}
@@ -172,7 +175,6 @@ export const AssetsPanel = memo(function AssetsPanel({
             icon={Footprints}
             label={t.assets.uploadAnimation}
             value={animName}
-            placeholder={t.assets.noMotion}
             meta={animMeta}
             onClick={onUploadAnimation}
             onRemove={onRemoveAnimation}
@@ -184,7 +186,6 @@ export const AssetsPanel = memo(function AssetsPanel({
             icon={Video}
             label={t.assets.uploadCamera}
             value={cameraName}
-            placeholder={t.assets.noCamera}
             meta={cameraMeta}
             onClick={onUploadCamera}
             onRemove={onRemoveCamera}
@@ -196,7 +197,6 @@ export const AssetsPanel = memo(function AssetsPanel({
             icon={Music}
             label={t.assets.uploadMusic}
             value={audioName}
-            placeholder={t.assets.noAudio}
             meta={audioMeta}
             onClick={onUploadMusic}
             onRemove={onRemoveMusic}
@@ -208,7 +208,6 @@ export const AssetsPanel = memo(function AssetsPanel({
             icon={ImageIcon}
             label={t.assets.uploadBackdrop}
             value={backdropName}
-            placeholder={t.assets.noBackdrop}
             meta={backdropMeta}
             onClick={onUploadBackdrop}
             onRemove={onRemoveBackdrop}
@@ -220,7 +219,6 @@ export const AssetsPanel = memo(function AssetsPanel({
             icon={Globe}
             label={t.assets.uploadSkybox}
             value={skyboxName}
-            placeholder={t.assets.noSkybox}
             meta={skyboxMeta}
             onClick={onUploadSkybox}
             onRemove={onRemoveSkybox}

@@ -14,6 +14,7 @@
 //               the hints miss it or guess wrong.
 // Then re-check `state.camera` against the new model's height.
 
+import { builtinEffect } from "@/lib/background-effects"
 import { assetFromPath, SCENE_FORMAT_VERSION, type Scene } from "@/lib/scene"
 
 export const DEFAULT_SCENE: Scene = {
@@ -48,8 +49,11 @@ export const DEFAULT_SCENE: Scene = {
       sun: { color: "#ffffff", strength: 2.0, azimuth: 205, elevation: 21 },
       bloom: { enabled: true, threshold: 0.5, knee: 0.5, radius: 4.0, intensity: 0.05, color: "#ffc9c9" },
       background: { color: "#4b004f" },
-      ground: { color: "#c800de", opacity: 1, shadow: true, grid: "#fafaf9", gridEnabled: true },
+      ground: { color: "#c800de", opacity: 0.42, shadow: true, grid: "#fafaf9", gridEnabled: true },
     },
+    // The demo ships with the starfield on — the first-open scene shows the
+    // effect layer working over the purple base.
+    backgroundEffect: builtinEffect("shining-stars"),
     // null = auto-group at load, so the demo restyles itself when the model changes.
     groups: null,
     groupsFor: null,

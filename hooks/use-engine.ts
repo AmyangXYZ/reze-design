@@ -92,6 +92,9 @@ export function useEngine(
           onRaycast: (_model, material) => onPickRef.current(material),
         })
         engineRef.current = engine
+        // Dev-only console handle — lets new engine APIs be exercised before any
+        // UI exists (e.g. `await __reze.setBackgroundEffect(wgsl, params)`).
+        if (process.env.NODE_ENV === "development") (window as unknown as { __reze?: Engine }).__reze = engine
         await engine.init()
         if (disposed) return
         // Zip-sourced scenes (user uploads, once there's blob storage) need a

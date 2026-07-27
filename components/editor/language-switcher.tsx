@@ -5,6 +5,7 @@
 // supported locales (each in its own script); the active one is checked. Reads
 // and sets the locale via the i18n context (persisted there).
 
+import { useState } from "react"
 import { Check, Languages } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -13,8 +14,11 @@ import { cn } from "@/lib/utils"
 
 export function LanguageSwitcher() {
   const { locale, setLocale, t } = useI18n()
+  // Controlled so picking a locale CLOSES the menu — the uncontrolled popover
+  // stayed open (a locale pick isn't outside-dismissal, Radix keeps it up).
+  const [open, setOpen] = useState(false)
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <Tooltip>
         <PopoverTrigger asChild>
           <TooltipTrigger asChild>
@@ -32,12 +36,19 @@ export function LanguageSwitcher() {
         side="right"
         align="end"
         sideOffset={8}
+        // Closing returns focus to the trigger by default, and focus opens the
+        // TOOLTIP — so picking a locale popped "Language" right after the menu
+        // closed. Keep focus where it is instead.
+        onCloseAutoFocus={(e) => e.preventDefault()}
         className="w-36 rounded-xl border-white/10 bg-zinc-950/90 p-1 shadow-float backdrop-blur-xs"
       >
         {LOCALES.map((code) => (
           <button
             key={code}
-            onClick={() => setLocale(code)}
+            onClick={() => {
+              setLocale(code)
+              setOpen(false)
+            }}
             className={cn(
               "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-xs transition-colors hover:bg-white/5",
               code === locale ? "text-foreground" : "text-muted-foreground",
