@@ -65,13 +65,20 @@ export const AnimPlayer = memo(function AnimPlayer({
   useEffect(() => {
     let raf = 0
     let last: Progress = { current: -1, duration: -1, playing: false, paused: false }
+    // The transport re-renders at ~20 Hz, not per frame: the time label shows
+    // whole seconds and the scrubber thumb moves sub-pixel per frame anyway, so
+    // updating 60×/s during playback (this player's most common state) bought
+    // nothing visually — it just competed with the render loop for main-thread
+    // time. Loop-restart detection below stays on the RAW progress.
+    const DISPLAY_STEP = 0.05
     const tick = () => {
       raf = requestAnimationFrame(tick)
       const model = engineRef.current?.getModel(modelName)
       if (!model) return
       const p = model.getAnimationProgress()
-      if (p.current !== last.current || p.duration !== last.duration || p.playing !== last.playing || p.paused !== last.paused) {
-        last = { current: p.current, duration: p.duration, playing: p.playing, paused: p.paused }
+      const shown = Math.round(p.current / DISPLAY_STEP) * DISPLAY_STEP
+      if (shown !== last.current || p.duration !== last.duration || p.playing !== last.playing || p.paused !== last.paused) {
+        last = { current: shown, duration: p.duration, playing: p.playing, paused: p.paused }
         setProgress(last)
       }
       if (loopRef.current && !p.playing && !p.paused && p.duration > 0 && p.current >= p.duration - AT_END_EPS) {

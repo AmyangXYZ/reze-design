@@ -5,6 +5,9 @@ import { NoNativeContextMenu } from "@/components/no-native-context-menu";
 import { I18nProvider } from "@/lib/i18n";
 import "./globals.css";
 import { Analytics } from "@vercel/analytics/next"
+import { preload } from "react-dom";
+import { DEFAULT_SCENE } from "@/lib/default-scene";
+import { modelPmxUrl } from "@/lib/scene";
 
 
 const geistSans = Geist({
@@ -28,6 +31,17 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Start the demo scene's heavy assets downloading at HTML parse instead of
+  // after the JS bundle boots and the engine initializes — the .pmx alone is
+  // ~2.5 MB and gates everything else (textures resolve from inside it).
+  // react-dom's preload() emits deduped <link rel="preload"> tags in <head>
+  // (JSX <link> rendered in the tree came out duplicated). crossOrigin
+  // "anonymous" matches the engine's plain fetch() — a mismatched mode would
+  // double-download.
+  const pmx = modelPmxUrl(DEFAULT_SCENE.assets.model);
+  if (pmx) preload(encodeURI(pmx), { as: "fetch", crossOrigin: "anonymous" });
+  const anim = DEFAULT_SCENE.assets.animation;
+  if (anim) preload(encodeURI(anim.url), { as: "fetch", crossOrigin: "anonymous" });
   return (
 
     <html
