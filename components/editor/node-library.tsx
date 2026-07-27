@@ -243,9 +243,10 @@ export function NodeLibrary({
                   <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{selected.description}</p>
                 )}
                 <div className="mt-2 flex flex-wrap gap-1">
-                  {selected.tags.map((t) => (
-                    <span key={t} className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-muted-foreground">
-                      {t}
+                  {/* Indexed key: role labels could repeat once entries carry several tags. */}
+                  {selected.tags.map((tag, i) => (
+                    <span key={`${tag}-${i}`} className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-muted-foreground">
+                      {tag}
                     </span>
                   ))}
                 </div>

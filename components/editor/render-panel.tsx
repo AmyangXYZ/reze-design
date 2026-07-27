@@ -36,14 +36,14 @@ import { useT } from "@/lib/i18n"
 const VIDEO_FPS = 60
 type Aspect = "16:9" | "9:16" | "1:1" | "4:3"
 const ASPECTS: Aspect[] = ["16:9", "9:16", "1:1", "4:3"]
-type Quality = "1080p" | "1440p" | "4k"
-const QUALITIES: Quality[] = ["1080p", "1440p", "4k"]
-const QUALITY_LABELS: Record<Quality, string> = { "1080p": "1080p", "1440p": "1440p", "4k": "4K" }
+type Quality = "720p" | "1080p" | "1440p" | "4k"
+const QUALITIES: Quality[] = ["720p", "1080p", "1440p", "4k"]
+const QUALITY_LABELS: Record<Quality, string> = { "720p": "720p", "1080p": "1080p", "1440p": "1440p", "4k": "4K" }
 const DIMS: Record<Aspect, Record<Quality, [number, number]>> = {
-  "16:9": { "1080p": [1920, 1080], "1440p": [2560, 1440], "4k": [3840, 2160] },
-  "9:16": { "1080p": [1080, 1920], "1440p": [1440, 2560], "4k": [2160, 3840] },
-  "1:1": { "1080p": [1080, 1080], "1440p": [1440, 1440], "4k": [2160, 2160] },
-  "4:3": { "1080p": [1440, 1080], "1440p": [1920, 1440], "4k": [2880, 2160] },
+  "16:9": { "720p": [1280, 720], "1080p": [1920, 1080], "1440p": [2560, 1440], "4k": [3840, 2160] },
+  "9:16": { "720p": [720, 1280], "1080p": [1080, 1920], "1440p": [1440, 2560], "4k": [2160, 3840] },
+  "1:1": { "720p": [720, 720], "1080p": [1080, 1080], "1440p": [1440, 1440], "4k": [2160, 2160] },
+  "4:3": { "720p": [960, 720], "1080p": [1440, 1080], "1440p": [1920, 1440], "4k": [2880, 2160] },
 }
 
 // min-h-6 keeps every row the height of a select trigger, so the switch row (whose
@@ -62,6 +62,23 @@ const fmtEta = (s: number) => {
   const v = Math.max(0, Math.round(s))
   return v >= 60 ? `${Math.floor(v / 60)}:${(v % 60).toString().padStart(2, "0")}` : `${v}s`
 }
+
+const fmtClock = (s: number) =>
+  `${Math.floor(s / 60)}:${Math.floor(s % 60)
+    .toString()
+    .padStart(2, "0")}`
+
+/** "m:ss" or plain seconds → seconds; null when empty/unparseable (= use default). */
+const parseClock = (text: string): number | null => {
+  const s = text.trim()
+  if (!s) return null
+  const mmss = /^(\d+):([0-5]?\d)$/.exec(s)
+  if (mmss) return Number(mmss[1]) * 60 + Number(mmss[2])
+  return /^\d+(\.\d+)?$/.test(s) ? Number(s) : null
+}
+
+const rangeInputCls =
+  "h-6 w-14 rounded-md border border-white/10 bg-white/5 px-1 text-center text-xs tabular-nums outline-none transition-colors hover:bg-white/10 focus:border-blue-400/50 placeholder:text-muted-foreground/50 disabled:opacity-50"
 
 export const RenderPanel = memo(function RenderPanel({
   engineRef,
@@ -104,6 +121,10 @@ export const RenderPanel = memo(function RenderPanel({
   const t = useT()
   const [aspect, setAspect] = useState<Aspect>("16:9")
   const [quality, setQuality] = useState<Quality>("4k")
+  // Export segment, "m:ss" text; blank = the whole clip (our default — the range
+  // is an escape hatch for platform-length cuts, not a required decision).
+  const [rangeStart, setRangeStart] = useState("")
+  const [rangeEnd, setRangeEnd] = useState("")
   const [watermark, setWatermark] = useState(true)
   const [exporting, setExporting] = useState(false)
   const [progress, setProgress] = useState<ExportProgress | null>(null)
@@ -112,7 +133,11 @@ export const RenderPanel = memo(function RenderPanel({
 
   const [width, height] = DIMS[aspect][quality]
   const upscaled = backdrop !== null && backdrop.width > 0 && backdrop.width < width
-  const canRender = !!animName && animDuration > 0 && !exporting
+  // Clamp the segment into the clip; anything invalid falls back to the defaults.
+  const segStart = Math.min(Math.max(0, parseClock(rangeStart) ?? 0), Math.max(0, animDuration - 0.1))
+  const segEnd = Math.min(Math.max(segStart + 0.1, parseClock(rangeEnd) ?? animDuration), animDuration)
+  const segDuration = Math.max(0, segEnd - segStart)
+  const canRender = !!animName && segDuration > 0 && !exporting
 
   const start = async () => {
     const engine = engineRef.current
@@ -129,7 +154,8 @@ export const RenderPanel = memo(function RenderPanel({
         engine,
         canvas,
         modelName,
-        duration: animDuration,
+        startTime: segStart,
+        duration: segDuration,
         settings: { width, height, fps: VIDEO_FPS, audioSource, watermark: greenScreen ? false : watermark, greenScreen },
         backdrop,
         colors,
@@ -199,6 +225,36 @@ export const RenderPanel = memo(function RenderPanel({
               </SelectContent>
             </Select>
           </Row>
+          {/* Segment to export — blank boxes = the whole clip. Format is m:ss;
+              plain seconds are accepted and CANONICALIZED to m:ss on blur ("90"
+              → "1:30"), so the field always shows what the export will do. */}
+          <Row label={t.render.range}>
+            <div className="flex items-center gap-1">
+              <input
+                value={rangeStart}
+                onChange={(e) => setRangeStart(e.target.value)}
+                onBlur={() => {
+                  const v = parseClock(rangeStart)
+                  setRangeStart(v === null ? "" : fmtClock(v))
+                }}
+                placeholder="0:00"
+                disabled={exporting}
+                className={rangeInputCls}
+              />
+              <span className="text-xs text-muted-foreground/60">–</span>
+              <input
+                value={rangeEnd}
+                onChange={(e) => setRangeEnd(e.target.value)}
+                onBlur={() => {
+                  const v = parseClock(rangeEnd)
+                  setRangeEnd(v === null ? "" : fmtClock(Math.min(v, animDuration)))
+                }}
+                placeholder={animDuration > 0 ? fmtClock(animDuration) : "-:--"}
+                disabled={exporting}
+                className={rangeInputCls}
+              />
+            </div>
+          </Row>
           <Row label={t.render.audio}>
             <Select
               value={audioSource}
@@ -259,9 +315,9 @@ export const RenderPanel = memo(function RenderPanel({
               {t.render.cancel}
             </Button>
           )}
-          {/* The one number that matters — the file this button produces. */}
+          {/* The one line that matters — the file this button produces. */}
           <div className="mt-1.5 text-center text-[11px] text-muted-foreground/60 tabular-nums">
-            {width} × {height} · {t.render.fps(String(VIDEO_FPS))} · mp4
+            {width} × {height} · {t.render.fps(String(VIDEO_FPS))} · {fmtClock(segDuration)} · mp4
           </div>
 
           {/* No preview card — the live viewport IS the preview: the export loop

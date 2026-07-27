@@ -83,22 +83,21 @@ function drawWatermark(ctx: CanvasRenderingContext2D, w: number, h: number, font
   ctx.restore()
 }
 
-/** Decode the music track and trim it to the clip length (shorter tracks are kept
- *  as-is — the tail of the video is simply silent). */
-async function buildMusicAudio(url: string, exportDuration: number): Promise<AudioBuffer | null> {
+/** Decode the music track and slice [startTime, startTime + exportDuration] out
+ *  of it — the export range's audio. A track shorter than the range end simply
+ *  goes silent at its natural end. */
+async function buildMusicAudio(url: string, startTime: number, exportDuration: number): Promise<AudioBuffer | null> {
   const data = await (await fetch(url)).arrayBuffer()
   const ac = new AudioContext()
   try {
     const decoded = await ac.decodeAudioData(data)
-    if (decoded.duration <= exportDuration + 0.05) return decoded
-    const length = Math.ceil(exportDuration * decoded.sampleRate)
-    const out = new AudioBuffer({
-      length,
-      numberOfChannels: decoded.numberOfChannels,
-      sampleRate: decoded.sampleRate,
-    })
+    if (startTime <= 0 && decoded.duration <= exportDuration + 0.05) return decoded
+    const rate = decoded.sampleRate
+    const from = Math.min(Math.floor(startTime * rate), decoded.length)
+    const length = Math.max(1, Math.min(Math.ceil(exportDuration * rate), decoded.length - from))
+    const out = new AudioBuffer({ length, numberOfChannels: decoded.numberOfChannels, sampleRate: rate })
     for (let c = 0; c < decoded.numberOfChannels; c++)
-      out.getChannelData(c).set(decoded.getChannelData(c).subarray(0, length))
+      out.getChannelData(c).set(decoded.getChannelData(c).subarray(from, from + length))
     return out
   } finally {
     void ac.close()
@@ -110,7 +109,9 @@ export async function exportVideo(opts: {
   /** The engine's (transparent) WebGPU canvas — composited over the backdrop. */
   canvas: HTMLCanvasElement
   modelName: string
-  /** Clip length in seconds — defines the video length. */
+  /** Segment start on the clip's timeline, seconds (default 0). */
+  startTime?: number
+  /** Segment length in seconds — defines the video length. */
   duration: number
   settings: ExportSettings
   backdrop: BackdropMedia | null
@@ -122,6 +123,7 @@ export async function exportVideo(opts: {
   signal?: AbortSignal
 }): Promise<Blob> {
   const { engine, canvas, modelName, duration, settings, backdrop, colors, musicUrl } = opts
+  const startTime = Math.max(0, opts.startTime ?? 0)
   const bgColor = colors.background
   const { width, height, fps } = settings
   const total = Math.max(1, Math.round(duration * fps))
@@ -150,7 +152,7 @@ export async function exportVideo(opts: {
   const progress = (p: ExportProgress) => opts.onProgress?.(p)
   progress({ phase: "audio", frame: 0, total, encodeFps: 0, etaSeconds: 0 })
   let audioBuffer: AudioBuffer | null = null
-  if (settings.audioSource === "music" && musicUrl) audioBuffer = await buildMusicAudio(musicUrl, duration)
+  if (settings.audioSource === "music" && musicUrl) audioBuffer = await buildMusicAudio(musicUrl, startTime, duration)
   let audioSource: AudioBufferSource | null = null
   if (audioBuffer) {
     const audioCodec = await getFirstEncodableAudioCodec(["aac", "opus"], {
@@ -191,9 +193,10 @@ export async function exportVideo(opts: {
       audioSource.close()
     }
 
-    // Pose 0, physics reset + settle so frame 0 isn't mid-fall hair.
+    // Seek to the segment start, physics reset + settle so the first frame
+    // isn't mid-fall hair (the warm-up settles at whatever pose is current).
     model.pause()
-    model.seek(0)
+    model.seek(startTime)
     engine.resetPhysics()
     for (let i = 0; i < WARMUP_FRAMES; i++) engine.renderFrame(1 / fps)
     model.play()
