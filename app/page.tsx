@@ -28,7 +28,7 @@ import { BrandPill, RailLogo, TopRightCluster } from "@/components/editor/editor
 import { LeftDock, RightDock, type DockTab } from "@/components/editor/dock"
 import { FloatingPanel, type Rect } from "@/components/editor/floating-panel"
 import { NodeLibrary } from "@/components/editor/node-library"
-import { RenderPanel } from "@/components/editor/render-panel"
+import { RenderPanel, type FramePreview } from "@/components/editor/render-panel"
 import { useEngine } from "@/hooks/use-engine"
 import { probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
 import { expandUploadFiles, readDroppedFiles } from "@/lib/uploads"
@@ -51,6 +51,12 @@ import { cn } from "@/lib/utils"
 // Paths are %20-encoded (the filenames contain a space).
 const DEFAULT_ANIM = { name: "IRIS OUT.vmd", url: "/animations/IRIS%20OUT.vmd" }
 const DEFAULT_AUDIO = { name: "IRIS OUT.wav", url: "/audios/IRIS%20OUT.wav" }
+
+// Frame preview: how far the viewport's aspect may deviate from the export target
+// before the canvas gets pinned / the frame border leaves the viewport edges. A
+// desktop window is never EXACTLY 16:9 — within this band the true frame differs
+// imperceptibly, so keep the scene untouched and the border flush.
+const FRAME_ASPECT_TOL = 1.03
 
 // Unique kebab id for a new (peeled / created) style group. CJK material names
 // slugify to empty → "group", which is fine (id is internal; label is shown).
@@ -461,6 +467,55 @@ export default function Home() {
   // exactly what renders (pure green background; ground surface hidden, shadow per
   // the Ground > Shadow switch; backdrop/skybox suspended).
   const [greenScreen, setGreenScreen] = useState(false)
+  // Live framing while the Render tab is open. The camera has a FIXED VERTICAL
+  // FOV, so when the viewport is wider than the target aspect the export view is
+  // exactly a center-crop of the normal render — the overlay's dimmed bars + border
+  // mark that crop and the canvas is left completely untouched (nothing shifts).
+  // Only when the viewport is NARROWER than the target (portrait phone, 16:9
+  // target) does the export see more horizontally than the viewport can show —
+  // then the canvas pins to the target aspect at screen scale and letterboxes
+  // top/bottom via object-contain.
+  const [framePreview, setFramePreview] = useState<FramePreview | null>(null)
+  const [frameVp, setFrameVp] = useState<{ w: number; h: number } | null>(null)
+  useEffect(() => {
+    if (!framePreview) {
+      setFrameVp(null)
+      return
+    }
+    const update = () => setFrameVp({ w: window.innerWidth, h: window.innerHeight })
+    update()
+    window.addEventListener("resize", update)
+    return () => window.removeEventListener("resize", update)
+  }, [framePreview])
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine || !ready) return
+    if (exporting) return // the export pins the full output resolution itself
+    // Tolerance: a viewport a hair narrower than the target (browser chrome,
+    // rounding) would otherwise pin and nudge the scene by a pixel or two for an
+    // invisible accuracy gain. Only pin on a real mismatch (e.g. portrait phone).
+    if (framePreview && frameVp && framePreview.aspect > (frameVp.w / frameVp.h) * FRAME_ASPECT_TOL) {
+      const dpr = window.devicePixelRatio || 1
+      engine.setRenderSize(Math.round(frameVp.w * dpr), Math.round((frameVp.w * dpr) / framePreview.aspect))
+    } else {
+      engine.setRenderSize(null)
+    }
+  }, [framePreview, frameVp, exporting, ready, engineRef])
+  // Frame rect in CSS pixels (the canvas fills the window; object-contain centers).
+  const frameRect =
+    framePreview && frameVp
+      ? (() => {
+          const va = frameVp.w / frameVp.h
+          const a = framePreview.aspect
+          // Within tolerance the canvas isn't pinned and the frame IS the viewport
+          // — snap to it, so a 16:9 target on a ~16:9 window hugs all four edges
+          // exactly like 9:16 hugs top/bottom (no phantom 1–2px bars on one side).
+          if (a <= va * FRAME_ASPECT_TOL && a >= va / FRAME_ASPECT_TOL) return { x: 0, y: 0, w: frameVp.w, h: frameVp.h }
+          const w = a < va ? frameVp.h * a : frameVp.w
+          const h = a < va ? frameVp.h : frameVp.w / a
+          return { x: (frameVp.w - w) / 2, y: (frameVp.h - h) / 2, w, h }
+        })()
+      : null
   // Green mode suspends the skybox live (it renders inside the canvas and would
   // cover the green); leaving green mode restores it from the kept file.
   const skyboxRef = useRef(skybox)
@@ -542,17 +597,32 @@ export default function Home() {
   const [audioDuration, setAudioDuration] = useState(0)
   const [audioSize, setAudioSize] = useState<number | null>(null)
 
-  // Animation duration + total bone keyframes become available a frame after the
-  // clip is shown/loaded.
+  // Animation duration + total bone keyframes appear whenever the async load
+  // (VMD parse + setAnimation, or a fresh model the clip carries over to)
+  // finishes — POLL until the engine reports them. A single deferred read raced
+  // the load: losing left animDuration stuck at 0, which disabled the Render
+  // button and made the range end clamp everything to 0:00.
   useEffect(() => {
-    const raf = requestAnimationFrame(() => {
-      const model = animName ? engineRef.current?.getModel(modelName) : null
-      setAnimDuration(model?.getAnimationProgress().duration ?? 0)
-      let kf = 0
-      const clip = model && animName ? model.getClip(animName) : null
-      if (clip) for (const track of clip.boneTracks.values()) kf += track.length
-      setAnimKeyframes(kf)
-    })
+    if (!animName) {
+      setAnimDuration(0)
+      setAnimKeyframes(0)
+      return
+    }
+    let raf = 0
+    const poll = () => {
+      const model = engineRef.current?.getModel(modelName)
+      const duration = model?.getAnimationProgress().duration ?? 0
+      const clip = model?.getClip(animName) ?? null
+      if (duration > 0 && clip) {
+        setAnimDuration(duration)
+        let kf = 0
+        for (const track of clip.boneTracks.values()) kf += track.length
+        setAnimKeyframes(kf)
+        return
+      }
+      raf = requestAnimationFrame(poll)
+    }
+    raf = requestAnimationFrame(poll)
     return () => cancelAnimationFrame(raf)
   }, [animName, modelName, engineRef])
 
@@ -785,6 +855,7 @@ export default function Home() {
           greenScreen={greenScreen}
           onGreenScreenChange={setGreenScreen}
           onExportingChange={setExporting}
+          onFramePreviewChange={setFramePreview}
         />
       ),
     },
@@ -840,6 +911,48 @@ export default function Home() {
           video export the buffer is pinned to the OUTPUT aspect (e.g. 9:16 on a wide
           screen) — contain letterboxes it instead of stretching. */}
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none object-contain" />
+
+      {/* ── Video-frame overlay (Render tab open / exporting): dimmed bars outside
+          the letterboxed frame, a border at its edge, and the watermark previewed
+          exactly where the export draws it. Pure DOM — pointer-events-none. ── */}
+      {frameRect && (
+        <div className="pointer-events-none absolute inset-0 z-10">
+          <div className="absolute bg-black/45" style={{ left: 0, right: 0, top: 0, height: frameRect.y }} />
+          <div className="absolute bg-black/45" style={{ left: 0, right: 0, bottom: 0, height: frameRect.y }} />
+          <div className="absolute bg-black/45" style={{ left: 0, top: frameRect.y, width: frameRect.x, height: frameRect.h }} />
+          <div className="absolute bg-black/45" style={{ right: 0, top: frameRect.y, width: frameRect.x, height: frameRect.h }} />
+          {/* Capture-tool convention: amber = framed (composing), red = recording. */}
+          <div
+            className={cn(
+              "absolute rounded-sm border",
+              exporting ? "border-red-500/90" : "border-amber-400/80",
+            )}
+            style={{ left: frameRect.x, top: frameRect.y, width: frameRect.w, height: frameRect.h }}
+          />
+          {framePreview?.watermark &&
+            (() => {
+              // Mirrors drawWatermark's metrics (lib/video-export.ts): 2.8%-height
+              // Geist Medium, wide tracking, soft shadow, 2.2% padding, top-left.
+              const size = Math.max(14, frameRect.h * 0.028)
+              const pad = frameRect.h * 0.022
+              return (
+                <div
+                  className="absolute font-medium"
+                  style={{
+                    left: frameRect.x + pad,
+                    top: frameRect.y + pad,
+                    fontSize: size,
+                    letterSpacing: size * 0.22,
+                    color: "rgba(255,255,255,0.88)",
+                    textShadow: `0 ${size * 0.08}px ${size * 0.6}px rgba(0,0,0,0.5)`,
+                  }}
+                >
+                  REZE DESIGN
+                </div>
+              )
+            })()}
+        </div>
+      )}
 
       {!ready && !error && (
         <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
