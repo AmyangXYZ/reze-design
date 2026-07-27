@@ -1,15 +1,16 @@
 "use client"
 
-// Engine lifecycle for the scene page: boot once with the user's stored scene
-// settings (so nothing flashes defaults), load the demo model in bind pose,
-// surface the material list, and forward raycast picks. Selection highlight is
-// imperative (engine.setSelectedMaterial) — the caller decides what "selected"
-// means; hover temporarily overrides it.
+// Engine lifecycle for the scene page: boot ONCE from a scene document (so the
+// first frame already matches the user's stored config — nothing flashes
+// defaults), load its model in bind pose, surface the material list, and forward
+// raycast picks. Selection highlight is imperative (engine.setSelectedMaterial) —
+// the caller decides what "selected" means; hover temporarily overrides it.
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Engine, Vec3, type ApplyStyleGroupResult, type CompileOptions, type RenderClass, type StyleGroup } from "reze-engine"
-import { MODEL_ID, MODEL_PATH, MODEL_PRESETS, SLOT_GRAPHS } from "@/lib/materials"
-import { azElToDirection, hexToLinearVec3, hexToSrgbVec3, type SceneSettings } from "@/lib/scene-settings"
+import { SLOT_GRAPHS } from "@/lib/materials"
+import { modelPmxUrl, type Scene } from "@/lib/scene"
+import { azElToDirection, hexToLinearVec3, hexToSrgbVec3 } from "@/lib/scene-settings"
 
 // Eye and Hair are pinned, non-deletable groups: they own the special render
 // classes (stencil so eyes read through hair), so membership IS the assignment —
@@ -36,21 +37,24 @@ export type MaterialRow = {
 
 export function useEngine(
   onPick: (material: string | null) => void,
-  /** Stored scene settings applied AT BOOT (constructor options + first
-   *  addGround) so the first frame already matches the user's config. */
-  initialSettings: SceneSettings,
+  /** The scene to boot into — read ONCE (constructor options + first loadModel +
+   *  addGround), so the first frame is already the user's config rather than a
+   *  default that gets corrected a tick later. Later edits go through the
+   *  mutators below, not by passing a new document. */
+  initialScene: Scene,
 ) {
-  const initialSettingsRef = useRef(initialSettings)
+  const sceneRef = useRef(initialScene)
+  const model0 = initialScene.assets.model
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const engineRef = useRef<Engine | null>(null)
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [materials, setMaterials] = useState<MaterialRow[]>([])
-  // The currently loaded model — the demo model until the user uploads their own.
-  const [modelName, setModelName] = useState(MODEL_ID)
-  const modelNameRef = useRef(MODEL_ID)
+  // The currently loaded model — the scene's model until the user uploads their own.
+  const [modelName, setModelName] = useState(model0.id)
+  const modelNameRef = useRef(model0.id)
   // The actual .pmx filename to show the user (the engine id above is internal).
-  const [modelFile, setModelFile] = useState(() => MODEL_PATH.split("/").pop() ?? `${MODEL_ID}.pmx`)
+  const [modelFile, setModelFile] = useState(model0.file)
   // High-level model stats for the Assets panel (VERTEX_STRIDE = 8 floats/vertex).
   const [modelStats, setModelStats] = useState({ vertices: 0, bones: 0, materials: 0 })
   // Style groups — the host is the source of truth (0.19). Seeded from the engine's
@@ -69,12 +73,15 @@ export function useEngine(
     const boot = async () => {
       if (!canvasRef.current) return
       try {
-        const s = initialSettingsRef.current
+        const scene = sceneRef.current
+        const s = scene.state.settings
+        const model0 = scene.assets.model
+        const [tx, ty, tz] = scene.state.camera.target
         const engine = new Engine(canvasRef.current, {
-          camera: { distance: 28.8, target: new Vec3(0, 12.5, 0) },
+          camera: { distance: scene.state.camera.distance, target: new Vec3(tx, ty, tz) },
           // The engine paints the background itself (composited post-tonemap, so it
           // matches the CSS hex) — the first frame is correct regardless of DOM state.
-          background: hexToSrgbVec3(s.colors.background),
+          background: hexToSrgbVec3(s.background.color),
           world: { color: hexToLinearVec3(s.world.color), strength: s.world.strength },
           sun: {
             color: hexToLinearVec3(s.sun.color),
@@ -87,14 +94,19 @@ export function useEngine(
         engineRef.current = engine
         await engine.init()
         if (disposed) return
-        const model = await engine.loadModel(MODEL_ID, MODEL_PATH)
+        // Zip-sourced scenes (user uploads, once there's blob storage) need a
+        // fetch + expandUploadFiles pass before loadModel — this is the one place
+        // that lands. Bundled scenes are folder-sourced, so nothing hits it today.
+        const pmxUrl = modelPmxUrl(model0)
+        if (!pmxUrl) throw new Error(`Zip-sourced models aren't loadable from a URL yet: ${model0.file}`)
+        const model = await engine.loadModel(model0.id, pmxUrl)
         if (disposed) return
         engine.addGround({
-          diffuseColor: hexToLinearVec3(s.colors.ground),
-          gridLineColor: hexToLinearVec3(s.colors.grid),
-          opacity: s.colors.groundOpacity,
-          shadowStrength: s.colors.groundShadow ? 1 : 0,
-          gridLineOpacity: s.colors.gridEnabled ? 0.4 : 0,
+          diffuseColor: hexToLinearVec3(s.ground.color),
+          gridLineColor: hexToLinearVec3(s.ground.grid),
+          opacity: s.ground.opacity,
+          shadowStrength: s.ground.shadow ? 1 : 0,
+          gridLineOpacity: s.ground.gridEnabled ? 0.4 : 0,
         })
         setMaterials(model.getMaterials().map((m) => ({ name: m.name, diffuse: m.diffuse, visible: true })))
         setModelStats({
@@ -102,12 +114,20 @@ export function useEngine(
           bones: model.getSkeleton().bones.length,
           materials: model.getMaterials().length,
         })
-        // Auto-group from the curated name→category overrides (0.21: overrides feed
-        // autoStyleGroups directly; there's no separate setMaterialPresets). Awaited so
-        // getStyleGroups is populated + the first frame is styled.
-        await engine.autoStyleGroups(MODEL_ID, MODEL_PRESETS)
+        // Styling: a document carrying groups (a restored or imported scene) is
+        // authoritative — reproduce it exactly. Otherwise derive them from material
+        // names, with the model's presets correcting the engine's built-in hints.
+        // Awaited either way so getStyleGroups is populated + the first frame is styled.
+        const docGroups = scene.state.groups
+        if (docGroups) {
+          // Empty groups are UI-only drop targets — withheld from the engine, which
+          // has nothing to shade with them, but kept in the list the user sees.
+          await engine.applyStyleGroups(model0.id, docGroups.filter((g) => g.materials.length > 0))
+        } else {
+          await engine.autoStyleGroups(model0.id, model0.presets)
+        }
         if (disposed) return
-        setGroups(withSpecialGroups(engine.getStyleGroups(MODEL_ID)))
+        setGroups(withSpecialGroups(docGroups ?? engine.getStyleGroups(model0.id)))
         // Bind pose until the user loads a VMD — material evaluation doesn't need motion.
         engine.runRenderLoop()
         setReady(true)
@@ -171,6 +191,9 @@ export function useEngine(
     try {
       await model.loadVmd(file.name, url)
       model.show(file.name) // activate + pose frame 0, paused (user presses play)
+      // Frame 0 of a new clip is an arbitrary jump from whatever pose was held —
+      // settle the solver against it so the first play doesn't fling hair/cloth.
+      engineRef.current?.resetPhysics()
       return file.name
     } catch {
       return null
@@ -188,6 +211,7 @@ export function useEngine(
     try {
       await model.loadVmd(name, url)
       model.show(name) // activate + pose frame 0, paused (user presses play)
+      engineRef.current?.resetPhysics() // same arbitrary jump to frame 0 as loadVmdFile
       return name
     } catch {
       return null

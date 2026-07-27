@@ -24,7 +24,6 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import type { BackdropMedia } from "@/lib/backdrop"
-import type { SceneColors } from "@/lib/scene-settings"
 import { exportVideo, type ExportAudioSource, type ExportProgress } from "@/lib/video-export"
 import { useT } from "@/lib/i18n"
 
@@ -95,7 +94,7 @@ export const RenderPanel = memo(function RenderPanel({
   animName,
   animDuration,
   backdrop,
-  colors,
+  backgroundColor,
   musicUrl,
   audioSource,
   onAudioSourceChange,
@@ -113,8 +112,8 @@ export const RenderPanel = memo(function RenderPanel({
   /** Clip length in seconds — defines the exported video length. */
   animDuration: number
   backdrop: BackdropMedia | null
-  /** Scene appearance colors (background + ground fields for green-screen suspend). */
-  colors: SceneColors
+  /** Page background hex — the bottom layer of the export composite. */
+  backgroundColor: string
   musicUrl: string | null
   /** Lifted to the page: also routes live audio (music element / backdrop video). */
   audioSource: ExportAudioSource
@@ -179,7 +178,7 @@ export const RenderPanel = memo(function RenderPanel({
         duration: segDuration,
         settings: { width, height, fps: VIDEO_FPS, audioSource, watermark: greenScreen ? false : watermark, greenScreen },
         backdrop,
-        colors,
+        backgroundColor,
         musicUrl,
         onProgress: setProgress,
         signal: ac.signal,

@@ -35,22 +35,16 @@ import { expandUploadFiles, readDroppedFiles } from "@/lib/uploads"
 import { useT } from "@/lib/i18n"
 import type { ExportAudioSource } from "@/lib/video-export"
 import { MaterialSphereIcon } from "@/components/scene/slot-icons"
+import { DEFAULT_SCENE } from "@/lib/default-scene"
 import { SLOT_GRAPHS } from "@/lib/materials"
+import { hydrateScene, saveSceneState } from "@/lib/scene"
 import {
   azElToDirection,
   hexToLinearVec3,
   hexToSrgbVec3,
-  loadSceneSettings,
-  saveSceneSettings,
   type SceneSettings,
 } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
-
-// Bundled defaults so a first-open scene is a complete "MMD" — the model dances
-// on load; audio joins on the first user interaction (browser autoplay policy).
-// Paths are %20-encoded (the filenames contain a space).
-const DEFAULT_ANIM = { name: "IRIS OUT.vmd", url: "/animations/IRIS%20OUT.vmd" }
-const DEFAULT_AUDIO = { name: "IRIS OUT.wav", url: "/audios/IRIS%20OUT.wav" }
 
 // Frame preview: how far the viewport's aspect may deviate from the export target
 // before the canvas gets pinned / the frame border leaves the viewport edges. A
@@ -182,17 +176,20 @@ export default function Home() {
     return () => window.removeEventListener("resize", onResize)
   }, [])
   const [animName, setAnimName] = useState<string | null>(null)
-  // Read stored settings synchronously (SSR-safe: falls back to defaults) so the
-  // page background AND the engine boot already match the user's config.
-  const [sceneSettings, setSceneSettings] = useState<SceneSettings>(() => loadSceneSettings())
+  // The boot document: the bundled demo with the user's stored values merged over
+  // it. Read synchronously (SSR-safe: falls back to the demo) so the page
+  // background AND the engine boot already match their config. Built once — it's
+  // the STARTING point, not live state; everything below owns its slice from here.
+  const [bootScene] = useState(() => hydrateScene(DEFAULT_SCENE))
+  const [sceneSettings, setSceneSettings] = useState<SceneSettings>(bootScene.state.settings)
   // suppressHydrationWarning makes React SKIP patching the server-rendered style
   // (SSR uses defaults; the client initializer read localStorage), and since the
   // state never changes after mount the stale server color stuck — a stored light
   // background rendered black after refresh. Sync the DOM imperatively instead.
   const rootRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    rootRef.current?.style.setProperty("background-color", sceneSettings.colors.background)
-  }, [sceneSettings.colors.background])
+    rootRef.current?.style.setProperty("background-color", sceneSettings.background.color)
+  }, [sceneSettings.background.color])
 
   // The engine hook needs a pick handler at construction; route through a ref
   // (synced in an effect) so the handler can use everything defined below.
@@ -215,7 +212,7 @@ export default function Home() {
     loadVmdFile,
     loadVmdUrl,
     stopAnimation,
-  } = useEngine((m) => pickRef.current(m), sceneSettings)
+  } = useEngine((m) => pickRef.current(m), bootScene)
 
   // material → its style group (a material is in at most one group; else ungrouped).
   const groupOfMaterial = useCallback(
@@ -561,13 +558,13 @@ export default function Home() {
     })
   }
 
-  // ── Music: a bundled default track, replaceable via upload. An <audio>
-  // element (below) is the source; a rAF loop mirrors the model's animation
-  // clock onto it so play/pause/seek/loop from the transport drive both. ──
+  // ── Music: the scene's track, replaceable via upload. An <audio> element
+  // (below) is the source; a rAF loop mirrors the model's animation clock onto it
+  // so play/pause/seek/loop from the transport drive both. ──
   const audioInputRef = useRef<HTMLInputElement | null>(null)
   const audioElRef = useRef<HTMLAudioElement | null>(null)
-  const [audioName, setAudioName] = useState<string | null>(DEFAULT_AUDIO.name)
-  const [audioSrc, setAudioSrc] = useState<string>(DEFAULT_AUDIO.url)
+  const [audioName, setAudioName] = useState<string | null>(bootScene.assets.audio?.name ?? null)
+  const [audioSrc, setAudioSrc] = useState<string>(bootScene.assets.audio?.url ?? "")
   const setMusicFile = (f: File) => {
     setAudioName(f.name)
     setAudioSize(f.size)
@@ -645,17 +642,18 @@ export default function Home() {
     }
   }, [])
 
-  // Load the bundled default motion once the demo model is ready (custom uploads
-  // don't re-trigger `ready`, so this stays demo-only).
-  const defaultAnimLoaded = useRef(false)
+  // Load the scene's motion once its model is ready (custom uploads don't
+  // re-trigger `ready`, so this runs for the booted scene only).
+  const sceneAnimLoaded = useRef(false)
   useEffect(() => {
-    if (!ready || defaultAnimLoaded.current) return
-    defaultAnimLoaded.current = true
-    animSourceRef.current = { kind: "url", name: DEFAULT_ANIM.name, url: DEFAULT_ANIM.url }
-    void loadVmdUrl(DEFAULT_ANIM.name, DEFAULT_ANIM.url).then((n) => {
+    const clip = bootScene.assets.animation
+    if (!ready || !clip || sceneAnimLoaded.current) return
+    sceneAnimLoaded.current = true
+    animSourceRef.current = { kind: "url", name: clip.name, url: clip.url }
+    void loadVmdUrl(clip.name, clip.url).then((n) => {
       if (n) setAnimName(n)
     })
-  }, [ready, loadVmdUrl])
+  }, [ready, loadVmdUrl, bootScene])
 
   // Mirror the animation clock onto the audio element (model is the master).
   // Audio FREE-RUNS while playing — currentTime is written only at discrete
@@ -723,16 +721,15 @@ export default function Home() {
   // ── Scene settings → engine ──
   const prevGround = useRef<string | null>(null)
   useEffect(() => {
-    saveSceneSettings(sceneSettings)
     if (!ready) return
     const engine = engineRef.current
     if (!engine) return
-    const { world, sun, bloom, colors } = sceneSettings
+    const { world, sun, bloom, background, ground } = sceneSettings
     // The engine paints the background (post-tonemap, exact CSS-hex match) — except
     // while a backdrop image is set, where the canvas must stay transparent so the
     // DOM image layer behind it shows through. Green-screen mode overrides both.
     engine.setBackgroundColor(
-      greenScreen ? hexToSrgbVec3("#00ff00") : backdrop ? null : hexToSrgbVec3(colors.background),
+      greenScreen ? hexToSrgbVec3("#00ff00") : backdrop ? null : hexToSrgbVec3(background.color),
     )
     engine.setWorld({ color: hexToLinearVec3(world.color), strength: world.strength })
     engine.setSun({
@@ -750,18 +747,41 @@ export default function Home() {
     })
     // Green mode hides the ground SURFACE (it would occlude the key) but keeps the
     // shadow-catcher shadow per the user's Shadow switch.
-    const groundKey = `${colors.ground}|${colors.grid}|${colors.groundOpacity}|${colors.groundShadow}|${colors.gridEnabled}|${greenScreen}`
+    const groundKey = `${ground.color}|${ground.grid}|${ground.opacity}|${ground.shadow}|${ground.gridEnabled}|${greenScreen}`
     if (prevGround.current !== groundKey) {
       engine.addGround({
-        diffuseColor: hexToLinearVec3(colors.ground),
-        gridLineColor: hexToLinearVec3(colors.grid),
-        opacity: greenScreen ? 0 : colors.groundOpacity,
-        shadowStrength: colors.groundShadow ? 1 : 0,
-        gridLineOpacity: greenScreen || !colors.gridEnabled ? 0 : 0.4,
+        diffuseColor: hexToLinearVec3(ground.color),
+        gridLineColor: hexToLinearVec3(ground.grid),
+        opacity: greenScreen ? 0 : ground.opacity,
+        shadowStrength: ground.shadow ? 1 : 0,
+        gridLineOpacity: greenScreen || !ground.gridEnabled ? 0 : 0.4,
       })
       prevGround.current = groundKey
     }
   }, [sceneSettings, ready, engineRef, backdrop, greenScreen])
+
+  // ── Working scene → localStorage. The `state` half only: assets are blob: URLs
+  // backed by File objects and would restore dead, so lib/scene.ts keeps them out
+  // structurally (and SceneState being a total type means adding a field breaks
+  // this call site rather than silently dropping it).
+  //
+  // Gated on `ready` because `groups` is [] until the engine finishes booting —
+  // saving that would clobber a stored group list with an empty one before the
+  // restore ever lands. `groupsFor` records which model the graphs were authored
+  // against, so a reload after a model upload falls back to auto-grouping instead
+  // of restoring groups naming materials this model doesn't have.
+  // (`camera` is authored framing, not live orbit — the engine exposes distance
+  // but no target getter, so orbiting still isn't captured.)
+  useEffect(() => {
+    if (!ready) return
+    saveSceneState({
+      name: bootScene.state.name,
+      camera: bootScene.state.camera,
+      settings: sceneSettings,
+      groups,
+      groupsFor: modelName,
+    })
+  }, [ready, sceneSettings, groups, modelName, bootScene])
 
   // ── Dock tab definitions ── LEFT = styling (materials, scene look); RIGHT =
   // ingredients & output (assets in, render out).
@@ -848,7 +868,7 @@ export default function Home() {
           animName={animName}
           animDuration={animDuration}
           backdrop={backdrop}
-          colors={sceneSettings.colors}
+          backgroundColor={sceneSettings.background.color}
           musicUrl={audioSrc || null}
           audioSource={audioSource}
           onAudioSourceChange={setAudioSource}
@@ -895,7 +915,7 @@ export default function Home() {
     <div
       ref={rootRef}
       className="fixed inset-0 overflow-hidden text-sm text-foreground select-none"
-      style={{ backgroundColor: sceneSettings.colors.background }}
+      style={{ backgroundColor: sceneSettings.background.color }}
       suppressHydrationWarning
       onDragOver={(e) => e.preventDefault()}
       onDrop={onDrop}

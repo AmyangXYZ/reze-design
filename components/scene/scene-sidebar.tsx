@@ -87,7 +87,7 @@ export function ScenePanel({
   onChange: (settings: SceneSettings) => void
 }) {
   const t = useT()
-  const { colors, world, sun, bloom } = settings
+  const { background, ground, world, sun, bloom } = settings
   const patch = <K extends keyof SceneSettings>(key: K, value: Partial<SceneSettings[K]>) =>
     onChange({ ...settings, [key]: { ...settings[key], ...value } })
 
@@ -183,27 +183,27 @@ export function ScenePanel({
 
         {/* Background: one color today; grows later (gradients, environments). */}
         <Section title={t.scene.background}>
-          <ColorRow label={t.scene.color} value={colors.background} onChange={(hex) => patch("colors", { background: hex })} />
+          <ColorRow label={t.scene.color} value={background.color} onChange={(hex) => patch("background", { color: hex })} />
         </Section>
 
         {/* Ground: its own domain — color, opacity, shadow, grid; presets later. */}
         <Section title={t.scene.ground}>
-          <ColorRow label={t.scene.color} value={colors.ground} onChange={(hex) => patch("colors", { ground: hex })} />
+          <ColorRow label={t.scene.color} value={ground.color} onChange={(hex) => patch("ground", { color: hex })} />
           <SliderRow
             label={t.scene.opacity}
-            value={colors.groundOpacity}
+            value={ground.opacity}
             min={0}
             max={1}
             step={0.01}
-            onChange={(v) => patch("colors", { groundOpacity: v })}
+            onChange={(v) => patch("ground", { opacity: v })}
             fmt={(v) => v.toFixed(2)}
           />
           {/* Shadow persists below opacity (shadow catcher) — this turns it off entirely. */}
           <div className="mt-2.5 flex items-center justify-between">
             <span className="text-xs">{t.scene.shadow}</span>
             <Switch
-              checked={colors.groundShadow}
-              onCheckedChange={(v) => patch("colors", { groundShadow: v })}
+              checked={ground.shadow}
+              onCheckedChange={(v) => patch("ground", { shadow: v })}
               className="scale-75"
             />
           </div>
@@ -211,12 +211,12 @@ export function ScenePanel({
           <div className="mt-2.5 flex items-center justify-between">
             <span className="text-xs">{t.scene.gridLines}</span>
             <div className="flex items-center gap-2">
-              {colors.gridEnabled && (
-                <ColorField value={colors.grid} onChange={(hex) => patch("colors", { grid: hex })} />
+              {ground.gridEnabled && (
+                <ColorField value={ground.grid} onChange={(hex) => patch("ground", { grid: hex })} />
               )}
               <Switch
-                checked={colors.gridEnabled}
-                onCheckedChange={(v) => patch("colors", { gridEnabled: v })}
+                checked={ground.gridEnabled}
+                onCheckedChange={(v) => patch("ground", { gridEnabled: v })}
                 className="scale-75"
               />
             </div>

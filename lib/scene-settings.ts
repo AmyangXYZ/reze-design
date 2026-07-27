@@ -1,27 +1,25 @@
-// Scene settings: appearance colors + world/sun/bloom lighting, persisted to
-// localStorage. Defaults are DERIVED from the engine's exported constants, so a
-// fresh session looks exactly like the engine's own defaults and never drifts.
+// Scene settings: the appearance-colors + world/sun/bloom TYPE and its sRGB↔linear
+// conversions. Values live elsewhere — the demo's look is `state.settings` in
+// lib/default-scene.ts, and the whole block travels inside the scene document
+// (lib/scene.ts), which is also what persists.
 //
-// Color semantics: `colors.background` is the page CSS backdrop (the engine
+// What stays here is ENGINE_DEFAULT_SCENE_SETTINGS: the engine's own neutral
+// defaults, DERIVED from its exported constants so they never drift from it.
+// That's a different thing from our default scene — it's what "Reset" restores.
+//
+// Color semantics: `background.color` is the page CSS backdrop (the engine
 // composites with premultiplied alpha, so the DOM shows through the ground
 // fade); everything else converts sRGB hex → linear for the engine.
+//
+// ONE KEY PER PANEL SECTION. The Scene panel renders World / Sun / Bloom /
+// Background / Ground, and each is exactly one key here, so a section's edits are
+// one `patch(section, …)` and hydrateScene's per-section merge lines up with what
+// the user actually sees. (These used to share one `colors` bag spanning three
+// sections, which matched neither the UI nor the merge.)
 
 import { DEFAULT_BLOOM_OPTIONS, Vec3 } from "reze-engine"
 
-export type SceneColors = {
-  background: string
-  ground: string
-  grid: string
-  /** Whole-ground opacity 0–1 (1 = solid; shadow persists — shadow catcher). */
-  groundOpacity: number
-  /** Ground receives the model's shadow. */
-  groundShadow: boolean
-  /** Show the ground grid lines. */
-  gridEnabled: boolean
-}
-
 export type SceneSettings = {
-  colors: SceneColors
   world: { color: string; strength: number }
   /** Sun direction as azimuth/elevation degrees — friendlier than a raw vector. */
   sun: { color: string; strength: number; azimuth: number; elevation: number }
@@ -32,6 +30,18 @@ export type SceneSettings = {
     radius: number
     intensity: number
     color: string
+  }
+  background: { color: string }
+  ground: {
+    color: string
+    /** Whole-ground opacity 0–1 (1 = solid; shadow persists — shadow catcher). */
+    opacity: number
+    /** Ground receives the model's shadow. */
+    shadow: boolean
+    /** Grid LINE color. */
+    grid: string
+    /** Show the ground grid lines. */
+    gridEnabled: boolean
   }
 }
 
@@ -66,36 +76,10 @@ export function azElToDirection(azimuth: number, elevation: number): Vec3 {
   return new Vec3(-Math.cos(el) * Math.sin(az), -Math.sin(el), -Math.cos(el) * Math.cos(az))
 }
 
-// The app's curated first-open look (used when there's no stored config yet) —
-// deliberately richer than the engine's neutral defaults.
-export const DEFAULT_SCENE_SETTINGS: SceneSettings = {
-  colors: {
-    background: "#0c0a09",
-    ground: "#8e51ff",
-    grid: "#fafaf9",
-    groundOpacity: 1,
-    groundShadow: true,
-    gridEnabled: true,
-  },
-  world: {
-    color: "#7f22fe",
-    strength: 0.7,
-  },
-  sun: {
-    color: "#ffffff",
-    strength: 2.0,
-    azimuth: 230,
-    elevation: 30,
-  },
-  bloom: {
-    enabled: true,
-    threshold: 0.5,
-    knee: 0.5,
-    radius: 4.0,
-    intensity: 0.05,
-    color: "#ffddd3",
-  },
-}
+// The app's curated first-open look is NOT here — it's `state.settings` in
+// lib/default-scene.ts, which owns every default the demo scene ships with. This
+// module is the SceneSettings type and its conversions; the values that happen to
+// be our defaults belong with the rest of the default scene.
 
 // The engine's real neutral defaults — what "Reset to defaults" restores (an
 // escape hatch when a model doesn't suit the curated purple first-open look).
@@ -104,12 +88,12 @@ export const DEFAULT_SCENE_SETTINGS: SceneSettings = {
 const ENGINE_WORLD = { color: new Vec3(0.4014, 0.4944, 0.647), strength: 0.3 }
 const ENGINE_SUN_DIR = new Vec3(-0.0873, -0.3844, 0.919)
 export const ENGINE_DEFAULT_SCENE_SETTINGS: SceneSettings = {
-  colors: {
-    background: "#0d1116",
-    ground: "#494d57",
+  background: { color: "#0d1116" },
+  ground: {
+    color: "#494d57",
+    opacity: 1,
+    shadow: true,
     grid: "#ededed",
-    groundOpacity: 1,
-    groundShadow: true,
     gridEnabled: true,
   },
   world: {
@@ -135,31 +119,57 @@ export const ENGINE_DEFAULT_SCENE_SETTINGS: SceneSettings = {
 // Color presets now live in one shared picker (components/color-picker.tsx),
 // sourced from the Tailwind palette — every color setting draws from that list.
 
-const STORAGE_KEY = "reze-design.scene"
+// Settings used to persist standalone under this key, in a flat `colors` bag that
+// spanned what are now the Background and Ground sections. They travel inside the
+// scene document's `state` now (lib/scene.ts) — this reader stays only to migrate
+// a pre-format session, so an existing user's saved look survives the upgrade.
+const LEGACY_STORAGE_KEY = "reze-design.scene"
 
-export function loadSceneSettings(): SceneSettings {
-  if (typeof window === "undefined") return DEFAULT_SCENE_SETTINGS
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const stored = JSON.parse(raw) as Partial<SceneSettings>
-      return {
-        colors: { ...DEFAULT_SCENE_SETTINGS.colors, ...stored.colors },
-        world: { ...DEFAULT_SCENE_SETTINGS.world, ...stored.world },
-        sun: { ...DEFAULT_SCENE_SETTINGS.sun, ...stored.sun },
-        bloom: { ...DEFAULT_SCENE_SETTINGS.bloom, ...stored.bloom },
-      }
-    }
-    return DEFAULT_SCENE_SETTINGS
-  } catch {
-    return DEFAULT_SCENE_SETTINGS
-  }
+type LegacySceneSettings = {
+  colors?: Partial<{
+    background: string
+    ground: string
+    grid: string
+    groundOpacity: number
+    groundShadow: boolean
+    gridEnabled: boolean
+  }>
+} & Partial<Pick<SceneSettings, "world" | "sun" | "bloom">>
+
+/** Sections AND their fields are both optional here: an old blob may predate a
+ *  setting entirely. hydrateScene merges this over the scene's own defaults, so
+ *  every gap fills in — undefined values must simply never be written. */
+export type PartialSceneSettings = { [K in keyof SceneSettings]?: Partial<SceneSettings[K]> }
+
+/** Drop keys whose value is undefined, so spreading can't punch a hole in the
+ *  defaults it merges over ({...{a:1}, ...{a: undefined}} is {a: undefined}). */
+function defined<T extends object>(o: T): Partial<T> {
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>
 }
 
-export function saveSceneSettings(settings: SceneSettings) {
+export function loadLegacySceneSettings(): PartialSceneSettings | null {
+  if (typeof window === "undefined") return null
+  let old: LegacySceneSettings
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
+    const raw = window.localStorage.getItem(LEGACY_STORAGE_KEY)
+    if (!raw) return null
+    old = JSON.parse(raw) as LegacySceneSettings
   } catch {
-    // storage full/blocked — customization just won't persist
+    return null
   }
+  // The old flat `colors` bag fans out into today's Background and Ground sections.
+  const c = old.colors ?? {}
+  return defined({
+    world: old.world,
+    sun: old.sun,
+    bloom: old.bloom,
+    background: defined({ color: c.background }),
+    ground: defined({
+      color: c.ground,
+      opacity: c.groundOpacity,
+      shadow: c.groundShadow,
+      grid: c.grid,
+      gridEnabled: c.gridEnabled,
+    }),
+  })
 }

@@ -76,6 +76,10 @@ export const AnimPlayer = memo(function AnimPlayer({
       }
       if (loopRef.current && !p.playing && !p.paused && p.duration > 0 && p.current >= p.duration - AT_END_EPS) {
         model.seek(0)
+        // Jumping end → frame 0 teleports every bone; the solver would carry the
+        // end pose's velocities into the restart and fling hair/skirt on the first
+        // frames. Settle it against the new pose before playing.
+        engineRef.current?.resetPhysics()
         model.play()
       }
     }
@@ -93,7 +97,10 @@ export const AnimPlayer = memo(function AnimPlayer({
       // Clip loaded but stopped (ended, or scrubbed while stopped). Resume from the
       // current position; only restart from 0 when sitting at the very end. `play()`
       // keeps currentFrame — `play(clipName)` would reset it to 0 (the from-start bug).
-      if (p.current >= p.duration - AT_END_EPS) model.seek(0)
+      if (p.current >= p.duration - AT_END_EPS) {
+        model.seek(0)
+        engineRef.current?.resetPhysics() // same end→0 teleport as the loop path
+      }
       model.play()
     } else if (clipName) {
       model.play(clipName) // first-ever start: load and play the clip

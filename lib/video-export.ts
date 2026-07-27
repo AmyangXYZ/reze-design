@@ -16,7 +16,6 @@ import {
 } from "mediabunny"
 import type { Engine } from "reze-engine"
 import { coverCrop, type BackdropMedia } from "./backdrop"
-import type { SceneColors } from "./scene-settings"
 
 export type ExportAudioSource = "music" | "none"
 
@@ -115,16 +114,16 @@ export async function exportVideo(opts: {
   duration: number
   settings: ExportSettings
   backdrop: BackdropMedia | null
-  /** Scene appearance colors — background is the bottom composite layer. */
-  colors: SceneColors
+  /** Page background hex — the bottom composite layer. */
+  backgroundColor: string
   /** Object/blob URL of the music track (used when audioSource === "music"). */
   musicUrl: string | null
   onProgress?: (p: ExportProgress) => void
   signal?: AbortSignal
 }): Promise<Blob> {
-  const { engine, canvas, modelName, duration, settings, backdrop, colors, musicUrl } = opts
+  const { engine, canvas, modelName, duration, settings, backdrop, backgroundColor, musicUrl } = opts
   const startTime = Math.max(0, opts.startTime ?? 0)
-  const bgColor = colors.background
+  const bgColor = backgroundColor
   const { width, height, fps } = settings
   const total = Math.max(1, Math.round(duration * fps))
   const model = engine.getModel(modelName)
