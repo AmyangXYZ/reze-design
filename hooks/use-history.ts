@@ -1,0 +1,103 @@
+"use client"
+
+// Undo/redo over a piece of state the host already owns. Modeled on the graph
+// editor's history (components/graph/graph-editor.tsx), which solved the same
+// problems first — this is that shape, extracted so more than one surface can use
+// it (scene settings today; group structure, which no undo covers yet, later).
+//
+// The two things that make it usable rather than merely correct:
+//
+//   DEBOUNCED SNAPSHOTS — a slider drag fires onChange every pixel. Recording
+//   each would bury the user's real edits under hundreds of entries, so a burst
+//   of changes settles into ONE step. The whole drag undoes at once.
+//
+//   A `restoring` GUARD — undo() sets state, which re-runs the snapshot effect,
+//   which would push the state we just undid back onto the stack: undo becomes a
+//   no-op that ping-pongs forever. The flag makes a restore not-an-edit.
+
+import { useCallback, useEffect, useRef, useState } from "react"
+
+/** How long a burst of edits stays "the same step". Matches the graph editor. */
+const SETTLE_MS = 300
+const MAX_ENTRIES = 64
+
+export function useHistory<T>(
+  present: T,
+  restoreState: (value: T) => void,
+  opts?: {
+    /** False while another surface owns undo — see the graph editor's `open`
+     *  gate. Only suppresses the keyboard shortcut; snapshots keep accruing, so
+     *  history isn't full of holes when focus comes back. */
+    shortcutsEnabled?: boolean
+  },
+) {
+  const past = useRef<T[]>([])
+  const future = useRef<T[]>([])
+  const current = useRef<T>(present)
+  const restoring = useRef(false)
+  // Mirrors the ref lengths into render so buttons can disable themselves.
+  const [depth, setDepth] = useState({ undo: 0, redo: 0 })
+  const sync = () => setDepth({ undo: past.current.length, redo: future.current.length })
+
+  const restoreRef = useRef(restoreState)
+  useEffect(() => {
+    restoreRef.current = restoreState
+  })
+
+  useEffect(() => {
+    if (restoring.current) {
+      restoring.current = false
+      return
+    }
+    const timer = setTimeout(() => {
+      // Content compare: a re-render that didn't actually change the value (a new
+      // object with identical fields) must not become an undo step.
+      if (JSON.stringify(present) === JSON.stringify(current.current)) return
+      past.current.push(current.current)
+      if (past.current.length > MAX_ENTRIES) past.current.shift()
+      current.current = present
+      future.current = [] // a fresh edit forks the timeline
+      sync()
+    }, SETTLE_MS)
+    return () => clearTimeout(timer)
+  }, [present])
+
+  const restore = useCallback((value: T) => {
+    restoring.current = true
+    current.current = value
+    restoreRef.current(value)
+    sync()
+  }, [])
+
+  const undo = useCallback(() => {
+    const prev = past.current.pop()
+    if (prev === undefined) return
+    future.current.push(current.current)
+    restore(prev)
+  }, [restore])
+
+  const redo = useCallback(() => {
+    const next = future.current.pop()
+    if (next === undefined) return
+    past.current.push(current.current)
+    restore(next)
+  }, [restore])
+
+  const enabled = opts?.shortcutsEnabled ?? true
+  useEffect(() => {
+    if (!enabled) return
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return
+      const el = e.target as HTMLElement
+      // Text fields keep their native undo.
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el.isContentEditable) return
+      e.preventDefault()
+      if (e.shiftKey) redo()
+      else undo()
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [enabled, undo, redo])
+
+  return { undo, redo, canUndo: depth.undo > 0, canRedo: depth.redo > 0 }
+}

@@ -87,6 +87,7 @@ const rangeInputCls =
 export type FramePreview = { aspect: number; watermark: boolean }
 
 export const RenderPanel = memo(function RenderPanel({
+  active,
   engineRef,
   canvasRef,
   modelName,
@@ -103,6 +104,9 @@ export const RenderPanel = memo(function RenderPanel({
   onExportingChange,
   onFramePreviewChange,
 }: {
+  /** This tab is the visible one. The dock KEEPS tabs mounted (see useKeepAlive),
+   *  so "am I on screen" can't be inferred from mount/unmount any more. */
+  active: boolean
   engineRef: RefObject<Engine | null>
   canvasRef: RefObject<HTMLCanvasElement | null>
   modelName: string
@@ -153,11 +157,14 @@ export const RenderPanel = memo(function RenderPanel({
 
   // While this tab is open, the viewport frames the shot live: report the aspect
   // + watermark so the page pins/letterboxes the canvas and previews the mark.
-  // The tab unmounting (tab switch / dock collapse) clears it via cleanup.
+  // Gated on `active`, not on mount: the dock keeps tabs mounted, so switching
+  // away no longer unmounts this. Cleanup still covers a dock collapse, which
+  // does unmount.
   useEffect(() => {
+    if (!active) return
     onFramePreviewChange({ aspect: width / height, watermark: watermark && !greenScreen })
     return () => onFramePreviewChange(null)
-  }, [width, height, watermark, greenScreen, onFramePreviewChange])
+  }, [active, width, height, watermark, greenScreen, onFramePreviewChange])
 
   const start = async () => {
     const engine = engineRef.current

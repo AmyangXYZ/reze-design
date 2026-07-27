@@ -107,6 +107,8 @@ const en = {
     ground: "Ground",
     gridLines: "Grid lines",
     resetDefaults: "Reset to defaults",
+    undo: "Undo",
+    redo: "Redo",
   },
   assets: {
     model: "Model",
@@ -386,6 +388,8 @@ const zh: Dictionary = {
     ground: "地面",
     gridLines: "网格线",
     resetDefaults: "恢复默认",
+    undo: "撤销",
+    redo: "重做",
   },
   assets: {
     model: "模型",
@@ -657,6 +661,8 @@ const ja: Dictionary = {
     ground: "地面",
     gridLines: "グリッド線",
     resetDefaults: "デフォルトに戻す",
+    undo: "元に戻す",
+    redo: "やり直し",
   },
   assets: {
     model: "モデル",

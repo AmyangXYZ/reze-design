@@ -7,7 +7,7 @@
 // LEFT uses a vertical icon+label rail (room to grow); RIGHT uses two text tabs
 // (Figma's Design/Prototype idiom). Panels render their own scroll content.
 
-import type { ComponentType, ReactNode } from "react"
+import { useCallback, useState, type ComponentType, type ReactNode } from "react"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { GithubMark } from "@/components/icons"
@@ -22,6 +22,29 @@ export type DockTab = {
 }
 
 const shell = "flex h-full min-h-0 w-full overflow-hidden shadow-float bg-zinc-950/70 backdrop-blur-xs"
+
+// KEEP-ALIVE. A tab's content mounts the first time it's opened and then STAYS
+// mounted, hidden with display:none, so switching is a style flip instead of a
+// teardown + rebuild. Rendering only the active tab made every switch reconstruct
+// a whole panel tree — the Materials panel alone builds a Radix ContextMenu root
+// per material AND per group (~39 for a typical model), which read as a stall.
+// Panels that must react to being hidden take an `active` prop rather than relying
+// on unmount (see RenderPanel's frame preview); collapsing a dock still unmounts
+// everything, so unmount cleanups keep working for that path.
+function useKeepAlive(active: string) {
+  const [seen, setSeen] = useState<string[]>([active])
+  const remember = useCallback((id: string) => setSeen((s) => (s.includes(id) ? s : [...s, id])), [])
+  // `id === active` also covers the parent switching tabs without going through
+  // the rail buttons, so the visible tab is never blank.
+  const isMounted = (id: string) => id === active || seen.includes(id)
+  return { isMounted, remember }
+}
+
+/** One mounted tab. Not `hidden` + `flex` together — two display utilities of equal
+ *  specificity, whichever Tailwind emits last would win. */
+function TabPane({ show, children }: { show: boolean; children: ReactNode }) {
+  return <div className={show ? "flex min-h-0 min-w-0 flex-1 flex-col" : "hidden"}>{children}</div>
+}
 
 export function LeftDock({
   railTop,
@@ -38,6 +61,7 @@ export function LeftDock({
   onActive: (id: string) => void
 }) {
   const current = tabs.find((t) => t.id === active) ?? tabs[0]
+  const { isMounted, remember } = useKeepAlive(current.id)
   return (
     <aside className={cn(shell, "border-r border-white/10")}>
       {/* Vertical rail — logo · divider · icon+label tabs (room to grow). Figma
@@ -52,7 +76,10 @@ export function LeftDock({
           return (
             <button
               key={t.id}
-              onClick={() => onActive(t.id)}
+              onClick={() => {
+                remember(t.id)
+                onActive(t.id)
+              }}
               className="flex w-full flex-col items-center gap-1.5 py-0.5"
             >
               <span
@@ -90,7 +117,14 @@ export function LeftDock({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {header}
         <Separator className="bg-white/10" />
-        {current.content}
+        {tabs.map(
+          (t) =>
+            isMounted(t.id) && (
+              <TabPane key={t.id} show={t.id === current.id}>
+                {t.content}
+              </TabPane>
+            ),
+        )}
       </div>
     </aside>
   )
@@ -108,6 +142,7 @@ export function RightDock({
   onActive: (id: string) => void
 }) {
   const current = tabs.find((t) => t.id === active) ?? tabs[0]
+  const { isMounted, remember } = useKeepAlive(current.id)
   return (
     <aside className={cn(shell, "flex-col border-l border-white/10")}>
       {header}
@@ -118,7 +153,10 @@ export function RightDock({
           return (
             <button
               key={t.id}
-              onClick={() => onActive(t.id)}
+              onClick={() => {
+                remember(t.id)
+                onActive(t.id)
+              }}
               className={cn(
                 "flex-1 cursor-pointer rounded-lg px-2 py-1 text-xs font-medium transition-colors",
                 on ? "bg-white/[0.08]" : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
@@ -130,7 +168,14 @@ export function RightDock({
         })}
       </div>
       <Separator className="bg-white/10" />
-      {current.content}
+      {tabs.map(
+        (t) =>
+          isMounted(t.id) && (
+            <TabPane key={t.id} show={t.id === current.id}>
+              {t.content}
+            </TabPane>
+          ),
+      )}
     </aside>
   )
 }

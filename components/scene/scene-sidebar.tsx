@@ -5,7 +5,7 @@
 // backdrop uploads live in the Assets tab. The Section / SliderRow / ColorRow
 // helpers are exported so the Assets panel and right dock can reuse the same rows.
 
-import { RotateCcw } from "lucide-react"
+import { Redo2, RotateCcw, Undo2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Slider } from "@/components/ui/slider"
@@ -82,9 +82,18 @@ export function ColorRow({ label, value, onChange }: { label: string; value: str
 export function ScenePanel({
   settings,
   onChange,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
 }: {
   settings: SceneSettings
   onChange: (settings: SceneSettings) => void
+  /** History is owned by the page (it holds the settings state) — see useHistory. */
+  onUndo: () => void
+  onRedo: () => void
+  canUndo: boolean
+  canRedo: boolean
 }) {
   const t = useT()
   const { background, ground, world, sun, bloom } = settings
@@ -223,12 +232,36 @@ export function ScenePanel({
           </div>
         </Section>
 
-        {/* Reset to the app's curated defaults (not the engine's neutral ones). */}
-        <div className="-mx-4 mt-4 border-t border-white/10 px-4 pt-3">
+        {/* Undo/redo sit beside Reset: all three step the whole panel at once,
+            unlike the per-section controls above. ⌘/Ctrl+Z works too (a slider
+            drag is one step) — these make it discoverable and reachable on touch,
+            where there's no keyboard. */}
+        <div className="-mx-4 mt-4 flex items-center gap-1 border-t border-white/10 px-4 pt-3">
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 w-full gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+            className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground disabled:opacity-30"
+            onClick={onUndo}
+            disabled={!canUndo}
+            title={t.scene.undo}
+          >
+            <Undo2 className="size-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground disabled:opacity-30"
+            onClick={onRedo}
+            disabled={!canRedo}
+            title={t.scene.redo}
+          >
+            <Redo2 className="size-3" />
+          </Button>
+          {/* Reset to the ENGINE's neutral defaults (not the demo's curated look). */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 flex-1 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
             onClick={() => onChange(ENGINE_DEFAULT_SCENE_SETTINGS)}
           >
             <RotateCcw className="size-3" />

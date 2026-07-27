@@ -44,7 +44,7 @@ export const DEFAULT_SCENE: Scene = {
     // The curated first-open look — deliberately richer than the engine's neutral
     // defaults, which stay in lib/scene-settings.ts as what "Reset" restores.
     settings: {
-      world: { color: "#ed6aff", strength: 0.5 },
+      world: { color: "#ed6aff", strength: 0.66 },
       sun: { color: "#ffffff", strength: 2.0, azimuth: 205, elevation: 21 },
       bloom: { enabled: true, threshold: 0.5, knee: 0.5, radius: 4.0, intensity: 0.05, color: "#ffc9c9" },
       background: { color: "#4b004f" },

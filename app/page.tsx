@@ -30,6 +30,7 @@ import { FloatingPanel, type Rect } from "@/components/editor/floating-panel"
 import { NodeLibrary } from "@/components/editor/node-library"
 import { RenderPanel, type FramePreview } from "@/components/editor/render-panel"
 import { useEngine } from "@/hooks/use-engine"
+import { useHistory } from "@/hooks/use-history"
 import { probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
 import { expandUploadFiles, readDroppedFiles } from "@/lib/uploads"
 import { useT } from "@/lib/i18n"
@@ -51,6 +52,12 @@ import { cn } from "@/lib/utils"
 // desktop window is never EXACTLY 16:9 — within this band the true frame differs
 // imperceptibly, so keep the scene untouched and the border flush.
 const FRAME_ASPECT_TOL = 1.03
+
+// How long edits settle before the working scene is written to localStorage.
+// Deliberately much longer than the undo hook's 300ms: undo granularity wants to
+// feel immediate, but an autosave doesn't, and a shorter window let a mid-drag
+// pause fire the write *during* the drag.
+const SAVE_SETTLE_MS = 1000
 
 // Unique kebab id for a new (peeled / created) style group. CJK material names
 // slugify to empty → "group", which is fine (id is internal; label is shown).
@@ -182,6 +189,10 @@ export default function Home() {
   // the STARTING point, not live state; everything below owns its slice from here.
   const [bootScene] = useState(() => hydrateScene(DEFAULT_SCENE))
   const [sceneSettings, setSceneSettings] = useState<SceneSettings>(bootScene.state.settings)
+  // Undo/redo for the Scene panel. The graph editor runs its OWN history and only
+  // yields ⌘Z while closed, so gate on the same `drawerOpen` it gates on —
+  // whichever surface is open owns the shortcut, and neither double-handles it.
+  const sceneHistory = useHistory(sceneSettings, setSceneSettings, { shortcutsEnabled: !drawerOpen })
   // suppressHydrationWarning makes React SKIP patching the server-rendered style
   // (SSR uses defaults; the client initializer read localStorage), and since the
   // state never changes after mount the stale server color stuck — a stored light
@@ -308,10 +319,18 @@ export default function Home() {
     }
   }
 
+  const openLibrary = useCallback((groupId: string) => setLibrary({ open: true, groupId }), [])
+
   // ── Group operations (structural edits go through applyGroups) ──
   // Returns the new id — the materials panel drops it straight into rename mode.
   // The label is still made unique ("New group 2") for whoever Escapes out.
-  const createGroup = (): string => {
+  // These are useCallback'd so MaterialsPanel (memoized) can skip re-rendering
+  // while it's the HIDDEN dock tab — the dock keeps tabs mounted now, so an
+  // unstable handler identity would re-render its ~39 context-menu trees on every
+  // unrelated page render, e.g. each tick of a scene-settings slider drag. Every
+  // one of them closes over `groups`, so identity changes exactly when the panel
+  // genuinely needs to redraw.
+  const createGroup = useCallback((): string => {
     const id = newGroupId("group", groups)
     const base = t.materials.newGroup
     const labels = new Set(groups.map((g) => g.label ?? g.id))
@@ -323,42 +342,57 @@ export default function Home() {
     ])
     setActiveGroupId(id)
     return id
-  }
+  }, [groups, t, applyGroups])
   // Non-empty groups compile through upsertGroup (one group); empty folders exist
   // in UI state only, so their edits go through applyGroups (which withholds them
   // from the engine) rather than upsertGroup (which would compile an empty group).
-  const patchGroup = (id: string, patch: Partial<StyleGroup>) => {
-    const g = groups.find((x) => x.id === id)
-    if (!g) return
-    const updated = { ...g, ...patch }
-    if (updated.materials.length) void upsertGroup(updated)
-    else void applyGroups(groups.map((x) => (x.id === id ? updated : x)))
-  }
-  const renameGroup = (id: string, label: string) => patchGroup(id, { label: label.trim() || id })
-  const deleteGroup = (id: string) => {
-    const g = groups.find((x) => x.id === id)
-    if (!g || g.renderClass === "eye" || g.renderClass === "hair") return // Eye/Hair are pinned
-    void applyGroups(groups.filter((x) => x.id !== id)) // its materials fall back to hand-shaded
-    if (activeGroupId === id) setActiveGroupId(null)
-  }
+  const patchGroup = useCallback(
+    (id: string, patch: Partial<StyleGroup>) => {
+      const g = groups.find((x) => x.id === id)
+      if (!g) return
+      const updated = { ...g, ...patch }
+      if (updated.materials.length) void upsertGroup(updated)
+      else void applyGroups(groups.map((x) => (x.id === id ? updated : x)))
+    },
+    [groups, upsertGroup, applyGroups],
+  )
+  const renameGroup = useCallback(
+    (id: string, label: string) => patchGroup(id, { label: label.trim() || id }),
+    [patchGroup],
+  )
+  const deleteGroup = useCallback(
+    (id: string) => {
+      const g = groups.find((x) => x.id === id)
+      if (!g || g.renderClass === "eye" || g.renderClass === "hair") return // Eye/Hair are pinned
+      void applyGroups(groups.filter((x) => x.id !== id)) // its materials fall back to hand-shaded
+      if (activeGroupId === id) setActiveGroupId(null)
+    },
+    [groups, applyGroups, activeGroupId],
+  )
   // Move a material into a group (target=null → ungroup). Removes it from wherever
   // it was first; each material lives in at most one group.
-  const moveMaterial = (material: string, targetId: string | null) => {
-    const next = groups.map((g) => ({ ...g, materials: g.materials.filter((m) => m !== material) }))
-    if (targetId) {
-      const t = next.find((g) => g.id === targetId)
-      if (t) t.materials = [...t.materials, material]
-    }
-    void applyGroups(next)
-  }
+  const moveMaterial = useCallback(
+    (material: string, targetId: string | null) => {
+      const next = groups.map((g) => ({ ...g, materials: g.materials.filter((m) => m !== material) }))
+      if (targetId) {
+        const t = next.find((g) => g.id === targetId)
+        if (t) t.materials = [...t.materials, material]
+      }
+      void applyGroups(next)
+    },
+    [groups, applyGroups],
+  )
   // Focus a group and open the node-graph editor on it (snapshots a baseline).
-  const editGroupGraph = (id: string) => {
-    const g = groups.find((x) => x.id === id)
-    if (!g) return
-    setActiveGroupId(id)
-    setEditBaseline({ groupId: id, graph: g.graph, label: g.label })
-    setDrawerOpen(true)
-  }
+  const editGroupGraph = useCallback(
+    (id: string) => {
+      const g = groups.find((x) => x.id === id)
+      if (!g) return
+      setActiveGroupId(id)
+      setEditBaseline({ groupId: id, graph: g.graph, label: g.label })
+      setDrawerOpen(true)
+    },
+    [groups],
+  )
 
   // ── Model upload ──
   type UploadState = { kind: "pick"; files: File[]; paths: string[] } | { kind: "notice"; message: string } | null
@@ -772,15 +806,35 @@ export default function Home() {
   // of restoring groups naming materials this model doesn't have.
   // (`camera` is authored framing, not live orbit — the engine exposes distance
   // but no target getter, so orbiting still isn't captured.)
+  //
+  // DEBOUNCED *and* deferred to idle, because this write is genuinely expensive:
+  // the payload carries every group's shader graph (~30 KB serialized) and
+  // localStorage.setItem is synchronous, so it blocks whatever frame it lands in.
+  // Debouncing alone wasn't enough — a pause mid-drag outlasted the window and
+  // fired the write while the user was still dragging. requestIdleCallback makes
+  // that impossible: the write waits for a free main thread no matter when the
+  // timer elapses. The timeout bounds the wait so a busy tab still saves.
   useEffect(() => {
     if (!ready) return
-    saveSceneState({
-      name: bootScene.state.name,
-      camera: bootScene.state.camera,
-      settings: sceneSettings,
-      groups,
-      groupsFor: modelName,
-    })
+    let idle = 0
+    const timer = setTimeout(() => {
+      const write = () =>
+        saveSceneState({
+          name: bootScene.state.name,
+          camera: bootScene.state.camera,
+          settings: sceneSettings,
+          groups,
+          groupsFor: modelName,
+        })
+      idle =
+        typeof requestIdleCallback === "function"
+          ? requestIdleCallback(write, { timeout: 2000 })
+          : (setTimeout(write, 0) as unknown as number)
+    }, SAVE_SETTLE_MS)
+    return () => {
+      clearTimeout(timer)
+      if (idle && typeof cancelIdleCallback === "function") cancelIdleCallback(idle)
+    }
   }, [ready, sceneSettings, groups, modelName, bootScene])
 
   // ── Dock tab definitions ── LEFT = styling (materials, scene look); RIGHT =
@@ -795,9 +849,9 @@ export default function Home() {
           materials={materials}
           groups={groups}
           activeGroupId={activeGroupId}
-          onHover={(name) => highlight(name)}
+          onHover={highlight}
           onToggleVisible={toggleVisible}
-          onOpenLibrary={(groupId) => setLibrary({ open: true, groupId })}
+          onOpenLibrary={openLibrary}
           onCreateGroup={createGroup}
           onRenameGroup={renameGroup}
           onDeleteGroup={deleteGroup}
@@ -807,7 +861,14 @@ export default function Home() {
         />
       ),
     },
-    { id: "scene", label: t.tabs.scene, icon: Sun, content: <ScenePanel settings={sceneSettings} onChange={setSceneSettings} /> },
+    { id: "scene", label: t.tabs.scene, icon: Sun, content: <ScenePanel
+          settings={sceneSettings}
+          onChange={setSceneSettings}
+          onUndo={sceneHistory.undo}
+          onRedo={sceneHistory.redo}
+          canUndo={sceneHistory.canUndo}
+          canRedo={sceneHistory.canRedo}
+        /> },
   ]
 
   const rightTabs: DockTab[] = [
@@ -861,6 +922,7 @@ export default function Home() {
       icon: Clapperboard,
       content: (
         <RenderPanel
+          active={rightTab === "render"}
           engineRef={engineRef}
           canvasRef={canvasRef}
           modelName={modelName}
