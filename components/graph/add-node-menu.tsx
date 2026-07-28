@@ -1,10 +1,6 @@
 "use client"
 
 // Blender-style "Add node" search palette, opened by right-clicking the graph canvas.
-// A search box filters the curated NODE_CATALOG; picking an item (click, or ↑↓ + ⏎)
-// drops that node at the cursor. Portaled to <body> so the bottom drawer's clipping
-// doesn't cut it off, and clamped to stay on-screen (right-clicks land low, near the
-// drawer's bottom edge, so it usually opens upward).
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
@@ -21,8 +17,7 @@ export function AddNodeMenu({
 }: {
   x: number
   y: number
-  /** When set (drag-to-create), show only node types this predicate accepts — i.e.
-   *  those with a socket compatible with the dragged wire. */
+  /** When set (drag-to-create), show only node types this predicate accepts — i.e. */
   accept?: (type: string) => boolean
   onPick: (type: string) => void
   onClose: () => void
@@ -34,9 +29,7 @@ export function AddNodeMenu({
   const [active, setActive] = useState(0)
   const [pos, setPos] = useState({ left: x, top: y, ready: false })
 
-  // When searching, collapse to a single flat, filtered list (no headers); otherwise
-  // show the curated groups. `flat` is the keyboard-navigable order either way. When
-  // `accept` is set (drag-to-create), incompatible node types are dropped throughout.
+  // When searching, collapse to a single flat, filtered list (no headers)
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase()
     const base = accept
@@ -69,8 +62,6 @@ export function AddNodeMenu({
   }, [x, y, flat.length])
 
   // Dismiss on outside pointer-down or Escape (Escape is also handled by the input).
-  // Capture phase: React Flow's pane stops pointer events from bubbling (d3-zoom),
-  // so a bubble-phase listener never sees clicks on the canvas — capture runs first.
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
       if (!ref.current?.contains(e.target as Node)) onClose()

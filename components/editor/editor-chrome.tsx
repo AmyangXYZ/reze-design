@@ -1,11 +1,6 @@
 "use client"
 
-// Editor chrome pieces. RailLogo is the app-level home/menu button at the TOP of
-// the left rail (Figma's logo slot) — higher-level ops live here (nav, and later
-// account/new-scene). BrandPill is the panel header: "Reze Design" + scene name +
-// the dock toggle; as the expanded dock header the logo is omitted (the rail owns
-// it) and it gets extra top padding, keeping the logo only as the floating pill.
-// TopRightCluster is the right header: portfolio (account) + a blue text Share.
+// Editor chrome pieces. RailLogo is the app-level home/menu button at the TOP of the left
 
 import Link from "next/link"
 import { CircleUserRound, PanelLeft, PanelLeftClose, WandSparkles } from "lucide-react"
@@ -20,8 +15,7 @@ import { cn } from "@/lib/utils"
 
 const floating = "rounded-lg border border-white/10 bg-zinc-950/70 shadow-float backdrop-blur-xs"
 
-/** App menu: nav + higher-level ops (placeholder). Reused by RailLogo and the
- *  floating brand pill so the two never drift. */
+/** App menu: nav + higher-level ops (placeholder). */
 function AppMenu({ children }: { children: React.ReactNode }) {
   return (
     <Popover>
@@ -76,8 +70,7 @@ export function BrandPill({
   sceneName: string
   docksOpen: boolean
   onToggleDocks: () => void
-  /** Render flat & full-width as a dock header (expanded, logo lives in the rail),
-   *  vs a floating pill with its own logo menu (collapsed). */
+  /** Render flat & full-width as a dock header (expanded, logo lives in the rail), vs a floating */
   asHeader?: boolean
 }) {
   const t = useT()
@@ -98,8 +91,6 @@ export function BrandPill({
   )
 
   // A small tag by the title so visitors know it's a live work-in-progress.
-  // Hidden on phones: the dock header is already tight there, and the tag was
-  // the first thing to collide with the scene name.
   const tag = (
     <span className="shrink-0 rounded-full bg-blue-400/15 px-1.5 py-px text-[10px] leading-none font-medium tracking-wide text-blue-400 max-sm:hidden">
       {t.brand.preRelease}
@@ -207,7 +198,6 @@ export function TopRightCluster({
     )
   }
   // Collapsed: a single pill holding account + Share together (Figma parity).
-  // py matches the brand pill's so the two floating pills sit at equal height.
   return (
     <div className={cn("flex items-center gap-1.5 py-1.5 pr-1.5 pl-1.5", floating)}>
       {accountBtn}

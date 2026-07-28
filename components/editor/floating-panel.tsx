@@ -1,14 +1,10 @@
 "use client"
 
-// A free-floating window: drag it by any descendant marked [data-drag-handle], and
-// resize from any edge or corner. Position/size are controlled ({rect} + onRectChange)
-// so the parent can persist them. During a gesture we mutate the DOM directly (no
-// re-render per frame, so React Flow inside stays smooth) and commit to state on
-// release. `fullscreen` overrides the rect with a near-viewport inset and disables
-// drag/resize. Everything is clamped to stay on-screen.
+// A free-floating window: drag it by any descendant marked [data-drag-handle], and resize
 
 import { useRef, type ReactNode } from "react"
 import { createPortal } from "react-dom"
+import { useZOrder } from "@/hooks/use-z-order"
 import { cn } from "@/lib/utils"
 
 export type Rect = { x: number; y: number; w: number; h: number }
@@ -17,8 +13,6 @@ type Mode = "move" | "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw"
 const PAD = 8 // keep this many px between the panel and the viewport edge
 
 // Drop the backdrop-blur (which re-samples the whole background every frame) and hint
-// the compositor while a gesture is live; restore both on release. This is what keeps
-// dragging smooth — a moving backdrop-filter is the expensive part, not the transform.
 function setPerf(el: HTMLElement, active: boolean) {
   if (active) {
     el.style.setProperty("backdrop-filter", "none")
@@ -39,6 +33,7 @@ export function FloatingPanel({
   minW = 360,
   minH = 240,
   className,
+  raiseKey,
   children,
 }: {
   rect: Rect
@@ -48,6 +43,8 @@ export function FloatingPanel({
   minW?: number
   minH?: number
   className?: string
+  /** Changing this raises the panel */
+  raiseKey?: unknown
   children: ReactNode
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -63,8 +60,7 @@ export function FloatingPanel({
     const vw = window.innerWidth
     const vh = window.innerHeight
     if (d.mode === "move") {
-      // Move via a compositor-only transform (no layout, no per-frame backdrop
-      // re-sample — see setPerf) — left/top stay at the start; committed on release.
+      // Move via a compositor-only transform (no layout, no per-frame backdrop re-sample
       const x = Math.min(Math.max(PAD, d.start.x + dx), vw - d.start.w - PAD)
       const y = Math.min(Math.max(PAD, d.start.y + dy), vh - d.start.h - PAD)
       latest.current = { x, y, w: d.start.w, h: d.start.h }
@@ -97,8 +93,7 @@ export function FloatingPanel({
     const d = drag.current
     if (el && d) {
       if (d.mode === "move") {
-        // Bake the transform into left/top synchronously so there's no flash when
-        // state re-renders to the same values.
+        // Bake the transform into left/top synchronously so there's no flash when state re-renders
         el.style.transform = ""
         el.style.left = `${latest.current.x}px`
         el.style.top = `${latest.current.y}px`
@@ -120,8 +115,7 @@ export function FloatingPanel({
   const onContainerDown = (e: React.PointerEvent) => {
     if (fullscreen) return
     const t = e.target as HTMLElement
-    // Drag from anywhere inside a [data-drag-handle] region (e.g. the whole header),
-    // but never when the press lands on an interactive control there (buttons still work).
+    // Drag from anywhere inside a [data-drag-handle] region (e.g.
     if (!t.closest("[data-drag-handle]")) return
     if (t.closest("button, a, input, textarea, select, [role='button'], [data-no-drag]")) return
     begin("move")(e)
@@ -133,12 +127,19 @@ export function FloatingPanel({
 
   // Edge/corner resize affordances (invisible hit strips). Corners sit above edges.
   const edge = "absolute touch-none"
+  const { z, onPointerDownCapture } = useZOrder(raiseKey)
+
   if (typeof document === "undefined") return null
-  // Portal to <body> so the panel's z-index compares directly against other body-level
-  // portals (the library) — inside the page root it'd be trapped in a lower stacking
-  // context and sit below them regardless of z.
+  // Portal to <body> so the panel's z-index compares directly against other body-level portals
   return createPortal(
-    <div ref={ref} className={cn("fixed", className)} style={style} onPointerDown={onContainerDown}>
+    <div
+      ref={ref}
+      className={cn("fixed", className)}
+      // Stacking is dynamic (useZOrder), so it has to beat any z-* the caller passes
+      style={{ ...style, zIndex: z }}
+      onPointerDownCapture={onPointerDownCapture}
+      onPointerDown={onContainerDown}
+    >
       {children}
       {!fullscreen && (
         <>

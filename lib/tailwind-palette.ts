@@ -1,6 +1,4 @@
 // GENERATED from tailwindcss/theme.css (oklch → sRGB hex) — do not edit by hand.
-// Regenerate with the gen-palette script if the Tailwind version changes.
-// Order matches ui.shadcn.com/colors: chromatic hues, then neutrals; 50–950.
 
 export type PaletteEntry = { name: string; hex: string }
 

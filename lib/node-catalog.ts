@@ -1,9 +1,4 @@
-// Curated "Add node" palette over the engine's NODE_REGISTRY. The registry carries
-// no display metadata (labels, grouping) — that's an editor concern — so the human
-// labels and category order live here. Every registry type appears exactly once
-// (see the dev-only completeness check at the bottom). Categories mirror the section
-// comments in the engine's registry (Input · Color · Texture · Vector · Math · Mix ·
-// Shader), the order a Blender user expects in an Add-node search.
+// Curated "Add node" palette over the engine's NODE_REGISTRY. The registry carries no display
 
 import { NODE_REGISTRY, type GraphNode, type SocketValue } from "reze-engine"
 
@@ -92,8 +87,7 @@ export const NODE_CATALOG: CatalogGroup[] = [
 export const nodeLabel = (type: string): string =>
   NODE_CATALOG.flatMap((g) => g.items).find((i) => i.type === type)?.label ?? type
 
-// Category accent color — shared by the node-card header and the graph minimap so both
-// speak the same visual language (Blender-style colored headers by node family).
+// Category accent color — shared by the node-card header and the graph minimap so both speak
 export const CATEGORY_COLORS: Record<string, string> = {
   Input: "#2dd4bf", // teal
   Color: "#fbbf24", // amber (matches the color socket)
@@ -110,8 +104,7 @@ export const categoryOf = (type: string): string | undefined => TYPE_TO_CATEGORY
 /** Accent hex for a node type via its category (neutral gray if uncatalogued). */
 export const nodeColor = (type: string): string => CATEGORY_COLORS[categoryOf(type) ?? ""] ?? "#a1a1aa"
 
-/** Unique node id from a type: slugify (`math/power` → `math_power`), then suffix on
- *  collision. Result matches the engine's id rule `/^[a-z0-9_]+$/`. */
+/** Unique node id from a type: slugify (`math/power` → `math_power`), then suffix on collision. */
 export function uniqueNodeId(type: string, existing: Set<string>): string {
   const base = type.replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "") || "node"
   if (!existing.has(base)) return base
@@ -120,10 +113,7 @@ export function uniqueNodeId(type: string, existing: Set<string>): string {
   return `${base}_${i}`
 }
 
-/** Build a fresh GraphNode with the registry's default literals seeded (so the card
- *  shows editable values immediately) at a ui position. Context/link-only sockets
- *  (no `default`) are left for the compiler to resolve. Arrays are cloned so nodes
- *  never share a literal with the registry. */
+/** Build a fresh GraphNode with the registry's default literals seeded (so the card shows */
 export function makeGraphNode(type: string, id: string, position: { x: number; y: number }): GraphNode {
   const spec = NODE_REGISTRY[type]
   const inputs: Record<string, SocketValue> = {}
@@ -138,7 +128,6 @@ export function makeGraphNode(type: string, id: string, position: { x: number; y
 }
 
 // Dev-only drift guard: fail loudly in the console if the registry gains/loses a type
-// the catalog doesn't mirror. Cheap, runs once at module load.
 if (process.env.NODE_ENV !== "production") {
   const listed = new Set(NODE_CATALOG.flatMap((g) => g.items.map((i) => i.type)))
   const registered = new Set(Object.keys(NODE_REGISTRY))

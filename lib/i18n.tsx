@@ -1,19 +1,6 @@
 "use client"
 
-// The whole i18n layer in one file: the string dictionaries + a tiny context that
-// holds the current locale (so switching re-renders) and persists the choice.
-// No URL routing — this is a client editor, the locale is just app state.
-//
-// English is the source of truth: its shape defines `Dictionary`, so `zh`/`ja` are
-// compile-time-checked to have every key. Values are strings, or a function when a
-// string interpolates a runtime value (keeps interpolation typed, no ICU library).
-// To add a language: add it to LOCALES + LOCALE_LABELS and a dict typed `: Dictionary`.
-//
-// NODE VOCABULARY: node names (`nodeLabel`) and categories (`nodeCategory`) are
-// translated to match Blender's Interface translation. They're keyed by the stable
-// node `type` / English category — display only, so the graph data, the compiler, and
-// the category colors (keyed by English) are untouched. Socket names stay English:
-// they're the engine's handle ids (see lib/graph-flow.ts), not display strings.
+// The whole i18n layer in one file
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react"
 
@@ -27,8 +14,7 @@ export const LOCALE_LABELS: Record<Locale, string> = {
   ja: "日本語",
 }
 
-// No `as const`: leaves infer as `string`, so `Dictionary` = this shape with
-// translatable values. Missing/misspelled keys in another locale are build errors.
+// No `as const`: leaves infer as `string`, so `Dictionary` = this shape with translatable
 const en = {
   brand: {
     // Product name is intentionally NOT translated (kept as a wordmark).
@@ -52,7 +38,7 @@ const en = {
   },
   editor: {
     loadingModel: "loading model…",
-    selectMaterial: "Select a material to edit its look",
+    selectMaterial: "Select a material to edit its shader graph",
     engineError: (message: string) => `Engine: ${message}`,
   },
   // Dock tab labels (ids stay fixed; only the display text is translated).
@@ -72,7 +58,6 @@ const en = {
   materials: {
     styleGroups: "Style groups",
     newGroup: "New group",
-    collapseAll: "Collapse all",
     moveTo: "Move to",
     ungrouped: "Ungrouped",
     hide: "Hide",
@@ -83,9 +68,10 @@ const en = {
     empty: "No materials — load a model.",
     shaderGraph: "Shader graph",
     library: "Library",
+    styleGroup: "Style group",
+    group: "Group",
+    defaultGraph: "Default",
     editGraph: "Edit graph",
-    editShaderGraph: "Edit shader graph",
-    nodesLinks: (nodes: number, links: number) => `${nodes} nodes · ${links} links`,
   },
   scene: {
     // Display name is the full "World light"; the engine key stays abbreviated `world`.
@@ -106,6 +92,9 @@ const en = {
     intensity: "Intensity",
     background: "Background",
     grade: "Grade",
+    preset: "Preset",
+    split: "Split tone",
+    browseAll: "Browse all…",
     shadows: "Shadows",
     midtones: "Midtones",
     highlights: "Highlights",
@@ -119,6 +108,18 @@ const en = {
     noEffect: "None",
     bgEffects: "Background effects",
     bgEffectHint: "A live shader layered over the background color or image, behind the model.",
+  },
+  gradeLibrary: {
+    newGrade: "New grade",
+    apply: "Apply grade",
+    publish: "Publish",
+    revert: "Back to preset",
+    publishSoon: "Publishing to the community library needs an account — coming soon",
+    untitled: "Untitled grade",
+    copy: "copy",
+    edit: "Edit",
+    duplicate: "Duplicate & edit",
+    categories: { basic: "Basic", film: "Film", color: "Color", night: "Night", mono: "Mono", custom: "Yours" },
   },
   bgLibrary: {
     browse: "Browse",
@@ -243,8 +244,7 @@ const en = {
     Mix: "Mix",
     Shader: "Shader",
   } as Record<string, string>,
-  // Node display names — keyed by the stable node `type`. Falls back to the catalog's
-  // English label for any type not listed here (see nodeLabel() usage).
+  // Node display names — keyed by the stable node `type`. Falls back to the catalog's English
   nodeLabel: {
     texture: "Image Texture",
     geometry: "Geometry",
@@ -287,9 +287,7 @@ const en = {
     "layer_weight/fresnel": "Layer Weight · Fresnel",
     "layer_weight/facing": "Layer Weight · Facing",
   } as Record<string, string>,
-  // Socket (port) display names — keyed by the engine's socket id (which stays the
-  // React Flow handle id; only the visible label is translated). Also gives the
-  // terse engine ids friendlier English names (loc → Location). Falls back to the id.
+  // Socket (port) display names
   socket: {
     color: "Color",
     alpha: "Alpha",
@@ -379,7 +377,6 @@ const zh: Dictionary = {
   materials: {
     styleGroups: "样式组",
     newGroup: "新建组",
-    collapseAll: "全部折叠",
     moveTo: "移动到",
     ungrouped: "未分组",
     hide: "隐藏",
@@ -390,9 +387,10 @@ const zh: Dictionary = {
     empty: "暂无材质 —— 请加载模型。",
     shaderGraph: "着色器图",
     library: "素材库",
+    styleGroup: "样式组",
+    group: "组",
+    defaultGraph: "默认",
     editGraph: "编辑图",
-    editShaderGraph: "编辑着色器图",
-    nodesLinks: (nodes: number, links: number) => `${nodes} 个节点 · ${links} 条连接`,
   },
   scene: {
     color: "颜色",
@@ -412,6 +410,9 @@ const zh: Dictionary = {
     intensity: "强度",
     background: "背景",
     grade: "调色",
+    preset: "预设",
+    split: "冷暖分离",
+    browseAll: "浏览全部…",
     shadows: "暗部",
     midtones: "中间调",
     highlights: "亮部",
@@ -425,6 +426,18 @@ const zh: Dictionary = {
     noEffect: "无",
     bgEffects: "背景特效",
     bgEffectHint: "实时着色器特效：悬浮于背景颜色或图片之上、模型之后。",
+  },
+  gradeLibrary: {
+    newGrade: "新建调色",
+    apply: "应用调色",
+    publish: "发布",
+    revert: "还原预设",
+    publishSoon: "发布到社区库需要账号 — 即将推出",
+    untitled: "未命名调色",
+    copy: "副本",
+    edit: "编辑",
+    duplicate: "复制并编辑",
+    categories: { basic: "基础", film: "胶片", color: "色彩", night: "夜晚", mono: "单色", custom: "我的" },
   },
   bgLibrary: {
     browse: "浏览",
@@ -677,7 +690,6 @@ const ja: Dictionary = {
   materials: {
     styleGroups: "スタイルグループ",
     newGroup: "新規グループ",
-    collapseAll: "すべて折りたたむ",
     moveTo: "移動先",
     ungrouped: "未グループ化",
     hide: "非表示",
@@ -688,9 +700,10 @@ const ja: Dictionary = {
     empty: "マテリアルがありません — モデルを読み込んでください。",
     shaderGraph: "シェーダーグラフ",
     library: "ライブラリ",
+    styleGroup: "スタイルグループ",
+    group: "グループ",
+    defaultGraph: "デフォルト",
     editGraph: "グラフを編集",
-    editShaderGraph: "シェーダーグラフを編集",
-    nodesLinks: (nodes: number, links: number) => `${nodes} ノード・${links} リンク`,
   },
   scene: {
     color: "カラー",
@@ -710,6 +723,9 @@ const ja: Dictionary = {
     intensity: "強度",
     background: "背景",
     grade: "グレーディング",
+    preset: "プリセット",
+    split: "スプリットトーン",
+    browseAll: "すべて表示…",
     shadows: "シャドウ",
     midtones: "中間調",
     highlights: "ハイライト",
@@ -723,6 +739,18 @@ const ja: Dictionary = {
     noEffect: "なし",
     bgEffects: "背景エフェクト",
     bgEffectHint: "背景色や画像の上、モデルの後ろに重なるリアルタイムシェーダー。",
+  },
+  gradeLibrary: {
+    newGrade: "新規グレード",
+    apply: "グレードを適用",
+    publish: "公開",
+    revert: "プリセットに戻す",
+    publishSoon: "コミュニティライブラリへの公開にはアカウントが必要です — 近日公開",
+    untitled: "無題のグレード",
+    copy: "コピー",
+    edit: "編集",
+    duplicate: "複製して編集",
+    categories: { basic: "ベーシック", film: "フィルム", color: "カラー", night: "ナイト", mono: "モノクロ", custom: "マイ" },
   },
   bgLibrary: {
     browse: "ブラウズ",
@@ -937,8 +965,7 @@ const ja: Dictionary = {
 
 const dictionaries: Record<Locale, Dictionary> = { en, zh, ja }
 
-// ── The tiny reactive layer ──────────────────────────────────────────────────
-
+// ── The tiny reactive layer ──
 const STORAGE_KEY = "reze-design.locale"
 const isLocale = (v: string): v is Locale => (LOCALES as readonly string[]).includes(v)
 
@@ -967,18 +994,14 @@ type I18nContextValue = {
 const I18nContext = createContext<I18nContextValue | null>(null)
 
 export function I18nProvider({ children }: { children: React.ReactNode }) {
-  // SSR/first render is "en" to match `<html lang="en">` (no hydration flash);
-  // a post-mount effect corrects to the saved/browser locale.
+  // SSR/first render is "en" to match `<html lang="en">` (no hydration flash)
   const [locale, setLocaleState] = useState<Locale>("en")
 
   useEffect(() => {
     setLocaleState(detectLocale())
   }, [])
 
-  // Deliberately NOT syncing `document.documentElement.lang` to the UI locale:
-  // it drives CJK glyph selection (Han unification), so switching the UI language
-  // would silently reshape user data like CJK model names. Keeping <html lang="en">
-  // fixed keeps that content rendering consistently regardless of UI language.
+  // Deliberately NOT syncing `document.documentElement.lang` to the UI locale
 
   const setLocale = useCallback((next: Locale) => {
     setLocaleState(next)

@@ -6,12 +6,7 @@ import { Select as SelectPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 
-// Radix returns focus to the trigger when a Select closes. After a MOUSE pick
-// the browser re-marks that restored focus as :focus-visible, so the trigger
-// keeps a blue focus border until you click elsewhere — the same class of
-// sticky-focus bug NoStickyFocus and `:focus:not(:focus-visible)` handle
-// elsewhere. Keyboard users genuinely need the focus back, so track the input
-// modality and only suppress the restore for pointer interactions.
+// Radix returns focus to the trigger when a Select closes.
 let lastInputWasKeyboard = false
 if (typeof window !== "undefined") {
   window.addEventListener("keydown", () => (lastInputWasKeyboard = true), true)
@@ -44,8 +39,7 @@ function SelectTrigger({
 }: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
   size?: "sm" | "default"
 }) {
-  // Compact by design (the app's design language): a quiet value + chevron,
-  // iOS-settings style — not a full-height form field. Size via data-size.
+  // Compact by design (the app's design language)
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"

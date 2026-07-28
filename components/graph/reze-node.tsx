@@ -1,10 +1,6 @@
 "use client"
 
 // Blender-style node card: input sockets down the left, outputs down the right.
-// Socket names are the React Flow handle ids — the 1:1 mapping the engine schema
-// was designed around (see lib/graph-flow.ts). Unlinked float literals are edited
-// inline on the card (Blender-style); edits flow through updateNodeData →
-// onNodesChange → recompile.
 
 import { createContext, memo, useContext, useRef, useState } from "react"
 import { Handle, Position, useReactFlow, type NodeProps } from "@xyflow/react"
@@ -16,9 +12,7 @@ import { useT } from "@/lib/i18n"
 import { hexToLinearVec3, linearVec3ToHex } from "@/lib/scene-settings"
 import { socketsOf, type RezeFlowNode } from "@/lib/graph-flow"
 
-// Lets the editor drive per-node rename without threading callbacks through node
-// `data` (which would break RezeNode's memo). `renamingId` is lifted to the editor so
-// both a title double-click and the context menu can start a rename on any node.
+// Lets the editor drive per-node rename without threading callbacks through node `data`
 export type NodeRenameOps = {
   rename: (oldId: string, next: string) => void
   renamingId: string | null
@@ -34,8 +28,7 @@ const SOCKET_COLORS: Record<string, string> = {
   vec4: "#f472b6",
 }
 
-// Display precision only — the graph keeps full-precision Blender constants until
-// the user actually edits a field (0.19999998807907104 shows as 0.2).
+// Display precision only — the graph keeps full-precision Blender constants until the user
 const round4 = (v: number) => Math.round(v * 10000) / 10000
 
 function fmtLiteral(v: number | number[]): string {
@@ -47,18 +40,12 @@ function fmtLiteral(v: number | number[]): string {
 const NUM_FIELD =
   "nodrag h-4.5 rounded-sm border-zinc-700 bg-zinc-950/80 px-1 py-0 text-right !text-[11px] tabular-nums shadow-none focus-visible:ring-1 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 
-// A number input that edits smoothly: it holds the raw TEXT locally, so the caret
-// never jumps and intermediate states (`0.`, `-`, `1.20`) are allowed. A finite value
-// commits on each edit; the text only re-syncs when `value` changes from OUTSIDE (not
-// from our own typing), and normalizes on blur. (`type=number` + a reformatted value
-// prop is what caused the caret-to-end jump.)
+// A number input that edits smoothly
 function NumberField({ value, onCommit, className }: { value: number; onCommit: (n: number) => void; className?: string }) {
   const [text, setText] = useState(() => String(round4(value)))
   const last = useRef(value)
   const focused = useRef(false)
-  // Only re-sync the text from an OUTSIDE change (reset/preview) and only while NOT
-  // editing. While focused we leave the text alone — otherwise the intermediate render
-  // from React Flow's store update (stale `value`) would reformat and jump the caret.
+  // Only re-sync the text from an OUTSIDE change (reset/preview) and only while NOT editing.
   if (!focused.current && value !== last.current) {
     last.current = value
     setText(String(round4(value)))
@@ -86,8 +73,7 @@ function NumberField({ value, onCommit, className }: { value: number; onCommit: 
   )
 }
 
-// A color socket's literal is a linear vec3 (or vec4 rgb); the picker speaks sRGB
-// hex, so convert on the boundary. `nodrag` keeps clicks from dragging the node.
+// A color socket's literal is a linear vec3 (or vec4 rgb)
 function ColorSocketButton({ rgb, onChange }: { rgb: [number, number, number]; onChange: (rgb: [number, number, number]) => void }) {
   const t = useT()
   const [open, setOpen] = useState(false)
@@ -115,9 +101,7 @@ function ColorSocketButton({ rgb, onChange }: { rgb: [number, number, number]; o
   )
 }
 
-// Three compact XYZ fields for a vector literal, sitting inline at the right edge of
-// the socket row (Blender-style). Kept narrow so a node with several vector inputs
-// (e.g. Mapping: loc/rot/scl) stays one row per socket instead of two.
+// Three compact XYZ fields for a vector literal, sitting inline at the right edge
 function VectorSocketInput({ value, onChange }: { value: [number, number, number]; onChange: (v: [number, number, number]) => void }) {
   return (
     <div className="nodrag ml-auto flex gap-1" onDoubleClick={(e) => e.stopPropagation()}>
@@ -142,7 +126,6 @@ const asRgb = (v: number | number[]): [number, number, number] =>
   typeof v === "number" ? [v, v, v] : [v[0] ?? 0, v[1] ?? 0, v[2] ?? 0]
 
 // Memoized so a change to one node (or a viewport pan) doesn't re-render every node.
-// Context (useT) still updates it on a locale switch — memo doesn't block that.
 export const RezeNode = memo(function RezeNode({ id, data, selected }: NodeProps<RezeFlowNode>) {
   const t = useT()
   const { updateNodeData } = useReactFlow()
@@ -160,8 +143,7 @@ export const RezeNode = memo(function RezeNode({ id, data, selected }: NodeProps
 
   return (
     <div
-      // Preview is shown as a pink ring (the "previewing …" pill already names it) —
-      // no header text that would break the node's layout.
+      // Preview is shown as a pink ring (the "previewing …" pill already names
       className={`rounded-md border bg-zinc-900/95 text-zinc-200 shadow-lg min-w-44 text-xs ${
         selected ? "border-pink-400" : isOutput ? "border-blue-400" : "border-zinc-700"
       }${isPreview ? " ring-2 ring-pink-500/80" : ""}`}
@@ -191,8 +173,7 @@ export const RezeNode = memo(function RezeNode({ id, data, selected }: NodeProps
                 e.currentTarget.blur()
               }
             }}
-            // field-sizing keeps the box hugging the text (in place, ~label-sized)
-            // instead of stretching to fill the header.
+            // field-sizing keeps the box hugging the text (in place, ~label-sized) instead of stretching
             className="nodrag rounded-sm border border-zinc-600 bg-zinc-950 px-1 text-xs text-zinc-100 outline-none [field-sizing:content] min-w-[2ch]"
           />
         ) : (
@@ -207,8 +188,7 @@ export const RezeNode = memo(function RezeNode({ id, data, selected }: NodeProps
             {graphNode.id}
           </span>
         )}
-        {/* Friendly (localized) node name — mirrors the Add-node palette. Falls back
-            to the raw type for any node not in the catalog. */}
+        {/* Friendly (localized) node name — mirrors the Add-node palette. */}
         <span className="text-zinc-500 font-normal">{t.nodeLabel[graphNode.type] ?? graphNode.type}</span>
         {isOutput && (
           <span className="ml-auto rounded-sm bg-blue-400/20 px-1 text-[9px] font-semibold tracking-wide text-blue-300">
@@ -229,9 +209,7 @@ export const RezeNode = memo(function RezeNode({ id, data, selected }: NodeProps
           </div>
         ))}
         {inputs.map(([name, type]) => {
-          // Fall back to the registry default so a socket left at its default (often
-          // omitted from the JSON) still shows an editable control. The write only
-          // happens on edit, so an untouched requiresLink socket stays link-enforced.
+          // Fall back to the registry default so a socket left at its default (often omitted
           const literal = graphNode.inputs?.[name] ?? NODE_REGISTRY[graphNode.type]?.inputs[name]?.default
           const linked = linkedInputs.includes(name)
           // A linked socket takes its value from the wire — no literal control.

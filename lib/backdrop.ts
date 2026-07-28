@@ -1,8 +1,4 @@
-// Backdrop media (a static image behind the 3D scene) + the shared cover-fit
-// math. The SAME coverCrop() drives the live DOM layer (object-fit: cover
-// equivalent) and the export composite's drawImage — so what you see is exactly
-// what renders. (Video backdrops were removed: a DOM <video> layer couldn't be
-// made reliably smooth; if they return it will be via an engine-rendered path.)
+// Backdrop media (a static image behind the 3D scene) + the shared cover-fit math.
 
 export type BackdropMedia = {
   /** The original upload (kept for potential re-use/export needs). */

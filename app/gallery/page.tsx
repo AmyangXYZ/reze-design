@@ -1,7 +1,4 @@
-// Gallery (placeholder) — the public wall of shared scenes. Each card will link
-// to a permanent, always-on live 3D scene at /[user]/[scene] once accounts +
-// persistence land. For now it renders dummy cards so the shell reads as a
-// product, plus the empty-state that explains what will fill it.
+// Gallery (placeholder) — the public wall of shared scenes.
 
 import { SiteHeader } from "@/components/site-header"
 

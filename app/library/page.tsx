@@ -1,8 +1,4 @@
-// Library (placeholder) — browsable node-graph packs per material slot. The
-// "Presets" row is seeded from the real engine presets (SLOT_GRAPHS) so it is
-// already meaningful; "Community" is the empty-state for user-contributed graphs
-// that arrives with accounts. Clicking a preset will eventually drop it onto the
-// active slot in the editor.
+// Library (placeholder) — browsable node-graph packs per material slot.
 
 import { CircleDashed } from "lucide-react"
 import { SiteHeader } from "@/components/site-header"

@@ -1,11 +1,6 @@
 "use client"
 
-// Immersive editor (home). The WebGPU viewport is the page; a Figma-style shell
-// floats over it: top-left brand pill + top-right account/play/share cluster
-// stay put, while TWO docks — left (Materials / Scene / Assets via an icon rail)
-// and right (Properties / Render tabs) — collapse together behind the brand
-// pill's single toggle. The node-graph editor lives in a bottom drawer, narrowed
-// to sit between the docks, and collapses on its own into a status pill.
+// Immersive editor (home).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
@@ -32,6 +27,7 @@ import { WgslEditorPanel } from "@/components/editor/wgsl-editor"
 import { NodeLibrary } from "@/components/editor/node-library"
 import { RenderPanel, type FramePreview } from "@/components/editor/render-panel"
 import { useEngine } from "@/hooks/use-engine"
+import { useZOrder } from "@/hooks/use-z-order"
 import { useHistory } from "@/hooks/use-history"
 import { probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
 import { expandUploadFiles, readDroppedFiles } from "@/lib/uploads"
@@ -40,8 +36,13 @@ import type { ExportAudioSource } from "@/lib/video-export"
 import { MaterialSphereIcon } from "@/components/scene/slot-icons"
 import { DEFAULT_SCENE } from "@/lib/default-scene"
 import { SLOT_GRAPHS } from "@/lib/materials"
+import { LIBRARY_PACKS } from "@/lib/node-library"
 import type { AppliedBackgroundEffect } from "@/lib/background-effects"
-import { resolveGrade } from "@/lib/grade"
+import { CUSTOM_ID, GRADE_PRESETS, loadUserGrades, resolveGrade, saveUserGrades, type GradeDef, type GradeSpec } from "@/lib/grade"
+import { BACKGROUND_EFFECTS, builtinEffect } from "@/lib/background-effects"
+import { GradeLibrary } from "@/components/editor/grade-library"
+import { GradeEditorPanel, type GradeEditorSubject } from "@/components/editor/grade-editor"
+import { captureScene } from "@/components/editor/grade-preview"
 import { hydrateScene, saveSceneState } from "@/lib/scene"
 import {
   azElToDirection,
@@ -51,20 +52,13 @@ import {
 } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 
-// Frame preview: how far the viewport's aspect may deviate from the export target
-// before the canvas gets pinned / the frame border leaves the viewport edges. A
-// desktop window is never EXACTLY 16:9 — within this band the true frame differs
-// imperceptibly, so keep the scene untouched and the border flush.
+// Frame preview: how far the viewport's aspect may deviate from the export target before
 const FRAME_ASPECT_TOL = 1.03
 
 // How long edits settle before the working scene is written to localStorage.
-// Deliberately much longer than the undo hook's 300ms: undo granularity wants to
-// feel immediate, but an autosave doesn't, and a shorter window let a mid-drag
-// pause fire the write *during* the drag.
 const SAVE_SETTLE_MS = 1000
 
-// Unique kebab id for a new (peeled / created) style group. CJK material names
-// slugify to empty → "group", which is fine (id is internal; label is shown).
+// Unique kebab id for a new (peeled / created) style group.
 const newGroupId = (material: string, groups: StyleGroup[]): string => {
   const base = material.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "group"
   const ids = new Set(groups.map((g) => g.id))
@@ -76,8 +70,7 @@ const newGroupId = (material: string, groups: StyleGroup[]): string => {
 
 const UI_KEY = "reze-design.ui"
 function loadUiState(): { docks: boolean; leftTab: string; rightTab: string } {
-  // Mobile first-open: docks closed — two 300px docks bury a phone viewport; the
-  // collapsed pills work fine there. (Stored per device, so a desktop stays open.)
+  // Mobile first-open: docks closed — two 300px docks bury a phone viewport
   const coarse = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches
   const def = { docks: !coarse, leftTab: "materials", rightTab: "assets" }
   if (typeof window === "undefined") return def
@@ -123,15 +116,12 @@ function loadWgslPanelRect(): Rect | null {
     return null
   }
 }
-// Default: the same bottom-centered rect the graph editor opens at — the two
-// editors are siblings, and the old right-side column defaulted awkwardly
-// (tall + narrow, overlapping the dock).
+// Default: the same bottom-centered rect the graph editor opens
 function defaultWgslPanelRect(): Rect {
   return defaultPanelRect()
 }
 
 // First-open default: bottom-centered, roughly where the old docked drawer sat, clamped
-// to the viewport so it always lands on-screen.
 function defaultPanelRect(): Rect {
   const vw = window.innerWidth
   const vh = window.innerHeight
@@ -145,17 +135,13 @@ export default function Home() {
   // Which style group the node-graph editor is bound to.
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null)
   // Node-graph library popup, opened for a specific material.
-  // The shader-graph library targets a style GROUP (the styling unit) — a group can be
-  // empty (a freshly created one), so keying on a material would lock those out.
   const [library, setLibrary] = useState<{ open: boolean; groupId: string | null }>({ open: false, groupId: null })
   // Bumped on library-pick to remount the graph editor with the new graph.
   const [libVersion, setLibVersion] = useState(0)
-  // The graph the editing session started from — restored on "Back to library"
-  // so a fresh fork / new graph (which previews live) can be cleanly abandoned.
+  // The graph the editing session started
   const [editBaseline, setEditBaseline] = useState<{ groupId: string; graph: ShaderGraph; label?: string } | null>(null)
 
-  // Dock + tab state persists; panels render only after mount (see `mounted`),
-  // so reading localStorage in the initializer can't cause a hydration mismatch.
+  // Dock + tab state persists
   const [docksOpen, setDocksOpen] = useState(() => loadUiState().docks)
   const [leftTab, setLeftTab] = useState(() => loadUiState().leftTab)
   const [rightTab, setRightTab] = useState(() => loadUiState().rightTab)
@@ -167,6 +153,10 @@ export default function Home() {
   useEffect(() => {
     if (mounted) saveUiState({ docks: docksOpen, leftTab, rightTab })
   }, [mounted, docksOpen, leftTab, rightTab])
+
+  // Docks join the same stacking order as the floating panels, so clicking one raises it over
+  const leftDockZ = useZOrder()
+  const rightDockZ = useZOrder()
 
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [drawerFull, setDrawerFull] = useState(false) // graph editor full-screen
@@ -194,39 +184,24 @@ export default function Home() {
     window.addEventListener("resize", onResize)
     return () => window.removeEventListener("resize", onResize)
   }, [])
-  // ── Per-model animation: each model owns its clip (engine clips are per
-  // instance). The MASTER — the animated model with the longest clip — drives
-  // the transport, audio sync, and export timeline; the rest follow it.
+  // Per-model animation: each model owns its clip (engine clips are per instance).
   type AnimSource = { kind: "file"; file: File } | { kind: "url"; name: string; url: string }
   type AnimEntry = { name: string; size: number | null; source: AnimSource }
   // Where an upload routes: a new cast member, or swapping one out in place.
   type ModelTarget = { mode: "add" } | { mode: "replace"; id: string }
   const [animByModel, setAnimByModel] = useState<Record<string, AnimEntry>>({})
   const [animMetaByModel, setAnimMetaByModel] = useState<Record<string, { duration: number; keyframes: number }>>({})
-  // The boot document: the bundled demo with the user's stored values merged over
-  // it. Read synchronously (SSR-safe: falls back to the demo) so the page
-  // background AND the engine boot already match their config. Built once — it's
-  // the STARTING point, not live state; everything below owns its slice from here.
+  // The boot document: the bundled demo with the user's stored values merged over it.
   const [bootScene] = useState(() => hydrateScene(DEFAULT_SCENE))
   const [sceneSettings, setSceneSettings] = useState<SceneSettings>(bootScene.state.settings)
-  // Undo/redo for the Scene panel. The graph editor runs its OWN history and only
-  // yields ⌘Z while closed, so gate on the same `drawerOpen` it gates on —
-  // whichever surface is open owns the shortcut, and neither double-handles it.
-  // Keyboard-only history (⌘/Ctrl+Z · ⇧⌘Z) — the hook registers the listener;
-  // no UI surfaces it (the buttons were removed as visual noise).
+  // Undo/redo for the Scene panel.
   useHistory(sceneSettings, setSceneSettings, { shortcutsEnabled: !drawerOpen })
-  // suppressHydrationWarning makes React SKIP patching the server-rendered style
-  // (SSR uses defaults; the client initializer read localStorage), and since the
-  // state never changes after mount the stale server color stuck — a stored light
-  // background rendered black after refresh. Sync the DOM imperatively instead.
+  // suppressHydrationWarning makes React SKIP patching the server-rendered style (SSR uses
   const rootRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     rootRef.current?.style.setProperty("background-color", sceneSettings.background.color)
   }, [sceneSettings.background.color])
 
-  // The engine hook needs a pick handler at construction; route through a ref
-  // (synced in an effect) so the handler can use everything defined below.
-  const pickRef = useRef<(model: string, material: string | null) => void>(() => {})
   const {
     canvasRef,
     engineRef,
@@ -236,6 +211,7 @@ export default function Home() {
     groupsByModel,
     upsertGroup: upsertGroupFor,
     applyGroups: applyGroupsFor,
+    resetStyleGroups,
     highlight: highlightFor,
     toggleVisible: toggleVisibleFor,
     addModelFromFiles,
@@ -244,24 +220,20 @@ export default function Home() {
     loadVmdFile,
     loadVmdUrl,
     stopAnimation,
-  } = useEngine((model, m) => pickRef.current(model, m), bootScene)
+  } = useEngine(bootScene)
 
-  // ── Active model: the one the Materials tab + graph editor edit. Shared with
-  // the Assets tab's character cards and the materials panel's model strip;
-  // clicking a material in the 3D scene also switches to its model. ──
+  // Active model: the one the Materials tab + graph editor edit.
   const [activeModelId, setActiveModelId] = useState(bootScene.assets.models[0].model.id)
   const activeModel = models.find((m) => m.id === activeModelId) ?? models[0] ?? null
   const activeId = activeModel?.id ?? activeModelId
-  // The EFFECTIVE id (falls back to models[0] after a removal) — callbacks read
-  // this ref so their identities stay stable for the memoized panels.
+  // The EFFECTIVE id (falls back to models[0] after a removal)
   const activeIdRef = useRef(activeId)
   useEffect(() => {
     activeIdRef.current = activeId
   }, [activeId])
   const materials = activeModel?.materials ?? []
   const groups = useMemo(() => groupsByModel[activeId] ?? [], [groupsByModel, activeId])
-  // Single-model signatures over the ACTIVE model — everything below (group ops,
-  // materials panel, graph editor) styles one model at a time.
+  // Single-model signatures over the ACTIVE model
   const upsertGroup = useCallback(
     (group: StyleGroup, opts?: CompileOptions) => upsertGroupFor(activeIdRef.current, group, opts),
     [upsertGroupFor],
@@ -271,38 +243,11 @@ export default function Home() {
   const toggleVisible = useCallback((name: string) => toggleVisibleFor(activeIdRef.current, name), [toggleVisibleFor])
   const selectModel = useCallback((id: string) => setActiveModelId(id), [])
 
-  // Clicking a material in the 3D scene switches to its model, highlights it and
-  // focuses its group (so the editor targets that group). No persistent
-  // selection — the tree is hover + drag.
-  const pick = (model: string, material: string | null) => {
-    if (model && model !== activeIdRef.current) setActiveModelId(model)
-    highlightFor(model || activeIdRef.current, material)
-    if (!material) return
-    const g = (groupsByModel[model] ?? []).find((x) => x.materials.includes(material)) ?? null
-    if (g) setActiveGroupId(g.id)
-  }
-  useEffect(() => {
-    pickRef.current = pick
-  })
-
   // Leaving the Materials tab clears any lingering hover/pick highlight.
   useEffect(() => {
     if (leftTab !== "materials") highlight(null)
   }, [leftTab, highlight])
 
-  // Selection is explicit (single-click a group to select/deselect), so we don't
-  // re-select on every null. But when a MODEL first shows in the panel (boot, or
-  // switching the active model), select its first non-empty group (sidebar order
-  // = sorted by label/id) so the shader-graph inspector isn't empty.
-  const autoSelectedFor = useRef<string | null>(null)
-  useEffect(() => {
-    if (autoSelectedFor.current === activeId || !groups.length) return
-    autoSelectedFor.current = activeId
-    const first = [...groups]
-      .sort((a, b) => (a.label ?? a.id).localeCompare(b.label ?? b.id, undefined, { sensitivity: "base" }))
-      .find((g) => g.materials.length > 0)
-    setActiveGroupId(first ? first.id : null)
-  }, [groups, activeId])
 
   const activeGroup = groups.find((g) => g.id === activeGroupId) ?? null
   const libGroup = groups.find((g) => g.id === library.groupId) ?? null
@@ -316,18 +261,15 @@ export default function Home() {
     [activeGroup, upsertGroup],
   )
 
-  // Apply a library look to the target group (the styling unit). `edit` opens the
-  // editor on the result and snapshots a baseline so the fork can be abandoned cleanly.
+  // Apply a library shader graph to the target style group.
   const applyLibrary = (graph: ShaderGraph, name: string, edit = false) => {
     const group = groups.find((g) => g.id === library.groupId)
     if (!group) return
     const styled: ShaderGraph = { ...graph, name }
     if (edit) setEditBaseline({ groupId: group.id, graph: group.graph, label: group.label })
-    // Apply the look's graph but keep the group's own name — the group label and the
-    // shader-graph name are separate (renaming the group here was the bug).
+    // Apply the library graph but keep the group's own name
     const updated: StyleGroup = { ...group, graph: styled }
-    // Empty groups can't compile — store via applyGroups (withheld from the engine)
-    // until they gain materials; non-empty groups compile through upsertGroup.
+    // Empty groups can't compile
     if (updated.materials.length) void upsertGroup(updated)
     else void applyGroups(groups.map((x) => (x.id === group.id ? updated : x)))
     setActiveGroupId(group.id)
@@ -339,17 +281,13 @@ export default function Home() {
     }
   }
 
-  // ── Graph-editor session lifecycle ──
-  // Edits preview live on the active group. Opening the editor snapshots the current
-  // graph as the baseline; "Save & close" keeps the edits; "Back to library" restores
-  // the baseline and returns to the picker (so a fresh fork/new graph can be undone).
+  // Graph-editor session lifecycle ── Edits preview live on the active group.
   const saveGraphEdit = () => {
     setEditBaseline(null)
     setDrawerOpen(false)
     setDrawerFull(false)
   }
-  // Close (discard): revert the live-previewed edits to the baseline and close —
-  // no library navigation (you may have arrived via the group's Edit graph).
+  // Close (discard): revert the live-previewed edits to the baseline and close
   const closeGraphEdit = () => {
     const baseline = editBaseline
     setEditBaseline(null)
@@ -362,17 +300,8 @@ export default function Home() {
     }
   }
 
-  const openLibrary = useCallback((groupId: string) => setLibrary({ open: true, groupId }), [])
 
-  // ── Group operations (structural edits go through applyGroups) ──
-  // Returns the new id — the materials panel drops it straight into rename mode.
-  // The label is still made unique ("New group 2") for whoever Escapes out.
-  // These are useCallback'd so MaterialsPanel (memoized) can skip re-rendering
-  // while it's the HIDDEN dock tab — the dock keeps tabs mounted now, so an
-  // unstable handler identity would re-render its ~39 context-menu trees on every
-  // unrelated page render, e.g. each tick of a scene-settings slider drag. Every
-  // one of them closes over `groups`, so identity changes exactly when the panel
-  // genuinely needs to redraw.
+  // Group operations (structural edits go through applyGroups) ── Returns the new id
   const createGroup = useCallback((): string => {
     const id = newGroupId("group", groups)
     const base = t.materials.newGroup
@@ -386,9 +315,7 @@ export default function Home() {
     setActiveGroupId(id)
     return id
   }, [groups, t, applyGroups])
-  // Non-empty groups compile through upsertGroup (one group); empty folders exist
-  // in UI state only, so their edits go through applyGroups (which withholds them
-  // from the engine) rather than upsertGroup (which would compile an empty group).
+  // Non-empty groups compile through upsertGroup (one group)
   const patchGroup = useCallback(
     (id: string, patch: Partial<StyleGroup>) => {
       const g = groups.find((x) => x.id === id)
@@ -412,8 +339,7 @@ export default function Home() {
     },
     [groups, applyGroups, activeGroupId],
   )
-  // Move a material into a group (target=null → ungroup). Removes it from wherever
-  // it was first; each material lives in at most one group.
+  // Move a material into a group (target=null → ungroup).
   const moveMaterial = useCallback(
     (material: string, targetId: string | null) => {
       const next = groups.map((g) => ({ ...g, materials: g.materials.filter((m) => m !== material) }))
@@ -461,13 +387,10 @@ export default function Home() {
         const oldId = target.id
         const prevAnim = animByModel[oldId] ?? null
         const id = await replaceModelFromFiles(oldId, files, pmxFile)
-        // Same-id replacement (same .pmx name) won't change activeId — force the
-        // group auto-select to re-run against the fresh group set either way.
-        autoSelectedFor.current = null
-        setActiveGroupId(null)
+        // Same-id replacement (same .pmx name) won't change activeId
+          setActiveGroupId(null)
         setActiveModelId(id)
-        // The replacement inherits the slot's animation (clips are per model
-        // instance — the retained source reloads into it; frame 0, paused).
+        // The replacement inherits the slot's animation (clips are per model instance
         clearAnimMeta(oldId)
         clearAnimMeta(id)
         setAnimByModel((prev) => {
@@ -490,8 +413,7 @@ export default function Home() {
   const vmdInputRef = useRef<HTMLInputElement | null>(null)
   // Which model the next VMD pick applies to — set before opening the dialog.
   const animTargetRef = useRef<string | null>(null)
-  // Meta (duration/keyframes) is derived by polling; drop a model's entry
-  // whenever its clip changes or goes away so the poll re-derives it.
+  // Meta (duration/keyframes) is derived by polling
   const clearAnimMeta = (modelId: string) =>
     setAnimMetaByModel((prev) => {
       const n = { ...prev }
@@ -515,8 +437,7 @@ export default function Home() {
     await loadAnimFor(target, file)
   }
 
-  // ── Camera VMD upload: drives the shot (target/rotation/distance/fov); default-on
-  // once loaded, toggled Follow/Free from the transport. ──
+  // Camera VMD upload: drives the shot (target/rotation/distance/fov)
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
   const [cameraName, setCameraName] = useState<string | null>(null)
   const loadCameraBuffer = async (buffer: ArrayBuffer, name: string) => {
@@ -537,13 +458,10 @@ export default function Home() {
     setCameraName(null)
   }, [engineRef])
 
-  // ── Backdrop: a static image behind the 3D scene. Lives as runtime state
-  // (object URL; original File kept on the object). Mutually exclusive with the
-  // 360 skybox — a flat layer behind an opaque skybox canvas would be invisible.
+  // Backdrop: a static image behind the 3D scene.
   const backdropInputRef = useRef<HTMLInputElement | null>(null)
   const [backdrop, setBackdrop] = useState<BackdropMedia | null>(null)
-  // ── Skybox: a 360° equirect image rendered BY THE ENGINE (PhotoDome-style,
-  // follows the camera; display-only, no lighting influence). ──
+  // Skybox: a 360° equirect image rendered BY THE ENGINE (PhotoDome-style, follows the camera
   const skyboxInputRef = useRef<HTMLInputElement | null>(null)
   const [skybox, setSkybox] = useState<BackdropMedia | null>(null)
   const onSkyboxPicked = async (file: File | undefined) => {
@@ -570,36 +488,23 @@ export default function Home() {
       return null
     })
   }, [engineRef])
-  // Audio routing — one choice drives BOTH live playback and export (consistency):
-  // "music" = the audio element, "none" = silent.
+  // Audio routing — one choice drives BOTH live playback and export (consistency)
   const [audioSource, setAudioSource] = useState<ExportAudioSource>("music")
-  // While an export runs it drives the same model clock the live mirrors watch —
-  // suspend them (music + backdrop video) or they'd play, out of sync, during render.
+  // While an export runs it drives the same model clock the live mirrors watch
   const [exporting, setExporting] = useState(false)
-  // Green-screen (chroma-key) mode — LIVE, not export-only: the viewport previews
-  // exactly what renders (pure green background; ground surface hidden, shadow per
-  // the Ground > Shadow switch; backdrop/skybox suspended).
+  // Green-screen (chroma-key) mode — LIVE, not export-only
   const [greenScreen, setGreenScreen] = useState(false)
-  // Live framing while the Render tab is open. The camera has a FIXED VERTICAL
-  // FOV, so when the viewport is wider than the target aspect the export view is
-  // exactly a center-crop of the normal render — the overlay's dimmed bars + border
-  // mark that crop and the canvas is left completely untouched (nothing shifts).
-  // Only when the viewport is NARROWER than the target (portrait phone, 16:9
-  // target) does the export see more horizontally than the viewport can show —
-  // then the canvas pins to the target aspect at screen scale and letterboxes
-  // top/bottom via object-contain.
+  // Live framing while the Render tab is open.
   const [framePreview, setFramePreview] = useState<FramePreview | null>(null)
-  // Collapsing the docks UNMOUNTS the Render panel (the dock's keep-alive covers
-  // tab switches, not collapse), so its cleanup clears the framing — which used
-  // to take the frame border away MID-EXPORT, exactly when you most want to
-  // watch it. Remember the last framing and keep drawing it while an export
-  // runs, so hiding the docks for a clean view keeps the recording frame.
+  // Collapsing the docks UNMOUNTS the Render panel (the dock's keep-alive covers tab switches
   const [lastFrame, setLastFrame] = useState<FramePreview | null>(null)
   const handleFramePreview = useCallback((p: FramePreview | null) => {
     setFramePreview(p)
     if (p) setLastFrame(p)
   }, [])
   const activeFrame = framePreview ?? (exporting ? lastFrame : null)
+  // Green screen is a RENDER-TAB PREVIEW, not a scene mode
+  const liveGreenScreen = greenScreen && activeFrame !== null
   const [frameVp, setFrameVp] = useState<{ w: number; h: number } | null>(null)
   useEffect(() => {
     if (!activeFrame) {
@@ -615,9 +520,7 @@ export default function Home() {
     const engine = engineRef.current
     if (!engine || !ready) return
     if (exporting) return // the export pins the full output resolution itself
-    // Tolerance: a viewport a hair narrower than the target (browser chrome,
-    // rounding) would otherwise pin and nudge the scene by a pixel or two for an
-    // invisible accuracy gain. Only pin on a real mismatch (e.g. portrait phone).
+    // Tolerance: a viewport a hair narrower than the target (browser chrome, rounding)
     if (activeFrame && frameVp && activeFrame.aspect > (frameVp.w / frameVp.h) * FRAME_ASPECT_TOL) {
       const dpr = window.devicePixelRatio || 1
       engine.setRenderSize(Math.round(frameVp.w * dpr), Math.round((frameVp.w * dpr) / activeFrame.aspect))
@@ -632,16 +535,13 @@ export default function Home() {
           const va = frameVp.w / frameVp.h
           const a = activeFrame.aspect
           // Within tolerance the canvas isn't pinned and the frame IS the viewport
-          // — snap to it, so a 16:9 target on a ~16:9 window hugs all four edges
-          // exactly like 9:16 hugs top/bottom (no phantom 1–2px bars on one side).
           if (a <= va * FRAME_ASPECT_TOL && a >= va / FRAME_ASPECT_TOL) return { x: 0, y: 0, w: frameVp.w, h: frameVp.h }
           const w = a < va ? frameVp.h * a : frameVp.w
           const h = a < va ? frameVp.h : frameVp.w / a
           return { x: (frameVp.w - w) / 2, y: (frameVp.h - h) / 2, w, h }
         })()
       : null
-  // Green mode suspends the skybox live (it renders inside the canvas and would
-  // cover the green); leaving green mode restores it from the kept file.
+  // Green mode suspends the skybox live (it renders inside the canvas and would cover
   const skyboxRef = useRef(skybox)
   useEffect(() => {
     skyboxRef.current = skybox
@@ -649,7 +549,7 @@ export default function Home() {
   useEffect(() => {
     const engine = engineRef.current
     if (!engine) return
-    if (greenScreen) engine.setBackdropEquirect(null)
+    if (liveGreenScreen) engine.setBackdropEquirect(null)
     else if (skyboxRef.current) {
       let stale = false
       void createImageBitmap(skyboxRef.current.file).then((b) => {
@@ -659,24 +559,93 @@ export default function Home() {
         stale = true
       }
     }
-  }, [greenScreen, engineRef])
+  }, [liveGreenScreen, engineRef])
 
-  // ── Background effect layer (WGSL, engine 0.25): floats between the base
-  // background (color / image / 360) and the model. A VALUE, not an asset —
-  // restored from localStorage at boot (bootScene) and persisted with the rest
-  // of the working state. Suspended in green-screen mode like the skybox: it
-  // renders in-canvas and would cover the key.
+  // Background effect layer (WGSL, engine 0.25)
   const [bgEffect, setBgEffect] = useState<AppliedBackgroundEffect | null>(bootScene.state.backgroundEffect)
   const [effectsOpen, setEffectsOpen] = useState(false)
-  const openEffects = useCallback(() => setEffectsOpen(true), [setEffectsOpen])
+
+  // Grades library ── User grades live in localStorage (pre-accounts), while the APPLIED
+  const [gradesOpen, setGradesOpen] = useState(false)
+  // Lazy initializer, not an effect
+  const [userGrades, setUserGrades] = useState<GradeDef[]>(loadUserGrades)
+  const openGrades = useCallback(() => {
+    // Snapshot the viewport first
+    captureScene(canvasRef.current)
+    setLibrary((s) => ({ ...s, open: false }))
+    setEffectsOpen(false)
+    setGradesOpen(true)
+    // Refs are stable by contract
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setLibrary, setEffectsOpen, setGradesOpen])
+  const applyGradePreset = useCallback(
+    (id: string) => setSceneSettings((s) => ({ ...s, grade: { ...s.grade, preset: id } })),
+    [],
+  )
+  const applyGradeCustom = useCallback(
+    (name: string, spec: GradeSpec) =>
+      setSceneSettings((s) => ({ ...s, grade: { ...s.grade, preset: CUSTOM_ID, custom: { name, spec } } })),
+    [],
+  )
+  const persistUserGrades = useCallback((list: GradeDef[]) => {
+    setUserGrades(list)
+    saveUserGrades(list)
+  }, [])
+
+  // Floating grade editor — an independent panel like the graph/WGSL editors, opened
+  const [gradeEditor, setGradeEditor] = useState<{ sessionId: number; subject: GradeEditorSubject } | null>(null)
+  const [gradePanelRect, setGradePanelRect] = useState<Rect | null>(null)
+  // Plain function, not useCallback
+  const openGradeEditor = (subject: GradeEditorSubject) => {
+    const fallback = defaultPanelRect()
+    setGradePanelRect((r) => r ?? fallback)
+    setGradeEditor((prev) => ({ sessionId: (prev?.sessionId ?? 0) + 1, subject }))
+    applyGradeCustom(subject.name, subject.spec)
+  }
+  // Plain function for the same reason as openGradeEditor above
+  const editGrade = (next: GradeEditorSubject) => {
+    setGradeEditor((prev) => (prev ? { ...prev, subject: next } : prev))
+    persistUserGrades(userGrades.map((g) => (g.id === next.id ? { ...g, name: next.name, spec: next.spec } : g)))
+    applyGradeCustom(next.name, next.spec)
+  }
+  // The three libraries are non-modal and share a z-index, so two open at once simply occlude
+  const applyGraphToGroup = useCallback(
+    (groupId: string, graphName: string) => {
+      const entry = LIBRARY_PACKS.flatMap((p) => p.entries).find((e) => e.name === graphName)
+      const group = groups.find((g) => g.id === groupId)
+      if (!entry || !group) return
+      const updated: StyleGroup = { ...group, graph: { ...entry.graph, name: entry.name } }
+      if (updated.materials.length) void upsertGroup(updated)
+      else void applyGroups(groups.map((x) => (x.id === groupId ? updated : x)))
+      setLibVersion((v) => v + 1)
+    },
+    [groups, upsertGroup, applyGroups],
+  )
+
+  // Re-derive the active model's grouping from the scene document
+  const resetGroupsForActive = useCallback(() => {
+    const id = activeIdRef.current
+    const seed = bootScene.assets.models.find((m) => m.model.id === id)?.model.styleGroups
+    setActiveGroupId(null)
+    void resetStyleGroups(id, seed)
+  }, [bootScene, resetStyleGroups])
+
+  const openLibrary = useCallback((groupId: string) => {
+    setEffectsOpen(false)
+    setGradesOpen(false)
+    setLibrary({ open: true, groupId })
+  }, [setEffectsOpen, setGradesOpen, setLibrary])
+  const openEffects = useCallback(() => {
+    setLibrary((s) => ({ ...s, open: false }))
+    setGradesOpen(false)
+    setEffectsOpen(true)
+  }, [setLibrary, setGradesOpen, setEffectsOpen])
   // Recompile ONLY when the shader (or green-screen suspension) actually changes.
-  // Code is the effect's whole surface — there is no separate params tier in the
-  // app (a deliberate call; the engine still has one for future needs).
   const lastFxWgsl = useRef<string | null>(null)
   useEffect(() => {
     const engine = engineRef.current
     if (!ready || !engine) return
-    const wgsl = greenScreen ? null : (bgEffect?.wgsl ?? null)
+    const wgsl = liveGreenScreen ? null : (bgEffect?.wgsl ?? null)
     if (wgsl === lastFxWgsl.current) return
     lastFxWgsl.current = wgsl
     let stale = false
@@ -687,18 +656,14 @@ export default function Home() {
     return () => {
       stale = true
     }
-  }, [bgEffect, greenScreen, ready, engineRef])
+  }, [bgEffect, liveGreenScreen, ready, engineRef])
   // Library callbacks — stable so the (memoizable) dialog doesn't re-render idly.
   const applyBgEffect = useCallback((fx: AppliedBackgroundEffect) => setBgEffect(fx), [setBgEffect])
   const removeBgEffect = useCallback(() => setBgEffect(null), [setBgEffect])
-  // ── Floating WGSL editor (page-owned, like the graph editor's panel — it
-  // coexists with the library and outlives it). Compile = live engine preview,
-  // Apply = commit to bgEffect; closing reverts any un-applied preview.
+  // Floating WGSL editor (page-owned, like the graph editor's panel
   const [fxEditor, setFxEditor] = useState<{ sessionId: number; subject: AppliedBackgroundEffect } | null>(null)
   const fxSessionRef = useRef(0)
-  // Rect initializes lazily on first OPEN (an event handler, so no
-  // setState-in-effect) — it needs window, which the useState initializer
-  // can't touch under SSR.
+  // Rect initializes lazily on first OPEN (an event handler, so no setState-in-effect)
   const [fxPanelRect, setFxPanelRect] = useState<Rect | null>(null)
   const updateFxPanelRect = useCallback((r: Rect) => {
     setFxPanelRect(r)
@@ -708,9 +673,7 @@ export default function Home() {
       // non-fatal
     }
   }, [])
-  // Compile + apply in one step — the scene MIRRORS the editor (no separate
-  // preview/commit tier; effects are cheap to re-apply). The guard update keeps
-  // the apply hook from re-compiling what the engine already has.
+  // Compile + apply in one step
   const commitFxCode = useCallback(
     async (subject: AppliedBackgroundEffect, wgsl: string) => {
       const engine = engineRef.current
@@ -724,8 +687,7 @@ export default function Home() {
     },
     [engineRef, setBgEffect],
   )
-  // Opening auto-applies the subject — picking "New effect" (or double-clicking
-  // a card) puts its code on the scene immediately, before any edit.
+  // Opening auto-applies the subject
   const openFxEditor = useCallback(
     (subject: AppliedBackgroundEffect) => {
       fxSessionRef.current += 1
@@ -761,15 +723,12 @@ export default function Home() {
     })
   }, [])
 
-  // ── Music: the scene's track, replaceable via upload. An <audio> element
-  // (below) is the source; a rAF loop mirrors the model's animation clock onto it
-  // so play/pause/seek/loop from the transport drive both. ──
+  // Music: the scene's track, replaceable via upload.
   const audioInputRef = useRef<HTMLInputElement | null>(null)
   const audioElRef = useRef<HTMLAudioElement | null>(null)
   const [audioName, setAudioName] = useState<string | null>(bootScene.assets.audio?.name ?? null)
   const [audioSrc, setAudioSrc] = useState<string>(bootScene.assets.audio?.url ?? "")
-  // High-level asset metadata (size for uploads; duration read from the engine /
-  // audio element once available). Sizes are unknown for the bundled defaults.
+  // High-level asset metadata (size for uploads
 
   const setMusicFile = (f: File) => {
     setAudioName(f.name)
@@ -777,16 +736,12 @@ export default function Home() {
       if (prev.startsWith("blob:")) URL.revokeObjectURL(prev)
       return URL.createObjectURL(f)
     })
-    // Removing audio routes audioSource to "none" — which also MUTES the <audio>
-    // element. A fresh upload must route back, or the new track plays silently
-    // ("deleted audio, uploaded new, can't hear it"). Only "none" flips: an
-    // explicit non-music routing the user chose is kept.
+    // Removing audio routes audioSource to "none" — which also MUTES the <audio> element.
     setAudioSource((s) => (s === "none" ? "music" : s))
   }
   const removeAudio = useCallback(() => {
     setAudioName(null)
-    // Revoke OUTSIDE the updater — a side effect inside setState's updater is
-    // impure (updaters can re-run), and the compiler lint rejects memoizing it.
+    // Revoke OUTSIDE the updater
     if (audioSrc.startsWith("blob:")) URL.revokeObjectURL(audioSrc)
     setAudioSrc("")
     // No source left for the "music" audio option — exports fall back to silent.
@@ -794,11 +749,7 @@ export default function Home() {
   }, [audioSrc, setAudioName, setAudioSrc, setAudioSource])
 
 
-  // Animation duration + total bone keyframes appear whenever an async load
-  // (VMD parse + setAnimation, or a replaced model the clip carried over to)
-  // finishes — POLL until the engine reports them. A single deferred read raced
-  // the load: losing left duration stuck at 0, which disabled the Render button.
-  // Per model: each resolved entry re-runs the effect with a smaller pending set.
+  // Animation duration + total bone keyframes appear whenever an async load (VMD parse +
   useEffect(() => {
     const pending = Object.entries(animByModel).filter(([id]) => !animMetaByModel[id])
     if (!pending.length) return
@@ -820,8 +771,7 @@ export default function Home() {
     return () => cancelAnimationFrame(raf)
   }, [animByModel, animMetaByModel, engineRef])
 
-  // ── Master clock: the animated model with the longest clip leads; the others
-  // follow (transport fan-out, audio sync, export timeline). ──
+  // Master clock: the animated model with the longest clip leads
   const animatedIds = useMemo(
     () =>
       models
@@ -834,10 +784,7 @@ export default function Home() {
   const masterDuration = masterId ? (animMetaByModel[masterId]?.duration ?? 0) : 0
   const extraModelNames = useMemo(() => animatedIds.slice(1), [animatedIds])
 
-  // Browsers block audio until the user interacts — start the track on the first
-  // gesture, synced to wherever the animation already is. Keydown counts too:
-  // a Space-press IS a valid user activation (autoplay-wise), and gating on
-  // pointerdown alone left Space-started playback silent until the first click.
+  // Browsers block audio until the user interacts
   const userInteracted = useRef(false)
   useEffect(() => {
     const on = () => {
@@ -853,8 +800,7 @@ export default function Home() {
     }
   }, [])
 
-  // Load each scene model's motion once the cast is ready (custom uploads don't
-  // re-trigger `ready`, so this runs for the booted scene only).
+  // Load each scene model's motion once the cast is ready (custom uploads don't re-trigger
   const sceneAnimLoaded = useRef(false)
   useEffect(() => {
     if (!ready || sceneAnimLoaded.current) return
@@ -874,12 +820,6 @@ export default function Home() {
   }, [ready, loadVmdUrl, bootScene])
 
   // Mirror the animation clock onto the audio element (model is the master).
-  // Audio FREE-RUNS while playing — currentTime is written only at discrete
-  // events: play start, a master-clock jump (scrub while playing / transport
-  // loop restart), or drift beyond 0.5s. Per-frame drift-threshold seeking
-  // (the old 0.2s check) was a seek storm on iOS, where currentTime is coarse
-  // and the audio pipeline laggy — audible flicker/jitter. Same policy that
-  // fixed the video backdrop; also how the engine's web preview stays smooth.
   useEffect(() => {
     const audio = audioElRef.current
     if (!audio) return
@@ -914,13 +854,10 @@ export default function Home() {
     return () => cancelAnimationFrame(raf)
   }, [masterId, engineRef, exporting])
 
-  // The file's path: folder picks carry webkitRelativePath; zip-expanded /
-  // dropped / flat files carry the path (or bare name) in `name`.
+  // The file's path: folder picks carry webkitRelativePath
   const relPath = (f: File) => (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name
 
-  // ONE model pipeline for every source — folder pick (desktop dialog), flat
-  // multi-select (mobile), .zip (mobile's sane path: models ship as zips, and a
-  // zip preserves the subfolder structure a flat pick can't), and drag & drop.
+  // ONE model pipeline for every source
   const handleModelFiles = async (list: File[], target?: ModelTarget) => {
     if (!list.length) return
     const t2 = target ?? modelTargetRef.current
@@ -937,16 +874,9 @@ export default function Home() {
     else setUpload({ kind: "pick", files, paths: pmxs.map(relPath).sort((a, b) => a.localeCompare(b)), target: t2 })
   }
 
-  // ── Scene settings → engine, guarded PER SECTION by object identity. patch()
-  // in the Scene panel replaces only the edited section, so untouched sections
-  // keep their identity and their pushes are skipped. This is not a micro-opt:
-  // setSun marks the shadow map dirty (an extra full scene pass per frame), so
-  // the old unguarded push re-rendered shadows on every tick of ANY slider —
-  // bloom included. First run after `ready` pushes everything (prev starts null).
+  // Scene settings → engine, guarded PER SECTION by object identity.
   const prevPushed = useRef<{ settings: SceneSettings; backdrop: boolean; greenScreen: boolean } | null>(null)
-  // addGround has no light-update path — it recreates GPU buffers + a bind group
-  // per call — so ground edits coalesce to at most one rebuild per frame, applied
-  // from the latest options at frame time (a drag can tick faster than rAF).
+  // addGround has no light-update path — it recreates GPU buffers + a bind group per call
   const groundOptsRef = useRef<Parameters<NonNullable<typeof engineRef.current>["addGround"]>[0] | null>(null)
   const groundRaf = useRef(0)
   useEffect(() => () => cancelAnimationFrame(groundRaf.current), [])
@@ -956,13 +886,11 @@ export default function Home() {
     if (!engine) return
     const { world, sun, bloom, background, ground, grade } = sceneSettings
     const prev = prevPushed.current
-    const modeChanged = !prev || prev.backdrop !== !!backdrop || prev.greenScreen !== greenScreen
-    // The engine paints the background (post-tonemap, exact CSS-hex match) — except
-    // while a backdrop image is set, where the canvas must stay transparent so the
-    // DOM image layer behind it shows through. Green-screen mode overrides both.
+    const modeChanged = !prev || prev.backdrop !== !!backdrop || prev.greenScreen !== liveGreenScreen
+    // The engine paints the background (post-tonemap, exact CSS-hex match)
     if (modeChanged || prev.settings.background !== background) {
       engine.setBackgroundColor(
-        greenScreen ? hexToSrgbVec3("#00ff00") : backdrop ? null : hexToSrgbVec3(background.color),
+        liveGreenScreen ? hexToSrgbVec3("#00ff00") : backdrop ? null : hexToSrgbVec3(background.color),
       )
     }
     if (!prev || prev.settings.world !== world) {
@@ -977,9 +905,7 @@ export default function Home() {
     }
     if (!prev || prev.settings.bloom !== bloom) {
       engine.setBloomOptions({
-        // Intensity 0 = off — the panel has no switch, so the slider is the ONLY
-        // authority (a stored enabled:false must not lock bloom off forever).
-        // Zero also skips the pyramid passes entirely.
+        // Intensity 0 = off — the panel has no switch, so the slider is the ONLY authority (a stored
         enabled: bloom.intensity > 0,
         threshold: bloom.threshold,
         knee: bloom.knee,
@@ -988,9 +914,7 @@ export default function Home() {
         color: hexToLinearVec3(bloom.color),
       })
     }
-    // Uniforms-only in the engine (no pipeline rebuild), so a drag is cheap —
-    // no rAF coalescing needed, unlike addGround. Display-space sRGB: the grade
-    // runs after the view transform, so the swatch IS the value.
+    // Uniforms-only in the engine (no pipeline rebuild), so a drag is cheap
     if (!prev || prev.settings.grade !== grade) {
       const cdl = resolveGrade(grade)
       engine.setColorGrading({
@@ -1001,17 +925,15 @@ export default function Home() {
         saturation: cdl.saturation,
       })
     }
-    // Green mode hides the ground SURFACE (it would occlude the key) but keeps the
-    // shadow-catcher shadow per the user's Shadow switch.
+    // Green mode hides the ground SURFACE (it would occlude the key) but keeps the shadow-catcher
     if (modeChanged || prev.settings.ground !== ground) {
       groundOptsRef.current = {
         diffuseColor: hexToLinearVec3(ground.color),
         gridLineColor: hexToLinearVec3(ground.grid),
-        opacity: greenScreen ? 0 : ground.opacity,
+        opacity: liveGreenScreen ? 0 : ground.opacity,
         shadowStrength: ground.shadow ? 1 : 0,
-        gridLineOpacity: greenScreen || !ground.gridEnabled ? 0 : 0.4,
-        // Square plane; the radial fade scales with it (engine defaults are
-        // 10/80 at size 160) so a small stage still fades at its own edge.
+        gridLineOpacity: liveGreenScreen || !ground.gridEnabled ? 0 : 0.4,
+        // Square plane; the radial fade scales with it (engine defaults are 10/80 at size 160)
         width: ground.size,
         height: ground.size,
         fadeStart: ground.size * (10 / 160),
@@ -1024,43 +946,49 @@ export default function Home() {
         })
       }
     }
-    prevPushed.current = { settings: sceneSettings, backdrop: !!backdrop, greenScreen }
-  }, [sceneSettings, ready, engineRef, backdrop, greenScreen])
+    prevPushed.current = { settings: sceneSettings, backdrop: !!backdrop, greenScreen: liveGreenScreen }
+  }, [sceneSettings, ready, engineRef, backdrop, liveGreenScreen])
 
-  // ── Working scene → localStorage. The `state` half only: assets are blob: URLs
-  // backed by File objects and would restore dead, so lib/scene.ts keeps them out
-  // structurally (and SceneState being a total type means adding a field breaks
-  // this call site rather than silently dropping it).
-  //
-  // Gated on `ready` because `groups` is [] until the engine finishes booting —
-  // saving that would clobber a stored group list with an empty one before the
-  // restore ever lands. `groupsFor` records which model the graphs were authored
-  // against, so a reload after a model upload falls back to auto-grouping instead
-  // of restoring groups naming materials this model doesn't have.
-  // (`camera` is authored framing, not live orbit — the engine exposes distance
-  // but no target getter, so orbiting still isn't captured.)
-  //
-  // DEBOUNCED *and* deferred to idle, because this write is genuinely expensive:
-  // the payload carries every group's shader graph (~30 KB serialized) and
-  // localStorage.setItem is synchronous, so it blocks whatever frame it lands in.
-  // Debouncing alone wasn't enough — a pause mid-drag outlasted the window and
-  // fired the write while the user was still dragging. requestIdleCallback makes
-  // that impossible: the write waits for a free main thread no matter when the
-  // timer elapses. The timeout bounds the wait so a busy tab still saves.
+  // Working scene → localStorage.
+  const pendingSave = useRef<Parameters<typeof saveSceneState>[0] | null>(null)
+  useEffect(() => {
+    const flush = () => {
+      if (!pendingSave.current) return
+      saveSceneState(pendingSave.current)
+      pendingSave.current = null
+    }
+    const onHidden = () => document.visibilityState === "hidden" && flush()
+    // pagehide covers reload/navigation
+    window.addEventListener("pagehide", flush)
+    document.addEventListener("visibilitychange", onHidden)
+    return () => {
+      window.removeEventListener("pagehide", flush)
+      document.removeEventListener("visibilitychange", onHidden)
+    }
+  }, [])
+
   useEffect(() => {
     if (!ready) return
     let idle = 0
+    const payload = {
+      name: bootScene.state.name,
+      camera: bootScene.state.camera,
+      settings: sceneSettings,
+      backgroundEffect: bgEffect,
+      // The whole per-model record
+      groups: groupsByModel,
+      // DERIVED from the live model list rather than tracked separately
+      hidden: Object.fromEntries(
+        models.map((m) => [m.id, m.materials.filter((mat) => !mat.visible).map((mat) => mat.name)]).filter(([, names]) => names.length),
+      ),
+    }
+    // Held for the exit flush until it's actually written.
+    pendingSave.current = payload
     const timer = setTimeout(() => {
-      const write = () =>
-        saveSceneState({
-          name: bootScene.state.name,
-          camera: bootScene.state.camera,
-          settings: sceneSettings,
-          backgroundEffect: bgEffect,
-          // The whole per-model record — hydrate filters to ids present in the
-          // booted scene, so uploaded models' entries simply don't match later.
-          groups: groupsByModel,
-        })
+      const write = () => {
+        saveSceneState(payload)
+        pendingSave.current = null
+      }
       idle =
         typeof requestIdleCallback === "function"
           ? requestIdleCallback(write, { timeout: 2000 })
@@ -1070,21 +998,13 @@ export default function Home() {
       clearTimeout(timer)
       if (idle && typeof cancelIdleCallback === "function") cancelIdleCallback(idle)
     }
-  }, [ready, sceneSettings, bgEffect, groupsByModel, bootScene])
+  }, [ready, sceneSettings, bgEffect, groupsByModel, models, bootScene])
 
-  // Stable handlers for the memoized AssetsPanel. These were inline arrows on
-  // the JSX — new identity every render, which defeats memo, and with keep-alive
-  // docks a defeated memo means the HIDDEN Assets tab re-rendered on every page
-  // render (each tick of a settings slider drag included). They only touch refs
-  // and setters, so identity never needs to change.
-  // Scene-panel Reset: everything the panel governs — settings AND the applied
-  // background effect (a separate state the old onChange-only reset missed).
-  // Settings flow through setSceneSettings, so the reset lands in undo history;
-  // the effect apply-effect (setBackgroundEffect) reacts to bgEffect on its own.
+  // Stable handlers for the memoized AssetsPanel.
   const resetSceneDefaults = useCallback(() => {
     setSceneSettings(DEFAULT_SCENE.state.settings)
     setBgEffect(DEFAULT_SCENE.state.backgroundEffect)
-  }, [])
+  }, [setSceneSettings, setBgEffect])
 
   const openModelDialog = useCallback(
     (target: ModelTarget) => {
@@ -1103,9 +1023,7 @@ export default function Home() {
     modelTargetRef.current = { mode: "replace", id }
     zipInputRef.current?.click()
   }, [])
-  // The "+ Add model" button reveals an EMPTY slot (upload pair + placeholder
-  // lines) instead of opening a dialog — filling slot N looks exactly like
-  // filling slot 1 did. One pending slot at a time; its ✕ cancels.
+  // The "+ Add model" button reveals an EMPTY slot (upload pair + placeholder lines) instead
   const [pendingSlot, setPendingSlot] = useState(false)
   const addSlot = useCallback(() => setPendingSlot(true), [])
   const cancelPending = useCallback(() => setPendingSlot(false), [])
@@ -1122,9 +1040,7 @@ export default function Home() {
         delete n[modelId]
         return n
       })
-      // Fall back to the surviving cast's first model (the derived activeModel
-      // handles it); let group auto-select re-run for whichever that is.
-      autoSelectedFor.current = null
+      // Fall back to the surviving cast's first model (the derived activeModel handles it).
     },
     [removeModelById],
   )
@@ -1146,8 +1062,32 @@ export default function Home() {
     [stopAnimation],
   )
 
-  // Character cards (Assets tab) + model strip (Materials tab) — memoized so the
-  // memoized panels aren't defeated by fresh array identities every render.
+  // Quick-switch entries for the two Scene-panel value rows.
+  const gradeItems = useMemo(
+    () => [
+      ...GRADE_PRESETS.map((g) => ({
+        id: g.id,
+        label: t.scene.gradePresets[g.id as keyof typeof t.scene.gradePresets] ?? g.id,
+      })),
+      ...userGrades.map((g) => ({ id: g.id, label: g.name ?? g.id })),
+    ],
+    [userGrades, t],
+  )
+  const pickGrade = useCallback(
+    (id: string) => {
+      const user = userGrades.find((g) => g.id === id)
+      if (user) applyGradeCustom(user.name ?? id, user.spec)
+      else applyGradePreset(id)
+    },
+    [userGrades, applyGradeCustom, applyGradePreset],
+  )
+  const effectItems = useMemo(() => BACKGROUND_EFFECTS.map((e) => ({ id: e.name, label: e.name })), [])
+  const pickEffect = useCallback((name: string) => {
+    const def = BACKGROUND_EFFECTS.find((e) => e.name === name)
+    if (def) setBgEffect(builtinEffect(def.id))
+  }, [setBgEffect])
+
+  // Character cards (Assets tab) + model strip (Materials tab)
   const characters = useMemo<CharacterCardData[]>(
     () =>
       models.map((m) => ({
@@ -1163,8 +1103,7 @@ export default function Home() {
     [models, activeId],
   )
 
-  // ── Dock tab definitions ── LEFT = styling (materials, scene look); RIGHT =
-  // ingredients & output (assets in, render out).
+  // Dock tab definitions ── LEFT = styling (materials, scene look)
   const leftTabs: DockTab[] = [
     {
       id: "materials",
@@ -1183,9 +1122,10 @@ export default function Home() {
           onCreateGroup={createGroup}
           onRenameGroup={renameGroup}
           onDeleteGroup={deleteGroup}
-          onSetActiveGroup={setActiveGroupId}
           onEditGroupGraph={editGroupGraph}
           onMoveMaterial={moveMaterial}
+          onPickGraph={applyGraphToGroup}
+          onResetGroups={resetGroupsForActive}
         />
       ),
     },
@@ -1194,6 +1134,16 @@ export default function Home() {
           onChange={setSceneSettings}
           effectName={bgEffect?.name ?? null}
           onOpenEffects={openEffects}
+          gradeName={
+            sceneSettings.grade.preset === CUSTOM_ID
+              ? (sceneSettings.grade.custom?.name ?? t.gradeLibrary.untitled)
+              : t.scene.gradePresets[sceneSettings.grade.preset as keyof typeof t.scene.gradePresets]
+          }
+          gradeItems={gradeItems}
+          onPickGrade={pickGrade}
+          onOpenGrades={openGrades}
+          effectItems={effectItems}
+          onPickEffect={pickEffect}
           onReset={resetSceneDefaults}
         /> },
   ]
@@ -1262,8 +1212,7 @@ export default function Home() {
     },
   ]
 
-  // Drag & drop anywhere: a single .vmd routes to the animation, audio to music,
-  // an image to the backdrop; anything else (folder, zip, file set) is a model.
+  // Drag & drop anywhere: a single .vmd routes to the animation, audio to music, an image
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault()
     const dt = e.dataTransfer
@@ -1287,8 +1236,7 @@ export default function Home() {
           return
         }
       }
-      // A dropped model REPLACES the active one (the pre-multi-model behavior);
-      // adding to the cast is the explicit "+ Add model" button.
+      // A dropped model REPLACES the active one (the pre-multi-model behavior)
       await handleModelFiles(files, { mode: "replace", id: activeIdRef.current })
     })()
   }
@@ -1302,21 +1250,15 @@ export default function Home() {
       onDragOver={(e) => e.preventDefault()}
       onDrop={onDrop}
     >
-      {/* ── Backdrop layer: page bg color → image (cover) → transparent canvas.
-          Export composites the SAME stack (lib/video-export), so live and
-          rendered output match. ── */}
-      {backdrop && !greenScreen && (
+      {/* Backdrop layer: page bg color → image (cover) → transparent canvas. */}
+      {backdrop && !liveGreenScreen && (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={backdrop.url} alt="" className="absolute inset-0 h-full w-full object-cover" />
       )}
-      {/* object-contain: normally a no-op (buffer aspect ≡ box aspect), but during
-          video export the buffer is pinned to the OUTPUT aspect (e.g. 9:16 on a wide
-          screen) — contain letterboxes it instead of stretching. */}
+      {/* object-contain: normally a no-op (buffer aspect ≡ box aspect), but during video export */}
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none object-contain" />
 
-      {/* ── Video-frame overlay (Render tab open / exporting): dimmed bars outside
-          the letterboxed frame, a border at its edge, and the watermark previewed
-          exactly where the export draws it. Pure DOM — pointer-events-none. ── */}
+      {/* Video-frame overlay (Render tab open / exporting) */}
       {frameRect && (
         <div className="pointer-events-none absolute inset-0 z-10">
           <div className="absolute bg-black/45" style={{ left: 0, right: 0, top: 0, height: frameRect.y }} />
@@ -1333,8 +1275,7 @@ export default function Home() {
           />
           {activeFrame?.watermark &&
             (() => {
-              // Mirrors drawWatermark's metrics (lib/video-export.ts): 2.8%-height
-              // Geist Medium, wide tracking, soft shadow, 2.2% padding, top-left.
+              // Mirrors drawWatermark's metrics (lib/video-export.ts)
               const size = Math.max(14, frameRect.h * 0.028)
               const pad = frameRect.h * 0.022
               return (
@@ -1372,11 +1313,14 @@ export default function Home() {
         </div>
       )}
 
-      {/* ── Left column: full-height flush dock when expanded (brand pill is its
-          header); a floating pill on its own when collapsed. ── */}
+      {/* Left column: full-height flush dock when expanded (brand pill is its header) */}
       {mounted &&
         (docksOpen ? (
-          <div className="fixed inset-y-0 left-0 z-20 w-[min(300px,88vw)]">
+          <div
+            className="fixed inset-y-0 left-0 w-[min(300px,88vw)]"
+            style={{ zIndex: leftDockZ.z }}
+            onPointerDownCapture={leftDockZ.onPointerDownCapture}
+          >
             <LeftDock
               railTop={<RailLogo />}
               header={
@@ -1402,11 +1346,14 @@ export default function Home() {
           </div>
         ))}
 
-      {/* ── Right column: full-height flush dock when expanded (account/play/share
-          cluster is its header); floating pills when collapsed. ── */}
+      {/* Right column: full-height flush dock when expanded (account/play/share cluster */}
       {mounted &&
         (docksOpen ? (
-          <div className="fixed inset-y-0 right-0 z-20 w-[min(300px,88vw)]">
+          <div
+            className="fixed inset-y-0 right-0 w-[min(300px,88vw)]"
+            style={{ zIndex: rightDockZ.z }}
+            onPointerDownCapture={rightDockZ.onPointerDownCapture}
+          >
             <RightDock
               header={<TopRightCluster shareName="untitled-scene" asHeader />}
               tabs={rightTabs}
@@ -1420,13 +1367,7 @@ export default function Home() {
           </div>
         ))}
 
-      {/* ── Node-graph editor: a free-floating, draggable + resizable window (drag by
-          the header grip; resize from any edge/corner). Position/size persist across
-          sessions; first open lands bottom-centered. The editor only MOUNTS while OPEN
-          — mounting it while closed made switching groups remount + auto-reapply the
-          graph (a spurious second setGroups → minimap double-refresh). Edits are
-          live-applied, so the graph persists on close. Client-only (React Flow isn't
-          SSR-safe), so gated behind `mounted` + an initialized rect. ── */}
+      {/* Node-graph editor: a free-floating, draggable + resizable window (drag by the header grip */}
       {mounted && panelRect && (
         <FloatingPanel
           rect={panelRect}
@@ -1434,8 +1375,7 @@ export default function Home() {
           open={drawerOpen}
           fullscreen={drawerFull}
           className={cn(
-            // z-50: above the docks/transport (z-20) and the non-modal library (z-40),
-            // so editing from the library floats on top of it as an independent panel.
+            // z-50: above the docks/transport (z-20) and the non-modal library (z-40), so editing
             "z-50 overflow-hidden rounded-xl border border-white/10 bg-zinc-950/70 shadow-float backdrop-blur-xs transition-opacity duration-300",
             !drawerOpen && "pointer-events-none opacity-0",
           )}
@@ -1471,17 +1411,14 @@ export default function Home() {
         </FloatingPanel>
       )}
 
-      {/* ── Persistent transport bar — always present (inert with no clip, so
-          removing the animation doesn't blink the UI away). ── */}
+      {/* Persistent transport bar — always present (inert with no clip, so removing the animation */}
       {mounted && !drawerFull && (
         <div className="fixed bottom-3 left-1/2 z-20 -translate-x-1/2">
           <AnimPlayer engineRef={engineRef} modelNames={animatedIds} hasCamera={cameraName !== null} />
         </div>
       )}
 
-      {/* ── Backgrounds library — the three-column shell (rail · grid ·
-          inspector). Applied-effect params edit LIVE (instant tier); Apply/Remove
-          swap the effect layer. ── */}
+      {/* Backgrounds library — the three-column shell (rail · grid · inspector). */}
       <BackgroundLibrary
         open={effectsOpen}
         onOpenChange={setEffectsOpen}
@@ -1505,6 +1442,31 @@ export default function Home() {
         />
       )}
 
+      {/* ── Grades library (tiles preview the live scene under each grade) ── */}
+      <GradeLibrary
+        open={gradesOpen}
+        onOpenChange={setGradesOpen}
+        grade={sceneSettings.grade}
+        onApplyPreset={applyGradePreset}
+        onApplyCustom={applyGradeCustom}
+        userGrades={userGrades}
+        onSaveUserGrades={persistUserGrades}
+        onEdit={openGradeEditor}
+      />
+
+      {/* ── Floating grade editor (drag it aside; the scene is the preview) ── */}
+      {mounted && gradeEditor && (
+        <GradeEditorPanel
+          open
+          sessionId={gradeEditor.sessionId}
+          rect={gradePanelRect}
+          onRectChange={setGradePanelRect}
+          subject={gradeEditor.subject}
+          onChange={editGrade}
+          onClose={() => setGradeEditor(null)}
+        />
+      )}
+
       {/* ── Shader-graph library popup ── */}
       <NodeLibrary
         open={library.open}
@@ -1517,10 +1479,7 @@ export default function Home() {
       />
 
       {/* ── Uploads ── */}
-      {/* Model upload — two COMPLETE paths only (flat multi-select was dropped:
-          it can't carry subfolders). Desktop: folder picker; a .zip also works
-          via drag & drop. Mobile: the model's .zip (extracted in-app, subfolders
-          preserved — models are distributed as zips anyway). */}
+      {/* Model upload — two COMPLETE paths only (flat multi-select was dropped */}
       <input
         ref={(el) => {
           folderInputRef.current = el
@@ -1534,8 +1493,7 @@ export default function Home() {
           e.target.value = ""
         }}
       />
-      {/* Model .zip picker — the mobile primary, and desktop's ZIP button (a
-          folder dialog can't pick files, hence the separate input). */}
+      {/* Model .zip picker — the mobile primary, and desktop's ZIP button (a folder dialog can't */}
       <input
         ref={zipInputRef}
         type="file"
@@ -1597,9 +1555,7 @@ export default function Home() {
           e.target.value = ""
         }}
       />
-      {/* Audio source — driven (play/pause/seek) by the animation-clock mirror above.
-          Muted when audio is set to None — same routing the export uses, so what
-          you hear is what renders. */}
+      {/* Audio source — driven (play/pause/seek) by the animation-clock mirror above. */}
       <audio
         ref={audioElRef}
         src={audioSrc || undefined}

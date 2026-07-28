@@ -1,31 +1,4 @@
-// Upload plumbing for model files: ZIP extraction and drag-&-drop directory
-// traversal.
-//
-// Folder pick is kept alongside zip pick on purpose, even though cloud storage
-// will only ever hold zips: someone iterating in Blender/PMXEditor re-picks the
-// same working folder to see their edit render here, and making them re-zip after
-// every tweak would wreck that loop. Both entry points converge below, so the zip
-// step belongs at the upload boundary, not in the picker.
-//
-// MMD models are distributed as zips with subfolder textures — a
-// single .zip pick (the only sane path on mobile, where pickers can't select
-// folders) or a dropped folder both expand to File[] whose NAMES carry the
-// relative path ("苍鹭·托特「扉页之吻」白衣/tex/body.png"); the engine keys its file map by
-// webkitRelativePath || name, so paths-in-names resolve exactly like a folder
-// pick. Separators are normalized (PowerShell's Compress-Archive writes
-// backslashes).
-//
-// NAME ENCODING is the minefield: zips written by OS shells carry names in the
-// writer's SYSTEM codepage with no marker — Shift-JIS on Japanese Windows, GBK
-// on Chinese Windows, EUC-KR on Korean — and a wrong decode mojibakes non-ASCII
-// texture names so they no longer match the PMX's (correctly encoded)
-// references → white model. Resolution order, per zip:
-//   1. Info-ZIP Unicode Path extra field (0x7075): authoritative UTF-8 name.
-//   2. Flag bit 11: names are UTF-8.
-//   3. Strict UTF-8 validation over ALL names: many tools write UTF-8 unflagged.
-//   4. Auto-detect ONE codepage for the whole zip by scoring candidate decodes
-//      (shift-jis, gb18030, big5, euc-kr): U+FFFD is a hard miss; halfwidth-
-//      katakana runs (the classic GBK-bytes-read-as-SJIS artifact) are penalized.
+// Upload plumbing for model files: ZIP extraction and drag-&-drop directory traversal.
 
 const EOCD_SIG = 0x06054b50;
 const CDIR_SIG = 0x02014b50;
@@ -99,8 +72,7 @@ export async function unzipToFiles(zip: File): Promise<File[]> {
   if (eocd < 0) throw new Error(`Not a zip file: ${zip.name}`);
   const count = view.getUint16(eocd + 10, true);
 
-  // Pass 1: collect entries + name bytes, resolve UTF-8 sources (extra field /
-  // flag), and gather the undecided names for whole-zip codepage detection.
+  // Pass 1: collect entries + name bytes, resolve UTF-8 sources (extra field / flag)
   type Entry = {
     name: string | null;
     bytes: Uint8Array;
@@ -143,8 +115,7 @@ export async function unzipToFiles(zip: File): Promise<File[]> {
     off += 46 + nameLen + extraLen + commentLen;
   }
 
-  // Pass 2: decode the undecided names — strict-valid UTF-8 wins, else the
-  // best-scoring legacy codepage (one consistent choice for the whole zip).
+  // Pass 2: decode the undecided names
   if (undecided.length > 0) {
     const enc = allValidUtf8 ? "utf-8" : detectLegacyEncoding(undecided);
     const dec = new TextDecoder(enc);
@@ -156,8 +127,7 @@ export async function unzipToFiles(zip: File): Promise<File[]> {
     const name = (e.name ?? "").replace(/\\/g, "/");
     if (!name || name.endsWith("/")) continue; // directory entry
 
-    // Local header name/extra lengths differ from the central ones; sizes there
-    // may be zero (data-descriptor zips) — central sizes are authoritative.
+    // Local header name/extra lengths differ from the central ones
     const lNameLen = view.getUint16(e.localOff + 26, true);
     const lExtraLen = view.getUint16(e.localOff + 28, true);
     const dataStart = e.localOff + 30 + lNameLen + lExtraLen;
@@ -189,8 +159,7 @@ export async function expandUploadFiles(files: File[]): Promise<File[]> {
   return out;
 }
 
-/** Drag & drop: traverse dropped items (files AND directories) into File[] with
- *  relative paths in the names. readEntries returns batches — loop until empty. */
+/** Drag & drop: traverse dropped items (files AND directories) into File[] with relative paths */
 export async function readDroppedFiles(
   items: DataTransferItemList,
 ): Promise<File[]> {
@@ -209,7 +178,6 @@ export async function readDroppedFiles(
         (entry as FileSystemFileEntry).file(resolve, reject),
       );
       // Re-wrap with the path in the name (webkitRelativePath is read-only "").
-      // File([blob]) references the data — no copy.
       out.push(prefix ? new File([file], prefix + file.name) : file);
     } else if (entry.isDirectory) {
       const reader = (entry as FileSystemDirectoryEntry).createReader();

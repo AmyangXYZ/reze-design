@@ -1,10 +1,6 @@
 "use client"
 
-// THE color control for the app: a chip (click → picker dialog) + read-only
-// hex label. The dialog mirrors the shadcn colors page — the full Tailwind
-// palette as a labelled grid: one row per hue, shade columns 50–950, each
-// swatch titled with its name and hex, plus a free hex field. Every color
-// setting reuses this one component and this one palette.
+// THE color control for the app: a chip (click → picker dialog) + read-only hex label.
 
 import { useRef, useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -14,13 +10,10 @@ import { cn } from "@/lib/utils"
 const SHADES = ["50", "100", "200", "300", "400", "500", "600", "700", "800", "900", "950"]
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 // Cells stretch to fill the dialog width (label column + 11 equal columns).
-// Horizontal gap only; row spacing is handled by space-y on the row stack.
 const GRID = "grid grid-cols-[3.75rem_repeat(11,minmax(0,1fr))] gap-x-3"
 
 function HexField({ value, onChange }: { value: string; onChange: (hex: string) => void }) {
-  // Controlled text so the preview refreshes live while typing; a valid 6-digit hex
-  // applies immediately. Re-sync from an OUTSIDE change (a swatch click) only while NOT
-  // focused — otherwise committing a hex would reformat the text and jump the caret.
+  // Controlled text so the preview refreshes live while typing
   const [text, setText] = useState(value)
   const last = useRef(value)
   const focused = useRef(false)
@@ -71,8 +64,7 @@ export function ColorField({ value, onChange }: { value: string; onChange: (hex:
   )
 }
 
-/** The palette + hex picker on its own, so any trigger (the ColorField chip, a node
- *  socket swatch) can open the same one control. Value/onChange are sRGB hex. */
+/** The palette + hex picker on its own, so any trigger (the ColorField chip, a node socket */
 export function ColorPickerDialog({
   open,
   onOpenChange,
@@ -86,8 +78,7 @@ export function ColorPickerDialog({
 }) {
   const active = value.toLowerCase()
 
-  // Hovering a swatch previews its name+hex+color in the bottom bar (event-delegated,
-  // so no per-swatch component cost). Instant, no floating tooltip.
+  // Hovering a swatch previews its name+hex+color in the bottom bar (event-delegated
   const [hover, setHover] = useState<{ name: string; hex: string } | null>(null)
   const onGridOver = (e: React.MouseEvent) => {
     const btn = (e.target as HTMLElement).closest<HTMLElement>("button[data-hex]")
@@ -97,8 +88,7 @@ export function ColorPickerDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent
-          // Don't autofocus the first swatch on open — Radix shows a tooltip on
-          // focus, which made "red-50" pop up every time the picker opened.
+          // Don't autofocus the first swatch on open
           onOpenAutoFocus={(e) => e.preventDefault()}
           className="gap-3 rounded-xl border-white/10 bg-zinc-950 sm:max-w-2xl"
         >
@@ -119,9 +109,7 @@ export function ColorPickerDialog({
                 ))}
               </div>
 
-              {/* Hover previews in the bottom bar via one delegated handler (no Radix
-                  Tooltip per swatch — 242 Tooltip trees were the dialog's open-lag).
-                  Hover is a composited transform only, so scrubbing stays smooth. */}
+              {/* Hover previews in the bottom bar via one delegated handler (no Radix Tooltip per swatch */}
               <div className="space-y-[5px]" onMouseOver={onGridOver} onMouseLeave={() => setHover(null)}>
                 {TAILWIND_PALETTE.map((row) => {
                   const hue = row[0].name.split("-")[0]
@@ -156,8 +144,7 @@ export function ColorPickerDialog({
           <div className="flex items-center gap-2 border-t border-white/10 pt-3">
             <span className="text-xs text-muted-foreground">Custom hex</span>
             <HexField value={value} onChange={onChange} />
-            {/* Right side previews the hovered swatch (name + hex + chip); falls back
-                to the current value when nothing is hovered. */}
+            {/* Right side previews the hovered swatch (name + hex + chip) */}
             <div className="ml-auto flex items-center gap-2">
               {hover && <span className="text-xs text-muted-foreground">{cap(hover.name)}</span>}
               <span className="font-mono text-xs text-muted-foreground tabular-nums">

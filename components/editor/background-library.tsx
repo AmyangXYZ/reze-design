@@ -1,14 +1,6 @@
 "use client"
 
-// Backgrounds library — the shared three-column shell (category rail ·
-// thumbnail grid · slim inspector) for WGSL background effects. Thumbnails are
-// LIVE: every card runs the effect's real WGSL through the tiny standalone
-// previewer (effect-preview.tsx) — one small device, not engine instances —
-// so curated and forked code preview identically.
-//
-// Layout lessons from the node library's mobile bug are baked in: dvh height,
-// the inspector column scrolls, Apply is shrink-0, and the rail hides on
-// narrow screens.
+// Backgrounds library — the shared three-column shell (category rail · thumbnail grid · slim
 
 import { useMemo, useState } from "react"
 import { Plus, Search, Sparkles, SquarePen, Trash2, X } from "lucide-react"
@@ -24,6 +16,7 @@ import {
   type BackgroundEffectDef,
 } from "@/lib/background-effects"
 import { EffectPreview } from "@/components/editor/effect-preview"
+import { useZOrder } from "@/hooks/use-z-order"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
@@ -33,37 +26,33 @@ type LibraryProps = {
   applied: AppliedBackgroundEffect | null
   onApply: (effect: AppliedBackgroundEffect) => void
   onRemove: () => void
-  /** Open the page-level floating WGSL editor on this effect (independent panel,
-   *  same idiom as the graph editor — it outlives this dialog). */
+  /** Open the page-level floating WGSL editor on this effect (independent panel, same idiom */
   onEdit: (fx: AppliedBackgroundEffect) => void
 }
 
 export function BackgroundLibrary(props: LibraryProps) {
   return (
-    // Non-modal + no overlay, mirroring the shader-graph library — the docks stay
-    // live and the scene stays undimmed (the scene IS the effect preview).
+    // Non-modal + no overlay, mirroring the shader-graph library
     <Dialog open={props.open} onOpenChange={props.onOpenChange} modal={false}>
-      {/* Mounted fresh per open: browsing state (query/category/selection/draft)
-          seeds itself in useState initializers — no reset effects needed. */}
+      {/* Mounted fresh per open: browsing state (query/category/selection/draft) seeds itself */}
       {props.open && <LibraryContent {...props} />}
     </Dialog>
   )
 }
 
-/** Seed the inspector's param draft: the applied effect's current values when
- *  browsing lands on it, defaults otherwise. */
+/** Seed the inspector's param draft */
 const seedDraft = (selected: BackgroundEffectDef | null, applied: AppliedBackgroundEffect | null): AppliedBackgroundEffect | null =>
   selected ? (applied?.id === selected.id ? { ...applied } : applyDefaults(selected)) : null
 
 function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: LibraryProps) {
   const t = useT()
+  // Desktop-style stacking: clicking a library raises it over any editor.
+  const { z, onPointerDownCapture } = useZOrder()
   const [query, setQuery] = useState("")
   const [category, setCategory] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(applied?.id ?? BACKGROUND_EFFECTS[0]?.id ?? null)
 
-  // An applied effect that isn't a curated entry (created from the template, or
-  // a curated one whose code was edited into something else) appears as its own
-  // "Custom" card — the library shows what's actually on the scene.
+  // An applied effect that isn't a curated entry (created from the template, or a curated
   const customDef: BackgroundEffectDef | null = useMemo(
     () =>
       applied && !BACKGROUND_EFFECTS.some((e) => e.id === applied.id)
@@ -81,9 +70,7 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
   )
   const all = useMemo(() => (customDef ? [...BACKGROUND_EFFECTS, customDef] : [...BACKGROUND_EFFECTS]), [customDef])
   const selected: BackgroundEffectDef | null = useMemo(() => all.find((e) => e.id === selectedId) ?? null, [all, selectedId])
-  // Draft = what Apply applies for the current selection. Re-seeded when the
-  // SELECTION moves, via render-time adjustment (the React-documented
-  // alternative to a setState-in-effect).
+  // Draft = what Apply applies for the current selection.
   const [draft, setDraft] = useState<AppliedBackgroundEffect | null>(() => seedDraft(selected, applied))
   const [draftFor, setDraftFor] = useState(selectedId)
   if (selectedId !== draftFor) {
@@ -104,8 +91,6 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
   const isAppliedSelected = applied !== null && selected !== null && applied.id === selected.id
 
   // "New effect": open the floating editor on a template-seeded custom subject.
-  // It gets its library card the moment the user APPLIES it from the editor
-  // (it becomes the applied CUSTOM effect).
   const startNew = () => onEdit({ id: "custom", name: t.bgLibrary.untitled, wgsl: NEW_EFFECT_TEMPLATE })
 
   return (
@@ -113,13 +98,12 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
         showCloseButton={false}
         overlay={false}
         onInteractOutside={(e) => e.preventDefault()}
-        // Don't return focus to the opener on close — it drew a stuck-looking
-        // focus ring on the Library pill (see globals.css focus-visible rule).
+        // Don't return focus to the opener on close
         onCloseAutoFocus={(e) => e.preventDefault()}
-        // Same footprint as the shader-graph library. The sm:max-w-5xl repeat is
-        // load-bearing: DialogContent's base classes include sm:max-w-lg, which
-        // outranks a plain max-w-* at the sm breakpoint.
-        className="z-40 flex h-[82dvh] max-h-[82dvh] w-[92vw] max-w-5xl flex-col gap-0 overflow-hidden border-white/10 bg-zinc-950/95 p-0 sm:max-w-5xl"
+        // Same footprint as the shader-graph library.
+        style={{ zIndex: z }}
+        onPointerDownCapture={onPointerDownCapture}
+        className="flex h-[82dvh] max-h-[82dvh] w-[92vw] max-w-5xl flex-col gap-0 overflow-hidden border-white/10 bg-zinc-950/95 p-0 sm:max-w-5xl data-[state=closed]:animate-none data-[state=closed]:fade-out-100 data-[state=closed]:zoom-out-100"
       >
         <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-white/10 px-4 py-2 text-left">
           <DialogTitle className="flex shrink-0 items-center gap-2 text-sm font-medium">
@@ -135,9 +119,7 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
               className="h-7 border-white/10 bg-white/5 pl-8 text-xs"
             />
           </div>
-          {/* Creation lives in the header — same spot in both libraries, visible
-              regardless of search/filter state (a pinned strip under the grid was
-              where it went to hide). */}
+          {/* Creation lives in the header */}
           <button
             onClick={startNew}
             className="flex shrink-0 items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90"
@@ -176,11 +158,10 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
             })}
           </div>
 
-          {/* ── Thumbnail grid + pinned "New effect" (the graph library's
-              New-graph idiom: template-seeded, straight into the editor). ── */}
+          {/* Thumbnail grid + pinned "New effect" (the graph library's New-graph idiom */}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <ScrollArea className="min-h-0 flex-1">
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] content-start gap-3 p-3">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(8rem,1fr))] content-start gap-3 p-3">
               {rows.map((e) => {
                 const sel = e.id === selectedId
                 return (
@@ -215,14 +196,12 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
           </ScrollArea>
           </div>
 
-          {/* ── Inspector: preview · meta · params · Apply (pinned, but the column
-              scrolls — the node library's landscape-phone lesson) ── */}
-          <div className="flex w-[15.5rem] shrink-0 flex-col overflow-y-auto border-l border-white/10 sm:w-[16.5rem]">
+          {/* Inspector: preview · meta · params · Apply (pinned, but the column scrolls */}
+          <div className="flex w-[17rem] shrink-0 flex-col overflow-y-auto border-l border-white/10 sm:w-[20rem]">
             {selected && draft ? (
               <>
                 <div className="p-3 pb-0">
-                  {/* The preview IS the edit affordance, exactly like the graph
-                      library: hover → "Edit shader", click pops the WGSL editor. */}
+                  {/* The preview IS the edit affordance, exactly like the graph library */}
                   <button
                     type="button"
                     onClick={() => onEdit(draft)}
@@ -252,8 +231,7 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
 
                 </div>
 
-                {/* Pinned action: red destructive Remove when applied (the
-                    counterpart of the blue Apply), Apply otherwise. */}
+                {/* Pinned action: red destructive Remove when applied (the counterpart of the blue Apply) */}
                 <div className="mt-auto shrink-0 space-y-1.5 border-t border-white/10 p-3">
                   {isAppliedSelected ? (
                     <Button

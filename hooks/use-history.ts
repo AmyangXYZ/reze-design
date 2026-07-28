@@ -1,19 +1,6 @@
 "use client"
 
-// Undo/redo over a piece of state the host already owns. Modeled on the graph
-// editor's history (components/graph/graph-editor.tsx), which solved the same
-// problems first — this is that shape, extracted so more than one surface can use
-// it (scene settings today; group structure, which no undo covers yet, later).
-//
-// The two things that make it usable rather than merely correct:
-//
-//   DEBOUNCED SNAPSHOTS — a slider drag fires onChange every pixel. Recording
-//   each would bury the user's real edits under hundreds of entries, so a burst
-//   of changes settles into ONE step. The whole drag undoes at once.
-//
-//   A `restoring` GUARD — undo() sets state, which re-runs the snapshot effect,
-//   which would push the state we just undid back onto the stack: undo becomes a
-//   no-op that ping-pongs forever. The flag makes a restore not-an-edit.
+// Undo/redo over a piece of state the host already owns.
 
 import { useCallback, useEffect, useRef, useState } from "react"
 
@@ -25,9 +12,7 @@ export function useHistory<T>(
   present: T,
   restoreState: (value: T) => void,
   opts?: {
-    /** False while another surface owns undo — see the graph editor's `open`
-     *  gate. Only suppresses the keyboard shortcut; snapshots keep accruing, so
-     *  history isn't full of holes when focus comes back. */
+    /** False while another surface owns undo — see the graph editor's `open` gate. */
     shortcutsEnabled?: boolean
   },
 ) {
@@ -50,8 +35,7 @@ export function useHistory<T>(
       return
     }
     const timer = setTimeout(() => {
-      // Content compare: a re-render that didn't actually change the value (a new
-      // object with identical fields) must not become an undo step.
+      // Content compare: a re-render that didn't actually change the value (a new object
       if (JSON.stringify(present) === JSON.stringify(current.current)) return
       past.current.push(current.current)
       if (past.current.length > MAX_ENTRIES) past.current.shift()

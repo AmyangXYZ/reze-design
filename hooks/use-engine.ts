@@ -1,28 +1,14 @@
 "use client"
 
-// Engine lifecycle for the scene page: boot ONCE from a scene document (so the
-// first frame already matches the user's stored config — nothing flashes
-// defaults), load its model(s) in bind pose, surface per-model material lists,
-// and forward raycast picks. Selection highlight is imperative
-// (engine.setSelectedMaterial) — the caller decides what "selected" means.
-//
-// MULTI-MODEL: the engine keys instances by name and renders them all; this hook
-// mirrors that as `models: EngineModelInfo[]` plus `groupsByModel` keyed by the
-// same ids. Every mutator takes the target model id — the page owns the "active
-// model" concept (which model the Materials tab edits); this hook has no
-// favorite beyond models[0] being the boot camera's subject.
+// Engine lifecycle for the scene page
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Engine, Vec3, type ApplyStyleGroupResult, type CompileOptions, type RenderClass, type StyleGroup } from "reze-engine"
+import { Engine, Vec3, type ApplyStyleGroupResult, type CompileOptions, type MaterialPresetMap, type RenderClass, type StyleGroup } from "reze-engine"
 import { SLOT_GRAPHS } from "@/lib/materials"
 import { modelPmxUrl, type Scene } from "@/lib/scene"
 import { azElToDirection, hexToLinearVec3, hexToSrgbVec3 } from "@/lib/scene-settings"
 
-// Eye and Hair are pinned, non-deletable groups: they own the special render
-// classes (stencil so eyes read through hair), so membership IS the assignment —
-// users drag eye/hair materials here instead of picking a render class. Seeded
-// empty when the engine's auto-grouping didn't already produce them, so there's
-// always a drop target. Empty seeds are UI-only (withheld from the engine).
+// Eye and Hair are pinned, non-deletable groups
 const SPECIAL_GROUPS: { id: string; label: string; renderClass: RenderClass; preset: "eye" | "hair" }[] = [
   { id: "eye", label: "Eye", renderClass: "eye", preset: "eye" },
   { id: "hair", label: "Hair", renderClass: "hair", preset: "hair" },
@@ -50,8 +36,7 @@ export type EngineModelInfo = {
   materials: MaterialRow[]
 }
 
-// Added models stand beside the first, not inside it: alternate right/left of
-// the origin in ~9-unit steps (a character is ~9 units shoulder-to-stage-mark).
+// Added models stand beside the first, not inside
 function spawnOffsetX(existingCount: number): number {
   if (existingCount === 0) return 0
   const step = Math.ceil(existingCount / 2) * 9
@@ -59,11 +44,7 @@ function spawnOffsetX(existingCount: number): number {
 }
 
 export function useEngine(
-  onPick: (model: string, material: string | null) => void,
-  /** The scene to boot into — read ONCE (constructor options + first loadModel +
-   *  addGround), so the first frame is already the user's config rather than a
-   *  default that gets corrected a tick later. Later edits go through the
-   *  mutators below, not by passing a new document. */
+  /** The scene to boot into — read ONCE (constructor options + first loadModel + addGround) */
   initialScene: Scene,
 ) {
   const sceneRef = useRef(initialScene)
@@ -72,25 +53,20 @@ export function useEngine(
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [models, setModels] = useState<EngineModelInfo[]>([])
-  // Style groups per model id — the host is the source of truth (0.19). Seeded
-  // from the engine's auto-created defaults after load; the app mutates and
-  // pushes them down.
+  // Style groups per model id — the host is the source of truth (0.19).
   const [groupsByModel, setGroupsByModel] = useState<Record<string, StyleGroup[]>>({})
-  // Callbacks need the CURRENT model list without re-creating themselves per
-  // render (memoized panels hold them) — mirror it in a ref.
+  // Callbacks need the CURRENT model list without re-creating themselves per render (memoized
   const modelsRef = useRef<EngineModelInfo[]>([])
   useEffect(() => {
     modelsRef.current = models
   }, [models])
 
-  // Raycast fires from inside the engine's event handlers; route through a ref
-  // so the boot effect never depends on the callback identity.
-  const onPickRef = useRef(onPick)
-  useEffect(() => {
-    onPickRef.current = onPick
-  })
-
-  const infoFor = (id: string, file: string, model: import("reze-engine").Model): EngineModelInfo => ({
+  const infoFor = (
+    id: string,
+    file: string,
+    model: import("reze-engine").Model,
+    hidden?: string[],
+  ): EngineModelInfo => ({
     id,
     file,
     stats: {
@@ -98,7 +74,7 @@ export function useEngine(
       bones: model.getSkeleton().bones.length,
       materials: model.getMaterials().length,
     },
-    materials: model.getMaterials().map((m) => ({ name: m.name, diffuse: m.diffuse, visible: true })),
+    materials: model.getMaterials().map((m) => ({ name: m.name, diffuse: m.diffuse, visible: !hidden?.includes(m.name) })),
   })
 
   useEffect(() => {
@@ -111,8 +87,7 @@ export function useEngine(
         const [tx, ty, tz] = scene.state.camera.target
         const engine = new Engine(canvasRef.current, {
           camera: { distance: scene.state.camera.distance, target: new Vec3(tx, ty, tz) },
-          // The engine paints the background itself (composited post-tonemap, so it
-          // matches the CSS hex) — the first frame is correct regardless of DOM state.
+          // The engine paints the background itself (composited post-tonemap, so it matches the CSS
           background: hexToSrgbVec3(s.background.color),
           world: { color: hexToLinearVec3(s.world.color), strength: s.world.strength },
           sun: {
@@ -121,39 +96,35 @@ export function useEngine(
             direction: azElToDirection(s.sun.azimuth, s.sun.elevation),
           },
           bloom: { ...s.bloom, color: hexToLinearVec3(s.bloom.color) },
-          onRaycast: (model, material) => onPickRef.current(model, material),
         })
         engineRef.current = engine
-        // Dev-only console handle — lets new engine APIs be exercised before any
-        // UI exists (e.g. `await __reze.setBackgroundEffect(wgsl, params)`).
+        // Dev-only console handle — lets new engine APIs be exercised before any UI exists (e.g.
         if (process.env.NODE_ENV === "development") (window as unknown as { __reze?: Engine }).__reze = engine
         await engine.init()
         if (disposed) return
         const infos: EngineModelInfo[] = []
         const groupsMap: Record<string, StyleGroup[]> = {}
         for (const entry of scene.assets.models) {
-          // Zip-sourced scenes (user uploads, once there's blob storage) need a
-          // fetch + expandUploadFiles pass before loadModel — this is the one
-          // place that lands. Bundled scenes are folder-sourced.
+          // Zip-sourced scenes (user uploads, once there's blob storage) need a fetch +
           const pmxUrl = modelPmxUrl(entry.model)
           if (!pmxUrl) throw new Error(`Zip-sourced models aren't loadable from a URL yet: ${entry.model.file}`)
           const model = await engine.loadModel(entry.model.id, pmxUrl)
           if (disposed) return
           const offset = spawnOffsetX(infos.length)
           if (offset !== 0) engine.setModelTransform(entry.model.id, { position: new Vec3(offset, 0, 0) })
-          // Styling: a document carrying groups for this model (a restored or
-          // imported scene) is authoritative — reproduce it exactly. Otherwise
-          // derive from material names, with the model's presets correcting the
-          // engine's built-in hints. Awaited so the first frame is styled.
+          // Styling: a document carrying groups for this model (a restored or imported scene)
           const docGroups = scene.state.groups?.[entry.model.id]
           if (docGroups) {
             // Empty groups are UI-only drop targets — withheld from the engine.
             await engine.applyStyleGroups(entry.model.id, docGroups.filter((g) => g.materials.length > 0))
           } else {
-            await engine.autoStyleGroups(entry.model.id, entry.model.presets)
+            await engine.autoStyleGroups(entry.model.id, entry.model.styleGroups)
           }
           if (disposed) return
-          infos.push(infoFor(entry.model.id, entry.model.file, model))
+          // Restore hidden materials from the document.
+          const hidden = scene.state.hidden?.[entry.model.id] ?? []
+          for (const name of hidden) engine.toggleMaterialVisible(entry.model.id, name)
+          infos.push(infoFor(entry.model.id, entry.model.file, model, hidden))
           groupsMap[entry.model.id] = withSpecialGroups(docGroups ?? engine.getStyleGroups(entry.model.id))
         }
         engine.addGround({
@@ -200,14 +171,10 @@ export function useEngine(
     )
   }, [])
 
-  // Zip-expanded files carry their RELATIVE PATH in File.name (lib/uploads.ts —
-  // that's how textures resolve like a folder pick), so the display name and
-  // engine key must strip to the basename or a zip upload shows
-  // "ModelFolder/model.pmx" while a folder pick shows "model.pmx".
+  // Zip-expanded files carry their RELATIVE PATH in File.name (lib/uploads.ts
   const pmxBaseName = (name: string): string => name.split("/").pop() || name
 
-  /** A unique engine key from a .pmx filename ("miku" → "miku-2" on collision).
-   *  `except` skips one existing id (the model being replaced). */
+  /** A unique engine key from a .pmx filename ("miku" → "miku-2" on collision). */
   const uniqueModelId = (pmxName: string, except?: string): string => {
     const base = pmxBaseName(pmxName).replace(/\.pmx$/i, "") || "custom"
     const taken = new Set(modelsRef.current.filter((m) => m.id !== except).map((m) => m.id))
@@ -217,9 +184,7 @@ export function useEngine(
     return `${base}-${i}`
   }
 
-  /** ADD a model to the scene (folder pick / zip expansion / drop). Auto-grouped,
-   *  spawned beside the existing cast. Returns the new model's id. Throws on
-   *  load failure — the scene keeps its current cast. */
+  /** ADD a model to the scene (folder pick / zip expansion / drop). */
   const addModelFromFiles = useCallback(async (files: File[] | FileList, pmxFile: File): Promise<string> => {
     const engine = engineRef.current
     if (!engine) throw new Error("engine not ready")
@@ -234,9 +199,7 @@ export function useEngine(
     return id
   }, [])
 
-  /** REPLACE one model with an upload, keeping its slot (list position + scene
-   *  transform). The old model is removed only after the new one loads, so a
-   *  failed upload keeps the scene. Returns the (possibly new) id. */
+  /** REPLACE one model with an upload, keeping its slot (list position + scene transform). */
   const replaceModelFromFiles = useCallback(
     async (targetId: string, files: File[] | FileList, pmxFile: File): Promise<string> => {
       const engine = engineRef.current
@@ -273,8 +236,7 @@ export function useEngine(
     })
   }, [])
 
-  /** Load a local .vmd onto ONE model (object URL), posed at frame 0 but PAUSED —
-   *  the user presses play (which also unlocks audio). Returns the clip name. */
+  /** Load a local .vmd onto ONE model (object URL), posed at frame 0 but PAUSED */
   const loadVmdFile = useCallback(async (modelId: string, file: File): Promise<string | null> => {
     const model = engineRef.current?.getModel(modelId)
     if (!model) return null
@@ -282,8 +244,7 @@ export function useEngine(
     try {
       await model.loadVmd(file.name, url)
       model.show(file.name) // activate + pose frame 0, paused (user presses play)
-      // Frame 0 of a new clip is an arbitrary jump from whatever pose was held —
-      // settle the solver against it so the first play doesn't fling hair/cloth.
+      // Frame 0 of a new clip is an arbitrary jump from whatever pose was held
       engineRef.current?.resetPhysics()
       return file.name
     } catch {
@@ -293,9 +254,7 @@ export function useEngine(
     }
   }, [])
 
-  /** Load a VMD from a URL (a bundled default clip) onto one model, posed at
-   *  frame 0 but PAUSED — play also unlocks audio, so motion and music start in
-   *  sync. */
+  /** Load a VMD from a URL (a bundled default clip) onto one model, posed at frame 0 but PAUSED */
   const loadVmdUrl = useCallback(async (modelId: string, name: string, url: string): Promise<string | null> => {
     const model = engineRef.current?.getModel(modelId)
     if (!model) return null
@@ -326,14 +285,27 @@ export function useEngine(
     [],
   )
 
-  /** Replace one model's whole set (structural changes: create/move/remove groups).
-   *  Empty folders are kept in UI state but withheld from the engine. */
+  /** Replace one model's whole set (structural changes: create/move/remove groups). */
   const applyGroups = useCallback(async (modelId: string, next: StyleGroup[]) => {
     setGroupsByModel((prev) => ({ ...prev, [modelId]: next }))
     await engineRef.current?.applyStyleGroups(
       modelId,
       next.filter((g) => g.materials.length > 0),
     )
+  }, [])
+
+  /** Back to a fresh load: re-derive grouping from the doc's seed + name hints, and unhide */
+  const resetStyleGroups = useCallback(async (modelId: string, seed?: MaterialPresetMap) => {
+    const engine = engineRef.current
+    if (!engine) return
+    await engine.autoStyleGroups(modelId, seed)
+    for (const m of modelsRef.current.find((x) => x.id === modelId)?.materials ?? []) {
+      if (!m.visible) engine.toggleMaterialVisible(modelId, m.name)
+    }
+    setModels((prev) =>
+      prev.map((m) => (m.id === modelId ? { ...m, materials: m.materials.map((x) => ({ ...x, visible: true })) } : m)),
+    )
+    setGroupsByModel((prev) => ({ ...prev, [modelId]: withSpecialGroups(engine.getStyleGroups(modelId)) }))
   }, [])
 
   /** Instant adjust-tier: write one exposed param on a group's graph (no recompile). */
@@ -347,9 +319,7 @@ export function useEngine(
   const stopAnimation = useCallback((modelId: string) => {
     const model = engineRef.current?.getModel(modelId)
     if (!model) return
-    // clearAnimation (not stop): stop() keeps the clip current and update()
-    // re-applies its frame-0 pose every frame, silently overwriting the bone
-    // resets below — the "removed the animation but the pose stuck" bug.
+    // clearAnimation (not stop)
     model.clearAnimation()
     // Back to the default bind pose (not the animation's frame 0).
     model.resetAllBones()
@@ -366,6 +336,7 @@ export function useEngine(
     groupsByModel,
     upsertGroup,
     applyGroups,
+    resetStyleGroups,
     setGroupParam,
     highlight,
     toggleVisible,

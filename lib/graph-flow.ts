@@ -1,17 +1,13 @@
 // Bijection between the engine's ShaderGraph JSON and React Flow's node/edge model.
-// The engine schema is the source of truth; React Flow state is a projection of it.
-// Socket names double as handle ids, so links ↔ edges is a mechanical mapping.
 
 import type { Edge, Node } from "@xyflow/react"
 import { NODE_REGISTRY, type GraphNode, type ShaderGraph } from "reze-engine"
 
 export type RezeNodeData = {
   graphNode: GraphNode
-  /** Input sockets currently fed by a link (handles render dots either way; the
-   *  inspector uses this to know which literals are editable). */
+  /** Input sockets currently fed by a link (handles render dots either way */
   linkedInputs: string[]
-  /** Editor-only badges, injected per-render from graph state (not persisted):
-   *  the graph's final output node, and the node whose output is being previewed. */
+  /** Editor-only badges, injected per-render from graph state (not persisted) */
   isOutput?: boolean
   isPreview?: boolean
   [key: string]: unknown
@@ -21,11 +17,7 @@ export type RezeFlowNode = Node<RezeNodeData, "reze">
 
 const edgeId = (l: ShaderGraph["links"][number]) => `${l.from.node}.${l.from.socket}→${l.to.node}.${l.to.socket}`
 
-/** Layered auto-layout for graphs without saved ui positions: x by topological
- *  depth, y stacked with per-node height estimates so tall nodes (principled,
- *  ramps) don't overlap their column neighbors. Exported so the minimap lays a graph
- *  out identically to the editor — otherwise opening the editor (which writes these
- *  positions back) would make the minimap visibly jump from a different layout. */
+/** Layered auto-layout for graphs without saved ui positions */
 export function autoLayout(graph: ShaderGraph): Map<string, { x: number; y: number }> {
   const depth = new Map<string, number>()
   const deps = new Map<string, string[]>()
@@ -41,8 +33,7 @@ export function autoLayout(graph: ShaderGraph): Map<string, { x: number; y: numb
   }
   for (const n of graph.nodes) compute(n.id, new Set())
 
-  // Header ~28px + ~22px per socket row + card padding — matches RezeNode's rendering
-  // closely enough that stacked columns keep a real visual gap.
+  // Header ~28px + ~22px per socket row + card padding
   const estHeight = (type: string) => {
     const { inputs, outputs } = socketsOf(type)
     return 36 + (inputs.length + outputs.length) * 22
@@ -82,8 +73,7 @@ export function toFlow(graph: ShaderGraph): { nodes: RezeFlowNode[]; edges: Edge
   return { nodes, edges }
 }
 
-/** Rebuild a ShaderGraph from React Flow state; `base` supplies everything the flow
- *  doesn't model (version, name, slot, output, params). */
+/** Rebuild a ShaderGraph from React Flow state */
 export function fromFlow(base: ShaderGraph, nodes: RezeFlowNode[], edges: Edge[]): ShaderGraph {
   return {
     ...base,
@@ -107,10 +97,7 @@ export function socketsOf(type: string): { inputs: [string, string][]; outputs: 
   }
 }
 
-/** Can an output socket of type `from` feed an input socket of type `to`? Mirrors the
- *  engine compiler's `canConvert` (not exported) — Blender-faithful implicit conversions
- *  — plus the rule that vec4 inputs (ramp stop colors) are literal-only, never linkable.
- *  Used for drag-time connection validation and compatible-node filtering. */
+/** Can an output socket of type `from` feed an input socket of type `to`? Mirrors the engine */
 export function canConnect(from: string, to: string): boolean {
   if (to === "vec4") return false
   if (from === to) return true

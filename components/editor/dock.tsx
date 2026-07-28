@@ -1,11 +1,6 @@
 "use client"
 
-// The two editor docks, Figma-style. Both are full-height, flush to the screen
-// edge, square-cornered (rounded pills are only the COLLAPSED state, rendered by
-// the page). Each dock's header is the always-on pill itself (brand pill left,
-// account/play/share cluster right), so the pill reads as part of the sidebar.
-// LEFT uses a vertical icon+label rail (room to grow); RIGHT uses two text tabs
-// (Figma's Design/Prototype idiom). Panels render their own scroll content.
+// The two editor docks, Figma-style.
 
 import { useCallback, useState, type ComponentType, type ReactNode } from "react"
 import { Separator } from "@/components/ui/separator"
@@ -23,25 +18,16 @@ export type DockTab = {
 
 const shell = "flex h-full min-h-0 w-full overflow-hidden shadow-float bg-zinc-950/70 backdrop-blur-xs"
 
-// KEEP-ALIVE. A tab's content mounts the first time it's opened and then STAYS
-// mounted, hidden with display:none, so switching is a style flip instead of a
-// teardown + rebuild. Rendering only the active tab made every switch reconstruct
-// a whole panel tree — the Materials panel alone builds a Radix ContextMenu root
-// per material AND per group (~39 for a typical model), which read as a stall.
-// Panels that must react to being hidden take an `active` prop rather than relying
-// on unmount (see RenderPanel's frame preview); collapsing a dock still unmounts
-// everything, so unmount cleanups keep working for that path.
+// KEEP-ALIVE. A tab's content mounts the first time it's opened and then STAYS mounted
 function useKeepAlive(active: string) {
   const [seen, setSeen] = useState<string[]>([active])
   const remember = useCallback((id: string) => setSeen((s) => (s.includes(id) ? s : [...s, id])), [])
-  // `id === active` also covers the parent switching tabs without going through
-  // the rail buttons, so the visible tab is never blank.
+  // `id === active` also covers the parent switching tabs without going through the rail
   const isMounted = (id: string) => id === active || seen.includes(id)
   return { isMounted, remember }
 }
 
-/** One mounted tab. Not `hidden` + `flex` together — two display utilities of equal
- *  specificity, whichever Tailwind emits last would win. */
+/** One mounted tab. Not `hidden` + `flex` together */
 function TabPane({ show, children }: { show: boolean; children: ReactNode }) {
   return <div className={show ? "flex min-h-0 min-w-0 flex-1 flex-col" : "hidden"}>{children}</div>
 }
@@ -64,9 +50,7 @@ export function LeftDock({
   const { isMounted, remember } = useKeepAlive(current.id)
   return (
     <aside className={cn(shell, "border-r border-white/10")}>
-      {/* Vertical rail — logo · divider · icon+label tabs (room to grow). Figma
-          style: the active highlight boxes only the ICON; the label sits plain
-          below it. */}
+      {/* Vertical rail — logo · divider · icon+label tabs (room to grow). */}
       <nav className="flex w-12 shrink-0 flex-col items-center gap-2 border-r border-white/10 py-1.5">
         {railTop}
         {railTop && <Separator className="w-7 bg-white/10" />}

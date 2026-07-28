@@ -1,9 +1,4 @@
-// Offline render-to-video. Drives the engine frame-by-frame (engine.renderFrame(1/fps)
-// — deterministic: animation, physics, and the camera VMD all advance exactly one
-// frame regardless of wall time) at an explicit resolution (engine.setRenderSize),
-// composites the same layer stack the live view shows (background color → backdrop
-// image → transparent engine canvas), and encodes via mediabunny (WebCodecs
-// hardware encode under the hood) into an mp4 with the music track.
+// Offline render-to-video.
 
 import {
   AudioBufferSource,
@@ -25,12 +20,9 @@ export type ExportSettings = {
   height: number
   fps: number
   audioSource: ExportAudioSource
-  /** Draw the Reze Design wordmark bottom-right. Default-on, freely removable —
-   *  it's advertising users choose to carry, never a paywall. */
+  /** Draw the Reze Design wordmark bottom-right. */
   watermark: boolean
-  /** Chroma-key mode: pure #00FF00 background replaces the scene background,
-   *  backdrop, and skybox for this export only — for compositing the character
-   *  into other footage in an external editor (the classic MMD PV workflow). */
+  /** Chroma-key mode: pure #00FF00 background replaces the scene background, backdrop */
   greenScreen: boolean
 }
 
@@ -57,9 +49,7 @@ const YIELD_EVERY = 3
 const videoBitrate = (w: number, h: number, fps: number) =>
   Math.round(Math.min(80e6, Math.max(6e6, w * h * fps * 0.1)))
 
-// ── Watermark: "REZE DESIGN" wordmark, top-left — uppercase Geist with wide,
-// editorial letterspacing and a soft drop shadow. Deliberately pretty and quiet:
-// people should WANT to keep it.
+// Watermark: "REZE DESIGN" wordmark, top-left
 
 /** Geist via next/font gets a hashed family name — read it off the CSS variable. */
 const brandFontFamily = () => {
@@ -83,9 +73,7 @@ function drawWatermark(ctx: CanvasRenderingContext2D, w: number, h: number, font
   ctx.restore()
 }
 
-/** Decode the music track and slice [startTime, startTime + exportDuration] out
- *  of it — the export range's audio. A track shorter than the range end simply
- *  goes silent at its natural end. */
+/** Decode the music track and slice [startTime, startTime + exportDuration] out */
 async function buildMusicAudio(url: string, startTime: number, exportDuration: number): Promise<AudioBuffer | null> {
   const data = await (await fetch(url)).arrayBuffer()
   const ac = new AudioContext()
@@ -110,9 +98,7 @@ export async function exportVideo(opts: {
   canvas: HTMLCanvasElement
   /** Master model (longest clip) — its clock defines the timeline. */
   modelName: string
-  /** Every OTHER animated model — seeked/played alongside the master so a
-   *  multi-model formation exports in sync (renderFrame advances all playing
-   *  clocks; they only need the same start state). */
+  /** Every OTHER animated model */
   extraModelNames?: string[]
   /** Segment start on the clip's timeline, seconds (default 0). */
   startTime?: number
@@ -124,10 +110,7 @@ export async function exportVideo(opts: {
   backgroundColor: string
   /** Object/blob URL of the music track (used when audioSource === "music"). */
   musicUrl: string | null
-  /** File System Access API writable: the mp4 STREAMS to disk in chunks instead
-   *  of accumulating in memory — a 4K multi-minute export never holds more than
-   *  ~16 MiB buffered. Caller closes (or aborts) the stream; resolves null.
-   *  Without it, falls back to the in-memory Blob (mobile / non-Chromium). */
+  /** File System Access API writable */
   fileStream?: FileSystemWritableFileStream
   onProgress?: (p: ExportProgress) => void
   signal?: AbortSignal
@@ -157,8 +140,7 @@ export async function exportVideo(opts: {
 
   const output = new Output({
     format: new Mp4OutputFormat(),
-    // StreamTarget is FileSystemWritableFileStream-compatible; chunked batches
-    // writes (~16 MiB) and its backpressure throttles the encoders.
+    // StreamTarget is FileSystemWritableFileStream-compatible
     target: opts.fileStream ? new StreamTarget(opts.fileStream, { chunked: true }) : new BufferTarget(),
   })
   const videoSource = new CanvasSource(composite, {
@@ -199,10 +181,7 @@ export async function exportVideo(opts: {
   const prior = model.getAnimationProgress()
   engine.stopRenderLoop()
   engine.setRenderSize(width, height)
-  // Green-screen state (background, ground surface, skybox suspension) is LIVE
-  // page state — toggling the switch previews it in the viewport, and the export
-  // renders exactly that (WYSIWYG). Here it only affects the composite fill and
-  // skips the flat backdrop layer.
+  // Green-screen state (background, ground surface, skybox suspension) is LIVE page state
   const fillColor = settings.greenScreen ? GREEN : bgColor
 
   try {
@@ -212,8 +191,7 @@ export async function exportVideo(opts: {
       audioSource.close()
     }
 
-    // Seek to the segment start, physics reset + settle so the first frame
-    // isn't mid-fall hair (the warm-up settles at whatever pose is current).
+    // Seek to the segment start, physics reset + settle so the first frame isn't mid-fall hair
     for (const m of cast) {
       m.pause()
       m.seek(startTime)
@@ -256,8 +234,7 @@ export async function exportVideo(opts: {
     if (output.state === "started") await output.cancel().catch(() => {})
     throw e
   } finally {
-    // Restore the live session: viewport-tracked size, background/skybox (green-
-    // screen mode suspended them), prior playhead + play state.
+    // Restore the live session: viewport-tracked size, background/skybox (green- screen mode
     engine.setRenderSize(null)
     for (const m of cast) {
       m.pause()

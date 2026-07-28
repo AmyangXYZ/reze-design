@@ -1,25 +1,4 @@
-// Curated WGSL background effects — the seed of the Backgrounds library. An
-// effect is a LAYER between the base background (color / image / 360) and the
-// model: its WGSL runs per-pixel in the engine's composite pass and returns
-// sRGB + alpha, over-composited onto the base — alpha 0 lets the base show
-// through, so Stars is stars over YOUR background color, not a baked-in sky.
-//
-// CODE IS THE ONLY SURFACE. No parameter-slider layer on top — tunables live as
-// commented consts at the top of each effect, edited in the WGSL editor and
-// applied with ⌘⏎ (a deliberate call: one mental model, no schema to maintain,
-// and the library stays a collection of self-contained shader files). The
-// engine's uniform-params tier still exists (setBackgroundEffectParam) for a
-// future need; the app just doesn't build UI on it.
-//
-// Effects are VALUES (a few KB of JSON-able text), not assets: they persist in
-// the working scene's localStorage state, will travel inside shared scene
-// documents verbatim, and need no blob storage.
-//
-// Engine contract (reze-engine 0.25):
-//   fn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f
-//   ray  — pixel's world-space view direction (pans with the orbit, like the skybox)
-//   uv   — 0..1, bottom-left origin · time — seconds since apply
-//   bgResolution() — canvas size in px
+// Curated WGSL background effects — the seed of the Backgrounds library.
 
 export type BackgroundEffectDef = {
   id: string
@@ -32,9 +11,7 @@ export type BackgroundEffectDef = {
   wgsl: string
 }
 
-/** What a scene stores when an effect is applied — a full snapshot, so a saved
- *  or shared scene reproduces exactly even if the library entry changes later
- *  (same philosophy as `groups`). Edited code IS the effect. */
+/** What a scene stores when an effect is applied */
 export type AppliedBackgroundEffect = {
   id: string
   name: string
@@ -47,28 +24,16 @@ export const applyDefaults = (def: BackgroundEffectDef): AppliedBackgroundEffect
   wgsl: def.wgsl,
 })
 
-/** A built-in effect as an applied snapshot — for scenes (like the bundled demo)
- *  that ship with an effect on. Throws on a bad id so a typo fails at build/boot,
- *  not as a silently-missing background. */
+/** A built-in effect as an applied snapshot */
 export function builtinEffect(id: string): AppliedBackgroundEffect {
   const def = BACKGROUND_EFFECTS.find((e) => e.id === id)
   if (!def) throw new Error(`unknown background effect: ${id}`)
   return applyDefaults(def)
 }
 
-/** The "New effect" starter: a terse contract reference, a replace-me body up
- *  top, and a small toolbox BELOW it (WGSL is order-independent, so helpers can
- *  trail the interesting code instead of burying it). */
+/** The "New effect" starter: a terse contract reference, a replace-me body up top, and a small */
 export const NEW_EFFECT_TEMPLATE = `// One function = one background effect, drawn behind the model over the
-// background color/image. ⌘⏎ compiles a live preview; Apply keeps it.
-// Full guide (contract, patterns, perf notes): README → Background effects
-//
-//   ray    view direction of this pixel (world space — pans with the camera)
-//   uv     0..1 canvas position, (0,0) bottom-left
-//   time   seconds since applied
-//   out    color + alpha — alpha 0 lets the background show through
-//
-// bgResolution() → canvas size in px. "Shining Stars" is a full worked example.
+// background color/image.
 
 fn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f {
   // Drifting glow — replace me.
@@ -101,8 +66,7 @@ const SHINING_STARS: BackgroundEffectDef = {
   description: "A twinkling starfield that pans with the camera. Transparent between stars — your background color (or image) stays the sky.",
   category: "Sky",
   tags: ["night", "calm"],
-  // Two star layers on a ray-projected grid: a sparse bright layer and a denser
-  // faint dust layer. Cell-hashed positions with per-star twinkle phase.
+  // Two star layers on a ray-projected grid
   wgsl: `// Tunables — edit a value and hit ⌘⏎ to see it live.
 const TINT = vec3f(1.0, 0.96, 0.88);  // star color
 const DENSITY = 0.5;                  // 0..1 — how crowded the sky is
@@ -122,8 +86,7 @@ fn starLayer(sph: vec2f, scale: f32, thresh: f32, time: f32, speed: f32) -> f32 
   let d = length(local);
   let bright = bgHash2(cell + 7.31).x;
   if (bright < thresh) { return 0.0; }
-  // Per-star period from its own hash: some stars breathe over seconds, some
-  // blink quickly — a sky, not a synchronized array.
+  // Per-star period from its own hash: some stars breathe over seconds, some blink quickly
   let period = 0.25 + 2.75 * bgHash2(cell + 31.7).y;
   let tw = 0.55 + 0.45 * sin(time * speed * period + h.x * 40.0);
   let size = (bright - thresh) / (1.0 - thresh);
@@ -136,11 +99,9 @@ fn starLayer(sph: vec2f, scale: f32, thresh: f32, time: f32, speed: f32) -> f32 
 
 fn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f {
   let d = normalize(ray);
-  // Latitude/longitude projection — same mapping the 360 skybox uses, so stars
-  // hold their place in the sky while the camera orbits.
+  // Latitude/longitude projection
   let sph = vec2f(atan2(d.x, d.z) * 1.2, asin(clamp(d.y, -1.0, 1.0)) * 1.5);
-  // Denser = MORE stars, not smaller ones (sizes untouched) — tuned so the sky
-  // reads full without flooding it.
+  // Denser = MORE stars, not smaller ones (sizes untouched)
   let dens = mix(0.95, 0.82, clamp(DENSITY, 0.0, 1.0));
   var s = starLayer(sph, 30.0, dens, time, TWINKLE * 1.6);
   // Faint dust layer: denser, smaller, slower.
@@ -159,12 +120,9 @@ const FUJI_WATERCOLOR: BackgroundEffectDef = {
   description: "Mt. Fuji in sumi-e watercolor — red sun, inked mountain, a swaying blossom branch on textured paper. Full-scene background.",
   category: "Nature",
   tags: ["ink", "fuji", "scene"],
-  // Port of "Mt. Fuji Watercolor" by noztol (Shadertoy). The ink-reveal intro
-  // is removed — the painting starts finished; the branch sway and paper
-  // texture remain as the living part.
+  // Port of "Mt. Fuji Watercolor" by noztol (Shadertoy). The ink-reveal intro is removed
   wgsl: `// "Mt. Fuji Watercolor" by noztol (Shadertoy) — WGSL port, reveal
 // animation removed (final frame only, the branch still sways).
-// Tunables — edit and ⌘⏎.
 const SWAY = 0.02;
 const ZOOM = 1.9;   // higher = smaller / further away
 const LIFT = 0.25;  // raises the composition — a backdrop, not ground scenery
@@ -202,9 +160,6 @@ fn fjFbm(p0: vec2f) -> f32 {
 }
 
 // Organic calligraphy stroke from a to b: tapered radius, drooping bend.
-// The fbm edge-roughness is HOISTED to the caller (rough): it only depends on
-// the pixel, so evaluating it inside cost 9 identical fbm calls per pixel —
-// the single biggest chunk of this effect's frame time.
 fn brushStroke(p: vec2f, a: vec2f, b: vec2f, rStart: f32, rEnd: f32, droop: f32, rough: f32) -> f32 {
   var pa = p - a;
   let ba = b - a;
@@ -286,8 +241,7 @@ fn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f {
 
   // ── Blossoms: textured splotch clusters at every branch tip. ──
   var flowerMask = 0.0;
-  // One shared petal grain for all 15 splotches (was 15 fbm calls); per-splotch
-  // identity comes from a hashed radius instead.
+  // One shared petal grain for all 15 splotches (was 15 fbm calls)
   let petalGrain = fjFbm(bUV * 70.0) * 0.02;
   var targets = array<vec2f, 5>(t1, t2, t3, t4, t5);
   for (var i = 0; i < 5; i++) {
@@ -315,8 +269,7 @@ const QUIET_RAIN: BackgroundEffectDef = {
   description: "Thin rain streaks in two depth layers with a slight slant. Low-alpha and cool — mood, not weather simulation.",
   category: "Nature",
   tags: ["rain", "mood", "overlay"],
-  // Column-hashed streaks: every column gets its own speed/phase, a skew makes
-  // the fall read as wind. Two layers for depth.
+  // Column-hashed streaks: every column gets its own speed/phase, a skew makes the fall read
   wgsl: `// Tunables — edit and ⌘⏎.
 const RAIN_COLOR = vec3f(0.75, 0.85, 1.0);
 const SPEED = 2.3;
@@ -334,9 +287,7 @@ fn rainLayer(p0: vec2f, time: f32, scale: f32, speed: f32) -> f32 {
   let col = floor(q.x);
   let h = rnHash(col);
   if (h > AMOUNT) { return 0.0; }
-  // Repeating fall coordinate, re-hashed EVERY cycle — so each pass of a drop
-  // down its column gets its own length, brightness and sideways jitter
-  // (constant per-column values read as a static pattern, not rain).
+  // Repeating fall coordinate, re-hashed EVERY cycle
   let fall = q.y + time * speed * (0.6 + 0.7 * h) + h * 9.0;
   let cyc = rnHash(col * 3.1 + floor(fall) * 7.7);
   let y = fract(fall);
@@ -362,9 +313,7 @@ const REZE_NEON: BackgroundEffectDef = {
   description: "A flickering neon sign spelling REZE DESIGN — glyphs are plain line segments with an exponential glow. Transparent around the tubes.",
   category: "Abstract",
   tags: ["neon", "text", "overlay"],
-  // Entry-level SDF text: every glyph is a handful of straight segments (baked
-  // below), the "neon" is distance-to-segment fed through a crisp tube + an
-  // exp() halo, plus a gentle shimmer, breathing scale and a traveling hue.
+  // Entry-level SDF text: every glyph is a handful of straight segments (baked below)
   wgsl: `// Tunables — edit and ⌘⏎.
 const NEON_COLOR = vec3f(0.96, 0.45, 0.71);  // tube color (brand pink)
 const NEON_COLOR_B = vec3f(0.45, 0.65, 0.98); // second hue the shimmer travels to
@@ -380,15 +329,9 @@ fn sdSegment(p: vec2f, a: vec2f, b: vec2f) -> f32 {
   return length(pa - ba * h);
 }
 
-// "REZE DESIGN" as 40 pre-baked segments (glyph boxes 0..0.9 × 0..1,
-// advance 1.2, word gap 0.7 — total width 12.4). UNROLLED, no array: a
-// function-scope var array with dynamic indexing spills to local memory on
-// most drivers — it made this the heaviest effect in the library. Straight-line
-// min() chains stay in registers.
+// "REZE DESIGN" as 40 pre-baked segments (glyph boxes 0..0.9 × 0..1, advance 1.2, word gap
 fn sdText(p: vec2f) -> f32 {
-  // Coarse reject: pixels far from the sign's bounding box skip the letters
-  // entirely (the halo is < 1% out there). boxD lower-bounds the true distance,
-  // so d stays continuous for the fwidth AA in background().
+  // Coarse reject: pixels far from the sign's bounding box skip the letters entirely (the halo
   let toBox = vec2f(max(abs(p.x - 6.20) - 6.20, 0.0), max(abs(p.y - 0.5) - 0.5, 0.0));
   let boxD = length(toBox);
   if (boxD > 1.0) { return boxD; }
@@ -450,9 +393,7 @@ fn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f {
   let tp = p / (TEXT_SCALE * breathe) + vec2f(12.4 * 0.5, 0.5);
   let d = sdText(vec2f(tp.x, tp.y));
 
-  // Neon = crisp tube + inner hot line + tight halo. The smoothstep band is
-  // pixel-sized (fwidth — legal here: uniform control flow), so the tube edge
-  // stays sharp at any scale.
+  // Neon = crisp tube + inner hot line + tight halo.
   let aa = fwidth(d) * 1.5;
   let tube = 1.0 - smoothstep(0.06 - aa, 0.06 + aa, d);
   let hot = 1.0 - smoothstep(0.02 - aa, 0.02 + aa, d);
@@ -476,11 +417,9 @@ const ORBITING_HEARTS: BackgroundEffectDef = {
   description: "Heart outlines drifting around the center. Transparent between the lines — a worked example of a decoration layer over your background color.",
   category: "Abstract",
   tags: ["cute", "overlay"],
-  // Adapted from a Shadertoy distance-field study (heart curve via IQ /
-  // Dave_Hoskins); the audio-reactive pulse is replaced with a sine.
+  // Adapted from a Shadertoy distance-field study (heart curve via IQ / Dave_Hoskins)
   wgsl: `// Adapted from a Shadertoy heart-outline study — heart curve by
 // Inigo Quilez, improved by Dave_Hoskins; audio-reactive pulse → sine.
-// Tunables — edit and ⌘⏎.
 const OPACITY = 0.9;
 const PULSE_SPEED = 1.8;
 const PI = 3.14159265;

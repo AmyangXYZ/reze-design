@@ -1,23 +1,12 @@
 /// <reference types="@webgpu/types" />
 "use client"
 
-// LIVE background-effect previews: each card/inspector canvas runs the effect's
-// REAL WGSL — not a hand-drawn sketch — through a deliberately tiny standalone
-// WebGPU renderer (own device, fullscreen triangle, one uniform buffer; no
-// engine involvement). Hand-made sketches couldn't scale past one effect and
-// could never preview a user's forked code; this previews anything that
-// compiles, and shows nothing (quiet gradient) for anything that doesn't.
-//
-// One module-level device + one rAF drive every mounted preview; pipelines are
-// cached per WGSL string. Canvases render at DPR-capped card size (~160×100),
-// so a handful of previews cost less than the scene's own frame.
+// LIVE background-effect previews: each card/inspector canvas runs the effect's REAL WGSL
 
 import { memo, useEffect, useRef } from "react"
 import { cn } from "@/lib/utils"
 
-// Same contract the engine's composite gives user code, minus the scene: uv is
-// bottom-left-origin, and `ray` is a slow synthetic orbit so sky-tracking
-// effects visibly pan in the preview.
+// Same contract the engine's composite gives user code, minus the scene
 const PREVIEW_WRAPPER = /* wgsl */ `
 struct U { time: f32, _pad: f32, res: vec2f }
 @group(0) @binding(0) var<uniform> u: U;
@@ -48,9 +37,7 @@ USER_CODE
 
 type Entry = { canvas: HTMLCanvasElement; ctx: GPUCanvasContext; wgsl: string }
 
-// Module-level singleton: device, per-code pipeline cache, registered canvases,
-// one shared frame loop. Never throws into React — a failure just leaves the
-// canvas showing its CSS fallback gradient.
+// Module-level singleton: device, per-code pipeline cache, registered canvases, one shared
 const previews = new Map<HTMLCanvasElement, Entry>()
 let device: GPUDevice | null = null
 let deviceLost = false
@@ -129,9 +116,7 @@ function frame(now: number) {
     }
     const pipeline = pipelineFor(d, e.wgsl)
     if (!pipeline) continue
-    // One uniform buffer shared across canvases: write per pass. (Queue writes
-    // are ordered against passes in submission order, but only per submit —
-    // so each canvas gets its own submit with its own size.)
+    // One uniform buffer shared across canvases: write per pass.
     uniforms[0] = now / 1000
     uniforms[2] = w
     uniforms[3] = h

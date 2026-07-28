@@ -1,7 +1,4 @@
-// The node-graph library: packs of reusable material looks. A graph is tagged by
-// the roles it suits, but never locked to one — applying retargets it to the
-// slot being edited (see the graph editor's import path). The built-ins ship as
-// one official pack; user/community packs slot in later with the same shape.
+// The node-graph library: packs of reusable material looks.
 
 import type { MaterialPreset, ShaderGraph } from "reze-engine"
 import { SLOT_GRAPHS, SLOT_LABELS } from "@/lib/materials"

@@ -1,24 +1,13 @@
 "use client"
 
-// WGSL editor — a free-floating, draggable, resizable panel (FloatingPanel, the
-// graph editor's idiom) so the scene stays visible beside it while iterating.
-//
-// The scene MIRRORS the editor: opening auto-applies the subject, and Compile
-// (⌘⏎) compiles + applies in one step — there is no separate preview/commit
-// tier (an effect is cheap to re-apply, unlike a graph compile). A failed
-// compile keeps the previous shader on screen and lists diagnostics.
-//
-// The code surface: ONE scroll container owns three layers — sticky line-number
-// gutter, Prism-highlighted render, and a transparent <textarea> stretched over
-// the content. Nothing is scroll-synced in JS: the textarea is always at least
-// as large as its content, so it never scrolls internally and caret-reveal
-// scrolls the shared container — gutter, highlight and caret cannot drift.
+// WGSL editor — a free-floating, draggable, resizable panel (FloatingPanel, the graph
 
 import { useCallback, useMemo, useState } from "react"
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism"
-import { ArrowDownToLine, Check, Copy, X } from "lucide-react"
+import { ArrowDownToLine, Check, Code, Copy } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { EditorHeader, EditorHeaderButton } from "@/components/editor/editor-header"
 import { FloatingPanel, type Rect } from "@/components/editor/floating-panel"
 import { useT } from "@/lib/i18n"
 
@@ -44,15 +33,13 @@ export function WgslEditorPanel({
   onClose,
 }: {
   open: boolean
-  /** Bumped by the opener per editing session — remounts the body so the code
-   *  state reseeds from `initial` (an ongoing session never reseeds). */
+  /** Bumped by the opener per editing session */
   sessionId: number
   rect: Rect | null
   onRectChange: (r: Rect) => void
   title: string
   initial: string
-  /** Compile + apply (the scene mirrors the editor). Diagnostics are line:col
-   *  in this code. */
+  /** Compile + apply (the scene mirrors the editor). */
   onCompile: (wgsl: string) => Promise<WgslCompileResult>
   onClose: () => void
 }) {
@@ -63,11 +50,11 @@ export function WgslEditorPanel({
       onRectChange={onRectChange}
       open={open}
       fullscreen={false}
+      raiseKey={sessionId}
       minW={420}
       minH={280}
-      // z-50 like the graph editor: above the docks and the non-modal library, so
-      // editing from the library floats over it as an independent panel.
-      className="z-50 overflow-hidden rounded-xl border border-white/10 bg-zinc-950/95 shadow-float"
+      // z-50 like the graph editor
+      className="overflow-hidden rounded-xl border border-white/10 bg-zinc-950/95 shadow-float"
     >
       <EditorBody key={sessionId} title={title} initial={initial} onCompile={onCompile} onClose={onClose} />
     </FloatingPanel>
@@ -104,42 +91,37 @@ function EditorBody({
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header = drag handle (interactive controls are excepted by the panel's hit test). */}
-      <div data-drag-handle className="flex shrink-0 cursor-grab items-center gap-2 border-b border-white/10 px-3 py-2">
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">{title} · WGSL</span>
-        <button
-          onClick={() => {
-            void navigator.clipboard.writeText(code).then(() => {
-              setCopied(true)
-              setTimeout(() => setCopied(false), 1500)
-            })
-          }}
-          title={t.bgLibrary.copy}
-          className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
-        >
-          {copied ? <Check className="size-3.5 text-blue-400" /> : <Copy className="size-3.5" />}
-        </button>
-        <button
-          onClick={() => {
-            const a = document.createElement("a")
-            a.href = URL.createObjectURL(new Blob([code], { type: "text/plain" }))
-            a.download = `${title.replace(/[^\w一-鿿-]+/g, "_")}.wgsl`
-            a.click()
-            URL.revokeObjectURL(a.href)
-          }}
-          title={t.bgLibrary.download}
-          className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
-        >
-          <ArrowDownToLine className="size-3.5" />
-        </button>
-        <button
-          onClick={onClose}
-          className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
-        >
-          <X className="size-4" />
-          <span className="sr-only">{t.library.close}</span>
-        </button>
-      </div>
+      <EditorHeader
+        icon={Code}
+        title={`${title} · WGSL`}
+        closeLabel={t.library.close}
+        onClose={onClose}
+        actions={
+          <>
+            <EditorHeaderButton
+              icon={copied ? Check : Copy}
+              label={t.bgLibrary.copy}
+              onClick={() => {
+                void navigator.clipboard.writeText(code).then(() => {
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 1500)
+                })
+              }}
+            />
+            <EditorHeaderButton
+              icon={ArrowDownToLine}
+              label={t.bgLibrary.download}
+              onClick={() => {
+                const a = document.createElement("a")
+                a.href = URL.createObjectURL(new Blob([code], { type: "text/plain" }))
+                a.download = `${title.replace(/[^\w一-鿿-]+/g, "_")}.wgsl`
+                a.click()
+                URL.revokeObjectURL(a.href)
+              }}
+            />
+          </>
+        }
+      />
 
       {/* ── Code: one scroller, three layers (sticky gutter · highlight · textarea). ── */}
       <div className="min-h-0 flex-1 overflow-auto bg-[#101014]">
@@ -163,8 +145,7 @@ function EditorBody({
               {/* Trailing newline keeps the last line's height when the caret sits on it. */}
               {code + "\n"}
             </SyntaxHighlighter>
-            {/* overflow-hidden + box ≥ content ⇒ the textarea never scrolls itself;
-                caret-reveal scrolls the shared container instead. */}
+            {/* overflow-hidden + box ≥ content ⇒ the textarea never scrolls itself */}
             <textarea
               value={code}
               onChange={(e) => {

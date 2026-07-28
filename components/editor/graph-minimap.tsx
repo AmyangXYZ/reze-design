@@ -1,9 +1,4 @@
-// A compact but honest schematic of a ShaderGraph — it IS the graph, not a random
-// picture. Each node is a titled card (type label + a header strip), with input
-// sockets down the left edge and outputs down the right, colored by socket type
-// (yellow=color, indigo=vector, zinc=float) exactly like the real editor. Links
-// run socket→socket in the source socket's color. Far lighter than a live React
-// Flow instance, so it's safe to render dozens in a grid.
+// A compact but honest schematic of a ShaderGraph — it IS the graph, not a random picture.
 
 import { memo } from "react"
 import type { ShaderGraph } from "reze-engine"
@@ -24,14 +19,9 @@ const SOCKET: Record<string, string> = {
 
 type Meta = { x: number; y: number; ins: [string, string][]; outs: [string, string][] }
 
-// Memoized: it recomputes autoLayout (a topological sort) on every render, and the
-// library renders one per row — without memo, each keystroke in the library search
-// re-lays-out every graph. Library/preset graph refs are stable, so memo skips the
-// work entirely; the active group's graph ref changes on edit, so it still updates.
+// Memoized: it recomputes autoLayout (a topological sort) on every render, and the library
 export const GraphMinimap = memo(function GraphMinimap({ graph, className }: { graph: ShaderGraph; className?: string }) {
-  // Same layout source as the editor (ui.position ?? autoLayout), so a graph looks
-  // identical here and in the editor — and opening the editor (which persists the
-  // autoLayout positions) no longer makes this minimap jump.
+  // Same layout source as the editor (ui.position ?? autoLayout), so a graph looks identical
   const layout = autoLayout(graph)
   const meta = new Map<string, Meta>()
   graph.nodes.forEach((n) => {
@@ -86,8 +76,7 @@ export const GraphMinimap = memo(function GraphMinimap({ graph, className }: { g
         return (
           <g key={n.id}>
             <rect x={m.x} y={m.y} width={NW} height={NH} rx={8} fill="currentColor" fillOpacity={0.14} stroke="currentColor" strokeOpacity={0.5} strokeWidth={1.5} />
-            {/* Header tint + colored underline — same subtle palette as the node card
-                (a faint fill, not a saturated strip), so preview matches the editor. */}
+            {/* Header tint + colored underline */}
             <path
               d={`M ${m.x} ${m.y + HEADER} V ${m.y + 8} Q ${m.x} ${m.y} ${m.x + 8} ${m.y} H ${m.x + NW - 8} Q ${m.x + NW} ${m.y} ${m.x + NW} ${m.y + 8} V ${m.y + HEADER} Z`}
               fill={accent}

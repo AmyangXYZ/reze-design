@@ -1,17 +1,6 @@
 "use client"
 
-// Assets panel (chromeless): the raw ingredients of a scene — models, their
-// motions, the camera, music, and backgrounds. reze-design is a finishing tool:
-// you bring finished motions and a pre-cut track.
-//
-// MULTI-MODEL as repeated SLOTS, each styled exactly like the single-model
-// panel: upload button pair → filename → meta. "+ Add model" (dashed, below the
-// last slot) doesn't open a dialog — it reveals an EMPTY slot with its own
-// upload buttons and placeholder lines, so filling slot 2 looks identical to
-// how slot 1 was filled. The Animation section repeats per slot the same way.
-// Slot 1 is permanent; slots 2+ carry a remove ✕ (the pending slot's ✕ just
-// cancels it). Clicking a slot's filename selects the ACTIVE model — the one
-// the Materials tab and material picks target.
+// Assets panel (chromeless): the raw ingredients of a scene
 
 import { memo, type ComponentType } from "react"
 import { Footprints, Globe, Image as ImageIcon, Music, PersonStanding, Plus, Video, X } from "lucide-react"
@@ -107,10 +96,7 @@ function AssetRow({
   return (
     <>
       <UploadPair icon={Icon} label={label} onClick={onClick} disabled={disabled} />
-      {/* Own line: filename (truncated — clips with … instead of widening the
-          dock) + optional remove. Quiet dash placeholder keeps the row height
-          constant, so loading an asset never shifts the layout below it. No
-          metadata second line anywhere — vertical space goes to the cast. */}
+      {/* Own line: filename (truncated */}
       <div className="mt-1.5 flex items-center gap-1">
         <span className={cn("min-w-0 flex-1 truncate text-xs", value ? "text-muted-foreground" : "text-muted-foreground/40")} title={value ?? undefined}>
           {value ?? "—"}
@@ -121,10 +107,7 @@ function AssetRow({
   )
 }
 
-// Memoized: the dock keeps tabs mounted (useKeepAlive), so without memo the
-// hidden Assets tab re-rendered on every page render — every settings-slider
-// tick included. Handler props are useCallback'd in page.tsx; `characters` is
-// useMemo'd there for the same reason.
+// Memoized: the dock keeps tabs mounted (useKeepAlive), so without memo the hidden Assets tab
 export const AssetsPanel = memo(function AssetsPanel({
   characters,
   pendingSlot,
@@ -237,18 +220,19 @@ export const AssetsPanel = memo(function AssetsPanel({
               </div>
             </div>
           )}
-          {/* Form-append: reveal the next slot where it would appear. Dashed =
-              "nothing here yet", distinct from the solid action buttons. */}
+          {/* Form-append: reveal the next slot where it would appear. */}
           {!pendingSlot && (
+            <div className="mt-2.5 flex justify-center">
             <Button
               variant="outline"
               size="sm"
-              className="mt-2.5 h-7 w-full min-w-0 gap-1.5 border-dashed border-white/15 bg-transparent text-xs text-muted-foreground hover:bg-white/5 hover:text-foreground"
+              className="h-7 w-fit gap-1.5 border-dashed border-white/15 bg-transparent px-2.5 text-xs text-muted-foreground hover:bg-white/5 hover:text-foreground"
               onClick={onAddSlot}
             >
               <Plus className="size-3.5" />
-              <span className="truncate">{addModelLabel}</span>
+              {addModelLabel}
             </Button>
+            </div>
           )}
         </Section>
 

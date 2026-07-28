@@ -1,8 +1,4 @@
-// Style-slot icons. Custom SVGs drawn in lucide's language (24-grid, stroke-2,
-// round caps) where lucide has no good fit: hair as flowing strands, cloth as
-// fabric swatches (smooth wave vs. rough cross-hatch), a sock for stockings,
-// stacked ingots for metal. The dashed circle stays the fallback mark for the
-// default slot.
+// Style-slot icons. Custom SVGs drawn in lucide's language (24-grid, stroke-2, round caps)
 
 import type { ComponentType } from "react"
 import type { MaterialPreset } from "reze-engine"

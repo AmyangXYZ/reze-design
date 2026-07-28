@@ -1,13 +1,6 @@
 "use client"
 
 // The node-graph editor for one style group, hosted inside the bottom drawer.
-// Ported from the original full-page editor: every edit (rewire, literal change,
-// node deletion) recompiles through the engine's graph→WGSL compiler (debounced)
-// and hot-swaps the group's pipeline live. Double-click a node to preview its
-// output on the model. ⌘/Ctrl+Z undo, ⇧ redo. The page remounts this component
-// per group (key includes the group id), so all state here is one graph. Save
-// keeps the live edits; Back-to-library discards them (the page reverts) — both
-// are page-owned; this component just fires the callbacks.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
@@ -45,12 +38,10 @@ import { cn } from "@/lib/utils"
 
 const nodeTypes = { reze: RezeNode }
 
-// Copy/paste clipboard at module scope so it survives the per-group remount — you can
-// copy nodes in one style group's graph and paste them into another's.
+// Copy/paste clipboard at module scope so it survives the per-group remount
 let clipboard: { nodes: RezeFlowNode[]; edges: Edge[] } | null = null
 
-// Undo history compares graphs by content (positions, literals, links) so selection
-// changes and sub-pixel drags don't pollute the stack.
+// Undo history compares graphs by content (positions, literals, links) so selection changes
 type Snapshot = { nodes: RezeFlowNode[]; edges: Edge[] }
 const snapshotSig = (s: Snapshot) =>
   JSON.stringify({
@@ -80,8 +71,7 @@ export function GraphEditor({
 }: {
   /** The group's factory preset — what Reset returns to. */
   presetGraph: ShaderGraph
-  /** Lazily resolves what the editor opens with — the preset, or a cached
-   *  work-in-progress. Called once on mount (state initializer). */
+  /** Lazily resolves what the editor opens with — the preset, or a cached work-in-progress. */
   getInitialGraph: () => ShaderGraph
   slotLabel: string
   engineReady: boolean
@@ -102,8 +92,7 @@ export function GraphEditor({
   onToggleFullscreen: () => void
 }) {
   const t = useT()
-  // `base` supplies what the flow doesn't model (name, slot, output, params);
-  // importing a JSON graph swaps it, reset returns to the slot's preset.
+  // `base` supplies what the flow doesn't model (name, slot, output, params)
   const [initial] = useState(() => {
     const graph = getInitialGraph()
     return { graph, ...toFlow(graph) }
@@ -131,8 +120,7 @@ export function GraphEditor({
     [],
   )
   const onEdgesChange = useCallback((changes: EdgeChange[]) => setEdges((e) => applyEdgeChanges(changes, e)), [])
-  // A new link into an occupied input replaces the old one (Blender/Unreal behavior;
-  // the compiler also rejects two links into one socket).
+  // A new link into an occupied input replaces the old one (Blender/Unreal behavior
   const onConnect = useCallback(
     (conn: Connection) =>
       setEdges((e) =>
@@ -141,8 +129,7 @@ export function GraphEditor({
     [],
   )
 
-  // Reject incompatible links mid-drag (React Flow dims the invalid target handles):
-  // the source output type must be able to feed the target input type.
+  // Reject incompatible links mid-drag (React Flow dims the invalid target handles)
   const isValidConnection = useCallback(
     (c: Connection | Edge) => {
       if (c.source === c.target) return false // no self-connection (immediate cycle)
@@ -159,7 +146,6 @@ export function GraphEditor({
   // ── Node ops: right-click pane → Add palette; right-click node → actions menu. ──
   const rfRef = useRef<ReactFlowInstance<RezeFlowNode, Edge> | null>(null)
   // A wire dragged onto empty canvas remembers its source socket so the Add palette
-  // can auto-connect the node you pick (Blender/Unreal/Unity's core building gesture).
   type PendingConnect = { nodeId: string; handleId: string | null; handleType: "source" | "target" }
   const [addMenu, setAddMenu] = useState<{ x: number; y: number; connect?: PendingConnect } | null>(null)
   const [nodeMenu, setNodeMenu] = useState<{ x: number; y: number; nodeId: string } | null>(null)
@@ -177,8 +163,7 @@ export function GraphEditor({
     e.preventDefault()
     setAddMenu(null)
     setEdgeMenu(null)
-    // Right-clicking outside the current selection selects just this node, so the
-    // menu's actions have an unambiguous target (matches most node editors).
+    // Right-clicking outside the current selection selects just this node, so the menu's actions
     if (!node.selected) setNodes((cur) => cur.map((n) => ({ ...n, selected: n.id === node.id })))
     setNodeMenu({ x: e.clientX, y: e.clientY, nodeId: node.id })
   }, [])
@@ -196,8 +181,7 @@ export function GraphEditor({
   const onConnectEnd = useCallback<OnConnectEnd>((e) => {
     const pending = connectingRef.current
     connectingRef.current = null
-    // Only a drop on empty canvas opens the palette; a drop on a handle is a normal
-    // connect (already handled by onConnect) or an invalid target (ignored).
+    // Only a drop on empty canvas opens the palette
     if (!pending || !(e.target as HTMLElement)?.classList?.contains("react-flow__pane")) return
     const point = "changedTouches" in e ? e.changedTouches[0] : e
     setNodeMenu(null)
@@ -224,8 +208,7 @@ export function GraphEditor({
       if (c && other) {
         const socks = socketsOf(type)
         if (c.handleType === "source") {
-          // Dragged from an output → wire to the new node's first same-type input,
-          // else the first convertible one (so color lands on color, not float `fac`).
+          // Dragged from an output → wire to the new node's first same-type input, else the first
           const fromT = socketType(other, c.handleId, "source")
           const input =
             socks.inputs.find(([, t]) => t === fromT) ?? socks.inputs.find(([, t]) => fromT && canConnect(fromT, t))
@@ -260,8 +243,7 @@ export function GraphEditor({
     }
   }, [addMenu, nodes])
 
-  // Duplicate node(s) with a small offset; links aren't copied (single-node case
-  // has none, and multi-select duplication keeping wires is a later refinement).
+  // Duplicate node(s) with a small offset
   const duplicateNodes = useCallback((ids: string[]) => {
     setNodes((cur) => {
       const taken = new Set(cur.map((n) => n.id))
@@ -351,10 +333,7 @@ export function GraphEditor({
     [nodes],
   )
 
-  // Rename a node's id — its title doubles as its identity (Blender-nickname style),
-  // so this rewrites every reference: links, the graph output, and any live preview.
-  // The id must fit the engine's `^[a-z0-9_]+$` rule and stay unique, so we sanitize
-  // + guard; a no-op (empty/duplicate/unchanged) is silently ignored.
+  // Rename a node's id — its title doubles as its identity (Blender-nickname style)
   const renameNode = useCallback((oldId: string, raw: string) => {
     const next = raw.trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "")
     if (!next || next === oldId) return
@@ -376,16 +355,14 @@ export function GraphEditor({
     setPreviewId((p) => (p === oldId ? next : p))
   }, [])
 
-  // Which node's title is in rename mode — lifted here so both a title double-click
-  // (in RezeNode) and the node context menu can start it. Handed to nodes via context.
+  // Which node's title is in rename mode
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const nodeRenameOps = useMemo(
     () => ({ rename: renameNode, renamingId, setRenaming: setRenamingId }),
     [renameNode, renamingId],
   )
 
-  // ── Edge reconnect: drag either end of an existing edge to a new socket;
-  //    dropping it on empty canvas deletes it (Blender-like). ──
+  // Edge reconnect: drag either end of an existing edge to a new socket
   const reconnectDidConnect = useRef(false)
   const onReconnectStart = useCallback(() => {
     reconnectDidConnect.current = false
@@ -399,8 +376,7 @@ export function GraphEditor({
     reconnectDidConnect.current = true
   }, [])
 
-  // ── Undo/redo: debounced content snapshots — a whole node drag or a burst of
-  //    literal edits is one undo step. ──
+  // Undo/redo: debounced content snapshots
   const past = useRef<Snapshot[]>([])
   const future = useRef<Snapshot[]>([])
   const present = useRef<Snapshot>({ nodes: initial.nodes, edges: initial.edges })
@@ -459,8 +435,7 @@ export function GraphEditor({
     return () => window.removeEventListener("keydown", onKey)
   }, [open, undo, redo])
 
-  // ⇧D duplicates the current selection (Blender's shortcut). Read selection from the
-  // instance so this doesn't re-subscribe on every node change.
+  // ⇧D duplicates the current selection (Blender's shortcut).
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
@@ -528,8 +503,7 @@ export function GraphEditor({
   const onImportFile = useCallback(
     async (file: File) => {
       try {
-        // A graph is pure shading now (no slot) — it applies to whatever group is
-        // being edited, so no retargeting is needed.
+        // A graph is pure shading now (no slot)
         const graph = JSON.parse(await file.text()) as ShaderGraph
         const diags = validateGraph(graph)
         if (diags.some((d) => d.severity === "error")) {
@@ -546,8 +520,7 @@ export function GraphEditor({
 
   const currentGraph: ShaderGraph = useMemo(() => fromFlow(base, nodes, edges), [base, nodes, edges])
 
-  // Inject the output/preview badges for rendering only (kept out of `nodes` state so
-  // graph changes stay clean); `nodes` remains the source of truth for edits/undo.
+  // Inject the output/preview badges for rendering only (kept out of `nodes` state so graph
   const displayNodes = useMemo(
     () =>
       nodes.map((n) => {
@@ -585,8 +558,7 @@ export function GraphEditor({
     const timer = setTimeout(async () => {
       const local = compileGraph(currentGraph, opts)
       setFsBody(local.fsBody)
-      // Before the GPU device is up, applying would explode — engineReady is in
-      // the deps, so the pending graph re-applies the moment boot completes.
+      // Before the GPU device is up, applying would explode
       if (!engineReady) {
         setDiagnostics(local.diagnostics)
         return
@@ -610,9 +582,7 @@ export function GraphEditor({
 
   const errors = diagnostics.filter((d) => d.severity === "error")
 
-  // Mount React Flow only once its host has real dimensions — the drawer's
-  // panels measure asynchronously, and RF warns (error #004) if it mounts into
-  // a 0×0 container.
+  // Mount React Flow only once its host has real dimensions
   const flowHostRef = useRef<HTMLDivElement>(null)
   const [flowSized, setFlowSized] = useState(false)
   useEffect(() => {
@@ -627,17 +597,13 @@ export function GraphEditor({
 
   return (
     <div className="flex h-full flex-col">
-      {/* ── Header — same language as the pill: slot icon + label, icons for
-          everything else. The icon carries compile status (red on error). ── */}
-      {/* The whole header is the window drag surface (buttons still work — see
-          FloatingPanel.onContainerDown); a centered grip is the affordance. */}
+      {/* Header — same language as the pill: slot icon + label, icons for everything else. */}
+      {/* The whole header is the window drag surface (buttons still work */}
       <header
         data-drag-handle
-        // Solid (opaque, no backdrop) — it's a thin, non-focal strip, and keeping it
-        // out of the panel's translucent/blurred layer is cheaper and reads crisper.
+        // Solid (opaque, no backdrop)
         className={cn(
-          // border-b (not a separate <Separator>) so the divider is part of the solid
-          // header's box — no sub-pixel seam letting the glass panel bleed through.
+          // border-b (not a separate <Separator>) so the divider is part of the solid header's box
           "relative flex shrink-0 items-center gap-2 border-b border-white/10 bg-zinc-950 pt-1 pb-1 pr-2 pl-3",
           !fullscreen && "cursor-grab active:cursor-grabbing",
         )}
@@ -823,8 +789,7 @@ export function GraphEditor({
                 (() => {
                   const node = nodes.find((n) => n.id === nodeMenu.nodeId)
                   if (!node) return null
-                  // openNodeMenu guarantees the clicked node is selected; act on the
-                  // whole selection (single- or multi-node).
+                  // openNodeMenu guarantees the clicked node is selected
                   const sel = nodes.filter((n) => n.selected).map((n) => n.id)
                   const targets = sel.length ? sel : [nodeMenu.nodeId]
                   const single = targets.length === 1

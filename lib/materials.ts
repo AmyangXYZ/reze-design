@@ -1,6 +1,4 @@
-// The style-slot tables: which shader graph, label, and ordering each material
-// category gets. Model-agnostic — the bundled model's own material→category map
-// lives in `lib/default-scene.ts`.
+// The style-slot tables: which shader graph, label, and ordering each material category gets.
 
 import {
   BODY_GRAPH,

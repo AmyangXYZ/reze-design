@@ -1,9 +1,6 @@
 "use client"
 
-// Right-click-a-node actions menu (Blender's node context menu). Same floating
-// surface + viewport clamp + capture-phase outside-close as the Add-node palette,
-// so the two read as one system. Actions are supplied by the editor; picking one
-// runs it and closes.
+// Right-click-a-node actions menu (Blender's node context menu).
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"

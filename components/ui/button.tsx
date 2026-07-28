@@ -54,9 +54,7 @@ function Button({
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
       onClick={(e) => {
-        // A mouse click leaves the button focused, so a later Space/Enter (meant for
-        // play/pause, or reopening a file picker) re-triggers it. Blur on pointer
-        // clicks; keyboard activation (detail 0) keeps focus for accessibility.
+        // A mouse click leaves the button focused, so a later Space/Enter (meant for play/pause
         if (e.detail > 0) (e.currentTarget as HTMLElement).blur()
         onClick?.(e)
       }}

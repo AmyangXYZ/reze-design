@@ -1,0 +1,93 @@
+"use client"
+
+// Quick-switch list behind a section's blue value text.
+
+import { Check } from "lucide-react"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { useT } from "@/lib/i18n"
+import { cn } from "@/lib/utils"
+
+export type QuickPickItem = { id: string; label: string; hint?: string }
+
+export function QuickPick({
+  value,
+  label,
+  items,
+  onPick,
+  onBrowse,
+  onEdit,
+  placeholder,
+}: {
+  /** Currently applied id, or null when nothing is applied. */
+  value: string | null
+  /** Display override for the trigger, when the raw value isn't what to show (the engine's stock */
+  label?: string
+  items: QuickPickItem[]
+  onPick: (id: string) => void
+  /** Escape hatch to the full library — always last, always present. */
+  onBrowse: () => void
+  /** Optional: open the editor on the current value. */
+  onEdit?: () => void
+  /** Shown (muted) when nothing is applied. */
+  placeholder: string
+}) {
+  const t = useT()
+  const current = items.find((i) => i.id === value)
+  // Blue whenever something is APPLIED
+  const applied = value !== null && value !== ""
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          className={cn(
+            "min-w-0 cursor-pointer truncate text-xs underline decoration-current/40 underline-offset-2 transition-colors hover:decoration-current",
+            applied ? "text-blue-400" : "text-muted-foreground/50",
+          )}
+        >
+          {label ?? current?.label ?? placeholder}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        sideOffset={6}
+        className="w-32 rounded-xl border-white/10 bg-zinc-950/95 p-1 shadow-float backdrop-blur-xs"
+        // Returning focus to the trigger draws a stuck ring on the value text.
+        onCloseAutoFocus={(e) => e.preventDefault()}
+      >
+        <ScrollArea className="max-h-64">
+          {items.map((i) => (
+            <button
+              key={i.id}
+              onClick={() => onPick(i.id)}
+              className={cn(
+                "flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors hover:bg-white/5",
+                i.id === value ? "text-blue-400" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <span className="min-w-0 flex-1 truncate">{i.label}</span>
+              {i.hint && <span className="shrink-0 font-mono text-[10px] text-muted-foreground/60">{i.hint}</span>}
+              {i.id === value && <Check className="size-3.5 shrink-0" />}
+            </button>
+          ))}
+        </ScrollArea>
+        <div className="mt-1 border-t border-white/10 pt-1">
+          {onEdit && (
+            <button
+              onClick={onEdit}
+              className="w-full cursor-pointer rounded-lg px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+            >
+              {t.materials.editGraph}
+            </button>
+          )}
+          <button
+            onClick={onBrowse}
+            className="w-full cursor-pointer rounded-lg px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+          >
+            {t.scene.browseAll}
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}

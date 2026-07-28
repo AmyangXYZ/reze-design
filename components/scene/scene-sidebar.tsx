@@ -1,19 +1,16 @@
 "use client"
 
-// Scene panel (chromeless): world / sun / bloom lighting and scene appearance
-// colors. Lives in the LEFT dock's "Scene" tab now. Model / animation / music /
-// backdrop uploads live in the Assets tab. The Section / SliderRow / ColorRow
-// helpers are exported so the Assets panel and right dock can reuse the same rows.
+// Scene panel (chromeless): world / sun / bloom lighting and scene appearance colors.
 
 import { memo } from "react"
-import { RotateCcw, Sparkles } from "lucide-react"
+import { Palette, RotateCcw, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ColorField } from "@/components/color-picker"
-import { GRADE_PRESETS, resolveGrade } from "@/lib/grade"
+import { intensityOf } from "@/lib/grade"
+import { QuickPick, type QuickPickItem } from "@/components/scene/quick-pick"
 import { useT } from "@/lib/i18n"
 import type { SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
@@ -38,8 +35,7 @@ export function SliderRow({
   // Single line: label · slider · value.
   return (
     <div className="mt-2.5 flex items-center gap-2 first:mt-0">
-      {/* w-16 fits the longest label ("Saturation"); truncate stays as the
-          safety net for a future longer one or a wider translation. */}
+      {/* w-16 fits the longest label ("Saturation") */}
       <span className="w-16 shrink-0 truncate text-xs">{label}</span>
       <Slider
         className="flex-1 [&_[data-slot=slider-thumb]]:size-2.5 [&_[data-slot=slider-thumb]]:hover:ring-2 [&_[data-slot=slider-track]]:h-1"
@@ -84,14 +80,18 @@ export function ColorRow({ label, value, onChange }: { label: string; value: str
   )
 }
 
-// Memoized for the same keep-alive reason as AssetsPanel/MaterialsPanel: hidden
-// tabs re-render with the page otherwise. When Scene IS the visible tab its
-// `settings` prop changes per edit, so memo never blocks a real update.
+// Memoized for the same keep-alive reason as AssetsPanel/MaterialsPanel
 export const ScenePanel = memo(function ScenePanel({
   settings,
   onChange,
   effectName,
   onOpenEffects,
+  gradeName,
+  gradeItems,
+  onPickGrade,
+  onOpenGrades,
+  effectItems,
+  onPickEffect,
   onReset,
 }: {
   settings: SceneSettings
@@ -99,16 +99,19 @@ export const ScenePanel = memo(function ScenePanel({
   /** Applied background-effect name (null = none) — the row opens the library. */
   effectName: string | null
   onOpenEffects: () => void
-  /** Restore EVERYTHING this panel governs to the demo defaults — all settings
-   *  sections AND the background effect (owned by page state, so the panel
-   *  can't reset it through onChange alone — the original "reset didn't clear
-   *  the effect" bug). */
+  /** Display name of the applied grade (built-in label or the user's own). */
+  gradeName: string
+  /** Quick-switch entries — the fast path beside the full library. */
+  gradeItems: QuickPickItem[]
+  onPickGrade: (id: string) => void
+  onOpenGrades: () => void
+  effectItems: QuickPickItem[]
+  onPickEffect: (id: string) => void
+  /** Restore EVERYTHING this panel governs to the demo defaults */
   onReset: () => void
 }) {
   const t = useT()
   const { background, ground, world, sun, bloom, grade } = settings
-  // What the engine actually receives — the readout below shows it.
-  const cdl = resolveGrade(grade)
   const patch = <K extends keyof SceneSettings>(key: K, value: Partial<SceneSettings[K]>) =>
     onChange({ ...settings, [key]: { ...settings[key], ...value } })
 
@@ -158,8 +161,7 @@ export const ScenePanel = memo(function ScenePanel({
         </Section>
 
         <Section title={t.scene.bloom} action={<ColorField value={bloom.color} onChange={(hex) => patch("bloom", { color: hex })} />}>
-          {/* No on/off switch — intensity 0 IS off (page.tsx maps it to enabled:false,
-              skipping the bloom passes entirely). One less row in a long panel. */}
+          {/* No on/off switch — intensity 0 IS off (page.tsx maps it to enabled:false, skipping */}
           <div>
             <SliderRow
               label={t.scene.threshold}
@@ -191,98 +193,7 @@ export const ScenePanel = memo(function ScenePanel({
           </div>
         </Section>
 
-        {/* Grade: the LOOK layer — ASC CDL on the tonemapped scene (engine
-            setColorGrading). The three tonal controls are colors, not sliders,
-            because the craft control here is "which way do I push this tonal
-            range" — mid-gray is neutral and distance from it is the amount, so
-            there's no separate strength slider to keep in sync. The background
-            layer stays ungraded by design (see composite.ts). */}
-        <Section
-          title={t.scene.grade}
-          action={
-            /* The look lives here; "Neutral" is the first entry, so this is also
-               the reset. No "Custom" state to derive — the preset IS the stored
-               value now, not something reverse-engineered from nine numbers. */
-            <Select
-              /* Fall back if a saved scene names a preset we've since retired —
-                 resolveGrade already does the same, so the two agree. */
-              value={GRADE_PRESETS.some((p) => p.id === grade.preset) ? grade.preset : "neutral"}
-              onValueChange={(id) => patch("grade", { preset: id })}
-            >
-              <SelectTrigger className="-my-0.5">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {GRADE_PRESETS.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {t.scene.gradePresets[p.id as keyof typeof t.scene.gradePresets]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          }
-        >
-          {/* iOS Photos' shape: a look, then how much of it. Dimmed rather than
-              hidden on Neutral — hiding it would jump the panel's height. */}
-          <div className={cn(grade.preset === "neutral" && "pointer-events-none opacity-40")}>
-            <SliderRow
-              label={t.scene.intensity}
-              value={grade.intensity}
-              min={0}
-              max={1}
-              step={0.01}
-              onChange={(v) => patch("grade", { intensity: v })}
-              fmt={(v) => v.toFixed(2)}
-            />
-          </div>
-          {/* READ-ONLY resolution of preset × intensity into the engine's three
-              CDL range tints. Without it, switching presets changed the scene
-              while every number in the panel stayed put — no confirmation of
-              what a preset actually did. Dragging Intensity now visibly washes
-              these toward neutral grey. Not editable on purpose: per-range
-              editing is the wheels we removed. */}
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            {(
-              [
-                [t.scene.shadows, cdl.shadows],
-                [t.scene.midtones, cdl.midtones],
-                [t.scene.highlights, cdl.highlights],
-              ] as const
-            ).map(([label, hex]) => (
-              <div key={label} className="min-w-0 text-center">
-                <div className="mx-auto h-3.5 w-12 rounded-[3px] ring-1 ring-white/10" style={{ backgroundColor: hex }} />
-                {/* Value sits with the swatch it describes; the name reads last.
-                    Hex uses ColorField's treatment (font-mono, muted) so the two
-                    readouts share one vocabulary across the panel. */}
-                <div className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">{hex}</div>
-                <div className="truncate text-[10px] text-foreground">{label}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Your adjustment ON TOP of the preset (1 = leave the preset alone),
-              the way Photos' Adjust panel composes over its Filters strip. Both
-              ranges are symmetric about 1, so the thumbs align when untouched. */}
-          <SliderRow
-            label={t.scene.contrast}
-            value={grade.contrast}
-            min={0.5}
-            max={1.5}
-            step={0.01}
-            onChange={(v) => patch("grade", { contrast: v })}
-            fmt={(v) => v.toFixed(2)}
-          />
-          <SliderRow
-            label={t.scene.saturation}
-            value={grade.saturation}
-            min={0}
-            max={2}
-            step={0.01}
-            onChange={(v) => patch("grade", { saturation: v })}
-            fmt={(v) => v.toFixed(2)}
-          />
-        </Section>
-
+        {/* Grade: the LOOK layer — ASC CDL on the tonemapped scene (engine setColorGrading). */}
         {/* Ground: its own domain — color, opacity, shadow, grid; presets later. */}
         <Section title={t.scene.ground}>
           <ColorRow label={t.scene.color} value={ground.color} onChange={(hex) => patch("ground", { color: hex })} />
@@ -330,13 +241,46 @@ export const ScenePanel = memo(function ScenePanel({
         </Section>
 
 
-        {/* Background & effect — last section: the most advanced one. The Library
-            pill lives in the SECTION TITLE row, mirroring the shader-graph
-            library's placement in the materials inspector (same pill, same
-            "Library" label — the sparkles icon is the only difference). Rows are
-            values: base color, and the applied effect's name (a link into the
-            same library). Image/360 uploads stay in the Assets tab for now —
-            when the image layer moves here it becomes the third row. */}
+        {/* Grade — the LOOK layer. */}
+        <Section
+          title={t.scene.grade}
+          action={
+            <button
+              onClick={onOpenGrades}
+              className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90"
+            >
+              <Palette className="size-3.5" />
+              {t.materials.library}
+            </button>
+          }
+        >
+          <div className="flex min-w-0 items-center justify-between gap-2">
+            <span className="shrink-0 text-xs">{t.scene.preset}</span>
+            {/* Value text is a quick-switch list; the pill above opens the full library with previews. */}
+            {/* Neutral is a CHOICE, not an absence — it reads blue like any other applied value. */}
+            <QuickPick
+              value={grade.preset}
+              items={gradeItems}
+              onPick={onPickGrade}
+              onBrowse={onOpenGrades}
+              placeholder={gradeName}
+            />
+          </div>
+          {/* Intensity is remembered PER grade, so switching looks restores the strength you last used */}
+          <div className={cn("mt-1", grade.preset === "neutral" && "pointer-events-none opacity-40")}>
+            <SliderRow
+              label={t.scene.intensity}
+              value={intensityOf(grade)}
+              min={0}
+              max={1}
+              step={0.01}
+              onChange={(v) => patch("grade", { intensities: { ...grade.intensities, [grade.preset]: v } })}
+              fmt={(v) => v.toFixed(2)}
+            />
+          </div>
+        </Section>
+
+        {/* Background & effect — last section: the most advanced one. */}
         <Section
           title={t.scene.background}
           action={
@@ -352,26 +296,19 @@ export const ScenePanel = memo(function ScenePanel({
           <ColorRow label={t.scene.color} value={background.color} onChange={(hex) => patch("background", { color: hex })} />
           <div className="mt-2.5 flex min-w-0 items-center justify-between gap-2">
             <span className="shrink-0 text-xs">{t.scene.effects}</span>
-            <button
-              onClick={onOpenEffects}
-              className={cn(
-                "min-w-0 cursor-pointer truncate text-xs underline decoration-current/40 underline-offset-2 transition-colors hover:decoration-current",
-                effectName ? "text-blue-400" : "text-muted-foreground/50",
-              )}
-            >
-              {effectName ?? t.scene.noEffect}
-            </button>
+            <QuickPick
+              value={effectName}
+              items={effectItems}
+              onPick={onPickEffect}
+              onBrowse={onOpenEffects}
+              placeholder={t.scene.noEffect}
+            />
           </div>
         </Section>
 
-        {/* Undo/redo is keyboard-only (⌘/Ctrl+Z, ⇧⌘Z via useHistory) — buttons
-            added visual noise for a shortcut people reach for by habit anyway. */}
+        {/* Undo/redo is keyboard-only (⌘/Ctrl+Z, ⇧⌘Z via useHistory) */}
         <div className="-mx-4 mt-4 flex items-center gap-1 border-t border-white/10 px-4 pt-2">
-          {/* Reset restores the CURATED first-open look — the "default" users
-              actually met — not the engine's neutral gray, which only developers
-              have seen (it stays exported in scene-settings for a future
-              "Neutral" preset). Lives in page.tsx (onReset) because it spans
-              panel-external state (the background effect). */}
+          {/* Reset restores the CURATED first-open look — the "default" users actually met */}
           <Button
             variant="ghost"
             size="sm"

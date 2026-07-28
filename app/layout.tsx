@@ -32,13 +32,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // Start the demo scene's heavy assets downloading at HTML parse instead of
-  // after the JS bundle boots and the engine initializes — the .pmx alone is
-  // ~2.5 MB and gates everything else (textures resolve from inside it).
-  // react-dom's preload() emits deduped <link rel="preload"> tags in <head>
-  // (JSX <link> rendered in the tree came out duplicated). crossOrigin
-  // "anonymous" matches the engine's plain fetch() — a mismatched mode would
-  // double-download.
+  // Start the demo scene's heavy assets downloading at HTML parse instead of after the JS
   for (const entry of DEFAULT_SCENE.assets.models) {
     const pmx = modelPmxUrl(entry.model);
     if (pmx) preload(encodeURI(pmx), { as: "fetch", crossOrigin: "anonymous" });
@@ -51,12 +45,10 @@ export default function RootLayout({
       className={`dark ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col text-foreground">
-        {/* A small delay lets hover-revealed triggers finish laying out before the
-            tooltip opens — avoids the first-open flash at the top-left corner. */}
+        {/* A small delay lets hover-revealed triggers finish laying out before the tooltip opens */}
         <NoNativeContextMenu />
         <NoStickyFocus />
-        {/* I18nProvider is client-side; it keeps <html lang> in sync post-mount.
-            SSR renders "en" to match the lang attribute above (no hydration flash). */}
+        {/* I18nProvider is client-side; it keeps <html lang> in sync post-mount. */}
         <I18nProvider>
           <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
         </I18nProvider>

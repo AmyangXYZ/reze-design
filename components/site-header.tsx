@@ -1,8 +1,6 @@
 "use client"
 
-// Solid top header for the content pages (gallery / library) — nextjs.org-style:
-// brand at the left, nav links, GitHub + account at the right. The immersive
-// editor does NOT use this; it has its own floating brand pill (editor-chrome).
+// Solid top header for the content pages (gallery / library) — nextjs.org-style
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"

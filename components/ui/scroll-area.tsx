@@ -1,11 +1,6 @@
 "use client"
 
-// Native scroll container with the scrollbar hidden — the app's panels scroll
-// "bare" (wheel / trackpad / touch), exactly like the materials tree's
-// no-scrollbar div. This replaced Radix's ScrollArea: its whole purpose is
-// drawing a custom scrollbar, which this design deliberately doesn't show —
-// and its viewport disables native scrolling unless its scrollbar is mounted,
-// which made "hide the scrollbar" needlessly fragile.
+// Native scroll container with the scrollbar hidden
 
 import * as React from "react"
 

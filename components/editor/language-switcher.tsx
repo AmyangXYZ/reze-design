@@ -1,9 +1,6 @@
 "use client"
 
-// Language button for the left dock's icon rail — sits right above the GitHub
-// button and matches its sizing. Clicking opens a side popover listing the
-// supported locales (each in its own script); the active one is checked. Reads
-// and sets the locale via the i18n context (persisted there).
+// Language button for the left dock's icon rail
 
 import { useState } from "react"
 import { Check, Languages } from "lucide-react"
@@ -14,8 +11,7 @@ import { cn } from "@/lib/utils"
 
 export function LanguageSwitcher() {
   const { locale, setLocale, t } = useI18n()
-  // Controlled so picking a locale CLOSES the menu — the uncontrolled popover
-  // stayed open (a locale pick isn't outside-dismissal, Radix keeps it up).
+  // Controlled so picking a locale CLOSES the menu
   const [open, setOpen] = useState(false)
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -36,9 +32,7 @@ export function LanguageSwitcher() {
         side="right"
         align="end"
         sideOffset={8}
-        // Closing returns focus to the trigger by default, and focus opens the
-        // TOOLTIP — so picking a locale popped "Language" right after the menu
-        // closed. Keep focus where it is instead.
+        // Closing returns focus to the trigger by default, and focus opens the TOOLTIP
         onCloseAutoFocus={(e) => e.preventDefault()}
         className="w-36 rounded-xl border-white/10 bg-zinc-950/90 p-1 shadow-float backdrop-blur-xs"
       >

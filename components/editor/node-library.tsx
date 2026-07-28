@@ -1,18 +1,10 @@
 "use client"
 
-// Shader-graph library — the shared library shell (category rail · thumbnail
-// grid · slim inspector), same language as the Backgrounds library. Cards carry
-// real graph minimaps; the inspector's big preview doubles as the fork-&-edit
-// button (hover → Edit graph), with Apply pinned at the bottom. A look always
-// styles the target material's whole GROUP (the styling unit); per-material
-// splits live in group management. Also mounts at /library later.
-//
-// Mobile rules baked in (the old table layout's lesson): dvh height, scrolling
-// inspector, shrink-0 pinned actions, rail hidden on narrow screens.
+// Shader-graph library — the shared library shell (category rail · thumbnail grid · slim
 
 import { useMemo, useState } from "react"
 import { DEFAULT_GRAPH, type ShaderGraph } from "reze-engine"
-import { Plus, Search, SquarePen, X } from "lucide-react"
+import { Plus, Search, SquarePen, Workflow, X } from "lucide-react"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -20,6 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { GraphMinimap } from "@/components/editor/graph-minimap"
 import { LIBRARY_PACKS } from "@/lib/node-library"
 import { SLOT_LABELS } from "@/lib/materials"
+import { useZOrder } from "@/hooks/use-z-order"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
@@ -46,8 +39,7 @@ type LibraryProps = {
   targetLabel: string | null
   /** Whether a target group exists yet for the material. */
   canApply: boolean
-  /** How many materials the target's group holds (shown as info — the whole
-   *  group shares one shader graph). */
+  /** How many materials the target's group holds (shown as info */
   affects: number
   /** The group's currently-applied shader graph (pre-selected + tagged "current"). */
   currentGraphName: string | null
@@ -58,8 +50,6 @@ type LibraryProps = {
 export function NodeLibrary(props: LibraryProps) {
   return (
     // Non-modal + no backdrop so it coexists with the (higher-z) floating editor
-    // as an independent panel — open a look's editor without the library closing
-    // or blocking. Content mounts fresh per open: browsing state seeds itself.
     <Dialog open={props.open} onOpenChange={props.onOpenChange} modal={false}>
       {props.open && <LibraryContent {...props} />}
     </Dialog>
@@ -68,6 +58,8 @@ export function NodeLibrary(props: LibraryProps) {
 
 function LibraryContent({ targetLabel, canApply, affects, currentGraphName, onApply }: LibraryProps) {
   const t = useT()
+  // Desktop-style stacking: clicking a library raises it over any editor.
+  const { z, onPointerDownCapture } = useZOrder()
   const [query, setQuery] = useState("")
   const [category, setCategory] = useState<string | null>(null)
   const isCurrent = (r: Row) => r.name === currentGraphName || r.graph.name === currentGraphName
@@ -93,14 +85,18 @@ function LibraryContent({ targetLabel, canApply, affects, currentGraphName, onAp
       showCloseButton={false}
       overlay={false}
       onInteractOutside={(e) => e.preventDefault()}
-      // Don't return focus to the opener on close — it drew a stuck-looking
-      // focus ring on the Library pill (see globals.css focus-visible rule).
+      // Don't return focus to the opener on close
       onCloseAutoFocus={(e) => e.preventDefault()}
       // sm:max-w repeat is load-bearing (DialogContent base carries sm:max-w-lg).
-      className="z-40 flex h-[82dvh] max-h-[82dvh] w-[92vw] max-w-5xl flex-col gap-0 overflow-hidden border-white/10 bg-zinc-950/95 p-0 sm:max-w-5xl"
+      style={{ zIndex: z }}
+        onPointerDownCapture={onPointerDownCapture}
+        className="flex h-[82dvh] max-h-[82dvh] w-[92vw] max-w-5xl flex-col gap-0 overflow-hidden border-white/10 bg-zinc-950/95 p-0 sm:max-w-5xl data-[state=closed]:animate-none data-[state=closed]:fade-out-100 data-[state=closed]:zoom-out-100"
     >
       <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-white/10 px-4 py-2 text-left">
-        <DialogTitle className="shrink-0 text-sm font-medium">{t.library.title}</DialogTitle>
+        <DialogTitle className="flex shrink-0 items-center gap-2 text-sm font-medium">
+          <Workflow className="size-4 text-blue-400" />
+          {t.library.title}
+        </DialogTitle>
         <div className="relative ml-auto w-64 max-w-[45%]">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -153,15 +149,14 @@ function LibraryContent({ targetLabel, canApply, affects, currentGraphName, onAp
         {/* ── Minimap grid ── */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <ScrollArea className="min-h-0 flex-1">
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] content-start gap-3 p-3">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(8rem,1fr))] content-start gap-3 p-3">
               {rows.map((r) => {
                 const sel = r.id === selectedId
                 return (
                   <button
                     key={r.id}
                     onClick={() => setSelectedId(r.id)}
-                    // Double-click forks straight into the graph editor (same as
-                    // the inspector preview's hover affordance, one step sooner).
+                    // Double-click forks straight into the graph editor (same as the inspector preview's hover
                     onDoubleClick={() => canApply && onApply(r.graph, r.name, true)}
                     className={cn(
                       "overflow-hidden rounded-md border text-left transition-colors",
@@ -193,12 +188,11 @@ function LibraryContent({ targetLabel, canApply, affects, currentGraphName, onAp
         </div>
 
         {/* ── Inspector: preview (= fork-&-edit) · meta · Apply pinned ── */}
-        <div className="flex w-[15.5rem] shrink-0 flex-col overflow-y-auto border-l border-white/10 sm:w-[16.5rem]">
+        <div className="flex w-[17rem] shrink-0 flex-col overflow-y-auto border-l border-white/10 sm:w-[20rem]">
           {selected ? (
             <>
               <div className="p-3 pb-0">
-                {/* The preview IS the edit affordance: hover → "Edit graph", click
-                    forks this look onto the group and opens the editor. */}
+                {/* The preview IS the edit affordance */}
                 <button
                   type="button"
                   disabled={!canApply}
