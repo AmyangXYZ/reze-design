@@ -147,11 +147,9 @@ export const ScenePanel = memo(function ScenePanel({
         </Section>
 
         <Section title={t.scene.bloom} action={<ColorField value={bloom.color} onChange={(hex) => patch("bloom", { color: hex })} />}>
-          <div className="flex items-center justify-between">
-            <span className="text-xs">{t.scene.enabled}</span>
-            <Switch checked={bloom.enabled} onCheckedChange={(v) => patch("bloom", { enabled: v })} className="scale-75" />
-          </div>
-          <div className={cn("mt-2.5", !bloom.enabled && "pointer-events-none opacity-40")}>
+          {/* No on/off switch — intensity 0 IS off (page.tsx maps it to enabled:false,
+              skipping the bloom passes entirely). One less row in a long panel. */}
+          <div>
             <SliderRow
               label={t.scene.threshold}
               value={bloom.threshold}
@@ -159,15 +157,6 @@ export const ScenePanel = memo(function ScenePanel({
               max={2}
               step={0.01}
               onChange={(v) => patch("bloom", { threshold: v })}
-              fmt={(v) => v.toFixed(2)}
-            />
-            <SliderRow
-              label={t.scene.knee}
-              value={bloom.knee}
-              min={0}
-              max={1}
-              step={0.01}
-              onChange={(v) => patch("bloom", { knee: v })}
               fmt={(v) => v.toFixed(2)}
             />
             <SliderRow
@@ -194,6 +183,15 @@ export const ScenePanel = memo(function ScenePanel({
         {/* Ground: its own domain — color, opacity, shadow, grid; presets later. */}
         <Section title={t.scene.ground}>
           <ColorRow label={t.scene.color} value={ground.color} onChange={(hex) => patch("ground", { color: hex })} />
+          <SliderRow
+            label={t.scene.size}
+            value={ground.size}
+            min={40}
+            max={400}
+            step={10}
+            onChange={(v) => patch("ground", { size: v })}
+            fmt={(v) => v.toFixed(0)}
+          />
           <SliderRow
             label={t.scene.opacity}
             value={ground.opacity}

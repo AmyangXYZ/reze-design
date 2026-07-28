@@ -90,6 +90,7 @@ const en = {
   scene: {
     // Display name is the full "World light"; the engine key stays abbreviated `world`.
     color: "Color",
+    size: "Size",
     opacity: "Opacity",
     shadow: "Shadow",
     world: "World light",
@@ -384,6 +385,7 @@ const zh: Dictionary = {
   },
   scene: {
     color: "颜色",
+    size: "大小",
     opacity: "不透明度",
     shadow: "阴影",
     world: "世界光",
@@ -670,6 +672,7 @@ const ja: Dictionary = {
   },
   scene: {
     color: "カラー",
+    size: "サイズ",
     opacity: "不透明度",
     shadow: "影",
     world: "ワールドライト",

@@ -176,7 +176,12 @@ const STATE_KEY = "reze-design.sceneState.2"
 
 export function saveSceneState(state: SceneState) {
   try {
-    window.localStorage.setItem(STATE_KEY, JSON.stringify(state))
+    // Stamped with the format version so a future default/semantic change can
+    // MIGRATE the blob surgically instead of bumping STATE_KEY (which wipes the
+    // user's whole working scene — their groups and effects, not just our
+    // defaults). New FIELDS never need either: hydrateScene's per-section merge
+    // fills them from the current defaults automatically.
+    window.localStorage.setItem(STATE_KEY, JSON.stringify({ version: SCENE_FORMAT_VERSION, ...state }))
   } catch {
     // storage full/blocked — edits just won't persist
   }

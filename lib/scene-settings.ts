@@ -34,6 +34,9 @@ export type SceneSettings = {
   background: { color: string }
   ground: {
     color: string
+    /** Side length of the (square) ground plane in world units — the model is
+     *  ~18 units tall. Drives the plane extent AND the radial fade with it. */
+    size: number
     /** Whole-ground opacity 0–1 (1 = solid; shadow persists — shadow catcher). */
     opacity: number
     /** Ground receives the model's shadow. */
@@ -91,6 +94,7 @@ export const ENGINE_DEFAULT_SCENE_SETTINGS: SceneSettings = {
   background: { color: "#0d1116" },
   ground: {
     color: "#494d57",
+    size: 160,
     opacity: 1,
     shadow: true,
     grid: "#ededed",

@@ -381,55 +381,58 @@ fn sdSegment(p: vec2f, a: vec2f, b: vec2f) -> f32 {
 }
 
 // "REZE DESIGN" as 40 pre-baked segments (glyph boxes 0..0.9 × 0..1,
-// advance 1.2, word gap 0.7 — total width 12.4).
+// advance 1.2, word gap 0.7 — total width 12.4). UNROLLED, no array: a
+// function-scope var array with dynamic indexing spills to local memory on
+// most drivers — it made this the heaviest effect in the library. Straight-line
+// min() chains stay in registers.
 fn sdText(p: vec2f) -> f32 {
-  var segs = array<vec4f, 40>(
-    vec4f(0.0, 0, 0.0, 1),
-    vec4f(0.0, 1, 0.8, 1),
-    vec4f(0.8, 1, 0.8, 0.5),
-    vec4f(0.8, 0.5, 0.0, 0.5),
-    vec4f(0.4, 0.5, 0.9, 0),
-    vec4f(1.2, 0, 1.2, 1),
-    vec4f(1.2, 1, 2.1, 1),
-    vec4f(1.2, 0.5, 1.9, 0.5),
-    vec4f(1.2, 0, 2.1, 0),
-    vec4f(2.4, 1, 3.3, 1),
-    vec4f(3.3, 1, 2.4, 0),
-    vec4f(2.4, 0, 3.3, 0),
-    vec4f(3.6, 0, 3.6, 1),
-    vec4f(3.6, 1, 4.5, 1),
-    vec4f(3.6, 0.5, 4.3, 0.5),
-    vec4f(3.6, 0, 4.5, 0),
-    vec4f(5.5, 0, 5.5, 1),
-    vec4f(5.5, 1, 6.15, 1),
-    vec4f(6.15, 1, 6.4, 0.75),
-    vec4f(6.4, 0.75, 6.4, 0.25),
-    vec4f(6.4, 0.25, 6.15, 0),
-    vec4f(6.15, 0, 5.5, 0),
-    vec4f(6.7, 0, 6.7, 1),
-    vec4f(6.7, 1, 7.6, 1),
-    vec4f(6.7, 0.5, 7.4, 0.5),
-    vec4f(6.7, 0, 7.6, 0),
-    vec4f(8.8, 1, 7.9, 1),
-    vec4f(7.9, 1, 7.9, 0.5),
-    vec4f(7.9, 0.5, 8.8, 0.5),
-    vec4f(8.8, 0.5, 8.8, 0),
-    vec4f(8.8, 0, 7.9, 0),
-    vec4f(9.55, 0, 9.55, 1),
-    vec4f(11.2, 1, 10.3, 1),
-    vec4f(10.3, 1, 10.3, 0),
-    vec4f(10.3, 0, 11.2, 0),
-    vec4f(11.2, 0, 11.2, 0.45),
-    vec4f(11.2, 0.45, 10.8, 0.45),
-    vec4f(11.5, 0, 11.5, 1),
-    vec4f(11.5, 1, 12.4, 0),
-    vec4f(12.4, 0, 12.4, 1),
-  );
+  // Coarse reject: pixels far from the sign's bounding box skip the letters
+  // entirely (the halo is < 1% out there). boxD lower-bounds the true distance,
+  // so d stays continuous for the fwidth AA in background().
+  let toBox = vec2f(max(abs(p.x - 6.20) - 6.20, 0.0), max(abs(p.y - 0.5) - 0.5, 0.0));
+  let boxD = length(toBox);
+  if (boxD > 1.0) { return boxD; }
   var d = 1e5;
-  for (var i = 0; i < 40; i++) {
-    let sg = segs[i];
-    d = min(d, sdSegment(p, sg.xy, sg.zw));
-  }
+  d = min(d, sdSegment(p, vec2f(0.0, 0), vec2f(0.0, 1)));
+  d = min(d, sdSegment(p, vec2f(0.0, 1), vec2f(0.8, 1)));
+  d = min(d, sdSegment(p, vec2f(0.8, 1), vec2f(0.8, 0.5)));
+  d = min(d, sdSegment(p, vec2f(0.8, 0.5), vec2f(0.0, 0.5)));
+  d = min(d, sdSegment(p, vec2f(0.4, 0.5), vec2f(0.9, 0)));
+  d = min(d, sdSegment(p, vec2f(1.2, 0), vec2f(1.2, 1)));
+  d = min(d, sdSegment(p, vec2f(1.2, 1), vec2f(2.1, 1)));
+  d = min(d, sdSegment(p, vec2f(1.2, 0.5), vec2f(1.9, 0.5)));
+  d = min(d, sdSegment(p, vec2f(1.2, 0), vec2f(2.1, 0)));
+  d = min(d, sdSegment(p, vec2f(2.4, 1), vec2f(3.3, 1)));
+  d = min(d, sdSegment(p, vec2f(3.3, 1), vec2f(2.4, 0)));
+  d = min(d, sdSegment(p, vec2f(2.4, 0), vec2f(3.3, 0)));
+  d = min(d, sdSegment(p, vec2f(3.6, 0), vec2f(3.6, 1)));
+  d = min(d, sdSegment(p, vec2f(3.6, 1), vec2f(4.5, 1)));
+  d = min(d, sdSegment(p, vec2f(3.6, 0.5), vec2f(4.3, 0.5)));
+  d = min(d, sdSegment(p, vec2f(3.6, 0), vec2f(4.5, 0)));
+  d = min(d, sdSegment(p, vec2f(5.5, 0), vec2f(5.5, 1)));
+  d = min(d, sdSegment(p, vec2f(5.5, 1), vec2f(6.15, 1)));
+  d = min(d, sdSegment(p, vec2f(6.15, 1), vec2f(6.4, 0.75)));
+  d = min(d, sdSegment(p, vec2f(6.4, 0.75), vec2f(6.4, 0.25)));
+  d = min(d, sdSegment(p, vec2f(6.4, 0.25), vec2f(6.15, 0)));
+  d = min(d, sdSegment(p, vec2f(6.15, 0), vec2f(5.5, 0)));
+  d = min(d, sdSegment(p, vec2f(6.7, 0), vec2f(6.7, 1)));
+  d = min(d, sdSegment(p, vec2f(6.7, 1), vec2f(7.6, 1)));
+  d = min(d, sdSegment(p, vec2f(6.7, 0.5), vec2f(7.4, 0.5)));
+  d = min(d, sdSegment(p, vec2f(6.7, 0), vec2f(7.6, 0)));
+  d = min(d, sdSegment(p, vec2f(8.8, 1), vec2f(7.9, 1)));
+  d = min(d, sdSegment(p, vec2f(7.9, 1), vec2f(7.9, 0.5)));
+  d = min(d, sdSegment(p, vec2f(7.9, 0.5), vec2f(8.8, 0.5)));
+  d = min(d, sdSegment(p, vec2f(8.8, 0.5), vec2f(8.8, 0)));
+  d = min(d, sdSegment(p, vec2f(8.8, 0), vec2f(7.9, 0)));
+  d = min(d, sdSegment(p, vec2f(9.55, 0), vec2f(9.55, 1)));
+  d = min(d, sdSegment(p, vec2f(11.2, 1), vec2f(10.3, 1)));
+  d = min(d, sdSegment(p, vec2f(10.3, 1), vec2f(10.3, 0)));
+  d = min(d, sdSegment(p, vec2f(10.3, 0), vec2f(11.2, 0)));
+  d = min(d, sdSegment(p, vec2f(11.2, 0), vec2f(11.2, 0.45)));
+  d = min(d, sdSegment(p, vec2f(11.2, 0.45), vec2f(10.8, 0.45)));
+  d = min(d, sdSegment(p, vec2f(11.5, 0), vec2f(11.5, 1)));
+  d = min(d, sdSegment(p, vec2f(11.5, 1), vec2f(12.4, 0)));
+  d = min(d, sdSegment(p, vec2f(12.4, 0), vec2f(12.4, 1)));
   return d;
 }
 

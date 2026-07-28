@@ -716,6 +716,11 @@ export default function Home() {
       if (prev.startsWith("blob:")) URL.revokeObjectURL(prev)
       return URL.createObjectURL(f)
     })
+    // Removing audio routes audioSource to "none" — which also MUTES the <audio>
+    // element. A fresh upload must route back, or the new track plays silently
+    // ("deleted audio, uploaded new, can't hear it"). Only "none" flips: an
+    // explicit non-music routing the user chose is kept.
+    setAudioSource((s) => (s === "none" ? "music" : s))
   }
   // The bundled track's METADATA can finish loading before hydration attaches
   // the onLoadedMetadata handler (the SSR'd <audio src> starts fetching
@@ -907,7 +912,10 @@ export default function Home() {
     }
     if (!prev || prev.settings.bloom !== bloom) {
       engine.setBloomOptions({
-        enabled: bloom.enabled,
+        // Intensity 0 = off — the panel has no switch, so the slider is the ONLY
+        // authority (a stored enabled:false must not lock bloom off forever).
+        // Zero also skips the pyramid passes entirely.
+        enabled: bloom.intensity > 0,
         threshold: bloom.threshold,
         knee: bloom.knee,
         radius: bloom.radius,
@@ -924,6 +932,12 @@ export default function Home() {
         opacity: greenScreen ? 0 : ground.opacity,
         shadowStrength: ground.shadow ? 1 : 0,
         gridLineOpacity: greenScreen || !ground.gridEnabled ? 0 : 0.4,
+        // Square plane; the radial fade scales with it (engine defaults are
+        // 10/80 at size 160) so a small stage still fades at its own edge.
+        width: ground.size,
+        height: ground.size,
+        fadeStart: ground.size * (10 / 160),
+        fadeEnd: ground.size * (80 / 160),
       }
       if (!groundRaf.current) {
         groundRaf.current = requestAnimationFrame(() => {
