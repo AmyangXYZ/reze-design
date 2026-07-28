@@ -33,14 +33,18 @@ import { useT } from "@/lib/i18n"
 // never freeform W×H fields). The caption under the Render button states the
 // exact resulting file.
 const VIDEO_FPS = 60
-type Aspect = "16:9" | "9:16" | "1:1" | "4:3"
-const ASPECTS: Aspect[] = ["16:9", "9:16", "1:1", "4:3"]
+type Aspect = "16:9" | "9:16" | "2.39:1" | "1:1" | "4:3"
+const ASPECTS: Aspect[] = ["16:9", "9:16", "2.39:1", "1:1", "4:3"]
 type Quality = "720p" | "1080p" | "1440p" | "4k"
 const QUALITIES: Quality[] = ["720p", "1080p", "1440p", "4k"]
 const QUALITY_LABELS: Record<Quality, string> = { "720p": "720p", "1080p": "1080p", "1440p": "1440p", "4k": "4K" }
 const DIMS: Record<Aspect, Record<Quality, [number, number]>> = {
   "16:9": { "720p": [1280, 720], "1080p": [1920, 1080], "1440p": [2560, 1440], "4k": [3840, 2160] },
   "9:16": { "720p": [720, 1280], "1080p": [1080, 1920], "1440p": [1440, 2560], "4k": [2160, 3840] },
+  // Cinemascope (anamorphic ~2.39:1) — the movie-theater frame. Same widths as
+  // the 16:9 tiers; heights are the standard even-rounded scope values
+  // (YouTube/DCI convention: 1920×804, 3840×1608).
+  "2.39:1": { "720p": [1280, 536], "1080p": [1920, 804], "1440p": [2560, 1072], "4k": [3840, 1608] },
   "1:1": { "720p": [720, 720], "1080p": [1080, 1080], "1440p": [1440, 1440], "4k": [2160, 2160] },
   "4:3": { "720p": [960, 720], "1080p": [1440, 1080], "1440p": [1920, 1440], "4k": [2880, 2160] },
 }
@@ -136,7 +140,9 @@ export const RenderPanel = memo(function RenderPanel({
   onFramePreviewChange: (preview: FramePreview | null) => void
 }) {
   const t = useT()
-  const [aspect, setAspect] = useState<Aspect>("16:9")
+  // Cinemascope by default — the whole reze-* series is named for the
+  // Chainsaw Man: Reze movie, so exports open on the movie-theater frame.
+  const [aspect, setAspect] = useState<Aspect>("2.39:1")
   const [quality, setQuality] = useState<Quality>("4k")
   // Export segment, "m:ss" text; blank = the whole clip (our default — the range
   // is an escape hatch for platform-length cuts, not a required decision).
@@ -174,6 +180,40 @@ export const RenderPanel = memo(function RenderPanel({
     const engine = engineRef.current
     const canvas = canvasRef.current
     if (!engine || !canvas || !animName) return
+    // reze-design-<scene>-<resolution>-<date>.mp4 — scene name sanitized for
+    // filesystems (illegal chars dropped, spaces → dashes; CJK passes through).
+    const scene =
+      sceneName
+        .toLowerCase()
+        .replace(/[\\/:*?"<>|]+/g, "")
+        .trim()
+        .replace(/\s+/g, "-") || "scene"
+    const filename = `reze-design-${scene}-${width}x${height}-${new Date().toISOString().slice(0, 10)}.mp4`
+
+    // File System Access path (Chromium desktop): ask WHERE first — the click is
+    // the user gesture the picker needs — then STREAM the mp4 there in chunks,
+    // so a 4K export never builds the whole file in memory. Elsewhere (Safari,
+    // Firefox, mobile) fall back to the in-memory blob + download link.
+    let fileStream: FileSystemWritableFileStream | undefined
+    if ("showSaveFilePicker" in window) {
+      try {
+        const handle = await (
+          window as unknown as {
+            showSaveFilePicker: (o: object) => Promise<{ createWritable(): Promise<FileSystemWritableFileStream> }>
+          }
+        ).showSaveFilePicker({
+          suggestedName: filename,
+          types: [{ description: "MP4 video", accept: { "video/mp4": [".mp4"] } }],
+        })
+        fileStream = await handle.createWritable()
+      } catch (e) {
+        // Canceling the picker cancels the export (nothing rendered yet).
+        if (e instanceof DOMException && e.name === "AbortError") return
+        // Picker unavailable/failed for another reason — fall back to memory.
+        fileStream = undefined
+      }
+    }
+
     setExporting(true)
     onExportingChange(true)
     setResult(null)
@@ -192,25 +232,26 @@ export const RenderPanel = memo(function RenderPanel({
         backdrop,
         backgroundColor,
         musicUrl,
+        fileStream,
         onProgress: setProgress,
         signal: ac.signal,
       })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      // reze-design-<scene>-<resolution>-<date>.mp4 — scene name sanitized for
-      // filesystems (illegal chars dropped, spaces → dashes; CJK passes through).
-      const scene =
-        sceneName
-          .toLowerCase()
-          .replace(/[\\/:*?"<>|]+/g, "")
-          .trim()
-          .replace(/\s+/g, "-") || "scene"
-      a.download = `reze-design-${scene}-${width}x${height}-${new Date().toISOString().slice(0, 10)}.mp4`
-      a.click()
-      setTimeout(() => URL.revokeObjectURL(url), 10_000)
+      if (fileStream) {
+        // Committing the writable materializes the picked file on disk.
+        await fileStream.close().catch(() => {})
+      } else if (blob) {
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = filename
+        a.click()
+        setTimeout(() => URL.revokeObjectURL(url), 10_000)
+      }
       setResult({ ok: true })
     } catch (e) {
+      // Discard the partial file — abort() drops everything written since
+      // createWritable, so a canceled export leaves no half-written mp4.
+      await fileStream?.abort().catch(() => {})
       // A user cancel is not an error state — just return to idle.
       if (!(e instanceof DOMException && e.name === "AbortError"))
         setResult({ ok: false, message: e instanceof Error ? e.message : String(e) })

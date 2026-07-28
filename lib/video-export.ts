@@ -8,6 +8,7 @@
 import {
   AudioBufferSource,
   BufferTarget,
+  StreamTarget,
   CanvasSource,
   getFirstEncodableAudioCodec,
   getFirstEncodableVideoCodec,
@@ -123,9 +124,14 @@ export async function exportVideo(opts: {
   backgroundColor: string
   /** Object/blob URL of the music track (used when audioSource === "music"). */
   musicUrl: string | null
+  /** File System Access API writable: the mp4 STREAMS to disk in chunks instead
+   *  of accumulating in memory — a 4K multi-minute export never holds more than
+   *  ~16 MiB buffered. Caller closes (or aborts) the stream; resolves null.
+   *  Without it, falls back to the in-memory Blob (mobile / non-Chromium). */
+  fileStream?: FileSystemWritableFileStream
   onProgress?: (p: ExportProgress) => void
   signal?: AbortSignal
-}): Promise<Blob> {
+}): Promise<Blob | null> {
   const { engine, canvas, modelName, duration, settings, backdrop, backgroundColor, musicUrl } = opts
   const startTime = Math.max(0, opts.startTime ?? 0)
   const bgColor = backgroundColor
@@ -149,7 +155,12 @@ export async function exportVideo(opts: {
   ctx.imageSmoothingQuality = "high"
   const watermarkFont = brandFontFamily()
 
-  const output = new Output({ format: new Mp4OutputFormat(), target: new BufferTarget() })
+  const output = new Output({
+    format: new Mp4OutputFormat(),
+    // StreamTarget is FileSystemWritableFileStream-compatible; chunked batches
+    // writes (~16 MiB) and its backpressure throttles the encoders.
+    target: opts.fileStream ? new StreamTarget(opts.fileStream, { chunked: true }) : new BufferTarget(),
+  })
   const videoSource = new CanvasSource(composite, {
     codec: videoCodec,
     bitrate: videoBitrate(width, height, fps),
@@ -237,6 +248,7 @@ export async function exportVideo(opts: {
     videoSource.close()
 
     await output.finalize()
+    if (opts.fileStream) return null // streamed to disk — nothing to hand back
     const buffer = (output.target as BufferTarget).buffer
     if (!buffer) throw new Error("Muxer produced no output")
     return new Blob([buffer], { type: "video/mp4" })
