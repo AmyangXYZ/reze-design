@@ -53,6 +53,7 @@ export const DEFAULT_SCENE: Scene = {
       sun: { color: "#ffffff", strength: 2.0, azimuth: 205, elevation: 21 },
       bloom: { enabled: true, threshold: 0.5, knee: 0.5, radius: 4.0, intensity: 0.05, color: "#ffc9c9" },
       background: { color: "#4b004f" },
+      grade: { preset: "neutral", intensity: 1, contrast: 1, saturation: 1 },
       ground: { color: "#c800de", size: 160, opacity: 0.42, shadow: true, grid: "#fafaf9", gridEnabled: true },
     },
     // The demo ships with the starfield on — the first-open scene shows the

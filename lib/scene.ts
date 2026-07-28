@@ -252,6 +252,7 @@ export function hydrateScene(base: Scene): Scene {
         sun: { ...base.state.settings.sun, ...settingsBase.sun },
         bloom: { ...base.state.settings.bloom, ...settingsBase.bloom },
         background: { ...base.state.settings.background, ...settingsBase.background },
+        grade: { ...base.state.settings.grade, ...settingsBase.grade },
         ground: { ...base.state.settings.ground, ...settingsBase.ground },
       },
       groups: groupsUsable ? usableGroups : base.state.groups,

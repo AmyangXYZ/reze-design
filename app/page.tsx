@@ -41,6 +41,7 @@ import { MaterialSphereIcon } from "@/components/scene/slot-icons"
 import { DEFAULT_SCENE } from "@/lib/default-scene"
 import { SLOT_GRAPHS } from "@/lib/materials"
 import type { AppliedBackgroundEffect } from "@/lib/background-effects"
+import { resolveGrade } from "@/lib/grade"
 import { hydrateScene, saveSceneState } from "@/lib/scene"
 import {
   azElToDirection,
@@ -953,7 +954,7 @@ export default function Home() {
     if (!ready) return
     const engine = engineRef.current
     if (!engine) return
-    const { world, sun, bloom, background, ground } = sceneSettings
+    const { world, sun, bloom, background, ground, grade } = sceneSettings
     const prev = prevPushed.current
     const modeChanged = !prev || prev.backdrop !== !!backdrop || prev.greenScreen !== greenScreen
     // The engine paints the background (post-tonemap, exact CSS-hex match) — except
@@ -985,6 +986,19 @@ export default function Home() {
         radius: bloom.radius,
         intensity: bloom.intensity,
         color: hexToLinearVec3(bloom.color),
+      })
+    }
+    // Uniforms-only in the engine (no pipeline rebuild), so a drag is cheap —
+    // no rAF coalescing needed, unlike addGround. Display-space sRGB: the grade
+    // runs after the view transform, so the swatch IS the value.
+    if (!prev || prev.settings.grade !== grade) {
+      const cdl = resolveGrade(grade)
+      engine.setColorGrading({
+        shadows: hexToSrgbVec3(cdl.shadows),
+        midtones: hexToSrgbVec3(cdl.midtones),
+        highlights: hexToSrgbVec3(cdl.highlights),
+        contrast: cdl.contrast,
+        saturation: cdl.saturation,
       })
     }
     // Green mode hides the ground SURFACE (it would occlude the key) but keeps the

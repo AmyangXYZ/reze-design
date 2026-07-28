@@ -11,7 +11,9 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ColorField } from "@/components/color-picker"
+import { GRADE_PRESETS, resolveGrade } from "@/lib/grade"
 import { useT } from "@/lib/i18n"
 import type { SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
@@ -36,7 +38,9 @@ export function SliderRow({
   // Single line: label · slider · value.
   return (
     <div className="mt-2.5 flex items-center gap-2 first:mt-0">
-      <span className="w-14 shrink-0 truncate text-xs">{label}</span>
+      {/* w-16 fits the longest label ("Saturation"); truncate stays as the
+          safety net for a future longer one or a wider translation. */}
+      <span className="w-16 shrink-0 truncate text-xs">{label}</span>
       <Slider
         className="flex-1 [&_[data-slot=slider-thumb]]:size-2.5 [&_[data-slot=slider-thumb]]:hover:ring-2 [&_[data-slot=slider-track]]:h-1"
         value={[value]}
@@ -102,7 +106,9 @@ export const ScenePanel = memo(function ScenePanel({
   onReset: () => void
 }) {
   const t = useT()
-  const { background, ground, world, sun, bloom } = settings
+  const { background, ground, world, sun, bloom, grade } = settings
+  // What the engine actually receives — the readout below shows it.
+  const cdl = resolveGrade(grade)
   const patch = <K extends keyof SceneSettings>(key: K, value: Partial<SceneSettings[K]>) =>
     onChange({ ...settings, [key]: { ...settings[key], ...value } })
 
@@ -183,6 +189,98 @@ export const ScenePanel = memo(function ScenePanel({
               fmt={(v) => v.toFixed(3)}
             />
           </div>
+        </Section>
+
+        {/* Grade: the LOOK layer — ASC CDL on the tonemapped scene (engine
+            setColorGrading). The three tonal controls are colors, not sliders,
+            because the craft control here is "which way do I push this tonal
+            range" — mid-gray is neutral and distance from it is the amount, so
+            there's no separate strength slider to keep in sync. The background
+            layer stays ungraded by design (see composite.ts). */}
+        <Section
+          title={t.scene.grade}
+          action={
+            /* The look lives here; "Neutral" is the first entry, so this is also
+               the reset. No "Custom" state to derive — the preset IS the stored
+               value now, not something reverse-engineered from nine numbers. */
+            <Select
+              /* Fall back if a saved scene names a preset we've since retired —
+                 resolveGrade already does the same, so the two agree. */
+              value={GRADE_PRESETS.some((p) => p.id === grade.preset) ? grade.preset : "neutral"}
+              onValueChange={(id) => patch("grade", { preset: id })}
+            >
+              <SelectTrigger className="-my-0.5">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {GRADE_PRESETS.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {t.scene.gradePresets[p.id as keyof typeof t.scene.gradePresets]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          }
+        >
+          {/* iOS Photos' shape: a look, then how much of it. Dimmed rather than
+              hidden on Neutral — hiding it would jump the panel's height. */}
+          <div className={cn(grade.preset === "neutral" && "pointer-events-none opacity-40")}>
+            <SliderRow
+              label={t.scene.intensity}
+              value={grade.intensity}
+              min={0}
+              max={1}
+              step={0.01}
+              onChange={(v) => patch("grade", { intensity: v })}
+              fmt={(v) => v.toFixed(2)}
+            />
+          </div>
+          {/* READ-ONLY resolution of preset × intensity into the engine's three
+              CDL range tints. Without it, switching presets changed the scene
+              while every number in the panel stayed put — no confirmation of
+              what a preset actually did. Dragging Intensity now visibly washes
+              these toward neutral grey. Not editable on purpose: per-range
+              editing is the wheels we removed. */}
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            {(
+              [
+                [t.scene.shadows, cdl.shadows],
+                [t.scene.midtones, cdl.midtones],
+                [t.scene.highlights, cdl.highlights],
+              ] as const
+            ).map(([label, hex]) => (
+              <div key={label} className="min-w-0 text-center">
+                <div className="mx-auto h-3.5 w-12 rounded-[3px] ring-1 ring-white/10" style={{ backgroundColor: hex }} />
+                {/* Value sits with the swatch it describes; the name reads last.
+                    Hex uses ColorField's treatment (font-mono, muted) so the two
+                    readouts share one vocabulary across the panel. */}
+                <div className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">{hex}</div>
+                <div className="truncate text-[10px] text-foreground">{label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Your adjustment ON TOP of the preset (1 = leave the preset alone),
+              the way Photos' Adjust panel composes over its Filters strip. Both
+              ranges are symmetric about 1, so the thumbs align when untouched. */}
+          <SliderRow
+            label={t.scene.contrast}
+            value={grade.contrast}
+            min={0.5}
+            max={1.5}
+            step={0.01}
+            onChange={(v) => patch("grade", { contrast: v })}
+            fmt={(v) => v.toFixed(2)}
+          />
+          <SliderRow
+            label={t.scene.saturation}
+            value={grade.saturation}
+            min={0}
+            max={2}
+            step={0.01}
+            onChange={(v) => patch("grade", { saturation: v })}
+            fmt={(v) => v.toFixed(2)}
+          />
         </Section>
 
         {/* Ground: its own domain — color, opacity, shadow, grid; presets later. */}

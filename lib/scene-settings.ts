@@ -18,6 +18,7 @@
 // sections, which matched neither the UI nor the merge.)
 
 import { DEFAULT_BLOOM_OPTIONS, Vec3 } from "reze-engine"
+import { DEFAULT_GRADE, type GradeSettings } from "@/lib/grade"
 
 export type SceneSettings = {
   world: { color: string; strength: number }
@@ -32,6 +33,9 @@ export type SceneSettings = {
     color: string
   }
   background: { color: string }
+  /** Post-tonemap color grade. Stored as INTENT (preset + strength + your two
+   *  adjustments); lib/grade.ts resolves it to the engine's ASC CDL inputs. */
+  grade: GradeSettings
   ground: {
     color: string
     /** Side length of the (square) ground plane in world units — the model is
@@ -92,6 +96,7 @@ const ENGINE_WORLD = { color: new Vec3(0.4014, 0.4944, 0.647), strength: 0.3 }
 const ENGINE_SUN_DIR = new Vec3(-0.0873, -0.3844, 0.919)
 export const ENGINE_DEFAULT_SCENE_SETTINGS: SceneSettings = {
   background: { color: "#0d1116" },
+  grade: DEFAULT_GRADE,
   ground: {
     color: "#494d57",
     size: 160,
