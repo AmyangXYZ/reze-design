@@ -97,7 +97,7 @@ function LibraryContent({ targetLabel, canApply, affects, currentGraphName, onAp
       // focus ring on the Library pill (see globals.css focus-visible rule).
       onCloseAutoFocus={(e) => e.preventDefault()}
       // sm:max-w repeat is load-bearing (DialogContent base carries sm:max-w-lg).
-      className="z-40 flex h-[74dvh] max-h-[74dvh] w-[88vw] max-w-4xl flex-col gap-0 overflow-hidden border-white/10 bg-zinc-950/95 p-0 sm:max-w-4xl"
+      className="z-40 flex h-[82dvh] max-h-[82dvh] w-[92vw] max-w-5xl flex-col gap-0 overflow-hidden border-white/10 bg-zinc-950/95 p-0 sm:max-w-5xl"
     >
       <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-white/10 px-4 py-2 text-left">
         <DialogTitle className="shrink-0 text-sm font-medium">{t.library.title}</DialogTitle>

@@ -39,10 +39,11 @@ export default function RootLayout({
   // (JSX <link> rendered in the tree came out duplicated). crossOrigin
   // "anonymous" matches the engine's plain fetch() — a mismatched mode would
   // double-download.
-  const pmx = modelPmxUrl(DEFAULT_SCENE.assets.model);
-  if (pmx) preload(encodeURI(pmx), { as: "fetch", crossOrigin: "anonymous" });
-  const anim = DEFAULT_SCENE.assets.animation;
-  if (anim) preload(encodeURI(anim.url), { as: "fetch", crossOrigin: "anonymous" });
+  for (const entry of DEFAULT_SCENE.assets.models) {
+    const pmx = modelPmxUrl(entry.model);
+    if (pmx) preload(encodeURI(pmx), { as: "fetch", crossOrigin: "anonymous" });
+    if (entry.animation) preload(encodeURI(entry.animation.url), { as: "fetch", crossOrigin: "anonymous" });
+  }
   return (
 
     <html

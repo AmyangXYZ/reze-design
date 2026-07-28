@@ -91,6 +91,7 @@ export const RenderPanel = memo(function RenderPanel({
   engineRef,
   canvasRef,
   modelName,
+  extraModelNames,
   sceneName,
   animName,
   animDuration,
@@ -109,7 +110,10 @@ export const RenderPanel = memo(function RenderPanel({
   active: boolean
   engineRef: RefObject<Engine | null>
   canvasRef: RefObject<HTMLCanvasElement | null>
+  /** Master animated model — its clip defines the export timeline. */
   modelName: string
+  /** Other animated models, driven in sync (multi-model scenes). */
+  extraModelNames: string[]
   /** The scene's display name — drives the exported filename. */
   sceneName: string
   animName: string | null
@@ -181,6 +185,7 @@ export const RenderPanel = memo(function RenderPanel({
         engine,
         canvas,
         modelName,
+        extraModelNames,
         startTime: segStart,
         duration: segDuration,
         settings: { width, height, fps: VIDEO_FPS, audioSource, watermark: greenScreen ? false : watermark, greenScreen },

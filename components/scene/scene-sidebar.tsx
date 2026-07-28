@@ -13,7 +13,6 @@ import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { ColorField } from "@/components/color-picker"
 import { useT } from "@/lib/i18n"
-import { DEFAULT_SCENE } from "@/lib/default-scene"
 import type { SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 
@@ -89,12 +88,18 @@ export const ScenePanel = memo(function ScenePanel({
   onChange,
   effectName,
   onOpenEffects,
+  onReset,
 }: {
   settings: SceneSettings
   onChange: (settings: SceneSettings) => void
   /** Applied background-effect name (null = none) — the row opens the library. */
   effectName: string | null
   onOpenEffects: () => void
+  /** Restore EVERYTHING this panel governs to the demo defaults — all settings
+   *  sections AND the background effect (owned by page state, so the panel
+   *  can't reset it through onChange alone — the original "reset didn't clear
+   *  the effect" bug). */
+  onReset: () => void
 }) {
   const t = useT()
   const { background, ground, world, sun, bloom } = settings
@@ -267,12 +272,13 @@ export const ScenePanel = memo(function ScenePanel({
           {/* Reset restores the CURATED first-open look — the "default" users
               actually met — not the engine's neutral gray, which only developers
               have seen (it stays exported in scene-settings for a future
-              "Neutral" preset). */}
+              "Neutral" preset). Lives in page.tsx (onReset) because it spans
+              panel-external state (the background effect). */}
           <Button
             variant="ghost"
             size="sm"
             className="h-7 flex-1 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-            onClick={() => onChange(DEFAULT_SCENE.state.settings)}
+            onClick={onReset}
           >
             <RotateCcw className="size-3" />
             {t.scene.resetDefaults}

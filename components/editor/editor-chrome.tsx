@@ -98,8 +98,10 @@ export function BrandPill({
   )
 
   // A small tag by the title so visitors know it's a live work-in-progress.
+  // Hidden on phones: the dock header is already tight there, and the tag was
+  // the first thing to collide with the scene name.
   const tag = (
-    <span className="shrink-0 rounded-full bg-blue-400/15 px-1.5 py-px text-[10px] leading-none font-medium tracking-wide text-blue-400">
+    <span className="shrink-0 rounded-full bg-blue-400/15 px-1.5 py-px text-[10px] leading-none font-medium tracking-wide text-blue-400 max-sm:hidden">
       {t.brand.preRelease}
     </span>
   )

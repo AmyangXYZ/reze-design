@@ -132,6 +132,10 @@ const en = {
   },
   assets: {
     model: "Model",
+    characters: "Characters",
+    addModel: "Add model",
+    replaceModel: "Replace model",
+    removeModel: "Remove model",
     animation: "Animation",
     camera: "Camera",
     music: "Music",
@@ -427,6 +431,10 @@ const zh: Dictionary = {
   },
   assets: {
     model: "模型",
+    characters: "角色",
+    addModel: "添加模型",
+    replaceModel: "替换模型",
+    removeModel: "移除模型",
     animation: "动作",
     camera: "相机",
     music: "音乐",
@@ -714,6 +722,10 @@ const ja: Dictionary = {
   },
   assets: {
     model: "モデル",
+    characters: "キャラクター",
+    addModel: "モデルを追加",
+    replaceModel: "モデルを差し替え",
+    removeModel: "モデルを削除",
     animation: "アニメーション",
     camera: "カメラ",
     music: "音楽",

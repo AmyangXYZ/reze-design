@@ -1,91 +1,121 @@
 "use client"
 
-// Assets panel (chromeless): the raw ingredients of a scene — the character (model +
-// its motion), its camera, and music. reze-design is a finishing tool: you bring a
-// finished motion and a pre-cut track. Each asset is a full-width upload button with
-// its current filename truncated on the line below (so a long name never widens the
-// dock). Environment/backgrounds live in the Scene tab, not here.
+// Assets panel (chromeless): the raw ingredients of a scene — models, their
+// motions, the camera, music, and backgrounds. reze-design is a finishing tool:
+// you bring finished motions and a pre-cut track.
+//
+// MULTI-MODEL as repeated SLOTS, each styled exactly like the single-model
+// panel: upload button pair → filename → meta. "+ Add model" (dashed, below the
+// last slot) doesn't open a dialog — it reveals an EMPTY slot with its own
+// upload buttons and placeholder lines, so filling slot 2 looks identical to
+// how slot 1 was filled. The Animation section repeats per slot the same way.
+// Slot 1 is permanent; slots 2+ carry a remove ✕ (the pending slot's ✕ just
+// cancels it). Clicking a slot's filename selects the ACTIVE model — the one
+// the Materials tab and material picks target.
 
 import { memo, type ComponentType } from "react"
-import { Footprints, Globe, Image as ImageIcon, Music, PersonStanding, Video, X } from "lucide-react"
+import { Footprints, Globe, Image as ImageIcon, Music, PersonStanding, Plus, Video, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Section } from "@/components/scene/scene-sidebar"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
+export type CharacterCardData = {
+  id: string
+  file: string
+  active: boolean
+  animName: string | null
+}
+
+/** The main upload button + optional "or ZIP" secondary — one slot's action row. */
+function UploadPair({
+  icon: Icon,
+  label,
+  onClick,
+  onZip,
+  joiner,
+  disabled,
+}: {
+  icon: ComponentType<{ className?: string }>
+  label: string
+  onClick?: () => void
+  onZip?: () => void
+  joiner?: string
+  disabled?: boolean
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={disabled}
+        className="h-7 min-w-0 flex-1 gap-1.5 border-white/10 bg-white/5 text-xs hover:bg-white/10 hover:text-foreground disabled:opacity-40"
+        onClick={onClick}
+      >
+        <Icon className="size-4" />
+        <span className="truncate">{label}</span>
+      </Button>
+      {onZip && (
+        <>
+          {joiner && <span className="shrink-0 text-[11px] text-muted-foreground/70">{joiner}</span>}
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={disabled}
+            className="h-7 shrink-0 border-white/10 bg-white/5 px-2.5 text-xs hover:bg-white/10 hover:text-foreground disabled:opacity-40"
+            onClick={onZip}
+          >
+            ZIP
+          </Button>
+        </>
+      )}
+    </div>
+  )
+}
+
+function RemoveButton({ onClick }: { onClick: () => void }) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="-mr-1 size-5 shrink-0 text-muted-foreground hover:text-red-400"
+      onClick={onClick}
+    >
+      <X className="size-3.5" />
+    </Button>
+  )
+}
+
 function AssetRow({
   icon: Icon,
   label,
   value,
-  meta,
   onClick,
   onRemove,
-  secondaryLabel,
-  onSecondaryClick,
-  secondaryJoiner,
+  disabled,
 }: {
   icon: ComponentType<{ className?: string }>
   label: string
   value?: string | null
-  /** High-level metadata line (size / duration / count) shown under the filename. */
-  meta?: string
   onClick?: () => void
   /** When set and a value is present, shows a remove (✕) button at the line's right edge. */
   onRemove?: () => void
-  /** Optional compact second action beside the main button (e.g. "ZIP"). */
-  secondaryLabel?: string
-  onSecondaryClick?: () => void
-  /** Word between the two actions ("or") — clarifies they're alternatives. */
-  secondaryJoiner?: string
+  /** Inert row (an empty model slot's animation placeholder). */
+  disabled?: boolean
 }) {
   return (
     <>
-      <div className="flex items-center gap-1.5">
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 min-w-0 flex-1 gap-1.5 border-white/10 bg-white/5 text-xs hover:bg-white/10 hover:text-foreground"
-          onClick={onClick}
-        >
-          <Icon className="size-4" />
-          <span className="truncate">{label}</span>
-        </Button>
-        {secondaryLabel && onSecondaryClick && (
-          <>
-            {secondaryJoiner && <span className="shrink-0 text-[11px] text-muted-foreground/70">{secondaryJoiner}</span>}
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 shrink-0 border-white/10 bg-white/5 px-2.5 text-xs hover:bg-white/10 hover:text-foreground"
-              onClick={onSecondaryClick}
-            >
-              {secondaryLabel}
-            </Button>
-          </>
-        )}
-      </div>
-      {/* Own line: filename (truncated — clips with … instead of widening the dock) + optional remove. */}
+      <UploadPair icon={Icon} label={label} onClick={onClick} disabled={disabled} />
+      {/* Own line: filename (truncated — clips with … instead of widening the
+          dock) + optional remove. Quiet dash placeholder keeps the row height
+          constant, so loading an asset never shifts the layout below it. No
+          metadata second line anywhere — vertical space goes to the cast. */}
       <div className="mt-1.5 flex items-center gap-1">
-        {/* Quiet dash placeholders (not "No motion" captions), and the meta line
-            always renders — every row keeps a constant height, so loading an
-            asset never shifts the layout below it. */}
         <span className={cn("min-w-0 flex-1 truncate text-xs", value ? "text-muted-foreground" : "text-muted-foreground/40")} title={value ?? undefined}>
           {value ?? "—"}
         </span>
-        {onRemove && value && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="-mr-1 size-5 shrink-0 text-muted-foreground hover:text-red-400"
-            onClick={onRemove}
-          >
-            <X className="size-3.5" />
-          </Button>
-        )}
-      </div>
-      <div className={cn("mt-0.5 truncate text-[11px] tabular-nums", value && meta ? "text-muted-foreground" : "text-muted-foreground/40")}>
-        {(value && meta) || "—"}
+        {onRemove && value && <RemoveButton onClick={onRemove} />}
       </div>
     </>
   )
@@ -93,136 +123,176 @@ function AssetRow({
 
 // Memoized: the dock keeps tabs mounted (useKeepAlive), so without memo the
 // hidden Assets tab re-rendered on every page render — every settings-slider
-// tick included. All handler props are useCallback'd in page.tsx; the meta
-// strings are primitives, so recomputing them doesn't break the bailout.
+// tick included. Handler props are useCallback'd in page.tsx; `characters` is
+// useMemo'd there for the same reason.
 export const AssetsPanel = memo(function AssetsPanel({
-  modelFile,
-  animName,
+  characters,
+  pendingSlot,
   cameraName,
   audioName,
   backdropName,
   skyboxName,
-  modelMeta,
-  animMeta,
-  cameraMeta,
-  audioMeta,
-  backdropMeta,
-  skyboxMeta,
   modelUploadLabel,
-  onUploadModel,
-  onUploadModelZip,
+  addModelLabel,
+  onSelectModel,
+  onReplaceSlot,
+  onReplaceSlotZip,
+  onAddSlot,
+  onFillPending,
+  onFillPendingZip,
+  onCancelPending,
+  onRemoveModel,
   onUploadAnimation,
+  onRemoveAnimation,
   onUploadCamera,
   onUploadMusic,
   onUploadBackdrop,
   onUploadSkybox,
   onRemoveMusic,
-  onRemoveAnimation,
   onRemoveCamera,
   onRemoveBackdrop,
   onRemoveSkybox,
 }: {
-  /** The loaded model's actual .pmx filename (not the internal id). */
-  modelFile: string
-  animName: string | null
+  characters: CharacterCardData[]
+  /** An empty slot is open (revealed by "+ Add model", filled by its uploads). */
+  pendingSlot: boolean
   cameraName: string | null
   audioName: string | null
   /** Flat background image filename (DOM layer behind the scene). */
   backdropName: string | null
   /** 360° equirect skybox filename (engine-rendered, follows the camera). */
   skyboxName: string | null
-  modelMeta: string
-  animMeta: string
-  cameraMeta: string
-  audioMeta: string
-  backdropMeta: string
-  skyboxMeta: string
   /** Platform-specific label (desktop: folder wording; mobile: zip wording). */
   modelUploadLabel: string
-  onUploadModel: () => void
-  /** Desktop only: opens the .zip file dialog (folder dialogs can't pick zips). */
-  onUploadModelZip?: () => void
-  onUploadAnimation: () => void
+  addModelLabel: string
+  onSelectModel: (id: string) => void
+  /** This slot's upload: replace ITS model (keeps slot position + transform + clip). */
+  onReplaceSlot: (id: string) => void
+  /** Desktop only: replace via .zip (folder dialogs can't pick zips). */
+  onReplaceSlotZip?: (id: string) => void
+  /** Reveal the empty slot (no dialog yet — its own buttons open one). */
+  onAddSlot: () => void
+  onFillPending: () => void
+  onFillPendingZip?: () => void
+  onCancelPending: () => void
+  /** Slots 2+ only — slot 1 is permanent. */
+  onRemoveModel: (id: string) => void
+  /** Per-model: upload a VMD motion for this model. */
+  onUploadAnimation: (id: string) => void
+  onRemoveAnimation: (id: string) => void
   onUploadCamera: () => void
   onUploadMusic: () => void
   onUploadBackdrop: () => void
   onUploadSkybox: () => void
   onRemoveMusic: () => void
-  onRemoveAnimation: () => void
   onRemoveCamera: () => void
   onRemoveBackdrop: () => void
   onRemoveSkybox: () => void
 }) {
   const t = useT()
+  const multi = characters.length > 1 || pendingSlot
   return (
     <ScrollArea className="min-h-0 flex-1">
       <div className="px-4 py-3.5">
         <Section title={t.assets.model}>
-          <AssetRow
-            icon={PersonStanding}
-            label={modelUploadLabel}
-            value={modelFile}
-            meta={modelMeta}
-            onClick={onUploadModel}
-            secondaryLabel={onUploadModelZip ? "ZIP" : undefined}
-            onSecondaryClick={onUploadModelZip}
-            secondaryJoiner={t.assets.or}
-          />
+          {characters.map((c, i) => (
+            <div key={c.id} className={i > 0 ? "mt-3" : undefined}>
+              <UploadPair
+                icon={PersonStanding}
+                label={modelUploadLabel}
+                onClick={() => onReplaceSlot(c.id)}
+                onZip={onReplaceSlotZip ? () => onReplaceSlotZip(c.id) : undefined}
+                joiner={t.assets.or}
+              />
+              <div className="mt-1.5 flex items-center gap-1">
+                <button
+                  onClick={() => onSelectModel(c.id)}
+                  className={cn(
+                    "min-w-0 flex-1 truncate text-left text-xs",
+                    // Active model reads brighter once there's a choice to make.
+                    multi && c.active ? "text-foreground" : "text-muted-foreground",
+                    multi && !c.active && "cursor-pointer hover:text-foreground",
+                  )}
+                  title={c.file}
+                >
+                  {c.file}
+                </button>
+                {i > 0 && <RemoveButton onClick={() => onRemoveModel(c.id)} />}
+              </div>
+            </div>
+          ))}
+          {/* The empty slot: same anatomy, placeholders until its upload lands. */}
+          {pendingSlot && (
+            <div className="mt-3">
+              <UploadPair
+                icon={PersonStanding}
+                label={modelUploadLabel}
+                onClick={onFillPending}
+                onZip={onFillPendingZip}
+                joiner={t.assets.or}
+              />
+              <div className="mt-1.5 flex items-center gap-1">
+                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground/40">—</span>
+                <RemoveButton onClick={onCancelPending} />
+              </div>
+            </div>
+          )}
+          {/* Form-append: reveal the next slot where it would appear. Dashed =
+              "nothing here yet", distinct from the solid action buttons. */}
+          {!pendingSlot && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2.5 h-7 w-full min-w-0 gap-1.5 border-dashed border-white/15 bg-transparent text-xs text-muted-foreground hover:bg-white/5 hover:text-foreground"
+              onClick={onAddSlot}
+            >
+              <Plus className="size-3.5" />
+              <span className="truncate">{addModelLabel}</span>
+            </Button>
+          )}
         </Section>
 
         <Section title={t.assets.animation}>
-          <AssetRow
-            icon={Footprints}
-            label={t.assets.uploadAnimation}
-            value={animName}
-            meta={animMeta}
-            onClick={onUploadAnimation}
-            onRemove={onRemoveAnimation}
-          />
+          {characters.map((c, i) => (
+            <div key={c.id} className={i > 0 ? "mt-2.5" : undefined}>
+              {/* One motion row per model — captioned once there's a cast. */}
+              {multi && (
+                <div className="mb-1 truncate text-[11px] text-muted-foreground/60" title={c.file}>
+                  {c.file}
+                </div>
+              )}
+              <AssetRow
+                icon={Footprints}
+                label={t.assets.uploadAnimation}
+                value={c.animName}
+                onClick={() => onUploadAnimation(c.id)}
+                onRemove={() => onRemoveAnimation(c.id)}
+              />
+            </div>
+          ))}
+          {/* The empty slot's future motion row — inert until its model lands. */}
+          {pendingSlot && (
+            <div className="mt-2.5">
+              <div className="mb-1 truncate text-[11px] text-muted-foreground/40">—</div>
+              <AssetRow icon={Footprints} label={t.assets.uploadAnimation} disabled />
+            </div>
+          )}
         </Section>
 
         <Section title={t.assets.camera}>
-          <AssetRow
-            icon={Video}
-            label={t.assets.uploadCamera}
-            value={cameraName}
-            meta={cameraMeta}
-            onClick={onUploadCamera}
-            onRemove={onRemoveCamera}
-          />
+          <AssetRow icon={Video} label={t.assets.uploadCamera} value={cameraName} onClick={onUploadCamera} onRemove={onRemoveCamera} />
         </Section>
 
         <Section title={t.assets.music}>
-          <AssetRow
-            icon={Music}
-            label={t.assets.uploadMusic}
-            value={audioName}
-            meta={audioMeta}
-            onClick={onUploadMusic}
-            onRemove={onRemoveMusic}
-          />
+          <AssetRow icon={Music} label={t.assets.uploadMusic} value={audioName} onClick={onUploadMusic} onRemove={onRemoveMusic} />
         </Section>
 
         <Section title={t.assets.backdrop}>
-          <AssetRow
-            icon={ImageIcon}
-            label={t.assets.uploadBackdrop}
-            value={backdropName}
-            meta={backdropMeta}
-            onClick={onUploadBackdrop}
-            onRemove={onRemoveBackdrop}
-          />
+          <AssetRow icon={ImageIcon} label={t.assets.uploadBackdrop} value={backdropName} onClick={onUploadBackdrop} onRemove={onRemoveBackdrop} />
         </Section>
 
         <Section title={t.assets.skybox}>
-          <AssetRow
-            icon={Globe}
-            label={t.assets.uploadSkybox}
-            value={skyboxName}
-            meta={skyboxMeta}
-            onClick={onUploadSkybox}
-            onRemove={onRemoveSkybox}
-          />
+          <AssetRow icon={Globe} label={t.assets.uploadSkybox} value={skyboxName} onClick={onUploadSkybox} onRemove={onRemoveSkybox} />
         </Section>
       </div>
     </ScrollArea>

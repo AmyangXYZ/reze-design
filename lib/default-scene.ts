@@ -20,20 +20,24 @@ import { assetFromPath, SCENE_FORMAT_VERSION, type Scene } from "@/lib/scene"
 export const DEFAULT_SCENE: Scene = {
   version: SCENE_FORMAT_VERSION,
   assets: {
-    model: {
-      id: "Thoth",
-      // Folder, not zip: it ships from /public behind HTTP/2 with long cache
-      // headers, so textures stream in and stay cached across visits.
-      source: { kind: "folder", dir: "/models/托特-扉页之吻" },
-      file: "苍鹭·托特「扉页之吻」白衣.pmx",
-      // Just the names the engine's hints don't get right on this model.
-      presets: {
-        body: ["手"],
-        cloth_smooth: ["头巾白", "头巾小白", "头巾黑", "头带小", "胸口布", "胸口布1"],
-        metal: ["指甲"],
+    models: [
+      {
+        model: {
+          id: "Thoth",
+          // Folder, not zip: it ships from /public behind HTTP/2 with long cache
+          // headers, so textures stream in and stay cached across visits.
+          source: { kind: "folder", dir: "/models/托特-扉页之吻" },
+          file: "苍鹭·托特「扉页之吻」白衣.pmx",
+          // Just the names the engine's hints don't get right on this model.
+          presets: {
+            body: ["手"],
+            cloth_smooth: ["头巾白", "头巾小白", "头巾黑", "头带小", "胸口布", "胸口布1"],
+            metal: ["指甲"],
+          },
+        },
+        animation: assetFromPath("/animations/One More Last Time.vmd"),
       },
-    },
-    animation: assetFromPath("/animations/One More Last Time.vmd"),
+    ],
     cameraAnimation: null,
     audio: assetFromPath("/audios/One More Last Time.wav"),
     background: null,
@@ -56,6 +60,5 @@ export const DEFAULT_SCENE: Scene = {
     backgroundEffect: builtinEffect("shining-stars"),
     // null = auto-group at load, so the demo restyles itself when the model changes.
     groups: null,
-    groupsFor: null,
   },
 }

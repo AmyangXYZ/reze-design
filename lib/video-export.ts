@@ -107,7 +107,12 @@ export async function exportVideo(opts: {
   engine: Engine
   /** The engine's (transparent) WebGPU canvas — composited over the backdrop. */
   canvas: HTMLCanvasElement
+  /** Master model (longest clip) — its clock defines the timeline. */
   modelName: string
+  /** Every OTHER animated model — seeked/played alongside the master so a
+   *  multi-model formation exports in sync (renderFrame advances all playing
+   *  clocks; they only need the same start state). */
+  extraModelNames?: string[]
   /** Segment start on the clip's timeline, seconds (default 0). */
   startTime?: number
   /** Segment length in seconds — defines the video length. */
@@ -128,6 +133,10 @@ export async function exportVideo(opts: {
   const total = Math.max(1, Math.round(duration * fps))
   const model = engine.getModel(modelName)
   if (!model) throw new Error("No model loaded")
+  const extras = (opts.extraModelNames ?? [])
+    .map((n) => engine.getModel(n))
+    .filter((m): m is NonNullable<typeof m> => !!m)
+  const cast = [model, ...extras]
 
   const videoCodec = await getFirstEncodableVideoCodec(["avc", "hevc", "av1"], { width, height })
   if (!videoCodec) throw new Error(`No supported video encoder for ${width}×${height}`)
@@ -194,11 +203,13 @@ export async function exportVideo(opts: {
 
     // Seek to the segment start, physics reset + settle so the first frame
     // isn't mid-fall hair (the warm-up settles at whatever pose is current).
-    model.pause()
-    model.seek(startTime)
+    for (const m of cast) {
+      m.pause()
+      m.seek(startTime)
+    }
     engine.resetPhysics()
     for (let i = 0; i < WARMUP_FRAMES; i++) engine.renderFrame(1 / fps)
-    model.play()
+    for (const m of cast) m.play()
 
     const started = performance.now()
     for (let i = 0; i < total; i++) {
@@ -236,10 +247,12 @@ export async function exportVideo(opts: {
     // Restore the live session: viewport-tracked size, background/skybox (green-
     // screen mode suspended them), prior playhead + play state.
     engine.setRenderSize(null)
-    model.pause()
-    model.seek(prior.current)
+    for (const m of cast) {
+      m.pause()
+      m.seek(prior.current)
+    }
     engine.renderFrame(0)
-    if (prior.playing) model.play()
+    if (prior.playing) for (const m of cast) m.play()
     engine.runRenderLoop()
   }
 }

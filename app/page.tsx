@@ -7,7 +7,7 @@
 // pill's single toggle. The node-graph editor lives in a bottom drawer, narrowed
 // to sit between the docks, and collapses on its own into a status pill.
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   DEFAULT_GRAPH,
   type CompileOptions,
@@ -23,7 +23,7 @@ import { GraphEditor } from "@/components/graph/graph-editor"
 import { AnimPlayer } from "@/components/scene/anim-player"
 import { MaterialsPanel } from "@/components/scene/material-sidebar"
 import { ScenePanel } from "@/components/scene/scene-sidebar"
-import { AssetsPanel } from "@/components/editor/assets-panel"
+import { AssetsPanel, type CharacterCardData } from "@/components/editor/assets-panel"
 import { BrandPill, RailLogo, TopRightCluster } from "@/components/editor/editor-chrome"
 import { LeftDock, RightDock, type DockTab } from "@/components/editor/dock"
 import { FloatingPanel, type Rect } from "@/components/editor/floating-panel"
@@ -71,15 +71,6 @@ const newGroupId = (material: string, groups: StyleGroup[]): string => {
   let i = 1
   while (ids.has(`${base}-${i}`)) i++
   return `${base}-${i}`
-}
-
-const fmtSize = (bytes: number) =>
-  bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
-const fmtDur = (s: number) => {
-  if (!s || !isFinite(s)) return ""
-  return `${Math.floor(s / 60)}:${Math.round(s % 60)
-    .toString()
-    .padStart(2, "0")}`
 }
 
 const UI_KEY = "reze-design.ui"
@@ -131,14 +122,11 @@ function loadWgslPanelRect(): Rect | null {
     return null
   }
 }
-// Default: a right-side column beside the scene (the point of the floating
-// panel is editing WITH the scene in view), clamped on-screen.
+// Default: the same bottom-centered rect the graph editor opens at — the two
+// editors are siblings, and the old right-side column defaulted awkwardly
+// (tall + narrow, overlapping the dock).
 function defaultWgslPanelRect(): Rect {
-  const vw = window.innerWidth
-  const vh = window.innerHeight
-  const w = Math.min(560, vw - 48)
-  const h = Math.min(Math.max(360, vh - 160), 640)
-  return { x: Math.max(8, vw - w - 340), y: Math.max(8, (vh - h) / 2 - 20), w, h }
+  return defaultPanelRect()
 }
 
 // First-open default: bottom-centered, roughly where the old docked drawer sat, clamped
@@ -205,7 +193,15 @@ export default function Home() {
     window.addEventListener("resize", onResize)
     return () => window.removeEventListener("resize", onResize)
   }, [])
-  const [animName, setAnimName] = useState<string | null>(null)
+  // ── Per-model animation: each model owns its clip (engine clips are per
+  // instance). The MASTER — the animated model with the longest clip — drives
+  // the transport, audio sync, and export timeline; the rest follow it.
+  type AnimSource = { kind: "file"; file: File } | { kind: "url"; name: string; url: string }
+  type AnimEntry = { name: string; size: number | null; source: AnimSource }
+  // Where an upload routes: a new cast member, or swapping one out in place.
+  type ModelTarget = { mode: "add" } | { mode: "replace"; id: string }
+  const [animByModel, setAnimByModel] = useState<Record<string, AnimEntry>>({})
+  const [animMetaByModel, setAnimMetaByModel] = useState<Record<string, { duration: number; keyframes: number }>>({})
   // The boot document: the bundled demo with the user's stored values merged over
   // it. Read synchronously (SSR-safe: falls back to the demo) so the page
   // background AND the engine boot already match their config. Built once — it's
@@ -229,39 +225,59 @@ export default function Home() {
 
   // The engine hook needs a pick handler at construction; route through a ref
   // (synced in an effect) so the handler can use everything defined below.
-  const pickRef = useRef<(material: string | null) => void>(() => {})
+  const pickRef = useRef<(model: string, material: string | null) => void>(() => {})
   const {
     canvasRef,
     engineRef,
     ready,
     error,
-    materials,
-    modelName,
-    modelFile,
-    modelStats,
-    groups,
-    upsertGroup,
-    applyGroups,
-    highlight,
-    toggleVisible,
-    loadFromFiles,
+    models,
+    groupsByModel,
+    upsertGroup: upsertGroupFor,
+    applyGroups: applyGroupsFor,
+    highlight: highlightFor,
+    toggleVisible: toggleVisibleFor,
+    addModelFromFiles,
+    replaceModelFromFiles,
+    removeModelById,
     loadVmdFile,
     loadVmdUrl,
     stopAnimation,
-  } = useEngine((m) => pickRef.current(m), bootScene)
+  } = useEngine((model, m) => pickRef.current(model, m), bootScene)
 
-  // material → its style group (a material is in at most one group; else ungrouped).
-  const groupOfMaterial = useCallback(
-    (name: string | null): StyleGroup | null => (name ? (groups.find((g) => g.materials.includes(name)) ?? null) : null),
-    [groups],
+  // ── Active model: the one the Materials tab + graph editor edit. Shared with
+  // the Assets tab's character cards and the materials panel's model strip;
+  // clicking a material in the 3D scene also switches to its model. ──
+  const [activeModelId, setActiveModelId] = useState(bootScene.assets.models[0].model.id)
+  const activeModel = models.find((m) => m.id === activeModelId) ?? models[0] ?? null
+  const activeId = activeModel?.id ?? activeModelId
+  // The EFFECTIVE id (falls back to models[0] after a removal) — callbacks read
+  // this ref so their identities stay stable for the memoized panels.
+  const activeIdRef = useRef(activeId)
+  useEffect(() => {
+    activeIdRef.current = activeId
+  }, [activeId])
+  const materials = activeModel?.materials ?? []
+  const groups = useMemo(() => groupsByModel[activeId] ?? [], [groupsByModel, activeId])
+  // Single-model signatures over the ACTIVE model — everything below (group ops,
+  // materials panel, graph editor) styles one model at a time.
+  const upsertGroup = useCallback(
+    (group: StyleGroup, opts?: CompileOptions) => upsertGroupFor(activeIdRef.current, group, opts),
+    [upsertGroupFor],
   )
+  const applyGroups = useCallback((next: StyleGroup[]) => applyGroupsFor(activeIdRef.current, next), [applyGroupsFor])
+  const highlight = useCallback((m: string | null) => highlightFor(activeIdRef.current, m), [highlightFor])
+  const toggleVisible = useCallback((name: string) => toggleVisibleFor(activeIdRef.current, name), [toggleVisibleFor])
+  const selectModel = useCallback((id: string) => setActiveModelId(id), [])
 
-  // Clicking a material in the 3D scene highlights it and focuses its group (so the
-  // editor targets that group). No persistent selection — the tree is hover + drag.
-  const pick = (material: string | null) => {
-    highlight(material)
+  // Clicking a material in the 3D scene switches to its model, highlights it and
+  // focuses its group (so the editor targets that group). No persistent
+  // selection — the tree is hover + drag.
+  const pick = (model: string, material: string | null) => {
+    if (model && model !== activeIdRef.current) setActiveModelId(model)
+    highlightFor(model || activeIdRef.current, material)
     if (!material) return
-    const g = groupOfMaterial(material)
+    const g = (groupsByModel[model] ?? []).find((x) => x.materials.includes(material)) ?? null
     if (g) setActiveGroupId(g.id)
   }
   useEffect(() => {
@@ -274,17 +290,18 @@ export default function Home() {
   }, [leftTab, highlight])
 
   // Selection is explicit (single-click a group to select/deselect), so we don't
-  // re-select on every null. But on the FIRST load, select the first non-empty group
-  // (sidebar order = sorted by label/id) so the shader-graph inspector isn't empty.
-  const didAutoSelect = useRef(false)
+  // re-select on every null. But when a MODEL first shows in the panel (boot, or
+  // switching the active model), select its first non-empty group (sidebar order
+  // = sorted by label/id) so the shader-graph inspector isn't empty.
+  const autoSelectedFor = useRef<string | null>(null)
   useEffect(() => {
-    if (didAutoSelect.current || !groups.length) return
-    didAutoSelect.current = true
+    if (autoSelectedFor.current === activeId || !groups.length) return
+    autoSelectedFor.current = activeId
     const first = [...groups]
       .sort((a, b) => (a.label ?? a.id).localeCompare(b.label ?? b.id, undefined, { sensitivity: "base" }))
       .find((g) => g.materials.length > 0)
-    if (first) setActiveGroupId(first.id)
-  }, [groups])
+    setActiveGroupId(first ? first.id : null)
+  }, [groups, activeId])
 
   const activeGroup = groups.find((g) => g.id === activeGroupId) ?? null
   const libGroup = groups.find((g) => g.id === library.groupId) ?? null
@@ -420,53 +437,93 @@ export default function Home() {
   )
 
   // ── Model upload ──
-  type UploadState = { kind: "pick"; files: File[]; paths: string[] } | { kind: "notice"; message: string } | null
+  type UploadState =
+    | { kind: "pick"; files: File[]; paths: string[]; target: ModelTarget }
+    | { kind: "notice"; message: string }
+    | null
   const [upload, setUpload] = useState<UploadState>(null)
   const folderInputRef = useRef<HTMLInputElement | null>(null)
   const zipInputRef = useRef<HTMLInputElement | null>(null)
+  // Where the folder/zip inputs route their pick (set before opening the dialog).
+  const modelTargetRef = useRef<ModelTarget>({ mode: "add" })
   // Mobile: no folder pickers exist, so the model button is zip-only there.
   const [isMobile] = useState(() => typeof navigator !== "undefined" && /Android|iPhone|iPad/i.test(navigator.userAgent))
 
-  const loadCustom = async (files: File[], pmxFile: File) => {
+  const loadCustom = async (files: File[], pmxFile: File, target: ModelTarget) => {
     setUpload(null)
-    setActiveGroupId(null) // the new model brings a fresh group set (re-inited on load)
-    setModelSize(pmxFile.size)
-    await loadFromFiles(files, pmxFile)
-    // The new model inherits the current animation (clips are per model instance,
-    // so the retained source reloads into it; posed at frame 0, paused).
-    const src = animSourceRef.current
-    if (src) {
-      const name = src.kind === "file" ? await loadVmdFile(src.file) : await loadVmdUrl(src.name, src.url)
-      setAnimName(name)
-    } else {
-      setAnimName(null)
+    try {
+      if (target.mode === "add") {
+        const id = await addModelFromFiles(files, pmxFile)
+        setActiveModelId(id)
+        setPendingSlot(false)
+      } else {
+        const oldId = target.id
+        const prevAnim = animByModel[oldId] ?? null
+        const id = await replaceModelFromFiles(oldId, files, pmxFile)
+        // Same-id replacement (same .pmx name) won't change activeId — force the
+        // group auto-select to re-run against the fresh group set either way.
+        autoSelectedFor.current = null
+        setActiveGroupId(null)
+        setActiveModelId(id)
+        // The replacement inherits the slot's animation (clips are per model
+        // instance — the retained source reloads into it; frame 0, paused).
+        clearAnimMeta(oldId)
+        clearAnimMeta(id)
+        setAnimByModel((prev) => {
+          const n = { ...prev }
+          delete n[oldId]
+          return n
+        })
+        if (prevAnim) {
+          const src = prevAnim.source
+          const name = src.kind === "file" ? await loadVmdFile(id, src.file) : await loadVmdUrl(id, src.name, src.url)
+          if (name) setAnimByModel((prev) => ({ ...prev, [id]: { ...prevAnim, name } }))
+        }
+      }
+    } catch (e) {
+      setUpload({ kind: "notice", message: e instanceof Error ? e.message : String(e) })
     }
   }
 
-  // ── VMD animation upload ──
+  // ── VMD animation upload (per model) ──
   const vmdInputRef = useRef<HTMLInputElement | null>(null)
-  // The clip's SOURCE, retained so a newly uploaded model inherits the current
-  // animation (clips live per model instance — the file/url must reload there).
-  const animSourceRef = useRef<{ kind: "file"; file: File } | { kind: "url"; name: string; url: string } | null>(null)
+  // Which model the next VMD pick applies to — set before opening the dialog.
+  const animTargetRef = useRef<string | null>(null)
+  // Meta (duration/keyframes) is derived by polling; drop a model's entry
+  // whenever its clip changes or goes away so the poll re-derives it.
+  const clearAnimMeta = (modelId: string) =>
+    setAnimMetaByModel((prev) => {
+      const n = { ...prev }
+      delete n[modelId]
+      return n
+    })
+  const loadAnimFor = async (modelId: string, file: File) => {
+    const name = await loadVmdFile(modelId, file)
+    clearAnimMeta(modelId)
+    setAnimByModel((prev) => {
+      const next = { ...prev }
+      if (name) next[modelId] = { name, size: file.size, source: { kind: "file", file } }
+      else delete next[modelId]
+      return next
+    })
+  }
   const onVmdPicked = async (file: File | undefined) => {
     if (!file) return
-    setAnimSize(file.size)
-    animSourceRef.current = { kind: "file", file }
-    setAnimName(await loadVmdFile(file))
+    const target = animTargetRef.current ?? activeIdRef.current
+    animTargetRef.current = null
+    await loadAnimFor(target, file)
   }
 
   // ── Camera VMD upload: drives the shot (target/rotation/distance/fov); default-on
   // once loaded, toggled Follow/Free from the transport. ──
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
   const [cameraName, setCameraName] = useState<string | null>(null)
-  const [cameraSize, setCameraSize] = useState<number | null>(null)
   const loadCameraBuffer = async (buffer: ArrayBuffer, name: string) => {
     const engine = engineRef.current
     if (!engine) return
     try {
       await engine.loadCameraVmdFromBuffer(buffer)
       setCameraName(name)
-      setCameraSize(buffer.byteLength)
     } catch (e) {
       setUpload({ kind: "notice", message: t.upload.cantLoadCamera(e instanceof Error ? e.message : String(e)) })
     }
@@ -477,7 +534,6 @@ export default function Home() {
   const removeCamera = useCallback(() => {
     engineRef.current?.clearCameraVmd()
     setCameraName(null)
-    setCameraSize(null)
   }, [engineRef])
 
   // ── Backdrop: a static image behind the 3D scene. Lives as runtime state
@@ -702,16 +758,9 @@ export default function Home() {
   const [audioSrc, setAudioSrc] = useState<string>(bootScene.assets.audio?.url ?? "")
   // High-level asset metadata (size for uploads; duration read from the engine /
   // audio element once available). Sizes are unknown for the bundled defaults.
-  const [modelSize, setModelSize] = useState<number | null>(null)
-  const [animDuration, setAnimDuration] = useState(0)
-  const [animKeyframes, setAnimKeyframes] = useState(0)
-  const [animSize, setAnimSize] = useState<number | null>(null)
-  const [audioDuration, setAudioDuration] = useState(0)
-  const [audioSize, setAudioSize] = useState<number | null>(null)
 
   const setMusicFile = (f: File) => {
     setAudioName(f.name)
-    setAudioSize(f.size)
     setAudioSrc((prev) => {
       if (prev.startsWith("blob:")) URL.revokeObjectURL(prev)
       return URL.createObjectURL(f)
@@ -722,60 +771,56 @@ export default function Home() {
     // explicit non-music routing the user chose is kept.
     setAudioSource((s) => (s === "none" ? "music" : s))
   }
-  // The bundled track's METADATA can finish loading before hydration attaches
-  // the onLoadedMetadata handler (the SSR'd <audio src> starts fetching
-  // immediately), leaving duration stuck at 0 — visible now that meta rows
-  // render a placeholder dash instead of collapsing. If the element already
-  // knows its duration, read it directly. (Deferred a tick: setState-in-effect.)
-  useEffect(() => {
-    const el = audioElRef.current
-    const t = setTimeout(() => {
-      if (el && el.readyState >= 1 && isFinite(el.duration) && el.duration > 0) setAudioDuration(el.duration)
-    }, 0)
-    return () => clearTimeout(t)
-  }, [audioSrc])
-
   const removeAudio = useCallback(() => {
     setAudioName(null)
-    setAudioDuration(0)
-    setAudioSize(null)
     // Revoke OUTSIDE the updater — a side effect inside setState's updater is
     // impure (updaters can re-run), and the compiler lint rejects memoizing it.
     if (audioSrc.startsWith("blob:")) URL.revokeObjectURL(audioSrc)
     setAudioSrc("")
     // No source left for the "music" audio option — exports fall back to silent.
     setAudioSource((s) => (s === "music" ? "none" : s))
-  }, [audioSrc, setAudioName, setAudioDuration, setAudioSize, setAudioSrc, setAudioSource])
+  }, [audioSrc, setAudioName, setAudioSrc, setAudioSource])
 
 
-  // Animation duration + total bone keyframes appear whenever the async load
-  // (VMD parse + setAnimation, or a fresh model the clip carries over to)
+  // Animation duration + total bone keyframes appear whenever an async load
+  // (VMD parse + setAnimation, or a replaced model the clip carried over to)
   // finishes — POLL until the engine reports them. A single deferred read raced
-  // the load: losing left animDuration stuck at 0, which disabled the Render
-  // button and made the range end clamp everything to 0:00.
+  // the load: losing left duration stuck at 0, which disabled the Render button.
+  // Per model: each resolved entry re-runs the effect with a smaller pending set.
   useEffect(() => {
-    if (!animName) {
-      setAnimDuration(0)
-      setAnimKeyframes(0)
-      return
-    }
+    const pending = Object.entries(animByModel).filter(([id]) => !animMetaByModel[id])
+    if (!pending.length) return
     let raf = 0
     const poll = () => {
-      const model = engineRef.current?.getModel(modelName)
-      const duration = model?.getAnimationProgress().duration ?? 0
-      const clip = model?.getClip(animName) ?? null
-      if (duration > 0 && clip) {
-        setAnimDuration(duration)
-        let kf = 0
-        for (const track of clip.boneTracks.values()) kf += track.length
-        setAnimKeyframes(kf)
-        return
-      }
       raf = requestAnimationFrame(poll)
+      for (const [id, entry] of pending) {
+        const model = engineRef.current?.getModel(id)
+        const duration = model?.getAnimationProgress().duration ?? 0
+        const clip = model?.getClip(entry.name) ?? null
+        if (duration > 0 && clip) {
+          let kf = 0
+          for (const track of clip.boneTracks.values()) kf += track.length
+          setAnimMetaByModel((prev) => ({ ...prev, [id]: { duration, keyframes: kf } }))
+        }
+      }
     }
     raf = requestAnimationFrame(poll)
     return () => cancelAnimationFrame(raf)
-  }, [animName, modelName, engineRef])
+  }, [animByModel, animMetaByModel, engineRef])
+
+  // ── Master clock: the animated model with the longest clip leads; the others
+  // follow (transport fan-out, audio sync, export timeline). ──
+  const animatedIds = useMemo(
+    () =>
+      models
+        .filter((m) => animByModel[m.id])
+        .map((m) => m.id)
+        .sort((a, b) => (animMetaByModel[b]?.duration ?? 0) - (animMetaByModel[a]?.duration ?? 0)),
+    [models, animByModel, animMetaByModel],
+  )
+  const masterId = animatedIds[0] ?? null
+  const masterDuration = masterId ? (animMetaByModel[masterId]?.duration ?? 0) : 0
+  const extraModelNames = useMemo(() => animatedIds.slice(1), [animatedIds])
 
   // Browsers block audio until the user interacts — start the track on the first
   // gesture, synced to wherever the animation already is. Keydown counts too:
@@ -796,17 +841,24 @@ export default function Home() {
     }
   }, [])
 
-  // Load the scene's motion once its model is ready (custom uploads don't
+  // Load each scene model's motion once the cast is ready (custom uploads don't
   // re-trigger `ready`, so this runs for the booted scene only).
   const sceneAnimLoaded = useRef(false)
   useEffect(() => {
-    const clip = bootScene.assets.animation
-    if (!ready || !clip || sceneAnimLoaded.current) return
+    if (!ready || sceneAnimLoaded.current) return
     sceneAnimLoaded.current = true
-    animSourceRef.current = { kind: "url", name: clip.name, url: clip.url }
-    void loadVmdUrl(clip.name, clip.url).then((n) => {
-      if (n) setAnimName(n)
-    })
+    for (const entry of bootScene.assets.models) {
+      const clip = entry.animation
+      if (!clip) continue
+      const id = entry.model.id
+      void loadVmdUrl(id, clip.name, clip.url).then((n) => {
+        if (n)
+          setAnimByModel((prev) => ({
+            ...prev,
+            [id]: { name: n, size: null, source: { kind: "url", name: clip.name, url: clip.url } },
+          }))
+      })
+    }
   }, [ready, loadVmdUrl, bootScene])
 
   // Mirror the animation clock onto the audio element (model is the master).
@@ -819,7 +871,7 @@ export default function Home() {
   useEffect(() => {
     const audio = audioElRef.current
     if (!audio) return
-    if (!animName || exporting) {
+    if (!masterId || exporting) {
       audio.pause()
       return
     }
@@ -828,7 +880,7 @@ export default function Home() {
     let lastModelTime = -1
     const tick = () => {
       raf = requestAnimationFrame(tick)
-      const p = engineRef.current?.getModel(modelName)?.getAnimationProgress()
+      const p = engineRef.current?.getModel(masterId)?.getAnimationProgress()
       if (!p) return
       const playing = p.playing && userInteracted.current
       // A frame advances the clock ≤ ~0.05s — anything bigger is a discrete jump.
@@ -848,7 +900,7 @@ export default function Home() {
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [animName, modelName, engineRef, exporting])
+  }, [masterId, engineRef, exporting])
 
   // The file's path: folder picks carry webkitRelativePath; zip-expanded /
   // dropped / flat files carry the path (or bare name) in `name`.
@@ -857,8 +909,9 @@ export default function Home() {
   // ONE model pipeline for every source — folder pick (desktop dialog), flat
   // multi-select (mobile), .zip (mobile's sane path: models ship as zips, and a
   // zip preserves the subfolder structure a flat pick can't), and drag & drop.
-  const handleModelFiles = async (list: File[]) => {
+  const handleModelFiles = async (list: File[], target?: ModelTarget) => {
     if (!list.length) return
+    const t2 = target ?? modelTargetRef.current
     let files: File[]
     try {
       files = await expandUploadFiles(list)
@@ -868,8 +921,8 @@ export default function Home() {
     }
     const pmxs = files.filter((f) => f.name.toLowerCase().endsWith(".pmx"))
     if (pmxs.length === 0) setUpload({ kind: "notice", message: t.upload.noPmx })
-    else if (pmxs.length === 1) await loadCustom(files, pmxs[0])
-    else setUpload({ kind: "pick", files, paths: pmxs.map(relPath).sort((a, b) => a.localeCompare(b)) })
+    else if (pmxs.length === 1) await loadCustom(files, pmxs[0], t2)
+    else setUpload({ kind: "pick", files, paths: pmxs.map(relPath).sort((a, b) => a.localeCompare(b)), target: t2 })
   }
 
   // ── Scene settings → engine, guarded PER SECTION by object identity. patch()
@@ -979,8 +1032,9 @@ export default function Home() {
           camera: bootScene.state.camera,
           settings: sceneSettings,
           backgroundEffect: bgEffect,
-          groups,
-          groupsFor: modelName,
+          // The whole per-model record — hydrate filters to ids present in the
+          // booted scene, so uploaded models' entries simply don't match later.
+          groups: groupsByModel,
         })
       idle =
         typeof requestIdleCallback === "function"
@@ -991,25 +1045,98 @@ export default function Home() {
       clearTimeout(timer)
       if (idle && typeof cancelIdleCallback === "function") cancelIdleCallback(idle)
     }
-  }, [ready, sceneSettings, bgEffect, groups, modelName, bootScene])
+  }, [ready, sceneSettings, bgEffect, groupsByModel, bootScene])
 
   // Stable handlers for the memoized AssetsPanel. These were inline arrows on
   // the JSX — new identity every render, which defeats memo, and with keep-alive
   // docks a defeated memo means the HIDDEN Assets tab re-rendered on every page
   // render (each tick of a settings slider drag included). They only touch refs
   // and setters, so identity never needs to change.
-  const pickModel = useCallback(() => (isMobile ? zipInputRef.current : folderInputRef.current)?.click(), [isMobile])
-  const pickModelZip = useCallback(() => zipInputRef.current?.click(), [])
-  const pickAnimation = useCallback(() => vmdInputRef.current?.click(), [])
+  // Scene-panel Reset: everything the panel governs — settings AND the applied
+  // background effect (a separate state the old onChange-only reset missed).
+  // Settings flow through setSceneSettings, so the reset lands in undo history;
+  // the effect apply-effect (setBackgroundEffect) reacts to bgEffect on its own.
+  const resetSceneDefaults = useCallback(() => {
+    setSceneSettings(DEFAULT_SCENE.state.settings)
+    setBgEffect(DEFAULT_SCENE.state.backgroundEffect)
+  }, [])
+
+  const openModelDialog = useCallback(
+    (target: ModelTarget) => {
+      modelTargetRef.current = target
+      ;(isMobile ? zipInputRef : folderInputRef).current?.click()
+    },
+    [isMobile],
+  )
+  const addModel = useCallback(() => openModelDialog({ mode: "add" }), [openModelDialog])
+  const addModelZip = useCallback(() => {
+    modelTargetRef.current = { mode: "add" }
+    zipInputRef.current?.click()
+  }, [])
+  const replaceSlot = useCallback((id: string) => openModelDialog({ mode: "replace", id }), [openModelDialog])
+  const replaceSlotZip = useCallback((id: string) => {
+    modelTargetRef.current = { mode: "replace", id }
+    zipInputRef.current?.click()
+  }, [])
+  // The "+ Add model" button reveals an EMPTY slot (upload pair + placeholder
+  // lines) instead of opening a dialog — filling slot N looks exactly like
+  // filling slot 1 did. One pending slot at a time; its ✕ cancels.
+  const [pendingSlot, setPendingSlot] = useState(false)
+  const addSlot = useCallback(() => setPendingSlot(true), [])
+  const cancelPending = useCallback(() => setPendingSlot(false), [])
+  const pickAnimationFor = useCallback((id: string) => {
+    animTargetRef.current = id
+    vmdInputRef.current?.click()
+  }, [])
+  const removeModel = useCallback(
+    (modelId: string) => {
+      removeModelById(modelId)
+      clearAnimMeta(modelId)
+      setAnimByModel((prev) => {
+        const n = { ...prev }
+        delete n[modelId]
+        return n
+      })
+      // Fall back to the surviving cast's first model (the derived activeModel
+      // handles it); let group auto-select re-run for whichever that is.
+      autoSelectedFor.current = null
+    },
+    [removeModelById],
+  )
   const pickCamera = useCallback(() => cameraInputRef.current?.click(), [])
   const pickMusic = useCallback(() => audioInputRef.current?.click(), [])
   const pickBackdrop = useCallback(() => backdropInputRef.current?.click(), [])
   const pickSkybox = useCallback(() => skyboxInputRef.current?.click(), [])
-  const removeAnimation = useCallback(() => {
-    stopAnimation()
-    setAnimName(null)
-    animSourceRef.current = null // don't resurrect it on the next model upload
-  }, [stopAnimation])
+  const removeAnimation = useCallback(
+    (modelId: string) => {
+      stopAnimation(modelId)
+      clearAnimMeta(modelId)
+      // Also forgets the retained source, so a model replace won't resurrect it.
+      setAnimByModel((prev) => {
+        const n = { ...prev }
+        delete n[modelId]
+        return n
+      })
+    },
+    [stopAnimation],
+  )
+
+  // Character cards (Assets tab) + model strip (Materials tab) — memoized so the
+  // memoized panels aren't defeated by fresh array identities every render.
+  const characters = useMemo<CharacterCardData[]>(
+    () =>
+      models.map((m) => ({
+        id: m.id,
+        file: m.file,
+        active: m.id === activeId,
+        animName: animByModel[m.id]?.name ?? null,
+      })),
+    [models, animByModel, activeId],
+  )
+  const modelTabs = useMemo(
+    () => models.map((m) => ({ id: m.id, file: m.file, active: m.id === activeId })),
+    [models, activeId],
+  )
 
   // ── Dock tab definitions ── LEFT = styling (materials, scene look); RIGHT =
   // ingredients & output (assets in, render out).
@@ -1020,6 +1147,8 @@ export default function Home() {
       icon: MaterialSphereIcon,
       content: (
         <MaterialsPanel
+          modelTabs={modelTabs}
+          onSelectModel={selectModel}
           materials={materials}
           groups={groups}
           activeGroupId={activeGroupId}
@@ -1040,6 +1169,7 @@ export default function Home() {
           onChange={setSceneSettings}
           effectName={bgEffect?.name ?? null}
           onOpenEffects={openEffects}
+          onReset={resetSceneDefaults}
         /> },
   ]
 
@@ -1050,34 +1180,29 @@ export default function Home() {
       icon: Package,
       content: (
         <AssetsPanel
-          modelFile={modelFile}
-          animName={animName}
+          characters={characters}
           cameraName={cameraName}
           audioName={audioName}
-          modelMeta={`${t.assets.metaModel(modelStats.vertices.toLocaleString("en-US"), modelStats.bones, modelStats.materials)}${modelSize ? ` · ${fmtSize(modelSize)}` : ""}`}
-          animMeta={
-            animName
-              ? [fmtDur(animDuration), animKeyframes ? t.assets.metaKeyframes(animKeyframes.toLocaleString("en-US")) : "", animSize ? fmtSize(animSize) : ""]
-                  .filter(Boolean)
-                  .join(" · ")
-              : ""
-          }
-          cameraMeta={cameraName && cameraSize != null ? fmtSize(cameraSize) : ""}
-          audioMeta={audioName ? [fmtDur(audioDuration), audioSize ? fmtSize(audioSize) : ""].filter(Boolean).join(" · ") : ""}
           backdropName={backdrop?.name ?? null}
-          backdropMeta={backdrop ? `${backdrop.width}×${backdrop.height}` : ""}
           skyboxName={skybox?.name ?? null}
-          skyboxMeta={skybox ? `${skybox.width}×${skybox.height} · 360°` : ""}
+          pendingSlot={pendingSlot}
           modelUploadLabel={isMobile ? t.assets.uploadModelZip : t.assets.uploadModelFolder}
-          onUploadModel={pickModel}
-          onUploadModelZip={isMobile ? undefined : pickModelZip}
-          onUploadAnimation={pickAnimation}
+          addModelLabel={t.assets.addModel}
+          onSelectModel={selectModel}
+          onReplaceSlot={replaceSlot}
+          onReplaceSlotZip={isMobile ? undefined : replaceSlotZip}
+          onAddSlot={addSlot}
+          onFillPending={addModel}
+          onFillPendingZip={isMobile ? undefined : addModelZip}
+          onCancelPending={cancelPending}
+          onRemoveModel={removeModel}
+          onUploadAnimation={pickAnimationFor}
+          onRemoveAnimation={removeAnimation}
           onUploadCamera={pickCamera}
           onUploadMusic={pickMusic}
           onRemoveMusic={removeAudio}
           onUploadBackdrop={pickBackdrop}
           onUploadSkybox={pickSkybox}
-          onRemoveAnimation={removeAnimation}
           onRemoveCamera={removeCamera}
           onRemoveBackdrop={removeBackdrop}
           onRemoveSkybox={removeSkybox}
@@ -1093,10 +1218,11 @@ export default function Home() {
           active={rightTab === "render"}
           engineRef={engineRef}
           canvasRef={canvasRef}
-          modelName={modelName}
+          modelName={masterId ?? activeId}
+          extraModelNames={extraModelNames}
           sceneName={t.brand.untitledScene}
-          animName={animName}
-          animDuration={animDuration}
+          animName={masterId ? (animByModel[masterId]?.name ?? null) : null}
+          animDuration={masterDuration}
           backdrop={backdrop}
           backgroundColor={sceneSettings.background.color}
           musicUrl={audioSrc || null}
@@ -1123,9 +1249,8 @@ export default function Home() {
         const f = files[0]
         const n = f.name.toLowerCase()
         if (n.endsWith(".vmd")) {
-          setAnimSize(f.size)
-          animSourceRef.current = { kind: "file", file: f }
-          setAnimName(await loadVmdFile(f))
+          // A dropped motion lands on the ACTIVE model (the card selection).
+          await loadAnimFor(activeIdRef.current, f)
           return
         }
         if (f.type.startsWith("audio/")) {
@@ -1137,7 +1262,9 @@ export default function Home() {
           return
         }
       }
-      await handleModelFiles(files)
+      // A dropped model REPLACES the active one (the pre-multi-model behavior);
+      // adding to the cast is the explicit "+ Add model" button.
+      await handleModelFiles(files, { mode: "replace", id: activeIdRef.current })
     })()
   }
 
@@ -1323,7 +1450,7 @@ export default function Home() {
           removing the animation doesn't blink the UI away). ── */}
       {mounted && !drawerFull && (
         <div className="fixed bottom-3 left-1/2 z-20 -translate-x-1/2">
-          <AnimPlayer engineRef={engineRef} modelName={modelName} clipName={animName} hasCamera={cameraName !== null} />
+          <AnimPlayer engineRef={engineRef} modelNames={animatedIds} hasCamera={cameraName !== null} />
         </div>
       )}
 
@@ -1455,7 +1582,6 @@ export default function Home() {
         playsInline
         muted={audioSource !== "music"}
         className="hidden"
-        onLoadedMetadata={(e) => setAudioDuration(e.currentTarget.duration)}
       />
       <Dialog open={upload !== null} onOpenChange={(o) => !o && setUpload(null)}>
         <DialogContent className="max-w-sm rounded-xl border-white/10 bg-zinc-950/95 backdrop-blur-xs">
@@ -1472,7 +1598,7 @@ export default function Home() {
                   className="block w-full cursor-pointer truncate rounded-lg px-3 py-2 text-left text-xs transition-colors hover:bg-white/5 hover:text-foreground"
                   onClick={() => {
                     const pmx = upload.files.find((f) => relPath(f) === path)
-                    if (pmx) void loadCustom(upload.files, pmx)
+                    if (pmx) void loadCustom(upload.files, pmx, upload.target)
                   }}
                 >
                   {path}

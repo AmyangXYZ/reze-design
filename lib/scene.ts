@@ -73,9 +73,18 @@ export type ModelRef = {
  *  durability boundary from these file-backed assets). */
 export type SceneBackground = { kind: "backdrop" | "skybox"; asset: AssetRef } | null
 
-export type SceneAssets = {
+/** One character in the scene: the model plus ITS motion clip. Clips are per
+ *  model instance in the engine, so a multi-model scene attaches one each —
+ *  formations typically reuse the same VMD across entries. */
+export type SceneModel = {
   model: ModelRef
   animation: AssetRef | null
+}
+
+export type SceneAssets = {
+  /** ≥1 entry; [0] is the PRIMARY model — boot camera framing is tuned to it and
+   *  it anchors the master clock fallback when no model has a longer clip. */
+  models: SceneModel[]
   /** Camera VMD — drives target/rotation/distance/fov, overriding `state.camera`. */
   cameraAnimation: AssetRef | null
   audio: AssetRef | null
@@ -92,16 +101,13 @@ export type SceneState = {
    *  reference, so a saved or shared scene reproduces exactly even if the
    *  library entry changes later — same philosophy as `groups`. */
   backgroundEffect: AppliedBackgroundEffect | null
-  /** Per-group shader graphs — the user's actual creative work. `null` means
-   *  "auto-group from the model's material names at load", which is what the
-   *  demo wants: it re-derives whenever the bundled model is swapped. */
-  groups: StyleGroup[] | null
-  /** The ModelRef.id `groups` was authored against. Groups name MATERIALS, and
-   *  those exist in exactly one model — restoring them across a model change
-   *  would silently match nothing and render the scene untoned. Gate on this and
-   *  fall back to auto-grouping. Assets don't persist but state does, so a
-   *  reload after a model upload hits precisely this case. */
-  groupsFor: string | null
+  /** Per-group shader graphs — the user's actual creative work — keyed by the
+   *  ModelRef.id they were authored against. Groups name MATERIALS, and those
+   *  exist in exactly one model, so restoring a model's groups is gated on its
+   *  id being present in the key set; models without an entry auto-group from
+   *  material names at load. `null` = auto-group everything (the demo's mode —
+   *  it re-derives whenever the bundled model is swapped). */
+  groups: Record<string, StyleGroup[]> | null
 }
 
 export type Scene = {
@@ -135,8 +141,7 @@ export function modelPmxUrl(model: ModelRef): string | null {
 /** Snapshot the live editor into a document. Centralises the version stamp and
  *  the `groupsFor` derivation so callers can't forget either. */
 export function serializeScene(live: {
-  model: ModelRef
-  animation: AssetRef | null
+  models: SceneModel[]
   cameraAnimation: AssetRef | null
   audio: AssetRef | null
   background: SceneBackground
@@ -144,13 +149,12 @@ export function serializeScene(live: {
   camera: SceneState["camera"]
   settings: SceneSettings
   backgroundEffect: AppliedBackgroundEffect | null
-  groups: StyleGroup[]
+  groups: Record<string, StyleGroup[]>
 }): Scene {
   return {
     version: SCENE_FORMAT_VERSION,
     assets: {
-      model: live.model,
-      animation: live.animation,
+      models: live.models,
       cameraAnimation: live.cameraAnimation,
       audio: live.audio,
       background: live.background,
@@ -161,7 +165,6 @@ export function serializeScene(live: {
       settings: live.settings,
       backgroundEffect: live.backgroundEffect,
       groups: live.groups,
-      groupsFor: live.model.id,
     },
   }
 }
@@ -187,14 +190,27 @@ export function saveSceneState(state: SceneState) {
   }
 }
 
-function loadStoredState(): Partial<SceneState> | null {
+/** Stored blobs from before the multi-model format carry `groups` as an ARRAY
+ *  plus a `groupsFor` model id — lift them into the per-model-id record. */
+type StoredState = Omit<Partial<SceneState>, "groups"> & {
+  groups?: Record<string, StyleGroup[]> | StyleGroup[] | null
+  groupsFor?: string | null
+}
+
+function loadStoredState(): StoredState | null {
   if (typeof window === "undefined") return null
   try {
     const raw = window.localStorage.getItem(STATE_KEY)
-    return raw ? (JSON.parse(raw) as Partial<SceneState>) : null
+    return raw ? (JSON.parse(raw) as StoredState) : null
   } catch {
     return null
   }
+}
+
+function migrateStoredGroups(stored: StoredState | null): Record<string, StyleGroup[]> | null {
+  if (!stored?.groups) return null
+  if (Array.isArray(stored.groups)) return stored.groupsFor ? { [stored.groupsFor]: stored.groups } : null
+  return stored.groups
 }
 
 /** The boot document: `base` (the bundled default) with the user's stored values
@@ -210,8 +226,15 @@ export function hydrateScene(base: Scene): Scene {
   // No new-format state yet: lift the pre-format settings-only blob, so an
   // existing user's saved look survives the upgrade.
   const settingsBase = stored?.settings ?? loadLegacySceneSettings() ?? base.state.settings
-  // Groups are meaningless against a different model — see SceneState.groupsFor.
-  const groupsUsable = stored?.groups != null && stored.groupsFor === base.assets.model.id
+  // Groups restore PER MODEL: an entry only applies when its model id is in the
+  // scene (groups name materials, which exist in exactly one model). Ids from
+  // removed/renamed uploads simply don't match and fall back to auto-grouping.
+  const storedGroups = migrateStoredGroups(stored)
+  const baseIds = new Set(base.assets.models.map((m) => m.model.id))
+  const usableGroups = storedGroups
+    ? Object.fromEntries(Object.entries(storedGroups).filter(([id]) => baseIds.has(id)))
+    : null
+  const groupsUsable = usableGroups != null && Object.keys(usableGroups).length > 0
 
   return {
     ...base,
@@ -231,8 +254,7 @@ export function hydrateScene(base: Scene): Scene {
         background: { ...base.state.settings.background, ...settingsBase.background },
         ground: { ...base.state.settings.ground, ...settingsBase.ground },
       },
-      groups: groupsUsable ? stored.groups! : base.state.groups,
-      groupsFor: groupsUsable ? base.assets.model.id : base.state.groupsFor,
+      groups: groupsUsable ? usableGroups : base.state.groups,
     },
   }
 }
