@@ -588,9 +588,20 @@ export default function Home() {
   // then the canvas pins to the target aspect at screen scale and letterboxes
   // top/bottom via object-contain.
   const [framePreview, setFramePreview] = useState<FramePreview | null>(null)
+  // Collapsing the docks UNMOUNTS the Render panel (the dock's keep-alive covers
+  // tab switches, not collapse), so its cleanup clears the framing — which used
+  // to take the frame border away MID-EXPORT, exactly when you most want to
+  // watch it. Remember the last framing and keep drawing it while an export
+  // runs, so hiding the docks for a clean view keeps the recording frame.
+  const [lastFrame, setLastFrame] = useState<FramePreview | null>(null)
+  const handleFramePreview = useCallback((p: FramePreview | null) => {
+    setFramePreview(p)
+    if (p) setLastFrame(p)
+  }, [])
+  const activeFrame = framePreview ?? (exporting ? lastFrame : null)
   const [frameVp, setFrameVp] = useState<{ w: number; h: number } | null>(null)
   useEffect(() => {
-    if (!framePreview) {
+    if (!activeFrame) {
       setFrameVp(null)
       return
     }
@@ -598,7 +609,7 @@ export default function Home() {
     update()
     window.addEventListener("resize", update)
     return () => window.removeEventListener("resize", update)
-  }, [framePreview])
+  }, [activeFrame])
   useEffect(() => {
     const engine = engineRef.current
     if (!engine || !ready) return
@@ -606,19 +617,19 @@ export default function Home() {
     // Tolerance: a viewport a hair narrower than the target (browser chrome,
     // rounding) would otherwise pin and nudge the scene by a pixel or two for an
     // invisible accuracy gain. Only pin on a real mismatch (e.g. portrait phone).
-    if (framePreview && frameVp && framePreview.aspect > (frameVp.w / frameVp.h) * FRAME_ASPECT_TOL) {
+    if (activeFrame && frameVp && activeFrame.aspect > (frameVp.w / frameVp.h) * FRAME_ASPECT_TOL) {
       const dpr = window.devicePixelRatio || 1
-      engine.setRenderSize(Math.round(frameVp.w * dpr), Math.round((frameVp.w * dpr) / framePreview.aspect))
+      engine.setRenderSize(Math.round(frameVp.w * dpr), Math.round((frameVp.w * dpr) / activeFrame.aspect))
     } else {
       engine.setRenderSize(null)
     }
-  }, [framePreview, frameVp, exporting, ready, engineRef])
+  }, [activeFrame, frameVp, exporting, ready, engineRef])
   // Frame rect in CSS pixels (the canvas fills the window; object-contain centers).
   const frameRect =
-    framePreview && frameVp
+    activeFrame && frameVp
       ? (() => {
           const va = frameVp.w / frameVp.h
-          const a = framePreview.aspect
+          const a = activeFrame.aspect
           // Within tolerance the canvas isn't pinned and the frame IS the viewport
           // — snap to it, so a 16:9 target on a ~16:9 window hugs all four edges
           // exactly like 9:16 hugs top/bottom (no phantom 1–2px bars on one side).
@@ -1231,7 +1242,7 @@ export default function Home() {
           greenScreen={greenScreen}
           onGreenScreenChange={setGreenScreen}
           onExportingChange={setExporting}
-          onFramePreviewChange={setFramePreview}
+          onFramePreviewChange={handleFramePreview}
         />
       ),
     },
@@ -1306,7 +1317,7 @@ export default function Home() {
             )}
             style={{ left: frameRect.x, top: frameRect.y, width: frameRect.w, height: frameRect.h }}
           />
-          {framePreview?.watermark &&
+          {activeFrame?.watermark &&
             (() => {
               // Mirrors drawWatermark's metrics (lib/video-export.ts): 2.8%-height
               // Geist Medium, wide tracking, soft shadow, 2.2% padding, top-left.
