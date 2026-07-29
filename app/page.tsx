@@ -998,14 +998,18 @@ export default function Home() {
     sceneSettings.grade.preset === CUSTOM_ID
       ? (sceneSettings.grade.custom?.name ?? t.gradeLibrary.untitled)
       : t.scene.gradePresets[sceneSettings.grade.preset as keyof typeof t.scene.gradePresets]
-  const gradeValue = sceneSettings.grade.preset
-  const gradeList = useMemo(
-    () =>
+  // An edit isn't a library item, so it doesn't get its own row — it marks the
+  // preset it descends from as edited. Only a from-scratch grade, which descends
+  // from nothing, needs a row of its own.
+  const gradeEdited = sceneSettings.grade.preset === CUSTOM_ID
+  const gradeValue = gradeEdited ? (sceneSettings.grade.custom?.from ?? CUSTOM_ID) : sceneSettings.grade.preset
+  const gradeList = useMemo(() => {
+    const items =
       gradeValue === CUSTOM_ID
         ? [...gradeItems, { id: CUSTOM_ID, label: sceneSettings.grade.custom?.name ?? t.gradeLibrary.untitled }]
-        : gradeItems,
-    [gradeItems, gradeValue, sceneSettings.grade.custom?.name, t],
-  )
+        : gradeItems
+    return gradeEdited ? items.map((i) => (i.id === gradeValue ? { ...i, hint: t.scene.edited } : i)) : items
+  }, [gradeItems, gradeValue, gradeEdited, sceneSettings.grade.custom?.name, t])
   const pickGrade = useCallback(
     (id: string) => {
       if (id === CUSTOM_ID) return // the transient row for the applied edit — already on
@@ -1041,7 +1045,16 @@ export default function Home() {
   const editCurrentEffect = useCallback(() => {
     if (bgEffect) openFxEditor(bgEffect)
   }, [bgEffect, openFxEditor])
-  const effectItems = useMemo(() => BACKGROUND_EFFECTS.map((e) => ({ id: e.name, label: e.name })), [])
+  // Same rule as grades: an edited builtin marks its own row rather than appearing
+  // as a second entry, and only a from-scratch effect gets a row of its own.
+  const effectItems = useMemo(() => {
+    const items = BACKGROUND_EFFECTS.map((e) => ({ id: e.name, label: e.name }))
+    if (!bgEffect) return items
+    if (isStockEffect(bgEffect)) return items
+    const known = items.some((i) => i.id === bgEffect.name)
+    const withOwn = known ? items : [...items, { id: bgEffect.name, label: bgEffect.name }]
+    return withOwn.map((i) => (i.id === bgEffect.name ? { ...i, hint: t.scene.edited } : i))
+  }, [bgEffect, t])
   const pickEffect = useCallback((name: string) => {
     const def = BACKGROUND_EFFECTS.find((e) => e.name === name)
     if (def) setBgEffect(builtinEffect(def.id))

@@ -30,96 +30,71 @@
     }
   },
   {
-    "id": "filmic",
+    "id": "cyberpunk",
     "kind": "grade",
-    "name": "Filmic",
+    "name": "Cyberpunk",
     "author": "Amyang",
-    "description": "Print-stock fade: blacks lifted toward cool blue, saturation pulled well down, contrast slightly soft. Reads as archival footage rather than a render.",
+    "description": "Teal shadows against magenta mids and highlights, saturation pushed past cinematic. Deliberately no amber — that reads as sunset, not neon.",
     "tags": [
-      "film",
-      "muted",
-      "faded"
+      "night",
+      "neon",
+      "saturated"
     ],
     "version": 1,
     "payload": {
       "spec": {
         "shadows": [
-          208,
-          0.24,
-          0.58
+          184,
+          0.36,
+          0.41
         ],
         "midtones": [
-          205,
-          0.12
+          312,
+          0.15,
+          0.39
         ],
         "highlights": [
-          30,
-          0.1
+          328,
+          0.3,
+          0.47
         ],
-        "contrast": 0.92,
-        "saturation": 0.62
+        "contrast": 1.42,
+        "saturation": 1.5
       }
     }
   },
   {
-    "id": "golden",
+    "id": "bloody",
     "kind": "grade",
-    "name": "Golden",
+    "name": "Bloody",
     "author": "Amyang",
-    "description": "Low-sun warmth across the whole frame. Skin goes properly golden — that's the point of it, not a side effect to correct.",
+    "description": "Horror-anime blood wash. Blacks go true black and the reds run the whole range from near-black to bright, so shading still reads — the colour comes from contrast and saturation rather than from crushing the channels.",
     "tags": [
-      "warm",
-      "sunset",
-      "soft"
+      "red",
+      "crimson",
+      "horror",
+      "anime"
     ],
     "version": 1,
     "payload": {
       "spec": {
         "shadows": [
-          30,
-          0.14
+          358,
+          0.55,
+          0.36
         ],
         "midtones": [
-          38,
-          0.1
+          356,
+          0.3,
+          0.4
         ],
         "highlights": [
-          45,
-          0.2
+          2,
+          0.5,
+          0.545
         ],
-        "contrast": 0.98,
-        "saturation": 1.1
-      }
-    }
-  },
-  {
-    "id": "sakura",
-    "kind": "grade",
-    "name": "Sakura",
-    "author": "Amyang",
-    "description": "A gentle rose wash through shadows and mids with the highlights left clean. Soft contrast keeps it wistful instead of candied.",
-    "tags": [
-      "pink",
-      "soft",
-      "romantic"
-    ],
-    "version": 1,
-    "payload": {
-      "spec": {
-        "shadows": [
-          305,
-          0.12
-        ],
-        "midtones": [
-          345,
-          0.09
-        ],
-        "highlights": [
-          352,
-          0.18
-        ],
-        "contrast": 0.96,
-        "saturation": 1.08
+        "contrast": 1.45,
+        "saturation": 0.75
       }
     }
   },
@@ -159,36 +134,100 @@
     }
   },
   {
-    "id": "cyberpunk",
+    "id": "golden",
     "kind": "grade",
-    "name": "Cyberpunk",
+    "name": "Divine",
     "author": "Amyang",
-    "description": "Teal shadows against magenta mids and highlights, saturation pushed past cinematic. Deliberately no amber — that reads as sunset, not neon.",
+    "description": "Holy light. Deep amber shadows climb through saturated gold to a radiance that blooms toward white — divine rather than the sepia a warm filter usually gives you.",
     "tags": [
-      "night",
-      "neon",
-      "saturated"
+      "gold",
+      "warm",
+      "holy",
+      "divine"
     ],
     "version": 1,
     "payload": {
       "spec": {
         "shadows": [
-          184,
-          0.36,
-          0.41
+          30,
+          0.15,
+          0.38
         ],
         "midtones": [
-          312,
-          0.15,
-          0.39
+          60,
+          0.55,
+          0.38
         ],
         "highlights": [
-          328,
-          0.3,
-          0.47
+          30,
+          0.18,
+          0.63
         ],
-        "contrast": 1.42,
-        "saturation": 1.5
+        "contrast": 0.99,
+        "saturation": 1.9
+      }
+    }
+  },
+  {
+    "id": "sakura",
+    "kind": "grade",
+    "name": "Sakura",
+    "author": "Amyang",
+    "description": "A gentle rose wash through shadows and mids with the highlights left clean. Soft contrast keeps it wistful instead of candied.",
+    "tags": [
+      "pink",
+      "soft",
+      "romantic"
+    ],
+    "version": 1,
+    "payload": {
+      "spec": {
+        "shadows": [
+          305,
+          0.12
+        ],
+        "midtones": [
+          345,
+          0.09
+        ],
+        "highlights": [
+          352,
+          0.18
+        ],
+        "contrast": 0.96,
+        "saturation": 1.08
+      }
+    }
+  },
+  {
+    "id": "filmic",
+    "kind": "grade",
+    "name": "Filmic",
+    "author": "Amyang",
+    "description": "Print-stock fade: blacks lifted toward cool blue, saturation pulled well down, contrast slightly soft. Reads as archival footage rather than a render.",
+    "tags": [
+      "film",
+      "muted",
+      "faded"
+    ],
+    "version": 1,
+    "payload": {
+      "spec": {
+        "shadows": [
+          208,
+          0.24,
+          0.58
+        ],
+        "midtones": [
+          205,
+          0.12
+        ],
+        "highlights": [
+          30,
+          0.1
+        ],
+        "contrast": 0.92,
+        "saturation": 0.62
       }
     }
   },

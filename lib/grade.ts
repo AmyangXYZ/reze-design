@@ -60,6 +60,11 @@ export const CUSTOM_ID = "custom"
 // contributed grade will arrive in once the library is server-backed.
 // Tune them by SIMULATING the engine's CDL over sample pixels and fitting to a
 // reference frame; eyeballing hue/sat numbers has never once landed.
+// Judge DETAIL on a grey ramp (a shaded white dress is one): sum the per-step
+// channel change. A preset that reads "flat" is one whose ramp bunches. Colour
+// belongs in `contrast` + `saturation`; pushing it through midtone/highlight
+// saturation instead drives slope and power apart until channels pin at 0/255,
+// which is what actually destroys shading.
 // JSON widens the range tuples to number[], so re-narrow on the way in — one
 // cast at the boundary keeps every consumer strongly typed.
 export const GRADE_PRESETS = asBuiltins<GradeItem>(presets as unknown as Omit<GradeItem, "owner">[])
