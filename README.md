@@ -1,12 +1,18 @@
 # Reze Design
 
-Turn an MMD dance into a live, shareable 3D performance. Bring a model, a motion, and a song — style the character, light it, and publish an interactive 3D link, not a flat video. Built on the MMD WebGPU engine [reze-engine](https://github.com/AmyangXYZ/reze-engine).
+Render MMD in the browser with WebGPU. Load models and motions, style materials with node-based shaders, grade the colour, and export 4K video or share a live 3D link. Built on the MMD WebGPU engine [reze-engine](https://github.com/AmyangXYZ/reze-engine).
 
-![reze-design](./screenshot.png)
+![The editor](./screenshots/home.png)
+
+| ![Shader graph editor](./screenshots/shader-graph.png) | ![Background effect editor](./screenshots/effect-editor.png) |
+| :-: | :-: |
+| Node editor compiled to WGSL, applied live | WGSL background effects edited in-app |
+
+![Video export](./screenshots/video-export.png)
 
 ## Features
 
-- **Compose a scene** — load a model (PMX folder or zip — drag & drop works too), a motion + camera VMD, and a music track; a demo loads on first open. Swapping models keeps the current dance.
+- **Multiple models per scene** — load as many characters as you like (PMX folder or zip, drag & drop), each with its own motion, plus a shared camera VMD and music track. A demo loads on first open, and swapping a model keeps its dance.
 - **Style every material** — collect materials into **style groups** and apply a **shader graph** to each in one click from the library.
 - **Author shaders visually** — build shader graphs in a Blender-style node editor (localized node names, Blender-style shortcuts, node rename), compiled to WGSL and applied live.
 - **Grade the look** — ASC CDL colour grading with curated presets (Bloody, Cyberpunk, Divine, Moonlit, Sakura), each with its own remembered intensity; open the grade editor for split tone, three tonal-range wheels and contrast/saturation, previewed on a live capture of your own scene.
@@ -14,19 +20,16 @@ Turn an MMD dance into a live, shareable 3D performance. Bring a model, a motion
 - **Background effects** — live WGSL shaders layered between the background and the model (starfield, sakura, rain, neon…): pick from the library, tweak the code in the built-in editor, ⌘⏎ to see it on the scene. Live thumbnails run the real shader.
 - **Play it back** — scrub and loop with the music synced to the motion; Space toggles playback; camera VMD follow/free toggle.
 - **Undo/redo everywhere** — ⌘/Ctrl+Z and ⇧⌘/Ctrl+Z, routed to whichever panel or editor you are working in (the code editor keeps native text undo).
-- **Render to video** — frame-accurate 60 fps mp4 export in the browser (WebCodecs hardware encode): aspect 16:9 / 9:16 / 1:1 / 4:3 × quality 1080p / 1440p / 4K, a **green-screen mode** for compositing in external editors (live-previewed in the viewport), and an optional watermark.
+- **High-quality video export** — frame-accurate 60 fps mp4 rendered in the browser with WebCodecs hardware encoding, streamed straight to disk so length is not capped by memory. 2.39:1 cinemascope, 16:9, 9:16, 1:1 and 4:3 at up to 4K, a **green-screen mode** previewed live in the viewport for compositing elsewhere, and an optional watermark.
 
 ## Authoring shaders
 
-Two terms, used consistently and exclusively: a **style group** is a set of
-materials that share one look, and a **shader graph** is the node graph that
-defines it. (A third value type, the **colour grade**, sits on the whole scene
-rather than on materials — see the Grade section in the Scene panel.)
+A **style group** is a set of materials that share one look, and a **shader
+graph** is the node graph defining it. A **colour grade** applies to the whole
+scene, from the Grade section of the Scene panel.
 
-Two custom-shader systems, one philosophy: everything the user makes is a
-self-contained value that travels inside the scene document. These sections are
-deliberately terse but complete — enough for a person to start, or to paste
-into an AI agent as the spec for generating one.
+Both shader systems produce self-contained values that travel inside the scene
+document, so a shared scene carries everything it needs to render.
 
 ### Shader graphs (materials)
 
@@ -141,9 +144,9 @@ npm run dev
 
 ## Roadmap
 
-reze-design is a curated MMD platform — an aesthetic with built-in shader graphs and colour grades (think camera filters), not a general 3D DCC. The focus is the character and its dance, presented well. Next up:
+A curated MMD platform built around the character and its dance, with a growing set of shader graphs and colour grades tuned for the look. Next up:
 
-- **Share a live link** — publish your scene as a real-time, interactive 3D page at `reze.design/<user>/<scene>`, not a flat video.
+- **Share a live link** — publish a scene as a real-time, interactive 3D page at `reze.design/<user>/<scene>`.
 - **More built-ins** — a growing shader-graph and colour-grade library tuned for the MMD aesthetic.
 - **Gallery** — browse and remix shared scenes, shader graphs and grades.
 - **Mobile layout** — a proper small-screen shell (the editor already runs there).

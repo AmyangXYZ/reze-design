@@ -43,6 +43,11 @@ export type SceneAssets = {
 }
 
 export type SceneState = {
+  /** The scene's identity, and the ONLY place it lives — `SceneItem.id` when
+   *  published, this while it is still local. Never inside SceneDoc: the payload
+   *  is content, and a second copy could only drift from the primary key.
+   *  Minted client-side so a scene has identity before it is ever published. */
+  id: string
   name: string
   /** Boot framing. `target` is the orbit centre — tune to the model's height. */
   camera: { distance: number; target: [number, number, number] }
@@ -114,6 +119,9 @@ export function parseSceneDoc(doc: SceneDoc, resolveEffect: (id: string) => Appl
       background: doc.background ? { kind: doc.background.kind, asset: assetFromPath(doc.background.asset) } : null,
     },
     state: {
+      // A parsed document is not yet a saved scene; hydrateScene supplies the
+      // stored id, or mints one for a first-time visitor.
+      id: "",
       name: doc.name,
       camera: doc.camera,
       settings: doc.settings,
@@ -191,6 +199,12 @@ export function serializeSceneDoc(
 // ── Local persistence: the `state` half only. ──────────────────────────────────
 
 // ".2": earlier builds autosaved backgroundEffect:null before effects existed
+/** Minted client-side: waiting for the server would leave local scenes anonymous. */
+export function newSceneId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID()
+  return `scn_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
+}
+
 const STATE_KEY = "reze-design.sceneState.2"
 
 export function saveSceneState(state: SceneState) {
@@ -241,6 +255,9 @@ export function hydrateScene(base: Scene): Scene {
     ...base,
     state: {
       ...base.state,
+      // Blobs stored before ids existed get one here. The demo's identity is never
+      // adopted — an edited demo is the user's own scene.
+      id: stored?.id ?? newSceneId(),
       name: stored?.name ?? base.state.name,
       camera: stored?.camera ?? base.state.camera,
       // Model-independent (unlike groups) — restores across model swaps.

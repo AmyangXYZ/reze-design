@@ -169,6 +169,14 @@ export default function Home() {
   const rightDockZ = useZOrder()
 
   const [drawerOpen, setDrawerOpen] = useState(false)
+  // Bumped per open so the panel RAISES each time — it stays mounted while closed,
+  // so without this bringToFront only ever ran on first mount and opening the
+  // editor from a library left the library stacked on top.
+  const [graphSession, setGraphSession] = useState(0)
+  const openGraphEditor = useCallback(() => {
+    setGraphSession((v) => v + 1)
+    setDrawerOpen(true)
+  }, [])
   const [drawerFull, setDrawerFull] = useState(false) // graph editor full-screen
   // Free-floating editor window rect (null until initialized post-mount from storage).
   const [panelRect, setPanelRect] = useState<Rect | null>(null)
@@ -295,7 +303,7 @@ export default function Home() {
     setActiveGroupId(group.id)
     setLibVersion((v) => v + 1)
     if (edit) {
-      setDrawerOpen(true) // pop the editor; keep the library open (independent panels)
+      openGraphEditor() // pop the editor; keep the library open (independent panels)
     } else {
       setLibrary({ open: false, groupId: null })
     }
@@ -378,9 +386,9 @@ export default function Home() {
       if (!g) return
       setActiveGroupId(id)
       setEditBaseline({ groupId: id, graph: g.graph, label: g.label })
-      setDrawerOpen(true)
+      openGraphEditor()
     },
-    [groups],
+    [groups, openGraphEditor],
   )
 
   // ── Model upload ──
@@ -904,6 +912,7 @@ export default function Home() {
     if (!ready) return
     let idle = 0
     const payload = {
+      id: bootScene.state.id,
       name: bootScene.state.name,
       camera: bootScene.state.camera,
       settings: sceneSettings,
@@ -1369,6 +1378,7 @@ export default function Home() {
         <FloatingPanel
           rect={panelRect}
           onRectChange={updatePanelRect}
+          raiseKey={graphSession}
           open={drawerOpen}
           fullscreen={drawerFull}
           className={cn(
