@@ -46,7 +46,11 @@ export function NodeContextMenu({
     const onDown = (e: PointerEvent) => {
       if (!ref.current?.contains(e.target as Node)) onClose()
     }
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return
+      e.stopPropagation() // owns the key; don't also close the editor behind it
+      onClose()
+    }
     document.addEventListener("pointerdown", onDown, true)
     document.addEventListener("keydown", onKey)
     return () => {

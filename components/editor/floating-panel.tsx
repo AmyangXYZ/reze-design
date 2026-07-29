@@ -34,6 +34,7 @@ export function FloatingPanel({
   minH = 240,
   className,
   raiseKey,
+  onEscape,
   children,
 }: {
   rect: Rect
@@ -45,6 +46,8 @@ export function FloatingPanel({
   className?: string
   /** Changing this raises the panel */
   raiseKey?: unknown
+  /** Escape closes this panel when it is the topmost surface. */
+  onEscape?: () => void
   children: ReactNode
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -127,7 +130,7 @@ export function FloatingPanel({
 
   // Edge/corner resize affordances (invisible hit strips). Corners sit above edges.
   const edge = "absolute touch-none"
-  const { z, onPointerDownCapture } = useZOrder(raiseKey)
+  const { z, onPointerDownCapture } = useZOrder(raiseKey, onEscape)
 
   if (typeof document === "undefined") return null
   // Portal to <body> so the panel's z-index compares directly against other body-level portals

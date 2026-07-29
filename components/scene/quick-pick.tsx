@@ -59,8 +59,10 @@ export function QuickPick({
         align="end"
         sideOffset={6}
         className="w-32 rounded-xl border-white/10 bg-zinc-950/95 p-1 shadow-float backdrop-blur-xs"
-        // Returning focus to the trigger draws a stuck ring on the value text.
+        // Returning focus to the trigger draws a stuck ring on the value text, and
+        // grabbing it on open leaves the first row ringed and flashing on close.
         onCloseAutoFocus={(e) => e.preventDefault()}
+        onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <ScrollArea className="max-h-64">
           {items.map((i) => (

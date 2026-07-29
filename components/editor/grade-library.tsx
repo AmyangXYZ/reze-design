@@ -44,7 +44,9 @@ export function GradeLibrary(props: Props) {
 function LibraryContent({ onOpenChange, grade, onApplyPreset, onEdit }: Props) {
   const t = useT()
   // Desktop-style stacking: clicking a library raises it over any editor.
-  const { z, onPointerDownCapture } = useZOrder()
+  // Radix would close on Escape whatever is stacked above it; the z-order
+  // stack closes only the topmost surface.
+  const { z, onPointerDownCapture } = useZOrder(undefined, () => onOpenChange(false))
   const [query, setQuery] = useState("")
   const [facet, setFacet] = useState<LibraryFacet>("all")
   const [selectedId, setSelectedId] = useState<string>(grade.preset === CUSTOM_ID ? "neutral" : grade.preset)
@@ -89,6 +91,10 @@ function LibraryContent({ onOpenChange, grade, onApplyPreset, onEdit }: Props) {
       showCloseButton={false}
       overlay={false}
       onInteractOutside={(e) => e.preventDefault()}
+      onEscapeKeyDown={(e) => e.preventDefault()}
+      // Don't pull focus into the search field — it made Escape land in a text
+      // input the moment the library opened.
+      onOpenAutoFocus={(e) => e.preventDefault()}
       onCloseAutoFocus={(e) => e.preventDefault()}
       style={{ zIndex: z }}
         onPointerDownCapture={onPointerDownCapture}

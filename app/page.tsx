@@ -1051,10 +1051,16 @@ export default function Home() {
   // from nothing, needs a row of its own.
   // DIFFED, not flagged: reverting the values back to the preset clears the mark,
   // where "has been through the editor" would keep claiming an edit that is gone.
+  // Merely OPENING the editor switches the scene to a custom snapshot, so
+  // `preset === CUSTOM_ID` says nothing about whether anything changed. Which row
+  // is selected follows the ancestor whenever there is one; only the `edited` mark
+  // depends on the spec actually differing. Keying selection off `edited` instead
+  // left the row resolving to CUSTOM_ID on an untouched grade, which appended a
+  // second row with the same name beside the built-in.
+  const gradeCustom = sceneSettings.grade.preset === CUSTOM_ID
+  const gradeValue = gradeCustom ? (sceneSettings.grade.custom?.from ?? CUSTOM_ID) : sceneSettings.grade.preset
   const gradeEdited =
-    sceneSettings.grade.preset === CUSTOM_ID &&
-    JSON.stringify(specOf(sceneSettings.grade)) !== JSON.stringify(gradeAncestor())
-  const gradeValue = gradeEdited ? (sceneSettings.grade.custom?.from ?? CUSTOM_ID) : sceneSettings.grade.preset
+    gradeCustom && JSON.stringify(specOf(sceneSettings.grade)) !== JSON.stringify(gradeAncestor())
   const gradeList = useMemo(() => {
     const items =
       gradeValue === CUSTOM_ID
@@ -1379,6 +1385,10 @@ export default function Home() {
           rect={panelRect}
           onRectChange={updatePanelRect}
           raiseKey={graphSession}
+          // Gated on open: this panel stays MOUNTED while closed, so an ungated
+          // closer would sit at the top of the stack and swallow Escape from the
+          // libraries beneath it.
+          onEscape={drawerOpen ? () => setDrawerOpen(false) : undefined}
           open={drawerOpen}
           fullscreen={drawerFull}
           className={cn(

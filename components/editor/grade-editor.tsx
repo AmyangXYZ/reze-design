@@ -54,6 +54,7 @@ export function GradeEditorPanel({
       open={open}
       fullscreen={false}
       raiseKey={sessionId}
+      onEscape={onClose}
       minW={520}
       minH={330}
       // z-50 like the other editors: above the docks and the non-modal library.

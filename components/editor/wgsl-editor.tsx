@@ -52,6 +52,7 @@ export function WgslEditorPanel({
       open={open}
       fullscreen={false}
       raiseKey={sessionId}
+      onEscape={onClose}
       minW={420}
       minH={280}
       // z-50 like the graph editor

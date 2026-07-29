@@ -1,5 +1,35 @@
 [
   {
+    "id": "neutral",
+    "kind": "grade",
+    "name": "Neutral",
+    "author": "Amyang",
+    "description": "No grade at all — the render exactly as the engine tonemapped it. The baseline every other preset is a departure from.",
+    "tags": [
+      "neutral",
+      "clean"
+    ],
+    "version": 1,
+    "payload": {
+      "spec": {
+        "shadows": [
+          0,
+          0
+        ],
+        "midtones": [
+          0,
+          0
+        ],
+        "highlights": [
+          0,
+          0
+        ],
+        "contrast": 1,
+        "saturation": 1
+      }
+    }
+  },
+  {
     "id": "bloody",
     "kind": "grade",
     "name": "Bloody",
@@ -135,36 +165,6 @@
         ],
         "contrast": 0.95,
         "saturation": 0.5
-      }
-    }
-  },
-  {
-    "id": "neutral",
-    "kind": "grade",
-    "name": "Neutral",
-    "author": "Amyang",
-    "description": "No grade at all — the render exactly as the engine tonemapped it. The baseline every other preset is a departure from.",
-    "tags": [
-      "neutral",
-      "clean"
-    ],
-    "version": 1,
-    "payload": {
-      "spec": {
-        "shadows": [
-          0,
-          0
-        ],
-        "midtones": [
-          0,
-          0
-        ],
-        "highlights": [
-          0,
-          0
-        ],
-        "contrast": 1,
-        "saturation": 1
       }
     }
   },

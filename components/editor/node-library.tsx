@@ -43,10 +43,13 @@ export function NodeLibrary(props: LibraryProps) {
   )
 }
 
-function LibraryContent({ targetLabel, canApply, affects, currentGraphName, onApply }: LibraryProps) {
+function LibraryContent({ targetLabel, canApply, affects, currentGraphName, onApply, onOpenChange }: LibraryProps) {
+  const onClose = () => onOpenChange(false)
   const t = useT()
   // Desktop-style stacking: clicking a library raises it over any editor.
-  const { z, onPointerDownCapture } = useZOrder()
+  // Radix would close on Escape whatever is stacked above it; the z-order
+  // stack closes only the topmost surface.
+  const { z, onPointerDownCapture } = useZOrder(undefined, onClose)
   const [query, setQuery] = useState("")
   const [facet, setFacet] = useState<LibraryFacet>("all")
   const isCurrent = (r: GraphItem) => r.name === currentGraphName || r.payload.graph.name === currentGraphName
@@ -64,6 +67,10 @@ function LibraryContent({ targetLabel, canApply, affects, currentGraphName, onAp
       showCloseButton={false}
       overlay={false}
       onInteractOutside={(e) => e.preventDefault()}
+      onEscapeKeyDown={(e) => e.preventDefault()}
+      // Don't pull focus into the search field — it made Escape land in a text
+      // input the moment the library opened.
+      onOpenAutoFocus={(e) => e.preventDefault()}
       // Don't return focus to the opener on close
       onCloseAutoFocus={(e) => e.preventDefault()}
       // sm:max-w repeat is load-bearing (DialogContent base carries sm:max-w-lg).

@@ -1,26 +1,21 @@
 # Reze Design
 
-Render MMD in the browser with WebGPU. Load models and motions, style materials with node-based shaders, grade the colour, and export 4K video or share a live 3D link. Built on the MMD WebGPU engine [reze-engine](https://github.com/AmyangXYZ/reze-engine).
+Design MMD scenes in the browser. Bring a model, a motion and a song, then decide how it all looks — material shaders you build as node graphs, colour grading, background effects, lighting and framing. Export the result as video, or share it as a live 3D link. Rendering runs on [reze-engine](https://github.com/AmyangXYZ/reze-engine), a WebGPU MMD engine.
 
 ![The editor](./screenshots/home.png)
 
-| ![Shader graph editor](./screenshots/shader-graph.png) | ![Background effect editor](./screenshots/effect-editor.png) |
-| :-: | :-: |
-| Node editor compiled to WGSL, applied live | WGSL background effects edited in-app |
-
-![Video export](./screenshots/video-export.png)
-
 ## Features
 
-- **Multiple models per scene** — load as many characters as you like (PMX folder or zip, drag & drop), each with its own motion, plus a shared camera VMD and music track. A demo loads on first open, and swapping a model keeps its dance.
-- **Style every material** — collect materials into **style groups** and apply a **shader graph** to each in one click from the library.
-- **Author shaders visually** — build shader graphs in a Blender-style node editor (localized node names, Blender-style shortcuts, node rename), compiled to WGSL and applied live.
-- **Grade the look** — ASC CDL colour grading with curated presets (Bloody, Cyberpunk, Divine, Moonlit, Sakura), each with its own remembered intensity; open the grade editor for split tone, three tonal-range wheels and contrast/saturation, previewed on a live capture of your own scene.
-- **Set the scene** — sun, world light, and bloom; a background color, a flat image backdrop, or a **360° panorama skybox** that follows the camera; ground with opacity (the shadow stays — a shadow catcher), shadow and grid toggles.
-- **Background effects** — live WGSL shaders layered between the background and the model (starfield, sakura, rain, neon…): pick from the library, tweak the code in the built-in editor, ⌘⏎ to see it on the scene. Live thumbnails run the real shader.
-- **Play it back** — scrub and loop with the music synced to the motion; Space toggles playback; camera VMD follow/free toggle.
-- **Undo/redo everywhere** — ⌘/Ctrl+Z and ⇧⌘/Ctrl+Z, routed to whichever panel or editor you are working in (the code editor keeps native text undo).
-- **High-quality video export** — frame-accurate 60 fps mp4 rendered in the browser with WebCodecs hardware encoding, streamed straight to disk so length is not capped by memory. 2.39:1 cinemascope, 16:9, 9:16, 1:1 and 4:3 at up to 4K, a **green-screen mode** previewed live in the viewport for compositing elsewhere, and an optional watermark.
+- **Material shader graph** — build material looks in a Blender-style node graph editor, compiled to WGSL and applied live.
+- **Colour grading** — ASC CDL with curated presets and a wheel-based editor, previewed on your own scene.
+- **Background effects** — WGSL shaders behind the model, edited in-app and applied with ⌘⏎.
+- **Scene lighting** — sun, world light and bloom over a background colour, image backdrop or 360° skybox.
+- **Multi-model support** — each with its own motion, plus a shared camera VMD and audio track.
+- **Playback** — scrub and loop with audio synced to the motion, and a free or VMD-driven camera.
+- **Video export** — 60 fps mp4 up to 4K, from 2.39:1 cinemascope to vertical, with a green-screen mode.
+- **Undo and redo** — ⌘/Ctrl+Z anywhere, scoped to the panel or editor you are working in.
+
+![Video export](./screenshots/video-export.png)
 
 ## Authoring shaders
 
@@ -32,6 +27,8 @@ Both shader systems produce self-contained values that travel inside the scene
 document, so a shared scene carries everything it needs to render.
 
 ### Shader graphs (materials)
+
+![Shader graph editor](./screenshots/shader-graph.png)
 
 A shader graph is a **Blender-style node graph compiled to WGSL** by
 reze-engine. Users author them in the node editor (open the library from a
@@ -70,6 +67,8 @@ graphs live in `content/graphs.json`; pass integration (stencil hair/eye, alpha
 mode) is _not_ part of a graph — it lives on the style group's `renderClass`.
 
 ### Background effects (WGSL)
+
+![Background effect editor](./screenshots/effect-editor.png)
 
 A background effect is **one WGSL function** rendered per-pixel between the
 background (color / image / 360°) and the model. The whole contract:

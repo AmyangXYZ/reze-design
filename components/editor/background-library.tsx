@@ -48,7 +48,9 @@ const seedDraft = (selected: EffectItem | null, applied: AppliedBackgroundEffect
 function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: LibraryProps) {
   const t = useT()
   // Desktop-style stacking: clicking a library raises it over any editor.
-  const { z, onPointerDownCapture } = useZOrder()
+  // Radix would close on Escape whatever is stacked above it; the z-order
+  // stack closes only the topmost surface.
+  const { z, onPointerDownCapture } = useZOrder(undefined, () => onOpenChange(false))
   const [query, setQuery] = useState("")
   const [facet, setFacet] = useState<LibraryFacet>("all")
   const [selectedId, setSelectedId] = useState<string | null>(applied?.id ?? BACKGROUND_EFFECTS[0]?.id ?? null)
@@ -93,6 +95,10 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
         showCloseButton={false}
         overlay={false}
         onInteractOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+      // Don't pull focus into the search field — it made Escape land in a text
+      // input the moment the library opened.
+      onOpenAutoFocus={(e) => e.preventDefault()}
         // Don't return focus to the opener on close
         onCloseAutoFocus={(e) => e.preventDefault()}
         // Same footprint as the shader-graph library.

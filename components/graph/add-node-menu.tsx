@@ -84,6 +84,7 @@ export function AddNodeMenu({
       pick(flat[active])
     } else if (e.key === "Escape") {
       e.preventDefault()
+      e.stopPropagation() // this menu owns the key; don't also close the editor
       onClose()
     }
   }

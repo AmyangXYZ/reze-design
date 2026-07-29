@@ -57,7 +57,8 @@ export type GradeSettings = {
 export const CUSTOM_ID = "custom"
 
 // Presets live in content/grades.json — data, not code, in the same envelope a
-// contributed grade will arrive in once the library is server-backed.
+// contributed grade will arrive in once the library is server-backed. File order
+// is the display order: Neutral first as the scene default, the rest by name.
 // Tune them by SIMULATING the engine's CDL over sample pixels and fitting to a
 // reference frame; eyeballing hue/sat numbers has never once landed.
 // Judge DETAIL on a grey ramp (a shaded white dress is one): sum the per-step
