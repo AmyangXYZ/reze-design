@@ -3,6 +3,7 @@
 // Undo/redo over a piece of state the host already owns.
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { useUndoScope } from "@/hooks/use-undo-scope"
 
 /** How long a burst of edits stays "the same step". Matches the graph editor. */
 const SETTLE_MS = 300
@@ -12,8 +13,16 @@ export function useHistory<T>(
   present: T,
   restoreState: (value: T) => void,
   opts?: {
-    /** False while another surface owns undo — see the graph editor's `open` gate. */
-    shortcutsEnabled?: boolean
+    /** Undo-scope id. Spread the returned `scopeProps` onto the surface's root so
+     *  the keystroke reaches this history only while the user is working in it. */
+    scope?: string
+    enabled?: boolean
+    /** Receives undo when nothing else is focused. */
+    fallback?: boolean
+    /** Clears the timeline when it changes. Pass the identity of whatever the
+     *  history is ABOUT (the active model, say) so switching subjects can't undo
+     *  one subject's edit onto another. */
+    resetKey?: string | number | null
   },
 ) {
   const past = useRef<T[]>([])
@@ -29,7 +38,19 @@ export function useHistory<T>(
     restoreRef.current = restoreState
   })
 
+  const resetKey = opts?.resetKey
+  const seenKey = useRef(resetKey)
+
   useEffect(() => {
+    // A new subject (a different model's groups, say) re-baselines rather than
+    // recording — otherwise undo would apply one subject's edit onto another.
+    if (seenKey.current !== resetKey) {
+      seenKey.current = resetKey
+      past.current = []
+      future.current = []
+      current.current = present
+      return
+    }
     if (restoring.current) {
       restoring.current = false
       return
@@ -44,7 +65,7 @@ export function useHistory<T>(
       sync()
     }, SETTLE_MS)
     return () => clearTimeout(timer)
-  }, [present])
+  }, [present, resetKey])
 
   const restore = useCallback((value: T) => {
     restoring.current = true
@@ -67,21 +88,10 @@ export function useHistory<T>(
     restore(next)
   }, [restore])
 
-  const enabled = opts?.shortcutsEnabled ?? true
-  useEffect(() => {
-    if (!enabled) return
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return
-      const el = e.target as HTMLElement
-      // Text fields keep their native undo.
-      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el.isContentEditable) return
-      e.preventDefault()
-      if (e.shiftKey) redo()
-      else undo()
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [enabled, undo, redo])
+  const scopeProps = useUndoScope(opts?.scope ?? "page", { undo, redo }, {
+    enabled: opts?.enabled ?? true,
+    fallback: opts?.fallback,
+  })
 
-  return { undo, redo, canUndo: depth.undo > 0, canRedo: depth.redo > 0 }
+  return { undo, redo, canUndo: depth.undo > 0, canRedo: depth.redo > 0, scopeProps }
 }

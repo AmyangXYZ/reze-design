@@ -1,12 +1,16 @@
-import type { MaterialPreset, ShaderGraph } from "reze-engine"
+import type { MaterialPreset } from "reze-engine"
 import graphs from "@/content/graphs.json"
+import { asBuiltins, type GraphItem } from "@/lib/library"
 
 // Pinned SNAPSHOTS of the engine's presets rather than live imports. The library
 // presents these with authors and dates, so retuning a preset upstream shouldn't
-// silently rewrite what a user sees — and once graphs are server-backed, builtin
-// and contributed entries need to live in the same shape.
-export const SLOT_GRAPHS = graphs as unknown as Partial<Record<MaterialPreset, ShaderGraph>>
+// silently rewrite what a user sees.
+export const GRAPH_LIBRARY = asBuiltins<GraphItem>(graphs as unknown as Omit<GraphItem, "owner">[])
 
+/** Role → graph, for the slots that ship with a default look. */
+export const SLOT_GRAPHS = Object.fromEntries(
+  GRAPH_LIBRARY.filter((g) => g.payload.role).map((g) => [g.payload.role, g.payload.graph]),
+) as Partial<Record<MaterialPreset, GraphItem["payload"]["graph"]>>
 
 export const SLOT_ORDER: MaterialPreset[] = [
   "hair",

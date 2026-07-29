@@ -9,6 +9,7 @@ import { ArrowDownToLine, Check, Code, Copy } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { EditorHeader, EditorHeaderButton } from "@/components/editor/editor-header"
 import { FloatingPanel, type Rect } from "@/components/editor/floating-panel"
+import { useUndoScope } from "@/hooks/use-undo-scope"
 import { useT } from "@/lib/i18n"
 
 const CODE_FONT = 'var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace'
@@ -89,8 +90,14 @@ function EditorBody({
     }
   }, [busy, code, onCompile])
 
+  const noop = () => {}
+  const wgslScope = useUndoScope("wgsl", { undo: noop, redo: noop })
+
   return (
-    <div className="flex h-full flex-col">
+    // Claims the undo scope without registering handlers: the code lives in a real
+    // <textarea>, so ⌘Z belongs to the browser's text undo. Owning the scope stops
+    // the keystroke falling through to the scene panel behind it.
+    <div className="flex h-full flex-col" {...wgslScope}>
       <EditorHeader
         icon={Code}
         title={`${title} · WGSL`}

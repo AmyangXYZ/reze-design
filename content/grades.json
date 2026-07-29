@@ -1,9 +1,226 @@
 [
-  {"id": "neutral", "author": "Amyang", "category": "basic", "spec": {"shadows": [0, 0], "midtones": [0, 0], "highlights": [0, 0], "contrast": 1, "saturation": 1}},
-  {"id": "filmic", "author": "Amyang", "category": "film", "spec": {"shadows": [208, 0.24, 0.58], "midtones": [205, 0.12], "highlights": [30, 0.1], "contrast": 0.92, "saturation": 0.62}},
-  {"id": "golden", "author": "Amyang", "category": "color", "spec": {"shadows": [30, 0.14], "midtones": [38, 0.1], "highlights": [45, 0.2], "contrast": 0.98, "saturation": 1.1}},
-  {"id": "sakura", "author": "Amyang", "category": "color", "spec": {"shadows": [305, 0.12], "midtones": [345, 0.09], "highlights": [352, 0.18], "contrast": 0.96, "saturation": 1.08}},
-  {"id": "moonlit", "author": "Amyang", "category": "night", "spec": {"shadows": [218, 0.34, 0.44], "midtones": [206, 0.32, 0.28], "highlights": [195, 0.2, 0.4], "contrast": 1.32, "saturation": 0.74}},
-  {"id": "cyberpunk", "author": "Amyang", "category": "night", "spec": {"shadows": [184, 0.36, 0.41], "midtones": [312, 0.15, 0.39], "highlights": [328, 0.3, 0.47], "contrast": 1.42, "saturation": 1.5}},
-  {"id": "ink", "author": "Amyang", "category": "mono", "spec": {"shadows": [0, 0], "midtones": [0, 0], "highlights": [0, 0], "contrast": 1.55, "saturation": 0}}
+  {
+    "id": "neutral",
+    "kind": "grade",
+    "name": "Neutral",
+    "author": "Amyang",
+    "description": "No grade at all — the render exactly as the engine tonemapped it. The baseline every other preset is a departure from.",
+    "tags": [
+      "neutral",
+      "clean"
+    ],
+    "version": 1,
+    "payload": {
+      "spec": {
+        "shadows": [
+          0,
+          0
+        ],
+        "midtones": [
+          0,
+          0
+        ],
+        "highlights": [
+          0,
+          0
+        ],
+        "contrast": 1,
+        "saturation": 1
+      }
+    }
+  },
+  {
+    "id": "filmic",
+    "kind": "grade",
+    "name": "Filmic",
+    "author": "Amyang",
+    "description": "Print-stock fade: blacks lifted toward cool blue, saturation pulled well down, contrast slightly soft. Reads as archival footage rather than a render.",
+    "tags": [
+      "film",
+      "muted",
+      "faded"
+    ],
+    "version": 1,
+    "payload": {
+      "spec": {
+        "shadows": [
+          208,
+          0.24,
+          0.58
+        ],
+        "midtones": [
+          205,
+          0.12
+        ],
+        "highlights": [
+          30,
+          0.1
+        ],
+        "contrast": 0.92,
+        "saturation": 0.62
+      }
+    }
+  },
+  {
+    "id": "golden",
+    "kind": "grade",
+    "name": "Golden",
+    "author": "Amyang",
+    "description": "Low-sun warmth across the whole frame. Skin goes properly golden — that's the point of it, not a side effect to correct.",
+    "tags": [
+      "warm",
+      "sunset",
+      "soft"
+    ],
+    "version": 1,
+    "payload": {
+      "spec": {
+        "shadows": [
+          30,
+          0.14
+        ],
+        "midtones": [
+          38,
+          0.1
+        ],
+        "highlights": [
+          45,
+          0.2
+        ],
+        "contrast": 0.98,
+        "saturation": 1.1
+      }
+    }
+  },
+  {
+    "id": "sakura",
+    "kind": "grade",
+    "name": "Sakura",
+    "author": "Amyang",
+    "description": "A gentle rose wash through shadows and mids with the highlights left clean. Soft contrast keeps it wistful instead of candied.",
+    "tags": [
+      "pink",
+      "soft",
+      "romantic"
+    ],
+    "version": 1,
+    "payload": {
+      "spec": {
+        "shadows": [
+          305,
+          0.12
+        ],
+        "midtones": [
+          345,
+          0.09
+        ],
+        "highlights": [
+          352,
+          0.18
+        ],
+        "contrast": 0.96,
+        "saturation": 1.08
+      }
+    }
+  },
+  {
+    "id": "moonlit",
+    "kind": "grade",
+    "name": "Moonlit",
+    "author": "Amyang",
+    "description": "Drowned in blue. Nothing crushes to black — shadows hold as deep navy while highlights stay bright enough to sparkle, and source hues wash out almost entirely so the blue is the subject rather than a tint over it.",
+    "tags": [
+      "night",
+      "cool",
+      "blue",
+      "cyan"
+    ],
+    "version": 1,
+    "payload": {
+      "spec": {
+        "shadows": [
+          214,
+          0.59,
+          0.46
+        ],
+        "midtones": [
+          239,
+          0.42,
+          0.38
+        ],
+        "highlights": [
+          206,
+          0.49,
+          0.4
+        ],
+        "contrast": 0.95,
+        "saturation": 0.5
+      }
+    }
+  },
+  {
+    "id": "cyberpunk",
+    "kind": "grade",
+    "name": "Cyberpunk",
+    "author": "Amyang",
+    "description": "Teal shadows against magenta mids and highlights, saturation pushed past cinematic. Deliberately no amber — that reads as sunset, not neon.",
+    "tags": [
+      "night",
+      "neon",
+      "saturated"
+    ],
+    "version": 1,
+    "payload": {
+      "spec": {
+        "shadows": [
+          184,
+          0.36,
+          0.41
+        ],
+        "midtones": [
+          312,
+          0.15,
+          0.39
+        ],
+        "highlights": [
+          328,
+          0.3,
+          0.47
+        ],
+        "contrast": 1.42,
+        "saturation": 1.5
+      }
+    }
+  },
+  {
+    "id": "ink",
+    "kind": "grade",
+    "name": "Ink",
+    "author": "Amyang",
+    "description": "Manga page: fully desaturated at contrast hard enough to snap into black and white plates rather than gray mush.",
+    "tags": [
+      "mono",
+      "manga",
+      "high-contrast"
+    ],
+    "version": 1,
+    "payload": {
+      "spec": {
+        "shadows": [
+          0,
+          0
+        ],
+        "midtones": [
+          0,
+          0
+        ],
+        "highlights": [
+          0,
+          0
+        ],
+        "contrast": 1.55,
+        "saturation": 0
+      }
+    }
+  }
 ]

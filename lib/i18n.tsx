@@ -119,7 +119,13 @@ const en = {
     copy: "copy",
     edit: "Edit",
     duplicate: "Duplicate & edit",
-    categories: { basic: "Basic", film: "Film", color: "Color", night: "Night", mono: "Mono", custom: "Yours" },
+  },
+  rail: {
+    browse: "Browse",
+    all: "All",
+    featured: "Featured",
+    yours: "Yours",
+    yoursEmpty: "Nothing published yet — publish a look to keep it here.",
   },
   bgLibrary: {
     browse: "Browse",
@@ -437,7 +443,13 @@ const zh: Dictionary = {
     copy: "副本",
     edit: "编辑",
     duplicate: "复制并编辑",
-    categories: { basic: "基础", film: "胶片", color: "色彩", night: "夜晚", mono: "单色", custom: "我的" },
+  },
+  rail: {
+    browse: "浏览",
+    all: "全部",
+    featured: "精选",
+    yours: "我的",
+    yoursEmpty: "还没有发布内容——发布后会出现在这里。",
   },
   bgLibrary: {
     browse: "浏览",
@@ -750,7 +762,13 @@ const ja: Dictionary = {
     copy: "コピー",
     edit: "編集",
     duplicate: "複製して編集",
-    categories: { basic: "ベーシック", film: "フィルム", color: "カラー", night: "ナイト", mono: "モノクロ", custom: "マイ" },
+  },
+  rail: {
+    browse: "ブラウズ",
+    all: "すべて",
+    featured: "おすすめ",
+    yours: "自分の",
+    yoursEmpty: "まだ公開したものはありません——公開するとここに並びます。",
   },
   bgLibrary: {
     browse: "ブラウズ",

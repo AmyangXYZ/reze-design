@@ -5,6 +5,7 @@
 import { useState } from "react"
 import { Check, Copy, Palette, RotateCcw, Share2 } from "lucide-react"
 import { FloatingPanel, type Rect } from "@/components/editor/floating-panel"
+import { useHistory } from "@/hooks/use-history"
 import { EditorHeader, EditorHeaderButton, EditorHeaderSeparator } from "@/components/editor/editor-header"
 import { GradePreview } from "@/components/editor/grade-preview"
 import { ColorWheel } from "@/components/editor/color-wheel"
@@ -12,7 +13,15 @@ import { SliderRow } from "@/components/scene/scene-sidebar"
 import { applySplit, readSplit, resolveSpec, type GradeSpec, type Range } from "@/lib/grade"
 import { useT } from "@/lib/i18n"
 
-export type GradeEditorSubject = { id: string; name: string; spec: GradeSpec }
+export type GradeEditorSubject = {
+  /** Library entry being edited (a user grade id, a preset id, or CUSTOM_ID). */
+  id: string
+  name: string
+  spec: GradeSpec
+  /** Built-in preset to revert to — distinct from `id`, which an edit may have
+   *  already moved to CUSTOM_ID. */
+  origin?: string
+}
 
 export function GradeEditorPanel({
   open,
@@ -20,6 +29,7 @@ export function GradeEditorPanel({
   rect,
   onRectChange,
   subject,
+  origin,
   onChange,
   onClose,
 }: {
@@ -29,6 +39,9 @@ export function GradeEditorPanel({
   rect: Rect | null
   onRectChange: (r: Rect) => void
   subject: GradeEditorSubject
+  /** The BUILT-IN spec this subject descends from — resolved from the library, never
+   *  a snapshot of how it looked when the editor opened. */
+  origin: GradeSpec
   /** Every edit: persists to the library AND mirrors onto the scene. */
   onChange: (next: GradeEditorSubject) => void
   onClose: () => void
@@ -46,31 +59,34 @@ export function GradeEditorPanel({
       // z-50 like the other editors: above the docks and the non-modal library.
       className="overflow-hidden rounded-xl border border-white/10 bg-zinc-950/95 shadow-float"
     >
-      <EditorBody key={sessionId} subject={subject} onChange={onChange} onClose={onClose} />
+      <EditorBody key={sessionId} subject={subject} origin={origin} onChange={onChange} onClose={onClose} />
     </FloatingPanel>
   )
 }
 
 function EditorBody({
   subject,
+  origin,
   onChange,
   onClose,
 }: {
   subject: GradeEditorSubject
+  origin: GradeSpec
   onChange: (next: GradeEditorSubject) => void
   onClose: () => void
 }) {
   const t = useT()
   const [copied, setCopied] = useState(false)
-  // Captured once per session (the panel remounts on sessionId), so "back to preset" means
-  const [origin] = useState(subject.spec)
   const { name, spec } = subject
   const set = (patch: Partial<GradeEditorSubject>) => onChange({ ...subject, ...patch })
   const setSpec = (patch: Partial<GradeSpec>) => set({ spec: { ...spec, ...patch } })
   const cdl = resolveSpec(spec, 1)
+  // Wheel drags settle into one history step, the same way the graph editor batches
+  // a node drag.
+  const { scopeProps } = useHistory(subject, onChange, { scope: "grade" })
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col" {...scopeProps}>
       <EditorHeader
         icon={Palette}
         iconClassName="text-blue-400"
@@ -82,7 +98,6 @@ function EditorBody({
             <EditorHeaderButton
               icon={RotateCcw}
               label={t.gradeLibrary.revert}
-              disabled={JSON.stringify(spec) === JSON.stringify(origin)}
               onClick={() => set({ spec: origin })}
             />
             <EditorHeaderButton

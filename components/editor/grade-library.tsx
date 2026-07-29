@@ -1,9 +1,9 @@
 "use client"
 
-// Grades library — the same three-column shell as the shader-graph and background-effect
+// Grades library — the same three-column shell as the shader-graph and background-effect libraries.
 
 import { useMemo, useState } from "react"
-import { Palette, Plus, Search, SquarePen, Trash2, X } from "lucide-react"
+import { Palette, Plus, Search, SquarePen, X } from "lucide-react"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,10 +14,10 @@ import {
   CUSTOM_ID,
   GRADE_PRESETS,
   NEW_GRADE_SPEC,
-  type GradeDef,
   type GradeSettings,
-  type GradeSpec,
 } from "@/lib/grade"
+import { LibraryRail, LibraryTags } from "@/components/editor/library-rail"
+import { matchesFacet, matchesQuery, type GradeItem, type LibraryFacet } from "@/lib/library"
 import { useZOrder } from "@/hooks/use-z-order"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -28,10 +28,6 @@ type Props = {
   grade: GradeSettings
   /** Apply a built-in by id. */
   onApplyPreset: (id: string) => void
-  /** Apply a user grade — snapshotted into the scene, never referenced. */
-  onApplyCustom: (name: string, spec: GradeSpec) => void
-  userGrades: GradeDef[]
-  onSaveUserGrades: (list: GradeDef[]) => void
   /** Open the page-level floating grade editor (independent panel, same idiom as the graph */
   onEdit: (subject: GradeEditorSubject) => void
 }
@@ -45,54 +41,48 @@ export function GradeLibrary(props: Props) {
   )
 }
 
-function LibraryContent({ onOpenChange, grade, onApplyPreset, onApplyCustom, userGrades, onSaveUserGrades, onEdit }: Props) {
+function LibraryContent({ onOpenChange, grade, onApplyPreset, onEdit }: Props) {
   const t = useT()
   // Desktop-style stacking: clicking a library raises it over any editor.
   const { z, onPointerDownCapture } = useZOrder()
   const [query, setQuery] = useState("")
-  const [category, setCategory] = useState<string | null>(null)
-  const [selectedId, setSelectedId] = useState<string>(grade.preset === CUSTOM_ID ? (userGrades[0]?.id ?? "neutral") : grade.preset)
+  const [facet, setFacet] = useState<LibraryFacet>("all")
+  const [selectedId, setSelectedId] = useState<string>(grade.preset === CUSTOM_ID ? "neutral" : grade.preset)
 
-  const nameOf = (g: GradeDef) => g.name ?? t.scene.gradePresets[g.id as keyof typeof t.scene.gradePresets] ?? g.id
-  const all = useMemo(() => [...GRADE_PRESETS, ...userGrades], [userGrades])
+  // Built-in names are UI chrome and translate by id; descriptions are AUTHOR
+  // text and stay as written, exactly as the effects library already shows them.
+  const nameOf = (g: GradeItem) => t.scene.gradePresets[g.id as keyof typeof t.scene.gradePresets] ?? g.name
+
+  const all = GRADE_PRESETS
   const selected = all.find((g) => g.id === selectedId) ?? all[0]
-  const isUser = userGrades.some((g) => g.id === selected?.id)
 
-  const categories = useMemo(() => [...new Set(all.map((g) => g.category))], [all])
-  const rows = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return all.filter(
-      (g) => (!category || g.category === category) && (!q || nameOf(g).toLowerCase().includes(q) || g.author.toLowerCase().includes(q)),
-    )
+  const rows = useMemo(
+    () => all.filter((g) => matchesFacet(g, facet) && matchesQuery(g, query, nameOf(g))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [all, query, category, t])
+    [all, query, facet, t],
+  )
 
   // Browsing never touches the scene
-  const select = (g: GradeDef) => setSelectedId(g.id)
+  const select = (g: GradeItem) => setSelectedId(g.id)
 
   const apply = () => {
-    if (isUser) onApplyCustom(nameOf(selected), selected.spec)
-    else onApplyPreset(selected.id)
+    onApplyPreset(selected.id)
     onOpenChange(false)
   }
 
   /** Straight into the editor, no entry created */
-  const startEdit = (g: GradeDef) => {
+  const startEdit = (g: GradeItem) => {
     setSelectedId(g.id)
-    onEdit({ id: g.id, name: nameOf(g), spec: g.spec })
+    onEdit({ id: g.id, name: nameOf(g), spec: g.payload.spec, origin: g.owner === "builtin" ? g.id : undefined })
   }
   const startNew = () => onEdit({ id: CUSTOM_ID, name: t.gradeLibrary.untitled, spec: NEW_GRADE_SPEC })
 
-  const removeUser = (id: string) => {
-    onSaveUserGrades(userGrades.filter((g) => g.id !== id))
-    setSelectedId("neutral")
-  }
-
   /** Is this entry what the scene is currently showing? Snapshotted user grades have no id */
-  const isApplied = (g: GradeDef) =>
-    grade.preset === CUSTOM_ID ? userGrades.some((u) => u.id === g.id) && grade.custom?.name === nameOf(g) : grade.preset === g.id
+  // An in-place edit (preset === CUSTOM_ID) matches nothing here — it isn't a library
+  // item until it's published.
+  const isApplied = (g: GradeItem) => grade.preset === g.id
 
-  const shownSpec = selected?.spec
+  const shownSpec = selected?.payload.spec
 
   return (
     <DialogContent
@@ -132,31 +122,7 @@ function LibraryContent({ onOpenChange, grade, onApplyPreset, onApplyCustom, use
       </DialogHeader>
 
       <div className="flex min-h-0 flex-1">
-        {/* ── Category rail ── */}
-        <div className="hidden w-36 shrink-0 flex-col gap-0.5 border-r border-white/10 p-2 md:flex">
-          <div className="px-2 py-1.5 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground/70 uppercase">
-            {t.bgLibrary.browse}
-          </div>
-          {[null, ...categories].map((c) => {
-            const count = c === null ? all.length : all.filter((g) => g.category === c).length
-            const on = category === c
-            return (
-              <button
-                key={c ?? "all"}
-                onClick={() => setCategory(c)}
-                className={cn(
-                  "flex h-7 cursor-pointer items-center gap-2 rounded-md px-2 text-xs transition-colors",
-                  on ? "bg-blue-400/15 font-medium text-blue-400" : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
-                )}
-              >
-                <span className="min-w-0 flex-1 truncate text-left">
-                  {c === null ? t.bgLibrary.all : (t.gradeLibrary.categories[c as keyof typeof t.gradeLibrary.categories] ?? c)}
-                </span>
-                <span className={cn("font-mono text-[11px]", on ? "text-blue-400/80" : "text-muted-foreground/60")}>{count}</span>
-              </button>
-            )
-          })}
-        </div>
+        <LibraryRail items={all} facet={facet} onFacetChange={setFacet} />
 
         {/* ── Grid: every tile is the user's own scene under that grade ── */}
         <ScrollArea className="min-h-0 min-w-0 flex-1">
@@ -174,7 +140,7 @@ function LibraryContent({ onOpenChange, grade, onApplyPreset, onApplyCustom, use
                   )}
                 >
                   <div className="relative aspect-[16/10] border-b border-white/5 bg-zinc-900">
-                    <GradePreview spec={g.spec} />
+                    <GradePreview spec={g.payload.spec} />
                     {isApplied(g) && (
                       <span className="absolute top-1.5 left-1.5 rounded border border-blue-400/40 bg-zinc-950/70 px-1.5 py-0.5 font-mono text-[9px] font-semibold tracking-wide text-blue-400 uppercase">
                         {t.bgLibrary.applied}
@@ -189,7 +155,9 @@ function LibraryContent({ onOpenChange, grade, onApplyPreset, onApplyCustom, use
               )
             })}
             {rows.length === 0 && (
-              <div className="col-span-full py-16 text-center text-xs text-muted-foreground">{t.library.noMatch(query)}</div>
+              <div className="col-span-full py-16 text-center text-xs text-muted-foreground">
+                  {facet === "yours" && !query ? t.rail.yoursEmpty : t.library.noMatch(query)}
+                </div>
             )}
           </div>
         </ScrollArea>
@@ -215,7 +183,13 @@ function LibraryContent({ onOpenChange, grade, onApplyPreset, onApplyCustom, use
 
               <div className="min-h-0 p-3">
                 <div className="truncate text-sm font-semibold">{nameOf(selected)}</div>
-                <div className="mt-0.5 font-mono text-[11px] text-muted-foreground/70">{selected.author}</div>
+                <div className="mt-0.5 font-mono text-[13px] text-muted-foreground/70">
+                  {selected.author} · v{selected.version}
+                </div>
+                {selected.description && (
+                  <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">{selected.description}</p>
+                )}
+                <LibraryTags tags={selected.tags} />
               </div>
 
               <div className="mt-auto shrink-0 space-y-1.5 border-t border-white/10 p-3">
@@ -226,16 +200,6 @@ function LibraryContent({ onOpenChange, grade, onApplyPreset, onApplyCustom, use
                 >
                   {t.gradeLibrary.apply}
                 </Button>
-                {isUser && (
-                  <Button
-                    size="sm"
-                    onClick={() => removeUser(selected.id)}
-                    className="h-8 w-full bg-red-500/90 text-xs font-medium text-white hover:bg-red-500"
-                  >
-                    <Trash2 className="size-3.5" />
-                    {t.bgLibrary.remove}
-                  </Button>
-                )}
               </div>
             </>
           )}

@@ -14,6 +14,8 @@ export type DockTab = {
   label: string
   icon: ComponentType<{ className?: string }>
   content: ReactNode
+  /** Undo-scope id — ⌘Z inside this pane routes to the matching history. */
+  undoScope?: string
 }
 
 const shell = "flex h-full min-h-0 w-full overflow-hidden shadow-float bg-zinc-950/70 backdrop-blur-xs"
@@ -28,8 +30,12 @@ function useKeepAlive(active: string) {
 }
 
 /** One mounted tab. Not `hidden` + `flex` together */
-function TabPane({ show, children }: { show: boolean; children: ReactNode }) {
-  return <div className={show ? "flex min-h-0 min-w-0 flex-1 flex-col" : "hidden"}>{children}</div>
+function TabPane({ show, scope, children }: { show: boolean; scope?: string; children: ReactNode }) {
+  return (
+    <div data-undo-scope={scope} className={show ? "flex min-h-0 min-w-0 flex-1 flex-col" : "hidden"}>
+      {children}
+    </div>
+  )
 }
 
 export function LeftDock({
@@ -104,7 +110,7 @@ export function LeftDock({
         {tabs.map(
           (t) =>
             isMounted(t.id) && (
-              <TabPane key={t.id} show={t.id === current.id}>
+              <TabPane key={t.id} show={t.id === current.id} scope={t.undoScope}>
                 {t.content}
               </TabPane>
             ),
@@ -155,7 +161,7 @@ export function RightDock({
       {tabs.map(
         (t) =>
           isMounted(t.id) && (
-            <TabPane key={t.id} show={t.id === current.id}>
+            <TabPane key={t.id} show={t.id === current.id} scope={t.undoScope}>
               {t.content}
             </TabPane>
           ),

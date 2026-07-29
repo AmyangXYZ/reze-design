@@ -2,6 +2,7 @@
 
 // Quick-switch list behind a section's blue value text.
 
+import { useState } from "react"
 import { Check } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -17,6 +18,7 @@ export function QuickPick({
   onPick,
   onBrowse,
   onEdit,
+  editLabel,
   placeholder,
 }: {
   /** Currently applied id, or null when nothing is applied. */
@@ -27,17 +29,22 @@ export function QuickPick({
   onPick: (id: string) => void
   /** Escape hatch to the full library — always last, always present. */
   onBrowse: () => void
-  /** Optional: open the editor on the current value. */
+  /** Optional: open the editor on the current value. Rendered above "Browse all…". */
   onEdit?: () => void
+  editLabel?: string
   /** Shown (muted) when nothing is applied. */
   placeholder: string
 }) {
   const t = useT()
+  // Controlled so Edit / Browse can dismiss it — both open another surface, and
+  // leaving the list floating over it reads as a stuck menu. Picking a value
+  // deliberately does NOT close, so several looks can be tried in a row.
+  const [open, setOpen] = useState(false)
   const current = items.find((i) => i.id === value)
   // Blue whenever something is APPLIED
   const applied = value !== null && value !== ""
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           className={cn(
@@ -74,14 +81,20 @@ export function QuickPick({
         <div className="mt-1 border-t border-white/10 pt-1">
           {onEdit && (
             <button
-              onClick={onEdit}
+              onClick={() => {
+                setOpen(false)
+                onEdit()
+              }}
               className="w-full cursor-pointer rounded-lg px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
             >
-              {t.materials.editGraph}
+              {editLabel ?? t.materials.editGraph}
             </button>
           )}
           <button
-            onClick={onBrowse}
+            onClick={() => {
+              setOpen(false)
+              onBrowse()
+            }}
             className="w-full cursor-pointer rounded-lg px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
           >
             {t.scene.browseAll}

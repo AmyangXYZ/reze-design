@@ -1,60 +1,85 @@
 [
   {
     "id": "shining-stars",
+    "kind": "effect",
     "name": "Shining Stars",
     "author": "Amyang",
     "description": "A twinkling starfield that pans with the camera. Transparent between stars — your background color (or image) stays the sky.",
-    "category": "Sky",
     "tags": [
+      "sky",
       "night",
       "calm"
-    ]
+    ],
+    "version": 1,
+    "payload": {
+      "wgsl": "// Tunables — edit a value and hit ⌘⏎ to see it live.\nconst TINT = vec3f(1.0, 0.96, 0.88);  // star color\nconst DENSITY = 0.5;                  // 0..1 — how crowded the sky is\nconst TWINKLE = 0.5;                  // 0..1 — flicker speed\nconst INTENSITY = 1.2;                // overall brightness\n\nfn bgHash2(p: vec2f) -> vec2f {\n  let q = vec2f(dot(p, vec2f(127.1, 311.7)), dot(p, vec2f(269.5, 183.3)));\n  return fract(sin(q) * 43758.5453);\n}\n\nfn starLayer(sph: vec2f, scale: f32, thresh: f32, time: f32, speed: f32) -> f32 {\n  let cell = floor(sph * scale);\n  let h = bgHash2(cell);\n  // Star sits at a hashed point inside its cell — kills the grid look.\n  let local = fract(sph * scale) - (0.15 + 0.7 * h);\n  let d = length(local);\n  let bright = bgHash2(cell + 7.31).x;\n  if (bright < thresh) { return 0.0; }\n  // Per-star period from its own hash: some stars breathe over seconds, some blink quickly\n  let period = 0.25 + 2.75 * bgHash2(cell + 31.7).y;\n  let tw = 0.55 + 0.45 * sin(time * speed * period + h.x * 40.0);\n  let size = (bright - thresh) / (1.0 - thresh);\n  // Tight core + faint halo — a hard point of light, not a blurry blob.\n  let r = 0.03 + 0.045 * size;\n  let core = smoothstep(r, r * 0.25, d);\n  let halo = smoothstep(r * 4.0, r, d) * 0.18;\n  return (core + halo) * tw * (0.45 + 0.75 * size);\n}\n\nfn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f {\n  let d = normalize(ray);\n  // Latitude/longitude projection\n  let sph = vec2f(atan2(d.x, d.z) * 1.2, asin(clamp(d.y, -1.0, 1.0)) * 1.5);\n  // Denser = MORE stars, not smaller ones (sizes untouched)\n  let dens = mix(0.95, 0.82, clamp(DENSITY, 0.0, 1.0));\n  var s = starLayer(sph, 30.0, dens, time, TWINKLE * 1.6);\n  // Faint dust layer: denser, smaller, slower.\n  s += 0.4 * starLayer(sph + 3.7, 70.0, mix(0.985, 0.9, clamp(DENSITY, 0.0, 1.0)), time, TWINKLE * 0.9);\n  let a = clamp(s * INTENSITY, 0.0, 1.0);\n  // Straight alpha — the engine's over-composite premultiplies.\n  return vec4f(TINT, a);\n}\n"
+    }
   },
   {
     "id": "fuji-watercolor",
+    "kind": "effect",
     "name": "Fuji Watercolor",
     "author": "noztol",
     "description": "Mt. Fuji in sumi-e watercolor — red sun, inked mountain, a swaying blossom branch on textured paper. Full-scene background.",
-    "category": "Nature",
     "tags": [
+      "nature",
       "ink",
       "fuji",
       "scene"
-    ]
+    ],
+    "version": 1,
+    "payload": {
+      "wgsl": "// \"Mt. Fuji Watercolor\" by noztol (Shadertoy) — WGSL port, reveal\n// animation removed (final frame only, the branch still sways).\nconst SWAY = 0.02;\nconst ZOOM = 1.9;   // higher = smaller / further away\nconst LIFT = 0.25;  // raises the composition — a backdrop, not ground scenery\nconst SUN_POS = vec2f(1.05, 0.38);\nconst SUN_COLOR = vec3f(0.8, 0.15, 0.15);\nconst FLOWER_COLOR = vec3f(0.85, 0.1, 0.2);\n\nfn fjHash(p0: vec2f) -> f32 {\n  var p = fract(p0 * vec2f(123.34, 456.21));\n  p += vec2f(dot(p, p + 45.32));\n  return fract(p.x * p.y);\n}\n\nfn fjNoise(p: vec2f) -> f32 {\n  let i = floor(p);\n  var f = fract(p);\n  f = f * f * (3.0 - 2.0 * f);\n  let a = fjHash(i);\n  let b = fjHash(i + vec2f(1.0, 0.0));\n  let c = fjHash(i + vec2f(0.0, 1.0));\n  let d = fjHash(i + vec2f(1.0, 1.0));\n  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);\n}\n\nfn fjFbm(p0: vec2f) -> f32 {\n  var v = 0.0;\n  var amp = 0.5;\n  var p = p0;\n  for (var i = 0; i < 4; i++) {\n    v += amp * fjNoise(p);\n    p *= 2.0;\n    amp *= 0.5;\n  }\n  return v;\n}\n\n// Organic calligraphy stroke from a to b: tapered radius, drooping bend.\nfn brushStroke(p: vec2f, a: vec2f, b: vec2f, rStart: f32, rEnd: f32, droop: f32, rough: f32) -> f32 {\n  var pa = p - a;\n  let ba = b - a;\n  let h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);\n  var pBended = p;\n  pBended.y += sin(h * 3.14159) * droop;\n  pa = pBended - a;\n  let d = length(pa - ba * h);\n  let taper = smoothstep(1.0, 0.0, h);\n  let r = mix(rEnd, rStart, taper);\n  return d - r - rough;\n}\n\nfn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f {\n  let res = bgResolution();\n  var p = (uv - 0.5) * vec2f(res.x / res.y, 1.0) * ZOOM;\n  p.y -= LIFT;\n\n  // ── Paper. ──\n  var col = vec3f(0.97, 0.95, 0.92);\n  col -= vec3f(fjFbm(p * 15.0) * 0.04);\n\n  // ── Red sun. ──\n  let sunUV = p - SUN_POS;\n  let sunDist = length(sunUV) - 0.15 + fjFbm(p * 20.0) * 0.03;\n  var sunShape = smoothstep(0.01, -0.01, sunDist);\n  sunShape *= fjFbm(p * 50.0) * 0.5 + 0.5;\n  col = mix(col, SUN_COLOR, clamp(sunShape * 0.9, 0.0, 1.0));\n\n  // ── Mountain: inked silhouette, ridge-lit side, snow cap. ──\n  var mntUV = p;\n  mntUV.x += fjFbm(p * 10.0) * 0.05;\n  mntUV.y += fjFbm(p * 15.0) * 0.03;\n  let fujiX = mntUV.x + 0.05;\n  let mountainShape = -0.1 - pow(abs(fujiX), 0.8) * 0.6;\n  let mountainMask = smoothstep(0.0, 0.02, mountainShape - mntUV.y);\n  let outlineDist = abs(mountainShape - mntUV.y);\n  let mntOutline = smoothstep(0.01, 0.002, outlineDist) * smoothstep(0.0, 0.05, mntUV.y + 0.15);\n  let ridgeTexture = fjFbm(vec2f(mntUV.x * 25.0, mntUV.y * 5.0));\n  let lightSide = smoothstep(-0.15, 0.25, fujiX + ridgeTexture * 0.1);\n  var baseMnt = mix(vec3f(0.04, 0.04, 0.05), vec3f(0.6, 0.6, 0.65), lightSide);\n  baseMnt *= 0.6 + 0.4 * fjFbm(p * 40.0);\n  let snowLine = -0.22 + abs(fujiX) * 0.5 + fjFbm(p * 30.0) * 0.04;\n  let snowCap = smoothstep(snowLine - 0.01, snowLine + 0.01, mntUV.y);\n  var mountainColor = mix(baseMnt, vec3f(0.98, 0.99, 1.0), snowCap);\n  mountainColor = mix(mountainColor, vec3f(0.02), mntOutline);\n  col = mix(col, mountainColor, mountainMask);\n\n  // ── Blossom branch, gently swaying. ──\n  var bUV = p;\n  bUV.x += 0.32; // sampling shift → the branch hangs further LEFT on screen\n  bUV.x += sin(time * 1.5 + p.y * 3.0) * SWAY;\n  bUV.y += cos(time * 1.2 + p.x * 2.0) * SWAY;\n\n  let n0 = vec2f(-1.0, -0.2);\n  let n1 = vec2f(-0.6, 0.0);\n  let n2 = vec2f(-0.2, 0.1);\n  let t1 = vec2f(0.2, 0.15);\n  let t2 = vec2f(-0.2, -0.15);\n  let t3 = vec2f(-0.0, 0.3);\n  let t4 = vec2f(-0.6, -0.25);\n  let t5 = vec2f(-0.1, -0.0);\n\n  var bd = 10.0;\n  let rough = fjFbm(bUV * 60.0) * 0.005; // shared stroke-edge roughness (see brushStroke)\n  bd = min(bd, brushStroke(bUV, n0, n1, 0.020, 0.015, 0.03, rough));\n  bd = min(bd, brushStroke(bUV, n1, n2, 0.015, 0.010, 0.03, rough));\n  bd = min(bd, brushStroke(bUV, n2, t1, 0.010, 0.003, 0.02, rough));\n  let s1Mid = vec2f(-0.4, -0.05);\n  bd = min(bd, brushStroke(bUV, n1, s1Mid, 0.00, 0.006, -0.02, rough));\n  bd = min(bd, brushStroke(bUV, s1Mid, t2, 0.006, 0.002, 0.01, rough));\n  bd = min(bd, brushStroke(bUV, n2, t3, 0.01, 0.009, -0.02, rough));\n  let s3Start = mix(n0, n1, 0.2);\n  bd = min(bd, brushStroke(bUV, s3Start, t4, 0.008, 0.002, 0.01, rough));\n  let s4Start = mix(n1, n2, 0.9);\n  bd = min(bd, brushStroke(bUV, s4Start, t5, 0.006, 0.002, 0.01, rough));\n  let branchMask = smoothstep(0.004, -0.002, bd);\n  col = mix(col, vec3f(0.04, 0.03, 0.03), branchMask);\n\n  // ── Blossoms: textured splotch clusters at every branch tip. ──\n  var flowerMask = 0.0;\n  // One shared petal grain for all 15 splotches (was 15 fbm calls)\n  let petalGrain = fjFbm(bUV * 70.0) * 0.02;\n  var targets = array<vec2f, 5>(t1, t2, t3, t4, t5);\n  for (var i = 0; i < 5; i++) {\n    let center = targets[i];\n    for (var j = 0; j < 3; j++) {\n      let fi = f32(i);\n      let fj = f32(j);\n      let offset = vec2f(fjNoise(vec2f(fi, fj * 10.0)) - 0.5, fjNoise(vec2f(fi, fj * 20.0)) - 0.5) * 0.03;\n      let fpos = center + offset;\n      let r = 0.012 + (fjHash(vec2f(fi, fj)) - 0.5) * 0.005;\n      let fdist = length(bUV - fpos) - r - petalGrain;\n      flowerMask = max(flowerMask, smoothstep(0.008, -0.005, fdist));\n    }\n  }\n  col = mix(col, FLOWER_COLOR, flowerMask);\n\n  return vec4f(clamp(col, vec3f(0.0), vec3f(1.0)), 1.0);\n}\n"
+    }
   },
   {
     "id": "quiet-rain",
+    "kind": "effect",
     "name": "Quiet Rain",
     "author": "Amyang",
     "description": "Thin rain streaks in two depth layers with a slight slant. Low-alpha and cool — mood, not weather simulation.",
-    "category": "Nature",
     "tags": [
+      "nature",
       "rain",
       "mood",
       "overlay"
-    ]
+    ],
+    "version": 1,
+    "payload": {
+      "wgsl": "// Tunables — edit and ⌘⏎.\nconst RAIN_COLOR = vec3f(0.75, 0.85, 1.0);\nconst SPEED = 2.3;\nconst SLANT = 0.12;     // sideways drift\nconst AMOUNT = 0.55;    // 0..1 — fraction of columns raining\n\nfn rnHash(x: f32) -> f32 {\n  return fract(sin(x * 127.1) * 43758.5453);\n}\n\nfn rainLayer(p0: vec2f, time: f32, scale: f32, speed: f32) -> f32 {\n  var p = p0;\n  p.x += p.y * SLANT; // wind skew\n  let q = vec2f(p.x * scale, p.y * scale * 0.14);\n  let col = floor(q.x);\n  let h = rnHash(col);\n  if (h > AMOUNT) { return 0.0; }\n  // Repeating fall coordinate, re-hashed EVERY cycle\n  let fall = q.y + time * speed * (0.6 + 0.7 * h) + h * 9.0;\n  let cyc = rnHash(col * 3.1 + floor(fall) * 7.7);\n  let y = fract(fall);\n  let len = 0.18 + 0.3 * cyc;\n  let drop = smoothstep(len, 0.0, y) * smoothstep(0.0, 0.05, y);\n  let cx = abs(fract(q.x) - 0.5 + (cyc - 0.5) * 0.3);\n  return drop * smoothstep(0.09, 0.02, cx) * (0.35 + 0.65 * cyc);\n}\n\nfn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f {\n  let res = bgResolution();\n  let p = vec2f(uv.x * res.x / res.y, uv.y);\n  var a = 0.2 * rainLayer(p, time, 90.0, SPEED * 0.8);\n  a += 0.32 * rainLayer(p + 2.3, time, 55.0, SPEED);\n  return vec4f(RAIN_COLOR, clamp(a, 0.0, 1.0));\n}\n"
+    }
   },
   {
     "id": "reze-neon",
+    "kind": "effect",
     "name": "REZE DESIGN",
     "author": "Amyang",
     "description": "A flickering neon sign spelling REZE DESIGN — glyphs are plain line segments with an exponential glow. Transparent around the tubes.",
-    "category": "Abstract",
     "tags": [
+      "abstract",
       "neon",
       "text",
       "overlay"
-    ]
+    ],
+    "version": 1,
+    "payload": {
+      "wgsl": "// Tunables — edit and ⌘⏎.\nconst NEON_COLOR = vec3f(0.96, 0.45, 0.71);  // tube color (brand pink)\nconst NEON_COLOR_B = vec3f(0.45, 0.65, 0.98); // second hue the shimmer travels to\nconst GLOW = 0.8;                            // halo strength\nconst FLICKER = 0.1;                         // 0 = steady sign\nconst TEXT_SCALE = 0.075;                    // sign size on screen\nconst POS_Y = 0.24;                          // height above center\n\nfn sdSegment(p: vec2f, a: vec2f, b: vec2f) -> f32 {\n  let pa = p - a;\n  let ba = b - a;\n  let h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);\n  return length(pa - ba * h);\n}\n\n// \"REZE DESIGN\" as 40 pre-baked segments (glyph boxes 0..0.9 × 0..1, advance 1.2, word gap\nfn sdText(p: vec2f) -> f32 {\n  // Coarse reject: pixels far from the sign's bounding box skip the letters entirely (the halo\n  let toBox = vec2f(max(abs(p.x - 6.20) - 6.20, 0.0), max(abs(p.y - 0.5) - 0.5, 0.0));\n  let boxD = length(toBox);\n  if (boxD > 1.0) { return boxD; }\n  var d = 1e5;\n  d = min(d, sdSegment(p, vec2f(0.0, 0), vec2f(0.0, 1)));\n  d = min(d, sdSegment(p, vec2f(0.0, 1), vec2f(0.8, 1)));\n  d = min(d, sdSegment(p, vec2f(0.8, 1), vec2f(0.8, 0.5)));\n  d = min(d, sdSegment(p, vec2f(0.8, 0.5), vec2f(0.0, 0.5)));\n  d = min(d, sdSegment(p, vec2f(0.4, 0.5), vec2f(0.9, 0)));\n  d = min(d, sdSegment(p, vec2f(1.2, 0), vec2f(1.2, 1)));\n  d = min(d, sdSegment(p, vec2f(1.2, 1), vec2f(2.1, 1)));\n  d = min(d, sdSegment(p, vec2f(1.2, 0.5), vec2f(1.9, 0.5)));\n  d = min(d, sdSegment(p, vec2f(1.2, 0), vec2f(2.1, 0)));\n  d = min(d, sdSegment(p, vec2f(2.4, 1), vec2f(3.3, 1)));\n  d = min(d, sdSegment(p, vec2f(3.3, 1), vec2f(2.4, 0)));\n  d = min(d, sdSegment(p, vec2f(2.4, 0), vec2f(3.3, 0)));\n  d = min(d, sdSegment(p, vec2f(3.6, 0), vec2f(3.6, 1)));\n  d = min(d, sdSegment(p, vec2f(3.6, 1), vec2f(4.5, 1)));\n  d = min(d, sdSegment(p, vec2f(3.6, 0.5), vec2f(4.3, 0.5)));\n  d = min(d, sdSegment(p, vec2f(3.6, 0), vec2f(4.5, 0)));\n  d = min(d, sdSegment(p, vec2f(5.5, 0), vec2f(5.5, 1)));\n  d = min(d, sdSegment(p, vec2f(5.5, 1), vec2f(6.15, 1)));\n  d = min(d, sdSegment(p, vec2f(6.15, 1), vec2f(6.4, 0.75)));\n  d = min(d, sdSegment(p, vec2f(6.4, 0.75), vec2f(6.4, 0.25)));\n  d = min(d, sdSegment(p, vec2f(6.4, 0.25), vec2f(6.15, 0)));\n  d = min(d, sdSegment(p, vec2f(6.15, 0), vec2f(5.5, 0)));\n  d = min(d, sdSegment(p, vec2f(6.7, 0), vec2f(6.7, 1)));\n  d = min(d, sdSegment(p, vec2f(6.7, 1), vec2f(7.6, 1)));\n  d = min(d, sdSegment(p, vec2f(6.7, 0.5), vec2f(7.4, 0.5)));\n  d = min(d, sdSegment(p, vec2f(6.7, 0), vec2f(7.6, 0)));\n  d = min(d, sdSegment(p, vec2f(8.8, 1), vec2f(7.9, 1)));\n  d = min(d, sdSegment(p, vec2f(7.9, 1), vec2f(7.9, 0.5)));\n  d = min(d, sdSegment(p, vec2f(7.9, 0.5), vec2f(8.8, 0.5)));\n  d = min(d, sdSegment(p, vec2f(8.8, 0.5), vec2f(8.8, 0)));\n  d = min(d, sdSegment(p, vec2f(8.8, 0), vec2f(7.9, 0)));\n  d = min(d, sdSegment(p, vec2f(9.55, 0), vec2f(9.55, 1)));\n  d = min(d, sdSegment(p, vec2f(11.2, 1), vec2f(10.3, 1)));\n  d = min(d, sdSegment(p, vec2f(10.3, 1), vec2f(10.3, 0)));\n  d = min(d, sdSegment(p, vec2f(10.3, 0), vec2f(11.2, 0)));\n  d = min(d, sdSegment(p, vec2f(11.2, 0), vec2f(11.2, 0.45)));\n  d = min(d, sdSegment(p, vec2f(11.2, 0.45), vec2f(10.8, 0.45)));\n  d = min(d, sdSegment(p, vec2f(11.5, 0), vec2f(11.5, 1)));\n  d = min(d, sdSegment(p, vec2f(11.5, 1), vec2f(12.4, 0)));\n  d = min(d, sdSegment(p, vec2f(12.4, 0), vec2f(12.4, 1)));\n  return d;\n}\n\nfn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f {\n  let res = bgResolution();\n  var p = (uv - 0.5) * vec2f(res.x / res.y, 1.0);\n  p.y -= POS_Y;\n  // The sign breathes and sways — quiet motion that says \"live shader\", not GIF.\n  let wobble = 0.05 * sin(time * 0.9);\n  let breathe = 1.0 + 0.05 * sin(time * 1.7);\n  let c = cos(wobble);\n  let si = sin(wobble);\n  p = mat2x2f(c, -si, si, c) * p;\n  // Screen space → text space (centered).\n  let tp = p / (TEXT_SCALE * breathe) + vec2f(12.4 * 0.5, 0.5);\n  let d = sdText(vec2f(tp.x, tp.y));\n\n  // Neon = crisp tube + inner hot line + tight halo.\n  let aa = fwidth(d) * 1.5;\n  let tube = 1.0 - smoothstep(0.06 - aa, 0.06 + aa, d);\n  let hot = 1.0 - smoothstep(0.02 - aa, 0.02 + aa, d);\n  let core = tube * 0.75 + hot * 0.45;\n  let halo = exp(-d * 5.0) * GLOW;\n  // Gentle electrical shimmer (two incommensurate frequencies, shallow depth).\n  let flicker = 1.0 - FLICKER * (0.5 + 0.5 * sin(time * 7.3) * sin(time * 3.1));\n  let s = (core + halo) * flicker;\n\n  // A hue gradient travels along the sign — the \"this is a shader\" tell.\n  let hue = mix(NEON_COLOR, NEON_COLOR_B, 0.5 + 0.5 * sin(time * 1.1 + tp.x * 0.45));\n  let color = hue + vec3f(0.35) * core; // core burns toward white\n  return vec4f(clamp(color, vec3f(0.0), vec3f(1.0)), clamp(s, 0.0, 1.0));\n}\n"
+    }
   },
   {
     "id": "orbiting-hearts",
+    "kind": "effect",
     "name": "Orbiting Hearts",
     "author": "Amyang",
     "description": "Heart outlines drifting around the center. Transparent between the lines — a worked example of a decoration layer over your background color.",
-    "category": "Abstract",
     "tags": [
+      "abstract",
       "cute",
       "overlay"
-    ]
+    ],
+    "version": 1,
+    "payload": {
+      "wgsl": "// Adapted from a Shadertoy heart-outline study — heart curve by\n// Inigo Quilez, improved by Dave_Hoskins; audio-reactive pulse → sine.\nconst OPACITY = 0.9;\nconst PULSE_SPEED = 1.8;\nconst PI = 3.14159265;\n\n// heart(p) = 0 traces a heart-shaped curve (x² + (1.2y − √|x|)² − 1).\nfn heartCurve(p0: vec2f) -> f32 {\n  var p = p0;\n  p.y += 0.6;\n  let k = 1.2 * p.y - sqrt(abs(p.x) + 0.3);\n  return p.x * p.x + k * k - 1.0;\n}\n\n// Central-difference gradient — turns the curve value into a screen distance.\nfn heartGrad(p: vec2f) -> vec2f {\n  let h = vec2f(0.01, 0.0);\n  return vec2f(heartCurve(p + h.xy) - heartCurve(p - h.xy),\n               heartCurve(p + h.yx) - heartCurve(p - h.yx)) / (2.0 * h.x);\n}\n\n// 1 on the outline, 0 elsewhere; line width scales with the pulse.\nfn heartLine(p: vec2f, pulse: f32) -> f32 {\n  let de = abs(heartCurve(p)) / length(heartGrad(p));\n  let eps = (15.0 + pulse * 3.0) / bgResolution().x;\n  return 1.0 - smoothstep(eps, 2.0 * eps, de);\n}\n\nfn hsv2rgb(c: vec3f) -> vec3f {\n  let K = vec4f(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);\n  let q = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);\n  return c.z * mix(vec3f(1.0), clamp(q - vec3f(1.0), vec3f(0.0), vec3f(1.0)), c.y);\n}\n\nfn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f {\n  let res = bgResolution();\n  let p = (uv - 0.5) * vec2f(1.0, res.y / res.x);\n  let pulse = 0.35 + 0.25 * sin(time * PULSE_SPEED);\n\n  var col = vec3f(0.0);\n  var a = 0.0;\n  for (var i = 0; i < 7; i++) {\n    var hue: vec3f;\n    var ang: f32;\n    var offset: vec2f;\n    var scale = 0.7;\n    if (i == 0) {\n      hue = vec3f(1.0, 0.3, 0.3);\n      ang = -time * 0.3;\n      offset = vec2f(cos(ang), sin(ang)) * 0.03;\n    } else if (i == 1) {\n      hue = vec3f(0.6, 0.6, 1.0);\n      ang = PI - time * 0.3;\n      offset = vec2f(cos(ang), sin(ang)) * 0.03;\n    } else {\n      hue = hsv2rgb(vec3f(f32(i) / 5.0 + time * 0.2, 0.4, 0.9));\n      ang = PI * f32(i - 2) * (2.0 / 5.0) + time * 0.3;\n      offset = vec2f(cos(ang), sin(ang)) * 0.2;\n      scale = 0.3 + f32(i) * 0.05;\n    }\n    let q = (p + offset) / (scale * (1.0 + pulse * 0.3) * 0.8);\n    let line = heartLine(q * 10.0, pulse);\n    col += line * hue;\n    a = max(a, line);\n  }\n  // Straight alpha: only the lines cover the background behind this layer.\n  return vec4f(clamp(col, vec3f(0.0), vec3f(1.0)), a * OPACITY);\n}\n"
+    }
   }
 ]

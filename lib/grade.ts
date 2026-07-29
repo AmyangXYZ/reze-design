@@ -1,6 +1,7 @@
 // Color grading — the LOOK layer, and the clearest example of this app's posture
 
 import presets from "@/content/grades.json"
+import { asBuiltins, type GradeItem } from "@/lib/library"
 
 export function hslToHex(h: number, s: number, l: number): string {
   const a = s * Math.min(l, 1 - l)
@@ -44,31 +45,26 @@ export type GradeSpec = {
   saturation: number
 }
 
-export type GradeDef = {
-  id: string
-  /** Built-ins resolve their display name through i18n by id */
-  name?: string
-  author: string
-  category: string
-  spec: GradeSpec
-}
-
 /** What the SCENE stores: which grade, and how strong */
 export type GradeSettings = {
   preset: string
   intensities: Record<string, number>
-  custom?: { name: string; spec: GradeSpec } | null
+  /** `from` is the built-in this snapshot descends from — without it, editing a
+   *  preset severs the link to it and "back to preset" has nothing to revert to. */
+  custom?: { name: string; spec: GradeSpec; from?: string | null } | null
 }
 
 export const CUSTOM_ID = "custom"
 
-// Presets live in content/grades.json — data, not code, and the same shape a
-// user-contributed grade will take once the library is server-backed.
+// Presets live in content/grades.json — data, not code, in the same envelope a
+// contributed grade will arrive in once the library is server-backed.
+// Tune them by SIMULATING the engine's CDL over sample pixels and fitting to a
+// reference frame; eyeballing hue/sat numbers has never once landed.
 // JSON widens the range tuples to number[], so re-narrow on the way in — one
 // cast at the boundary keeps every consumer strongly typed.
-export const GRADE_PRESETS = presets as unknown as GradeDef[]
+export const GRADE_PRESETS = asBuiltins<GradeItem>(presets as unknown as Omit<GradeItem, "owner">[])
 
-export const NEUTRAL_SPEC: GradeSpec = GRADE_PRESETS[0].spec
+export const NEUTRAL_SPEC: GradeSpec = GRADE_PRESETS[0].payload.spec
 export const DEFAULT_GRADE: GradeSettings = { preset: "neutral", intensities: {}, custom: null }
 
 /** Editor starting point — visibly a grade rather than a no-op, so a new author sees */
@@ -109,7 +105,7 @@ export function readSplit(spec: GradeSpec): number {
 /** The spec the settings currently point at (built-in, or the snapshot). */
 export function specOf(g: GradeSettings): GradeSpec {
   if (g.preset === CUSTOM_ID) return g.custom?.spec ?? NEUTRAL_SPEC
-  return (GRADE_PRESETS.find((p) => p.id === g.preset) ?? GRADE_PRESETS[0]).spec
+  return (GRADE_PRESETS.find((p) => p.id === g.preset) ?? GRADE_PRESETS[0]).payload.spec
 }
 
 /** Strength for the ACTIVE grade. */
@@ -136,26 +132,3 @@ export function resolveSpec(
 export function resolveGrade(g: GradeSettings) {
   return resolveSpec(specOf(g), intensityOf(g))
 }
-
-// ── User-authored grades ──
-
-const LIBRARY_KEY = "reze-design.gradeLibrary.1"
-
-export function loadUserGrades(): GradeDef[] {
-  if (typeof window === "undefined") return []
-  try {
-    const raw = window.localStorage.getItem(LIBRARY_KEY)
-    return raw ? (JSON.parse(raw) as GradeDef[]) : []
-  } catch {
-    return []
-  }
-}
-
-export function saveUserGrades(list: GradeDef[]): void {
-  try {
-    window.localStorage.setItem(LIBRARY_KEY, JSON.stringify(list))
-  } catch {
-    // storage full/blocked — the applied grade still lives in the scene
-  }
-}
-

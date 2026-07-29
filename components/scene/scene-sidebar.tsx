@@ -1,6 +1,7 @@
 "use client"
 
-// Scene panel (chromeless): world / sun / bloom lighting and scene appearance colors.
+// Scene panel (chromeless). Grade and Background lead — they're the two-click way to
+// change everything — with the lighting and appearance sections below them.
 
 import { memo } from "react"
 import { Palette, RotateCcw, Sparkles } from "lucide-react"
@@ -87,11 +88,14 @@ export const ScenePanel = memo(function ScenePanel({
   effectName,
   onOpenEffects,
   gradeName,
+  gradeValue,
   gradeItems,
   onPickGrade,
   onOpenGrades,
+  onEditGrade,
   effectItems,
   onPickEffect,
+  onEditEffect,
   onReset,
 }: {
   settings: SceneSettings
@@ -102,12 +106,18 @@ export const ScenePanel = memo(function ScenePanel({
   /** Display name of the applied grade (built-in label or the user's own). */
   gradeName: string
   /** Quick-switch entries — the fast path beside the full library. */
+  /** Resolved selection id — an applied user grade maps back to its library entry. */
+  gradeValue: string
   gradeItems: QuickPickItem[]
   onPickGrade: (id: string) => void
   onOpenGrades: () => void
+  /** Open the grade editor on whatever is applied. */
+  onEditGrade: () => void
   effectItems: QuickPickItem[]
   onPickEffect: (id: string) => void
-  /** Restore EVERYTHING this panel governs to the demo defaults */
+  /** Open the WGSL editor on the applied effect — absent when none is applied. */
+  onEditEffect?: () => void
+  /** Restore EVERYTHING this panel governs to the scene document's values. */
   onReset: () => void
 }) {
   const t = useT()
@@ -118,16 +128,71 @@ export const ScenePanel = memo(function ScenePanel({
   return (
     <ScrollArea className="min-h-0 flex-1">
       <div className="px-4 py-3.5">
-        <Section title={t.scene.world} action={<ColorField value={world.color} onChange={(hex) => patch("world", { color: hex })} />}>
-          <SliderRow
-            label={t.scene.strength}
-            value={world.strength}
-            min={0}
-            max={2}
-            step={0.01}
-            onChange={(v) => patch("world", { strength: v })}
-            fmt={(v) => v.toFixed(2)}
-          />
+        <Section
+          title={t.scene.grade}
+          action={
+            <button
+              onClick={onOpenGrades}
+              className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90"
+            >
+              <Palette className="size-3.5" />
+              {t.materials.library}
+            </button>
+          }
+        >
+          <div className="flex min-w-0 items-center justify-between gap-2">
+            <span className="shrink-0 text-xs">{t.scene.preset}</span>
+            {/* Value text is a quick-switch list; the pill above opens the full library with previews. */}
+            {/* Neutral is a CHOICE, not an absence — it reads blue like any other applied value. */}
+            <QuickPick
+              value={gradeValue}
+              items={gradeItems}
+              onPick={onPickGrade}
+              onBrowse={onOpenGrades}
+              onEdit={onEditGrade}
+              editLabel={t.gradeLibrary.edit}
+              placeholder={gradeName}
+            />
+          </div>
+          {/* Intensity is remembered PER grade, so switching looks restores the strength you last used */}
+          <div className={cn("mt-1", grade.preset === "neutral" && "pointer-events-none opacity-40")}>
+            <SliderRow
+              label={t.scene.intensity}
+              value={intensityOf(grade)}
+              min={0}
+              max={1}
+              step={0.01}
+              onChange={(v) => patch("grade", { intensities: { ...grade.intensities, [grade.preset]: v } })}
+              fmt={(v) => v.toFixed(2)}
+            />
+          </div>
+        </Section>
+
+        <Section
+          title={t.scene.background}
+          action={
+            <button
+              onClick={onOpenEffects}
+              className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90"
+            >
+              <Sparkles className="size-3.5" />
+              {t.materials.library}
+            </button>
+          }
+        >
+          <ColorRow label={t.scene.color} value={background.color} onChange={(hex) => patch("background", { color: hex })} />
+          <div className="mt-2.5 flex min-w-0 items-center justify-between gap-2">
+            <span className="shrink-0 text-xs">{t.scene.effects}</span>
+            <QuickPick
+              value={effectName}
+              items={effectItems}
+              onPick={onPickEffect}
+              onBrowse={onOpenEffects}
+              onEdit={onEditEffect}
+              editLabel={t.bgLibrary.editShader}
+              placeholder={t.scene.noEffect}
+            />
+          </div>
         </Section>
 
         <Section title={t.scene.sun} action={<ColorField value={sun.color} onChange={(hex) => patch("sun", { color: hex })} />}>
@@ -160,6 +225,18 @@ export const ScenePanel = memo(function ScenePanel({
           />
         </Section>
 
+        <Section title={t.scene.world} action={<ColorField value={world.color} onChange={(hex) => patch("world", { color: hex })} />}>
+          <SliderRow
+            label={t.scene.strength}
+            value={world.strength}
+            min={0}
+            max={2}
+            step={0.01}
+            onChange={(v) => patch("world", { strength: v })}
+            fmt={(v) => v.toFixed(2)}
+          />
+        </Section>
+
         <Section title={t.scene.bloom} action={<ColorField value={bloom.color} onChange={(hex) => patch("bloom", { color: hex })} />}>
           {/* No on/off switch — intensity 0 IS off (page.tsx maps it to enabled:false, skipping */}
           <div>
@@ -173,15 +250,6 @@ export const ScenePanel = memo(function ScenePanel({
               fmt={(v) => v.toFixed(2)}
             />
             <SliderRow
-              label={t.scene.radius}
-              value={bloom.radius}
-              min={0}
-              max={8}
-              step={0.1}
-              onChange={(v) => patch("bloom", { radius: v })}
-              fmt={(v) => v.toFixed(1)}
-            />
-            <SliderRow
               label={t.scene.intensity}
               value={bloom.intensity}
               min={0}
@@ -193,19 +261,8 @@ export const ScenePanel = memo(function ScenePanel({
           </div>
         </Section>
 
-        {/* Grade: the LOOK layer — ASC CDL on the tonemapped scene (engine setColorGrading). */}
-        {/* Ground: its own domain — color, opacity, shadow, grid; presets later. */}
         <Section title={t.scene.ground}>
           <ColorRow label={t.scene.color} value={ground.color} onChange={(hex) => patch("ground", { color: hex })} />
-          <SliderRow
-            label={t.scene.size}
-            value={ground.size}
-            min={40}
-            max={400}
-            step={10}
-            onChange={(v) => patch("ground", { size: v })}
-            fmt={(v) => v.toFixed(0)}
-          />
           <SliderRow
             label={t.scene.opacity}
             value={ground.opacity}
@@ -237,72 +294,6 @@ export const ScenePanel = memo(function ScenePanel({
                 className="scale-75"
               />
             </div>
-          </div>
-        </Section>
-
-
-        {/* Grade — the LOOK layer. */}
-        <Section
-          title={t.scene.grade}
-          action={
-            <button
-              onClick={onOpenGrades}
-              className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90"
-            >
-              <Palette className="size-3.5" />
-              {t.materials.library}
-            </button>
-          }
-        >
-          <div className="flex min-w-0 items-center justify-between gap-2">
-            <span className="shrink-0 text-xs">{t.scene.preset}</span>
-            {/* Value text is a quick-switch list; the pill above opens the full library with previews. */}
-            {/* Neutral is a CHOICE, not an absence — it reads blue like any other applied value. */}
-            <QuickPick
-              value={grade.preset}
-              items={gradeItems}
-              onPick={onPickGrade}
-              onBrowse={onOpenGrades}
-              placeholder={gradeName}
-            />
-          </div>
-          {/* Intensity is remembered PER grade, so switching looks restores the strength you last used */}
-          <div className={cn("mt-1", grade.preset === "neutral" && "pointer-events-none opacity-40")}>
-            <SliderRow
-              label={t.scene.intensity}
-              value={intensityOf(grade)}
-              min={0}
-              max={1}
-              step={0.01}
-              onChange={(v) => patch("grade", { intensities: { ...grade.intensities, [grade.preset]: v } })}
-              fmt={(v) => v.toFixed(2)}
-            />
-          </div>
-        </Section>
-
-        {/* Background & effect — last section: the most advanced one. */}
-        <Section
-          title={t.scene.background}
-          action={
-            <button
-              onClick={onOpenEffects}
-              className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90"
-            >
-              <Sparkles className="size-3.5" />
-              {t.materials.library}
-            </button>
-          }
-        >
-          <ColorRow label={t.scene.color} value={background.color} onChange={(hex) => patch("background", { color: hex })} />
-          <div className="mt-2.5 flex min-w-0 items-center justify-between gap-2">
-            <span className="shrink-0 text-xs">{t.scene.effects}</span>
-            <QuickPick
-              value={effectName}
-              items={effectItems}
-              onPick={onPickEffect}
-              onBrowse={onOpenEffects}
-              placeholder={t.scene.noEffect}
-            />
           </div>
         </Section>
 

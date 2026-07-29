@@ -33,6 +33,7 @@ import { AddNodeMenu } from "@/components/graph/add-node-menu"
 import { NodeContextMenu, type MenuAction } from "@/components/graph/node-context-menu"
 import { makeGraphNode, uniqueNodeId } from "@/lib/node-catalog"
 import { canConnect, fromFlow, socketsOf, socketType, toFlow, type RezeFlowNode } from "@/lib/graph-flow"
+import { useUndoScope } from "@/hooks/use-undo-scope"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
@@ -420,20 +421,9 @@ export function GraphEditor({
     restore(next)
   }, [restore])
 
-  useEffect(() => {
-    if (!open) return // drawer hidden — don't swallow the page's shortcuts
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return
-      const el = e.target as HTMLElement
-      // Inputs keep their native text undo.
-      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el.isContentEditable) return
-      e.preventDefault()
-      if (e.shiftKey) redo()
-      else undo()
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [open, undo, redo])
+  // Undo reaches this editor only while the user is working inside it — the scope
+  // props go on the root below.
+  const undoScope = useUndoScope("graph", { undo, redo }, { enabled: open })
 
   // ⇧D duplicates the current selection (Blender's shortcut).
   useEffect(() => {
@@ -596,7 +586,7 @@ export function GraphEditor({
   }, [])
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col" {...undoScope}>
       {/* Header — same language as the pill: slot icon + label, icons for everything else. */}
       {/* The whole header is the window drag surface (buttons still work */}
       <header

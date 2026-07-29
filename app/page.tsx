@@ -36,22 +36,21 @@ import { useT } from "@/lib/i18n"
 import type { ExportAudioSource } from "@/lib/video-export"
 import { MaterialSphereIcon } from "@/components/scene/slot-icons"
 import { DEFAULT_SCENE } from "@/lib/default-scene"
-import { SLOT_GRAPHS } from "@/lib/materials"
-import { LIBRARY_PACKS } from "@/lib/node-library"
+import { GRAPH_LIBRARY, SLOT_GRAPHS } from "@/lib/materials"
 import type { AppliedBackgroundEffect } from "@/lib/background-effects"
-import { CUSTOM_ID, GRADE_PRESETS, loadUserGrades, resolveGrade, saveUserGrades, type GradeDef, type GradeSpec } from "@/lib/grade"
+import { CUSTOM_ID, GRADE_PRESETS, NEUTRAL_SPEC, specOf, type GradeSpec } from "@/lib/grade"
 import { BACKGROUND_EFFECTS, builtinEffect } from "@/lib/background-effects"
 import { GradeLibrary } from "@/components/editor/grade-library"
 import { GradeEditorPanel, type GradeEditorSubject } from "@/components/editor/grade-editor"
 import { captureScene } from "@/components/editor/grade-preview"
 import { hydrateScene, saveSceneState } from "@/lib/scene"
-import {
-  azElToDirection,
-  hexToLinearVec3,
-  hexToSrgbVec3,
-  type SceneSettings,
-} from "@/lib/scene-settings"
+import type { SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
+
+/** True when the applied effect is a built-in whose shader is still as shipped —
+ *  i.e. a selection rather than something the user wrote or edited. */
+const isStockEffect = (fx: AppliedBackgroundEffect) =>
+  BACKGROUND_EFFECTS.some((e) => e.id === fx.id && e.payload.wgsl === fx.wgsl)
 
 // Frame preview: how far the viewport's aspect may deviate from the export target before
 const FRAME_ASPECT_TOL = 1.03
@@ -195,8 +194,9 @@ export default function Home() {
   // The boot document: the bundled demo with the user's stored values merged over it.
   const [bootScene] = useState(() => hydrateScene(DEFAULT_SCENE))
   const [sceneSettings, setSceneSettings] = useState<SceneSettings>(bootScene.state.settings)
-  // Undo/redo for the Scene panel.
-  useHistory(sceneSettings, setSceneSettings, { shortcutsEnabled: !drawerOpen })
+  // Undo/redo for the Scene panel — also the fallback scope, so ⌘Z with nothing
+  // focused still edits the scene the way it always has.
+  useHistory(sceneSettings, setSceneSettings, { scope: "scene", fallback: true })
   // suppressHydrationWarning makes React SKIP patching the server-rendered style (SSR uses
   const rootRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -240,6 +240,9 @@ export default function Home() {
     [upsertGroupFor],
   )
   const applyGroups = useCallback((next: StyleGroup[]) => applyGroupsFor(activeIdRef.current, next), [applyGroupsFor])
+  // Undo for the Materials panel. Restoring re-applies through the engine, so an
+  // undone grouping recompiles exactly like a hand-made one.
+  useHistory(groups, applyGroups, { scope: "materials", resetKey: activeId })
   const highlight = useCallback((m: string | null) => highlightFor(activeIdRef.current, m), [highlightFor])
   const toggleVisible = useCallback((name: string) => toggleVisibleFor(activeIdRef.current, name), [toggleVisibleFor])
   const selectModel = useCallback((id: string) => setActiveModelId(id), [])
@@ -252,8 +255,14 @@ export default function Home() {
 
   const activeGroup = groups.find((g) => g.id === activeGroupId) ?? null
   const libGroup = groups.find((g) => g.id === library.groupId) ?? null
-  // Factory preset for the active group (for Reset) — auto-group ids are role keys.
-  const presetGraph = (activeGroup && SLOT_GRAPHS[activeGroup.id as MaterialPreset]) || activeGroup?.graph || null
+  // Factory preset for the active group (for Reset). Resolves the LIBRARY entry the
+  // group's graph came from — never the group's live graph, which made Reset restore
+  // the current state for any group whose id isn't a built-in role key.
+  const presetGraph = activeGroup
+    ? (GRAPH_LIBRARY.find((e) => e.name === activeGroup.graph?.name)?.payload.graph ??
+      SLOT_GRAPHS[activeGroup.id as MaterialPreset] ??
+      DEFAULT_GRAPH)
+    : null
 
   // Graph editor's onApply: compile + swap the edited graph onto the active group.
   const applyActiveGraph = useCallback(
@@ -562,7 +571,6 @@ export default function Home() {
   // Grades library ── User grades live in localStorage (pre-accounts), while the APPLIED
   const [gradesOpen, setGradesOpen] = useState(false)
   // Lazy initializer, not an effect
-  const [userGrades, setUserGrades] = useState<GradeDef[]>(loadUserGrades)
   const openGrades = useCallback(() => {
     // Snapshot the viewport first
     captureScene(canvasRef.current)
@@ -577,14 +585,19 @@ export default function Home() {
     [],
   )
   const applyGradeCustom = useCallback(
-    (name: string, spec: GradeSpec) =>
-      setSceneSettings((s) => ({ ...s, grade: { ...s.grade, preset: CUSTOM_ID, custom: { name, spec } } })),
+    (name: string, spec: GradeSpec, from?: string | null) =>
+      setSceneSettings((s) => ({
+        ...s,
+        grade: {
+          ...s.grade,
+          preset: CUSTOM_ID,
+          // Keep the existing origin when the caller doesn't name one, so successive
+          // edits of the same grade don't lose the preset they started from.
+          custom: { name, spec, from: from ?? s.grade.custom?.from ?? null },
+        },
+      })),
     [],
   )
-  const persistUserGrades = useCallback((list: GradeDef[]) => {
-    setUserGrades(list)
-    saveUserGrades(list)
-  }, [])
 
   // Floating grade editor — an independent panel like the graph/WGSL editors, opened
   const [gradeEditor, setGradeEditor] = useState<{ sessionId: number; subject: GradeEditorSubject } | null>(null)
@@ -594,21 +607,20 @@ export default function Home() {
     const fallback = defaultPanelRect()
     setGradePanelRect((r) => r ?? fallback)
     setGradeEditor((prev) => ({ sessionId: (prev?.sessionId ?? 0) + 1, subject }))
-    applyGradeCustom(subject.name, subject.spec)
+    applyGradeCustom(subject.name, subject.spec, subject.origin ?? null)
   }
   // Plain function for the same reason as openGradeEditor above
   const editGrade = (next: GradeEditorSubject) => {
     setGradeEditor((prev) => (prev ? { ...prev, subject: next } : prev))
-    persistUserGrades(userGrades.map((g) => (g.id === next.id ? { ...g, name: next.name, spec: next.spec } : g)))
-    applyGradeCustom(next.name, next.spec)
+    applyGradeCustom(next.name, next.spec, next.origin ?? null)
   }
   // The three libraries are non-modal and share a z-index, so two open at once simply occlude
   const applyGraphToGroup = useCallback(
     (groupId: string, graphName: string) => {
-      const entry = LIBRARY_PACKS.flatMap((p) => p.entries).find((e) => e.name === graphName)
+      const entry = GRAPH_LIBRARY.find((e) => e.name === graphName)
       const group = groups.find((g) => g.id === groupId)
       if (!entry || !group) return
-      const updated: StyleGroup = { ...group, graph: { ...entry.graph, name: entry.name } }
+      const updated: StyleGroup = { ...group, graph: { ...entry.payload.graph, name: entry.name } }
       if (updated.materials.length) void upsertGroup(updated)
       else void applyGroups(groups.map((x) => (x.id === groupId ? updated : x)))
       setLibVersion((v) => v + 1)
@@ -904,9 +916,13 @@ export default function Home() {
   }, [ready, sceneSettings, bgEffect, groupsByModel, models, bootScene])
 
   // Stable handlers for the memoized AssetsPanel.
+  // Back to the scene DOCUMENT — sliders, colours, and which grade/effect is picked.
+  // A picked preset is document state and reverts; an EDITED one is content, and an
+  // in-place edit lives nowhere but here, so resetting would destroy it outright.
   const resetSceneDefaults = useCallback(() => {
-    setSceneSettings(DEFAULT_SCENE.state.settings)
-    setBgEffect(DEFAULT_SCENE.state.backgroundEffect)
+    const doc = DEFAULT_SCENE.state.settings
+    setSceneSettings((s) => (s.grade.preset === CUSTOM_ID ? { ...doc, grade: s.grade } : doc))
+    setBgEffect((fx) => (fx && !isStockEffect(fx) ? fx : DEFAULT_SCENE.state.backgroundEffect))
   }, [setSceneSettings, setBgEffect])
 
   const openModelDialog = useCallback(
@@ -972,18 +988,59 @@ export default function Home() {
         id: g.id,
         label: t.scene.gradePresets[g.id as keyof typeof t.scene.gradePresets] ?? g.id,
       })),
-      ...userGrades.map((g) => ({ id: g.id, label: g.name ?? g.id })),
     ],
-    [userGrades, t],
+    [t],
+  )
+  // An applied user grade is a SNAPSHOT — the scene stores preset=CUSTOM_ID plus a
+  // name, not the library id — so map it back to its entry, and fall back to a
+  // transient row for a snapshot that has no library entry (an unsaved edit).
+  const gradeName =
+    sceneSettings.grade.preset === CUSTOM_ID
+      ? (sceneSettings.grade.custom?.name ?? t.gradeLibrary.untitled)
+      : t.scene.gradePresets[sceneSettings.grade.preset as keyof typeof t.scene.gradePresets]
+  const gradeValue = sceneSettings.grade.preset
+  const gradeList = useMemo(
+    () =>
+      gradeValue === CUSTOM_ID
+        ? [...gradeItems, { id: CUSTOM_ID, label: sceneSettings.grade.custom?.name ?? t.gradeLibrary.untitled }]
+        : gradeItems,
+    [gradeItems, gradeValue, sceneSettings.grade.custom?.name, t],
   )
   const pickGrade = useCallback(
     (id: string) => {
-      const user = userGrades.find((g) => g.id === id)
-      if (user) applyGradeCustom(user.name ?? id, user.spec)
-      else applyGradePreset(id)
+      if (id === CUSTOM_ID) return // the transient row for the applied edit — already on
+      applyGradePreset(id)
     },
-    [userGrades, applyGradeCustom, applyGradePreset],
+    [applyGradePreset],
   )
+  // The TRUE built-in spec the edit descends from. Snapshotting subject.spec on mount
+  // made "back to preset" revert to however the grade looked when the editor last
+  // opened, and read as disabled whenever those happened to match.
+  const gradeOrigin = useMemo(() => {
+    const sub = gradeEditor?.subject
+    const custom = sceneSettings.grade.custom
+    const id =
+      sub?.origin ??
+      (sub?.id !== CUSTOM_ID ? sub?.id : null) ??
+      custom?.from ??
+      // Scenes stored before `from` existed carry no ancestry — recover it from the
+      // snapshot's name so an already-saved edit still knows what it forked from.
+      GRADE_PRESETS.find(
+        (g) => (t.scene.gradePresets[g.id as keyof typeof t.scene.gradePresets] ?? g.name) === custom?.name,
+      )?.id
+    // Neutral, never NEW_GRADE_SPEC: "revert" means back to no grade, not to the
+    // editor's authoring starting point.
+    return GRADE_PRESETS.find((g) => g.id === id)?.payload.spec ?? NEUTRAL_SPEC
+  }, [gradeEditor?.subject, sceneSettings.grade.custom, t])
+  const editCurrentGrade = useCallback(() => {
+    const { grade } = sceneSettings
+    const origin = grade.preset === CUSTOM_ID ? (grade.custom?.from ?? undefined) : grade.preset
+    openGradeEditor({ id: grade.preset, name: gradeName, spec: specOf(grade), origin })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sceneSettings, gradeName])
+  const editCurrentEffect = useCallback(() => {
+    if (bgEffect) openFxEditor(bgEffect)
+  }, [bgEffect, openFxEditor])
   const effectItems = useMemo(() => BACKGROUND_EFFECTS.map((e) => ({ id: e.name, label: e.name })), [])
   const pickEffect = useCallback((name: string) => {
     const def = BACKGROUND_EFFECTS.find((e) => e.name === name)
@@ -1012,6 +1069,7 @@ export default function Home() {
       id: "materials",
       label: t.tabs.materials,
       icon: MaterialSphereIcon,
+      undoScope: "materials",
       content: (
         <MaterialsPanel
           modelTabs={modelTabs}
@@ -1032,20 +1090,19 @@ export default function Home() {
         />
       ),
     },
-    { id: "scene", label: t.tabs.scene, icon: Sun, content: <ScenePanel
+    { id: "scene", label: t.tabs.scene, icon: Sun, undoScope: "scene", content: <ScenePanel
           settings={sceneSettings}
           onChange={setSceneSettings}
           effectName={bgEffect?.name ?? null}
           onOpenEffects={openEffects}
-          gradeName={
-            sceneSettings.grade.preset === CUSTOM_ID
-              ? (sceneSettings.grade.custom?.name ?? t.gradeLibrary.untitled)
-              : t.scene.gradePresets[sceneSettings.grade.preset as keyof typeof t.scene.gradePresets]
-          }
-          gradeItems={gradeItems}
+          gradeName={gradeName}
+          gradeValue={gradeValue}
+          gradeItems={gradeList}
           onPickGrade={pickGrade}
           onOpenGrades={openGrades}
           effectItems={effectItems}
+          onEditGrade={editCurrentGrade}
+          onEditEffect={bgEffect ? editCurrentEffect : undefined}
           onPickEffect={pickEffect}
           onReset={resetSceneDefaults}
         /> },
@@ -1351,9 +1408,6 @@ export default function Home() {
         onOpenChange={setGradesOpen}
         grade={sceneSettings.grade}
         onApplyPreset={applyGradePreset}
-        onApplyCustom={applyGradeCustom}
-        userGrades={userGrades}
-        onSaveUserGrades={persistUserGrades}
         onEdit={openGradeEditor}
       />
 
@@ -1365,6 +1419,7 @@ export default function Home() {
           rect={gradePanelRect}
           onRectChange={setGradePanelRect}
           subject={gradeEditor.subject}
+          origin={gradeOrigin}
           onChange={editGrade}
           onClose={() => setGradeEditor(null)}
         />

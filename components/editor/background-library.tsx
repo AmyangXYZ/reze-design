@@ -1,6 +1,6 @@
 "use client"
 
-// Backgrounds library — the shared three-column shell (category rail · thumbnail grid · slim
+// Backgrounds library — the shared three-column shell (facet rail · thumbnail grid · slim
 
 import { useMemo, useState } from "react"
 import { Plus, Search, Sparkles, SquarePen, Trash2, X } from "lucide-react"
@@ -13,9 +13,10 @@ import {
   BACKGROUND_EFFECTS,
   NEW_EFFECT_TEMPLATE,
   type AppliedBackgroundEffect,
-  type BackgroundEffectDef,
 } from "@/lib/background-effects"
 import { EffectPreview } from "@/components/editor/effect-preview"
+import { LibraryRail, LibraryTags } from "@/components/editor/library-rail"
+import { matchesFacet, matchesQuery, type EffectItem, type LibraryFacet } from "@/lib/library"
 import { useZOrder } from "@/hooks/use-z-order"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -34,14 +35,14 @@ export function BackgroundLibrary(props: LibraryProps) {
   return (
     // Non-modal + no overlay, mirroring the shader-graph library
     <Dialog open={props.open} onOpenChange={props.onOpenChange} modal={false}>
-      {/* Mounted fresh per open: browsing state (query/category/selection/draft) seeds itself */}
+      {/* Mounted fresh per open: browsing state (query/facet/selection/draft) seeds itself */}
       {props.open && <LibraryContent {...props} />}
     </Dialog>
   )
 }
 
 /** Seed the inspector's param draft */
-const seedDraft = (selected: BackgroundEffectDef | null, applied: AppliedBackgroundEffect | null): AppliedBackgroundEffect | null =>
+const seedDraft = (selected: EffectItem | null, applied: AppliedBackgroundEffect | null): AppliedBackgroundEffect | null =>
   selected ? (applied?.id === selected.id ? { ...applied } : applyDefaults(selected)) : null
 
 function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: LibraryProps) {
@@ -49,27 +50,29 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
   // Desktop-style stacking: clicking a library raises it over any editor.
   const { z, onPointerDownCapture } = useZOrder()
   const [query, setQuery] = useState("")
-  const [category, setCategory] = useState<string | null>(null)
+  const [facet, setFacet] = useState<LibraryFacet>("all")
   const [selectedId, setSelectedId] = useState<string | null>(applied?.id ?? BACKGROUND_EFFECTS[0]?.id ?? null)
 
   // An applied effect that isn't a curated entry (created from the template, or a curated
-  const customDef: BackgroundEffectDef | null = useMemo(
+  const customDef: EffectItem | null = useMemo(
     () =>
       applied && !BACKGROUND_EFFECTS.some((e) => e.id === applied.id)
         ? {
             id: applied.id,
+            kind: "effect",
             name: applied.name,
             author: t.bgLibrary.you,
             description: t.bgLibrary.customDesc,
-            category: t.bgLibrary.custom,
             tags: [],
-            wgsl: applied.wgsl,
+            version: 1,
+            owner: "user",
+            payload: { wgsl: applied.wgsl },
           }
         : null,
     [applied, t],
   )
   const all = useMemo(() => (customDef ? [...BACKGROUND_EFFECTS, customDef] : [...BACKGROUND_EFFECTS]), [customDef])
-  const selected: BackgroundEffectDef | null = useMemo(() => all.find((e) => e.id === selectedId) ?? null, [all, selectedId])
+  const selected: EffectItem | null = useMemo(() => all.find((e) => e.id === selectedId) ?? null, [all, selectedId])
   // Draft = what Apply applies for the current selection.
   const [draft, setDraft] = useState<AppliedBackgroundEffect | null>(() => seedDraft(selected, applied))
   const [draftFor, setDraftFor] = useState(selectedId)
@@ -78,15 +81,7 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
     setDraft(seedDraft(selected, applied))
   }
 
-  const categories = useMemo(() => [...new Set(all.map((e) => e.category))], [all])
-  const rows = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return all.filter(
-      (e) =>
-        (!category || e.category === category) &&
-        (!q || e.name.toLowerCase().includes(q) || e.tags.some((tag) => tag.includes(q)) || e.author.toLowerCase().includes(q)),
-    )
-  }, [all, query, category])
+  const rows = useMemo(() => all.filter((e) => matchesFacet(e, facet) && matchesQuery(e, query)), [all, query, facet])
 
   const isAppliedSelected = applied !== null && selected !== null && applied.id === selected.id
 
@@ -134,29 +129,7 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1">
-          {/* ── Category rail (hidden on narrow screens — search still filters) ── */}
-          <div className="hidden w-36 shrink-0 flex-col gap-0.5 border-r border-white/10 p-2 md:flex">
-            <div className="px-2 py-1.5 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground/70 uppercase">
-              {t.bgLibrary.browse}
-            </div>
-            {[null, ...categories].map((c) => {
-              const count = c === null ? BACKGROUND_EFFECTS.length : BACKGROUND_EFFECTS.filter((e) => e.category === c).length
-              const on = category === c
-              return (
-                <button
-                  key={c ?? "all"}
-                  onClick={() => setCategory(c)}
-                  className={cn(
-                    "flex h-7 items-center gap-2 rounded-md px-2 text-xs transition-colors",
-                    on ? "bg-blue-400/15 font-medium text-blue-400" : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
-                  )}
-                >
-                  <span className="min-w-0 flex-1 truncate text-left">{c ?? t.bgLibrary.all}</span>
-                  <span className={cn("font-mono text-[11px]", on ? "text-blue-400/80" : "text-muted-foreground/60")}>{count}</span>
-                </button>
-              )
-            })}
-          </div>
+          <LibraryRail items={all} facet={facet} onFacetChange={setFacet} />
 
           {/* Thumbnail grid + pinned "New effect" (the graph library's New-graph idiom */}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -175,7 +148,7 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
                     )}
                   >
                     <div className="relative aspect-[16/10] border-b border-white/5 bg-zinc-900">
-                      <EffectPreview wgsl={e.wgsl} />
+                      <EffectPreview wgsl={e.payload.wgsl} />
                       {applied?.id === e.id && (
                         <span className="absolute top-1.5 left-1.5 rounded border border-blue-400/40 bg-zinc-950/70 px-1.5 py-0.5 font-mono text-[9px] font-semibold tracking-wide text-blue-400 uppercase">
                           {t.bgLibrary.applied}
@@ -190,7 +163,9 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
                 )
               })}
               {rows.length === 0 && (
-                <div className="col-span-full py-16 text-center text-xs text-muted-foreground">{t.library.noMatch(query)}</div>
+                <div className="col-span-full py-16 text-center text-xs text-muted-foreground">
+                  {facet === "yours" && !query ? t.rail.yoursEmpty : t.library.noMatch(query)}
+                </div>
               )}
             </div>
           </ScrollArea>
@@ -217,18 +192,11 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
                 </div>
                 <div className="min-h-0 p-3">
                   <div className="truncate text-sm font-semibold">{selected.name}</div>
-                  <div className="mt-0.5 font-mono text-[11px] text-muted-foreground/70">
-                    {selected.author} · {selected.category}
+                  <div className="mt-0.5 font-mono text-[13px] text-muted-foreground/70">
+                    {selected.author} · v{selected.version}
                   </div>
-                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{selected.description}</p>
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {selected.tags.map((tag) => (
-                      <span key={tag} className="rounded border border-white/5 bg-white/5 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-
+                  <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">{selected.description}</p>
+                  <LibraryTags tags={selected.tags} />
                 </div>
 
                 {/* Pinned action: red destructive Remove when applied (the counterpart of the blue Apply) */}
