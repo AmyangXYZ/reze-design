@@ -9,7 +9,7 @@ Turn an MMD dance into a live, shareable 3D performance. Bring a model, a motion
 - **Compose a scene** — load a model (PMX folder or zip — drag & drop works too), a motion + camera VMD, and a music track; a demo loads on first open. Swapping models keeps the current dance.
 - **Style every material** — collect materials into **style groups** and apply a **shader graph** to each in one click from the library.
 - **Author shaders visually** — build shader graphs in a Blender-style node editor (localized node names, Blender-style shortcuts, node rename), compiled to WGSL and applied live.
-- **Grade the look** — ASC CDL colour grading with curated presets (Filmic, Moonlit, Cyberpunk, Ink…), each with its own remembered intensity; open the grade editor for split tone, three tonal-range wheels and contrast/saturation, previewed on a live capture of your own scene.
+- **Grade the look** — ASC CDL colour grading with curated presets (Bloody, Cyberpunk, Divine, Moonlit, Sakura), each with its own remembered intensity; open the grade editor for split tone, three tonal-range wheels and contrast/saturation, previewed on a live capture of your own scene.
 - **Set the scene** — sun, world light, and bloom; a background color, a flat image backdrop, or a **360° panorama skybox** that follows the camera; ground with opacity (the shadow stays — a shadow catcher), shadow and grid toggles.
 - **Background effects** — live WGSL shaders layered between the background and the model (starfield, sakura, rain, neon…): pick from the library, tweak the code in the built-in editor, ⌘⏎ to see it on the scene. Live thumbnails run the real shader.
 - **Play it back** — scrub and loop with the music synced to the motion; Space toggles playback; camera VMD follow/free toggle.
@@ -95,7 +95,7 @@ return). Keep loops small and fixed; this runs behind a full character render.
 
 Patterns, each with a worked example in the built-in library
 (`content/effects.json`): hash-grid particle fields (_Shining Stars_), column
-streaks (_Quiet Rain_), SDF glyphs + exp glow (_REZE Neon_), implicit-curve
+streaks (_Quiet Rain_), SDF glyphs + exp glow (_REZE DESIGN_), implicit-curve
 outlines (_Orbiting Hearts_), and sumi-e scene composition (_Fuji Watercolor_).
 
 Workflow: Library → _New effect_ (commented starter template) or fork any

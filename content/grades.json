@@ -1,31 +1,36 @@
 [
   {
-    "id": "neutral",
+    "id": "bloody",
     "kind": "grade",
-    "name": "Neutral",
+    "name": "Bloody",
     "author": "Amyang",
-    "description": "No grade at all — the render exactly as the engine tonemapped it. The baseline every other preset is a departure from.",
+    "description": "Horror-anime blood wash. Blacks go true black and the reds run the whole range from near-black to bright, so shading still reads — the colour comes from contrast and saturation rather than from crushing the channels.",
     "tags": [
-      "neutral",
-      "clean"
+      "red",
+      "crimson",
+      "horror",
+      "anime"
     ],
     "version": 1,
     "payload": {
       "spec": {
         "shadows": [
-          0,
-          0
+          358,
+          0.55,
+          0.36
         ],
         "midtones": [
-          0,
-          0
+          356,
+          0.3,
+          0.4
         ],
         "highlights": [
-          0,
-          0
+          2,
+          0.5,
+          0.545
         ],
-        "contrast": 1,
-        "saturation": 1
+        "contrast": 1.45,
+        "saturation": 0.75
       }
     }
   },
@@ -64,37 +69,37 @@
     }
   },
   {
-    "id": "bloody",
+    "id": "golden",
     "kind": "grade",
-    "name": "Bloody",
+    "name": "Divine",
     "author": "Amyang",
-    "description": "Horror-anime blood wash. Blacks go true black and the reds run the whole range from near-black to bright, so shading still reads — the colour comes from contrast and saturation rather than from crushing the channels.",
+    "description": "Holy light. Deep amber shadows climb through saturated gold to a radiance that blooms toward white — divine rather than the sepia a warm filter usually gives you.",
     "tags": [
-      "red",
-      "crimson",
-      "horror",
-      "anime"
+      "gold",
+      "warm",
+      "holy",
+      "divine"
     ],
     "version": 1,
     "payload": {
       "spec": {
         "shadows": [
-          358,
-          0.55,
-          0.36
+          30,
+          0.15,
+          0.38
         ],
         "midtones": [
-          356,
-          0.3,
-          0.4
+          60,
+          0.55,
+          0.38
         ],
         "highlights": [
-          2,
-          0.5,
-          0.545
+          0,
+          0.18,
+          0.63
         ],
-        "contrast": 1.45,
-        "saturation": 0.75
+        "contrast": 1.15,
+        "saturation": 1.9
       }
     }
   },
@@ -134,37 +139,32 @@
     }
   },
   {
-    "id": "golden",
+    "id": "neutral",
     "kind": "grade",
-    "name": "Divine",
+    "name": "Neutral",
     "author": "Amyang",
-    "description": "Holy light. Deep amber shadows climb through saturated gold to a radiance that blooms toward white — divine rather than the sepia a warm filter usually gives you.",
+    "description": "No grade at all — the render exactly as the engine tonemapped it. The baseline every other preset is a departure from.",
     "tags": [
-      "gold",
-      "warm",
-      "holy",
-      "divine"
+      "neutral",
+      "clean"
     ],
     "version": 1,
     "payload": {
       "spec": {
         "shadows": [
-          30,
-          0.15,
-          0.38
+          0,
+          0
         ],
         "midtones": [
-          60,
-          0.55,
-          0.38
+          0,
+          0
         ],
         "highlights": [
-          30,
-          0.18,
-          0.63
+          0,
+          0
         ],
-        "contrast": 0.99,
-        "saturation": 1.9
+        "contrast": 1,
+        "saturation": 1
       }
     }
   },
@@ -196,69 +196,6 @@
         ],
         "contrast": 0.96,
         "saturation": 1.08
-      }
-    }
-  },
-  {
-    "id": "filmic",
-    "kind": "grade",
-    "name": "Filmic",
-    "author": "Amyang",
-    "description": "Print-stock fade: blacks lifted toward cool blue, saturation pulled well down, contrast slightly soft. Reads as archival footage rather than a render.",
-    "tags": [
-      "film",
-      "muted",
-      "faded"
-    ],
-    "version": 1,
-    "payload": {
-      "spec": {
-        "shadows": [
-          208,
-          0.24,
-          0.58
-        ],
-        "midtones": [
-          205,
-          0.12
-        ],
-        "highlights": [
-          30,
-          0.1
-        ],
-        "contrast": 0.92,
-        "saturation": 0.62
-      }
-    }
-  },
-  {
-    "id": "ink",
-    "kind": "grade",
-    "name": "Ink",
-    "author": "Amyang",
-    "description": "Manga page: fully desaturated at contrast hard enough to snap into black and white plates rather than gray mush.",
-    "tags": [
-      "mono",
-      "manga",
-      "high-contrast"
-    ],
-    "version": 1,
-    "payload": {
-      "spec": {
-        "shadows": [
-          0,
-          0
-        ],
-        "midtones": [
-          0,
-          0
-        ],
-        "highlights": [
-          0,
-          0
-        ],
-        "contrast": 1.55,
-        "saturation": 0
       }
     }
   }

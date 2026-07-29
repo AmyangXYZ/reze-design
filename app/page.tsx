@@ -107,6 +107,16 @@ function savePanelRect(r: Rect) {
   }
 }
 // The WGSL editor floats like the graph editor; its rect persists the same way.
+const GRADE_PANEL_KEY = "reze-design.gradePanel"
+function loadGradePanelRect(): Rect | null {
+  try {
+    const raw = window.localStorage.getItem(GRADE_PANEL_KEY)
+    return raw ? (JSON.parse(raw) as Rect) : null
+  } catch {
+    return null
+  }
+}
+
 const WGSL_PANEL_KEY = "reze-design.wgslPanel"
 function loadWgslPanelRect(): Rect | null {
   try {
@@ -602,9 +612,17 @@ export default function Home() {
   // Floating grade editor — an independent panel like the graph/WGSL editors, opened
   const [gradeEditor, setGradeEditor] = useState<{ sessionId: number; subject: GradeEditorSubject } | null>(null)
   const [gradePanelRect, setGradePanelRect] = useState<Rect | null>(null)
+  const updateGradePanelRect = useCallback((r: Rect) => {
+    setGradePanelRect(r)
+    try {
+      window.localStorage.setItem(GRADE_PANEL_KEY, JSON.stringify(r))
+    } catch {
+      // non-fatal
+    }
+  }, [])
   // Plain function, not useCallback
   const openGradeEditor = (subject: GradeEditorSubject) => {
-    const fallback = defaultPanelRect()
+    const fallback = loadGradePanelRect() ?? defaultPanelRect()
     setGradePanelRect((r) => r ?? fallback)
     setGradeEditor((prev) => ({ sessionId: (prev?.sessionId ?? 0) + 1, subject }))
     applyGradeCustom(subject.name, subject.spec, subject.origin ?? null)
@@ -991,6 +1009,27 @@ export default function Home() {
     ],
     [t],
   )
+  // The TRUE built-in spec an edit descends from — resolved from the library, never
+  // a snapshot taken when the editor opened (which made "back to preset" revert to
+  // the last-closed state). Also what the `edited` mark diffs against.
+  const gradeAncestor = useCallback(
+    (subject?: GradeEditorSubject) => {
+      const custom = sceneSettings.grade.custom
+      const id =
+        subject?.origin ??
+        (subject && subject.id !== CUSTOM_ID ? subject.id : null) ??
+        custom?.from ??
+        // Scenes stored before `from` existed carry no ancestry — recover it from
+        // the snapshot's name so an already-saved edit still knows its origin.
+        GRADE_PRESETS.find(
+          (g) => (t.scene.gradePresets[g.id as keyof typeof t.scene.gradePresets] ?? g.name) === custom?.name,
+        )?.id
+      // Neutral, never NEW_GRADE_SPEC: "revert" means back to no grade, not to the
+      // editor's authoring starting point.
+      return GRADE_PRESETS.find((g) => g.id === id)?.payload.spec ?? NEUTRAL_SPEC
+    },
+    [sceneSettings.grade.custom, t],
+  )
   // An applied user grade is a SNAPSHOT — the scene stores preset=CUSTOM_ID plus a
   // name, not the library id — so map it back to its entry, and fall back to a
   // transient row for a snapshot that has no library entry (an unsaved edit).
@@ -1001,7 +1040,11 @@ export default function Home() {
   // An edit isn't a library item, so it doesn't get its own row — it marks the
   // preset it descends from as edited. Only a from-scratch grade, which descends
   // from nothing, needs a row of its own.
-  const gradeEdited = sceneSettings.grade.preset === CUSTOM_ID
+  // DIFFED, not flagged: reverting the values back to the preset clears the mark,
+  // where "has been through the editor" would keep claiming an edit that is gone.
+  const gradeEdited =
+    sceneSettings.grade.preset === CUSTOM_ID &&
+    JSON.stringify(specOf(sceneSettings.grade)) !== JSON.stringify(gradeAncestor())
   const gradeValue = gradeEdited ? (sceneSettings.grade.custom?.from ?? CUSTOM_ID) : sceneSettings.grade.preset
   const gradeList = useMemo(() => {
     const items =
@@ -1017,25 +1060,6 @@ export default function Home() {
     },
     [applyGradePreset],
   )
-  // The TRUE built-in spec the edit descends from. Snapshotting subject.spec on mount
-  // made "back to preset" revert to however the grade looked when the editor last
-  // opened, and read as disabled whenever those happened to match.
-  const gradeOrigin = useMemo(() => {
-    const sub = gradeEditor?.subject
-    const custom = sceneSettings.grade.custom
-    const id =
-      sub?.origin ??
-      (sub?.id !== CUSTOM_ID ? sub?.id : null) ??
-      custom?.from ??
-      // Scenes stored before `from` existed carry no ancestry — recover it from the
-      // snapshot's name so an already-saved edit still knows what it forked from.
-      GRADE_PRESETS.find(
-        (g) => (t.scene.gradePresets[g.id as keyof typeof t.scene.gradePresets] ?? g.name) === custom?.name,
-      )?.id
-    // Neutral, never NEW_GRADE_SPEC: "revert" means back to no grade, not to the
-    // editor's authoring starting point.
-    return GRADE_PRESETS.find((g) => g.id === id)?.payload.spec ?? NEUTRAL_SPEC
-  }, [gradeEditor?.subject, sceneSettings.grade.custom, t])
   const editCurrentGrade = useCallback(() => {
     const { grade } = sceneSettings
     const origin = grade.preset === CUSTOM_ID ? (grade.custom?.from ?? undefined) : grade.preset
@@ -1430,9 +1454,9 @@ export default function Home() {
           open
           sessionId={gradeEditor.sessionId}
           rect={gradePanelRect}
-          onRectChange={setGradePanelRect}
+          onRectChange={updateGradePanelRect}
           subject={gradeEditor.subject}
-          origin={gradeOrigin}
+          origin={gradeAncestor(gradeEditor.subject)}
           onChange={editGrade}
           onClose={() => setGradeEditor(null)}
         />
