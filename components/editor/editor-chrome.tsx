@@ -2,78 +2,70 @@
 
 // Editor chrome pieces. RailLogo is the app-level home/menu button at the TOP of the left
 
-import Link from "next/link"
-import { CircleUserRound, PanelLeft, PanelLeftClose, WandSparkles } from "lucide-react"
+import { useState } from "react"
+import { PanelLeft, PanelLeftClose, WandSparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { GithubMark } from "@/components/icons"
-import { NAV_LINKS } from "@/components/site-nav"
+import { AccountButton } from "@/components/editor/account-panel"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 const floating = "rounded-lg border border-white/10 bg-zinc-950/70 shadow-float backdrop-blur-xs"
 
-/** App menu: nav + higher-level ops (placeholder). */
-function AppMenu({ children }: { children: React.ReactNode }) {
-  return (
-    <Popover>
-      <PopoverTrigger asChild>{children}</PopoverTrigger>
-      <PopoverContent
-        align="start"
-        sideOffset={6}
-        className="w-48 rounded-xl border-white/10 bg-zinc-950/90 p-1 shadow-float backdrop-blur-xs"
-      >
-        {NAV_LINKS.map((l) => (
-          <Link
-            key={l.href}
-            href={l.href}
-            className="block rounded-lg px-2.5 py-1.5 text-xs transition-colors hover:bg-white/5 hover:text-foreground"
-          >
-            {l.label}
-          </Link>
-        ))}
-        <Separator className="my-1 bg-white/10" />
-        <a
-          href="https://github.com/AmyangXYZ/reze-design"
-          target="_blank"
-          rel="noreferrer"
-          className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
-        >
-          <GithubMark className="size-3.5" />
-          GitHub
-        </a>
-      </PopoverContent>
-    </Popover>
-  )
-}
-
 /** Top of the left rail — the logo/home button for app-level operations. */
 export function RailLogo() {
-  const t = useT()
   return (
-    <AppMenu>
-      <Button variant="ghost" size="icon" className="mt-1.5 rounded-lg text-pink-400 hover:bg-white/5" aria-label={t.brand.menu}>
-        <WandSparkles className="size-4.5" />
-      </Button>
-    </AppMenu>
+    <span className="mt-1.5 flex size-9 items-center justify-center text-pink-400" aria-hidden>
+      <WandSparkles className="size-4.5" />
+    </span>
   )
 }
 
 export function BrandPill({
   sceneName,
+  onRenameScene,
   docksOpen,
   onToggleDocks,
   asHeader = false,
 }: {
   sceneName: string
+  onRenameScene: (name: string) => void
   docksOpen: boolean
   onToggleDocks: () => void
   /** Render flat & full-width as a dock header (expanded, logo lives in the rail), vs a floating */
   asHeader?: boolean
 }) {
   const t = useT()
+  // Double-click to rename, the same gesture as renaming a style group or a node.
+  const [editing, setEditing] = useState(false)
+  const commit = (value: string) => {
+    const next = value.trim()
+    if (next && next !== sceneName) onRenameScene(next.slice(0, 60))
+    setEditing(false)
+  }
+  const nameEl = editing ? (
+    <input
+      autoFocus
+      defaultValue={sceneName}
+      onBlur={(e) => commit(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") commit(e.currentTarget.value)
+        // Escape abandons the edit rather than committing a half-typed name.
+        else if (e.key === "Escape") setEditing(false)
+      }}
+      maxLength={60}
+      className="min-w-0 flex-1 rounded border border-white/15 bg-white/5 px-1 text-xs outline-none"
+    />
+  ) : (
+    <span
+      onDoubleClick={() => setEditing(true)}
+      title={t.brand.renameScene}
+      className="min-w-0 flex-1 cursor-text truncate text-xs text-muted-foreground"
+    >
+      {sceneName}
+    </span>
+  )
   const toggle = (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -106,7 +98,7 @@ export function BrandPill({
             <span className="truncate text-sm font-semibold tracking-tight text-foreground">Reze Design</span>
             {tag}
           </div>
-          <span className="truncate text-xs text-muted-foreground">{sceneName}</span>
+          {nameEl}
         </div>
         {toggle}
       </div>
@@ -114,13 +106,11 @@ export function BrandPill({
   }
   return (
     <div className={cn("flex items-center gap-1.5", floating, "py-1.5 pr-1.5 pl-2")}>
-      <AppMenu>
-        <Button variant="ghost" size="icon" className="size-7 rounded-lg text-pink-400 hover:bg-white/5" aria-label={t.brand.menu}>
-          <WandSparkles className="size-4.5" />
-        </Button>
-      </AppMenu>
+      <span className="flex size-7 items-center justify-center text-pink-400" aria-hidden>
+        <WandSparkles className="size-4.5" />
+      </span>
       <span className="whitespace-nowrap pb-0.5 text-sm font-semibold tracking-tight text-foreground">Reze Design</span>
-      <span className="ml-1 max-w-24 truncate text-xs text-muted-foreground">{sceneName}</span>
+      <span className="ml-1 max-w-32">{nameEl}</span>
       {toggle}
     </div>
   )
@@ -135,32 +125,7 @@ export function TopRightCluster({
   asHeader?: boolean
 }) {
   const t = useT()
-  const accountBtn = (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className={cn("rounded-md hover:bg-white/5 hover:text-foreground", asHeader ? "size-8" : "size-7")}
-          aria-label={t.account.label}
-        >
-          <CircleUserRound className={asHeader ? "size-5" : "size-4"} />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        align={asHeader ? "start" : "end"}
-        sideOffset={6}
-        className="w-52 rounded-xl border-white/10 bg-zinc-950/90 p-3 text-center shadow-float backdrop-blur-xs"
-      >
-        <CircleUserRound className="mx-auto size-8 text-muted-foreground"/>
-        <div className="mt-2 text-xs">{t.account.comingSoon}</div>
-        <div className="mt-0.5 text-xs text-muted-foreground">{t.account.savePrompt}</div>
-        <Button size="sm" disabled className="mt-3 h-7 w-full bg-white/10 text-xs hover:bg-white/15">
-          {t.account.signIn}
-        </Button>
-      </PopoverContent>
-    </Popover>
-  )
+  const accountBtn = <AccountButton asHeader={asHeader} />
 
   const shareBtn = (
     <Popover>

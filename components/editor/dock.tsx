@@ -18,7 +18,8 @@ export type DockTab = {
   undoScope?: string
 }
 
-const shell = "flex h-full min-h-0 w-full overflow-hidden shadow-float bg-zinc-950/70 backdrop-blur-xs"
+// `relative` so an absolutely-positioned hidden TabPane anchors to the dock.
+const shell = "relative flex h-full min-h-0 w-full overflow-hidden shadow-float bg-zinc-950/70 backdrop-blur-xs"
 
 // KEEP-ALIVE. A tab's content mounts the first time it's opened and then STAYS mounted
 function useKeepAlive(active: string) {
@@ -29,10 +30,26 @@ function useKeepAlive(active: string) {
   return { isMounted, remember }
 }
 
-/** One mounted tab. Not `hidden` + `flex` together */
+/**
+ * One mounted tab.
+ *
+ * Hidden panes are kept IN LAYOUT (absolutely positioned and `invisible`) rather
+ * than `display: none`. A Radix Slider measures its track to place the thumb, and
+ * inside a display-none subtree that measures zero — so every slider re-measured
+ * and visibly drifted the moment its tab was shown. `visibility: hidden` still
+ * computes layout, so the measurement is right before it's ever seen, and
+ * `absolute` keeps it from pushing the visible pane around.
+ */
 function TabPane({ show, scope, children }: { show: boolean; scope?: string; children: ReactNode }) {
   return (
-    <div data-undo-scope={scope} className={show ? "flex min-h-0 min-w-0 flex-1 flex-col" : "hidden"}>
+    <div
+      data-undo-scope={scope}
+      aria-hidden={!show}
+      className={cn(
+        "flex min-h-0 min-w-0 flex-col",
+        show ? "flex-1" : "pointer-events-none invisible absolute inset-0",
+      )}
+    >
       {children}
     </div>
   )
@@ -104,7 +121,7 @@ export function LeftDock({
           </Tooltip>
         </div>
       </nav>
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         {header}
         <Separator className="bg-white/10" />
         {tabs.map(

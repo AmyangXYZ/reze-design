@@ -11,8 +11,9 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { GraphMinimap } from "@/components/editor/graph-minimap"
 import { GRAPH_LIBRARY } from "@/lib/materials"
-import { LibraryRail, LibraryTags } from "@/components/editor/library-rail"
+import { LIBRARY_SHELL, LibraryRail, LibraryStats, LibraryTags } from "@/components/editor/library-rail"
 import { matchesFacet, matchesQuery, type GraphItem, type LibraryFacet } from "@/lib/library"
+import { useLibraryStats } from "@/hooks/use-library-stats"
 import { useZOrder } from "@/hooks/use-z-order"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -49,6 +50,7 @@ function LibraryContent({ targetLabel, canApply, affects, currentGraphName, onAp
   // Desktop-style stacking: clicking a library raises it over any editor.
   // Radix would close on Escape whatever is stacked above it; the z-order
   // stack closes only the topmost surface.
+  const { stats, signedIn, toggleLike } = useLibraryStats()
   const { z, onPointerDownCapture } = useZOrder(undefined, onClose)
   const [query, setQuery] = useState("")
   const [facet, setFacet] = useState<LibraryFacet>("all")
@@ -76,9 +78,9 @@ function LibraryContent({ targetLabel, canApply, affects, currentGraphName, onAp
       // sm:max-w repeat is load-bearing (DialogContent base carries sm:max-w-lg).
       style={{ zIndex: z }}
         onPointerDownCapture={onPointerDownCapture}
-        className="flex h-[82dvh] max-h-[82dvh] w-[92vw] max-w-5xl flex-col gap-0 overflow-hidden border-white/10 bg-zinc-950/95 p-0 sm:max-w-5xl data-[state=closed]:animate-none data-[state=closed]:fade-out-100 data-[state=closed]:zoom-out-100"
+        className={LIBRARY_SHELL}
     >
-      <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-white/10 px-4 py-2 text-left">
+      <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-white/10 bg-zinc-950 px-4 py-2 text-left">
         <DialogTitle className="flex shrink-0 items-center gap-2 text-sm font-medium">
           <Workflow className="size-4 text-blue-400" />
           {t.library.title}
@@ -117,8 +119,16 @@ function LibraryContent({ targetLabel, canApply, affects, currentGraphName, onAp
               {rows.map((r) => {
                 const sel = r.id === selectedId
                 return (
-                  <button
+                  <div
                     key={r.id}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(ev) => {
+                      if (ev.key === "Enter" || ev.key === " ") {
+                        ev.preventDefault()
+                        setSelectedId(r.id)
+                      }
+                    }}
                     onClick={() => setSelectedId(r.id)}
                     // Double-click forks straight into the graph editor (same as the inspector preview's hover
                     onDoubleClick={() => canApply && onApply(r.payload.graph, r.name, true)}
@@ -137,9 +147,18 @@ function LibraryContent({ targetLabel, canApply, affects, currentGraphName, onAp
                     </div>
                     <div className="px-2 py-1.5">
                       <div className="truncate text-xs font-medium">{r.name}</div>
-                      <div className="truncate font-mono text-[11px] text-muted-foreground/70">{r.author}</div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate font-mono text-[11px] text-muted-foreground/70">{r.author}</span>
+                        <LibraryStats
+                          likeCount={stats[r.id]?.likeCount ?? 0}
+                          liked={stats[r.id]?.liked ?? false}
+                          scenes={stats[r.id]?.scenes ?? 0}
+                          canLike={signedIn}
+                          onToggle={() => void toggleLike(r.id)}
+                        />
+                      </div>
                     </div>
-                  </button>
+                  </div>
                 )
               })}
               {rows.length === 0 && (

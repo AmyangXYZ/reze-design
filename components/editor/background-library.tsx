@@ -15,8 +15,9 @@ import {
   type AppliedBackgroundEffect,
 } from "@/lib/background-effects"
 import { EffectPreview } from "@/components/editor/effect-preview"
-import { LibraryRail, LibraryTags } from "@/components/editor/library-rail"
+import { LIBRARY_SHELL, LibraryRail, LibraryStats, LibraryTags } from "@/components/editor/library-rail"
 import { matchesFacet, matchesQuery, type EffectItem, type LibraryFacet } from "@/lib/library"
+import { useLibraryStats } from "@/hooks/use-library-stats"
 import { useZOrder } from "@/hooks/use-z-order"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -50,30 +51,20 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
   // Desktop-style stacking: clicking a library raises it over any editor.
   // Radix would close on Escape whatever is stacked above it; the z-order
   // stack closes only the topmost surface.
+  const { stats, signedIn, toggleLike } = useLibraryStats()
   const { z, onPointerDownCapture } = useZOrder(undefined, () => onOpenChange(false))
   const [query, setQuery] = useState("")
   const [facet, setFacet] = useState<LibraryFacet>("all")
   const [selectedId, setSelectedId] = useState<string | null>(applied?.id ?? BACKGROUND_EFFECTS[0]?.id ?? null)
+  // Follow the applied effect when it CHANGES — creating or editing one should move
+  // the selection with it, rather than leaving the ring on the previous entry.
+  const [lastApplied, setLastApplied] = useState(applied?.id ?? null)
+  if ((applied?.id ?? null) !== lastApplied) {
+    setLastApplied(applied?.id ?? null)
+    if (applied) setSelectedId(applied.id)
+  }
 
-  // An applied effect that isn't a curated entry (created from the template, or a curated
-  const customDef: EffectItem | null = useMemo(
-    () =>
-      applied && !BACKGROUND_EFFECTS.some((e) => e.id === applied.id)
-        ? {
-            id: applied.id,
-            kind: "effect",
-            name: applied.name,
-            author: t.bgLibrary.you,
-            description: t.bgLibrary.customDesc,
-            tags: [],
-            version: 1,
-            owner: "user",
-            payload: { wgsl: applied.wgsl },
-          }
-        : null,
-    [applied, t],
-  )
-  const all = useMemo(() => (customDef ? [...BACKGROUND_EFFECTS, customDef] : [...BACKGROUND_EFFECTS]), [customDef])
+  const all = BACKGROUND_EFFECTS
   const selected: EffectItem | null = useMemo(() => all.find((e) => e.id === selectedId) ?? null, [all, selectedId])
   // Draft = what Apply applies for the current selection.
   const [draft, setDraft] = useState<AppliedBackgroundEffect | null>(() => seedDraft(selected, applied))
@@ -104,9 +95,9 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
         // Same footprint as the shader-graph library.
         style={{ zIndex: z }}
         onPointerDownCapture={onPointerDownCapture}
-        className="flex h-[82dvh] max-h-[82dvh] w-[92vw] max-w-5xl flex-col gap-0 overflow-hidden border-white/10 bg-zinc-950/95 p-0 sm:max-w-5xl data-[state=closed]:animate-none data-[state=closed]:fade-out-100 data-[state=closed]:zoom-out-100"
+        className={LIBRARY_SHELL}
       >
-        <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-white/10 px-4 py-2 text-left">
+        <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-white/10 bg-zinc-950 px-4 py-2 text-left">
           <DialogTitle className="flex shrink-0 items-center gap-2 text-sm font-medium">
             <Sparkles className="size-4 text-blue-400" />
             {t.scene.bgEffects}
@@ -144,8 +135,16 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
               {rows.map((e) => {
                 const sel = e.id === selectedId
                 return (
-                  <button
+                  <div
                     key={e.id}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(ev) => {
+                      if (ev.key === "Enter" || ev.key === " ") {
+                        ev.preventDefault()
+                        setSelectedId(e.id)
+                      }
+                    }}
                     onClick={() => setSelectedId(e.id)}
                     onDoubleClick={() => onEdit(seedDraft(e, applied)!)} // straight into the code
                     className={cn(
@@ -163,9 +162,18 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
                     </div>
                     <div className="px-2 py-1.5">
                       <div className="truncate text-xs font-medium">{e.name}</div>
-                      <div className="truncate font-mono text-[11px] text-muted-foreground/70">{e.author}</div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate font-mono text-[11px] text-muted-foreground/70">{e.author}</span>
+                        <LibraryStats
+                          likeCount={stats[e.id]?.likeCount ?? 0}
+                          liked={stats[e.id]?.liked ?? false}
+                          scenes={stats[e.id]?.scenes ?? 0}
+                          canLike={signedIn}
+                          onToggle={() => void toggleLike(e.id)}
+                        />
+                      </div>
                     </div>
-                  </button>
+                  </div>
                 )
               })}
               {rows.length === 0 && (

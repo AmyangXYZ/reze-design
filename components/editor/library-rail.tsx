@@ -8,9 +8,23 @@
 // live in search and on the item itself; the rail answers the question the
 // taxonomy never could — "show me mine".
 
+import { Heart } from "lucide-react"
 import { LIBRARY_FACETS, type LibraryFacet, type LibraryItem } from "@/lib/library"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
+
+/**
+ * The shared shell class for all three library dialogs.
+ *
+ * Animations are suppressed in BOTH directions. Switching libraries closes one and
+ * opens another in the same batch, and since they're identical in size and
+ * position, animating means a gap followed by a zoom — which reads as a flash. With
+ * both off, the swap looks like one panel changing its contents.
+ */
+export const LIBRARY_SHELL =
+  "flex h-[82dvh] max-h-[82dvh] w-[92vw] max-w-5xl flex-col gap-0 overflow-hidden border-white/10 bg-zinc-950/95 p-0 sm:max-w-5xl " +
+  "data-[state=closed]:animate-none data-[state=closed]:fade-out-100 data-[state=closed]:zoom-out-100 " +
+  "data-[state=open]:animate-none data-[state=open]:fade-in-100 data-[state=open]:zoom-in-100"
 
 export function LibraryRail({
   items,
@@ -73,5 +87,52 @@ export function LibraryTags({ tags }: { tags: string[] }) {
         </span>
       ))}
     </div>
+  )
+}
+
+/** Likes and scene-usage, sitting at the end of an item's author line.
+ *  Outline heart until you've liked it, then solid — the convention people
+ *  already read without being told. */
+export function LibraryStats({
+  likeCount,
+  liked,
+  scenes,
+  canLike,
+  onToggle,
+}: {
+  likeCount: number
+  liked: boolean
+  scenes: number
+  canLike: boolean
+  onToggle?: () => void
+}) {
+  const t = useT()
+  return (
+    <span className="flex shrink-0 items-center gap-2 font-mono text-[11px]">
+      {scenes > 0 && (
+        <span className="text-muted-foreground/70" title={t.library.usedInScenes(scenes)}>
+          {scenes} ⬦
+        </span>
+      )}
+      <button
+        type="button"
+        disabled={!canLike}
+        title={canLike ? undefined : t.library.signInToLike}
+        onClick={(e) => {
+          // The card underneath selects; the heart must not also select it.
+          e.stopPropagation()
+          onToggle?.()
+        }}
+        className={cn(
+          "flex items-center gap-1 rounded transition-colors",
+          canLike && "cursor-pointer",
+          liked ? "text-red-400" : "text-muted-foreground/70",
+          canLike && !liked && "hover:text-red-400",
+        )}
+      >
+        <Heart className={cn("size-3", liked && "fill-current")} />
+        {likeCount > 0 && likeCount}
+      </button>
+    </span>
   )
 }

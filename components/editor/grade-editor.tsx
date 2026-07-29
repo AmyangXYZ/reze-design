@@ -3,8 +3,9 @@
 // Grade editor — a free-floating, draggable, resizable panel (FloatingPanel), the same idiom
 
 import { useState } from "react"
-import { Check, Copy, Palette, RotateCcw, Share2 } from "lucide-react"
+import { Check, Copy, Palette, RotateCcw } from "lucide-react"
 import { FloatingPanel, type Rect } from "@/components/editor/floating-panel"
+import { PublishButton } from "@/components/editor/publish-button"
 import { useHistory } from "@/hooks/use-history"
 import { EditorHeader, EditorHeaderButton, EditorHeaderSeparator } from "@/components/editor/editor-header"
 import { GradePreview } from "@/components/editor/grade-preview"
@@ -78,10 +79,13 @@ function EditorBody({
 }) {
   const t = useT()
   const [copied, setCopied] = useState(false)
+  // Publishing is what turns an edit into a library item: it acquires an owner,
+  // a server-generated id, and a name others will see it under.
   const { name, spec } = subject
   const set = (patch: Partial<GradeEditorSubject>) => onChange({ ...subject, ...patch })
   const setSpec = (patch: Partial<GradeSpec>) => set({ spec: { ...spec, ...patch } })
   const cdl = resolveSpec(spec, 1)
+
   // Wheel drags settle into one history step, the same way the graph editor batches
   // a node drag.
   const { scopeProps } = useHistory(subject, onChange, { scope: "grade" })
@@ -114,7 +118,8 @@ function EditorBody({
             />
             <EditorHeaderSeparator />
             {/* The one action with no precedent to copy */}
-            <EditorHeaderButton icon={Share2} label={t.gradeLibrary.publishSoon} disabled />
+            <EditorHeaderSeparator />
+            <PublishButton kind="grade" defaultName={name || t.gradeLibrary.untitled} payload={() => ({ spec })} />
           </>
         }
       />

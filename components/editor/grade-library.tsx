@@ -16,8 +16,9 @@ import {
   NEW_GRADE_SPEC,
   type GradeSettings,
 } from "@/lib/grade"
-import { LibraryRail, LibraryTags } from "@/components/editor/library-rail"
+import { LIBRARY_SHELL, LibraryRail, LibraryStats, LibraryTags } from "@/components/editor/library-rail"
 import { matchesFacet, matchesQuery, type GradeItem, type LibraryFacet } from "@/lib/library"
+import { useLibraryStats } from "@/hooks/use-library-stats"
 import { useZOrder } from "@/hooks/use-z-order"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -46,10 +47,17 @@ function LibraryContent({ onOpenChange, grade, onApplyPreset, onEdit }: Props) {
   // Desktop-style stacking: clicking a library raises it over any editor.
   // Radix would close on Escape whatever is stacked above it; the z-order
   // stack closes only the topmost surface.
+  const { stats, signedIn, toggleLike } = useLibraryStats()
   const { z, onPointerDownCapture } = useZOrder(undefined, () => onOpenChange(false))
   const [query, setQuery] = useState("")
   const [facet, setFacet] = useState<LibraryFacet>("all")
   const [selectedId, setSelectedId] = useState<string>(grade.preset === CUSTOM_ID ? "neutral" : grade.preset)
+  // Applying a grade elsewhere (the quick-pick, or the editor) moves the selection.
+  const [lastPreset, setLastPreset] = useState(grade.preset)
+  if (grade.preset !== lastPreset) {
+    setLastPreset(grade.preset)
+    if (grade.preset !== CUSTOM_ID) setSelectedId(grade.preset)
+  }
 
   // Built-in names are UI chrome and translate by id; descriptions are AUTHOR
   // text and stay as written, exactly as the effects library already shows them.
@@ -98,9 +106,9 @@ function LibraryContent({ onOpenChange, grade, onApplyPreset, onEdit }: Props) {
       onCloseAutoFocus={(e) => e.preventDefault()}
       style={{ zIndex: z }}
         onPointerDownCapture={onPointerDownCapture}
-        className="flex h-[82dvh] max-h-[82dvh] w-[92vw] max-w-5xl flex-col gap-0 overflow-hidden border-white/10 bg-zinc-950/95 p-0 sm:max-w-5xl data-[state=closed]:animate-none data-[state=closed]:fade-out-100 data-[state=closed]:zoom-out-100"
+        className={LIBRARY_SHELL}
     >
-      <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-white/10 px-4 py-2 text-left">
+      <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-white/10 bg-zinc-950 px-4 py-2 text-left">
         <DialogTitle className="flex shrink-0 items-center gap-2 text-sm font-medium">
           <Palette className="size-4 text-blue-400" />
           {t.scene.grade}
@@ -136,8 +144,16 @@ function LibraryContent({ onOpenChange, grade, onApplyPreset, onEdit }: Props) {
             {rows.map((g) => {
               const sel = g.id === selectedId
               return (
-                <button
+                <div
                   key={g.id}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(ev) => {
+                    if (ev.key === "Enter" || ev.key === " ") {
+                      ev.preventDefault()
+                      select(g)
+                    }
+                  }}
                   onClick={() => select(g)}
                   onDoubleClick={() => startEdit(g)} // straight into the wheels
                   className={cn(
@@ -155,9 +171,18 @@ function LibraryContent({ onOpenChange, grade, onApplyPreset, onEdit }: Props) {
                   </div>
                   <div className="px-2 py-1.5">
                     <div className="truncate text-xs font-medium">{nameOf(g)}</div>
-                    <div className="truncate font-mono text-[11px] text-muted-foreground/70">{g.author}</div>
+                    <div className="flex items-center justify-between gap-2">
+                        <span className="truncate font-mono text-[11px] text-muted-foreground/70">{g.author}</span>
+                        <LibraryStats
+                          likeCount={stats[g.id]?.likeCount ?? 0}
+                          liked={stats[g.id]?.liked ?? false}
+                          scenes={stats[g.id]?.scenes ?? 0}
+                          canLike={signedIn}
+                          onToggle={() => void toggleLike(g.id)}
+                        />
+                      </div>
                   </div>
-                </button>
+                </div>
               )
             })}
             {rows.length === 0 && (

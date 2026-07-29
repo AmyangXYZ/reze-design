@@ -39,14 +39,14 @@ export function SliderRow({
       {/* w-16 fits the longest label ("Saturation") */}
       <span className="w-16 shrink-0 truncate text-xs">{label}</span>
       <Slider
-        className="flex-1 [&_[data-slot=slider-thumb]]:size-2.5 [&_[data-slot=slider-thumb]]:hover:ring-2 [&_[data-slot=slider-track]]:h-1"
+        className="min-w-0 flex-1 [&_[data-slot=slider-thumb]]:size-2.5 [&_[data-slot=slider-thumb]]:hover:ring-2 [&_[data-slot=slider-track]]:h-1"
         value={[value]}
         min={min}
         max={max}
         step={step}
         onValueChange={([v]) => onChange(v)}
       />
-      <span className="w-8 shrink-0 text-right text-[11px] text-muted-foreground tabular-nums">{fmt ? fmt(value) : value}</span>
+      <span className="w-10 shrink-0 text-right text-[11px] text-muted-foreground tabular-nums">{fmt ? fmt(value) : value}</span>
     </div>
   )
 }

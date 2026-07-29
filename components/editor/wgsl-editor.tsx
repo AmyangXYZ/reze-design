@@ -7,7 +7,8 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism"
 import { ArrowDownToLine, Check, Code, Copy } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { EditorHeader, EditorHeaderButton } from "@/components/editor/editor-header"
+import { EditorHeader, EditorHeaderButton, EditorHeaderSeparator } from "@/components/editor/editor-header"
+import { PublishButton } from "@/components/editor/publish-button"
 import { FloatingPanel, type Rect } from "@/components/editor/floating-panel"
 import { useUndoScope } from "@/hooks/use-undo-scope"
 import { useT } from "@/lib/i18n"
@@ -127,6 +128,8 @@ function EditorBody({
                 URL.revokeObjectURL(a.href)
               }}
             />
+            <EditorHeaderSeparator />
+            <PublishButton kind="effect" defaultName={title} payload={() => ({ wgsl: code })} />
           </>
         }
       />

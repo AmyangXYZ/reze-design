@@ -149,7 +149,6 @@ export default function Home() {
   // Bumped on library-pick to remount the graph editor with the new graph.
   const [libVersion, setLibVersion] = useState(0)
   // The graph the editing session started
-  const [editBaseline, setEditBaseline] = useState<{ groupId: string; graph: ShaderGraph; label?: string } | null>(null)
 
   // Dock + tab state persists
   const [docksOpen, setDocksOpen] = useState(() => loadUiState().docks)
@@ -212,6 +211,7 @@ export default function Home() {
   // The boot document: the bundled demo with the user's stored values merged over it.
   const [bootScene] = useState(() => hydrateScene(DEFAULT_SCENE))
   const [sceneSettings, setSceneSettings] = useState<SceneSettings>(bootScene.state.settings)
+  const [sceneName, setSceneName] = useState(bootScene.state.name)
   // Undo/redo for the Scene panel — also the fallback scope, so ⌘Z with nothing
   // focused still edits the scene the way it always has.
   useHistory(sceneSettings, setSceneSettings, { scope: "scene", fallback: true })
@@ -294,7 +294,6 @@ export default function Home() {
     const group = groups.find((g) => g.id === library.groupId)
     if (!group) return
     const styled: ShaderGraph = { ...graph, name }
-    if (edit) setEditBaseline({ groupId: group.id, graph: group.graph, label: group.label })
     // Apply the library graph but keep the group's own name
     const updated: StyleGroup = { ...group, graph: styled }
     // Empty groups can't compile
@@ -310,22 +309,11 @@ export default function Home() {
   }
 
   // Graph-editor session lifecycle ── Edits preview live on the active group.
-  const saveGraphEdit = () => {
-    setEditBaseline(null)
-    setDrawerOpen(false)
-    setDrawerFull(false)
-  }
-  // Close (discard): revert the live-previewed edits to the baseline and close
+  // Close keeps the edits, like the other two editors. Undoing is ⌘Z, and the
+  // header's reset-to-preset covers starting over.
   const closeGraphEdit = () => {
-    const baseline = editBaseline
-    setEditBaseline(null)
     setDrawerOpen(false)
     setDrawerFull(false)
-    if (baseline) {
-      const g = groups.find((x) => x.id === baseline.groupId)
-      if (g) void upsertGroup({ ...g, graph: baseline.graph, label: baseline.label })
-      setLibVersion((v) => v + 1)
-    }
   }
 
 
@@ -385,7 +373,6 @@ export default function Home() {
       const g = groups.find((x) => x.id === id)
       if (!g) return
       setActiveGroupId(id)
-      setEditBaseline({ groupId: id, graph: g.graph, label: g.label })
       openGraphEditor()
     },
     [groups, openGraphEditor],
@@ -913,7 +900,7 @@ export default function Home() {
     let idle = 0
     const payload = {
       id: bootScene.state.id,
-      name: bootScene.state.name,
+      name: sceneName,
       camera: bootScene.state.camera,
       settings: sceneSettings,
       backgroundEffect: bgEffect,
@@ -940,16 +927,16 @@ export default function Home() {
       clearTimeout(timer)
       if (idle && typeof cancelIdleCallback === "function") cancelIdleCallback(idle)
     }
-  }, [ready, sceneSettings, bgEffect, groupsByModel, models, bootScene])
+  }, [ready, sceneName, sceneSettings, bgEffect, groupsByModel, models, bootScene])
 
   // Stable handlers for the memoized AssetsPanel.
   // Back to the scene DOCUMENT — sliders, colours, and which grade/effect is picked.
   // A picked preset is document state and reverts; an EDITED one is content, and an
   // in-place edit lives nowhere but here, so resetting would destroy it outright.
   const resetSceneDefaults = useCallback(() => {
-    const doc = DEFAULT_SCENE.state.settings
-    setSceneSettings((s) => (s.grade.preset === CUSTOM_ID ? { ...doc, grade: s.grade } : doc))
-    setBgEffect((fx) => (fx && !isStockEffect(fx) ? fx : DEFAULT_SCENE.state.backgroundEffect))
+    setSceneSettings(DEFAULT_SCENE.state.settings)
+    setBgEffect(DEFAULT_SCENE.state.backgroundEffect)
+    setSceneName(DEFAULT_SCENE.state.name)
   }, [setSceneSettings, setBgEffect])
 
   const openModelDialog = useCallback(
@@ -1207,7 +1194,7 @@ export default function Home() {
           canvasRef={canvasRef}
           modelName={masterId ?? activeId}
           extraModelNames={extraModelNames}
-          sceneName={t.brand.untitledScene}
+          sceneName={sceneName}
           animName={masterId ? (animByModel[masterId]?.name ?? null) : null}
           animDuration={masterDuration}
           backdrop={backdrop}
@@ -1337,7 +1324,8 @@ export default function Home() {
               railTop={<RailLogo />}
               header={
                 <BrandPill
-                  sceneName={t.brand.untitledScene}
+                  sceneName={sceneName}
+          onRenameScene={setSceneName}
                   docksOpen
                   onToggleDocks={() => {
                     setDocksOpen(false)
@@ -1354,7 +1342,7 @@ export default function Home() {
           </div>
         ) : (
           <div className="fixed top-3 left-3 z-20">
-            <BrandPill sceneName={t.brand.untitledScene} docksOpen={false} onToggleDocks={() => setDocksOpen(true)} />
+            <BrandPill sceneName={sceneName} onRenameScene={setSceneName} docksOpen={false} onToggleDocks={() => setDocksOpen(true)} />
           </div>
         ))}
 
@@ -1407,7 +1395,6 @@ export default function Home() {
               engineReady={ready}
               engineError={error}
               open={drawerOpen}
-              onSave={saveGraphEdit}
               onClose={closeGraphEdit}
               fullscreen={drawerFull}
               onToggleFullscreen={() => setDrawerFull((v) => !v)}

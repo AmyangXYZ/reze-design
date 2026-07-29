@@ -22,7 +22,7 @@ import {
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
 import { compileGraph, validateGraph, type CompileOptions, type Diagnostic, type ShaderGraph } from "reze-engine"
-import { Check, Code, FileDown, FileUp, Grip, Maximize2, Minimize2, RotateCcw, Workflow, X } from "lucide-react"
+import { Code, FileDown, FileUp, Grip, Maximize2, Minimize2, RotateCcw, Workflow, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -33,6 +33,7 @@ import { AddNodeMenu } from "@/components/graph/add-node-menu"
 import { NodeContextMenu, type MenuAction } from "@/components/graph/node-context-menu"
 import { makeGraphNode, uniqueNodeId } from "@/lib/node-catalog"
 import { canConnect, fromFlow, socketsOf, socketType, toFlow, type RezeFlowNode } from "@/lib/graph-flow"
+import { PublishButton } from "@/components/editor/publish-button"
 import { useUndoScope } from "@/hooks/use-undo-scope"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -62,7 +63,6 @@ export function GraphEditor({
   engineReady,
   engineError,
   open,
-  onSave,
   onClose,
   onApply,
   onGraphChange,
@@ -79,7 +79,6 @@ export function GraphEditor({
   engineError: string | null
   open: boolean
   /** Save & close — keep the current graph, end the editing session. */
-  onSave: () => void
   /** Close — discard this session's edits (restore the baseline) and close. */
   onClose: () => void
   /** Compile + swap this graph onto the active group (parent upserts the group). */
@@ -689,14 +688,14 @@ export function GraphEditor({
             </TooltipTrigger>
             <TooltipContent>{t.graph.discardClose}</TooltipContent>
           </Tooltip>
-          <Button
-            size="sm"
-            onClick={onSave}
-            className="ml-1 h-6 gap-1 bg-blue-400 px-2 text-xs font-medium text-white hover:bg-blue-300"
-          >
-            <Check className="size-3.5" />
-            {t.graph.save}
-          </Button>
+          <div className="ml-1">
+            <PublishButton
+              kind="graph"
+              defaultName={currentGraph.name}
+              defaultTags={currentGraph.tags ?? []}
+              payload={() => ({ graph: currentGraph })}
+            />
+          </div>
         </div>
       </header>
 

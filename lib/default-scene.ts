@@ -17,7 +17,7 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
     },
   ],
   audio: "/audios/One More Last Time.wav",
-  name: "Untitled Scene",
+  name: "My first scene",
   camera: { distance: 26.2, target: [0, 11.4, 0] },
   settings: {
     world: { color: "#ed6aff", strength: 0.66 },
