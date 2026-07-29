@@ -1,5 +1,7 @@
 // Color grading — the LOOK layer, and the clearest example of this app's posture
 
+import presets from "@/content/grades.json"
+
 export function hslToHex(h: number, s: number, l: number): string {
   const a = s * Math.min(l, 1 - l)
   const f = (n: number) => {
@@ -58,59 +60,13 @@ export type GradeSettings = {
   custom?: { name: string; spec: GradeSpec } | null
 }
 
-const NEUTRAL: Range = [0, 0]
 export const CUSTOM_ID = "custom"
 
-// Presets were tuned by simulating the engine's CDL chain over sample pixels (skin, white
-export const GRADE_PRESETS: GradeDef[] = [
-  {
-    id: "neutral",
-    author: "Amyang",
-    category: "basic",
-    spec: { shadows: NEUTRAL, midtones: NEUTRAL, highlights: NEUTRAL, contrast: 1, saturation: 1 },
-  },
-  // Film emulation: LIFTED cool blacks (shadow lightness 0.58
-  {
-    id: "filmic",
-    author: "Amyang",
-    category: "film",
-    spec: { shadows: [208, 0.24, 0.58], midtones: [205, 0.12], highlights: [30, 0.1], contrast: 0.92, saturation: 0.62 },
-  },
-  // Golden hour, built like `sakura` — a coherent warm family at visible saturations.
-  {
-    id: "golden",
-    author: "Amyang",
-    category: "color",
-    spec: { shadows: [30, 0.14], midtones: [38, 0.1], highlights: [45, 0.2], contrast: 0.98, saturation: 1.1 },
-  },
-  {
-    id: "sakura",
-    author: "Amyang",
-    category: "color",
-    spec: { shadows: [305, 0.12], midtones: [345, 0.09], highlights: [352, 0.18], contrast: 0.96, saturation: 1.08 },
-  },
-  // Tuned against reference frames
-  {
-    id: "moonlit",
-    author: "Amyang",
-    category: "night",
-    spec: { shadows: [218, 0.34, 0.44], midtones: [206, 0.32, 0.28], highlights: [195, 0.2, 0.4], contrast: 1.32, saturation: 0.74 },
-  },
-  // "Inky dark base + high-saturation cyan and magenta neon"
-  {
-    id: "cyberpunk",
-    author: "Amyang",
-    category: "night",
-    spec: { shadows: [184, 0.36, 0.41], midtones: [312, 0.15, 0.39], highlights: [328, 0.3, 0.47], contrast: 1.42, saturation: 1.5 },
-  },
-  // Manga page: pure monochrome, contrast hard enough to read as ink.
-  {
-    id: "ink",
-    author: "Amyang",
-    category: "mono",
-    spec: { shadows: NEUTRAL, midtones: NEUTRAL, highlights: NEUTRAL, contrast: 1.55, saturation: 0 },
-  },
-]
+// Presets live in content/grades.json — data, not code, and the same shape a
+// user-contributed grade will take once the library is server-backed.
+// JSON widens the range tuples to number[], so re-narrow on the way in — one
+// cast at the boundary keeps every consumer strongly typed.
+export const GRADE_PRESETS = presets as unknown as GradeDef[]
 
 export const NEUTRAL_SPEC: GradeSpec = GRADE_PRESETS[0].spec
 export const DEFAULT_GRADE: GradeSettings = { preset: "neutral", intensities: {}, custom: null }
@@ -118,7 +74,7 @@ export const DEFAULT_GRADE: GradeSettings = { preset: "neutral", intensities: {}
 /** Editor starting point — visibly a grade rather than a no-op, so a new author sees */
 export const NEW_GRADE_SPEC: GradeSpec = {
   shadows: [210, 0.18],
-  midtones: NEUTRAL,
+  midtones: [0, 0],
   highlights: [35, 0.18],
   contrast: 1.05,
   saturation: 1.05,

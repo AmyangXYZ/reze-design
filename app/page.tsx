@@ -27,6 +27,7 @@ import { WgslEditorPanel } from "@/components/editor/wgsl-editor"
 import { NodeLibrary } from "@/components/editor/node-library"
 import { RenderPanel, type FramePreview } from "@/components/editor/render-panel"
 import { useEngine } from "@/hooks/use-engine"
+import { useSceneSync } from "@/hooks/use-scene-sync"
 import { useZOrder } from "@/hooks/use-z-order"
 import { useHistory } from "@/hooks/use-history"
 import { probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
@@ -541,28 +542,21 @@ export default function Home() {
           return { x: (frameVp.w - w) / 2, y: (frameVp.h - h) / 2, w, h }
         })()
       : null
-  // Green mode suspends the skybox live (it renders inside the canvas and would cover
-  const skyboxRef = useRef(skybox)
-  useEffect(() => {
-    skyboxRef.current = skybox
-  })
-  useEffect(() => {
-    const engine = engineRef.current
-    if (!engine) return
-    if (liveGreenScreen) engine.setBackdropEquirect(null)
-    else if (skyboxRef.current) {
-      let stale = false
-      void createImageBitmap(skyboxRef.current.file).then((b) => {
-        if (!stale) engine.setBackdropEquirect(b)
-      })
-      return () => {
-        stale = true
-      }
-    }
-  }, [liveGreenScreen, engineRef])
 
   // Background effect layer (WGSL, engine 0.25)
   const [bgEffect, setBgEffect] = useState<AppliedBackgroundEffect | null>(bootScene.state.backgroundEffect)
+
+  // Everything a published scene needs pushed at the engine — the viewer will
+  // call this same hook with a fetched document and no editing around it.
+  const { noteAppliedWgsl } = useSceneSync({
+    engineRef,
+    ready,
+    settings: sceneSettings,
+    backgroundEffect: bgEffect,
+    hasBackdrop: !!backdrop,
+    skybox: skybox?.file ?? null,
+    greenScreen: liveGreenScreen,
+  })
   const [effectsOpen, setEffectsOpen] = useState(false)
 
   // Grades library ── User grades live in localStorage (pre-accounts), while the APPLIED
@@ -640,23 +634,6 @@ export default function Home() {
     setGradesOpen(false)
     setEffectsOpen(true)
   }, [setLibrary, setGradesOpen, setEffectsOpen])
-  // Recompile ONLY when the shader (or green-screen suspension) actually changes.
-  const lastFxWgsl = useRef<string | null>(null)
-  useEffect(() => {
-    const engine = engineRef.current
-    if (!ready || !engine) return
-    const wgsl = liveGreenScreen ? null : (bgEffect?.wgsl ?? null)
-    if (wgsl === lastFxWgsl.current) return
-    lastFxWgsl.current = wgsl
-    let stale = false
-    void engine.setBackgroundEffect(wgsl).then((r) => {
-      // Curated effects should never fail to compile — surface loudly if one does.
-      if (!stale && !r.ok) console.error("background effect failed:", r.diagnostics)
-    })
-    return () => {
-      stale = true
-    }
-  }, [bgEffect, liveGreenScreen, ready, engineRef])
   // Library callbacks — stable so the (memoizable) dialog doesn't re-render idly.
   const applyBgEffect = useCallback((fx: AppliedBackgroundEffect) => setBgEffect(fx), [setBgEffect])
   const removeBgEffect = useCallback(() => setBgEffect(null), [setBgEffect])
@@ -680,12 +657,12 @@ export default function Home() {
       if (!engine) return { ok: false, diagnostics: ["engine not ready"] }
       const r = await engine.setBackgroundEffect(wgsl)
       if (r.ok) {
-        lastFxWgsl.current = wgsl
+        noteAppliedWgsl(wgsl)
         setBgEffect({ ...subject, wgsl })
       }
       return r
     },
-    [engineRef, setBgEffect],
+    [engineRef, setBgEffect, noteAppliedWgsl],
   )
   // Opening auto-applies the subject
   const openFxEditor = useCallback(
@@ -874,80 +851,6 @@ export default function Home() {
     else setUpload({ kind: "pick", files, paths: pmxs.map(relPath).sort((a, b) => a.localeCompare(b)), target: t2 })
   }
 
-  // Scene settings → engine, guarded PER SECTION by object identity.
-  const prevPushed = useRef<{ settings: SceneSettings; backdrop: boolean; greenScreen: boolean } | null>(null)
-  // addGround has no light-update path — it recreates GPU buffers + a bind group per call
-  const groundOptsRef = useRef<Parameters<NonNullable<typeof engineRef.current>["addGround"]>[0] | null>(null)
-  const groundRaf = useRef(0)
-  useEffect(() => () => cancelAnimationFrame(groundRaf.current), [])
-  useEffect(() => {
-    if (!ready) return
-    const engine = engineRef.current
-    if (!engine) return
-    const { world, sun, bloom, background, ground, grade } = sceneSettings
-    const prev = prevPushed.current
-    const modeChanged = !prev || prev.backdrop !== !!backdrop || prev.greenScreen !== liveGreenScreen
-    // The engine paints the background (post-tonemap, exact CSS-hex match)
-    if (modeChanged || prev.settings.background !== background) {
-      engine.setBackgroundColor(
-        liveGreenScreen ? hexToSrgbVec3("#00ff00") : backdrop ? null : hexToSrgbVec3(background.color),
-      )
-    }
-    if (!prev || prev.settings.world !== world) {
-      engine.setWorld({ color: hexToLinearVec3(world.color), strength: world.strength })
-    }
-    if (!prev || prev.settings.sun !== sun) {
-      engine.setSun({
-        color: hexToLinearVec3(sun.color),
-        strength: sun.strength,
-        direction: azElToDirection(sun.azimuth, sun.elevation),
-      })
-    }
-    if (!prev || prev.settings.bloom !== bloom) {
-      engine.setBloomOptions({
-        // Intensity 0 = off — the panel has no switch, so the slider is the ONLY authority (a stored
-        enabled: bloom.intensity > 0,
-        threshold: bloom.threshold,
-        knee: bloom.knee,
-        radius: bloom.radius,
-        intensity: bloom.intensity,
-        color: hexToLinearVec3(bloom.color),
-      })
-    }
-    // Uniforms-only in the engine (no pipeline rebuild), so a drag is cheap
-    if (!prev || prev.settings.grade !== grade) {
-      const cdl = resolveGrade(grade)
-      engine.setColorGrading({
-        shadows: hexToSrgbVec3(cdl.shadows),
-        midtones: hexToSrgbVec3(cdl.midtones),
-        highlights: hexToSrgbVec3(cdl.highlights),
-        contrast: cdl.contrast,
-        saturation: cdl.saturation,
-      })
-    }
-    // Green mode hides the ground SURFACE (it would occlude the key) but keeps the shadow-catcher
-    if (modeChanged || prev.settings.ground !== ground) {
-      groundOptsRef.current = {
-        diffuseColor: hexToLinearVec3(ground.color),
-        gridLineColor: hexToLinearVec3(ground.grid),
-        opacity: liveGreenScreen ? 0 : ground.opacity,
-        shadowStrength: ground.shadow ? 1 : 0,
-        gridLineOpacity: liveGreenScreen || !ground.gridEnabled ? 0 : 0.4,
-        // Square plane; the radial fade scales with it (engine defaults are 10/80 at size 160)
-        width: ground.size,
-        height: ground.size,
-        fadeStart: ground.size * (10 / 160),
-        fadeEnd: ground.size * (80 / 160),
-      }
-      if (!groundRaf.current) {
-        groundRaf.current = requestAnimationFrame(() => {
-          groundRaf.current = 0
-          if (groundOptsRef.current) engineRef.current?.addGround(groundOptsRef.current)
-        })
-      }
-    }
-    prevPushed.current = { settings: sceneSettings, backdrop: !!backdrop, greenScreen: liveGreenScreen }
-  }, [sceneSettings, ready, engineRef, backdrop, liveGreenScreen])
 
   // Working scene → localStorage.
   const pendingSave = useRef<Parameters<typeof saveSceneState>[0] | null>(null)

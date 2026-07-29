@@ -1,31 +1,12 @@
-// The style-slot tables: which shader graph, label, and ordering each material category gets.
+import type { MaterialPreset, ShaderGraph } from "reze-engine"
+import graphs from "@/content/graphs.json"
 
-import {
-  BODY_GRAPH,
-  CLOTH_ROUGH_GRAPH,
-  CLOTH_SMOOTH_GRAPH,
-  DEFAULT_GRAPH,
-  EYE_GRAPH,
-  FACE_GRAPH,
-  HAIR_GRAPH,
-  METAL_GRAPH,
-  STOCKINGS_GRAPH,
-  type MaterialPreset,
-  type ShaderGraph,
-} from "reze-engine"
+// Pinned SNAPSHOTS of the engine's presets rather than live imports. The library
+// presents these with authors and dates, so retuning a preset upstream shouldn't
+// silently rewrite what a user sees — and once graphs are server-backed, builtin
+// and contributed entries need to live in the same shape.
+export const SLOT_GRAPHS = graphs as unknown as Partial<Record<MaterialPreset, ShaderGraph>>
 
-/** Every slot ships an editable graph preset (engine 0.18.1 added face + eye). */
-export const SLOT_GRAPHS: Partial<Record<MaterialPreset, ShaderGraph>> = {
-  hair: HAIR_GRAPH,
-  body: BODY_GRAPH,
-  face: FACE_GRAPH,
-  eye: EYE_GRAPH,
-  cloth_smooth: CLOTH_SMOOTH_GRAPH,
-  cloth_rough: CLOTH_ROUGH_GRAPH,
-  stockings: STOCKINGS_GRAPH,
-  metal: METAL_GRAPH,
-  default: DEFAULT_GRAPH,
-}
 
 export const SLOT_ORDER: MaterialPreset[] = [
   "hair",

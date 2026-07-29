@@ -1,0 +1,9 @@
+[
+  {"id": "neutral", "author": "Amyang", "category": "basic", "spec": {"shadows": [0, 0], "midtones": [0, 0], "highlights": [0, 0], "contrast": 1, "saturation": 1}},
+  {"id": "filmic", "author": "Amyang", "category": "film", "spec": {"shadows": [208, 0.24, 0.58], "midtones": [205, 0.12], "highlights": [30, 0.1], "contrast": 0.92, "saturation": 0.62}},
+  {"id": "golden", "author": "Amyang", "category": "color", "spec": {"shadows": [30, 0.14], "midtones": [38, 0.1], "highlights": [45, 0.2], "contrast": 0.98, "saturation": 1.1}},
+  {"id": "sakura", "author": "Amyang", "category": "color", "spec": {"shadows": [305, 0.12], "midtones": [345, 0.09], "highlights": [352, 0.18], "contrast": 0.96, "saturation": 1.08}},
+  {"id": "moonlit", "author": "Amyang", "category": "night", "spec": {"shadows": [218, 0.34, 0.44], "midtones": [206, 0.32, 0.28], "highlights": [195, 0.2, 0.4], "contrast": 1.32, "saturation": 0.74}},
+  {"id": "cyberpunk", "author": "Amyang", "category": "night", "spec": {"shadows": [184, 0.36, 0.41], "midtones": [312, 0.15, 0.39], "highlights": [328, 0.3, 0.47], "contrast": 1.42, "saturation": 1.5}},
+  {"id": "ink", "author": "Amyang", "category": "mono", "spec": {"shadows": [0, 0], "midtones": [0, 0], "highlights": [0, 0], "contrast": 1.55, "saturation": 0}}
+]

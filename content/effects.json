@@ -1,0 +1,60 @@
+[
+  {
+    "id": "shining-stars",
+    "name": "Shining Stars",
+    "author": "Amyang",
+    "description": "A twinkling starfield that pans with the camera. Transparent between stars — your background color (or image) stays the sky.",
+    "category": "Sky",
+    "tags": [
+      "night",
+      "calm"
+    ]
+  },
+  {
+    "id": "fuji-watercolor",
+    "name": "Fuji Watercolor",
+    "author": "noztol",
+    "description": "Mt. Fuji in sumi-e watercolor — red sun, inked mountain, a swaying blossom branch on textured paper. Full-scene background.",
+    "category": "Nature",
+    "tags": [
+      "ink",
+      "fuji",
+      "scene"
+    ]
+  },
+  {
+    "id": "quiet-rain",
+    "name": "Quiet Rain",
+    "author": "Amyang",
+    "description": "Thin rain streaks in two depth layers with a slight slant. Low-alpha and cool — mood, not weather simulation.",
+    "category": "Nature",
+    "tags": [
+      "rain",
+      "mood",
+      "overlay"
+    ]
+  },
+  {
+    "id": "reze-neon",
+    "name": "REZE DESIGN",
+    "author": "Amyang",
+    "description": "A flickering neon sign spelling REZE DESIGN — glyphs are plain line segments with an exponential glow. Transparent around the tubes.",
+    "category": "Abstract",
+    "tags": [
+      "neon",
+      "text",
+      "overlay"
+    ]
+  },
+  {
+    "id": "orbiting-hearts",
+    "name": "Orbiting Hearts",
+    "author": "Amyang",
+    "description": "Heart outlines drifting around the center. Transparent between the lines — a worked example of a decoration layer over your background color.",
+    "category": "Abstract",
+    "tags": [
+      "cute",
+      "overlay"
+    ]
+  }
+]
