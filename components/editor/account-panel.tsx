@@ -143,16 +143,49 @@ function Portfolio({ onOpenLibrary }: { onOpenLibrary?: (kind: "grade" | "effect
   )
 }
 
+/**
+ * The handle prompt, on first sign-in.
+ *
+ * A handle is assigned automatically at sign-up, so nothing is broken if this is
+ * ignored — but it goes in every scene URL and can only be set once, which is too
+ * consequential to leave sitting unlabelled in a menu. Dismissing it is allowed;
+ * it reappears next session, and the same field stays in the account menu until
+ * the handle is claimed.
+ */
+export function HandleDialog() {
+  const t = useT()
+  const { data: session } = useSession()
+  const [dismissed, setDismissed] = useState(false)
+  // Claimed handles set `usernameChangedAt`, which is also what closes this the
+  // moment the save lands — the session refresh flips the condition.
+  const unclaimed = !!session?.user.username && !session.user.usernameChangedAt
+  return (
+    <Dialog open={unclaimed && !dismissed} onOpenChange={(o) => !o && setDismissed(true)}>
+      <DialogContent className="w-[24rem] gap-0 border-white/10 bg-zinc-950/95 p-5 sm:max-w-[24rem]">
+        <DialogTitle className="text-sm font-medium">{t.account.handleTitle}</DialogTitle>
+        <DialogDescription className="mt-1 text-xs leading-snug text-muted-foreground">
+          {t.account.handleHint}
+        </DialogDescription>
+        <p className="mt-1.5 text-xs leading-snug text-amber-200/90">{t.account.handleOnce}</p>
+        {session?.user.username && <HandleField current={session.user.username} />}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 /** Claiming the handle. Shown only until it's claimed — after that it's fixed, and
  *  a menu is the wrong place to keep saying so. */
 function HandleField({ current }: { current: string }) {
   const t = useT()
+  const { refetch } = useSession()
   const [value, setValue] = useState(current)
   const [state, setState] = useState<"idle" | "saving" | "saved" | string>("idle")
-  const dirty = value.trim().toLowerCase() !== current
+  // The suggested handle is a real answer, so confirming it unchanged is allowed —
+  // it claims the name and closes the question for good.
+  const valid = !!value.trim()
 
   const save = async () => {
-    if (!dirty) return
+    if (!valid) return
     setState("saving")
     const res = await fetch("/api/username", {
       method: "POST",
@@ -161,7 +194,11 @@ function HandleField({ current }: { current: string }) {
     })
     if (res.ok) {
       setState("saved")
-      void authClient.getSession({ query: { disableCookieCache: true } })
+      // Awaited, and past the cookie cache: the session carries the name shown in
+      // the menu and the flag that closes the prompt, so firing this off and
+      // forgetting it left both stale until a reload.
+      await authClient.getSession({ query: { disableCookieCache: true } })
+      await refetch()
       setTimeout(() => setState("idle"), 1500)
       return
     }
@@ -201,7 +238,7 @@ function HandleField({ current }: { current: string }) {
         <Button
           type="submit"
           size="sm"
-          disabled={!dirty || state === "saving"}
+          disabled={!valid || state === "saving"}
           className="h-7 shrink-0 bg-blue-400 px-2 text-xs text-white hover:bg-blue-300 disabled:opacity-40"
         >
           {t.account.handleSave}
@@ -263,7 +300,6 @@ export function AccountButton({
             </DialogDescription>
           </div>
           <SignInForm />
-          <p className="mt-4 text-center text-[11px] leading-relaxed text-muted-foreground/70">{t.account.noPassword}</p>
         </DialogContent>
       </Dialog>
     )

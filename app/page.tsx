@@ -78,6 +78,7 @@ import { modelFilePaths, sceneFiles } from "@/lib/scene-files"
 import type { BundleEntry } from "@/lib/bundle"
 import { ShareSceneDialog, type ScenePublishSource } from "@/components/editor/share-scene"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { HandleDialog } from "@/components/editor/account-panel"
 import { LoadingPill } from "@/components/editor/loading-pill"
 import { SceneGallery, prefetchGallery } from "@/components/editor/scene-gallery"
 import type { SceneSettings } from "@/lib/scene-settings"
@@ -1953,6 +1954,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
         />
       )}
       <SceneGallery open={galleryOpen} onOpenChange={setGalleryOpen} />
+      <HandleDialog />
       {mounted && (
         <ShareSceneDialog
           open={shareOpen}
