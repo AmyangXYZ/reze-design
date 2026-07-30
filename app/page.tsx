@@ -2,7 +2,7 @@
 
 // Immersive editor (home).
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import {
   DEFAULT_GRAPH,
   compileGraph,
@@ -12,7 +12,7 @@ import {
   type ShaderGraph,
   type StyleGroup,
 } from "reze-engine"
-import { Clapperboard, Package, Sun, X } from "lucide-react"
+import { BookOpen, Clapperboard, GalleryThumbnails, Package, Sun, X, type LucideIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { GraphEditor } from "@/components/graph/graph-editor"
@@ -49,13 +49,14 @@ import {
   type ScenePayload,
 } from "@/lib/library"
 import { communityItems, useCommunity } from "@/hooks/use-community"
+import { prefetchLibraryStats } from "@/hooks/use-library-stats"
 import { forkTarget } from "@/lib/fork"
 import { resolveSceneRefs } from "@/lib/resolve-refs"
 import { effectRef, gradeRef, graphRef } from "@/lib/refs"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useSession } from "@/lib/auth-client"
 import { createDraft, isDraft, loadDrafts, nextDraftName, updateDraft } from "@/lib/drafts"
-import { BACKGROUND_EFFECTS, builtinEffect } from "@/lib/background-effects"
+import { applyDefaults, BACKGROUND_EFFECTS, builtinEffect } from "@/lib/background-effects"
 import { GradeLibrary } from "@/components/editor/grade-library"
 import { GradeEditorPanel, type GradeEditorSubject } from "@/components/editor/grade-editor"
 import { SaveCloseDialog } from "@/components/editor/save-close"
@@ -76,14 +77,72 @@ import {
 import { modelFilePaths, sceneFiles } from "@/lib/scene-files"
 import type { BundleEntry } from "@/lib/bundle"
 import { ShareSceneDialog, type ScenePublishSource } from "@/components/editor/share-scene"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { LoadingPill } from "@/components/editor/loading-pill"
+import { SceneGallery, prefetchGallery } from "@/components/editor/scene-gallery"
 import type { SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
+
+// The manual lives in the repo, not in a dialog: it is going to grow past what a
+// popup can hold, it wants images and cross-links, and keeping it beside the code
+// means it can be read, corrected and translated by anyone who can open a PR.
+const MANUAL_URL = "https://github.com/AmyangXYZ/reze-design/blob/main/docs/manual/en.md"
 
 // Frame preview: how far the viewport's aspect may deviate from the export target before
 const FRAME_ASPECT_TOL = 1.03
 
 // How long edits settle before the working scene is written to localStorage.
 const SAVE_SETTLE_MS = 1000
+
+/** Appended when someone's scene is opened in your editor, so the two are never
+ *  confused for each other in the title bar or in the publish dialog. */
+const FORK_SUFFIX = " - fork"
+
+/** A rail entry that opens a surface. Shaped like a tab so the rail reads as one
+ *  column, but it never becomes the active tab — it opens something over it. */
+function RailAction({ icon: Icon, label, onClick }: { icon: LucideIcon; label: string; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="flex w-full cursor-pointer flex-col items-center gap-1.5 py-0.5">
+      <span className="flex size-8 items-center justify-center rounded-md transition-colors hover:bg-white/[0.05]">
+        <Icon className="size-4.5" />
+      </span>
+      <span className="text-[9px] leading-none font-medium text-muted-foreground">{label}</span>
+    </button>
+  )
+}
+
+/** Bottom-cluster utility: icon only, like the language and GitHub buttons. */
+function RailUtility({
+  icon: Icon,
+  label,
+  onClick,
+  href,
+}: {
+  icon: LucideIcon
+  label: string
+  onClick?: () => void
+  /** Opens elsewhere instead of acting here — a new tab, like the GitHub mark below. */
+  href?: string
+}) {
+  const cls =
+    "flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/[0.05] hover:text-foreground"
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        {href ? (
+          <a href={href} target="_blank" rel="noreferrer" aria-label={label} className={cls}>
+            <Icon className="size-4.5" />
+          </a>
+        ) : (
+          <button onClick={onClick} aria-label={label} className={cls}>
+            <Icon className="size-4.5" />
+          </button>
+        )}
+      </TooltipTrigger>
+      <TooltipContent side="right">{label}</TooltipContent>
+    </Tooltip>
+  )
+}
 
 /** Community rows for a quick-pick: a few, plus whatever is applied. */
 function communityQuickPick(items: { name: string }[], applied: string | null) {
@@ -704,6 +763,25 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     opened: GradeEditorSubject
     savePrompt: boolean
   } | null>(null)
+  // Like counts and the gallery's first page, warmed during idle time after boot
+  // — opening a library should be a render, not a fetch. (Community rows need no
+  // warming here: useCommunity above already fetched them on mount.)
+  useEffect(() => {
+    const warm = () => {
+      prefetchLibraryStats()
+      prefetchGallery()
+    }
+    // A short timeout, because the editor's render loop keeps the main thread busy
+    // enough that idle may never arrive on its own — and these are three GETs whose
+    // cost to the frame is starting them.
+    const idle =
+      typeof requestIdleCallback === "function" ? requestIdleCallback(warm, { timeout: 1000 }) : window.setTimeout(warm, 800)
+    return () => {
+      if (typeof cancelIdleCallback === "function") cancelIdleCallback(idle)
+      else clearTimeout(idle)
+    }
+  }, [])
+
   // The scene stores the grade NAME; the spec resolves against built-ins and the
   // reactive drafts store, so editing a draft live-updates the render.
   const appliedGradeSpec = useMemo(
@@ -729,9 +807,11 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   // Grades library ── User grades live in localStorage (pre-accounts), while the APPLIED
   const [gradesOpen, setGradesOpen] = useState(false)
   const [libraryFacet, setLibraryFacet] = useState<LibraryFacet>("all")
+  const [galleryOpen, setGalleryOpen] = useState(false)
   // Lazy initializer, not an effect
   const showGrades = useCallback((facet: LibraryFacet) => {
     setLibraryFacet(facet)
+    setGalleryOpen(false)
     // Snapshot the viewport first
     captureScene(canvasRef.current)
     setLibrary((s) => ({ ...s, open: false }))
@@ -739,7 +819,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     setGradesOpen(true)
     // Refs are stable by contract
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setLibrary, setEffectsOpen, setGradesOpen])
+  }, [setLibrary, setEffectsOpen, setGradesOpen, setGalleryOpen])
   // Applying restores the strength you last used this grade at — that memory is
   // UX, so it lives in localStorage rather than the scene.
   const applyGradePreset = useCallback(
@@ -832,29 +912,38 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
 
   const showLibrary = useCallback((groupId: string | null, facet: LibraryFacet) => {
     setLibraryFacet(facet)
+    setGalleryOpen(false)
     setEffectsOpen(false)
     setGradesOpen(false)
     setLibrary({ open: true, groupId })
-  }, [setEffectsOpen, setGradesOpen, setLibrary])
+  }, [setEffectsOpen, setGradesOpen, setLibrary, setGalleryOpen])
   const showEffects = useCallback((facet: LibraryFacet) => {
     setLibraryFacet(facet)
+    setGalleryOpen(false)
     setLibrary((s) => ({ ...s, open: false }))
     setGradesOpen(false)
     setEffectsOpen(true)
-  }, [setLibrary, setGradesOpen, setEffectsOpen])
+  }, [setLibrary, setGradesOpen, setEffectsOpen, setGalleryOpen])
   // Zero-argument handlers: these are wired straight to onClick, and an optional
   // parameter there would be filled with the click event.
   const openGrades = useCallback(() => showGrades("all"), [showGrades])
   const openEffects = useCallback(() => showEffects("all"), [showEffects])
   const openLibrary = useCallback((groupId: string | null) => showLibrary(groupId, "all"), [showLibrary])
   /** Account-tab stat numbers: the matching library, filtered to your work. */
+  const openGallery = useCallback(() => {
+    setLibrary((s) => ({ ...s, open: false }))
+    setGradesOpen(false)
+    setEffectsOpen(false)
+    setGalleryOpen(true)
+  }, [setLibrary, setGradesOpen, setEffectsOpen, setGalleryOpen])
   const openLibraryForAccount = useCallback(
-    (kind: "grade" | "effect" | "graph") => {
-      if (kind === "grade") showGrades("yours")
+    (kind: "grade" | "effect" | "graph" | "scene") => {
+      if (kind === "scene") openGallery()
+      else if (kind === "grade") showGrades("yours")
       else if (kind === "effect") showEffects("yours")
       else showLibrary(null, "yours")
     },
-    [showGrades, showEffects, showLibrary],
+    [showGrades, showEffects, showLibrary, openGallery],
   )
   // Library callbacks — stable so the (memoizable) dialog doesn't re-render idly.
   const applyBgEffect = useCallback((effect: AppliedBackgroundEffect) => setBgEffect(effect), [setBgEffect])
@@ -1432,8 +1521,8 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       })),
       ...communityQuickPick(communityEffects, bgEffect?.name ?? null),
     ]
-    if (!bgEffect) return items
-    const pristine = [...BACKGROUND_EFFECTS, ...effectDrafts].some(
+    if (!bgEffect?.name) return items
+    const pristine = [...BACKGROUND_EFFECTS, ...effectDrafts, ...communityEffects].some(
       (e) => e.name === bgEffect.name && e.payload.wgsl === bgEffect.wgsl,
     )
     if (pristine) return items
@@ -1452,7 +1541,9 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
         return
       }
       const def = BACKGROUND_EFFECTS.find((e) => e.name === name)
-      if (def) setBgEffect(builtinEffect(def.id))
+      // Straight from the definition we just found — going back through the
+      // by-name lookup with its id is what made every built-in "unknown".
+      if (def) setBgEffect(applyDefaults(def))
     },
     [setBgEffect, communityEffects],
   )
@@ -1675,14 +1766,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
         </div>
       )}
 
-      {!ready && !error && (
-        <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
-          <div className="flex items-center gap-2.5 rounded-full border border-white/10 bg-zinc-950/90 px-4 py-2 text-xs text-muted-foreground backdrop-blur-xs">
-            <span className="size-2 animate-pulse rounded-full bg-blue-400" />
-            {t.editor.loadingModel}
-          </div>
-        </div>
-      )}
+      {!ready && !error && <LoadingPill />}
       {error && (
         <div className="absolute inset-0 z-30 flex items-center justify-center p-6">
           <div className="max-w-md rounded-xl border border-red-400/20 bg-zinc-950/90 px-5 py-4 text-xs text-red-400 backdrop-blur-xs">
@@ -1697,6 +1781,12 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
           <RaisableLayer className="fixed inset-y-0 left-0 w-[min(300px,88vw)]">
             <LeftDock
               railTop={<RailLogo />}
+              railActions={
+                <RailAction icon={GalleryThumbnails} label={t.gallery.title} onClick={openGallery} />
+              }
+              railUtilities={
+                <RailUtility icon={BookOpen} label={t.gallery.manual} href={MANUAL_URL} />
+              }
               header={
                 <BrandPill
                   sceneName={sceneName}
@@ -1862,6 +1952,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
           onClose={requestCloseGradeEditor}
         />
       )}
+      <SceneGallery open={galleryOpen} onOpenChange={setGalleryOpen} />
       {mounted && (
         <ShareSceneDialog
           open={shareOpen}
@@ -2024,8 +2115,14 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
  *  stays `/`. Rendering the editor only once the scene resolves means the engine
  *  boots once, on the right document — no demo flash, no wasted model download. */
 function EditorRoute() {
-  const t = useT()
-  const [from] = useState(forkTarget)
+  // Server renders no fork (sessionStorage doesn't exist there); the client picks
+  // it up after hydration. Reading it in useState made the two disagree, which is
+  // precisely the hydration error.
+  const from = useSyncExternalStore(
+    () => () => {},
+    forkTarget,
+    () => null,
+  )
   const [forked, setForked] = useState<Scene | null>(null)
   const [failed, setFailed] = useState(false)
 
@@ -2042,8 +2139,11 @@ function EditorRoute() {
         if (stale) return
         const scene = parseSceneDoc(doc, builtinEffect, libraryGraph, resolve as never)
         // A fork is a NEW scene: its own identity from the first frame, so
-        // publishing can never overwrite the one it came from.
-        setForked({ ...scene, state: { ...scene.state, id: newSceneId() } })
+        // publishing can never overwrite the one it came from — and its own name,
+        // so the tab title says which of the two you are editing. Forking a fork
+        // doesn't stack the suffix.
+        const name = scene.state.name.endsWith(FORK_SUFFIX) ? scene.state.name : `${scene.state.name}${FORK_SUFFIX}`
+        setForked({ ...scene, state: { ...scene.state, id: newSceneId(), name } })
       } catch {
         if (!stale) setFailed(true)
       }
@@ -2055,8 +2155,8 @@ function EditorRoute() {
 
   if (from && !forked && !failed) {
     return (
-      <main className="fixed inset-0 flex items-center justify-center bg-zinc-950 text-xs text-muted-foreground">
-        {t.editor.loadingModel}
+      <main className="fixed inset-0 bg-zinc-950">
+        <LoadingPill />
       </main>
     )
   }

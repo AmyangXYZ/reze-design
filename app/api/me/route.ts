@@ -6,11 +6,12 @@
 import { NextResponse } from "next/server"
 import { eq, sql } from "drizzle-orm"
 import { auth } from "@/lib/auth"
-import { db, schema } from "@/lib/db"
+import { hasDatabase, db, schema } from "@/lib/db"
 
 export type MeStats = { scene: number; effect: number; grade: number; graph: number; likes: number }
 
 export async function GET(request: Request) {
+  if (!hasDatabase) return NextResponse.json({ error: "unauthenticated" }, { status: 401 })
   const session = await auth.api.getSession({ headers: request.headers })
   if (!session) return NextResponse.json({ error: "unauthenticated" }, { status: 401 })
 

@@ -1,7 +1,7 @@
 // Scene settings: the appearance-colors + world/sun/bloom TYPE and its sRGB↔linear
 
-import { DEFAULT_BLOOM_OPTIONS, Vec3 } from "reze-engine"
-import { DEFAULT_GRADE, type GradeSettings } from "@/lib/grade"
+import { Vec3 } from "reze-engine"
+import type { GradeSettings } from "@/lib/grade"
 
 export type SceneSettings = {
   world: { color: string; strength: number }
@@ -62,40 +62,5 @@ export function azElToDirection(azimuth: number, elevation: number): Vec3 {
   return new Vec3(-Math.cos(el) * Math.sin(az), -Math.sin(el), -Math.cos(el) * Math.cos(az))
 }
 
-// The app's curated first-open look is NOT here
-
-// The engine's real neutral defaults
-const ENGINE_WORLD = { color: new Vec3(0.4014, 0.4944, 0.647), strength: 0.3 }
-const ENGINE_SUN_DIR = new Vec3(-0.0873, -0.3844, 0.919)
-export const ENGINE_DEFAULT_SCENE_SETTINGS: SceneSettings = {
-  background: { color: "#0d1116" },
-  grade: DEFAULT_GRADE,
-  ground: {
-    color: "#494d57",
-    size: 160,
-    opacity: 1,
-    shadow: true,
-    grid: "#ededed",
-    gridEnabled: true,
-  },
-  world: {
-    color: linearVec3ToHex(ENGINE_WORLD.color),
-    strength: ENGINE_WORLD.strength,
-  },
-  sun: {
-    color: "#ffffff",
-    strength: 2.0,
-    azimuth: (Math.round((Math.atan2(-ENGINE_SUN_DIR.x, -ENGINE_SUN_DIR.z) * 180) / Math.PI) + 360) % 360,
-    elevation: Math.round((Math.asin(-ENGINE_SUN_DIR.y) * 180) / Math.PI),
-  },
-  bloom: {
-    enabled: DEFAULT_BLOOM_OPTIONS.enabled,
-    threshold: DEFAULT_BLOOM_OPTIONS.threshold,
-    knee: DEFAULT_BLOOM_OPTIONS.knee,
-    radius: DEFAULT_BLOOM_OPTIONS.radius,
-    intensity: DEFAULT_BLOOM_OPTIONS.intensity,
-    color: linearVec3ToHex(DEFAULT_BLOOM_OPTIONS.color),
-  },
-}
 
 // Color presets now live in one shared picker (components/color-picker.tsx), sourced

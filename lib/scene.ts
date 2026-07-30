@@ -218,7 +218,7 @@ function parseModelSource(path: string): { source: ModelSource; file: string } {
 
 /** The published payloads a pin can resolve to — structurally, so this module
  *  needn't import the library's payload types. */
-type LibraryPayloadLike = { graph?: ShaderGraph; wgsl?: string; spec?: unknown }
+type LibraryPayloadLike = { graph?: ShaderGraph; wgsl?: string; spec?: unknown; name?: string }
 
 /** The applied effect a document describes: a pin, a snapshot, or a built-in name. */
 function appliedEffect(
@@ -230,8 +230,10 @@ function appliedEffect(
   if (typeof applied === "string") return resolveEffect(applied)
   if (isItemRef(applied)) {
     const hit = resolveRef?.(applied)
-    // An unresolvable pin means no effect at all, rather than a wrong one.
-    return hit?.wgsl ? { id: applied.id, name: "", wgsl: hit.wgsl } : null
+    // An unresolvable pin means no effect at all, rather than a wrong one. A
+    // resolved one keeps its name: it is what the picker shows, and an effect
+    // applied under an empty label left that control blank and unclickable.
+    return hit?.wgsl ? { id: applied.id, name: hit.name ?? "", wgsl: hit.wgsl } : null
   }
   // A snapshot's runtime id is its name, the same aliasing built-ins use.
   return { id: applied.name, name: applied.name, wgsl: applied.wgsl }

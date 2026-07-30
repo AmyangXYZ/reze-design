@@ -12,11 +12,15 @@
 import { NextResponse } from "next/server"
 import { eq, sql } from "drizzle-orm"
 import { auth } from "@/lib/auth"
-import { db, schema } from "@/lib/db"
+import { hasDatabase, db, schema } from "@/lib/db"
 
 export type ItemStats = { id: string; likeCount: number; liked: boolean; scenes: number }
 
 export async function GET(request: Request) {
+  // No database configured: an honest empty answer, not a 500 the client has to
+  // interpret. See lib/db — running without one is supported.
+  if (!hasDatabase) return NextResponse.json({ stats: {}, signedIn: false })
+
   const session = await auth.api.getSession({ headers: request.headers })
 
   const [items, mine, sceneRefs] = await Promise.all([

@@ -1,6 +1,6 @@
 import { notFound, permanentRedirect } from "next/navigation"
 import { eq } from "drizzle-orm"
-import { db, schema } from "@/lib/db"
+import { db, hasDatabase, schema } from "@/lib/db"
 import { user } from "@/lib/db/auth-schema"
 import type { ScenePayload } from "@/lib/library"
 import { SceneViewer } from "./viewer"
@@ -12,6 +12,9 @@ import { SceneViewer } from "./viewer"
 export const revalidate = 0
 
 async function load(id: string) {
+  // Nothing is published where nothing is stored. See lib/db — a clone with no
+  // database still runs the editor; scene links simply resolve to not-found.
+  if (!hasDatabase) return null
   const [row] = await db
     .select({
       id: schema.libraryItems.id,
@@ -30,6 +33,7 @@ async function load(id: string) {
     .where(eq(schema.libraryItems.id, id))
     .limit(1)
   if (!row || row.kind !== "scene" || row.visibility !== "public") return null
+
   return row
 }
 

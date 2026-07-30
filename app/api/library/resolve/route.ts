@@ -10,11 +10,16 @@
 
 import { NextResponse } from "next/server"
 import { and, eq, inArray, or } from "drizzle-orm"
-import { db, schema } from "@/lib/db"
+import { hasDatabase, db, schema } from "@/lib/db"
 
 const MAX_REFS = 64
 
 export async function POST(request: Request) {
+  // No database configured: an honest empty answer, not a 500 the client has to
+  // interpret. See lib/db — running without one is supported.
+  // Built-in pins resolve from the app bundle before this route is ever called.
+  if (!hasDatabase) return NextResponse.json({ payloads: {} })
+
   const { refs } = ((await request.json().catch(() => ({}))) ?? {}) as { refs?: unknown }
   if (!Array.isArray(refs)) return NextResponse.json({ error: "refs required" }, { status: 400 })
 

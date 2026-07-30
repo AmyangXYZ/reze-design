@@ -123,7 +123,7 @@ export function TopRightCluster({
   /** Opens the page-level publish-scene dialog. */
   onShare: () => void
   /** Account-tab stat numbers open the matching library on "Yours". */
-  onOpenLibrary?: (kind: "grade" | "effect" | "graph") => void
+  onOpenLibrary?: (kind: "grade" | "effect" | "graph" | "scene") => void
   asHeader?: boolean
 }) {
   const t = useT()

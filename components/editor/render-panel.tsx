@@ -4,7 +4,7 @@
 
 import { memo, useEffect, useRef, useState, type RefObject } from "react"
 import type { Engine } from "reze-engine"
-import { Clapperboard, Square } from "lucide-react"
+import { Camera, Clapperboard, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Switch } from "@/components/ui/switch"
@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import type { BackdropMedia } from "@/lib/backdrop"
-import { exportVideo, type ExportAudioSource, type ExportProgress } from "@/lib/video-export"
+import { captureStill, exportVideo, type ExportAudioSource, type ExportProgress } from "@/lib/video-export"
 import { useT } from "@/lib/i18n"
 
 // Minimal config, iMovie-export style
@@ -131,6 +131,9 @@ export const RenderPanel = memo(function RenderPanel({
   const [progress, setProgress] = useState<ExportProgress | null>(null)
   const [result, setResult] = useState<{ ok: boolean; message?: string } | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  // Guards a second click without touching the button's appearance. A capture is
+  // over in well under a second; a spinner that fast is noise.
+  const capturingRef = useRef(false)
 
   const [width, height] = DIMS[aspect][quality]
   const upscaled = backdrop !== null && backdrop.width > 0 && backdrop.width < width
@@ -148,18 +151,55 @@ export const RenderPanel = memo(function RenderPanel({
     return () => onFramePreviewChange(null)
   }, [active, width, height, watermark, greenScreen, onFramePreviewChange])
 
-  const start = async () => {
-    const engine = engineRef.current
-    const canvas = canvasRef.current
-    if (!engine || !canvas || !animName) return
-    // reze-design-<scene>-<resolution>-<date>.mp4
+  // reze-design-<scene>-<resolution>-<date>.<ext>
+  const filenameFor = (ext: string) => {
     const scene =
       sceneName
         .toLowerCase()
         .replace(/[\\/:*?"<>|]+/g, "")
         .trim()
         .replace(/\s+/g, "-") || "scene"
-    const filename = `reze-design-${scene}-${width}x${height}-${new Date().toISOString().slice(0, 10)}.mp4`
+    return `reze-design-${scene}-${width}x${height}-${new Date().toISOString().slice(0, 10)}.${ext}`
+  }
+
+  const download = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = filename
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 10_000)
+  }
+
+  /** A still of the shot as framed, at the output size — the thumbnail a publish
+   *  asks for, without leaving for a screenshot tool. */
+  const capture = async () => {
+    const engine = engineRef.current
+    const canvas = canvasRef.current
+    if (!engine || !canvas || capturingRef.current || exporting) return
+    capturingRef.current = true
+    setResult(null)
+    try {
+      const blob = await captureStill({
+        engine,
+        canvas,
+        settings: { width, height, watermark: greenScreen ? false : watermark, greenScreen },
+        backdrop,
+        backgroundColor,
+      })
+      download(blob, filenameFor("png"))
+    } catch (e) {
+      setResult({ ok: false, message: e instanceof Error ? e.message : String(e) })
+    } finally {
+      capturingRef.current = false
+    }
+  }
+
+  const start = async () => {
+    const engine = engineRef.current
+    const canvas = canvasRef.current
+    if (!engine || !canvas || !animName) return
+    const filename = filenameFor("mp4")
 
     // File System Access path (Chromium desktop): ask WHERE first
     let fileStream: FileSystemWritableFileStream | undefined
@@ -208,12 +248,7 @@ export const RenderPanel = memo(function RenderPanel({
         // Committing the writable materializes the picked file on disk.
         await fileStream.close().catch(() => {})
       } else if (blob) {
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement("a")
-        a.href = url
-        a.download = filename
-        a.click()
-        setTimeout(() => URL.revokeObjectURL(url), 10_000)
+        download(blob, filename)
       }
       setResult({ ok: true })
     } catch (e) {
@@ -330,6 +365,21 @@ export const RenderPanel = memo(function RenderPanel({
         </Section>
 
         <Section title={t.render.export}>
+          {/* Same framing, one frame. Needs no animation, so it stays available on
+              a still scene where Render has nothing to render. */}
+          <Button
+            size="sm"
+            disabled={exporting}
+            onClick={() => void capture()}
+            className="h-8 w-full gap-1.5 bg-white text-xs font-medium text-zinc-950 hover:bg-white/90 disabled:opacity-40"
+          >
+            <Camera className="size-3.5" />
+            {t.render.capturePng}
+          </Button>
+          <div className="mt-1.5 mb-2.5 text-center text-[11px] text-muted-foreground/60 tabular-nums">
+            {width} × {height} · png
+          </div>
+
           {!exporting ? (
             <Button
               size="sm"
@@ -354,6 +404,7 @@ export const RenderPanel = memo(function RenderPanel({
           <div className="mt-1.5 text-center text-[11px] text-muted-foreground/60 tabular-nums">
             {width} × {height} · {t.render.fps(String(VIDEO_FPS))} · {fmtClock(segDuration)} · mp4
           </div>
+
 
           {/* No preview card — the live viewport IS the preview */}
           {exporting && (

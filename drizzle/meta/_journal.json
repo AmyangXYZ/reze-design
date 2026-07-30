@@ -71,6 +71,13 @@
       "when": 1785426569298,
       "tag": "0009_sour_meggan",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785437443904,
+      "tag": "0010_light_timeslip",
+      "breakpoints": true
     }
   ]
 }

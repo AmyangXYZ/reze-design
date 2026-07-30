@@ -57,6 +57,8 @@ function TabPane({ show, scope, children }: { show: boolean; scope?: string; chi
 
 export function LeftDock({
   railTop,
+  railActions,
+  railUtilities,
   header,
   tabs,
   active,
@@ -64,6 +66,11 @@ export function LeftDock({
 }: {
   /** App-level logo/home button at the very top of the rail (Figma's logo slot). */
   railTop?: ReactNode
+  /** Actions that open a surface rather than switch tabs — below the tabs, so the
+   *  rail reads as "where you are" then "what you can open". */
+  railActions?: ReactNode
+  /** Extra utilities in the pinned bottom cluster, above GitHub. */
+  railUtilities?: ReactNode
   header: ReactNode
   tabs: DockTab[]
   active: string
@@ -103,9 +110,11 @@ export function LeftDock({
             </button>
           )
         })}
+        {railActions}
         {/* Utilities pinned to the bottom of the rail: language above GitHub. */}
         <div className="mt-auto mb-1 flex flex-col items-center gap-2">
           <LanguageSwitcher />
+          {railUtilities}
           <Tooltip>
             <TooltipTrigger asChild>
               <a

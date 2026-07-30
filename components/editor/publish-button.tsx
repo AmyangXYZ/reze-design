@@ -16,7 +16,7 @@ import type { LibraryItem, LibraryKind } from "@/lib/library"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
-const MAX_TAGS = 8
+const MAX_TAGS = 5
 
 export function PublishButton({
   kind,

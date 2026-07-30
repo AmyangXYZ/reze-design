@@ -2,7 +2,7 @@
 
 // Backgrounds library — the shared three-column shell (facet rail · thumbnail grid · slim
 
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { Check, Plus, Search, Sparkles, SquarePen, X } from "lucide-react"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -23,13 +23,12 @@ import {
   addCommunityItem,
   builtinAuthor,
   isMine,
-  refreshCommunity,
   removeCommunityItem,
   renameCommunityItem,
   useCommunity,
 } from "@/hooks/use-community"
 import { useDrafts } from "@/hooks/use-drafts"
-import { useLibraryStats } from "@/hooks/use-library-stats"
+import { noteItemPublished, useLibraryStats } from "@/hooks/use-library-stats"
 import { useZOrder } from "@/hooks/use-z-order"
 import { PublishButton } from "@/components/editor/publish-button"
 import { useT } from "@/lib/i18n"
@@ -72,6 +71,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, () => onOpenChange(false))
   const [query, setQuery] = useState("")
   const [facet, setFacet] = useState<LibraryFacet>(initialFacet ?? "all")
+  const [tag, setTag] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(applied?.id ?? BACKGROUND_EFFECTS[0]?.id ?? null)
   // Follow the applied effect when it CHANGES — creating or editing one should move
   // the selection with it, rather than leaving the ring on the previous entry.
@@ -83,8 +83,6 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
 
   const { drafts, update: updateDraft, remove: removeDraft } = useDrafts<EffectItem>("effect")
   // Built-ins lead in name order; drafts follow in creation order.
-  // Fresh rows every open — a publish elsewhere shows without a reload.
-  useEffect(() => refreshCommunity(), [])
   const community = useCommunity<EffectItem>("effect")
   const all = useMemo(
     // Bundled items carry no idea who is asking; the fetched rows do.
@@ -100,7 +98,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
     setDraft(seedDraft(selected, applied))
   }
 
-  const rows = useMemo(() => all.filter((e) => matchesFacet(e, facet) && matchesQuery(e, query)), [all, query, facet])
+  const rows = useMemo(() => all.filter((e) => matchesFacet(e, facet, statFor(e.name).liked) && (!tag || e.tags.includes(tag)) && matchesQuery(e, query)), [all, query, facet, tag, statFor])
   // Two compartments: built-ins (and community, later) scroll; drafts pin to the bottom.
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const commitRename = (item: EffectItem, raw: string) => {
@@ -276,7 +274,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1">
-          <LibraryRail items={all} facet={facet} onFacetChange={setFacet} />
+          <LibraryRail items={all} facet={facet} onFacetChange={setFacet} tag={tag} onTagChange={setTag} isLiked={(i) => statFor(i.name).liked} />
 
           {/* Thumbnail grid + pinned "New effect" (the graph library's New-graph idiom */}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -348,6 +346,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                       // Promotion: the draft's content now lives on the server —
                       // keeping the local copy would show the same thing twice.
                       addCommunityItem(item)
+                      noteItemPublished("effect", item.name, item.id)
                       removeDraft(selected.id)
                       onRenamed?.(selected.name, item.name)
                     }}

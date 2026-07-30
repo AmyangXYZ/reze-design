@@ -7,7 +7,7 @@
 // no password hashes at all.
 
 import { useEffect, useState } from "react"
-import { CircleUserRound, LogOut, WandSparkles } from "lucide-react"
+import { CircleUserRound, GalleryThumbnails, Heart, LogOut, Palette, Sparkles, WandSparkles, Workflow } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -92,7 +92,7 @@ function fetchMe(): Promise<MeStats | null> {
 }
 
 /** What you've published and how it landed — the reason to have an account. */
-function Portfolio({ onOpenLibrary }: { onOpenLibrary?: (kind: "grade" | "effect" | "graph") => void }) {
+function Portfolio({ onOpenLibrary }: { onOpenLibrary?: (kind: "grade" | "effect" | "graph" | "scene") => void }) {
   const t = useT()
   const [stats, setStats] = useState<MeStats | null>(cached)
   useEffect(() => {
@@ -108,35 +108,36 @@ function Portfolio({ onOpenLibrary }: { onOpenLibrary?: (kind: "grade" | "effect
   // An em dash while unknown, never 0 — showing "0 scenes" to someone with six is
   // worse than showing nothing.
   const n = (v: number | undefined) => (stats ? v : "—")
+  // Every count is a way in: a number you can't act on is trivia.
+  const cells = [
+    { key: "scene" as const, icon: GalleryThumbnails, label: t.account.scenesPublished, onClick: () => onOpenLibrary?.("scene") },
+    { key: "effect" as const, icon: Sparkles, label: t.account.effects, onClick: () => onOpenLibrary?.("effect") },
+    { key: "grade" as const, icon: Palette, label: t.account.grades, onClick: () => onOpenLibrary?.("grade") },
+    { key: "graph" as const, icon: Workflow, label: t.account.graphs, onClick: () => onOpenLibrary?.("graph") },
+  ]
+
   return (
-    <div className="mt-3 border-t border-white/10 pt-3">
-      <div className="text-center">
-        <div className="font-mono text-lg leading-none">{n(stats?.scene)}</div>
-        <div className="mt-1.5 text-xs text-muted-foreground">{t.account.scenesPublished}</div>
-      </div>
-      <div className="mt-3 grid grid-cols-3 gap-1 text-center">
-        {(
-          [
-            ["effect", t.account.effects],
-            ["grade", t.account.grades],
-            ["graph", t.account.graphs],
-          ] as const
-        ).map(([k, label]) => (
-          <button
-            key={k}
-            type="button"
-            onClick={() => onOpenLibrary?.(k)}
-            className="cursor-pointer rounded-md py-0.5 transition-colors hover:bg-white/5"
-          >
-            <div className="font-mono text-sm leading-none underline decoration-white/25 underline-offset-3">
-              {n(stats?.[k])}
-            </div>
-            <div className="mt-1 text-xs text-muted-foreground">{label}</div>
-          </button>
-        ))}
-      </div>
-      <div className="mt-3.5 text-center text-xs text-muted-foreground">
-        <span className="font-mono text-xs text-foreground">{n(stats?.likes)}</span> {t.account.likesEarned}
+    // Rows, not a grid of numbers. A 4-up grid of counts is a dashboard widget;
+    // an account menu is a list of places you can go, and each row is one — label
+    // left, count right, the whole row a target. Likes sit with them because it is
+    // the same kind of fact, not a footnote in a different size.
+    <div className="border-t border-white/10 py-1">
+      {cells.map((c) => (
+        <button
+          key={c.key}
+          type="button"
+          onClick={c.onClick}
+          className="flex w-full cursor-pointer items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-white/5"
+        >
+          <c.icon className="size-4 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{c.label}</span>
+          <span className="shrink-0 font-mono text-[13px] text-foreground">{n(stats?.[c.key])}</span>
+        </button>
+      ))}
+      <div className="flex items-center gap-2.5 px-4 py-2">
+        <Heart className="size-4 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{t.account.likesEarned}</span>
+        <span className="shrink-0 font-mono text-[13px] text-foreground">{n(stats?.likes)}</span>
       </div>
     </div>
   )
@@ -213,7 +214,13 @@ function HandleField({ current }: { current: string }) {
   )
 }
 
-export function AccountButton({ asHeader = false, onOpenLibrary }: { asHeader?: boolean; onOpenLibrary?: (kind: "grade" | "effect" | "graph") => void }) {
+export function AccountButton({
+  asHeader = false,
+  onOpenLibrary,
+}: {
+  asHeader?: boolean
+  onOpenLibrary?: (kind: "grade" | "effect" | "graph" | "scene") => void
+}) {
   const t = useT()
   const { data: session } = useSession()
   useEffect(() => {
@@ -271,23 +278,37 @@ export function AccountButton({ asHeader = false, onOpenLibrary }: { asHeader?: 
         sideOffset={8}
         // Opening the menu is not a request to rename yourself.
         onOpenAutoFocus={(e) => e.preventDefault()}
-        className="w-64 rounded-xl border-white/10 bg-zinc-950/90 p-3 text-center shadow-float backdrop-blur-xs"
+        className="w-60 rounded-xl border-white/10 bg-zinc-950/90 p-0 shadow-float backdrop-blur-xs"
       >
-        <div className="truncate font-mono text-sm font-medium">{session.user.username ?? session.user.name}</div>
-        <div className="mt-0.5 truncate text-xs text-muted-foreground">{session.user.email}</div>
+        <div className="flex items-center gap-2.5 px-3 py-3">
+          {session.user.image ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={session.user.image} alt="" className="size-9 shrink-0 rounded-full" />
+          ) : (
+            <span className="size-9 shrink-0 rounded-full bg-white/10" />
+          )}
+          <div className="min-w-0 flex-1 text-left">
+            <div className="truncate font-mono text-xs font-medium">{session.user.username ?? session.user.name}</div>
+            <div className="truncate text-[11px] text-muted-foreground">{session.user.email}</div>
+          </div>
+        </div>
         {session.user.username && !session.user.usernameChangedAt && (
-          <HandleField current={session.user.username} />
+          <div className="px-3 pb-3">
+            <HandleField current={session.user.username} />
+          </div>
         )}
         <Portfolio onOpenLibrary={onOpenLibrary} />
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => void signOut()}
-          className="mt-3 h-7 w-full gap-1.5 border border-red-500/25 bg-red-500/10 text-xs text-red-400 hover:bg-red-500/20 hover:text-red-300"
-        >
-          <LogOut className="size-3.5" />
-          {t.account.signOut}
-        </Button>
+        <div className="p-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => void signOut()}
+            className="h-8 w-full gap-1.5 border border-red-500/25 bg-red-500/10 text-xs text-red-400 hover:bg-red-500/20 hover:text-red-300"
+          >
+            <LogOut className="size-3.5" />
+            {t.account.signOut}
+          </Button>
+        </div>
       </PopoverContent>
     </Popover>
   )

@@ -2,7 +2,7 @@
 
 // Shader-graph library — the shared library shell (facet rail · thumbnail grid · slim inspector).
 
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { DEFAULT_GRAPH, type ShaderGraph } from "reze-engine"
 import { Check, Plus, Search, SquarePen, Workflow, X } from "lucide-react"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -19,13 +19,12 @@ import {
   addCommunityItem,
   builtinAuthor,
   isMine,
-  refreshCommunity,
   removeCommunityItem,
   renameCommunityItem,
   useCommunity,
 } from "@/hooks/use-community"
 import { useDrafts } from "@/hooks/use-drafts"
-import { useLibraryStats } from "@/hooks/use-library-stats"
+import { noteItemPublished, useLibraryStats } from "@/hooks/use-library-stats"
 import { useZOrder } from "@/hooks/use-z-order"
 import { PublishButton } from "@/components/editor/publish-button"
 import { useT } from "@/lib/i18n"
@@ -68,8 +67,6 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRe
   // stack closes only the topmost surface.
   const { drafts, update: updateDraft, remove: removeDraft } = useDrafts<GraphItem>("graph")
   // Built-ins lead in name order; drafts follow in creation order.
-  // Fresh rows every open — a publish elsewhere shows without a reload.
-  useEffect(() => refreshCommunity(), [])
   const community = useCommunity<GraphItem>("graph")
   const ROWS = useMemo(
     // Bundled items carry no idea who is asking; the fetched rows do.
@@ -80,13 +77,14 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRe
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, onClose)
   const [query, setQuery] = useState("")
   const [facet, setFacet] = useState<LibraryFacet>(initialFacet ?? "all")
+  const [tag, setTag] = useState<string | null>(null)
   const isCurrent = (r: GraphItem) => r.name === currentGraphName || r.payload.graph.name === currentGraphName
   const [selectedId, setSelectedId] = useState<string | null>(() => ROWS.find(isCurrent)?.id ?? ROWS[0]?.id ?? null)
 
   const rows = useMemo(
     () =>
-      ROWS.filter((r) => matchesFacet(r, facet) && matchesQuery(r, query)).sort((a, b) => a.name.localeCompare(b.name)),
-    [ROWS, query, facet],
+      ROWS.filter((r) => matchesFacet(r, facet, statFor(r.name).liked) && (!tag || r.tags.includes(tag)) && matchesQuery(r, query)).sort((a, b) => a.name.localeCompare(b.name)),
+    [ROWS, query, facet, tag, statFor],
   )
   // Two compartments: built-ins (and community, later) scroll; drafts pin to the bottom.
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -259,7 +257,7 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRe
       </DialogHeader>
 
       <div className="flex min-h-0 flex-1">
-        <LibraryRail items={ROWS} facet={facet} onFacetChange={setFacet} />
+        <LibraryRail items={ROWS} facet={facet} onFacetChange={setFacet} tag={tag} onTagChange={setTag} isLiked={(i) => statFor(i.name).liked} />
 
         {/* ── Minimap grid ── */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -330,6 +328,7 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRe
                       // Promotion: the draft's content now lives on the server —
                       // keeping the local copy would show the same thing twice.
                       addCommunityItem(item)
+                      noteItemPublished("graph", item.name, item.id)
                       removeDraft(selected.id)
                       
                     }}

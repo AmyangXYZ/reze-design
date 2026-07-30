@@ -72,21 +72,27 @@ export function QuickPick({
             applied ? "text-blue-400" : "text-muted-foreground/50",
           )}
         >
-          {label ?? current?.label ?? placeholder}
+          {/* `||`, not `??`: an empty label is as good as none, and falling
+              through to the placeholder keeps the trigger clickable. */}
+          {label || current?.label || placeholder}
         </button>
       </PopoverTrigger>
       <PopoverContent
         align="end"
         sideOffset={6}
-        className="w-32 rounded-xl border-white/10 bg-zinc-950/95 p-1 shadow-float backdrop-blur-xs"
+        // Wide enough for the longest built-in name ("Principled BSDF") — truncating
+        // the labels in a list whose whole job is naming things reads as broken.
+        className="w-44 rounded-xl border-white/10 bg-zinc-950/95 p-1 shadow-float backdrop-blur-xs"
         // Returning focus to the trigger draws a stuck ring on the value text, and
         // grabbing it on open leaves the first row ringed and flashing on close.
         onCloseAutoFocus={(e) => e.preventDefault()}
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         {/* Built-ins and community scroll in the main area; local drafts hold a
-            small compartment pinned at the bottom. */}
-        <ScrollArea className="max-h-48">
+            small compartment pinned at the bottom. Tall enough that every built-in
+            fits without scrolling — there are nine shader graphs, and a list that
+            hides two of them sends you to the full library for no reason. */}
+        <ScrollArea className="max-h-80">
           {items.filter((i) => (i.section ?? "builtin") === "builtin").map(row)}
           {items.some((i) => i.section === "community") && (
             <div className="px-2 pt-1.5 pb-1 text-[9px] font-medium tracking-[0.14em] text-muted-foreground/60 uppercase">

@@ -1,6 +1,10 @@
 # Reze Design
 
-Design MMD scenes in the browser. Bring a model, a motion and a song, then decide how it all looks — material shaders you build as node graphs, colour grading, background effects, lighting and framing. Export the result as video, or share it as a live 3D link. Rendering runs on [reze-engine](https://github.com/AmyangXYZ/reze-engine), a WebGPU MMD engine.
+Design MMD scenes in the browser, then publish them. Bring a model, a motion and a song, decide how it all looks — material shaders you build as node graphs, colour grading, background effects, lighting and framing — and export the result as video or publish it to a permanent link anyone can open and orbit in real time. Rendering runs on [reze-engine](https://github.com/AmyangXYZ/reze-engine), a WebGPU MMD engine.
+
+A published scene is a live 3D page at `reze.design/<handle>/<id>`, not a video of one. Open it in the editor and you get your own copy to take further, with the original's credits carried along.
+
+**[User manual](./docs/manual/en.md)** · [简体中文](./docs/manual/zh.md) · [日本語](./docs/manual/ja.md)
 
 ![The editor](./screenshots/home.png)
 
@@ -13,6 +17,10 @@ Design MMD scenes in the browser. Bring a model, a motion and a song, then decid
 - **Multi-model support** — each with its own motion, plus a shared camera VMD and audio track.
 - **Playback** — scrub and loop with audio synced to the motion, and a free or VMD-driven camera.
 - **Video export** — 60 fps mp4 up to 4K, from 2.39:1 cinemascope to vertical, with a green-screen mode.
+- **Still capture** — one PNG at the same framing and resolution as the video, for a scene's thumbnail.
+- **Publishing** — a scene becomes a live 3D page at a permanent URL, with its uploaded assets packed into one archive.
+- **Gallery** — browse what people have published, sorted by hot, new or top, narrowed by tag or by what you liked.
+- **Accounts** — sign in with GitHub or Google, take a handle, and own what you publish.
 - **Undo and redo** — ⌘/Ctrl+Z anywhere, scoped to the panel or editor you are working in.
 
 ![Video export](./screenshots/video-export.png)
@@ -124,15 +132,31 @@ wear one envelope (`lib/library.ts`) and travel as data rather than code:
 ```
 
 Built-ins ship in the repo (`content/grades.json`, `graphs.json`,
-`effects.json`) so a clone runs with no server; community items will come from
-the database and merge in at runtime — ids can't collide, so there is no seeding
-step and no dedup.
+`effects.json`) so a clone runs with no server; community items come from the
+database and merge in at runtime — ids can't collide, so there is no dedup step.
+
+Published items are **immutable versions**. Publishing over your own item writes
+version _n+1_ rather than replacing version _n_, and a scene pins the exact
+`{ id, version }` it used, so nobody's scene changes under them when an author
+retunes a preset. Built-in pins resolve from the app bundle, which is why a
+clone with no database still renders a scene that uses them.
 
 The library shows **published** content only. Editing a preset does not create a
 library entry: the edit lives in the scene, travelling by value inside the scene
 document so a shared link reproduces exactly what you made, while unmodified
 built-ins travel as a bare id and stay retunable. Publishing is what mints a new
 library item under your name.
+
+## Publishing a scene
+
+**Share** collects the models, motions and audio you uploaded, packs them into a
+single archive, uploads it straight to object storage from the browser, and
+publishes the document that points at it. A scene needs a name, a description,
+tags, a thumbnail and **credits** — naming the artists behind the model, the
+motion and the music is required, not optional.
+
+The URL is `reze.design/<handle>/<short-id>`. The short id is what resolves, so
+renaming a scene or an author never breaks a link.
 
 ## Development
 
@@ -141,14 +165,33 @@ npm install
 npm run dev
 ```
 
+No configuration is needed to run the editor. Without a database the app still
+builds and boots: models load, materials and shader graphs work, video and PNG
+export work, and every built-in grade, effect and graph is browsable. The parts
+that need a server — accounts, publishing, the gallery — report that they are
+unavailable instead of failing.
+
+To run the full platform, copy the environment keys the app reads:
+
+| Key | What it is |
+| --- | --- |
+| `DATABASE_URL` | Postgres (Neon), pooled endpoint |
+| `DATABASE_URL_UNPOOLED` | Same database, direct — used by migrations |
+| `BETTER_AUTH_SECRET` | Session signing key; different per environment |
+| `BETTER_AUTH_URL` | Absolute origin, for OAuth callbacks |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | GitHub sign-in (omit to hide it) |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google sign-in (omit to hide it) |
+| `R2_*` | Cloudflare R2 bucket for scene bundles and thumbnails |
+| `ADMIN_EMAILS` | Comma-separated; moderation access, checked server-side |
+
 ## Roadmap
 
-A curated MMD platform built around the character and its dance, with a growing set of shader graphs and colour grades tuned for the look. Next up:
+A curated MMD platform built around the character and its dance. Next up:
 
-- **Share a live link** — publish a scene as a real-time, interactive 3D page at `reze.design/<user>/<scene>`.
 - **More built-ins** — a growing shader-graph and colour-grade library tuned for the MMD aesthetic.
-- **Gallery** — browse and remix shared scenes, shader graphs and grades.
+- **A fuller manual** — every panel, control and workflow, in three languages.
 - **Mobile layout** — a proper small-screen shell (the editor already runs there).
+- **Camera bone-follow** — frame the shot on a model's head or centre bone.
 
 ## License
 

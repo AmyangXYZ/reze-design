@@ -57,12 +57,6 @@ function load(force = false): Promise<CommunityItem[]> {
   return inflight
 }
 
-/** Refetch — each library calls this as it opens, so a publish from another tab
- *  or session shows up without a reload. */
-export function refreshCommunity(): void {
-  void load(true)
-}
-
 /** Does the signed-in user own this bundled item? Matched by uuid, which the
  *  bundle and the database now share. */
 export function isMine(id: string): boolean {
@@ -103,12 +97,15 @@ export function useCommunity<T extends LibraryItem = LibraryItem>(kind: LibraryK
   const [items, setItems] = useState<CommunityItem[]>(() => cache ?? [])
   useEffect(() => {
     let stale = false
-    const update = () => void load().then((all) => !stale && setItems([...all]))
-    update()
-    listeners.add(update)
+    const apply = (all: CommunityItem[]) => !stale && setItems([...all])
+    // Forced: mounting means a library just opened, and the cached rows are
+    // already on screen while the check runs. A failed refresh keeps them.
+    void load(true).then(apply)
+    const relay = () => apply(cache ?? [])
+    listeners.add(relay)
     return () => {
       stale = true
-      listeners.delete(update)
+      listeners.delete(relay)
     }
   }, [])
 

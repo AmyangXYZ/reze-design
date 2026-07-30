@@ -72,13 +72,15 @@ export type SceneItem = LibraryItem<"scene", ScenePayload>
 /** Rail facets are about PROVENANCE, not taxonomy: a short list that never grows,
  *  where tags are many and overlapping and belong in search instead. `community`
  *  and `liked` arrive with the server. */
-export type LibraryFacet = "all" | "featured" | "yours"
+export type LibraryFacet = "all" | "featured" | "yours" | "liked"
 
-export const LIBRARY_FACETS: LibraryFacet[] = ["all", "featured", "yours"]
+export const LIBRARY_FACETS: LibraryFacet[] = ["all", "featured", "yours", "liked"]
 
-export function matchesFacet(item: LibraryItem & MaybeMine, facet: LibraryFacet): boolean {
+export function matchesFacet(item: LibraryItem & MaybeMine, facet: LibraryFacet, liked?: boolean): boolean {
   if (facet === "all") return true
   if (facet === "featured") return item.owner === "builtin"
+  // Liked depends on who is asking, so it is passed in rather than read off the item.
+  if (facet === "liked") return liked === true
   // "Yours" means yours — drafts AND your published rows, not everyone's
   // community items. Splitting drafts into their own facet made "Yours" exclude
   // work in progress, which reads as a bug.

@@ -7,9 +7,12 @@
 import { NextResponse } from "next/server"
 import { and, eq, sql } from "drizzle-orm"
 import { auth } from "@/lib/auth"
-import { db, schema } from "@/lib/db"
+import { hasDatabase, db, schema } from "@/lib/db"
 
 export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
+  // No database configured — see lib/db. Nothing to publish to, and nothing to
+  // sign in as, so the honest answer is that this deployment cannot do it.
+  if (!hasDatabase) return NextResponse.json({ error: "no database on this deployment" }, { status: 503 })
   const session = await auth.api.getSession({ headers: request.headers })
   if (!session) return NextResponse.json({ error: "sign in to like" }, { status: 401 })
   if (session.user.banned) return NextResponse.json({ error: "account suspended" }, { status: 403 })

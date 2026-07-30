@@ -12,14 +12,19 @@ import { sceneRefs } from "@/lib/scene"
 
 type Payload = { graph?: unknown; wgsl?: string; spec?: unknown }
 
-const bundled = new Map<string, { version: number; payload: Payload }>()
+/** What a pin resolves to: the content, plus the name it is known by. An effect
+ *  has nowhere else to carry its label — a graph keeps one inside itself — and a
+ *  nameless effect leaves the picker with nothing to show. */
+type Resolved = Payload & { name: string }
+
+const bundled = new Map<string, { version: number; resolved: Resolved }>()
 for (const i of [...GRAPH_LIBRARY, ...BACKGROUND_EFFECTS, ...GRADE_PRESETS]) {
-  bundled.set(i.id, { version: i.version, payload: i.payload as Payload })
+  bundled.set(i.id, { version: i.version, resolved: { ...(i.payload as Payload), name: i.name } })
 }
 
 /** A resolver for every pin in the document, built with one request at most. */
-export async function resolveSceneRefs(doc: SceneDoc): Promise<(ref: ItemRef) => Payload | undefined> {
-  const remote = new Map<string, Payload>()
+export async function resolveSceneRefs(doc: SceneDoc): Promise<(ref: ItemRef) => Resolved | undefined> {
+  const remote = new Map<string, Resolved>()
   const missing = sceneRefs(doc).filter((r) => {
     const hit = bundled.get(r.id)
     // A pinned version the bundle doesn't carry (retuned since) still has to be
@@ -35,8 +40,10 @@ export async function resolveSceneRefs(doc: SceneDoc): Promise<(ref: ItemRef) =>
         body: JSON.stringify({ refs: missing }),
       })
       if (res.ok) {
-        const { payloads } = (await res.json()) as Record<string, Record<string, { payload: Payload }>>
-        for (const [key, v] of Object.entries(payloads ?? {})) remote.set(key, v.payload)
+        const { payloads } = (await res.json()) as {
+          payloads?: Record<string, { payload: Payload; name: string }>
+        }
+        for (const [key, v] of Object.entries(payloads ?? {})) remote.set(key, { ...v.payload, name: v.name })
       }
     } catch {
       // Unresolved pins render as the engine default — degraded, never broken.
@@ -45,7 +52,7 @@ export async function resolveSceneRefs(doc: SceneDoc): Promise<(ref: ItemRef) =>
 
   return (ref) => {
     const hit = bundled.get(ref.id)
-    if (hit && hit.version === ref.version) return hit.payload
+    if (hit && hit.version === ref.version) return hit.resolved
     return remote.get(`${ref.id}@${ref.version}`)
   }
 }

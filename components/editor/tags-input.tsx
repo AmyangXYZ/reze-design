@@ -4,10 +4,17 @@
 // empty field takes back the last chip. A comma-separated string in a plain text
 // field left people guessing whether the separator counted — a chip is proof it
 // did.
+//
+// A tag is ONE short word. That is a spam defence, not a style rule: "best mmd
+// dance 2026 free download" is the shape keyword spam takes, and a field that
+// cannot hold a phrase cannot hold that. Few, short, single words stay useful for
+// finding things and stay useless for shouting.
 
 import { useState } from "react"
 import { X } from "lucide-react"
 import { cn } from "@/lib/utils"
+
+const MAX_TAG_LENGTH = 16
 
 export function TagsInput({
   value,
@@ -25,7 +32,15 @@ export function TagsInput({
   const [draft, setDraft] = useState("")
 
   const commit = (raw: string) => {
-    const tag = raw.trim().toLowerCase().replace(/,+$/, "")
+    const tag = raw
+      .trim()
+      .toLowerCase()
+      .replace(/,+$/, "")
+      // Whitespace becomes a hyphen rather than being rejected: someone typing
+      // "black dress" meant one tag, and silently dropping it would puzzle them.
+      .replace(/\s+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, MAX_TAG_LENGTH)
     setDraft("")
     if (!tag || value.includes(tag) || value.length >= max) return
     onChange([...value, tag])
@@ -34,7 +49,7 @@ export function TagsInput({
   return (
     <div
       className={cn(
-        "mt-1 flex min-h-9 flex-wrap items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-2 py-1.5 focus-within:border-blue-400/50",
+        "mt-0.5 flex min-h-8 flex-wrap content-start items-start gap-1.5 rounded-md border border-white/10 bg-white/5 px-2 py-1.5 focus-within:border-blue-400/50",
         className,
       )}
     >
@@ -54,6 +69,7 @@ export function TagsInput({
           </button>
         </span>
       ))}
+      {value.length < max && (
       <input
         value={draft}
         onChange={(e) => {
@@ -72,9 +88,11 @@ export function TagsInput({
         }}
         // A committed chip on blur, so a typed-but-unconfirmed word isn't lost.
         onBlur={() => commit(draft)}
+        maxLength={MAX_TAG_LENGTH}
         placeholder={value.length === 0 ? placeholder : undefined}
-        className="min-w-16 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
+        className="h-5 min-w-16 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/50"
       />
+      )}
     </div>
   )
 }

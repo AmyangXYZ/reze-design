@@ -1,4 +1,5 @@
-// Offline render-to-video.
+// Offline render-to-file — the video export, and the single still that shares its
+// composite stack.
 
 import {
   AudioBufferSource,
@@ -71,6 +72,71 @@ function drawWatermark(ctx: CanvasRenderingContext2D, w: number, h: number, font
   ctx.fillStyle = "rgba(255, 255, 255, 0.88)"
   ctx.fillText("REZE DESIGN", pad, pad)
   ctx.restore()
+}
+
+/** Backdrop bitmap, decoded once. */
+function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const el = new Image()
+    el.onload = () => resolve(el)
+    el.onerror = () => reject(new Error("Can't decode backdrop image"))
+    el.src = url
+  })
+}
+
+/**
+ * One frame of the same composite the video produces, as a PNG.
+ *
+ * Nothing seeks and nothing resets physics: the still is the pose that was on
+ * screen when the button was pressed, rendered at the output size instead of the
+ * viewport's. That makes it the obvious way to produce a publish thumbnail —
+ * the framing you were just looking at, at the resolution you were going to
+ * render at.
+ */
+export async function captureStill(opts: {
+  engine: Engine
+  /** The engine's (transparent) WebGPU canvas — composited over the backdrop. */
+  canvas: HTMLCanvasElement
+  settings: Pick<ExportSettings, "width" | "height" | "watermark" | "greenScreen">
+  backdrop: BackdropMedia | null
+  backgroundColor: string
+}): Promise<Blob> {
+  const { engine, canvas, settings, backdrop, backgroundColor } = opts
+  const { width, height } = settings
+
+  // Decoded before the engine is touched, so the render size is restored promptly.
+  const bgImage = backdrop && !settings.greenScreen ? await loadImage(backdrop.url) : null
+
+  const composite = document.createElement("canvas")
+  composite.width = width
+  composite.height = height
+  const ctx = composite.getContext("2d")!
+  ctx.imageSmoothingQuality = "high"
+
+  // Stopped, because the live loop would redraw at viewport size in the gap
+  // between our frame and reading it back.
+  engine.stopRenderLoop()
+  engine.setRenderSize(width, height)
+  try {
+    // dt = 0 redraws the current pose rather than advancing it.
+    engine.renderFrame(0)
+    ctx.fillStyle = settings.greenScreen ? GREEN : backgroundColor
+    ctx.fillRect(0, 0, width, height)
+    if (bgImage) {
+      const c = coverCrop(bgImage.naturalWidth, bgImage.naturalHeight, width, height)
+      ctx.drawImage(bgImage, c.sx, c.sy, c.sw, c.sh, 0, 0, width, height)
+    }
+    ctx.drawImage(canvas, 0, 0, width, height)
+    if (settings.watermark && !settings.greenScreen) drawWatermark(ctx, width, height, brandFontFamily())
+  } finally {
+    engine.setRenderSize(null)
+    engine.renderFrame(0)
+    engine.runRenderLoop()
+  }
+
+  const blob = await new Promise<Blob | null>((resolve) => composite.toBlob(resolve, "image/png"))
+  if (!blob) throw new Error("Canvas produced no image")
+  return blob
 }
 
 /** Decode the music track and slice [startTime, startTime + exportDuration] out */
@@ -168,14 +234,7 @@ export async function exportVideo(opts: {
 
   // ── Backdrop layer (skipped entirely in green-screen mode) ──
   let bgImage: HTMLImageElement | null = null
-  if (backdrop && !settings.greenScreen) {
-    bgImage = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const el = new Image()
-      el.onload = () => resolve(el)
-      el.onerror = () => reject(new Error("Can't decode backdrop image"))
-      el.src = backdrop.url
-    })
-  }
+  if (backdrop && !settings.greenScreen) bgImage = await loadImage(backdrop.url)
 
   // ── Engine: remember live state, switch to offline stepping ──
   const prior = model.getAnimationProgress()

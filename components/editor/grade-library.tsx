@@ -2,7 +2,7 @@
 
 // Grades library — the same three-column shell as the shader-graph and background-effect libraries.
 
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { Check, Palette, Plus, Search, SquarePen, X } from "lucide-react"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -22,13 +22,12 @@ import {
   addCommunityItem,
   builtinAuthor,
   isMine,
-  refreshCommunity,
   removeCommunityItem,
   renameCommunityItem,
   useCommunity,
 } from "@/hooks/use-community"
 import { useDrafts } from "@/hooks/use-drafts"
-import { useLibraryStats } from "@/hooks/use-library-stats"
+import { noteItemPublished, useLibraryStats } from "@/hooks/use-library-stats"
 import { useZOrder } from "@/hooks/use-z-order"
 import { PublishButton } from "@/components/editor/publish-button"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
@@ -67,6 +66,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, () => onOpenChange(false))
   const [query, setQuery] = useState("")
   const [facet, setFacet] = useState<LibraryFacet>(initialFacet ?? "all")
+  const [tag, setTag] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string>(grade.preset)
   // Applying a grade elsewhere (the quick-pick, or the editor) moves the selection.
   const [lastPreset, setLastPreset] = useState(grade.preset)
@@ -81,8 +81,6 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
 
   const { drafts, update: updateDraft, remove: removeDraft } = useDrafts<GradeItem>("grade")
   // Drafts first: what you're working on is what you came back for.
-  // Fresh rows every open — a publish elsewhere shows without a reload.
-  useEffect(() => refreshCommunity(), [])
   const community = useCommunity<GradeItem>("grade")
   const all = useMemo(
     // Bundled items carry no idea who is asking; the fetched rows do.
@@ -92,9 +90,9 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
   const selected = all.find((g) => g.name === selectedId) ?? all[0]
 
   const rows = useMemo(
-    () => all.filter((g) => matchesFacet(g, facet) && matchesQuery(g, query, nameOf(g))),
+    () => all.filter((g) => matchesFacet(g, facet, statFor(g.name).liked) && (!tag || g.tags.includes(tag)) && matchesQuery(g, query, nameOf(g))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [all, query, facet, t],
+    [all, query, facet, tag, t],
   )
   // Two compartments: built-ins (and community, later) scroll; drafts pin to the bottom.
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -285,7 +283,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
       </DialogHeader>
 
       <div className="flex min-h-0 flex-1">
-        <LibraryRail items={all} facet={facet} onFacetChange={setFacet} />
+        <LibraryRail items={all} facet={facet} onFacetChange={setFacet} tag={tag} onTagChange={setTag} isLiked={(i) => statFor(i.name).liked} />
 
         {/* ── Grid: every tile is the user's own scene under that grade ── */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -358,6 +356,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                       // Promotion: the draft's content now lives on the server —
                       // keeping the local copy would show the same thing twice.
                       addCommunityItem(item)
+                      noteItemPublished("grade", item.name, item.id)
                       removeDraft(selected.id)
                       setSelectedId(item.name)
                       onRenamed?.(selected.name, item.name)

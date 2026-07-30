@@ -16,6 +16,7 @@ import { specOf } from "@/lib/grade"
 import { libraryGraph } from "@/lib/materials"
 import { parseSceneDoc, type Scene, type SceneDoc } from "@/lib/scene"
 import { setForkTarget } from "@/lib/fork"
+import { LoadingPill } from "@/components/editor/loading-pill"
 import { resolveSceneRefs } from "@/lib/resolve-refs"
 import { useSession } from "@/lib/auth-client"
 import { useT } from "@/lib/i18n"
@@ -42,7 +43,6 @@ type ViewerProps = {
  * `useEngine(scene)`.
  */
 export function SceneViewer(props: ViewerProps) {
-  const t = useT()
   const [scene, setScene] = useState<Scene | null>(null)
   useEffect(() => {
     let stale = false
@@ -56,8 +56,8 @@ export function SceneViewer(props: ViewerProps) {
 
   if (!scene) {
     return (
-      <main className="fixed inset-0 flex items-center justify-center bg-zinc-950 text-xs text-muted-foreground">
-        {t.editor.loadingModel}
+      <main className="fixed inset-0 bg-zinc-950">
+        <LoadingPill />
       </main>
     )
   }
@@ -216,10 +216,18 @@ function SceneStage({ scene, sceneId, title, author, description, credits, likeC
           contact with the product, and nothing else on the page says its name. */}
       <Link
         href="/"
-        className="absolute top-5.5 left-4 flex items-center gap-1.5 text-sm font-semibold tracking-tight text-white/90 transition-colors hover:text-white md:left-6"
+        // The editor's collapsed BrandPill, box model and all: same top-3/left-3
+        // origin, same 1px border, same py-1.5/pl-2, same size-7 icon well. Only
+        // the pill's surface is missing, so the mark and wordmark land on the exact
+        // pixels they occupy in the editor and nothing shifts between the two.
+        className="group absolute top-3 left-3 flex items-center gap-1.5 rounded-lg border border-transparent py-1.5 pr-1.5 pl-2"
       >
-        <WandSparkles className="size-4 text-blue-400" />
-        Reze Design
+        <span className="flex size-7 items-center justify-center text-pink-400" aria-hidden>
+          <WandSparkles className="size-4.5" />
+        </span>
+        <span className="whitespace-nowrap pb-0.5 text-sm font-semibold tracking-tight text-foreground transition-colors group-hover:text-white">
+          Reze Design
+        </span>
       </Link>
 
       {/* Bottom left, above the transport: title, author, caption — TikTok's
@@ -271,11 +279,7 @@ function SceneStage({ scene, sceneId, title, author, description, credits, likeC
         </button>
       </div>
 
-      {!ready && !error && (
-        <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">
-          {t.editor.loadingModel}
-        </div>
-      )}
+      {!ready && !error && <LoadingPill />}
       {error && (
         <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-xs text-red-400">
           {t.editor.engineError(error)}

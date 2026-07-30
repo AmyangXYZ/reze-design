@@ -7,7 +7,7 @@ import { NextResponse } from "next/server"
 import { eq } from "drizzle-orm"
 import { auth } from "@/lib/auth"
 import { requireAdmin } from "@/lib/admin"
-import { db, schema } from "@/lib/db"
+import { hasDatabase, db, schema } from "@/lib/db"
 /** The item id if this request may act on it, otherwise null. */
 async function authorize(request: Request, id: string) {
   if (await requireAdmin(request.headers)) return { id, admin: true as const }
@@ -24,6 +24,9 @@ async function authorize(request: Request, id: string) {
 
 /** A single PUBLIC item — how the viewer page resolves a share link. */
 export async function GET(_request: Request, ctx: { params: Promise<{ id: string }> }) {
+  // No database configured — see lib/db. Nothing to publish to, and nothing to
+  // sign in as, so the honest answer is that this deployment cannot do it.
+  if (!hasDatabase) return NextResponse.json({ error: "no database on this deployment" }, { status: 503 })
   const { id } = await ctx.params
   const [row] = await db
     .select({
@@ -56,6 +59,9 @@ const MAX_NAME = 60
  * rename is purely cosmetic to anyone already using it.
  */
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {
+  // No database configured — see lib/db. Nothing to publish to, and nothing to
+  // sign in as, so the honest answer is that this deployment cannot do it.
+  if (!hasDatabase) return NextResponse.json({ error: "no database on this deployment" }, { status: 503 })
   const { id } = await ctx.params
   const ok = await authorize(request, id)
   if (!ok) return NextResponse.json({ error: "not found" }, { status: 404 })
@@ -77,6 +83,9 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
 }
 
 export async function DELETE(request: Request, ctx: { params: Promise<{ id: string }> }) {
+  // No database configured — see lib/db. Nothing to publish to, and nothing to
+  // sign in as, so the honest answer is that this deployment cannot do it.
+  if (!hasDatabase) return NextResponse.json({ error: "no database on this deployment" }, { status: 503 })
   const { id } = await ctx.params
   const ok = await authorize(request, id)
   // 404 rather than 403: a stranger probing ids learns nothing about what exists.

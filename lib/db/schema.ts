@@ -76,6 +76,9 @@ export const libraryItems = pgTable(
      *  because quotas and orphan cleanup are queries over them. */
     bundleKey: text("bundle_key"),
     bundleBytes: integer("bundle_bytes").notNull().default(0),
+    /** Gallery still, captured from the author's canvas at publish. Null when the
+     *  capture failed — the card falls back to a placeholder rather than blocking. */
+    posterKey: text("poster_key"),
 
     /** Soft delete: the item leaves the library but its versions stay, so scenes
      *  already pinned to one keep rendering. Hard delete is moderation only. */

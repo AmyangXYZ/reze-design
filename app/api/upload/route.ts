@@ -10,8 +10,11 @@ import { NextResponse } from "next/server"
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 import { auth } from "@/lib/auth"
+import { hasDatabase } from "@/lib/db"
 
 const MAX_BUNDLE_BYTES = 200 * 1024 * 1024
+const MAX_POSTER_BYTES = 20 * 1024 * 1024
+const POSTER_TYPES = ["image/png", "image/jpeg", "image/webp"]
 
 const s3 = () =>
   new S3Client({
@@ -24,10 +27,18 @@ const s3 = () =>
   })
 
 export async function POST(request: Request) {
+  // No database configured — see lib/db. Nothing to publish to, and nothing to
+  // sign in as, so the honest answer is that this deployment cannot do it.
+  if (!hasDatabase) return NextResponse.json({ error: "no database on this deployment" }, { status: 503 })
   const session = await auth.api.getSession({ headers: request.headers })
   if (!session) return NextResponse.json({ error: "unauthenticated" }, { status: 401 })
 
-  const { sceneId, size } = ((await request.json().catch(() => ({}))) ?? {}) as { sceneId?: unknown; size?: unknown }
+  const { sceneId, size, kind, contentType } = ((await request.json().catch(() => ({}))) ?? {}) as {
+    sceneId?: unknown
+    size?: unknown
+    kind?: unknown
+    contentType?: unknown
+  }
   if (typeof sceneId !== "string" || !/^[a-zA-Z0-9_-]{8,64}$/.test(sceneId)) {
     return NextResponse.json({ error: "invalid sceneId" }, { status: 400 })
   }
@@ -35,10 +46,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "bundle too large" }, { status: 413 })
   }
 
-  const key = `scenes/${session.user.id}/${sceneId}/assets.zip`
+  // Two objects live under a scene: its asset bundle and its gallery poster.
+  const poster = kind === "poster"
+  const posterType = POSTER_TYPES.includes(String(contentType)) ? String(contentType) : "image/webp"
+  if (poster && typeof size === "number" && size > MAX_POSTER_BYTES) {
+    return NextResponse.json({ error: "poster too large" }, { status: 413 })
+  }
+  const ext = poster ? (posterType.split("/")[1] === "jpeg" ? "jpg" : posterType.split("/")[1]) : "zip"
+  const key = `scenes/${session.user.id}/${sceneId}/${poster ? `poster.${ext}` : "assets.zip"}`
   const uploadUrl = await getSignedUrl(
     s3(),
-    new PutObjectCommand({ Bucket: process.env.R2_BUCKET, Key: key, ContentType: "application/zip" }),
+    new PutObjectCommand({
+      Bucket: process.env.R2_BUCKET,
+      Key: key,
+      ContentType: poster ? posterType : "application/zip",
+    }),
     { expiresIn: 600 },
   )
   return NextResponse.json({ uploadUrl, key, publicUrl: `${process.env.R2_PUBLIC_BASE_URL}/${key}` })
