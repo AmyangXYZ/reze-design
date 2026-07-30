@@ -37,11 +37,20 @@ import { useT } from "@/lib/i18n"
 import type { ExportAudioSource } from "@/lib/video-export"
 import { MaterialSphereIcon } from "@/components/scene/slot-icons"
 import { DEFAULT_SCENE } from "@/lib/default-scene"
-import { groupLabel, GRAPH_LIBRARY, SLOT_GRAPHS } from "@/lib/materials"
+import { groupLabel, GRAPH_LIBRARY, libraryGraph, SLOT_GRAPHS } from "@/lib/materials"
 import type { AppliedBackgroundEffect } from "@/lib/background-effects"
 import { GRADE_PRESETS, NEUTRAL_SPEC, gradeSpec, recallIntensity, specOf } from "@/lib/grade"
-import { quickPickItems, type EffectItem, type GradeItem, type GraphItem, type LibraryFacet } from "@/lib/library"
+import {
+  quickPickItems,
+  type EffectItem,
+  type GradeItem,
+  type GraphItem,
+  type LibraryFacet,
+  type ScenePayload,
+} from "@/lib/library"
 import { communityItems, useCommunity } from "@/hooks/use-community"
+import { forkTarget } from "@/lib/fork"
+import { resolveSceneRefs } from "@/lib/resolve-refs"
 import { effectRef, gradeRef, graphRef } from "@/lib/refs"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useSession } from "@/lib/auth-client"
@@ -53,15 +62,18 @@ import { SaveCloseDialog } from "@/components/editor/save-close"
 import { captureScene } from "@/components/editor/grade-preview"
 import {
   hydrateScene,
+  newSceneId,
+  parseSceneDoc,
   saveSceneState,
   serializeSceneDoc,
+  type Scene,
   type AssetRef,
   type ModelSource,
   type SceneBackground,
   type SceneCamera,
   type SceneModel,
 } from "@/lib/scene"
-import { modelFilePath, sceneFiles } from "@/lib/scene-files"
+import { modelFilePaths, sceneFiles } from "@/lib/scene-files"
 import type { BundleEntry } from "@/lib/bundle"
 import { ShareSceneDialog, type ScenePublishSource } from "@/components/editor/share-scene"
 import type { SceneSettings } from "@/lib/scene-settings"
@@ -176,7 +188,12 @@ function defaultPanelRect(): Rect {
   return { x: Math.round((vw - w) / 2), y: Math.max(8, vh - h - 76), w, h }
 }
 
-export default function Home() {
+/**
+ * The editor. Normally opens on the bundled demo merged with your stored edits;
+ * given a scene it opens on that instead — which is what Fork does, so a forked
+ * scene lands in the same tool rather than a second, lesser one.
+ */
+function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom?: string }) {
   const t = useT()
   // Which style group the node-graph editor is bound to.
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null)
@@ -254,7 +271,9 @@ export default function Home() {
   const [animByModel, setAnimByModel] = useState<Record<string, AnimEntry>>({})
   const [animMetaByModel, setAnimMetaByModel] = useState<Record<string, { duration: number; keyframes: number }>>({})
   // The boot document: the bundled demo with the user's stored values merged over it.
-  const [bootScene] = useState(() => hydrateScene(DEFAULT_SCENE))
+  // A forked scene boots as published — NOT merged with your stored state, which
+  // belongs to whatever you were working on before.
+  const [bootScene] = useState(() => initialScene ?? hydrateScene(DEFAULT_SCENE))
   const [sceneSettings, setSceneSettings] = useState<SceneSettings>(bootScene.state.settings)
   const [sceneCamera, setSceneCamera] = useState<SceneCamera>(bootScene.state.camera)
   const [sceneName, setSceneName] = useState(bootScene.state.name)
@@ -277,6 +296,7 @@ export default function Home() {
     upsertGroup: upsertGroupFor,
     applyGroups: applyGroupsFor,
     resetStyleGroups,
+    bundleFiles,
     setCameraView,
     highlight: highlightFor,
     toggleVisible: toggleVisibleFor,
@@ -710,7 +730,7 @@ export default function Home() {
   const [gradesOpen, setGradesOpen] = useState(false)
   const [libraryFacet, setLibraryFacet] = useState<LibraryFacet>("all")
   // Lazy initializer, not an effect
-  const openGrades = useCallback((facet: LibraryFacet = "all") => {
+  const showGrades = useCallback((facet: LibraryFacet) => {
     setLibraryFacet(facet)
     // Snapshot the viewport first
     captureScene(canvasRef.current)
@@ -810,26 +830,31 @@ export default function Home() {
     void resetStyleGroups(id, DEFAULT_SCENE.state.groups?.[id])
   }, [resetStyleGroups])
 
-  const openLibrary = useCallback((groupId: string | null, facet: LibraryFacet = "all") => {
+  const showLibrary = useCallback((groupId: string | null, facet: LibraryFacet) => {
     setLibraryFacet(facet)
     setEffectsOpen(false)
     setGradesOpen(false)
     setLibrary({ open: true, groupId })
   }, [setEffectsOpen, setGradesOpen, setLibrary])
-  const openEffects = useCallback((facet: LibraryFacet = "all") => {
+  const showEffects = useCallback((facet: LibraryFacet) => {
     setLibraryFacet(facet)
     setLibrary((s) => ({ ...s, open: false }))
     setGradesOpen(false)
     setEffectsOpen(true)
   }, [setLibrary, setGradesOpen, setEffectsOpen])
+  // Zero-argument handlers: these are wired straight to onClick, and an optional
+  // parameter there would be filled with the click event.
+  const openGrades = useCallback(() => showGrades("all"), [showGrades])
+  const openEffects = useCallback(() => showEffects("all"), [showEffects])
+  const openLibrary = useCallback((groupId: string | null) => showLibrary(groupId, "all"), [showLibrary])
   /** Account-tab stat numbers: the matching library, filtered to your work. */
   const openLibraryForAccount = useCallback(
     (kind: "grade" | "effect" | "graph") => {
-      if (kind === "grade") openGrades("yours")
-      else if (kind === "effect") openEffects("yours")
-      else openLibrary(null, "yours")
+      if (kind === "grade") showGrades("yours")
+      else if (kind === "effect") showEffects("yours")
+      else showLibrary(null, "yours")
     },
-    [openGrades, openEffects, openLibrary],
+    [showGrades, showEffects, showLibrary],
   )
   // Library callbacks — stable so the (memoizable) dialog doesn't re-render idly.
   const applyBgEffect = useCallback((effect: AppliedBackgroundEffect) => setBgEffect(effect), [setBgEffect])
@@ -1197,13 +1222,26 @@ export default function Home() {
     const entries: BundleEntry[] = []
     const liveModels: SceneModel[] = models.map((m) => {
       const kept = sceneFiles.models.get(m.id)
+      const booted = bootScene.assets.models.find((d) => d.model.id === m.id)?.model.source ?? null
       let source: ModelSource | null = null
       if (kept) {
+        // Uploaded here: pack the files we were given.
         const base = `models/${m.id}`
-        for (const f of kept.files) entries.push({ path: `${base}/${modelFilePath(f)}`, file: f })
-        source = { kind: "bundle", path: `${base}/${modelFilePath(kept.pmx)}` }
+        const paths = modelFilePaths(kept.files)
+        for (const f of kept.files) entries.push({ path: `${base}/${paths.get(f)!}`, file: f })
+        source = { kind: "bundle", path: `${base}/${paths.get(kept.pmx)!}` }
+      } else if (booted?.kind === "bundle") {
+        // Came out of a bundle (a forked scene): re-pack the files already
+        // unzipped in memory, so this scene owns its assets rather than pointing
+        // at someone else's — theirs can be deleted, and the bytes should be
+        // counted against whoever published them.
+        const dir = booted.path.slice(0, booted.path.lastIndexOf("/") + 1)
+        for (const f of bundleFiles()) {
+          if (f.name.startsWith(dir)) entries.push({ path: f.name, file: f })
+        }
+        source = booted
       } else {
-        source = bootScene.assets.models.find((d) => d.model.id === m.id)?.model.source ?? null
+        source = booted
       }
       const anim = animByModel[m.id]
       let animation: AssetRef | null = null
@@ -1831,6 +1869,7 @@ export default function Home() {
           sceneId={bootScene.state.id}
           sceneName={sceneName}
           onRename={setSceneName}
+          forkedFromId={forkedFrom}
           collect={collectScenePublish}
         />
       )}
@@ -1979,4 +2018,51 @@ export default function Home() {
       </Dialog>
     </div>
   )
+}
+
+/** Fork hands the scene id over in sessionStorage (see lib/fork.ts), so the URL
+ *  stays `/`. Rendering the editor only once the scene resolves means the engine
+ *  boots once, on the right document — no demo flash, no wasted model download. */
+function EditorRoute() {
+  const t = useT()
+  const [from] = useState(forkTarget)
+  const [forked, setForked] = useState<Scene | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    if (!from) return
+    let stale = false
+    void (async () => {
+      try {
+        const res = await fetch(`/api/library/${from}`)
+        if (!res.ok) throw new Error(String(res.status))
+        const { item } = (await res.json()) as { item: { payload: ScenePayload } }
+        const doc = item.payload.doc
+        const resolve = await resolveSceneRefs(doc)
+        if (stale) return
+        const scene = parseSceneDoc(doc, builtinEffect, libraryGraph, resolve as never)
+        // A fork is a NEW scene: its own identity from the first frame, so
+        // publishing can never overwrite the one it came from.
+        setForked({ ...scene, state: { ...scene.state, id: newSceneId() } })
+      } catch {
+        if (!stale) setFailed(true)
+      }
+    })()
+    return () => {
+      stale = true
+    }
+  }, [from])
+
+  if (from && !forked && !failed) {
+    return (
+      <main className="fixed inset-0 flex items-center justify-center bg-zinc-950 text-xs text-muted-foreground">
+        {t.editor.loadingModel}
+      </main>
+    )
+  }
+  return <Editor initialScene={forked ?? undefined} forkedFrom={forked ? (from ?? undefined) : undefined} />
+}
+
+export default function Home() {
+  return <EditorRoute />
 }

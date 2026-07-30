@@ -49,7 +49,7 @@ export function ItemControls({ id }: { id: string }) {
   )
 }
 
-export function RenameUser({ id, username }: { id: string; username: string | null }) {
+export function RenameUser({ id, username, isSelf }: { id: string; username: string | null; isSelf: boolean }) {
   const { run, disabled } = useAction()
   return (
     <button
@@ -61,6 +61,10 @@ export function RenameUser({ id, username }: { id: string; username: string | nu
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ username: next }),
+        }).then((ok) => {
+          // The signed-in session carries a cached copy of the handle, so renaming
+          // YOURSELF leaves the account menu showing the old one until it reloads.
+          if (ok && isSelf) window.location.reload()
         })
       }}
       className={`${iconBtn} text-muted-foreground hover:bg-white/5 hover:text-foreground`}

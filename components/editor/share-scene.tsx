@@ -33,6 +33,7 @@ export function ShareSceneDialog({
   sceneId,
   sceneName,
   onRename,
+  forkedFromId,
   collect,
 }: {
   open: boolean
@@ -43,6 +44,8 @@ export function ShareSceneDialog({
   sceneName: string
   /** Renaming here renames the working scene too — one name, top-left included. */
   onRename: (name: string) => void
+  /** The scene this session was forked from, if any. Lineage, recorded quietly. */
+  forkedFromId?: string
   collect: () => ScenePublishSource
 }) {
   const t = useT()
@@ -104,6 +107,7 @@ export function ShareSceneDialog({
           credits: credits.trim(),
           bundleKey,
           bundleBytes,
+          forkedFromId,
           // The published presets this scene pins — recorded as edges so "used in
           // N scenes" is a join rather than a scan through documents.
           uses: sceneRefs(doc),
@@ -202,15 +206,18 @@ export function ShareSceneDialog({
             </label>
             <label className="block">
               <span className="text-xs text-muted-foreground">{t.share.credits}</span>
+              {/* The one thing in this dialog a publisher must actually read. */}
+              <p className="mt-1 rounded-md bg-amber-400/5 px-2.5 py-2 text-xs leading-relaxed text-amber-200/90">
+                {t.share.creditsWhy}
+              </p>
               <textarea
                 value={credits}
                 onChange={(e) => setCredits(e.target.value)}
                 maxLength={4000}
                 rows={4}
                 placeholder={t.share.creditsHint}
-                className="mt-1 w-full resize-none rounded-md border border-white/10 bg-white/5 px-2.5 py-2 text-sm outline-none placeholder:text-muted-foreground/50 focus:border-blue-400/50"
+                className="mt-1.5 w-full resize-none rounded-md border border-white/10 bg-white/5 px-2.5 py-2 text-sm outline-none placeholder:text-muted-foreground/50 focus:border-blue-400/50"
               />
-              <span className="mt-1 block text-[11px] text-muted-foreground/70">{t.share.creditsWhy}</span>
             </label>
             {error && <div className="text-[11px] text-red-400">{error}</div>}
             <Button

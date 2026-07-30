@@ -15,6 +15,98 @@ const SPECIAL_GROUPS: { id: string; label: string; renderClass: RenderClass; pre
   { id: "eye", label: "Eye", renderClass: "eye", preset: "eye" },
   { id: "hair", label: "Hair", renderClass: "hair", preset: "hair" },
 ]
+function infoFor(
+  id: string,
+  file: string,
+  model: import("reze-engine").Model,
+  hidden?: string[],
+): EngineModelInfo {
+  return {
+    id,
+    file,
+    stats: {
+      vertices: Math.round(model.getVertices().length / 8),
+      bones: model.getSkeleton().bones.length,
+      materials: model.getMaterials().length,
+    },
+    materials: model
+      .getMaterials()
+      .map((m) => ({ name: m.name, diffuse: m.diffuse, visible: !hidden?.includes(m.name) })),
+  }
+}
+
+/**
+ * Load a scene's CONTENT into a live engine: assets, models, styling, ground,
+ * framing. Shared by first boot and by swapScene, so opening a published scene
+ * takes exactly the same path as starting in one — and so the two can never drift.
+ *
+ * `stale` lets a superseded load bail between awaits; every one of these steps is
+ * asynchronous and a user can swap again mid-flight.
+ */
+async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean) {
+  const s = scene.state.settings
+  const infos: EngineModelInfo[] = []
+  const groups: Record<string, StyleGroup[]> = {}
+
+  // A published scene's uploads live in one zip. Fetched once and shared by every
+  // model in the document; the unzipped File names keep their bundle paths, which
+  // is exactly what the engine resolves textures against.
+  let bundle: File[] | null = null
+  if (scene.assets.bundle) {
+    const res = await fetch(scene.assets.bundle)
+    if (!res.ok) throw new Error(`Can't fetch scene assets: ${res.status}`)
+    bundle = await unzipToFiles(new File([await res.blob()], "assets.zip"))
+    if (stale()) return null
+  }
+
+  for (const entry of scene.assets.models) {
+    const src = entry.model.source
+    let model
+    if (src.kind === "bundle") {
+      const pmxFile = bundle?.find((f) => f.name === src.path)
+      if (!pmxFile) throw new Error(`Missing in scene assets: ${src.path}`)
+      // Scoped to this model's folder: two models in one bundle can share a
+      // texture basename, and the engine's basename fallback would guess.
+      const dir = src.path.slice(0, src.path.lastIndexOf("/") + 1)
+      const files = bundle!.filter((f) => f.name.startsWith(dir))
+      model = await engine.loadModel(entry.model.id, { files, pmxFile })
+    } else {
+      const pmxUrl = modelPmxUrl(entry.model)
+      if (!pmxUrl) throw new Error(`Zip-sourced models aren't loadable from a URL yet: ${entry.model.file}`)
+      model = await engine.loadModel(entry.model.id, pmxUrl)
+    }
+    if (stale()) return null
+    const offset = spawnOffsetX(infos.length)
+    if (offset !== 0) engine.setModelTransform(entry.model.id, { position: new Vec3(offset, 0, 0) })
+    // Styling: a document carrying groups for this model (a restored or imported scene)
+    const docGroups = scene.state.groups?.[entry.model.id]
+    if (docGroups) {
+      // Empty groups are UI-only drop targets — withheld from the engine.
+      await engine.applyStyleGroups(entry.model.id, docGroups.filter((g) => g.materials.length > 0))
+    } else {
+      await engine.autoStyleGroups(entry.model.id)
+    }
+    if (stale()) return null
+    const hidden = scene.state.hidden?.[entry.model.id] ?? []
+    for (const name of hidden) engine.toggleMaterialVisible(entry.model.id, name)
+    infos.push(infoFor(entry.model.id, entry.model.file, model, hidden))
+    groups[entry.model.id] = withSpecialGroups(docGroups ?? engine.getStyleGroups(entry.model.id))
+  }
+
+  engine.addGround({
+    diffuseColor: hexToLinearVec3(s.ground.color),
+    gridLineColor: hexToLinearVec3(s.ground.grid),
+    opacity: s.ground.opacity,
+    shadowStrength: s.ground.shadow ? 1 : 0,
+    gridLineOpacity: s.ground.gridEnabled ? 0.4 : 0,
+    width: s.ground.size,
+    height: s.ground.size,
+    fadeStart: s.ground.size * (10 / 160),
+    fadeEnd: s.ground.size * (80 / 160),
+  })
+  return { infos, groups, bundle }
+}
+
 function withSpecialGroups(list: StyleGroup[]): StyleGroup[] {
   const seeds = SPECIAL_GROUPS.filter((s) => !list.some((g) => (g.renderClass ?? "auto") === s.renderClass)).map(
     (s): StyleGroup => ({ id: s.id, label: s.label, materials: [], graph: structuredClone(SLOT_GRAPHS[s.preset]!), renderClass: s.renderClass }),
@@ -61,25 +153,11 @@ export function useEngine(
   const modelsRef = useRef<EngineModelInfo[]>([])
   // The scene's unzipped asset bundle, for resolving clips and audio by path.
   const bundleRef = useRef<File[] | null>(null)
+  // Bumped per swap so a superseded load stops touching state mid-flight.
+  const swapToken = useRef(0)
   useEffect(() => {
     modelsRef.current = models
   }, [models])
-
-  const infoFor = (
-    id: string,
-    file: string,
-    model: import("reze-engine").Model,
-    hidden?: string[],
-  ): EngineModelInfo => ({
-    id,
-    file,
-    stats: {
-      vertices: Math.round(model.getVertices().length / 8),
-      bones: model.getSkeleton().bones.length,
-      materials: model.getMaterials().length,
-    },
-    materials: model.getMaterials().map((m) => ({ name: m.name, diffuse: m.diffuse, visible: !hidden?.includes(m.name) })),
-  })
 
   useEffect(() => {
     let disposed = false
@@ -106,64 +184,10 @@ export function useEngine(
         if (process.env.NODE_ENV === "development") (window as unknown as { __reze?: Engine }).__reze = engine
         await engine.init()
         if (disposed) return
-        const infos: EngineModelInfo[] = []
-        const groupsMap: Record<string, StyleGroup[]> = {}
-        // A published scene's uploads live in one zip. Fetched once here and shared
-        // by every model in the document; the unzipped File names keep their bundle
-        // paths, which is exactly what the engine resolves textures against.
-        let bundle: File[] | null = null
-        if (scene.assets.bundle) {
-          const res = await fetch(scene.assets.bundle)
-          if (!res.ok) throw new Error(`Can't fetch scene assets: ${res.status}`)
-          bundle = await unzipToFiles(new File([await res.blob()], "assets.zip"))
-          if (disposed) return
-        }
-        bundleRef.current = bundle
-        for (const entry of scene.assets.models) {
-          const src = entry.model.source
-          let model
-          if (src.kind === "bundle") {
-            const pmxFile = bundle?.find((f) => f.name === src.path)
-            if (!pmxFile) throw new Error(`Missing in scene assets: ${src.path}`)
-            // Scoped to this model's folder: two models in one bundle can share a
-            // texture basename, and the engine's basename fallback would guess.
-            const dir = src.path.slice(0, src.path.lastIndexOf("/") + 1)
-            const files = bundle!.filter((f) => f.name.startsWith(dir))
-            model = await engine.loadModel(entry.model.id, { files, pmxFile })
-          } else {
-            const pmxUrl = modelPmxUrl(entry.model)
-            if (!pmxUrl) throw new Error(`Zip-sourced models aren't loadable from a URL yet: ${entry.model.file}`)
-            model = await engine.loadModel(entry.model.id, pmxUrl)
-          }
-          if (disposed) return
-          const offset = spawnOffsetX(infos.length)
-          if (offset !== 0) engine.setModelTransform(entry.model.id, { position: new Vec3(offset, 0, 0) })
-          // Styling: a document carrying groups for this model (a restored or imported scene)
-          const docGroups = scene.state.groups?.[entry.model.id]
-          if (docGroups) {
-            // Empty groups are UI-only drop targets — withheld from the engine.
-            await engine.applyStyleGroups(entry.model.id, docGroups.filter((g) => g.materials.length > 0))
-          } else {
-            await engine.autoStyleGroups(entry.model.id)
-          }
-          if (disposed) return
-          // Restore hidden materials from the document.
-          const hidden = scene.state.hidden?.[entry.model.id] ?? []
-          for (const name of hidden) engine.toggleMaterialVisible(entry.model.id, name)
-          infos.push(infoFor(entry.model.id, entry.model.file, model, hidden))
-          groupsMap[entry.model.id] = withSpecialGroups(docGroups ?? engine.getStyleGroups(entry.model.id))
-        }
-        engine.addGround({
-          diffuseColor: hexToLinearVec3(s.ground.color),
-          gridLineColor: hexToLinearVec3(s.ground.grid),
-          opacity: s.ground.opacity,
-          shadowStrength: s.ground.shadow ? 1 : 0,
-          gridLineOpacity: s.ground.gridEnabled ? 0.4 : 0,
-          width: s.ground.size,
-          height: s.ground.size,
-          fadeStart: s.ground.size * (10 / 160),
-          fadeEnd: s.ground.size * (80 / 160),
-        })
+        const loaded = await loadSceneInto(engine, scene, () => disposed)
+        if (!loaded) return
+        bundleRef.current = loaded.bundle
+        const { infos, groups: groupsMap } = loaded
         setModels(infos)
         setGroupsByModel(groupsMap)
         // Bind pose until the user loads a VMD — material evaluation doesn't need motion.
@@ -283,6 +307,11 @@ export function useEngine(
   /** A file out of the scene's asset bundle, by its bundle-relative path. */
   const bundleFile = useCallback((path: string): File | null => bundleRef.current?.find((f) => f.name === path) ?? null, [])
 
+  /** The whole unzipped bundle. Publishing a scene that came from one re-packs
+   *  these, so a forked scene owns its assets instead of pointing at someone
+   *  else's — which would break the moment they deleted theirs. */
+  const bundleFiles = useCallback((): File[] => bundleRef.current ?? [], [])
+
   /** Load a VMD from a URL (a bundled default clip) onto one model, posed at frame 0 but PAUSED */
   const loadVmdUrl = useCallback(async (modelId: string, name: string, url: string): Promise<string | null> => {
     const model = engineRef.current?.getModel(modelId)
@@ -341,6 +370,49 @@ export function useEngine(
   }, [])
 
   /**
+   * Replace the whole scene without tearing down the device, canvas or swap
+   * chain — one WebGPU context for the session, documents flowing through it.
+   *
+   * That is what makes opening a published scene (or swiping to the next one in a
+   * gallery) a document change rather than a page load: no context loss, no
+   * re-init, no flash of an empty canvas.
+   */
+  const swapScene = useCallback(async (scene: Scene): Promise<string | null> => {
+    const engine = engineRef.current
+    if (!engine) return "engine not ready"
+    const token = ++swapToken.current
+    const stale = () => token !== swapToken.current
+    setReady(false)
+    try {
+      // The outgoing scene's models and its retained upload files go together —
+      // keeping either would leak into the incoming document.
+      for (const m of modelsRef.current) engine.removeModel(m.id)
+      sceneFiles.models.clear()
+      sceneFiles.audio = null
+      sceneFiles.camera = null
+      engine.clearCameraVmd()
+
+      const loaded = await loadSceneInto(engine, scene, stale)
+      if (!loaded) return null
+      bundleRef.current = loaded.bundle
+      sceneRef.current = scene
+      setModels(loaded.infos)
+      setGroupsByModel(loaded.groups)
+      const [tx, ty, tz] = scene.state.camera.target
+      engine.setCameraTarget(new Vec3(tx, ty, tz))
+      engine.setCameraDistance(scene.state.camera.distance)
+      setError(null)
+      return null
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      setError(message)
+      return message
+    } finally {
+      if (!stale()) setReady(true)
+    }
+  }, [])
+
+  /**
    * Push orbit framing to the engine. A loaded, enabled camera VMD drives the shot
    * instead, so this shows up only once that is off.
    */
@@ -381,6 +453,8 @@ export function useEngine(
     applyGroups,
     resetStyleGroups,
     bundleFile,
+    bundleFiles,
+    swapScene,
     setCameraView,
     setGroupParam,
     highlight,

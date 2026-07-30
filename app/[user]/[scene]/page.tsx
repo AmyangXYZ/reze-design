@@ -18,6 +18,7 @@ async function load(id: string) {
       name: schema.libraryItems.name,
       author: schema.libraryItems.author,
       description: schema.libraryItems.description,
+      credits: schema.libraryItems.credits,
       payload: schema.libraryItems.payload,
       likeCount: schema.libraryItems.likeCount,
       visibility: schema.libraryItems.visibility,
@@ -58,9 +59,11 @@ export default async function ScenePage({ params }: { params: Promise<{ user: st
   return (
     <SceneViewer
       doc={doc}
+      sceneId={row.id}
       title={row.name}
       author={row.handle ?? row.author}
       description={row.description}
+      credits={row.credits}
       likeCount={row.likeCount}
     />
   )

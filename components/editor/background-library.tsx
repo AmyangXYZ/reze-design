@@ -19,7 +19,15 @@ import { LIBRARY_SHELL, LibraryRail, LibraryStats, LibraryTags } from "@/compone
 import { matchesFacet, matchesQuery, type EffectItem, type LibraryFacet } from "@/lib/library"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
 import { draftOrigin, nextDraftName } from "@/lib/drafts"
-import { addCommunityItem, builtinAuthor, refreshCommunity, removeCommunityItem, renameCommunityItem, useCommunity } from "@/hooks/use-community"
+import {
+  addCommunityItem,
+  builtinAuthor,
+  isMine,
+  refreshCommunity,
+  removeCommunityItem,
+  renameCommunityItem,
+  useCommunity,
+} from "@/hooks/use-community"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useLibraryStats } from "@/hooks/use-library-stats"
 import { useZOrder } from "@/hooks/use-z-order"
@@ -78,7 +86,11 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   // Fresh rows every open — a publish elsewhere shows without a reload.
   useEffect(() => refreshCommunity(), [])
   const community = useCommunity<EffectItem>("effect")
-  const all = useMemo(() => [...BACKGROUND_EFFECTS, ...community, ...drafts], [community, drafts])
+  const all = useMemo(
+    // Bundled items carry no idea who is asking; the fetched rows do.
+    () => [...BACKGROUND_EFFECTS.map((i) => ({ ...i, mine: isMine(i.id) })), ...community, ...drafts],
+    [community, drafts],
+  )
   const selected: EffectItem | null = useMemo(() => all.find((e) => e.id === selectedId) ?? null, [all, selectedId])
   // Draft = what Apply applies for the current selection.
   const [draft, setDraft] = useState<AppliedBackgroundEffect | null>(() => seedDraft(selected, applied))

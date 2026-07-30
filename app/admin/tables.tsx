@@ -172,7 +172,7 @@ export function UserTable({ users, selfId }: { users: UserRow[]; selfId: string 
               <span className="size-5 rounded-full bg-white/10" />
             )}
             <span className="font-mono">{u.username ?? "—"}</span>
-            <RenameUser id={u.id} username={u.username} />
+            <RenameUser id={u.id} username={u.username} isSelf={u.id === selfId} />
             {u.banned && (
               <span className="shrink-0 rounded border border-amber-400/30 px-1 text-[10px] text-amber-400">
                 suspended

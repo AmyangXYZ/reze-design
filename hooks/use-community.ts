@@ -29,6 +29,10 @@ const listeners = new Set<() => void>()
 // The seed mirrors builtins with the ADMIN ACCOUNT's live handle as author —
 // the repo JSON can't know it, so display resolves through this map.
 const builtinAuthors = new Map<string, string>()
+// Bundled items the signed-in user owns. Built-ins are simply presets authored by
+// the admin account, so for THAT account they belong under "Yours" like anything
+// else they published — the bundle just can't know who is asking.
+let mineIds = new Set<string>()
 
 function load(force = false): Promise<CommunityItem[]> {
   if (cache && !force) return Promise.resolve(cache)
@@ -36,6 +40,7 @@ function load(force = false): Promise<CommunityItem[]> {
     .then((r) => r.json())
     .then((d: { items?: CommunityItem[] }) => {
       const rows = d.items ?? []
+      mineIds = new Set(rows.filter((i) => i.mine).map((i) => i.id))
       for (const i of rows) {
         if (BUILTIN_NAMES[i.kind]?.has(i.name)) builtinAuthors.set(`${i.kind}:${i.name}`, i.author)
       }
@@ -56,6 +61,12 @@ function load(force = false): Promise<CommunityItem[]> {
  *  or session shows up without a reload. */
 export function refreshCommunity(): void {
   void load(true)
+}
+
+/** Does the signed-in user own this bundled item? Matched by uuid, which the
+ *  bundle and the database now share. */
+export function isMine(id: string): boolean {
+  return mineIds.has(id)
 }
 
 /** The live author to display for a built-in (the admin account's handle), or

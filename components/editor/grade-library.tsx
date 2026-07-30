@@ -18,7 +18,15 @@ import {
 import { LIBRARY_SHELL, LibraryRail, LibraryStats, LibraryTags } from "@/components/editor/library-rail"
 import { matchesFacet, matchesQuery, type GradeItem, type LibraryFacet } from "@/lib/library"
 import { draftOrigin, nextDraftName } from "@/lib/drafts"
-import { addCommunityItem, builtinAuthor, refreshCommunity, removeCommunityItem, renameCommunityItem, useCommunity } from "@/hooks/use-community"
+import {
+  addCommunityItem,
+  builtinAuthor,
+  isMine,
+  refreshCommunity,
+  removeCommunityItem,
+  renameCommunityItem,
+  useCommunity,
+} from "@/hooks/use-community"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useLibraryStats } from "@/hooks/use-library-stats"
 import { useZOrder } from "@/hooks/use-z-order"
@@ -76,7 +84,11 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
   // Fresh rows every open — a publish elsewhere shows without a reload.
   useEffect(() => refreshCommunity(), [])
   const community = useCommunity<GradeItem>("grade")
-  const all = useMemo(() => [...GRADE_PRESETS, ...community, ...drafts], [community, drafts])
+  const all = useMemo(
+    // Bundled items carry no idea who is asking; the fetched rows do.
+    () => [...GRADE_PRESETS.map((i) => ({ ...i, mine: isMine(i.id) })), ...community, ...drafts],
+    [community, drafts],
+  )
   const selected = all.find((g) => g.name === selectedId) ?? all[0]
 
   const rows = useMemo(

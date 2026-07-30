@@ -20,11 +20,19 @@ export const sceneFiles = {
   camera: null as File | null,
 }
 
-/** The bundle-relative path a model file is stored (and later resolved) under. */
-export function modelFilePath(f: File): string {
-  const rel = f.webkitRelativePath || f.name
-  // Folder picks include the picked directory itself — strip it so the bundle
-  // layout matches what a zip expansion produces.
-  const i = rel.indexOf("/")
-  return f.webkitRelativePath && i !== -1 ? rel.slice(i + 1) : rel
+/**
+ * Bundle-relative paths for one model's files, with a wrapper directory removed.
+ *
+ * A folder pick carries the picked directory in `webkitRelativePath`; a zip
+ * carries its own root inside `File.name`. Either way, a first segment that EVERY
+ * file shares is packaging rather than structure, and keeping it nested the model
+ * one level deeper than its own id — `models/<id>/<same-name-again>/model.pmx`.
+ */
+export function modelFilePaths(files: File[]): Map<File, string> {
+  const rel = (f: File) => (f.webkitRelativePath || f.name).replace(/\\/g, "/")
+  const roots = new Set(files.map((f) => rel(f).split("/")[0]))
+  // One shared root AND at least one file actually inside it — a flat pick of
+  // loose files would otherwise lose its only filename.
+  const strip = roots.size === 1 && files.every((f) => rel(f).includes("/"))
+  return new Map(files.map((f) => [f, strip ? rel(f).slice(rel(f).indexOf("/") + 1) : rel(f)]))
 }
