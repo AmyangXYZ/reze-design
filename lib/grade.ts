@@ -45,10 +45,24 @@ export type GradeSpec = {
   saturation: number
 }
 
-/** What the SCENE stores: which grade (by name — built-in or draft), how strong. */
+/**
+ * What the SCENE stores: which grade, and how strong.
+ *
+ * Built-ins travel by NAME — we curate them, so a retune reaches every scene
+ * using it. Anything else (a community grade, a local draft) travels by VALUE in
+ * `spec`: your published scene must not change because someone else edited their
+ * preset, and it must survive them renaming or deleting it. Same
+ * reference-or-snapshot rule graphs and effects already follow.
+ */
 export type GradeSettings = {
+  /** Display label. The reference only when it names a built-in. */
   preset: string
   intensity: number
+  /** The value itself, for a grade with no published version to pin. */
+  spec?: GradeSpec
+  /** A pin to the published grade this came from. Rendering prefers `spec` when
+   *  present; this is what records provenance and usage. */
+  from?: { id: string; version: number }
 }
 
 // Presets live in content/grades.json — data, not code, in the same envelope a
@@ -63,7 +77,7 @@ export type GradeSettings = {
 // which is what actually destroys shading.
 // JSON widens the range tuples to number[], so re-narrow on the way in — one
 // cast at the boundary keeps every consumer strongly typed.
-export const GRADE_PRESETS = asBuiltins<GradeItem>(presets as unknown as Omit<GradeItem, "owner" | "id">[])
+export const GRADE_PRESETS = asBuiltins<GradeItem>(presets as unknown as Omit<GradeItem, "owner">[])
 
 export const NEUTRAL_SPEC: GradeSpec = GRADE_PRESETS[0].payload.spec
 export const DEFAULT_GRADE: GradeSettings = { preset: "Neutral", intensity: 1 }
@@ -101,6 +115,12 @@ export function readSplit(spec: GradeSpec): number {
   const [sh, ss] = spec.shadows
   const [hh, hs] = spec.highlights
   return Math.max(-1, Math.min(1, (warmth(hh) * hs - warmth(sh) * ss) / (2 * SPLIT_MAX_SAT)))
+}
+
+/** The spec a scene's grade settings resolve to: its snapshot when it carries one,
+ *  otherwise the named entry. */
+export function specOf(g: GradeSettings, drafts: GradeItem[] = []): GradeSpec {
+  return g.spec ?? gradeSpec(g.preset, drafts)
 }
 
 /** Resolve a grade name against the built-ins and the given drafts. Unresolvable

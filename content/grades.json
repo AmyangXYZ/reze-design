@@ -1,5 +1,6 @@
 [
   {
+    "id": "94e03201-a5ae-46f0-a8ca-01d6ef1b02bf",
     "kind": "grade",
     "name": "Neutral",
     "author": "Amyang",
@@ -29,6 +30,7 @@
     }
   },
   {
+    "id": "f583720f-61c4-45e8-bc08-aec3fa80be7a",
     "kind": "grade",
     "name": "Bloody",
     "author": "Amyang",
@@ -63,6 +65,7 @@
     }
   },
   {
+    "id": "4cf503e4-1b59-4dc6-a8ec-8a14fa8f8935",
     "kind": "grade",
     "name": "Cyberpunk",
     "author": "Amyang",
@@ -96,6 +99,7 @@
     }
   },
   {
+    "id": "babcc543-9ce5-4a94-9727-2ee688e1ef64",
     "kind": "grade",
     "name": "Divine",
     "author": "Amyang",
@@ -130,6 +134,7 @@
     }
   },
   {
+    "id": "79ea1a89-bfee-4c42-87d9-0b7715c47188",
     "kind": "grade",
     "name": "Moonlit",
     "author": "Amyang",
@@ -164,6 +169,7 @@
     }
   },
   {
+    "id": "c1c76b96-5461-47a9-b58c-bd04d0a09e0a",
     "kind": "grade",
     "name": "Sakura",
     "author": "Amyang",

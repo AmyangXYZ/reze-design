@@ -22,7 +22,7 @@ export function usePublish(kind: Exclude<LibraryKind, "scene">) {
   const publish = async (
     name: string,
     payload: unknown,
-    extra?: { description?: string; tags?: string[] },
+    extra?: { description?: string; tags?: string[]; id?: string; forkedFromId?: string },
   ): Promise<LibraryItem | null> => {
     if (!session || publishing) return null
     setPublishing(true)

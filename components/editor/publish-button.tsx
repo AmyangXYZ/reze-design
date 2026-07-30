@@ -9,6 +9,7 @@ import { Check, Share2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { TagsInput } from "@/components/editor/tags-input"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { usePublish } from "@/hooks/use-publish"
 import type { LibraryItem, LibraryKind } from "@/lib/library"
@@ -23,6 +24,8 @@ export function PublishButton({
   defaultDescription = "",
   defaultTags = [],
   payload,
+  itemId,
+  forkedFromId,
   className,
   onPublished,
 }: {
@@ -32,6 +35,12 @@ export function PublishButton({
   defaultTags?: string[]
   /** Read at submit time, so it captures the latest edits rather than a stale copy. */
   payload: () => unknown
+  /** The item's identity. A draft keeps its uuid through publishing; a working
+   *  copy of something you already published carries THAT id, so this writes the
+   *  next version rather than a second item. */
+  itemId?: string
+  /** Someone else's item this was derived from — recorded as lineage. */
+  forkedFromId?: string
   className?: string
   /** Fires with the created row — the library uses it to promote a draft. */
   onPublished?: (item: LibraryItem) => void
@@ -41,16 +50,14 @@ export function PublishButton({
   const [open, setOpen] = useState(false)
   const [name, setName] = useState(defaultName)
   const [description, setDescription] = useState(defaultDescription)
-  const [tags, setTags] = useState(defaultTags.join(", "))
+  const [tags, setTags] = useState<string[]>(defaultTags)
 
   const submit = async () => {
     const item = await publish(name.trim() || defaultName, payload(), {
+      id: itemId,
+      forkedFromId,
       description: description.trim(),
-      tags: tags
-        .split(",")
-        .map((s) => s.trim().toLowerCase())
-        .filter(Boolean)
-        .slice(0, MAX_TAGS),
+      tags,
     })
     // A name conflict keeps the dialog open for a rename; other failures show
     // inline too. Only success closes.
@@ -86,6 +93,7 @@ export function PublishButton({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent
+        onOpenAutoFocus={(e) => e.preventDefault()}
         onCloseAutoFocus={(e) => e.preventDefault()}
         className="w-[26rem] border-white/10 bg-zinc-950/95 p-5 sm:max-w-[26rem]"
       >
@@ -97,44 +105,40 @@ export function PublishButton({
             e.preventDefault()
             void submit()
           }}
+          // Publishing takes a click, never a stray Enter from a text field.
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "TEXTAREA") e.preventDefault()
+          }}
         >
           <label className="block">
-            <span className="text-[11px] text-muted-foreground">{t.library.publishName}</span>
+            <span className="text-xs text-muted-foreground">{t.library.publishName}</span>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
               maxLength={60}
-              required
-              className="mt-1 h-8 border-white/10 bg-white/5 text-xs md:text-xs"
+              className="mt-1 h-9 border-white/10 bg-white/5 text-sm md:text-sm"
             />
           </label>
           <label className="block">
-            <span className="text-[11px] text-muted-foreground">{t.library.publishDescription}</span>
+            <span className="text-xs text-muted-foreground">{t.library.publishDescription}</span>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               maxLength={500}
               rows={3}
-              required
               placeholder={t.library.publishDescriptionHint}
-              className="mt-1 w-full resize-none rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground/50 focus:border-blue-400/50"
+              className="mt-1 w-full resize-none rounded-md border border-white/10 bg-white/5 px-2.5 py-2 text-sm outline-none placeholder:text-muted-foreground/50 focus:border-blue-400/50"
             />
           </label>
           <label className="block">
-            <span className="text-[11px] text-muted-foreground">{t.library.publishTags}</span>
-            <Input
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
-              required
-              placeholder={t.library.publishTagsHint}
-              className="mt-1 h-8 border-white/10 bg-white/5 text-xs md:text-xs"
-            />
+            <span className="text-xs text-muted-foreground">{t.library.publishTags}</span>
+            <TagsInput value={tags} onChange={setTags} max={MAX_TAGS} placeholder={t.library.publishTagsHint} />
           </label>
           {failed && <div className="text-[11px] text-red-400">{t.gradeLibrary.publishFailed}</div>}
           {nameTaken && <div className="text-[11px] text-red-400">{t.library.nameTaken}</div>}
           <Button
             type="submit"
-            disabled={publishing}
+            disabled={publishing || !name.trim() || !description.trim() || tags.length === 0}
             className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-300"
           >
             {publishing ? t.account.working : t.gradeLibrary.publish}

@@ -57,6 +57,20 @@
       "when": 1785389954463,
       "tag": "0007_abnormal_hellfire_club",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785421921937,
+      "tag": "0008_easy_vulture",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785426569298,
+      "tag": "0009_sour_meggan",
+      "breakpoints": true
     }
   ]
 }

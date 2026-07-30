@@ -11,10 +11,20 @@
 import type { EffectPayload, GradePayload, GraphPayload, LibraryItem } from "@/lib/library"
 
 export type DraftKind = "grade" | "effect" | "graph"
+
+/**
+ * A local draft: a library item that hasn't been published yet.
+ *
+ * `sourceId` — a working copy of something YOU published; publishing writes that
+ * item's next version. `forkedFromId` — derived from someone ELSE's published
+ * item; publishing creates your own item and records where it came from. Exactly
+ * one of them is ever set.
+ */
+export type Draft = LibraryItem & { sourceId?: string; forkedFromId?: string }
 export type DraftPayload = GradePayload | EffectPayload | GraphPayload
 
 const KEY = "reze-design.drafts.1"
-const EMPTY: Record<DraftKind, LibraryItem[]> = { grade: [], effect: [], graph: [] }
+const EMPTY: Record<DraftKind, Draft[]> = { grade: [], effect: [], graph: [] }
 
 // Every mutation bumps a version and notifies subscribers, so two components
 // holding drafts (a library dialog, the page's quick-pick) can never disagree.
@@ -28,17 +38,17 @@ export const draftsStore = {
   getVersion: () => version,
 }
 
-export function loadDrafts(): Record<DraftKind, LibraryItem[]> {
+export function loadDrafts(): Record<DraftKind, Draft[]> {
   if (typeof window === "undefined") return EMPTY
   try {
     const raw = window.localStorage.getItem(KEY)
-    return raw ? { ...EMPTY, ...(JSON.parse(raw) as Partial<Record<DraftKind, LibraryItem[]>>) } : EMPTY
+    return raw ? { ...EMPTY, ...(JSON.parse(raw) as Partial<Record<DraftKind, Draft[]>>) } : EMPTY
   } catch {
     return EMPTY
   }
 }
 
-function save(store: Record<DraftKind, LibraryItem[]>) {
+function save(store: Record<DraftKind, Draft[]>) {
   try {
     window.localStorage.setItem(KEY, JSON.stringify(store))
   } catch {
@@ -57,18 +67,34 @@ export function nextDraftName(base: string, taken: Iterable<string>): string {
   return name
 }
 
-/** Prefixed so a draft id can never be mistaken for a built-in's hand-written id
- *  or a server-generated one. */
+/** A plain uuid, like every other item: a draft that gets published keeps the same
+ *  identity rather than being copied to a new one. Where it lives is `owner`, not
+ *  a prefix on the id. */
 const draftId = () =>
-  `local_${typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`
 
 export function createDraft(
   kind: DraftKind,
-  opts: { name: string; payload: DraftPayload; author: string; description?: string; tags?: string[] },
-): LibraryItem {
+  opts: {
+    name: string
+    payload: DraftPayload
+    author: string
+    description?: string
+    tags?: string[]
+    /** The PUBLISHED item this draft is a working copy of, when you own it.
+     *  Publishing then writes that item's next version instead of a new item. */
+    sourceId?: string
+    /** Someone else's published item this was derived from — lineage, not identity. */
+    forkedFromId?: string
+  },
+): Draft {
   const store = loadDrafts()
-  const item: LibraryItem = {
+  const item: Draft = {
     id: draftId(),
+    ...(opts.sourceId ? { sourceId: opts.sourceId } : {}),
+    ...(opts.forkedFromId ? { forkedFromId: opts.forkedFromId } : {}),
     kind,
     name: nextDraftName(
       opts.name,
@@ -97,4 +123,14 @@ export function removeDraft(kind: DraftKind, id: string): void {
   save({ ...store, [kind]: store[kind].filter((d) => d.id !== id) })
 }
 
-export const isDraftId = (id: string) => id.startsWith("local_")
+/** Is this id a local draft? Asked of the store rather than read off the id —
+ *  identity is a plain uuid now, and only the store knows where a thing lives. */
+export function isDraft(kind: DraftKind, id: string): boolean {
+  return loadDrafts()[kind].some((d) => d.id === id)
+}
+
+/** How a draft relates to published content, if at all. */
+export function draftOrigin(kind: DraftKind, id: string): { sourceId?: string; forkedFromId?: string } {
+  const d = loadDrafts()[kind].find((x) => x.id === id)
+  return { sourceId: d?.sourceId, forkedFromId: d?.forkedFromId }
+}

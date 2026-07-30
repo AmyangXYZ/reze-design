@@ -38,6 +38,7 @@ export function SaveCloseDialog({
   return (
     <Dialog open onOpenChange={(o) => !o && onCancel()}>
       <DialogContent
+        onOpenAutoFocus={(e) => e.preventDefault()}
         onCloseAutoFocus={(e) => e.preventDefault()}
         className="w-[22rem] border-white/10 bg-zinc-950/95 p-5 sm:max-w-[22rem]"
       >

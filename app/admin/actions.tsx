@@ -6,7 +6,7 @@
 
 import { useEffect, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Ban, RotateCcw, Trash2 } from "lucide-react"
+import { Ban, PenLine, RotateCcw, Trash2 } from "lucide-react"
 
 
 function useAction() {
@@ -46,6 +46,28 @@ export function ItemControls({ id }: { id: string }) {
         <Trash2 className="size-3.5" />
       </button>
     </div>
+  )
+}
+
+export function RenameUser({ id, username }: { id: string; username: string | null }) {
+  const { run, disabled } = useAction()
+  return (
+    <button
+      disabled={disabled}
+      onClick={() => {
+        const next = prompt("New handle (lowercase letters, digits, - and _):", username ?? "")
+        if (!next || next === username) return
+        void run(`/api/admin/users/${id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ username: next }),
+        })
+      }}
+      className={`${iconBtn} text-muted-foreground hover:bg-white/5 hover:text-foreground`}
+      aria-label="Rename handle"
+    >
+      <PenLine className="size-3.5" />
+    </button>
   )
 }
 

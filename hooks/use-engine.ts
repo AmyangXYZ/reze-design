@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { Engine, Vec3, type ApplyStyleGroupResult, type CompileOptions, type RenderClass, type StyleGroup } from "reze-engine"
 import { SLOT_GRAPHS } from "@/lib/materials"
 import { modelKey, modelPmxUrl, type Scene, type SceneCamera } from "@/lib/scene"
+import { unzipToFiles } from "@/lib/uploads"
 import { sceneFiles } from "@/lib/scene-files"
 import { azElToDirection, hexToLinearVec3, hexToSrgbVec3 } from "@/lib/scene-settings"
 
@@ -58,6 +59,8 @@ export function useEngine(
   const [groupsByModel, setGroupsByModel] = useState<Record<string, StyleGroup[]>>({})
   // Callbacks need the CURRENT model list without re-creating themselves per render (memoized
   const modelsRef = useRef<EngineModelInfo[]>([])
+  // The scene's unzipped asset bundle, for resolving clips and audio by path.
+  const bundleRef = useRef<File[] | null>(null)
   useEffect(() => {
     modelsRef.current = models
   }, [models])
@@ -105,11 +108,33 @@ export function useEngine(
         if (disposed) return
         const infos: EngineModelInfo[] = []
         const groupsMap: Record<string, StyleGroup[]> = {}
+        // A published scene's uploads live in one zip. Fetched once here and shared
+        // by every model in the document; the unzipped File names keep their bundle
+        // paths, which is exactly what the engine resolves textures against.
+        let bundle: File[] | null = null
+        if (scene.assets.bundle) {
+          const res = await fetch(scene.assets.bundle)
+          if (!res.ok) throw new Error(`Can't fetch scene assets: ${res.status}`)
+          bundle = await unzipToFiles(new File([await res.blob()], "assets.zip"))
+          if (disposed) return
+        }
+        bundleRef.current = bundle
         for (const entry of scene.assets.models) {
-          // Zip-sourced scenes (user uploads, once there's blob storage) need a fetch +
-          const pmxUrl = modelPmxUrl(entry.model)
-          if (!pmxUrl) throw new Error(`Zip-sourced models aren't loadable from a URL yet: ${entry.model.file}`)
-          const model = await engine.loadModel(entry.model.id, pmxUrl)
+          const src = entry.model.source
+          let model
+          if (src.kind === "bundle") {
+            const pmxFile = bundle?.find((f) => f.name === src.path)
+            if (!pmxFile) throw new Error(`Missing in scene assets: ${src.path}`)
+            // Scoped to this model's folder: two models in one bundle can share a
+            // texture basename, and the engine's basename fallback would guess.
+            const dir = src.path.slice(0, src.path.lastIndexOf("/") + 1)
+            const files = bundle!.filter((f) => f.name.startsWith(dir))
+            model = await engine.loadModel(entry.model.id, { files, pmxFile })
+          } else {
+            const pmxUrl = modelPmxUrl(entry.model)
+            if (!pmxUrl) throw new Error(`Zip-sourced models aren't loadable from a URL yet: ${entry.model.file}`)
+            model = await engine.loadModel(entry.model.id, pmxUrl)
+          }
           if (disposed) return
           const offset = spawnOffsetX(infos.length)
           if (offset !== 0) engine.setModelTransform(entry.model.id, { position: new Vec3(offset, 0, 0) })
@@ -255,6 +280,9 @@ export function useEngine(
     }
   }, [])
 
+  /** A file out of the scene's asset bundle, by its bundle-relative path. */
+  const bundleFile = useCallback((path: string): File | null => bundleRef.current?.find((f) => f.name === path) ?? null, [])
+
   /** Load a VMD from a URL (a bundled default clip) onto one model, posed at frame 0 but PAUSED */
   const loadVmdUrl = useCallback(async (modelId: string, name: string, url: string): Promise<string | null> => {
     const model = engineRef.current?.getModel(modelId)
@@ -352,6 +380,7 @@ export function useEngine(
     upsertGroup,
     applyGroups,
     resetStyleGroups,
+    bundleFile,
     setCameraView,
     setGroupParam,
     highlight,

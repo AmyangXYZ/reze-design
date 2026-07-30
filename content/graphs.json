@@ -1,5 +1,6 @@
 [
   {
+    "id": "01ac9aff-9110-41be-b3ee-5f6a13c9eaba",
     "kind": "graph",
     "name": "Body",
     "author": "Amyang",
@@ -642,6 +643,7 @@
     }
   },
   {
+    "id": "1fdae04c-ae86-4f0b-8537-72998e47352f",
     "kind": "graph",
     "name": "Eye",
     "author": "Amyang",
@@ -740,6 +742,7 @@
     }
   },
   {
+    "id": "04692a13-963e-42cc-9d86-372764d45abf",
     "kind": "graph",
     "name": "Face",
     "author": "Amyang",
@@ -1469,6 +1472,7 @@
     }
   },
   {
+    "id": "ffbe6bf8-85bc-4e90-aef7-7e1a2c80ecce",
     "kind": "graph",
     "name": "Hair",
     "author": "Amyang",
@@ -1909,6 +1913,7 @@
     }
   },
   {
+    "id": "c8c7bac2-cd74-43c5-8110-701818ae4213",
     "kind": "graph",
     "name": "Metal",
     "author": "Amyang",
@@ -2283,6 +2288,7 @@
     }
   },
   {
+    "id": "c9ce133b-a6d4-44de-a3d5-3ed0d0a7c0df",
     "kind": "graph",
     "name": "Principled BSDF",
     "author": "Amyang",
@@ -2371,6 +2377,7 @@
     }
   },
   {
+    "id": "5d78bb34-6f05-43b2-9b84-0231b298a267",
     "kind": "graph",
     "name": "Rough Cloth",
     "author": "Amyang",
@@ -2769,6 +2776,7 @@
     }
   },
   {
+    "id": "ee356efe-1188-4e1a-860c-299eaa50236a",
     "kind": "graph",
     "name": "Smooth Cloth",
     "author": "Amyang",
@@ -3095,6 +3103,7 @@
     }
   },
   {
+    "id": "c99e277e-588c-4a60-b758-6a03552935ac",
     "kind": "graph",
     "name": "Stockings",
     "author": "Amyang",

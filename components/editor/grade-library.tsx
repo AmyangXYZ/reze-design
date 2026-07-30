@@ -2,7 +2,7 @@
 
 // Grades library — the same three-column shell as the shader-graph and background-effect libraries.
 
-import { Fragment, useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Check, Palette, Plus, Search, SquarePen, X } from "lucide-react"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -17,8 +17,8 @@ import {
 } from "@/lib/grade"
 import { LIBRARY_SHELL, LibraryRail, LibraryStats, LibraryTags } from "@/components/editor/library-rail"
 import { matchesFacet, matchesQuery, type GradeItem, type LibraryFacet } from "@/lib/library"
-import { nextDraftName } from "@/lib/drafts"
-import { addCommunityItem, builtinAuthor, refreshCommunity, removeCommunityItem, useCommunity } from "@/hooks/use-community"
+import { draftOrigin, nextDraftName } from "@/lib/drafts"
+import { addCommunityItem, builtinAuthor, refreshCommunity, removeCommunityItem, renameCommunityItem, useCommunity } from "@/hooks/use-community"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useLibraryStats } from "@/hooks/use-library-stats"
 import { useZOrder } from "@/hooks/use-z-order"
@@ -90,8 +90,20 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
     setRenamingId(null)
     const wanted = raw.trim()
     if (!wanted || wanted === item.name) return
-    const name = nextDraftName(wanted, [...GRADE_PRESETS, ...drafts].filter((x) => x.id !== item.id).map((x) => x.name))
-    updateDraft(item.id, { name })
+    // Deduped against everything visible here, so two rows never share a label.
+    const name = nextDraftName(
+      wanted,
+      [...GRADE_PRESETS, ...community, ...drafts].filter((x) => x.id !== item.id).map((x) => x.name),
+    )
+    if (item.owner === "local") updateDraft(item.id, { name })
+    else {
+      // Published: the server owns the row, and rejects a name you already used.
+      void fetch(`/api/library/${item.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name }),
+      }).then((res) => res.ok && renameCommunityItem(item.id, name))
+    }
     setSelectedId(name)
     onRenamed?.(item.name, name)
   }
@@ -176,14 +188,31 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                   </div>
                 </div>
     )
-    // Card management lives on right-click — the inspector only applies/publishes.
-    if (g.owner !== "local") {
-      // Your own PUBLISHED rows are deletable too — moderation is deletion.
-      if (!(g as { mine?: boolean }).mine) return <Fragment key={g.id}>{card}</Fragment>
-      return (
-        <ContextMenu key={g.id}>
-          <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
-          <ContextMenuContent className="w-40">
+    // One menu on every card: right-click is the discoverable route to editing
+    // (double-click still works). Rename and delete only where they apply.
+    const isDraft = g.owner === "local"
+    const mine = (g as { mine?: boolean }).mine === true
+    return (
+      <ContextMenu key={g.id}>
+        <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
+        <ContextMenuContent className="w-40">
+          <ContextMenuItem onSelect={() => startEdit(g)}>{t.gradeLibrary.edit}</ContextMenuItem>
+          {isDraft && <ContextMenuItem onSelect={() => setRenamingId(g.id)}>{t.graph.rename}</ContextMenuItem>}
+          {isDraft && (
+            <ContextMenuItem
+              variant="danger"
+              onSelect={() => {
+                if (confirm(t.library.deleteDraftConfirm)) removeDraft(g.id)
+              }}
+            >
+              {t.library.deleteDraft}
+            </ContextMenuItem>
+          )}
+          {!isDraft && mine && (
+            <ContextMenuItem onSelect={() => setRenamingId(g.id)}>{t.graph.rename}</ContextMenuItem>
+          )}
+          {!isDraft && mine && (
+            // Your own published rows: moderation is deletion.
             <ContextMenuItem
               variant="danger"
               onSelect={() => {
@@ -195,23 +224,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
             >
               {t.library.deletePublished}
             </ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenu>
-      )
-    }
-    return (
-      <ContextMenu key={g.id}>
-        <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
-        <ContextMenuContent className="w-36">
-          <ContextMenuItem onSelect={() => setRenamingId(g.id)}>{t.graph.rename}</ContextMenuItem>
-          <ContextMenuItem
-            variant="danger"
-            onSelect={() => {
-              if (confirm(t.library.deleteDraftConfirm)) removeDraft(g.id)
-            }}
-          >
-            {t.library.deleteDraft}
-          </ContextMenuItem>
+          )}
         </ContextMenuContent>
       </ContextMenu>
     )
@@ -326,6 +339,8 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                     defaultDescription={selected.description}
                     defaultTags={selected.tags}
                     payload={() => selected.payload}
+                    itemId={draftOrigin("grade", selected.id).sourceId ?? selected.id}
+                    forkedFromId={draftOrigin("grade", selected.id).forkedFromId}
                     className="h-7 w-full"
                     onPublished={(item) => {
                       // Promotion: the draft's content now lives on the server —

@@ -41,7 +41,22 @@ export type SceneAssets = {
   cameraAnimation: AssetRef | null
   audio: AssetRef | null
   background: SceneBackground
+  /** Asset zip these models/clips live in, or null when every path is site-served. */
+  bundle: string | null
 }
+
+/**
+ * A pin to a published library item, at an exact immutable version.
+ *
+ * Versions never change once published, so a pinned scene renders the same
+ * forever while its author keeps iterating — and one pin costs a few bytes where
+ * a snapshot costs kilobytes. Resolution is two-tier: built-ins ship in the app
+ * bundle and resolve with no network, everything else through /api/library/resolve.
+ */
+export type ItemRef = { id: string; version: number }
+
+/** An effect stored BY VALUE: for a draft, which has no published version to pin. */
+export type EffectSnapshot = { name: string; wgsl: string }
 
 /** Orbit framing: how far the camera sits and what it looks at. */
 export type SceneCamera = { distance: number; target: [number, number, number] }
@@ -81,11 +96,14 @@ export type Scene = {
  * A style group as AUTHORED: a display label, which materials, and which shader
  * graph they use. No id — engine keys are minted at parse, like model keys.
  *
- * `graph` is the library NAME when the group uses built-in or published content,
- * and a full ShaderGraph when it uses something unpublished — the same
- * reference-or-snapshot rule as the background effect. Referencing by name keeps a
- * scene small and lets a retuned library graph reach scenes already using it;
- * inlining is what makes an unpublished look survive being shared.
+ * `graph` is a full ShaderGraph in anything the app writes: a published scene is
+ * frozen artwork, so it carries its shading BY VALUE and renders identically
+ * forever — no matter who renames, retunes or deletes the preset it came from, and
+ * with no distinction between built-in and community content.
+ *
+ * A NAME is also accepted, for hand-authored documents in this repo (see
+ * lib/default-scene.ts) where both sides move in one commit. Serialization never
+ * produces one.
  *
  * `role` marks the groups with special pass integration (hair/eye stenciling,
  * stockings' hashed alpha). Not a user choice — the app maintains these groups —
@@ -94,9 +112,18 @@ export type Scene = {
 export type StyleGroupDoc = {
   label?: string
   materials: string[]
-  graph: string | ShaderGraph
+  /**
+   * A pin to a published graph, a full ShaderGraph for an unpublished draft, or a
+   * built-in's NAME (the hand-authored shorthand this repo's own documents use —
+   * serialization never writes one).
+   */
+  graph: ItemRef | ShaderGraph | string
   role?: "hair" | "eye" | "stockings"
 }
+
+/** Distinguishes the three `graph` forms without inspecting a ShaderGraph's shape. */
+export const isItemRef = (v: unknown): v is ItemRef =>
+  typeof v === "object" && v !== null && "id" in v && "version" in v
 
 export type SceneModelDoc = {
   /** Path to the .pmx, or to a .zip containing it. */
@@ -134,9 +161,11 @@ export type SceneAssetsDoc = {
 export type SceneSettingsDoc = Omit<SceneSettings, "background"> & {
   camera: SceneCamera
   background: SceneSettings["background"] & {
-    /** Built-in id, or a full snapshot for an effect the user wrote or edited —
-     *  an id-only field would silently drop custom WGSL when a scene is shared. */
-    effect?: string | AppliedBackgroundEffect | null
+    /**
+     * A pin to a published effect, a snapshot when it is still a draft, or a
+     * built-in's name for this repo's own documents.
+     */
+    effect?: ItemRef | EffectSnapshot | string | null
   }
 }
 
@@ -187,6 +216,27 @@ function parseModelSource(path: string): { source: ModelSource; file: string } {
   return { source: { kind: "folder", dir: path.slice(0, i) }, file: path.slice(i + 1) }
 }
 
+/** The published payloads a pin can resolve to — structurally, so this module
+ *  needn't import the library's payload types. */
+type LibraryPayloadLike = { graph?: ShaderGraph; wgsl?: string; spec?: unknown }
+
+/** The applied effect a document describes: a pin, a snapshot, or a built-in name. */
+function appliedEffect(
+  applied: SceneSettingsDoc["background"]["effect"],
+  resolveEffect: (name: string) => AppliedBackgroundEffect,
+  resolveRef?: (ref: ItemRef) => LibraryPayloadLike | undefined,
+): AppliedBackgroundEffect | null {
+  if (!applied) return null
+  if (typeof applied === "string") return resolveEffect(applied)
+  if (isItemRef(applied)) {
+    const hit = resolveRef?.(applied)
+    // An unresolvable pin means no effect at all, rather than a wrong one.
+    return hit?.wgsl ? { id: applied.id, name: "", wgsl: hit.wgsl } : null
+  }
+  // A snapshot's runtime id is its name, the same aliasing built-ins use.
+  return { id: applied.name, name: applied.name, wgsl: applied.wgsl }
+}
+
 /** Role → engine pass integration, both directions of the round trip. */
 const ROLE_INTEGRATION = {
   hair: { renderClass: "hair" },
@@ -206,8 +256,11 @@ const roleOf = (g: StyleGroup): StyleGroupDoc["role"] =>
  */
 export function parseSceneDoc(
   doc: SceneDoc,
-  resolveEffect: (id: string) => AppliedBackgroundEffect,
-  resolveGraph?: (id: string) => ShaderGraph | undefined,
+  resolveEffect: (name: string) => AppliedBackgroundEffect,
+  resolveGraph?: (name: string) => ShaderGraph | undefined,
+  /** Resolves a pin to its published payload. Built-ins come from the app bundle;
+   *  community items must be fetched first (see resolveSceneRefs). */
+  resolveRef?: (ref: ItemRef) => LibraryPayloadLike | undefined,
 ): Scene {
   // Engine keys for groups are minted here the way newGroupId mints them in the
   // editor: a slug of the label (role as fallback), deduped within the model.
@@ -215,7 +268,11 @@ export function parseSceneDoc(
     const ids = new Set<string>()
     return gs
       .map((g): StyleGroup | null => {
-        const graph = typeof g.graph === "string" ? resolveGraph?.(g.graph) : g.graph
+        const graph = isItemRef(g.graph)
+          ? (resolveRef?.(g.graph) as { graph?: ShaderGraph } | undefined)?.graph
+          : typeof g.graph === "string"
+            ? resolveGraph?.(g.graph)
+            : g.graph
         // A group whose graph can't be resolved is dropped rather than rendered
         // with the wrong look — its materials fall back to the engine default,
         // which is visibly neutral instead of visibly wrong.
@@ -258,6 +315,7 @@ export function parseSceneDoc(
         : doc.assets.skybox
           ? { kind: "skybox", asset: assetFromPath(doc.assets.skybox) }
           : null,
+      bundle: doc.assets.bundle ?? null,
     },
     state: {
       // A parsed document is not yet a saved scene; hydrateScene supplies the
@@ -266,7 +324,7 @@ export function parseSceneDoc(
       name: doc.name,
       camera,
       settings: { ...settings, background: { color: background.color } },
-      backgroundEffect: !applied ? null : typeof applied === "string" ? resolveEffect(applied) : applied,
+      backgroundEffect: appliedEffect(applied, resolveEffect, resolveRef),
       groups: materials.length ? Object.fromEntries(materials.map(([id, m]) => [id, resolveGroups(m.groups)])) : null,
       hidden: hidden.length ? Object.fromEntries(hidden.map(([id, m]) => [id, m.hidden!])) : null,
     },
@@ -298,9 +356,14 @@ function modelPath(m: ModelRef): string {
 /** The pinned engine dependency ("^0.26.0" → "0.26.0") — stamped into documents. */
 const ENGINE_VERSION = pkg.dependencies["reze-engine"].replace(/^[~^]/, "")
 
-/** Snapshot the live editor into the AUTHORED document — the inverse of
- *  parseSceneDoc, and the form a scene is shared/served as. `isBuiltinEffect`
- *  decides whether an applied effect travels as an id or as a full snapshot. */
+/**
+ * Snapshot the live editor into the AUTHORED document — the inverse of
+ * parseSceneDoc, and the form a scene is shared/served as.
+ *
+ * Everything travels BY VALUE: graphs, the background shader, the grade spec. A
+ * published scene is a finished piece, so nothing about how it renders may depend
+ * on content that someone else can still rename, retune or delete.
+ */
 export function serializeSceneDoc(
   live: {
     models: SceneModel[]
@@ -316,17 +379,19 @@ export function serializeSceneDoc(
     groups: Record<string, StyleGroup[]>
     hidden: Record<string, string[]>
   },
-  isBuiltinEffect: (applied: AppliedBackgroundEffect) => boolean,
-  /** The library id this graph came from, if any — so it travels as a reference. */
-  graphId?: (graph: ShaderGraph) => string | undefined,
+  /** Recognises published content by value, so it can be pinned instead of copied. */
+  refs?: {
+    graph: (graph: ShaderGraph) => ItemRef | undefined
+    effect: (wgsl: string) => ItemRef | undefined
+  },
 ): SceneDoc {
   const applied = live.backgroundEffect
   const toDoc = (g: StyleGroup): StyleGroupDoc => ({
     label: g.label,
     materials: g.materials,
-    // The library NAME when the library owns this graph; the whole thing when it
-    // doesn't, so an unpublished look still travels with the scene.
-    graph: graphId?.(g.graph) ?? g.graph,
+    // A pin when this is exactly some published graph; the whole thing when it
+    // isn't — an unpublished draft, or one the user has since edited.
+    graph: refs?.graph(g.graph) ?? g.graph,
     role: roleOf(g),
   })
   return {
@@ -352,9 +417,28 @@ export function serializeSceneDoc(
     settings: {
       camera: live.camera,
       ...live.settings,
-      background: { ...live.settings.background, effect: !applied ? null : isBuiltinEffect(applied) ? applied.id : applied },
+      background: {
+        ...live.settings.background,
+        effect: applied ? (refs?.effect(applied.wgsl) ?? { name: applied.name, wgsl: applied.wgsl }) : null,
+      },
     },
   }
+}
+
+/**
+ * Every published item this document pins. Written to `scene_uses` at publish, so
+ * "used in N scenes" is a join rather than a scan through JSON — and so a preset
+ * page can list the scenes using it.
+ */
+export function sceneRefs(doc: SceneDoc): ItemRef[] {
+  const found = new Map<string, ItemRef>()
+  const add = (v: unknown) => {
+    if (isItemRef(v)) found.set(v.id, v)
+  }
+  add(doc.settings.background.effect)
+  add(doc.settings.grade.from)
+  for (const m of doc.assets.models) for (const g of m.materials?.groups ?? []) add(g.graph)
+  return [...found.values()]
 }
 
 // ── Local persistence: the `state` half only. ──────────────────────────────────

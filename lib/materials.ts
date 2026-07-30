@@ -5,7 +5,7 @@ import { asBuiltins, type GraphItem } from "@/lib/library"
 // Pinned SNAPSHOTS of the engine's presets rather than live imports. The library
 // presents these with authors and dates, so retuning a preset upstream shouldn't
 // silently rewrite what a user sees.
-export const GRAPH_LIBRARY = asBuiltins<GraphItem>(graphs as unknown as Omit<GraphItem, "owner" | "id">[])
+export const GRAPH_LIBRARY = asBuiltins<GraphItem>(graphs as unknown as Omit<GraphItem, "owner">[])
 
 /** Role → graph, for the slots that ship with a default look. */
 export const SLOT_GRAPHS = Object.fromEntries(
@@ -16,17 +16,6 @@ export const SLOT_GRAPHS = Object.fromEntries(
  *  they're unpublished, so a scene that uses one inlines it instead. */
 export function libraryGraph(name: string): GraphItem["payload"]["graph"] | undefined {
   return GRAPH_LIBRARY.find((g) => g.name === name)?.payload.graph
-}
-
-/**
- * The library name a graph came from, or undefined if it's been edited or is a
- * draft. Identity by VALUE, not by a tag carried on the graph: a group's graph is
- * edited in place, and a tag that survived editing would make a scene load
- * somebody else's look. Compared as serialized JSON, which is what travels.
- */
-export function libraryGraphName(graph: GraphItem["payload"]["graph"]): string | undefined {
-  const json = JSON.stringify(graph)
-  return GRAPH_LIBRARY.find((g) => JSON.stringify(g.payload.graph) === json)?.name
 }
 
 /**

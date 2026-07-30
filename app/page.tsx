@@ -37,14 +37,15 @@ import { useT } from "@/lib/i18n"
 import type { ExportAudioSource } from "@/lib/video-export"
 import { MaterialSphereIcon } from "@/components/scene/slot-icons"
 import { DEFAULT_SCENE } from "@/lib/default-scene"
-import { groupLabel, GRAPH_LIBRARY, libraryGraphName, SLOT_GRAPHS } from "@/lib/materials"
+import { groupLabel, GRAPH_LIBRARY, SLOT_GRAPHS } from "@/lib/materials"
 import type { AppliedBackgroundEffect } from "@/lib/background-effects"
-import { GRADE_PRESETS, NEUTRAL_SPEC, gradeSpec, recallIntensity } from "@/lib/grade"
+import { GRADE_PRESETS, NEUTRAL_SPEC, gradeSpec, recallIntensity, specOf } from "@/lib/grade"
 import { quickPickItems, type EffectItem, type GradeItem, type GraphItem, type LibraryFacet } from "@/lib/library"
-import { useCommunity } from "@/hooks/use-community"
+import { communityItems, useCommunity } from "@/hooks/use-community"
+import { effectRef, gradeRef, graphRef } from "@/lib/refs"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useSession } from "@/lib/auth-client"
-import { createDraft, isDraftId, loadDrafts, nextDraftName, updateDraft } from "@/lib/drafts"
+import { createDraft, isDraft, loadDrafts, nextDraftName, updateDraft } from "@/lib/drafts"
 import { BACKGROUND_EFFECTS, builtinEffect } from "@/lib/background-effects"
 import { GradeLibrary } from "@/components/editor/grade-library"
 import { GradeEditorPanel, type GradeEditorSubject } from "@/components/editor/grade-editor"
@@ -80,6 +81,17 @@ function communityQuickPick(items: { name: string }[], applied: string | null) {
     if (hit) shown.push(hit)
   }
   return shown.map((i) => ({ id: i.name, label: i.name, section: "community" as const }))
+}
+
+/**
+ * How a new draft relates to whatever it was edited from: your own published item
+ * (publishing updates it) or someone else's (publishing forks it). Neither, for
+ * a built-in or a from-scratch creation — those simply become new items.
+ */
+function origin(community: { id: string; mine: boolean }[], editedId: string) {
+  const hit = community.find((i) => i.id === editedId)
+  if (!hit) return {}
+  return hit.mine ? { sourceId: hit.id } : { forkedFromId: hit.id }
 }
 
 // Unique kebab id for a new (peeled / created) style group.
@@ -376,12 +388,12 @@ export default function Home() {
     }
     // An existing draft saves in place — unless it stopped compiling, in which
     // case the dialog surfaces the refusal instead of silently keeping a dud.
-    if (isDraftId(graphLibEdit.id) && saveGraphLibEdit(graphLibEdit.name) === null) return
+    if (isDraft("graph", graphLibEdit.id) && saveGraphLibEdit(graphLibEdit.name) === null) return
     setGraphLibEdit({ ...graphLibEdit, savePrompt: true })
   }
   const saveGraphLibEdit = (wanted: string): string | null => {
     if (!graphLibEdit) return null
-    const keep = isDraftId(graphLibEdit.id) ? graphLibEdit.id : undefined
+    const keep = isDraft("graph", graphLibEdit.id) ? graphLibEdit.id : undefined
     const name = freeGraphName(wanted, keep)
     const graph = { ...(graphLibLatest.current ?? graphLibEdit.opened), name }
     // Same rule as effects: a graph that doesn't compile doesn't get saved.
@@ -391,7 +403,13 @@ export default function Home() {
       return err?.message ?? "compile failed"
     }
     if (keep) updateDraft("graph", keep, { name, payload: { graph } })
-    else createDraft("graph", { name, payload: { graph }, author: authorName })
+    else
+      createDraft("graph", {
+        name,
+        payload: { graph },
+        author: authorName,
+        ...origin(communityGraphs, graphLibEdit.id),
+      })
     setGraphLibEdit(null)
     setDrawerOpen(false)
     return null
@@ -670,10 +688,8 @@ export default function Home() {
   // reactive drafts store, so editing a draft live-updates the render.
   const appliedGradeSpec = useMemo(
     () =>
-      gradeEditor
-        ? gradeEditor.subject.spec
-        : gradeSpec(sceneSettings.grade.preset, [...gradeDrafts, ...communityGrades]),
-    [gradeEditor, sceneSettings.grade.preset, gradeDrafts, communityGrades],
+      gradeEditor ? gradeEditor.subject.spec : specOf(sceneSettings.grade, [...gradeDrafts, ...communityGrades]),
+    [gradeEditor, sceneSettings.grade, gradeDrafts, communityGrades],
   )
   const { noteAppliedWgsl } = useSceneSync({
     engineRef,
@@ -707,7 +723,8 @@ export default function Home() {
   // Applying restores the strength you last used this grade at — that memory is
   // UX, so it lives in localStorage rather than the scene.
   const applyGradePreset = useCallback(
-    (name: string) => setSceneSettings((s) => ({ ...s, grade: { preset: name, intensity: recallIntensity(name) } })),
+    (name: string) =>
+      setSceneSettings((s) => ({ ...s, grade: { preset: name, intensity: recallIntensity(name) } })),
     [],
   )
 
@@ -744,7 +761,7 @@ export default function Home() {
       return
     }
     // An existing draft has a home — save in place, no questions.
-    if (isDraftId(subject.id)) {
+    if (isDraft("grade", subject.id)) {
       updateDraft("grade", subject.id, { payload: { spec: subject.spec } })
       setGradeEditor(null)
       return
@@ -754,17 +771,25 @@ export default function Home() {
   const saveGradeEdit = (wanted: string) => {
     if (!gradeEditor) return
     const { subject } = gradeEditor
-    const keep = isDraftId(subject.id) ? subject.id : undefined
+    const keep = isDraft("grade", subject.id) ? subject.id : undefined
     const name = freeGradeName(wanted, keep)
     if (keep) updateDraft("grade", keep, { name, payload: { spec: subject.spec } })
-    else createDraft("grade", { name, payload: { spec: subject.spec }, author: authorName })
+    else
+      createDraft("grade", {
+        name,
+        payload: { spec: subject.spec },
+        author: authorName,
+        // Editing your OWN published preset makes a working copy of it, so
+        // publishing writes that item's next version instead of a second item.
+        ...origin(communityGrades, subject.id),
+      })
     applyGradePreset(name)
     setGradeEditor(null)
   }
   // The three libraries are non-modal and share a z-index, so two open at once simply occlude
   const applyGraphToGroup = useCallback(
     (groupId: string, graphName: string) => {
-      const entry = [...loadDrafts().graph, ...communityGraphs, ...GRAPH_LIBRARY].find(
+      const entry = [...loadDrafts().graph, ...communityItems("graph"), ...GRAPH_LIBRARY].find(
         (e) => e.name === graphName,
       ) as GraphItem | undefined
       const group = groups.find((g) => g.id === groupId)
@@ -774,7 +799,7 @@ export default function Home() {
       else void applyGroups(groups.map((x) => (x.id === groupId ? updated : x)))
       setLibVersion((v) => v + 1)
     },
-    [groups, upsertGroup, applyGroups, communityGraphs],
+    [groups, upsertGroup, applyGroups],
   )
 
   // Restore the active model's grouping from the pristine scene document — not the
@@ -869,7 +894,7 @@ export default function Home() {
     }
     // An existing draft saves in place when it compiles; a refusal (or a nameless
     // new effect) goes through the dialog.
-    if (isDraftId(effectEditor.subject.id)) {
+    if (isDraft("effect", effectEditor.subject.id)) {
       const engine = engineRef.current
       const r = engine ? await engine.setBackgroundEffect(code) : { ok: false }
       if (r.ok) {
@@ -899,15 +924,22 @@ export default function Home() {
     const { subject, savePrompt: code } = effectEditor
     // A broken shader must not land in the library — it would be auto-applied on
     // every future pick. Compiling IS applying, which is also what save wants.
+    const isExisting = isDraft("effect", subject.id)
     const engine = engineRef.current
     const r = engine ? await engine.setBackgroundEffect(code) : { ok: false, diagnostics: ["engine not ready"] }
     if (!r.ok) return r.diagnostics[0] ?? "compile failed"
     noteAppliedWgsl(code)
-    const keep = isDraftId(subject.id) ? subject.id : undefined
+    const keep = isExisting ? subject.id : undefined
     const name = freeEffectName(wanted, keep)
     let id = keep
     if (keep) updateDraft("effect", keep, { name, payload: { wgsl: code } })
-    else id = createDraft("effect", { name, payload: { wgsl: code }, author: authorName }).id
+    else
+      id = createDraft("effect", {
+        name,
+        payload: { wgsl: code },
+        author: authorName,
+        ...origin(communityEffects, subject.id),
+      }).id
     setBgEffect({ id: id!, name, wgsl: code })
     setEffectEditor(null)
     return null
@@ -1215,8 +1247,6 @@ export default function Home() {
         .map((m) => [m.id, m.materials.filter((mat) => !mat.visible).map((mat) => mat.name)] as const)
         .filter(([, names]) => names.length),
     )
-    const isBuiltinEffect = (applied: AppliedBackgroundEffect) =>
-      BACKGROUND_EFFECTS.some((e) => e.name === applied.name && e.payload.wgsl === applied.wgsl)
     return {
       entries,
       makeDoc: (bundle) =>
@@ -1229,13 +1259,22 @@ export default function Home() {
             bundle,
             name: sceneName,
             camera: sceneCamera,
-            settings: sceneSettings,
+            // A published grade pins; anything else carries its spec. `preset`
+            // is the label either way.
+            settings: {
+              ...sceneSettings,
+              grade: (() => {
+                const ref = gradeRef(appliedGradeSpec)
+                return ref
+                  ? { preset: sceneSettings.grade.preset, intensity: sceneSettings.grade.intensity, from: ref }
+                  : { ...sceneSettings.grade, spec: appliedGradeSpec }
+              })(),
+            },
             backgroundEffect: bgEffect,
             groups: groupsByModel,
             hidden,
           },
-          isBuiltinEffect,
-          libraryGraphName,
+          { graph: graphRef, effect: effectRef },
         ),
     }
   }
@@ -1751,8 +1790,8 @@ export default function Home() {
       )}
       {mounted && effectEditor?.savePrompt != null && (
         <SaveCloseDialog
-          defaultName={isDraftId(effectEditor.subject.id) ? effectEditor.subject.name : freeEffectName(effectEditor.subject.name)}
-          askName={!isDraftId(effectEditor.subject.id)}
+          defaultName={isDraft("effect", effectEditor.subject.id) ? effectEditor.subject.name : freeEffectName(effectEditor.subject.name)}
+          askName={!isDraft("effect", effectEditor.subject.id)}
           onSave={saveEffectEdit}
           onDiscard={discardEffectEdit}
           onCancel={() => setEffectEditor((prev) => (prev ? { ...prev, savePrompt: null } : prev))}
@@ -1797,8 +1836,8 @@ export default function Home() {
       )}
       {mounted && graphLibEdit?.savePrompt && (
         <SaveCloseDialog
-          defaultName={isDraftId(graphLibEdit.id) ? graphLibEdit.name : freeGraphName(graphLibEdit.name)}
-          askName={!isDraftId(graphLibEdit.id)}
+          defaultName={isDraft("graph", graphLibEdit.id) ? graphLibEdit.name : freeGraphName(graphLibEdit.name)}
+          askName={!isDraft("graph", graphLibEdit.id)}
           onSave={saveGraphLibEdit}
           onDiscard={discardGraphLibEdit}
           onCancel={() => setGraphLibEdit((prev) => (prev ? { ...prev, savePrompt: false } : prev))}

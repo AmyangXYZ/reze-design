@@ -41,5 +41,5 @@ export async function POST(request: Request) {
     new PutObjectCommand({ Bucket: process.env.R2_BUCKET, Key: key, ContentType: "application/zip" }),
     { expiresIn: 600 },
   )
-  return NextResponse.json({ uploadUrl, publicUrl: `${process.env.R2_PUBLIC_BASE_URL}/${key}` })
+  return NextResponse.json({ uploadUrl, key, publicUrl: `${process.env.R2_PUBLIC_BASE_URL}/${key}` })
 }

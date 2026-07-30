@@ -64,6 +64,18 @@ export function builtinAuthor(kind: LibraryKind, name: string, fallback: string)
   return builtinAuthors.get(`${kind}:${name}`) ?? fallback
 }
 
+/** The cached rows for a kind, without subscribing — for callbacks that must not
+ *  re-create themselves every time the cache changes. */
+export function communityItems(kind: LibraryKind): CommunityItem[] {
+  return (cache ?? []).filter((i) => i.kind === kind)
+}
+
+/** Reflect a rename the server accepted. */
+export function renameCommunityItem(id: string, name: string) {
+  cache = (cache ?? []).map((i) => (i.id === id ? { ...i, name } : i))
+  for (const l of listeners) l()
+}
+
 /** Drop a row the server just deleted, without waiting for a refetch. */
 export function removeCommunityItem(id: string) {
   cache = (cache ?? []).filter((i) => i.id !== id)

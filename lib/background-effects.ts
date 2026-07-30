@@ -56,4 +56,4 @@ fn noise2(p: vec2f) -> f32 {
 }
 `
 
-export const BACKGROUND_EFFECTS = asBuiltins<EffectItem>(effects as Omit<EffectItem, "owner" | "id">[])
+export const BACKGROUND_EFFECTS = asBuiltins<EffectItem>(effects as Omit<EffectItem, "owner">[])

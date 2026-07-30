@@ -9,12 +9,12 @@
 //   Server-side columns — owner_id, like_count, visibility, timestamps, license,
 //     moderation status — never leave the database and can be added freely.
 //
-// Builtins live in content/*.json and ship with the bundle. THEY CARRY NO IDS:
-// ids are machine-minted, never authored — the database mints uuids when the seed
-// mirrors them, drafts mint local_<uuid>, publishes mint uuids. The human key is
-// the NAME, unique per kind, which is also how scene documents reference library
-// content. Client-side, asBuiltins aliases id = name so selection code has one
-// key type; the alias is derived, not authored.
+// EVERY item has a permanent uuid, and it is the only identity that matters.
+// Built-ins carry theirs in content/*.json (authored once, never regenerated —
+// otherwise a reseed would orphan every like and usage stat pointing at one);
+// drafts mint one at creation and keep it through publishing, so a preset is the
+// same entity before and after it becomes public. Names are display only: they
+// are unique per author for that author's sanity, and they can change freely.
 
 import type { MaterialPreset, ShaderGraph } from "reze-engine"
 import type { GradeSpec } from "@/lib/grade"
@@ -39,14 +39,12 @@ export type EffectPayload = { wgsl: string }
 export type ScenePayload = { doc: SceneDoc }
 
 export type LibraryItem<K extends LibraryKind = LibraryKind, P = unknown> = {
-  /** Machine-minted, never authored: uuid for server rows, local_<uuid> for
-   *  drafts, and =name for builtins (a derived alias — builtins have no stored
-   *  id; their identity is the name). */
+  /** Permanent uuid. Never shown to users, never reused, never changes — a
+   *  renamed, republished or forked item keeps it. */
   id: string
   kind: K
-  /** Canonical (English) name — UNIQUE PER KIND, and the key scene documents
-   *  reference library content by. The UI prefers a localized override when one
-   *  exists — community items simply have none. */
+  /** Display name — unique per author, and free to change. The UI prefers a
+   *  localized override when one exists; community items simply have none. */
   name: string
   /** Display name, denormalized so a snapshot needs no join to render. */
   author: string
@@ -99,12 +97,14 @@ export function matchesQuery(item: LibraryItem, query: string, displayName = ite
 }
 
 /** Stamp repo content as builtin at load — the JSON files stay lean. */
-export function asBuiltins<T extends LibraryItem>(items: Omit<T, "owner" | "id">[]): T[] {
+export function asBuiltins<T extends LibraryItem>(items: Omit<T, "owner">[]): T[] {
   if (process.env.NODE_ENV !== "production") {
-    const dupes = items.map((i) => i.name).filter((n, x, a) => a.indexOf(n) !== x)
-    if (dupes.length) throw new Error(`duplicate builtin names: ${dupes.join(", ")}`)
+    for (const key of ["id", "name"] as const) {
+      const dupes = items.map((i) => i[key]).filter((v, x, a) => a.indexOf(v) !== x)
+      if (dupes.length) throw new Error(`duplicate builtin ${key}: ${dupes.join(", ")}`)
+    }
   }
-  return items.map((i) => ({ ...i, id: i.name, owner: "builtin" }) as T)
+  return items.map((i) => ({ ...i, owner: "builtin" }) as T)
 }
 
 /**
