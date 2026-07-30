@@ -19,6 +19,7 @@ import { LIBRARY_SHELL, LibraryRail, LibraryStats, LibraryTags } from "@/compone
 import { matchesFacet, matchesQuery, type EffectItem, type LibraryFacet } from "@/lib/library"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
 import { nextDraftName } from "@/lib/drafts"
+import { addCommunityItem, useCommunity } from "@/hooks/use-community"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useLibraryStats } from "@/hooks/use-library-stats"
 import { useZOrder } from "@/hooks/use-z-order"
@@ -72,7 +73,8 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onRenamed, o
 
   const { drafts, update: updateDraft, remove: removeDraft } = useDrafts<EffectItem>("effect")
   // Built-ins lead in name order; drafts follow in creation order.
-  const all = useMemo(() => [...BACKGROUND_EFFECTS, ...drafts], [drafts])
+  const community = useCommunity<EffectItem>("effect")
+  const all = useMemo(() => [...BACKGROUND_EFFECTS, ...community, ...drafts], [community, drafts])
   const selected: EffectItem | null = useMemo(() => all.find((e) => e.id === selectedId) ?? null, [all, selectedId])
   // Draft = what Apply applies for the current selection.
   const [draft, setDraft] = useState<AppliedBackgroundEffect | null>(() => seedDraft(selected, applied))
@@ -290,6 +292,13 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onRenamed, o
                     defaultTags={selected.tags}
                     payload={() => selected.payload}
                     className="h-7 w-full"
+                    onPublished={(item) => {
+                      // Promotion: the draft's content now lives on the server —
+                      // keeping the local copy would show the same thing twice.
+                      addCommunityItem(item)
+                      removeDraft(selected.id)
+                      onRenamed?.(selected.name, item.name)
+                    }}
                   />
                 )}
                   {isAppliedSelected ? (

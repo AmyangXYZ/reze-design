@@ -18,6 +18,7 @@ import {
 import { LIBRARY_SHELL, LibraryRail, LibraryStats, LibraryTags } from "@/components/editor/library-rail"
 import { matchesFacet, matchesQuery, type GradeItem, type LibraryFacet } from "@/lib/library"
 import { nextDraftName } from "@/lib/drafts"
+import { addCommunityItem, useCommunity } from "@/hooks/use-community"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useLibraryStats } from "@/hooks/use-library-stats"
 import { useZOrder } from "@/hooks/use-z-order"
@@ -70,7 +71,8 @@ function LibraryContent({ onOpenChange, grade, onApplyPreset, onRenamed, onEdit 
 
   const { drafts, update: updateDraft, remove: removeDraft } = useDrafts<GradeItem>("grade")
   // Drafts first: what you're working on is what you came back for.
-  const all = useMemo(() => [...GRADE_PRESETS, ...drafts], [drafts])
+  const community = useCommunity<GradeItem>("grade")
+  const all = useMemo(() => [...GRADE_PRESETS, ...community, ...drafts], [community, drafts])
   const selected = all.find((g) => g.name === selectedId) ?? all[0]
 
   const rows = useMemo(
@@ -300,6 +302,14 @@ function LibraryContent({ onOpenChange, grade, onApplyPreset, onRenamed, onEdit 
                     defaultTags={selected.tags}
                     payload={() => selected.payload}
                     className="h-7 w-full"
+                    onPublished={(item) => {
+                      // Promotion: the draft's content now lives on the server —
+                      // keeping the local copy would show the same thing twice.
+                      addCommunityItem(item)
+                      removeDraft(selected.id)
+                      setSelectedId(item.name)
+                      onRenamed?.(selected.name, item.name)
+                    }}
                   />
                 )}
                 <Button

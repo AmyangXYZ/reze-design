@@ -62,6 +62,10 @@ export type LibraryItem<K extends LibraryKind = LibraryKind, P = unknown> = {
 /** `local` is an unpublished draft, held in localStorage — see lib/drafts.ts. */
 export type LibraryOwner = "builtin" | "user" | "local"
 
+/** Client-side flag on community rows: the signed-in user's own published work.
+ *  Never stored — it depends on who is asking. */
+export type MaybeMine = { mine?: boolean }
+
 export type GradeItem = LibraryItem<"grade", GradePayload>
 export type GraphItem = LibraryItem<"graph", GraphPayload>
 export type EffectItem = LibraryItem<"effect", EffectPayload>
@@ -74,14 +78,13 @@ export type LibraryFacet = "all" | "featured" | "yours"
 
 export const LIBRARY_FACETS: LibraryFacet[] = ["all", "featured", "yours"]
 
-export function matchesFacet(item: LibraryItem, facet: LibraryFacet): boolean {
+export function matchesFacet(item: LibraryItem & MaybeMine, facet: LibraryFacet): boolean {
   if (facet === "all") return true
   if (facet === "featured") return item.owner === "builtin"
-  // "Yours" means yours — drafts included. Splitting drafts into their own facet
-  // made "Yours" exclude your own work in progress, which reads as a bug. The
-  // `local` badge already says which is published and which isn't, so the rail
-  // doesn't need to say it twice.
-  return item.owner === "user" || item.owner === "local"
+  // "Yours" means yours — drafts AND your published rows, not everyone's
+  // community items. Splitting drafts into their own facet made "Yours" exclude
+  // work in progress, which reads as a bug.
+  return item.owner === "local" || item.mine === true
 }
 
 /** Name · author · tags, all case-insensitive. */

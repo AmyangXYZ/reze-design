@@ -84,9 +84,17 @@ export function QuickPick({
         onCloseAutoFocus={(e) => e.preventDefault()}
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        {/* Built-ins (and community, once it lands) scroll in the main area; local
-            drafts hold a small compartment pinned at the bottom. */}
-        <ScrollArea className="max-h-48">{items.filter((i) => (i.section ?? "builtin") !== "local").map(row)}</ScrollArea>
+        {/* Built-ins and community scroll in the main area; local drafts hold a
+            small compartment pinned at the bottom. */}
+        <ScrollArea className="max-h-48">
+          {items.filter((i) => (i.section ?? "builtin") === "builtin").map(row)}
+          {items.some((i) => i.section === "community") && (
+            <div className="px-2 pt-1.5 pb-1 text-[9px] font-medium tracking-[0.14em] text-muted-foreground/60 uppercase">
+              {t.rail.community}
+            </div>
+          )}
+          {items.filter((i) => i.section === "community").map(row)}
+        </ScrollArea>
         {items.some((i) => i.section === "local") && (
           <div className="mt-1 border-t border-white/10 pt-1">
             <div className="px-2 pt-0.5 pb-1 text-[9px] font-medium tracking-[0.14em] text-muted-foreground/60 uppercase">

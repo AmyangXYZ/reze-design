@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } 
 import { Input } from "@/components/ui/input"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { usePublish } from "@/hooks/use-publish"
-import type { LibraryKind } from "@/lib/library"
+import type { LibraryItem, LibraryKind } from "@/lib/library"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
@@ -24,6 +24,7 @@ export function PublishButton({
   defaultTags = [],
   payload,
   className,
+  onPublished,
 }: {
   kind: Exclude<LibraryKind, "scene">
   defaultName: string
@@ -32,16 +33,18 @@ export function PublishButton({
   /** Read at submit time, so it captures the latest edits rather than a stale copy. */
   payload: () => unknown
   className?: string
+  /** Fires with the created row — the library uses it to promote a draft. */
+  onPublished?: (item: LibraryItem) => void
 }) {
   const t = useT()
-  const { signedIn, publishing, published, failed, publish } = usePublish(kind)
+  const { signedIn, publishing, published, failed, nameTaken, publish } = usePublish(kind)
   const [open, setOpen] = useState(false)
   const [name, setName] = useState(defaultName)
   const [description, setDescription] = useState(defaultDescription)
   const [tags, setTags] = useState(defaultTags.join(", "))
 
   const submit = async () => {
-    await publish(name.trim() || defaultName, payload(), {
+    const item = await publish(name.trim() || defaultName, payload(), {
       description: description.trim(),
       tags: tags
         .split(",")
@@ -49,6 +52,10 @@ export function PublishButton({
         .filter(Boolean)
         .slice(0, MAX_TAGS),
     })
+    // A name conflict keeps the dialog open for a rename; other failures show
+    // inline too. Only success closes.
+    if (!item) return
+    onPublished?.(item)
     setOpen(false)
   }
 
@@ -122,6 +129,7 @@ export function PublishButton({
             />
           </label>
           {failed && <div className="text-[11px] text-red-400">{t.gradeLibrary.publishFailed}</div>}
+          {nameTaken && <div className="text-[11px] text-red-400">{t.library.nameTaken}</div>}
           <Button
             type="submit"
             disabled={publishing}

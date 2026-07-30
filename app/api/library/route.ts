@@ -5,6 +5,7 @@
 // stable id and a name under which others will see it.
 
 import { NextResponse } from "next/server"
+import { asc, eq } from "drizzle-orm"
 import { auth } from "@/lib/auth"
 import { db, schema } from "@/lib/db"
 import type { LibraryKind } from "@/lib/library"
@@ -13,6 +14,38 @@ const KINDS: LibraryKind[] = ["grade", "graph", "effect", "scene"]
 const MAX_NAME = 60
 const MAX_DESCRIPTION = 500
 const MAX_TAGS = 8
+
+/**
+ * The community library: every public row, all kinds — the client filters by
+ * kind. One request feeds the three libraries, the quick-picks, and name
+ * resolution, mirroring how /stats already works. `mine` marks the caller's own
+ * rows so the "Yours" facet can include published work next to local drafts.
+ */
+export async function GET(request: Request) {
+  const session = await auth.api.getSession({ headers: request.headers })
+  const rows = await db
+    .select({
+      id: schema.libraryItems.id,
+      kind: schema.libraryItems.kind,
+      name: schema.libraryItems.name,
+      author: schema.libraryItems.author,
+      description: schema.libraryItems.description,
+      tags: schema.libraryItems.tags,
+      version: schema.libraryItems.version,
+      payload: schema.libraryItems.payload,
+      ownerId: schema.libraryItems.ownerId,
+    })
+    .from(schema.libraryItems)
+    .where(eq(schema.libraryItems.visibility, "public"))
+    // Oldest first — new arrivals land at the end, like everywhere else.
+    .orderBy(asc(schema.libraryItems.createdAt))
+  const items = rows.map(({ ownerId, ...r }) => ({
+    ...r,
+    owner: "user" as const,
+    mine: !!session && ownerId === session.user.id,
+  }))
+  return NextResponse.json({ items })
+}
 
 export async function POST(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers })

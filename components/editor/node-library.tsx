@@ -15,6 +15,7 @@ import { LIBRARY_SHELL, LibraryRail, LibraryStats, LibraryTags } from "@/compone
 import { matchesFacet, matchesQuery, type GraphItem, type LibraryFacet } from "@/lib/library"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
 import { nextDraftName } from "@/lib/drafts"
+import { addCommunityItem, useCommunity } from "@/hooks/use-community"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useLibraryStats } from "@/hooks/use-library-stats"
 import { useZOrder } from "@/hooks/use-z-order"
@@ -57,7 +58,8 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRe
   // stack closes only the topmost surface.
   const { drafts, update: updateDraft, remove: removeDraft } = useDrafts<GraphItem>("graph")
   // Built-ins lead in name order; drafts follow in creation order.
-  const ROWS = useMemo(() => [...GRAPH_LIBRARY, ...drafts], [drafts])
+  const community = useCommunity<GraphItem>("graph")
+  const ROWS = useMemo(() => [...GRAPH_LIBRARY, ...community, ...drafts], [community, drafts])
   const { statFor, signedIn, toggleLike } = useLibraryStats("graph")
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, onClose)
   const [query, setQuery] = useState("")
@@ -272,6 +274,13 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRe
                     defaultTags={selected.tags}
                     payload={() => selected.payload}
                     className="h-7 w-full"
+                    onPublished={(item) => {
+                      // Promotion: the draft's content now lives on the server —
+                      // keeping the local copy would show the same thing twice.
+                      addCommunityItem(item)
+                      removeDraft(selected.id)
+                      
+                    }}
                   />
                 )}
                 <Button

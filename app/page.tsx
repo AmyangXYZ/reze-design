@@ -41,6 +41,7 @@ import { groupLabel, GRAPH_LIBRARY, SLOT_GRAPHS } from "@/lib/materials"
 import type { AppliedBackgroundEffect } from "@/lib/background-effects"
 import { GRADE_PRESETS, NEUTRAL_SPEC, gradeSpec, recallIntensity } from "@/lib/grade"
 import { quickPickItems, type EffectItem, type GradeItem, type GraphItem } from "@/lib/library"
+import { useCommunity } from "@/hooks/use-community"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useSession } from "@/lib/auth-client"
 import { createDraft, isDraftId, loadDrafts, nextDraftName, updateDraft } from "@/lib/drafts"
@@ -58,6 +59,16 @@ const FRAME_ASPECT_TOL = 1.03
 
 // How long edits settle before the working scene is written to localStorage.
 const SAVE_SETTLE_MS = 1000
+
+/** Community rows for a quick-pick: a few, plus whatever is applied. */
+function communityQuickPick(items: { name: string }[], applied: string | null) {
+  const shown = items.slice(0, 3)
+  if (applied && !shown.some((i) => i.name === applied)) {
+    const hit = items.find((i) => i.name === applied)
+    if (hit) shown.push(hit)
+  }
+  return shown.map((i) => ({ id: i.name, label: i.name, section: "community" as const }))
+}
 
 // Unique kebab id for a new (peeled / created) style group.
 const newGroupId = (material: string, groups: StyleGroup[]): string => {
@@ -625,6 +636,11 @@ export default function Home() {
   // Everything a published scene needs pushed at the engine — the viewer will
   // call this same hook with a fetched document and no editing around it.
   const { drafts: gradeDrafts } = useDrafts<GradeItem>("grade")
+  // Community rows join name resolution and the quick-picks — same names, same
+  // rules, different provenance.
+  const communityGrades = useCommunity<GradeItem>("grade")
+  const communityEffects = useCommunity<EffectItem>("effect")
+  const communityGraphs = useCommunity<GraphItem>("graph")
   // Floating grade editor — an independent panel like the graph/WGSL editors, opened
   // per subject. The editor is a SCRATCHPAD: `subject` is the working copy, live on
   // the render but written nowhere. Only the save-on-close dialog creates or
@@ -638,8 +654,11 @@ export default function Home() {
   // The scene stores the grade NAME; the spec resolves against built-ins and the
   // reactive drafts store, so editing a draft live-updates the render.
   const appliedGradeSpec = useMemo(
-    () => (gradeEditor ? gradeEditor.subject.spec : gradeSpec(sceneSettings.grade.preset, gradeDrafts)),
-    [gradeEditor, sceneSettings.grade.preset, gradeDrafts],
+    () =>
+      gradeEditor
+        ? gradeEditor.subject.spec
+        : gradeSpec(sceneSettings.grade.preset, [...gradeDrafts, ...communityGrades]),
+    [gradeEditor, sceneSettings.grade.preset, gradeDrafts, communityGrades],
   )
   const { noteAppliedWgsl } = useSceneSync({
     engineRef,
@@ -728,7 +747,9 @@ export default function Home() {
   // The three libraries are non-modal and share a z-index, so two open at once simply occlude
   const applyGraphToGroup = useCallback(
     (groupId: string, graphName: string) => {
-      const entry = [...loadDrafts().graph, ...GRAPH_LIBRARY].find((e) => e.name === graphName) as GraphItem | undefined
+      const entry = [...loadDrafts().graph, ...communityGraphs, ...GRAPH_LIBRARY].find(
+        (e) => e.name === graphName,
+      ) as GraphItem | undefined
       const group = groups.find((g) => g.id === groupId)
       if (!entry || !group) return
       const updated: StyleGroup = { ...group, graph: { ...entry.payload.graph, name: entry.name } }
@@ -736,7 +757,7 @@ export default function Home() {
       else void applyGroups(groups.map((x) => (x.id === groupId ? updated : x)))
       setLibVersion((v) => v + 1)
     },
-    [groups, upsertGroup, applyGroups],
+    [groups, upsertGroup, applyGroups, communityGraphs],
   )
 
   // Restore the active model's grouping from the pristine scene document — not the
@@ -1174,12 +1195,15 @@ export default function Home() {
   const appliedGradeDraftId = gradeDrafts.find((d) => d.name === sceneSettings.grade.preset)?.id ?? null
   const gradeItems = useMemo(
     () =>
-      quickPickItems(GRADE_PRESETS, gradeDrafts, appliedGradeDraftId).map((g) => ({
-        id: g.name,
-        label: t.scene.gradePresets[g.name as keyof typeof t.scene.gradePresets] ?? g.name,
-        section: g.owner === "local" ? ("local" as const) : ("builtin" as const),
-      })),
-    [t, gradeDrafts, appliedGradeDraftId],
+      [
+        ...quickPickItems(GRADE_PRESETS, gradeDrafts, appliedGradeDraftId).map((g) => ({
+          id: g.name,
+          label: t.scene.gradePresets[g.name as keyof typeof t.scene.gradePresets] ?? g.name,
+          section: g.owner === "local" ? ("local" as const) : ("builtin" as const),
+        })),
+        ...communityQuickPick(communityGrades, sceneSettings.grade.preset),
+      ],
+    [t, gradeDrafts, appliedGradeDraftId, communityGrades, sceneSettings.grade.preset],
   )
   // The built-in spec an edit descends from. Neutral, never NEW_GRADE_SPEC:
   // "revert" means back to no grade, not to the editor's authoring starting point.
@@ -1210,11 +1234,14 @@ export default function Home() {
   // draft. During an editor session the applied row carries the hint live; saving
   // or discarding clears it. An unsaved new effect gets a transient row.
   const effectItems = useMemo(() => {
-    const items = quickPickItems(BACKGROUND_EFFECTS, effectDrafts, bgEffect?.id ?? null).map((e) => ({
-      id: e.name,
-      label: e.name,
-      section: e.owner === "local" ? ("local" as const) : ("builtin" as const),
-    }))
+    const items = [
+      ...quickPickItems(BACKGROUND_EFFECTS, effectDrafts, bgEffect?.id ?? null).map((e) => ({
+        id: e.name,
+        label: e.name,
+        section: e.owner === "local" ? ("local" as const) : ("builtin" as const),
+      })),
+      ...communityQuickPick(communityEffects, bgEffect?.name ?? null),
+    ]
     if (!bgEffect) return items
     const pristine = [...BACKGROUND_EFFECTS, ...effectDrafts].some(
       (e) => e.name === bgEffect.name && e.payload.wgsl === bgEffect.wgsl,
@@ -1223,20 +1250,21 @@ export default function Home() {
     const known = items.some((i) => i.id === bgEffect.name)
     const withOwn = known ? items : [...items, { id: bgEffect.name, label: bgEffect.name, section: "local" as const }]
     return withOwn.map((i) => (i.id === bgEffect.name ? { ...i, hint: t.scene.edited } : i))
-  }, [bgEffect, effectDrafts, t])
+  }, [bgEffect, effectDrafts, communityEffects, t])
   const pickEffect = useCallback(
     (name: string) => {
-      const draft = loadDrafts().effect.find((e) => e.name === name) as EffectItem | undefined
-      if (draft) {
-        // A draft carries its own shader, so it applies by value — there is no
-        // built-in to resolve it against.
-        setBgEffect({ id: draft.id, name: draft.name, wgsl: draft.payload.wgsl })
+      const own = [...loadDrafts().effect, ...communityEffects].find((e) => e.name === name) as
+        | EffectItem
+        | undefined
+      if (own) {
+        // Drafts and community rows carry their own shader — they apply by value.
+        setBgEffect({ id: own.id, name: own.name, wgsl: own.payload.wgsl })
         return
       }
       const def = BACKGROUND_EFFECTS.find((e) => e.name === name)
       if (def) setBgEffect(builtinEffect(def.id))
     },
-    [setBgEffect],
+    [setBgEffect, communityEffects],
   )
 
   // Character cards (Assets tab) + model strip (Materials tab)
