@@ -14,6 +14,7 @@ export type AssetRef = { name: string; url: string }
 export type ModelSource =
   | { kind: "folder"; dir: string }  // folder URL, no trailing slash
   | { kind: "zip"; url: string }     // archive URL
+  | { kind: "bundle"; path: string } // inside the scene's asset bundle
 
 export type ModelRef = {
   /** Engine key, unique within the scene. Never authored — minted from the .pmx
@@ -117,6 +118,12 @@ export type SceneAssetsDoc = {
    *  backdrop wins over a set skybox, matching the editor's replace behaviour. */
   backdrop?: string | null
   skybox?: string | null
+  /**
+   * URL of the scene's asset zip. Paths above that don't start with "/" or a
+   * scheme are relative to this bundle; site-served demo assets keep absolute
+   * paths and are never re-uploaded.
+   */
+  bundle?: string | null
 }
 
 /**
@@ -169,9 +176,13 @@ export function modelKey(file: string, taken: Iterable<string>): string {
   return `${base}-${n}`
 }
 
-/** Split "/dir/file.pmx" into a folder source, or route a .zip to its own kind. */
+/** Split "/dir/file.pmx" into a folder source, route a .zip to its own kind, and
+ *  read a relative path as living inside the scene's asset bundle. */
 function parseModelSource(path: string): { source: ModelSource; file: string } {
   if (/\.zip$/i.test(path)) return { source: { kind: "zip", url: path }, file: path.split("/").pop() ?? path }
+  if (!path.startsWith("/") && !/^https?:/.test(path)) {
+    return { source: { kind: "bundle", path }, file: path.split("/").pop() ?? path }
+  }
   const i = path.lastIndexOf("/")
   return { source: { kind: "folder", dir: path.slice(0, i) }, file: path.slice(i + 1) }
 }
@@ -279,7 +290,9 @@ export function modelPmxUrl(model: ModelRef): string | null {
 
 /** Path a model loads from — the inverse of parseModelSource. */
 function modelPath(m: ModelRef): string {
-  return m.source.kind === "zip" ? m.source.url : `${m.source.dir}/${m.file}`
+  if (m.source.kind === "zip") return m.source.url
+  if (m.source.kind === "bundle") return m.source.path
+  return `${m.source.dir}/${m.file}`
 }
 
 /** The pinned engine dependency ("^0.26.0" → "0.26.0") — stamped into documents. */
@@ -294,6 +307,8 @@ export function serializeSceneDoc(
     cameraAnimation: AssetRef | null
     audio: AssetRef | null
     background: SceneBackground
+    /** Public URL of the uploaded asset zip, or null for a bundle-free scene. */
+    bundle: string | null
     name: string
     camera: SceneCamera
     settings: SceneSettings
@@ -332,6 +347,7 @@ export function serializeSceneDoc(
       audio: live.audio?.url ?? null,
       backdrop: live.background?.kind === "backdrop" ? live.background.asset.url : null,
       skybox: live.background?.kind === "skybox" ? live.background.asset.url : null,
+      bundle: live.bundle,
     },
     settings: {
       camera: live.camera,

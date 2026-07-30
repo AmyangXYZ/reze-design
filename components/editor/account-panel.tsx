@@ -92,7 +92,7 @@ function fetchMe(): Promise<MeStats | null> {
 }
 
 /** What you've published and how it landed — the reason to have an account. */
-function Portfolio() {
+function Portfolio({ onOpenLibrary }: { onOpenLibrary?: (kind: "grade" | "effect" | "graph") => void }) {
   const t = useT()
   const [stats, setStats] = useState<MeStats | null>(cached)
   useEffect(() => {
@@ -111,7 +111,7 @@ function Portfolio() {
   return (
     <div className="mt-3 border-t border-white/10 pt-3">
       <div className="text-center">
-        <div className="font-mono text-xl leading-none">{n(stats?.scene)}</div>
+        <div className="font-mono text-lg leading-none">{n(stats?.scene)}</div>
         <div className="mt-1.5 text-xs text-muted-foreground">{t.account.scenesPublished}</div>
       </div>
       <div className="mt-3 grid grid-cols-3 gap-1 text-center">
@@ -122,14 +122,21 @@ function Portfolio() {
             ["graph", t.account.graphs],
           ] as const
         ).map(([k, label]) => (
-          <div key={k}>
-            <div className="font-mono text-base leading-none">{n(stats?.[k])}</div>
+          <button
+            key={k}
+            type="button"
+            onClick={() => onOpenLibrary?.(k)}
+            className="cursor-pointer rounded-md py-0.5 transition-colors hover:bg-white/5"
+          >
+            <div className="font-mono text-sm leading-none underline decoration-white/25 underline-offset-3">
+              {n(stats?.[k])}
+            </div>
             <div className="mt-1 text-xs text-muted-foreground">{label}</div>
-          </div>
+          </button>
         ))}
       </div>
       <div className="mt-3.5 text-center text-xs text-muted-foreground">
-        <span className="font-mono text-sm text-foreground">{n(stats?.likes)}</span> {t.account.likesEarned}
+        <span className="font-mono text-xs text-foreground">{n(stats?.likes)}</span> {t.account.likesEarned}
       </div>
     </div>
   )
@@ -206,7 +213,7 @@ function HandleField({ current }: { current: string }) {
   )
 }
 
-export function AccountButton({ asHeader = false }: { asHeader?: boolean }) {
+export function AccountButton({ asHeader = false, onOpenLibrary }: { asHeader?: boolean; onOpenLibrary?: (kind: "grade" | "effect" | "graph") => void }) {
   const t = useT()
   const { data: session } = useSession()
   useEffect(() => {
@@ -266,12 +273,12 @@ export function AccountButton({ asHeader = false }: { asHeader?: boolean }) {
         onOpenAutoFocus={(e) => e.preventDefault()}
         className="w-64 rounded-xl border-white/10 bg-zinc-950/90 p-3 text-center shadow-float backdrop-blur-xs"
       >
-        <div className="truncate font-mono text-xs font-medium">{session.user.username ?? session.user.name}</div>
-        <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{session.user.email}</div>
+        <div className="truncate font-mono text-sm font-medium">{session.user.username ?? session.user.name}</div>
+        <div className="mt-0.5 truncate text-xs text-muted-foreground">{session.user.email}</div>
         {session.user.username && !session.user.usernameChangedAt && (
           <HandleField current={session.user.username} />
         )}
-        <Portfolio />
+        <Portfolio onOpenLibrary={onOpenLibrary} />
         <Button
           size="sm"
           variant="ghost"

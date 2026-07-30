@@ -105,7 +105,7 @@ export function PublishButton({
               onChange={(e) => setName(e.target.value)}
               maxLength={60}
               required
-              className="mt-1 h-8 border-white/10 bg-white/5 text-xs"
+              className="mt-1 h-8 border-white/10 bg-white/5 text-xs md:text-xs"
             />
           </label>
           <label className="block">
@@ -115,6 +115,7 @@ export function PublishButton({
               onChange={(e) => setDescription(e.target.value)}
               maxLength={500}
               rows={3}
+              required
               placeholder={t.library.publishDescriptionHint}
               className="mt-1 w-full resize-none rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground/50 focus:border-blue-400/50"
             />
@@ -124,8 +125,9 @@ export function PublishButton({
             <Input
               value={tags}
               onChange={(e) => setTags(e.target.value)}
+              required
               placeholder={t.library.publishTagsHint}
-              className="mt-1 h-8 border-white/10 bg-white/5 font-mono text-xs"
+              className="mt-1 h-8 border-white/10 bg-white/5 text-xs md:text-xs"
             />
           </label>
           {failed && <div className="text-[11px] text-red-400">{t.gradeLibrary.publishFailed}</div>}

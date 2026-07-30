@@ -15,6 +15,13 @@ const MAX_NAME = 60
 const MAX_DESCRIPTION = 500
 const MAX_TAGS = 8
 
+// Base58: no 0/O/I/l ambiguity — these ids live in shareable URLs.
+const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+function shortId(len = 8): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(len))
+  return Array.from(bytes, (b) => BASE58[b % 58]).join("")
+}
+
 /**
  * The community library: every public row, all kinds — the client filters by
  * kind. One request feeds the three libraries, the quick-picks, and name
@@ -77,10 +84,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "payload is required" }, { status: 400 })
   }
 
-  // Ids are machine-minted, names are the human key: unique per kind, enforced by
-  // the (kind, name) index — the same rule that lets scene documents reference
-  // content by name without ambiguity.
-  const id = crypto.randomUUID()
+  // Ids are machine-minted. Presets get uuids and are referenced by NAME (unique
+  // per kind); scenes get SHORT ids because the id IS the share URL —
+  // reze.design/<user>/<id> — and scene names are free to collide.
+  const id = kind === "scene" ? shortId() : crypto.randomUUID()
   let row
   try {
     ;[row] = await db

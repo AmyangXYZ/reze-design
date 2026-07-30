@@ -2,7 +2,7 @@
 
 // Backgrounds library — the shared three-column shell (facet rail · thumbnail grid · slim
 
-import { Fragment, useMemo, useState } from "react"
+import { Fragment, useEffect, useMemo, useState } from "react"
 import { Check, Plus, Search, Sparkles, SquarePen, X } from "lucide-react"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -19,7 +19,7 @@ import { LIBRARY_SHELL, LibraryRail, LibraryStats, LibraryTags } from "@/compone
 import { matchesFacet, matchesQuery, type EffectItem, type LibraryFacet } from "@/lib/library"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
 import { nextDraftName } from "@/lib/drafts"
-import { addCommunityItem, useCommunity } from "@/hooks/use-community"
+import { addCommunityItem, builtinAuthor, refreshCommunity, removeCommunityItem, useCommunity } from "@/hooks/use-community"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useLibraryStats } from "@/hooks/use-library-stats"
 import { useZOrder } from "@/hooks/use-z-order"
@@ -30,6 +30,8 @@ import { cn } from "@/lib/utils"
 type LibraryProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Facet the library opens on — the account tab opens straight to "yours". */
+  initialFacet?: LibraryFacet
   applied: AppliedBackgroundEffect | null
   onApply: (effect: AppliedBackgroundEffect) => void
   /** A draft was renamed — re-point anything applied by the old name. */
@@ -53,7 +55,7 @@ export function BackgroundLibrary(props: LibraryProps) {
 const seedDraft = (selected: EffectItem | null, applied: AppliedBackgroundEffect | null): AppliedBackgroundEffect | null =>
   selected ? (applied?.id === selected.id ? { ...applied } : applyDefaults(selected)) : null
 
-function LibraryContent({ onOpenChange, applied, onApply, onRemove, onRenamed, onEdit }: LibraryProps) {
+function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove, onRenamed, onEdit }: LibraryProps) {
   const t = useT()
   // Desktop-style stacking: clicking a library raises it over any editor.
   // Radix would close on Escape whatever is stacked above it; the z-order
@@ -61,7 +63,7 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onRenamed, o
   const { statFor, signedIn, toggleLike } = useLibraryStats("effect")
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, () => onOpenChange(false))
   const [query, setQuery] = useState("")
-  const [facet, setFacet] = useState<LibraryFacet>("all")
+  const [facet, setFacet] = useState<LibraryFacet>(initialFacet ?? "all")
   const [selectedId, setSelectedId] = useState<string | null>(applied?.id ?? BACKGROUND_EFFECTS[0]?.id ?? null)
   // Follow the applied effect when it CHANGES — creating or editing one should move
   // the selection with it, rather than leaving the ring on the previous entry.
@@ -73,6 +75,8 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onRenamed, o
 
   const { drafts, update: updateDraft, remove: removeDraft } = useDrafts<EffectItem>("effect")
   // Built-ins lead in name order; drafts follow in creation order.
+  // Fresh rows every open — a publish elsewhere shows without a reload.
+  useEffect(() => refreshCommunity(), [])
   const community = useCommunity<EffectItem>("effect")
   const all = useMemo(() => [...BACKGROUND_EFFECTS, ...community, ...drafts], [community, drafts])
   const selected: EffectItem | null = useMemo(() => all.find((e) => e.id === selectedId) ?? null, [all, selectedId])
@@ -161,7 +165,28 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onRenamed, o
                   </div>
     )
     // Card management lives on right-click — the inspector only applies/publishes.
-    if (e.owner !== "local") return <Fragment key={e.id}>{card}</Fragment>
+    if (e.owner !== "local") {
+      // Your own PUBLISHED rows are deletable too — moderation is deletion.
+      if (!(e as { mine?: boolean }).mine) return <Fragment key={e.id}>{card}</Fragment>
+      return (
+        <ContextMenu key={e.id}>
+          <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
+          <ContextMenuContent className="w-40">
+            <ContextMenuItem
+              variant="danger"
+              onSelect={() => {
+                if (!confirm(t.library.deletePublishedConfirm)) return
+                void fetch(`/api/library/${e.id}`, { method: "DELETE" }).then((res) => {
+                  if (res.ok) removeCommunityItem(e.id)
+                })
+              }}
+            >
+              {t.library.deletePublished}
+            </ContextMenuItem>
+          </ContextMenuContent>
+        </ContextMenu>
+      )
+    }
     return (
       <ContextMenu key={e.id}>
         <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
@@ -276,7 +301,7 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onRenamed, o
                 <div className="min-h-0 p-3">
                   <div className="truncate text-sm font-semibold">{selected.name}</div>
                   <div className="mt-0.5 font-mono text-[13px] text-muted-foreground/70">
-                    {selected.author} · v{selected.version}
+                    {builtinAuthor("effect", selected.name, selected.author)} · v{selected.version}
                   </div>
                   <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">{selected.description}</p>
                   <LibraryTags tags={selected.tags} />

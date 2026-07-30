@@ -37,10 +37,10 @@ import { useT } from "@/lib/i18n"
 import type { ExportAudioSource } from "@/lib/video-export"
 import { MaterialSphereIcon } from "@/components/scene/slot-icons"
 import { DEFAULT_SCENE } from "@/lib/default-scene"
-import { groupLabel, GRAPH_LIBRARY, SLOT_GRAPHS } from "@/lib/materials"
+import { groupLabel, GRAPH_LIBRARY, libraryGraphName, SLOT_GRAPHS } from "@/lib/materials"
 import type { AppliedBackgroundEffect } from "@/lib/background-effects"
 import { GRADE_PRESETS, NEUTRAL_SPEC, gradeSpec, recallIntensity } from "@/lib/grade"
-import { quickPickItems, type EffectItem, type GradeItem, type GraphItem } from "@/lib/library"
+import { quickPickItems, type EffectItem, type GradeItem, type GraphItem, type LibraryFacet } from "@/lib/library"
 import { useCommunity } from "@/hooks/use-community"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useSession } from "@/lib/auth-client"
@@ -50,7 +50,19 @@ import { GradeLibrary } from "@/components/editor/grade-library"
 import { GradeEditorPanel, type GradeEditorSubject } from "@/components/editor/grade-editor"
 import { SaveCloseDialog } from "@/components/editor/save-close"
 import { captureScene } from "@/components/editor/grade-preview"
-import { hydrateScene, saveSceneState, type SceneCamera } from "@/lib/scene"
+import {
+  hydrateScene,
+  saveSceneState,
+  serializeSceneDoc,
+  type AssetRef,
+  type ModelSource,
+  type SceneBackground,
+  type SceneCamera,
+  type SceneModel,
+} from "@/lib/scene"
+import { modelFilePath, sceneFiles } from "@/lib/scene-files"
+import type { BundleEntry } from "@/lib/bundle"
+import { ShareSceneDialog, type ScenePublishSource } from "@/components/editor/share-scene"
 import type { SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 
@@ -539,9 +551,12 @@ export default function Home() {
     }
   }
   const onCameraPicked = async (file: File | undefined) => {
-    if (file) await loadCameraBuffer(await file.arrayBuffer(), file.name)
+    if (!file) return
+    sceneFiles.camera = file
+    await loadCameraBuffer(await file.arrayBuffer(), file.name)
   }
   const removeCamera = useCallback(() => {
+    sceneFiles.camera = null
     engineRef.current?.clearCameraVmd()
     setCameraName(null)
   }, [engineRef])
@@ -677,8 +692,10 @@ export default function Home() {
 
   // Grades library ── User grades live in localStorage (pre-accounts), while the APPLIED
   const [gradesOpen, setGradesOpen] = useState(false)
+  const [libraryFacet, setLibraryFacet] = useState<LibraryFacet>("all")
   // Lazy initializer, not an effect
-  const openGrades = useCallback(() => {
+  const openGrades = useCallback((facet: LibraryFacet = "all") => {
+    setLibraryFacet(facet)
     // Snapshot the viewport first
     captureScene(canvasRef.current)
     setLibrary((s) => ({ ...s, open: false }))
@@ -768,16 +785,27 @@ export default function Home() {
     void resetStyleGroups(id, DEFAULT_SCENE.state.groups?.[id])
   }, [resetStyleGroups])
 
-  const openLibrary = useCallback((groupId: string | null) => {
+  const openLibrary = useCallback((groupId: string | null, facet: LibraryFacet = "all") => {
+    setLibraryFacet(facet)
     setEffectsOpen(false)
     setGradesOpen(false)
     setLibrary({ open: true, groupId })
   }, [setEffectsOpen, setGradesOpen, setLibrary])
-  const openEffects = useCallback(() => {
+  const openEffects = useCallback((facet: LibraryFacet = "all") => {
+    setLibraryFacet(facet)
     setLibrary((s) => ({ ...s, open: false }))
     setGradesOpen(false)
     setEffectsOpen(true)
   }, [setLibrary, setGradesOpen, setEffectsOpen])
+  /** Account-tab stat numbers: the matching library, filtered to your work. */
+  const openLibraryForAccount = useCallback(
+    (kind: "grade" | "effect" | "graph") => {
+      if (kind === "grade") openGrades("yours")
+      else if (kind === "effect") openEffects("yours")
+      else openLibrary(null, "yours")
+    },
+    [openGrades, openEffects, openLibrary],
+  )
   // Library callbacks — stable so the (memoizable) dialog doesn't re-render idly.
   const applyBgEffect = useCallback((effect: AppliedBackgroundEffect) => setBgEffect(effect), [setBgEffect])
   const removeBgEffect = useCallback(() => setBgEffect(null), [setBgEffect])
@@ -917,6 +945,7 @@ export default function Home() {
   // High-level asset metadata (size for uploads
 
   const setMusicFile = (f: File) => {
+    sceneFiles.audio = f
     setAudioName(f.name)
     setAudioSrc((prev) => {
       if (prev.startsWith("blob:")) URL.revokeObjectURL(prev)
@@ -926,6 +955,7 @@ export default function Home() {
     setAudioSource((s) => (s === "none" ? "music" : s))
   }
   const removeAudio = useCallback(() => {
+    sceneFiles.audio = null
     setAudioName(null)
     // Revoke OUTSIDE the updater
     if (audioSrc.startsWith("blob:")) URL.revokeObjectURL(audioSrc)
@@ -1126,6 +1156,89 @@ export default function Home() {
     },
     [setCameraView],
   )
+
+  // ── Publish-scene collection: the live editor as ONE document + the files its
+  // uploaded assets need. Demo assets keep site paths; uploads become
+  // bundle-relative paths backed by zip entries.
+  const [shareOpen, setShareOpen] = useState(false)
+  const collectScenePublish = (): ScenePublishSource => {
+    const entries: BundleEntry[] = []
+    const liveModels: SceneModel[] = models.map((m) => {
+      const kept = sceneFiles.models.get(m.id)
+      let source: ModelSource | null = null
+      if (kept) {
+        const base = `models/${m.id}`
+        for (const f of kept.files) entries.push({ path: `${base}/${modelFilePath(f)}`, file: f })
+        source = { kind: "bundle", path: `${base}/${modelFilePath(kept.pmx)}` }
+      } else {
+        source = bootScene.assets.models.find((d) => d.model.id === m.id)?.model.source ?? null
+      }
+      const anim = animByModel[m.id]
+      let animation: AssetRef | null = null
+      if (anim?.source.kind === "file") {
+        const path = `motions/${m.id}/${anim.source.file.name}`
+        entries.push({ path, file: anim.source.file })
+        animation = { name: anim.name, url: path }
+      } else if (anim?.source.kind === "url") {
+        animation = { name: anim.name, url: anim.source.url }
+      }
+      return { model: { id: m.id, file: m.file, source: source! }, animation }
+    })
+    let cameraAnimation: AssetRef | null = null
+    if (cameraName && sceneFiles.camera) {
+      const path = `camera/${sceneFiles.camera.name}`
+      entries.push({ path, file: sceneFiles.camera })
+      cameraAnimation = { name: cameraName, url: path }
+    } else if (cameraName && bootScene.assets.cameraAnimation?.name === cameraName) {
+      cameraAnimation = bootScene.assets.cameraAnimation
+    }
+    let audio: AssetRef | null = null
+    if (audioName && sceneFiles.audio) {
+      const path = `audio/${sceneFiles.audio.name}`
+      entries.push({ path, file: sceneFiles.audio })
+      audio = { name: audioName, url: path }
+    } else if (audioName && audioSrc && !audioSrc.startsWith("blob:")) {
+      audio = { name: audioName, url: audioSrc }
+    }
+    let background: SceneBackground = null
+    if (backdrop) {
+      const path = `backdrop/${backdrop.name}`
+      entries.push({ path, file: backdrop.file })
+      background = { kind: "backdrop", asset: { name: backdrop.name, url: path } }
+    } else if (skybox) {
+      const path = `skybox/${skybox.name}`
+      entries.push({ path, file: skybox.file })
+      background = { kind: "skybox", asset: { name: skybox.name, url: path } }
+    }
+    const hidden = Object.fromEntries(
+      models
+        .map((m) => [m.id, m.materials.filter((mat) => !mat.visible).map((mat) => mat.name)] as const)
+        .filter(([, names]) => names.length),
+    )
+    const isBuiltinEffect = (applied: AppliedBackgroundEffect) =>
+      BACKGROUND_EFFECTS.some((e) => e.name === applied.name && e.payload.wgsl === applied.wgsl)
+    return {
+      entries,
+      makeDoc: (bundle) =>
+        serializeSceneDoc(
+          {
+            models: liveModels,
+            cameraAnimation,
+            audio,
+            background,
+            bundle,
+            name: sceneName,
+            camera: sceneCamera,
+            settings: sceneSettings,
+            backgroundEffect: bgEffect,
+            groups: groupsByModel,
+            hidden,
+          },
+          isBuiltinEffect,
+          libraryGraphName,
+        ),
+    }
+  }
 
   const resetSceneDefaults = useCallback(() => {
     setSceneSettings(DEFAULT_SCENE.state.settings)
@@ -1535,7 +1648,7 @@ export default function Home() {
         (docksOpen ? (
           <RaisableLayer className="fixed inset-y-0 right-0 w-[min(300px,88vw)]">
             <RightDock
-              header={<TopRightCluster shareName="untitled-scene" asHeader />}
+              header={<TopRightCluster onShare={() => setShareOpen(true)} onOpenLibrary={openLibraryForAccount} asHeader />}
               tabs={rightTabs}
               active={rightTab}
               onActive={setRightTab}
@@ -1543,7 +1656,7 @@ export default function Home() {
           </RaisableLayer>
         ) : (
           <div className="fixed top-3 right-3 z-20">
-            <TopRightCluster shareName="untitled-scene" />
+            <TopRightCluster onShare={() => setShareOpen(true)} onOpenLibrary={openLibraryForAccount} />
           </div>
         ))}
 
@@ -1614,6 +1727,7 @@ export default function Home() {
       {/* Backgrounds library — the three-column shell (rail · grid · inspector). */}
       <BackgroundLibrary
         open={effectsOpen}
+        initialFacet={libraryFacet}
         onOpenChange={setEffectsOpen}
         applied={bgEffect}
         onApply={applyBgEffect}
@@ -1648,6 +1762,7 @@ export default function Home() {
       {/* ── Grades library (tiles preview the live scene under each grade) ── */}
       <GradeLibrary
         open={gradesOpen}
+        initialFacet={libraryFacet}
         onOpenChange={setGradesOpen}
         grade={sceneSettings.grade}
         onRenamed={(oldName, newName) =>
@@ -1668,6 +1783,16 @@ export default function Home() {
           origin={gradeAncestor(gradeEditor.subject)}
           onChange={editGrade}
           onClose={requestCloseGradeEditor}
+        />
+      )}
+      {mounted && (
+        <ShareSceneDialog
+          open={shareOpen}
+          onOpenChange={setShareOpen}
+          sceneId={bootScene.state.id}
+          sceneName={sceneName}
+          onRename={setSceneName}
+          collect={collectScenePublish}
         />
       )}
       {mounted && graphLibEdit?.savePrompt && (
@@ -1691,6 +1816,7 @@ export default function Home() {
       {/* ── Shader-graph library popup ── */}
       <NodeLibrary
         open={library.open}
+        initialFacet={libraryFacet}
         onOpenChange={(o) => setLibrary((s) => ({ ...s, open: o }))}
         canApply={libGroup !== null}
         targetLabel={libGroup ? groupLabel(libGroup) : null}

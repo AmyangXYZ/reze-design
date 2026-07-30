@@ -2,7 +2,7 @@
 
 // Shader-graph library — the shared library shell (facet rail · thumbnail grid · slim inspector).
 
-import { Fragment, useMemo, useState } from "react"
+import { Fragment, useEffect, useMemo, useState } from "react"
 import { DEFAULT_GRAPH, type ShaderGraph } from "reze-engine"
 import { Check, Plus, Search, SquarePen, Workflow, X } from "lucide-react"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -15,7 +15,7 @@ import { LIBRARY_SHELL, LibraryRail, LibraryStats, LibraryTags } from "@/compone
 import { matchesFacet, matchesQuery, type GraphItem, type LibraryFacet } from "@/lib/library"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
 import { nextDraftName } from "@/lib/drafts"
-import { addCommunityItem, useCommunity } from "@/hooks/use-community"
+import { addCommunityItem, builtinAuthor, refreshCommunity, removeCommunityItem, useCommunity } from "@/hooks/use-community"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useLibraryStats } from "@/hooks/use-library-stats"
 import { useZOrder } from "@/hooks/use-z-order"
@@ -27,6 +27,8 @@ import { cn } from "@/lib/utils"
 type LibraryProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Facet the library opens on — the account tab opens straight to "yours". */
+  initialFacet?: LibraryFacet
   /** Whether a target group exists yet for the material. */
   canApply: boolean
   /** Display name of the group Apply targets — null when opened with none. */
@@ -50,7 +52,7 @@ export function NodeLibrary(props: LibraryProps) {
   )
 }
 
-function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRenamed, onEdit, onOpenChange }: LibraryProps) {
+function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRenamed, onEdit, onOpenChange, initialFacet }: LibraryProps) {
   const onClose = () => onOpenChange(false)
   const t = useT()
   // Desktop-style stacking: clicking a library raises it over any editor.
@@ -58,12 +60,14 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRe
   // stack closes only the topmost surface.
   const { drafts, update: updateDraft, remove: removeDraft } = useDrafts<GraphItem>("graph")
   // Built-ins lead in name order; drafts follow in creation order.
+  // Fresh rows every open — a publish elsewhere shows without a reload.
+  useEffect(() => refreshCommunity(), [])
   const community = useCommunity<GraphItem>("graph")
   const ROWS = useMemo(() => [...GRAPH_LIBRARY, ...community, ...drafts], [community, drafts])
   const { statFor, signedIn, toggleLike } = useLibraryStats("graph")
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, onClose)
   const [query, setQuery] = useState("")
-  const [facet, setFacet] = useState<LibraryFacet>("all")
+  const [facet, setFacet] = useState<LibraryFacet>(initialFacet ?? "all")
   const isCurrent = (r: GraphItem) => r.name === currentGraphName || r.payload.graph.name === currentGraphName
   const [selectedId, setSelectedId] = useState<string | null>(() => ROWS.find(isCurrent)?.id ?? ROWS[0]?.id ?? null)
 
@@ -144,7 +148,28 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRe
                   </div>
     )
     // Card management lives on right-click — the inspector only applies/publishes.
-    if (r.owner !== "local") return <Fragment key={r.id}>{card}</Fragment>
+    if (r.owner !== "local") {
+      // Your own PUBLISHED rows are deletable too — moderation is deletion.
+      if (!(r as { mine?: boolean }).mine) return <Fragment key={r.id}>{card}</Fragment>
+      return (
+        <ContextMenu key={r.id}>
+          <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
+          <ContextMenuContent className="w-40">
+            <ContextMenuItem
+              variant="danger"
+              onSelect={() => {
+                if (!confirm(t.library.deletePublishedConfirm)) return
+                void fetch(`/api/library/${r.id}`, { method: "DELETE" }).then((res) => {
+                  if (res.ok) removeCommunityItem(r.id)
+                })
+              }}
+            >
+              {t.library.deletePublished}
+            </ContextMenuItem>
+          </ContextMenuContent>
+        </ContextMenu>
+      )
+    }
     return (
       <ContextMenu key={r.id}>
         <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
@@ -258,7 +283,7 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRe
               <div className="min-h-0 p-3">
                 <div className="truncate text-sm font-semibold">{selected.name}</div>
                 <div className="mt-0.5 font-mono text-[13px] text-muted-foreground/70">
-                  {selected.author} · v{selected.version}
+                  {builtinAuthor("graph", selected.name, selected.author)} · v{selected.version}
                 </div>
                 {selected.description && (
                   <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">{selected.description}</p>

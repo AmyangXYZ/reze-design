@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { Engine, Vec3, type ApplyStyleGroupResult, type CompileOptions, type RenderClass, type StyleGroup } from "reze-engine"
 import { SLOT_GRAPHS } from "@/lib/materials"
 import { modelKey, modelPmxUrl, type Scene, type SceneCamera } from "@/lib/scene"
+import { sceneFiles } from "@/lib/scene-files"
 import { azElToDirection, hexToLinearVec3, hexToSrgbVec3 } from "@/lib/scene-settings"
 
 // Eye and Hair are pinned, non-deletable groups
@@ -183,6 +184,9 @@ export function useEngine(
     const engine = engineRef.current
     if (!engine) throw new Error("engine not ready")
     const id = uniqueModelId(pmxFile.name)
+    // Retained for zip-on-publish — the engine consumes the bytes, the bundle
+    // needs them again.
+    sceneFiles.models.set(id, { pmx: pmxFile, files: Array.from(files) })
     const model = await engine.loadModel(id, { files, pmxFile })
     const offset = spawnOffsetX(modelsRef.current.length)
     if (offset !== 0) engine.setModelTransform(id, { position: new Vec3(offset, 0, 0) })
@@ -199,6 +203,8 @@ export function useEngine(
       const engine = engineRef.current
       if (!engine) throw new Error("engine not ready")
       const id = uniqueModelId(pmxFile.name, targetId)
+      sceneFiles.models.delete(targetId)
+      sceneFiles.models.set(id, { pmx: pmxFile, files: Array.from(files) })
       const transform = engine.getModelTransform(targetId)
       if (id === targetId) engine.removeModel(targetId)
       const model = await engine.loadModel(id, { files, pmxFile })
@@ -221,6 +227,7 @@ export function useEngine(
 
   /** Remove a model from the scene entirely (the page keeps ≥1 by policy). */
   const removeModelById = useCallback((modelId: string) => {
+    sceneFiles.models.delete(modelId)
     engineRef.current?.removeModel(modelId)
     setModels((prev) => prev.filter((m) => m.id !== modelId))
     setGroupsByModel((prev) => {

@@ -8,7 +8,6 @@ import { useEffect, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Ban, RotateCcw, Trash2 } from "lucide-react"
 
-const VISIBILITIES = ["private", "unlisted", "public"] as const
 
 function useAction() {
   const router = useRouter()
@@ -31,28 +30,12 @@ function useAction() {
 
 const iconBtn = "flex size-7 cursor-pointer items-center justify-center rounded-md transition-colors disabled:opacity-40"
 
-export function ItemControls({ id, visibility }: { id: string; visibility: string }) {
+// Moderation is deletion — by the author, or here by an admin. No visibility
+// states to shepherd; published means public until someone removes it.
+export function ItemControls({ id }: { id: string }) {
   const { run, disabled } = useAction()
   return (
     <div className="flex items-center gap-2">
-      <select
-        value={visibility}
-        disabled={disabled}
-        onChange={(e) =>
-          void run(`/api/library/${id}`, {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ visibility: e.target.value }),
-          })
-        }
-        className="h-7 rounded-md border border-white/10 bg-white/5 px-1.5 text-xs"
-      >
-        {VISIBILITIES.map((v) => (
-          <option key={v} value={v} className="bg-zinc-900">
-            {v}
-          </option>
-        ))}
-      </select>
       <button
         disabled={disabled}
         // Publishing is reversible; deleting is not.

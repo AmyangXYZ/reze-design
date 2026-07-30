@@ -26,13 +26,22 @@ const BUILTIN_NAMES: Partial<Record<LibraryKind, Set<string>>> = {
 let cache: CommunityItem[] | null = null
 let inflight: Promise<CommunityItem[]> | null = null
 const listeners = new Set<() => void>()
+// The seed mirrors builtins with the ADMIN ACCOUNT's live handle as author —
+// the repo JSON can't know it, so display resolves through this map.
+const builtinAuthors = new Map<string, string>()
 
-function load(): Promise<CommunityItem[]> {
-  if (cache) return Promise.resolve(cache)
+function load(force = false): Promise<CommunityItem[]> {
+  if (cache && !force) return Promise.resolve(cache)
   inflight ??= fetch("/api/library")
     .then((r) => r.json())
     .then((d: { items?: CommunityItem[] }) => {
-      cache = (d.items ?? []).filter((i) => !BUILTIN_NAMES[i.kind]?.has(i.name))
+      const rows = d.items ?? []
+      for (const i of rows) {
+        if (BUILTIN_NAMES[i.kind]?.has(i.name)) builtinAuthors.set(`${i.kind}:${i.name}`, i.author)
+      }
+      cache = rows.filter((i) => !BUILTIN_NAMES[i.kind]?.has(i.name))
+      inflight = null
+      for (const l of listeners) l()
       return cache
     })
     .catch(() => {
@@ -41,6 +50,24 @@ function load(): Promise<CommunityItem[]> {
       return cache ?? []
     })
   return inflight
+}
+
+/** Refetch — each library calls this as it opens, so a publish from another tab
+ *  or session shows up without a reload. */
+export function refreshCommunity(): void {
+  void load(true)
+}
+
+/** The live author to display for a built-in (the admin account's handle), or
+ *  the repo's fallback when the mirror hasn't been fetched. */
+export function builtinAuthor(kind: LibraryKind, name: string, fallback: string): string {
+  return builtinAuthors.get(`${kind}:${name}`) ?? fallback
+}
+
+/** Drop a row the server just deleted, without waiting for a refetch. */
+export function removeCommunityItem(id: string) {
+  cache = (cache ?? []).filter((i) => i.id !== id)
+  for (const l of listeners) l()
 }
 
 /** Merge a JUST-published row so the library shows it before any refetch. */
@@ -61,5 +88,6 @@ export function useCommunity<T extends LibraryItem = LibraryItem>(kind: LibraryK
       listeners.delete(update)
     }
   }, [])
+
   return items.filter((i) => i.kind === kind) as (T & { mine: boolean })[]
 }

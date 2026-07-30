@@ -5,7 +5,6 @@
 import { useState } from "react"
 import { PanelLeft, PanelLeftClose, WandSparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { AccountButton } from "@/components/editor/account-panel"
 import { useT } from "@/lib/i18n"
@@ -117,40 +116,27 @@ export function BrandPill({
 }
 
 export function TopRightCluster({
-  shareName,
+  onShare,
+  onOpenLibrary,
   asHeader = false,
 }: {
-  /** The scene's future permanent path (/[user]/[scene]) — shown in the Share popover. */
-  shareName: string
+  /** Opens the page-level publish-scene dialog. */
+  onShare: () => void
+  /** Account-tab stat numbers open the matching library on "Yours". */
+  onOpenLibrary?: (kind: "grade" | "effect" | "graph") => void
   asHeader?: boolean
 }) {
   const t = useT()
-  const accountBtn = <AccountButton asHeader={asHeader} />
+  const accountBtn = <AccountButton asHeader={asHeader} onOpenLibrary={onOpenLibrary} />
 
   const shareBtn = (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          size="sm"
-          className="h-7 rounded-md bg-blue-400 px-3 text-xs font-medium text-white hover:bg-blue-300"
-        >
-          {t.share.label}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="end"
-        sideOffset={6}
-        className="w-64 rounded-xl border-white/10 bg-zinc-950/90 p-3 shadow-float backdrop-blur-xs"
-      >
-        <div className="text-xs font-medium">{t.share.permanentLink}</div>
-        <div className="mt-2 truncate rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-muted-foreground">
-          reze.design/you/{shareName}
-        </div>
-        <div className="mt-2 text-xs text-muted-foreground">
-          {t.share.publishPrompt}
-        </div>
-      </PopoverContent>
-    </Popover>
+    <Button
+      size="sm"
+      onClick={onShare}
+      className="h-7 rounded-md bg-blue-400 px-3 text-xs font-medium text-white hover:bg-blue-300"
+    >
+      {t.share.label}
+    </Button>
   )
 
   // Figma order: portfolio (avatar) on the left, Share pushed to the right.

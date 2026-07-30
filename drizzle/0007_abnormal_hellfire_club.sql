@@ -1,0 +1,2 @@
+DROP INDEX "library_items_kind_name_idx";--> statement-breakpoint
+CREATE UNIQUE INDEX "library_items_kind_name_idx" ON "library_items" USING btree ("kind","name") WHERE "library_items"."kind" <> 'scene';

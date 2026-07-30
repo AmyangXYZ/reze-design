@@ -50,6 +50,13 @@
       "when": 1785377576009,
       "tag": "0006_modern_mongu",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785389954463,
+      "tag": "0007_abnormal_hellfire_club",
+      "breakpoints": true
     }
   ]
 }

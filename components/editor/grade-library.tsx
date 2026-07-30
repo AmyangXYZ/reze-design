@@ -2,7 +2,7 @@
 
 // Grades library — the same three-column shell as the shader-graph and background-effect libraries.
 
-import { Fragment, useMemo, useState } from "react"
+import { Fragment, useEffect, useMemo, useState } from "react"
 import { Check, Palette, Plus, Search, SquarePen, X } from "lucide-react"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -18,7 +18,7 @@ import {
 import { LIBRARY_SHELL, LibraryRail, LibraryStats, LibraryTags } from "@/components/editor/library-rail"
 import { matchesFacet, matchesQuery, type GradeItem, type LibraryFacet } from "@/lib/library"
 import { nextDraftName } from "@/lib/drafts"
-import { addCommunityItem, useCommunity } from "@/hooks/use-community"
+import { addCommunityItem, builtinAuthor, refreshCommunity, removeCommunityItem, useCommunity } from "@/hooks/use-community"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useLibraryStats } from "@/hooks/use-library-stats"
 import { useZOrder } from "@/hooks/use-z-order"
@@ -30,6 +30,8 @@ import { cn } from "@/lib/utils"
 type Props = {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Facet the library opens on — the account tab opens straight to "yours". */
+  initialFacet?: LibraryFacet
   grade: GradeSettings
   /** Apply a built-in by id. */
   onApplyPreset: (id: string) => void
@@ -48,7 +50,7 @@ export function GradeLibrary(props: Props) {
   )
 }
 
-function LibraryContent({ onOpenChange, grade, onApplyPreset, onRenamed, onEdit }: Props) {
+function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRenamed, onEdit }: Props) {
   const t = useT()
   // Desktop-style stacking: clicking a library raises it over any editor.
   // Radix would close on Escape whatever is stacked above it; the z-order
@@ -56,7 +58,7 @@ function LibraryContent({ onOpenChange, grade, onApplyPreset, onRenamed, onEdit 
   const { statFor, signedIn, toggleLike } = useLibraryStats("grade")
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, () => onOpenChange(false))
   const [query, setQuery] = useState("")
-  const [facet, setFacet] = useState<LibraryFacet>("all")
+  const [facet, setFacet] = useState<LibraryFacet>(initialFacet ?? "all")
   const [selectedId, setSelectedId] = useState<string>(grade.preset)
   // Applying a grade elsewhere (the quick-pick, or the editor) moves the selection.
   const [lastPreset, setLastPreset] = useState(grade.preset)
@@ -71,6 +73,8 @@ function LibraryContent({ onOpenChange, grade, onApplyPreset, onRenamed, onEdit 
 
   const { drafts, update: updateDraft, remove: removeDraft } = useDrafts<GradeItem>("grade")
   // Drafts first: what you're working on is what you came back for.
+  // Fresh rows every open — a publish elsewhere shows without a reload.
+  useEffect(() => refreshCommunity(), [])
   const community = useCommunity<GradeItem>("grade")
   const all = useMemo(() => [...GRADE_PRESETS, ...community, ...drafts], [community, drafts])
   const selected = all.find((g) => g.name === selectedId) ?? all[0]
@@ -173,7 +177,28 @@ function LibraryContent({ onOpenChange, grade, onApplyPreset, onRenamed, onEdit 
                 </div>
     )
     // Card management lives on right-click — the inspector only applies/publishes.
-    if (g.owner !== "local") return <Fragment key={g.id}>{card}</Fragment>
+    if (g.owner !== "local") {
+      // Your own PUBLISHED rows are deletable too — moderation is deletion.
+      if (!(g as { mine?: boolean }).mine) return <Fragment key={g.id}>{card}</Fragment>
+      return (
+        <ContextMenu key={g.id}>
+          <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
+          <ContextMenuContent className="w-40">
+            <ContextMenuItem
+              variant="danger"
+              onSelect={() => {
+                if (!confirm(t.library.deletePublishedConfirm)) return
+                void fetch(`/api/library/${g.id}`, { method: "DELETE" }).then((res) => {
+                  if (res.ok) removeCommunityItem(g.id)
+                })
+              }}
+            >
+              {t.library.deletePublished}
+            </ContextMenuItem>
+          </ContextMenuContent>
+        </ContextMenu>
+      )
+    }
     return (
       <ContextMenu key={g.id}>
         <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
@@ -285,7 +310,7 @@ function LibraryContent({ onOpenChange, grade, onApplyPreset, onRenamed, onEdit 
               <div className="min-h-0 p-3">
                 <div className="truncate text-sm font-semibold">{nameOf(selected)}</div>
                 <div className="mt-0.5 font-mono text-[13px] text-muted-foreground/70">
-                  {selected.author} · v{selected.version}
+                  {builtinAuthor("grade", selected.name, selected.author)} · v{selected.version}
                 </div>
                 {selected.description && (
                   <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">{selected.description}</p>

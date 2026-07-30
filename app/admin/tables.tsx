@@ -93,7 +93,7 @@ export function ItemTables({ items }: { items: ItemRow[] }) {
     {
       key: "actions",
       header: "Visibility",
-      cell: (r) => <ItemControls id={r.id} visibility={r.visibility} />,
+      cell: (r) => <ItemControls id={r.id} />,
     },
   ]
 
