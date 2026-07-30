@@ -9,10 +9,12 @@
 //   Server-side columns — owner_id, like_count, visibility, timestamps, license,
 //     moderation status — never leave the database and can be added freely.
 //
-// Builtins live in content/*.json and ship with the bundle; the database will
-// hold only community items. Their ids can't collide (builtin ids are
-// hand-written, user ids server-generated), so the two merge at runtime with no
-// seeding step and no dedup — and a clone with no database still has a library.
+// Builtins live in content/*.json and ship with the bundle. THEY CARRY NO IDS:
+// ids are machine-minted, never authored — the database mints uuids when the seed
+// mirrors them, drafts mint local_<uuid>, publishes mint uuids. The human key is
+// the NAME, unique per kind, which is also how scene documents reference library
+// content. Client-side, asBuiltins aliases id = name so selection code has one
+// key type; the alias is derived, not authored.
 
 import type { MaterialPreset, ShaderGraph } from "reze-engine"
 import type { GradeSpec } from "@/lib/grade"
@@ -37,10 +39,14 @@ export type EffectPayload = { wgsl: string }
 export type ScenePayload = { doc: SceneDoc }
 
 export type LibraryItem<K extends LibraryKind = LibraryKind, P = unknown> = {
+  /** Machine-minted, never authored: uuid for server rows, local_<uuid> for
+   *  drafts, and =name for builtins (a derived alias — builtins have no stored
+   *  id; their identity is the name). */
   id: string
   kind: K
-  /** Canonical (English) name. The UI prefers a localized override when one
-   *  exists for this id — community items simply have none. */
+  /** Canonical (English) name — UNIQUE PER KIND, and the key scene documents
+   *  reference library content by. The UI prefers a localized override when one
+   *  exists — community items simply have none. */
   name: string
   /** Display name, denormalized so a snapshot needs no join to render. */
   author: string
@@ -53,7 +59,8 @@ export type LibraryItem<K extends LibraryKind = LibraryKind, P = unknown> = {
   payload: P
 }
 
-export type LibraryOwner = "builtin" | "user"
+/** `local` is an unpublished draft, held in localStorage — see lib/drafts.ts. */
+export type LibraryOwner = "builtin" | "user" | "local"
 
 export type GradeItem = LibraryItem<"grade", GradePayload>
 export type GraphItem = LibraryItem<"graph", GraphPayload>
@@ -70,7 +77,11 @@ export const LIBRARY_FACETS: LibraryFacet[] = ["all", "featured", "yours"]
 export function matchesFacet(item: LibraryItem, facet: LibraryFacet): boolean {
   if (facet === "all") return true
   if (facet === "featured") return item.owner === "builtin"
-  return item.owner === "user"
+  // "Yours" means yours — drafts included. Splitting drafts into their own facet
+  // made "Yours" exclude your own work in progress, which reads as a bug. The
+  // `local` badge already says which is published and which isn't, so the rail
+  // doesn't need to say it twice.
+  return item.owner === "user" || item.owner === "local"
 }
 
 /** Name · author · tags, all case-insensitive. */
@@ -85,6 +96,35 @@ export function matchesQuery(item: LibraryItem, query: string, displayName = ite
 }
 
 /** Stamp repo content as builtin at load — the JSON files stay lean. */
-export function asBuiltins<T extends LibraryItem>(items: Omit<T, "owner">[]): T[] {
-  return items.map((i) => ({ ...i, owner: "builtin" }) as T)
+export function asBuiltins<T extends LibraryItem>(items: Omit<T, "owner" | "id">[]): T[] {
+  if (process.env.NODE_ENV !== "production") {
+    const dupes = items.map((i) => i.name).filter((n, x, a) => a.indexOf(n) !== x)
+    if (dupes.length) throw new Error(`duplicate builtin names: ${dupes.join(", ")}`)
+  }
+  return items.map((i) => ({ ...i, id: i.name, owner: "builtin" }) as T)
+}
+
+/**
+ * What belongs in a quick-switch list, as opposed to the full library.
+ *
+ * All the built-ins — they're curated, few, and the reason presets exist — plus
+ * your most recent drafts, since work in progress is the likeliest next pick. The
+ * applied item is always present even if it would otherwise be cut, because a
+ * selector that can't show what's selected is broken. Everything else is a click
+ * away behind "Browse all…", which is what that escape hatch is for.
+ */
+export function quickPickItems<T extends LibraryItem>(
+  builtins: T[],
+  drafts: T[],
+  appliedId: string | null,
+  maxDrafts = 4,
+): T[] {
+  // Built-ins lead (name order — content file order), drafts follow in creation
+  // order, so a new draft appears at the end rather than reshuffling the list.
+  const list = [...builtins, ...drafts.slice(-maxDrafts)]
+  if (appliedId && !list.some((i) => i.id === appliedId)) {
+    const applied = drafts.find((i) => i.id === appliedId)
+    if (applied) list.push(applied)
+  }
+  return list
 }

@@ -3,8 +3,12 @@
 // The repo stays the source of truth for CONTENT — a clone with no database still
 // renders the library from content/*.json. These rows exist so built-ins can
 // participate relationally: likes reference an item id, and usage stats join
-// against one. Upsert, so re-running after retuning a preset overwrites rather
-// than duplicating, and the repo always wins.
+// against one.
+//
+// Identity: the NAME (unique per kind) is the key — it's how scene documents
+// reference library content and how this upsert finds an existing row. Ids are
+// machine-minted uuids and never appear in content files.
+import { randomUUID } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { Pool, neonConfig } from "@neondatabase/serverless"
 import ws from "ws"
@@ -31,9 +35,7 @@ const UPSERT = `
   insert into library_items
     (id, kind, name, author, description, tags, version, payload, owner_id, visibility)
   values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'public')
-  on conflict (id) do update set
-    kind = excluded.kind,
-    name = excluded.name,
+  on conflict (kind, name) do update set
     author = excluded.author,
     description = excluded.description,
     tags = excluded.tags,
@@ -48,7 +50,7 @@ for (const i of items) {
   // The owner's HANDLE, not the name in the JSON: otherwise every re-seed undoes a
   // rename and built-ins go back to displaying a stale author.
   await pool.query(UPSERT, [
-    i.id,
+    randomUUID(),
     i.kind,
     i.name,
     ownerHandle ?? i.author,

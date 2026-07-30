@@ -43,6 +43,13 @@
       "when": 1785353992267,
       "tag": "0005_nifty_blonde_phantom",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785377576009,
+      "tag": "0006_modern_mongu",
+      "breakpoints": true
     }
   ]
 }

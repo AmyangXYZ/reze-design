@@ -45,16 +45,11 @@ export type GradeSpec = {
   saturation: number
 }
 
-/** What the SCENE stores: which grade, and how strong */
+/** What the SCENE stores: which grade (by name — built-in or draft), how strong. */
 export type GradeSettings = {
   preset: string
-  intensities: Record<string, number>
-  /** `from` is the built-in this snapshot descends from — without it, editing a
-   *  preset severs the link to it and "back to preset" has nothing to revert to. */
-  custom?: { name: string; spec: GradeSpec; from?: string | null } | null
+  intensity: number
 }
-
-export const CUSTOM_ID = "custom"
 
 // Presets live in content/grades.json — data, not code, in the same envelope a
 // contributed grade will arrive in once the library is server-backed. File order
@@ -68,10 +63,10 @@ export const CUSTOM_ID = "custom"
 // which is what actually destroys shading.
 // JSON widens the range tuples to number[], so re-narrow on the way in — one
 // cast at the boundary keeps every consumer strongly typed.
-export const GRADE_PRESETS = asBuiltins<GradeItem>(presets as unknown as Omit<GradeItem, "owner">[])
+export const GRADE_PRESETS = asBuiltins<GradeItem>(presets as unknown as Omit<GradeItem, "owner" | "id">[])
 
 export const NEUTRAL_SPEC: GradeSpec = GRADE_PRESETS[0].payload.spec
-export const DEFAULT_GRADE: GradeSettings = { preset: "neutral", intensities: {}, custom: null }
+export const DEFAULT_GRADE: GradeSettings = { preset: "Neutral", intensity: 1 }
 
 /** Editor starting point — visibly a grade rather than a no-op, so a new author sees */
 export const NEW_GRADE_SPEC: GradeSpec = {
@@ -108,15 +103,41 @@ export function readSplit(spec: GradeSpec): number {
   return Math.max(-1, Math.min(1, (warmth(hh) * hs - warmth(sh) * ss) / (2 * SPLIT_MAX_SAT)))
 }
 
-/** The spec the settings currently point at (built-in, or the snapshot). */
-export function specOf(g: GradeSettings): GradeSpec {
-  if (g.preset === CUSTOM_ID) return g.custom?.spec ?? NEUTRAL_SPEC
-  return (GRADE_PRESETS.find((p) => p.id === g.preset) ?? GRADE_PRESETS[0]).payload.spec
+/** Resolve a grade name against the built-ins and the given drafts. Unresolvable
+ *  names (a draft deleted, a scene from elsewhere) read as Neutral — visibly
+ *  ungraded rather than wrongly graded. */
+export function gradeSpec(name: string, drafts: GradeItem[] = []): GradeSpec {
+  return (
+    (GRADE_PRESETS.find((p) => p.name === name) ?? drafts.find((d) => d.name === name))?.payload.spec ?? NEUTRAL_SPEC
+  )
 }
 
-/** Strength for the ACTIVE grade. */
-export function intensityOf(g: GradeSettings): number {
-  return Math.max(0, Math.min(1, g.intensities[g.preset] ?? 1))
+// ── Per-preset intensity memory ────────────────────────────────────────────────
+// A UX nicety, not scene content: switching back to a preset restores the
+// strength you last used it at. Lives in localStorage, never in the document.
+
+const INTENSITY_KEY = "reze-design.gradeIntensity.1"
+
+function intensityMap(): Record<string, number> {
+  if (typeof window === "undefined") return {}
+  try {
+    return (JSON.parse(window.localStorage.getItem(INTENSITY_KEY) ?? "{}") as Record<string, number>) ?? {}
+  } catch {
+    return {}
+  }
+}
+
+export function recallIntensity(preset: string): number {
+  const v = intensityMap()[preset]
+  return typeof v === "number" ? Math.max(0, Math.min(1, v)) : 1
+}
+
+export function rememberIntensity(preset: string, v: number): void {
+  try {
+    window.localStorage.setItem(INTENSITY_KEY, JSON.stringify({ ...intensityMap(), [preset]: v }))
+  } catch {
+    // Storage blocked — switching presets just starts at full strength.
+  }
 }
 
 /** Resolve a spec + strength into the engine's ASC CDL inputs. */
@@ -135,6 +156,3 @@ export function resolveSpec(
   }
 }
 
-export function resolveGrade(g: GradeSettings) {
-  return resolveSpec(specOf(g), intensityOf(g))
-}

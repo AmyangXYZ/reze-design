@@ -13,6 +13,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { usePublish } from "@/hooks/use-publish"
 import type { LibraryKind } from "@/lib/library"
 import { useT } from "@/lib/i18n"
+import { cn } from "@/lib/utils"
 
 const MAX_TAGS = 8
 
@@ -22,6 +23,7 @@ export function PublishButton({
   defaultDescription = "",
   defaultTags = [],
   payload,
+  className,
 }: {
   kind: Exclude<LibraryKind, "scene">
   defaultName: string
@@ -29,6 +31,7 @@ export function PublishButton({
   defaultTags?: string[]
   /** Read at submit time, so it captures the latest edits rather than a stale copy. */
   payload: () => unknown
+  className?: string
 }) {
   const t = useT()
   const { signedIn, publishing, published, failed, publish } = usePublish(kind)
@@ -53,7 +56,7 @@ export function PublishButton({
     <Button
       size="sm"
       disabled={!signedIn}
-      className="h-7 gap-1.5 rounded-md bg-blue-400 px-3 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-40"
+      className={cn("h-7 gap-1.5 rounded-md bg-white px-3 text-xs font-medium text-zinc-900 hover:bg-white/90 disabled:opacity-40", className)}
     >
       {published ? <Check className="size-3.5" /> : <Share2 className="size-3.5" />}
       {published ? t.gradeLibrary.publishDone : t.gradeLibrary.publish}

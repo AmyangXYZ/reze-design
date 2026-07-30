@@ -1,6 +1,5 @@
 [
   {
-    "id": "fuji-watercolor",
     "kind": "effect",
     "name": "Fuji Watercolor",
     "author": "Amyang",
@@ -17,7 +16,6 @@
     }
   },
   {
-    "id": "orbiting-hearts",
     "kind": "effect",
     "name": "Orbiting Hearts",
     "author": "Amyang",
@@ -33,7 +31,6 @@
     }
   },
   {
-    "id": "quiet-rain",
     "kind": "effect",
     "name": "Quiet Rain",
     "author": "Amyang",
@@ -50,7 +47,6 @@
     }
   },
   {
-    "id": "reze-neon",
     "kind": "effect",
     "name": "REZE DESIGN",
     "author": "Amyang",
@@ -67,7 +63,6 @@
     }
   },
   {
-    "id": "shining-stars",
     "kind": "effect",
     "name": "Shining Stars",
     "author": "Amyang",

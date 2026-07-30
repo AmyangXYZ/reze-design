@@ -66,9 +66,18 @@ function release(id: string) {
   emit()
 }
 
-/** z for this surface, plus the handler that raises it. `onEscape` opts the
- *  surface into Escape-closes-topmost. */
-export function useZOrder(raiseKey?: unknown, onEscape?: () => void): { z: number; onPointerDownCapture: () => void } {
+/**
+ * z for this surface, plus the handlers that raise it. `onEscape` opts the surface
+ * into Escape-closes-topmost.
+ *
+ * Spread the returned `raise` props onto the surface root. Focus raises as well as
+ * pointer-down, so tabbing into a dock behind an editor brings it forward — the
+ * behaviour every desktop window manager has and every web app forgets.
+ */
+export function useZOrder(
+  raiseKey?: unknown,
+  onEscape?: () => void,
+): { z: number; onPointerDownCapture: () => void; onFocusCapture: () => void } {
   const id = useId()
   useEffect(() => {
     bringToFront(id)
@@ -96,6 +105,10 @@ export function useZOrder(raiseKey?: unknown, onEscape?: () => void): { z: numbe
     () => order.indexOf(id),
     () => -1, // SSR: unstacked; the mount effect assigns a real position
   )
-  const onPointerDownCapture = useCallback(() => bringToFront(id), [id])
-  return { z: BASE + Math.min(Math.max(index, 0), MAX_STACK - 1), onPointerDownCapture }
+  const raise = useCallback(() => bringToFront(id), [id])
+  return {
+    z: BASE + Math.min(Math.max(index, 0), MAX_STACK - 1),
+    onPointerDownCapture: raise,
+    onFocusCapture: raise,
+  }
 }

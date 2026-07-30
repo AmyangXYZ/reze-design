@@ -12,7 +12,7 @@
 import { useEffect, useRef } from "react"
 import type { Engine } from "reze-engine"
 import type { AppliedBackgroundEffect } from "@/lib/background-effects"
-import { resolveGrade } from "@/lib/grade"
+import { resolveSpec, type GradeSpec } from "@/lib/grade"
 import { azElToDirection, hexToLinearVec3, hexToSrgbVec3, type SceneSettings } from "@/lib/scene-settings"
 
 const GREEN = "#00ff00"
@@ -21,6 +21,7 @@ export function useSceneSync({
   engineRef,
   ready,
   settings,
+  gradeSpec,
   backgroundEffect,
   /** A DOM image sits behind the canvas, so the canvas must stay transparent. */
   hasBackdrop = false,
@@ -33,6 +34,8 @@ export function useSceneSync({
   engineRef: React.RefObject<Engine | null>
   ready: boolean
   settings: SceneSettings
+  /** Resolved by the caller: the scene stores a NAME, and drafts live client-side. */
+  gradeSpec: GradeSpec
   backgroundEffect: AppliedBackgroundEffect | null
   hasBackdrop?: boolean
   skybox?: File | null
@@ -40,7 +43,7 @@ export function useSceneSync({
 }) {
   // Per-section identity guard: setSun dirties the shadow map (an extra full pass
   // per frame), so an unguarded push re-rendered shadows on every bloom tick.
-  const prev = useRef<{ settings: SceneSettings; backdrop: boolean; green: boolean } | null>(null)
+  const prev = useRef<{ settings: SceneSettings; gradeSpec: GradeSpec; backdrop: boolean; green: boolean } | null>(null)
   // addGround rebuilds GPU buffers and a bind group per call, so ground edits
   // coalesce to at most one rebuild per frame from the latest options.
   const groundOpts = useRef<Parameters<Engine["addGround"]>[0] | null>(null)
@@ -81,8 +84,8 @@ export function useSceneSync({
         color: hexToLinearVec3(bloom.color),
       })
     }
-    if (!p || p.settings.grade !== grade) {
-      const cdl = resolveGrade(grade)
+    if (!p || p.settings.grade !== grade || p.gradeSpec !== gradeSpec) {
+      const cdl = resolveSpec(gradeSpec, grade.intensity)
       engine.setColorGrading({
         shadows: hexToSrgbVec3(cdl.shadows),
         midtones: hexToSrgbVec3(cdl.midtones),
@@ -111,8 +114,8 @@ export function useSceneSync({
         })
       }
     }
-    prev.current = { settings, backdrop: hasBackdrop, green: greenScreen }
-  }, [settings, ready, engineRef, hasBackdrop, greenScreen])
+    prev.current = { settings, gradeSpec, backdrop: hasBackdrop, green: greenScreen }
+  }, [settings, gradeSpec, ready, engineRef, hasBackdrop, greenScreen])
 
   // Recompile only when the shader itself (or its suspension) actually changes.
   const lastWgsl = useRef<string | null>(null)

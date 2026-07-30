@@ -9,7 +9,13 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
-export type QuickPickItem = { id: string; label: string; hint?: string }
+export type QuickPickItem = {
+  id: string
+  label: string
+  hint?: string
+  /** Which section the row sits in. Defaults to "builtin". */
+  section?: "builtin" | "community" | "local"
+}
 
 export function QuickPick({
   value,
@@ -41,6 +47,20 @@ export function QuickPick({
   // deliberately does NOT close, so several looks can be tried in a row.
   const [open, setOpen] = useState(false)
   const current = items.find((i) => i.id === value)
+  const row = (i: QuickPickItem) => (
+    <button
+      key={i.id}
+      onClick={() => onPick(i.id)}
+      className={cn(
+        "flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors hover:bg-white/5",
+        i.id === value ? "text-blue-400" : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      <span className="min-w-0 flex-1 truncate">{i.label}</span>
+      {i.hint && <span className="shrink-0 font-mono text-[10px] text-muted-foreground/60">{i.hint}</span>}
+      {i.id === value && <Check className="size-3.5 shrink-0" />}
+    </button>
+  )
   // Blue whenever something is APPLIED
   const applied = value !== null && value !== ""
   return (
@@ -64,22 +84,17 @@ export function QuickPick({
         onCloseAutoFocus={(e) => e.preventDefault()}
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        <ScrollArea className="max-h-64">
-          {items.map((i) => (
-            <button
-              key={i.id}
-              onClick={() => onPick(i.id)}
-              className={cn(
-                "flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors hover:bg-white/5",
-                i.id === value ? "text-blue-400" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <span className="min-w-0 flex-1 truncate">{i.label}</span>
-              {i.hint && <span className="shrink-0 font-mono text-[10px] text-muted-foreground/60">{i.hint}</span>}
-              {i.id === value && <Check className="size-3.5 shrink-0" />}
-            </button>
-          ))}
-        </ScrollArea>
+        {/* Built-ins (and community, once it lands) scroll in the main area; local
+            drafts hold a small compartment pinned at the bottom. */}
+        <ScrollArea className="max-h-48">{items.filter((i) => (i.section ?? "builtin") !== "local").map(row)}</ScrollArea>
+        {items.some((i) => i.section === "local") && (
+          <div className="mt-1 border-t border-white/10 pt-1">
+            <div className="px-2 pt-0.5 pb-1 text-[9px] font-medium tracking-[0.14em] text-muted-foreground/60 uppercase">
+              {t.rail.local}
+            </div>
+            <ScrollArea className="max-h-16">{items.filter((i) => i.section === "local").map(row)}</ScrollArea>
+          </div>
+        )}
         <div className="mt-1 border-t border-white/10 pt-1">
           {onEdit && (
             <button

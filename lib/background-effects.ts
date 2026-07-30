@@ -20,10 +20,10 @@ export const applyDefaults = (def: EffectItem): AppliedBackgroundEffect => ({
   wgsl: def.payload.wgsl,
 })
 
-/** A built-in effect as an applied snapshot */
-export function builtinEffect(id: string): AppliedBackgroundEffect {
-  const def = BACKGROUND_EFFECTS.find((e) => e.id === id)
-  if (!def) throw new Error(`unknown background effect: ${id}`)
+/** A built-in effect as an applied snapshot, by name — how scene documents refer to it. */
+export function builtinEffect(name: string): AppliedBackgroundEffect {
+  const def = BACKGROUND_EFFECTS.find((e) => e.name === name)
+  if (!def) throw new Error(`unknown background effect: ${name}`)
   return applyDefaults(def)
 }
 
@@ -56,4 +56,4 @@ fn noise2(p: vec2f) -> f32 {
 }
 `
 
-export const BACKGROUND_EFFECTS = asBuiltins<EffectItem>(effects as Omit<EffectItem, "owner">[])
+export const BACKGROUND_EFFECTS = asBuiltins<EffectItem>(effects as Omit<EffectItem, "owner" | "id">[])

@@ -10,7 +10,7 @@
 // (built-in ids are hand-written, user ids generated), so the two merge at read
 // time with no seeding step and no dedup.
 
-import { index, integer, jsonb, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core"
+import { index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import type { EffectPayload, GradePayload, GraphPayload, LibraryKind, ScenePayload } from "@/lib/library"
 import { user } from "./auth-schema"
 
@@ -47,6 +47,9 @@ export const libraryItems = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    // The NAME is the human key — scene documents reference library content by it,
+    // so it must be unique per kind. Ids stay machine-minted and opaque.
+    uniqueIndex("library_items_kind_name_idx").on(t.kind, t.name),
     // The library browses by kind, and the gallery by kind within what's public.
     index("library_items_kind_visibility_idx").on(t.kind, t.visibility),
     // "Yours" — every item a user owns, newest first.

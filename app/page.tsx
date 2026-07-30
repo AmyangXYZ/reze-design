@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   DEFAULT_GRAPH,
+  compileGraph,
   type CompileOptions,
   type Diagnostic,
   type MaterialPreset,
@@ -28,7 +29,7 @@ import { NodeLibrary } from "@/components/editor/node-library"
 import { RenderPanel, type FramePreview } from "@/components/editor/render-panel"
 import { useEngine } from "@/hooks/use-engine"
 import { useSceneSync } from "@/hooks/use-scene-sync"
-import { useZOrder } from "@/hooks/use-z-order"
+import { RaisableLayer } from "@/components/editor/raisable-layer"
 import { useHistory } from "@/hooks/use-history"
 import { probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
 import { expandUploadFiles, readDroppedFiles } from "@/lib/uploads"
@@ -36,21 +37,21 @@ import { useT } from "@/lib/i18n"
 import type { ExportAudioSource } from "@/lib/video-export"
 import { MaterialSphereIcon } from "@/components/scene/slot-icons"
 import { DEFAULT_SCENE } from "@/lib/default-scene"
-import { GRAPH_LIBRARY, SLOT_GRAPHS } from "@/lib/materials"
+import { groupLabel, GRAPH_LIBRARY, SLOT_GRAPHS } from "@/lib/materials"
 import type { AppliedBackgroundEffect } from "@/lib/background-effects"
-import { CUSTOM_ID, GRADE_PRESETS, NEUTRAL_SPEC, specOf, type GradeSpec } from "@/lib/grade"
+import { GRADE_PRESETS, NEUTRAL_SPEC, gradeSpec, recallIntensity } from "@/lib/grade"
+import { quickPickItems, type EffectItem, type GradeItem, type GraphItem } from "@/lib/library"
+import { useDrafts } from "@/hooks/use-drafts"
+import { useSession } from "@/lib/auth-client"
+import { createDraft, isDraftId, loadDrafts, nextDraftName, updateDraft } from "@/lib/drafts"
 import { BACKGROUND_EFFECTS, builtinEffect } from "@/lib/background-effects"
 import { GradeLibrary } from "@/components/editor/grade-library"
 import { GradeEditorPanel, type GradeEditorSubject } from "@/components/editor/grade-editor"
+import { SaveCloseDialog } from "@/components/editor/save-close"
 import { captureScene } from "@/components/editor/grade-preview"
-import { hydrateScene, saveSceneState } from "@/lib/scene"
+import { hydrateScene, saveSceneState, type SceneCamera } from "@/lib/scene"
 import type { SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
-
-/** True when the applied effect is a built-in whose shader is still as shipped —
- *  i.e. a selection rather than something the user wrote or edited. */
-const isStockEffect = (fx: AppliedBackgroundEffect) =>
-  BACKGROUND_EFFECTS.some((e) => e.id === fx.id && e.payload.wgsl === fx.wgsl)
 
 // Frame preview: how far the viewport's aspect may deviate from the export target before
 const FRAME_ASPECT_TOL = 1.03
@@ -164,19 +165,28 @@ export default function Home() {
   }, [mounted, docksOpen, leftTab, rightTab])
 
   // Docks join the same stacking order as the floating panels, so clicking one raises it over
-  const leftDockZ = useZOrder()
-  const rightDockZ = useZOrder()
 
   const [drawerOpen, setDrawerOpen] = useState(false)
   // Bumped per open so the panel RAISES each time — it stays mounted while closed,
   // so without this bringToFront only ever ran on first mount and opening the
   // editor from a library left the library stacked on top.
   const [graphSession, setGraphSession] = useState(0)
+  // Standalone graph-editing session (library act, no group) — state lives up
+  // here because opening the group editor must end it; handlers live with the
+  // other library-editing flows below.
+  const [graphLibEdit, setGraphLibEdit] = useState<{
+    sessionId: number
+    id: string
+    name: string
+    opened: ShaderGraph
+    savePrompt: boolean
+  } | null>(null)
+  const graphLibLatest = useRef<ShaderGraph | null>(null)
   const openGraphEditor = useCallback(() => {
+    setGraphLibEdit(null)
     setGraphSession((v) => v + 1)
     setDrawerOpen(true)
   }, [])
-  const [drawerFull, setDrawerFull] = useState(false) // graph editor full-screen
   // Free-floating editor window rect (null until initialized post-mount from storage).
   const [panelRect, setPanelRect] = useState<Rect | null>(null)
   useEffect(() => {
@@ -211,6 +221,7 @@ export default function Home() {
   // The boot document: the bundled demo with the user's stored values merged over it.
   const [bootScene] = useState(() => hydrateScene(DEFAULT_SCENE))
   const [sceneSettings, setSceneSettings] = useState<SceneSettings>(bootScene.state.settings)
+  const [sceneCamera, setSceneCamera] = useState<SceneCamera>(bootScene.state.camera)
   const [sceneName, setSceneName] = useState(bootScene.state.name)
   // Undo/redo for the Scene panel — also the fallback scope, so ⌘Z with nothing
   // focused still edits the scene the way it always has.
@@ -231,6 +242,7 @@ export default function Home() {
     upsertGroup: upsertGroupFor,
     applyGroups: applyGroupsFor,
     resetStyleGroups,
+    setCameraView,
     highlight: highlightFor,
     toggleVisible: toggleVisibleFor,
     addModelFromFiles,
@@ -290,7 +302,7 @@ export default function Home() {
   )
 
   // Apply a library shader graph to the target style group.
-  const applyLibrary = (graph: ShaderGraph, name: string, edit = false) => {
+  const applyLibrary = (graph: ShaderGraph, name: string) => {
     const group = groups.find((g) => g.id === library.groupId)
     if (!group) return
     const styled: ShaderGraph = { ...graph, name }
@@ -301,19 +313,69 @@ export default function Home() {
     else void applyGroups(groups.map((x) => (x.id === group.id ? updated : x)))
     setActiveGroupId(group.id)
     setLibVersion((v) => v + 1)
-    if (edit) {
-      openGraphEditor() // pop the editor; keep the library open (independent panels)
-    } else {
-      setLibrary({ open: false, groupId: null })
-    }
+    setLibrary({ open: false, groupId: null })
   }
 
   // Graph-editor session lifecycle ── Edits preview live on the active group.
   // Close keeps the edits, like the other two editors. Undoing is ⌘Z, and the
   // header's reset-to-preset covers starting over.
-  const closeGraphEdit = () => {
+  const closeGraphEdit = () => setDrawerOpen(false)
+
+  // Standalone graph editing: same scratchpad contract as the grade/effect
+  // editors — edits compile purely (compileGraph needs no engine), and only
+  // save-on-close writes a draft.
+  const openGraphLibEdit = (id: string, name: string, graph: ShaderGraph) => {
+    graphLibLatest.current = null
+    setGraphLibEdit((prev) => ({ sessionId: (prev?.sessionId ?? 0) + 1, id, name, opened: graph, savePrompt: false }))
+    setGraphSession((v) => v + 1) // raiseKey: the drawer must surface above the library
+    setDrawerOpen(true)
+  }
+  const compileStandalone = (graph: ShaderGraph): Promise<{ ok: boolean; diagnostics: Diagnostic[] }> => {
+    graphLibLatest.current = graph
+    const r = compileGraph(graph)
+    return Promise.resolve({ ok: r.ok, diagnostics: r.diagnostics })
+  }
+  const freeGraphName = (wanted: string, keepId?: string) =>
+    nextDraftName(wanted, [
+      ...GRAPH_LIBRARY.map((g) => g.name),
+      ...loadDrafts().graph.filter((d) => d.id !== keepId).map((d) => d.name),
+    ])
+  const requestCloseGraphDrawer = () => {
+    if (!graphLibEdit) {
+      setDrawerOpen(false)
+      return
+    }
+    const latest = graphLibLatest.current ?? graphLibEdit.opened
+    if (JSON.stringify(latest) === JSON.stringify(graphLibEdit.opened)) {
+      setGraphLibEdit(null)
+      setDrawerOpen(false)
+      return
+    }
+    // An existing draft saves in place — unless it stopped compiling, in which
+    // case the dialog surfaces the refusal instead of silently keeping a dud.
+    if (isDraftId(graphLibEdit.id) && saveGraphLibEdit(graphLibEdit.name) === null) return
+    setGraphLibEdit({ ...graphLibEdit, savePrompt: true })
+  }
+  const saveGraphLibEdit = (wanted: string): string | null => {
+    if (!graphLibEdit) return null
+    const keep = isDraftId(graphLibEdit.id) ? graphLibEdit.id : undefined
+    const name = freeGraphName(wanted, keep)
+    const graph = { ...(graphLibLatest.current ?? graphLibEdit.opened), name }
+    // Same rule as effects: a graph that doesn't compile doesn't get saved.
+    const r = compileGraph(graph)
+    if (!r.ok) {
+      const err = r.diagnostics.find((d) => d.severity === "error")
+      return err?.message ?? "compile failed"
+    }
+    if (keep) updateDraft("graph", keep, { name, payload: { graph } })
+    else createDraft("graph", { name, payload: { graph }, author: authorName })
+    setGraphLibEdit(null)
     setDrawerOpen(false)
-    setDrawerFull(false)
+    return null
+  }
+  const discardGraphLibEdit = () => {
+    setGraphLibEdit(null)
+    setDrawerOpen(false)
   }
 
 
@@ -562,16 +624,37 @@ export default function Home() {
 
   // Everything a published scene needs pushed at the engine — the viewer will
   // call this same hook with a fetched document and no editing around it.
+  const { drafts: gradeDrafts } = useDrafts<GradeItem>("grade")
+  // Floating grade editor — an independent panel like the graph/WGSL editors, opened
+  // per subject. The editor is a SCRATCHPAD: `subject` is the working copy, live on
+  // the render but written nowhere. Only the save-on-close dialog creates or
+  // updates a draft — closing clean, or discarding, leaves no trace.
+  const [gradeEditor, setGradeEditor] = useState<{
+    sessionId: number
+    subject: GradeEditorSubject
+    opened: GradeEditorSubject
+    savePrompt: boolean
+  } | null>(null)
+  // The scene stores the grade NAME; the spec resolves against built-ins and the
+  // reactive drafts store, so editing a draft live-updates the render.
+  const appliedGradeSpec = useMemo(
+    () => (gradeEditor ? gradeEditor.subject.spec : gradeSpec(sceneSettings.grade.preset, gradeDrafts)),
+    [gradeEditor, sceneSettings.grade.preset, gradeDrafts],
+  )
   const { noteAppliedWgsl } = useSceneSync({
     engineRef,
     ready,
     settings: sceneSettings,
+    gradeSpec: appliedGradeSpec,
     backgroundEffect: bgEffect,
     hasBackdrop: !!backdrop,
     skybox: skybox?.file ?? null,
     greenScreen: liveGreenScreen,
   })
   const [effectsOpen, setEffectsOpen] = useState(false)
+
+  const { data: authSession } = useSession()
+  const authorName = authSession?.user.username ?? t.bgLibrary.you
 
   // Grades library ── User grades live in localStorage (pre-accounts), while the APPLIED
   const [gradesOpen, setGradesOpen] = useState(false)
@@ -585,27 +668,13 @@ export default function Home() {
     // Refs are stable by contract
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setLibrary, setEffectsOpen, setGradesOpen])
+  // Applying restores the strength you last used this grade at — that memory is
+  // UX, so it lives in localStorage rather than the scene.
   const applyGradePreset = useCallback(
-    (id: string) => setSceneSettings((s) => ({ ...s, grade: { ...s.grade, preset: id } })),
-    [],
-  )
-  const applyGradeCustom = useCallback(
-    (name: string, spec: GradeSpec, from?: string | null) =>
-      setSceneSettings((s) => ({
-        ...s,
-        grade: {
-          ...s.grade,
-          preset: CUSTOM_ID,
-          // Keep the existing origin when the caller doesn't name one, so successive
-          // edits of the same grade don't lose the preset they started from.
-          custom: { name, spec, from: from ?? s.grade.custom?.from ?? null },
-        },
-      })),
+    (name: string) => setSceneSettings((s) => ({ ...s, grade: { preset: name, intensity: recallIntensity(name) } })),
     [],
   )
 
-  // Floating grade editor — an independent panel like the graph/WGSL editors, opened
-  const [gradeEditor, setGradeEditor] = useState<{ sessionId: number; subject: GradeEditorSubject } | null>(null)
   const [gradePanelRect, setGradePanelRect] = useState<Rect | null>(null)
   const updateGradePanelRect = useCallback((r: Rect) => {
     setGradePanelRect(r)
@@ -619,18 +688,47 @@ export default function Home() {
   const openGradeEditor = (subject: GradeEditorSubject) => {
     const fallback = loadGradePanelRect() ?? defaultPanelRect()
     setGradePanelRect((r) => r ?? fallback)
-    setGradeEditor((prev) => ({ sessionId: (prev?.sessionId ?? 0) + 1, subject }))
-    applyGradeCustom(subject.name, subject.spec, subject.origin ?? null)
+    setGradeEditor((prev) => ({ sessionId: (prev?.sessionId ?? 0) + 1, subject, opened: subject, savePrompt: false }))
   }
   // Plain function for the same reason as openGradeEditor above
-  const editGrade = (next: GradeEditorSubject) => {
+  const editGrade = (next: GradeEditorSubject) =>
     setGradeEditor((prev) => (prev ? { ...prev, subject: next } : prev))
-    applyGradeCustom(next.name, next.spec, next.origin ?? null)
+  /** A name no other grade holds — builtins and drafts alike (minus the one being renamed). */
+  const freeGradeName = (wanted: string, keepId?: string) =>
+    nextDraftName(wanted, [
+      ...GRADE_PRESETS.map((g) => g.name),
+      ...loadDrafts().grade.filter((d) => d.id !== keepId).map((d) => d.name),
+    ])
+  const requestCloseGradeEditor = () => {
+    if (!gradeEditor) return
+    const { subject, opened } = gradeEditor
+    const dirty = subject.name !== opened.name || JSON.stringify(subject.spec) !== JSON.stringify(opened.spec)
+    if (!dirty) {
+      setGradeEditor(null)
+      return
+    }
+    // An existing draft has a home — save in place, no questions.
+    if (isDraftId(subject.id)) {
+      updateDraft("grade", subject.id, { payload: { spec: subject.spec } })
+      setGradeEditor(null)
+      return
+    }
+    setGradeEditor({ ...gradeEditor, savePrompt: true })
+  }
+  const saveGradeEdit = (wanted: string) => {
+    if (!gradeEditor) return
+    const { subject } = gradeEditor
+    const keep = isDraftId(subject.id) ? subject.id : undefined
+    const name = freeGradeName(wanted, keep)
+    if (keep) updateDraft("grade", keep, { name, payload: { spec: subject.spec } })
+    else createDraft("grade", { name, payload: { spec: subject.spec }, author: authorName })
+    applyGradePreset(name)
+    setGradeEditor(null)
   }
   // The three libraries are non-modal and share a z-index, so two open at once simply occlude
   const applyGraphToGroup = useCallback(
     (groupId: string, graphName: string) => {
-      const entry = GRAPH_LIBRARY.find((e) => e.name === graphName)
+      const entry = [...loadDrafts().graph, ...GRAPH_LIBRARY].find((e) => e.name === graphName) as GraphItem | undefined
       const group = groups.find((g) => g.id === groupId)
       if (!entry || !group) return
       const updated: StyleGroup = { ...group, graph: { ...entry.payload.graph, name: entry.name } }
@@ -641,15 +739,15 @@ export default function Home() {
     [groups, upsertGroup, applyGroups],
   )
 
-  // Re-derive the active model's grouping from the scene document
+  // Restore the active model's grouping from the pristine scene document — not the
+  // hydrated boot state, which already carries the user's stored edits.
   const resetGroupsForActive = useCallback(() => {
     const id = activeIdRef.current
-    const seed = bootScene.assets.models.find((m) => m.model.id === id)?.model.styleGroups
     setActiveGroupId(null)
-    void resetStyleGroups(id, seed)
-  }, [bootScene, resetStyleGroups])
+    void resetStyleGroups(id, DEFAULT_SCENE.state.groups?.[id])
+  }, [resetStyleGroups])
 
-  const openLibrary = useCallback((groupId: string) => {
+  const openLibrary = useCallback((groupId: string | null) => {
     setEffectsOpen(false)
     setGradesOpen(false)
     setLibrary({ open: true, groupId })
@@ -660,15 +758,24 @@ export default function Home() {
     setEffectsOpen(true)
   }, [setLibrary, setGradesOpen, setEffectsOpen])
   // Library callbacks — stable so the (memoizable) dialog doesn't re-render idly.
-  const applyBgEffect = useCallback((fx: AppliedBackgroundEffect) => setBgEffect(fx), [setBgEffect])
+  const applyBgEffect = useCallback((effect: AppliedBackgroundEffect) => setBgEffect(effect), [setBgEffect])
   const removeBgEffect = useCallback(() => setBgEffect(null), [setBgEffect])
   // Floating WGSL editor (page-owned, like the graph editor's panel
-  const [fxEditor, setFxEditor] = useState<{ sessionId: number; subject: AppliedBackgroundEffect } | null>(null)
-  const fxSessionRef = useRef(0)
+  // Scratchpad, like the grade editor: `subject` is what opened (its wgsl is the
+  // dirty baseline), `prior` is what the scene showed before — restored on discard,
+  // and on any close that saved nothing. Compiles preview live; drafts are written
+  // only by the save-on-close dialog.
+  const [effectEditor, setEffectEditor] = useState<{
+    sessionId: number
+    subject: AppliedBackgroundEffect
+    prior: AppliedBackgroundEffect | null
+    savePrompt: string | null
+  } | null>(null)
+  const effectSessionRef = useRef(0)
   // Rect initializes lazily on first OPEN (an event handler, so no setState-in-effect)
-  const [fxPanelRect, setFxPanelRect] = useState<Rect | null>(null)
-  const updateFxPanelRect = useCallback((r: Rect) => {
-    setFxPanelRect(r)
+  const [effectPanelRect, setEffectPanelRect] = useState<Rect | null>(null)
+  const updateEffectPanelRect = useCallback((r: Rect) => {
+    setEffectPanelRect(r)
     try {
       window.localStorage.setItem(WGSL_PANEL_KEY, JSON.stringify(r))
     } catch {
@@ -676,7 +783,12 @@ export default function Home() {
     }
   }, [])
   // Compile + apply in one step
-  const commitFxCode = useCallback(
+  // Only the LISTS come from the hook. Writes go through the plain functions in
+  // lib/drafts.ts — a hook-returned callback in a dependency array defeats the
+  // React Compiler's memoization, and these writes need no React state.
+  const { drafts: effectDrafts } = useDrafts<EffectItem>("effect")
+
+  const commitEffectCode = useCallback(
     async (subject: AppliedBackgroundEffect, wgsl: string) => {
       const engine = engineRef.current
       if (!engine) return { ok: false, diagnostics: ["engine not ready"] }
@@ -689,17 +801,68 @@ export default function Home() {
     },
     [engineRef, setBgEffect, noteAppliedWgsl],
   )
-  // Opening auto-applies the subject
-  const openFxEditor = useCallback(
-    (subject: AppliedBackgroundEffect) => {
-      fxSessionRef.current += 1
-      setFxEditor({ sessionId: fxSessionRef.current, subject })
-      setFxPanelRect((r) => r ?? loadWgslPanelRect() ?? defaultWgslPanelRect())
-      void commitFxCode(subject, subject.wgsl)
-    },
-    [commitFxCode],
-  )
-  const closeFxEditor = useCallback(() => setFxEditor(null), [])
+  // Opening auto-applies the subject. Plain functions, like the grade editor's —
+  // they feed non-memoized dialogs, so memoizing buys nothing.
+  const openEffectEditor = (subject: AppliedBackgroundEffect) => {
+    effectSessionRef.current += 1
+    setEffectEditor({ sessionId: effectSessionRef.current, subject, prior: bgEffect, savePrompt: null })
+    setEffectPanelRect((r) => r ?? loadWgslPanelRect() ?? defaultWgslPanelRect())
+    void commitEffectCode(subject, subject.wgsl)
+  }
+  /** Close request from the editor. Dirty → prompt; clean → the preview simply
+   *  ends, and whatever was applied before the session comes back. */
+  const requestCloseEffectEditor = async (code: string) => {
+    if (!effectEditor) return
+    if (code === effectEditor.subject.wgsl) {
+      setBgEffect(effectEditor.prior)
+      setEffectEditor(null)
+      return
+    }
+    // An existing draft saves in place when it compiles; a refusal (or a nameless
+    // new effect) goes through the dialog.
+    if (isDraftId(effectEditor.subject.id)) {
+      const engine = engineRef.current
+      const r = engine ? await engine.setBackgroundEffect(code) : { ok: false }
+      if (r.ok) {
+        noteAppliedWgsl(code)
+        const { id, name } = effectEditor.subject
+        updateDraft("effect", id, { payload: { wgsl: code } })
+        setBgEffect({ id, name, wgsl: code })
+        setEffectEditor(null)
+        return
+      }
+    }
+    setEffectEditor({ ...effectEditor, savePrompt: code })
+  }
+  const discardEffectEdit = () => {
+    if (!effectEditor) return
+    setBgEffect(effectEditor.prior)
+    setEffectEditor(null)
+  }
+  /** A name no other effect holds — builtins and drafts alike (minus the one being renamed). */
+  const freeEffectName = (wanted: string, keepId?: string) =>
+    nextDraftName(wanted, [
+      ...BACKGROUND_EFFECTS.map((e) => e.name),
+      ...loadDrafts().effect.filter((d) => d.id !== keepId).map((d) => d.name),
+    ])
+  const saveEffectEdit = async (wanted: string): Promise<string | null> => {
+    if (!effectEditor?.savePrompt) return null
+    const { subject, savePrompt: code } = effectEditor
+    // A broken shader must not land in the library — it would be auto-applied on
+    // every future pick. Compiling IS applying, which is also what save wants.
+    const engine = engineRef.current
+    const r = engine ? await engine.setBackgroundEffect(code) : { ok: false, diagnostics: ["engine not ready"] }
+    if (!r.ok) return r.diagnostics[0] ?? "compile failed"
+    noteAppliedWgsl(code)
+    const keep = isDraftId(subject.id) ? subject.id : undefined
+    const name = freeEffectName(wanted, keep)
+    let id = keep
+    if (keep) updateDraft("effect", keep, { name, payload: { wgsl: code } })
+    else id = createDraft("effect", { name, payload: { wgsl: code }, author: authorName }).id
+    setBgEffect({ id: id!, name, wgsl: code })
+    setEffectEditor(null)
+    return null
+  }
   const onBackdropPicked = async (file: File | undefined) => {
     if (!file) return
     try {
@@ -901,7 +1064,7 @@ export default function Home() {
     const payload = {
       id: bootScene.state.id,
       name: sceneName,
-      camera: bootScene.state.camera,
+      camera: sceneCamera,
       settings: sceneSettings,
       backgroundEffect: bgEffect,
       // The whole per-model record
@@ -927,17 +1090,28 @@ export default function Home() {
       clearTimeout(timer)
       if (idle && typeof cancelIdleCallback === "function") cancelIdleCallback(idle)
     }
-  }, [ready, sceneName, sceneSettings, bgEffect, groupsByModel, models, bootScene])
+  }, [ready, sceneName, sceneSettings, sceneCamera, bgEffect, groupsByModel, models, bootScene])
 
   // Stable handlers for the memoized AssetsPanel.
   // Back to the scene DOCUMENT — sliders, colours, and which grade/effect is picked.
   // A picked preset is document state and reverts; an EDITED one is content, and an
   // in-place edit lives nowhere but here, so resetting would destroy it outright.
+  // Framing is pushed on change rather than through an effect, so dragging a slider
+  // moves the camera on the same tick as the value updates.
+  const changeCamera = useCallback(
+    (c: SceneCamera) => {
+      setSceneCamera(c)
+      setCameraView(c)
+    },
+    [setCameraView],
+  )
+
   const resetSceneDefaults = useCallback(() => {
     setSceneSettings(DEFAULT_SCENE.state.settings)
     setBgEffect(DEFAULT_SCENE.state.backgroundEffect)
     setSceneName(DEFAULT_SCENE.state.name)
-  }, [setSceneSettings, setBgEffect])
+    changeCamera(DEFAULT_SCENE.state.camera)
+  }, [setSceneSettings, setBgEffect, changeCamera])
 
   const openModelDialog = useCallback(
     (target: ModelTarget) => {
@@ -995,96 +1169,75 @@ export default function Home() {
     [stopAnimation],
   )
 
-  // Quick-switch entries for the two Scene-panel value rows.
+  // Quick-switch entries for the two Scene-panel value rows. Rows are keyed by
+  // NAME — the same key the scene stores — so drafts and built-ins are one list.
+  const appliedGradeDraftId = gradeDrafts.find((d) => d.name === sceneSettings.grade.preset)?.id ?? null
   const gradeItems = useMemo(
-    () => [
-      ...GRADE_PRESETS.map((g) => ({
-        id: g.id,
-        label: t.scene.gradePresets[g.id as keyof typeof t.scene.gradePresets] ?? g.id,
+    () =>
+      quickPickItems(GRADE_PRESETS, gradeDrafts, appliedGradeDraftId).map((g) => ({
+        id: g.name,
+        label: t.scene.gradePresets[g.name as keyof typeof t.scene.gradePresets] ?? g.name,
+        section: g.owner === "local" ? ("local" as const) : ("builtin" as const),
       })),
-    ],
-    [t],
+    [t, gradeDrafts, appliedGradeDraftId],
   )
-  // The TRUE built-in spec an edit descends from — resolved from the library, never
-  // a snapshot taken when the editor opened (which made "back to preset" revert to
-  // the last-closed state). Also what the `edited` mark diffs against.
+  // The built-in spec an edit descends from. Neutral, never NEW_GRADE_SPEC:
+  // "revert" means back to no grade, not to the editor's authoring starting point.
   const gradeAncestor = useCallback(
-    (subject?: GradeEditorSubject) => {
-      const custom = sceneSettings.grade.custom
-      const id =
-        subject?.origin ??
-        (subject && subject.id !== CUSTOM_ID ? subject.id : null) ??
-        custom?.from ??
-        // Scenes stored before `from` existed carry no ancestry — recover it from
-        // the snapshot's name so an already-saved edit still knows its origin.
-        GRADE_PRESETS.find(
-          (g) => (t.scene.gradePresets[g.id as keyof typeof t.scene.gradePresets] ?? g.name) === custom?.name,
-        )?.id
-      // Neutral, never NEW_GRADE_SPEC: "revert" means back to no grade, not to the
-      // editor's authoring starting point.
-      return GRADE_PRESETS.find((g) => g.id === id)?.payload.spec ?? NEUTRAL_SPEC
-    },
-    [sceneSettings.grade.custom, t],
+    (subject?: GradeEditorSubject) =>
+      GRADE_PRESETS.find((g) => g.name === (subject?.origin ?? subject?.name))?.payload.spec ?? NEUTRAL_SPEC,
+    [],
   )
-  // An applied user grade is a SNAPSHOT — the scene stores preset=CUSTOM_ID plus a
-  // name, not the library id — so map it back to its entry, and fall back to a
-  // transient row for a snapshot that has no library entry (an unsaved edit).
   const gradeName =
-    sceneSettings.grade.preset === CUSTOM_ID
-      ? (sceneSettings.grade.custom?.name ?? t.gradeLibrary.untitled)
-      : t.scene.gradePresets[sceneSettings.grade.preset as keyof typeof t.scene.gradePresets]
-  // An edit isn't a library item, so it doesn't get its own row — it marks the
-  // preset it descends from as edited. Only a from-scratch grade, which descends
-  // from nothing, needs a row of its own.
-  // DIFFED, not flagged: reverting the values back to the preset clears the mark,
-  // where "has been through the editor" would keep claiming an edit that is gone.
-  // Merely OPENING the editor switches the scene to a custom snapshot, so
-  // `preset === CUSTOM_ID` says nothing about whether anything changed. Which row
-  // is selected follows the ancestor whenever there is one; only the `edited` mark
-  // depends on the spec actually differing. Keying selection off `edited` instead
-  // left the row resolving to CUSTOM_ID on an untouched grade, which appended a
-  // second row with the same name beside the built-in.
-  const gradeCustom = sceneSettings.grade.preset === CUSTOM_ID
-  const gradeValue = gradeCustom ? (sceneSettings.grade.custom?.from ?? CUSTOM_ID) : sceneSettings.grade.preset
-  const gradeEdited =
-    gradeCustom && JSON.stringify(specOf(sceneSettings.grade)) !== JSON.stringify(gradeAncestor())
-  const gradeList = useMemo(() => {
-    const items =
-      gradeValue === CUSTOM_ID
-        ? [...gradeItems, { id: CUSTOM_ID, label: sceneSettings.grade.custom?.name ?? t.gradeLibrary.untitled }]
-        : gradeItems
-    return gradeEdited ? items.map((i) => (i.id === gradeValue ? { ...i, hint: t.scene.edited } : i)) : items
-  }, [gradeItems, gradeValue, gradeEdited, sceneSettings.grade.custom?.name, t])
-  const pickGrade = useCallback(
-    (id: string) => {
-      if (id === CUSTOM_ID) return // the transient row for the applied edit — already on
-      applyGradePreset(id)
-    },
-    [applyGradePreset],
-  )
+    t.scene.gradePresets[sceneSettings.grade.preset as keyof typeof t.scene.gradePresets] ??
+    sceneSettings.grade.preset
+  const pickGrade = applyGradePreset
   const editCurrentGrade = useCallback(() => {
-    const { grade } = sceneSettings
-    const origin = grade.preset === CUSTOM_ID ? (grade.custom?.from ?? undefined) : grade.preset
-    openGradeEditor({ id: grade.preset, name: gradeName, spec: specOf(grade), origin })
+    const { preset } = sceneSettings.grade
+    const draft = gradeDrafts.find((d) => d.name === preset)
+    openGradeEditor({
+      id: draft?.id ?? preset,
+      name: preset,
+      spec: gradeSpec(preset, gradeDrafts),
+      origin: draft ? undefined : preset,
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sceneSettings, gradeName])
-  const editCurrentEffect = useCallback(() => {
-    if (bgEffect) openFxEditor(bgEffect)
-  }, [bgEffect, openFxEditor])
-  // Same rule as grades: an edited builtin marks its own row rather than appearing
-  // as a second entry, and only a from-scratch effect gets a row of its own.
+  }, [sceneSettings.grade.preset, gradeDrafts])
+  const editCurrentEffect = () => {
+    if (bgEffect) openEffectEditor(bgEffect)
+  }
+  // "edited" means the APPLIED shader differs from its saved source — builtin or
+  // draft. During an editor session the applied row carries the hint live; saving
+  // or discarding clears it. An unsaved new effect gets a transient row.
   const effectItems = useMemo(() => {
-    const items = BACKGROUND_EFFECTS.map((e) => ({ id: e.name, label: e.name }))
+    const items = quickPickItems(BACKGROUND_EFFECTS, effectDrafts, bgEffect?.id ?? null).map((e) => ({
+      id: e.name,
+      label: e.name,
+      section: e.owner === "local" ? ("local" as const) : ("builtin" as const),
+    }))
     if (!bgEffect) return items
-    if (isStockEffect(bgEffect)) return items
+    const pristine = [...BACKGROUND_EFFECTS, ...effectDrafts].some(
+      (e) => e.name === bgEffect.name && e.payload.wgsl === bgEffect.wgsl,
+    )
+    if (pristine) return items
     const known = items.some((i) => i.id === bgEffect.name)
-    const withOwn = known ? items : [...items, { id: bgEffect.name, label: bgEffect.name }]
+    const withOwn = known ? items : [...items, { id: bgEffect.name, label: bgEffect.name, section: "local" as const }]
     return withOwn.map((i) => (i.id === bgEffect.name ? { ...i, hint: t.scene.edited } : i))
-  }, [bgEffect, t])
-  const pickEffect = useCallback((name: string) => {
-    const def = BACKGROUND_EFFECTS.find((e) => e.name === name)
-    if (def) setBgEffect(builtinEffect(def.id))
-  }, [setBgEffect])
+  }, [bgEffect, effectDrafts, t])
+  const pickEffect = useCallback(
+    (name: string) => {
+      const draft = loadDrafts().effect.find((e) => e.name === name) as EffectItem | undefined
+      if (draft) {
+        // A draft carries its own shader, so it applies by value — there is no
+        // built-in to resolve it against.
+        setBgEffect({ id: draft.id, name: draft.name, wgsl: draft.payload.wgsl })
+        return
+      }
+      const def = BACKGROUND_EFFECTS.find((e) => e.name === name)
+      if (def) setBgEffect(builtinEffect(def.id))
+    },
+    [setBgEffect],
+  )
 
   // Character cards (Assets tab) + model strip (Materials tab)
   const characters = useMemo<CharacterCardData[]>(
@@ -1135,14 +1288,17 @@ export default function Home() {
           effectName={bgEffect?.name ?? null}
           onOpenEffects={openEffects}
           gradeName={gradeName}
-          gradeValue={gradeValue}
-          gradeItems={gradeList}
+          gradeValue={sceneSettings.grade.preset}
+          gradeItems={gradeItems}
           onPickGrade={pickGrade}
           onOpenGrades={openGrades}
           effectItems={effectItems}
           onEditGrade={editCurrentGrade}
           onEditEffect={bgEffect ? editCurrentEffect : undefined}
           onPickEffect={pickEffect}
+          camera={sceneCamera}
+          onCameraChange={changeCamera}
+          cameraDriven={cameraName !== null}
           onReset={resetSceneDefaults}
         /> },
   ]
@@ -1243,7 +1399,12 @@ export default function Home() {
   return (
     <div
       ref={rootRef}
-      className="fixed inset-0 overflow-hidden text-sm text-foreground select-none"
+      // ABSOLUTE, not fixed: `position: fixed` creates a stacking context, which
+      // scoped every z-index inside this root. Radix portals its dialogs to
+      // document.body, so a library at z-44 outranked a dock at z-48 simply by
+      // living outside. Absolute with z-index auto doesn't open a stacking context,
+      // so docks, floating panels and portaled dialogs all compare in one order.
+      className="absolute inset-0 overflow-hidden text-sm text-foreground select-none"
       style={{ backgroundColor: sceneSettings.background.color }}
       suppressHydrationWarning
       onDragOver={(e) => e.preventDefault()}
@@ -1315,11 +1476,7 @@ export default function Home() {
       {/* Left column: full-height flush dock when expanded (brand pill is its header) */}
       {mounted &&
         (docksOpen ? (
-          <div
-            className="fixed inset-y-0 left-0 w-[min(300px,88vw)]"
-            style={{ zIndex: leftDockZ.z }}
-            onPointerDownCapture={leftDockZ.onPointerDownCapture}
-          >
+          <RaisableLayer className="fixed inset-y-0 left-0 w-[min(300px,88vw)]">
             <LeftDock
               railTop={<RailLogo />}
               header={
@@ -1330,7 +1487,6 @@ export default function Home() {
                   onToggleDocks={() => {
                     setDocksOpen(false)
                     setDrawerOpen(false) // collapsing the docks hides the graph editor too
-                    setDrawerFull(false)
                   }}
                   asHeader
                 />
@@ -1339,7 +1495,7 @@ export default function Home() {
               active={leftTab}
               onActive={setLeftTab}
             />
-          </div>
+          </RaisableLayer>
         ) : (
           <div className="fixed top-3 left-3 z-20">
             <BrandPill sceneName={sceneName} onRenameScene={setSceneName} docksOpen={false} onToggleDocks={() => setDocksOpen(true)} />
@@ -1349,18 +1505,14 @@ export default function Home() {
       {/* Right column: full-height flush dock when expanded (account/play/share cluster */}
       {mounted &&
         (docksOpen ? (
-          <div
-            className="fixed inset-y-0 right-0 w-[min(300px,88vw)]"
-            style={{ zIndex: rightDockZ.z }}
-            onPointerDownCapture={rightDockZ.onPointerDownCapture}
-          >
+          <RaisableLayer className="fixed inset-y-0 right-0 w-[min(300px,88vw)]">
             <RightDock
               header={<TopRightCluster shareName="untitled-scene" asHeader />}
               tabs={rightTabs}
               active={rightTab}
               onActive={setRightTab}
             />
-          </div>
+          </RaisableLayer>
         ) : (
           <div className="fixed top-3 right-3 z-20">
             <TopRightCluster shareName="untitled-scene" />
@@ -1376,19 +1528,30 @@ export default function Home() {
           // Gated on open: this panel stays MOUNTED while closed, so an ungated
           // closer would sit at the top of the stack and swallow Escape from the
           // libraries beneath it.
-          onEscape={drawerOpen ? () => setDrawerOpen(false) : undefined}
-          open={drawerOpen}
-          fullscreen={drawerFull}
+          onEscape={drawerOpen ? requestCloseGraphDrawer : undefined}
+          fullscreen={false}
           className={cn(
             // z-50: above the docks/transport (z-20) and the non-modal library (z-40), so editing
             "z-50 overflow-hidden rounded-xl border border-white/10 bg-zinc-950/70 shadow-float backdrop-blur-xs transition-opacity duration-300",
             !drawerOpen && "pointer-events-none opacity-0",
           )}
         >
-          {!drawerOpen ? null : activeGroup && presetGraph ? (
+          {!drawerOpen ? null : graphLibEdit ? (
+            <GraphEditor
+              key={`lib-${graphLibEdit.sessionId}`}
+              slotLabel={graphLibEdit.name}
+              presetGraph={graphLibEdit.opened}
+              getInitialGraph={() => graphLibEdit.opened}
+              onApply={compileStandalone}
+              engineReady={ready}
+              engineError={error}
+              open={drawerOpen}
+              onClose={requestCloseGraphDrawer}
+            />
+          ) : activeGroup && presetGraph ? (
             <GraphEditor
               key={`${activeGroup.id}-${libVersion}`}
-              slotLabel={activeGroup.label ?? activeGroup.id}
+              slotLabel={activeGroup.graph.name || groupLabel(activeGroup)}
               presetGraph={presetGraph}
               getInitialGraph={() => activeGroup.graph ?? presetGraph}
               onApply={applyActiveGraph}
@@ -1396,8 +1559,6 @@ export default function Home() {
               engineError={error}
               open={drawerOpen}
               onClose={closeGraphEdit}
-              fullscreen={drawerFull}
-              onToggleFullscreen={() => setDrawerFull((v) => !v)}
             />
           ) : (
             <div className="relative flex h-full items-center justify-center text-xs text-muted-foreground">
@@ -1416,7 +1577,7 @@ export default function Home() {
       )}
 
       {/* Persistent transport bar — always present (inert with no clip, so removing the animation */}
-      {mounted && !drawerFull && (
+      {mounted && (
         <div className="fixed bottom-3 left-1/2 z-20 -translate-x-1/2">
           <AnimPlayer engineRef={engineRef} modelNames={animatedIds} hasCamera={cameraName !== null} />
         </div>
@@ -1429,20 +1590,30 @@ export default function Home() {
         applied={bgEffect}
         onApply={applyBgEffect}
         onRemove={removeBgEffect}
-        onEdit={openFxEditor}
+        onEdit={openEffectEditor}
+        onRenamed={(oldName, newName) => setBgEffect((prev) => (prev?.name === oldName ? { ...prev, name: newName } : prev))}
       />
 
       {/* ── Floating WGSL editor (drag it aside; the scene is the preview). ── */}
-      {mounted && fxEditor && (
+      {mounted && effectEditor && (
         <WgslEditorPanel
           open
-          sessionId={fxEditor.sessionId}
-          rect={fxPanelRect}
-          onRectChange={updateFxPanelRect}
-          title={fxEditor.subject.name}
-          initial={fxEditor.subject.wgsl}
-          onCompile={(wgsl) => commitFxCode(fxEditor.subject, wgsl)}
-          onClose={closeFxEditor}
+          sessionId={effectEditor.sessionId}
+          rect={effectPanelRect}
+          onRectChange={updateEffectPanelRect}
+          title={effectEditor.subject.name}
+          initial={effectEditor.subject.wgsl}
+          onCompile={(wgsl) => commitEffectCode(effectEditor.subject, wgsl)}
+          onClose={(code) => void requestCloseEffectEditor(code)}
+        />
+      )}
+      {mounted && effectEditor?.savePrompt != null && (
+        <SaveCloseDialog
+          defaultName={isDraftId(effectEditor.subject.id) ? effectEditor.subject.name : freeEffectName(effectEditor.subject.name)}
+          askName={!isDraftId(effectEditor.subject.id)}
+          onSave={saveEffectEdit}
+          onDiscard={discardEffectEdit}
+          onCancel={() => setEffectEditor((prev) => (prev ? { ...prev, savePrompt: null } : prev))}
         />
       )}
 
@@ -1451,6 +1622,9 @@ export default function Home() {
         open={gradesOpen}
         onOpenChange={setGradesOpen}
         grade={sceneSettings.grade}
+        onRenamed={(oldName, newName) =>
+          setSceneSettings((s) => (s.grade.preset === oldName ? { ...s, grade: { ...s.grade, preset: newName } } : s))
+        }
         onApplyPreset={applyGradePreset}
         onEdit={openGradeEditor}
       />
@@ -1465,7 +1639,24 @@ export default function Home() {
           subject={gradeEditor.subject}
           origin={gradeAncestor(gradeEditor.subject)}
           onChange={editGrade}
-          onClose={() => setGradeEditor(null)}
+          onClose={requestCloseGradeEditor}
+        />
+      )}
+      {mounted && graphLibEdit?.savePrompt && (
+        <SaveCloseDialog
+          defaultName={isDraftId(graphLibEdit.id) ? graphLibEdit.name : freeGraphName(graphLibEdit.name)}
+          askName={!isDraftId(graphLibEdit.id)}
+          onSave={saveGraphLibEdit}
+          onDiscard={discardGraphLibEdit}
+          onCancel={() => setGraphLibEdit((prev) => (prev ? { ...prev, savePrompt: false } : prev))}
+        />
+      )}
+      {mounted && gradeEditor?.savePrompt && (
+        <SaveCloseDialog
+          defaultName={freeGradeName(gradeEditor.subject.name)}
+          onSave={saveGradeEdit}
+          onDiscard={() => setGradeEditor(null)}
+          onCancel={() => setGradeEditor((prev) => (prev ? { ...prev, savePrompt: false } : prev))}
         />
       )}
 
@@ -1473,11 +1664,11 @@ export default function Home() {
       <NodeLibrary
         open={library.open}
         onOpenChange={(o) => setLibrary((s) => ({ ...s, open: o }))}
-        targetLabel={libGroup?.label ?? libGroup?.id ?? null}
         canApply={libGroup !== null}
-        affects={libGroup?.materials.length ?? 0}
+        targetLabel={libGroup ? groupLabel(libGroup) : null}
         currentGraphName={libGroup?.graph.name ?? null}
         onApply={applyLibrary}
+        onEdit={openGraphLibEdit}
       />
 
       {/* ── Uploads ── */}

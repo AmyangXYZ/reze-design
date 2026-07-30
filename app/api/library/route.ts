@@ -44,26 +44,32 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "payload is required" }, { status: 400 })
   }
 
-  // The id is SERVER-generated so it can never collide with a built-in's
-  // hand-written id — that is what lets repo and database content merge with no
-  // dedup step.
+  // Ids are machine-minted, names are the human key: unique per kind, enforced by
+  // the (kind, name) index — the same rule that lets scene documents reference
+  // content by name without ambiguity.
   const id = crypto.randomUUID()
-  const [row] = await db
-    .insert(schema.libraryItems)
-    .values({
-      id,
-      kind: kind as LibraryKind,
-      name: name.trim(),
-      author,
-      description: typeof description === "string" ? description.slice(0, MAX_DESCRIPTION) : "",
-      tags: Array.isArray(tags) ? tags.filter((t): t is string => typeof t === "string").slice(0, MAX_TAGS) : [],
-      payload: payload as never,
-      ownerId: session.user.id,
-      // Published means visible. Private is the column default so an accidental
-      // insert stays invisible, but this route is an explicit act.
-      visibility: "public",
-    })
-    .returning()
+  let row
+  try {
+    ;[row] = await db
+      .insert(schema.libraryItems)
+      .values({
+        id,
+        kind: kind as LibraryKind,
+        name: name.trim(),
+        author,
+        description: typeof description === "string" ? description.slice(0, MAX_DESCRIPTION) : "",
+        tags: Array.isArray(tags) ? tags.filter((t): t is string => typeof t === "string").slice(0, MAX_TAGS) : [],
+        payload: payload as never,
+        ownerId: session.user.id,
+        // Published means visible. Private is the column default so an accidental
+        // insert stays invisible, but this route is an explicit act.
+        visibility: "public",
+      })
+      .returning()
+  } catch {
+    // The unique (kind, name) index objected — the only constraint on this insert.
+    return NextResponse.json({ error: "name-taken" }, { status: 409 })
+  }
 
   return NextResponse.json({ item: row }, { status: 201 })
 }

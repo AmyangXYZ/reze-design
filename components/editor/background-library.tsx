@@ -2,8 +2,8 @@
 
 // Backgrounds library — the shared three-column shell (facet rail · thumbnail grid · slim
 
-import { useMemo, useState } from "react"
-import { Plus, Search, Sparkles, SquarePen, Trash2, X } from "lucide-react"
+import { Fragment, useMemo, useState } from "react"
+import { Check, Plus, Search, Sparkles, SquarePen, X } from "lucide-react"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -17,8 +17,12 @@ import {
 import { EffectPreview } from "@/components/editor/effect-preview"
 import { LIBRARY_SHELL, LibraryRail, LibraryStats, LibraryTags } from "@/components/editor/library-rail"
 import { matchesFacet, matchesQuery, type EffectItem, type LibraryFacet } from "@/lib/library"
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
+import { nextDraftName } from "@/lib/drafts"
+import { useDrafts } from "@/hooks/use-drafts"
 import { useLibraryStats } from "@/hooks/use-library-stats"
 import { useZOrder } from "@/hooks/use-z-order"
+import { PublishButton } from "@/components/editor/publish-button"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
@@ -27,9 +31,11 @@ type LibraryProps = {
   onOpenChange: (open: boolean) => void
   applied: AppliedBackgroundEffect | null
   onApply: (effect: AppliedBackgroundEffect) => void
+  /** A draft was renamed — re-point anything applied by the old name. */
+  onRenamed?: (oldName: string, newName: string) => void
   onRemove: () => void
   /** Open the page-level floating WGSL editor on this effect (independent panel, same idiom */
-  onEdit: (fx: AppliedBackgroundEffect) => void
+  onEdit: (effect: AppliedBackgroundEffect) => void
 }
 
 export function BackgroundLibrary(props: LibraryProps) {
@@ -46,13 +52,13 @@ export function BackgroundLibrary(props: LibraryProps) {
 const seedDraft = (selected: EffectItem | null, applied: AppliedBackgroundEffect | null): AppliedBackgroundEffect | null =>
   selected ? (applied?.id === selected.id ? { ...applied } : applyDefaults(selected)) : null
 
-function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: LibraryProps) {
+function LibraryContent({ onOpenChange, applied, onApply, onRemove, onRenamed, onEdit }: LibraryProps) {
   const t = useT()
   // Desktop-style stacking: clicking a library raises it over any editor.
   // Radix would close on Escape whatever is stacked above it; the z-order
   // stack closes only the topmost surface.
-  const { stats, signedIn, toggleLike } = useLibraryStats()
-  const { z, onPointerDownCapture } = useZOrder(undefined, () => onOpenChange(false))
+  const { statFor, signedIn, toggleLike } = useLibraryStats("effect")
+  const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, () => onOpenChange(false))
   const [query, setQuery] = useState("")
   const [facet, setFacet] = useState<LibraryFacet>("all")
   const [selectedId, setSelectedId] = useState<string | null>(applied?.id ?? BACKGROUND_EFFECTS[0]?.id ?? null)
@@ -64,7 +70,9 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
     if (applied) setSelectedId(applied.id)
   }
 
-  const all = BACKGROUND_EFFECTS
+  const { drafts, update: updateDraft, remove: removeDraft } = useDrafts<EffectItem>("effect")
+  // Built-ins lead in name order; drafts follow in creation order.
+  const all = useMemo(() => [...BACKGROUND_EFFECTS, ...drafts], [drafts])
   const selected: EffectItem | null = useMemo(() => all.find((e) => e.id === selectedId) ?? null, [all, selectedId])
   // Draft = what Apply applies for the current selection.
   const [draft, setDraft] = useState<AppliedBackgroundEffect | null>(() => seedDraft(selected, applied))
@@ -75,11 +83,100 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
   }
 
   const rows = useMemo(() => all.filter((e) => matchesFacet(e, facet) && matchesQuery(e, query)), [all, query, facet])
+  // Two compartments: built-ins (and community, later) scroll; drafts pin to the bottom.
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const commitRename = (item: EffectItem, raw: string) => {
+    setRenamingId(null)
+    const wanted = raw.trim()
+    if (!wanted || wanted === item.name) return
+    const name = nextDraftName(wanted, [...BACKGROUND_EFFECTS, ...drafts].filter((x) => x.id !== item.id).map((x) => x.name))
+    updateDraft(item.id, { name })
+    onRenamed?.(item.name, name)
+  }
+
+  const builtinRows = rows.filter((x) => x.owner !== "local")
+  const localRows = rows.filter((x) => x.owner === "local")
 
   const isAppliedSelected = applied !== null && selected !== null && applied.id === selected.id
 
-  // "New effect": open the floating editor on a template-seeded custom subject.
-  const startNew = () => onEdit({ id: "custom", name: t.bgLibrary.untitled, wgsl: NEW_EFFECT_TEMPLATE })
+  // "New effect": open the floating editor on the template. Nothing is created —
+  // the editor is a scratchpad, and save-on-close is what makes a draft.
+  const startNew = () => onEdit({ id: "", name: t.bgLibrary.newEffect, wgsl: NEW_EFFECT_TEMPLATE })
+
+  const renderCard = (e: EffectItem) => {
+    const sel = e.id === selectedId
+    const card = (
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(ev) => {
+                      if (ev.key === "Enter" || ev.key === " ") {
+                        ev.preventDefault()
+                        setSelectedId(e.id)
+                      }
+                    }}
+                    onClick={() => setSelectedId(e.id)}
+                    onDoubleClick={() => onEdit(seedDraft(e, applied)!)} // straight into the code
+                    className={cn(
+                      "overflow-hidden rounded-md border text-left transition-colors",
+                      sel ? "border-blue-400 ring-1 ring-blue-400" : "border-white/10 hover:border-white/25",
+                    )}
+                  >
+                    <div className="relative aspect-[16/10] border-b border-white/5 bg-zinc-900">
+                      <EffectPreview wgsl={e.payload.wgsl} />
+                      {applied?.id === e.id && (
+                        <span className="absolute top-1.5 left-1.5 rounded border border-blue-400/40 bg-zinc-950/70 px-1.5 py-0.5 font-mono text-[9px] font-semibold tracking-wide text-blue-400 uppercase">
+                          {t.bgLibrary.applied}
+                        </span>
+                      )}
+                    </div>
+                    <div className="px-2 py-1.5">
+                      <div className="flex items-center gap-1.5">
+                        {renamingId === e.id ? (
+                          <Input
+                            autoFocus
+                            defaultValue={e.name}
+                            className="h-5 min-w-0 flex-1 border-white/10 bg-white/5 px-1 text-xs md:text-xs"
+                            onClick={(ev) => ev.stopPropagation()}
+                            onBlur={(ev) => commitRename(e, ev.target.value)}
+                            onKeyDown={(ev) => {
+                              if (ev.key === "Enter") (ev.target as HTMLInputElement).blur()
+                              if (ev.key === "Escape") setRenamingId(null)
+                            }}
+                          />
+                        ) : (
+                          <span className="min-w-0 flex-1 truncate text-xs font-medium">{e.name}</span>
+                        )}
+                        <LibraryStats
+                          likeCount={statFor(e.name).likeCount}
+                          liked={statFor(e.name).liked}
+                          scenes={statFor(e.name).scenes}
+                          canLike={signedIn}
+                          onToggle={() => void toggleLike(e.name)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+    )
+    // Card management lives on right-click — the inspector only applies/publishes.
+    if (e.owner !== "local") return <Fragment key={e.id}>{card}</Fragment>
+    return (
+      <ContextMenu key={e.id}>
+        <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
+        <ContextMenuContent className="w-36">
+          <ContextMenuItem onSelect={() => setRenamingId(e.id)}>{t.graph.rename}</ContextMenuItem>
+          <ContextMenuItem
+            variant="danger"
+            onSelect={() => {
+              if (confirm(t.library.deleteDraftConfirm)) removeDraft(e.id)
+            }}
+          >
+            {t.library.deleteDraft}
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+    )
+  }
 
   return (
       <DialogContent
@@ -95,6 +192,7 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
         // Same footprint as the shader-graph library.
         style={{ zIndex: z }}
         onPointerDownCapture={onPointerDownCapture}
+        onFocusCapture={onFocusCapture}
         className={LIBRARY_SHELL}
       >
         <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-white/10 bg-zinc-950 px-4 py-2 text-left">
@@ -131,51 +229,8 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
           {/* Thumbnail grid + pinned "New effect" (the graph library's New-graph idiom */}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <ScrollArea className="min-h-0 flex-1">
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(8rem,1fr))] content-start gap-3 p-3">
-              {rows.map((e) => {
-                const sel = e.id === selectedId
-                return (
-                  <div
-                    key={e.id}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(ev) => {
-                      if (ev.key === "Enter" || ev.key === " ") {
-                        ev.preventDefault()
-                        setSelectedId(e.id)
-                      }
-                    }}
-                    onClick={() => setSelectedId(e.id)}
-                    onDoubleClick={() => onEdit(seedDraft(e, applied)!)} // straight into the code
-                    className={cn(
-                      "overflow-hidden rounded-md border text-left transition-colors",
-                      sel ? "border-blue-400 ring-1 ring-blue-400" : "border-white/10 hover:border-white/25",
-                    )}
-                  >
-                    <div className="relative aspect-[16/10] border-b border-white/5 bg-zinc-900">
-                      <EffectPreview wgsl={e.payload.wgsl} />
-                      {applied?.id === e.id && (
-                        <span className="absolute top-1.5 left-1.5 rounded border border-blue-400/40 bg-zinc-950/70 px-1.5 py-0.5 font-mono text-[9px] font-semibold tracking-wide text-blue-400 uppercase">
-                          {t.bgLibrary.applied}
-                        </span>
-                      )}
-                    </div>
-                    <div className="px-2 py-1.5">
-                      <div className="truncate text-xs font-medium">{e.name}</div>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="truncate font-mono text-[11px] text-muted-foreground/70">{e.author}</span>
-                        <LibraryStats
-                          likeCount={stats[e.id]?.likeCount ?? 0}
-                          liked={stats[e.id]?.liked ?? false}
-                          scenes={stats[e.id]?.scenes ?? 0}
-                          canLike={signedIn}
-                          onToggle={() => void toggleLike(e.id)}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(6.5rem,1fr))] content-start gap-2.5 p-3">
+              {builtinRows.map(renderCard)}
               {rows.length === 0 && (
                 <div className="col-span-full py-16 text-center text-xs text-muted-foreground">
                   {facet === "yours" && !query ? t.rail.yoursEmpty : t.library.noMatch(query)}
@@ -183,6 +238,18 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
               )}
             </div>
           </ScrollArea>
+                    {localRows.length > 0 && (
+            <div className="flex max-h-[26%] shrink-0 flex-col border-t border-white/10">
+              <div className="shrink-0 px-3 pt-2 pb-1 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
+                {t.rail.local}
+              </div>
+              <ScrollArea className="min-h-0 flex-1">
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(6.5rem,1fr))] content-start gap-2.5 px-3 pb-3">
+                  {localRows.map(renderCard)}
+                </div>
+              </ScrollArea>
+            </div>
+          )}
           </div>
 
           {/* Inspector: preview · meta · params · Apply (pinned, but the column scrolls */}
@@ -215,13 +282,24 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
 
                 {/* Pinned action: red destructive Remove when applied (the counterpart of the blue Apply) */}
                 <div className="mt-auto shrink-0 space-y-1.5 border-t border-white/10 p-3">
+                {selected.owner === "local" && (
+                  <PublishButton
+                    kind="effect"
+                    defaultName={selected.name}
+                    defaultDescription={selected.description}
+                    defaultTags={selected.tags}
+                    payload={() => selected.payload}
+                    className="h-7 w-full"
+                  />
+                )}
                   {isAppliedSelected ? (
                     <Button
                       size="sm"
+                      variant="outline"
                       onClick={onRemove}
-                      className="h-8 w-full bg-red-500/90 text-xs font-medium text-white hover:bg-red-500"
+                      className="h-8 w-full border-white/10 bg-white/5 text-xs font-medium hover:bg-white/10"
                     >
-                      <Trash2 className="size-3.5" />
+                      <X className="size-3.5" />
                       {t.bgLibrary.remove}
                     </Button>
                   ) : (
@@ -233,6 +311,7 @@ function LibraryContent({ onOpenChange, applied, onApply, onRemove, onEdit }: Li
                       }}
                       className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-300"
                     >
+                      <Check className="size-3.5" />
                       {t.bgLibrary.apply}
                     </Button>
                   )}

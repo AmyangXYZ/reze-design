@@ -1,6 +1,5 @@
 [
   {
-    "id": "neutral",
     "kind": "grade",
     "name": "Neutral",
     "author": "Amyang",
@@ -30,7 +29,6 @@
     }
   },
   {
-    "id": "bloody",
     "kind": "grade",
     "name": "Bloody",
     "author": "Amyang",
@@ -65,7 +63,6 @@
     }
   },
   {
-    "id": "cyberpunk",
     "kind": "grade",
     "name": "Cyberpunk",
     "author": "Amyang",
@@ -99,7 +96,6 @@
     }
   },
   {
-    "id": "golden",
     "kind": "grade",
     "name": "Divine",
     "author": "Amyang",
@@ -134,7 +130,6 @@
     }
   },
   {
-    "id": "moonlit",
     "kind": "grade",
     "name": "Moonlit",
     "author": "Amyang",
@@ -169,7 +164,6 @@
     }
   },
   {
-    "id": "sakura",
     "kind": "grade",
     "name": "Sakura",
     "author": "Amyang",

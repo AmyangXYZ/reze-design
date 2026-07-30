@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "library_items_kind_name_idx" ON "library_items" USING btree ("kind","name");

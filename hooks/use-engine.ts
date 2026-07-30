@@ -3,9 +3,9 @@
 // Engine lifecycle for the scene page
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Engine, Vec3, type ApplyStyleGroupResult, type CompileOptions, type MaterialPresetMap, type RenderClass, type StyleGroup } from "reze-engine"
+import { Engine, Vec3, type ApplyStyleGroupResult, type CompileOptions, type RenderClass, type StyleGroup } from "reze-engine"
 import { SLOT_GRAPHS } from "@/lib/materials"
-import { modelPmxUrl, type Scene } from "@/lib/scene"
+import { modelKey, modelPmxUrl, type Scene, type SceneCamera } from "@/lib/scene"
 import { azElToDirection, hexToLinearVec3, hexToSrgbVec3 } from "@/lib/scene-settings"
 
 // Eye and Hair are pinned, non-deletable groups
@@ -118,7 +118,7 @@ export function useEngine(
             // Empty groups are UI-only drop targets — withheld from the engine.
             await engine.applyStyleGroups(entry.model.id, docGroups.filter((g) => g.materials.length > 0))
           } else {
-            await engine.autoStyleGroups(entry.model.id, entry.model.styleGroups)
+            await engine.autoStyleGroups(entry.model.id)
           }
           if (disposed) return
           // Restore hidden materials from the document.
@@ -174,15 +174,9 @@ export function useEngine(
   // Zip-expanded files carry their RELATIVE PATH in File.name (lib/uploads.ts
   const pmxBaseName = (name: string): string => name.split("/").pop() || name
 
-  /** A unique engine key from a .pmx filename ("miku" → "miku-2" on collision). */
-  const uniqueModelId = (pmxName: string, except?: string): string => {
-    const base = pmxBaseName(pmxName).replace(/\.pmx$/i, "") || "custom"
-    const taken = new Set(modelsRef.current.filter((m) => m.id !== except).map((m) => m.id))
-    if (!taken.has(base)) return base
-    let i = 2
-    while (taken.has(`${base}-${i}`)) i++
-    return `${base}-${i}`
-  }
+  /** A unique engine key from a .pmx filename — the same mint parseSceneDoc uses. */
+  const uniqueModelId = (pmxName: string, except?: string): string =>
+    modelKey(pmxName, modelsRef.current.filter((m) => m.id !== except).map((m) => m.id))
 
   /** ADD a model to the scene (folder pick / zip expansion / drop). */
   const addModelFromFiles = useCallback(async (files: File[] | FileList, pmxFile: File): Promise<string> => {
@@ -295,17 +289,31 @@ export function useEngine(
   }, [])
 
   /** Back to a fresh load: re-derive grouping from the doc's seed + name hints, and unhide */
-  const resetStyleGroups = useCallback(async (modelId: string, seed?: MaterialPresetMap) => {
+  /** Restore a model's grouping: the document's groups when it has an entry, the
+   *  engine's auto-classification otherwise. */
+  const resetStyleGroups = useCallback(async (modelId: string, groups?: StyleGroup[]) => {
     const engine = engineRef.current
     if (!engine) return
-    await engine.autoStyleGroups(modelId, seed)
+    if (groups?.length) await engine.applyStyleGroups(modelId, groups.filter((g) => g.materials.length > 0))
+    else await engine.autoStyleGroups(modelId)
     for (const m of modelsRef.current.find((x) => x.id === modelId)?.materials ?? []) {
       if (!m.visible) engine.toggleMaterialVisible(modelId, m.name)
     }
     setModels((prev) =>
       prev.map((m) => (m.id === modelId ? { ...m, materials: m.materials.map((x) => ({ ...x, visible: true })) } : m)),
     )
-    setGroupsByModel((prev) => ({ ...prev, [modelId]: withSpecialGroups(engine.getStyleGroups(modelId)) }))
+    setGroupsByModel((prev) => ({ ...prev, [modelId]: withSpecialGroups(groups ?? engine.getStyleGroups(modelId)) }))
+  }, [])
+
+  /**
+   * Push orbit framing to the engine. A loaded, enabled camera VMD drives the shot
+   * instead, so this shows up only once that is off.
+   */
+  const setCameraView = useCallback((c: SceneCamera) => {
+    const engine = engineRef.current
+    if (!engine) return
+    engine.setCameraTarget(new Vec3(...c.target))
+    engine.setCameraDistance(c.distance)
   }, [])
 
   /** Instant adjust-tier: write one exposed param on a group's graph (no recompile). */
@@ -337,6 +345,7 @@ export function useEngine(
     upsertGroup,
     applyGroups,
     resetStyleGroups,
+    setCameraView,
     setGroupParam,
     highlight,
     toggleVisible,

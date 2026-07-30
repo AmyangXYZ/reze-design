@@ -2,12 +2,10 @@
 
 // Grade editor — a free-floating, draggable, resizable panel (FloatingPanel), the same idiom
 
-import { useState } from "react"
-import { Check, Copy, Palette, RotateCcw } from "lucide-react"
+import { Palette, RotateCcw } from "lucide-react"
 import { FloatingPanel, type Rect } from "@/components/editor/floating-panel"
-import { PublishButton } from "@/components/editor/publish-button"
 import { useHistory } from "@/hooks/use-history"
-import { EditorHeader, EditorHeaderButton, EditorHeaderSeparator } from "@/components/editor/editor-header"
+import { EditorHeader, EditorHeaderButton } from "@/components/editor/editor-header"
 import { GradePreview } from "@/components/editor/grade-preview"
 import { ColorWheel } from "@/components/editor/color-wheel"
 import { SliderRow } from "@/components/scene/scene-sidebar"
@@ -15,12 +13,12 @@ import { applySplit, readSplit, resolveSpec, type GradeSpec, type Range } from "
 import { useT } from "@/lib/i18n"
 
 export type GradeEditorSubject = {
-  /** Library entry being edited (a user grade id, a preset id, or CUSTOM_ID). */
+  /** Library entry being edited: a draft's local_ id, or a built-in's name. The
+   *  first change to a built-in forks it into a draft (see page's editGrade). */
   id: string
   name: string
   spec: GradeSpec
-  /** Built-in preset to revert to — distinct from `id`, which an edit may have
-   *  already moved to CUSTOM_ID. */
+  /** Built-in name this grade descends from — what "back to preset" reverts to. */
   origin?: string
 }
 
@@ -52,7 +50,6 @@ export function GradeEditorPanel({
     <FloatingPanel
       rect={rect}
       onRectChange={onRectChange}
-      open={open}
       fullscreen={false}
       raiseKey={sessionId}
       onEscape={onClose}
@@ -78,9 +75,6 @@ function EditorBody({
   onClose: () => void
 }) {
   const t = useT()
-  const [copied, setCopied] = useState(false)
-  // Publishing is what turns an edit into a library item: it acquires an owner,
-  // a server-generated id, and a name others will see it under.
   const { name, spec } = subject
   const set = (patch: Partial<GradeEditorSubject>) => onChange({ ...subject, ...patch })
   const setSpec = (patch: Partial<GradeSpec>) => set({ spec: { ...spec, ...patch } })
@@ -95,32 +89,11 @@ function EditorBody({
       <EditorHeader
         icon={Palette}
         iconClassName="text-blue-400"
-        title={`${name || t.gradeLibrary.untitled} · ${t.scene.grade}`}
+        title={name || t.gradeLibrary.untitled}
         closeLabel={t.library.close}
         onClose={onClose}
         actions={
-          <>
-            <EditorHeaderButton
-              icon={RotateCcw}
-              label={t.gradeLibrary.revert}
-              onClick={() => set({ spec: origin })}
-            />
-            <EditorHeaderButton
-              icon={copied ? Check : Copy}
-              label={t.bgLibrary.copy}
-              onClick={() => {
-                // The resolved CDL travels
-                void navigator.clipboard.writeText(JSON.stringify({ name, spec, cdl }, null, 2)).then(() => {
-                  setCopied(true)
-                  setTimeout(() => setCopied(false), 1500)
-                })
-              }}
-            />
-            <EditorHeaderSeparator />
-            {/* The one action with no precedent to copy */}
-            <EditorHeaderSeparator />
-            <PublishButton kind="grade" defaultName={name || t.gradeLibrary.untitled} payload={() => ({ spec })} />
-          </>
+          <EditorHeaderButton icon={RotateCcw} label={t.gradeLibrary.revert} onClick={() => set({ spec: origin })} />
         }
       />
 

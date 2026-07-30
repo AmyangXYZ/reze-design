@@ -28,7 +28,6 @@ function setPerf(el: HTMLElement, active: boolean) {
 export function FloatingPanel({
   rect,
   onRectChange,
-  open,
   fullscreen,
   minW = 360,
   minH = 240,
@@ -39,7 +38,6 @@ export function FloatingPanel({
 }: {
   rect: Rect
   onRectChange: (r: Rect) => void
-  open: boolean
   fullscreen: boolean
   minW?: number
   minH?: number
@@ -130,7 +128,7 @@ export function FloatingPanel({
 
   // Edge/corner resize affordances (invisible hit strips). Corners sit above edges.
   const edge = "absolute touch-none"
-  const { z, onPointerDownCapture } = useZOrder(raiseKey, onEscape)
+  const { z, onPointerDownCapture, onFocusCapture } = useZOrder(raiseKey, onEscape)
 
   if (typeof document === "undefined") return null
   // Portal to <body> so the panel's z-index compares directly against other body-level portals
@@ -140,6 +138,7 @@ export function FloatingPanel({
       className={cn("fixed", className)}
       // Stacking is dynamic (useZOrder), so it has to beat any z-* the caller passes
       style={{ ...style, zIndex: z }}
+      onFocusCapture={onFocusCapture}
       onPointerDownCapture={onPointerDownCapture}
       onPointerDown={onContainerDown}
     >

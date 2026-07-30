@@ -1,8 +1,9 @@
 // The scene document — one JSON bundle describing everything a scene is.
 
-import type { MaterialPresetMap, StyleGroup } from "reze-engine"
+import type { ShaderGraph, StyleGroup } from "reze-engine"
+import pkg from "@/package.json"
 import type { AppliedBackgroundEffect } from "@/lib/background-effects"
-import { loadLegacySceneSettings, type SceneSettings } from "@/lib/scene-settings"
+import type { SceneSettings } from "@/lib/scene-settings"
 
 export const SCENE_FORMAT_VERSION = 1
 
@@ -15,13 +16,12 @@ export type ModelSource =
   | { kind: "zip"; url: string }     // archive URL
 
 export type ModelRef = {
-  /** Engine key for this model instance. ASCII, arbitrary, never shown. */
+  /** Engine key, unique within the scene. Never authored — minted from the .pmx
+   *  filename by modelKey(), at import and at parse alike. */
   id: string
   /** .pmx filename inside the folder/archive — also what the Assets panel shows. */
   file: string
   source: ModelSource
-  /** Seed style groups: group id → material names. See SceneModelDoc. */
-  styleGroups?: MaterialPresetMap
 }
 
 /** The background's BASE layer */
@@ -42,6 +42,9 @@ export type SceneAssets = {
   background: SceneBackground
 }
 
+/** Orbit framing: how far the camera sits and what it looks at. */
+export type SceneCamera = { distance: number; target: [number, number, number] }
+
 export type SceneState = {
   /** The scene's identity, and the ONLY place it lives — `SceneItem.id` when
    *  published, this while it is still local. Never inside SceneDoc: the payload
@@ -49,8 +52,8 @@ export type SceneState = {
    *  Minted client-side so a scene has identity before it is ever published. */
   id: string
   name: string
-  /** Boot framing. `target` is the orbit centre — tune to the model's height. */
-  camera: { distance: number; target: [number, number, number] }
+  /** `target` is the orbit centre — tune to the model's height. */
+  camera: SceneCamera
   settings: SceneSettings
   /** WGSL effect layered between the base background and the model (stars, water…). */
   backgroundEffect: AppliedBackgroundEffect | null
@@ -66,33 +69,104 @@ export type Scene = {
   state: SceneState
 }
 
-// ── Authored form ──
+// ── Authored form ────────────────────────────────────────────────────────────────
+//
+// The document mirrors the editor's three tabs: `assets` holds URLs, `settings`
+// holds values, `materials` holds each model's grouping and shading. A field lives
+// where its tab is, so reading a scene file and reading the UI teach the same
+// structure.
+
+/**
+ * A style group as AUTHORED: a display label, which materials, and which shader
+ * graph they use. No id — engine keys are minted at parse, like model keys.
+ *
+ * `graph` is the library NAME when the group uses built-in or published content,
+ * and a full ShaderGraph when it uses something unpublished — the same
+ * reference-or-snapshot rule as the background effect. Referencing by name keeps a
+ * scene small and lets a retuned library graph reach scenes already using it;
+ * inlining is what makes an unpublished look survive being shared.
+ *
+ * `role` marks the groups with special pass integration (hair/eye stenciling,
+ * stockings' hashed alpha). Not a user choice — the app maintains these groups —
+ * but it must travel, because nothing else in the document implies it.
+ */
+export type StyleGroupDoc = {
+  label?: string
+  materials: string[]
+  graph: string | ShaderGraph
+  role?: "hair" | "eye" | "stockings"
+}
 
 export type SceneModelDoc = {
-  /** Engine key. ASCII, arbitrary, never shown. */
-  id: string
   /** Path to the .pmx, or to a .zip containing it. */
   model: string
   /** Path to this model's motion, or null. */
   animation?: string | null
-  /** Seed STYLE GROUPS for this model: group id → material names. */
-  styleGroups?: MaterialPresetMap
+  /** This model's Materials-tab state. Absent = auto-group at load. */
+  materials?: SceneModelMaterialsDoc
+}
+
+/** Every file the scene points at — and nothing else. */
+export type SceneAssetsDoc = {
+  /** ≥1 entry; [0] is the primary model. */
+  models: SceneModelDoc[]
+  /** Camera VMD — overrides `settings.camera` while enabled. */
+  cameraAnimation?: string | null
+  audio?: string | null
+  /** Two slots, as in the Assets panel. Mutually exclusive at runtime — a set
+   *  backdrop wins over a set skybox, matching the editor's replace behaviour. */
+  backdrop?: string | null
+  skybox?: string | null
+}
+
+/**
+ * Everything the Scene tab governs, camera and background effect included — the
+ * effect sits inside `background` exactly where the UI puts it, at the same level
+ * as the grade rather than floating outside the settings.
+ */
+export type SceneSettingsDoc = Omit<SceneSettings, "background"> & {
+  camera: SceneCamera
+  background: SceneSettings["background"] & {
+    /** Built-in id, or a full snapshot for an effect the user wrote or edited —
+     *  an id-only field would silently drop custom WGSL when a scene is shared. */
+    effect?: string | AppliedBackgroundEffect | null
+  }
+}
+
+/** One model's Materials-tab state: the COMPLETE group list, exactly as shown.
+ *  Self-contained by design — a scene renders the same even if the engine's
+ *  auto-grouping heuristic changes under it. */
+export type SceneModelMaterialsDoc = {
+  groups: StyleGroupDoc[]
+  /** Material names the user has hidden. */
+  hidden?: string[]
 }
 
 export type SceneDoc = {
-  version?: number
-  models: SceneModelDoc[]
-  cameraAnimation?: string | null
-  audio?: string | null
-  background?: { kind: "backdrop" | "skybox"; asset: string } | null
+  /** FORMAT version — what migrations key on. */
+  version: number
+  /** Engine version that authored the document. Advisory provenance for diagnosing
+   *  "my old scene looks different", never used to alter behaviour. */
+  engine?: string
   name: string
-  camera: SceneState["camera"]
-  settings: SceneSettings
-  /** Built-in id, or a full snapshot for an effect the user wrote or edited —
-   *  an id-only field silently drops custom WGSL when a scene is shared. */
-  backgroundEffect?: string | AppliedBackgroundEffect | null
-  groups?: Record<string, StyleGroup[]> | null
-  hidden?: Record<string, string[]> | null
+  assets: SceneAssetsDoc
+  settings: SceneSettingsDoc
+}
+
+/**
+ * Mint an engine key from a .pmx filename ("miku.pmx" → "miku", "miku-2" on
+ * collision). The ONLY way model keys come to exist — documents never author them,
+ * so there is no id to keep unique, remember, or get wrong. Filename-derived
+ * rather than positional so stored per-model state can only ever reattach to the
+ * same model, not to whatever occupies the slot next time.
+ */
+export function modelKey(file: string, taken: Iterable<string>): string {
+  const base = (file.split("/").pop() ?? file).replace(/\.pmx$/i, "") || "model"
+  const used = new Set(taken)
+  if (!used.has(base)) return base
+  let n = 2
+  while (used.has(`${base}-${n}`)) n++
+  return `${base}-${n}`
 }
 
 /** Split "/dir/file.pmx" into a folder source, or route a .zip to its own kind. */
@@ -102,42 +176,94 @@ function parseModelSource(path: string): { source: ModelSource; file: string } {
   return { source: { kind: "folder", dir: path.slice(0, i) }, file: path.slice(i + 1) }
 }
 
-/** Inflate the authored document into the runtime scene. */
-export function parseSceneDoc(doc: SceneDoc, resolveEffect: (id: string) => AppliedBackgroundEffect): Scene {
+/** Role → engine pass integration, both directions of the round trip. */
+const ROLE_INTEGRATION = {
+  hair: { renderClass: "hair" },
+  eye: { renderClass: "eye" },
+  stockings: { alphaMode: "hashed" },
+} as const satisfies Record<string, Pick<StyleGroup, "renderClass" | "alphaMode">>
+
+const roleOf = (g: StyleGroup): StyleGroupDoc["role"] =>
+  g.renderClass === "hair" || g.renderClass === "eye" ? g.renderClass : g.alphaMode === "hashed" ? "stockings" : undefined
+
+/**
+ * Inflate the authored document into the runtime scene.
+ *
+ * `resolveGraph` turns a library id into a graph. It's injected rather than
+ * imported so this module stays independent of where content comes from — the
+ * same reason `resolveEffect` is a parameter.
+ */
+export function parseSceneDoc(
+  doc: SceneDoc,
+  resolveEffect: (id: string) => AppliedBackgroundEffect,
+  resolveGraph?: (id: string) => ShaderGraph | undefined,
+): Scene {
+  // Engine keys for groups are minted here the way newGroupId mints them in the
+  // editor: a slug of the label (role as fallback), deduped within the model.
+  const resolveGroups = (gs: StyleGroupDoc[]): StyleGroup[] => {
+    const ids = new Set<string>()
+    return gs
+      .map((g): StyleGroup | null => {
+        const graph = typeof g.graph === "string" ? resolveGraph?.(g.graph) : g.graph
+        // A group whose graph can't be resolved is dropped rather than rendered
+        // with the wrong look — its materials fall back to the engine default,
+        // which is visibly neutral instead of visibly wrong.
+        if (!graph) return null
+        const base =
+          (g.label ?? g.role ?? "").toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "group"
+        let id = base
+        for (let n = 2; ids.has(id); n++) id = `${base}-${n}`
+        ids.add(id)
+        return { id, label: g.label, materials: g.materials, graph, ...(g.role ? ROLE_INTEGRATION[g.role] : {}) }
+      })
+      .filter((g): g is StyleGroup => g !== null)
+  }
+
+  const { camera, background, ...settings } = doc.settings
+  const applied = background.effect
+
+  // Keys are minted here, in document order — the doc itself is id-free.
+  const ids: string[] = []
+  const models = doc.assets.models.map((m) => {
+    const { source, file } = parseModelSource(m.model)
+    const id = modelKey(file, ids)
+    ids.push(id)
+    return {
+      model: { id, file, source },
+      animation: m.animation ? assetFromPath(m.animation) : null,
+    }
+  })
+  const materials = doc.assets.models.flatMap((m, i) => (m.materials ? [[ids[i], m.materials] as const] : []))
+  const hidden = materials.filter(([, m]) => m.hidden?.length)
+
   return {
-    version: doc.version ?? SCENE_FORMAT_VERSION,
+    version: doc.version,
     assets: {
-      models: doc.models.map((m) => {
-        const { source, file } = parseModelSource(m.model)
-        return {
-          model: { id: m.id, file, source, styleGroups: m.styleGroups },
-          animation: m.animation ? assetFromPath(m.animation) : null,
-        }
-      }),
-      cameraAnimation: doc.cameraAnimation ? assetFromPath(doc.cameraAnimation) : null,
-      audio: doc.audio ? assetFromPath(doc.audio) : null,
-      background: doc.background ? { kind: doc.background.kind, asset: assetFromPath(doc.background.asset) } : null,
+      models,
+      cameraAnimation: doc.assets.cameraAnimation ? assetFromPath(doc.assets.cameraAnimation) : null,
+      audio: doc.assets.audio ? assetFromPath(doc.assets.audio) : null,
+      background: doc.assets.backdrop
+        ? { kind: "backdrop", asset: assetFromPath(doc.assets.backdrop) }
+        : doc.assets.skybox
+          ? { kind: "skybox", asset: assetFromPath(doc.assets.skybox) }
+          : null,
     },
     state: {
       // A parsed document is not yet a saved scene; hydrateScene supplies the
       // stored id, or mints one for a first-time visitor.
       id: "",
       name: doc.name,
-      camera: doc.camera,
-      settings: doc.settings,
-      backgroundEffect: !doc.backgroundEffect
-        ? null
-        : typeof doc.backgroundEffect === "string"
-          ? resolveEffect(doc.backgroundEffect)
-          : doc.backgroundEffect,
-      groups: doc.groups ?? null,
-      hidden: doc.hidden ?? null,
+      camera,
+      settings: { ...settings, background: { color: background.color } },
+      backgroundEffect: !applied ? null : typeof applied === "string" ? resolveEffect(applied) : applied,
+      groups: materials.length ? Object.fromEntries(materials.map(([id, m]) => [id, resolveGroups(m.groups)])) : null,
+      hidden: hidden.length ? Object.fromEntries(hidden.map(([id, m]) => [id, m.hidden!])) : null,
     },
   }
 }
 
 /** Join a folder URL and a filename. No encoding — see AssetRef.url. */
-export function assetUrl(dir: string, file: string): string {
+function assetUrl(dir: string, file: string): string {
   return `${dir.replace(/\/+$/, "")}/${file}`
 }
 
@@ -151,11 +277,13 @@ export function modelPmxUrl(model: ModelRef): string | null {
   return model.source.kind === "folder" ? assetUrl(model.source.dir, model.file) : null
 }
 
-/** Snapshot the live editor into a document. */
 /** Path a model loads from — the inverse of parseModelSource. */
 function modelPath(m: ModelRef): string {
   return m.source.kind === "zip" ? m.source.url : `${m.source.dir}/${m.file}`
 }
+
+/** The pinned engine dependency ("^0.26.0" → "0.26.0") — stamped into documents. */
+const ENGINE_VERSION = pkg.dependencies["reze-engine"].replace(/^[~^]/, "")
 
 /** Snapshot the live editor into the AUTHORED document — the inverse of
  *  parseSceneDoc, and the form a scene is shared/served as. `isBuiltinEffect`
@@ -167,45 +295,63 @@ export function serializeSceneDoc(
     audio: AssetRef | null
     background: SceneBackground
     name: string
-    camera: SceneState["camera"]
+    camera: SceneCamera
     settings: SceneSettings
     backgroundEffect: AppliedBackgroundEffect | null
     groups: Record<string, StyleGroup[]>
     hidden: Record<string, string[]>
   },
-  isBuiltinEffect: (fx: AppliedBackgroundEffect) => boolean,
+  isBuiltinEffect: (applied: AppliedBackgroundEffect) => boolean,
+  /** The library id this graph came from, if any — so it travels as a reference. */
+  graphId?: (graph: ShaderGraph) => string | undefined,
 ): SceneDoc {
-  const fx = live.backgroundEffect
+  const applied = live.backgroundEffect
+  const toDoc = (g: StyleGroup): StyleGroupDoc => ({
+    label: g.label,
+    materials: g.materials,
+    // The library NAME when the library owns this graph; the whole thing when it
+    // doesn't, so an unpublished look still travels with the scene.
+    graph: graphId?.(g.graph) ?? g.graph,
+    role: roleOf(g),
+  })
   return {
     version: SCENE_FORMAT_VERSION,
-    models: live.models.map((m) => ({
-      id: m.model.id,
-      model: modelPath(m.model),
-      animation: m.animation?.url ?? null,
-      styleGroups: m.model.styleGroups,
-    })),
-    cameraAnimation: live.cameraAnimation?.url ?? null,
-    audio: live.audio?.url ?? null,
-    background: live.background ? { kind: live.background.kind, asset: live.background.asset.url } : null,
+    engine: ENGINE_VERSION,
     name: live.name,
-    camera: live.camera,
-    settings: live.settings,
-    backgroundEffect: !fx ? null : isBuiltinEffect(fx) ? fx.id : fx,
-    groups: live.groups,
-    hidden: live.hidden,
+    assets: {
+      models: live.models.map((m) => {
+        const hidden = live.hidden[m.model.id]
+        const groups = live.groups[m.model.id]
+        return {
+          model: modelPath(m.model),
+          animation: m.animation?.url ?? null,
+          ...(groups ? { materials: { groups: groups.map(toDoc), ...(hidden?.length ? { hidden } : {}) } } : {}),
+        }
+      }),
+      cameraAnimation: live.cameraAnimation?.url ?? null,
+      audio: live.audio?.url ?? null,
+      backdrop: live.background?.kind === "backdrop" ? live.background.asset.url : null,
+      skybox: live.background?.kind === "skybox" ? live.background.asset.url : null,
+    },
+    settings: {
+      camera: live.camera,
+      ...live.settings,
+      background: { ...live.settings.background, effect: !applied ? null : isBuiltinEffect(applied) ? applied.id : applied },
+    },
   }
 }
 
 // ── Local persistence: the `state` half only. ──────────────────────────────────
 
-// ".2": earlier builds autosaved backgroundEffect:null before effects existed
 /** Minted client-side: waiting for the server would leave local scenes anonymous. */
 export function newSceneId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID()
   return `scn_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
 }
 
-const STATE_KEY = "reze-design.sceneState.2"
+// ".3": name-keyed references and the {preset, intensity} grade — older blobs
+// don't parse into this shape, and there are no compatibility shims by design.
+const STATE_KEY = "reze-design.sceneState.3"
 
 export function saveSceneState(state: SceneState) {
   try {
@@ -216,11 +362,7 @@ export function saveSceneState(state: SceneState) {
   }
 }
 
-/** Stored blobs from before the multi-model format carry `groups` as an ARRAY plus */
-type StoredState = Omit<Partial<SceneState>, "groups"> & {
-  groups?: Record<string, StyleGroup[]> | StyleGroup[] | null
-  groupsFor?: string | null
-}
+type StoredState = Partial<SceneState>
 
 function loadStoredState(): StoredState | null {
   if (typeof window === "undefined") return null
@@ -232,19 +374,12 @@ function loadStoredState(): StoredState | null {
   }
 }
 
-function migrateStoredGroups(stored: StoredState | null): Record<string, StyleGroup[]> | null {
-  if (!stored?.groups) return null
-  if (Array.isArray(stored.groups)) return stored.groupsFor ? { [stored.groupsFor]: stored.groups } : null
-  return stored.groups
-}
-
 /** The boot document: `base` (the bundled default) with the user's stored values merged over */
 export function hydrateScene(base: Scene): Scene {
   const stored = loadStoredState()
-  // No new-format state yet: lift the pre-format settings-only blob, so an existing user's
-  const settingsBase = stored?.settings ?? loadLegacySceneSettings() ?? base.state.settings
+  const settingsBase = stored?.settings ?? base.state.settings
   // Groups restore PER MODEL: an entry only applies when its model id is in the scene (groups
-  const storedGroups = migrateStoredGroups(stored)
+  const storedGroups = stored?.groups ?? null
   const baseIds = new Set(base.assets.models.map((m) => m.model.id))
   const usableGroups = storedGroups
     ? Object.fromEntries(Object.entries(storedGroups).filter(([id]) => baseIds.has(id)))

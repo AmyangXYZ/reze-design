@@ -40,7 +40,7 @@ export function LibraryRail({
   const count: Record<LibraryFacet, number> = {
     all: items.length,
     featured: items.filter((i) => i.owner === "builtin").length,
-    yours: items.filter((i) => i.owner === "user").length,
+    yours: items.filter((i) => i.owner === "user" || i.owner === "local").length,
   }
 
   return (
@@ -131,7 +131,7 @@ export function LibraryStats({
         )}
       >
         <Heart className={cn("size-3", liked && "fill-current")} />
-        {likeCount > 0 && likeCount}
+        {likeCount}
       </button>
     </span>
   )

@@ -21,10 +21,9 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
-import { compileGraph, validateGraph, type CompileOptions, type Diagnostic, type ShaderGraph } from "reze-engine"
-import { Code, FileDown, FileUp, Grip, Maximize2, Minimize2, RotateCcw, Workflow, X } from "lucide-react"
+import { compileGraph, type CompileOptions, type Diagnostic, type ShaderGraph } from "reze-engine"
+import { Code, Grip, RotateCcw, Workflow, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
 import { RezeNode, RenameNodeProvider } from "@/components/graph/reze-node"
@@ -33,7 +32,6 @@ import { AddNodeMenu } from "@/components/graph/add-node-menu"
 import { NodeContextMenu, type MenuAction } from "@/components/graph/node-context-menu"
 import { makeGraphNode, uniqueNodeId } from "@/lib/node-catalog"
 import { canConnect, fromFlow, socketsOf, socketType, toFlow, type RezeFlowNode } from "@/lib/graph-flow"
-import { PublishButton } from "@/components/editor/publish-button"
 import { useUndoScope } from "@/hooks/use-undo-scope"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -67,8 +65,6 @@ export function GraphEditor({
   onApply,
   onGraphChange,
   onApplyStateChange,
-  fullscreen,
-  onToggleFullscreen,
 }: {
   /** The group's factory preset — what Reset returns to. */
   presetGraph: ShaderGraph
@@ -88,8 +84,6 @@ export function GraphEditor({
   /** Mirrors the compile/apply status dot — the page shows it on the collapsed pill. */
   onApplyStateChange?: (state: "ok" | "error" | "compiling") => void
   /** Full-screen drawer state (page-owned) + toggle. */
-  fullscreen: boolean
-  onToggleFullscreen: () => void
 }) {
   const t = useT()
   // `base` supplies what the flow doesn't model (name, slot, output, params)
@@ -476,37 +470,6 @@ export function GraphEditor({
     restoring.current = true // the state swap itself is not an undo step
   }, [])
 
-  // ── Preset JSON export/import — the file format IS the ShaderGraph schema. ──
-  const importFileRef = useRef<HTMLInputElement>(null)
-  const onExport = useCallback(() => {
-    const graph = fromFlow(base, nodes, edges) // include current edits + layout
-    const blob = new Blob([JSON.stringify(graph, null, 2)], { type: "application/json" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `${graph.name || slotLabel || "graph"}.graph.json`
-    a.click()
-    URL.revokeObjectURL(url)
-  }, [base, nodes, edges, slotLabel])
-
-  const onImportFile = useCallback(
-    async (file: File) => {
-      try {
-        // A graph is pure shading now (no slot)
-        const graph = JSON.parse(await file.text()) as ShaderGraph
-        const diags = validateGraph(graph)
-        if (diags.some((d) => d.severity === "error")) {
-          setDiagnostics(diags)
-          return
-        }
-        loadGraph(graph)
-      } catch (e) {
-        setDiagnostics([{ severity: "error", message: `import failed: ${e instanceof Error ? e.message : e}` }])
-      }
-    },
-    [loadGraph],
-  )
-
   const currentGraph: ShaderGraph = useMemo(() => fromFlow(base, nodes, edges), [base, nodes, edges])
 
   // Inject the output/preview badges for rendering only (kept out of `nodes` state so graph
@@ -594,7 +557,7 @@ export function GraphEditor({
         className={cn(
           // border-b (not a separate <Separator>) so the divider is part of the solid header's box
           "relative flex shrink-0 items-center gap-2 border-b border-white/10 bg-zinc-950 pt-1 pb-1 pr-2 pl-3",
-          !fullscreen && "cursor-grab active:cursor-grabbing",
+          "cursor-grab active:cursor-grabbing",
         )}
       >
         <Workflow
@@ -605,11 +568,9 @@ export function GraphEditor({
           )}
         />
         <span className="min-w-0 truncate text-xs font-medium text-zinc-200">{slotLabel}</span>
-        {!fullscreen && (
-          <span className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-zinc-600">
-            <Grip className="size-4" />
-          </span>
-        )}
+        <span className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-zinc-600">
+          <Grip className="size-4" />
+        </span>
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           {/* ── Tools: code view + reset ── */}
           <Tooltip>
@@ -634,51 +595,6 @@ export function GraphEditor({
             <TooltipContent>{t.graph.resetToPreset}</TooltipContent>
           </Tooltip>
 
-          <Separator orientation="vertical" className="mx-1 h-4 bg-white/10" />
-
-          {/* ── Import / export the graph as JSON ── */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="size-6 text-zinc-400 hover:text-zinc-100" onClick={() => importFileRef.current?.click()}>
-                <FileUp className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t.graph.importGraph}</TooltipContent>
-          </Tooltip>
-          <input
-            ref={importFileRef}
-            type="file"
-            accept=".json,application/json"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0]
-              e.target.value = ""
-              if (file) void onImportFile(file)
-            }}
-          />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="size-6 text-zinc-400 hover:text-zinc-100" onClick={onExport}>
-                <FileDown className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t.graph.exportGraph}</TooltipContent>
-          </Tooltip>
-
-          <Separator orientation="vertical" className="mx-1 h-4 bg-white/10" />
-
-          {/* ── Full screen ── */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="size-6 text-zinc-400 hover:text-zinc-100" onClick={onToggleFullscreen}>
-                {fullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{fullscreen ? t.graph.exitFullScreen : t.graph.fullScreen}</TooltipContent>
-          </Tooltip>
-
-          <Separator orientation="vertical" className="mx-1 h-4 bg-white/10" />
-
           {/* ── Exit: close (discard) or save (keep) ── */}
           <Tooltip>
             <TooltipTrigger asChild>
@@ -688,14 +604,6 @@ export function GraphEditor({
             </TooltipTrigger>
             <TooltipContent>{t.graph.discardClose}</TooltipContent>
           </Tooltip>
-          <div className="ml-1">
-            <PublishButton
-              kind="graph"
-              defaultName={currentGraph.name}
-              defaultTags={currentGraph.tags ?? []}
-              payload={() => ({ graph: currentGraph })}
-            />
-          </div>
         </div>
       </header>
 

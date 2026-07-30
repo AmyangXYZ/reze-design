@@ -10,10 +10,11 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { ColorField } from "@/components/color-picker"
-import { intensityOf } from "@/lib/grade"
+import { rememberIntensity } from "@/lib/grade"
 import { QuickPick, type QuickPickItem } from "@/components/scene/quick-pick"
 import { useT } from "@/lib/i18n"
 import type { SceneSettings } from "@/lib/scene-settings"
+import type { SceneCamera } from "@/lib/scene"
 import { cn } from "@/lib/utils"
 
 export function SliderRow({
@@ -85,6 +86,9 @@ export function ColorRow({ label, value, onChange }: { label: string; value: str
 export const ScenePanel = memo(function ScenePanel({
   settings,
   onChange,
+  camera,
+  onCameraChange,
+  cameraDriven,
   effectName,
   onOpenEffects,
   gradeName,
@@ -100,6 +104,10 @@ export const ScenePanel = memo(function ScenePanel({
 }: {
   settings: SceneSettings
   onChange: (settings: SceneSettings) => void
+  camera: SceneCamera
+  onCameraChange: (camera: SceneCamera) => void
+  /** True while a camera motion is driving the shot, which overrides these values. */
+  cameraDriven?: boolean
   /** Applied background-effect name (null = none) — the row opens the library. */
   effectName: string | null
   onOpenEffects: () => void
@@ -124,6 +132,12 @@ export const ScenePanel = memo(function ScenePanel({
   const { background, ground, world, sun, bloom, grade } = settings
   const patch = <K extends keyof SceneSettings>(key: K, value: Partial<SceneSettings[K]>) =>
     onChange({ ...settings, [key]: { ...settings[key], ...value } })
+  const setTarget = (axis: 0 | 1 | 2, v: number) => {
+    const target: SceneCamera["target"] = [...camera.target]
+    target[axis] = v
+    onCameraChange({ ...camera, target })
+  }
+  const oneDp = (v: number) => v.toFixed(1)
 
   return (
     <ScrollArea className="min-h-0 flex-1">
@@ -155,14 +169,18 @@ export const ScenePanel = memo(function ScenePanel({
             />
           </div>
           {/* Intensity is remembered PER grade, so switching looks restores the strength you last used */}
-          <div className={cn("mt-1", grade.preset === "neutral" && "pointer-events-none opacity-40")}>
+          <div className={cn("mt-1", grade.preset === "Neutral" && "pointer-events-none opacity-40")}>
             <SliderRow
               label={t.scene.intensity}
-              value={intensityOf(grade)}
+              value={grade.intensity}
               min={0}
               max={1}
               step={0.01}
-              onChange={(v) => patch("grade", { intensities: { ...grade.intensities, [grade.preset]: v } })}
+              onChange={(v) => {
+                patch("grade", { intensity: v })
+                // Remembered per preset, so switching back restores this strength.
+                rememberIntensity(grade.preset, v)
+              }}
               fmt={(v) => v.toFixed(2)}
             />
           </div>
@@ -295,6 +313,31 @@ export const ScenePanel = memo(function ScenePanel({
               />
             </div>
           </div>
+        </Section>
+
+        <Section title={t.scene.camera}>
+          <SliderRow
+            label={t.scene.distance}
+            value={camera.distance}
+            min={1}
+            max={100}
+            step={0.1}
+            onChange={(v) => onCameraChange({ ...camera, distance: v })}
+            fmt={oneDp}
+          />
+          {(["X", "Y", "Z"] as const).map((axis, i) => (
+            <SliderRow
+              key={axis}
+              label={`${t.scene.target} ${axis}`}
+              value={camera.target[i]}
+              min={i === 1 ? -10 : -50}
+              max={i === 1 ? 50 : 50}
+              step={0.1}
+              onChange={(v) => setTarget(i as 0 | 1 | 2, v)}
+              fmt={oneDp}
+            />
+          ))}
+          {cameraDriven && <p className="mt-2 text-[11px] text-muted-foreground/70">{t.scene.cameraVmdNote}</p>}
         </Section>
 
         {/* Undo/redo is keyboard-only (⌘/Ctrl+Z, ⇧⌘Z via useHistory) */}
