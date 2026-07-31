@@ -136,12 +136,34 @@ function SceneStage({ scene, sceneId, title, author, description, credits, likeC
   const like = useLike(sceneId, likeCount)
   const { canvasRef, engineRef, ready, error, models, bundleFile } = useEngine(scene)
 
+  // Background. A published scene packs its image, so both kinds resolve out of
+  // the bundle synchronously. A flat backdrop is a DOM layer BEHIND the canvas,
+  // which only shows if the canvas stays transparent — that is what `hasBackdrop`
+  // buys, and without it the engine painted the background colour straight over
+  // the image. A skybox is the engine's own dome, uploaded by the same hook.
+  const background = ready ? scene.assets.background : null
+  const backdropFile = useMemo(
+    () => (background?.kind === "backdrop" ? bundleFile(background.asset.url) : null),
+    [background, bundleFile],
+  )
+  const skyboxFile = useMemo(
+    () => (background?.kind === "skybox" ? bundleFile(background.asset.url) : null),
+    [background, bundleFile],
+  )
+  const backdropUrl = useMemo(() => (backdropFile ? URL.createObjectURL(backdropFile) : null), [backdropFile])
+  useEffect(() => {
+    if (!backdropUrl) return
+    return () => URL.revokeObjectURL(backdropUrl)
+  }, [backdropUrl])
+
   useSceneSync({
     engineRef,
     ready,
     settings: scene.state.settings,
     gradeSpec: specOf(scene.state.settings.grade),
     backgroundEffect: scene.state.backgroundEffect,
+    hasBackdrop: !!backdropFile,
+    skybox: skyboxFile,
   })
 
   // Motions: the engine has the bundle by now, so a clip resolves out of it.
@@ -185,36 +207,6 @@ function SceneStage({ scene, sceneId, title, author, description, credits, likeC
     if (!audioSrc?.startsWith("blob:")) return
     return () => URL.revokeObjectURL(audioSrc)
   }, [audioSrc])
-
-  // Background. A flat backdrop is a DOM layer behind the transparent canvas; a
-  // skybox is a dome the engine draws. Same split as the editor — the viewer drew
-  // neither, so a published scene arrived on its background colour alone.
-  const background = ready ? scene.assets.background : null
-  const backdropUrl = useMemo(() => {
-    if (background?.kind !== "backdrop") return null
-    const file = bundleFile(background.asset.url)
-    return file ? URL.createObjectURL(file) : background.asset.url
-  }, [background, bundleFile])
-  useEffect(() => {
-    if (!backdropUrl?.startsWith("blob:")) return
-    return () => URL.revokeObjectURL(backdropUrl)
-  }, [backdropUrl])
-
-  useEffect(() => {
-    const engine = engineRef.current
-    if (!engine || background?.kind !== "skybox") return
-    let stale = false
-    void (async () => {
-      const packed = bundleFile(background.asset.url)
-      const blob: Blob = packed ? packed : await (await fetch(background.asset.url)).blob()
-      const bitmap = await createImageBitmap(blob)
-      if (stale) return
-      engine.setBackdropEquirect(bitmap)
-    })()
-    return () => {
-      stale = true
-    }
-  }, [engineRef, background, bundleFile])
 
   const audioElRef = useRef<HTMLAudioElement>(null)
   // The animation clock is the master, exactly as in the editor.
