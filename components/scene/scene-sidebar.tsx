@@ -377,11 +377,12 @@ export const ScenePanel = memo(function ScenePanel({
           {/* Follow: the orbit centre rides a bone, so a motion that travels keeps
               the subject in frame. The target sliders below then read as an
               offset from that bone — same three numbers, different origin. */}
-          {/* Sits in the same w-10 column the slider values occupy, so the
-              control edge lines up down the panel instead of drifting right. */}
+          {/* The switch keeps the w-10 right column the slider values occupy, so
+              the control edge lines up down the panel — but with no slider in
+              between, the label takes everything else instead of the w-16 a
+              slider row has to leave it. */}
           <div className="mt-2.5 flex items-center gap-2">
-            <span className="w-16 shrink-0 truncate text-xs">{t.scene.follow}</span>
-            <span className="min-w-0 flex-1" />
+            <span className="min-w-0 flex-1 truncate text-xs">{t.scene.follow}</span>
             <span className="flex w-10 shrink-0 justify-end">
               <Switch
                 checked={!!camera.follow}
