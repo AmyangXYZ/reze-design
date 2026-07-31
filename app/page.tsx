@@ -1214,11 +1214,16 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       const jumped = lastModelTime >= 0 && Math.abs(p.current - lastModelTime) > 0.35
       lastModelTime = p.current
       if (playing) {
-        if (!wasPlaying) {
+        if (!wasPlaying || (!audio.seeking && (jumped || Math.abs(audio.currentTime - p.current) > 0.5))) {
           audio.currentTime = p.current
+        }
+        // A track SHORTER than the clip ends part-way through and leaves the
+        // element paused. Seeking it back to 0 when the motion loops does not
+        // resume an ended element — only play() does — so the second pass ran in
+        // silence. Guarded on there being audio left, or an element sitting at
+        // its own duration would be asked to start again every frame.
+        if (audio.paused && (!Number.isFinite(audio.duration) || p.current < audio.duration - 0.05)) {
           void audio.play().catch(() => {})
-        } else if (!audio.seeking && (jumped || Math.abs(audio.currentTime - p.current) > 0.5)) {
-          audio.currentTime = p.current
         }
       } else if (!audio.paused) {
         audio.pause()

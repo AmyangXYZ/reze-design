@@ -91,8 +91,26 @@ export type ScenePublishSource = {
 
 type Step = "idle" | "packing" | "uploading" | "publishing" | "done"
 
-export function ShareSceneDialog({
-  open,
+export function ShareSceneDialog(props: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  sceneId: string
+  sceneName: string
+  onRename: (name: string) => void
+  forkedFromId?: string
+  collect: () => ScenePublishSource
+}) {
+  // Mounted only while open, so every publish starts from a clean form. Kept
+  // mounted, the dialog reopened onto the previous publish's success screen —
+  // with the previous scene's link.
+  return (
+    <Dialog open={props.open} onOpenChange={(o) => !o && props.onOpenChange(false)}>
+      {props.open && <ShareSceneForm {...props} />}
+    </Dialog>
+  )
+}
+
+function ShareSceneForm({
   onOpenChange,
   sceneId,
   sceneName,
@@ -100,10 +118,9 @@ export function ShareSceneDialog({
   forkedFromId,
   collect,
 }: {
-  open: boolean
   onOpenChange: (open: boolean) => void
-  /** The working scene's client-minted id — keys the R2 bundle, so republishing
-   *  the same scene overwrites its own assets. */
+  /** The working scene's client-minted id. Keys the saved draft — the upload gets
+   *  its own id per publish (see `publishScope`). */
   sceneId: string
   sceneName: string
   /** Renaming here renames the working scene too — one name, top-left included. */
@@ -150,6 +167,10 @@ export function ShareSceneDialog({
   const publish = async () => {
     if (!session || busy) return
     setError(null)
+    // A fresh storage scope per publish. Keying the bundle by the WORKING scene id
+    // meant two publishes from one editor session wrote the same object: the first
+    // scene silently started serving the second one's models.
+    const publishScope = crypto.randomUUID()
     // Which step is in flight, so a thrown error can say what actually failed
     // rather than "something went wrong" for four unrelated causes.
     let stage: Step = "packing"
@@ -172,7 +193,7 @@ export function ShareSceneDialog({
         const presign = await fetch("/api/upload", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ sceneId, size: zip.size }),
+          body: JSON.stringify({ sceneId: publishScope, size: zip.size }),
         })
         if (!presign.ok) throw new Error(`presign ${presign.status}`)
         const { uploadUrl, key, publicUrl } = (await presign.json()) as {
@@ -190,7 +211,7 @@ export function ShareSceneDialog({
         const presign = await fetch("/api/upload", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ sceneId, size: poster.size, kind: "poster", contentType: poster.type }),
+          body: JSON.stringify({ sceneId: publishScope, size: poster.size, kind: "poster", contentType: poster.type }),
         })
         if (!presign.ok) throw new Error(await reason(presign))
         const { uploadUrl, key } = (await presign.json()) as { uploadUrl: string; key: string }
@@ -267,12 +288,17 @@ export function ShareSceneDialog({
         : t.share.publishing
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
-      <DialogContent
-        onOpenAutoFocus={(e) => e.preventDefault()}
-        onCloseAutoFocus={(e) => e.preventDefault()}
-        className="grid w-[34rem] gap-0 border-white/10 bg-zinc-950/95 p-5 sm:max-w-[34rem]"
-      >
+    <DialogContent
+      onOpenAutoFocus={(e) => e.preventDefault()}
+      onCloseAutoFocus={(e) => e.preventDefault()}
+      // A publish in flight owns the dialog: closing it mid-upload would abandon
+      // a bundle already on its way to storage. All three exits are held here
+      // rather than on the Dialog root, which no longer sees `busy`.
+      showCloseButton={!busy}
+      onEscapeKeyDown={(e) => busy && e.preventDefault()}
+      onInteractOutside={(e) => busy && e.preventDefault()}
+      className="grid w-[34rem] gap-0 border-white/10 bg-zinc-950/95 p-5 sm:max-w-[34rem]"
+    >
         <DialogTitle className="flex items-center gap-2 text-sm font-medium">
           <Globe className="size-4 text-blue-400" />
           {t.share.title}
@@ -442,7 +468,6 @@ export function ShareSceneDialog({
             </Button>
           </form>
         )}
-      </DialogContent>
-    </Dialog>
+    </DialogContent>
   )
 }

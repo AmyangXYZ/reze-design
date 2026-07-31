@@ -3,8 +3,9 @@
 // The browser PUTs straight to R2 — Vercel caps request bodies at 4.5MB, and a
 // model zip is routinely ten times that. The key is permanent storage, not a
 // staging area: scoped under the CALLER's user id (from the session, never the
-// request), so nobody can write outside their own prefix no matter what scene
-// id they claim, and republishing a scene overwrites its own bundle in place.
+// request), so nobody can write outside their own prefix no matter what id they
+// claim. The client sends a fresh id per publish, because every publish creates a
+// new scene row and two scenes must never share one bundle.
 
 import { NextResponse } from "next/server"
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3"
