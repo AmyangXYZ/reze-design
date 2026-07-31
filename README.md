@@ -2,9 +2,9 @@
 
 Design MMD scenes in the browser, then publish them. Bring a model, a motion and a song, decide how it all looks — material shaders you build as node graphs, colour grading, background effects, lighting and framing — and export the result as video or publish it to a permanent link anyone can open and orbit in real time. Rendering runs on [reze-engine](https://github.com/AmyangXYZ/reze-engine), a WebGPU MMD engine.
 
-A published scene is a live 3D page at `reze.design/<handle>/<id>`, not a video of one. Open it in the editor and you get your own copy to take further, with the original's credits carried along.
+A published scene is a live 3D page at `reze.design/<handle>/<id>` — real-time, orbitable, and openable in the editor as your own copy to take further, credits carried along.
 
-**[User manual](./docs/manual/en.md)** · [简体中文](./docs/manual/zh.md) · [日本語](./docs/manual/ja.md)
+**[User manual](./docs/manual/en.md)** · [简体中文](./docs/manual/zh.md) — what MMD is, every panel, and how to author grades, WGSL background effects and shader graphs.
 
 ![The editor](./screenshots/home.png)
 
@@ -189,7 +189,6 @@ To run the full platform, copy the environment keys the app reads:
 A curated MMD platform built around the character and its dance. Next up:
 
 - **More built-ins** — a growing shader-graph and colour-grade library tuned for the MMD aesthetic.
-- **A fuller manual** — every panel, control and workflow, in three languages.
 - **Mobile layout** — a proper small-screen shell (the editor already runs there).
 - **Camera bone-follow** — frame the shot on a model's head or centre bone.
 

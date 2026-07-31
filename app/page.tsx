@@ -33,7 +33,7 @@ import { RaisableLayer } from "@/components/editor/raisable-layer"
 import { useHistory } from "@/hooks/use-history"
 import { probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
 import { expandUploadFiles, readDroppedFiles } from "@/lib/uploads"
-import { useT } from "@/lib/i18n"
+import { useI18n, useT } from "@/lib/i18n"
 import type { ExportAudioSource } from "@/lib/video-export"
 import { MaterialSphereIcon } from "@/components/scene/slot-icons"
 import { DEFAULT_SCENE } from "@/lib/default-scene"
@@ -87,7 +87,9 @@ import { cn } from "@/lib/utils"
 // The manual lives in the repo, not in a dialog: it is going to grow past what a
 // popup can hold, it wants images and cross-links, and keeping it beside the code
 // means it can be read, corrected and translated by anyone who can open a PR.
-const MANUAL_URL = "https://github.com/AmyangXYZ/reze-design/blob/main/docs/manual/en.md"
+const MANUAL_BASE = "https://github.com/AmyangXYZ/reze-design/blob/main/docs/manual"
+/** The manual in the reader's language where one exists, English otherwise. */
+const manualUrl = (locale: string) => `${MANUAL_BASE}/${locale === "zh" ? "zh" : "en"}.md`
 
 // Frame preview: how far the viewport's aspect may deviate from the export target before
 const FRAME_ASPECT_TOL = 1.03
@@ -255,6 +257,7 @@ function defaultPanelRect(): Rect {
  */
 function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom?: string }) {
   const t = useT()
+  const { locale } = useI18n()
   // Which style group the node-graph editor is bound to.
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null)
   // Node-graph library popup, opened for a specific material.
@@ -1786,7 +1789,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
                 <RailAction icon={GalleryThumbnails} label={t.gallery.title} onClick={openGallery} />
               }
               railUtilities={
-                <RailUtility icon={BookOpen} label={t.gallery.manual} href={MANUAL_URL} />
+                <RailUtility icon={BookOpen} label={t.gallery.manual} href={manualUrl(locale)} />
               }
               header={
                 <BrandPill
