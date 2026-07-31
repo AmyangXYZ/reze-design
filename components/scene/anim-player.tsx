@@ -72,8 +72,12 @@ export const AnimPlayer = memo(function AnimPlayer({
   useEffect(() => {
     let raf = 0
     let last: Progress = { current: -1, duration: -1, playing: false, paused: false }
-    // The transport re-renders at ~20 Hz, not per frame
-    const DISPLAY_STEP = 0.05
+    // No display quantum. The playhead is judged against a 60 Hz render, so any
+    // throttle reads as stepping rather than sliding, whatever its size — a
+    // clip-relative quantum only moves which durations look bad. `progress` is
+    // local to this row and is passed to nothing, so updating per frame
+    // re-renders one small subtree; and while nothing is playing `current` stops
+    // changing, so the loop idles without touching state.
     const tick = () => {
       raf = requestAnimationFrame(tick)
       const m = master()
@@ -86,9 +90,8 @@ export const AnimPlayer = memo(function AnimPlayer({
         return
       }
       const p = m.getAnimationProgress()
-      const shown = Math.round(p.current / DISPLAY_STEP) * DISPLAY_STEP
-      if (shown !== last.current || p.duration !== last.duration || p.playing !== last.playing || p.paused !== last.paused) {
-        last = { current: shown, duration: p.duration, playing: p.playing, paused: p.paused }
+      if (p.current !== last.current || p.duration !== last.duration || p.playing !== last.playing || p.paused !== last.paused) {
+        last = { current: p.current, duration: p.duration, playing: p.playing, paused: p.paused }
         setProgress(last)
       }
       if (loopRef.current && !p.playing && !p.paused && p.duration > 0 && p.current >= p.duration - AT_END_EPS) {
