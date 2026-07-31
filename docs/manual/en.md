@@ -237,6 +237,16 @@ way to produce the thumbnail a published scene requires. Capture thumbnails at
 **Green screen** replaces the background with pure `#00FF00` for compositing
 elsewhere, the classic MMD PV route.
 
+**Scene config** is a different kind of export, and it lives on the chevron beside
+the scene name rather than in the Render tab. It writes everything about how a
+scene looks — lighting, background, colour grade, camera framing and every
+material style group — to a small `.reze.json` file. It carries no assets: models,
+motions and audio are untouched, and an imported config applies to whichever
+models are already loaded. Material work finds its way back because a model's key
+is its `.pmx` filename, so re-importing the same model picks up the groups that
+belonged to it. **Reset scene config** restores the curated look the editor opens
+with, across the Scene and Materials tabs together.
+
 ## 1.8 Publishing
 
 Publishing turns your scene into a page anyone can open — a live 3D render they

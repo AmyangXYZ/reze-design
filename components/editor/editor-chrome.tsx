@@ -7,10 +7,17 @@ import { PanelLeft, PanelLeftClose, WandSparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { AccountButton } from "@/components/editor/account-panel"
+import { SceneFileActions } from "@/components/editor/scene-file-menu"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 const floating = "rounded-lg border border-white/10 bg-zinc-950/70 shadow-float backdrop-blur-xs"
+
+// Label and input share one box, so entering rename cannot shift the text or change
+// the row's height — the same approach SliderRow uses for its typed values. The border
+// is present in both states and merely transparent on the label, or the text would
+// jump by a pixel the moment it becomes editable.
+const NAME_BOX = "min-w-0 rounded border px-1 text-xs leading-4"
 
 // Shown beside the wordmark. A version is the same in every language, so it lives
 // here rather than in the dictionary — keep it in step with package.json and the
@@ -31,12 +38,18 @@ export function BrandPill({
   onRenameScene,
   docksOpen,
   onToggleDocks,
+  onExportScene,
+  onImportScene,
+  onResetScene,
   asHeader = false,
 }: {
   sceneName: string
   onRenameScene: (name: string) => void
   docksOpen: boolean
   onToggleDocks: () => void
+  onExportScene: () => void
+  onImportScene: (file: File) => void
+  onResetScene: () => void
   /** Render flat & full-width as a dock header (expanded, logo lives in the rail), vs a floating */
   asHeader?: boolean
 }) {
@@ -59,17 +72,21 @@ export function BrandPill({
         else if (e.key === "Escape") setEditing(false)
       }}
       maxLength={60}
-      className="min-w-0 flex-1 rounded border border-white/15 bg-white/5 px-1 text-xs outline-none"
+      // field-sizing keeps the box hugging the text instead of stretching to fill the
+      // row, which is what pushed the menu chevron out to the far edge on every rename.
+      className={cn(NAME_BOX, "max-w-full [field-sizing:content] border-blue-400/50 bg-white/5 text-foreground outline-none")}
     />
   ) : (
     <span
       onDoubleClick={() => setEditing(true)}
       title={t.brand.renameScene}
-      className="min-w-0 flex-1 cursor-text truncate text-xs text-muted-foreground"
+      className={cn(NAME_BOX, "cursor-text truncate border-transparent text-muted-foreground")}
     >
       {sceneName}
     </span>
   )
+  const sceneActions = <SceneFileActions onExport={onExportScene} onImport={onImportScene} onReset={onResetScene} />
+
   const toggle = (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -96,15 +113,16 @@ export function BrandPill({
   // Expanded header: title over scene name (two lines). Collapsed pill: one line.
   if (asHeader) {
     return (
-      <div className="flex w-full items-center gap-2 py-2.5 pt-5.5 pr-1.5 pl-4">
-        <div className="flex min-w-0 flex-1 flex-col leading-tight">
-          <div className="flex items-center gap-1.5">
-            <span className="truncate text-sm font-semibold tracking-tight text-foreground">Reze Design</span>
-            {tag}
-          </div>
-          {nameEl}
+      <div className="flex w-full flex-col pt-3.5 pr-1.5 pb-2.5 pl-4 leading-tight">
+        <div className="flex items-center gap-1.5">
+          <span className="truncate text-sm font-semibold tracking-tight text-foreground">Reze Design</span>
+          {tag}
+          {toggle}
         </div>
-        {toggle}
+        <div className="-ml-[5px] flex min-w-0 items-center gap-1">
+          {nameEl}
+          {sceneActions}
+        </div>
       </div>
     )
   }

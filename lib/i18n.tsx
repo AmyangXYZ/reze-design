@@ -23,6 +23,14 @@ const en = {
     renameScene: "Double-click to rename",
     language: "Language",
   },
+  // Export / import / reset all act on the same slice: the scene's look, not its files.
+  sceneFile: {
+    label: "Scene config",
+    export: "Export scene config",
+    import: "Import scene config",
+    reset: "Reset scene config",
+    badFile: "Not a Reze Design scene file",
+  },
   account: {
     label: "Account",
     signIn: "Sign in",
@@ -146,7 +154,6 @@ const en = {
     follow: "Follow center",
     typeValue: "Double-click to type a value",
     cameraVmdNote: "A camera motion is driving the shot — these apply when it is off.",
-    resetDefaults: "Reset to defaults",
     effects: "Effect",
     noEffect: "None",
     edited: "edited",
@@ -396,6 +403,13 @@ const zh: Dictionary = {
     renameScene: "双击重命名",
     language: "语言",
   },
+  sceneFile: {
+    label: "场景配置",
+    export: "导出场景配置",
+    import: "导入场景配置",
+    reset: "重置场景配置",
+    badFile: "不是 Reze Design 场景文件",
+  },
   account: {
     label: "账户",
     signIn: "登录",
@@ -516,7 +530,6 @@ const zh: Dictionary = {
     follow: "跟踪中心骨",
     typeValue: "双击可直接输入数值",
     cameraVmdNote: "镜头由相机动作驱动，关闭后这些设置才生效。",
-    resetDefaults: "恢复默认",
     effects: "特效",
     noEffect: "无",
     edited: "已修改",
@@ -761,6 +774,13 @@ const ja: Dictionary = {
     renameScene: "ダブルクリックで名前を変更",
     language: "言語",
   },
+  sceneFile: {
+    label: "シーン設定",
+    export: "シーン設定を書き出す",
+    import: "シーン設定を読み込む",
+    reset: "シーン設定をリセット",
+    badFile: "Reze Design のシーンファイルではありません",
+  },
   account: {
     label: "アカウント",
     signIn: "サインイン",
@@ -881,7 +901,6 @@ const ja: Dictionary = {
     follow: "センター追従",
     typeValue: "ダブルクリックで数値を入力",
     cameraVmdNote: "カメラモーションが画角を制御中。オフにすると反映されます。",
-    resetDefaults: "デフォルトに戻す",
     effects: "エフェクト",
     noEffect: "なし",
     edited: "編集済み",

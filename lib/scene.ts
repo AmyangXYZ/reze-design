@@ -464,10 +464,43 @@ export function newSceneId(): string {
 // don't parse into this shape, and there are no compatibility shims by design.
 const STATE_KEY = "reze-design.sceneState.3"
 
+/**
+ * Model ids are minted from the .pmx filename (see `modelKey`), so re-importing
+ * the same model gets the same id back and its saved material work can be
+ * reclaimed. That only holds if the work survives the model's ABSENCE: on reload
+ * the base document is the bundled demo, `hydrateScene` keeps only the entries
+ * whose model is present, and a straight write of that pruned map would persist
+ * the loss before the user gets a chance to re-import. So entries for models not
+ * currently in the scene are carried through rather than dropped — pruned at
+ * use, retained at rest.
+ *
+ * Bounded, because localStorage is a ~5MB budget shared with everything else and
+ * this map would otherwise grow once per model ever opened.
+ */
+const RETAINED_MODELS = 24
+
+function retain<T>(next: Record<string, T> | null, prev: Record<string, T> | undefined): Record<string, T> | null {
+  if (!prev) return next
+  // `next` first: the live scene's entries are the ones worth keeping when the
+  // cap bites, and its values win for any id present in both.
+  const merged = { ...prev, ...(next ?? {}) }
+  const keys = [...new Set([...Object.keys(next ?? {}), ...Object.keys(prev)])].slice(0, RETAINED_MODELS)
+  return keys.length ? Object.fromEntries(keys.map((k) => [k, merged[k]])) : next
+}
+
 export function saveSceneState(state: SceneState) {
   try {
+    const prev = loadStoredState()
     // Stamped with the format version so a future default/semantic change can MIGRATE the blob
-    window.localStorage.setItem(STATE_KEY, JSON.stringify({ version: SCENE_FORMAT_VERSION, ...state }))
+    window.localStorage.setItem(
+      STATE_KEY,
+      JSON.stringify({
+        version: SCENE_FORMAT_VERSION,
+        ...state,
+        groups: retain(state.groups, prev?.groups ?? undefined),
+        hidden: retain(state.hidden, prev?.hidden ?? undefined),
+      }),
+    )
   } catch {
     // storage full/blocked — edits just won't persist
   }

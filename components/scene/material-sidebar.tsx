@@ -4,8 +4,7 @@
 
 import { memo, useEffect, useMemo, useRef, useState } from "react"
 import type { StyleGroup } from "reze-engine"
-import { ChevronDown, ChevronRight, Circle, Eye, EyeOff, FolderPlus, Pencil, RotateCcw, Trash2, Workflow } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { ChevronDown, ChevronRight, Circle, Eye, EyeOff, FolderPlus, Pencil, Trash2, Workflow } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
@@ -89,7 +88,6 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   onEditGroupGraph,
   onMoveMaterial,
   onPickGraph,
-  onResetGroups,
 }: {
   /** All loaded models — the strip only renders with 2+. The panel body always shows the ACTIVE */
   modelTabs: { id: string; file: string; active: boolean }[]
@@ -114,7 +112,6 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   /** Apply a library shader graph to a style group by name */
   onPickGraph: (groupId: string, graphName: string) => void
   /** Discard hand-made grouping and re-derive it from the scene document. */
-  onResetGroups: () => void
 }) {
   const t = useT()
   // On touch devices HTML5-draggable rows swallow swipes (drag starts instead of
@@ -430,18 +427,6 @@ export const MaterialsPanel = memo(function MaterialsPanel({
             <div className="px-3 py-6 text-center text-xs text-muted-foreground">{t.materials.empty}</div>
           )}
 
-          {/* Same escape hatch, same shape, and the same placement as the Scene tab's */}
-          <div className="-mx-4 mt-4 flex items-center gap-1 border-t border-white/10 px-4 pt-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 flex-1 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-              onClick={onResetGroups}
-            >
-              <RotateCcw className="size-3" />
-              {t.scene.resetDefaults}
-            </Button>
-          </div>
           </div>
         </ContextMenuTrigger>
         {/* Don't yank focus back on close */}

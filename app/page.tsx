@@ -74,6 +74,7 @@ import {
   type SceneCamera,
   type SceneModel,
 } from "@/lib/scene"
+import { downloadSceneFile, readSceneFile } from "@/lib/scene-file"
 import { modelFilePaths, sceneFiles } from "@/lib/scene-files"
 import type { BundleEntry } from "@/lib/bundle"
 import { ShareSceneDialog, type ScenePublishSource } from "@/components/editor/share-scene"
@@ -916,14 +917,6 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     [groups, upsertGroup, applyGroups],
   )
 
-  // Restore the active model's grouping from the pristine scene document — not the
-  // hydrated boot state, which already carries the user's stored edits.
-  const resetGroupsForActive = useCallback(() => {
-    const id = activeIdRef.current
-    setActiveGroupId(null)
-    void resetStyleGroups(id, DEFAULT_SCENE.state.groups?.[id])
-  }, [resetStyleGroups])
-
   const showLibrary = useCallback((groupId: string | null, facet: LibraryFacet) => {
     setLibraryFacet(facet)
     setGalleryOpen(false)
@@ -1465,12 +1458,68 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     }
   }
 
+  // One reset for the whole document. It used to be two — settings in the Scene tab,
+  // groups in the Materials tab — which meant neither one actually restored "the
+  // default", and which of the two you got depended on where you happened to be.
   const resetSceneDefaults = useCallback(() => {
     setSceneSettings(DEFAULT_SCENE.state.settings)
     setBgEffect(DEFAULT_SCENE.state.backgroundEffect)
     setSceneName(DEFAULT_SCENE.state.name)
     changeCamera(DEFAULT_SCENE.state.camera)
-  }, [setSceneSettings, setBgEffect, changeCamera])
+    setActiveGroupId(null)
+    for (const m of models) void resetStyleGroups(m.id, DEFAULT_SCENE.state.groups?.[m.id])
+  }, [models, setSceneSettings, setBgEffect, changeCamera, resetStyleGroups])
+
+  /** Exactly what the autosave effect persists — export, reset and import all act on
+   *  this one slice, so the three can never drift into meaning different things. */
+  const exportScene = useCallback(() => {
+    downloadSceneFile({
+      id: bootScene.state.id,
+      name: sceneName,
+      camera: sceneCamera,
+      settings: sceneSettings,
+      backgroundEffect: bgEffect,
+      groups: groupsByModel,
+      hidden: Object.fromEntries(
+        models
+          .map((m) => [m.id, m.materials.filter((mat) => !mat.visible).map((mat) => mat.name)] as const)
+          .filter(([, names]) => names.length),
+      ),
+    })
+  }, [bootScene, sceneName, sceneCamera, sceneSettings, bgEffect, groupsByModel, models])
+
+  // Deliberately not memoized: BrandPill is a plain component, so a stable identity
+  // buys nothing here, and the compiler cannot preserve a manual memo across this
+  // async body — a useCallback would only be a lie the linter has to flag.
+  const importScene = async (file: File) => {
+    const config = await readSceneFile(file)
+    if (!config) {
+      setUpload({ kind: "notice", message: t.sceneFile.badFile })
+      return
+    }
+    if (config.settings) setSceneSettings(config.settings)
+    if (config.camera) changeCamera(config.camera)
+    if (config.name) setSceneName(config.name)
+    if ("backgroundEffect" in config) setBgEffect(config.backgroundEffect ?? null)
+    // Groups are keyed by model id, which modelKey() mints from the .pmx filename —
+    // so a config re-attaches to the same model on any machine, and says nothing about
+    // models this scene has not loaded. Those entries are skipped, not an error.
+    if (config.groups) {
+      setActiveGroupId(null)
+      for (const m of models) {
+        const g = config.groups[m.id]
+        if (g?.length) void resetStyleGroups(m.id, g)
+      }
+    }
+    // After resetStyleGroups every material is visible again, so hidden has to be
+    // re-applied on top — otherwise a config would export what it hides and import
+    // it back showing everything.
+    if (config.hidden) {
+      for (const m of models) {
+        for (const name of config.hidden[m.id] ?? []) toggleVisibleFor(m.id, name)
+      }
+    }
+  }
 
   const openModelDialog = useCallback(
     (target: ModelTarget) => {
@@ -1646,7 +1695,6 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
           onEditGroupGraph={editGroupGraph}
           onMoveMaterial={moveMaterial}
           onPickGraph={applyGraphToGroup}
-          onResetGroups={resetGroupsForActive}
         />
       ),
     },
@@ -1667,7 +1715,6 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
           camera={sceneCamera}
           onCameraChange={changeCamera}
           cameraDriven={cameraName !== null}
-          onReset={resetSceneDefaults}
         /> },
   ]
 
@@ -1849,7 +1896,10 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
               header={
                 <BrandPill
                   sceneName={sceneName}
-          onRenameScene={setSceneName}
+                  onRenameScene={setSceneName}
+                  onExportScene={exportScene}
+                  onImportScene={importScene}
+                  onResetScene={resetSceneDefaults}
                   docksOpen
                   onToggleDocks={() => {
                     setDocksOpen(false)
@@ -1865,7 +1915,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
           </RaisableLayer>
         ) : (
           <div className="fixed top-3 left-3 z-20">
-            <BrandPill sceneName={sceneName} onRenameScene={setSceneName} docksOpen={false} onToggleDocks={() => setDocksOpen(true)} />
+            <BrandPill sceneName={sceneName} onRenameScene={setSceneName} onExportScene={exportScene} onImportScene={importScene} onResetScene={resetSceneDefaults} docksOpen={false} onToggleDocks={() => setDocksOpen(true)} />
           </div>
         ))}
 

@@ -4,8 +4,7 @@
 // change everything — with the lighting and appearance sections below them.
 
 import { memo, useState } from "react"
-import { Palette, RotateCcw, Sparkles } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { Palette, Sparkles } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
@@ -149,7 +148,6 @@ export const ScenePanel = memo(function ScenePanel({
   effectItems,
   onPickEffect,
   onEditEffect,
-  onReset,
 }: {
   settings: SceneSettings
   onChange: (settings: SceneSettings) => void
@@ -175,7 +173,6 @@ export const ScenePanel = memo(function ScenePanel({
   /** Open the WGSL editor on the applied effect — absent when none is applied. */
   onEditEffect?: () => void
   /** Restore EVERYTHING this panel governs to the scene document's values. */
-  onReset: () => void
 }) {
   const t = useT()
   const { background, ground, world, sun, bloom, grade } = settings
@@ -406,19 +403,6 @@ export const ScenePanel = memo(function ScenePanel({
           {cameraDriven && <p className="mt-2 text-[11px] text-muted-foreground/70">{t.scene.cameraVmdNote}</p>}
         </Section>
 
-        {/* Undo/redo is keyboard-only (⌘/Ctrl+Z, ⇧⌘Z via useHistory) */}
-        <div className="-mx-4 mt-4 flex items-center gap-1 border-t border-white/10 px-4 pt-2">
-          {/* Reset restores the CURATED first-open look — the "default" users actually met */}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 flex-1 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-            onClick={onReset}
-          >
-            <RotateCcw className="size-3" />
-            {t.scene.resetDefaults}
-          </Button>
-        </div>
       </div>
     </ScrollArea>
   )
