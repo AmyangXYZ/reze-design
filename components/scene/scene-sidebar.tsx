@@ -3,7 +3,7 @@
 // Scene panel (chromeless). Grade and Background lead — they're the two-click way to
 // change everything — with the lighting and appearance sections below them.
 
-import { memo } from "react"
+import { memo, useState } from "react"
 import { Palette, RotateCcw, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -16,6 +16,11 @@ import { useT } from "@/lib/i18n"
 import type { SceneSettings } from "@/lib/scene-settings"
 import type { SceneCamera } from "@/lib/scene"
 import { cn } from "@/lib/utils"
+
+/** The value column, shared by its readout and its editor so switching between
+ *  them moves nothing. `p-0` is load-bearing: browsers pad an input by default,
+ *  and `leading-4` pins the text to the same baseline the span sits on. */
+const VALUE_BOX = "block h-4 w-10 shrink-0 rounded border bg-transparent p-0 text-right text-[11px] leading-4 tabular-nums"
 
 export function SliderRow({
   label,
@@ -34,6 +39,23 @@ export function SliderRow({
   onChange: (v: number) => void
   fmt?: (v: number) => string
 }) {
+  // Double-click the value to type one. The slider stays the primary control —
+  // it is what you reach for while judging a look — and typing is there for the
+  // times you already know the number. Same gesture as renaming a scene or a
+  // style group, so it needs no affordance of its own.
+  const t = useT()
+  const [editing, setEditing] = useState(false)
+  const commit = (raw: string) => {
+    setEditing(false)
+    const parsed = Number(raw)
+    if (!Number.isFinite(parsed)) return
+    // Clamped and stepped, so a typed value cannot reach somewhere the slider
+    // could not — the two controls must always agree about what is legal.
+    const stepped = Math.round(parsed / step) * step
+    const clamped = Math.min(max, Math.max(min, stepped))
+    if (clamped !== value) onChange(Number(clamped.toFixed(6)))
+  }
+
   // Single line: label · slider · value.
   return (
     <div className="mt-2.5 flex items-center gap-2 first:mt-0">
@@ -47,10 +69,37 @@ export function SliderRow({
         step={step}
         onValueChange={([v]) => onChange(v)}
       />
-      <span className="w-10 shrink-0 text-right text-[11px] text-muted-foreground tabular-nums">{fmt ? fmt(value) : value}</span>
+      {/* Both states carry the same box: fixed height, same width, same border
+          box and zero padding. Only colour changes when it becomes editable, so
+          the row does not shift under the pointer that just double-clicked it. */}
+      {editing ? (
+        <input
+          autoFocus
+          defaultValue={String(value)}
+          onFocus={(e) => e.currentTarget.select()}
+          onBlur={(e) => commit(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur()
+            else if (e.key === "Escape") setEditing(false)
+          }}
+          className={cn(VALUE_BOX, "border-blue-400/50 bg-white/5 text-foreground outline-none")}
+        />
+      ) : (
+        <span
+          onDoubleClick={() => setEditing(true)}
+          title={t.scene.typeValue}
+          className={cn(VALUE_BOX, "cursor-text border-transparent text-muted-foreground")}
+        >
+          {fmt ? fmt(value) : value}
+        </span>
+      )}
     </div>
   )
 }
+
+/** The bone the camera follows. センター is the body's root in every standard MMD
+ *  rig, so it tracks travel without inheriting the bob of a spine or a head. */
+const FOLLOW_BONE = "センター"
 
 export function Section({
   title,
@@ -325,10 +374,26 @@ export const ScenePanel = memo(function ScenePanel({
             onChange={(v) => onCameraChange({ ...camera, distance: v })}
             fmt={oneDp}
           />
+          {/* Follow: the orbit centre rides a bone, so a motion that travels keeps
+              the subject in frame. The target sliders below then read as an
+              offset from that bone — same three numbers, different origin. */}
+          {/* Sits in the same w-10 column the slider values occupy, so the
+              control edge lines up down the panel instead of drifting right. */}
+          <div className="mt-2.5 flex items-center gap-2">
+            <span className="w-16 shrink-0 truncate text-xs">{t.scene.follow}</span>
+            <span className="min-w-0 flex-1" />
+            <span className="flex w-10 shrink-0 justify-end">
+              <Switch
+                checked={!!camera.follow}
+                onCheckedChange={(on) => onCameraChange({ ...camera, follow: on ? FOLLOW_BONE : null })}
+                className="scale-75"
+              />
+            </span>
+          </div>
           {(["X", "Y", "Z"] as const).map((axis, i) => (
             <SliderRow
               key={axis}
-              label={`${t.scene.target} ${axis}`}
+              label={`${camera.follow ? t.scene.offset : t.scene.target} ${axis}`}
               value={camera.target[i]}
               min={i === 1 ? -10 : -50}
               max={i === 1 ? 50 : 50}

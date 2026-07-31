@@ -111,14 +111,12 @@ export function ShareSceneDialog(props: {
 }
 
 function ShareSceneForm({
-  onOpenChange,
   sceneId,
   sceneName,
   onRename,
   forkedFromId,
   collect,
 }: {
-  onOpenChange: (open: boolean) => void
   /** The working scene's client-minted id. Keys the saved draft — the upload gets
    *  its own id per publish (see `publishScope`). */
   sceneId: string

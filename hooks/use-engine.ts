@@ -3,7 +3,7 @@
 // Engine lifecycle for the scene page
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Engine, Vec3, type ApplyStyleGroupResult, type CompileOptions, type RenderClass, type StyleGroup } from "reze-engine"
+import { Engine, Vec3, type ApplyStyleGroupResult, type CompileOptions, type Model, type RenderClass, type StyleGroup } from "reze-engine"
 import { SLOT_GRAPHS } from "@/lib/materials"
 import { modelKey, modelPmxUrl, type Scene, type SceneCamera } from "@/lib/scene"
 import { unzipToFiles } from "@/lib/uploads"
@@ -43,6 +43,27 @@ function infoFor(
  * `stale` lets a superseded load bail between awaits; every one of these steps is
  * asynchronous and a user can swap again mid-flight.
  */
+/**
+ * The one place a camera is applied.
+ *
+ * Boot, scene swap and the sliders all pass through here. Three copies of this
+ * is how the editor and the viewer drifted apart before — each grew its own
+ * idea of what a scene's camera meant, and only one of them was right.
+ *
+ * `follow` binds the orbit centre to a bone, so a motion that travels keeps the
+ * subject framed; the target triple then reads as an offset from that bone
+ * rather than a point in the world. A camera VMD still overrides both.
+ */
+function applyCamera(engine: Engine, camera: SceneCamera, model: Model | null): void {
+  if (camera.follow && model) {
+    engine.setCameraFollow(model, camera.follow, new Vec3(...camera.target))
+  } else {
+    engine.setCameraFollow(null)
+    engine.setCameraTarget(new Vec3(...camera.target))
+  }
+  engine.setCameraDistance(camera.distance)
+}
+
 async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean) {
   const s = scene.state.settings
   const infos: EngineModelInfo[] = []
@@ -97,8 +118,7 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean)
   // so a published scene opens on the shot its author chose whether it is being
   // viewed or edited — the editor only pushed the camera when a slider moved, and
   // the viewer never pushed it at all.
-  engine.setCameraTarget(new Vec3(...scene.state.camera.target))
-  engine.setCameraDistance(scene.state.camera.distance)
+  applyCamera(engine, scene.state.camera, engine.getModel(scene.assets.models[0]?.model.id ?? ""))
 
   engine.addGround({
     diffuseColor: hexToLinearVec3(s.ground.color),
@@ -405,9 +425,7 @@ export function useEngine(
       sceneRef.current = scene
       setModels(loaded.infos)
       setGroupsByModel(loaded.groups)
-      const [tx, ty, tz] = scene.state.camera.target
-      engine.setCameraTarget(new Vec3(tx, ty, tz))
-      engine.setCameraDistance(scene.state.camera.distance)
+      applyCamera(engine, scene.state.camera, engine.getModel(scene.assets.models[0]?.model.id ?? ""))
       setError(null)
       return null
     } catch (e) {
@@ -426,8 +444,7 @@ export function useEngine(
   const setCameraView = useCallback((c: SceneCamera) => {
     const engine = engineRef.current
     if (!engine) return
-    engine.setCameraTarget(new Vec3(...c.target))
-    engine.setCameraDistance(c.distance)
+    applyCamera(engine, c, engine.getModel(modelsRef.current[0]?.id ?? ""))
   }, [])
 
   /** Instant adjust-tier: write one exposed param on a group's graph (no recompile). */

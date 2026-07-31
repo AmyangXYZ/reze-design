@@ -59,7 +59,16 @@ export type ItemRef = { id: string; version: number }
 export type EffectSnapshot = { name: string; wgsl: string }
 
 /** Orbit framing: how far the camera sits and what it looks at. */
-export type SceneCamera = { distance: number; target: [number, number, number] }
+export type SceneCamera = {
+  distance: number
+  /** Where the camera looks — or, when `follow` is set, the offset from the bone
+   *  it is following. The three sliders mean the same thing either way. */
+  target: [number, number, number]
+  /** Bone the orbit centre rides on, so a travelling motion stays in frame.
+   *  Absent or null = a fixed point in the world, which is what every scene
+   *  written before this does. */
+  follow?: string | null
+}
 
 export type SceneState = {
   /** The scene's identity, and the ONLY place it lives — `SceneItem.id` when

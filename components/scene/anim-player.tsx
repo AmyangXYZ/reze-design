@@ -10,6 +10,11 @@ import { Slider } from "@/components/ui/slider"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useT } from "@/lib/i18n"
 
+/** A single scrub step past this reads as a teleport rather than motion. Matches
+ *  the discontinuity threshold the audio clock uses, so the two agree about what
+ *  counts as a jump. */
+const SEEK_SETTLE_SECONDS = 0.35
+
 const fmt = (s: number) => {
   const m = Math.floor(s / 60)
   const sec = Math.floor(s % 60)
@@ -135,9 +140,26 @@ export const AnimPlayer = memo(function AnimPlayer({
     return () => window.removeEventListener("keydown", onKey)
   }, [])
 
+  // A seek teleports every rigid body from wherever it was to wherever the new
+  // pose puts it, and the solver reads that as enormous velocity — hair and
+  // skirts detonate. Resetting fixes it, but resetting on every scrub event
+  // would fight a smooth drag, which needs no help: step by step the bodies
+  // track the pose fine.
+  //
+  // So what is measured is the largest SINGLE step of the interaction, not how
+  // far it travelled in total. Dragging slowly across the whole clip is a
+  // thousand small steps and resets nothing; clicking the far end of the track
+  // is one big step and resets once, on release.
+  const biggestStep = useRef(0)
   const seek = (v: number) => {
+    biggestStep.current = Math.max(biggestStep.current, Math.abs(v - (dragVal ?? progress.current)))
     setDragVal(v)
     for (const model of cast()) model.seek(v)
+  }
+  const endSeek = () => {
+    setDragVal(null)
+    if (biggestStep.current > SEEK_SETTLE_SECONDS) engineRef.current?.resetPhysics()
+    biggestStep.current = 0
   }
 
   const current = dragVal ?? progress.current
@@ -163,7 +185,7 @@ export const AnimPlayer = memo(function AnimPlayer({
         step={0.01}
         disabled={!hasClip}
         onValueChange={([v]) => seek(v)}
-        onValueCommit={() => setDragVal(null)}
+        onValueCommit={endSeek}
       />
       <span className="shrink-0 text-xs leading-none text-muted-foreground tabular-nums">{fmt(progress.duration)}</span>
       {hasCamera && (
