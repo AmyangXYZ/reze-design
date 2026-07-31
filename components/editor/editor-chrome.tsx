@@ -12,6 +12,11 @@ import { cn } from "@/lib/utils"
 
 const floating = "rounded-lg border border-white/10 bg-zinc-950/70 shadow-float backdrop-blur-xs"
 
+// Shown beside the wordmark. A version is the same in every language, so it lives
+// here rather than in the dictionary — keep it in step with package.json and the
+// git tag.
+const VERSION = "0.3.0 beta"
+
 /** Top of the left rail — the logo/home button for app-level operations. */
 export function RailLogo() {
   return (
@@ -84,7 +89,7 @@ export function BrandPill({
   // A small tag by the title so visitors know it's a live work-in-progress.
   const tag = (
     <span className="shrink-0 rounded-full bg-blue-400/15 px-1.5 py-px text-[10px] leading-none font-medium tracking-wide text-blue-400 max-sm:hidden">
-      {t.brand.preRelease}
+      {VERSION}
     </span>
   )
 

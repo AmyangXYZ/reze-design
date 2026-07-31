@@ -18,7 +18,6 @@ export const LOCALE_LABELS: Record<Locale, string> = {
 const en = {
   brand: {
     // Product name is intentionally NOT translated (kept as a wordmark).
-    preRelease: "Pre-release",
     hidePanels: "Hide panels",
     showPanels: "Show panels",
     renameScene: "Double-click to rename",
@@ -389,7 +388,6 @@ export type Dictionary = typeof en
 
 const zh: Dictionary = {
   brand: {
-    preRelease: "预发布",
     hidePanels: "隐藏面板",
     showPanels: "显示面板",
     renameScene: "双击重命名",
@@ -752,7 +750,6 @@ const zh: Dictionary = {
 
 const ja: Dictionary = {
   brand: {
-    preRelease: "プレリリース",
     hidePanels: "パネルを隠す",
     showPanels: "パネルを表示",
     renameScene: "ダブルクリックで名前を変更",
