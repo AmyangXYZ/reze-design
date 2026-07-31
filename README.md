@@ -1,6 +1,6 @@
 # Reze Design
 
-Design MMD scenes in the browser, then publish them. Bring a model, a motion and a song, decide how it all looks — material shaders you build as node graphs, colour grading, background effects, lighting and framing — and export the result as video or publish it to a permanent link anyone can open and orbit in real time. Rendering runs on [reze-engine](https://github.com/AmyangXYZ/reze-engine), a WebGPU MMD engine.
+An MMD design, rendering and sharing platform, in the browser. Bring a model, a motion and a song, decide how it all looks — material shaders you build as node graphs, colour grading, background effects, lighting and framing — and export the result as video or publish it to a permanent link anyone can open and orbit in real time. Rendering runs on [reze-engine](https://github.com/AmyangXYZ/reze-engine), a WebGPU MMD engine.
 
 A published scene is a live 3D page at `reze.design/<handle>/<id>` — real-time, orbitable, and openable in the editor as your own copy to take further, credits carried along.
 

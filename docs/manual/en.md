@@ -2,10 +2,10 @@
 
 **English** · [简体中文](https://github.com/AmyangXYZ/reze-design/blob/main/docs/manual/zh.md)
 
-Reze Design composes, renders and publishes MMD scenes in a browser. It loads the
-models and motions the MikuMikuDance community has been making since 2008, renders
-them on WebGPU, and turns the result into a video file or a live page anyone can
-open and orbit.
+Reze Design is an MMD design, rendering and sharing platform. It runs in the
+browser: it reads the models and motions the MikuMikuDance community has been
+making since 2008, renders them on WebGPU, and turns the result into a video file
+or a live page anyone can open and orbit.
 
 **Section 0** is background, for anyone who has never heard of MMD. **Section 1**
 walks through making one, from an empty scene to a published one.
