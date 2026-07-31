@@ -132,7 +132,7 @@ export function RailTags({
                 key={name}
                 onClick={() => onTagChange(on ? null : name)}
                 className={cn(
-                  "flex cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-all",
+                  "flex cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-[color,background-color,border-color,box-shadow,opacity]",
                   tagHue(name),
                   on ? "ring-1 ring-white/50 brightness-125" : "opacity-75 hover:opacity-100",
                 )}

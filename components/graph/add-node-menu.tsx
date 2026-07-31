@@ -46,8 +46,14 @@ export function AddNodeMenu({
   }, [query, accept, t])
   const flat = useMemo(() => groups.flatMap((g) => g.items), [groups])
 
-  // Reset the highlight to the top whenever the filtered set changes.
-  useEffect(() => setActive(0), [query])
+  // Reset the highlight to the top whenever the filtered set changes. Adjusted
+  // during render rather than in an effect: an effect re-rendered the whole menu
+  // a second time on every keystroke.
+  const [lastQuery, setLastQuery] = useState(query)
+  if (query !== lastQuery) {
+    setLastQuery(query)
+    setActive(0)
+  }
   useEffect(() => inputRef.current?.focus(), [])
 
   // Clamp into the viewport after measuring (menu height varies with the filter).

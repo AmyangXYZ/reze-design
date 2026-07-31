@@ -63,7 +63,6 @@ export type GradeSettings = {
 export const GRADE_PRESETS = asBuiltins<GradeItem>(presets as unknown as Omit<GradeItem, "owner">[])
 
 export const NEUTRAL_SPEC: GradeSpec = GRADE_PRESETS[0].payload.spec
-export const DEFAULT_GRADE: GradeSettings = { preset: "Neutral", intensity: 1 }
 
 /** Editor starting point — visibly a grade rather than a no-op, so a new author sees */
 export const NEW_GRADE_SPEC: GradeSpec = {

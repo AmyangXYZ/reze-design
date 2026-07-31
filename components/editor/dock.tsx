@@ -39,6 +39,13 @@ function useKeepAlive(active: string) {
  * and visibly drifted the moment its tab was shown. `visibility: hidden` still
  * computes layout, so the measurement is right before it's ever seen, and
  * `absolute` keeps it from pushing the visible pane around.
+ *
+ * `opacity-0` and `-z-10` go with it. Opacity is not inherited — it applies to
+ * the subtree as a group — so the pane goes dark in the same frame no matter what
+ * its descendants transition, and ordering keeps it behind the pane you switched
+ * to. Without that, any descendant carrying `transition-all` animated its own
+ * INHERITED visibility change, and visible→hidden lands at the END of the
+ * duration: the old tab's buttons stayed painted over the new one for 150ms.
  */
 function TabPane({ show, scope, children }: { show: boolean; scope?: string; children: ReactNode }) {
   return (
@@ -47,7 +54,7 @@ function TabPane({ show, scope, children }: { show: boolean; scope?: string; chi
       aria-hidden={!show}
       className={cn(
         "flex min-h-0 min-w-0 flex-col",
-        show ? "flex-1" : "pointer-events-none invisible absolute inset-0",
+        show ? "relative z-0 flex-1" : "pointer-events-none invisible absolute inset-0 -z-10 opacity-0",
       )}
     >
       {children}

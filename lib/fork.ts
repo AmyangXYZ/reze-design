@@ -23,11 +23,3 @@ export function forkTarget(): string | null {
     return null
   }
 }
-
-export function clearForkTarget(): void {
-  try {
-    window.sessionStorage.removeItem(KEY)
-  } catch {
-    // Non-fatal.
-  }
-}

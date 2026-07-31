@@ -117,12 +117,9 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   onResetGroups: () => void
 }) {
   const t = useT()
-  // On touch devices HTML5-draggable rows swallow swipes (drag starts instead of scroll)
-  const [coarse, setCoarse] = useState(false)
-  useEffect(() => {
-    const c = window.matchMedia("(pointer: coarse)").matches
-    setCoarse(c)
-  }, [])
+  // On touch devices HTML5-draggable rows swallow swipes (drag starts instead of
+  // scroll). Read at init — this panel only ever renders inside a mounted dock.
+  const [coarse] = useState(() => typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [renaming, setRenaming] = useState<string | null>(null)
   // Focus + select the rename input once it mounts.

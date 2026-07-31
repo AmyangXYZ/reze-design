@@ -4,13 +4,14 @@
 // no database — that is what keeps a clone of this repo running. Everything else
 // is fetched in a single request, whatever the document pins.
 
+import type { ShaderGraph } from "reze-engine"
 import { BACKGROUND_EFFECTS } from "@/lib/background-effects"
 import { GRADE_PRESETS } from "@/lib/grade"
 import { GRAPH_LIBRARY } from "@/lib/materials"
 import type { ItemRef, SceneDoc } from "@/lib/scene"
 import { sceneRefs } from "@/lib/scene"
 
-type Payload = { graph?: unknown; wgsl?: string; spec?: unknown }
+type Payload = { graph?: ShaderGraph; wgsl?: string; spec?: unknown }
 
 /** What a pin resolves to: the content, plus the name it is known by. An effect
  *  has nowhere else to carry its label — a graph keeps one inside itself — and a

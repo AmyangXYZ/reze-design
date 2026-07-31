@@ -198,8 +198,6 @@ const en = {
     uploadBackdrop: "Upload image",
     skybox: "Skybox",
     uploadSkybox: "Upload 360° image",
-    metaModel: (vertices: string, bones: number, materials: number) =>
-      `${vertices} vertices · ${bones} bones · ${materials} materials`,
   },
   render: {
     output: "Output",
@@ -568,8 +566,6 @@ const zh: Dictionary = {
     uploadBackdrop: "上传图片",
     skybox: "天空盒",
     uploadSkybox: "上传 360° 全景图",
-    metaModel: (vertices: string, bones: number, materials: number) =>
-      `${vertices} 顶点 · ${bones} 骨骼 · ${materials} 材质`,
   },
   render: {
     output: "输出",
@@ -933,8 +929,6 @@ const ja: Dictionary = {
     uploadBackdrop: "画像をアップロード",
     skybox: "スカイボックス",
     uploadSkybox: "360°画像をアップロード",
-    metaModel: (vertices: string, bones: number, materials: number) =>
-      `${vertices} 頂点・${bones} ボーン・${materials} マテリアル`,
   },
   render: {
     output: "出力",

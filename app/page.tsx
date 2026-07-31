@@ -302,11 +302,12 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     setGraphSession((v) => v + 1)
     setDrawerOpen(true)
   }, [])
-  // Free-floating editor window rect (null until initialized post-mount from storage).
-  const [panelRect, setPanelRect] = useState<Rect | null>(null)
-  useEffect(() => {
-    setPanelRect(loadPanelRect() ?? defaultPanelRect())
-  }, [])
+  // Free-floating editor window rect. Read at init rather than in an effect: the
+  // panel is gated on `mounted`, so nothing renders it before hydration settles,
+  // and setting it from an effect cost a second render of this whole component.
+  const [panelRect, setPanelRect] = useState<Rect | null>(() =>
+    typeof window === "undefined" ? null : (loadPanelRect() ?? defaultPanelRect()),
+  )
   const updatePanelRect = useCallback((r: Rect) => {
     setPanelRect(r)
     savePanelRect(r)
@@ -709,12 +710,16 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   const activeFrame = framePreview ?? (exporting ? lastFrame : null)
   // Green screen is a RENDER-TAB PREVIEW, not a scene mode
   const liveGreenScreen = greenScreen && activeFrame !== null
-  const [frameVp, setFrameVp] = useState<{ w: number; h: number } | null>(null)
+  // Seeded from the window rather than left null until an effect runs: the pair
+  // (frame, viewport) decides the render size, and measuring the viewport one
+  // render later made opening the Render tab resize the WebGPU canvas TWICE —
+  // once to the viewport, once to the framed size — which the docks' backdrop
+  // blur sits on top of.
+  const [frameVp, setFrameVp] = useState<{ w: number; h: number } | null>(() =>
+    typeof window === "undefined" ? null : { w: window.innerWidth, h: window.innerHeight },
+  )
   useEffect(() => {
-    if (!activeFrame) {
-      setFrameVp(null)
-      return
-    }
+    if (!activeFrame) return
     const update = () => setFrameVp({ w: window.innerWidth, h: window.innerHeight })
     update()
     window.addEventListener("resize", update)
@@ -724,6 +729,10 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     const engine = engineRef.current
     if (!engine || !ready) return
     if (exporting) return // the export pins the full output resolution itself
+    // Nothing to decide until the viewport has been measured; resizing to the
+    // viewport first and to the frame a moment later is two canvas rebuilds where
+    // one will do.
+    if (activeFrame && !frameVp) return
     // Tolerance: a viewport a hair narrower than the target (browser chrome, rounding)
     if (activeFrame && frameVp && activeFrame.aspect > (frameVp.w / frameVp.h) * FRAME_ASPECT_TOL) {
       const dpr = window.devicePixelRatio || 1
@@ -2142,7 +2151,7 @@ function EditorRoute() {
         const doc = item.payload.doc
         const resolve = await resolveSceneRefs(doc)
         if (stale) return
-        const scene = parseSceneDoc(doc, builtinEffect, libraryGraph, resolve as never)
+        const scene = parseSceneDoc(doc, builtinEffect, libraryGraph, resolve)
         // A fork is a NEW scene: its own identity from the first frame, so
         // publishing can never overwrite the one it came from — and its own name,
         // so the tab title says which of the two you are editing. Forking a fork

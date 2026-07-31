@@ -21,10 +21,16 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const DESCRIPTION =
+  "An MMD design, rendering and sharing platform. Compose a scene in the browser — node-graph material shaders compiled to WGSL, colour grading, background effects, lighting and framing — then export video or publish a live 3D link. Powered by reze-engine on WebGPU.";
+
 export const metadata: Metadata = {
   title: "Reze Design",
-  description:
-    "Blender-style material node graphs compiled to WGSL live on a WebGPU MMD renderer. Web-native scene composing and styling, powered by reze-engine.",
+  description: DESCRIPTION,
+  // Scenes are shared as links, so the site's own card should say what the link
+  // leads to. Published scenes override this with their own title and blurb.
+  openGraph: { title: "Reze Design", description: DESCRIPTION, type: "website" },
+  twitter: { card: "summary_large_image", title: "Reze Design", description: DESCRIPTION },
 };
 
 export default function RootLayout({

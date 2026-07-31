@@ -47,7 +47,7 @@ export function SceneViewer(props: ViewerProps) {
   useEffect(() => {
     let stale = false
     void resolveSceneRefs(props.doc).then((resolve) => {
-      if (!stale) setScene(parseSceneDoc(props.doc, builtinEffect, libraryGraph, resolve as never))
+      if (!stale) setScene(parseSceneDoc(props.doc, builtinEffect, libraryGraph, resolve))
     })
     return () => {
       stale = true
