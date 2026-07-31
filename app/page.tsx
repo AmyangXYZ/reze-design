@@ -66,6 +66,7 @@ import {
   newSceneId,
   parseSceneDoc,
   saveSceneState,
+  storedGroupsFor,
   serializeSceneDoc,
   type Scene,
   type AssetRef,
@@ -580,17 +581,37 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   // Mobile: no folder pickers exist, so the model button is zip-only there.
   const [isMobile] = useState(() => typeof navigator !== "undefined" && /Android|iPhone|iPad/i.test(navigator.userAgent))
 
+  /**
+   * Re-apply the material work saved for this model id, if any.
+   *
+   * Only groups whose materials this model actually has: ids come from the .pmx
+   * FILENAME, so two unrelated models both called `model.pmx` share an id, and
+   * pushing one's groups onto the other would apply groups naming materials that do
+   * not exist. The freshly auto-grouped set is the authority on what does.
+   */
+  const reclaimGroups = async (id: string) => {
+    const saved = storedGroupsFor(id)
+    if (!saved?.length) return
+    const known = new Set(engineRef.current?.getStyleGroups(id).flatMap((g) => g.materials) ?? [])
+    const usable = saved
+      .map((group) => ({ ...group, materials: group.materials.filter((m) => known.has(m)) }))
+      .filter((group) => group.materials.length > 0)
+    if (usable.length) await resetStyleGroups(id, usable)
+  }
+
   const loadCustom = async (files: File[], pmxFile: File, target: ModelTarget) => {
     setUpload(null)
     try {
       if (target.mode === "add") {
         const id = await addModelFromFiles(files, pmxFile)
+        await reclaimGroups(id)
         setActiveModelId(id)
         setPendingSlot(false)
       } else {
         const oldId = target.id
         const prevAnim = animByModel[oldId] ?? null
         const id = await replaceModelFromFiles(oldId, files, pmxFile)
+        await reclaimGroups(id)
         // Same-id replacement (same .pmx name) won't change activeId
           setActiveGroupId(null)
         setActiveModelId(id)

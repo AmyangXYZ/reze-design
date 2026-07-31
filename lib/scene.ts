@@ -518,6 +518,18 @@ function loadStoredState(): StoredState | null {
   }
 }
 
+/**
+ * The material work saved for a model that is not in the scene right now.
+ *
+ * Assets are not persisted, so a model the user imported themselves is never in the
+ * boot document and `hydrateScene` cannot restore its groups. Re-importing the same
+ * .pmx mints the same id (see `modelKey`), which is what makes the saved work
+ * reachable again — but only through a lookup like this one.
+ */
+export function storedGroupsFor(modelId: string): StyleGroup[] | null {
+  return loadStoredState()?.groups?.[modelId] ?? null
+}
+
 /** The boot document: `base` (the bundled default) with the user's stored values merged over */
 export function hydrateScene(base: Scene): Scene {
   const stored = loadStoredState()
