@@ -93,6 +93,13 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean)
     groups[entry.model.id] = withSpecialGroups(docGroups ?? engine.getStyleGroups(entry.model.id))
   }
 
+  // Framing travels with the document. Applied here rather than in either host,
+  // so a published scene opens on the shot its author chose whether it is being
+  // viewed or edited — the editor only pushed the camera when a slider moved, and
+  // the viewer never pushed it at all.
+  engine.setCameraTarget(new Vec3(...scene.state.camera.target))
+  engine.setCameraDistance(scene.state.camera.distance)
+
   engine.addGround({
     diffuseColor: hexToLinearVec3(s.ground.color),
     gridLineColor: hexToLinearVec3(s.ground.grid),

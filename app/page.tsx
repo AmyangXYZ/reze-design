@@ -360,6 +360,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     upsertGroup: upsertGroupFor,
     applyGroups: applyGroupsFor,
     resetStyleGroups,
+    bundleFile,
     bundleFiles,
     setCameraView,
     highlight: highlightFor,
@@ -1175,24 +1176,64 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     }
   }, [])
 
-  // Load each scene model's motion once the cast is ready (custom uploads don't re-trigger
+  // Everything a scene document carries beyond its models: motion, camera motion,
+  // music, backdrop, skybox.
+  //
+  // A published scene's asset URLs are paths INSIDE its bundle (`motions/…`,
+  // `backdrop/…`), so they have to be resolved against the unzipped files rather
+  // than fetched. The viewer has always done this; the editor fetched them as
+  // URLs, which is why opening a published scene in the editor arrived without
+  // its dance or its background.
   const sceneAnimLoaded = useRef(false)
   useEffect(() => {
     if (!ready || sceneAnimLoaded.current) return
     sceneAnimLoaded.current = true
+
     for (const entry of bootScene.assets.models) {
       const clip = entry.animation
       if (!clip) continue
       const id = entry.model.id
-      void loadVmdUrl(id, clip.name, clip.url).then((n) => {
-        if (n)
-          setAnimByModel((prev) => ({
-            ...prev,
-            [id]: { name: n, size: null, source: { kind: "url", name: clip.name, url: clip.url } },
-          }))
+      const packed = bundleFile(clip.url)
+      // Packed motion loads from the File and is REMEMBERED as a file, so
+      // publishing this fork re-packs it instead of pointing at a path that only
+      // exists inside somebody else's zip.
+      const load = packed ? loadVmdFile(id, packed) : loadVmdUrl(id, clip.name, clip.url)
+      void load.then((n) => {
+        if (!n) return
+        setAnimByModel((prev) => ({
+          ...prev,
+          [id]: packed
+            ? { name: n, size: packed.size, source: { kind: "file", file: packed } }
+            : { name: n, size: null, source: { kind: "url", name: clip.name, url: clip.url } },
+        }))
       })
     }
-  }, [ready, loadVmdUrl, bootScene])
+
+    const cam = bootScene.assets.cameraAnimation
+    if (cam) {
+      const packed = bundleFile(cam.url)
+      if (packed) void onCameraPicked(packed)
+    }
+
+    const track = bootScene.assets.audio
+    if (track) {
+      const packed = bundleFile(track.url)
+      if (packed) {
+        sceneFiles.audio = packed
+        setAudioName(packed.name)
+        setAudioSrc(URL.createObjectURL(packed))
+      }
+    }
+
+    const bg = bootScene.assets.background
+    if (bg) {
+      const packed = bundleFile(bg.asset.url)
+      if (packed) {
+        void (bg.kind === "skybox" ? onSkyboxPicked(packed) : onBackdropPicked(packed))
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, bootScene])
 
   // Mirror the animation clock onto the audio element (model is the master).
   useEffect(() => {

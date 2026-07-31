@@ -186,6 +186,36 @@ function SceneStage({ scene, sceneId, title, author, description, credits, likeC
     return () => URL.revokeObjectURL(audioSrc)
   }, [audioSrc])
 
+  // Background. A flat backdrop is a DOM layer behind the transparent canvas; a
+  // skybox is a dome the engine draws. Same split as the editor — the viewer drew
+  // neither, so a published scene arrived on its background colour alone.
+  const background = ready ? scene.assets.background : null
+  const backdropUrl = useMemo(() => {
+    if (background?.kind !== "backdrop") return null
+    const file = bundleFile(background.asset.url)
+    return file ? URL.createObjectURL(file) : background.asset.url
+  }, [background, bundleFile])
+  useEffect(() => {
+    if (!backdropUrl?.startsWith("blob:")) return
+    return () => URL.revokeObjectURL(backdropUrl)
+  }, [backdropUrl])
+
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine || background?.kind !== "skybox") return
+    let stale = false
+    void (async () => {
+      const packed = bundleFile(background.asset.url)
+      const blob: Blob = packed ? packed : await (await fetch(background.asset.url)).blob()
+      const bitmap = await createImageBitmap(blob)
+      if (stale) return
+      engine.setBackdropEquirect(bitmap)
+    })()
+    return () => {
+      stale = true
+    }
+  }, [engineRef, background, bundleFile])
+
   const audioElRef = useRef<HTMLAudioElement>(null)
   // The animation clock is the master, exactly as in the editor.
   useEffect(() => {
@@ -210,6 +240,11 @@ function SceneStage({ scene, sceneId, title, author, description, credits, likeC
 
   return (
     <main className="fixed inset-0 overflow-hidden bg-zinc-950">
+      {/* Backdrop layer: page bg colour → image (cover) → transparent canvas. */}
+      {backdropUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={backdropUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+      )}
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none object-contain" />
 
       {/* Top left: whose site this is. A shared link is often someone's first
