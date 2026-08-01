@@ -658,7 +658,24 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     // Only here, on a user-picked motion — the other loadVmd call sites are restores
     // (boot, and re-applying a clip after a model swap), where clearing the offset
     // would stack a published multi-model scene back on top of itself.
-    if (name) centerModel(modelId)
+    if (name) {
+      centerModel(modelId)
+      // Join the transport where it already is. `show()` poses frame 0 and pauses, so a
+      // clip added to a second model mid-session starts at zero while the rest of the
+      // cast stands at T — they then play out of step for the whole take. The first
+      // model that already has a clip is the transport's clock (same rule AnimPlayer
+      // uses), so the newcomer seeks to it, and starts moving if it is running.
+      const engine = engineRef.current
+      const joined = engine?.getModel(modelId)
+      for (const other of engine?.getModelNames() ?? []) {
+        if (other === modelId) continue
+        const p = engine?.getModel(other)?.getAnimationProgress()
+        if (!p || p.duration <= 0) continue
+        joined?.seek(p.current)
+        if (p.playing) joined?.play()
+        break
+      }
+    }
     clearAnimMeta(modelId)
     setAnimByModel((prev) => {
       const next = { ...prev }
