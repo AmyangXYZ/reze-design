@@ -26,9 +26,10 @@ const en = {
   // Export / import / reset all act on the same slice: the scene's look, not its files.
   sceneFile: {
     label: "Scene config",
+    newScene: "New scene",
     export: "Export scene config",
     import: "Import scene config",
-    reset: "Reset scene config",
+    reset: "Reset to default scene",
     badFile: "Not a Reze Design scene file",
   },
   account: {
@@ -405,9 +406,10 @@ const zh: Dictionary = {
   },
   sceneFile: {
     label: "场景配置",
+    newScene: "新建场景",
     export: "导出场景配置",
     import: "导入场景配置",
-    reset: "重置场景配置",
+    reset: "恢复默认场景",
     badFile: "不是 Reze Design 场景文件",
   },
   account: {
@@ -776,9 +778,10 @@ const ja: Dictionary = {
   },
   sceneFile: {
     label: "シーン設定",
+    newScene: "新規シーン",
     export: "シーン設定を書き出す",
     import: "シーン設定を読み込む",
-    reset: "シーン設定をリセット",
+    reset: "既定のシーンに戻す",
     badFile: "Reze Design のシーンファイルではありません",
   },
   account: {

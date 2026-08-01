@@ -174,6 +174,9 @@ export const AssetsPanel = memo(function AssetsPanel({
 }) {
   const t = useT()
   const multi = characters.length > 1 || pendingSlot
+  // With no cast at all the upload row IS the section — making the user click
+  // "Add model" first would be a step that reveals the only thing there is to do.
+  const empty = characters.length === 0
   return (
     <ScrollArea className="min-h-0 flex-1">
       <div className="px-4 py-3.5">
@@ -200,13 +203,13 @@ export const AssetsPanel = memo(function AssetsPanel({
                 >
                   {c.file}
                 </button>
-                {i > 0 && <RemoveButton onClick={() => onRemoveModel(c.id)} />}
+                <RemoveButton onClick={() => onRemoveModel(c.id)} />
               </div>
             </div>
           ))}
           {/* The empty slot: same anatomy, placeholders until its upload lands. */}
-          {pendingSlot && (
-            <div className="mt-3">
+          {(pendingSlot || empty) && (
+            <div className={empty ? undefined : "mt-3"}>
               <UploadPair
                 icon={PersonStanding}
                 label={modelUploadLabel}
@@ -216,12 +219,13 @@ export const AssetsPanel = memo(function AssetsPanel({
               />
               <div className="mt-1.5 flex items-center gap-1">
                 <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground/40">—</span>
-                <RemoveButton onClick={onCancelPending} />
+                {/* Nothing to cancel back to when this is the scene's only slot. */}
+                {pendingSlot && <RemoveButton onClick={onCancelPending} />}
               </div>
             </div>
           )}
           {/* Form-append: reveal the next slot where it would appear. */}
-          {!pendingSlot && (
+          {!pendingSlot && !empty && (
             <div className="mt-2.5 flex justify-center">
             <Button
               variant="outline"

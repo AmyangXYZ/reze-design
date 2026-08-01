@@ -314,6 +314,20 @@ export function useEngine(
   }, [])
 
   /** Load a local .vmd onto ONE model (object URL), posed at frame 0 but PAUSED */
+  /**
+   * Drop a model's spawn offset.
+   *
+   * `spawnOffsetX` exists so a newly added model does not land inside the first one —
+   * a framing aid for a model standing in its rest pose. A motion carries its own
+   * placement, so once the user loads one the offset is the app second-guessing the
+   * file. Nothing is lost: the transform is never persisted (SceneModelDoc has no
+   * position), so the offset is runtime-only and the origin is where the model was
+   * always going to be.
+   */
+  const centerModel = useCallback((modelId: string) => {
+    engineRef.current?.setModelTransform(modelId, { position: new Vec3(0, 0, 0) })
+  }, [])
+
   const loadVmdFile = useCallback(async (modelId: string, file: File): Promise<string | null> => {
     const model = engineRef.current?.getModel(modelId)
     if (!model) return null
@@ -488,6 +502,7 @@ export function useEngine(
     removeModelById,
     loadVmdFile,
     loadVmdUrl,
+    centerModel,
     stopAnimation,
   }
 }

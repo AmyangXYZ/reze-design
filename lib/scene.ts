@@ -35,7 +35,9 @@ export type SceneModel = {
 }
 
 export type SceneAssets = {
-  /** ≥1 entry; [0] is the PRIMARY model */
+  /** [0] is the PRIMARY model. May be empty: a build without the demo assets
+   *  (NEXT_PUBLIC_USE_DEFAULT_ASSETS=false) starts with no cast, and the last model can be
+   *  removed. */
   models: SceneModel[]
   /** Camera VMD — drives target/rotation/distance/fov, overriding `state.camera`. */
   cameraAnimation: AssetRef | null
@@ -145,7 +147,7 @@ export type SceneModelDoc = {
 
 /** Every file the scene points at — and nothing else. */
 export type SceneAssetsDoc = {
-  /** ≥1 entry; [0] is the primary model. */
+  /** [0] is the primary model; may be empty. */
   models: SceneModelDoc[]
   /** Camera VMD — overrides `settings.camera` while enabled. */
   cameraAnimation?: string | null

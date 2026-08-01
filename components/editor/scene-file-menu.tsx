@@ -6,7 +6,7 @@
 // which is why there is no longer one reset in the Scene tab and another in Materials.
 
 import { useRef, useState } from "react"
-import { ArrowDownToLine, ArrowUpFromLine, ChevronDown, RotateCcw } from "lucide-react"
+import { ArrowDownToLine, ArrowUpFromLine, ChevronDown, FilePlus2, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useT } from "@/lib/i18n"
@@ -33,10 +33,12 @@ function Row({
 }
 
 export function SceneFileActions({
+  onNew,
   onExport,
   onImport,
   onReset,
 }: {
+  onNew: () => void
   onExport: () => void
   /** Receives the picked .json — the caller parses, so a bad file is reported through
    *  the same notice the rest of the scene's file failures use. */
@@ -82,6 +84,7 @@ export function SceneFileActions({
           </Button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-fit min-w-40 p-1">
+          <Row icon={FilePlus2} label={t.sceneFile.newScene} onClick={run(onNew)} />
           <Row icon={ArrowDownToLine} label={t.sceneFile.import} onClick={pickFile} />
           <Row icon={ArrowUpFromLine} label={t.sceneFile.export} onClick={run(onExport)} />
           <Row icon={RotateCcw} label={t.sceneFile.reset} onClick={run(onReset)} />

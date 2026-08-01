@@ -4,11 +4,33 @@ import { builtinEffect } from "@/lib/background-effects"
 import { libraryGraph } from "@/lib/materials"
 import { parseSceneDoc, type Scene, type SceneDoc } from "@/lib/scene"
 
+/**
+ * Whether this build ships the demo model, motion and music.
+ *
+ * A desktop or self-hosted build may want none of them — `public/models` is by far
+ * the largest thing in the repo, and a packaged app has no reason to carry someone
+ * else's character. `NEXT_PUBLIC_USE_DEFAULT_ASSETS=false` boots the editor into an empty
+ * scene: the lighting, ground, colour grade and background effect are all defined
+ * in code, so the starting scene still looks like something and the user brings
+ * their own model to it.
+ *
+ * Read at build time (the NEXT_PUBLIC_ prefix inlines it), so a downstream packager
+ * sets it in the environment rather than patching this file — which is the point.
+ */
+// Absent means on: the demo is what the web build ships, and only a packager opting
+// out has any reason to set this. Parsed leniently so a `0` or an `off` still reads
+// as off rather than silently shipping assets the packager meant to drop.
+const NO = ["false", "0", "off", "no"]
+export const USE_DEFAULT_ASSETS = !NO.includes((process.env.NEXT_PUBLIC_USE_DEFAULT_ASSETS ?? "").trim().toLowerCase())
+
 export const DEFAULT_SCENE_DOC: SceneDoc = {
   version: 1,
   name: "My first scene",
   assets: {
-    models: [
+    // Empty, not a placeholder: every consumer already tolerates a cast of none.
+    models: !USE_DEFAULT_ASSETS
+      ? []
+      : [
       {
         model: "/models/托特-扉页之吻/苍鹭·托特「扉页之吻」白衣.pmx",
         animation: "/animations/One More Last Time.vmd",
@@ -49,7 +71,7 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
       },
     ],
     cameraAnimation: null,
-    audio: "/audios/One More Last Time.wav",
+    audio: USE_DEFAULT_ASSETS ? "/audios/One More Last Time.wav" : null,
     backdrop: null,
     skybox: null,
   },
@@ -65,3 +87,33 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
 }
 
 export const DEFAULT_SCENE: Scene = parseSceneDoc(DEFAULT_SCENE_DOC, builtinEffect, libraryGraph)
+
+/**
+ * A blank scene — no model, no motion, no music, no background effect, no grade.
+ *
+ * The settings split by what they encode. Colour, the effect and the grade are TASTE:
+ * the bundled demo is a stage set built around one character, and starting a new scene
+ * inside someone else's art direction is wrong. Camera distance, target height and the
+ * sun's angle are CONVENTION: they encode MMD's scale (a model stands ~20 units) and
+ * basic key-light placement, and dropping a user at the engine's raw defaults would
+ * leave them staring at an unlit model from the wrong distance, which reads as broken.
+ *
+ * So: the demo's structure and conventions, with the palette neutralised. A lit studio,
+ * neither a black void nor a finished look.
+ */
+export const EMPTY_SCENE_DOC: SceneDoc = {
+  version: 1,
+  name: "Untitled scene",
+  assets: { models: [], cameraAnimation: null, audio: null, backdrop: null, skybox: null },
+  settings: {
+    camera: DEFAULT_SCENE_DOC.settings.camera,
+    world: { color: "#ffffff", strength: 0.35 },
+    sun: { color: "#ffffff", strength: 2.0, azimuth: 205, elevation: 21 },
+    bloom: { enabled: true, threshold: 0.8, knee: 0.5, radius: 4.0, intensity: 0.03, color: "#ffffff" },
+    background: { color: "#1c1c1e", effect: null },
+    grade: { preset: "Neutral", intensity: 1 },
+    ground: { color: "#3a3a3d", size: 160, opacity: 0.42, shadow: true, grid: "#fafaf9", gridEnabled: true },
+  },
+}
+
+export const EMPTY_SCENE: Scene = parseSceneDoc(EMPTY_SCENE_DOC, builtinEffect, libraryGraph)

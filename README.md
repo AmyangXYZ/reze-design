@@ -172,6 +172,22 @@ export work, and every built-in grade, effect and graph is browsable. The parts
 that need a server — accounts, publishing, the gallery — report that they are
 unavailable instead of failing.
 
+### Packaging without the demo assets
+
+`public/models` is the largest thing in the repo, and a desktop or self-hosted
+build has no reason to ship someone else's character. One build-time key controls
+it, so a downstream packager configures this from the environment instead of
+patching the source:
+
+| Key | What it does |
+| --- | --- |
+| `NEXT_PUBLIC_USE_DEFAULT_ASSETS` | `false` boots into an empty scene — no model, motion or music. Unset (or anything else) keeps the demo. |
+
+An empty scene is a supported state, not a degraded one: lighting, ground, colour
+grade and the background effect are defined in code, so the editor still opens on
+something and the user brings their own model. Removing the last model in a
+running session is allowed for the same reason.
+
 To run the full platform, copy the environment keys the app reads:
 
 | Key | What it is |

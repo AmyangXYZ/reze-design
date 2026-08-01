@@ -38,6 +38,7 @@ export function BrandPill({
   onRenameScene,
   docksOpen,
   onToggleDocks,
+  onNewScene,
   onExportScene,
   onImportScene,
   onResetScene,
@@ -47,6 +48,7 @@ export function BrandPill({
   onRenameScene: (name: string) => void
   docksOpen: boolean
   onToggleDocks: () => void
+  onNewScene: () => void
   onExportScene: () => void
   onImportScene: (file: File) => void
   onResetScene: () => void
@@ -85,7 +87,7 @@ export function BrandPill({
       {sceneName}
     </span>
   )
-  const sceneActions = <SceneFileActions onExport={onExportScene} onImport={onImportScene} onReset={onResetScene} />
+  const sceneActions = <SceneFileActions onNew={onNewScene} onExport={onExportScene} onImport={onImportScene} onReset={onResetScene} />
 
   const toggle = (
     <Tooltip>

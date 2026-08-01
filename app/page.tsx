@@ -36,7 +36,7 @@ import { expandUploadFiles, readDroppedFiles } from "@/lib/uploads"
 import { useI18n, useT } from "@/lib/i18n"
 import type { ExportAudioSource } from "@/lib/video-export"
 import { MaterialSphereIcon } from "@/components/scene/slot-icons"
-import { DEFAULT_SCENE } from "@/lib/default-scene"
+import { DEFAULT_SCENE, EMPTY_SCENE } from "@/lib/default-scene"
 import { groupLabel, GRAPH_LIBRARY, libraryGraph, SLOT_GRAPHS } from "@/lib/materials"
 import type { AppliedBackgroundEffect } from "@/lib/background-effects"
 import { GRADE_PRESETS, NEUTRAL_SPEC, gradeSpec, recallIntensity, specOf } from "@/lib/grade"
@@ -339,7 +339,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   // The boot document: the bundled demo with the user's stored values merged over it.
   // A forked scene boots as published — NOT merged with your stored state, which
   // belongs to whatever you were working on before.
-  const [bootScene] = useState(() => initialScene ?? hydrateScene(DEFAULT_SCENE))
+  const [bootScene, setBootScene] = useState(() => initialScene ?? hydrateScene(DEFAULT_SCENE))
   const [sceneSettings, setSceneSettings] = useState<SceneSettings>(bootScene.state.settings)
   const [sceneCamera, setSceneCamera] = useState<SceneCamera>(bootScene.state.camera)
   const [sceneName, setSceneName] = useState(bootScene.state.name)
@@ -365,6 +365,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     bundleFile,
     bundleFiles,
     setCameraView,
+    swapScene,
     highlight: highlightFor,
     toggleVisible: toggleVisibleFor,
     addModelFromFiles,
@@ -372,11 +373,12 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     removeModelById,
     loadVmdFile,
     loadVmdUrl,
+    centerModel,
     stopAnimation,
   } = useEngine(bootScene)
 
   // Active model: the one the Materials tab + graph editor edit.
-  const [activeModelId, setActiveModelId] = useState(bootScene.assets.models[0].model.id)
+  const [activeModelId, setActiveModelId] = useState(bootScene.assets.models[0]?.model.id ?? "")
   const activeModel = models.find((m) => m.id === activeModelId) ?? models[0] ?? null
   const activeId = activeModel?.id ?? activeModelId
   // The EFFECTIVE id (falls back to models[0] after a removal)
@@ -599,6 +601,12 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     if (usable.length) await resetStyleGroups(id, usable)
   }
 
+  // The "+ Add model" button reveals an EMPTY slot (upload pair + placeholder lines) instead.
+  // Declared here rather than beside addSlot/cancelPending: loadCustom clears it on a
+  // successful upload, and a setter used a thousand lines above its own declaration reads
+  // as a hoisting accident.
+  const [pendingSlot, setPendingSlot] = useState(false)
+
   const loadCustom = async (files: File[], pmxFile: File, target: ModelTarget) => {
     setUpload(null)
     try {
@@ -647,6 +655,10 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     })
   const loadAnimFor = async (modelId: string, file: File) => {
     const name = await loadVmdFile(modelId, file)
+    // Only here, on a user-picked motion — the other loadVmd call sites are restores
+    // (boot, and re-applying a clip after a model swap), where clearing the offset
+    // would stack a published multi-model scene back on top of itself.
+    if (name) centerModel(modelId)
     clearAnimMeta(modelId)
     setAnimByModel((prev) => {
       const next = { ...prev }
@@ -1249,46 +1261,6 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, bootScene])
 
-  // Mirror the animation clock onto the audio element (model is the master).
-  useEffect(() => {
-    const audio = audioElRef.current
-    if (!audio) return
-    if (!masterId || exporting) {
-      audio.pause()
-      return
-    }
-    let raf = 0
-    let wasPlaying = false
-    let lastModelTime = -1
-    const tick = () => {
-      raf = requestAnimationFrame(tick)
-      const p = engineRef.current?.getModel(masterId)?.getAnimationProgress()
-      if (!p) return
-      const playing = p.playing && userInteracted.current
-      // A frame advances the clock ≤ ~0.05s — anything bigger is a discrete jump.
-      const jumped = lastModelTime >= 0 && Math.abs(p.current - lastModelTime) > 0.35
-      lastModelTime = p.current
-      if (playing) {
-        if (!wasPlaying || (!audio.seeking && (jumped || Math.abs(audio.currentTime - p.current) > 0.5))) {
-          audio.currentTime = p.current
-        }
-        // A track SHORTER than the clip ends part-way through and leaves the
-        // element paused. Seeking it back to 0 when the motion loops does not
-        // resume an ended element — only play() does — so the second pass ran in
-        // silence. Guarded on there being audio left, or an element sitting at
-        // its own duration would be asked to start again every frame.
-        if (audio.paused && (!Number.isFinite(audio.duration) || p.current < audio.duration - 0.05)) {
-          void audio.play().catch(() => {})
-        }
-      } else if (!audio.paused) {
-        audio.pause()
-      }
-      wasPlaying = playing
-    }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [masterId, engineRef, exporting])
-
   // The file's path: folder picks carry webkitRelativePath
   const relPath = (f: File) => (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name
 
@@ -1479,17 +1451,6 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     }
   }
 
-  // One reset for the whole document. It used to be two — settings in the Scene tab,
-  // groups in the Materials tab — which meant neither one actually restored "the
-  // default", and which of the two you got depended on where you happened to be.
-  const resetSceneDefaults = useCallback(() => {
-    setSceneSettings(DEFAULT_SCENE.state.settings)
-    setBgEffect(DEFAULT_SCENE.state.backgroundEffect)
-    setSceneName(DEFAULT_SCENE.state.name)
-    changeCamera(DEFAULT_SCENE.state.camera)
-    setActiveGroupId(null)
-    for (const m of models) void resetStyleGroups(m.id, DEFAULT_SCENE.state.groups?.[m.id])
-  }, [models, setSceneSettings, setBgEffect, changeCamera, resetStyleGroups])
 
   /** Exactly what the autosave effect persists — export, reset and import all act on
    *  this one slice, so the three can never drift into meaning different things. */
@@ -1559,8 +1520,6 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     modelTargetRef.current = { mode: "replace", id }
     zipInputRef.current?.click()
   }, [])
-  // The "+ Add model" button reveals an EMPTY slot (upload pair + placeholder lines) instead
-  const [pendingSlot, setPendingSlot] = useState(false)
   const addSlot = useCallback(() => setPendingSlot(true), [])
   const cancelPending = useCallback(() => setPendingSlot(false), [])
   const pickAnimationFor = useCallback((id: string) => {
@@ -1580,6 +1539,97 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     },
     [removeModelById],
   )
+
+  /**
+   * Swap the whole document in place.
+   *
+   * Reset, New and Import all land here. The engine's `swapScene` runs the same
+   * `loadSceneInto` that first boot does — so a swapped scene and a booted one can never
+   * mean different things — and it keeps the WebGPU device, its pipelines and every
+   * compiled shader. A page reload would have thrown all of that away and flashed the
+   * DOM on the way.
+   *
+   * `bootScene` is state rather than a frozen initializer because it is the identity the
+   * whole persistence layer keys on: the manifest, the IndexedDB record and the autosave
+   * all write under `bootScene.state.id`. Leave it frozen and a new scene would quietly
+   * persist under the identity of the one it replaced, and only misbehave on the NEXT
+   * refresh.
+   */
+  // Not memoized: BrandPill is a plain component so a stable identity buys nothing, and
+  // the compiler cannot preserve a manual memo across this async body anyway.
+  const applyScene = async (next: Scene) => {
+      await swapScene(next)
+
+      // Assets the engine does not own, cleared before the new document's are adopted.
+      sceneFiles.models.clear()
+      sceneFiles.audio = null
+      sceneFiles.camera = null
+      setAnimByModel({})
+      setAnimMetaByModel({})
+      engineRef.current?.clearCameraVmd()
+      setCameraName(null)
+      // The helpers, not setState: removeSkybox also clears the engine's equirect, and
+      // clearing only the React state left the engine still drawing the old sky.
+      removeBackdrop()
+      removeSkybox()
+      setAudioSrc((prev) => {
+        if (prev.startsWith("blob:")) URL.revokeObjectURL(prev)
+        return next.assets.audio?.url ?? ""
+      })
+      setAudioName(next.assets.audio?.name ?? null)
+
+      // loadSceneInto handles models, styles, camera and ground — but NOT motion, the
+      // camera VMD or the background. Boot loads those separately, so a swap that skips
+      // them silently drops every clip in the document it just adopted.
+      for (const entry of next.assets.models) {
+        const clip = entry.animation
+        if (!clip) continue
+        const name = await loadVmdUrl(entry.model.id, clip.name, clip.url)
+        if (!name) continue
+        setAnimByModel((prev) => ({
+          ...prev,
+          [entry.model.id]: { name, size: null, source: { kind: "url", name: clip.name, url: clip.url } },
+        }))
+      }
+      const cam = next.assets.cameraAnimation
+      if (cam) {
+        try {
+          await loadCameraBuffer(await (await fetch(cam.url)).arrayBuffer(), cam.name)
+        } catch {
+          // a missing served asset shouldn't take the whole swap down
+        }
+      }
+      const bg = next.assets.background
+      if (bg) {
+        try {
+          const blob = await (await fetch(bg.asset.url)).blob()
+          const file = new File([blob], bg.asset.name, { type: blob.type })
+          await (bg.kind === "skybox" ? onSkyboxPicked : onBackdropPicked)(file)
+        } catch {
+          // same
+        }
+      }
+
+      setSceneSettings(next.state.settings)
+      setBgEffect(next.state.backgroundEffect)
+      setSceneName(next.state.name)
+      changeCamera(next.state.camera)
+      setActiveGroupId(null)
+      setActiveModelId(next.assets.models[0]?.model.id ?? "")
+      setPendingSlot(false)
+      setBootScene(next)
+      saveSceneState(next.state)
+  }
+
+  /** The curated first-open scene, assets included. */
+  const resetSceneDefaults = () =>
+    void applyScene({ ...DEFAULT_SCENE, state: { ...DEFAULT_SCENE.state, id: bootScene.state.id } })
+
+  /** Blank: no assets, no effect, no grade, neutral settings — and a NEW identity, so the
+   *  uploads just cleared can never be re-adopted by it. */
+  const newScene = () => void applyScene({ ...EMPTY_SCENE, state: { ...EMPTY_SCENE.state, id: newSceneId() } })
+
+
   const pickCamera = useCallback(() => cameraInputRef.current?.click(), [])
   const pickMusic = useCallback(() => audioInputRef.current?.click(), [])
   const pickBackdrop = useCallback(() => backdropInputRef.current?.click(), [])
@@ -1918,6 +1968,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
                 <BrandPill
                   sceneName={sceneName}
                   onRenameScene={setSceneName}
+                  onNewScene={newScene}
                   onExportScene={exportScene}
                   onImportScene={importScene}
                   onResetScene={resetSceneDefaults}
@@ -1936,7 +1987,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
           </RaisableLayer>
         ) : (
           <div className="fixed top-3 left-3 z-20">
-            <BrandPill sceneName={sceneName} onRenameScene={setSceneName} onExportScene={exportScene} onImportScene={importScene} onResetScene={resetSceneDefaults} docksOpen={false} onToggleDocks={() => setDocksOpen(true)} />
+            <BrandPill sceneName={sceneName} onRenameScene={setSceneName} onNewScene={newScene} onExportScene={exportScene} onImportScene={importScene} onResetScene={resetSceneDefaults} docksOpen={false} onToggleDocks={() => setDocksOpen(true)} />
           </div>
         ))}
 
@@ -2256,6 +2307,17 @@ function EditorRoute() {
   )
   const [forked, setForked] = useState<Scene | null>(null)
   const [failed, setFailed] = useState(false)
+  // Every boot decision inside Editor reads localStorage: the stored scene state, and
+  // whether this scene's uploads are waiting in IndexedDB. On the server both answer
+  // "nothing", so the demo scene renders there and the user's renders here — the same
+  // hydration mismatch this route already avoids for forks. `bootScene` is frozen in
+  // useState and cannot re-derive after hydration, so the fix is to not build it until
+  // the client is running. Server snapshot false, client true, no effect needed.
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  )
 
   useEffect(() => {
     if (!from) return
@@ -2284,7 +2346,7 @@ function EditorRoute() {
     }
   }, [from])
 
-  if (from && !forked && !failed) {
+  if (!mounted || (from && !forked && !failed)) {
     return (
       <main className="fixed inset-0 bg-zinc-950">
         <LoadingPill />
