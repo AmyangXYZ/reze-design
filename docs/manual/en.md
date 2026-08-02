@@ -237,15 +237,21 @@ way to produce the thumbnail a published scene requires. Capture thumbnails at
 **Green screen** replaces the background with pure `#00FF00` for compositing
 elsewhere, the classic MMD PV route.
 
-**Scene config** is a different kind of export, and it lives on the chevron beside
-the scene name rather than in the Render tab. It writes everything about how a
-scene looks — lighting, background, colour grade, camera framing and every
-material style group — to a small `.reze.json` file. It carries no assets: models,
-motions and audio are untouched, and an imported config applies to whichever
-models are already loaded. Material work finds its way back because a model's key
-is its `.pmx` filename, so re-importing the same model picks up the groups that
-belonged to it. **Reset scene config** restores the curated look the editor opens
-with, across the Scene and Materials tabs together.
+**Exporting the scene itself** lives in the scene menu — click the logo at the top
+of the left rail (or on the floating pill when the panels are collapsed). **Export
+scene** writes one zip holding the scene document and every uploaded asset: model,
+motion, music, backdrop. **Import scene** opens such a zip on any machine and the
+scene arrives whole. The same menu holds **New scene**, which starts from a blank,
+neutrally lit stage, and **Reset to default scene**, which brings back the bundled
+demo.
+
+**Your work persists.** Every change is saved the moment you make it — settings
+and material work, and the models, motion and music you uploaded, all stored in
+your own browser (localStorage and IndexedDB; nothing is sent to a server until
+you publish). Refresh mid-edit, close the tab, come back tomorrow: the editor
+reopens exactly where you left off, uploads included. Only four actions change
+what loads — New scene, Reset, importing a scene file, and opening someone
+else's scene in the editor.
 
 ## 1.8 Publishing
 

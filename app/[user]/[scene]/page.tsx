@@ -1,5 +1,6 @@
 import { notFound, permanentRedirect } from "next/navigation"
-import { eq } from "drizzle-orm"
+import { after } from "next/server"
+import { eq, sql } from "drizzle-orm"
 import { db, hasDatabase, schema } from "@/lib/db"
 import { user } from "@/lib/db/auth-schema"
 import type { ScenePayload } from "@/lib/library"
@@ -58,6 +59,22 @@ export default async function ScenePage({ params }: { params: Promise<{ user: st
   // one scene: the address bar stays honest and search engines see one page.
   const canonical = row.handle ?? row.author
   if (handle !== canonical) permanentRedirect(`/${canonical}/${row.id}`)
+
+  // Count the view once the response is on its way — the counter must never cost the
+  // visitor the round trip to the database. After the redirect check, so a stale-handle
+  // URL counts once, not once per hop; and here rather than in load(), which
+  // generateMetadata also calls and would double every hit. Atomic in SQL — two
+  // simultaneous visitors both land.
+  after(async () => {
+    try {
+      await db
+        .update(schema.libraryItems)
+        .set({ viewCount: sql`${schema.libraryItems.viewCount} + 1` })
+        .where(eq(schema.libraryItems.id, row.id))
+    } catch {
+      // a lost count is nothing
+    }
+  })
 
   const doc = (row.payload as ScenePayload).doc
   return (

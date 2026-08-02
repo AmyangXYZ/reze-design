@@ -32,7 +32,7 @@ import { useSceneSync } from "@/hooks/use-scene-sync"
 import { RaisableLayer } from "@/components/editor/raisable-layer"
 import { useHistory } from "@/hooks/use-history"
 import { probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
-import { expandUploadFiles, readDroppedFiles } from "@/lib/uploads"
+import { expandUploadFiles, readDroppedFiles, unzipToFiles } from "@/lib/uploads"
 import { useI18n, useT } from "@/lib/i18n"
 import type { ExportAudioSource } from "@/lib/video-export"
 import { MaterialSphereIcon } from "@/components/scene/slot-icons"
@@ -50,7 +50,7 @@ import {
 } from "@/lib/library"
 import { communityItems, useCommunity } from "@/hooks/use-community"
 import { prefetchLibraryStats } from "@/hooks/use-library-stats"
-import { forkTarget } from "@/lib/fork"
+import { clearForkTarget, forkTarget } from "@/lib/fork"
 import { resolveSceneRefs } from "@/lib/resolve-refs"
 import { effectRef, gradeRef, graphRef } from "@/lib/refs"
 import { useDrafts } from "@/hooks/use-drafts"
@@ -62,9 +62,12 @@ import { GradeEditorPanel, type GradeEditorSubject } from "@/components/editor/g
 import { SaveCloseDialog } from "@/components/editor/save-close"
 import { captureScene } from "@/components/editor/grade-preview"
 import {
+  assetsDocOf,
   hydrateScene,
+  idbBundleOf,
   newSceneId,
   parseSceneDoc,
+  saveSceneAssets,
   saveSceneState,
   storedGroupsFor,
   serializeSceneDoc,
@@ -73,11 +76,13 @@ import {
   type ModelSource,
   type SceneBackground,
   type SceneCamera,
+  type SceneDoc,
   type SceneModel,
 } from "@/lib/scene"
-import { downloadSceneFile, readSceneFile } from "@/lib/scene-file"
+import { downloadBlob, readSceneFile, sceneZipFileName } from "@/lib/scene-file"
 import { modelFilePaths, sceneFiles } from "@/lib/scene-files"
-import type { BundleEntry } from "@/lib/bundle"
+import { buildZip, type BundleEntry } from "@/lib/bundle"
+import { clearLocalBundle, saveLocalBundle } from "@/lib/asset-store"
 import { ShareSceneDialog, type ScenePublishSource } from "@/components/editor/share-scene"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { HandleDialog } from "@/components/editor/account-panel"
@@ -1220,63 +1225,118 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   }, [])
 
   // Everything a scene document carries beyond its models: motion, camera motion,
-  // music, backdrop, skybox.
+  // music, backdrop, skybox. loadSceneInto owns models, styles, camera and ground;
+  // THIS owns the rest — and it is the only loader of the rest. Boot and swap both
+  // call it, which is what ended each drifting its own copy (music lost on swap,
+  // clips lost on reset, background surviving as a ghost).
   //
-  // A published scene's asset URLs are paths INSIDE its bundle (`motions/…`,
-  // `backdrop/…`), so they have to be resolved against the unzipped files rather
-  // than fetched. The viewer has always done this; the editor fetched them as
-  // URLs, which is why opening a published scene in the editor arrived without
-  // its dance or its background.
-  const sceneAnimLoaded = useRef(false)
-  useEffect(() => {
-    if (!ready || sceneAnimLoaded.current) return
-    sceneAnimLoaded.current = true
-
-    for (const entry of bootScene.assets.models) {
+  // Resolution per slot: the scene's bundle first — a published zip and the local
+  // IndexedDB bundle look identical through bundleFile — then the URL itself for
+  // served assets. Bundle-resolved files are REMEMBERED as files, so publishing a
+  // fork re-packs them instead of pointing into somebody else's zip.
+  const loadDocExtras = async (scene: Scene) => {
+    for (const entry of scene.assets.models) {
       const clip = entry.animation
       if (!clip) continue
       const id = entry.model.id
       const packed = bundleFile(clip.url)
-      // Packed motion loads from the File and is REMEMBERED as a file, so
-      // publishing this fork re-packs it instead of pointing at a path that only
-      // exists inside somebody else's zip.
-      const load = packed ? loadVmdFile(id, packed) : loadVmdUrl(id, clip.name, clip.url)
-      void load.then((n) => {
-        if (!n) return
-        setAnimByModel((prev) => ({
-          ...prev,
-          [id]: packed
-            ? { name: n, size: packed.size, source: { kind: "file", file: packed } }
-            : { name: n, size: null, source: { kind: "url", name: clip.name, url: clip.url } },
-        }))
-      })
+      const name = await (packed ? loadVmdFile(id, packed) : loadVmdUrl(id, clip.name, clip.url))
+      if (!name) continue
+      setAnimByModel((prev) => ({
+        ...prev,
+        [id]: packed
+          ? { name, size: packed.size, source: { kind: "file", file: packed } }
+          : { name, size: null, source: { kind: "url", name: clip.name, url: clip.url } },
+      }))
     }
 
-    const cam = bootScene.assets.cameraAnimation
+    const cam = scene.assets.cameraAnimation
     if (cam) {
       const packed = bundleFile(cam.url)
-      if (packed) void onCameraPicked(packed)
+      if (packed) await onCameraPicked(packed)
+      else if (/^[/]|^https?:/.test(cam.url)) {
+        try {
+          await loadCameraBuffer(await (await fetch(cam.url)).arrayBuffer(), cam.name)
+        } catch {
+          // a missing served asset degrades to no camera motion, not a dead scene
+        }
+      }
     }
 
-    const track = bootScene.assets.audio
+    const track = scene.assets.audio
     if (track) {
       const packed = bundleFile(track.url)
-      if (packed) {
-        sceneFiles.audio = packed
-        setAudioName(packed.name)
-        setAudioSrc(URL.createObjectURL(packed))
+      if (packed) setMusicFile(packed)
+      else if (/^[/]|^https?:/.test(track.url)) {
+        setAudioName(track.name)
+        setAudioSrc(track.url)
+        setAudioSource((v) => (v === "none" ? "music" : v))
       }
     }
 
-    const bg = bootScene.assets.background
+    const bg = scene.assets.background
     if (bg) {
       const packed = bundleFile(bg.asset.url)
-      if (packed) {
-        void (bg.kind === "skybox" ? onSkyboxPicked(packed) : onBackdropPicked(packed))
+      const apply = bg.kind === "skybox" ? onSkyboxPicked : onBackdropPicked
+      if (packed) await apply(packed)
+      else if (/^[/]|^https?:/.test(bg.asset.url)) {
+        try {
+          const blob = await (await fetch(bg.asset.url)).blob()
+          await apply(new File([blob], bg.asset.name, { type: blob.type }))
+        } catch {
+          // same: degrade, don't die
+        }
       }
     }
+  }
+
+  const sceneAnimLoaded = useRef(false)
+  useEffect(() => {
+    if (!ready || sceneAnimLoaded.current) return
+    sceneAnimLoaded.current = true
+    void loadDocExtras(bootScene)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, bootScene])
+
+  // Mirror the animation clock onto the audio element (model is the master).
+  useEffect(() => {
+    const audio = audioElRef.current
+    if (!audio) return
+    if (!masterId || exporting) {
+      audio.pause()
+      return
+    }
+    let raf = 0
+    let wasPlaying = false
+    let lastModelTime = -1
+    const tick = () => {
+      raf = requestAnimationFrame(tick)
+      const p = engineRef.current?.getModel(masterId)?.getAnimationProgress()
+      if (!p) return
+      const playing = p.playing && userInteracted.current
+      // A frame advances the clock ≤ ~0.05s — anything bigger is a discrete jump.
+      const jumped = lastModelTime >= 0 && Math.abs(p.current - lastModelTime) > 0.35
+      lastModelTime = p.current
+      if (playing) {
+        if (!wasPlaying || (!audio.seeking && (jumped || Math.abs(audio.currentTime - p.current) > 0.5))) {
+          audio.currentTime = p.current
+        }
+        // A track SHORTER than the clip ends part-way through and leaves the
+        // element paused. Seeking it back to 0 when the motion loops does not
+        // resume an ended element — only play() does — so the second pass ran in
+        // silence. Guarded on there being audio left, or an element sitting at
+        // its own duration would be asked to start again every frame.
+        if (audio.paused && (!Number.isFinite(audio.duration) || p.current < audio.duration - 0.05)) {
+          void audio.play().catch(() => {})
+        }
+      } else if (!audio.paused) {
+        audio.pause()
+      }
+      wasPlaying = playing
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [masterId, engineRef, exporting])
 
   // The file's path: folder picks carry webkitRelativePath
   const relPath = (f: File) => (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name
@@ -1369,8 +1429,20 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   // uploaded assets need. Demo assets keep site paths; uploads become
   // bundle-relative paths backed by zip entries.
   const [shareOpen, setShareOpen] = useState(false)
-  const collectScenePublish = (): ScenePublishSource => {
+  /**
+   * Every slot's CURRENT value — uploaded assets as bundle-relative paths backed by
+   * File entries, served assets as their URLs — regardless of who supplied them. This
+   * is the one collector behind BOTH destinations: publish zips the entries to R2,
+   * local persistence writes them to the IndexedDB bundle. Persisting is publishing
+   * with a different store, which is why refresh, fork and publish can never disagree
+   * about what the scene is made of.
+   */
+  const collectSceneSlots = () => {
     const entries: BundleEntry[] = []
+    // A file that came OUT of a bundle keeps its bundle path as its name; packing it
+    // under a fresh prefix would nest it one level deeper per generation
+    // (audio/audio/track.wav), and the local persist loop runs every session.
+    const packPath = (prefix: string, name: string) => (name.includes("/") ? name : `${prefix}/${name}`)
     const liveModels: SceneModel[] = models.map((m) => {
       const kept = sceneFiles.models.get(m.id)
       const booted = bootScene.assets.models.find((d) => d.model.id === m.id)?.model.source ?? null
@@ -1397,7 +1469,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       const anim = animByModel[m.id]
       let animation: AssetRef | null = null
       if (anim?.source.kind === "file") {
-        const path = `motions/${m.id}/${anim.source.file.name}`
+        const path = packPath(`motions/${m.id}`, anim.source.file.name)
         entries.push({ path, file: anim.source.file })
         animation = { name: anim.name, url: path }
       } else if (anim?.source.kind === "url") {
@@ -1407,7 +1479,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     })
     let cameraAnimation: AssetRef | null = null
     if (cameraName && sceneFiles.camera) {
-      const path = `camera/${sceneFiles.camera.name}`
+      const path = packPath("camera", sceneFiles.camera.name)
       entries.push({ path, file: sceneFiles.camera })
       cameraAnimation = { name: cameraName, url: path }
     } else if (cameraName && bootScene.assets.cameraAnimation?.name === cameraName) {
@@ -1415,7 +1487,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     }
     let audio: AssetRef | null = null
     if (audioName && sceneFiles.audio) {
-      const path = `audio/${sceneFiles.audio.name}`
+      const path = packPath("audio", sceneFiles.audio.name)
       entries.push({ path, file: sceneFiles.audio })
       audio = { name: audioName, url: path }
     } else if (audioName && audioSrc && !audioSrc.startsWith("blob:")) {
@@ -1423,11 +1495,11 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     }
     let background: SceneBackground = null
     if (backdrop) {
-      const path = `backdrop/${backdrop.name}`
+      const path = packPath("backdrop", backdrop.name)
       entries.push({ path, file: backdrop.file })
       background = { kind: "backdrop", asset: { name: backdrop.name, url: path } }
     } else if (skybox) {
-      const path = `skybox/${skybox.name}`
+      const path = packPath("skybox", skybox.name)
       entries.push({ path, file: skybox.file })
       background = { kind: "skybox", asset: { name: skybox.name, url: path } }
     }
@@ -1436,15 +1508,20 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
         .map((m) => [m.id, m.materials.filter((mat) => !mat.visible).map((mat) => mat.name)] as const)
         .filter(([, names]) => names.length),
     )
+    return { entries, models: liveModels, cameraAnimation, audio, background, hidden }
+  }
+
+  const collectScenePublish = (): ScenePublishSource => {
+    const slots = collectSceneSlots()
     return {
-      entries,
+      entries: slots.entries,
       makeDoc: (bundle) =>
         serializeSceneDoc(
           {
-            models: liveModels,
-            cameraAnimation,
-            audio,
-            background,
+            models: slots.models,
+            cameraAnimation: slots.cameraAnimation,
+            audio: slots.audio,
+            background: slots.background,
             bundle,
             name: sceneName,
             camera: sceneCamera,
@@ -1461,36 +1538,104 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
             },
             backgroundEffect: bgEffect,
             groups: groupsByModel,
-            hidden,
+            hidden: slots.hidden,
           },
           { graph: graphRef, effect: effectRef },
         ),
     }
   }
 
+  // ── The working scene's assets, persisted. ──
+  //
+  // Bytes land FIRST, then the doc: a doc pointing at a bundle that never finished
+  // writing would boot half a scene, so the record only ever describes what is down.
+  // When the byte write fails (quota), the doc records no bundle and boot degrades to
+  // the slots that still resolve — the lenient path in loadSceneInto.
+  // 150ms: just enough to coalesce one upload's burst of state commits (model list,
+  // groups, clip entry) into a single bundle write, while keeping upload→refresh a
+  // window a human hand cannot beat. The write order is the real guarantee — bytes,
+  // then the record — so a refresh that does land mid-write boots the previous state,
+  // never a broken one.
+  useEffect(() => {
+    if (!ready) return
+    const timer = setTimeout(() => {
+      const id = bootScene.state.id
+      const slots = collectSceneSlots()
+      void (async () => {
+        let bundleUrl: string | null = null
+        if (slots.entries.length && (await saveLocalBundle(id, slots.entries))) bundleUrl = idbBundleOf(id)
+        saveSceneAssets(
+          id,
+          assetsDocOf({
+            models: slots.models,
+            cameraAnimation: slots.cameraAnimation,
+            audio: slots.audio,
+            background: slots.background,
+            bundle: bundleUrl,
+          }),
+        )
+      })()
+    }, 150)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, models, animByModel, audioName, audioSrc, cameraName, backdrop, skybox, bootScene])
 
-  /** Exactly what the autosave effect persists — export, reset and import all act on
-   *  this one slice, so the three can never drift into meaning different things. */
-  const exportScene = useCallback(() => {
-    downloadSceneFile({
-      id: bootScene.state.id,
-      name: sceneName,
-      camera: sceneCamera,
-      settings: sceneSettings,
-      backgroundEffect: bgEffect,
-      groups: groupsByModel,
-      hidden: Object.fromEntries(
-        models
-          .map((m) => [m.id, m.materials.filter((mat) => !mat.visible).map((mat) => mat.name)] as const)
-          .filter(([, names]) => names.length),
-      ),
-    })
-  }, [bootScene, sceneName, sceneCamera, sceneSettings, bgEffect, groupsByModel, models])
+
+  /**
+   * The whole scene as one file: the publish pipeline aimed at disk. The same
+   * collector gathers the doc and the uploaded bytes, and the same zip format R2
+   * receives is what the user downloads — `scene.json` beside the asset entries, so
+   * import, fork and boot all read one shape. Served assets stay URLs (they exist on
+   * every deployment); uploaded ones travel in the zip.
+   */
+  const exportScene = async () => {
+    const src = collectScenePublish()
+    // bundle: null in the written doc — the assets are BESIDE it in the same zip, and
+    // import points the parsed scene at the zip it came from.
+    const doc = src.makeDoc(null)
+    const zip = await buildZip([
+      ...src.entries,
+      { path: "scene.json", file: new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" }) },
+    ])
+    downloadBlob(zip, sceneZipFileName(sceneName))
+  }
 
   // Deliberately not memoized: BrandPill is a plain component, so a stable identity
   // buys nothing here, and the compiler cannot preserve a manual memo across this
   // async body — a useCallback would only be a lie the linter has to flag.
   const importScene = async (file: File) => {
+    // The full format: a zip with scene.json beside its assets. Loaded exactly like a
+    // fork — parse the doc, point the scene at its bundle, swap — and then owned like
+    // one: the persist effect re-packs the zip's files into the IndexedDB bundle, so
+    // the import survives refresh with no dependence on the original file.
+    if (file.name.toLowerCase().endsWith(".zip")) {
+      try {
+        const files = await unzipToFiles(file)
+        const docFile = files.find((f) => f.name === "scene.json")
+        if (!docFile) throw new Error("no scene.json")
+        const doc = JSON.parse(await docFile.text()) as SceneDoc
+        const resolve = await resolveSceneRefs(doc)
+        const scene = parseSceneDoc(doc, builtinEffect, libraryGraph, resolve)
+        // A blob URL, so loadSceneInto's bundle fetch reads the zip we already hold.
+        const url = URL.createObjectURL(file)
+        try {
+          await applyScene({
+            ...scene,
+            assets: { ...scene.assets, bundle: url },
+            // Its own identity: an imported file may be shared around, and two people's
+            // working scenes must not collide on one id.
+            state: { ...scene.state, id: newSceneId() },
+          })
+        } finally {
+          URL.revokeObjectURL(url)
+        }
+      } catch {
+        setUpload({ kind: "notice", message: t.sceneFile.badFile })
+      }
+      return
+    }
+    // Legacy .reze.json: the config-only format — settings and materials onto the
+    // scene you are in, assets untouched.
     const config = await readSceneFile(file)
     if (!config) {
       setUpload({ kind: "notice", message: t.sceneFile.badFile })
@@ -1591,41 +1736,14 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       removeSkybox()
       setAudioSrc((prev) => {
         if (prev.startsWith("blob:")) URL.revokeObjectURL(prev)
-        return next.assets.audio?.url ?? ""
+        return ""
       })
-      setAudioName(next.assets.audio?.name ?? null)
+      setAudioName(null)
 
-      // loadSceneInto handles models, styles, camera and ground — but NOT motion, the
-      // camera VMD or the background. Boot loads those separately, so a swap that skips
-      // them silently drops every clip in the document it just adopted.
-      for (const entry of next.assets.models) {
-        const clip = entry.animation
-        if (!clip) continue
-        const name = await loadVmdUrl(entry.model.id, clip.name, clip.url)
-        if (!name) continue
-        setAnimByModel((prev) => ({
-          ...prev,
-          [entry.model.id]: { name, size: null, source: { kind: "url", name: clip.name, url: clip.url } },
-        }))
-      }
-      const cam = next.assets.cameraAnimation
-      if (cam) {
-        try {
-          await loadCameraBuffer(await (await fetch(cam.url)).arrayBuffer(), cam.name)
-        } catch {
-          // a missing served asset shouldn't take the whole swap down
-        }
-      }
-      const bg = next.assets.background
-      if (bg) {
-        try {
-          const blob = await (await fetch(bg.asset.url)).blob()
-          const file = new File([blob], bg.asset.name, { type: blob.type })
-          await (bg.kind === "skybox" ? onSkyboxPicked : onBackdropPicked)(file)
-        } catch {
-          // same
-        }
-      }
+      // loadSceneInto handled models, styles, camera and ground; the same extras
+      // loader boot uses handles the rest, so a swapped document and a booted one
+      // can never mean different things.
+      await loadDocExtras(next)
 
       setSceneSettings(next.state.settings)
       setBgEffect(next.state.backgroundEffect)
@@ -1635,7 +1753,17 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       setActiveModelId(next.assets.models[0]?.model.id ?? "")
       setPendingSlot(false)
       setBootScene(next)
+
+      // Persisted NOW rather than left to the debounced effects: Reset and New are the
+      // user stating what the scene is, and a refresh inside the debounce window must
+      // not resurrect what they just discarded. One exception in the record: a blob:
+      // bundle (an imported zip) dies with this session, so it is stored as no bundle —
+      // a refresh in the window boots what resolves, and the persist effect re-points
+      // the record at the IndexedDB copy moments later.
+      const transient = !!next.assets.bundle && next.assets.bundle.startsWith("blob:")
       saveSceneState(next.state)
+      saveSceneAssets(next.state.id, assetsDocOf({ ...next.assets, bundle: transient ? null : next.assets.bundle }))
+      if (!next.assets.bundle) void clearLocalBundle()
   }
 
   /** The curated first-open scene, assets included. */
@@ -1974,7 +2102,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
         (docksOpen ? (
           <RaisableLayer className="fixed inset-y-0 left-0 w-[min(300px,88vw)]">
             <LeftDock
-              railTop={<RailLogo />}
+              railTop={<RailLogo onNew={newScene} onExport={exportScene} onImport={importScene} onReset={resetSceneDefaults} />}
               railActions={
                 <RailAction icon={GalleryThumbnails} label={t.gallery.title} onClick={openGallery} />
               }
@@ -2354,6 +2482,10 @@ function EditorRoute() {
         // doesn't stack the suffix.
         const name = scene.state.name.endsWith(FORK_SUFFIX) ? scene.state.name : `${scene.state.name}${FORK_SUFFIX}`
         setForked({ ...scene, state: { ...scene.state, id: newSceneId(), name } })
+        // Spent: the editor adopts this scene and persistence carries it from here.
+        // `from` stays stable this session (the store never notifies), so the editor
+        // still knows it is a fork; only the NEXT load stops re-forking.
+        clearForkTarget()
       } catch {
         if (!stale) setFailed(true)
       }

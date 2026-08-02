@@ -1,4 +1,7 @@
-// A scene's CONFIG as a portable file — the `state` half of a Scene, never the assets.
+// The legacy `.reze.json` config format: the `state` half of a Scene, never the
+// assets. The app no longer WRITES it — export produces the full `.reze.zip` with the
+// document beside its files — but files people already exported must keep importing,
+// so the reader stays.
 //
 // The split is one the types already draw: `Scene.assets` is what is loaded (models,
 // motion, audio, backdrop) and `Scene.state` is how it looks. Only the second half
@@ -22,22 +25,6 @@ export const SCENE_FILE_KIND = "reze-design/scene-config"
 export type SceneConfig = Omit<SceneState, "id">
 
 export type SceneFile = { kind: string; version: number } & SceneConfig
-
-/** Listed field by field rather than spread-minus-id, so what leaves the app is
- *  explicit — and so a field added to SceneState later fails to compile here
- *  instead of silently joining every exported file. */
-export function toSceneFile(state: SceneState): SceneFile {
-  return {
-    kind: SCENE_FILE_KIND,
-    version: SCENE_FORMAT_VERSION,
-    name: state.name,
-    camera: state.camera,
-    settings: state.settings,
-    backgroundEffect: state.backgroundEffect,
-    groups: state.groups,
-    hidden: state.hidden,
-  }
-}
 
 /**
  * Field-wise and forgiving: a file missing a key leaves that part of the scene
@@ -70,16 +57,18 @@ const slug = (s: string) =>
     .replace(/[^\w一-鿿-]+/g, "-")
     .replace(/^-+|-+$/g, "") || "scene"
 
-export function sceneFileName(name: string): string {
-  return `${slug(name)}.reze.json`
+/** The FULL export: doc + assets in one zip, named the way video exports are —
+ *  reze-design-<scene>-<date> — so a downloads folder sorts a session's artifacts
+ *  together. Import tells the formats apart by extension alone. */
+export function sceneZipFileName(name: string): string {
+  return `reze-design-${slug(name)}-${new Date().toISOString().slice(0, 10)}.zip`
 }
 
-export function downloadSceneFile(state: SceneState): void {
-  const blob = new Blob([JSON.stringify(toSceneFile(state), null, 2)], { type: "application/json" })
+export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")
   a.href = url
-  a.download = sceneFileName(state.name)
+  a.download = filename
   a.click()
   // Revoking in the same turn cancels the download in some browsers.
   setTimeout(() => URL.revokeObjectURL(url), 0)

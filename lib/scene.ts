@@ -260,6 +260,46 @@ const ROLE_INTEGRATION = {
 const roleOf = (g: StyleGroup): StyleGroupDoc["role"] =>
   g.renderClass === "hair" || g.renderClass === "eye" ? g.renderClass : g.alphaMode === "hashed" ? "stockings" : undefined
 
+/** The assets half of the document round trip — used alone by local persistence,
+ *  and by parseSceneDoc for the whole document. */
+export function parseAssetsDoc(a: SceneAssetsDoc): SceneAssets {
+  const ids: string[] = []
+  const models = a.models.map((m) => {
+    const { source, file } = parseModelSource(m.model)
+    const id = modelKey(file, ids)
+    ids.push(id)
+    return {
+      model: { id, file, source },
+      animation: m.animation ? assetFromPath(m.animation) : null,
+    }
+  })
+  return {
+    models,
+    cameraAnimation: a.cameraAnimation ? assetFromPath(a.cameraAnimation) : null,
+    audio: a.audio ? assetFromPath(a.audio) : null,
+    background: a.backdrop
+      ? { kind: "backdrop", asset: assetFromPath(a.backdrop) }
+      : a.skybox
+        ? { kind: "skybox", asset: assetFromPath(a.skybox) }
+        : null,
+    bundle: a.bundle ?? null,
+  }
+}
+
+/** The inverse: live assets back to their authored form. Ids are dropped — parse
+ *  re-mints the same ones from the same filenames, which is the round trip's whole
+ *  contract. */
+export function assetsDocOf(a: SceneAssets): SceneAssetsDoc {
+  return {
+    models: a.models.map((m) => ({ model: modelPath(m.model), animation: m.animation?.url ?? null })),
+    cameraAnimation: a.cameraAnimation?.url ?? null,
+    audio: a.audio?.url ?? null,
+    backdrop: a.background?.kind === "backdrop" ? a.background.asset.url : null,
+    skybox: a.background?.kind === "skybox" ? a.background.asset.url : null,
+    bundle: a.bundle,
+  }
+}
+
 /**
  * Inflate the authored document into the runtime scene.
  *
@@ -303,33 +343,15 @@ export function parseSceneDoc(
   const { camera, background, ...settings } = doc.settings
   const applied = background.effect
 
-  // Keys are minted here, in document order — the doc itself is id-free.
-  const ids: string[] = []
-  const models = doc.assets.models.map((m) => {
-    const { source, file } = parseModelSource(m.model)
-    const id = modelKey(file, ids)
-    ids.push(id)
-    return {
-      model: { id, file, source },
-      animation: m.animation ? assetFromPath(m.animation) : null,
-    }
-  })
+  const assets = parseAssetsDoc(doc.assets)
+  // Keys were minted by parseAssetsDoc in document order — the doc itself is id-free.
+  const ids = assets.models.map((m) => m.model.id)
   const materials = doc.assets.models.flatMap((m, i) => (m.materials ? [[ids[i], m.materials] as const] : []))
   const hidden = materials.filter(([, m]) => m.hidden?.length)
 
   return {
     version: doc.version,
-    assets: {
-      models,
-      cameraAnimation: doc.assets.cameraAnimation ? assetFromPath(doc.assets.cameraAnimation) : null,
-      audio: doc.assets.audio ? assetFromPath(doc.assets.audio) : null,
-      background: doc.assets.backdrop
-        ? { kind: "backdrop", asset: assetFromPath(doc.assets.backdrop) }
-        : doc.assets.skybox
-          ? { kind: "skybox", asset: assetFromPath(doc.assets.skybox) }
-          : null,
-      bundle: doc.assets.bundle ?? null,
-    },
+    assets,
     state: {
       // A parsed document is not yet a saved scene; hydrateScene supplies the
       // stored id, or mints one for a first-time visitor.
@@ -358,6 +380,19 @@ export function assetFromPath(url: string): AssetRef {
 export function modelPmxUrl(model: ModelRef): string | null {
   return model.source.kind === "folder" ? assetUrl(model.source.dir, model.file) : null
 }
+
+/**
+ * The local scene's bundle "URL": its files live in IndexedDB rather than behind a
+ * fetch. One invariant keeps mixed cases impossible: whenever ANY of the working
+ * scene's assets are local bytes — uploads, or a fork's files adopted from its zip —
+ * the whole bundle is the idb one. There is never an R2 bundle and an idb bundle in
+ * play at once.
+ */
+export const idbBundleOf = (sceneId: string): string => `idb:${sceneId}`
+
+/** The scene id inside an idb bundle URL, or null for a fetchable one. */
+export const idbBundleId = (bundle: string | null): string | null =>
+  bundle?.startsWith("idb:") ? bundle.slice(4) : null
 
 /** Path a model loads from — the inverse of parseModelSource. */
 function modelPath(m: ModelRef): string {
@@ -532,13 +567,51 @@ export function storedGroupsFor(modelId: string): StyleGroup[] | null {
   return loadStoredState()?.groups?.[modelId] ?? null
 }
 
+/**
+ * The working scene's ASSETS, as an authored doc. The other half of persistence:
+ * `saveSceneState` stores how the scene looks, this stores what it is made of. Both
+ * carry the scene id, and both must agree before either is believed — a stale assets
+ * record under a different id is ignored, never merged.
+ *
+ * The doc is tiny (paths, not bytes; uploaded files live in the IndexedDB bundle the
+ * `idb:` bundle URL points at), so localStorage holds it and boot reads it
+ * synchronously — which is what lets the boot document be decided before the engine
+ * exists, with no async gap for a demo model to flash through.
+ */
+const ASSETS_KEY = "reze-design.sceneAssets.1"
+
+export function saveSceneAssets(sceneId: string, assets: SceneAssetsDoc): void {
+  try {
+    window.localStorage.setItem(ASSETS_KEY, JSON.stringify({ sceneId, assets }))
+  } catch {
+    // storage full/blocked — the next boot falls back to the demo
+  }
+}
+
+function loadStoredAssets(sceneId: string): SceneAssetsDoc | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = window.localStorage.getItem(ASSETS_KEY)
+    if (!raw) return null
+    const rec = JSON.parse(raw) as { sceneId: string; assets: SceneAssetsDoc }
+    return rec.sceneId === sceneId ? rec.assets : null
+  } catch {
+    return null
+  }
+}
+
 /** The boot document: `base` (the bundled default) with the user's stored values merged over */
 export function hydrateScene(base: Scene): Scene {
   const stored = loadStoredState()
+  // The stored assets record replaces the demo's cast outright — presence is the
+  // signal, so an empty record (a New scene) is an empty cast, not a fallthrough to
+  // the demo. Absent (first visit, or a cleared browser), the demo stands.
+  const storedAssets = stored?.id ? loadStoredAssets(stored.id) : null
+  const assets = storedAssets ? parseAssetsDoc(storedAssets) : base.assets
   const settingsBase = stored?.settings ?? base.state.settings
   // Groups restore PER MODEL: an entry only applies when its model id is in the scene (groups
   const storedGroups = stored?.groups ?? null
-  const baseIds = new Set(base.assets.models.map((m) => m.model.id))
+  const baseIds = new Set(assets.models.map((m) => m.model.id))
   const usableGroups = storedGroups
     ? Object.fromEntries(Object.entries(storedGroups).filter(([id]) => baseIds.has(id)))
     : null
@@ -546,6 +619,7 @@ export function hydrateScene(base: Scene): Scene {
 
   return {
     ...base,
+    assets,
     state: {
       ...base.state,
       // Blobs stored before ids existed get one here. The demo's identity is never

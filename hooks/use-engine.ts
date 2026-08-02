@@ -5,8 +5,9 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Engine, Vec3, type ApplyStyleGroupResult, type CompileOptions, type Model, type RenderClass, type StyleGroup } from "reze-engine"
 import { SLOT_GRAPHS } from "@/lib/materials"
-import { modelKey, modelPmxUrl, type Scene, type SceneCamera } from "@/lib/scene"
+import { idbBundleId, modelKey, modelPmxUrl, type Scene, type SceneCamera } from "@/lib/scene"
 import { unzipToFiles } from "@/lib/uploads"
+import { loadLocalBundle } from "@/lib/asset-store"
 import { sceneFiles } from "@/lib/scene-files"
 import { azElToDirection, hexToLinearVec3, hexToSrgbVec3 } from "@/lib/scene-settings"
 
@@ -69,23 +70,39 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean)
   const infos: EngineModelInfo[] = []
   const groups: Record<string, StyleGroup[]> = {}
 
-  // A published scene's uploads live in one zip. Fetched once and shared by every
-  // model in the document; the unzipped File names keep their bundle paths, which
-  // is exactly what the engine resolves textures against.
+  // A scene's uploads live in one bundle: a published scene's is a zip behind a URL,
+  // the working scene's is the same entries in IndexedDB (an `idb:` bundle). Either
+  // way the File names carry bundle paths, which is exactly what the engine resolves
+  // textures against — one seam, two stores.
   let bundle: File[] | null = null
-  if (scene.assets.bundle) {
+  const idbId = idbBundleId(scene.assets.bundle)
+  if (idbId) {
+    bundle = await loadLocalBundle(idbId)
+    if (stale()) return null
+  } else if (scene.assets.bundle) {
     const res = await fetch(scene.assets.bundle)
     if (!res.ok) throw new Error(`Can't fetch scene assets: ${res.status}`)
     bundle = await unzipToFiles(new File([await res.blob()], "assets.zip"))
     if (stale()) return null
   }
+  // For a published zip a missing path is corruption and throwing is honest. Local
+  // bytes are different: browsers evict IndexedDB under pressure, so "gone" is a
+  // normal Tuesday — the scene boots with whatever still resolves and the user
+  // re-uploads the rest, rather than hitting a wall of error.
+  const lenient = !scene.assets.bundle || idbId !== null
 
   for (const entry of scene.assets.models) {
     const src = entry.model.source
     let model
     if (src.kind === "bundle") {
       const pmxFile = bundle?.find((f) => f.name === src.path)
-      if (!pmxFile) throw new Error(`Missing in scene assets: ${src.path}`)
+      if (!pmxFile) {
+        if (lenient) {
+          console.warn(`Local scene asset missing (evicted?): ${src.path}`)
+          continue
+        }
+        throw new Error(`Missing in scene assets: ${src.path}`)
+      }
       // Scoped to this model's folder: two models in one bundle can share a
       // texture basename, and the engine's basename fallback would guess.
       const dir = src.path.slice(0, src.path.lastIndexOf("/") + 1)

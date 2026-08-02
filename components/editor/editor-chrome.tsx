@@ -7,7 +7,7 @@ import { PanelLeft, PanelLeftClose, WandSparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { AccountButton } from "@/components/editor/account-panel"
-import { SceneFileActions } from "@/components/editor/scene-file-menu"
+import { SceneFileMenu, type SceneMenuHandlers } from "@/components/editor/scene-file-menu"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
@@ -22,13 +22,21 @@ const NAME_BOX = "min-w-0 rounded border px-1 text-xs leading-4"
 // Shown beside the wordmark. A version is the same in every language, so it lives
 // here rather than in the dictionary — keep it in step with package.json and the
 // git tag.
-const VERSION = "0.3.0 beta"
+const VERSION = "0.3.1 beta"
 
-/** Top of the left rail — the logo/home button for app-level operations. */
-export function RailLogo() {
+/** Top of the left rail — the logo, and therefore the scene menu (see
+ *  scene-file-menu.tsx for why the logo is the menu). */
+export function RailLogo(props: SceneMenuHandlers) {
   return (
-    <span className="mt-1.5 flex size-9 items-center justify-center text-pink-400" aria-hidden>
-      <WandSparkles className="size-4.5" />
+    <span className="mt-1.5 inline-flex">
+      <SceneFileMenu
+        {...props}
+        trigger={
+          <span className="flex size-9 items-center justify-center text-pink-400">
+            <WandSparkles className="size-4.5" />
+          </span>
+        }
+      />
     </span>
   )
 }
@@ -87,8 +95,6 @@ export function BrandPill({
       {sceneName}
     </span>
   )
-  const sceneActions = <SceneFileActions onNew={onNewScene} onExport={onExportScene} onImport={onImportScene} onReset={onResetScene} />
-
   const toggle = (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -121,18 +127,25 @@ export function BrandPill({
           {tag}
           {toggle}
         </div>
-        <div className="-ml-[5px] flex min-w-0 items-center gap-1">
-          {nameEl}
-          {sceneActions}
-        </div>
+        <div className="-ml-[5px] flex min-w-0 items-center gap-1">{nameEl}</div>
       </div>
     )
   }
   return (
     <div className={cn("flex items-center gap-1.5", floating, "py-1.5 pr-1.5 pl-2")}>
-      <span className="flex size-7 items-center justify-center text-pink-400" aria-hidden>
-        <WandSparkles className="size-4.5" />
-      </span>
+      {/* The rail is hidden while the docks are collapsed, so the pill's logo carries
+          the menu — same rule, different home. */}
+      <SceneFileMenu
+        onNew={onNewScene}
+        onExport={onExportScene}
+        onImport={onImportScene}
+        onReset={onResetScene}
+        trigger={
+          <span className="flex size-7 items-center justify-center text-pink-400">
+            <WandSparkles className="size-4.5" />
+          </span>
+        }
+      />
       <span className="whitespace-nowrap pb-0.5 text-sm font-semibold tracking-tight text-foreground">Reze Design</span>
       <span className="ml-1 max-w-32">{nameEl}</span>
       {toggle}

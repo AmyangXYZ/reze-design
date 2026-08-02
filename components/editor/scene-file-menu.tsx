@@ -1,14 +1,17 @@
 "use client"
 
-// Document-level actions for the scene's CONFIG: import one, export this one, reset to
-// the curated default. They hang off the scene name because that is what they act on —
-// and they live together because they are the same slice of state seen three ways,
-// which is why there is no longer one reset in the Scene tab and another in Materials.
+// The scene menu: new, import, export, reset — the document-level file operations.
+//
+// It opens from the LOGO, wherever the logo appears (the rail top when the docks are
+// open, the floating pill when they are collapsed): the Figma convention, and the role
+// the rail logo was always documented to hold. One rule — the logo is the menu — beats
+// a chevron decorating the scene name, which read as a rename affordance and put file
+// chrome on the document's identity row.
 
-import { useRef, useState } from "react"
-import { ArrowDownToLine, ArrowUpFromLine, ChevronDown, FilePlus2, RotateCcw } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { useRef, useState, type ReactNode } from "react"
+import { ArrowDownToLine, ArrowUpFromLine, FilePlus2, RotateCcw } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useT } from "@/lib/i18n"
 
 function Row({
@@ -32,19 +35,17 @@ function Row({
   )
 }
 
-export function SceneFileActions({
-  onNew,
-  onExport,
-  onImport,
-  onReset,
-}: {
+export type SceneMenuHandlers = {
   onNew: () => void
   onExport: () => void
-  /** Receives the picked .json — the caller parses, so a bad file is reported through
+  /** Receives the picked file — the caller parses, so a bad file is reported through
    *  the same notice the rest of the scene's file failures use. */
   onImport: (file: File) => void
   onReset: () => void
-}) {
+}
+
+/** Wraps `trigger` (the logo, in either of its homes) as the opener of the scene menu. */
+export function SceneFileMenu({ trigger, onNew, onExport, onImport, onReset }: SceneMenuHandlers & { trigger: ReactNode }) {
   const t = useT()
   const [open, setOpen] = useState(false)
   const input = useRef<HTMLInputElement>(null)
@@ -63,7 +64,7 @@ export function SceneFileActions({
       <input
         ref={input}
         type="file"
-        accept="application/json,.json"
+        accept=".zip,.json,application/zip,application/json"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0]
@@ -73,20 +74,24 @@ export function SceneFileActions({
         }}
       />
       <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={t.sceneFile.label}
-            className="size-4 shrink-0 rounded text-muted-foreground hover:bg-white/5 hover:text-foreground"
-          >
-            <ChevronDown className="size-3" />
-          </Button>
-        </PopoverTrigger>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                aria-label={t.sceneFile.label}
+                className="cursor-pointer rounded-md outline-none transition-colors hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-ring/50"
+              >
+                {trigger}
+              </button>
+            </PopoverTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="right">{t.sceneFile.label}</TooltipContent>
+        </Tooltip>
         <PopoverContent align="start" className="w-fit min-w-40 p-1">
           <Row icon={FilePlus2} label={t.sceneFile.newScene} onClick={run(onNew)} />
-          <Row icon={ArrowDownToLine} label={t.sceneFile.import} onClick={pickFile} />
           <Row icon={ArrowUpFromLine} label={t.sceneFile.export} onClick={run(onExport)} />
+          <Row icon={ArrowDownToLine} label={t.sceneFile.import} onClick={pickFile} />
           <Row icon={RotateCcw} label={t.sceneFile.reset} onClick={run(onReset)} />
         </PopoverContent>
       </Popover>

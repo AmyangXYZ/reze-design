@@ -21,7 +21,8 @@ A published scene is a live 3D page at `reze.design/<handle>/<id>` — real-time
 - **Publishing** — a scene becomes a live 3D page at a permanent URL, with its uploaded assets packed into one archive.
 - **Gallery** — browse what people have published, sorted by hot, new or top, narrowed by tag or by what you liked.
 - **Accounts** — sign in with GitHub or Google, take a handle, and own what you publish.
-- **Scene config** — export a scene's lighting, grade, camera and materials to a portable JSON file, import it into another scene, or reset to the default.
+- **Persistent scene state** — every edit is recorded as you make it: settings, materials and camera to localStorage, uploaded models, motion and music to IndexedDB. Refresh mid-edit, close the tab, come back tomorrow — the editor reopens exactly where you left off, uploads included, and nothing touches a server until you publish.
+- **Scene files** — export the whole scene as one zip (document + assets) from the logo menu, and import it on any machine; forking a published scene lands in the same flow.
 - **Undo and redo** — ⌘/Ctrl+Z anywhere, scoped to the panel or editor you are working in.
 
 ![Video export](./screenshots/video-export.png)
