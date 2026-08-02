@@ -6,9 +6,16 @@ Reze Design 是一个 MMD 场景的设计、渲染与分享平台，运行在浏
 年积累的模型与动作，以 WebGPU 渲染，最终输出为一个视频文件，或一个任何人都能打开并自
 由转动视角的实时页面。
 
-**第 0 节**是背景，写给没有接触过 MMD 的读者。**第 1 节**是完整流程，从空场景一直讲到
-发布。**第 2 节**讲如何做出自己的风格：调色预设、用 WGSL 编写的背景特效、用节点搭建的
-材质着色图。模型、动作与音乐的来源见[附录 B](#附录-b-去哪里找模型动作和音乐)。
+它由自研引擎驱动——reze-engine，一个为本平台构建的 WebGPU 渲染器——平台的能力边界正
+来自于此：材质是直接编译为 WGSL 的节点图，背景特效是对着实时场景即写即用的着色器，视
+频导出以离线方式逐帧推进时钟，任何机器上渲染 4K 60 帧都能得到逐像素一致的结果。围绕引
+擎的是一个跨会话保留工作的现代编辑器，以及一个平台：每个发布的场景都是一个可打开、可
+转动、可二创的实时页面。
+
+手册的顺序就是你工作的顺序：**第 0 节**是背景，写给没有接触过 MMD 的读者。**第 1 节**
+把完整流程走一遍——导入素材、取景、打光、定风格、导出、发布。**第 2 节**深入三个创作
+面——调色预设、WGSL 背景特效、节点材质图——每一节都给出完整契约，读完即可独立创作。
+模型、动作与音乐的来源见[附录 B](#附录-b-去哪里找模型动作和音乐)。
 
 ---
 
@@ -114,7 +121,12 @@ MMD 带动的这套画风，如今早已进入主流。原神、深空之眼、�
 开关可随时把控制权交还给你，播放不会中断。
 
 需要手动构图时，**Scene → Camera** 比鼠标精确得多。最常调整的是 Target Y：角色身高约
-为 10 个单位，因此目标高度取 10 左右为脸部特写，取 5 左右为半身，取 0 则是贴地仰拍。
+为 10 个单位，因此目标高度取 10 左右为脸部特写，取 5 左右为半身，取 0 则是贴地仰拍。任
+何滑杆的数值都可以精确输入——双击数字即可。
+
+**跟踪中心**把镜头轨道绑定到角色的中心骨骼上：动作在舞台上大范围移动时，画面始终跟着角
+色走，而不会把人跳出画外；此时目标滑杆的含义变为相对角色的偏移，而非世界中的固定点。已
+载入并开启的镜头动作仍然优先。
 
 ## 1.4 灯光
 
@@ -266,7 +278,12 @@ MB 或网络中断；*发布*多为登录过期或名称冲突。
 
 # 2. 做出自己的风格
 
-三处可创作的位置，分别处于同一条管线的三个层级。学习顺序不限。
+第 1 节讲的是从现成内容里选，这一节讲自己创作——这也是本平台在其他 MMD 工具中没有对
+应物的部分：场景的风格在这里是可编程的、实时的，分布在同一条管线的三个层级。**调色**
+（§2.2）塑造整帧的色彩；**背景特效**（§2.3）是画在角色身后那一层的单个 WGSL 函数；
+**材质图**（§2.4）用节点定义每种表面如何响应光照，编译为 WGSL。每一节都给出完整契
+约——读完一节即可在编辑器中创作，也可以直接手写文档。§2.5 说明三者共用的草稿、发布
+与版本机制。
 
 ## 2.1 渲染管线
 
@@ -503,6 +520,75 @@ BSDF* 是中性底子，其余八个是各类表面的现成例子。
 - **Generated WGSL**：编辑器会显示这张图编译出的代码，结果与预期不符时值得一读。
 
 节点的位置只是排版。移动节点不影响结果，重新排版过的图，仍视作与其来源的库条目完全一致。
+
+### 图即文档
+
+编辑器搭出的一切都是一份纯 JSON 文档——reze-engine 的 `ShaderGraph`——直接书写文档
+同样是一等的创作方式。完整结构如下：
+
+```jsonc
+{
+  "version": 1,
+  "name": "My Graph",
+  "nodes": [
+    // id：唯一，/^[a-z0-9_]+$/ · type：下表中的注册 id
+    // inputs：未连线插槽的字面默认值
+    { "id": "tex", "type": "texture" },
+    { "id": "shade", "type": "shader_to_rgb_diffuse" },
+    { "id": "band", "type": "ramp_constant_aa",
+      "inputs": { "edge": 0.35, "color0": [0.62, 0.58, 0.72, 1], "color1": [1, 1, 1, 1] } },
+    { "id": "lit", "type": "mix/multiply", "inputs": { "fac": 1.0 } }
+  ],
+  "links": [
+    { "from": { "node": "shade", "socket": "value" }, "to": { "node": "band", "socket": "fac" } },
+    { "from": { "node": "tex",   "socket": "color" }, "to": { "node": "lit",  "socket": "a" } },
+    { "from": { "node": "band",  "socket": "color" }, "to": { "node": "lit",  "socket": "b" } }
+  ],
+  "output": { "node": "lit", "socket": "color" }
+}
+```
+
+这个例子本身就是一个可用的赛璐璐着色器：漫反射光照量化为两段，再乘到贴图上。
+`output` 必须解析为颜色（`vec3f`）或标量（`f32`）；合理处会自动转换。可选的
+`params` 数组把选定的节点输入暴露为命名滑杆，调整即时生效、无需重编译；`tags`
+是库检索用的自由标签。
+
+节点词汇表，按注册 id——括号内为插槽：
+
+| 类型 id | 输入 → 输出 |
+| --- | --- |
+| `texture` | → `color`、`alpha`——材质漫反射贴图在该像素的取样 |
+| `geometry` | → `normal`、`view`、`world_pos`、`rest_pos`、`uv`、`reflection` |
+| `material_diffuse` | → `color`——PMX 材质的基础色 |
+| `value` / `rgb` | 字面浮点 / 颜色 → `value` / `color` |
+| `hue_sat` | `hue`、`saturation`、`value`、`fac`、`color` → `color` |
+| `bright_contrast` | `color`、`bright`、`contrast` → `color` |
+| `invert` | `fac`、`color` → `color` |
+| `ramp_constant`、`ramp_linear`、`ramp_cardinal` | `fac`、`pos0`、`color0`、`pos1`、`color1` → `color`、`alpha`、`fac_out` |
+| `ramp_constant_aa` | `fac`、`edge`、`color0`、`color1` → `color`——抗锯齿两段色带，赛璐璐着色的主力 |
+| `ramp_tri` | `fac` → `value`——三角波 |
+| `math/add`、`math/multiply`、`math/power`、`math/greater_than` | `a`、`b` → `value` |
+| `math/clamp01` | `a` → `value` |
+| `mix/blend`、`mix/overlay`、`mix/multiply`、`mix/lighten`、`mix/linear_light`、`mix/add_emit` | `fac`、`a`、`b` → `color` |
+| `principled` | `base`、`metallic`、`specular`、`roughness`、`spec_clamp`、`sheen`、`sheen_tint`、`normal` → `color`——GGX 核心 |
+| `emission` | `color`、`strength` → `color` |
+| `add_shader` | `a`、`b` → `color` |
+| `mix_shader` | `fac`、`a`、`b` → `color` |
+| `fresnel` | `ior` → `value` |
+| `layer_weight/fresnel`、`layer_weight/facing` | `blend` → `value` |
+| `shader_to_rgb_diffuse` | → `value`——场景漫反射光照项（法线·光照、日光、环境光、阴影），toon 色带需要的正是它 |
+| `separate_xyz` | `vector` → `x`、`y`、`z` |
+| `vect_cross` | `a`、`b` → `vector` |
+| `mapping` | `vector`、`loc`、`rot`、`scl` → `vector` |
+| `bump` | `strength`、`height`、`normal` → `vector` |
+| `tex_noise` | `vector`、`scale`、`detail`、`roughness`、`distortion` → `value` |
+| `tex_gradient` | `vector` → `value` |
+| `tex_voronoi/f1`、`tex_voronoi/color` | `vector`、`scale` → `value` / `color` |
+
+节点语义完全对齐 Blender 3.6 legacy-EEVEE，Blender 的直觉可以直接迁移——一套
+Blender 节点通常逐插槽照搬即可。编译器以节点名和插槽名报告诊断而不是静默失败；
+通道集成（发丝/眼睛的模板测试、抖动透明）属于样式组的 role，从不属于图——图只负
+责计算颜色。
 
 ### MMD 的惯例
 

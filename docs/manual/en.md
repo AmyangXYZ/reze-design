@@ -7,10 +7,20 @@ browser: it reads the models and motions the MikuMikuDance community has been
 making since 2008, renders them on WebGPU, and turns the result into a video file
 or a live page anyone can open and orbit.
 
-**Section 0** is background, for anyone who has never heard of MMD. **Section 1**
-walks through making one, from an empty scene to a published one.
-**Section 2** is for making your own looks — colour grades, WGSL background
-shaders, and material graphs built from nodes. [Appendix B](#appendix-b-finding-models-motions-and-music)
+It renders on its own engine — reze-engine, a WebGPU renderer built for this
+platform — and that is where its reach comes from: materials are node graphs
+compiled straight to WGSL, background effects are shaders you edit against the
+live scene, and video export steps the clock offline, frame by frame, so a 4K
+60 fps render comes out pixel-identical on any machine. Around the engine sits a
+modern editor that keeps your work across sessions, and a platform where every
+published scene is a live page others can open, orbit and fork.
+
+The manual follows the same path your work will: **Section 0** is background, for
+anyone who has never heard of MMD. **Section 1** walks the whole journey once —
+assets in, shot framed, lit, styled, exported, published. **Section 2** goes
+deeper into the three authoring surfaces — colour grades, WGSL background
+shaders, and material node graphs — each complete enough to write from without
+reading anything else. [Appendix B](#appendix-b-finding-models-motions-and-music)
 covers where to find models, motion and music.
 
 ---
@@ -137,7 +147,13 @@ without stopping playback.
 For framing by hand, **Scene → Camera** is more precise than the mouse. Target Y
 is the control you will reach for most: a character stands about 10 units tall, so
 a target height near 10 frames the face, near 5 the torso, and 0 puts the camera
-on the floor looking up.
+on the floor looking up. Any slider value can be typed exactly — double-click the
+number.
+
+**Follow center** binds the orbit to the character's centre bone, so a motion that
+travels across the stage stays framed instead of dancing out of shot; the target
+sliders then read as an offset from the character rather than a point in the
+world. A loaded camera motion still takes priority while it is on.
 
 ## 1.4 Light
 
@@ -334,8 +350,15 @@ at a signed-out session or a name collision.
 
 # 2. Authoring your own look
 
-Section 1 covered choosing from what exists. This section covers making your own.
-Three surfaces, at three levels of the same pipeline. Learn them in any order.
+Section 1 covered choosing from what exists. This section covers making your own,
+and it is the part of the platform that has no counterpart in other MMD tools:
+the look of a scene here is programmable, live, at three levels of one pipeline.
+**Grades** (§2.2) shape the whole frame's colour. **Background effects** (§2.3)
+are single WGSL functions painting the layer behind the character. **Material
+graphs** (§2.4) define how each surface responds to light, as nodes that compile
+to WGSL. Each section states its full contract — read one and you can author in
+it, in the editor or by writing the document directly. §2.5 explains how drafts,
+publishing and versions work for all three.
 
 ## 2.1 The rendering model
 
@@ -612,6 +635,78 @@ The socket names you will meet most often are `color`, `alpha`, `normal`, `view`
 
 Node positions are layout. Moving nodes never changes the result, and a rearranged
 graph still counts as identical to the library entry it came from.
+
+### The graph as a document
+
+Everything the editor builds is a plain JSON document — `ShaderGraph` in
+reze-engine — and the document is a first-class way to author. This is the whole
+shape:
+
+```jsonc
+{
+  "version": 1,
+  "name": "My Graph",
+  "nodes": [
+    // id: unique, /^[a-z0-9_]+$/ · type: one of the registry ids below
+    // inputs: literal defaults for sockets you leave unlinked
+    { "id": "tex", "type": "texture" },
+    { "id": "shade", "type": "shader_to_rgb_diffuse" },
+    { "id": "band", "type": "ramp_constant_aa",
+      "inputs": { "edge": 0.35, "color0": [0.62, 0.58, 0.72, 1], "color1": [1, 1, 1, 1] } },
+    { "id": "lit", "type": "mix/multiply", "inputs": { "fac": 1.0 } }
+  ],
+  "links": [
+    { "from": { "node": "shade", "socket": "value" }, "to": { "node": "band", "socket": "fac" } },
+    { "from": { "node": "tex",   "socket": "color" }, "to": { "node": "lit",  "socket": "a" } },
+    { "from": { "node": "band",  "socket": "color" }, "to": { "node": "lit",  "socket": "b" } }
+  ],
+  "output": { "node": "lit", "socket": "color" }
+}
+```
+
+That example is a complete, working cel shader: diffuse lighting quantised to two
+bands, multiplied over the texture. `output` must resolve to a colour (`vec3f`)
+or scalar (`f32`); floats and colours convert where sensible. An optional
+`params` array exposes chosen node inputs as named sliders that adjust live
+without recompiling, and `tags` are free-form hints for library search.
+
+The node vocabulary, by registry id — sockets in parentheses:
+
+| Type id | Inputs → outputs |
+| --- | --- |
+| `texture` | → `color`, `alpha` — the material's diffuse texture at this pixel |
+| `geometry` | → `normal`, `view`, `world_pos`, `rest_pos`, `uv`, `reflection` |
+| `material_diffuse` | → `color` — the PMX material's authored base tint |
+| `value` / `rgb` | a literal float / colour → `value` / `color` |
+| `hue_sat` | `hue`, `saturation`, `value`, `fac`, `color` → `color` |
+| `bright_contrast` | `color`, `bright`, `contrast` → `color` |
+| `invert` | `fac`, `color` → `color` |
+| `ramp_constant`, `ramp_linear`, `ramp_cardinal` | `fac`, `pos0`, `color0`, `pos1`, `color1` → `color`, `alpha`, `fac_out` |
+| `ramp_constant_aa` | `fac`, `edge`, `color0`, `color1` → `color` — the anti-aliased two-band ramp; the cel-shading workhorse |
+| `ramp_tri` | `fac` → `value` — triangle wave |
+| `math/add`, `math/multiply`, `math/power`, `math/greater_than` | `a`, `b` → `value` |
+| `math/clamp01` | `a` → `value` |
+| `mix/blend`, `mix/overlay`, `mix/multiply`, `mix/lighten`, `mix/linear_light`, `mix/add_emit` | `fac`, `a`, `b` → `color` |
+| `principled` | `base`, `metallic`, `specular`, `roughness`, `spec_clamp`, `sheen`, `sheen_tint`, `normal` → `color` — the GGX core |
+| `emission` | `color`, `strength` → `color` |
+| `add_shader` | `a`, `b` → `color` |
+| `mix_shader` | `fac`, `a`, `b` → `color` |
+| `fresnel` | `ior` → `value` |
+| `layer_weight/fresnel`, `layer_weight/facing` | `blend` → `value` |
+| `shader_to_rgb_diffuse` | → `value` — the scene's diffuse lighting term (normal · light, sun, ambient, shadow), the input a toon ramp wants |
+| `separate_xyz` | `vector` → `x`, `y`, `z` |
+| `vect_cross` | `a`, `b` → `vector` |
+| `mapping` | `vector`, `loc`, `rot`, `scl` → `vector` |
+| `bump` | `strength`, `height`, `normal` → `vector` |
+| `tex_noise` | `vector`, `scale`, `detail`, `roughness`, `distortion` → `value` |
+| `tex_gradient` | `vector` → `value` |
+| `tex_voronoi/f1`, `tex_voronoi/color` | `vector`, `scale` → `value` / `color` |
+
+Node semantics are frozen Blender 3.6 legacy-EEVEE, so Blender intuition
+transfers directly — a Blender node setup usually ports socket for socket. The
+compiler reports diagnostics with node and socket names rather than failing
+silently, and pass integration (the hair/eye stencil, hashed alpha) belongs to
+the style group's role, never to the graph — a graph only ever computes colour.
 
 ### The MMD idiom
 
