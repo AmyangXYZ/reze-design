@@ -10,6 +10,7 @@ One piece of the **Reze MMD family**, covering the whole MMD workflow on the web
 | **reze-design**                                         | This repo — scene design, rendering and sharing                                |
 | [reze-studio](https://github.com/AmyangXYZ/reze-studio) | Animation editing on a professional timeline and curve editor                  |
 | [MiKaPo](https://github.com/AmyangXYZ/MiKaPo)           | Real-time motion capture in the browser, exporting straight to VMD             |
+| [reze-rig](https://github.com/AmyangXYZ/reze-rig)       | Universal animation retargeting — FBX and Elden Ring HKX in, VMD out           |
 
 **[User manual](./docs/manual/en.md)** · [简体中文](./docs/manual/zh.md) — what MMD is, every panel, and how to author grades, WGSL background effects and shader graphs.
 
