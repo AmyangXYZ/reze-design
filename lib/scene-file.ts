@@ -58,10 +58,15 @@ const slug = (s: string) =>
     .replace(/^-+|-+$/g, "") || "scene"
 
 /** The FULL export: doc + assets in one zip, named the way video exports are —
- *  reze-design-<scene>-<date> — so a downloads folder sorts a session's artifacts
- *  together. Import tells the formats apart by extension alone. */
+ *  reze-design-<scene>-<stamp> — so a downloads folder sorts a session's artifacts
+ *  together. The stamp carries the LOCAL time of day down to seconds: exporting is
+ *  cheap enough to do many times a day, and identical names would shadow each other
+ *  as "(1)" copies. Dashes, not colons — Windows forbids colons in filenames. */
 export function sceneZipFileName(name: string): string {
-  return `reze-design-${slug(name)}-${new Date().toISOString().slice(0, 10)}.zip`
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, "0")
+  const stamp = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`
+  return `reze-design-${slug(name)}-${stamp}.zip`
 }
 
 export function downloadBlob(blob: Blob, filename: string): void {

@@ -88,7 +88,10 @@ export function SceneFileMenu({ trigger, onNew, onExport, onImport, onReset }: S
           </TooltipTrigger>
           <TooltipContent side="right">{t.sceneFile.label}</TooltipContent>
         </Tooltip>
-        <PopoverContent align="start" className="w-fit min-w-40 p-1">
+        {/* Radix returns focus to the trigger on close, and a programmatic focus counts
+            as keyboard focus — so the logo kept its focus ring after every use. Same
+            fix the material sidebar's context menu uses. */}
+        <PopoverContent align="start" className="w-fit min-w-40 p-1" onCloseAutoFocus={(e) => e.preventDefault()}>
           <Row icon={FilePlus2} label={t.sceneFile.newScene} onClick={run(onNew)} />
           <Row icon={ArrowUpFromLine} label={t.sceneFile.export} onClick={run(onExport)} />
           <Row icon={ArrowDownToLine} label={t.sceneFile.import} onClick={pickFile} />
