@@ -225,8 +225,19 @@ function SceneStage({ scene, sceneId, title, author, description, credits, likeC
       const p = master?.getAnimationProgress()
       if (p?.playing && audio.paused) void audio.play().catch(() => {})
       if (!p?.playing && !audio.paused) audio.pause()
-      // Seeking (loop restart, scrub) must carry the track with it.
-      if (p && Math.abs(audio.currentTime - p.current) > 0.25) audio.currentTime = p.current
+      if (p) {
+        const drift = audio.currentTime - p.current
+        // Hard seeks only for genuine jumps (loop restart, scrub). Ordinary
+        // drift bends the playback rate instead — ±4% is inaudible, while the
+        // old seek-on-0.25s turned every clock hiccup (mobile Safari's
+        // throttled rAF especially) into a stutter-repeat loop.
+        if (Math.abs(drift) > 1) {
+          audio.currentTime = p.current
+          audio.playbackRate = 1
+        } else if (!audio.seeking) {
+          audio.playbackRate = Math.min(1.04, Math.max(0.96, 1 - drift * 0.2))
+        }
+      }
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)

@@ -1338,8 +1338,17 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       const jumped = lastModelTime >= 0 && Math.abs(p.current - lastModelTime) > 0.35
       lastModelTime = p.current
       if (playing) {
-        if (!wasPlaying || (!audio.seeking && (jumped || Math.abs(audio.currentTime - p.current) > 0.5))) {
+        const drift = audio.currentTime - p.current
+        if (!wasPlaying || (!audio.seeking && (jumped || Math.abs(drift) > 1))) {
+          // Genuine discontinuity (start, loop wrap, scrub, runaway drift):
+          // the only cases worth an audible hard seek.
           audio.currentTime = p.current
+          audio.playbackRate = 1
+        } else if (!audio.seeking) {
+          // Ordinary drift is corrected by RATE, not seeks: ±4% is inaudible,
+          // and it absorbs clock mismatch (throttled rAF, load hitches) that
+          // used to trigger a seek-stutter loop every couple of seconds.
+          audio.playbackRate = Math.min(1.04, Math.max(0.96, 1 - drift * 0.2))
         }
         // A track SHORTER than the clip ends part-way through and leaves the
         // element paused. Seeking it back to 0 when the motion loops does not
