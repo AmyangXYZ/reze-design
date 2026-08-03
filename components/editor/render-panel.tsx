@@ -159,7 +159,10 @@ export const RenderPanel = memo(function RenderPanel({
         .replace(/[\\/:*?"<>|]+/g, "")
         .trim()
         .replace(/\s+/g, "-") || "scene"
-    return `reze-design-${scene}-${width}x${height}-${new Date().toISOString().slice(0, 10)}.${ext}`
+    const stamp = new Date()
+    const two = (n: number) => String(n).padStart(2, "0")
+    const when = `${stamp.getFullYear()}-${two(stamp.getMonth() + 1)}-${two(stamp.getDate())}-${two(stamp.getHours())}${two(stamp.getMinutes())}${two(stamp.getSeconds())}`
+    return `reze-design-${scene}-${width}x${height}-${when}.${ext}`
   }
 
   const download = (blob: Blob, filename: string) => {
@@ -255,8 +258,13 @@ export const RenderPanel = memo(function RenderPanel({
       // Discard the partial file — abort() drops everything written since createWritable
       await fileStream?.abort().catch(() => {})
       // A user cancel is not an error state — just return to idle.
-      if (!(e instanceof DOMException && e.name === "AbortError"))
-        setResult({ ok: false, message: e instanceof Error ? e.message : String(e) })
+      if (!(e instanceof DOMException && e.name === "AbortError")) {
+        const raw = e instanceof Error ? e.message : String(e)
+        // The encoder rejecting our config is a browser capability gap, not a
+        // user-fixable parameter problem — say so instead of dumping the config.
+        const friendly = /encoder configuration|not supported by this browser/i.test(raw)
+        setResult({ ok: false, message: friendly ? t.render.encoderUnsupported : raw })
+      }
     } finally {
       setExporting(false)
       onExportingChange(false)

@@ -33,6 +33,10 @@ export const NEW_EFFECT_TEMPLATE = `// One function = one background effect, dra
 // background color/image.
 
 fn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f {
+  // For circles/shapes that must not stretch with the canvas, correct by the
+  // live aspect ratio — never hardcode one:
+  //   let aspect = bgResolution().x / bgResolution().y;
+  //   let p = vec2f((uv.x - 0.5) * aspect, uv.y - 0.5);
   // Drifting glow — replace me.
   let n = noise2(uv * 3.0 + vec2f(time * 0.15, 0.0));
   return vec4f(0.35, 0.55, 1.0, 0.22 * n);

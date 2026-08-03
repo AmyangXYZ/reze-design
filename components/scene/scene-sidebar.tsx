@@ -29,6 +29,7 @@ export function SliderRow({
   step,
   onChange,
   fmt,
+  disabled,
 }: {
   label: string
   value: number
@@ -37,6 +38,7 @@ export function SliderRow({
   step: number
   onChange: (v: number) => void
   fmt?: (v: number) => string
+  disabled?: boolean
 }) {
   // Double-click the value to type one. The slider stays the primary control —
   // it is what you reach for while judging a look — and typing is there for the
@@ -57,7 +59,7 @@ export function SliderRow({
 
   // Single line: label · slider · value.
   return (
-    <div className="mt-2.5 flex items-center gap-2 first:mt-0">
+    <div className={cn("mt-2.5 flex items-center gap-2 first:mt-0", disabled && "pointer-events-none opacity-40")}>
       {/* w-16 fits the longest label ("Saturation") */}
       <span className="w-16 shrink-0 truncate text-xs">{label}</span>
       <Slider
@@ -66,6 +68,7 @@ export function SliderRow({
         min={min}
         max={max}
         step={step}
+        disabled={disabled}
         onValueChange={([v]) => onChange(v)}
       />
       {/* Both states carry the same box: fixed height, same width, same border
@@ -99,6 +102,11 @@ export function SliderRow({
 /** The bone the camera follows. センター is the body's root in every standard MMD
  *  rig, so it tracks travel without inheriting the bob of a spine or a head. */
 const FOLLOW_BONE = "センター"
+/** Defaults for the two meanings of the target triple: as an OFFSET from the
+ *  followed bone (センター already sits at hip height, so only a small lift) and
+ *  as an ABSOLUTE point (the scene default framing). */
+const FOLLOW_OFFSET_DEFAULT: [number, number, number] = [0, 3, 0]
+const TARGET_DEFAULT: [number, number, number] = [0, 11.4, 0]
 
 export function Section({
   title,
@@ -362,8 +370,32 @@ export const ScenePanel = memo(function ScenePanel({
         </Section>
 
         <Section title={t.scene.camera}>
+          {/* Follow first — the choice that decides what the numbers below MEAN.
+              The orbit centre rides a bone, so a motion that travels keeps the
+              subject in frame; the target sliders then read as an offset from
+              that bone — same three numbers, different origin. */}
+          <div className={cn("flex items-center gap-2", cameraDriven && "pointer-events-none opacity-40")}>
+            <span className="min-w-0 flex-1 truncate text-xs">{t.scene.follow}</span>
+            <span className="flex w-10 shrink-0 justify-end">
+              <Switch
+                checked={!!camera.follow}
+                // The triple changes MEANING with the toggle (offset vs point), so
+                // each direction re-seeds its own sensible default instead of
+                // reinterpreting the other's numbers (11.4 as an offset aims sky-high).
+                onCheckedChange={(on) =>
+                  onCameraChange({
+                    ...camera,
+                    follow: on ? FOLLOW_BONE : null,
+                    target: on ? [...FOLLOW_OFFSET_DEFAULT] : [...TARGET_DEFAULT],
+                  })
+                }
+                className="scale-75"
+              />
+            </span>
+          </div>
           <SliderRow
             label={t.scene.distance}
+            disabled={cameraDriven}
             value={camera.distance}
             min={1}
             max={100}
@@ -371,26 +403,32 @@ export const ScenePanel = memo(function ScenePanel({
             onChange={(v) => onCameraChange({ ...camera, distance: v })}
             fmt={oneDp}
           />
-          {/* Follow: the orbit centre rides a bone, so a motion that travels keeps
-              the subject in frame. The target sliders below then read as an
-              offset from that bone — same three numbers, different origin. */}
-          {/* The switch keeps the w-10 right column the slider values occupy, so
-              the control edge lines up down the panel — but with no slider in
-              between, the label takes everything else instead of the w-16 a
-              slider row has to leave it. */}
-          <div className="mt-2.5 flex items-center gap-2">
-            <span className="min-w-0 flex-1 truncate text-xs">{t.scene.follow}</span>
-            <span className="flex w-10 shrink-0 justify-end">
-              <Switch
-                checked={!!camera.follow}
-                onCheckedChange={(on) => onCameraChange({ ...camera, follow: on ? FOLLOW_BONE : null })}
-                className="scale-75"
-              />
-            </span>
-          </div>
+          {/* Initial angles, degrees in the UI, radians in the doc. Alpha wraps
+              the full turn; beta stays off the poles (the orbit clamps there). */}
+          <SliderRow
+            label={t.scene.angleH}
+            disabled={cameraDriven}
+            value={Math.round((camera.alpha * 180) / Math.PI)}
+            min={-180}
+            max={180}
+            step={1}
+            onChange={(v) => onCameraChange({ ...camera, alpha: (v * Math.PI) / 180 })}
+            fmt={(v) => `${v}°`}
+          />
+          <SliderRow
+            label={t.scene.angleV}
+            disabled={cameraDriven}
+            value={Math.round((camera.beta * 180) / Math.PI)}
+            min={5}
+            max={175}
+            step={1}
+            onChange={(v) => onCameraChange({ ...camera, beta: (v * Math.PI) / 180 })}
+            fmt={(v) => `${v}°`}
+          />
           {(["X", "Y", "Z"] as const).map((axis, i) => (
             <SliderRow
               key={axis}
+              disabled={cameraDriven}
               label={`${camera.follow ? t.scene.offset : t.scene.target} ${axis}`}
               value={camera.target[i]}
               min={i === 1 ? -10 : -50}
@@ -400,7 +438,6 @@ export const ScenePanel = memo(function ScenePanel({
               fmt={oneDp}
             />
           ))}
-          {cameraDriven && <p className="mt-2 text-[11px] text-muted-foreground/70">{t.scene.cameraVmdNote}</p>}
         </Section>
 
       </div>

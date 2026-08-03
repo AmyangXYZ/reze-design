@@ -57,18 +57,43 @@ function infoFor(
  */
 function applyCamera(engine: Engine, camera: SceneCamera, model: Model | null): void {
   if (camera.follow && model) {
-    engine.setCameraFollow(model, camera.follow, new Vec3(...camera.target))
+    // Short exponential lag (Cinemachine-style aim damping): eases the frame
+    // without letting the subject swim off-center — target-follow wants to be
+    // much tighter than a position-follow would be.
+    engine.setCameraFollow(model, camera.follow, new Vec3(...camera.target), 0.15)
   } else {
     engine.setCameraFollow(null)
     engine.setCameraTarget(new Vec3(...camera.target))
   }
   engine.setCameraDistance(camera.distance)
+  engine.setCameraAlpha(camera.alpha)
+  engine.setCameraBeta(camera.beta)
 }
 
-async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean) {
+async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean, onStage?: () => void) {
   const s = scene.state.settings
   const infos: EngineModelInfo[] = []
   const groups: Record<string, StyleGroup[]> = {}
+
+  // ── Stage first, models after ──
+  // Ground, framing and (via onStage) the render loop go up BEFORE any model
+  // bytes arrive, so the page opens on the live stage — background, effect,
+  // ground — while models stream in and pop into place. On a slow route
+  // (models are the megabytes) this is the difference between a scene loading
+  // and a blank screen loading.
+  engine.addGround({
+    diffuseColor: hexToLinearVec3(s.ground.color),
+    gridLineColor: hexToLinearVec3(s.ground.grid),
+    opacity: s.ground.opacity,
+    shadowStrength: s.ground.shadow ? 1 : 0,
+    gridLineOpacity: s.ground.gridEnabled ? 0.4 : 0,
+    width: s.ground.size,
+    height: s.ground.size,
+    fadeStart: s.ground.size * (10 / 160),
+    fadeEnd: s.ground.size * (80 / 160),
+  })
+  applyCamera(engine, scene.state.camera, null)
+  onStage?.()
 
   // A scene's uploads live in one bundle: a published scene's is a zip behind a URL,
   // the working scene's is the same entries in IndexedDB (an `idb:` bundle). Either
@@ -90,6 +115,20 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean)
   // normal Tuesday — the scene boots with whatever still resolves and the user
   // re-uploads the rest, rather than hitting a wall of error.
   const lenient = !scene.assets.bundle || idbId !== null
+
+  // Camera VMD before any model: the authored shot is driving by the time the
+  // first model reveals, so nothing on screen ever jumps to a new framing.
+  const cam = scene.assets.cameraAnimation
+  if (cam) {
+    try {
+      const packed = bundle?.find((f) => f.name === cam.url)
+      if (packed) engine.loadCameraVmdFromBuffer(await packed.arrayBuffer())
+      else if (/^[/]|^https?:/.test(cam.url)) await engine.loadCameraVmd(cam.url)
+    } catch {
+      // a broken camera track shouldn't block the scene
+    }
+    if (stale()) return null
+  }
 
   for (const entry of scene.assets.models) {
     const src = entry.model.source
@@ -114,8 +153,13 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean)
       model = await engine.loadModel(entry.model.id, pmxUrl)
     }
     if (stale()) return null
+    // Hidden until styled: the first visible frame wears the scene's shader
+    // graphs, not a flash of the default PBSDF look.
     const offset = spawnOffsetX(infos.length)
-    if (offset !== 0) engine.setModelTransform(entry.model.id, { position: new Vec3(offset, 0, 0) })
+    engine.setModelTransform(entry.model.id, {
+      visible: false,
+      ...(offset !== 0 ? { position: new Vec3(offset, 0, 0) } : {}),
+    })
     // Styling: a document carrying groups for this model (a restored or imported scene)
     const docGroups = scene.state.groups?.[entry.model.id]
     if (docGroups) {
@@ -136,18 +180,13 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean)
   // viewed or edited — the editor only pushed the camera when a slider moved, and
   // the viewer never pushed it at all.
   applyCamera(engine, scene.state.camera, engine.getModel(scene.assets.models[0]?.model.id ?? ""))
-
-  engine.addGround({
-    diffuseColor: hexToLinearVec3(s.ground.color),
-    gridLineColor: hexToLinearVec3(s.ground.grid),
-    opacity: s.ground.opacity,
-    shadowStrength: s.ground.shadow ? 1 : 0,
-    gridLineOpacity: s.ground.gridEnabled ? 0.4 : 0,
-    width: s.ground.size,
-    height: s.ground.size,
-    fadeStart: s.ground.size * (10 / 160),
-    fadeEnd: s.ground.size * (80 / 160),
-  })
+  // Camera bound (follow included) and styles compiled — reveal. Models with an
+  // animation stay hidden a moment longer: their clip loader reveals them after
+  // show(), so the first visible frame wears the motion's first pose instead of
+  // flashing bind pose. (If the clip fails, the loader still reveals.)
+  for (const entry of scene.assets.models) {
+    if (!entry.animation) engine.setModelTransform(entry.model.id, { visible: true })
+  }
   return { infos, groups, bundle }
 }
 
@@ -189,6 +228,8 @@ export function useEngine(
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const engineRef = useRef<Engine | null>(null)
   const [ready, setReady] = useState(false)
+  // The stage (ground/camera/render loop) is live — models may still be loading.
+  const [stageReady, setStageReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [models, setModels] = useState<EngineModelInfo[]>([])
   // Style groups per model id — the host is the source of truth (0.19).
@@ -228,14 +269,17 @@ export function useEngine(
         if (process.env.NODE_ENV === "development") (window as unknown as { __reze?: Engine }).__reze = engine
         await engine.init()
         if (disposed) return
-        const loaded = await loadSceneInto(engine, scene, () => disposed)
+        const loaded = await loadSceneInto(engine, scene, () => disposed, () => {
+          // Stage up: paint now, models stream in behind.
+          engine.runRenderLoop()
+          setStageReady(true)
+        })
         if (!loaded) return
         bundleRef.current = loaded.bundle
         const { infos, groups: groupsMap } = loaded
         setModels(infos)
         setGroupsByModel(groupsMap)
         // Bind pose until the user loads a VMD — material evaluation doesn't need motion.
-        engine.runRenderLoop()
         setReady(true)
         setError(null)
       } catch (e) {
@@ -501,6 +545,7 @@ export function useEngine(
     canvasRef,
     engineRef,
     ready,
+    stageReady,
     error,
     models,
     groupsByModel,

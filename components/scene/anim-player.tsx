@@ -30,12 +30,16 @@ export const AnimPlayer = memo(function AnimPlayer({
   engineRef,
   modelNames,
   hasCamera,
+  onFollowingChange,
 }: {
   engineRef: RefObject<Engine | null>
   /** Models WITH a loaded clip, master (longest clip) first. */
   modelNames: string[]
   /** A camera VMD is loaded — show the Follow/Free toggle. */
   hasCamera: boolean
+  /** Live camera-VMD drive state — fires on toggle and on initial sync, so the
+   *  host can enable/disable its camera controls with the ACTUAL mode. */
+  onFollowingChange?: (following: boolean) => void
 }) {
   const t = useT()
   const [progress, setProgress] = useState<Progress>({ current: 0, duration: 0, playing: false, paused: false })
@@ -49,13 +53,21 @@ export const AnimPlayer = memo(function AnimPlayer({
   const [following, setFollowing] = useState(true)
   // Camera VMD is default-on when loaded — mirror the engine's actual state.
   useEffect(() => {
-    if (hasCamera) setFollowing(engineRef.current?.isCameraVmdEnabled() ?? true)
+    if (!hasCamera) return
+    const live = engineRef.current?.isCameraVmdEnabled() ?? true
+    setFollowing(live)
+    onFollowingChange?.(live)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasCamera, engineRef])
   const toggleCamera = () => {
     const engine = engineRef.current
     if (!engine) return
     const next = !following
-    engine.setCameraVmdEnabled(next) // off falls back to orbit
+    // Free orbit is FAITHFUL: the orbit still holds the framing the scene's
+    // author stored (applied at load, untouched while the VMD drives), so
+    // toggling off simply returns to it — no recentering, no manipulation.
+    engine.setCameraVmdEnabled(next)
+    onFollowingChange?.(next)
     setFollowing(next)
   }
 

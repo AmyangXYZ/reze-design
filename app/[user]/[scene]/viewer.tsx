@@ -134,7 +134,7 @@ function SceneStage({ scene, sceneId, title, author, description, credits, likeC
   const router = useRouter()
   const [expanded, setExpanded] = useState(false)
   const like = useLike(sceneId, likeCount)
-  const { canvasRef, engineRef, ready, error, models, bundleFile } = useEngine(scene)
+  const { canvasRef, engineRef, ready, stageReady, error, models, bundleFile } = useEngine(scene)
 
   // Background. A published scene packs its image, so both kinds resolve out of
   // the bundle synchronously. A flat backdrop is a DOM layer BEHIND the canvas,
@@ -158,7 +158,7 @@ function SceneStage({ scene, sceneId, title, author, description, credits, likeC
 
   useSceneSync({
     engineRef,
-    ready,
+    ready: stageReady,
     settings: scene.state.settings,
     gradeSpec: specOf(scene.state.settings.grade),
     backgroundEffect: scene.state.backgroundEffect,
@@ -188,6 +188,9 @@ function SceneStage({ scene, sceneId, title, author, description, credits, likeC
           loaded.push(entry.model.id)
         } finally {
           if (file) URL.revokeObjectURL(url)
+          // Hidden since load so bind pose never shows — reveal on the clip's
+          // first pose (or reveal anyway if the clip failed).
+          engine.setModelTransform(entry.model.id, { visible: true })
         }
       }
       engine.resetPhysics()

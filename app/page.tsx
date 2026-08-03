@@ -348,9 +348,18 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   const [sceneSettings, setSceneSettings] = useState<SceneSettings>(bootScene.state.settings)
   const [sceneCamera, setSceneCamera] = useState<SceneCamera>(bootScene.state.camera)
   const [sceneName, setSceneName] = useState(bootScene.state.name)
+  // Which scene the timelines are ABOUT: bumps on every swap/open so undo can
+  // never carry one scene's past into another (same model id or not).
+  const sceneEpochRef = useRef(0)
+  const prevBootRef = useRef(bootScene)
+  if (prevBootRef.current !== bootScene) {
+    prevBootRef.current = bootScene
+    sceneEpochRef.current++
+  }
+  const sceneEpoch = sceneEpochRef.current
   // Undo/redo for the Scene panel — also the fallback scope, so ⌘Z with nothing
   // focused still edits the scene the way it always has.
-  useHistory(sceneSettings, setSceneSettings, { scope: "scene", fallback: true })
+  useHistory(sceneSettings, setSceneSettings, { scope: "scene", fallback: true, resetKey: sceneEpoch })
   // suppressHydrationWarning makes React SKIP patching the server-rendered style (SSR uses
   const rootRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -361,6 +370,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     canvasRef,
     engineRef,
     ready,
+    stageReady,
     error,
     models,
     groupsByModel,
@@ -401,7 +411,10 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   const applyGroups = useCallback((next: StyleGroup[]) => applyGroupsFor(activeIdRef.current, next), [applyGroupsFor])
   // Undo for the Materials panel. Restoring re-applies through the engine, so an
   // undone grouping recompiles exactly like a hand-made one.
-  useHistory(groups, applyGroups, { scope: "materials", resetKey: activeId })
+  // `ready` is part of the key: a published scene knows its model id from the
+  // document, so without it the async [] → doc/auto groups population right
+  // after boot records as an undoable step — and ⌘Z "ungroups" everything.
+  useHistory(groups, applyGroups, { scope: "materials", resetKey: `${sceneEpoch}:${activeId}:${ready ? 1 : 0}` })
   const highlight = useCallback((m: string | null) => highlightFor(activeIdRef.current, m), [highlightFor])
   const toggleVisible = useCallback((name: string) => toggleVisibleFor(activeIdRef.current, name), [toggleVisibleFor])
   const selectModel = useCallback((id: string) => setActiveModelId(id), [])
@@ -699,6 +712,9 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   // Camera VMD upload: drives the shot (target/rotation/distance/fov)
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
   const [cameraName, setCameraName] = useState<string | null>(null)
+  // Live drive state from the transport toggle — the sidebar's camera controls
+  // disable on the ACTUAL mode, not on whether a camera VMD merely exists.
+  const [camVmdFollowing, setCamVmdFollowing] = useState(true)
   const loadCameraBuffer = async (buffer: ArrayBuffer, name: string) => {
     const engine = engineRef.current
     if (!engine) return
@@ -861,7 +877,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   )
   const { noteAppliedWgsl } = useSceneSync({
     engineRef,
-    ready,
+    ready: stageReady,
     settings: sceneSettings,
     gradeSpec: appliedGradeSpec,
     backgroundEffect: bgEffect,
@@ -1235,21 +1251,8 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   // served assets. Bundle-resolved files are REMEMBERED as files, so publishing a
   // fork re-packs them instead of pointing into somebody else's zip.
   const loadDocExtras = async (scene: Scene) => {
-    for (const entry of scene.assets.models) {
-      const clip = entry.animation
-      if (!clip) continue
-      const id = entry.model.id
-      const packed = bundleFile(clip.url)
-      const name = await (packed ? loadVmdFile(id, packed) : loadVmdUrl(id, clip.name, clip.url))
-      if (!name) continue
-      setAnimByModel((prev) => ({
-        ...prev,
-        [id]: packed
-          ? { name, size: packed.size, source: { kind: "file", file: packed } }
-          : { name, size: null, source: { kind: "url", name: clip.name, url: clip.url } },
-      }))
-    }
-
+    // Camera VMD before the clips: the authored shot is in place for the first
+    // animated frame instead of flashing the default orbit while clips stream.
     const cam = scene.assets.cameraAnimation
     if (cam) {
       const packed = bundleFile(cam.url)
@@ -1261,6 +1264,23 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
           // a missing served asset degrades to no camera motion, not a dead scene
         }
       }
+    }
+    for (const entry of scene.assets.models) {
+      const clip = entry.animation
+      if (!clip) continue
+      const id = entry.model.id
+      const packed = bundleFile(clip.url)
+      const name = await (packed ? loadVmdFile(id, packed) : loadVmdUrl(id, clip.name, clip.url))
+      // Animated models were revealed-on-hold by loadSceneInto: show them now,
+      // wearing the clip's first pose (or bind pose if the clip failed to load).
+      engineRef.current?.setModelTransform(id, { visible: true })
+      if (!name) continue
+      setAnimByModel((prev) => ({
+        ...prev,
+        [id]: packed
+          ? { name, size: packed.size, source: { kind: "file", file: packed } }
+          : { name, size: null, source: { kind: "url", name: clip.name, url: clip.url } },
+      }))
     }
 
     const track = scene.assets.audio
@@ -1377,21 +1397,34 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     }
   }, [])
 
+  // Angles and wheel-zoom live on the ENGINE camera only (drags never flow
+  // through React state) — snapshot at save/publish time so a document reopens
+  // on the exact view its author was looking at.
+  const snapshotCamera = useCallback((): SceneCamera => {
+    const e = engineRef.current
+    if (!e) return sceneCamera
+    // While a camera VMD drives, the live orbit is parked wherever it last was —
+    // meaningless numbers that must not overwrite the document's camera.
+    if (e.isCameraVmdEnabled()) return sceneCamera
+    return { ...sceneCamera, distance: e.getCameraDistance(), alpha: e.getCameraAlpha(), beta: e.getCameraBeta() }
+  }, [sceneCamera, engineRef])
+
   useEffect(() => {
     if (!ready) return
     let idle = 0
     const payload = {
       id: bootScene.state.id,
       name: sceneName,
-      camera: sceneCamera,
+      camera: snapshotCamera(),
       settings: sceneSettings,
       backgroundEffect: bgEffect,
       // The whole per-model record
       groups: groupsByModel,
-      // DERIVED from the live model list rather than tracked separately
-      hidden: Object.fromEntries(
-        models.map((m) => [m.id, m.materials.filter((mat) => !mat.visible).map((mat) => mat.name)]).filter(([, names]) => names.length),
-      ),
+      // DERIVED from the live model list rather than tracked separately.
+      // Empty lists are WRITTEN, not filtered: saveSceneState's retain() merges
+      // over the previous save, so a dropped key would leave the old hidden
+      // list in place — un-hiding the last material could never persist.
+      hidden: Object.fromEntries(models.map((m) => [m.id, m.materials.filter((mat) => !mat.visible).map((mat) => mat.name)])),
     }
     // Held for the exit flush until it's actually written.
     pendingSave.current = payload
@@ -1524,7 +1557,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
             background: slots.background,
             bundle,
             name: sceneName,
-            camera: sceneCamera,
+            camera: snapshotCamera(),
             // A published grade pins; anything else carries its spec. `preset`
             // is the label either way.
             settings: {
@@ -1930,7 +1963,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
           onPickEffect={pickEffect}
           camera={sceneCamera}
           onCameraChange={changeCamera}
-          cameraDriven={cameraName !== null}
+          cameraDriven={cameraName !== null && camVmdFollowing}
         /> },
   ]
 
@@ -2213,7 +2246,12 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       {/* Persistent transport bar — always present (inert with no clip, so removing the animation */}
       {mounted && (
         <div className="fixed bottom-3 left-1/2 z-20 -translate-x-1/2">
-          <AnimPlayer engineRef={engineRef} modelNames={animatedIds} hasCamera={cameraName !== null} />
+          <AnimPlayer
+            engineRef={engineRef}
+            modelNames={animatedIds}
+            hasCamera={cameraName !== null}
+            onFollowingChange={setCamVmdFollowing}
+          />
         </div>
       )}
 

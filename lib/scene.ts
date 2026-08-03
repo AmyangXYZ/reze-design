@@ -60,9 +60,19 @@ export type ItemRef = { id: string; version: number }
 /** An effect stored BY VALUE: for a draft, which has no published version to pin. */
 export type EffectSnapshot = { name: string; wgsl: string }
 
-/** Orbit framing: how far the camera sits and what it looks at. */
+/** The engine's stock orbit angles — the backfill for documents written before
+ *  angles were part of the schema (also what the DB patch stamped). */
+export const CAMERA_DEFAULT_ALPHA = Math.PI
+export const CAMERA_DEFAULT_BETA = Math.PI / 2.5
+
+/** Orbit framing: how far the camera sits, from which angle, at what it looks. */
 export type SceneCamera = {
   distance: number
+  /** Orbit azimuth in radians — captured from the live camera at save time, so
+   *  a scene opens on the exact authored angle. */
+  alpha: number
+  /** Orbit inclination in radians (0 = top-down pole). */
+  beta: number
   /** Where the camera looks — or, when `follow` is set, the offset from the bone
    *  it is following. The three sliders mean the same thing either way. */
   target: [number, number, number]
@@ -340,7 +350,14 @@ export function parseSceneDoc(
       .filter((g): g is StyleGroup => g !== null)
   }
 
-  const { camera, background, ...settings } = doc.settings
+  const { camera: docCamera, background, ...settings } = doc.settings
+  // Pre-angle documents (and forks copied from them) get the stock angles the
+  // engine always used — identical framing to what they had.
+  const camera: SceneCamera = {
+    ...docCamera,
+    alpha: docCamera.alpha ?? CAMERA_DEFAULT_ALPHA,
+    beta: docCamera.beta ?? CAMERA_DEFAULT_BETA,
+  }
   const applied = background.effect
 
   const assets = parseAssetsDoc(doc.assets)

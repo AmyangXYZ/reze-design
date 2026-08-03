@@ -76,7 +76,7 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
     skybox: null,
   },
   settings: {
-    camera: { distance: 26.2, target: [0, 11.4, 0] },
+    camera: { distance: 26.2, alpha: Math.PI, beta: Math.PI / 2.5, target: [0, 11.4, 0] },
     world: { color: "#ed6aff", strength: 0.66 },
     sun: { color: "#ffffff", strength: 2.0, azimuth: 205, elevation: 21 },
     bloom: { enabled: true, threshold: 0.5, knee: 0.5, radius: 4.0, intensity: 0.05, color: "#ffc9c9" },
