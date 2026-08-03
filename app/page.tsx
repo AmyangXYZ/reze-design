@@ -1348,7 +1348,11 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
           // Ordinary drift is corrected by RATE, not seeks: ±4% is inaudible,
           // and it absorbs clock mismatch (throttled rAF, load hitches) that
           // used to trigger a seek-stutter loop every couple of seconds.
-          audio.playbackRate = Math.min(1.04, Math.max(0.96, 1 - drift * 0.2))
+          // Dead-band + write-on-change: iOS's audio pipeline audibly churns
+          // when playbackRate is poked every frame, so hold 1.0 inside ±50ms
+          // and step the correction in 0.01 increments.
+          const target = Math.abs(drift) < 0.05 ? 1 : Math.round(Math.min(1.04, Math.max(0.96, 1 - drift * 0.2)) * 100) / 100
+          if (audio.playbackRate !== target) audio.playbackRate = target
         }
         // A track SHORTER than the clip ends part-way through and leaves the
         // element paused. Seeking it back to 0 when the motion loops does not

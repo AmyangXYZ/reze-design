@@ -3,10 +3,10 @@
 // Persistent bottom transport: play/pause · scrub · time · loop.
 
 import { memo, useEffect, useRef, useState, type RefObject } from "react"
+import { cn } from "@/lib/utils"
 import type { Engine, Model } from "reze-engine"
 import { Orbit, Pause, Play, Repeat, RepeatOff, Video } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Slider } from "@/components/ui/slider"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useT } from "@/lib/i18n"
 
@@ -48,7 +48,17 @@ export const AnimPlayer = memo(function AnimPlayer({
   useEffect(() => {
     loopRef.current = loop
   })
-  const [dragVal, setDragVal] = useState<number | null>(null)
+  // The bar is driven OUTSIDE React: the rAF tick writes transform-only DOM
+  // updates (fill scaleX, thumb translateX) — smooth 60fps without a single
+  // re-render, which is what iOS Safari needs with a blurred pane over the
+  // canvas. React keeps only structural state (playing/duration).
+  const trackRef = useRef<HTMLDivElement | null>(null)
+  const fillRef = useRef<HTMLDivElement | null>(null)
+  const thumbRef = useRef<HTMLDivElement | null>(null)
+  const timeRef = useRef<HTMLSpanElement | null>(null)
+  const currentRef = useRef(0)
+  const draggingRef = useRef(false)
+  const paintBarRef = useRef<(current: number, duration: number) => void>(() => {})
   // Whether the loaded camera VMD is currently driving the view (vs. free orbit).
   const [following, setFollowing] = useState(true)
   // Camera VMD is default-on when loaded — mirror the engine's actual state.
@@ -90,6 +100,21 @@ export const AnimPlayer = memo(function AnimPlayer({
     // local to this row and is passed to nothing, so updating per frame
     // re-renders one small subtree; and while nothing is playing `current` stops
     // changing, so the loop idles without touching state.
+    let lastLabel = 0
+    const paintBar = (current: number, duration: number) => {
+      const ratio = duration > 0 ? Math.min(1, current / duration) : 0
+      const fill = fillRef.current
+      const thumb = thumbRef.current
+      const track = trackRef.current
+      if (fill) fill.style.transform = `scaleX(${ratio})`
+      if (thumb && track) thumb.style.transform = `translateX(${ratio * track.clientWidth}px) translate(-50%, -50%)`
+      const now = performance.now()
+      if (timeRef.current && now - lastLabel > 250) {
+        lastLabel = now
+        timeRef.current.textContent = fmt(current)
+      }
+    }
+    paintBarRef.current = paintBar
     const tick = () => {
       raf = requestAnimationFrame(tick)
       const m = master()
@@ -98,13 +123,20 @@ export const AnimPlayer = memo(function AnimPlayer({
         if (last.current !== 0 || last.duration !== 0 || last.playing || last.paused) {
           last = { current: 0, duration: 0, playing: false, paused: false }
           setProgress(last)
+          paintBar(0, 0)
         }
         return
       }
       const p = m.getAnimationProgress()
-      if (p.current !== last.current || p.duration !== last.duration || p.playing !== last.playing || p.paused !== last.paused) {
+      // Only STRUCTURAL changes touch React; the advancing clock goes straight
+      // to the DOM above, so playback re-renders nothing.
+      if (p.duration !== last.duration || p.playing !== last.playing || p.paused !== last.paused) {
         last = { current: p.current, duration: p.duration, playing: p.playing, paused: p.paused }
         setProgress(last)
+      }
+      if (!draggingRef.current) {
+        currentRef.current = p.current
+        paintBar(p.current, p.duration)
       }
       if (loopRef.current && !p.playing && !p.paused && p.duration > 0 && p.current >= p.duration - AT_END_EPS) {
         // Restart the whole cast together — jumping end → frame 0 teleports every bone
@@ -167,17 +199,24 @@ export const AnimPlayer = memo(function AnimPlayer({
   // is one big step and resets once, on release.
   const biggestStep = useRef(0)
   const seek = (v: number) => {
-    biggestStep.current = Math.max(biggestStep.current, Math.abs(v - (dragVal ?? progress.current)))
-    setDragVal(v)
+    biggestStep.current = Math.max(biggestStep.current, Math.abs(v - currentRef.current))
+    currentRef.current = v
     for (const model of cast()) model.seek(v)
+    paintBarRef.current(v, master()?.getAnimationProgress().duration ?? 0)
   }
   const endSeek = () => {
-    setDragVal(null)
+    draggingRef.current = false
     if (biggestStep.current > SEEK_SETTLE_SECONDS) engineRef.current?.resetPhysics()
     biggestStep.current = 0
   }
-
-  const current = dragVal ?? progress.current
+  const seekFromPointer = (e: React.PointerEvent<HTMLDivElement>) => {
+    const track = trackRef.current
+    const m = master()
+    if (!track || !m) return
+    const rect = track.getBoundingClientRect()
+    const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
+    seek(ratio * m.getAnimationProgress().duration)
+  }
 
   const hasClip = modelNames.length > 0
   return (
@@ -191,17 +230,39 @@ export const AnimPlayer = memo(function AnimPlayer({
       >
         {progress.playing ? <Pause className="size-4" /> : <Play className="size-4 translate-x-px" />}
       </Button>
-      <span className="shrink-0 text-xs leading-none text-muted-foreground tabular-nums">{fmt(current)}</span>
-      <Slider
-        className="w-[min(16rem,30vw)] [&_[data-slot=slider-thumb]]:size-2.5 [&_[data-slot=slider-thumb]]:hover:ring-2 [&_[data-slot=slider-track]]:h-1"
-        value={[current]}
-        min={0}
-        max={Math.max(progress.duration, 0.01)}
-        step={0.01}
-        disabled={!hasClip}
-        onValueChange={([v]) => seek(v)}
-        onValueCommit={endSeek}
-      />
+      <span ref={timeRef} className="shrink-0 text-xs leading-none text-muted-foreground tabular-nums">
+        {fmt(0)}
+      </span>
+      {/* Ref-driven bar: transform-only updates from the rAF tick — never a
+          re-render. Styled identically to the ui Slider it replaced (bg-muted
+          track h-1, primary range, size-2.5 bordered white thumb). */}
+      <div
+        ref={trackRef}
+        className={cn(
+          "relative flex h-4 w-[min(16rem,30vw)] touch-none items-center select-none",
+          hasClip ? "cursor-pointer" : "opacity-50",
+        )}
+        onPointerDown={(e) => {
+          if (!hasClip) return
+          draggingRef.current = true
+          e.currentTarget.setPointerCapture(e.pointerId)
+          seekFromPointer(e)
+        }}
+        onPointerMove={(e) => {
+          if (draggingRef.current) seekFromPointer(e)
+        }}
+        onPointerUp={() => endSeek()}
+        onPointerCancel={() => endSeek()}
+      >
+        <div className="relative h-1 w-full overflow-hidden rounded-full bg-muted">
+          <div ref={fillRef} className="absolute inset-y-0 left-0 w-full origin-left bg-primary" style={{ transform: "scaleX(0)" }} />
+        </div>
+        <div
+          ref={thumbRef}
+          className="absolute top-1/2 left-0 size-2.5 rounded-full border border-primary bg-white shadow-sm ring-ring/50 hover:ring-2"
+          style={{ transform: "translate(-50%, -50%)" }}
+        />
+      </div>
       <span className="shrink-0 text-xs leading-none text-muted-foreground tabular-nums">{fmt(progress.duration)}</span>
       {hasCamera && (
         <Tooltip>

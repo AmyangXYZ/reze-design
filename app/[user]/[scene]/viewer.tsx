@@ -235,7 +235,11 @@ function SceneStage({ scene, sceneId, title, author, description, credits, likeC
           audio.currentTime = p.current
           audio.playbackRate = 1
         } else if (!audio.seeking) {
-          audio.playbackRate = Math.min(1.04, Math.max(0.96, 1 - drift * 0.2))
+          // Dead-band + write-on-change: iOS's audio pipeline audibly churns
+          // when playbackRate is poked every frame, so hold 1.0 inside ±50ms
+          // and step the correction in 0.01 increments.
+          const target = Math.abs(drift) < 0.05 ? 1 : Math.round(Math.min(1.04, Math.max(0.96, 1 - drift * 0.2)) * 100) / 100
+          if (audio.playbackRate !== target) audio.playbackRate = target
         }
       }
       raf = requestAnimationFrame(tick)
