@@ -268,13 +268,6 @@ export function useEngine(
         // Dev-only console handle — lets new engine APIs be exercised before any UI exists (e.g.
         if (process.env.NODE_ENV === "development") (window as unknown as { __reze?: Engine }).__reze = engine
         await engine.init()
-        // TEMPORARY BISECT — revert after measuring. Does the mid-clip fps drop
-        // on iOS follow the GPU morph pass? It only dispatches once morph
-        // weights change, which matches "starts a few seconds in, and only for
-        // some animations and models". The CPU fallback re-uploads the vertex
-        // buffer per dirty frame, so overall speed may be WORSE; the question is
-        // only whether the mid-clip step disappears.
-        engine.setGpuMorphsEnabled(false)
         if (disposed) return
         const loaded = await loadSceneInto(engine, scene, () => disposed, () => {
           // Stage up: paint now, models stream in behind.
