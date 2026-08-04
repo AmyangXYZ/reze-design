@@ -114,50 +114,29 @@ export const AnimPlayer = memo(function AnimPlayer({
       trackW = track0.clientWidth
       ro.observe(track0)
     }
-    // The playhead is ANIMATED, not redrawn.
+    // Per frame on desktop; a 4Hz tick on touch devices.
     //
     // Both bar elements sit inside the transport's backdrop-blur pane, and
-    // dirtying anything in a blurred region makes WebKit recomposite the blur;
-    // sixty times a second that was the frame. But throttling the redraw is a
-    // trap: 60Hz reads as motion and 4Hz reads as a deliberate tick, while
-    // everything between reads as broken — fast enough to look like it is
-    // trying to be smooth, too slow to be it. A wall-clock threshold on top of
-    // rAF makes it worse still, firing on whichever frame first exceeds it, so
-    // the cadence goes uneven under exactly the load that caused the throttle.
+    // dirtying anything in a blurred region makes WebKit recomposite the blur.
+    // Sixty times a second that was the frame on a phone — throttling this loop
+    // to 4Hz was what proved it, by making iOS playback smooth.
     //
-    // So: write a target four times a second and let the compositor tween
-    // between them. A linear transition of the same length as the interval is
-    // continuous by construction — each tween ends as the next target lands —
-    // and it runs off the main thread, so the blur is recomposited at whatever
-    // rate the compositor likes rather than once per JS frame.
-    const PAINT_MS = 250
+    // Only two rates are worth having. 60Hz reads as motion and 4Hz reads as a
+    // deliberate tick; everything between reads as broken, fast enough to look
+    // like it is trying to be smooth and too slow to be it. Interpolating the
+    // gap with a compositor tween is worse still — smoothness the clip did not
+    // actually have, which is legible as exactly that. So: full rate where it
+    // is affordable, an honest tick where it is not.
+    const coarse = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches
+    const MIN_PAINT_MS = coarse ? 250 : 0
     let lastPaintMs = -Infinity
-    const setTween = (on: boolean) => {
-      const d = on ? `${PAINT_MS}ms` : "0ms"
-      if (fillRef.current) fillRef.current.style.transitionDuration = d
-      if (thumbRef.current) thumbRef.current.style.transitionDuration = d
-    }
-    const writeBar = (ratio: number) => {
+    const paintBar = (current: number, duration: number, snap = false) => {
+      const now = performance.now()
+      if (!snap && now - lastPaintMs < MIN_PAINT_MS) return
+      lastPaintMs = now
+      const ratio = duration > 0 ? Math.min(1, current / duration) : 0
       if (fillRef.current) fillRef.current.style.transform = `scaleX(${ratio})`
       if (thumbRef.current) thumbRef.current.style.transform = `translateX(${ratio * trackW}px) translate(-50%, -50%)`
-    }
-    /** `snap` skips the tween: a scrub or a loop wrap is a jump, and gliding to
-     *  it would read as the bar lagging the user. */
-    const paintBar = (current: number, duration: number, snap = false) => {
-      const ratio = duration > 0 ? Math.min(1, current / duration) : 0
-      const now = performance.now()
-      if (snap) {
-        setTween(false)
-        writeBar(ratio)
-        lastPaintMs = now
-      } else if (now - lastPaintMs >= PAINT_MS) {
-        // Aim one interval ahead so the tween lands where the clip will be,
-        // rather than always trailing by a quarter second.
-        const ahead = duration > 0 ? Math.min(1, (current + PAINT_MS / 1000) / duration) : 0
-        setTween(true)
-        writeBar(ahead)
-        lastPaintMs = now
-      }
       if (timeRef.current && now - lastLabel > 250) {
         lastLabel = now
         timeRef.current.textContent = fmt(current)
@@ -316,13 +295,13 @@ export const AnimPlayer = memo(function AnimPlayer({
           <div
             ref={fillRef}
             className="absolute inset-y-0 left-0 w-full origin-left bg-primary"
-            style={{ transform: "scaleX(0)", transitionProperty: "transform", transitionTimingFunction: "linear" }}
+            style={{ transform: "scaleX(0)" }}
           />
         </div>
         <div
           ref={thumbRef}
           className="absolute top-1/2 left-0 size-2.5 rounded-full border border-primary bg-white shadow-sm ring-ring/50 hover:ring-2"
-          style={{ transform: "translate(-50%, -50%)", transitionProperty: "transform", transitionTimingFunction: "linear" }}
+          style={{ transform: "translate(-50%, -50%)" }}
         />
       </div>
       <span className="shrink-0 text-xs leading-none text-muted-foreground tabular-nums">{fmt(progress.duration)}</span>
