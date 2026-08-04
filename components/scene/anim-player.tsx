@@ -114,32 +114,25 @@ export const AnimPlayer = memo(function AnimPlayer({
       trackW = track0.clientWidth
       ro.observe(track0)
     }
-    // Repaint on a fixed number of steps across the clip, not per frame.
+    // Per frame everywhere except WebKit.
     //
-    // Both elements sit inside the transport's backdrop-blur pane, and dirtying
-    // anything in a blurred region makes the browser recomposite the blur.
-    // Sixty times a second that was the frame — throttling this loop to 4Hz was
-    // what proved it, by making playback smooth on iOS.
+    // Both bar elements sit inside the transport's backdrop-blur pane, and
+    // dirtying anything in a blurred region makes WebKit recomposite the blur.
+    // At sixty times a second that was the whole frame — throttling this loop
+    // to 4Hz was what proved it, by making iOS playback smooth. Blink
+    // recomposites the same writes for nothing, so there is no reason to spend
+    // smoothness there.
     //
-    // Clip-relative rather than a wall-clock interval, so a long motion and a
-    // short one both get the same number of updates instead of a long one
-    // repainting hundreds of times for the same travel.
-    // 300 steps is roughly a pixel of travel on a typical track, so the motion
-    // reads as sliding. The wall-clock floor keeps a short clip from repainting
-    // hundreds of times a second to cross the same distance — together they
-    // settle around 20-30 repaints a second whatever the duration, which the
-    // 4Hz experiment showed is comfortably inside budget.
-    const STEPS = 300
-    const MIN_PAINT_MS = 32
-    let lastPainted = -1
+    // navigator.vendor is Apple's for desktop Safari and for every browser on
+    // iOS, since they are all WKWebView — which is exactly the boundary the
+    // cost falls on, and why "it's slow in iOS Chrome too" was never about
+    // Chrome.
+    const isWebKit = typeof navigator !== "undefined" && navigator.vendor === "Apple Computer, Inc."
+    const MIN_PAINT_MS = isWebKit ? 50 : 0
     let lastPaintMs = 0
     const paintBar = (current: number, duration: number) => {
-      const step = duration > 0 ? duration / STEPS : 0
       const now = performance.now()
-      const moved = lastPainted < 0 || step <= 0 || Math.abs(current - lastPainted) >= step
-      const due = moved && now - lastPaintMs >= MIN_PAINT_MS
-      if (due) {
-        lastPainted = current
+      if (now - lastPaintMs >= MIN_PAINT_MS) {
         lastPaintMs = now
         const ratio = duration > 0 ? Math.min(1, current / duration) : 0
         const fill = fillRef.current
