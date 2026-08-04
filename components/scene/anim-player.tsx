@@ -129,6 +129,10 @@ export const AnimPlayer = memo(function AnimPlayer({
     paintBarRef.current = paintBar
     const tick = () => {
       raf = requestAnimationFrame(tick)
+      // TEMPORARY BISECT: does playback hold framerate with the transport doing
+      // nothing per frame? If yes the cost is in this loop; if no, the transport
+      // is cleared and the cause is elsewhere entirely.
+      if (1) return
       const m = master()
       if (!m) {
         // Every clip removed: clear the frozen last progress (time + duration), otherwise
