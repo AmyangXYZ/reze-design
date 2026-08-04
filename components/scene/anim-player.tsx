@@ -92,20 +92,34 @@ export const AnimPlayer = memo(function AnimPlayer({
   useEffect(() => {
     let raf = 0
     let last: Progress = { current: -1, duration: -1, playing: false, paused: false }
-    // No display quantum. The playhead is judged against a 60 Hz render, so any
-    // throttle reads as stepping rather than sliding, whatever its size — a
-    // clip-relative quantum only moves which durations look bad. `progress` is
-    // local to this row and is passed to nothing, so updating per frame
-    // re-renders one small subtree; and while nothing is playing `current` stops
-    // changing, so the loop idles without touching state.
+    // No display quantum: the playhead is judged against a 60 Hz render, so any
+    // throttle reads as stepping rather than sliding, whatever its size. That is
+    // affordable only because the advancing clock never touches React — it goes
+    // straight to two transforms below, and React sees a render only when the
+    // clip's structure changes (loaded, played, paused).
     let lastLabel = 0
+    // The track's width, cached. Reading clientWidth here is a LAYOUT READ, and
+    // the line above it writes a transform — write-then-read forces the browser
+    // to flush layout synchronously, every frame, for a number that only
+    // changes when the window resizes. On WebKit that reflow blocks against the
+    // compositor and costs far more than the work it measures; it is what made
+    // playback drop frames on Safari and iOS while the profiler showed the main
+    // thread idle (a forced reflow lands in "unaccounted", not in script).
+    let trackW = 0
+    const track0 = trackRef.current
+    const ro = new ResizeObserver((entries) => {
+      trackW = entries[0]?.contentRect.width ?? track0?.clientWidth ?? 0
+    })
+    if (track0) {
+      trackW = track0.clientWidth
+      ro.observe(track0)
+    }
     const paintBar = (current: number, duration: number) => {
       const ratio = duration > 0 ? Math.min(1, current / duration) : 0
       const fill = fillRef.current
       const thumb = thumbRef.current
-      const track = trackRef.current
       if (fill) fill.style.transform = `scaleX(${ratio})`
-      if (thumb && track) thumb.style.transform = `translateX(${ratio * track.clientWidth}px) translate(-50%, -50%)`
+      if (thumb) thumb.style.transform = `translateX(${ratio * trackW}px) translate(-50%, -50%)`
       const now = performance.now()
       if (timeRef.current && now - lastLabel > 250) {
         lastLabel = now
@@ -146,7 +160,10 @@ export const AnimPlayer = memo(function AnimPlayer({
       }
     }
     raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
+    return () => {
+      cancelAnimationFrame(raf)
+      ro.disconnect()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engineRef, namesKey])
 
