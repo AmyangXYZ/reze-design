@@ -91,6 +91,8 @@ import { SceneGallery, prefetchGallery } from "@/components/editor/scene-gallery
 import type { SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 
+
+
 // The manual lives in the repo, not in a dialog: it is going to grow past what a
 // popup can hold, it wants images and cross-links, and keeping it beside the code
 // means it can be read, corrected and translated by anyone who can open a PR.
@@ -1338,21 +1340,13 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       const jumped = lastModelTime >= 0 && Math.abs(p.current - lastModelTime) > 0.35
       lastModelTime = p.current
       if (playing) {
-        const drift = audio.currentTime - p.current
-        if (!wasPlaying || (!audio.seeking && (jumped || Math.abs(drift) > 1))) {
-          // Genuine discontinuity (start, loop wrap, scrub, runaway drift):
-          // the only cases worth an audible hard seek.
+        // Free-running audio, like the reze.one demo: the clock is set at
+        // playback start and on explicit jumps (scrub, loop wrap) and is then
+        // LEFT ALONE — no drift lock, no rate bending. Continuous correction
+        // of any kind is what stuttered on mobile Safari; real clock drift
+        // over a dance is milliseconds and nobody hears it.
+        if (!wasPlaying || (!audio.seeking && jumped)) {
           audio.currentTime = p.current
-          audio.playbackRate = 1
-        } else if (!audio.seeking) {
-          // Ordinary drift is corrected by RATE, not seeks: ±4% is inaudible,
-          // and it absorbs clock mismatch (throttled rAF, load hitches) that
-          // used to trigger a seek-stutter loop every couple of seconds.
-          // Dead-band + write-on-change: iOS's audio pipeline audibly churns
-          // when playbackRate is poked every frame, so hold 1.0 inside ±50ms
-          // and step the correction in 0.01 increments.
-          const target = Math.abs(drift) < 0.05 ? 1 : Math.round(Math.min(1.04, Math.max(0.96, 1 - drift * 0.2)) * 100) / 100
-          if (audio.playbackRate !== target) audio.playbackRate = target
         }
         // A track SHORTER than the clip ends part-way through and leaves the
         // element paused. Seeking it back to 0 when the motion loops does not

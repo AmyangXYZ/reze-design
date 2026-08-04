@@ -22,6 +22,8 @@ import { useSession } from "@/lib/auth-client"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
+
+
 type ViewerProps = {
   doc: SceneDoc
   sceneId: string
@@ -218,29 +220,23 @@ function SceneStage({ scene, sceneId, title, author, description, credits, likeC
     const engine = engineRef.current
     if (!audio || !engine || !ready) return
     let raf = 0
+    let lastCurrent = -1
     const tick = () => {
       // Progress lives on the model (the animation clock's owner); the first
       // animated model is the master, as in the editor.
       const master = animated[0] ? engine.getModel(animated[0]) : null
       const p = master?.getAnimationProgress()
+      const wasPaused = audio.paused
       if (p?.playing && audio.paused) void audio.play().catch(() => {})
       if (!p?.playing && !audio.paused) audio.pause()
       if (p) {
-        const drift = audio.currentTime - p.current
-        // Hard seeks only for genuine jumps (loop restart, scrub). Ordinary
-        // drift bends the playback rate instead — ±4% is inaudible, while the
-        // old seek-on-0.25s turned every clock hiccup (mobile Safari's
-        // throttled rAF especially) into a stutter-repeat loop.
-        if (Math.abs(drift) > 1) {
-          audio.currentTime = p.current
-          audio.playbackRate = 1
-        } else if (!audio.seeking) {
-          // Dead-band + write-on-change: iOS's audio pipeline audibly churns
-          // when playbackRate is poked every frame, so hold 1.0 inside ±50ms
-          // and step the correction in 0.01 increments.
-          const target = Math.abs(drift) < 0.05 ? 1 : Math.round(Math.min(1.04, Math.max(0.96, 1 - drift * 0.2)) * 100) / 100
-          if (audio.playbackRate !== target) audio.playbackRate = target
-        }
+        // Free-running audio, like the reze.one demo: set the clock when
+        // playback (re)starts or the animation clock jumps (loop wrap, seek),
+        // then leave it alone — no drift lock, no rate bending. Continuous
+        // correction is what stuttered on mobile Safari.
+        const jumped = lastCurrent >= 0 && Math.abs(p.current - lastCurrent) > 0.35
+        lastCurrent = p.current
+        if ((p.playing && wasPaused) || jumped) audio.currentTime = p.current
       }
       raf = requestAnimationFrame(tick)
     }
