@@ -10,9 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useT } from "@/lib/i18n"
 
-/** A single scrub step past this reads as a teleport rather than motion. Matches
- *  the discontinuity threshold the audio clock uses, so the two agree about what
- *  counts as a jump. */
+/** A single scrub step past this reads as a teleport rather than motion. */
 const SEEK_SETTLE_SECONDS = 0.35
 
 const fmt = (s: number) => {
@@ -139,7 +137,9 @@ export const AnimPlayer = memo(function AnimPlayer({
         paintBar(p.current, p.duration)
       }
       if (loopRef.current && !p.playing && !p.paused && p.duration > 0 && p.current >= p.duration - AT_END_EPS) {
-        // Restart the whole cast together — jumping end → frame 0 teleports every bone
+        // Restart the whole cast together — end → frame 0 teleports every bone,
+        // so re-seed the bodies onto the new pose rather than letting them
+        // stretch across the discontinuity.
         for (const model of cast()) model.seek(0)
         engineRef.current?.resetPhysics()
         for (const model of cast()) model.play()
@@ -162,7 +162,7 @@ export const AnimPlayer = memo(function AnimPlayer({
       // Clip loaded but stopped (ended, or scrubbed while stopped).
       if (p.current >= p.duration - AT_END_EPS) {
         for (const model of cast()) model.seek(0)
-        engineRef.current?.resetPhysics() // same end→0 teleport as the loop path
+        engineRef.current?.resetPhysics() // same end → 0 teleport as the loop path
       }
       // `play()` keeps currentFrame — `play(clip)` would reset to 0 (from-start bug).
       for (const model of cast()) model.play()
@@ -197,6 +197,9 @@ export const AnimPlayer = memo(function AnimPlayer({
   // far it travelled in total. Dragging slowly across the whole clip is a
   // thousand small steps and resets nothing; clicking the far end of the track
   // is one big step and resets once, on release.
+  // A scrub past this is a teleport rather than motion, and the bodies want
+  // re-seeding once the user lets go — not on every step of the drag, which
+  // would fight a slow scrub that the simulation tracks perfectly well.
   const biggestStep = useRef(0)
   const seek = (v: number) => {
     biggestStep.current = Math.max(biggestStep.current, Math.abs(v - currentRef.current))
