@@ -98,6 +98,7 @@ export const AnimPlayer = memo(function AnimPlayer({
     // straight to two transforms below, and React sees a render only when the
     // clip's structure changes (loaded, played, paused).
     let lastLabel = 0
+    let lastTickMs = 0
     // The track's width, cached. Reading clientWidth here is a LAYOUT READ, and
     // the line above it writes a transform — write-then-read forces the browser
     // to flush layout synchronously, every frame, for a number that only
@@ -129,10 +130,13 @@ export const AnimPlayer = memo(function AnimPlayer({
     paintBarRef.current = paintBar
     const tick = () => {
       raf = requestAnimationFrame(tick)
-      // TEMPORARY BISECT: does playback hold framerate with the transport doing
-      // nothing per frame? If yes the cost is in this loop; if no, the transport
-      // is cleared and the cause is elsewhere entirely.
-      if (1) return
+      // TEMPORARY BISECT: run this loop's body at ~4Hz instead of per frame.
+      // The playhead will step visibly — that is the point. Everything still
+      // works; only the per-frame cost is gone. If playback holds framerate
+      // now, the cost is in here; if it still drops, the transport is cleared.
+      const nowMs = performance.now()
+      if (nowMs - lastTickMs < 250) return
+      lastTickMs = nowMs
       const m = master()
       if (!m) {
         // Every clip removed: clear the frozen last progress (time + duration), otherwise
