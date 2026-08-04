@@ -124,14 +124,23 @@ export const AnimPlayer = memo(function AnimPlayer({
     // Clip-relative rather than a wall-clock interval, so a long motion and a
     // short one both get the same number of updates instead of a long one
     // repainting hundreds of times for the same travel.
-    const STEPS = 40
+    // 300 steps is roughly a pixel of travel on a typical track, so the motion
+    // reads as sliding. The wall-clock floor keeps a short clip from repainting
+    // hundreds of times a second to cross the same distance — together they
+    // settle around 20-30 repaints a second whatever the duration, which the
+    // 4Hz experiment showed is comfortably inside budget.
+    const STEPS = 300
+    const MIN_PAINT_MS = 32
     let lastPainted = -1
+    let lastPaintMs = 0
     const paintBar = (current: number, duration: number) => {
       const step = duration > 0 ? duration / STEPS : 0
-      const due = lastPainted < 0 || step <= 0 || Math.abs(current - lastPainted) >= step
       const now = performance.now()
+      const moved = lastPainted < 0 || step <= 0 || Math.abs(current - lastPainted) >= step
+      const due = moved && now - lastPaintMs >= MIN_PAINT_MS
       if (due) {
         lastPainted = current
+        lastPaintMs = now
         const ratio = duration > 0 ? Math.min(1, current / duration) : 0
         const fill = fillRef.current
         const thumb = thumbRef.current
