@@ -114,12 +114,37 @@ export const AnimPlayer = memo(function AnimPlayer({
       trackW = track0.clientWidth
       ro.observe(track0)
     }
+    // Paint only when the playhead actually moves a pixel.
+    //
+    // These two elements live inside the transport's backdrop-blur pane, so
+    // touching either one dirties the blurred region and forces iOS to
+    // recomposite the blur — per frame, that was the cost of playback, and it
+    // does not care that the write itself is transform-only.
+    //
+    // The gate is the rendered position rather than a timer, which makes the
+    // rate follow the clip for free: a sixteen-second motion on a 300px track
+    // moves the thumb about nineteen pixels a second, so it repaints roughly
+    // nineteen times a second, while a short clip repaints more often because
+    // it genuinely moves further. Sub-pixel updates are invisible by
+    // definition, so nothing is lost that could have been seen.
+    let lastPx = -1
     const paintBar = (current: number, duration: number) => {
       const ratio = duration > 0 ? Math.min(1, current / duration) : 0
+      const px = ratio * trackW
+      if (lastPx >= 0 && Math.abs(px - lastPx) < 1) {
+        // Still repaint the label on its own slower cadence.
+        const t = performance.now()
+        if (timeRef.current && t - lastLabel > 250) {
+          lastLabel = t
+          timeRef.current.textContent = fmt(current)
+        }
+        return
+      }
+      lastPx = px
       const fill = fillRef.current
       const thumb = thumbRef.current
       if (fill) fill.style.transform = `scaleX(${ratio})`
-      if (thumb) thumb.style.transform = `translateX(${ratio * trackW}px) translate(-50%, -50%)`
+      if (thumb) thumb.style.transform = `translateX(${px}px) translate(-50%, -50%)`
       const now = performance.now()
       if (timeRef.current && now - lastLabel > 250) {
         lastLabel = now
@@ -275,12 +300,18 @@ export const AnimPlayer = memo(function AnimPlayer({
         onPointerCancel={() => endSeek()}
       >
         <div className="relative h-1 w-full overflow-hidden rounded-full bg-muted">
-          <div ref={fillRef} className="absolute inset-y-0 left-0 w-full origin-left bg-primary" style={{ transform: "scaleX(0)" }} />
+          <div
+            ref={fillRef}
+            className="absolute inset-y-0 left-0 w-full origin-left bg-primary"
+            // Own layer: a transform write on a promoted element composites
+            // without re-rasterising the backdrop-blur pane around it.
+            style={{ transform: "scaleX(0)", willChange: "transform" }}
+          />
         </div>
         <div
           ref={thumbRef}
           className="absolute top-1/2 left-0 size-2.5 rounded-full border border-primary bg-white shadow-sm ring-ring/50 hover:ring-2"
-          style={{ transform: "translate(-50%, -50%)" }}
+          style={{ transform: "translate(-50%, -50%)", willChange: "transform" }}
         />
       </div>
       <span className="shrink-0 text-xs leading-none text-muted-foreground tabular-nums">{fmt(progress.duration)}</span>
