@@ -56,7 +56,7 @@ export const AnimPlayer = memo(function AnimPlayer({
   const timeRef = useRef<HTMLSpanElement | null>(null)
   const currentRef = useRef(0)
   const draggingRef = useRef(false)
-  const paintBarRef = useRef<(current: number, duration: number) => void>(() => {})
+  const paintBarRef = useRef<(current: number, duration: number, snap?: boolean) => void>(() => {})
   // Whether the loaded camera VMD is currently driving the view (vs. free orbit).
   const [following, setFollowing] = useState(true)
   // Camera VMD is default-on when loaded — mirror the engine's actual state.
@@ -114,31 +114,49 @@ export const AnimPlayer = memo(function AnimPlayer({
       trackW = track0.clientWidth
       ro.observe(track0)
     }
-    // Per frame everywhere except WebKit.
+    // The playhead is ANIMATED, not redrawn.
     //
     // Both bar elements sit inside the transport's backdrop-blur pane, and
-    // dirtying anything in a blurred region makes WebKit recomposite the blur.
-    // At sixty times a second that was the whole frame — throttling this loop
-    // to 4Hz was what proved it, by making iOS playback smooth. Blink
-    // recomposites the same writes for nothing, so there is no reason to spend
-    // smoothness there.
+    // dirtying anything in a blurred region makes WebKit recomposite the blur;
+    // sixty times a second that was the frame. But throttling the redraw is a
+    // trap: 60Hz reads as motion and 4Hz reads as a deliberate tick, while
+    // everything between reads as broken — fast enough to look like it is
+    // trying to be smooth, too slow to be it. A wall-clock threshold on top of
+    // rAF makes it worse still, firing on whichever frame first exceeds it, so
+    // the cadence goes uneven under exactly the load that caused the throttle.
     //
-    // navigator.vendor is Apple's for desktop Safari and for every browser on
-    // iOS, since they are all WKWebView — which is exactly the boundary the
-    // cost falls on, and why "it's slow in iOS Chrome too" was never about
-    // Chrome.
-    const isWebKit = typeof navigator !== "undefined" && navigator.vendor === "Apple Computer, Inc."
-    const MIN_PAINT_MS = isWebKit ? 50 : 0
-    let lastPaintMs = 0
-    const paintBar = (current: number, duration: number) => {
+    // So: write a target four times a second and let the compositor tween
+    // between them. A linear transition of the same length as the interval is
+    // continuous by construction — each tween ends as the next target lands —
+    // and it runs off the main thread, so the blur is recomposited at whatever
+    // rate the compositor likes rather than once per JS frame.
+    const PAINT_MS = 250
+    let lastPaintMs = -Infinity
+    const setTween = (on: boolean) => {
+      const d = on ? `${PAINT_MS}ms` : "0ms"
+      if (fillRef.current) fillRef.current.style.transitionDuration = d
+      if (thumbRef.current) thumbRef.current.style.transitionDuration = d
+    }
+    const writeBar = (ratio: number) => {
+      if (fillRef.current) fillRef.current.style.transform = `scaleX(${ratio})`
+      if (thumbRef.current) thumbRef.current.style.transform = `translateX(${ratio * trackW}px) translate(-50%, -50%)`
+    }
+    /** `snap` skips the tween: a scrub or a loop wrap is a jump, and gliding to
+     *  it would read as the bar lagging the user. */
+    const paintBar = (current: number, duration: number, snap = false) => {
+      const ratio = duration > 0 ? Math.min(1, current / duration) : 0
       const now = performance.now()
-      if (now - lastPaintMs >= MIN_PAINT_MS) {
+      if (snap) {
+        setTween(false)
+        writeBar(ratio)
         lastPaintMs = now
-        const ratio = duration > 0 ? Math.min(1, current / duration) : 0
-        const fill = fillRef.current
-        const thumb = thumbRef.current
-        if (fill) fill.style.transform = `scaleX(${ratio})`
-        if (thumb) thumb.style.transform = `translateX(${ratio * trackW}px) translate(-50%, -50%)`
+      } else if (now - lastPaintMs >= PAINT_MS) {
+        // Aim one interval ahead so the tween lands where the clip will be,
+        // rather than always trailing by a quarter second.
+        const ahead = duration > 0 ? Math.min(1, (current + PAINT_MS / 1000) / duration) : 0
+        setTween(true)
+        writeBar(ahead)
+        lastPaintMs = now
       }
       if (timeRef.current && now - lastLabel > 250) {
         lastLabel = now
@@ -154,7 +172,7 @@ export const AnimPlayer = memo(function AnimPlayer({
         if (last.current !== 0 || last.duration !== 0 || last.playing || last.paused) {
           last = { current: 0, duration: 0, playing: false, paused: false }
           setProgress(last)
-          paintBar(0, 0)
+          paintBar(0, 0, true)
         }
         return
       }
@@ -175,6 +193,7 @@ export const AnimPlayer = memo(function AnimPlayer({
         // stretch across the discontinuity.
         for (const model of cast()) model.seek(0)
         engineRef.current?.resetPhysics()
+        paintBar(0, p.duration, true)
         for (const model of cast()) model.play()
       }
     }
@@ -241,7 +260,7 @@ export const AnimPlayer = memo(function AnimPlayer({
     biggestStep.current = Math.max(biggestStep.current, Math.abs(v - currentRef.current))
     currentRef.current = v
     for (const model of cast()) model.seek(v)
-    paintBarRef.current(v, master()?.getAnimationProgress().duration ?? 0)
+    paintBarRef.current(v, master()?.getAnimationProgress().duration ?? 0, true)
   }
   const endSeek = () => {
     draggingRef.current = false
@@ -297,13 +316,13 @@ export const AnimPlayer = memo(function AnimPlayer({
           <div
             ref={fillRef}
             className="absolute inset-y-0 left-0 w-full origin-left bg-primary"
-            style={{ transform: "scaleX(0)" }}
+            style={{ transform: "scaleX(0)", transitionProperty: "transform", transitionTimingFunction: "linear" }}
           />
         </div>
         <div
           ref={thumbRef}
           className="absolute top-1/2 left-0 size-2.5 rounded-full border border-primary bg-white shadow-sm ring-ring/50 hover:ring-2"
-          style={{ transform: "translate(-50%, -50%)" }}
+          style={{ transform: "translate(-50%, -50%)", transitionProperty: "transform", transitionTimingFunction: "linear" }}
         />
       </div>
       <span className="shrink-0 text-xs leading-none text-muted-foreground tabular-nums">{fmt(progress.duration)}</span>
