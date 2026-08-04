@@ -221,6 +221,23 @@ function SceneStage({ scene, sceneId, title, author, description, credits, likeC
     if (!audio || !engine || !ready) return
     let raf = 0
     let lastCurrent = -1
+    // One correction at ACTUAL sound start (decode can lag play() on a cold
+    // cache; free-run would keep that offset forever). Never fires mid-playback.
+    const onPlaying = () => {
+      const master = animated[0] ? engine.getModel(animated[0]) : null
+      const p = master?.getAnimationProgress()
+      if (p?.playing && Math.abs(audio.currentTime - p.current) > 0.05) audio.currentTime = p.current
+    }
+    audio.addEventListener("playing", onPlaying)
+    // preload="auto" is a hint iOS Safari ignores until a user gesture — warm
+    // the buffer on the FIRST gesture anywhere (usually well before play), so
+    // pressing play starts sound without a fetch+decode stall. Guarded: never
+    // fires once data is buffered or playback has begun.
+    const warm = () => {
+      if (audio.paused && audio.readyState < 3 && audio.src) audio.load()
+    }
+    window.addEventListener("pointerdown", warm, { once: true })
+    window.addEventListener("keydown", warm, { once: true })
     const tick = () => {
       // Progress lives on the model (the animation clock's owner); the first
       // animated model is the master, as in the editor.
@@ -241,7 +258,12 @@ function SceneStage({ scene, sceneId, title, author, description, credits, likeC
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
+    return () => {
+      cancelAnimationFrame(raf)
+      audio.removeEventListener("playing", onPlaying)
+      window.removeEventListener("pointerdown", warm)
+      window.removeEventListener("keydown", warm)
+    }
   }, [ready, engineRef, audioSrc, animated])
 
   return (
