@@ -1334,7 +1334,14 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     // The one correction free-run allows: when sound ACTUALLY starts (decode
     // can lag play() by hundreds of ms on a cold cache), stamp the clock once.
     // Fires per start, never during steady playback.
+    // Armed ONLY when the tick just stamped the clock (start/scrub/loop):
+    // sound may begin hundreds of ms after that stamp, so correct once at true
+    // onset. Plain resumes never arm it — seeking there flushes the decoder
+    // and mutes the first beat, which is worse than the drift.
+    let stampArmed = false
     const onPlaying = () => {
+      if (!stampArmed) return
+      stampArmed = false
       const p = engineRef.current?.getModel(masterId)?.getAnimationProgress()
       if (p?.playing && Math.abs(audio.currentTime - p.current) > 0.05) audio.currentTime = p.current
     }
@@ -1363,8 +1370,12 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
         // LEFT ALONE — no drift lock, no rate bending. Continuous correction
         // of any kind is what stuttered on mobile Safari; real clock drift
         // over a dance is milliseconds and nobody hears it.
-        if (!wasPlaying || (!audio.seeking && jumped)) {
+        // Stamp only when the clocks genuinely disagree (scrubbed while
+        // stopped, loop wrap) — a resume with clocks already close plays on
+        // untouched, seek-free.
+        if ((!wasPlaying && Math.abs(audio.currentTime - p.current) > 0.15) || (!audio.seeking && jumped)) {
           audio.currentTime = p.current
+          stampArmed = true
         }
         // A track SHORTER than the clip ends part-way through and leaves the
         // element paused. Seeking it back to 0 when the motion loops does not

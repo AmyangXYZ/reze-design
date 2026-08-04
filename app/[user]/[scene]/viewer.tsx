@@ -223,7 +223,13 @@ function SceneStage({ scene, sceneId, title, author, description, credits, likeC
     let lastCurrent = -1
     // One correction at ACTUAL sound start (decode can lag play() on a cold
     // cache; free-run would keep that offset forever). Never fires mid-playback.
+    // Armed ONLY after an explicit stamp (start/loop): corrects decode latency
+    // once at true sound onset. Plain resumes never arm it — a seek there
+    // flushes the decoder and mutes the first beat.
+    let stampArmed = false
     const onPlaying = () => {
+      if (!stampArmed) return
+      stampArmed = false
       const master = animated[0] ? engine.getModel(animated[0]) : null
       const p = master?.getAnimationProgress()
       if (p?.playing && Math.abs(audio.currentTime - p.current) > 0.05) audio.currentTime = p.current
@@ -253,7 +259,10 @@ function SceneStage({ scene, sceneId, title, author, description, credits, likeC
         // correction is what stuttered on mobile Safari.
         const jumped = lastCurrent >= 0 && Math.abs(p.current - lastCurrent) > 0.35
         lastCurrent = p.current
-        if ((p.playing && wasPaused) || jumped) audio.currentTime = p.current
+        if (((p.playing && wasPaused) && Math.abs(audio.currentTime - p.current) > 0.15) || jumped) {
+          audio.currentTime = p.current
+          stampArmed = true
+        }
       }
       raf = requestAnimationFrame(tick)
     }
