@@ -12,7 +12,7 @@ import { ColorField } from "@/components/color-picker"
 import { rememberIntensity } from "@/lib/grade"
 import { QuickPick, type QuickPickItem } from "@/components/scene/quick-pick"
 import { useT } from "@/lib/i18n"
-import type { SceneSettings } from "@/lib/scene-settings"
+import { WIND_MAX, windFreqFromSlider, windSliderFromFreq, type SceneSettings } from "@/lib/scene-settings"
 import type { SceneCamera } from "@/lib/scene"
 import { cn } from "@/lib/utils"
 
@@ -183,7 +183,7 @@ export const ScenePanel = memo(function ScenePanel({
   /** Restore EVERYTHING this panel governs to the scene document's values. */
 }) {
   const t = useT()
-  const { background, ground, world, sun, bloom, grade } = settings
+  const { background, ground, world, sun, bloom, grade, physics } = settings
   const patch = <K extends keyof SceneSettings>(key: K, value: Partial<SceneSettings[K]>) =>
     onChange({ ...settings, [key]: { ...settings[key], ...value } })
   const setTarget = (axis: 0 | 1 | 2, v: number) => {
@@ -367,6 +367,64 @@ export const ScenePanel = memo(function ScenePanel({
               />
             </div>
           </div>
+        </Section>
+
+        {/* After Ground because it belongs to the same idea — the world the
+            character stands in — and before Camera, which is the viewer's. */}
+        <Section title={t.scene.physics}>
+          <SliderRow
+            label={t.scene.gravity}
+            value={physics.gravity}
+            min={0}
+            max={200}
+            step={1}
+            onChange={(v) => patch("physics", { gravity: v })}
+            fmt={(v) => v.toFixed(0)}
+          />
+          <SliderRow
+            label={t.scene.wind}
+            value={physics.wind}
+            min={0}
+            max={WIND_MAX}
+            step={1}
+            onChange={(v) => patch("physics", { wind: v })}
+            fmt={(v) => v.toFixed(0)}
+          />
+          {/* Position, not Hz: the scale is geometric, so the slider carries a
+              0-1 position and the document keeps the frequency it means. */}
+          <SliderRow
+            label={t.scene.windFrequency}
+            value={windSliderFromFreq(physics.windFrequency)}
+            min={0}
+            max={1}
+            step={0.01}
+            disabled={physics.wind === 0}
+            onChange={(v) => patch("physics", { windFrequency: windFreqFromSlider(v) })}
+            fmt={(v) => windFreqFromSlider(v).toFixed(2)}
+          />
+          {/* Always rendered, disabled while there is no air to move: mounting
+              four rows the moment wind leaves zero shifts everything below it
+              under the cursor, which is worse than a few greyed sliders. */}
+          <SliderRow
+            label={t.scene.azimuth}
+            value={physics.windAzimuth}
+            min={0}
+            max={360}
+            step={1}
+            disabled={physics.wind === 0}
+            onChange={(v) => patch("physics", { windAzimuth: v })}
+            fmt={(v) => `${v.toFixed(0)}°`}
+          />
+          <SliderRow
+            label={t.scene.elevation}
+            value={physics.windElevation}
+            min={-90}
+            max={90}
+            step={1}
+            disabled={physics.wind === 0}
+            onChange={(v) => patch("physics", { windElevation: v })}
+            fmt={(v) => `${v.toFixed(0)}°`}
+          />
         </Section>
 
         <Section title={t.scene.camera}>

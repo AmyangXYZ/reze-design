@@ -3,7 +3,7 @@
 import type { ShaderGraph, StyleGroup } from "reze-engine"
 import pkg from "@/package.json"
 import type { AppliedBackgroundEffect } from "@/lib/background-effects"
-import type { SceneSettings } from "@/lib/scene-settings"
+import { DEFAULT_PHYSICS, type SceneSettings } from "@/lib/scene-settings"
 
 export const SCENE_FORMAT_VERSION = 1
 
@@ -375,7 +375,17 @@ export function parseSceneDoc(
       id: "",
       name: doc.name,
       camera,
-      settings: { ...settings, background: { color: background.color } },
+      // Published documents all carry a physics block (backfilled 2026-08-04,
+      // see scripts/db-patch-physics.mjs), so the type requires one. The merge
+      // stays because a *file* exported before the section existed cannot be
+      // backfilled — spreading an absent block is a no-op and the defaults
+      // stand, which is still air at MMD gravity: exactly how those scenes
+      // already looked.
+      settings: {
+        ...settings,
+        physics: { ...DEFAULT_PHYSICS, ...settings.physics },
+        background: { color: background.color },
+      },
       backgroundEffect: appliedEffect(applied, resolveEffect, resolveRef),
       groups: materials.length ? Object.fromEntries(materials.map(([id, m]) => [id, resolveGroups(m.groups)])) : null,
       hidden: hidden.length ? Object.fromEntries(hidden.map(([id, m]) => [id, m.hidden!])) : null,
@@ -653,6 +663,7 @@ export function hydrateScene(base: Scene): Scene {
         background: { ...base.state.settings.background, ...settingsBase.background },
         grade: { ...base.state.settings.grade, ...settingsBase.grade },
         ground: { ...base.state.settings.ground, ...settingsBase.ground },
+        physics: { ...base.state.settings.physics, ...settingsBase.physics },
       },
       groups: groupsUsable ? usableGroups : base.state.groups,
       // Same per-model gate as groups

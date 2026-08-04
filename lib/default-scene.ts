@@ -3,6 +3,7 @@
 import { builtinEffect } from "@/lib/background-effects"
 import { libraryGraph } from "@/lib/materials"
 import { parseSceneDoc, type Scene, type SceneDoc } from "@/lib/scene"
+import { DEFAULT_PHYSICS } from "@/lib/scene-settings"
 
 /**
  * Whether this build ships the demo model, motion and music.
@@ -83,6 +84,7 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
     background: { color: "#4b004f", effect: "Shining Stars" },
     grade: { preset: "Neutral", intensity: 1 },
     ground: { color: "#c800de", size: 160, opacity: 0.42, shadow: true, grid: "#fafaf9", gridEnabled: true },
+    physics: DEFAULT_PHYSICS,
   },
 }
 
@@ -113,6 +115,7 @@ export const EMPTY_SCENE_DOC: SceneDoc = {
     background: { color: "#1c1c1e", effect: null },
     grade: { preset: "Neutral", intensity: 1 },
     ground: { color: "#3a3a3d", size: 160, opacity: 0.42, shadow: true, grid: "#fafaf9", gridEnabled: true },
+    physics: DEFAULT_PHYSICS,
   },
 }
 

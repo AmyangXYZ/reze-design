@@ -10,10 +10,10 @@
 // document and neither knows the difference.
 
 import { useEffect, useRef } from "react"
-import type { Engine } from "reze-engine"
+import { Vec3, type Engine } from "reze-engine"
 import type { AppliedBackgroundEffect } from "@/lib/background-effects"
 import { resolveSpec, type GradeSpec } from "@/lib/grade"
-import { azElToDirection, hexToLinearVec3, hexToSrgbVec3, type SceneSettings } from "@/lib/scene-settings"
+import { azElToDirection, windVariation, hexToLinearVec3, hexToSrgbVec3, windDirection, type SceneSettings } from "@/lib/scene-settings"
 
 const GREEN = "#00ff00"
 
@@ -53,7 +53,7 @@ export function useSceneSync({
   useEffect(() => {
     const engine = engineRef.current
     if (!ready || !engine) return
-    const { world, sun, bloom, background, ground, grade } = settings
+    const { world, sun, bloom, background, ground, grade, physics } = settings
     const p = prev.current
     const modeChanged = !p || p.backdrop !== hasBackdrop || p.green !== greenScreen
 
@@ -93,6 +93,21 @@ export function useSceneSync({
         contrast: cdl.contrast,
         saturation: cdl.saturation,
       })
+    }
+    if (!p || p.settings.physics !== physics) {
+      // Gravity points down; the slider is its magnitude, since a tilted world
+      // is a different feature from a heavy one and nobody reached for it.
+      engine.setGravity(new Vec3(0, -physics.gravity, 0))
+      engine.setWind(
+        physics.wind > 0
+          ? {
+              direction: windDirection(physics.windAzimuth, physics.windElevation),
+              strength: physics.wind,
+              turbulence: windVariation(physics.wind, physics.windFrequency),
+              frequency: physics.windFrequency,
+            }
+          : null,
+      )
     }
     if (modeChanged || p.settings.ground !== ground) {
       groundOpts.current = {
