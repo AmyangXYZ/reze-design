@@ -114,38 +114,30 @@ export const AnimPlayer = memo(function AnimPlayer({
       trackW = track0.clientWidth
       ro.observe(track0)
     }
-    // Paint only when the playhead actually moves a pixel.
+    // Repaint on a fixed number of steps across the clip, not per frame.
     //
-    // These two elements live inside the transport's backdrop-blur pane, so
-    // touching either one dirties the blurred region and forces iOS to
-    // recomposite the blur — per frame, that was the cost of playback, and it
-    // does not care that the write itself is transform-only.
+    // Both elements sit inside the transport's backdrop-blur pane, and dirtying
+    // anything in a blurred region makes the browser recomposite the blur.
+    // Sixty times a second that was the frame — throttling this loop to 4Hz was
+    // what proved it, by making playback smooth on iOS.
     //
-    // The gate is the rendered position rather than a timer, which makes the
-    // rate follow the clip for free: a sixteen-second motion on a 300px track
-    // moves the thumb about nineteen pixels a second, so it repaints roughly
-    // nineteen times a second, while a short clip repaints more often because
-    // it genuinely moves further. Sub-pixel updates are invisible by
-    // definition, so nothing is lost that could have been seen.
-    let lastPx = -1
+    // Clip-relative rather than a wall-clock interval, so a long motion and a
+    // short one both get the same number of updates instead of a long one
+    // repainting hundreds of times for the same travel.
+    const STEPS = 40
+    let lastPainted = -1
     const paintBar = (current: number, duration: number) => {
-      const ratio = duration > 0 ? Math.min(1, current / duration) : 0
-      const px = ratio * trackW
-      if (lastPx >= 0 && Math.abs(px - lastPx) < 1) {
-        // Still repaint the label on its own slower cadence.
-        const t = performance.now()
-        if (timeRef.current && t - lastLabel > 250) {
-          lastLabel = t
-          timeRef.current.textContent = fmt(current)
-        }
-        return
-      }
-      lastPx = px
-      const fill = fillRef.current
-      const thumb = thumbRef.current
-      if (fill) fill.style.transform = `scaleX(${ratio})`
-      if (thumb) thumb.style.transform = `translateX(${px}px) translate(-50%, -50%)`
+      const step = duration > 0 ? duration / STEPS : 0
+      const due = lastPainted < 0 || step <= 0 || Math.abs(current - lastPainted) >= step
       const now = performance.now()
+      if (due) {
+        lastPainted = current
+        const ratio = duration > 0 ? Math.min(1, current / duration) : 0
+        const fill = fillRef.current
+        const thumb = thumbRef.current
+        if (fill) fill.style.transform = `scaleX(${ratio})`
+        if (thumb) thumb.style.transform = `translateX(${ratio * trackW}px) translate(-50%, -50%)`
+      }
       if (timeRef.current && now - lastLabel > 250) {
         lastLabel = now
         timeRef.current.textContent = fmt(current)
@@ -303,15 +295,13 @@ export const AnimPlayer = memo(function AnimPlayer({
           <div
             ref={fillRef}
             className="absolute inset-y-0 left-0 w-full origin-left bg-primary"
-            // Own layer: a transform write on a promoted element composites
-            // without re-rasterising the backdrop-blur pane around it.
-            style={{ transform: "scaleX(0)", willChange: "transform" }}
+            style={{ transform: "scaleX(0)" }}
           />
         </div>
         <div
           ref={thumbRef}
           className="absolute top-1/2 left-0 size-2.5 rounded-full border border-primary bg-white shadow-sm ring-ring/50 hover:ring-2"
-          style={{ transform: "translate(-50%, -50%)", willChange: "transform" }}
+          style={{ transform: "translate(-50%, -50%)" }}
         />
       </div>
       <span className="shrink-0 text-xs leading-none text-muted-foreground tabular-nums">{fmt(progress.duration)}</span>
