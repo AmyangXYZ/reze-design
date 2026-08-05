@@ -23,7 +23,20 @@ import { cn } from "@/lib/utils"
  * both off, the swap looks like one panel changing its contents.
  */
 export const LIBRARY_SHELL =
-  "flex h-[82dvh] max-h-[82dvh] w-[92vw] max-w-5xl flex-col gap-0 overflow-hidden border-white/10 bg-zinc-950/95 p-0 sm:max-w-5xl " +
+  // One size for all four surfaces — three libraries and the gallery — because
+  // they are the same kind of window and switching between them should not
+  // resize the screen. Fixed rather than content-sized for the same reason: a
+  // dialog whose height depends on how much you have published is a dialog that
+  // never looks the same twice.
+  //
+  // The empty space that a fixed height creates belongs at the BOTTOM of the
+  // sections: Local is mt-auto, so slack collects above it rather than opening a
+  // hole between the built-ins and Community.
+  //
+  // 84dvh. The dialog is centred, so the margin below it is (100-h)/2: at 88
+  // that left ~6%, under the transport bar's own height at fixed bottom-3, and
+  // the two visibly touched. 80 cleared it but read as a band of dead space.
+  "flex h-[84dvh] max-h-[84dvh] w-[92vw] max-w-6xl flex-col gap-0 overflow-hidden border-white/10 bg-zinc-950/95 p-0 sm:max-w-6xl " +
   "data-[state=closed]:animate-none data-[state=closed]:fade-out-100 data-[state=closed]:zoom-out-100 " +
   "data-[state=open]:animate-none data-[state=open]:fade-in-100 data-[state=open]:zoom-in-100"
 
@@ -171,13 +184,13 @@ export function LibraryRail({
   const t = useT()
   const label: Record<LibraryFacet, string> = {
     all: t.rail.all,
-    featured: t.rail.featured,
+    builtin: t.rail.builtin,
     yours: t.rail.yours,
     liked: t.rail.liked,
   }
   const count: Record<LibraryFacet, number> = {
     all: items.length,
-    featured: items.filter((i) => i.owner === "builtin").length,
+    builtin: items.filter((i) => i.owner === "builtin").length,
     yours: items.filter((i) => i.owner === "user" || (i as LibraryItem & MaybeMine).mine === true || i.owner === "local").length,
     liked: isLiked ? items.filter(isLiked).length : 0,
   }

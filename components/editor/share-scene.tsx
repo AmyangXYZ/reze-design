@@ -16,6 +16,7 @@ import { buildZip, type BundleEntry } from "@/lib/bundle"
 import type { LibraryItem } from "@/lib/library"
 import { sceneRefs, type SceneDoc } from "@/lib/scene"
 import { useSession } from "@/lib/auth-client"
+import type { UnpublishedUse } from "@/lib/refs"
 import { useT } from "@/lib/i18n"
 
 const MAX_TAGS = 5
@@ -99,6 +100,7 @@ export function ShareSceneDialog(props: {
   onRename: (name: string) => void
   forkedFromId?: string
   collect: () => ScenePublishSource
+  unpublished: () => UnpublishedUse[]
 }) {
   // Mounted only while open, so every publish starts from a clean form. Kept
   // mounted, the dialog reopened onto the previous publish's success screen —
@@ -116,6 +118,7 @@ function ShareSceneForm({
   onRename,
   forkedFromId,
   collect,
+  unpublished,
 }: {
   /** The working scene's client-minted id. Keys the saved draft — the upload gets
    *  its own id per publish (see `publishScope`). */
@@ -126,12 +129,18 @@ function ShareSceneForm({
   /** The scene this session was forked from, if any. Lineage, recorded quietly. */
   forkedFromId?: string
   collect: () => ScenePublishSource
+  /** Looks this scene uses that exist in no library. Publishing is blocked while
+   *  this is non-empty — see lib/refs.ts for why. */
+  unpublished: () => UnpublishedUse[]
 }) {
   const t = useT()
   const { data: session } = useSession()
   // Lazily from storage: nothing is rendered until the dialog opens, so reading
   // client-only state here can't disagree with the server's markup.
   const [draft] = useState(() => readDraft(sceneId))
+  // Looks this scene wears that no library has. Read once — the scene is frozen
+  // behind this dialog — and it blocks publishing outright: see lib/refs.ts.
+  const [blocking] = useState(() => unpublished())
   const [description, setDescription] = useState(draft.description)
   const [tags, setTags] = useState<string[]>(draft.tags)
   const [credits, setCredits] = useState(draft.credits)
@@ -164,6 +173,8 @@ function ShareSceneForm({
 
   const publish = async () => {
     if (!session || busy) return
+    // Disabling the button is the courtesy; this is the rule.
+    if (blocking.length > 0) return
     setError(null)
     // A fresh storage scope per publish. Keying the bundle by the WORKING scene id
     // meant two publishes from one editor session wrote the same object: the first
@@ -302,6 +313,23 @@ function ShareSceneForm({
           {t.share.title}
         </DialogTitle>
         <DialogDescription className="mt-0.5 text-xs leading-snug text-muted-foreground/80">{t.share.blurb}</DialogDescription>
+
+        {/* Shown before the form rather than on submit: discovering a block after
+            writing a description, choosing tags and picking a thumbnail is the
+            worst moment to learn about it. */}
+        {blocking.length > 0 && step !== "done" && (
+          <div className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 p-2.5">
+            <p className="text-xs font-medium text-amber-300">{t.share.unpublishedTitle}</p>
+            <p className="mt-0.5 text-[11px] leading-snug text-amber-200/70">{t.share.unpublishedBlurb}</p>
+            <ul className="mt-1.5 space-y-0.5">
+              {blocking.map((u) => (
+                <li key={`${u.kind}:${u.name}`} className="font-mono text-[11px] text-amber-200/90">
+                  {t.share.unpublishedKind[u.kind as "graph" | "grade" | "effect"]} · {u.name}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {step === "done" && shareUrl ? (
           <div className="mt-1 min-w-0 space-y-3">
@@ -450,7 +478,16 @@ function ShareSceneForm({
             )}
             <Button
               type="submit"
-              disabled={!session || busy || !sceneName.trim() || !description.trim() || tags.length === 0 || !credits.trim() || !poster}
+              disabled={
+                !session ||
+                busy ||
+                blocking.length > 0 ||
+                !sceneName.trim() ||
+                !description.trim() ||
+                tags.length === 0 ||
+                !credits.trim() ||
+                !poster
+              }
               className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-50"
             >
               {busy ? (

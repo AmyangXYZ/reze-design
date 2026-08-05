@@ -124,18 +124,42 @@ export function updateDraft(kind: DraftKind, id: string, patch: Partial<LibraryI
 // delay turns a drag into one write while still meaning "saved as you go": the
 // editors also write on close, so nothing is left in flight.
 const pendingWrites = new Map<string, ReturnType<typeof setTimeout>>()
+const pendingRuns = new Map<string, () => void>()
 
 export function updateDraftSoon(kind: DraftKind, id: string, patch: Partial<LibraryItem>, ms = 400): void {
   const key = `${kind}:${id}`
   const queued = pendingWrites.get(key)
   if (queued) clearTimeout(queued)
+  const run = () => updateDraft(kind, id, patch)
+  pendingRuns.set(key, run)
   pendingWrites.set(
     key,
     setTimeout(() => {
       pendingWrites.delete(key)
-      updateDraft(kind, id, patch)
+      pendingRuns.delete(key)
+      run()
     }, ms),
   )
+}
+
+/**
+ * Write anything still queued, now.
+ *
+ * The coalescing above means a draft can be up to one delay behind what is on
+ * screen, which is invisible until the tab closes inside that window and takes
+ * the last keystroke with it. Editors write synchronously when they close, so
+ * this only covers closing the PAGE mid-edit — the same reason the scene state
+ * flushes on pagehide.
+ */
+export function flushDraftWrites(): void {
+  for (const [key, timer] of pendingWrites) {
+    clearTimeout(timer)
+    pendingWrites.delete(key)
+  }
+  // The timers held nothing but the intent to write; the patches themselves are
+  // captured in the closures, so re-running them is the flush.
+  for (const run of pendingRuns.values()) run()
+  pendingRuns.clear()
 }
 
 export function removeDraft(kind: DraftKind, id: string): void {

@@ -169,12 +169,13 @@ export const MaterialsPanel = memo(function MaterialsPanel({
     return out
   }, [groups, communityGraphs])
   const itemsForGroup = (g: StyleGroup) => {
-    // The applied graph is always present, even when it is community work that
-    // fell outside the newest few — a selector that cannot show what is
-    // selected is broken.
+    // The applied graph is always present — a selector that cannot show what is
+    // selected is broken. Listed as local, not community: what falls through
+    // here is a look carried by the scene, which the editor adopts as a draft,
+    // and calling someone's unpublished work "community" was simply wrong.
     const base = graphItems.some((i) => i.id === g.graph.name)
       ? graphItems
-      : [...graphItems, { id: g.graph.name, label: g.graph.name, section: "community" as const }]
+      : [...graphItems, { id: g.graph.name, label: g.graph.name, section: "local" as const }]
     return editedGroups.has(g.id) ? base.map((i) => (i.id === g.graph.name ? { ...i, hint: t.scene.edited } : i)) : base
   }
 

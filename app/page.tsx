@@ -53,10 +53,10 @@ import { communityItems, useCommunity } from "@/hooks/use-community"
 import { prefetchLibraryStats } from "@/hooks/use-library-stats"
 import { clearForkTarget, forkTarget } from "@/lib/fork"
 import { resolveSceneRefs } from "@/lib/resolve-refs"
-import { effectRef, gradeRef, graphRef } from "@/lib/refs"
+import { effectRef, gradeRef, graphRef, unpublishedUses } from "@/lib/refs"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useSession } from "@/lib/auth-client"
-import { createDraft, isDraft, loadDrafts, nextDraftName, updateDraft, updateDraftSoon } from "@/lib/drafts"
+import { createDraft, flushDraftWrites, isDraft, loadDrafts, nextDraftName, updateDraft, updateDraftSoon } from "@/lib/drafts"
 import { applyDefaults, BACKGROUND_EFFECTS, builtinEffect } from "@/lib/background-effects"
 import { GradeLibrary } from "@/components/editor/grade-library"
 import { GradeEditorPanel, type GradeEditorSubject } from "@/components/editor/grade-editor"
@@ -1483,6 +1483,10 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   const pendingSave = useRef<Parameters<typeof saveSceneState>[0] | null>(null)
   useEffect(() => {
     const flush = () => {
+      // Draft edits coalesce on a short timer, so the same exit that catches the
+      // scene has to catch them too — otherwise closing the tab mid-edit takes
+      // the last keystroke with it.
+      flushDraftWrites()
       if (!pendingSave.current) return
       saveSceneState(pendingSave.current)
       pendingSave.current = null
@@ -2427,6 +2431,14 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
           onRename={setSceneName}
           forkedFromId={forkedFrom}
           collect={collectScenePublish}
+          unpublished={() =>
+            unpublishedUses({
+              gradeSpec: appliedGradeSpec,
+              gradeName: sceneSettings.grade.preset,
+              effect: bgEffect,
+              groups: groupsByModel,
+            })
+          }
         />
       )}
       {mounted && groupGraphPrompt && (

@@ -283,9 +283,9 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
 
           {/* Thumbnail grid + pinned "New effect" (the graph library's New-graph idiom */}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <ScrollArea className="min-h-0 flex-1">
+          <ScrollArea className="min-h-0">
             <div className="px-3 pt-2 pb-1 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.builtin}</div>
-            <div className="grid grid-cols-3 content-start gap-2.5 px-3 pb-3">
+            <div className="grid grid-cols-5 content-start gap-2 px-3 pb-1.5">
               {builtinRows.map(renderCard)}
               {rows.length === 0 && (
                 <div className="col-span-full py-16 text-center text-xs text-muted-foreground">
@@ -293,26 +293,31 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                 </div>
               )}
             </div>
-            {/* Both headers are ALWAYS shown, even empty. An empty Community
-              section is the point: it is the only place in the app that says
-              publishing is a thing you can do, and a section that appears only
-              once someone else has published can never make the first ask.
-              Local is different — it is your own drafts, and an empty one
-              tells you nothing you did not know. */}
-            <div className="px-3 pt-1 pb-1 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.community}</div>
-            {communityRows.length > 0 ? (
-              <div className="grid grid-cols-3 content-start gap-2.5 px-3 pb-3">{communityRows.map(renderCard)}</div>
-            ) : (
-              <div className="px-3 pb-3 text-xs text-muted-foreground/70">{t.rail.communityEmpty}</div>
-            )}
           </ScrollArea>
+
+          {/* Community is PINNED, like drafts, rather than scrolling below the
+              built-ins. Both headers show even when empty: an empty Community is
+              the only place in the app that says publishing is a thing you can
+              do, and a section you must scroll to find cannot make that ask at
+              all. Local stays conditional — your own drafts, and an empty one
+              tells you nothing you did not know. */}
+          <div className="mt-2 flex max-h-[13rem] shrink-0 flex-col border-t border-white/10">
+            <div className="shrink-0 px-3 pt-2 pb-1 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.community}</div>
+            <ScrollArea className="min-h-0 flex-1">
+              {communityRows.length > 0 ? (
+                <div className="grid grid-cols-5 content-start gap-2 px-3 pb-3">{communityRows.map(renderCard)}</div>
+              ) : (
+                <div className="px-3 pb-3 text-xs text-muted-foreground/70">{t.rail.communityEmpty}</div>
+              )}
+            </ScrollArea>
+          </div>
                     {localRows.length > 0 && (
-            <div className="flex max-h-[26%] shrink-0 flex-col border-t border-white/10">
-              <div className="shrink-0 px-3 pt-2 pb-1 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
+            <div className="mt-auto flex max-h-[10rem] shrink-0 flex-col border-t border-white/10">
+              <div className="shrink-0 px-3 pt-1.5 pb-1 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
                 {t.rail.local}
               </div>
               <ScrollArea className="min-h-0 flex-1">
-                <div className="grid grid-cols-3 content-start gap-2.5 px-3 pb-3">
+                <div className="grid grid-cols-5 content-start gap-2 px-3 pb-3">
                   {localRows.map(renderCard)}
                 </div>
               </ScrollArea>
@@ -321,7 +326,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
           </div>
 
           {/* Inspector: preview · meta · params · Apply (pinned, but the column scrolls */}
-          <div className="flex w-[17rem] shrink-0 flex-col overflow-y-auto border-l border-white/10 sm:w-[20rem]">
+          <div className="flex w-[15rem] shrink-0 flex-col overflow-y-auto border-l border-white/10 sm:w-[17rem]">
             {selected && draft ? (
               <>
                 <div className="p-3 pb-0">
