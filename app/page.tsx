@@ -46,6 +46,7 @@ import {
   type EffectItem,
   type GradeItem,
   type GraphItem,
+  type GraphPayload,
   type LibraryFacet,
   type ScenePayload,
 } from "@/lib/library"
@@ -256,6 +257,50 @@ function defaultPanelRect(): Rect {
  * given a scene it opens on that instead — which is what Fork does, so a forked
  * scene lands in the same tool rather than a second, lesser one.
  */
+
+/**
+ * Take a local copy of any look this scene wears that lives in no library.
+ *
+ * A scene can arrive wearing a built-in its author edited and never saved. It
+ * renders — that graph travels by value inside the document — but nothing could
+ * show it, so the quick switch reported "edited" against a Hair you could not
+ * find, and picking Hair from the list silently replaced the author's version
+ * with no way back.
+ *
+ * Each orphan becomes a draft under a free name and the group is repointed at
+ * it: the look survives exactly, appears under Local like anything else you own,
+ * and the quick switch selects it by its own name instead of impersonating a
+ * built-in. Publishing can then require it the way it requires everything else.
+ *
+ * Idempotent by construction rather than by bookkeeping — a second pass finds
+ * the draft the first one made, reads back the same name, and changes nothing.
+ * Returns null when there was nothing to do, so the caller can skip the write.
+ */
+function adoptOrphanGraphs(list: StyleGroup[], author: string, fallbackName: string): StyleGroup[] | null {
+  const drafts = loadDrafts().graph
+  let changed = false
+  const next = list.map((g) => {
+    // Pinned to something published or built-in: nothing to rescue.
+    if (!g.graph || graphRef(g.graph)) return g
+    const mine = drafts.find((d) => sameGraphLook((d.payload as GraphPayload).graph, g.graph))
+    // Same whole-kind namespace the editor's freeGraphName uses: an adopted
+    // orphan is usually named after the built-in or community graph it was
+    // edited from, which is exactly the name it must not take.
+    const name =
+      mine?.name ??
+      nextDraftName(g.graph.name || fallbackName, [
+        ...GRAPH_LIBRARY.map((x) => x.name),
+        ...communityItems("graph").map((c) => c.name),
+        ...drafts.map((d) => d.name),
+      ])
+    if (!mine) createDraft("graph", { name, payload: { graph: { ...g.graph, name } }, author })
+    if (g.graph.name === name) return g
+    changed = true
+    return { ...g, graph: { ...g.graph, name } }
+  })
+  return changed ? next : null
+}
+
 function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom?: string }) {
   const t = useT()
   const { locale } = useI18n()
@@ -533,10 +578,24 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     }
     return Promise.resolve({ ok: r.ok, diagnostics: r.diagnostics })
   }
-  const freeGraphName = (wanted: string, keepId?: string) =>
+  // A name is the human key for a kind, so it has to be free across the WHOLE
+  // kind — built-ins, published community work, and your own drafts. Community
+  // was the gap: forking someone's "Neon Hair" produced a second "Neon Hair",
+  // two different looks answering to one name in the quick switch.
+  //
+  // `editingId` is the one id allowed to keep its name, and it covers two cases
+  // with one argument: your own draft (saving over itself), and your own
+  // PUBLISHED item (a working copy publishes as that item's next version, so
+  // uniquing here would quietly rename the published thing). Someone else's
+  // item is never excluded — that is the fork, and it gets the suffix.
+  //
+  // Read from the community cache rather than the hook value: these are called
+  // from handlers and during render, and the hook's const is declared far below.
+  const freeGraphName = (wanted: string, editingId?: string) =>
     nextDraftName(wanted, [
       ...GRAPH_LIBRARY.map((g) => g.name),
-      ...loadDrafts().graph.filter((d) => d.id !== keepId).map((d) => d.name),
+      ...communityItems("graph").filter((c) => !(c.mine && c.id === editingId)).map((c) => c.name),
+      ...loadDrafts().graph.filter((d) => d.id !== editingId).map((d) => d.name),
     ])
   const requestCloseGraphDrawer = () => {
     if (!graphLibEdit) {
@@ -557,7 +616,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   const saveGraphLibEdit = (wanted: string): string | null => {
     if (!graphLibEdit) return null
     const keep = isDraft("graph", graphLibEdit.id) ? graphLibEdit.id : undefined
-    const name = freeGraphName(wanted, keep)
+    const name = freeGraphName(wanted, graphLibEdit.id)
     const graph = { ...(graphLibLatest.current ?? graphLibEdit.opened), name }
     // Same rule as effects: a graph that doesn't compile doesn't get saved.
     const r = compileGraph(graph)
@@ -947,6 +1006,17 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   const { data: authSession } = useSession()
   const authorName = authSession?.user.username ?? t.bgLibrary.you
 
+  // See adoptOrphanGraphs. EDITOR ONLY: the viewer shares useEngine, and reading
+  // somebody's scene must not deposit their work in your library.
+  useEffect(() => {
+    if (!ready) return
+    for (const [modelId, list] of Object.entries(groupsByModel)) {
+      const next = adoptOrphanGraphs(list, authorName, t.materials.styleGroup)
+      if (next) void applyGroupsFor(modelId, next)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, groupsByModel, communityGraphs])
+
   // Grades library ── User grades live in localStorage (pre-accounts), while the APPLIED
   const [gradesOpen, setGradesOpen] = useState(false)
   const [libraryFacet, setLibraryFacet] = useState<LibraryFacet>("all")
@@ -992,10 +1062,12 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     if (isDraft("grade", next.id)) updateDraftSoon("grade", next.id, { payload: { spec: next.spec } })
   }
   /** A name no other grade holds — builtins and drafts alike (minus the one being renamed). */
-  const freeGradeName = (wanted: string, keepId?: string) =>
+  /** Free across built-ins, community and drafts — see freeGraphName. */
+  const freeGradeName = (wanted: string, editingId?: string) =>
     nextDraftName(wanted, [
       ...GRADE_PRESETS.map((g) => g.name),
-      ...loadDrafts().grade.filter((d) => d.id !== keepId).map((d) => d.name),
+      ...communityItems("grade").filter((c) => !(c.mine && c.id === editingId)).map((c) => c.name),
+      ...loadDrafts().grade.filter((d) => d.id !== editingId).map((d) => d.name),
     ])
   const requestCloseGradeEditor = () => {
     if (!gradeEditor) return
@@ -1017,7 +1089,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     if (!gradeEditor) return
     const { subject } = gradeEditor
     const keep = isDraft("grade", subject.id) ? subject.id : undefined
-    const name = freeGradeName(wanted, keep)
+    const name = freeGradeName(wanted, subject.id)
     if (keep) updateDraft("grade", keep, { name, payload: { spec: subject.spec } })
     else
       createDraft("grade", {
@@ -1167,10 +1239,12 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     setEffectEditor(null)
   }
   /** A name no other effect holds — builtins and drafts alike (minus the one being renamed). */
-  const freeEffectName = (wanted: string, keepId?: string) =>
+  /** Free across built-ins, community and drafts — see freeGraphName. */
+  const freeEffectName = (wanted: string, editingId?: string) =>
     nextDraftName(wanted, [
       ...BACKGROUND_EFFECTS.map((e) => e.name),
-      ...loadDrafts().effect.filter((d) => d.id !== keepId).map((d) => d.name),
+      ...communityItems("effect").filter((c) => !(c.mine && c.id === editingId)).map((c) => c.name),
+      ...loadDrafts().effect.filter((d) => d.id !== editingId).map((d) => d.name),
     ])
   const saveEffectEdit = async (wanted: string): Promise<string | null> => {
     if (!effectEditor?.savePrompt) return null
@@ -1183,7 +1257,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     if (!r.ok) return r.diagnostics[0] ?? "compile failed"
     noteAppliedWgsl(code)
     const keep = isExisting ? subject.id : undefined
-    const name = freeEffectName(wanted, keep)
+    const name = freeEffectName(wanted, subject.id)
     let id = keep
     if (keep) updateDraft("effect", keep, { name, payload: { wgsl: code } })
     else
@@ -2386,7 +2460,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       )}
       {mounted && effectEditor?.savePrompt != null && (
         <SaveCloseDialog
-          defaultName={isDraft("effect", effectEditor.subject.id) ? effectEditor.subject.name : freeEffectName(effectEditor.subject.name)}
+          defaultName={freeEffectName(effectEditor.subject.name, effectEditor.subject.id)}
           askName={!isDraft("effect", effectEditor.subject.id)}
           onSave={saveEffectEdit}
           onDiscard={discardEffectEdit}
@@ -2451,7 +2525,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       )}
       {mounted && graphLibEdit?.savePrompt && (
         <SaveCloseDialog
-          defaultName={isDraft("graph", graphLibEdit.id) ? graphLibEdit.name : freeGraphName(graphLibEdit.name)}
+          defaultName={freeGraphName(graphLibEdit.name, graphLibEdit.id)}
           askName={!isDraft("graph", graphLibEdit.id)}
           onSave={saveGraphLibEdit}
           onDiscard={discardGraphLibEdit}
@@ -2460,7 +2534,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       )}
       {mounted && gradeEditor?.savePrompt && (
         <SaveCloseDialog
-          defaultName={freeGradeName(gradeEditor.subject.name)}
+          defaultName={freeGradeName(gradeEditor.subject.name, gradeEditor.subject.id)}
           onSave={saveGradeEdit}
           onDiscard={() => setGradeEditor(null)}
           onCancel={() => setGradeEditor((prev) => (prev ? { ...prev, savePrompt: false } : prev))}

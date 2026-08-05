@@ -82,42 +82,57 @@ export function QuickPick({
         sideOffset={6}
         // Wide enough for the longest built-in name ("Principled BSDF") — truncating
         // the labels in a list whose whole job is naming things reads as broken.
-        className="w-44 rounded-xl border-white/10 bg-zinc-950/95 p-1 shadow-float backdrop-blur-xs"
+        //
+        // A flex column with a bounded height is what makes the pinned sections
+        // below pin: the height comes from Radix's own measurement of the gap to
+        // the viewport edge, capped at 28rem so a tall screen doesn't produce a
+        // list running the full window. The fallback in the var() matters — the
+        // variable is only set when collision detection runs, and without it the
+        // whole max-height declaration would be dropped as invalid.
+        className="flex max-h-[min(28rem,var(--radix-popover-content-available-height,28rem))] w-44 flex-col rounded-xl border-white/10 bg-zinc-950/95 p-1 shadow-float backdrop-blur-xs"
         // Returning focus to the trigger draws a stuck ring on the value text, and
         // grabbing it on open leaves the first row ringed and flashing on close.
         onCloseAutoFocus={(e) => e.preventDefault()}
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        {/* Built-ins and community scroll in the main area; local drafts hold a
-            small compartment pinned at the bottom. Tall enough that every built-in
-            fits without scrolling — there are nine shader graphs, and a list that
-            hides two of them sends you to the full library for no reason. */}
-        <ScrollArea className="max-h-80">
+        {/* Three compartments, same as the full libraries: built-ins take the
+            slack and scroll, Community and Local are pinned below at a fixed
+            size. Pinned because they are the rows you are most likely to want
+            and the ones a growing built-in list pushes out of sight first —
+            scrolling past nine shader graphs to reach your own draft is the
+            failure this layout exists to prevent.
+
+            The built-in area is flex-1 rather than a fixed max-h, so a SHORT
+            list still shrink-wraps (auto height, nothing to grow into) while a
+            long one gives way to the compartments instead of overflowing. */}
+        <ScrollArea className="min-h-0 flex-1">
           {/* Both headers always, matching the full libraries — and an empty
               Community is the one place a quick switch can suggest that
               publishing exists. Local stays conditional: your own drafts. */}
-          <div className="px-2 pt-1.5 pb-1 text-xs font-medium tracking-[0.14em] text-muted-foreground/60 uppercase">
+          <div className="px-2 pt-1.5 pb-1 text-xs font-medium text-muted-foreground/60">
             {t.rail.builtin}
           </div>
           {items.filter((i) => (i.section ?? "builtin") === "builtin").map(row)}
-          <div className="px-2 pt-1.5 pb-1 text-xs font-medium tracking-[0.14em] text-muted-foreground/60 uppercase">
+        </ScrollArea>
+        <div className="mt-1 shrink-0 border-t border-white/10 pt-1">
+          <div className="px-2 pt-0.5 pb-1 text-xs font-medium text-muted-foreground/60">
             {t.rail.community}
           </div>
           {items.some((i) => i.section === "community") ? (
-            items.filter((i) => i.section === "community").map(row)
+            <ScrollArea className="max-h-24">{items.filter((i) => i.section === "community").map(row)}</ScrollArea>
           ) : (
             <div className="px-2 pb-1 text-xs text-muted-foreground/50">{t.rail.communityEmpty}</div>
           )}
-        </ScrollArea>
+        </div>
         {items.some((i) => i.section === "local") && (
-          <div className="mt-1 border-t border-white/10 pt-1">
-            <div className="px-2 pt-0.5 pb-1 text-xs font-medium tracking-[0.14em] text-muted-foreground/60 uppercase">
+          <div className="mt-1 shrink-0 border-t border-white/10 pt-1">
+            <div className="px-2 pt-0.5 pb-1 text-xs font-medium text-muted-foreground/60">
               {t.rail.local}
             </div>
             <ScrollArea className="max-h-16">{items.filter((i) => i.section === "local").map(row)}</ScrollArea>
           </div>
         )}
-        <div className="mt-1 border-t border-white/10 pt-1">
+        <div className="mt-1 shrink-0 border-t border-white/10 pt-1">
           {onEdit && (
             <button
               onClick={() => {

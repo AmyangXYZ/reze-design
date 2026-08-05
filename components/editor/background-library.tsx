@@ -284,7 +284,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
           {/* Thumbnail grid + pinned "New effect" (the graph library's New-graph idiom */}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <ScrollArea className="min-h-0">
-            <div className="px-3 pt-2 pb-1 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.builtin}</div>
+            <div className="px-3 pt-2 pb-2.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.builtin}</div>
             <div className="grid grid-cols-5 content-start gap-2 px-3 pb-1.5">
               {builtinRows.map(renderCard)}
               {rows.length === 0 && (
@@ -302,7 +302,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
               all. Local stays conditional — your own drafts, and an empty one
               tells you nothing you did not know. */}
           <div className="mt-2 flex max-h-[13rem] shrink-0 flex-col border-t border-white/10">
-            <div className="shrink-0 px-3 pt-2 pb-1 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.community}</div>
+            <div className="shrink-0 px-3 pt-2 pb-2.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.community}</div>
             <ScrollArea className="min-h-0 flex-1">
               {communityRows.length > 0 ? (
                 <div className="grid grid-cols-5 content-start gap-2 px-3 pb-3">{communityRows.map(renderCard)}</div>
@@ -313,8 +313,22 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
           </div>
                     {localRows.length > 0 && (
             <div className="mt-auto flex max-h-[10rem] shrink-0 flex-col border-t border-white/10">
-              <div className="shrink-0 px-3 pt-1.5 pb-1 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
-                {t.rail.local}
+              <div className="flex shrink-0 items-center justify-between px-3 pt-1.5 pb-2.5">
+                <span className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.local}</span>
+                {/* Clears exactly what is LISTED, not every draft of this kind — a
+                    search or facet can be narrowing this section, and wiping rows
+                    you cannot see is not something a visible count can warn about.
+                    Unpublished work has no server copy, hence the confirm. */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!confirm(t.library.clearLocalConfirm(localRows.length))) return
+                    for (const d of localRows) removeDraft(d.id)
+                  }}
+                  className="shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-[11px] text-muted-foreground/70 transition-colors hover:bg-white/5 hover:text-red-400"
+                >
+                  {t.library.clearLocal}
+                </button>
               </div>
               <ScrollArea className="min-h-0 flex-1">
                 <div className="grid grid-cols-5 content-start gap-2 px-3 pb-3">

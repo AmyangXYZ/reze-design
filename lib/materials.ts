@@ -12,8 +12,12 @@ export const SLOT_GRAPHS = Object.fromEntries(
   GRAPH_LIBRARY.filter((g) => g.payload.role).map((g) => [g.payload.role, g.payload.graph]),
 ) as Partial<Record<MaterialPreset, GraphItem["payload"]["graph"]>>
 
-/** A scene's `graph: "<name>"` → the graph itself. Drafts aren't here by design:
- *  they're unpublished, so a scene that uses one inlines it instead. */
+/** A scene's `graph: "<name>"` → the graph itself. Built-ins only, deliberately:
+ *  use-community builds its built-in name set from GRAPH_LIBRARY at module
+ *  scope, so reaching back into it from here is a cycle, and materials is still
+ *  initialising when community reads from it. Community graphs need no entry
+ *  anyway — they travel as pins, and an EDITED one is an orphan that
+ *  adoptOrphanGraphs takes a local copy of. */
 export function libraryGraph(name: string): GraphItem["payload"]["graph"] | undefined {
   return GRAPH_LIBRARY.find((g) => g.name === name)?.payload.graph
 }
