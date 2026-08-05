@@ -2,14 +2,16 @@
 
 // Grade editor — a free-floating, draggable, resizable panel (FloatingPanel), the same idiom
 
-import { Palette, RotateCcw } from "lucide-react"
+import { useRef, useState } from "react"
+import { Download, Palette, RotateCcw, Upload } from "lucide-react"
 import { FloatingPanel, type Rect } from "@/components/editor/floating-panel"
 import { useHistory } from "@/hooks/use-history"
 import { EditorHeader, EditorHeaderButton } from "@/components/editor/editor-header"
 import { GradePreview } from "@/components/editor/grade-preview"
 import { ColorWheel } from "@/components/editor/color-wheel"
 import { SliderRow } from "@/components/scene/scene-sidebar"
-import { applySplit, readSplit, resolveSpec, type GradeSpec, type Range } from "@/lib/grade"
+import { applySplit, isGradeSpec, readSplit, resolveSpec, type GradeSpec, type Range } from "@/lib/grade"
+import { slug } from "@/lib/scene-file"
 import { useT } from "@/lib/i18n"
 
 export type GradeEditorSubject = {
@@ -78,6 +80,37 @@ function EditorBody({
   const { name, spec } = subject
   const set = (patch: Partial<GradeEditorSubject>) => onChange({ ...subject, ...patch })
   const setSpec = (patch: Partial<GradeSpec>) => set({ spec: { ...spec, ...patch } })
+
+  // ── The grade as a file ──────────────────────────────────────────────────
+  // Five numbers and three ranges: small enough to hand-write, generate, or
+  // pass around on its own without a scene or an account.
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const exportSpec = () => {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(spec, null, 2)], { type: "application/json" }))
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `reze-design-color-grade-${slug(name, "grade")}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+  const [importError, setImportError] = useState<string | null>(null)
+  const importSpec = async (file: File) => {
+    setImportError(null)
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(await file.text())
+    } catch {
+      setImportError(t.gradeLibrary.importNotJson)
+      return
+    }
+    // Verified, not cast: a spec wrong in one field would reach the sliders as
+    // NaN and grade the scene to nothing, with nothing on screen saying why.
+    if (!isGradeSpec(parsed)) {
+      setImportError(t.gradeLibrary.importNotGrade)
+      return
+    }
+    set({ spec: parsed })
+  }
   const cdl = resolveSpec(spec, 1)
 
   // Wheel drags settle into one history step, the same way the graph editor batches
@@ -93,13 +126,38 @@ function EditorBody({
         closeLabel={t.library.close}
         onClose={onClose}
         actions={
-          <EditorHeaderButton icon={RotateCcw} label={t.gradeLibrary.revert} onClick={() => set({ spec: origin })} />
+          <>
+            <EditorHeaderButton icon={RotateCcw} label={t.gradeLibrary.revert} onClick={() => set({ spec: origin })} />
+            <EditorHeaderButton icon={Download} label={t.gradeLibrary.exportJson} onClick={exportSpec} />
+            <EditorHeaderButton
+              icon={Upload}
+              label={t.gradeLibrary.importJson}
+              onClick={() => fileInputRef.current?.click()}
+            />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                // Cleared so re-picking the same file after fixing it still fires.
+                e.target.value = ""
+                if (f) void importSpec(f)
+              }}
+            />
+          </>
         }
       />
 
       <div className="flex min-h-0 flex-1">
         {/* ── Controls column ── */}
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3">
+          {importError && (
+            <div className="mb-2 rounded border border-red-400/30 bg-red-500/10 px-2 py-1 text-[11px] text-red-300">
+              {importError}
+            </div>
+          )}
           {/* Split tone first: the one move that covers most grading intent. */}
           <SliderRow
             label={t.scene.split}

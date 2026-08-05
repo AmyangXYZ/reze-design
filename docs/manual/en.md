@@ -447,9 +447,15 @@ threshold that looked right in a small window can bloom readily at 4K.
 
 ### Saving and sharing
 
-Editing a preset creates a **draft** of your own, stored locally in your browser,
-which you can rename, keep working on, and apply to as many scenes as you like.
-Drafts are private and stay on your machine.
+Editing a preset opens a scratchpad. Close it and you are asked whether to keep
+the result as a **draft** of your own — stored locally in your browser, free to
+rename, keep working on, and apply to as many scenes as you like. Once it is a
+draft it saves as you work, so there is nothing to confirm the next time. Drafts
+are private and stay on your machine.
+
+A grade also **exports and imports as JSON** from the editor's header, so a look
+can be written by hand, generated, or passed to someone else without a scene or
+an account. The same buttons sit in the shader-graph editor.
 
 **Publish** turns a draft into a library item under your name, visible to
 everyone. See [§2.5](#25-drafts-publishing-and-versions) for what that implies.
@@ -739,9 +745,24 @@ on the eyes.
 
 ## 2.5 Drafts, publishing and versions
 
-All three surfaces share one lifecycle. **Editing anything produces a draft** —
-built-ins stay as they are, and the draft lives privately in your browser, free to
-rename, re-edit and apply. **Applying a draft embeds it in your scene by value**,
+All three surfaces share one lifecycle, and one rule: **what you keep lives in
+Local, what you don't is gone.**
+
+**Your own drafts save as you work.** Every change goes to local storage as you
+make it, so closing a draft is simply closing it — nothing to confirm, and a
+stray reload costs nothing.
+
+**Everything else is a scratchpad.** A built-in, someone else's published item,
+or a look you build directly on a style group: it is live on screen while you
+work, but nothing is written anywhere until you close. Then you are asked whether
+to keep it. Keep it and it lands in **Local**, free to rename, re-edit, apply to
+other scenes and publish. Decline and it is discarded — including from the scene
+you were previewing it in, which returns to what it was.
+
+That is why there is no "saved in this scene but not in your library" state to
+reason about: a look you want exists in Local, or it does not exist.
+
+**Applying a draft embeds it in your scene by value**,
 so the scene carries the actual grade, shader or graph, which is what lets a
 published scene reproduce exactly on someone else's machine.
 

@@ -18,8 +18,9 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import { QuickPick } from "@/components/scene/quick-pick"
-import { GRAPH_LIBRARY, groupLabel } from "@/lib/materials"
-import { quickPickItems, type GraphItem } from "@/lib/library"
+import { GRAPH_LIBRARY, groupLabel, sameGraphLook } from "@/lib/materials"
+import { communityQuickPickItems, quickPickItems, type GraphItem } from "@/lib/library"
+import { useCommunity } from "@/hooks/use-community"
 import { useDrafts } from "@/hooks/use-drafts"
 import type { MaterialRow } from "@/hooks/use-engine"
 import { useT } from "@/lib/i18n"
@@ -135,15 +136,20 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   const [menuTarget, setMenuTarget] = useState<MenuTarget | null>(null)
 
   // Every library graph, flat — the quick-switch list beside the full browser.
+  // Community belongs here as much as it does for grades and effects; it was
+  // simply never wired, so published graphs were invisible outside the browser.
   const graphDrafts = useDrafts<GraphItem>("graph").drafts
+  const communityGraphs = useCommunity<GraphItem>("graph")
   const graphItems = useMemo(
-    () =>
-      quickPickItems(GRAPH_LIBRARY, graphDrafts, null).map((e) => ({
+    () => [
+      ...quickPickItems(GRAPH_LIBRARY, graphDrafts, null).map((e) => ({
         id: e.name,
         label: e.name,
         section: e.owner === "local" ? ("local" as const) : ("builtin" as const),
       })),
-    [graphDrafts],
+      ...communityQuickPickItems(communityGraphs, null),
+    ],
+    [graphDrafts, communityGraphs],
   )
   // A group reads `edited` only when its graph actually DIFFERS from the library
   // entry it came from. Compared without `name`, which the group rewrites to the
@@ -151,17 +157,26 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   // round-trips the graph through ReactFlow, which stamps layout positions onto
   // every node. Layout is not part of the look.
   const editedGroups = useMemo(() => {
-    const bare = (g: StyleGroup["graph"]) =>
-      JSON.stringify({ ...g, name: undefined, nodes: g?.nodes?.map((n) => ({ ...n, ui: undefined })) })
     const out = new Set<string>()
     for (const g of groups) {
-      const lib = GRAPH_LIBRARY.find((e) => e.name === g.graph?.name)
-      if (lib && bare(g.graph) !== bare(lib.payload.graph)) out.add(g.id)
+      // Community entries count too — a group built on someone's published graph
+      // could never read as edited while only built-ins were consulted.
+      const lib =
+        GRAPH_LIBRARY.find((e) => e.name === g.graph?.name) ??
+        communityGraphs.find((e) => e.name === g.graph?.name)
+      if (lib && !sameGraphLook(g.graph, lib.payload.graph)) out.add(g.id)
     }
     return out
-  }, [groups])
-  const itemsForGroup = (g: StyleGroup) =>
-    editedGroups.has(g.id) ? graphItems.map((i) => (i.id === g.graph.name ? { ...i, hint: t.scene.edited } : i)) : graphItems
+  }, [groups, communityGraphs])
+  const itemsForGroup = (g: StyleGroup) => {
+    // The applied graph is always present, even when it is community work that
+    // fell outside the newest few — a selector that cannot show what is
+    // selected is broken.
+    const base = graphItems.some((i) => i.id === g.graph.name)
+      ? graphItems
+      : [...graphItems, { id: g.graph.name, label: g.graph.name, section: "community" as const }]
+    return editedGroups.has(g.id) ? base.map((i) => (i.id === g.graph.name ? { ...i, hint: t.scene.edited } : i)) : base
+  }
 
   const byName = useMemo(() => new Map(materials.map((m) => [m.name, m])), [materials])
   const grouped = useMemo(() => new Set(groups.flatMap((g) => g.materials)), [groups])

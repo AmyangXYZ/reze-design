@@ -133,3 +133,25 @@ export function quickPickItems<T extends LibraryItem>(
   }
   return list
 }
+
+/**
+ * Community rows for a quick-pick: the newest few, plus whatever is applied.
+ *
+ * The server returns community newest-first, so a slice off the front is the
+ * recent work — which is the only useful cut, since nobody recognises these
+ * names. The applied item is appended when it falls outside that slice, for the
+ * same reason quickPickItems does it: a selector that cannot show what is
+ * selected is broken.
+ */
+export function communityQuickPickItems<T extends LibraryItem>(
+  items: T[],
+  appliedName: string | null,
+  max = 3,
+): { id: string; label: string; section: "community" }[] {
+  const shown = items.slice(0, max)
+  if (appliedName && !shown.some((i) => i.name === appliedName)) {
+    const hit = items.find((i) => i.name === appliedName)
+    if (hit) shown.push(hit)
+  }
+  return shown.map((i) => ({ id: i.name, label: i.name, section: "community" as const }))
+}

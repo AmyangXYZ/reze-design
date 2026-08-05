@@ -21,8 +21,8 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
-import { compileGraph, type CompileOptions, type Diagnostic, type ShaderGraph } from "reze-engine"
-import { Code, Grip, RotateCcw, Workflow, X } from "lucide-react"
+import { compileGraph, validateGraph, type CompileOptions, type Diagnostic, type ShaderGraph } from "reze-engine"
+import { Code, Download, Grip, RotateCcw, Upload, Workflow, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
@@ -34,6 +34,7 @@ import { makeGraphNode, uniqueNodeId } from "@/lib/node-catalog"
 import { canConnect, fromFlow, socketsOf, socketType, toFlow, type RezeFlowNode } from "@/lib/graph-flow"
 import { useUndoScope } from "@/hooks/use-undo-scope"
 import { useT } from "@/lib/i18n"
+import { slug } from "@/lib/scene-file"
 import { cn } from "@/lib/utils"
 
 const nodeTypes = { reze: RezeNode }
@@ -472,6 +473,54 @@ export function GraphEditor({
 
   const currentGraph: ShaderGraph = useMemo(() => fromFlow(base, nodes, edges), [base, nodes, edges])
 
+  // ── Graph as a file ──────────────────────────────────────────────────────
+  // A graph is small, self-contained JSON, which makes it the natural unit to
+  // hand around: a look can be written by hand, generated against the node
+  // registry, or passed between people without a scene or a login.
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const exportGraph = useCallback(() => {
+    const json = JSON.stringify(currentGraph, null, 2)
+    const url = URL.createObjectURL(new Blob([json], { type: "application/json" }))
+    const a = document.createElement("a")
+    a.href = url
+    // Named the way scene and video exports are, so a downloads folder sorts a
+    // session's artifacts together — and so a file that has travelled through a
+    // chat still says what it is and what made it.
+    a.download = `reze-design-shader-graph-${slug(slotLabel, "graph")}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [currentGraph, slotLabel])
+
+  const importGraph = useCallback(
+    async (file: File) => {
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(await file.text())
+      } catch {
+        setDiagnostics([{ severity: "error", message: t.graph.importNotJson }])
+        return
+      }
+      const graph = parsed as ShaderGraph
+      // Validated BEFORE it reaches the canvas. A generated graph is exactly the
+      // kind that arrives subtly wrong, and the compiler already says why in the
+      // same panel edits report through — so a bad file reads as a list of
+      // problems rather than a material that silently stops rendering.
+      let problems: Diagnostic[]
+      try {
+        problems = validateGraph(graph)
+      } catch {
+        setDiagnostics([{ severity: "error", message: t.graph.importNotGraph }])
+        return
+      }
+      if (problems.some((d) => d.severity === "error")) {
+        setDiagnostics(problems)
+        return
+      }
+      loadGraph(graph)
+    },
+    [loadGraph, t],
+  )
+
   // Inject the output/preview badges for rendering only (kept out of `nodes` state so graph
   const displayNodes = useMemo(
     () =>
@@ -594,6 +643,39 @@ export function GraphEditor({
             </TooltipTrigger>
             <TooltipContent>{t.graph.resetToPreset}</TooltipContent>
           </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="size-6 text-zinc-400 hover:text-zinc-100" onClick={exportGraph}>
+                <Download className="size-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t.graph.exportJson}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-6 text-zinc-400 hover:text-zinc-100"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload className="size-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t.graph.importJson}</TooltipContent>
+          </Tooltip>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              // Cleared so re-picking the same file after fixing it still fires.
+              e.target.value = ""
+              if (f) void importGraph(f)
+            }}
+          />
 
           {/* ── Exit: close (discard) or save (keep) ── */}
           <Tooltip>

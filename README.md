@@ -65,8 +65,17 @@ Grades, shader graphs and background effects share one envelope
 from the database at runtime. Published items are **immutable versions**:
 publishing over your own item writes version _n+1_, and a scene pins the exact
 `{ id, version }` it used, so nobody's scene changes under them when an author
-retunes a preset. Editing a preset doesn't touch the library — the edit travels
-by value inside the scene document; publishing is what mints a library item.
+retunes a preset.
+
+Editing is a scratchpad, and one rule covers all three: **what you keep lives in
+Local, what you don't is gone.** Your own drafts save as you work, straight to
+local storage, so closing one is just closing it. Editing a built-in, someone
+else's published item, or a look built directly on a style group writes nothing
+until you close — then it asks whether to keep the result as a draft. Decline and
+it is discarded, including from the scene you were previewing it in. Publishing
+is what turns a draft into a library item everyone can see. Graphs and grades
+also import and export as JSON, so a look can be hand-written, generated or
+passed around with no scene and no account.
 
 ## Publishing
 

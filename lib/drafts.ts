@@ -118,6 +118,26 @@ export function updateDraft(kind: DraftKind, id: string, patch: Partial<LibraryI
   save({ ...store, [kind]: store[kind].map((d) => (d.id === id ? { ...d, ...patch } : d)) })
 }
 
+// Coalesced writes, keyed per draft. Editing is continuous — slider drags,
+// keystrokes, node drags — and every write re-serialises the entire draft store,
+// so saving on each change would cost more than the change did. A short trailing
+// delay turns a drag into one write while still meaning "saved as you go": the
+// editors also write on close, so nothing is left in flight.
+const pendingWrites = new Map<string, ReturnType<typeof setTimeout>>()
+
+export function updateDraftSoon(kind: DraftKind, id: string, patch: Partial<LibraryItem>, ms = 400): void {
+  const key = `${kind}:${id}`
+  const queued = pendingWrites.get(key)
+  if (queued) clearTimeout(queued)
+  pendingWrites.set(
+    key,
+    setTimeout(() => {
+      pendingWrites.delete(key)
+      updateDraft(kind, id, patch)
+    }, ms),
+  )
+}
+
 export function removeDraft(kind: DraftKind, id: string): void {
   const store = loadDrafts()
   save({ ...store, [kind]: store[kind].filter((d) => d.id !== id) })

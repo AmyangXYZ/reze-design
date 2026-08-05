@@ -93,17 +93,25 @@ export function QuickPick({
             fits without scrolling — there are nine shader graphs, and a list that
             hides two of them sends you to the full library for no reason. */}
         <ScrollArea className="max-h-80">
+          {/* Both headers always, matching the full libraries — and an empty
+              Community is the one place a quick switch can suggest that
+              publishing exists. Local stays conditional: your own drafts. */}
+          <div className="px-2 pt-1.5 pb-1 text-xs font-medium tracking-[0.14em] text-muted-foreground/60 uppercase">
+            {t.rail.builtin}
+          </div>
           {items.filter((i) => (i.section ?? "builtin") === "builtin").map(row)}
-          {items.some((i) => i.section === "community") && (
-            <div className="px-2 pt-1.5 pb-1 text-[9px] font-medium tracking-[0.14em] text-muted-foreground/60 uppercase">
-              {t.rail.community}
-            </div>
+          <div className="px-2 pt-1.5 pb-1 text-xs font-medium tracking-[0.14em] text-muted-foreground/60 uppercase">
+            {t.rail.community}
+          </div>
+          {items.some((i) => i.section === "community") ? (
+            items.filter((i) => i.section === "community").map(row)
+          ) : (
+            <div className="px-2 pb-1 text-xs text-muted-foreground/50">{t.rail.communityEmpty}</div>
           )}
-          {items.filter((i) => i.section === "community").map(row)}
         </ScrollArea>
         {items.some((i) => i.section === "local") && (
           <div className="mt-1 border-t border-white/10 pt-1">
-            <div className="px-2 pt-0.5 pb-1 text-[9px] font-medium tracking-[0.14em] text-muted-foreground/60 uppercase">
+            <div className="px-2 pt-0.5 pb-1 text-xs font-medium tracking-[0.14em] text-muted-foreground/60 uppercase">
               {t.rail.local}
             </div>
             <ScrollArea className="max-h-16">{items.filter((i) => i.section === "local").map(row)}</ScrollArea>

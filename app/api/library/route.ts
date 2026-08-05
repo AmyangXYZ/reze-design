@@ -5,7 +5,7 @@
 // stable id and a name under which others will see it.
 
 import { NextResponse } from "next/server"
-import { and, asc, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm"
+import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm"
 import { auth } from "@/lib/auth"
 import { hasDatabase, db, schema } from "@/lib/db"
 import type { LibraryKind } from "@/lib/library"
@@ -170,8 +170,11 @@ export async function GET(request: Request) {
     })
     .from(schema.libraryItems)
     .where(eq(schema.libraryItems.visibility, "public"))
-    // Oldest first — new arrivals land at the end, like everywhere else.
-    .orderBy(asc(schema.libraryItems.createdAt))
+    // Newest first. Libraries show built-ins sorted by name — a fixed set you
+    // learn the shape of — and community by date, where recency is the only
+    // signal anyone has about work they have not seen. The rows carry no
+    // timestamp, so this ordering IS the date sort the client renders.
+    .orderBy(desc(schema.libraryItems.createdAt))
   const items = rows.map(({ ownerId, ...r }) => ({
     ...r,
     owner: "user" as const,

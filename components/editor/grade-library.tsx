@@ -94,7 +94,6 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [all, query, facet, tag, t],
   )
-  // Two compartments: built-ins (and community, later) scroll; drafts pin to the bottom.
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const commitRename = (item: GradeItem, raw: string) => {
     setRenamingId(null)
@@ -118,8 +117,16 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
     onRenamed?.(item.name, name)
   }
 
-  const builtinRows = rows.filter((x) => x.owner !== "local")
-  const localRows = rows.filter((x) => x.owner === "local")
+  // Built-ins by name (a fixed set you learn the shape of, so it must not move);
+  // community in server order, which is newest first, because nobody knows those
+  // names and recency is the only signal there is. Drafts pin below both.
+  const builtinRows = useMemo(
+    () => rows.filter((x) => x.owner === "builtin").sort((a, b) => nameOf(a).localeCompare(nameOf(b))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, t],
+  )
+  const communityRows = useMemo(() => rows.filter((x) => x.owner === "user"), [rows])
+  const localRows = useMemo(() => rows.filter((x) => x.owner === "local"), [rows])
 
   // Browsing never touches the scene
   const select = (g: GradeItem) => setSelectedId(g.name)
@@ -190,7 +197,6 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                         <LibraryStats
                           likeCount={statFor(g.name).likeCount}
                           liked={statFor(g.name).liked}
-                          scenes={statFor(g.name).scenes}
                           canLike={signedIn}
                           onToggle={() => void toggleLike(g.name)}
                         />
@@ -288,7 +294,8 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
         {/* ── Grid: every tile is the user's own scene under that grade ── */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <ScrollArea className="min-h-0 flex-1">
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(6.5rem,1fr))] content-start gap-2.5 p-3">
+          <div className="px-3 pt-2 pb-1 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.builtin}</div>
+          <div className="grid grid-cols-3 content-start gap-2.5 px-3 pb-3">
             {builtinRows.map(renderCard)}
             {rows.length === 0 && (
               <div className="col-span-full py-16 text-center text-xs text-muted-foreground">
@@ -296,6 +303,18 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                 </div>
             )}
           </div>
+          {/* Both headers are ALWAYS shown, even empty. An empty Community
+              section is the point: it is the only place in the app that says
+              publishing is a thing you can do, and a section that appears only
+              once someone else has published can never make the first ask.
+              Local is different — it is your own drafts, and an empty one
+              tells you nothing you did not know. */}
+          <div className="px-3 pt-1 pb-1 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.community}</div>
+          {communityRows.length > 0 ? (
+            <div className="grid grid-cols-3 content-start gap-2.5 px-3 pb-3">{communityRows.map(renderCard)}</div>
+          ) : (
+            <div className="px-3 pb-3 text-xs text-muted-foreground/70">{t.rail.communityEmpty}</div>
+          )}
         </ScrollArea>
         {localRows.length > 0 && (
             <div className="flex max-h-[26%] shrink-0 flex-col border-t border-white/10">
@@ -303,7 +322,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                 {t.rail.local}
               </div>
               <ScrollArea className="min-h-0 flex-1">
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(6.5rem,1fr))] content-start gap-2.5 px-3 pb-3">
+                <div className="grid grid-cols-3 content-start gap-2.5 px-3 pb-3">
                 {localRows.map(renderCard)}
                 </div>
               </ScrollArea>
@@ -334,6 +353,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                 <div className="truncate text-sm font-semibold">{nameOf(selected)}</div>
                 <div className="mt-0.5 font-mono text-[13px] text-muted-foreground/70">
                   {builtinAuthor("grade", selected.name, selected.author)} · v{selected.version}
+                  {statFor(selected.name).scenes > 0 && ` · ${t.library.usedInScenes(statFor(selected.name).scenes)}`}
                 </div>
                 {selected.description && (
                   <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">{selected.description}</p>

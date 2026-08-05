@@ -37,10 +37,11 @@ import { useI18n, useT } from "@/lib/i18n"
 import type { ExportAudioSource } from "@/lib/video-export"
 import { MaterialSphereIcon } from "@/components/scene/slot-icons"
 import { DEFAULT_SCENE, EMPTY_SCENE } from "@/lib/default-scene"
-import { groupLabel, GRAPH_LIBRARY, libraryGraph, SLOT_GRAPHS } from "@/lib/materials"
+import { groupLabel, GRAPH_LIBRARY, libraryGraph, sameGraphLook, SLOT_GRAPHS } from "@/lib/materials"
 import type { AppliedBackgroundEffect } from "@/lib/background-effects"
 import { GRADE_PRESETS, NEUTRAL_SPEC, gradeSpec, recallIntensity, specOf } from "@/lib/grade"
 import {
+  communityQuickPickItems,
   quickPickItems,
   type EffectItem,
   type GradeItem,
@@ -55,7 +56,7 @@ import { resolveSceneRefs } from "@/lib/resolve-refs"
 import { effectRef, gradeRef, graphRef } from "@/lib/refs"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useSession } from "@/lib/auth-client"
-import { createDraft, isDraft, loadDrafts, nextDraftName, updateDraft } from "@/lib/drafts"
+import { createDraft, isDraft, loadDrafts, nextDraftName, updateDraft, updateDraftSoon } from "@/lib/drafts"
 import { applyDefaults, BACKGROUND_EFFECTS, builtinEffect } from "@/lib/background-effects"
 import { GradeLibrary } from "@/components/editor/grade-library"
 import { GradeEditorPanel, type GradeEditorSubject } from "@/components/editor/grade-editor"
@@ -156,15 +157,6 @@ function RailUtility({
   )
 }
 
-/** Community rows for a quick-pick: a few, plus whatever is applied. */
-function communityQuickPick(items: { name: string }[], applied: string | null) {
-  const shown = items.slice(0, 3)
-  if (applied && !shown.some((i) => i.name === applied)) {
-    const hit = items.find((i) => i.name === applied)
-    if (hit) shown.push(hit)
-  }
-  return shown.map((i) => ({ id: i.name, label: i.name, section: "community" as const }))
-}
 
 /**
  * How a new draft relates to whatever it was edited from: your own published item
@@ -306,6 +298,12 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     savePrompt: boolean
   } | null>(null)
   const graphLibLatest = useRef<ShaderGraph | null>(null)
+  // What the group's graph was when this session opened. Editing a group applies
+  // to the scene live — that IS the preview — so declining to keep the result
+  // has to put this back, or "discard" would mean "discard from the library but
+  // keep in the scene", which is two different words for one button.
+  const groupGraphBaseline = useRef<{ groupId: string; graph: ShaderGraph } | null>(null)
+  const [groupGraphPrompt, setGroupGraphPrompt] = useState(false)
   const openGraphEditor = useCallback(() => {
     setGraphLibEdit(null)
     setGraphSession((v) => v + 1)
@@ -463,7 +461,56 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   // Graph-editor session lifecycle ── Edits preview live on the active group.
   // Close keeps the edits, like the other two editors. Undoing is ⌘Z, and the
   // header's reset-to-preset covers starting over.
-  const closeGraphEdit = () => setDrawerOpen(false)
+  /**
+   * Closing a GROUP graph session — the same scratchpad contract the library and
+   * the grade/effect editors already keep, which this path never had.
+   *
+   * Unchanged closes silently. Changed asks to keep it, because otherwise a look
+   * built here could only ever live in this one scene: invisible in the library,
+   * unusable on another group, impossible to publish. Declining reverts, so the
+   * one rule holds everywhere — what you keep is in Local, and what you do not
+   * keep is gone.
+   */
+  const closeGraphEdit = () => {
+    const base = groupGraphBaseline.current
+    const group = base ? groups.find((g) => g.id === base.groupId) : null
+    // Compared by LOOK, not bytes: merely opening the editor round-trips the
+    // graph through ReactFlow and stamps node layout onto it, so a raw compare
+    // calls every session dirty and asks to save a graph nobody touched.
+    if (!base || !group || sameGraphLook(group.graph, base.graph)) {
+      groupGraphBaseline.current = null
+      setDrawerOpen(false)
+      return
+    }
+    setGroupGraphPrompt(true)
+  }
+  const saveGroupGraph = (wanted: string): string | null => {
+    const base = groupGraphBaseline.current
+    const group = base ? groups.find((g) => g.id === base.groupId) : null
+    if (!base || !group) return null
+    const name = freeGraphName(wanted)
+    const graph = { ...group.graph, name }
+    // Same rule as every other save here: a graph that does not compile does not
+    // enter the library, or picking it later would raise engine errors.
+    const r = compileGraph(graph)
+    if (!r.ok) return r.diagnostics.find((d) => d.severity === "error")?.message ?? "compile failed"
+    createDraft("graph", { name, payload: { graph }, author: authorName })
+    // The group keeps it too, now under the saved name, so the scene and the
+    // library agree about what this look is called.
+    void upsertGroup({ ...group, graph })
+    groupGraphBaseline.current = null
+    setGroupGraphPrompt(false)
+    setDrawerOpen(false)
+    return null
+  }
+  const discardGroupGraph = () => {
+    const base = groupGraphBaseline.current
+    const group = base ? groups.find((g) => g.id === base.groupId) : null
+    if (base && group) void upsertGroup({ ...group, graph: base.graph })
+    groupGraphBaseline.current = null
+    setGroupGraphPrompt(false)
+    setDrawerOpen(false)
+  }
 
   // Standalone graph editing: same scratchpad contract as the grade/effect
   // editors — edits compile purely (compileGraph needs no engine), and only
@@ -477,6 +524,13 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   const compileStandalone = (graph: ShaderGraph): Promise<{ ok: boolean; diagnostics: Diagnostic[] }> => {
     graphLibLatest.current = graph
     const r = compileGraph(graph)
+    // Editing your own draft saves as you go — closing it is then just closing,
+    // and a crash or a stray reload costs nothing. Only drafts: a built-in or
+    // someone else's published work has no local home to write to until the
+    // close prompt gives it one.
+    if (graphLibEdit && isDraft("graph", graphLibEdit.id)) {
+      updateDraftSoon("graph", graphLibEdit.id, { payload: { graph: { ...graph, name: graphLibEdit.name } } })
+    }
     return Promise.resolve({ ok: r.ok, diagnostics: r.diagnostics })
   }
   const freeGraphName = (wanted: string, keepId?: string) =>
@@ -584,6 +638,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     (id: string) => {
       const g = groups.find((x) => x.id === id)
       if (!g) return
+      groupGraphBaseline.current = { groupId: id, graph: structuredClone(g.graph) }
       setActiveGroupId(id)
       openGraphEditor()
     },
@@ -932,8 +987,10 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     setGradeEditor((prev) => ({ sessionId: (prev?.sessionId ?? 0) + 1, subject, opened: subject, savePrompt: false }))
   }
   // Plain function for the same reason as openGradeEditor above
-  const editGrade = (next: GradeEditorSubject) =>
+  const editGrade = (next: GradeEditorSubject) => {
     setGradeEditor((prev) => (prev ? { ...prev, subject: next } : prev))
+    if (isDraft("grade", next.id)) updateDraftSoon("grade", next.id, { payload: { spec: next.spec } })
+  }
   /** A name no other grade holds — builtins and drafts alike (minus the one being renamed). */
   const freeGradeName = (wanted: string, keepId?: string) =>
     nextDraftName(wanted, [
@@ -1064,6 +1121,8 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       if (r.ok) {
         noteAppliedWgsl(wgsl)
         setBgEffect({ ...subject, wgsl })
+        // Same rule as graphs and grades: your own draft saves as you go.
+        if (isDraft("effect", subject.id)) updateDraftSoon("effect", subject.id, { payload: { wgsl } })
       }
       return r
     },
@@ -1878,7 +1937,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
           label: t.scene.gradePresets[g.name as keyof typeof t.scene.gradePresets] ?? g.name,
           section: g.owner === "local" ? ("local" as const) : ("builtin" as const),
         })),
-        ...communityQuickPick(communityGrades, sceneSettings.grade.preset),
+        ...communityQuickPickItems(communityGrades, sceneSettings.grade.preset),
       ],
     [t, gradeDrafts, appliedGradeDraftId, communityGrades, sceneSettings.grade.preset],
   )
@@ -1917,7 +1976,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
         label: e.name,
         section: e.owner === "local" ? ("local" as const) : ("builtin" as const),
       })),
-      ...communityQuickPick(communityEffects, bgEffect?.name ?? null),
+      ...communityQuickPickItems(communityEffects, bgEffect?.name ?? null),
     ]
     if (!bgEffect?.name) return items
     const pristine = [...BACKGROUND_EFFECTS, ...effectDrafts, ...communityEffects].some(
@@ -2368,6 +2427,14 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
           onRename={setSceneName}
           forkedFromId={forkedFrom}
           collect={collectScenePublish}
+        />
+      )}
+      {mounted && groupGraphPrompt && (
+        <SaveCloseDialog
+          defaultName={freeGraphName(activeGroup?.graph.name ?? t.materials.newGroup)}
+          onSave={saveGroupGraph}
+          onDiscard={discardGroupGraph}
+          onCancel={() => setGroupGraphPrompt(false)}
         />
       )}
       {mounted && graphLibEdit?.savePrompt && (

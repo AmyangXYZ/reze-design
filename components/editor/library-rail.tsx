@@ -217,24 +217,17 @@ export function LibraryTags({ tags }: { tags: string[] }) {
 export function LibraryStats({
   likeCount,
   liked,
-  scenes,
   canLike,
   onToggle,
 }: {
   likeCount: number
   liked: boolean
-  scenes: number
   canLike: boolean
   onToggle?: () => void
 }) {
   const t = useT()
   return (
     <span className="flex shrink-0 items-center gap-2 font-mono text-[11px]">
-      {scenes > 0 && (
-        <span className="text-muted-foreground/70" title={t.library.usedInScenes(scenes)}>
-          {scenes} ⬦
-        </span>
-      )}
       <button
         type="button"
         disabled={!canLike}

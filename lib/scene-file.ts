@@ -50,12 +50,12 @@ export function parseSceneFile(raw: unknown): Partial<SceneConfig> | null {
   return config
 }
 
-const slug = (s: string) =>
+export const slug = (s: string, fallback = "scene") =>
   s
     .trim()
     .toLowerCase()
     .replace(/[^\w一-鿿-]+/g, "-")
-    .replace(/^-+|-+$/g, "") || "scene"
+    .replace(/^-+|-+$/g, "") || fallback
 
 /** The FULL export: doc + assets in one zip, named the way video exports are —
  *  reze-design-<scene>-<stamp> — so a downloads folder sorts a session's artifacts

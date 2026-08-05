@@ -1,4 +1,4 @@
-import type { MaterialPreset } from "reze-engine"
+import type { MaterialPreset, ShaderGraph } from "reze-engine"
 import graphs from "@/content/graphs.json"
 import { asBuiltins, type GraphItem } from "@/lib/library"
 
@@ -38,4 +38,19 @@ export const SLOT_LABELS = Object.fromEntries(
  */
 export function groupLabel(group: { id: string; label?: string }): string {
   return group.label ?? SLOT_LABELS[group.id as MaterialPreset] ?? group.id
+}
+
+/**
+ * Do two shader graphs describe the same LOOK?
+ *
+ * Not a deep equality: `name` is rewritten to the group's label on apply, and
+ * opening the editor round-trips the graph through ReactFlow, which stamps
+ * layout positions onto every node. Neither changes how anything renders, so
+ * comparing raw would report "edited" for a graph nobody touched — and prompt to
+ * save it on close.
+ */
+export function sameGraphLook(a: ShaderGraph | undefined, b: ShaderGraph | undefined): boolean {
+  const bare = (g: ShaderGraph | undefined) =>
+    JSON.stringify({ ...g, name: undefined, nodes: g?.nodes?.map((n) => ({ ...n, ui: undefined })) })
+  return bare(a) === bare(b)
 }

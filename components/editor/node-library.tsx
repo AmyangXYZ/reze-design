@@ -81,12 +81,13 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRe
   const isCurrent = (r: GraphItem) => r.name === currentGraphName || r.payload.graph.name === currentGraphName
   const [selectedId, setSelectedId] = useState<string | null>(() => ROWS.find(isCurrent)?.id ?? ROWS[0]?.id ?? null)
 
+  // Filtering only — each section below sorts by what that section is FOR, and
+  // one order across all three would either scramble the built-ins or bury the
+  // newest community work.
   const rows = useMemo(
-    () =>
-      ROWS.filter((r) => matchesFacet(r, facet, statFor(r.name).liked) && (!tag || r.tags.includes(tag)) && matchesQuery(r, query)).sort((a, b) => a.name.localeCompare(b.name)),
+    () => ROWS.filter((r) => matchesFacet(r, facet, statFor(r.name).liked) && (!tag || r.tags.includes(tag)) && matchesQuery(r, query)),
     [ROWS, query, facet, tag, statFor],
   )
-  // Two compartments: built-ins (and community, later) scroll; drafts pin to the bottom.
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const commitRename = (item: GraphItem, raw: string) => {
     setRenamingId(null)
@@ -109,8 +110,15 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRe
     onRenamed?.(item.name, name)
   }
 
-  const builtinRows = rows.filter((x) => x.owner !== "local")
-  const localRows = rows.filter((x) => x.owner === "local")
+  // Built-ins by name: a fixed set you learn the shape of, so it must not move.
+  const builtinRows = useMemo(
+    () => rows.filter((x) => x.owner === "builtin").sort((a, b) => a.name.localeCompare(b.name)),
+    [rows],
+  )
+  // Community in server order, which is newest first — nobody knows these names,
+  // so recency is the only signal there is.
+  const communityRows = useMemo(() => rows.filter((x) => x.owner === "user"), [rows])
+  const localRows = useMemo(() => rows.filter((x) => x.owner === "local"), [rows])
   const selected = useMemo(() => ROWS.find((r) => r.id === selectedId) ?? null, [ROWS, selectedId])
 
   const renderCard = (r: GraphItem) => {
@@ -161,7 +169,6 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRe
                         <LibraryStats
                           likeCount={statFor(r.name).likeCount}
                           liked={statFor(r.name).liked}
-                          scenes={statFor(r.name).scenes}
                           canLike={signedIn}
                           onToggle={() => void toggleLike(r.name)}
                         />
@@ -262,7 +269,8 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRe
         {/* ── Minimap grid ── */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <ScrollArea className="min-h-0 flex-1">
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(6.5rem,1fr))] content-start gap-2.5 p-3">
+            <div className="px-3 pt-2 pb-1 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.builtin}</div>
+            <div className="grid grid-cols-3 content-start gap-2.5 px-3 pb-3">
               {builtinRows.map(renderCard)}
               {rows.length === 0 && (
                 <div className="col-span-full py-16 text-center text-xs text-muted-foreground">
@@ -270,6 +278,18 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRe
                 </div>
               )}
             </div>
+            {/* Both headers are ALWAYS shown, even empty. An empty Community
+                section is the point: it is the only place in the app that says
+                publishing is a thing you can do, and a section that appears only
+                once someone else has published can never make the first ask.
+                Local is different — it is your own drafts, and an empty one
+                tells you nothing you did not know. */}
+              <div className="px-3 pt-1 pb-1 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.community}</div>
+              {communityRows.length > 0 ? (
+                <div className="grid grid-cols-3 content-start gap-2.5 px-3 pb-3">{communityRows.map(renderCard)}</div>
+              ) : (
+                <div className="px-3 pb-3 text-xs text-muted-foreground/70">{t.rail.communityEmpty}</div>
+              )}
           </ScrollArea>
                   {localRows.length > 0 && (
             <div className="flex max-h-[26%] shrink-0 flex-col border-t border-white/10">
@@ -277,7 +297,7 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRe
                 {t.rail.local}
               </div>
               <ScrollArea className="min-h-0 flex-1">
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(6.5rem,1fr))] content-start gap-2.5 px-3 pb-3">
+                <div className="grid grid-cols-3 content-start gap-2.5 px-3 pb-3">
                   {localRows.map(renderCard)}
                 </div>
               </ScrollArea>
@@ -307,6 +327,7 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRe
                 <div className="truncate text-sm font-semibold">{selected.name}</div>
                 <div className="mt-0.5 font-mono text-[13px] text-muted-foreground/70">
                   {builtinAuthor("graph", selected.name, selected.author)} · v{selected.version}
+                  {statFor(selected.name).scenes > 0 && ` · ${t.library.usedInScenes(statFor(selected.name).scenes)}`}
                 </div>
                 {selected.description && (
                   <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">{selected.description}</p>
