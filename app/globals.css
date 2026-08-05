@@ -192,6 +192,30 @@
   height: 0 !important;
 }
 
+/* Slim but ALWAYS drawn, for lists whose overflow has to be legible. macOS
+   overlay scrollbars fade out when idle, so a section clipped mid-scroll reads
+   as a complete section — the quick switch showed four built-ins and looked
+   like it had four. Explicit ::-webkit-scrollbar sizing opts out of overlay
+   behaviour and keeps the track present whenever content overflows. */
+.thin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.22) transparent;
+}
+.thin-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.thin-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgb(255 255 255 / 0.22);
+  border-radius: 3px;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(255 255 255 / 0.35);
+}
+
 /* Heavier Figma-style drop shadow for floating panels / pills / popovers. */
 @utility shadow-float {
   box-shadow:

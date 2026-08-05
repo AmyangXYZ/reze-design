@@ -1576,8 +1576,16 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   }, [])
 
   // Angles and wheel-zoom live on the ENGINE camera only (drags never flow
-  // through React state) — snapshot at save/publish time so a document reopens
-  // on the exact view its author was looking at.
+  // through React state) — snapshot at PUBLISH time so a document opens on the
+  // exact view its author chose to ship.
+  //
+  // Deliberately not used by the local autosave. Orbiting is how you look at a
+  // scene, not how you edit it, and it changes no React state — so it never
+  // saves on its own. Calling this from the autosave meant the next unrelated
+  // edit (a slider, a hidden material) quietly baked wherever the mouse had
+  // left the camera into the stored scene, and the angle came back on refresh
+  // having never been authored. The document's camera is what the three
+  // sliders write, and only they should persist.
   const snapshotCamera = useCallback((): SceneCamera => {
     const e = engineRef.current
     if (!e) return sceneCamera
@@ -1593,7 +1601,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     const payload = {
       id: bootScene.state.id,
       name: sceneName,
-      camera: snapshotCamera(),
+      camera: sceneCamera,
       settings: sceneSettings,
       backgroundEffect: bgEffect,
       // The whole per-model record

@@ -105,7 +105,7 @@ export function QuickPick({
             The built-in area is flex-1 rather than a fixed max-h, so a SHORT
             list still shrink-wraps (auto height, nothing to grow into) while a
             long one gives way to the compartments instead of overflowing. */}
-        <ScrollArea className="min-h-0 flex-1">
+        <ScrollArea bars className="min-h-0 flex-1">
           {/* Both headers always, matching the full libraries — and an empty
               Community is the one place a quick switch can suggest that
               publishing exists. Local stays conditional: your own drafts. */}
@@ -119,7 +119,7 @@ export function QuickPick({
             {t.rail.community}
           </div>
           {items.some((i) => i.section === "community") ? (
-            <ScrollArea className="max-h-24">{items.filter((i) => i.section === "community").map(row)}</ScrollArea>
+            <ScrollArea bars className="max-h-24">{items.filter((i) => i.section === "community").map(row)}</ScrollArea>
           ) : (
             <div className="px-2 pb-1 text-xs text-muted-foreground/50">{t.rail.communityEmpty}</div>
           )}
@@ -129,7 +129,7 @@ export function QuickPick({
             <div className="px-2 pt-0.5 pb-1 text-xs font-medium text-muted-foreground/60">
               {t.rail.local}
             </div>
-            <ScrollArea className="max-h-16">{items.filter((i) => i.section === "local").map(row)}</ScrollArea>
+            <ScrollArea bars className="max-h-16">{items.filter((i) => i.section === "local").map(row)}</ScrollArea>
           </div>
         )}
         <div className="mt-1 shrink-0 border-t border-white/10 pt-1">
