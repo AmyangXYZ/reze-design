@@ -367,7 +367,7 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRe
                     payload={() => selected.payload}
                     itemId={draftOrigin("graph", selected.id).sourceId ?? selected.id}
                     forkedFromId={draftOrigin("graph", selected.id).forkedFromId}
-                    className="h-7 w-full"
+                    className="h-8 w-full"
                     onPublished={(item) => {
                       // Promotion: the draft's content now lives on the server —
                       // keeping the local copy would show the same thing twice.

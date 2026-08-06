@@ -54,7 +54,20 @@ export function groupLabel(group: { id: string; label?: string }): string {
  * save it on close.
  */
 export function sameGraphLook(a: ShaderGraph | undefined, b: ShaderGraph | undefined): boolean {
+  // Numbers are normalised to float32 before comparing. Every one of these
+  // values reaches the GPU as an f32 uniform, so two graphs whose params agree
+  // in f32 ARE the same look — but as f64 they can disagree in the final digit
+  // depending on which round-trip produced them:
+  //
+  //   engine preset   "hue": 0.46000000834465027
+  //   graphs.json     "hue": 0.4600000083446502
+  //
+  // That is a difference of ~1e-17, far below f32's ~6e-8 resolution, and it was
+  // enough to make a freshly auto-styled group fail to recognise the built-in it
+  // came from — so every upload adopted "Body"/"Face" as an orphan and deposited
+  // a "Body 2" draft in the user's library.
+  const f32 = (_key: string, v: unknown) => (typeof v === "number" ? Math.fround(v) : v)
   const bare = (g: ShaderGraph | undefined) =>
-    JSON.stringify({ ...g, name: undefined, nodes: g?.nodes?.map((n) => ({ ...n, ui: undefined })) })
+    JSON.stringify({ ...g, name: undefined, nodes: g?.nodes?.map((n) => ({ ...n, ui: undefined })) }, f32)
   return bare(a) === bare(b)
 }

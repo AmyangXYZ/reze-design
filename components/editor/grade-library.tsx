@@ -390,7 +390,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                     payload={() => selected.payload}
                     itemId={draftOrigin("grade", selected.id).sourceId ?? selected.id}
                     forkedFromId={draftOrigin("grade", selected.id).forkedFromId}
-                    className="h-7 w-full"
+                    className="h-8 w-full"
                     onPublished={(item) => {
                       // Promotion: the draft's content now lives on the server —
                       // keeping the local copy would show the same thing twice.
