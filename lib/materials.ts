@@ -1,4 +1,4 @@
-import type { MaterialPreset, ShaderGraph } from "reze-engine"
+import { NODE_REGISTRY, type MaterialPreset, type ShaderGraph } from "reze-engine"
 import graphs from "@/content/graphs.json"
 import { asBuiltins, type GraphItem } from "@/lib/library"
 
@@ -54,6 +54,15 @@ export function groupLabel(group: { id: string; label?: string }): string {
  * save it on close.
  */
 export function sameGraphLook(a: ShaderGraph | undefined, b: ShaderGraph | undefined): boolean {
+  // Everything below is canonicalised before comparing, because the editor is a
+  // graph EDITOR, not a text editor: the order nodes sit in the array, the order
+  // sockets were typed into `inputs`, and a literal that restates the socket's own
+  // default are all invisible to the compiler, which topo-sorts by node id and
+  // emits the same constant either way. Comparing them raw made ordinary editing
+  // register as an edit — drag a node, add a link and take it back, nudge a
+  // slider and nudge it home — and every one of those ended in "where should I
+  // save this?" for a graph that renders exactly as it opened.
+  const bySocket = (x: [string, unknown], y: [string, unknown]) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0)
   // Numbers are normalised to float32 before comparing. Every one of these
   // values reaches the GPU as an f32 uniform, so two graphs whose params agree
   // in f32 ARE the same look — but as f64 they can disagree in the final digit
@@ -67,7 +76,34 @@ export function sameGraphLook(a: ShaderGraph | undefined, b: ShaderGraph | undef
   // came from — so every upload adopted "Body"/"Face" as an orphan and deposited
   // a "Body 2" draft in the user's library.
   const f32 = (_key: string, v: unknown) => (typeof v === "number" ? Math.fround(v) : v)
+  // A literal equal to the socket's registry default says nothing the default
+  // doesn't. Sockets that must be linked keep theirs: there, present and absent
+  // is the difference between a graph that compiles and one that doesn't.
+  const literals = (type: string, inputs: ShaderGraph["nodes"][number]["inputs"]) => {
+    const spec = NODE_REGISTRY[type]
+    const kept = Object.entries(inputs ?? {}).filter(([socket, value]) => {
+      const input = spec?.inputs[socket]
+      return !input || input.requiresLink || JSON.stringify(value, f32) !== JSON.stringify(input.default, f32)
+    })
+    return Object.fromEntries(kept.sort(bySocket))
+  }
   const bare = (g: ShaderGraph | undefined) =>
-    JSON.stringify({ ...g, name: undefined, nodes: g?.nodes?.map((n) => ({ ...n, ui: undefined })) }, f32)
+    JSON.stringify(
+      {
+        version: g?.version,
+        output: g?.output,
+        params: g?.params,
+        tags: g?.tags,
+        // `ui` is layout and `name` is the label the group stamps on apply —
+        // neither reaches the shader.
+        nodes: [...(g?.nodes ?? [])]
+          .map((n) => ({ id: n.id, type: n.type, inputs: literals(n.type, n.inputs) }))
+          .sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0)),
+        links: [...(g?.links ?? [])]
+          .map((l) => `${l.from.node}.${l.from.socket}>${l.to.node}.${l.to.socket}`)
+          .sort(),
+      },
+      f32,
+    )
   return bare(a) === bare(b)
 }

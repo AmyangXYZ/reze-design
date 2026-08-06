@@ -645,7 +645,12 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       return
     }
     const latest = graphLibLatest.current ?? graphLibEdit.opened
-    if (JSON.stringify(latest) === JSON.stringify(graphLibEdit.opened)) {
+    // By LOOK, not bytes — the same compare the group path makes. Opening the
+    // editor round-trips the graph through ReactFlow, which stamps and rounds a
+    // layout position onto every node, so a raw compare calls a session dirty for
+    // dragging a node an inch, or for an edit that was undone back to where it
+    // started, and then asks where to save a graph that renders identically.
+    if (sameGraphLook(latest, graphLibEdit.opened)) {
       setGraphLibEdit(null)
       setDrawerOpen(false)
       return

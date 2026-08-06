@@ -43,7 +43,10 @@ const nodeTypes = { reze: RezeNode }
 let clipboard: { nodes: RezeFlowNode[]; edges: Edge[] } | null = null
 
 // Undo history compares graphs by content (positions, literals, links) so selection changes
-type Snapshot = { nodes: RezeFlowNode[]; edges: Edge[] }
+// aren't steps. `base` rides along because the output socket and the exposed params live
+// there rather than in the flow, and a node rename moves BOTH — history that watched only
+// the flow could undo the rename and leave the output pointing at an id nothing carries.
+type Snapshot = { nodes: RezeFlowNode[]; edges: Edge[]; base: ShaderGraph }
 const snapshotSig = (s: Snapshot) =>
   JSON.stringify({
     n: s.nodes.map((n) => ({
@@ -53,6 +56,7 @@ const snapshotSig = (s: Snapshot) =>
       g: n.data.graphNode,
     })),
     e: s.edges.map((e) => [e.source, e.sourceHandle, e.target, e.targetHandle]),
+    b: { output: s.base.output, params: s.base.params },
   })
 
 export function GraphEditor({
@@ -374,46 +378,64 @@ export function GraphEditor({
   // Undo/redo: debounced content snapshots
   const past = useRef<Snapshot[]>([])
   const future = useRef<Snapshot[]>([])
-  const present = useRef<Snapshot>({ nodes: initial.nodes, edges: initial.edges })
+  const present = useRef<Snapshot>({ nodes: initial.nodes, edges: initial.edges, base: initial.graph })
+  const latest = useRef<Snapshot>({ nodes: initial.nodes, edges: initial.edges, base: initial.graph })
+  const settle = useRef<ReturnType<typeof setTimeout> | null>(null)
   const restoring = useRef(false)
 
+  // Close the open step. A burst of edits is one entry, so this normally runs on
+  // the settle timer — but ⌘Z fires it first, because an edit undone within the
+  // settle window is exactly the case the debounce would otherwise swallow: the
+  // keystroke found an empty timeline, did nothing, and the edit landed anyway.
+  const commit = useCallback(() => {
+    if (settle.current) clearTimeout(settle.current)
+    settle.current = null
+    const snap = latest.current
+    if (snapshotSig(snap) === snapshotSig(present.current)) {
+      present.current = snap // keep latest selection state, no history entry
+      return
+    }
+    past.current.push(present.current)
+    if (past.current.length > 64) past.current.shift()
+    present.current = snap
+    future.current = []
+  }, [])
+
   useEffect(() => {
+    latest.current = { nodes, edges, base }
     if (restoring.current) {
       restoring.current = false
       return
     }
-    const timer = setTimeout(() => {
-      const snap = { nodes, edges }
-      if (snapshotSig(snap) === snapshotSig(present.current)) {
-        present.current = snap // keep latest selection state, no history entry
-        return
-      }
-      past.current.push(present.current)
-      if (past.current.length > 64) past.current.shift()
-      present.current = snap
-      future.current = []
-    }, 300)
-    return () => clearTimeout(timer)
-  }, [nodes, edges])
+    settle.current = setTimeout(commit, 300)
+    return () => {
+      if (settle.current) clearTimeout(settle.current)
+      settle.current = null
+    }
+  }, [nodes, edges, base, commit])
 
   const restore = useCallback((snap: Snapshot) => {
     restoring.current = true
     present.current = snap
+    latest.current = snap
     setNodes(snap.nodes)
     setEdges(snap.edges)
+    setBase(snap.base)
   }, [])
   const undo = useCallback(() => {
+    commit()
     const prev = past.current.pop()
     if (!prev) return
     future.current.push(present.current)
     restore(prev)
-  }, [restore])
+  }, [commit, restore])
   const redo = useCallback(() => {
+    commit()
     const next = future.current.pop()
     if (!next) return
     past.current.push(present.current)
     restore(next)
-  }, [restore])
+  }, [commit, restore])
 
   // Undo reaches this editor only while the user is working inside it — the scope
   // props go on the root below.
@@ -467,7 +489,8 @@ export function GraphEditor({
     setPreviewId(null)
     past.current = []
     future.current = []
-    present.current = { nodes: flow.nodes, edges: flow.edges }
+    present.current = { nodes: flow.nodes, edges: flow.edges, base: graph }
+    latest.current = present.current
     restoring.current = true // the state swap itself is not an undo step
   }, [])
 

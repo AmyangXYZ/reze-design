@@ -40,8 +40,28 @@ export function useHistory<T>(
 
   const resetKey = opts?.resetKey
   const seenKey = useRef(resetKey)
+  const latest = useRef(present)
+  const settle = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Close the open step. A burst of edits is one entry, so this normally runs on
+  // the settle timer — but undo calls it first, because an edit taken back within
+  // the settle window is the case the debounce would otherwise swallow whole: the
+  // keystroke found nothing to undo, and the edit was recorded a moment later.
+  const commit = useCallback(() => {
+    if (settle.current) clearTimeout(settle.current)
+    settle.current = null
+    const value = latest.current
+    // Content compare: a re-render that didn't actually change the value (a new object
+    if (JSON.stringify(value) === JSON.stringify(current.current)) return
+    past.current.push(current.current)
+    if (past.current.length > MAX_ENTRIES) past.current.shift()
+    current.current = value
+    future.current = [] // a fresh edit forks the timeline
+    sync()
+  }, [])
 
   useEffect(() => {
+    latest.current = present
     // A new subject (a different model's groups, say) re-baselines rather than
     // recording — otherwise undo would apply one subject's edit onto another.
     if (seenKey.current !== resetKey) {
@@ -49,44 +69,45 @@ export function useHistory<T>(
       past.current = []
       future.current = []
       current.current = present
+      sync()
       return
     }
     if (restoring.current) {
       restoring.current = false
       return
     }
-    const timer = setTimeout(() => {
-      // Content compare: a re-render that didn't actually change the value (a new object
-      if (JSON.stringify(present) === JSON.stringify(current.current)) return
-      past.current.push(current.current)
-      if (past.current.length > MAX_ENTRIES) past.current.shift()
-      current.current = present
-      future.current = [] // a fresh edit forks the timeline
-      sync()
-    }, SETTLE_MS)
-    return () => clearTimeout(timer)
-  }, [present, resetKey])
+    settle.current = setTimeout(commit, SETTLE_MS)
+    return () => {
+      if (settle.current) clearTimeout(settle.current)
+      settle.current = null
+    }
+  }, [present, resetKey, commit])
 
   const restore = useCallback((value: T) => {
     restoring.current = true
     current.current = value
+    // Kept in step with `current` so a second undo arriving before the host has
+    // re-rendered commits nothing instead of re-recording the state it just left.
+    latest.current = value
     restoreRef.current(value)
     sync()
   }, [])
 
   const undo = useCallback(() => {
+    commit()
     const prev = past.current.pop()
     if (prev === undefined) return
     future.current.push(current.current)
     restore(prev)
-  }, [restore])
+  }, [commit, restore])
 
   const redo = useCallback(() => {
+    commit()
     const next = future.current.pop()
     if (next === undefined) return
     past.current.push(current.current)
     restore(next)
-  }, [restore])
+  }, [commit, restore])
 
   const scopeProps = useUndoScope(opts?.scope ?? "page", { undo, redo }, {
     enabled: opts?.enabled ?? true,
