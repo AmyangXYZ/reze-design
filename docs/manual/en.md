@@ -656,25 +656,30 @@ shape:
     // id: unique, /^[a-z0-9_]+$/ · type: one of the registry ids below
     // inputs: literal defaults for sockets you leave unlinked
     { "id": "tex", "type": "texture" },
+    { "id": "diff", "type": "material_diffuse" },
+    { "id": "base", "type": "mix/multiply", "inputs": { "fac": 1.0 } },
     { "id": "shade", "type": "shader_to_rgb_diffuse" },
     { "id": "band", "type": "ramp_constant_aa",
       "inputs": { "edge": 0.35, "color0": [0.62, 0.58, 0.72, 1], "color1": [1, 1, 1, 1] } },
     { "id": "lit", "type": "mix/multiply", "inputs": { "fac": 1.0 } }
   ],
   "links": [
+    { "from": { "node": "tex",   "socket": "color" }, "to": { "node": "base", "socket": "a" } },
+    { "from": { "node": "diff",  "socket": "color" }, "to": { "node": "base", "socket": "b" } },
     { "from": { "node": "shade", "socket": "value" }, "to": { "node": "band", "socket": "fac" } },
-    { "from": { "node": "tex",   "socket": "color" }, "to": { "node": "lit",  "socket": "a" } },
+    { "from": { "node": "base",  "socket": "color" }, "to": { "node": "lit",  "socket": "a" } },
     { "from": { "node": "band",  "socket": "color" }, "to": { "node": "lit",  "socket": "b" } }
   ],
   "output": { "node": "lit", "socket": "color" }
 }
 ```
 
-That example is a complete, working cel shader: diffuse lighting quantised to two
-bands, multiplied over the texture. `output` must resolve to a colour (`vec3f`)
-or scalar (`f32`); floats and colours convert where sensible. An optional
-`params` array exposes chosen node inputs as named sliders that adjust live
-without recompiling, and `tags` are free-form hints for library search.
+That example is a complete, working cel shader: the texture times the material's
+own diffuse tint, with diffuse lighting quantised to two bands multiplied over
+it. `output` must resolve to a colour (`vec3f`) or scalar (`f32`); floats and
+colours convert where sensible. An optional `params` array exposes chosen node
+inputs as named sliders that adjust live without recompiling, and `tags` are
+free-form hints for library search.
 
 The node vocabulary, by registry id — sockets in parentheses:
 
@@ -708,11 +713,191 @@ The node vocabulary, by registry id — sockets in parentheses:
 | `tex_gradient` | `vector` → `value` |
 | `tex_voronoi/f1`, `tex_voronoi/color` | `vector`, `scale` → `value` / `color` |
 
-Node semantics are frozen Blender 3.6 legacy-EEVEE, so Blender intuition
-transfers directly — a Blender node setup usually ports socket for socket. The
-compiler reports diagnostics with node and socket names rather than failing
+The compiler reports diagnostics with node and socket names rather than failing
 silently, and pass integration (the hair/eye stencil, hashed alpha) belongs to
 the style group's role, never to the graph — a graph only ever computes colour.
+
+### Writing a graph that compiles
+
+The editor keeps you inside the schema as you drag: it offers only sockets that
+exist, dims the ones a wire cannot legally reach, and replaces the old link when
+a second one lands on an occupied input. A document written by hand or generated
+by a tool has none of that, so it is checked on arrival — **Import graph JSON**
+in the editor's header validates the file before it reaches the canvas and lists
+what is wrong with it in the diagnostics panel. What follows is what you need to
+write one that lands clean.
+
+**Most graphs share one spine**, and starting from it gets a surface most of the
+way there:
+
+1. **Base colour** — `texture` multiplied by `material_diffuse`, as a
+   `mix/multiply` with `fac: 1`. Leave the multiply out and untextured materials
+   render white.
+2. **A lighting term** — `shader_to_rgb_diffuse` into a ramp: `ramp_constant_aa`
+   for cel bands, `ramp_linear` for a soft falloff. Use `principled` in its place
+   when the surface should read as lit PBR rather than toon.
+3. **Combine the two** — another `mix/multiply` at `fac: 1`, the ramp over the
+   base. That alone is a working cel shader.
+4. **Then add** — `fresnel` or `layer_weight/facing` into `emission`, joined with
+   `add_shader`, for rim light; `mix/add_emit` for a glowing region; `bump` or
+   `tex_noise` into `principled.normal` for surface detail.
+
+Expose the two or three numbers you will want to retune later as `params`, and
+they become sliders that adjust live without a recompile.
+
+These are the rules the result is checked against.
+
+**Structure.** `version` is `1`. Node ids are unique and match
+`/^[a-z0-9_]+$/` — lowercase, digits, underscore, nothing else — and `type` is
+an exact registry id from the table above: `math/power`, never `Math` or
+`power`. Each input socket takes at most one link, the graph is acyclic, and
+`output` must resolve to a colour or a float, a `vec4` output being rejected and
+a float splatting to colour. A graph is capped at 64 nodes and 16 exposed params.
+
+**Literals and links.** `inputs` carries literal values for the sockets you leave
+unlinked, and the shape has to fit the socket: a 3-vector on a `float` socket is
+an error, while a scalar splats onto colour, vector and `vec4` sockets. The
+sockets that carry the value a node processes — `invert.color`,
+`separate_xyz.vector`, `principled.base`, the ramps' `fac` — need either a link
+or an explicit literal; leaving one at its registry default is the error, and it
+is only reported for nodes that actually feed the output. Ramp stop colours
+(`color0`, `color1`) are `vec4` and can only be literals; nothing links into them.
+
+**Params** target unlinked inputs, one param per socket, and a param's `kind`
+must match the socket's type. Since `kind` is `float` or `color`, a ramp stop
+cannot be exposed at all — to make a toon shadow tint adjustable, drive it
+through a `mix/*` node and expose that node's colour input instead. A param
+aimed at a node that gets pruned still compiles, with a warning that the slider
+does nothing.
+
+**Types convert implicitly** where they differ, so conversion nodes are never
+needed: colour → float takes BT.601 luminance, float → colour or vector splats,
+and colour and vector pass through each other unchanged. Vector → float is
+rejected, exactly as in Blender — use `separate_xyz`.
+
+**Coordinates are the engine's** — left-handed and Y-up, the PMX convention,
+where Blender is right-handed and Z-up. The vertical component of a normal is
+`separate_xyz` socket `y`, not `z`, and a direction vector written for Blender as
+`(x, y, z)` is `(x, z, y)` here, sign checked. UVs are unchanged. Get this wrong
+and the shading looks plausible but lit from the wrong axis, which is the most
+common mistake in a hand-written graph.
+
+**What the vocabulary does not have** is worth knowing before you write against
+it rather than at validation time:
+
+- **Five math operations**, not forty: add, multiply, power, greater-than,
+  clamp01. Subtract is add with a negative literal and divide is multiply by a
+  reciprocal; min, max, abs, sqrt, floor, fract, modulo and the trigonometric
+  ops have to be rebuilt or dropped.
+- **Six mix modes**: blend, overlay, multiply, lighten, linear light, and
+  `mix/add_emit`. No screen, difference, divide, subtract, dodge, burn, soft
+  light, hue, saturation, colour or value.
+- **Ramps have two stops**, and stop colours are literals. A multi-stop ramp
+  decomposes into chained ramps and mixes, or an approximation; `ramp_tri`
+  covers the black→white→black case. This is the limit a toon look hits
+  hardest, since multi-stop ramps are the standard tool for one.
+- **Textures are sampled at the mesh UV.** `texture` takes no vector input, so
+  `mapping` drives the procedural textures only. Scrolling UVs, matcaps,
+  triplanar projection and second UV sets have no expression here.
+- **Vectors come apart but not back together** — there is no `combine_xyz` — and
+  cross product is the only vector-math operation.
+- **Shading is colour.** `add_shader` compiles to `a + b` and `mix_shader` to
+  `mix(a, b, fac)`, both on `vec3f` — evaluate each branch to a colour, then
+  combine. There is no BSDF object to mix beforehand.
+- **Emission is its own node**, added to the shaded result with `add_shader`,
+  which is how all nine built-ins are written.
+
+**Checking a graph outside the editor.** reze-engine exports
+`validateGraph(graph)`, which returns the diagnostics above, and
+`compileGraph(graph)`, which returns `{ ok, wgsl, diagnostics }`; both report
+problems rather than throwing. Sockets that need a link, cycles and pruned nodes
+are reported by the compile rather than by validation, so compile before handing
+a graph over.
+
+### Coming from Blender
+
+Node semantics are frozen at Blender 3.6 legacy EEVEE, so most of a material
+transfers socket for socket, but reze reads no `.blend` file — the conversion is
+an authoring-time translation you do once. Two facts about the target version
+shape it. A material authored in **4.x or later** carries Principled v2
+sockets — around 32 of them against 3.6's 21 — and needs translating back, as
+below. And **EEVEE Next lighting does not exist here**: no screen-traced GI, no
+virtual shadow maps. A toon ramp driven by `shader_to_rgb_diffuse` reads legacy
+EEVEE's ambient and shadow model, so values tuned against a 4.2+ render want
+re-tuning by eye.
+
+**Node for node:**
+
+| Blender node | reze type |
+| --- | --- |
+| Principled BSDF | `principled` — eight inputs, see below |
+| Emission | `emission` |
+| Mix Shader, Add Shader | `mix_shader`, `add_shader` — RGB, see below |
+| Shader to RGB | `shader_to_rgb_diffuse` |
+| Image Texture | `texture` — the material's own diffuse map at the mesh UV |
+| Texture Coordinate, Geometry | `geometry` |
+| Value, RGB | `value`, `rgb` |
+| Hue/Saturation, Bright/Contrast, Invert | `hue_sat`, `bright_contrast`, `invert` |
+| Color Ramp | `ramp_constant`, `ramp_linear`, `ramp_cardinal`, by interpolation |
+| Math | `math/add`, `math/multiply`, `math/power`, `math/greater_than` |
+| Mix Color | `mix/blend`, `mix/overlay`, `mix/multiply`, `mix/lighten`, `mix/linear_light` |
+| Fresnel, Layer Weight | `fresnel`, `layer_weight/fresnel`, `layer_weight/facing` |
+| Separate XYZ, Vector Math (cross), Mapping, Bump | `separate_xyz`, `vect_cross`, `mapping`, `bump` |
+| Noise, Gradient, Voronoi Texture | `tex_noise`, `tex_gradient`, `tex_voronoi/f1`, `tex_voronoi/color` |
+
+A node's mode is part of the type string, because it is topology rather than a
+parameter: `Math` set to POWER is `math/power`, a Color Ramp's interpolation
+picks between the three `ramp_*` types, and Layer Weight's chosen output picks
+`layer_weight/fresnel` or `layer_weight/facing`. A few types have no Blender
+source and are worth reaching for — `material_diffuse` (the PMX material's own
+tint; multiply the diffuse texture by it, or untextured materials render white),
+`ramp_constant_aa`, `ramp_tri`, `mix/add_emit` and `math/clamp01`.
+
+**Principled BSDF maps eight inputs.**
+
+| reze socket | Blender 3.6 | Blender 4.x+ | Conversion |
+| --- | --- | --- | --- |
+| `base` | Base Color | Base Color | direct |
+| `metallic` | Metallic | Metallic | direct; v2's F82 tint is lost |
+| `roughness` | Roughness | Roughness | direct |
+| `specular` | Specular | Specular IOR Level | renamed; same 0–1 range, 0.5 default |
+| `sheen` | Sheen | Sheen Weight | 3.6 is a Disney retroreflective term, 4.0+ a microfiber BSDF — the number transfers, the look does not |
+| `sheen_tint` | Sheen Tint (float) | Sheen Tint (colour) | take the luminance of v2's colour |
+| `normal` | Normal | Normal | flipped as above; unlinked means the shading normal |
+| `spec_clamp` | — | — | reze-only, EEVEE's Light Clamp; leave it off unless a noisy bump throws specular fireflies |
+
+Everything else bakes into `base` at authoring time or is dropped: coat,
+subsurface, transmission, IOR, alpha, anisotropy, tangent, thin film, diffuse
+roughness. Emission is the exception — 4.x folds it into Principled, and here it
+is an `emission` node added to the result with `add_shader`, which is how all
+nine built-ins are written.
+
+**Mixed BSDFs are a rewrite rather than a transcription.** A tree that mixes
+closures and evaluates the result afterwards has to be restructured in the
+Shader-to-RGB style — evaluate each branch to a colour, then combine — and what
+comes out wants checking against a reference render. *Hair* is the built-in to
+read for the idiom.
+
+**A large tree will not fit.** Sixty-four nodes is the ceiling, so a material of
+eighty-seven has to lose twenty-three. Most of the excess is reroutes, frames and
+constant plumbing carrying no runtime meaning: fold constant subtrees, collapse
+chains of literal math into single values, and drop the branches feeding
+Principled inputs that do not exist here. Node groups flatten before porting,
+Float and RGB Curves resample into ramps or a math chain, and Menu Switch
+resolves to the one branch you want. Normal Map, Displacement, Attribute, Object
+Info, Light Path and AOV Output have no equivalent at all.
+
+**Say what did not survive.** A silently degraded material reads as a renderer
+bug to whoever inherits it. Name the Blender node or socket you dropped and
+whether it was baked into another value, approximated or omitted; and where the
+source leans on multi-stop ramps, transformed texture lookups or real closure
+mixing, say up front that the result is a rewrite rather than a port.
+
+**Say what did not survive the port.** A silently degraded material reads as a
+renderer bug to whoever inherits it. Name the Blender node or socket you dropped
+and whether it was baked into another value, approximated or omitted; and if the
+source leans on multi-stop ramps, transformed texture lookups or real closure
+mixing, say up front that it is a rewrite rather than a port.
 
 ### The MMD idiom
 

@@ -538,22 +538,27 @@ BSDF* 是中性底子，其余八个是各类表面的现成例子。
     // id：唯一，/^[a-z0-9_]+$/ · type：下表中的注册 id
     // inputs：未连线插槽的字面默认值
     { "id": "tex", "type": "texture" },
+    { "id": "diff", "type": "material_diffuse" },
+    { "id": "base", "type": "mix/multiply", "inputs": { "fac": 1.0 } },
     { "id": "shade", "type": "shader_to_rgb_diffuse" },
     { "id": "band", "type": "ramp_constant_aa",
       "inputs": { "edge": 0.35, "color0": [0.62, 0.58, 0.72, 1], "color1": [1, 1, 1, 1] } },
     { "id": "lit", "type": "mix/multiply", "inputs": { "fac": 1.0 } }
   ],
   "links": [
+    { "from": { "node": "tex",   "socket": "color" }, "to": { "node": "base", "socket": "a" } },
+    { "from": { "node": "diff",  "socket": "color" }, "to": { "node": "base", "socket": "b" } },
     { "from": { "node": "shade", "socket": "value" }, "to": { "node": "band", "socket": "fac" } },
-    { "from": { "node": "tex",   "socket": "color" }, "to": { "node": "lit",  "socket": "a" } },
+    { "from": { "node": "base",  "socket": "color" }, "to": { "node": "lit",  "socket": "a" } },
     { "from": { "node": "band",  "socket": "color" }, "to": { "node": "lit",  "socket": "b" } }
   ],
   "output": { "node": "lit", "socket": "color" }
 }
 ```
 
-这个例子本身就是一个可用的赛璐璐着色器：漫反射光照量化为两段，再乘到贴图上。
-`output` 必须解析为颜色（`vec3f`）或标量（`f32`）；合理处会自动转换。可选的
+这个例子本身就是一个可用的赛璐璐着色器：贴图乘以材质自带的漫反射色，再把量化成
+两段的漫反射光照乘上去。`output` 必须解析为颜色（`vec3f`）或标量（`f32`）；合理
+处会自动转换。可选的
 `params` 数组把选定的节点输入暴露为命名滑杆，调整即时生效、无需重编译；`tags`
 是库检索用的自由标签。
 
@@ -589,10 +594,152 @@ BSDF* 是中性底子，其余八个是各类表面的现成例子。
 | `tex_gradient` | `vector` → `value` |
 | `tex_voronoi/f1`、`tex_voronoi/color` | `vector`、`scale` → `value` / `color` |
 
-节点语义完全对齐 Blender 3.6 legacy-EEVEE，Blender 的直觉可以直接迁移——一套
-Blender 节点通常逐插槽照搬即可。编译器以节点名和插槽名报告诊断而不是静默失败；
-通道集成（发丝/眼睛的模板测试、抖动透明）属于样式组的 role，从不属于图——图只负
-责计算颜色。
+编译器以节点名和插槽名报告诊断而不是静默失败；通道集成（发丝/眼睛的模板测试、抖动
+透明）属于样式组的 role，从不属于图——图只负责计算颜色。
+
+### 写出能编译的图
+
+编辑器在拖拽时就把你限制在 schema 之内：只给出真实存在的插槽，连不上的目标会变暗，
+第二条线落到已被占用的输入上会替换掉原来那条。手写或由工具生成的文档没有这层保护，
+因此要在进入画布之前先检查——编辑器标题栏的 **Import graph JSON** 会先校验文件，
+把问题列在诊断面板里。以下是写出一份一次过关的文档所需要的东西。
+
+**大多数图共用同一副骨架**，从它起步，一个表面就已经完成大半：
+
+1. **基础色**——`texture` 乘以 `material_diffuse`，即一个 `fac: 1` 的
+   `mix/multiply`。少了这一乘，无贴图的材质会渲染成白色。
+2. **光照项**——`shader_to_rgb_diffuse` 接入一条渐变：赛璐璐色阶用
+   `ramp_constant_aa`，柔和过渡用 `ramp_linear`。若这个表面该是有光照的 PBR 而非
+   toon，就用 `principled` 顶替这一步。
+3. **两者相乘**——再来一个 `fac: 1` 的 `mix/multiply`，把渐变乘到基础色上。仅此
+   已是一个可用的赛璐璐着色器。
+4. **然后再加**——`fresnel` 或 `layer_weight/facing` 接 `emission`，用
+   `add_shader` 叠上去，得到轮廓光；`mix/add_emit` 用于发光区域；`bump` 或
+   `tex_noise` 接进 `principled.normal` 增加表面细节。
+
+把日后想重新调的那两三个数值暴露成 `params`，它们就成了实时生效、无需重编译的滑杆。
+
+结果依据的规则如下。
+
+**结构。** `version` 为 `1`。节点 id 唯一，且符合 `/^[a-z0-9_]+$/`——小写字母、
+数字、下划线，别的都不行；`type` 是上表中一字不差的注册 id：`math/power`，不是
+`Math`，也不是 `power`。每个输入插槽最多一条连线，整张图无环，`output` 必须解析为
+颜色或浮点——`vec4` 输出会被拒绝，浮点则自动铺开成颜色。单张图上限 64 个节点、16
+个暴露参数。
+
+**字面值与连线。** `inputs` 为未连线的插槽提供字面值，形状必须与插槽相符：三分量
+向量放在 `float` 插槽上是错误，而标量会铺开到颜色、向量和 `vec4` 插槽。承载「被处理
+的那个值」的插槽——`invert.color`、`separate_xyz.vector`、`principled.base`、各类
+渐变的 `fac`——要么连线，要么显式写出字面值；把它留在注册表默认值上才是错误，并且
+只对真正参与输出的节点报告。渐变的两个色标（`color0`、`color1`）是 `vec4`，只能是
+字面值，任何连线都进不去。
+
+**参数**只能指向未连线的输入，一个插槽至多一个参数，且 `kind` 必须与插槽类型一致。
+由于 `kind` 只有 `float` 和 `color`，色标根本无法暴露——想让 toon 的暗部色可调，
+就让它经过一个 `mix/*` 节点，暴露该节点的颜色输入。参数指向的节点若被剪掉，图照样
+编译，只是会警告这个滑杆不起作用。
+
+**类型会隐式转换**，因此从不需要转换节点：颜色 → 浮点取 BT.601 亮度，浮点 → 颜色或
+向量做铺开，颜色与向量互相直通、比特不变。向量 → 浮点会被拒绝，与 Blender 完全
+一致——请用 `separate_xyz`。
+
+**坐标系是引擎的**：左手、Y 轴向上，即 PMX 的约定，而 Blender 是右手、Z 轴向上。
+法线的竖直分量是 `separate_xyz` 的 `y` 而非 `z`；照 Blender 写下的方向向量
+`(x, y, z)`，在这里是 `(x, z, y)`，符号还需再确认一遍。UV 不变。这一处弄错，画面
+看着像那么回事，但光是从错误的轴打过来的——手写图最常见的错误正是它。
+
+**这套词汇里没有的东西**，最好动手前就知道，而不是等校验时才发现：
+
+- **只有五种数学运算**，不是四十种：加、乘、幂、大于、clamp01。减法是加一个负的
+  字面值，除法是乘以倒数；min、max、abs、sqrt、floor、fract、取模和三角函数只能
+  重建或舍弃。
+- **只有六种混合模式**：blend、overlay、multiply、lighten、linear light，以及
+  `mix/add_emit`。没有 screen、difference、divide、subtract、dodge、burn、soft
+  light、色相、饱和度、颜色、明度。
+- **渐变只有两个色标**，且色标颜色只能是字面值。多色标渐变需拆成链式渐变加混合，
+  或者做近似；`ramp_tri` 覆盖了黑→白→黑这一种。这是 toon 风格撞得最狠的一堵墙，
+  因为多色标渐变正是做 toon 的标准工具。
+- **贴图只在网格自身的 UV 上取样。** `texture` 没有 vector 输入，因此 `mapping`
+  只能驱动程序化纹理。滚动 UV、matcap、三平面投影、第二套 UV，在这里都没有对应的
+  表达方式。
+- **向量能拆不能合**——没有 `combine_xyz`——叉乘是唯一的向量运算。
+- **着色的结果就是颜色。** `add_shader` 编译成 `a + b`，`mix_shader` 编译成
+  `mix(a, b, fac)`，都作用在 `vec3f` 上——先把每一支求值成颜色，再合起来。这里
+  没有可供事先混合的 BSDF 对象。
+- **自发光是独立节点**，用 `add_shader` 叠加到着色结果上，九个内置图都是这么写的。
+
+**在编辑器之外检查。** reze-engine 导出 `validateGraph(graph)`，返回上述诊断；
+`compileGraph(graph)` 返回 `{ ok, wgsl, diagnostics }`。两者都以诊断报告问题，而
+不抛异常。必须连线的插槽、环、被剪掉的节点由编译而非校验报告，因此把图交出去之前
+先编译一次。
+
+### 从 Blender 迁移
+
+节点语义冻结在 Blender 3.6 legacy EEVEE，因此一份材质大多能逐插槽搬过来；但 reze
+不读 `.blend` 文件——转换是创作阶段做一次的翻译。目标版本有两点决定了其余一切。用
+**4.x 及以后**创作的材质带的是 Principled v2 的插槽——约 32 个，而 3.6 是 21
+个——需要按下表译回去。以及**这里没有 EEVEE Next 的光照**：没有屏幕空间追踪的 GI，
+没有虚拟阴影贴图。由 `shader_to_rgb_diffuse` 驱动的 toon 色带读到的是 legacy EEVEE
+的环境光与阴影模型，因此照 4.2+ 的渲染结果调好的数值，需要凭眼睛重新调一遍。
+
+**节点对照：**
+
+| Blender 节点 | reze type |
+| --- | --- |
+| Principled BSDF | `principled`——只有八个输入，见下 |
+| Emission | `emission` |
+| Mix Shader、Add Shader | `mix_shader`、`add_shader`——按 RGB 运算，见下 |
+| Shader to RGB | `shader_to_rgb_diffuse` |
+| Image Texture | `texture`——材质自身的漫反射贴图，在网格 UV 上取样 |
+| Texture Coordinate、Geometry | `geometry` |
+| Value、RGB | `value`、`rgb` |
+| Hue/Saturation、Bright/Contrast、Invert | `hue_sat`、`bright_contrast`、`invert` |
+| Color Ramp | 按插值方式取 `ramp_constant`、`ramp_linear`、`ramp_cardinal` |
+| Math | `math/add`、`math/multiply`、`math/power`、`math/greater_than` |
+| Mix Color | `mix/blend`、`mix/overlay`、`mix/multiply`、`mix/lighten`、`mix/linear_light` |
+| Fresnel、Layer Weight | `fresnel`、`layer_weight/fresnel`、`layer_weight/facing` |
+| Separate XYZ、Vector Math（叉乘）、Mapping、Bump | `separate_xyz`、`vect_cross`、`mapping`、`bump` |
+| Noise、Gradient、Voronoi Texture | `tex_noise`、`tex_gradient`、`tex_voronoi/f1`、`tex_voronoi/color` |
+
+节点的模式属于类型字符串的一部分，因为它是拓扑而非参数：`Math` 选 POWER 就是
+`math/power`，Color Ramp 的插值方式决定用三种 `ramp_*` 中的哪一个，Layer Weight
+选用的输出决定是 `layer_weight/fresnel` 还是 `layer_weight/facing`。有几个类型在
+Blender 里没有来源，值得主动用起来——`material_diffuse`（PMX 材质自带的色调；把漫
+反射贴图乘上它，否则无贴图的材质会渲染成白色）、`ramp_constant_aa`、`ramp_tri`、
+`mix/add_emit` 和 `math/clamp01`。
+
+**Principled BSDF 映射八个输入。**
+
+| reze 插槽 | Blender 3.6 | Blender 4.x+ | 转换 |
+| --- | --- | --- | --- |
+| `base` | Base Color | Base Color | 直接对应 |
+| `metallic` | Metallic | Metallic | 直接对应；v2 的 F82 染色会丢失 |
+| `roughness` | Roughness | Roughness | 直接对应 |
+| `specular` | Specular | Specular IOR Level | 只是改了名；仍是 0–1，默认 0.5 |
+| `sheen` | Sheen | Sheen Weight | 3.6 是 Disney 的回射项，4.0+ 换成了微纤维 BSDF——数值能搬，观感搬不过来 |
+| `sheen_tint` | Sheen Tint（浮点） | Sheen Tint（颜色） | 取 v2 那个颜色的亮度 |
+| `normal` | Normal | Normal | 按上文换轴；不连线即为着色法线 |
+| `spec_clamp` | — | — | reze 独有，相当于 EEVEE 的 Light Clamp；除非带噪声的 bump 打出高光噪点，否则保持关闭 |
+
+其余的要么在创作阶段烘进 `base`，要么舍弃：coat、次表面、透射、IOR、alpha、各向
+异性、切线、薄膜、漫反射粗糙度。自发光是例外——4.x 把它并进了 Principled，而这里
+它是一个 `emission` 节点，用 `add_shader` 叠到结果上。
+
+**混合 BSDF 的树是重写，不是誊写。** 先混合闭包、再统一求值的那种结构，必须改写成
+Shader-to-RGB 的写法——每一支各自求值成颜色，然后合并——改完的结果需要对着参考渲染
+逐一核对。内置图中 *Hair* 是这一写法的范本。
+
+**大树装不下。** 上限是 64 个节点，因此一份 87 个节点的材质必须减掉 23 个。多出来
+的部分大多是 reroute、frame 和常量管线，本来就没有运行时意义：把常量子树折叠掉，
+把一串字面运算收成单个值，再砍掉那些通往这里并不存在的 Principled 输入的分支。
+节点组要先展平，Float 与 RGB Curves 重采样成渐变或一串数学节点，Menu Switch 定到
+你要的那一支。Normal Map、Displacement、Attribute、Object Info、Light Path、AOV
+Output 则完全没有对应物。
+
+**把没搬过来的东西讲清楚。** 一份被悄悄降级的材质，在接手的人看来就是渲染器的
+bug。指明舍弃了哪个 Blender 节点或插槽，以及它是被烘进了别的值、做了近似，还是直接
+省略；若原图依赖多色标渐变、变换后的贴图取样或真正的闭包混合，一开始就说明这是重写
+而非移植。
 
 ### MMD 的惯例
 

@@ -46,6 +46,14 @@ nodes. Graphs are plain JSON, compile errors surface as diagnostics rather than
 throws, and exposed params adjust live without a recompile.
 → [manual §2.4](./docs/manual/en.md#24-material-shader-graphs)
 
+Node semantics are frozen at Blender 3.6 legacy EEVEE. The manual carries the
+whole authoring contract — every node's sockets, the spine most graphs share,
+the rules a document is checked against, and how a Blender material translates —
+so a graph can be written or generated from the document alone and imported as
+JSON.
+→ [writing a graph](./docs/manual/en.md#writing-a-graph-that-compiles) ·
+[coming from Blender](./docs/manual/en.md#coming-from-blender)
+
 ![Background effect editor](./screenshots/effect-editor.png)
 
 A background effect is one WGSL function — `fn background(ray, uv, time) ->
