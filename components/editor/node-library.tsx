@@ -347,15 +347,15 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
               do, and a section you have to scroll to find cannot make that ask
               at all. Local stays conditional — your own drafts, and an empty one
               tells you nothing you did not know. */}
-          {/* Capped only to leave the Local shelf its room. With no drafts there
-              is no shelf, so Community takes that space back rather than
-              stopping short of an empty gap. */}
-          <div
-            className={cn(
-              "mt-2 flex shrink-0 flex-col border-t border-white/10",
-              localRows.length > 0 ? "max-h-[13rem]" : "max-h-[23rem]",
-            )}
-          >
+          {/* Community takes the slack rather than a fixed cap. The dialog is a
+              fixed height, so a short built-in shelf leaves room over: parked
+              under a capped Community, that room read as a black band lying on
+              top of the section, community cards scrolling inside a box with
+              dead space beneath them. Growing into it costs nothing and never
+              takes the room the Local shelf needs, which is capped and pinned
+              last. The floor keeps a row of cards visible when the built-ins are
+              long enough to squeeze it. */}
+          <div className="mt-2 flex min-h-[7.5rem] flex-1 flex-col border-t border-white/10">
             <div className="shrink-0 px-3 pt-2 pb-2.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.community}</div>
             <ScrollArea className="min-h-0 flex-1">
               {communityRows.length > 0 ? (
@@ -365,8 +365,8 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
               )}
             </ScrollArea>
           </div>
-                  {localRows.length > 0 && (
-            <div className="mt-auto flex max-h-[10rem] shrink-0 flex-col border-t border-white/10">
+          {localRows.length > 0 && (
+            <div className="flex max-h-[10rem] shrink-0 flex-col border-t border-white/10">
               <div className="flex shrink-0 items-center justify-between px-3 pt-1.5 pb-2.5">
                 <span className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.local}</span>
                 {/* Clears exactly what is LISTED, not every draft of this kind — a
