@@ -69,6 +69,52 @@ export type GraphItem = LibraryItem<"graph", GraphPayload>
 export type EffectItem = LibraryItem<"effect", EffectPayload>
 export type SceneItem = LibraryItem<"scene", ScenePayload>
 
+// ── Names ────────────────────────────────────────────────────────────────────
+// The name is the human key, and the editor resolves by it: the quick switch
+// matches a group to a library row by name, and applying one looks it up by
+// name. Two rows answering to the same name therefore aren't a cosmetic clash —
+// one of them becomes unreachable, and which one you get is list order.
+//
+// So a name is compared by MEANING, not by bytes: "Neon Hair", "neon hair" and
+// "Neon  Hair" are one name, and only one thing may hold it.
+
+/** What a typed name becomes: trimmed, inner whitespace collapsed. */
+export function normalizeName(raw: string): string {
+  return raw.trim().replace(/\s+/g, " ")
+}
+
+/** The comparison form — case and spacing folded away. */
+export function nameKey(raw: string): string {
+  return normalizeName(raw).toLowerCase()
+}
+
+/** The existing name `wanted` would collide with, if any. Returned rather than a
+ *  boolean so the refusal can name what is already there. */
+export function conflictingName(wanted: string, taken: Iterable<string>): string | undefined {
+  const key = nameKey(wanted)
+  for (const name of taken) if (nameKey(name) === key) return name
+  return undefined
+}
+
+/**
+ * Put the item's name inside a graph payload, where a ShaderGraph carries one of
+ * its own.
+ *
+ * Two names for one thing, and the row's is the real one: it is what the library
+ * lists, what the quick switch matches a group against, and what the publish
+ * dialog asks for. The payload's copy came from whatever the draft was called,
+ * so publishing "Hair 2 17" as "3D质感头发" left a scene wearing a look named
+ * after the draft — selected in the quick switch, findable in no library.
+ *
+ * Applied wherever the row's name is decided (publish, rename) and again when a
+ * pin resolves, so rows written before this stay right too.
+ */
+export function withGraphName<T>(payload: T, name: string): T {
+  const p = payload as { graph?: { name?: string } } | null
+  if (!p || typeof p !== "object" || !p.graph || typeof p.graph !== "object") return payload
+  return { ...p, graph: { ...p.graph, name } } as T
+}
+
 /** Rail facets are about PROVENANCE, not taxonomy: a short list that never grows,
  *  where tags are many and overlapping and belong in search instead. `community`
  *  and `liked` arrive with the server. */
@@ -137,23 +183,16 @@ export function quickPickItems<T extends LibraryItem>(
 }
 
 /**
- * Community rows for a quick-pick: the newest few, plus whatever is applied.
+ * Community rows for a quick-pick: all of them, newest first.
  *
- * The server returns community newest-first, so a slice off the front is the
- * recent work — which is the only useful cut, since nobody recognises these
- * names. The applied item is appended when it falls outside that slice, for the
- * same reason quickPickItems does it: a selector that cannot show what is
- * selected is broken.
+ * Cut to three at first, on the theory that nobody recognises these names so
+ * only the recent work is worth showing. But three is not a list you browse —
+ * it is a teaser for the full library, and it put a dialog between someone and
+ * every published look past the newest few. The section scrolls, so the cut
+ * bought nothing that the scrollbar does not.
  */
 export function communityQuickPickItems<T extends LibraryItem>(
   items: T[],
-  appliedName: string | null,
-  max = 3,
 ): { id: string; label: string; section: "community" }[] {
-  const shown = items.slice(0, max)
-  if (appliedName && !shown.some((i) => i.name === appliedName)) {
-    const hit = items.find((i) => i.name === appliedName)
-    if (hit) shown.push(hit)
-  }
-  return shown.map((i) => ({ id: i.name, label: i.name, section: "community" as const }))
+  return items.map((i) => ({ id: i.name, label: i.name, section: "community" as const }))
 }

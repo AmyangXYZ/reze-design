@@ -8,7 +8,8 @@ import { NextResponse } from "next/server"
 import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm"
 import { auth } from "@/lib/auth"
 import { hasDatabase, db, schema } from "@/lib/db"
-import type { LibraryKind } from "@/lib/library"
+import { nameClash } from "@/lib/db/names"
+import { normalizeName, withGraphName, type LibraryKind } from "@/lib/library"
 
 const KINDS: LibraryKind[] = ["grade", "graph", "effect", "scene"]
 const MAX_NAME = 60
@@ -221,8 +222,13 @@ export async function POST(request: Request) {
   }
 
   const text = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "")
+  // A graph carries a name inside itself too, and the row's name is the one
+  // everybody sees. Reconciled HERE, where the name is decided, so the stored
+  // payload can never disagree with the row it belongs to — see withGraphName.
+  const wanted = normalizeName(name)
+  const stored = kind === "graph" ? withGraphName(payload, wanted) : payload
   const common = {
-    name: name.trim(),
+    name: wanted,
     author,
     description: text(description, MAX_DESCRIPTION),
     // Same shape the client offers: few, short, single words. Enforced here too,
@@ -237,7 +243,7 @@ export async function POST(request: Request) {
           ),
         ].slice(0, MAX_TAGS)
       : [],
-    payload: payload as never,
+    payload: stored as never,
     ownerId: session.user.id,
   }
 
@@ -321,6 +327,16 @@ export async function POST(request: Request) {
   // after it goes public. Publishing over one you already own writes the next
   // immutable version rather than a second item.
   const itemId = typeof id === "string" && UUID.test(id) ? id : crypto.randomUUID()
+
+  // One name per kind, for everybody. Not per author: the editor resolves a look
+  // BY NAME — the quick switch matches a group to a library row that way, and
+  // applying one looks it up that way — so a second "Neon Hair" does not read as
+  // two artists' takes, it makes one of them unreachable.
+  //
+  // Case and spacing folded, because a library where "neon hair" and "Neon Hair"
+  // are different things is a library nobody can search.
+  const clash = await nameClash(kind as LibraryKind, wanted, itemId)
+  if (clash) return NextResponse.json({ error: "name-taken", taken: clash }, { status: 409 })
   const [existing] = await db
     .select({ ownerId: schema.libraryItems.ownerId, version: schema.libraryItems.version })
     .from(schema.libraryItems)
@@ -357,7 +373,7 @@ export async function POST(request: Request) {
       await tx.insert(schema.libraryItemVersions).values({
         itemId,
         version,
-        payload: payload as never,
+        payload: stored as never,
         changelog: text(changelog, MAX_DESCRIPTION) || null,
       })
       return item

@@ -224,14 +224,18 @@ export const AssetsPanel = memo(function AssetsPanel({
               </div>
             </div>
           )}
-          {/* Form-append: reveal the next slot where it would appear. */}
-          {!pendingSlot && !empty && (
+          {/* Form-append: reveal the next slot where it would appear.
+              Shown for as long as there is a cast — there is no cap on how many
+              models a scene holds, so the way to add one never goes away. While a
+              slot is already waiting for its files this opens that slot's picker,
+              because a second empty slot is not what the click is asking for. */}
+          {!empty && (
             <div className="mt-2.5 flex justify-center">
             <Button
               variant="outline"
               size="sm"
               className="h-7 w-fit gap-1.5 border-dashed border-white/15 bg-transparent px-2.5 text-xs text-muted-foreground hover:bg-white/5 hover:text-foreground"
-              onClick={onAddSlot}
+              onClick={pendingSlot ? onFillPending : onAddSlot}
             >
               <Plus className="size-3.5" />
               {addModelLabel}

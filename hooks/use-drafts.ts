@@ -10,6 +10,7 @@
 
 import { useCallback, useMemo, useSyncExternalStore } from "react"
 import {
+  clearDrafts,
   createDraft,
   draftsStore,
   loadDrafts,
@@ -36,5 +37,7 @@ export function useDrafts<T extends LibraryItem = LibraryItem>(kind: DraftKind) 
     ),
     update: useCallback((id: string, patch: Partial<LibraryItem>) => updateDraft(kind, id, patch), [kind]),
     remove: useCallback((id: string) => removeDraft(kind, id), [kind]),
+    /** Delete many at once — one write, so a bulk clear is all-or-nothing. */
+    clear: useCallback((ids: string[]) => clearDrafts(kind, ids), [kind]),
   }
 }

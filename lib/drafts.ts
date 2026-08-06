@@ -8,6 +8,7 @@
 // Local, not server-side — they're unpublished by definition, and a draft shelf
 // that needed an account would put a sign-in wall in front of experimenting.
 
+import { nameKey, normalizeName } from "@/lib/library"
 import type { EffectPayload, GradePayload, GraphPayload, LibraryItem } from "@/lib/library"
 
 export type DraftKind = "grade" | "effect" | "graph"
@@ -51,19 +52,28 @@ export function loadDrafts(): Record<DraftKind, Draft[]> {
 function save(store: Record<DraftKind, Draft[]>) {
   try {
     window.localStorage.setItem(KEY, JSON.stringify(store))
-  } catch {
-    // Storage full or blocked: the draft still lives in the open editor.
+  } catch (e) {
+    // Storage full or blocked: the draft still lives in the open editor, but
+    // subscribers are about to render a shelf that survives no reload. Said out
+    // loud, because silence here looks exactly like a draft that "didn't save".
+    console.warn("[drafts] localStorage write failed — drafts will not survive a reload", e)
   }
   version++
   for (const l of listeners) l()
 }
 
 /** `Untitled Effect`, then `Untitled Effect 2`, `3`… — the same convention style
- *  groups already use, so the app names things one way. */
+ *  groups already use, so the app names things one way.
+ *
+ *  Collisions are judged by nameKey, so this never hands back a name that merely
+ *  differs from an existing one in case or spacing: two rows a person reads as
+ *  the same name are the same name. */
 export function nextDraftName(base: string, taken: Iterable<string>): string {
-  const names = new Set(taken)
-  let name = base
-  for (let n = 2; names.has(name); n++) name = `${base} ${n}`
+  const keys = new Set<string>()
+  for (const t of taken) keys.add(nameKey(t))
+  const root = normalizeName(base)
+  let name = root
+  for (let n = 2; keys.has(nameKey(name)); n++) name = `${root} ${n}`
   return name
 }
 
@@ -162,9 +172,42 @@ export function flushDraftWrites(): void {
   pendingRuns.clear()
 }
 
+/**
+ * Throw away a draft's queued write instead of running it.
+ *
+ * The other half of save-as-you-go. A discarded session must not be finished by
+ * a timer that outlived it: the last edit before "Discard" is still in flight
+ * for up to one delay, and without this it landed a moment later — the edit you
+ * declined to keep, saved anyway.
+ */
+export function cancelDraftWrites(kind: DraftKind, id: string): void {
+  const key = `${kind}:${id}`
+  const queued = pendingWrites.get(key)
+  if (queued) clearTimeout(queued)
+  pendingWrites.delete(key)
+  pendingRuns.delete(key)
+}
+
 export function removeDraft(kind: DraftKind, id: string): void {
+  cancelDraftWrites(kind, id)
   const store = loadDrafts()
   save({ ...store, [kind]: store[kind].filter((d) => d.id !== id) })
+}
+
+/**
+ * Delete a set of drafts in ONE write.
+ *
+ * Clearing them one at a time re-read and re-serialised the whole store per
+ * draft, so a shelf of a hundred took a hundred round trips through
+ * localStorage and notified every subscriber a hundred times — and any single
+ * failed write left the rest of the batch half-applied, which is how "Clear
+ * all" came to leave things behind.
+ */
+export function clearDrafts(kind: DraftKind, ids: Iterable<string>): void {
+  const gone = new Set(ids)
+  for (const id of gone) cancelDraftWrites(kind, id)
+  const store = loadDrafts()
+  save({ ...store, [kind]: store[kind].filter((d) => !gone.has(d.id)) })
 }
 
 /** Is this id a local draft? Asked of the store rather than read off the id —

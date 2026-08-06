@@ -22,12 +22,22 @@ function candidates<T>(kind: LibraryKind, builtins: T[]): T[] {
 const pin = (item: { id: string; version: number } | undefined): ItemRef | undefined =>
   item ? { id: item.id, version: item.version } : undefined
 
+// Compared by LOOK, not bytes. Opening the editor on a group round-trips its
+// graph through ReactFlow, which stamps node layout onto it — so a byte compare
+// stops recognising a built-in nobody edited, and the scene inlines a copy of a
+// preset it should simply have pinned.
+function graphMatch(graph: ShaderGraph): GraphItem | undefined {
+  return candidates<GraphItem>("graph", GRAPH_LIBRARY).find((i) => sameGraphLook(i.payload.graph, graph))
+}
+
 export function graphRef(graph: ShaderGraph): ItemRef | undefined {
-  // Compared by LOOK, not bytes. Opening the editor on a group round-trips its
-  // graph through ReactFlow, which stamps node layout onto it — so a byte
-  // compare stops recognising a built-in nobody edited, and the scene inlines a
-  // copy of a preset it should simply have pinned.
-  return pin(candidates<GraphItem>("graph", GRAPH_LIBRARY).find((i) => sameGraphLook(i.payload.graph, graph)))
+  return pin(graphMatch(graph))
+}
+
+/** What the library calls this look, when the look IS some published or built-in
+ *  graph. The name a group must wear to be findable in the library it came from. */
+export function graphLibraryName(graph: ShaderGraph): string | undefined {
+  return graphMatch(graph)?.name
 }
 
 export function effectRef(wgsl: string): ItemRef | undefined {

@@ -12,7 +12,8 @@ import { Input } from "@/components/ui/input"
 import { TagsInput } from "@/components/editor/tags-input"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { usePublish } from "@/hooks/use-publish"
-import type { LibraryItem, LibraryKind } from "@/lib/library"
+import { publishClash } from "@/lib/names"
+import { normalizeName, type LibraryItem, type LibraryKind } from "@/lib/library"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
@@ -52,8 +53,15 @@ export function PublishButton({
   const [description, setDescription] = useState(defaultDescription)
   const [tags, setTags] = useState<string[]>(defaultTags)
 
+  // Every draft is publishable; a taken name is what blocks it. Checked here as
+  // well as on the server — the server is the one that counts, but a round trip
+  // to learn a name is taken delivers the message after the publish already
+  // looked like it was working.
+  const clash = publishClash(kind, name, itemId)
+
   const submit = async () => {
-    const item = await publish(name.trim() || defaultName, payload(), {
+    if (clash) return
+    const item = await publish(normalizeName(name) || defaultName, payload(), {
       id: itemId,
       forkedFromId,
       description: description.trim(),
@@ -116,8 +124,12 @@ export function PublishButton({
               value={name}
               onChange={(e) => setName(e.target.value)}
               maxLength={60}
-              className="mt-1 h-9 border-white/10 bg-white/5 text-sm md:text-sm"
+              className={cn(
+                "mt-1 h-9 border-white/10 bg-white/5 text-sm md:text-sm",
+                clash && "border-red-400/60",
+              )}
             />
+            {clash && <p className="mt-1 text-[11px] text-red-400">{t.library.nameTakenBy(clash)}</p>}
           </label>
           <label className="block">
             <span className="text-xs text-muted-foreground">{t.library.publishDescription}</span>
@@ -138,7 +150,7 @@ export function PublishButton({
           {nameTaken && <div className="text-[11px] text-red-400">{t.library.nameTaken}</div>}
           <Button
             type="submit"
-            disabled={publishing || !name.trim() || !description.trim() || tags.length === 0}
+            disabled={publishing || !!clash || !name.trim() || !description.trim() || tags.length === 0}
             className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-300"
           >
             {publishing ? t.account.working : t.gradeLibrary.publish}

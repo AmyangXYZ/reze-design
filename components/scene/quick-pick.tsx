@@ -95,31 +95,46 @@ export function QuickPick({
         onCloseAutoFocus={(e) => e.preventDefault()}
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        {/* Three compartments, same as the full libraries: built-ins take the
-            slack and scroll, Community and Local are pinned below at a fixed
-            size. Pinned because they are the rows you are most likely to want
-            and the ones a growing built-in list pushes out of sight first —
-            scrolling past nine shader graphs to reach your own draft is the
-            failure this layout exists to prevent.
+        {/* Three compartments, same as the full libraries.
+            Built-ins and Community are PEERS: both flex-1 with the same cap, so
+            they share the popover evenly and neither can push the other out of
+            sight. Both hold a whole library now — nine-odd built-ins, and every
+            published row — and there is no reason the app's own list should
+            outrank everyone else's. Local is pinned small below them: your own
+            drafts on this device, a short list by nature.
 
-            The built-in area is flex-1 rather than a fixed max-h, so a SHORT
-            list still shrink-wraps (auto height, nothing to grow into) while a
-            long one gives way to the compartments instead of overflowing. */}
-        <ScrollArea bars className="min-h-0 flex-1">
-          {/* Both headers always, matching the full libraries — and an empty
-              Community is the one place a quick switch can suggest that
-              publishing exists. Local stays conditional: your own drafts. */}
-          <div className="px-2 pt-1.5 pb-1 text-xs font-medium text-muted-foreground/60">
+            flex-1 with a max-h rather than a fixed height, so a SHORT list still
+            shrink-wraps instead of leaving a hole where rows would be. An empty
+            Community drops back to shrink-0 for the same reason — a section with
+            one line of text in it must not claim half the panel.
+
+            Every header sits OUTSIDE its scroller, so it stays put while the rows
+            move under it: a heading that scrolls away leaves you reading a list
+            with no idea whose it is. Both headers always render, matching the
+            full libraries — an empty Community is the one place a quick switch
+            can suggest that publishing exists. Local stays conditional; an empty
+            one tells you nothing you did not know. */}
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="shrink-0 px-2 pt-1.5 pb-1 text-xs font-medium text-muted-foreground/60">
             {t.rail.builtin}
           </div>
-          {items.filter((i) => (i.section ?? "builtin") === "builtin").map(row)}
-        </ScrollArea>
-        <div className="mt-1 shrink-0 border-t border-white/10 pt-1">
-          <div className="px-2 pt-0.5 pb-1 text-xs font-medium text-muted-foreground/60">
+          <ScrollArea bars className="min-h-0 max-h-44 flex-1">
+            {items.filter((i) => (i.section ?? "builtin") === "builtin").map(row)}
+          </ScrollArea>
+        </div>
+        <div
+          className={cn(
+            "mt-1 flex min-h-0 flex-col border-t border-white/10 pt-1",
+            items.some((i) => i.section === "community") ? "flex-1" : "shrink-0",
+          )}
+        >
+          <div className="shrink-0 px-2 pt-0.5 pb-1 text-xs font-medium text-muted-foreground/60">
             {t.rail.community}
           </div>
           {items.some((i) => i.section === "community") ? (
-            <ScrollArea bars className="max-h-24">{items.filter((i) => i.section === "community").map(row)}</ScrollArea>
+            <ScrollArea bars className="min-h-0 max-h-44 flex-1">
+              {items.filter((i) => i.section === "community").map(row)}
+            </ScrollArea>
           ) : (
             <div className="px-2 pb-1 text-xs text-muted-foreground/50">{t.rail.communityEmpty}</div>
           )}

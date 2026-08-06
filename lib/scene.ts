@@ -331,8 +331,16 @@ export function parseSceneDoc(
     const ids = new Set<string>()
     return gs
       .map((g): StyleGroup | null => {
+        // A pin resolves to the published item, so the group wears that item's
+        // NAME — not the name sitting inside the payload, which is whatever the
+        // author's draft happened to be called when they published it. The two
+        // drift the moment someone publishes under a different title, and the
+        // group then answers to a name no library lists.
+        const pinned = isItemRef(g.graph) ? resolveRef?.(g.graph) : undefined
         const graph = isItemRef(g.graph)
-          ? (resolveRef?.(g.graph) as { graph?: ShaderGraph } | undefined)?.graph
+          ? pinned?.graph && pinned.name
+            ? { ...pinned.graph, name: pinned.name }
+            : pinned?.graph
           : typeof g.graph === "string"
             ? resolveGraph?.(g.graph)
             : g.graph

@@ -42,6 +42,7 @@ import type { AppliedBackgroundEffect } from "@/lib/background-effects"
 import { GRADE_PRESETS, NEUTRAL_SPEC, gradeSpec, recallIntensity, specOf } from "@/lib/grade"
 import {
   communityQuickPickItems,
+  nameKey,
   quickPickItems,
   type EffectItem,
   type GradeItem,
@@ -50,14 +51,24 @@ import {
   type LibraryFacet,
   type ScenePayload,
 } from "@/lib/library"
-import { communityItems, useCommunity } from "@/hooks/use-community"
+import { communityItems, useCommunity, useCommunityLoaded } from "@/hooks/use-community"
 import { prefetchLibraryStats } from "@/hooks/use-library-stats"
 import { clearForkTarget, forkTarget } from "@/lib/fork"
 import { resolveSceneRefs } from "@/lib/resolve-refs"
-import { effectRef, gradeRef, graphRef, unpublishedUses } from "@/lib/refs"
+import { effectRef, gradeRef, graphLibraryName, graphRef, unpublishedUses } from "@/lib/refs"
+import { freeName } from "@/lib/names"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useSession } from "@/lib/auth-client"
-import { createDraft, flushDraftWrites, isDraft, loadDrafts, nextDraftName, updateDraft, updateDraftSoon } from "@/lib/drafts"
+import {
+  cancelDraftWrites,
+  createDraft,
+  flushDraftWrites,
+  isDraft,
+  loadDrafts,
+  nextDraftName,
+  updateDraft,
+  updateDraftSoon,
+} from "@/lib/drafts"
 import { applyDefaults, BACKGROUND_EFFECTS, builtinEffect } from "@/lib/background-effects"
 import { GradeLibrary } from "@/components/editor/grade-library"
 import { GradeEditorPanel, type GradeEditorSubject } from "@/components/editor/grade-editor"
@@ -259,13 +270,23 @@ function defaultPanelRect(): Rect {
  */
 
 /**
- * Take a local copy of any look this scene wears that lives in no library.
+ * Give every look this scene wears a name you can find it under.
  *
- * A scene can arrive wearing a built-in its author edited and never saved. It
- * renders — that graph travels by value inside the document — but nothing could
- * show it, so the quick switch reported "edited" against a Hair you could not
- * find, and picking Hair from the list silently replaced the author's version
- * with no way back.
+ * Two halves, one rule — a group's graph is named after whatever library entry
+ * its look actually is, and a look that is no library entry becomes one of yours:
+ *
+ * NAMED AFTER SOMETHING ELSE. The scene stores each group's graph by value, name
+ * included, so a stale name outlives whatever produced it: published under a
+ * different title, renamed since, or minted by an older version of this repair.
+ * The look is fine — it is pinned, it renders — but the quick switch matches
+ * groups to library rows BY NAME, so it showed a look nobody could look up.
+ * Renaming to the matched entry costs nothing: the two are the same graph.
+ *
+ * IN NO LIBRARY AT ALL. A scene can arrive wearing a built-in its author edited
+ * and never saved. It renders — that graph travels by value inside the document
+ * — but nothing could show it, so the quick switch reported "edited" against a
+ * Hair you could not find, and picking Hair from the list silently replaced the
+ * author's version with no way back.
  *
  * Each orphan becomes a draft under a free name and the group is repointed at
  * it: the look survives exactly, appears under Local like anything else you own,
@@ -277,11 +298,20 @@ function defaultPanelRect(): Rect {
  * Returns null when there was nothing to do, so the caller can skip the write.
  */
 function adoptOrphanGraphs(list: StyleGroup[], author: string, fallbackName: string): StyleGroup[] | null {
+  // A running list, not a snapshot: two groups wearing the same orphan look must
+  // end up on ONE draft, and two wearing differently-named orphans must not both
+  // be handed the same free name by a list that never learns about the first.
   const drafts = loadDrafts().graph
   let changed = false
   const next = list.map((g) => {
-    // Pinned to something published or built-in: nothing to rescue.
-    if (!g.graph || graphRef(g.graph)) return g
+    if (!g.graph) return g
+    // It IS a library entry: wear that entry's name, whatever the document says.
+    const known = graphLibraryName(g.graph)
+    if (known) {
+      if (g.graph.name === known) return g
+      changed = true
+      return { ...g, graph: { ...g.graph, name: known } }
+    }
     const mine = drafts.find((d) => sameGraphLook((d.payload as GraphPayload).graph, g.graph))
     // Same whole-kind namespace the editor's freeGraphName uses: an adopted
     // orphan is usually named after the built-in or community graph it was
@@ -293,7 +323,7 @@ function adoptOrphanGraphs(list: StyleGroup[], author: string, fallbackName: str
         ...communityItems("graph").map((c) => c.name),
         ...drafts.map((d) => d.name),
       ])
-    if (!mine) createDraft("graph", { name, payload: { graph: { ...g.graph, name } }, author })
+    if (!mine) drafts.push(createDraft("graph", { name, payload: { graph: { ...g.graph, name } }, author }))
     if (g.graph.name === name) return g
     changed = true
     return { ...g, graph: { ...g.graph, name } }
@@ -515,6 +545,11 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
    * unusable on another group, impossible to publish. Declining reverts, so the
    * one rule holds everywhere — what you keep is in Local, and what you do not
    * keep is gone.
+   *
+   * Editing one of YOUR drafts is not that situation: it already has a home, so
+   * it saves in place and closes, exactly as the standalone editor does. Asking
+   * where to put it made every close mint another copy of the draft you were
+   * already editing.
    */
   const closeGraphEdit = () => {
     const base = groupGraphBaseline.current
@@ -527,19 +562,39 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       setDrawerOpen(false)
       return
     }
+    // By name, which IS the identity a group holds a look by — the load-time
+    // repair keeps that name pointing at the draft the look came from.
+    const draft = draftGraphNamed(group.graph.name)
+    if (draft) {
+      // A save that doesn't compile is refused everywhere else; surfacing that
+      // needs the dialog, so fall through to it rather than silently keeping a dud.
+      const r = compileGraph(group.graph)
+      if (r.ok) {
+        updateDraft("graph", draft.id, { payload: { graph: group.graph } })
+        groupGraphBaseline.current = null
+        setDrawerOpen(false)
+        return
+      }
+    }
     setGroupGraphPrompt(true)
   }
   const saveGroupGraph = (wanted: string): string | null => {
     const base = groupGraphBaseline.current
     const group = base ? groups.find((g) => g.id === base.groupId) : null
     if (!base || !group) return null
-    const name = freeGraphName(wanted)
+    // Your own draft keeps its identity and its name — this is the same save the
+    // silent path does, reached only because a compile error had to be shown.
+    // Anything else is new, and a taken name gets the next free number: closing
+    // an editor is the wrong moment to be blocked over a label.
+    const keep = draftGraphNamed(group.graph.name)
+    const name = keep?.name ?? freeGraphName(wanted)
     const graph = { ...group.graph, name }
     // Same rule as every other save here: a graph that does not compile does not
     // enter the library, or picking it later would raise engine errors.
     const r = compileGraph(graph)
     if (!r.ok) return r.diagnostics.find((d) => d.severity === "error")?.message ?? "compile failed"
-    createDraft("graph", { name, payload: { graph }, author: authorName })
+    if (keep) updateDraft("graph", keep.id, { payload: { graph } })
+    else createDraft("graph", { name, payload: { graph }, author: authorName })
     // The group keeps it too, now under the saved name, so the scene and the
     // library agree about what this look is called.
     void upsertGroup({ ...group, graph })
@@ -578,25 +633,12 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     }
     return Promise.resolve({ ok: r.ok, diagnostics: r.diagnostics })
   }
-  // A name is the human key for a kind, so it has to be free across the WHOLE
-  // kind — built-ins, published community work, and your own drafts. Community
-  // was the gap: forking someone's "Neon Hair" produced a second "Neon Hair",
-  // two different looks answering to one name in the quick switch.
-  //
-  // `editingId` is the one id allowed to keep its name, and it covers two cases
-  // with one argument: your own draft (saving over itself), and your own
-  // PUBLISHED item (a working copy publishes as that item's next version, so
-  // uniquing here would quietly rename the published thing). Someone else's
-  // item is never excluded — that is the fork, and it gets the suffix.
-  //
-  // Read from the community cache rather than the hook value: these are called
-  // from handlers and during render, and the hook's const is declared far below.
-  const freeGraphName = (wanted: string, editingId?: string) =>
-    nextDraftName(wanted, [
-      ...GRAPH_LIBRARY.map((g) => g.name),
-      ...communityItems("graph").filter((c) => !(c.mine && c.id === editingId)).map((c) => c.name),
-      ...loadDrafts().graph.filter((d) => d.id !== editingId).map((d) => d.name),
-    ])
+  // Names live in lib/names.ts — one namespace per kind, asked the same way by
+  // every editor, every library and the publish dialog.
+  const freeGraphName = (wanted: string, editingId?: string) => freeName("graph", wanted, editingId)
+  /** Your local draft that this graph name refers to, if any — the thing an edit
+   *  from the quick switch saves back into. */
+  const draftGraphNamed = (name: string) => loadDrafts().graph.find((d) => nameKey(d.name) === nameKey(name))
   const requestCloseGraphDrawer = () => {
     if (!graphLibEdit) {
       setDrawerOpen(false)
@@ -636,7 +678,18 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     setDrawerOpen(false)
     return null
   }
+  // Discard has to undo save-as-you-go, not just stop it. A draft has been
+  // written throughout the session — that is the point of it — so declining the
+  // result means dropping what is still queued AND putting the draft back to
+  // what this session opened on. Without that, "discard" kept everything except
+  // the last four hundred milliseconds.
   const discardGraphLibEdit = () => {
+    if (graphLibEdit && isDraft("graph", graphLibEdit.id)) {
+      cancelDraftWrites("graph", graphLibEdit.id)
+      updateDraft("graph", graphLibEdit.id, {
+        payload: { graph: { ...graphLibEdit.opened, name: graphLibEdit.name } },
+      })
+    }
     setGraphLibEdit(null)
     setDrawerOpen(false)
   }
@@ -1008,14 +1061,42 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
 
   // See adoptOrphanGraphs. EDITOR ONLY: the viewer shares useEngine, and reading
   // somebody's scene must not deposit their work in your library.
+  //
+  // Once per LOADED DOCUMENT, never on a live edit. Editing a group's graph
+  // previews by writing the group, so keying this on `groupsByModel` ran it on
+  // every keystroke in the graph editor: each half-finished look was adopted as
+  // a draft and the group renamed under the open editor, which is how closing
+  // with Discard still left drafts behind, and how a name grew a tail of
+  // numbers ("Hair 2 17 3 18 11") one edit at a time. A document arrives once —
+  // that is the moment it can be repaired.
+  //
+  // Gated on the community list having ARRIVED, not merely been asked for. An
+  // orphan is a look that matches nothing published, and before those rows land
+  // nothing matches: running early adopted every graph in the scene you just
+  // opened, published or not, which is the other half of the same report.
+  const communityLoaded = useCommunityLoaded()
+  const adoptedDoc = useRef(false)
   useEffect(() => {
-    if (!ready) return
+    // A swap clears `ready` first, which re-arms this for the incoming document.
+    if (!ready) {
+      adoptedDoc.current = false
+      return
+    }
+    // Never under an open editor: this renames a group's graph, and doing that
+    // to the graph somebody is editing is the whole complaint. Waiting costs
+    // nothing — the guard above still lets it run exactly once, when the drawer
+    // closes.
+    if (adoptedDoc.current || !communityLoaded || drawerOpen) return
+    adoptedDoc.current = true
     for (const [modelId, list] of Object.entries(groupsByModel)) {
       const next = adoptOrphanGraphs(list, authorName, t.materials.styleGroup)
       if (next) void applyGroupsFor(modelId, next)
     }
+    // `groupsByModel` is read, not depended on — the loaded document's groups
+    // land in the same commit as `ready`, and re-running on later edits is the
+    // bug above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, groupsByModel, communityGraphs])
+  }, [ready, communityLoaded, drawerOpen])
 
   // Grades library ── User grades live in localStorage (pre-accounts), while the APPLIED
   const [gradesOpen, setGradesOpen] = useState(false)
@@ -1061,14 +1142,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     setGradeEditor((prev) => (prev ? { ...prev, subject: next } : prev))
     if (isDraft("grade", next.id)) updateDraftSoon("grade", next.id, { payload: { spec: next.spec } })
   }
-  /** A name no other grade holds — builtins and drafts alike (minus the one being renamed). */
-  /** Free across built-ins, community and drafts — see freeGraphName. */
-  const freeGradeName = (wanted: string, editingId?: string) =>
-    nextDraftName(wanted, [
-      ...GRADE_PRESETS.map((g) => g.name),
-      ...communityItems("grade").filter((c) => !(c.mine && c.id === editingId)).map((c) => c.name),
-      ...loadDrafts().grade.filter((d) => d.id !== editingId).map((d) => d.name),
-    ])
+  const freeGradeName = (wanted: string, editingId?: string) => freeName("grade", wanted, editingId)
   const requestCloseGradeEditor = () => {
     if (!gradeEditor) return
     const { subject, opened } = gradeEditor
@@ -1085,8 +1159,8 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     }
     setGradeEditor({ ...gradeEditor, savePrompt: true })
   }
-  const saveGradeEdit = (wanted: string) => {
-    if (!gradeEditor) return
+  const saveGradeEdit = (wanted: string): string | null => {
+    if (!gradeEditor) return null
     const { subject } = gradeEditor
     const keep = isDraft("grade", subject.id) ? subject.id : undefined
     const name = freeGradeName(wanted, subject.id)
@@ -1102,7 +1176,45 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       })
     applyGradePreset(name)
     setGradeEditor(null)
+    return null
   }
+  // Same contract as the other two editors' discard: a draft that saved as you
+  // went goes back to what the session opened on.
+  const discardGradeEdit = () => {
+    if (!gradeEditor) return
+    const { subject, opened } = gradeEditor
+    if (isDraft("grade", subject.id)) {
+      cancelDraftWrites("grade", subject.id)
+      updateDraft("grade", subject.id, { payload: { spec: opened.spec } })
+    }
+    setGradeEditor(null)
+  }
+  // A draft renamed in the library takes the groups wearing it along. The grade
+  // and effect libraries have always done this for what the scene applies; the
+  // graph library could not, because a group holds its look by value — so the
+  // scene went on calling it by a name no library had, which then read as
+  // "not in use" and let the draft be deleted out from under it.
+  const renameGroupLooks = useCallback(
+    (oldName: string, newName: string) => {
+      for (const [modelId, list] of Object.entries(groupsByModel)) {
+        let changed = false
+        const next = list.map((g) => {
+          if (!g.graph || nameKey(g.graph.name) !== nameKey(oldName)) return g
+          changed = true
+          return { ...g, graph: { ...g.graph, name: newName } }
+        })
+        if (changed) void applyGroupsFor(modelId, next)
+      }
+    },
+    [groupsByModel, applyGroupsFor],
+  )
+  // Every look the scene is wearing, across ALL models — not just the group the
+  // library was opened from. A draft one of these is built on is in use, and the
+  // library refuses to delete it.
+  const usedLookNames = useMemo(
+    () => [...new Set(Object.values(groupsByModel).flatMap((list) => list.map((g) => g.graph?.name).filter(Boolean)))] as string[],
+    [groupsByModel],
+  )
   // The three libraries are non-modal and share a z-index, so two open at once simply occlude
   const applyGraphToGroup = useCallback(
     (groupId: string, graphName: string) => {
@@ -1235,17 +1347,15 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   }
   const discardEffectEdit = () => {
     if (!effectEditor) return
+    // Same contract as the graph editor's discard: undo the as-you-go writes.
+    if (isDraft("effect", effectEditor.subject.id)) {
+      cancelDraftWrites("effect", effectEditor.subject.id)
+      updateDraft("effect", effectEditor.subject.id, { payload: { wgsl: effectEditor.subject.wgsl } })
+    }
     setBgEffect(effectEditor.prior)
     setEffectEditor(null)
   }
-  /** A name no other effect holds — builtins and drafts alike (minus the one being renamed). */
-  /** Free across built-ins, community and drafts — see freeGraphName. */
-  const freeEffectName = (wanted: string, editingId?: string) =>
-    nextDraftName(wanted, [
-      ...BACKGROUND_EFFECTS.map((e) => e.name),
-      ...communityItems("effect").filter((c) => !(c.mine && c.id === editingId)).map((c) => c.name),
-      ...loadDrafts().effect.filter((d) => d.id !== editingId).map((d) => d.name),
-    ])
+  const freeEffectName = (wanted: string, editingId?: string) => freeName("effect", wanted, editingId)
   const saveEffectEdit = async (wanted: string): Promise<string | null> => {
     if (!effectEditor?.savePrompt) return null
     const { subject, savePrompt: code } = effectEditor
@@ -2015,18 +2125,26 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   // Quick-switch entries for the two Scene-panel value rows. Rows are keyed by
   // NAME — the same key the scene stores — so drafts and built-ins are one list.
   const appliedGradeDraftId = gradeDrafts.find((d) => d.name === sceneSettings.grade.preset)?.id ?? null
-  const gradeItems = useMemo(
-    () =>
-      [
-        ...quickPickItems(GRADE_PRESETS, gradeDrafts, appliedGradeDraftId).map((g) => ({
-          id: g.name,
-          label: t.scene.gradePresets[g.name as keyof typeof t.scene.gradePresets] ?? g.name,
-          section: g.owner === "local" ? ("local" as const) : ("builtin" as const),
-        })),
-        ...communityQuickPickItems(communityGrades, sceneSettings.grade.preset),
-      ],
-    [t, gradeDrafts, appliedGradeDraftId, communityGrades, sceneSettings.grade.preset],
-  )
+  // Same three parts as the effect list below it, in the same order: the rows,
+  // then the "edited" hint when what is applied has drifted from the entry it
+  // came from, then a transient row for a look no list holds. Grades had none of
+  // it, so an unsaved grade edit read as though the preset itself had changed.
+  const gradeItems = useMemo(() => {
+    const items = [
+      ...quickPickItems(GRADE_PRESETS, gradeDrafts, appliedGradeDraftId).map((g) => ({
+        id: g.name,
+        label: t.scene.gradePresets[g.name as keyof typeof t.scene.gradePresets] ?? g.name,
+        section: g.owner === "local" ? ("local" as const) : ("builtin" as const),
+      })),
+      ...communityQuickPickItems(communityGrades),
+    ]
+    const { preset } = sceneSettings.grade
+    const source = gradeSpec(preset, [...gradeDrafts, ...communityGrades])
+    if (JSON.stringify(appliedGradeSpec) === JSON.stringify(source)) return items
+    const known = items.some((i) => i.id === preset)
+    const withOwn = known ? items : [...items, { id: preset, label: preset, section: "local" as const }]
+    return withOwn.map((i) => (i.id === preset ? { ...i, hint: t.scene.edited } : i))
+  }, [t, gradeDrafts, appliedGradeDraftId, communityGrades, sceneSettings.grade, appliedGradeSpec])
   // The built-in spec an edit descends from. Neutral, never NEW_GRADE_SPEC:
   // "revert" means back to no grade, not to the editor's authoring starting point.
   const gradeAncestor = useCallback(
@@ -2038,17 +2156,26 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     t.scene.gradePresets[sceneSettings.grade.preset as keyof typeof t.scene.gradePresets] ??
     sceneSettings.grade.preset
   const pickGrade = applyGradePreset
+  // Opened on exactly what the scene is showing, resolved the way the RENDER
+  // resolves it — drafts and community alike, snapshot included. Reading only
+  // drafts opened the editor on Neutral for anything published: the session
+  // began by discarding the look it was meant to be editing, and saving then
+  // wrote that blank back out. The other two editors are handed the applied
+  // item itself, which is why neither could go wrong this way.
+  //
+  // The item's own id comes with it, so a community grade saves as a working
+  // copy of that item — the same provenance the library's Edit already gives.
   const editCurrentGrade = useCallback(() => {
     const { preset } = sceneSettings.grade
-    const draft = gradeDrafts.find((d) => d.name === preset)
+    const own = [...gradeDrafts, ...communityGrades].find((g) => nameKey(g.name) === nameKey(preset))
     openGradeEditor({
-      id: draft?.id ?? preset,
+      id: own?.id ?? preset,
       name: preset,
-      spec: gradeSpec(preset, gradeDrafts),
-      origin: draft ? undefined : preset,
+      spec: specOf(sceneSettings.grade, [...gradeDrafts, ...communityGrades]),
+      // Only a built-in is an ancestor to revert to.
+      origin: own ? undefined : preset,
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sceneSettings.grade.preset, gradeDrafts])
+  }, [sceneSettings.grade, gradeDrafts, communityGrades])
   const editCurrentEffect = () => {
     if (bgEffect) openEffectEditor(bgEffect)
   }
@@ -2062,7 +2189,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
         label: e.name,
         section: e.owner === "local" ? ("local" as const) : ("builtin" as const),
       })),
-      ...communityQuickPickItems(communityEffects, bgEffect?.name ?? null),
+      ...communityQuickPickItems(communityEffects),
     ]
     if (!bgEffect?.name) return items
     const pristine = [...BACKGROUND_EFFECTS, ...effectDrafts, ...communityEffects].some(
@@ -2525,7 +2652,13 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       )}
       {mounted && groupGraphPrompt && (
         <SaveCloseDialog
-          defaultName={freeGraphName(activeGroup?.graph.name ?? t.materials.newGroup)}
+          // Your own draft is not being named, it is being saved back — the
+          // dialog is here only because the compile failed.
+          askName={!draftGraphNamed(activeGroup?.graph.name ?? "")}
+          defaultName={
+            draftGraphNamed(activeGroup?.graph.name ?? "")?.name ??
+            freeGraphName(activeGroup?.graph.name ?? t.materials.newGroup)
+          }
           onSave={saveGroupGraph}
           onDiscard={discardGroupGraph}
           onCancel={() => setGroupGraphPrompt(false)}
@@ -2542,9 +2675,12 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       )}
       {mounted && gradeEditor?.savePrompt && (
         <SaveCloseDialog
+          // Spelled out like the other two, though a draft never reaches this
+          // dialog: the three prompts should read the same at a glance.
+          askName={!isDraft("grade", gradeEditor.subject.id)}
           defaultName={freeGradeName(gradeEditor.subject.name, gradeEditor.subject.id)}
           onSave={saveGradeEdit}
-          onDiscard={() => setGradeEditor(null)}
+          onDiscard={discardGradeEdit}
           onCancel={() => setGradeEditor((prev) => (prev ? { ...prev, savePrompt: false } : prev))}
         />
       )}
@@ -2557,6 +2693,8 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
         canApply={libGroup !== null}
         targetLabel={libGroup ? groupLabel(libGroup) : null}
         currentGraphName={libGroup?.graph.name ?? null}
+        usedNames={usedLookNames}
+        onRenamed={renameGroupLooks}
         onApply={applyLibrary}
         onEdit={openGraphLibEdit}
       />

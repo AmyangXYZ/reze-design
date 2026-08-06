@@ -9,7 +9,7 @@
 // database: the repo is the authority for their content, and showing the mirror
 // would double every builtin card.
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useSyncExternalStore } from "react"
 import { BACKGROUND_EFFECTS } from "@/lib/background-effects"
 import { GRADE_PRESETS } from "@/lib/grade"
 import { GRAPH_LIBRARY } from "@/lib/materials"
@@ -25,6 +25,11 @@ const BUILTIN_NAMES: Partial<Record<LibraryKind, Set<string>>> = {
 
 let cache: CommunityItem[] | null = null
 let inflight: Promise<CommunityItem[]> | null = null
+// Has a fetch ever SUCCEEDED? Distinct from "cache is empty": until the rows
+// land, every published item looks like it does not exist, and code that
+// decides what is unpublished has to wait rather than guess. A failed fetch
+// leaves this false — unknown is not the same as none.
+let settled = false
 const listeners = new Set<() => void>()
 // The seed mirrors builtins with the ADMIN ACCOUNT's live handle as author —
 // the repo JSON can't know it, so display resolves through this map.
@@ -45,6 +50,7 @@ function load(force = false): Promise<CommunityItem[]> {
         if (BUILTIN_NAMES[i.kind]?.has(i.name)) builtinAuthors.set(`${i.kind}:${i.name}`, i.author)
       }
       cache = rows.filter((i) => !BUILTIN_NAMES[i.kind]?.has(i.name))
+      settled = true
       inflight = null
       for (const l of listeners) l()
       return cache
@@ -91,6 +97,29 @@ export function removeCommunityItem(id: string) {
 export function addCommunityItem(item: LibraryItem) {
   cache = [...(cache ?? []), { ...item, owner: "user", mine: true }]
   for (const l of listeners) l()
+}
+
+const subscribe = (l: () => void) => {
+  listeners.add(l)
+  return () => {
+    listeners.delete(l)
+  }
+}
+
+/**
+ * Whether the community rows are actually here yet.
+ *
+ * For the one caller that must not act on an empty list: adopting orphan looks
+ * asks "does this match anything published?", and asked too early the answer is
+ * no for everything — which took a local copy of every graph in the scene you
+ * just opened. Stays false when the fetch fails, so being offline skips the
+ * repair instead of doing it wrong.
+ */
+export function useCommunityLoaded(): boolean {
+  useEffect(() => {
+    void load()
+  }, [])
+  return useSyncExternalStore(subscribe, () => settled, () => false)
 }
 
 export function useCommunity<T extends LibraryItem = LibraryItem>(kind: LibraryKind): (T & { mine: boolean })[] {

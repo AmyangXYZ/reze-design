@@ -147,7 +147,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
         label: e.name,
         section: e.owner === "local" ? ("local" as const) : ("builtin" as const),
       })),
-      ...communityQuickPickItems(communityGraphs, null),
+      ...communityQuickPickItems(communityGraphs),
     ],
     [graphDrafts, communityGraphs],
   )

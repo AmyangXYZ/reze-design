@@ -12,9 +12,17 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { GraphMinimap } from "@/components/editor/graph-minimap"
 import { GRAPH_LIBRARY } from "@/lib/materials"
 import { LIBRARY_SHELL, LibraryRail, LibraryStats, LibraryTags } from "@/components/editor/library-rail"
-import { matchesFacet, matchesQuery, type GraphItem, type LibraryFacet } from "@/lib/library"
+import {
+  conflictingName,
+  matchesFacet,
+  matchesQuery,
+  nameKey,
+  normalizeName,
+  type GraphItem,
+  type LibraryFacet,
+} from "@/lib/library"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
-import { draftOrigin, nextDraftName } from "@/lib/drafts"
+import { draftOrigin } from "@/lib/drafts"
 import {
   addCommunityItem,
   builtinAuthor,
@@ -44,9 +52,13 @@ type LibraryProps = {
   onEdit: (id: string, name: string, graph: ShaderGraph) => void
   /** The group's currently-applied shader graph (pre-selected + tagged "current"). */
   currentGraphName: string | null
+  /** Every look this scene is wearing, across all models. A draft one of them is
+   *  built on cannot be deleted — see `inUse` below. */
+  usedNames?: string[]
   /** `edit` pops the shader-graph editor on the fork so the user can customize it. */
   onApply: (graph: ShaderGraph, name: string) => void
-  /** A draft was renamed. Groups keep their own snapshots, so nothing re-points. */
+  /** A draft was renamed — re-point the groups wearing it, or the scene keeps
+   *  calling the look by a name the library no longer has. */
   onRenamed?: (oldName: string, newName: string) => void
 }
 
@@ -59,13 +71,13 @@ export function NodeLibrary(props: LibraryProps) {
   )
 }
 
-function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRenamed, onEdit, onOpenChange, initialFacet }: LibraryProps) {
+function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [], onApply, onRenamed, onEdit, onOpenChange, initialFacet }: LibraryProps) {
   const onClose = () => onOpenChange(false)
   const t = useT()
   // Desktop-style stacking: clicking a library raises it over any editor.
   // Radix would close on Escape whatever is stacked above it; the z-order
   // stack closes only the topmost surface.
-  const { drafts, update: updateDraft, remove: removeDraft } = useDrafts<GraphItem>("graph")
+  const { drafts, update: updateDraft, remove: removeDraft, clear: clearDrafts } = useDrafts<GraphItem>("graph")
   // Built-ins lead in name order; drafts follow in creation order.
   const community = useCommunity<GraphItem>("graph")
   const ROWS = useMemo(
@@ -93,15 +105,30 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRe
     [ROWS, query, facet, tag, statFor],
   )
   const [renamingId, setRenamingId] = useState<string | null>(null)
+  // The name someone typed that is already in use. Rename REFUSES rather than
+  // silently saving under "… 2": a suffix you did not ask for is how a library
+  // fills up with things whose names mean nothing.
+  const [renameError, setRenameError] = useState<string | null>(null)
   const commitRename = (item: GraphItem, raw: string) => {
-    setRenamingId(null)
-    const wanted = raw.trim()
-    if (!wanted || wanted === item.name) return
-    // Deduped against everything visible here, so two rows never share a label.
-    const name = nextDraftName(
+    const wanted = normalizeName(raw)
+    if (!wanted || wanted === item.name) {
+      setRenamingId(null)
+      setRenameError(null)
+      return
+    }
+    const clash = conflictingName(
       wanted,
       [...GRAPH_LIBRARY, ...community, ...drafts].filter((x) => x.id !== item.id).map((x) => x.name),
     )
+    if (clash) {
+      // Stays in edit mode with the message attached, so the fix is one keystroke
+      // away rather than a rename that silently did something else.
+      setRenameError(t.library.nameTakenBy(clash))
+      return
+    }
+    setRenamingId(null)
+    setRenameError(null)
+    const name = wanted
     if (item.owner === "local") updateDraft(item.id, { name, payload: { graph: { ...item.payload.graph, name } } })
     else {
       // Published: the server owns the row, and rejects a name you already used.
@@ -124,6 +151,16 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRe
   const communityRows = useMemo(() => rows.filter((x) => x.owner === "user"), [rows])
   const localRows = useMemo(() => rows.filter((x) => x.owner === "local"), [rows])
   const selected = useMemo(() => ROWS.find((r) => r.id === selectedId) ?? null, [ROWS, selectedId])
+
+  // A draft a group in this scene is wearing cannot be deleted — the same rule as
+  // an open file. Deleting it would not change the render (the scene carries the
+  // graph by value), it would just strand the look: named after something no
+  // library holds, and adopted straight back as a draft on the next load. So
+  // "Clear all" appeared to keep things it had deleted. Publishing is exempt,
+  // and is the way one of these leaves Local: it takes the same name with it.
+  const used = useMemo(() => new Set(usedNames.map(nameKey)), [usedNames])
+  const inUse = (r: GraphItem) => r.owner === "local" && used.has(nameKey(r.name))
+  const clearable = localRows.filter((r) => !inUse(r))
 
   const renderCard = (r: GraphItem) => {
     const sel = r.id === selectedId
@@ -159,12 +196,19 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRe
                           <Input
                             autoFocus
                             defaultValue={r.name}
-                            className="h-5 min-w-0 flex-1 border-white/10 bg-white/5 px-1 text-xs md:text-xs"
+                            className={cn(
+                              "h-5 min-w-0 flex-1 border-white/10 bg-white/5 px-1 text-xs md:text-xs",
+                              renameError && "border-red-400/60",
+                            )}
                             onClick={(ev) => ev.stopPropagation()}
+                            onChange={() => renameError && setRenameError(null)}
                             onBlur={(ev) => commitRename(r, ev.target.value)}
                             onKeyDown={(ev) => {
                               if (ev.key === "Enter") (ev.target as HTMLInputElement).blur()
-                              if (ev.key === "Escape") setRenamingId(null)
+                              if (ev.key === "Escape") {
+                                setRenameError(null)
+                                setRenamingId(null)
+                              }
                             }}
                           />
                         ) : (
@@ -177,6 +221,9 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRe
                           onToggle={() => void toggleLike(r.name)}
                         />
                       </div>
+                      {renamingId === r.id && renameError && (
+                        <p className="mt-1 text-[10px] leading-tight text-red-400">{renameError}</p>
+                      )}
                     </div>
                   </div>
     )
@@ -189,15 +236,25 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRe
         <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
         <ContextMenuContent className="w-40">
           <ContextMenuItem onSelect={() => onEdit(r.id, r.name, r.payload.graph)}>{t.library.editGraph}</ContextMenuItem>
-          {isDraft && <ContextMenuItem onSelect={() => setRenamingId(r.id)}>{t.graph.rename}</ContextMenuItem>}
+          {isDraft && (
+            <ContextMenuItem
+              onSelect={() => {
+                setRenameError(null)
+                setRenamingId(r.id)
+              }}
+            >
+              {t.graph.rename}
+            </ContextMenuItem>
+          )}
           {isDraft && (
             <ContextMenuItem
               variant="danger"
+              disabled={inUse(r)}
               onSelect={() => {
                 if (confirm(t.library.deleteDraftConfirm)) removeDraft(r.id)
               }}
             >
-              {t.library.deleteDraft}
+              {inUse(r) ? t.library.deleteInUse : t.library.deleteDraft}
             </ContextMenuItem>
           )}
           {!isDraft && mine && (
@@ -290,7 +347,15 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRe
               do, and a section you have to scroll to find cannot make that ask
               at all. Local stays conditional — your own drafts, and an empty one
               tells you nothing you did not know. */}
-          <div className="mt-2 flex max-h-[13rem] shrink-0 flex-col border-t border-white/10">
+          {/* Capped only to leave the Local shelf its room. With no drafts there
+              is no shelf, so Community takes that space back rather than
+              stopping short of an empty gap. */}
+          <div
+            className={cn(
+              "mt-2 flex shrink-0 flex-col border-t border-white/10",
+              localRows.length > 0 ? "max-h-[13rem]" : "max-h-[23rem]",
+            )}
+          >
             <div className="shrink-0 px-3 pt-2 pb-2.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.community}</div>
             <ScrollArea className="min-h-0 flex-1">
               {communityRows.length > 0 ? (
@@ -307,14 +372,20 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, onApply, onRe
                 {/* Clears exactly what is LISTED, not every draft of this kind — a
                     search or facet can be narrowing this section, and wiping rows
                     you cannot see is not something a visible count can warn about.
-                    Unpublished work has no server copy, hence the confirm. */}
+                    Drafts this scene is wearing are kept and SAID to be kept, so a
+                    shelf that isn't empty afterwards is explained rather than
+                    suspicious. Unpublished work has no server copy, hence the confirm. */}
                 <button
                   type="button"
+                  disabled={clearable.length === 0}
+                  title={clearable.length === 0 ? t.library.clearLocalNone : undefined}
                   onClick={() => {
-                    if (!confirm(t.library.clearLocalConfirm(localRows.length))) return
-                    for (const d of localRows) removeDraft(d.id)
+                    const kept = localRows.length - clearable.length
+                    const ask = t.library.clearLocalConfirm(clearable.length) + (kept > 0 ? t.library.clearLocalKept(kept) : "")
+                    if (!confirm(ask)) return
+                    clearDrafts(clearable.map((d) => d.id))
                   }}
-                  className="shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-[11px] text-muted-foreground/70 transition-colors hover:bg-white/5 hover:text-red-400"
+                  className="shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-[11px] text-muted-foreground/70 transition-colors hover:bg-white/5 hover:text-red-400 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground/70"
                 >
                   {t.library.clearLocal}
                 </button>

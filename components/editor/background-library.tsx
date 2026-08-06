@@ -16,9 +16,16 @@ import {
 } from "@/lib/background-effects"
 import { EffectPreview } from "@/components/editor/effect-preview"
 import { LIBRARY_SHELL, LibraryRail, LibraryStats, LibraryTags } from "@/components/editor/library-rail"
-import { matchesFacet, matchesQuery, type EffectItem, type LibraryFacet } from "@/lib/library"
+import {
+  conflictingName,
+  matchesFacet,
+  matchesQuery,
+  normalizeName,
+  type EffectItem,
+  type LibraryFacet,
+} from "@/lib/library"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
-import { draftOrigin, nextDraftName } from "@/lib/drafts"
+import { draftOrigin } from "@/lib/drafts"
 import {
   addCommunityItem,
   builtinAuthor,
@@ -81,7 +88,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
     if (applied) setSelectedId(applied.id)
   }
 
-  const { drafts, update: updateDraft, remove: removeDraft } = useDrafts<EffectItem>("effect")
+  const { drafts, update: updateDraft, remove: removeDraft, clear: clearDrafts } = useDrafts<EffectItem>("effect")
   // Built-ins lead in name order; drafts follow in creation order.
   const community = useCommunity<EffectItem>("effect")
   const all = useMemo(
@@ -100,15 +107,27 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
 
   const rows = useMemo(() => all.filter((e) => matchesFacet(e, facet, statFor(e.name).liked) && (!tag || e.tags.includes(tag)) && matchesQuery(e, query)), [all, query, facet, tag, statFor])
   const [renamingId, setRenamingId] = useState<string | null>(null)
+  // A typed name that is already in use — see the graph library's commitRename.
+  const [renameError, setRenameError] = useState<string | null>(null)
   const commitRename = (item: EffectItem, raw: string) => {
-    setRenamingId(null)
-    const wanted = raw.trim()
-    if (!wanted || wanted === item.name) return
-    // Deduped against everything visible here, so two rows never share a label.
-    const name = nextDraftName(
+    const wanted = normalizeName(raw)
+    if (!wanted || wanted === item.name) {
+      setRenamingId(null)
+      setRenameError(null)
+      return
+    }
+    // Refused, not silently suffixed — see the graph library's commitRename.
+    const clash = conflictingName(
       wanted,
       [...BACKGROUND_EFFECTS, ...community, ...drafts].filter((x) => x.id !== item.id).map((x) => x.name),
     )
+    if (clash) {
+      setRenameError(t.library.nameTakenBy(clash))
+      return
+    }
+    setRenamingId(null)
+    setRenameError(null)
+    const name = wanted
     if (item.owner === "local") updateDraft(item.id, { name })
     else {
       // Published: the server owns the row, and rejects a name you already used.
@@ -130,6 +149,9 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   )
   const communityRows = useMemo(() => rows.filter((x) => x.owner === "user"), [rows])
   const localRows = useMemo(() => rows.filter((x) => x.owner === "local"), [rows])
+  // The applied effect cannot be deleted — see the graph library's `inUse`.
+  const inUse = (e: EffectItem) => e.owner === "local" && applied?.id === e.id
+  const clearable = localRows.filter((e) => !inUse(e))
 
   const isAppliedSelected = applied !== null && selected !== null && applied.id === selected.id
 
@@ -170,12 +192,19 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                           <Input
                             autoFocus
                             defaultValue={e.name}
-                            className="h-5 min-w-0 flex-1 border-white/10 bg-white/5 px-1 text-xs md:text-xs"
+                            className={cn(
+                              "h-5 min-w-0 flex-1 border-white/10 bg-white/5 px-1 text-xs md:text-xs",
+                              renameError && "border-red-400/60",
+                            )}
                             onClick={(ev) => ev.stopPropagation()}
+                            onChange={() => renameError && setRenameError(null)}
                             onBlur={(ev) => commitRename(e, ev.target.value)}
                             onKeyDown={(ev) => {
                               if (ev.key === "Enter") (ev.target as HTMLInputElement).blur()
-                              if (ev.key === "Escape") setRenamingId(null)
+                              if (ev.key === "Escape") {
+                                setRenameError(null)
+                                setRenamingId(null)
+                              }
                             }}
                           />
                         ) : (
@@ -188,6 +217,9 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                           onToggle={() => void toggleLike(e.name)}
                         />
                       </div>
+                      {renamingId === e.id && renameError && (
+                        <p className="mt-1 text-[10px] leading-tight text-red-400">{renameError}</p>
+                      )}
                     </div>
                   </div>
     )
@@ -200,19 +232,34 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
         <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
         <ContextMenuContent className="w-40">
           <ContextMenuItem onSelect={() => onEdit(seedDraft(e, applied)!)}>{t.bgLibrary.editShader}</ContextMenuItem>
-          {isDraft && <ContextMenuItem onSelect={() => setRenamingId(e.id)}>{t.graph.rename}</ContextMenuItem>}
+          {isDraft && <ContextMenuItem
+              onSelect={() => {
+                setRenameError(null)
+                setRenamingId(e.id)
+              }}
+            >
+              {t.graph.rename}
+            </ContextMenuItem>}
           {isDraft && (
             <ContextMenuItem
               variant="danger"
+              disabled={inUse(e)}
               onSelect={() => {
                 if (confirm(t.library.deleteDraftConfirm)) removeDraft(e.id)
               }}
             >
-              {t.library.deleteDraft}
+              {inUse(e) ? t.library.deleteInUse : t.library.deleteDraft}
             </ContextMenuItem>
           )}
           {!isDraft && mine && (
-            <ContextMenuItem onSelect={() => setRenamingId(e.id)}>{t.graph.rename}</ContextMenuItem>
+            <ContextMenuItem
+              onSelect={() => {
+                setRenameError(null)
+                setRenamingId(e.id)
+              }}
+            >
+              {t.graph.rename}
+            </ContextMenuItem>
           )}
           {!isDraft && mine && (
             // Your own published rows: moderation is deletion.
@@ -301,7 +348,15 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
               do, and a section you must scroll to find cannot make that ask at
               all. Local stays conditional — your own drafts, and an empty one
               tells you nothing you did not know. */}
-          <div className="mt-2 flex max-h-[13rem] shrink-0 flex-col border-t border-white/10">
+          {/* Capped only to leave the Local shelf its room. With no drafts there
+              is no shelf, so Community takes that space back rather than
+              stopping short of an empty gap. */}
+          <div
+            className={cn(
+              "mt-2 flex shrink-0 flex-col border-t border-white/10",
+              localRows.length > 0 ? "max-h-[13rem]" : "max-h-[23rem]",
+            )}
+          >
             <div className="shrink-0 px-3 pt-2 pb-2.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.community}</div>
             <ScrollArea className="min-h-0 flex-1">
               {communityRows.length > 0 ? (
@@ -321,11 +376,15 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                     Unpublished work has no server copy, hence the confirm. */}
                 <button
                   type="button"
+                  disabled={clearable.length === 0}
+                  title={clearable.length === 0 ? t.library.clearLocalNone : undefined}
                   onClick={() => {
-                    if (!confirm(t.library.clearLocalConfirm(localRows.length))) return
-                    for (const d of localRows) removeDraft(d.id)
+                    const kept = localRows.length - clearable.length
+                    const ask = t.library.clearLocalConfirm(clearable.length) + (kept > 0 ? t.library.clearLocalKept(kept) : "")
+                    if (!confirm(ask)) return
+                    clearDrafts(clearable.map((d) => d.id))
                   }}
-                  className="shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-[11px] text-muted-foreground/70 transition-colors hover:bg-white/5 hover:text-red-400"
+                  className="shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-[11px] text-muted-foreground/70 transition-colors hover:bg-white/5 hover:text-red-400 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground/70"
                 >
                   {t.library.clearLocal}
                 </button>

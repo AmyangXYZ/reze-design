@@ -8,6 +8,8 @@ import { eq } from "drizzle-orm"
 import { auth } from "@/lib/auth"
 import { requireAdmin } from "@/lib/admin"
 import { hasDatabase, db, schema } from "@/lib/db"
+import { nameClash } from "@/lib/db/names"
+import { normalizeName, withGraphName } from "@/lib/library"
 /** The item id if this request may act on it, otherwise null. */
 async function authorize(request: Request, id: string) {
   if (await requireAdmin(request.headers)) return { id, admin: true as const }
@@ -54,9 +56,16 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
 const MAX_NAME = 60
 
 /**
- * Rename a published item. Safe because scene documents never reference community
- * content by name — built-ins travel by name, everything else by value — so a
- * rename is purely cosmetic to anyone already using it.
+ * Rename a published item. Safe for anyone already USING it, because scene
+ * documents never reference community content by name — built-ins travel by
+ * name, everything else by value.
+ *
+ * Not free of consequence in the library, though: the editor picks a look by
+ * name, so the new one has to be as unique as the old — one name per kind, for
+ * everybody, matched with case and spacing folded (see the publish route).
+ *
+ * A graph's payload carries the same name, and it moves with the row: leaving it
+ * on the old one is how the two came to disagree in the first place.
  */
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {
   // No database configured — see lib/db. Nothing to publish to, and nothing to
@@ -70,16 +79,29 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
   if (typeof name !== "string" || !name.trim() || name.length > MAX_NAME) {
     return NextResponse.json({ error: "invalid name" }, { status: 400 })
   }
+  const wanted = normalizeName(name)
+  const [row] = await db
+    .select({ kind: schema.libraryItems.kind, payload: schema.libraryItems.payload })
+    .from(schema.libraryItems)
+    .where(eq(schema.libraryItems.id, id))
+    .limit(1)
+  if (!row) return NextResponse.json({ error: "not found" }, { status: 404 })
+  const clash = await nameClash(row.kind, wanted, id)
+  if (clash) return NextResponse.json({ error: "name-taken", taken: clash }, { status: 409 })
   try {
     await db
       .update(schema.libraryItems)
-      .set({ name: name.trim(), updatedAt: new Date() })
+      .set({
+        name: wanted,
+        ...(row.kind === "graph" ? { payload: withGraphName(row.payload, wanted) as never } : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(schema.libraryItems.id, id))
   } catch {
-    // The unique (owner, kind, name) index — you already have one by that name.
+    // The unique (owner, kind, name) index — the database's own last word.
     return NextResponse.json({ error: "name-taken" }, { status: 409 })
   }
-  return NextResponse.json({ id, name: name.trim() })
+  return NextResponse.json({ id, name: wanted })
 }
 
 export async function DELETE(request: Request, ctx: { params: Promise<{ id: string }> }) {
