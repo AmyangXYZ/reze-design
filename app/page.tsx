@@ -31,10 +31,10 @@ import { useEngine } from "@/hooks/use-engine"
 import { useSceneSync } from "@/hooks/use-scene-sync"
 import { RaisableLayer } from "@/components/editor/raisable-layer"
 import { useHistory } from "@/hooks/use-history"
-import { probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
+import { useSceneMedia } from "@/hooks/use-scene-media"
+import { useBrowseSurface } from "@/hooks/use-browse-surface"
 import { expandUploadFiles, readDroppedFiles, unzipToFiles } from "@/lib/uploads"
 import { useI18n, useT } from "@/lib/i18n"
-import type { ExportAudioSource } from "@/lib/video-export"
 import { MaterialSphereIcon } from "@/components/scene/slot-icons"
 import { DEFAULT_SCENE, EMPTY_SCENE } from "@/lib/default-scene"
 import { groupLabel, GRAPH_LIBRARY, libraryGraph, sameGraphLook, SLOT_GRAPHS } from "@/lib/materials"
@@ -337,7 +337,18 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   // Which style group the node-graph editor is bound to.
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null)
   // Node-graph library popup, opened for a specific material.
-  const [library, setLibrary] = useState<{ open: boolean; groupId: string | null }>({ open: false, groupId: null })
+  // One slot for the graph / grade / effect libraries and the gallery — see
+  // useBrowseSurface for why four booleans became a union.
+  const {
+    facet: libraryFacet,
+    open: openBrowse,
+    closeIf: closeBrowse,
+    graphLibrary,
+    gradesOpen,
+    effectsOpen,
+    galleryOpen,
+  } = useBrowseSurface()
+  const library = { open: graphLibrary !== null, groupId: graphLibrary?.groupId ?? null }
   // Bumped on library-pick to remount the graph editor with the new graph.
   const [libVersion, setLibVersion] = useState(0)
   // The graph the editing session started
@@ -535,7 +546,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     else void applyGroups(groups.map((x) => (x.id === group.id ? updated : x)))
     setActiveGroupId(group.id)
     setLibVersion((v) => v + 1)
-    setLibrary({ open: false, groupId: null })
+    closeBrowse("graph")
   }
 
   // Graph-editor session lifecycle ── Edits preview live on the active group.
@@ -773,6 +784,9 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     | { kind: "notice"; message: string }
     | null
   const [upload, setUpload] = useState<UploadState>(null)
+  /** Surface a message in the upload notice dialog — the one way anything in the
+   *  editor reports a failure the user has to read. */
+  const notice = useCallback((message: string) => setUpload({ kind: "notice", message }), [])
   const folderInputRef = useRef<HTMLInputElement | null>(null)
   const zipInputRef = useRef<HTMLInputElement | null>(null)
   // Where the folder/zip inputs route their pick (set before opening the dialog).
@@ -892,65 +906,18 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     await loadAnimFor(target, file)
   }
 
-  // Camera VMD upload: drives the shot (target/rotation/distance/fov)
-  const cameraInputRef = useRef<HTMLInputElement | null>(null)
-  const [cameraName, setCameraName] = useState<string | null>(null)
-  // Live drive state from the transport toggle — the sidebar's camera controls
-  // disable on the ACTUAL mode, not on whether a camera VMD merely exists.
-  const [camVmdFollowing, setCamVmdFollowing] = useState(true)
-  const loadCameraBuffer = async (buffer: ArrayBuffer, name: string) => {
-    const engine = engineRef.current
-    if (!engine) return
-    try {
-      await engine.loadCameraVmdFromBuffer(buffer)
-      setCameraName(name)
-    } catch (e) {
-      setUpload({ kind: "notice", message: t.upload.cantLoadCamera(e instanceof Error ? e.message : String(e)) })
-    }
-  }
-  const onCameraPicked = async (file: File | undefined) => {
-    if (!file) return
-    sceneFiles.camera = file
-    await loadCameraBuffer(await file.arrayBuffer(), file.name)
-  }
-  const removeCamera = useCallback(() => {
-    sceneFiles.camera = null
-    engineRef.current?.clearCameraVmd()
-    setCameraName(null)
-  }, [engineRef])
+  // Camera motion, backdrop, skybox and music all live in useSceneMedia — four
+  // slots with one shape, and neither layout owns them.
+  const media = useSceneMedia({ engineRef, bootScene, onNotice: notice })
+  const {
+    cameraInputRef, cameraName, setCameraName, camVmdFollowing, setCamVmdFollowing,
+    loadCameraBuffer, onCameraPicked, pickCamera, removeCamera,
+    backdropInputRef, backdrop, onBackdropPicked, pickBackdrop, removeBackdrop,
+    skyboxInputRef, skybox, onSkyboxPicked, pickSkybox, removeSkybox,
+    audioInputRef, audioElRef, audioName, setAudioName, audioSrc, setAudioSrc,
+    audioSource, setAudioSource, setMusicFile, pickMusic, removeAudio,
+  } = media
 
-  // Backdrop: a static image behind the 3D scene.
-  const backdropInputRef = useRef<HTMLInputElement | null>(null)
-  const [backdrop, setBackdrop] = useState<BackdropMedia | null>(null)
-  // Skybox: a 360° equirect image rendered BY THE ENGINE (PhotoDome-style, follows the camera
-  const skyboxInputRef = useRef<HTMLInputElement | null>(null)
-  const [skybox, setSkybox] = useState<BackdropMedia | null>(null)
-  const onSkyboxPicked = async (file: File | undefined) => {
-    if (!file) return
-    try {
-      const next = await probeBackdrop(file)
-      engineRef.current?.setBackdropEquirect(await createImageBitmap(file))
-      setSkybox((prev) => {
-        releaseBackdrop(prev)
-        return next
-      })
-      setBackdrop((prev) => {
-        releaseBackdrop(prev)
-        return null
-      })
-    } catch (e) {
-      setUpload({ kind: "notice", message: e instanceof Error ? e.message : String(e) })
-    }
-  }
-  const removeSkybox = useCallback(() => {
-    engineRef.current?.setBackdropEquirect(null)
-    setSkybox((prev) => {
-      releaseBackdrop(prev)
-      return null
-    })
-  }, [engineRef])
-  // Audio routing — one choice drives BOTH live playback and export (consistency)
-  const [audioSource, setAudioSource] = useState<ExportAudioSource>("music")
   // While an export runs it drives the same model clock the live mirrors watch
   const [exporting, setExporting] = useState(false)
   // Green-screen (chroma-key) mode — LIVE, not export-only
@@ -1068,7 +1035,6 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     skybox: skybox?.file ?? null,
     greenScreen: liveGreenScreen,
   })
-  const [effectsOpen, setEffectsOpen] = useState(false)
 
   const { data: authSession } = useSession()
   const authorName = authSession?.user.username ?? t.bgLibrary.you
@@ -1113,21 +1079,17 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   }, [ready, communityLoaded, drawerOpen])
 
   // Grades library ── User grades live in localStorage (pre-accounts), while the APPLIED
-  const [gradesOpen, setGradesOpen] = useState(false)
-  const [libraryFacet, setLibraryFacet] = useState<LibraryFacet>("all")
-  const [galleryOpen, setGalleryOpen] = useState(false)
-  // Lazy initializer, not an effect
-  const showGrades = useCallback((facet: LibraryFacet) => {
-    setLibraryFacet(facet)
-    setGalleryOpen(false)
-    // Snapshot the viewport first
-    captureScene(canvasRef.current)
-    setLibrary((s) => ({ ...s, open: false }))
-    setEffectsOpen(false)
-    setGradesOpen(true)
-    // Refs are stable by contract
+  const showGrades = useCallback(
+    (facet: LibraryFacet) => {
+      // Snapshot the viewport BEFORE the library covers it — grade previews
+      // render against the scene as it looks right now.
+      captureScene(canvasRef.current)
+      openBrowse({ kind: "grade" }, facet)
+    },
+    // canvasRef is stable by contract.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setLibrary, setEffectsOpen, setGradesOpen, setGalleryOpen])
+    [openBrowse],
+  )
   // Applying restores the strength you last used this grade at — that memory is
   // UX, so it lives in localStorage rather than the scene.
   const applyGradePreset = useCallback(
@@ -1245,32 +1207,18 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     [groups, upsertGroup, applyGroups],
   )
 
-  const showLibrary = useCallback((groupId: string | null, facet: LibraryFacet) => {
-    setLibraryFacet(facet)
-    setGalleryOpen(false)
-    setEffectsOpen(false)
-    setGradesOpen(false)
-    setLibrary({ open: true, groupId })
-  }, [setEffectsOpen, setGradesOpen, setLibrary, setGalleryOpen])
-  const showEffects = useCallback((facet: LibraryFacet) => {
-    setLibraryFacet(facet)
-    setGalleryOpen(false)
-    setLibrary((s) => ({ ...s, open: false }))
-    setGradesOpen(false)
-    setEffectsOpen(true)
-  }, [setLibrary, setGradesOpen, setEffectsOpen, setGalleryOpen])
+  const showLibrary = useCallback(
+    (groupId: string | null, facet: LibraryFacet) => openBrowse({ kind: "graph", groupId }, facet),
+    [openBrowse],
+  )
+  const showEffects = useCallback((facet: LibraryFacet) => openBrowse({ kind: "effect" }, facet), [openBrowse])
   // Zero-argument handlers: these are wired straight to onClick, and an optional
   // parameter there would be filled with the click event.
   const openGrades = useCallback(() => showGrades("all"), [showGrades])
   const openEffects = useCallback(() => showEffects("all"), [showEffects])
   const openLibrary = useCallback((groupId: string | null) => showLibrary(groupId, "all"), [showLibrary])
   /** Account-tab stat numbers: the matching library, filtered to your work. */
-  const openGallery = useCallback(() => {
-    setLibrary((s) => ({ ...s, open: false }))
-    setGradesOpen(false)
-    setEffectsOpen(false)
-    setGalleryOpen(true)
-  }, [setLibrary, setGradesOpen, setEffectsOpen, setGalleryOpen])
+  const openGallery = useCallback(() => openBrowse({ kind: "gallery" }), [openBrowse])
   const openLibraryForAccount = useCallback(
     (kind: "grade" | "effect" | "graph" | "scene") => {
       if (kind === "scene") openGallery()
@@ -1395,59 +1343,6 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     setEffectEditor(null)
     return null
   }
-  const onBackdropPicked = async (file: File | undefined) => {
-    if (!file) return
-    try {
-      const next = await probeBackdrop(file)
-      setBackdrop((prev) => {
-        releaseBackdrop(prev)
-        return next
-      })
-      // Flat backdrop replaces the skybox (mutual exclusion, no layering surprises).
-      engineRef.current?.setBackdropEquirect(null)
-      setSkybox((prev) => {
-        releaseBackdrop(prev)
-        return null
-      })
-    } catch (e) {
-      setUpload({ kind: "notice", message: e instanceof Error ? e.message : String(e) })
-    }
-  }
-  const removeBackdrop = useCallback(() => {
-    setBackdrop((prev) => {
-      releaseBackdrop(prev)
-      return null
-    })
-  }, [])
-
-  // Music: the scene's track, replaceable via upload.
-  const audioInputRef = useRef<HTMLInputElement | null>(null)
-  const audioElRef = useRef<HTMLAudioElement | null>(null)
-  const [audioName, setAudioName] = useState<string | null>(bootScene.assets.audio?.name ?? null)
-  const [audioSrc, setAudioSrc] = useState<string>(bootScene.assets.audio?.url ?? "")
-  // High-level asset metadata (size for uploads
-
-  const setMusicFile = (f: File) => {
-    sceneFiles.audio = f
-    setAudioName(f.name)
-    setAudioSrc((prev) => {
-      if (prev.startsWith("blob:")) URL.revokeObjectURL(prev)
-      return URL.createObjectURL(f)
-    })
-    // Removing audio routes audioSource to "none" — which also MUTES the <audio> element.
-    setAudioSource((s) => (s === "none" ? "music" : s))
-  }
-  const removeAudio = useCallback(() => {
-    sceneFiles.audio = null
-    setAudioName(null)
-    // Revoke OUTSIDE the updater
-    if (audioSrc.startsWith("blob:")) URL.revokeObjectURL(audioSrc)
-    setAudioSrc("")
-    // No source left for the "music" audio option — exports fall back to silent.
-    setAudioSource((s) => (s === "music" ? "none" : s))
-  }, [audioSrc, setAudioName, setAudioSrc, setAudioSource])
-
-
   // Animation duration + total bone keyframes appear whenever an async load (VMD parse +
   useEffect(() => {
     const pending = Object.entries(animByModel).filter(([id]) => !animMetaByModel[id])
@@ -1654,7 +1549,9 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       window.removeEventListener("pointerdown", warm)
       window.removeEventListener("keydown", warm)
     }
-  }, [masterId, engineRef, exporting])
+    // audioElRef now comes from useSceneMedia, so the linter can no longer see
+    // that it is a ref and stable. Listing it costs nothing and keeps the rule on.
+  }, [masterId, engineRef, exporting, audioElRef])
 
   // The file's path: folder picks carry webkitRelativePath
   const relPath = (f: File) => (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name
@@ -2161,10 +2058,6 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   const newScene = () => void applyScene({ ...EMPTY_SCENE, state: { ...EMPTY_SCENE.state, id: newSceneId() } })
 
 
-  const pickCamera = useCallback(() => cameraInputRef.current?.click(), [])
-  const pickMusic = useCallback(() => audioInputRef.current?.click(), [])
-  const pickBackdrop = useCallback(() => backdropInputRef.current?.click(), [])
-  const pickSkybox = useCallback(() => skyboxInputRef.current?.click(), [])
   const removeAnimation = useCallback(
     (modelId: string) => {
       stopAnimation(modelId)
@@ -2648,7 +2541,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       <BackgroundLibrary
         open={effectsOpen}
         initialFacet={libraryFacet}
-        onOpenChange={setEffectsOpen}
+        onOpenChange={(o) => !o && closeBrowse("effect")}
         applied={bgEffect}
         onApply={applyBgEffect}
         onRemove={removeBgEffect}
@@ -2683,7 +2576,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       <GradeLibrary
         open={gradesOpen}
         initialFacet={libraryFacet}
-        onOpenChange={setGradesOpen}
+        onOpenChange={(o) => !o && closeBrowse("grade")}
         grade={sceneSettings.grade}
         onRenamed={(oldName, newName) =>
           setSceneSettings((s) => (s.grade.preset === oldName ? { ...s, grade: { ...s.grade, preset: newName } } : s))
@@ -2705,7 +2598,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
           onClose={requestCloseGradeEditor}
         />
       )}
-      <SceneGallery open={galleryOpen} onOpenChange={setGalleryOpen} />
+      <SceneGallery open={galleryOpen} onOpenChange={(o) => !o && closeBrowse("gallery")} />
       <HandleDialog />
       {mounted && (
         <ShareSceneDialog
@@ -2765,7 +2658,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       <NodeLibrary
         open={library.open}
         initialFacet={libraryFacet}
-        onOpenChange={(o) => setLibrary((s) => ({ ...s, open: o }))}
+        onOpenChange={(o) => !o && closeBrowse("graph")}
         canApply={libGroup !== null}
         targetLabel={libGroup ? groupLabel(libGroup) : null}
         currentGraphName={libGroup?.graph.name ?? null}
