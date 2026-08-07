@@ -26,7 +26,7 @@ import { cn } from "@/lib/utils"
  * animates — which is exactly when these surfaces are open. The chrome study
  * dropped it for the same reason after profiling it on WebKit.
  */
-const SKIN = "border border-white/10 bg-zinc-950/85 shadow-float"
+const SKIN = "border border-line-strong bg-surface shadow-float"
 
 export type SurfacePlacement =
   /** Centred over a scrim. A decision to commit or abandon. */
@@ -39,12 +39,12 @@ export type SurfacePlacement =
   | "sheet"
 
 const PLACEMENT: Record<SurfacePlacement, string> = {
-  center: "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[10px]",
+  center: "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-surface",
   // Insets rather than full height: the surface floats over the canvas, it does
   // not become a wall beside it.
-  side: "absolute top-3 right-3 bottom-3 w-[19rem] rounded-[10px] flex flex-col",
-  float: "absolute rounded-[10px] flex flex-col",
-  sheet: "absolute bottom-3 left-1/2 -translate-x-1/2 rounded-[10px]",
+  side: "absolute top-3 right-3 bottom-3 w-[19rem] rounded-surface flex flex-col",
+  float: "absolute rounded-surface flex flex-col",
+  sheet: "absolute bottom-3 left-1/2 -translate-x-1/2 rounded-surface",
 }
 
 export function Surface({
@@ -71,7 +71,7 @@ export function Surface({
  * float surface, the task wants the canvas and the placement is wrong.
  */
 export function Scrim({ onClose }: { onClose?: () => void }) {
-  return <div className="absolute inset-0 z-20 bg-[#03050880]" onClick={onClose} />
+  return <div className="absolute inset-0 z-20 bg-scrim" onClick={onClose} />
 }
 
 /**

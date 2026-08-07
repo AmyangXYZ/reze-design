@@ -33,7 +33,7 @@ export function LayerRow({
   children: ReactNode
 }) {
   return (
-    <div className="border-t border-white/[0.06] first:border-t-0">
+    <div className="border-t border-line first:border-t-0">
       <button
         onClick={onToggle}
         aria-expanded={open}
@@ -83,10 +83,10 @@ export function PresetChips({
           onClick={() => onPick(o)}
           className={cn(
             // 4px — the chip step of the radii scale.
-            "rounded-[4px] border px-2 py-0.5 text-[10.5px] transition-colors",
+            "rounded-chip border px-2 py-0.5 text-[10.5px] transition-colors",
             o === value
               ? "border-blue-400/40 bg-blue-400/15 text-blue-400"
-              : "border-white/10 text-muted-foreground hover:border-white/20 hover:text-foreground",
+              : "border-line-strong text-muted-foreground hover:border-white/25 hover:text-foreground",
           )}
         >
           {o}
@@ -102,7 +102,7 @@ export function PresetChips({
 export function StackGroup({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
-      <div className="px-3 pt-3 pb-1 font-mono text-[9.5px] tracking-[0.15em] text-muted-foreground/70 uppercase">
+      <div className="px-3 pt-3 pb-1 font-mono text-[9.5px] tracking-[0.15em] text-muted-foreground uppercase">
         {label}
       </div>
       {children}
