@@ -28,10 +28,27 @@ export type ModelRef = {
 /** The background's BASE layer */
 export type SceneBackground = { kind: "backdrop" | "skybox"; asset: AssetRef } | null
 
+/** Placement for an environment model. Characters spawn on a deterministic
+ *  offset; a stage has to be put somewhere, so it carries its own transform.
+ *  Rotation is degrees per axis — what the slider shows, so nothing converts. */
+export type SceneStageTransform = {
+  position: [number, number, number]
+  rotation: [number, number, number]
+  /** Uniform. Stage PMX are authored at wildly different scales. */
+  scale: number
+}
+
 /** One character in the scene: the model plus ITS motion clip. */
 export type SceneModel = {
   model: ModelRef
   animation: AssetRef | null
+  /** Environment geometry — no motion slot, placed by `transform`, and it
+   *  suppresses the ground. */
+  stage?: boolean
+  transform?: SceneStageTransform
+  /** Authored morph weights by morph name. A stage's morphs are switches the
+   *  user set, not animation, so they are document state — see stage-morphs.tsx. */
+  morphs?: Record<string, number>
 }
 
 export type SceneAssets = {
@@ -151,6 +168,13 @@ export type SceneModelDoc = {
   model: string
   /** Path to this model's motion, or null. */
   animation?: string | null
+  /** Environment model. Absent = a cast member, which is the old shape — so
+   *  every scene written before stages existed still parses as it always did. */
+  stage?: boolean
+  /** Stage placement (position / rotation in degrees / uniform scale). */
+  transform?: SceneStageTransform
+  /** Authored stage switch weights by morph name. */
+  morphs?: Record<string, number>
   /** This model's Materials-tab state. Absent = auto-group at load. */
   materials?: SceneModelMaterialsDoc
 }
@@ -272,6 +296,24 @@ const roleOf = (g: StyleGroup): StyleGroupDoc["role"] =>
 
 /** The assets half of the document round trip — used alone by local persistence,
  *  and by parseSceneDoc for the whole document. */
+/**
+ * The stage half of a model entry, spread-if-present.
+ *
+ * `stage`, `transform` and `morphs` are structurally identical on `SceneModel`
+ * and `SceneModelDoc`, so one helper serves both directions of the round trip.
+ * Written once because there are three sites — parse, the local-persistence
+ * writer, and the publish writer — and a field added to only two of them
+ * silently stops round-tripping on the third.
+ */
+function stageFieldsOf(m: Pick<SceneModel, "stage" | "transform" | "morphs">) {
+  return {
+    ...(m.stage ? { stage: true as const } : {}),
+    ...(m.transform ? { transform: m.transform } : {}),
+    // An empty map is the same as no switches — don't write `"morphs": {}`.
+    ...(m.morphs && Object.keys(m.morphs).length > 0 ? { morphs: m.morphs } : {}),
+  }
+}
+
 export function parseAssetsDoc(a: SceneAssetsDoc): SceneAssets {
   const ids: string[] = []
   const models = a.models.map((m) => {
@@ -281,6 +323,9 @@ export function parseAssetsDoc(a: SceneAssetsDoc): SceneAssets {
     return {
       model: { id, file, source },
       animation: m.animation ? assetFromPath(m.animation) : null,
+      // Spread-if-present, so a cast member parses to the same shape a pre-stage
+      // build produced.
+      ...stageFieldsOf(m),
     }
   })
   return {
@@ -301,7 +346,11 @@ export function parseAssetsDoc(a: SceneAssetsDoc): SceneAssets {
  *  contract. */
 export function assetsDocOf(a: SceneAssets): SceneAssetsDoc {
   return {
-    models: a.models.map((m) => ({ model: modelPath(m.model), animation: m.animation?.url ?? null })),
+    models: a.models.map((m) => ({
+      model: modelPath(m.model),
+      animation: m.animation?.url ?? null,
+      ...stageFieldsOf(m),
+    })),
     cameraAnimation: a.cameraAnimation?.url ?? null,
     audio: a.audio?.url ?? null,
     backdrop: a.background?.kind === "backdrop" ? a.background.asset.url : null,
@@ -488,6 +537,7 @@ export function serializeSceneDoc(
         return {
           model: modelPath(m.model),
           animation: m.animation?.url ?? null,
+          ...stageFieldsOf(m),
           ...(groups ? { materials: { groups: groups.map(toDoc), ...(hidden?.length ? { hidden } : {}) } } : {}),
         }
       }),

@@ -2,13 +2,21 @@
 
 // Assets panel (chromeless): the raw ingredients of a scene
 
-import { memo, type ComponentType } from "react"
-import { Footprints, Globe, Image as ImageIcon, Music, PersonStanding, Plus, Video, X } from "lucide-react"
+import { memo, type ComponentType, type ReactNode, type RefObject } from "react"
+import { Footprints, Globe, Image as ImageIcon, Music, Mountain, PersonStanding, Plus, RotateCcw, Video, X } from "lucide-react"
+import type { Engine } from "reze-engine"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Section } from "@/components/scene/scene-sidebar"
+import { Section, SliderRow } from "@/components/scene/scene-sidebar"
+import { StageMorphs } from "@/components/scene/stage-morphs"
+import { DEFAULT_STAGE_TRANSFORM, type StageInfo, type StageTransform } from "@/hooks/use-engine"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
+
+/** Axis suffixes for the placement rows. Not in the dictionary — "X" is "X" in
+ *  every language the app speaks, the same reason the camera target composes its
+ *  labels rather than carrying nine keys. */
+const AXES = ["X", "Y", "Z"] as const
 
 export type CharacterCardData = {
   id: string
@@ -107,10 +115,144 @@ function AssetRow({
   )
 }
 
+/** A titled block inside a stage card. The reset sits on the title's own line,
+ *  right-aligned — it acts on everything below it, so it belongs to the heading
+ *  rather than trailing the last control. Always present, so the heading row
+ *  never changes height or reflows as values move off their defaults; it simply
+ *  goes inert when there is nothing to undo. */
+function StageSubsection({
+  title,
+  onReset,
+  canReset,
+  children,
+}: {
+  title: string
+  onReset: () => void
+  /** False when the subsection already sits at its defaults. */
+  canReset: boolean
+  children: ReactNode
+}) {
+  const t = useT()
+  // No rule above the heading: these are parts of one Stage section, not
+  // separate sections, and Section already draws the boundary that matters.
+  return (
+    <div className="mt-4">
+      <div className="mb-2 flex h-5 items-center justify-between">
+        <span className="text-xs font-medium text-foreground">{title}</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={!canReset}
+          className="-mr-1.5 h-5 gap-1 px-1.5 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-35"
+          onClick={onReset}
+        >
+          <RotateCcw className="size-3" />
+          {t.stage.reset}
+        </Button>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+/**
+ * One stage: its file, where it stands, and its switches.
+ *
+ * Placement is the thing a stage needs that a character never does — a cast
+ * member spawns on a deterministic offset, a building has to be put somewhere.
+ * Rotation earns its place because stage PMX are authored facing whichever way
+ * the artist happened to work in, and turning the stage is the MMD instinct;
+ * turning the camera instead moves the whole composition.
+ */
+function StageCard({
+  stage,
+  engineRef,
+  onTransform,
+  onMorph,
+  onResetMorphs,
+  onRemove,
+}: {
+  stage: StageInfo
+  engineRef: RefObject<Engine | null>
+  onTransform: (patch: Partial<StageTransform>) => void
+  /** Takes the stage id so it can be passed through unbound — a per-card closure
+   *  would be a new identity every render and defeat StageMorphs' memo. */
+  onMorph: (stageId: string, morph: string, weight: number) => void
+  onResetMorphs: () => void
+  onRemove: () => void
+}) {
+  const t = useT()
+  const { position, rotation, scale } = stage.transform
+  const setAxis = (key: "position" | "rotation", i: number, v: number) => {
+    const next: [number, number, number] = [...stage.transform[key]]
+    next[i] = v
+    onTransform({ [key]: next })
+  }
+  const placed =
+    position.some((v) => v !== 0) || rotation.some((v) => v !== 0) || scale !== DEFAULT_STAGE_TRANSFORM.scale
+  const switched = Object.values(stage.morphs).some((w) => w > 0)
+  return (
+    <div className="mt-4 first:mt-0">
+      <div className="flex items-center gap-1">
+        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={stage.file}>
+          {stage.file}
+        </span>
+        <RemoveButton onClick={onRemove} />
+      </div>
+
+      <StageSubsection
+        title={t.stage.placement}
+        canReset={placed}
+        onReset={() => onTransform(DEFAULT_STAGE_TRANSFORM)}
+      >
+        {AXES.map((axis, i) => (
+          <SliderRow
+            key={`p${axis}`}
+            label={`${t.stage.position} ${axis}`}
+            value={position[i]}
+            min={-50}
+            max={50}
+            step={0.1}
+            onChange={(v) => setAxis("position", i, v)}
+          />
+        ))}
+        {AXES.map((axis, i) => (
+          <SliderRow
+            key={`r${axis}`}
+            label={`${t.stage.rotation} ${axis}`}
+            value={rotation[i]}
+            min={-180}
+            max={180}
+            step={1}
+            onChange={(v) => setAxis("rotation", i, v)}
+            fmt={(v) => `${v}°`}
+          />
+        ))}
+        {/* Stage PMX come at wildly different scales — 0.05 lets a model authored
+            in centimetres meet one authored in MMD units without a re-export. */}
+        <SliderRow label={t.stage.scale} value={scale} min={0.05} max={10} step={0.05} onChange={(v) => onTransform({ scale: v })} fmt={(v) => `${v.toFixed(2)}×`} />
+      </StageSubsection>
+
+      <StageSubsection title={t.stage.switches} canReset={switched} onReset={onResetMorphs}>
+        <StageMorphs engineRef={engineRef} stageId={stage.id} weights={stage.morphs} onChange={onMorph} />
+      </StageSubsection>
+    </div>
+  )
+}
+
 // Memoized: the dock keeps tabs mounted (useKeepAlive), so without memo the hidden Assets tab
 export const AssetsPanel = memo(function AssetsPanel({
   characters,
   pendingSlot,
+  stages,
+  engineRef,
+  onUploadStage,
+  onUploadStageZip,
+  stageUploadLabel,
+  onRemoveStage,
+  onStageTransform,
+  onStageMorph,
+  onResetStageMorphs,
   cameraName,
   audioName,
   backdropName,
@@ -139,6 +281,20 @@ export const AssetsPanel = memo(function AssetsPanel({
   characters: CharacterCardData[]
   /** An empty slot is open (revealed by "+ Add model", filled by its uploads). */
   pendingSlot: boolean
+  /** Environment models. Separate from characters: no motion slot, placed by
+   *  transform. Each carries its own authored switch weights. */
+  stages: StageInfo[]
+  /** The stage morph panel reads each stage's morph table straight off the model. */
+  engineRef: RefObject<Engine | null>
+  onUploadStage: () => void
+  /** Desktop only: folder dialogs can't pick a zip, so it needs its own button. */
+  onUploadStageZip?: () => void
+  /** Platform-specific wording, as with modelUploadLabel. */
+  stageUploadLabel: string
+  onRemoveStage: (id: string) => void
+  onStageTransform: (id: string, patch: Partial<StageTransform>) => void
+  onStageMorph: (id: string, morph: string, weight: number) => void
+  onResetStageMorphs: (id: string) => void
   cameraName: string | null
   audioName: string | null
   /** Flat background image filename (DOM layer behind the scene). */
@@ -267,6 +423,33 @@ export const AssetsPanel = memo(function AssetsPanel({
             <div className="mt-2.5">
               <div className="mb-1 truncate text-[11px] text-muted-foreground/40">—</div>
               <AssetRow icon={Footprints} label={t.assets.uploadAnimation} disabled />
+            </div>
+          )}
+        </Section>
+
+        <Section title={t.stage.title}>
+          <UploadPair
+            icon={Mountain}
+            label={stageUploadLabel}
+            onClick={onUploadStage}
+            onZip={onUploadStageZip}
+            joiner={t.assets.or}
+          />
+          {stages.length === 0 ? (
+            <div className="mt-1.5 text-xs text-muted-foreground/40">—</div>
+          ) : (
+            <div className="mt-1">
+              {stages.map((s) => (
+                <StageCard
+                  key={s.id}
+                  stage={s}
+                  engineRef={engineRef}
+                  onTransform={(patch) => onStageTransform(s.id, patch)}
+                  onMorph={onStageMorph}
+                  onResetMorphs={() => onResetStageMorphs(s.id)}
+                  onRemove={() => onRemoveStage(s.id)}
+                />
+              ))}
             </div>
           )}
         </Section>

@@ -145,6 +145,7 @@ export const ScenePanel = memo(function ScenePanel({
   camera,
   onCameraChange,
   cameraDriven,
+  stagePresent,
   effectName,
   onOpenEffects,
   gradeName,
@@ -163,6 +164,8 @@ export const ScenePanel = memo(function ScenePanel({
   onCameraChange: (camera: SceneCamera) => void
   /** True while a camera motion is driving the shot, which overrides these values. */
   cameraDriven?: boolean
+  /** A stage is in the scene, so the engine will not draw the ground plane. */
+  stagePresent?: boolean
   /** Applied background-effect name (null = none) — the row opens the library. */
   effectName: string | null
   onOpenEffects: () => void
@@ -333,40 +336,47 @@ export const ScenePanel = memo(function ScenePanel({
           </div>
         </Section>
 
+        {/* A stage brings its own floor and the engine refuses to draw the plane
+            underneath it (both sit at y=0 and would z-fight). Leaving these live
+            would make the whole section look broken, so it goes inert and says
+            why — the settings are kept, and come back with the stage removed. */}
         <Section title={t.scene.ground}>
-          <ColorRow label={t.scene.color} value={ground.color} onChange={(hex) => patch("ground", { color: hex })} />
-          <SliderRow
-            label={t.scene.opacity}
-            value={ground.opacity}
-            min={0}
-            max={1}
-            step={0.01}
-            onChange={(v) => patch("ground", { opacity: v })}
-            fmt={(v) => v.toFixed(2)}
-          />
-          {/* Shadow persists below opacity (shadow catcher) — this turns it off entirely. */}
-          <div className="mt-2.5 flex items-center justify-between">
-            <span className="text-xs">{t.scene.shadow}</span>
-            <Switch
-              checked={ground.shadow}
-              onCheckedChange={(v) => patch("ground", { shadow: v })}
-              className="scale-75"
+          {stagePresent && <p className="mb-2.5 text-[11px] text-muted-foreground/60">{t.stage.groundOff}</p>}
+          <fieldset disabled={stagePresent} className={cn(stagePresent && "pointer-events-none opacity-40")}>
+            <ColorRow label={t.scene.color} value={ground.color} onChange={(hex) => patch("ground", { color: hex })} />
+            <SliderRow
+              label={t.scene.opacity}
+              value={ground.opacity}
+              min={0}
+              max={1}
+              step={0.01}
+              onChange={(v) => patch("ground", { opacity: v })}
+              fmt={(v) => v.toFixed(2)}
             />
-          </div>
-          {/* Grid lines: toggle + color chip in one row (chip only while on). */}
-          <div className="mt-2.5 flex items-center justify-between">
-            <span className="text-xs">{t.scene.gridLines}</span>
-            <div className="flex items-center gap-2">
-              {ground.gridEnabled && (
-                <ColorField value={ground.grid} onChange={(hex) => patch("ground", { grid: hex })} />
-              )}
+            {/* Shadow persists below opacity (shadow catcher) — this turns it off entirely. */}
+            <div className="mt-2.5 flex items-center justify-between">
+              <span className="text-xs">{t.scene.shadow}</span>
               <Switch
-                checked={ground.gridEnabled}
-                onCheckedChange={(v) => patch("ground", { gridEnabled: v })}
+                checked={ground.shadow}
+                onCheckedChange={(v) => patch("ground", { shadow: v })}
                 className="scale-75"
               />
             </div>
-          </div>
+            {/* Grid lines: toggle + color chip in one row (chip only while on). */}
+            <div className="mt-2.5 flex items-center justify-between">
+              <span className="text-xs">{t.scene.gridLines}</span>
+              <div className="flex items-center gap-2">
+                {ground.gridEnabled && (
+                  <ColorField value={ground.grid} onChange={(hex) => patch("ground", { grid: hex })} />
+                )}
+                <Switch
+                  checked={ground.gridEnabled}
+                  onCheckedChange={(v) => patch("ground", { gridEnabled: v })}
+                  className="scale-75"
+                />
+              </div>
+            </div>
+          </fieldset>
         </Section>
 
         {/* After Ground because it belongs to the same idea — the world the

@@ -34,11 +34,12 @@ covers where to find models, motion and music.
   - [1.3 The shot](#13-the-shot)
   - [1.4 Light](#14-light)
   - [1.5 What sits behind the character](#15-what-sits-behind-the-character)
-  - [1.6 The look](#16-the-look)
-  - [1.7 Export](#17-export)
-  - [1.8 Publishing](#18-publishing)
-  - [1.9 The gallery](#19-the-gallery)
-  - [1.10 When something goes wrong](#110-when-something-goes-wrong)
+  - [1.6 A stage](#16-a-stage)
+  - [1.7 The look](#17-the-look)
+  - [1.8 Export](#18-export)
+  - [1.9 Publishing](#19-publishing)
+  - [1.10 The gallery](#110-the-gallery)
+  - [1.11 When something goes wrong](#111-when-something-goes-wrong)
 - [2. Authoring your own look](#2-authoring-your-own-look)
   - [2.1 The rendering model](#21-the-rendering-model)
   - [2.2 Colour grades](#22-colour-grades)
@@ -190,7 +191,45 @@ background and the character. Rain, stars, drifting petals, an aurora.
 Pick an effect from **Scene → Background**, or open the library for the full set.
 Writing your own is [§2.3](#23-background-effects-in-wgsl).
 
-## 1.6 The look
+## 1.6 A stage
+
+A backdrop is a picture behind the character. A **stage** is geometry the
+character stands in — a shrine, a street, a concert floor — distributed as a PMX
+like any model, and loaded from **Assets → Stage**, as a folder or a zip.
+
+A scene holds one stage, so uploading another replaces it. Under it:
+
+**Placement.** Position, rotation and uniform scale. Stage PMX are authored
+facing whatever direction the artist worked in and at wildly different scales, so
+expect to turn and resize one before it sits right. Reset returns the block to
+its defaults.
+
+**Switches.** Stage artists rig options as morphs — a roof on or off, a banner
+swapped, a neon set recoloured. No motion drives these; the weight you pick is
+the scene's, and it is saved with the document. Only morphs the renderer can
+actually move are listed, so a slider here always does something.
+
+**The ground turns off.** A stage brings its own floor, and the built-in ground
+plane sits at the same height — drawing both makes them fight for every pixel.
+The Ground section goes inert while a stage is loaded and says so; its settings
+are kept and return when you remove the stage.
+
+Background effects still run behind a stage, so petals or stars drift past a
+shrine the same way they drift past a backdrop.
+
+A stage's materials are ordinary materials: they appear in the Materials tab and
+take style groups and shader graphs like a character's. They are **not**
+auto-grouped, because the automatic grouping matches names like hair and skin —
+meaningless on architecture, and occasionally wrong in ways that reorder the
+whole scene. A fresh stage renders on the neutral default graph; group it by hand
+when you want more.
+
+Many stages ship with their lighting **baked into the textures**. Those shadows
+are part of the image and will not move when you change the sun, and they will
+not match the live shadow your character casts. That is a property of the stage,
+not a setting.
+
+## 1.7 The look
 
 Two systems decide how the scene reads, and they work at different scales.
 
@@ -227,7 +266,7 @@ differently from a cloth one.
 
 Building a graph node by node is [§2.4](#24-material-shader-graphs).
 
-## 1.7 Export
+## 1.8 Export
 
 The **Render** tab sets aspect and quality — 2.39:1 cinemascope through vertical
 9:16, at up to 4K — and optionally a range, so you can export `0:12` to `0:30`
@@ -269,7 +308,7 @@ reopens exactly where you left off, uploads included. Only four actions change
 what loads — New scene, Reset, importing a scene file, and opening someone
 else's scene in the editor.
 
-## 1.8 Publishing
+## 1.9 Publishing
 
 Publishing turns your scene into a page anyone can open — a live 3D render they
 can orbit.
@@ -304,7 +343,7 @@ The result is a permanent link of the form `reze.design/<your-name>/<id>`. The
 short id is what resolves, so renaming the scene, or renaming yourself, keeps
 every link already shared working.
 
-## 1.9 The gallery
+## 1.10 The gallery
 
 The gallery button, below the Scene tab, opens what everyone has published,
 browsable by hot, new, top, yours or liked, and narrowed by tag.
@@ -319,7 +358,7 @@ Accounts exist to own what you publish. On first sign-in you choose your name,
 which appears in every scene link you create and can be set only once — permanence
 is what keeps a shared link working forever.
 
-## 1.10 When something goes wrong
+## 1.11 When something goes wrong
 
 **The model loads white, grey or black.** Textures were not found, almost always
 because the `.pmx` was loaded without its folder. Load the whole folder or the

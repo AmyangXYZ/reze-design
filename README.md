@@ -23,6 +23,7 @@ One piece of the **Reze MMD family**, covering the whole MMD workflow on the web
 - **Background effects** — WGSL shaders behind the model, written and applied live in the editor.
 - **Scene lighting** — sun, world light and bloom over a background colour, image backdrop or 360° skybox.
 - **Multi-model support** — each with its own motion, plus a shared camera VMD and audio track.
+- **Stage models** — load a stage PMX as the scene's environment: place it with position, rotation and uniform scale, and flip the switches its author rigged as morphs. It replaces the ground plane, and its materials go through the same style groups and shader graphs as a character.
 - **Playback** — scrub and loop with audio synced to the motion, and a free or VMD-driven camera.
 - **Video export** — 60 fps mp4 up to 4K, from 2.39:1 cinemascope to vertical, with a green-screen mode.
 - **Still capture** — one PNG at the same framing and resolution as the video, for a scene's thumbnail.

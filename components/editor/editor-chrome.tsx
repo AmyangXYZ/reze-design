@@ -22,7 +22,7 @@ const NAME_BOX = "min-w-0 rounded border px-1 text-xs leading-4"
 // Shown beside the wordmark. A version is the same in every language, so it lives
 // here rather than in the dictionary — keep it in step with package.json and the
 // git tag.
-const VERSION = "0.3.3 beta"
+const VERSION = "0.3.4 beta"
 
 /** Top of the left rail — the logo, and therefore the scene menu (see
  *  scene-file-menu.tsx for why the logo is the menu). */

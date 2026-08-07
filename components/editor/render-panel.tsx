@@ -129,7 +129,9 @@ export const RenderPanel = memo(function RenderPanel({
   const [watermark, setWatermark] = useState(true)
   const [exporting, setExporting] = useState(false)
   const [progress, setProgress] = useState<ExportProgress | null>(null)
-  const [result, setResult] = useState<{ ok: boolean; message?: string } | null>(null)
+  // `file` names what actually landed, so the caption can point at it — a bare
+  // "downloaded" leaves the user hunting through their downloads folder.
+  const [result, setResult] = useState<{ ok: boolean; message?: string; file?: string } | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   // Guards a second click without touching the button's appearance. A capture is
   // over in well under a second; a spinner that fast is noise.
@@ -206,16 +208,19 @@ export const RenderPanel = memo(function RenderPanel({
 
     // File System Access path (Chromium desktop): ask WHERE first
     let fileStream: FileSystemWritableFileStream | undefined
+    // What the user actually called it, which can differ from our suggestion.
+    let pickedName: string | undefined
     if ("showSaveFilePicker" in window) {
       try {
         const handle = await (
           window as unknown as {
-            showSaveFilePicker: (o: object) => Promise<{ createWritable(): Promise<FileSystemWritableFileStream> }>
+            showSaveFilePicker: (o: object) => Promise<{ name: string; createWritable(): Promise<FileSystemWritableFileStream> }>
           }
         ).showSaveFilePicker({
           suggestedName: filename,
           types: [{ description: "MP4 video", accept: { "video/mp4": [".mp4"] } }],
         })
+        pickedName = handle.name
         fileStream = await handle.createWritable()
       } catch (e) {
         // Canceling the picker cancels the export (nothing rendered yet).
@@ -253,7 +258,9 @@ export const RenderPanel = memo(function RenderPanel({
       } else if (blob) {
         download(blob, filename)
       }
-      setResult({ ok: true })
+      // With a picked file the user chose the name themselves; report the one
+      // they picked, not the one we would have generated.
+      setResult({ ok: true, file: fileStream ? (pickedName ?? filename) : filename })
     } catch (e) {
       // Discard the partial file — abort() drops everything written since createWritable
       await fileStream?.abort().catch(() => {})
@@ -430,7 +437,7 @@ export const RenderPanel = memo(function RenderPanel({
 
           {result && (
             <div className={`mt-2 text-[11px] ${result.ok ? "text-muted-foreground" : "text-red-400"}`}>
-              {result.ok ? t.render.done : t.render.failed(result.message ?? "")}
+              {result.ok ? t.render.done(result.file ?? "") : t.render.failed(result.message ?? "")}
             </div>
           )}
         </Section>

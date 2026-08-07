@@ -3,9 +3,9 @@
 // Engine lifecycle for the scene page
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Engine, Vec3, type ApplyStyleGroupResult, type CompileOptions, type Model, type RenderClass, type StyleGroup } from "reze-engine"
+import { Engine, Quat, Vec3, type ApplyStyleGroupResult, type CompileOptions, type Model, type RenderClass, type StyleGroup } from "reze-engine"
 import { SLOT_GRAPHS } from "@/lib/materials"
-import { idbBundleId, modelKey, modelPmxUrl, type Scene, type SceneCamera } from "@/lib/scene"
+import { idbBundleId, modelKey, modelPmxUrl, type Scene, type SceneCamera, type SceneStageTransform } from "@/lib/scene"
 import { unzipToFiles } from "@/lib/uploads"
 import { loadLocalBundle } from "@/lib/asset-store"
 import { sceneFiles } from "@/lib/scene-files"
@@ -74,6 +74,9 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
   const s = scene.state.settings
   const infos: EngineModelInfo[] = []
   const groups: Record<string, StyleGroup[]> = {}
+  // Stages are in `infos` too — their materials use the same group path. This
+  // is the list that tells the UI which of them are scenery.
+  const stageList: StageInfo[] = []
 
   // ── Stage first, models after ──
   // Ground, framing and (via onStage) the render loop go up BEFORE any model
@@ -146,7 +149,12 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
       // texture basename, and the engine's basename fallback would guess.
       const dir = src.path.slice(0, src.path.lastIndexOf("/") + 1)
       const files = bundle!.filter((f) => f.name.startsWith(dir))
-      model = await engine.loadModel(entry.model.id, { files, pmxFile })
+      // A stage has to go in through the stage door, or it comes back as an
+      // ordinary cast member: physics, IK, a spawn offset, and no ground
+      // suppression. The document's `stage` flag is the only thing that knows.
+      model = entry.stage
+        ? await engine.loadStage(entry.model.id, { files, pmxFile })
+        : await engine.loadModel(entry.model.id, { files, pmxFile })
     } else {
       const pmxUrl = modelPmxUrl(entry.model)
       if (!pmxUrl) throw new Error(`Zip-sourced models aren't loadable from a URL yet: ${entry.model.file}`)
@@ -155,17 +163,33 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
     if (stale()) return null
     // Hidden until styled: the first visible frame wears the scene's shader
     // graphs, not a flash of the default PBSDF look.
-    const offset = spawnOffsetX(infos.length)
-    engine.setModelTransform(entry.model.id, {
-      visible: false,
-      ...(offset !== 0 ? { position: new Vec3(offset, 0, 0) } : {}),
-    })
+    if (entry.stage) {
+      const tr = entry.transform ?? DEFAULT_STAGE_TRANSFORM
+      const morphs = entry.morphs ?? {}
+      stageList.push({ id: entry.model.id, file: entry.model.file, transform: tr, morphs })
+      engine.setModelTransform(entry.model.id, { visible: false, ...stageTransformToEngine(tr) })
+      // Switches are authored state, so they are restored before the first
+      // visible frame rather than applied after the scene appears.
+      for (const [morph, weight] of Object.entries(morphs)) model.setMorphWeight(morph, weight)
+    } else {
+      // Stages are placed by the document; only cast members get the offset that
+      // keeps a newly added model from landing inside the first one.
+      const offset = spawnOffsetX(infos.length - stageList.length)
+      engine.setModelTransform(entry.model.id, {
+        visible: false,
+        ...(offset !== 0 ? { position: new Vec3(offset, 0, 0) } : {}),
+      })
+    }
     // Styling: a document carrying groups for this model (a restored or imported scene)
     const docGroups = scene.state.groups?.[entry.model.id]
     if (docGroups) {
       // Empty groups are UI-only drop targets — withheld from the engine.
       await engine.applyStyleGroups(entry.model.id, docGroups.filter((g) => g.materials.length > 0))
-    } else {
+    } else if (!entry.stage) {
+      // Never auto-group a stage: resolvePreset matches material names by
+      // substring against character hints, and the hair/eye presets carry a
+      // renderClass — a chance hit would put a wall in the hair pass or have it
+      // write the eye stencil. Ungrouped is the honest default for scenery.
       await engine.autoStyleGroups(entry.model.id)
     }
     if (stale()) return null
@@ -187,7 +211,7 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
   for (const entry of scene.assets.models) {
     if (!entry.animation) engine.setModelTransform(entry.model.id, { visible: true })
   }
-  return { infos, groups, bundle }
+  return { infos, groups, bundle, stageList }
 }
 
 function withSpecialGroups(list: StyleGroup[]): StyleGroup[] {
@@ -213,6 +237,40 @@ export type EngineModelInfo = {
   materials: MaterialRow[]
 }
 
+/** A stage's placement — the document's own type, not a parallel one. The value
+ *  the sliders edit IS what gets serialised, so there is nothing to convert and
+ *  no second definition to drift. Rotation is degrees, matching the slider. */
+export type StageTransform = SceneStageTransform
+
+export const DEFAULT_STAGE_TRANSFORM: StageTransform = {
+  position: [0, 0, 0],
+  rotation: [0, 0, 0],
+  scale: 1,
+}
+
+export type StageInfo = {
+  id: string
+  file: string
+  transform: StageTransform
+  /** Authored switch weights by morph name. Lives here, not in a parallel map in
+   *  the page: it is per-stage document state with the same lifecycle as the
+   *  transform, and a second container keyed by the same id went stale on
+   *  document swap — ids are pmx basenames, so a new scene with a same-named
+   *  stage inherited the old one's switches. */
+  morphs: Record<string, number>
+}
+
+/** The document's degrees-and-tuples form → what setModelTransform wants. One
+ *  converter, so the boot path and the sliders cannot drift apart. */
+function stageTransformToEngine(t: StageTransform) {
+  const rad = (d: number) => (d * Math.PI) / 180
+  return {
+    position: new Vec3(t.position[0], t.position[1], t.position[2]),
+    rotation: Quat.fromEuler(rad(t.rotation[0]), rad(t.rotation[1]), rad(t.rotation[2])),
+    scale: t.scale,
+  }
+}
+
 // Added models stand beside the first, not inside
 function spawnOffsetX(existingCount: number): number {
   if (existingCount === 0) return 0
@@ -232,6 +290,10 @@ export function useEngine(
   const [stageReady, setStageReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [models, setModels] = useState<EngineModelInfo[]>([])
+  // Which of `models` are environment rather than cast. Stages stay IN models so
+  // their materials reach the group/graph path; this list is what keeps them out
+  // of the cast, the motion rows and the spawn-offset walk.
+  const [stages, setStages] = useState<StageInfo[]>([])
   // Style groups per model id — the host is the source of truth (0.19).
   const [groupsByModel, setGroupsByModel] = useState<Record<string, StyleGroup[]>>({})
   // Callbacks need the CURRENT model list without re-creating themselves per render (memoized
@@ -278,6 +340,7 @@ export function useEngine(
         bundleRef.current = loaded.bundle
         const { infos, groups: groupsMap } = loaded
         setModels(infos)
+        setStages(loaded.stageList)
         setGroupsByModel(groupsMap)
         // Bind pose until the user loads a VMD — material evaluation doesn't need motion.
         setReady(true)
@@ -313,6 +376,30 @@ export function useEngine(
   const pmxBaseName = (name: string): string => name.split("/").pop() || name
 
   /** A unique engine key from a .pmx filename — the same mint parseSceneDoc uses. */
+  // Stage edits read the live list here and keep the engine call OUTSIDE the
+  // state updater: React invokes updaters twice in StrictMode, which would
+  // double-issue every engine write.
+  const stagesRef = useRef<StageInfo[]>([])
+  useEffect(() => {
+    stagesRef.current = stages
+  }, [stages])
+
+  /** Remove a model from the scene entirely (the page keeps ≥1 by policy).
+   *  Declared above the adders because replacing a stage builds on it. */
+  const removeModelById = useCallback((modelId: string) => {
+    sceneFiles.models.delete(modelId)
+    engineRef.current?.removeModel(modelId)
+    setModels((prev) => prev.filter((m) => m.id !== modelId))
+    // Removing the last stage un-suppresses the ground inside the engine, so
+    // nothing here has to put it back.
+    setStages((prev) => prev.filter((s) => s.id !== modelId))
+    setGroupsByModel((prev) => {
+      const next = { ...prev }
+      delete next[modelId]
+      return next
+    })
+  }, [])
+
   const uniqueModelId = (pmxName: string, except?: string): string =>
     modelKey(pmxName, modelsRef.current.filter((m) => m.id !== except).map((m) => m.id))
 
@@ -332,6 +419,64 @@ export function useEngine(
     setModels((prev) => [...prev, infoFor(id, pmxBaseName(pmxFile.name), model)])
     setGroupsByModel((prev) => ({ ...prev, [id]: groups }))
     return id
+  }, [])
+
+  /**
+   * ADD a stage — environment geometry rather than a cast member.
+   *
+   * A stage is loaded into `models` like anything else, because its materials
+   * go through the same group → shader-graph path (that IS the reason pure-PMX
+   * stages are worth supporting). `stages` is the separate list that keeps it
+   * out of the cast: no motion slot, no spawn offset, placed by transform.
+   */
+  const addStageFromFiles = useCallback(async (files: File[] | FileList, pmxFile: File): Promise<string> => {
+    const engine = engineRef.current
+    if (!engine) throw new Error("engine not ready")
+    // A scene holds ONE stage, so uploading another replaces it. Two stages mean
+    // two floors at y=0 with identical depth — they z-fight across the whole
+    // floor, flashing as the camera turns, and no amount of depth precision can
+    // separate surfaces that are exactly coplanar. There is also no sense in
+    // which a scene is standing in two places at once.
+    for (const prev of stagesRef.current) removeModelById(prev.id)
+    const id = uniqueModelId(pmxFile.name)
+    sceneFiles.models.set(id, { pmx: pmxFile, files: Array.from(files) })
+    const model = await engine.loadStage(id, { files, pmxFile })
+    // Deliberately NOT auto-grouped. resolvePreset matches material names by
+    // substring against character hints (hair / eye / 髪 / 肌 …), and a stage's
+    // materials are named for architecture. A chance hit does not just pick an
+    // odd look — the hair and eye presets carry renderClass, so a wall would be
+    // drawn in the hair pass or made to write the eye stencil. Ungrouped is the
+    // right default here: the neutral base graph, with the user free to group
+    // the stage by hand exactly as they would a character.
+    const groups = withSpecialGroups(engine.getStyleGroups(id))
+    setModels((prev) => [...prev, infoFor(id, pmxBaseName(pmxFile.name), model)])
+    setGroupsByModel((prev) => ({ ...prev, [id]: groups }))
+    setStages((prev) => [...prev, { id, file: pmxBaseName(pmxFile.name), transform: DEFAULT_STAGE_TRANSFORM, morphs: {} }])
+    return id
+  }, [removeModelById])
+
+  /** Place a stage. Position and rotation are absolute, scale is uniform. */
+  const setStageTransform = useCallback((id: string, patch: Partial<StageTransform>) => {
+    const current = stagesRef.current.find((s) => s.id === id)
+    if (!current) return
+    const next = { ...current.transform, ...patch }
+    engineRef.current?.setModelTransform(id, stageTransformToEngine(next))
+    setStages((prev) => prev.map((s) => (s.id === id ? { ...s, transform: next } : s)))
+  }, [])
+
+  /** Flip one of a stage's switches. */
+  const setStageMorph = useCallback((id: string, morph: string, weight: number) => {
+    engineRef.current?.getModel(id)?.setMorphWeight(morph, weight)
+    setStages((prev) => prev.map((s) => (s.id === id ? { ...s, morphs: { ...s.morphs, [morph]: weight } } : s)))
+  }, [])
+
+  /** Return every switch on a stage to zero. */
+  const resetStageMorphs = useCallback((id: string) => {
+    const current = stagesRef.current.find((s) => s.id === id)
+    if (!current) return
+    const model = engineRef.current?.getModel(id)
+    for (const morph of Object.keys(current.morphs)) model?.setMorphWeight(morph, 0)
+    setStages((prev) => prev.map((s) => (s.id === id ? { ...s, morphs: {} } : s)))
   }, [])
 
   /** REPLACE one model with an upload, keeping its slot (list position + scene transform). */
@@ -361,18 +506,6 @@ export function useEngine(
     },
     [],
   )
-
-  /** Remove a model from the scene entirely (the page keeps ≥1 by policy). */
-  const removeModelById = useCallback((modelId: string) => {
-    sceneFiles.models.delete(modelId)
-    engineRef.current?.removeModel(modelId)
-    setModels((prev) => prev.filter((m) => m.id !== modelId))
-    setGroupsByModel((prev) => {
-      const next = { ...prev }
-      delete next[modelId]
-      return next
-    })
-  }, [])
 
   /** Load a local .vmd onto ONE model (object URL), posed at frame 0 but PAUSED */
   /**
@@ -499,6 +632,7 @@ export function useEngine(
       bundleRef.current = loaded.bundle
       sceneRef.current = scene
       setModels(loaded.infos)
+      setStages(loaded.stageList)
       setGroupsByModel(loaded.groups)
       applyCamera(engine, scene.state.camera, engine.getModel(scene.assets.models[0]?.model.id ?? ""))
       setError(null)
@@ -548,6 +682,11 @@ export function useEngine(
     stageReady,
     error,
     models,
+    stages,
+    addStageFromFiles,
+    setStageTransform,
+    setStageMorph,
+    resetStageMorphs,
     groupsByModel,
     upsertGroup,
     applyGroups,

@@ -413,7 +413,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   type AnimSource = { kind: "file"; file: File } | { kind: "url"; name: string; url: string }
   type AnimEntry = { name: string; size: number | null; source: AnimSource }
   // Where an upload routes: a new cast member, or swapping one out in place.
-  type ModelTarget = { mode: "add" } | { mode: "replace"; id: string }
+  type ModelTarget = { mode: "add" } | { mode: "replace"; id: string } | { mode: "addStage" }
   const [animByModel, setAnimByModel] = useState<Record<string, AnimEntry>>({})
   const [animMetaByModel, setAnimMetaByModel] = useState<Record<string, { duration: number; keyframes: number }>>({})
   // The boot document: the bundled demo with the user's stored values merged over it.
@@ -459,6 +459,11 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     highlight: highlightFor,
     toggleVisible: toggleVisibleFor,
     addModelFromFiles,
+    stages,
+    addStageFromFiles,
+    setStageTransform,
+    setStageMorph,
+    resetStageMorphs,
     replaceModelFromFiles,
     removeModelById,
     loadVmdFile,
@@ -802,7 +807,11 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   const loadCustom = async (files: File[], pmxFile: File, target: ModelTarget) => {
     setUpload(null)
     try {
-      if (target.mode === "add") {
+      if (target.mode === "addStage") {
+        // No reclaimGroups and no activeModelId: a stage is not the thing you are
+        // styling when it lands, and its groups are the user's to make.
+        await addStageFromFiles(files, pmxFile)
+      } else if (target.mode === "add") {
         const id = await addModelFromFiles(files, pmxFile)
         await reclaimGroups(id)
         setActiveModelId(id)
@@ -1809,7 +1818,16 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       } else if (anim?.source.kind === "url") {
         animation = { name: anim.name, url: anim.source.url }
       }
-      return { model: { id: m.id, file: m.file, source: source! }, animation }
+      // Stages carry their placement and their switch weights in the document.
+      // Without the flag they reload as ordinary cast: physics, IK, a spawn
+      // offset, and no ground suppression.
+      const stage = stages.find((s) => s.id === m.id)
+      return {
+        model: { id: m.id, file: m.file, source: source! },
+        animation,
+        ...(stage ? { stage: true, transform: stage.transform } : {}),
+        ...(stage && Object.keys(stage.morphs).length ? { morphs: stage.morphs } : {}),
+      }
     })
     let cameraAnimation: AssetRef | null = null
     if (cameraName && sceneFiles.camera) {
@@ -1879,6 +1897,12 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     }
   }
 
+  // The fingerprint the bundle in IndexedDB was written for, and the URL it got.
+  // Refs, not state: they record what already happened on disk and must not
+  // themselves trigger the effect that writes it.
+  const bundleWrittenFor = useRef<string | null>(null)
+  const bundleWrittenRef = useRef<string | null>(null)
+
   // ── The working scene's assets, persisted. ──
   //
   // Bytes land FIRST, then the doc: a doc pointing at a bundle that never finished
@@ -1890,14 +1914,33 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   // window a human hand cannot beat. The write order is the real guarantee — bytes,
   // then the record — so a refresh that does land mid-write boots the previous state,
   // never a broken one.
+  // What changes the BYTES: the set of files the scene points at. Placement and
+  // switches are not on this list — they change the doc, never the bundle, and
+  // repacking tens of megabytes of PMX through structuredClone every time a
+  // slider settles is what a stage drag used to cost.
+  const assetFingerprint = [
+    models.map((m) => m.id).join("|"),
+    Object.entries(animByModel).map(([k, v]) => `${k}:${v.name}`).join("|"),
+    audioName ?? "",
+    backdrop?.name ?? "",
+    skybox?.name ?? "",
+    cameraName ?? "",
+  ].join("//")
+
   useEffect(() => {
     if (!ready) return
     const timer = setTimeout(() => {
       const id = bootScene.state.id
       const slots = collectSceneSlots()
       void (async () => {
-        let bundleUrl: string | null = null
-        if (slots.entries.length && (await saveLocalBundle(id, slots.entries))) bundleUrl = idbBundleOf(id)
+        // Only repack when the file set moved; otherwise keep pointing at the
+        // bundle already in IndexedDB.
+        let bundleUrl: string | null = bundleWrittenRef.current
+        if (bundleWrittenFor.current !== assetFingerprint) {
+          bundleUrl = slots.entries.length && (await saveLocalBundle(id, slots.entries)) ? idbBundleOf(id) : null
+          bundleWrittenFor.current = assetFingerprint
+          bundleWrittenRef.current = bundleUrl
+        }
         saveSceneAssets(
           id,
           assetsDocOf({
@@ -1911,8 +1954,10 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       })()
     }, 150)
     return () => clearTimeout(timer)
+    // stages is here so moving a stage or flipping a switch reaches the DOC —
+    // the bundle write above is gated separately on assetFingerprint.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, models, animByModel, audioName, audioSrc, cameraName, backdrop, skybox, bootScene])
+  }, [ready, models, stages, assetFingerprint, animByModel, audioName, audioSrc, cameraName, backdrop, skybox, bootScene])
 
 
   /**
@@ -2018,6 +2063,13 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   }, [])
   const addSlot = useCallback(() => setPendingSlot(true), [])
   const cancelPending = useCallback(() => setPendingSlot(false), [])
+  const uploadStage = useCallback(() => openModelDialog({ mode: "addStage" }), [openModelDialog])
+  // Same two doors as a model: a folder pick, or a zip for people who have the
+  // stage as one file (which is how most are distributed).
+  const uploadStageZip = useCallback(() => {
+    modelTargetRef.current = { mode: "addStage" }
+    zipInputRef.current?.click()
+  }, [])
   const pickAnimationFor = useCallback((id: string) => {
     animTargetRef.current = id
     vmdInputRef.current?.click()
@@ -2223,17 +2275,26 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     [setBgEffect, communityEffects],
   )
 
-  // Character cards (Assets tab) + model strip (Materials tab)
+  // Character cards (Assets tab) + model strip (Materials tab).
+  //
+  // Stages live in `models` so their materials reach the group / shader-graph
+  // path — that is the point of supporting pure-PMX stages at all — but they are
+  // not cast. They get no motion row and no slot of their own here; the Stage
+  // section owns them.
+  const stageIds = useMemo(() => new Set(stages.map((s) => s.id)), [stages])
   const characters = useMemo<CharacterCardData[]>(
     () =>
-      models.map((m) => ({
-        id: m.id,
-        file: m.file,
-        active: m.id === activeId,
-        animName: animByModel[m.id]?.name ?? null,
-      })),
-    [models, animByModel, activeId],
+      models
+        .filter((m) => !stageIds.has(m.id))
+        .map((m) => ({
+          id: m.id,
+          file: m.file,
+          active: m.id === activeId,
+          animName: animByModel[m.id]?.name ?? null,
+        })),
+    [models, stageIds, animByModel, activeId],
   )
+  // The Materials strip DOES list stages — styling a stage is the workflow.
   const modelTabs = useMemo(
     () => models.map((m) => ({ id: m.id, file: m.file, active: m.id === activeId })),
     [models, activeId],
@@ -2282,6 +2343,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
           camera={sceneCamera}
           onCameraChange={changeCamera}
           cameraDriven={cameraName !== null && camVmdFollowing}
+          stagePresent={stages.length > 0}
         /> },
   ]
 
@@ -2293,6 +2355,15 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       content: (
         <AssetsPanel
           characters={characters}
+          stages={stages}
+          engineRef={engineRef}
+          onUploadStage={uploadStage}
+          onUploadStageZip={isMobile ? undefined : uploadStageZip}
+          stageUploadLabel={isMobile ? t.stage.uploadStageZip : t.stage.uploadStageFolder}
+          onRemoveStage={removeModelById}
+          onStageTransform={setStageTransform}
+          onStageMorph={setStageMorph}
+          onResetStageMorphs={resetStageMorphs}
           cameraName={cameraName}
           audioName={audioName}
           backdropName={backdrop?.name ?? null}
