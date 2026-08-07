@@ -1,0 +1,890 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<!--
+  Reze Design - chrome study. FROZEN REFERENCE, NOT SHIPPED CODE.
+
+  The layout proposal behind 0.4.0: a full-bleed viewport with chrome floating
+  over it, one collapsed "stack" whose rows name the preset they are set to
+  rather than reciting numbers, a selection-driven inspector with no tabs, a
+  transport that unfolds into a timeline in place, and a VS Code-shaped command
+  palette.
+
+  Kept verbatim as the decision record. Do NOT maintain this against the app -
+  where the two disagree the app is right and this is history. Self-contained
+  with no build step: open it in a browser.
+-->
+<title>Reze — chrome study</title>
+<style>
+  /* ─── Committed single theme ───────────────────────────────────────────
+     A mockup OF a dark editor, so it ships one visual world in both viewer
+     themes — a light rendering would misrepresent the product. Tokens still
+     live on :root so nothing is styled with raw values inline. */
+  :root,
+  :root[data-theme="dark"],
+  :root[data-theme="light"] {
+    --ground: #0d1116;
+    --ground-lift: #11161d;
+    --panel: rgba(16, 20, 27, 0.92);
+    --line: rgba(255, 255, 255, 0.09);
+    --line-strong: rgba(255, 255, 255, 0.16);
+    --ink: #e8ecf2;
+    --ink-dim: rgba(232, 236, 242, 0.58);
+    --ink-faint: rgba(232, 236, 242, 0.34);
+    --accent: #60a5fa;
+    --accent-soft: rgba(96, 165, 250, 0.15);
+    --brand: #f472b6;
+    /* The scene's own palette, lifted from the real project. */
+    --scene-bg: #4b004f;
+    --scene-world: #ed6aff;
+    --scene-ground: #c800de;
+    --scene-bloom: #ffc9c9;
+
+    --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+
+    --r: 10px;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+  }
+
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  :focus:not(:focus-visible) { outline: none; }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 40px 24px 72px; display: flex; flex-direction: column; gap: 28px; }
+
+  /* ─── Page framing ─────────────────────────────────────────────────── */
+  .masthead { display: flex; flex-direction: column; gap: 10px; }
+  .eyebrow { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-faint); }
+  h1 { margin: 0; font-size: clamp(24px, 3.6vw, 34px); font-weight: 600; letter-spacing: -0.02em; text-wrap: balance; }
+  .lede { margin: 0; max-width: 64ch; color: var(--ink-dim); font-size: 14.5px; }
+  .lede strong { color: var(--ink); font-weight: 600; }
+
+  /* ─── State switch ─────────────────────────────────────────────────── */
+  .states {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    padding: 5px; border: 1px solid var(--line); border-radius: 999px;
+    background: var(--ground-lift); align-self: flex-start;
+  }
+  .state-btn {
+    border: 0; background: transparent; color: var(--ink-dim);
+    padding: 6px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 500;
+    transition: background 0.16s ease, color 0.16s ease;
+  }
+  .state-btn:hover { color: var(--ink); background: rgba(255, 255, 255, 0.05); }
+  .state-btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+  .state-note { font-size: 12px; color: var(--ink-faint); padding-left: 8px; font-family: var(--mono); }
+
+  /* ─── The mock application ─────────────────────────────────────────── */
+  .app {
+    position: relative; aspect-ratio: 16 / 10; min-height: 460px;
+    border: 1px solid var(--line-strong); border-radius: 14px;
+    overflow: hidden; background: #05070a; user-select: none;
+    container-type: inline-size;
+  }
+
+  /* Viewport — full bleed, ALWAYS. Chrome floats over it; nothing ever
+     shrinks the thing you are making. */
+  .viewport { position: absolute; inset: 0; }
+  #stars { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .stage {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(120% 90% at 50% 12%, rgba(237, 106, 255, 0.16) 0%, transparent 58%),
+      radial-gradient(90% 70% at 50% 100%, rgba(200, 0, 222, 0.24) 0%, transparent 62%),
+      linear-gradient(180deg, #240028 0%, var(--scene-bg) 46%, #2c0430 100%);
+  }
+  .floor {
+    position: absolute; left: -20%; right: -20%; bottom: 0; height: 46%;
+    background-image:
+      repeating-linear-gradient(90deg, rgba(250, 250, 250, 0.22) 0 1px, transparent 1px 84px),
+      repeating-linear-gradient(0deg, rgba(250, 250, 250, 0.22) 0 1px, transparent 1px 84px);
+    transform: perspective(340px) rotateX(72deg); transform-origin: bottom center;
+    -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 34%, #000 100%);
+    mask-image: linear-gradient(180deg, transparent 0%, #000 34%, #000 100%);
+    opacity: 0.5;
+  }
+  .figure {
+    position: absolute; left: 50%; bottom: 8%; height: 74%;
+    transform: translateX(-50%); cursor: pointer;
+    filter: drop-shadow(0 18px 34px rgba(0, 0, 0, 0.5));
+  }
+  .figure svg { height: 100%; width: auto; display: block; }
+  .figure .sel-ring { opacity: 0; transition: opacity 0.18s ease; }
+  .app[data-selected="dress"] .figure .sel-ring { opacity: 1; }
+  .hit-ground { position: absolute; left: 0; right: 0; bottom: 0; height: 26%; cursor: pointer; }
+
+  .hint {
+    position: absolute; left: 50%; bottom: 4.5%; transform: translateX(-50%);
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em;
+    color: rgba(255, 255, 255, 0.42); background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--line); padding: 4px 10px; border-radius: 999px;
+    pointer-events: none; opacity: 0; transition: opacity 0.2s ease; white-space: nowrap;
+  }
+  .app[data-state="compose"] .hint, .app[data-state="edit"] .hint { opacity: 1; }
+  .app[data-selected]:not([data-selected=""]) .hint { opacity: 0; }
+
+  /* ─── Shared chrome surface ────────────────────────────────────────── */
+  .surface {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
+    /* No backdrop-filter: the real app profiles it as the frame cost on
+       WebKit whenever anything animates over the canvas. */
+    box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.72), 0 8px 20px -8px rgba(0, 0, 0, 0.55);
+  }
+  .chrome { position: absolute; transition: opacity 0.22s ease, transform 0.28s cubic-bezier(0.22, 1, 0.36, 1); }
+  .chrome.out { opacity: 0; pointer-events: none; }
+
+  /* ─── Top bar ──────────────────────────────────────────────────────── */
+  .topbar { top: 12px; left: 12px; right: 12px; display: flex; align-items: center; gap: 10px; pointer-events: none; }
+  .topbar > * { pointer-events: auto; }
+  .brandmark { display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 10px; }
+  .brandmark .wand { color: var(--brand); display: flex; }
+  .brandmark .name { font-size: 12.5px; font-weight: 600; letter-spacing: -0.01em; }
+  .brandmark .doc { font-size: 12px; color: var(--ink-dim); }
+  .brandmark .sep { color: var(--ink-faint); }
+  .spacer { flex: 1; }
+  .kbd-hint { display: flex; align-items: center; gap: 7px; padding: 6px 10px 6px 12px; font-size: 12px; color: var(--ink-dim); border: 0; }
+  .kbd-hint:hover { color: var(--ink); }
+  kbd {
+    font-family: var(--mono); font-size: 10.5px; border: 1px solid var(--line-strong);
+    border-radius: 5px; padding: 2px 5px; color: var(--ink-dim); background: rgba(255, 255, 255, 0.04);
+  }
+  .share { background: var(--accent); color: #06131f; border: 0; border-radius: 8px; padding: 7px 15px; font-size: 12.5px; font-weight: 650; }
+  .share:hover { filter: brightness(1.08); }
+
+  /* ─── The stack: one panel, everything in it ───────────────────────── */
+  .stack {
+    top: 62px; left: 12px; width: 268px; max-height: calc(100% - 150px);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .stack.out { transform: translateX(-14px); }
+  .stack-scroll { overflow-y: auto; overscroll-behavior: contain; }
+  .stack-scroll::-webkit-scrollbar { width: 6px; }
+  .stack-scroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 3px; }
+
+  .grouplabel {
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.15em;
+    text-transform: uppercase; color: var(--ink-faint); padding: 11px 12px 5px;
+  }
+
+  /* A layer row. Collapsed it is ONE line that still reports its state —
+     but it names the DECISION ("Golden hour"), not the values behind it.
+     Reciting numbers at rest is what makes a panel read as a debug GUI. */
+  .layer { border-top: 1px solid rgba(255, 255, 255, 0.05); }
+  .layer:first-of-type { border-top: 0; }
+  .layer-head {
+    width: 100%; display: flex; align-items: center; gap: 9px;
+    padding: 8px 11px; background: transparent; border: 0; text-align: left;
+  }
+  .layer-head:hover { background: rgba(255, 255, 255, 0.04); }
+  .layer[data-open="true"] > .layer-head { background: rgba(255, 255, 255, 0.05); }
+  .glyph { width: 16px; height: 16px; display: grid; place-items: center; color: var(--ink-faint); flex: none; }
+  .layer[data-open="true"] .glyph { color: var(--accent); }
+  .layer-name { font-size: 12.5px; flex: none; }
+  /* Sans, not mono: a preset name is a name, and monospacing it would put
+     the readout back. */
+  .layer-sum {
+    margin-left: auto; font-size: 11.5px; color: var(--ink-faint);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 132px;
+  }
+  .layer[data-open="true"] .layer-sum { opacity: 0; }
+  .layer-body { display: none; padding: 2px 11px 12px; }
+  .layer[data-open="true"] .layer-body { display: block; }
+
+  /* Presets first, parameters second — the app's own pattern, applied
+     inside the row. Only one layer is ever open, so this costs no ambient
+     noise. */
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 3px 0 10px; }
+  .chip {
+    border: 1px solid var(--line); background: transparent; color: var(--ink-dim);
+    border-radius: 999px; padding: 3px 9px; font-size: 10.5px;
+  }
+  .chip:hover { color: var(--ink); border-color: var(--line-strong); }
+  .chip[aria-pressed="true"] { background: var(--accent-soft); border-color: rgba(96, 165, 250, 0.42); color: var(--accent); }
+
+  .row { display: flex; align-items: center; gap: 10px; height: 24px; font-size: 11.5px; color: var(--ink-dim); }
+  .row .k { flex: none; width: 62px; }
+  .row .v { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .track { flex: 1; height: 3px; border-radius: 999px; background: rgba(255, 255, 255, 0.12); position: relative; }
+  .track i { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: rgba(255, 255, 255, 0.42); }
+  .track b { position: absolute; top: 50%; width: 9px; height: 9px; border-radius: 999px; background: #fff; transform: translate(-50%, -50%); }
+  .swatch { width: 11px; height: 11px; border-radius: 3px; border: 1px solid rgba(255, 255, 255, 0.22); flex: none; }
+  .pilllink {
+    display: inline-flex; align-items: center; gap: 5px; margin-top: 8px;
+    padding: 4px 9px; border-radius: 7px; border: 1px solid var(--line);
+    background: transparent; font-size: 11px; color: var(--ink-dim);
+  }
+  .pilllink:hover { color: var(--ink); border-color: var(--line-strong); }
+  .empty { font-size: 11.5px; color: var(--ink-faint); font-style: italic; }
+
+  .cast-row { display: flex; align-items: center; gap: 9px; padding: 8px 11px; }
+  .cast-av { width: 22px; height: 22px; border-radius: 6px; flex: none; background: linear-gradient(150deg, #e9d5ff, #c084fc 55%, #7c3aed); }
+  .cast-meta { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .cast-meta .n { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cast-meta .s { font-size: 10.5px; color: var(--ink-faint); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ─── Contextual card — exists only while something is selected ────── */
+  .inspector { top: 62px; right: 12px; width: 244px; padding: 12px; }
+  .inspector.out { transform: translateX(14px); }
+  .insp-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+  .insp-kind { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+  .insp-name { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+
+  /* ─── Transport → timeline ─────────────────────────────────────────── */
+  .transport {
+    left: 50%; bottom: 14px; transform: translateX(-50%);
+    width: min(560px, 82%); overflow: hidden; border-radius: 999px;
+    transition: width 0.3s cubic-bezier(0.22, 1, 0.36, 1), border-radius 0.3s ease, opacity 0.2s ease;
+  }
+  .app[data-state="edit"] .transport { width: min(760px, 94%); border-radius: 12px; }
+  /* The pill row NEVER moves — expansion unfolds beneath it, so the play
+     button your hand already knows stays exactly where it was. */
+  .pill-row { display: flex; align-items: center; gap: 11px; padding: 8px 14px; height: 42px; }
+  .icon-btn {
+    width: 26px; height: 26px; border-radius: 999px; border: 0; background: transparent;
+    display: grid; place-items: center; color: var(--ink-dim); flex: none;
+  }
+  .icon-btn:hover { background: rgba(255, 255, 255, 0.07); color: var(--ink); }
+  .icon-btn.on { color: var(--accent); }
+  .time { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); font-variant-numeric: tabular-nums; flex: none; }
+  .scrub { flex: 1; height: 14px; position: relative; display: flex; align-items: center; cursor: pointer; }
+  .scrub .bar { width: 100%; height: 3px; border-radius: 999px; background: rgba(255, 255, 255, 0.14); overflow: hidden; }
+  .scrub .fill { height: 100%; width: 26%; background: rgba(255, 255, 255, 0.75); }
+  .scrub .knob { position: absolute; top: 50%; left: 26%; width: 9px; height: 9px; border-radius: 999px; background: #fff; transform: translate(-50%, -50%); }
+
+  .lanes { display: none; border-top: 1px solid var(--line); padding: 8px 10px 10px; }
+  .app[data-state="edit"] .lanes { display: block; }
+  .lane { display: flex; align-items: center; gap: 9px; height: 30px; }
+  .lane-key { font-family: var(--mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-faint); width: 62px; flex: none; }
+  .lane-body { flex: 1; height: 20px; position: relative; }
+  .block {
+    position: absolute; top: 0; bottom: 0; border-radius: 5px;
+    display: flex; align-items: center; padding: 0 8px; font-size: 10px;
+    color: rgba(255, 255, 255, 0.8); white-space: nowrap; overflow: hidden; cursor: grab;
+  }
+  .block.motion { left: 0; width: 78%; background: rgba(96, 165, 250, 0.26); border: 1px solid rgba(96, 165, 250, 0.5); }
+  .block.motion:hover { background: rgba(96, 165, 250, 0.34); }
+  .block.empty-slot {
+    left: 0; right: 0; border: 1px dashed var(--line-strong); color: var(--ink-faint);
+    font-style: italic; justify-content: center; cursor: pointer;
+  }
+  .block.empty-slot:hover { border-color: var(--accent); color: var(--accent); }
+  .wave { position: absolute; inset: 0; display: flex; align-items: center; gap: 1px; }
+  .wave span { flex: 1; background: rgba(244, 114, 182, 0.5); border-radius: 1px; min-width: 1px; }
+  .lane-play { position: absolute; top: -4px; bottom: -4px; width: 1px; background: #fff; left: 26%; pointer-events: none; }
+  .beat-note { display: flex; align-items: center; gap: 6px; margin-top: 6px; padding-left: 71px; font-size: 10px; color: var(--ink-faint); font-family: var(--mono); }
+  .beat-note b { color: var(--accent); font-weight: 500; }
+
+  /* ─── Command palette ──────────────────────────────────────────────── */
+  .cmd-scrim { position: absolute; inset: 0; background: rgba(3, 5, 8, 0.55); display: none; z-index: 20; }
+  .cmd-scrim.show { display: block; }
+  .cmd {
+    position: absolute; top: 14%; left: 50%; transform: translateX(-50%);
+    width: min(462px, 80%); padding: 0; z-index: 21; display: none; overflow: hidden;
+  }
+  .cmd.show { display: block; }
+  .cmd-field { display: flex; align-items: center; gap: 9px; padding: 0 12px; }
+  .cmd-field .mag { color: var(--ink-faint); display: flex; flex: none; }
+  .cmd input {
+    flex: 1; background: transparent; border: 0; outline: 0; color: var(--ink);
+    font-family: var(--sans); font-size: 14px; padding: 11px 0 12px;
+  }
+  .cmd input::placeholder { color: var(--ink-faint); }
+  .cmd-mode {
+    font-family: var(--mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--accent); background: var(--accent-soft); padding: 3px 7px; border-radius: 5px; flex: none;
+  }
+  .cmd-list { border-top: 1px solid var(--line); padding: 4px 0; max-height: 228px; overflow-y: auto; }
+  .cmd-list::-webkit-scrollbar { width: 6px; }
+  .cmd-list::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 3px; }
+  .cmd-sec {
+    font-family: var(--mono); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-faint); padding: 8px 13px 4px;
+  }
+  .cmd-item {
+    display: flex; align-items: center; gap: 10px; width: calc(100% - 8px);
+    margin: 0 4px; padding: 7px 9px; border: 0; background: transparent;
+    border-radius: 7px; font-size: 12.5px; text-align: left;
+  }
+  .cmd-item:hover, .cmd-item.active { background: rgba(255, 255, 255, 0.08); }
+  .cmd-item .ci { color: var(--ink-faint); display: flex; flex: none; }
+  .cmd-item.deep .ci { color: var(--brand); }
+  .cmd-item .ct { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cmd-item .ck { margin-left: auto; display: flex; gap: 3px; flex: none; }
+  .cmd-item .ck kbd { font-size: 9.5px; padding: 2px 5px; }
+  .cmd-none { padding: 16px 13px; font-size: 12px; color: var(--ink-faint); }
+  .cmd-foot {
+    display: flex; align-items: center; gap: 14px; border-top: 1px solid var(--line);
+    padding: 7px 13px; font-size: 10.5px; color: var(--ink-faint);
+  }
+  .cmd-foot span { display: flex; align-items: center; gap: 5px; }
+
+  /* ─── Notes below the mock ─────────────────────────────────────────── */
+  .notes {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(232px, 1fr));
+    gap: 1px; background: var(--line); border: 1px solid var(--line);
+    border-radius: 12px; overflow: hidden;
+  }
+  .note { background: var(--ground-lift); padding: 18px 18px 20px; display: flex; flex-direction: column; gap: 7px; }
+  .note h3 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+  .note p { margin: 0; font-size: 12.5px; color: var(--ink-dim); }
+  .note .tag { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+
+  .count {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 18px;
+    padding: 16px 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--ground-lift);
+  }
+  .count .fig { font-family: var(--mono); font-size: 22px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .count .fig.now { color: var(--ink-faint); text-decoration: line-through; text-decoration-color: rgba(255, 255, 255, 0.25); }
+  .count .fig.next { color: var(--accent); }
+  .count .lab { font-size: 12.5px; color: var(--ink-dim); }
+
+  @container (max-width: 720px) {
+    .stack { width: 216px; }
+    .inspector { width: 200px; }
+    .layer-sum { max-width: 84px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <span class="eyebrow">Chrome study · Reze</span>
+    <h1>Capability you can reach, not capability you can see</h1>
+    <p class="lede">
+      The dock layout scales by adding panels, so noise grows with total features rather than with the task at
+      hand. This proposes the opposite: <strong>the canvas never shrinks</strong>, chrome fades in by depth, and
+      every layer stays one line that names what it is set to. Pros lose nothing — everything is one keystroke
+      away.
+    </p>
+  </header>
+
+  <div class="states" role="group" aria-label="Chrome depth">
+    <button class="state-btn" data-set="view" aria-pressed="false">View</button>
+    <button class="state-btn" data-set="compose" aria-pressed="true">Compose</button>
+    <button class="state-btn" data-set="edit" aria-pressed="false">Edit</button>
+    <span class="state-note" id="stateNote">the scene, and what it is made of</span>
+  </div>
+
+  <!-- ─────────────────────────── mock app ─────────────────────────── -->
+  <div class="app" id="app" data-state="compose" data-selected="">
+    <div class="viewport" id="viewport">
+      <div class="stage"></div>
+      <canvas id="stars"></canvas>
+      <div class="floor"></div>
+
+      <div class="figure" id="figure" role="button" tabindex="0" aria-label="Select the dress material">
+        <svg viewBox="0 0 120 300" aria-hidden="true">
+          <ellipse class="sel-ring" cx="60" cy="292" rx="52" ry="8" fill="none" stroke="#60a5fa" stroke-width="2"/>
+          <path d="M60 18c-16 0-26 11-26 26 0 30-8 84-8 122h68c0-38-8-92-8-122 0-15-10-26-26-26z" fill="#cfd3e2" opacity="0.5"/>
+          <circle cx="60" cy="40" r="16" fill="#f3e7f6" opacity="0.9"/>
+          <path d="M50 56h20l6 46H44z" fill="#f6eefb" opacity="0.85"/>
+          <path d="M44 100h32l22 128c-19 9-57 9-76 0z" fill="#f0e4fb" opacity="0.9"/>
+          <path d="M76 100l22 128c-8 4-19 6-30 7l8-135z" fill="#3b1140" opacity="0.42"/>
+          <path d="M50 60c-12 8-20 22-22 38l7 3c4-14 10-24 19-30z" fill="#f3e7f6" opacity="0.8"/>
+          <path d="M70 60c12 8 20 22 22 38l-7 3c-4-14-10-24-19-30z" fill="#f3e7f6" opacity="0.8"/>
+          <path d="M52 232h6l2 52h-8zM62 232h6l2 52h-8z" fill="#f3e7f6" opacity="0.75"/>
+          <ellipse class="sel-ring" cx="60" cy="164" rx="46" ry="76" fill="none" stroke="#60a5fa" stroke-width="1.5" stroke-dasharray="4 4"/>
+        </svg>
+      </div>
+
+      <div class="hit-ground" id="hitGround" role="button" tabindex="0" aria-label="Select the ground"></div>
+      <div class="hint">Click the character or the floor</div>
+    </div>
+
+    <!-- Top bar -->
+    <div class="chrome topbar" id="topbar">
+      <div class="surface brandmark">
+        <span class="wand" aria-hidden="true">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M3 8h4"/><path d="M17 16h4"/></svg>
+        </span>
+        <span class="name">Reze</span>
+        <span class="sep">/</span>
+        <span class="doc">My first scene</span>
+      </div>
+      <span class="spacer"></span>
+      <button class="surface kbd-hint" id="openCmd">Search anything <kbd>⌘K</kbd></button>
+      <button class="share">Share</button>
+    </div>
+
+    <!-- The stack: assets and look in ONE panel -->
+    <div class="chrome surface stack" id="stack">
+      <div class="stack-scroll">
+        <div class="grouplabel">Cast</div>
+        <div class="cast-row">
+          <span class="cast-av" aria-hidden="true"></span>
+          <span class="cast-meta">
+            <span class="n">苍鹭·托特「扉页之吻」</span>
+            <span class="s">One More Last Time.vmd</span>
+          </span>
+        </div>
+
+        <div class="grouplabel">Scene</div>
+        <div id="layers"></div>
+      </div>
+    </div>
+
+    <!-- Contextual card — only while something is selected -->
+    <div class="chrome surface inspector out" id="inspector" aria-live="polite"></div>
+
+    <!-- Transport, which is the timeline collapsed -->
+    <div class="chrome surface transport" id="transport">
+      <div class="pill-row">
+        <button class="icon-btn" id="playBtn" aria-label="Play">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+        <span class="time" id="tNow">0:04</span>
+        <span class="scrub" id="scrub">
+          <span class="bar"><span class="fill" id="fill"></span></span>
+          <span class="knob" id="knob"></span>
+        </span>
+        <span class="time">0:16</span>
+        <button class="icon-btn on" aria-label="Loop is on">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
+        </button>
+        <button class="icon-btn" id="expandBtn" aria-label="Show timeline" aria-expanded="false">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 15 6-6 6 6"/></svg>
+        </button>
+      </div>
+
+      <div class="lanes">
+        <div class="lane">
+          <span class="lane-key">Animation</span>
+          <span class="lane-body">
+            <span class="block motion">One More Last Time.vmd</span>
+            <span class="lane-play"></span>
+          </span>
+        </div>
+        <div class="lane">
+          <span class="lane-key">Camera</span>
+          <span class="lane-body">
+            <span class="block empty-slot">drop a camera motion</span>
+            <span class="lane-play"></span>
+          </span>
+        </div>
+        <div class="lane">
+          <span class="lane-key">Music</span>
+          <span class="lane-body">
+            <span class="wave" id="wave"></span>
+            <span class="lane-play"></span>
+          </span>
+        </div>
+        <div class="beat-note"><b>92 BPM detected</b> · blocks snap to the beat</div>
+      </div>
+    </div>
+
+    <!-- Command palette -->
+    <div class="cmd-scrim" id="scrim"></div>
+    <div class="surface cmd" id="cmd">
+      <div class="cmd-field">
+        <span class="mag" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        </span>
+        <input id="cmdInput" placeholder="Search anything —  &gt;  for commands" autocomplete="off" spellcheck="false">
+        <span class="cmd-mode" id="cmdMode" hidden>Commands</span>
+      </div>
+      <div class="cmd-list" id="cmdList"></div>
+      <div class="cmd-foot">
+        <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+        <span><kbd>↵</kbd> run</span>
+        <span><kbd>&gt;</kbd> commands</span>
+        <span><kbd>esc</kbd> close</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="count">
+    <span class="fig now">41</span>
+    <span class="lab">controls on screen today</span>
+    <span class="fig next">8</span>
+    <span class="lab">rows in the stack — each naming what it is set to</span>
+  </div>
+
+  <div class="notes">
+    <div class="note">
+      <span class="tag">Collapsed ≠ hidden</span>
+      <h3>Rows name presets, not numbers</h3>
+      <p><em>Golden hour</em>, not <em>205° · 21°</em>. You read the whole scene in one column, and the values
+        behind each decision are one click in.</p>
+    </div>
+    <div class="note">
+      <span class="tag">Depth, not modes</span>
+      <h3>Chrome arrives when asked</h3>
+      <p>View is exactly what a share link renders. Compose adds the stack. Edit unfolds the timeline. Nobody
+        picks a workspace; the screen follows the work.</p>
+    </div>
+    <div class="note">
+      <span class="tag">Selection is the mode</span>
+      <h3>The inspector has no tabs</h3>
+      <p>Click the dress, get the dress. There is no model / camera / light dropdown to set first — the thing
+        you clicked is the thing you are editing.</p>
+    </div>
+    <div class="note">
+      <span class="tag">Reachability</span>
+      <h3>⌘K carries the keymap</h3>
+      <p>Every command shows its shortcut, so the palette teaches the keyboard rather than competing with it.
+        Type <kbd>&gt;</kbd> for commands only, as in VS Code.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    "use strict";
+
+    var app = document.getElementById("app");
+    var stack = document.getElementById("stack");
+    var inspector = document.getElementById("inspector");
+    var topbar = document.getElementById("topbar");
+    var stateNote = document.getElementById("stateNote");
+
+    /* ── Star field ───────────────────────────────────────────────── */
+    var cv = document.getElementById("stars");
+    function drawStars() {
+      var r = cv.getBoundingClientRect();
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);
+      cv.width = Math.max(1, Math.round(r.width * dpr));
+      cv.height = Math.max(1, Math.round(r.height * dpr));
+      var g = cv.getContext("2d");
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.clearRect(0, 0, r.width, r.height);
+      var seed = 7;
+      function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+      for (var i = 0; i < 190; i++) {
+        var x = rnd() * r.width, y = rnd() * r.height * 0.82, s = rnd() * 1.5 + 0.3;
+        g.globalAlpha = 0.18 + rnd() * 0.62;
+        g.fillStyle = rnd() > 0.75 ? "#ffc9c9" : "#ffffff";
+        g.beginPath(); g.arc(x, y, s, 0, Math.PI * 2); g.fill();
+      }
+    }
+    drawStars();
+    if (window.ResizeObserver) new ResizeObserver(drawStars).observe(cv);
+
+    /* ── Waveform ─────────────────────────────────────────────────── */
+    var wave = document.getElementById("wave"), wseed = 3;
+    for (var w = 0; w < 84; w++) {
+      wseed = (wseed * 48271) % 2147483647;
+      var t = w / 84;
+      var env = 0.35 + 0.65 * Math.abs(Math.sin(t * Math.PI * 3.1));
+      var bar = document.createElement("span");
+      bar.style.height = Math.max(8, (0.2 + (wseed / 2147483647) * 0.8) * env * 100) + "%";
+      wave.appendChild(bar);
+    }
+
+    /* ── Stack ────────────────────────────────────────────────────── */
+    function ic(p) {
+      return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+        'stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + p + '</svg>';
+    }
+    function slider(label, pct, val) {
+      return '<div class="row"><span class="k">' + label + '</span>' +
+        '<span class="track"><i style="width:' + pct + '%"></i><b style="left:' + pct + '%"></b></span>' +
+        '<span class="v">' + val + '</span></div>';
+    }
+    function color(label, hex) {
+      return '<div class="row"><span class="k">' + label + '</span>' +
+        '<span class="swatch" style="background:' + hex + '"></span>' +
+        '<span class="v">' + hex + '</span></div>';
+    }
+    function chips(list) {
+      return '<div class="chips">' + list.map(function (c, i) {
+        return '<button class="chip" aria-pressed="' + (i === 0) + '">' + c + '</button>';
+      }).join("") + '</div>';
+    }
+
+    var LAYERS = [
+      { id: "camera", name: "Camera", sum: "Wide · centred",
+        icon: ic('<path d="M15 10 21 7v10l-6-3z"/><rect x="3" y="6" width="12" height="12" rx="2"/>'),
+        body: chips(["Wide", "Portrait", "Low angle", "Follow"]) +
+              slider("Distance", 52, "26.2") + slider("Angle H", 50, "180°") + slider("Angle V", 34, "68°") +
+              '<div class="empty" style="margin-top:6px">No camera motion loaded.</div>' +
+              '<button class="pilllink">Upload camera motion</button>' },
+      { id: "music", name: "Music", sum: "One More Last Time",
+        icon: ic('<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>'),
+        body: '<div class="row"><span class="k">Length</span><span class="v">0:16</span></div>' +
+              slider("Volume", 80, "0.80") +
+              '<div class="row"><span class="k">Tempo</span><span class="v">92 BPM</span></div>' },
+      { id: "background", name: "Background", sum: "Shining Stars",
+        icon: ic('<circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8"/><path d="M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18"/>'),
+        body: chips(["Shining Stars", "Aurora", "Rain", "None"]) +
+              color("Colour", "#4b004f") + slider("Density", 62, "0.62") +
+              '<button class="pilllink">Browse library</button>' },
+      { id: "light", name: "Light", sum: "Soft key",
+        icon: ic('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
+        body: chips(["Soft key", "Golden hour", "Stage", "Rim only"]) +
+              color("Key", "#ffffff") + slider("Strength", 50, "2.00") +
+              slider("Azimuth", 57, "205°") + slider("Elevation", 23, "21°") +
+              color("Fill", "#ed6aff") + slider("Strength", 66, "0.66") },
+      { id: "bloom", name: "Bloom", sum: "Gentle",
+        icon: ic('<circle cx="12" cy="12" r="3"/><path d="M12 4v1M12 19v1M4 12h1M19 12h1M6.3 6.3l.7.7M17 17l.7.7M6.3 17.7l.7-.7M17 7l.7-.7"/>'),
+        body: chips(["Gentle", "Dreamy", "Hard", "Off"]) +
+              color("Colour", "#ffc9c9") + slider("Threshold", 50, "0.50") + slider("Intensity", 12, "0.050") },
+      { id: "ground", name: "Ground", sum: "Violet grid",
+        icon: ic('<path d="M3 17h18"/><path d="M6 21 9 7h6l3 14"/>'),
+        body: chips(["Violet grid", "Void", "White cyc", "Mirror"]) +
+              color("Colour", "#c800de") + slider("Opacity", 42, "0.42") +
+              '<div class="row"><span class="k">Shadow</span><span class="v">On</span></div>' +
+              '<div class="row"><span class="k">Grid</span><span class="v">On</span></div>' },
+      { id: "physics", name: "Physics", sum: "Default",
+        icon: ic('<circle cx="12" cy="12" r="2"/><ellipse cx="12" cy="12" rx="10" ry="4"/><ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(60 12 12)"/>'),
+        body: chips(["Default", "Weightless", "Breezy", "Off"]) +
+              slider("Gravity", 65, "98") + slider("Wind", 0, "0") + slider("Frequency", 20, "0.20") },
+      { id: "grade", name: "Grade", sum: "Neutral",
+        icon: ic('<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none"/>'),
+        body: chips(["Neutral", "Warm film", "Cool night", "Bleach"]) +
+              slider("Intensity", 100, "1.00") +
+              '<button class="pilllink">Browse library</button>' }
+    ];
+
+    var host = document.getElementById("layers");
+    LAYERS.forEach(function (L) {
+      var el = document.createElement("div");
+      el.className = "layer";
+      el.setAttribute("data-open", "false");
+      el.setAttribute("data-id", L.id);
+      el.innerHTML =
+        '<button class="layer-head" aria-expanded="false">' +
+          '<span class="glyph">' + L.icon + '</span>' +
+          '<span class="layer-name">' + L.name + '</span>' +
+          '<span class="layer-sum">' + L.sum + '</span>' +
+        '</button>' +
+        '<div class="layer-body">' + L.body + '</div>';
+      el.querySelector(".layer-head").addEventListener("click", function () {
+        var open = el.getAttribute("data-open") === "true";
+        LAYERS.forEach(function (o) {
+          var n = host.querySelector('[data-id="' + o.id + '"]');
+          n.setAttribute("data-open", "false");
+          n.querySelector(".layer-head").setAttribute("aria-expanded", "false");
+        });
+        if (!open) {
+          el.setAttribute("data-open", "true");
+          el.querySelector(".layer-head").setAttribute("aria-expanded", "true");
+        }
+      });
+      host.appendChild(el);
+    });
+
+    /* Picking a preset renames the row — the summary reports the decision. */
+    host.addEventListener("click", function (e) {
+      var chip = e.target.closest(".chip");
+      if (!chip) return;
+      [].forEach.call(chip.parentElement.querySelectorAll(".chip"), function (c) {
+        c.setAttribute("aria-pressed", "false");
+      });
+      chip.setAttribute("aria-pressed", "true");
+      chip.closest(".layer").querySelector(".layer-sum").textContent = chip.textContent;
+    });
+
+    /* ── Selection drives the inspector ───────────────────────────── */
+    var INSPECT = {
+      dress: {
+        kind: "Material", name: "Dress · white",
+        body: chips(["Silk toon", "Matte", "Satin", "Velvet"]) +
+              slider("Rim", 44, "0.44") + slider("Specular", 18, "0.18") + color("Shadow", "#3b1140") +
+              '<button class="pilllink">Edit shader graph</button>'
+      },
+      ground: {
+        kind: "Object", name: "Ground plane",
+        body: chips(["Violet grid", "Void", "White cyc"]) +
+              color("Colour", "#c800de") + slider("Opacity", 42, "0.42") +
+              '<div class="row"><span class="k">Shadow</span><span class="v">On</span></div>' +
+              '<div class="row"><span class="k">Grid</span><span class="v">On</span></div>'
+      }
+    };
+
+    function select(id) {
+      if (app.getAttribute("data-state") === "view") return;
+      app.setAttribute("data-selected", id || "");
+      if (!id) { inspector.classList.add("out"); return; }
+      var d = INSPECT[id];
+      inspector.innerHTML =
+        '<div class="insp-head"><span class="insp-kind">' + d.kind + '</span>' +
+        '<span class="insp-name">' + d.name + '</span></div>' + d.body;
+      inspector.classList.remove("out");
+    }
+
+    function bind(id, sel) {
+      var el = document.getElementById(id);
+      el.addEventListener("click", function (e) { e.stopPropagation(); select(sel); });
+      el.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(sel); }
+      });
+    }
+    bind("figure", "dress");
+    bind("hitGround", "ground");
+    document.getElementById("viewport").addEventListener("click", function () { select(""); });
+    inspector.addEventListener("click", function (e) {
+      var chip = e.target.closest(".chip");
+      if (!chip) return;
+      [].forEach.call(chip.parentElement.querySelectorAll(".chip"), function (c) {
+        c.setAttribute("aria-pressed", "false");
+      });
+      chip.setAttribute("aria-pressed", "true");
+    });
+
+    /* ── Chrome depth ─────────────────────────────────────────────── */
+    var NOTES = {
+      view: "what a share link renders — no chrome at all",
+      compose: "the scene, and what it is made of",
+      edit: "the transport unfolds; the play button never moves"
+    };
+    function setState(s) {
+      app.setAttribute("data-state", s);
+      stateNote.textContent = NOTES[s];
+      [].forEach.call(document.querySelectorAll(".state-btn"), function (b) {
+        b.setAttribute("aria-pressed", String(b.dataset.set === s));
+      });
+      var bare = s === "view";
+      stack.classList.toggle("out", bare);
+      topbar.classList.toggle("out", bare);
+      if (bare) select("");
+      document.getElementById("expandBtn").setAttribute("aria-expanded", String(s === "edit"));
+    }
+    [].forEach.call(document.querySelectorAll(".state-btn"), function (b) {
+      b.addEventListener("click", function () { setState(b.dataset.set); });
+    });
+    document.getElementById("expandBtn").addEventListener("click", function (e) {
+      e.stopPropagation();
+      setState(app.getAttribute("data-state") === "edit" ? "compose" : "edit");
+    });
+
+    /* ── Playback ─────────────────────────────────────────────────── */
+    var playing = false, pos = 0.26, raf = 0, last = 0, DUR = 16;
+    var fill = document.getElementById("fill"), knob = document.getElementById("knob");
+    var tNow = document.getElementById("tNow"), playBtn = document.getElementById("playBtn");
+    var heads = document.querySelectorAll(".lane-play");
+
+    function fmt(s) { var m = Math.floor(s / 60), x = Math.floor(s % 60); return m + ":" + (x < 10 ? "0" : "") + x; }
+    function paint() {
+      var p = (pos * 100).toFixed(2) + "%";
+      fill.style.width = p; knob.style.left = p;
+      for (var i = 0; i < heads.length; i++) heads[i].style.left = p;
+      tNow.textContent = fmt(pos * DUR);
+    }
+    function tick(now) {
+      if (!playing) return;
+      if (!last) last = now;
+      pos += (now - last) / 1000 / DUR; last = now;
+      if (pos >= 1) pos -= 1;
+      paint();
+      raf = requestAnimationFrame(tick);
+    }
+    playBtn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      playing = !playing;
+      playBtn.innerHTML = playing
+        ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>'
+        : '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
+      playBtn.setAttribute("aria-label", playing ? "Pause" : "Play");
+      if (playing) { last = 0; raf = requestAnimationFrame(tick); } else cancelAnimationFrame(raf);
+    });
+    document.getElementById("scrub").addEventListener("pointerdown", function (e) {
+      e.stopPropagation();
+      var r = this.getBoundingClientRect();
+      pos = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+      paint();
+    });
+    paint();
+
+    /* ── Command palette — VS Code shaped: a shortcut on every row, ">"
+          filters to commands, sections group the results. ───────────── */
+    var ARROW = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 18 6-6-6-6"/></svg>';
+    var SPARK = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8"/></svg>';
+
+    var CMDS = [
+      { t: "Toggle timeline", sec: "Commands", keys: ["⌘", "T"], cmd: true },
+      { t: "Edit shader graph — Dress", sec: "Commands", keys: ["⇧⌘", "G"], cmd: true, deep: true },
+      { t: "Write a WGSL background effect", sec: "Commands", keys: ["⇧⌘", "W"], cmd: true, deep: true },
+      { t: "Edit motion in Reze Studio", sec: "Commands", keys: ["⇧⌘", "M"], cmd: true, deep: true },
+      { t: "Export 4K video", sec: "Commands", keys: ["⇧⌘", "E"], cmd: true },
+      { t: "Publish scene", sec: "Commands", keys: ["⌘", "↵"], cmd: true },
+      { t: "Add character", sec: "Commands", keys: ["⌘", "N"], cmd: true },
+      { t: "Upload camera motion", sec: "Commands", cmd: true },
+      { t: "Camera", sec: "Go to", keys: ["⌘", "1"] },
+      { t: "Background", sec: "Go to", keys: ["⌘", "2"] },
+      { t: "Light", sec: "Go to", keys: ["⌘", "3"] },
+      { t: "Ground", sec: "Go to", keys: ["⌘", "4"] },
+      { t: "Grade", sec: "Go to", keys: ["⌘", "5"] },
+      { t: "Bloom intensity", sec: "Settings" },
+      { t: "Sun elevation", sec: "Settings" },
+      { t: "Grade library", sec: "Settings" }
+    ];
+
+    var cmd = document.getElementById("cmd"), scrim = document.getElementById("scrim");
+    var cmdInput = document.getElementById("cmdInput"), cmdList = document.getElementById("cmdList");
+    var cmdMode = document.getElementById("cmdMode");
+
+    function renderCmds(raw) {
+      var commandsOnly = raw.charAt(0) === ">";
+      cmdMode.hidden = !commandsOnly;
+      var needle = (commandsOnly ? raw.slice(1) : raw).trim().toLowerCase();
+      var hits = CMDS.filter(function (c) {
+        if (commandsOnly && !c.cmd) return false;
+        return !needle || (c.t + " " + c.sec).toLowerCase().indexOf(needle) > -1;
+      });
+      if (!hits.length) {
+        cmdList.innerHTML = '<div class="cmd-none">Nothing matches “' + raw.replace(/[<>&]/g, "") + '”.</div>';
+        return;
+      }
+      var html = "", section = null, n = 0;
+      hits.forEach(function (c) {
+        if (c.sec !== section) { section = c.sec; html += '<div class="cmd-sec">' + section + '</div>'; }
+        var keys = (c.keys || []).map(function (k) { return "<kbd>" + k + "</kbd>"; }).join("");
+        html += '<button class="cmd-item' + (c.deep ? " deep" : "") + (n === 0 ? " active" : "") + '">' +
+          '<span class="ci">' + (c.deep ? SPARK : ARROW) + '</span>' +
+          '<span class="ct">' + c.t + '</span>' +
+          '<span class="ck">' + keys + '</span></button>';
+        n++;
+      });
+      cmdList.innerHTML = html;
+    }
+    function openCmd(prefill) {
+      cmd.classList.add("show"); scrim.classList.add("show");
+      cmdInput.value = prefill || "";
+      renderCmds(cmdInput.value);
+      cmdInput.focus();
+    }
+    function closeCmd() { cmd.classList.remove("show"); scrim.classList.remove("show"); }
+
+    document.getElementById("openCmd").addEventListener("click", function (e) { e.stopPropagation(); openCmd(); });
+    scrim.addEventListener("click", closeCmd);
+    cmdInput.addEventListener("input", function () { renderCmds(this.value); });
+    cmdList.addEventListener("click", function (e) { if (e.target.closest(".cmd-item")) closeCmd(); });
+
+    cmdInput.addEventListener("keydown", function (e) {
+      if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+      e.preventDefault();
+      var items = [].slice.call(cmdList.querySelectorAll(".cmd-item"));
+      if (!items.length) return;
+      var i = items.findIndex(function (x) { return x.classList.contains("active"); });
+      items.forEach(function (x) { x.classList.remove("active"); });
+      var next = e.key === "ArrowDown" ? (i + 1) % items.length : (i - 1 + items.length) % items.length;
+      items[next].classList.add("active");
+      items[next].scrollIntoView({ block: "nearest" });
+    });
+
+    window.addEventListener("keydown", function (e) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openCmd(); }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "p") { e.preventDefault(); openCmd(">"); }
+      if (e.key === "Escape") closeCmd();
+    });
+    renderCmds("");
+  })();
+</script>
+
+</body></html>
