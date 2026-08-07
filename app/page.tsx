@@ -33,6 +33,7 @@ import { RaisableLayer } from "@/components/editor/raisable-layer"
 import { useHistory } from "@/hooks/use-history"
 import { useSceneMedia } from "@/hooks/use-scene-media"
 import { useBrowseSurface } from "@/hooks/use-browse-surface"
+import { useStoredRect } from "@/hooks/use-stored-rect"
 import { expandUploadFiles, readDroppedFiles, unzipToFiles } from "@/lib/uploads"
 import { useI18n, useT } from "@/lib/i18n"
 import { MaterialSphereIcon } from "@/components/scene/slot-icons"
@@ -214,45 +215,10 @@ function saveUiState(state: { docks: boolean; leftTab: string; rightTab: string 
 
 // The graph editor is a free-floating window; its position/size persist across sessions.
 const PANEL_KEY = "reze-design.graphPanel"
-function loadPanelRect(): Rect | null {
-  try {
-    const raw = window.localStorage.getItem(PANEL_KEY)
-    return raw ? (JSON.parse(raw) as Rect) : null
-  } catch {
-    return null
-  }
-}
-function savePanelRect(r: Rect) {
-  try {
-    window.localStorage.setItem(PANEL_KEY, JSON.stringify(r))
-  } catch {
-    // non-fatal
-  }
-}
 // The WGSL editor floats like the graph editor; its rect persists the same way.
 const GRADE_PANEL_KEY = "reze-design.gradePanel"
-function loadGradePanelRect(): Rect | null {
-  try {
-    const raw = window.localStorage.getItem(GRADE_PANEL_KEY)
-    return raw ? (JSON.parse(raw) as Rect) : null
-  } catch {
-    return null
-  }
-}
 
 const WGSL_PANEL_KEY = "reze-design.wgslPanel"
-function loadWgslPanelRect(): Rect | null {
-  try {
-    const raw = window.localStorage.getItem(WGSL_PANEL_KEY)
-    return raw ? (JSON.parse(raw) as Rect) : null
-  } catch {
-    return null
-  }
-}
-// Default: the same bottom-centered rect the graph editor opens
-function defaultWgslPanelRect(): Rect {
-  return defaultPanelRect()
-}
 
 // First-open default: bottom-centered, roughly where the old docked drawer sat, clamped
 function defaultPanelRect(): Rect {
@@ -398,28 +364,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   // Free-floating editor window rect. Read at init rather than in an effect: the
   // panel is gated on `mounted`, so nothing renders it before hydration settles,
   // and setting it from an effect cost a second render of this whole component.
-  const [panelRect, setPanelRect] = useState<Rect | null>(() =>
-    typeof window === "undefined" ? null : (loadPanelRect() ?? defaultPanelRect()),
-  )
-  const updatePanelRect = useCallback((r: Rect) => {
-    setPanelRect(r)
-    savePanelRect(r)
-  }, [])
-  // Keep the floating editor on-screen if the window shrinks (never lose it off-edge).
-  useEffect(() => {
-    const onResize = () =>
-      setPanelRect((r) => {
-        if (!r) return r
-        const pad = 8
-        const w = Math.min(r.w, window.innerWidth - 2 * pad)
-        const h = Math.min(r.h, window.innerHeight - 2 * pad)
-        const x = Math.min(Math.max(pad, r.x), window.innerWidth - w - pad)
-        const y = Math.min(Math.max(pad, r.y), window.innerHeight - h - pad)
-        return { x, y, w, h }
-      })
-    window.addEventListener("resize", onResize)
-    return () => window.removeEventListener("resize", onResize)
-  }, [])
+  const { rect: panelRect, update: updatePanelRect } = useStoredRect(PANEL_KEY, defaultPanelRect, { eager: true })
   // Per-model animation: each model owns its clip (engine clips are per instance).
   type AnimSource = { kind: "file"; file: File } | { kind: "url"; name: string; url: string }
   type AnimEntry = { name: string; size: number | null; source: AnimSource }
@@ -1098,19 +1043,11 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     [],
   )
 
-  const [gradePanelRect, setGradePanelRect] = useState<Rect | null>(null)
-  const updateGradePanelRect = useCallback((r: Rect) => {
-    setGradePanelRect(r)
-    try {
-      window.localStorage.setItem(GRADE_PANEL_KEY, JSON.stringify(r))
-    } catch {
-      // non-fatal
-    }
-  }, [])
+  const { rect: gradePanelRect, update: updateGradePanelRect, ensure: ensureGradePanelRect } =
+    useStoredRect(GRADE_PANEL_KEY, defaultPanelRect)
   // Plain function, not useCallback
   const openGradeEditor = (subject: GradeEditorSubject) => {
-    const fallback = loadGradePanelRect() ?? defaultPanelRect()
-    setGradePanelRect((r) => r ?? fallback)
+    ensureGradePanelRect()
     setGradeEditor((prev) => ({ sessionId: (prev?.sessionId ?? 0) + 1, subject, opened: subject, savePrompt: false }))
   }
   // Plain function for the same reason as openGradeEditor above
@@ -1244,15 +1181,8 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   } | null>(null)
   const effectSessionRef = useRef(0)
   // Rect initializes lazily on first OPEN (an event handler, so no setState-in-effect)
-  const [effectPanelRect, setEffectPanelRect] = useState<Rect | null>(null)
-  const updateEffectPanelRect = useCallback((r: Rect) => {
-    setEffectPanelRect(r)
-    try {
-      window.localStorage.setItem(WGSL_PANEL_KEY, JSON.stringify(r))
-    } catch {
-      // non-fatal
-    }
-  }, [])
+  const { rect: effectPanelRect, update: updateEffectPanelRect, ensure: ensureEffectPanelRect } =
+    useStoredRect(WGSL_PANEL_KEY, defaultPanelRect)
   // Compile + apply in one step
   // Only the LISTS come from the hook. Writes go through the plain functions in
   // lib/drafts.ts — a hook-returned callback in a dependency array defeats the
@@ -1279,7 +1209,7 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   const openEffectEditor = (subject: AppliedBackgroundEffect) => {
     effectSessionRef.current += 1
     setEffectEditor({ sessionId: effectSessionRef.current, subject, prior: bgEffect, savePrompt: null })
-    setEffectPanelRect((r) => r ?? loadWgslPanelRect() ?? defaultWgslPanelRect())
+    ensureEffectPanelRect()
     void commitEffectCode(subject, subject.wgsl)
   }
   /** Close request from the editor. Dirty → prompt; clean → the preview simply
@@ -2125,6 +2055,8 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
       // Only a built-in is an ancestor to revert to.
       origin: own ? undefined : preset,
     })
+    // openGradeEditor calls ensureGradePanelRect, which is stable from useStoredRect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sceneSettings.grade, gradeDrafts, communityGrades])
   const editCurrentEffect = () => {
     if (bgEffect) openEffectEditor(bgEffect)
