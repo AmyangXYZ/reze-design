@@ -5,13 +5,7 @@ import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react"
 import { Select as SelectPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
-
-// Radix returns focus to the trigger when a Select closes.
-let lastInputWasKeyboard = false
-if (typeof window !== "undefined") {
-  window.addEventListener("keydown", () => (lastInputWasKeyboard = true), true)
-  window.addEventListener("pointerdown", () => (lastInputWasKeyboard = false), true)
-}
+import { preventFocusReturnOnPointer } from "@/lib/last-input"
 
 function Select({
   ...props
@@ -69,9 +63,7 @@ function SelectContent({
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content
         data-slot="select-content"
-        onCloseAutoFocus={(e) => {
-          if (!lastInputWasKeyboard) e.preventDefault()
-        }}
+        onCloseAutoFocus={preventFocusReturnOnPointer}
         className={cn(
           "relative z-50 max-h-(--radix-select-content-available-height) min-w-[5.5rem] origin-(--radix-select-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-lg border border-white/10 bg-zinc-950/95 text-popover-foreground shadow-md backdrop-blur-xs data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
           position === "popper" &&
