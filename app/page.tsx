@@ -26,7 +26,7 @@ import { FloatingPanel, type Rect } from "@/components/editor/floating-panel"
 import { BackgroundLibrary } from "@/components/editor/background-library"
 import { WgslEditorPanel } from "@/components/editor/wgsl-editor"
 import { NodeLibrary } from "@/components/editor/node-library"
-import { RenderPanel, type FramePreview } from "@/components/editor/render-panel"
+import { RenderPanel } from "@/components/editor/render-panel"
 import { useEngine } from "@/hooks/use-engine"
 import { useSceneSync } from "@/hooks/use-scene-sync"
 import { RaisableLayer } from "@/components/editor/raisable-layer"
@@ -34,6 +34,7 @@ import { useHistory } from "@/hooks/use-history"
 import { useSceneMedia } from "@/hooks/use-scene-media"
 import { useBrowseSurface } from "@/hooks/use-browse-surface"
 import { useStoredRect } from "@/hooks/use-stored-rect"
+import { useRenderFraming } from "@/hooks/use-render-framing"
 import { expandUploadFiles, readDroppedFiles, unzipToFiles } from "@/lib/uploads"
 import { useI18n, useT } from "@/lib/i18n"
 import { MaterialSphereIcon } from "@/components/scene/slot-icons"
@@ -863,36 +864,12 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     audioSource, setAudioSource, setMusicFile, pickMusic, removeAudio,
   } = media
 
-  // While an export runs it drives the same model clock the live mirrors watch
-  const [exporting, setExporting] = useState(false)
-  // Green-screen (chroma-key) mode — LIVE, not export-only
-  const [greenScreen, setGreenScreen] = useState(false)
-  // Live framing while the Render tab is open.
-  const [framePreview, setFramePreview] = useState<FramePreview | null>(null)
-  // Collapsing the docks UNMOUNTS the Render panel (the dock's keep-alive covers tab switches
-  const [lastFrame, setLastFrame] = useState<FramePreview | null>(null)
-  const handleFramePreview = useCallback((p: FramePreview | null) => {
-    setFramePreview(p)
-    if (p) setLastFrame(p)
-  }, [])
-  const activeFrame = framePreview ?? (exporting ? lastFrame : null)
-  // Green screen is a RENDER-TAB PREVIEW, not a scene mode
-  const liveGreenScreen = greenScreen && activeFrame !== null
-  // Seeded from the window rather than left null until an effect runs: the pair
-  // (frame, viewport) decides the render size, and measuring the viewport one
-  // render later made opening the Render tab resize the WebGPU canvas TWICE —
-  // once to the viewport, once to the framed size — which the docks' backdrop
-  // blur sits on top of.
-  const [frameVp, setFrameVp] = useState<{ w: number; h: number } | null>(() =>
-    typeof window === "undefined" ? null : { w: window.innerWidth, h: window.innerHeight },
-  )
-  useEffect(() => {
-    if (!activeFrame) return
-    const update = () => setFrameVp({ w: window.innerWidth, h: window.innerHeight })
-    update()
-    window.addEventListener("resize", update)
-    return () => window.removeEventListener("resize", update)
-  }, [activeFrame])
+  // Export framing, green-screen preview and in-flight state — see the hook for
+  // why lastFrame has to outlive the panel that reported it.
+  const {
+    exporting, setExporting, greenScreen, setGreenScreen,
+    handleFramePreview, activeFrame, liveGreenScreen, frameVp,
+  } = useRenderFraming()
   useEffect(() => {
     const engine = engineRef.current
     if (!engine || !ready) return
