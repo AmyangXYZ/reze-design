@@ -42,3 +42,4 @@ next-env.d.ts
 
 # Third-party MMD assets dropped in for testing — never ours to commit
 /【*】*/
+/Models/

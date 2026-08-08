@@ -245,26 +245,19 @@
    RADII: 12px surface · 8px interior · 6px chip.
    ───────────────────────────────────────────────────────────────────────── */
 @theme inline {
-  /* Chrome ground. NO backdrop-blur behind it, and opaque enough not to need
-     one.
+  /* Chrome ground — the recipe the shipped docks use: zinc-950/70 behind a
+     backdrop-blur, /95 for anything stacked on top.
 
-     The shipped docks use zinc-950/70 behind a blur and keep doing so — they
-     carry their own literals, so this token draws the line cleanly. Everything
-     built on it goes without, for a reason that was measured rather than
-     assumed: a blur re-samples the whole viewport every frame, and these
-     surfaces float over a canvas that is rendering continuously. It is worst
-     when a surface is also ANIMATING — the transport unfolding into the
-     timeline visibly dropped frames until the blur came off it.
-
-     Lightness is raised from zinc-950's 0.141, and that is the blur being paid
-     for rather than a change of mind. A 70% pane over a blurred scene borrowed
-     the scene's brightness; take the blur away and hold the same alpha and the
-     panels read markedly darker than they used to. Lifting L restores the colour
-     they had while keeping them opaque — which is the whole point, since alpha
-     is what would put the canvas back underneath. */
-  --color-surface: oklch(0.178 0.006 286 / 0.92);
+     The blur was removed once and measured: the transport's fold animates
+     layout properties, and doing that through a backdrop-filter over a live
+     WebGPU canvas visibly dropped frames. It went back in anyway — the call is
+     that the 0.4.0 chrome looks identical to the shipped app, and a fold that
+     pays a few frames of its 300ms is the cheaper loss. If the fold ever has
+     to be perfectly smooth, drop the blur HERE and raise L to compensate
+     (0.178 at 0.92 alpha read the same); do not re-litigate it per surface. */
+  --color-surface: oklch(0.141 0.005 285.823 / 0.7);
   /* Anything stacked ON the ground: a menu over a panel, a dialog over both. */
-  --color-surface-raised: oklch(0.196 0.006 286 / 0.96);
+  --color-surface-raised: oklch(0.141 0.005 285.823 / 0.95);
   /* The dim behind a centred, scrimmed surface. */
   --color-scrim: oklch(0.12 0.008 260 / 0.55);
 

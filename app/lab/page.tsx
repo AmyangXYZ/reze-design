@@ -44,7 +44,6 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { AccountButton } from "@/components/editor/account-panel"
-import type { Engine, StyleGroup } from "reze-engine"
 import { AnimPlayer } from "@/components/scene/anim-player"
 import { CastSwatch } from "@/components/editor/cast-swatch"
 import { CommandPalette } from "@/components/editor/command-palette"
@@ -55,16 +54,17 @@ import { LayerRow, PresetChips, StackGroup } from "@/components/editor/layer-row
 import { SliderRow } from "@/components/scene/scene-sidebar"
 import { useEngine } from "@/hooks/use-engine"
 import { DEFAULT_SCENE } from "@/lib/default-scene"
-import { hydrateScene, type Scene } from "@/lib/scene"
+import { hydrateScene } from "@/lib/scene"
 import { expandUploadFiles } from "@/lib/uploads"
-import { dominantHue, type TextureSource } from "@/lib/model-colour"
-import { NEUTRAL_PALETTE, paletteForHue, type CastPaletteId } from "@/lib/cast-palette"
-import { sceneFiles } from "@/lib/scene-files"
+import { castColour } from "@/lib/model-colour"
+import { castSourceFor } from "@/lib/cast-source"
+import { NEUTRAL_PALETTE, type CastPaletteId } from "@/lib/cast-palette"
+import { relFilePath } from "@/lib/scene-files"
 import { cn } from "@/lib/utils"
 
 /** Floating chrome — editor-chrome.tsx's `floating`, taken through the surface
  *  token so the pills and the panel cannot drift apart. */
-const PILL = "rounded-xl border border-white/10 bg-surface shadow-float"
+const PILL = "rounded-xl border border-white/10 bg-surface shadow-float backdrop-blur-xs"
 
 /** The iOS sheet curve — decelerating, no overshoot. Width, height and radius
  *  all ride it so the transport reads as ONE surface changing shape rather than
@@ -400,126 +400,6 @@ function CastRowSkeleton() {
  *  model here is a .pmx, so printing it on every row says nothing. */
 const displayName = (file: string) => file.replace(/\.pmx$/i, "")
 
-const IMAGE = /\.(png|jpe?g|bmp|webp)$/i
-const norm = (p: string) => p.replace(/\\/g, "/").toLowerCase()
-
-/**
- * The DIFFUSE textures this model actually wears.
- *
- * Two things narrower than "images near the model", both of which were being
- * sampled and both of which skew the answer:
- *
- *  - not every image in the folder. Model folders carry unused variants, spare
- *    costumes, readme screenshots. Only what a material references counts.
- *  - not every texture in the PMX table either. That table also holds toon ramps
- *    and sphere maps — a toon ramp is a warm gradient by construction, so
- *    letting those vote is a thumb on the scale toward amber.
- *
- * Walk the materials, take their diffuseTextureIndex, resolve only those. An
- * uploaded model matches them against the Files still in memory; a served one
- * builds URLs under its folder.
- */
-/** Auto-grouping already tells us which materials are skin — 顔 / 肌 / face /
- *  body and their many spellings. Skipping those materials outright beats any
- *  colour heuristic: skin sits in the same hues as blonde and auburn hair, and
- *  a body material carries a huge vertex count, so it dominates the vote
- *  precisely because it covers the most character. */
-const SKIN_GROUPS = new Set(["body", "face"])
-
-/**
- * How much each kind of material counts toward the identity colour.
- *
- * The COSTUME is what identifies a character. Hair is unreliable for it — silver,
- * white, blonde and black are all extremely common, and when hair is achromatic
- * it either contributes nothing or, worse, contributes a faint tint that reads as
- * a confident wrong colour. It still votes, at a fraction, because a teal- or
- * pink-haired character genuinely IS that colour.
- *
- * Eyes score zero: vivid, tiny, and never what anyone means by a character's
- * colour. Anything unlisted is costume and counts fully.
- */
-const GROUP_WEIGHT: Record<string, number> = {
-  hair: 0.3,
-  eye: 0,
-  stockings: 0.5,
-}
-
-function textureSources(
-  engine: Engine | null,
-  id: string,
-  scene: Scene,
-  groups: StyleGroup[] | undefined,
-): { sources: TextureSource[] } {
-  // Passed in, not read off window.__reze — that handle is only set in
-  // development, so reaching for it would have made every model come out
-  // neutral in production without anything failing loudly.
-  const model = engine?.getModel(id)
-  if (!model) return { sources: [] }
-
-  const table = model.getTextures()
-  const skinMaterials = new Set((groups ?? []).filter((g) => SKIN_GROUPS.has(g.id)).flatMap((g) => g.materials))
-  const groupOf = new Map<string, string>()
-  for (const g of groups ?? []) for (const name of g.materials) groupOf.set(name, g.id)
-  // Group by sheet AND tint, summing vertices: several materials can share one
-  // sheet, and what matters is how much of the character ends up wearing it.
-  //
-  // The tint is not optional detail. A large share of MMD materials paint a white
-  // or grey sheet and put the actual colour in the material's diffuse — so the
-  // texture alone says "grey" for a scarlet dress. And a material with no texture
-  // at all is nothing BUT its diffuse; those used to be dropped outright, which is
-  // how a model with three sheets and a flat-coloured costume came out neutral.
-  const parts = new Map<string, { index: number; tint: [number, number, number]; weight: number }>()
-  for (const mat of model.getMaterials()) {
-    if (skinMaterials.has(mat.name)) continue
-    const factor = GROUP_WEIGHT[groupOf.get(mat.name) ?? ""] ?? 1
-    if (factor === 0) continue
-    // Fully transparent materials are hidden parts, not colour.
-    if (mat.diffuse[3] < 0.1) continue
-    const i = mat.diffuseTextureIndex
-    const index = i >= 0 && i < table.length && IMAGE.test(table[i].path) ? i : -1
-    const tint: [number, number, number] = [mat.diffuse[0], mat.diffuse[1], mat.diffuse[2]]
-    const key = `${index}|${tint.map((c) => Math.round(c * 32)).join(",")}`
-    const part = parts.get(key)
-    if (part) part.weight += mat.vertexCount * factor
-    else parts.set(key, { index, tint, weight: mat.vertexCount * factor })
-  }
-  if (parts.size === 0) return { sources: [] }
-  // Untextured materials need no file, so they resolve here for both branches.
-  const flat = [...parts.values()]
-    .filter((p) => p.index < 0)
-    .map(({ tint, weight }) => ({ src: null, tint, weight }) satisfies TextureSource)
-  const paths = [...parts.values()]
-    .filter((p) => p.index >= 0)
-    .map(({ index, tint, weight }) => ({ path: table[index].path, tint, weight }))
-
-  const kept = sceneFiles.models.get(id)
-  if (kept) {
-    // Match on the path tail: two textures can share a basename in different
-    // subfolders, and webkitRelativePath carries the folder the user picked.
-    const files = paths
-      .map(({ path, tint, weight }) => {
-        const want = norm(path)
-        const base = want.split("/").pop()
-        const file = kept.files.find((f) => {
-          const rel = norm((f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name)
-          return rel.endsWith(want) || norm(f.name) === base
-        })
-        return file ? ({ src: file, tint, weight } satisfies TextureSource) : null
-      })
-      .filter((x) => x !== null)
-    return { sources: [...files, ...flat] }
-  }
-
-  const src = scene.assets.models.find((m) => m.model.id === id)?.model.source
-  if (src?.kind !== "folder") return { sources: flat }
-  const dir = src.dir
-  return {
-    sources: [
-      ...paths.map(({ path, tint, weight }) => ({ src: `${dir}/${path.replace(/\\/g, "/")}`, tint, weight })),
-      ...flat,
-    ],
-  }
-}
 
 export default function Lab() {
   const [scene] = useState(() => hydrateScene(DEFAULT_SCENE))
@@ -626,7 +506,6 @@ export default function Lab() {
   type UploadState =
     { kind: "pick"; files: File[]; paths: string[]; target: ModelTarget } | { kind: "notice"; message: string } | null
   const [upload, setUpload] = useState<UploadState>(null)
-  const relPath = (f: File) => (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name
 
   const pickModel = (target: ModelTarget) => {
     modelTarget.current = target
@@ -675,7 +554,7 @@ export default function Lab() {
       setUpload({
         kind: "pick",
         files,
-        paths: pmx.map(relPath).sort((a, b) => a.localeCompare(b)),
+        paths: pmx.map(relFilePath).sort((a, b) => a.localeCompare(b)),
         target,
       })
     }
@@ -687,30 +566,23 @@ export default function Lab() {
   // upgrades in place when the answer lands, so nothing waits on decoding
   // textures and nothing moves when it finishes.
   const [palettes, setPalettes] = useState<Record<string, CastPaletteId>>({})
+  // Once per model id, tracked in a ref rather than read back from `palettes` —
+  // state in the deps made every resolution re-run the effect, and the restart
+  // raced its own in-flight pass: N models cost 2N−1 full extractions, the
+  // extras discarded. Models kick off in parallel; castColour returns the
+  // palette id directly, or null for a model it could not read (a bundled one,
+  // say), which resolves to the neutral rather than shimmering forever.
+  const castStarted = useRef(new Set<string>())
   useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      for (const m of models) {
-        if (palettes[m.id]) continue
-        const { sources } = textureSources(engineRef.current, m.id, scene, groupsByModel[m.id])
-        if (sources.length === 0) {
-          // Nothing to sample (a bundled model). Resolve anyway, or the swatch
-          // shimmers forever waiting on an answer that is not coming.
-          setPalettes((p) => (p[m.id] ? p : { ...p, [m.id]: NEUTRAL_PALETTE }))
-          continue
-        }
-        const hue = await dominantHue(sources)
-        if (cancelled) return
-        // null → no colour inside the vibrant bounds, which the neutral says
-        // honestly rather than inventing one.
-        const id = hue === null ? NEUTRAL_PALETTE : paletteForHue(hue).id
-        setPalettes((p) => (p[m.id] ? p : { ...p, [m.id]: id }))
-      }
-    })()
-    return () => {
-      cancelled = true
+    for (const m of models) {
+      if (castStarted.current.has(m.id)) continue
+      castStarted.current.add(m.id)
+      const source = castSourceFor(m.id, scene, groupsByModel[m.id])
+      void (source ? castColour(source) : Promise.resolve(null)).then((palette) =>
+        setPalettes((p) => (p[m.id] ? p : { ...p, [m.id]: palette ?? NEUTRAL_PALETTE })),
+      )
     }
-  }, [models, palettes, scene, engineRef, groupsByModel])
+  }, [models, scene, groupsByModel])
 
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [recentIds, setRecentIds] = useState<string[]>([])
@@ -848,7 +720,7 @@ export default function Lab() {
       {/* Which .pmx, or why it failed — the shipped editor's dialog, reused
           rather than reinvented. */}
       <Dialog open={upload !== null} onOpenChange={(o) => !o && setUpload(null)}>
-        <DialogContent className="max-w-sm rounded-xl border-line-strong bg-surface-raised">
+        <DialogContent className="max-w-sm rounded-xl border-line-strong bg-surface-raised backdrop-blur-xs">
           <DialogHeader>
             <DialogTitle className="text-sm">
               {upload?.kind === "pick" ? "Which model?" : "Couldn't load that"}
@@ -861,7 +733,7 @@ export default function Lab() {
                   key={path}
                   className="block w-full cursor-pointer truncate rounded-lg px-3 py-2 text-left text-xs transition-colors hover:bg-white/5 hover:text-foreground"
                   onClick={() => {
-                    const pmx = upload.files.find((f) => relPath(f) === path)
+                    const pmx = upload.files.find((f) => relFilePath(f) === path)
                     if (pmx) void loadPicked(upload.files, pmx, upload.target)
                   }}
                 >
@@ -1152,19 +1024,23 @@ export default function Lab() {
           WORKSPACE,
         )}
       >
-        {/* max-width, not width: auto does not interpolate, so a pill that hugs
-            its contents cannot animate to full-bleed. Two explicit values can,
-            and while collapsed the cap simply sits above the row's natural size
-            so the pill still hugs.
-            
-            The open value is 100%, not some large rem — a cap past the container
-            keeps animating after the element has stopped growing, which spends
-            most of the duration doing nothing visible and reads as a snap. */}
+        {/* max-w-fit is what returns the collapsed pill to the ORIGINAL slider
+            length: the track is flex-1 with min-w-[min(16rem,30vw)], and a
+            fit-content pill resolves a flex-1 child at its min-content size —
+            which IS that floor, the shipped transport's exact track width. Open
+            swaps the cap to 100% and flex-1 absorbs the growth, so the track is
+            the only thing that stretches.
+
+            interpolate-size lets the keyword cap animate (Chrome; Safari snaps
+            between correct layouts, which this dev route accepts). The open cap
+            is 100% and not some large rem, because a cap past the container
+            keeps "animating" after the element has stopped growing — dead time
+            that reads as a snap at the start of the close. */}
         <div
           className={cn(
-            "pointer-events-auto w-full transition-[max-width]",
+            "pointer-events-auto w-full transition-[max-width] [interpolate-size:allow-keywords]",
             FOLD,
-            timelineOpen ? "max-w-full" : "max-w-[31rem]",
+            timelineOpen ? "max-w-full" : "max-w-fit",
           )}
         >
           <AnimPlayer
@@ -1195,8 +1071,21 @@ export default function Lab() {
               <div className={cn("grid transition-[grid-template-rows]", FOLD, timelineOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
                 <div className="overflow-hidden" inert={!timelineOpen}>
                   {/* Border on the INNER element, so it folds away with the
-                      lanes instead of drawing a line under a closed pill. */}
-                  <div className="border-t border-line px-4 pt-3 pb-4">
+                      lanes instead of drawing a line under a closed pill.
+
+                      The fade is asymmetric on purpose. The fold only CLIPS the
+                      lanes — they stay fully opaque under the shrinking edge, so
+                      the last visible strip vanished in one frame, a flash right
+                      at the end of the close. Fading out at half the fold's
+                      duration means the fold closes over content that is already
+                      gone; opening gets the full duration, since content
+                      arriving with the fold is what a fold should look like. */}
+                  <div
+                    className={cn(
+                      "border-t border-line px-4 pt-3 pb-4 transition-opacity ease-out",
+                      timelineOpen ? "opacity-100 duration-300" : "opacity-0 duration-150",
+                    )}
+                  >
                     {/* One lane per cast member, then the scene-wide slots.
                         Camera and music always show even with an empty cast: the
                         timeline's shape should not depend on what happens to be

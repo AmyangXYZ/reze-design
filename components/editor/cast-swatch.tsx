@@ -36,21 +36,20 @@ export function CastSwatch({
       style={{ backgroundImage: `linear-gradient(145deg, ${from} 0%, ${to} 72%)` }}
       aria-hidden
     >
-      {/* Light from the top-left, as everything else in the chrome is lit. A
-          tight, bright core rather than a broad wash — a wash just lightens the
-          colour, while a small hot spot reads as a surface catching light. */}
+      {/* One soft light from above, and nothing that DEPICTS shininess. A hard
+          gloss stop, a specular dot and a shaded floor were tried together and
+          read as a Flash-era glass button — three skeuomorphic cues stacked.
+          What reads considered is the opposite: a broad low wash you only miss
+          when it is gone. */}
       <span
         className="absolute inset-0"
-        style={{ backgroundImage: "radial-gradient(70% 60% at 26% 16%, rgb(255 255 255 / 0.22), transparent 70%)" }}
-      />
-      {/* A sheen across the upper half — what keeps it from reading as a sticker. */}
-      <span
-        className="absolute inset-x-0 top-0 h-1/2"
-        style={{ backgroundImage: "linear-gradient(180deg, rgb(255 255 255 / 0.12), transparent)" }}
+        style={{ backgroundImage: "radial-gradient(90% 70% at 30% 0%, rgb(255 255 255 / 0.16), transparent 68%)" }}
       />
       {/* Inset hairline rather than a border, so the gradient runs to the very
-          edge instead of being framed by it. */}
-      <span className="absolute inset-0 rounded-interior ring-1 ring-white/20 ring-inset" />
+          edge instead of being framed by it. The single brighter pixel along
+          the top edge is the one machined detail — an edge catching light,
+          which is as far as the shine goes. */}
+      <span className="absolute inset-0 rounded-interior shadow-[inset_0_1px_0_rgb(255_255_255/0.28)] ring-1 ring-white/15 ring-inset" />
     </span>
   )
 }

@@ -21,13 +21,11 @@ import type { ReactNode } from "react"
 import { cn } from "@/lib/utils"
 
 /**
- * NO backdrop-blur — see --color-surface, which is opaque enough without one.
- *
- * A blur re-samples the whole viewport every frame, and these surfaces float
- * over a canvas that never stops rendering. The transport folding open was the
- * proof: identical markup, visibly smoother the moment the blur came off.
+ * The docks' own recipe — bg-surface behind a backdrop-blur. The blur's cost
+ * over a live canvas is real and was measured; the decision to keep it anyway
+ * is recorded on --color-surface in globals.css.
  */
-const SKIN = "border border-line-strong bg-surface shadow-float"
+const SKIN = "border border-line-strong bg-surface shadow-float backdrop-blur-xs"
 
 export type SurfacePlacement =
   /** Centred over a scrim. A decision to commit or abandon. */

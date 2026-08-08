@@ -28,8 +28,12 @@ export const sceneFiles = {
  * file shares is packaging rather than structure, and keeping it nested the model
  * one level deeper than its own id — `models/<id>/<same-name-again>/model.pmx`.
  */
+/** Where a kept File sits relative to its upload: folder picks carry the path in
+ *  webkitRelativePath, zip expansion in name. The one rule, spelled once. */
+export const relFilePath = (f: File) => (f.webkitRelativePath || f.name).replace(/\\/g, "/")
+
 export function modelFilePaths(files: File[]): Map<File, string> {
-  const rel = (f: File) => (f.webkitRelativePath || f.name).replace(/\\/g, "/")
+  const rel = relFilePath
   const roots = new Set(files.map((f) => rel(f).split("/")[0]))
   // One shared root AND at least one file actually inside it — a flat pick of
   // loose files would otherwise lose its only filename.

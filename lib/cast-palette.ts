@@ -15,7 +15,7 @@
 // Two different hues in one square was tried too; it made every swatch busy and
 // the list incoherent, which is the opposite of what an identity mark is for.
 
-export type CastPaletteId = "violet" | "rose" | "amber" | "green" | "teal" | "sky" | "blue" | "slate"
+export type CastPaletteId = "violet" | "rose" | "amber" | "green" | "teal" | "sky" | "blue" | "silver" | "slate"
 
 export type CastPalette = {
   id: CastPaletteId
@@ -39,30 +39,24 @@ export const CAST_PALETTES: CastPalette[] = [
   { id: "blue", from: "#60a5fa", to: "#2563eb", hue: 228 },
   { id: "violet", from: "#a78bfa", to: "#7c3aed", hue: 268 },
   /**
-   * For characters with no colour of their own — white, silver, black. Forcing
-   * one into a hue means reporting a faint tint as an identity, which is how a
-   * white dress came out blue.
+   * TWO neutrals, because colourless spans white to black and one swatch cannot
+   * say both — a white-dressed character behind a dark grey square reads as
+   * mislabelled, and a black one has nothing darker left to claim. Silver is
+   * the light absence, slate the dark one; extraction picks by which side of
+   * mid-lightness holds more colourless mass.
    *
-   * A step darker and far duller than the rest, on purpose: it stands for the
-   * absence of colour, so it must never out-brighten one.
+   * Both far duller than every colour, on purpose: brightness without chroma
+   * does not compete with an identity, saturation does — so the neutrals may
+   * bracket the colours in lightness but must never approach them in chroma.
    */
-  { id: "slate", from: "#64748b", to: "#334155", hue: null },
+  { id: "silver", from: "#e2e8f0", to: "#94a3b8", hue: null },
+  { id: "slate", from: "#475569", to: "#1e293b", hue: null },
 ]
 
 const byId = new Map(CAST_PALETTES.map((p) => [p.id, p]))
 
 export function castPalette(id: CastPaletteId | undefined): CastPalette {
   return (id && byId.get(id)) ?? byId.get("slate")!
-}
-
-/** Nearest palette to a hue, on the circle — 350° and 10° are neighbours. */
-export function paletteForHue(hue: number): CastPalette {
-  const h = ((hue % 360) + 360) % 360
-  const hued = CAST_PALETTES.filter((p): p is CastPalette & { hue: number } => p.hue !== null)
-  return hued.reduce((best, p) => {
-    const d = (x: { hue: number }) => Math.min(Math.abs(h - x.hue), 360 - Math.abs(h - x.hue))
-    return d(p) < d(best) ? p : best
-  })
 }
 
 /** What a model gets when its textures carry no identifying colour. */

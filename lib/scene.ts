@@ -451,7 +451,7 @@ export function parseSceneDoc(
 }
 
 /** Join a folder URL and a filename. No encoding — see AssetRef.url. */
-function assetUrl(dir: string, file: string): string {
+export function assetUrl(dir: string, file: string): string {
   return `${dir.replace(/\/+$/, "")}/${file}`
 }
 
