@@ -52,12 +52,14 @@ export function LayerRow({
         )}
       >
         <Icon className={cn("size-4 shrink-0", open ? "text-blue-400" : "text-muted-foreground")} />
-        <span className="shrink-0 text-[13px] text-foreground">{name}</span>
+        <span className="shrink-0 text-[13px] text-foreground font-medium">{name}</span>
         {/* Hidden rather than unmounted while open: the row must not reflow when
             the body appears, and the summary is about to be redundant anyway. */}
         <span
           className={cn(
-            "ml-auto max-w-[8.25rem] truncate text-[13px] text-muted-foreground transition-opacity",
+            // No transition: the body swaps instantly when rows switch, and a
+            // summary that FADES back in reads as the value arriving late.
+            "ml-auto max-w-[8.25rem] truncate text-[13px] text-muted-foreground",
             open && "opacity-0",
           )}
         >
@@ -145,7 +147,7 @@ export function StackGroup({
           rows the label OWNS — a label floating equidistant between the block
           above and the block below belongs to neither. */}
       <div className="flex items-center gap-2 px-4 pt-6 pb-1">
-        <span className="min-w-0 flex-1 truncate font-mono text-xs tracking-[0.12em] text-muted-foreground uppercase">
+        <span className="min-w-0 flex-1 truncate font-mono text-xs font-medium tracking-[0.12em] text-muted-foreground uppercase">
           {label}
         </span>
         {/* The action has to fit the label's own line box, or a group that has

@@ -33,8 +33,9 @@ export function QuickPick({
   label?: string
   items: QuickPickItem[]
   onPick: (id: string) => void
-  /** Escape hatch to the full library — always last, always present. */
-  onBrowse: () => void
+  /** Escape hatch to the full library, last in the list. Omit when the caller
+   *  renders its own Browse affordance beside the picker instead. */
+  onBrowse?: () => void
   /** Optional: open the editor on the current value. Rendered above "Browse all…". */
   onEdit?: () => void
   editLabel?: string
@@ -147,6 +148,7 @@ export function QuickPick({
             <ScrollArea bars className="max-h-16">{items.filter((i) => i.section === "local").map(row)}</ScrollArea>
           </div>
         )}
+        {(onEdit || onBrowse) && (
         <div className="mt-1 shrink-0 border-t border-white/10 pt-1">
           {onEdit && (
             <button
@@ -159,16 +161,19 @@ export function QuickPick({
               {editLabel ?? t.materials.editGraph}
             </button>
           )}
-          <button
-            onClick={() => {
-              setOpen(false)
-              onBrowse()
-            }}
-            className="w-full cursor-pointer rounded-lg px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
-          >
-            {t.scene.browseAll}
-          </button>
+          {onBrowse && (
+            <button
+              onClick={() => {
+                setOpen(false)
+                onBrowse()
+              }}
+              className="w-full cursor-pointer rounded-lg px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+            >
+              {t.scene.browseAll}
+            </button>
+          )}
         </div>
+        )}
       </PopoverContent>
     </Popover>
   )

@@ -52,8 +52,10 @@ type Props = {
   onApplyPreset: (id: string) => void
   /** A draft was renamed — re-point anything applied by the old name. */
   onRenamed?: (oldName: string, newName: string) => void
-  /** Open the page-level floating grade editor (independent panel, same idiom as the graph */
-  onEdit: (subject: GradeEditorSubject) => void
+  /** Open the page-level floating grade editor (independent panel, same idiom as the graph
+   *  editor). Optional: a host without the editor omits it, and every edit/new
+   *  affordance hides rather than sitting there doing nothing. */
+  onEdit?: (subject: GradeEditorSubject) => void
 }
 
 export function GradeLibrary(props: Props) {
@@ -161,12 +163,13 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
 
   /** Straight into the editor, no entry created */
   const startEdit = (g: GradeItem) => {
+    if (!onEdit) return
     setSelectedId(g.name)
     onEdit({ id: g.id, name: g.name, spec: g.payload.spec, origin: g.owner === "builtin" ? g.name : undefined })
   }
   // Nothing is created here — the editor is a scratchpad, and the save-on-close
   // dialog is what turns the work into a draft.
-  const startNew = () => onEdit({ id: "", name: t.gradeLibrary.newGrade, spec: NEW_GRADE_SPEC })
+  const startNew = () => onEdit?.({ id: "", name: t.gradeLibrary.newGrade, spec: NEW_GRADE_SPEC })
 
   /** Is this entry what the scene is currently showing? The scene stores the name. */
   const isApplied = (g: GradeItem) => grade.preset === g.name
@@ -245,7 +248,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
       <ContextMenu key={g.id}>
         <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
         <ContextMenuContent className="w-40">
-          <ContextMenuItem onSelect={() => startEdit(g)}>{t.gradeLibrary.edit}</ContextMenuItem>
+          {onEdit && <ContextMenuItem onSelect={() => startEdit(g)}>{t.gradeLibrary.edit}</ContextMenuItem>}
           {isDraft && <ContextMenuItem
               onSelect={() => {
                 setRenameError(null)
@@ -323,6 +326,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
             className="h-7 border-white/10 bg-white/5 pl-8 text-xs"
           />
         </div>
+        {onEdit && (
         <button
           onClick={startNew}
           className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90"
@@ -330,6 +334,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
           <Plus className="size-3.5" />
           {t.gradeLibrary.newGrade}
         </button>
+        )}
         <DialogClose className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
           <X className="size-4" />
           <span className="sr-only">{t.library.close}</span>
@@ -417,6 +422,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                 {/* The preview IS the edit affordance, exactly like the other two libraries */}
                 <button
                   type="button"
+                  disabled={!onEdit}
                   onClick={() => startEdit(selected)}
                   className="group/prev relative block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-md border border-white/10"
                 >
