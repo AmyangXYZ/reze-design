@@ -71,7 +71,16 @@ export function LayerRow({
           under the band and 14px above the next divider, which is what made it
           look mispositioned rather than merely close. Tighten both together or
           not at all. */}
-      {open && <div className="px-4 py-3">{children}</div>}
+      {/* text-muted-foreground on the WRAPPER: the row name above is bright and
+          every control label inside is muted, so title and items never read as
+          the same tier. Controls that mean to be bright (a selected chip, an
+          editing value) override locally.
+
+          pt one step under pb: the open header's tinted band contributes its
+          own 8px below the title, so equal paddings read as a LARGER gap above
+          the first control than below the last. Slightly smaller pt is what
+          looks symmetric. */}
+      {open && <div className="px-4 pt-2 pb-3 text-muted-foreground">{children}</div>}
     </div>
   )
 }

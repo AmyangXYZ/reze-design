@@ -58,10 +58,12 @@ import { useEngine } from "@/hooks/use-engine"
 import { DEFAULT_SCENE } from "@/lib/default-scene"
 import { hydrateScene } from "@/lib/scene"
 import { expandUploadFiles } from "@/lib/uploads"
+import { Vec3 } from "reze-engine"
 import { castColour } from "@/lib/model-colour"
 import { castSourceFor } from "@/lib/cast-source"
 import { NEUTRAL_PALETTE, type CastPaletteId } from "@/lib/cast-palette"
 import { relFilePath, sceneFiles } from "@/lib/scene-files"
+import { WIND_MAX, windDirection, windFreqFromSlider, windSliderFromFreq, windVariation, type SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 
 /** Floating chrome — editor-chrome.tsx's `floating`, taken through the surface
@@ -119,18 +121,7 @@ const LAYERS = [
     icon: Sun,
     presets: ["Soft key", "Golden hour", "Stage", "Rim only"],
   },
-  {
-    id: "bloom",
-    name: "Bloom",
-    icon: Sparkles,
-    presets: ["Gentle", "Dreamy", "Hard", "Off"],
-  },
-  {
-    id: "physics",
-    name: "Physics",
-    icon: Atom,
-    presets: ["On", "Off"],
-  },
+  { id: "physics", name: "Physics", icon: Atom, presets: [] },
 ] as const
 
 /** A stand-in command set — enough to judge ranking, sections and the ">" mode.
@@ -597,13 +588,35 @@ export default function Lab() {
     })
   }
   const [openRow, setOpenRow] = useState<string | null>(null)
+  // Physics is the first REAL scene section: state seeded from the document,
+  // applied with exactly the lines use-scene-sync runs — same helpers, so the
+  // numbers cannot drift. Always simulating: MMD without physics is a
+  // mannequin, so there is no off switch to reach for. Full useSceneSync
+  // adoption waits for the Light/Bloom slice, where who-applies-the-boot-look
+  // has to be audited first; physics has no such conflict.
+  const [physics, setPhysics] = useState<SceneSettings["physics"]>(() => scene.state.settings.physics)
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!ready || !engine) return
+    engine.setGravity(new Vec3(0, -physics.gravity, 0))
+    engine.setWind(
+      physics.wind > 0
+        ? {
+            direction: windDirection(physics.windAzimuth, physics.windElevation),
+            strength: physics.wind,
+            turbulence: windVariation(physics.wind, physics.windFrequency),
+            frequency: physics.windFrequency,
+          }
+        : null,
+    )
+  }, [ready, engineRef, physics])
+  const physicsSummary = physics.wind > 0 ? `Wind ${physics.wind.toFixed(0)}` : "Calm"
+
   const [picked, setPicked] = useState<Record<string, string>>({
     camera: "Wide",
     background: "Shining Stars",
     light: "Soft key",
     grade: "Neutral",
-    bloom: "Gentle",
-    physics: "On",
   })
   const [expanded, setExpanded] = useState(true)
   // ── Model upload ──
@@ -1159,7 +1172,7 @@ export default function Lab() {
                   key={l.id}
                   icon={l.icon}
                   name={l.name}
-                  summary={picked[l.id] ?? "—"}
+                  summary={l.id === "physics" ? physicsSummary : (picked[l.id] ?? "—")}
                   open={openRow === l.id}
                   onToggle={() => setOpenRow((r) => (r === l.id ? null : l.id))}
                 >
@@ -1170,17 +1183,62 @@ export default function Lab() {
                       onPick={(name) => setPicked((p) => ({ ...p, [l.id]: name }))}
                     />
                   )}
-                  {/* Placeholder parameters — the shell is judging the row, not
-                    the controls, and these are wired to nothing. */}
-                  <SliderRow
-                    label="Amount"
-                    value={0.5}
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    onChange={() => {}}
-                    fmt={(v) => v.toFixed(2)}
-                  />
+                  {l.id === "physics" ? (
+                    <>
+                      <SliderRow
+                        label="Gravity"
+                        value={physics.gravity}
+                        min={0}
+                        max={200}
+                        step={1}
+                        onChange={(v) => setPhysics((p) => ({ ...p, gravity: v }))}
+                        fmt={(v) => v.toFixed(0)}
+                      />
+                      <SliderRow
+                        label="Wind"
+                        value={physics.wind}
+                        min={0}
+                        max={WIND_MAX}
+                        step={1}
+                        onChange={(v) => setPhysics((p) => ({ ...p, wind: v }))}
+                        fmt={(v) => v.toFixed(0)}
+                      />
+                      {/* Rendered always, disabled while there is no air to
+                          move — main's own rule: mounting rows when wind leaves
+                          zero shifts everything under the cursor. Frequency
+                          rides the geometric mapping, same as main. */}
+                      <SliderRow
+                        label="Frequency"
+                        value={windSliderFromFreq(physics.windFrequency)}
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        disabled={physics.wind === 0}
+                        onChange={(v) => setPhysics((p) => ({ ...p, windFrequency: windFreqFromSlider(v) }))}
+                        fmt={(v) => windFreqFromSlider(v).toFixed(2)}
+                      />
+                      <SliderRow
+                        label="Direction"
+                        value={physics.windAzimuth}
+                        min={0}
+                        max={360}
+                        step={1}
+                        disabled={physics.wind === 0}
+                        onChange={(v) => setPhysics((p) => ({ ...p, windAzimuth: v }))}
+                        fmt={(v) => `${v.toFixed(0)}°`}
+                      />
+                    </>
+                  ) : (
+                    <SliderRow
+                      label="Amount"
+                      value={0.5}
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      onChange={() => {}}
+                      fmt={(v) => v.toFixed(2)}
+                    />
+                  )}
                 </LayerRow>
               ))}
             </StackGroup>
