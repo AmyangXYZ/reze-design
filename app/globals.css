@@ -242,17 +242,17 @@
      amber-400  warning — the thing still works, but read this
      red-400    destructive — this removes something
 
-   RADII: 10px surface · 6px interior · 4px chip. Smaller reads as more
-   professional; 12+ does not.
+   RADII: 12px surface · 8px interior · 6px chip.
    ───────────────────────────────────────────────────────────────────────── */
 @theme inline {
-  /* Chrome ground. Opaque enough to read over an animating 3D scene WITHOUT a
-     backdrop-blur — a blur behind chrome that floats over the canvas re-samples
-     the viewport every frame the scene moves, which is exactly when the chrome
-     is open. Blur is opt-in for surfaces that sit over something static. */
-  --color-surface: oklch(0.16 0.005 260 / 0.85);
+  /* Chrome ground — the values the app already ships: zinc-950/70 behind a
+     backdrop-blur for panels and pills (the docks' own recipe), /95 for anything
+     stacked on top. The chrome study instead drops the blur and raises the panel
+     to 92%, which does read crisper over the scene; consistency with the shipped
+     app wins, because if the blur goes it has to go everywhere at once. */
+  --color-surface: oklch(0.141 0.005 285.823 / 0.7);
   /* Anything stacked ON the ground: a menu over a panel, a dialog over both. */
-  --color-surface-raised: oklch(0.16 0.005 260 / 0.95);
+  --color-surface-raised: oklch(0.141 0.005 285.823 / 0.95);
   /* The dim behind a centred, scrimmed surface. */
   --color-scrim: oklch(0.12 0.008 260 / 0.55);
 
@@ -262,7 +262,7 @@
   --color-line: oklch(1 0 0 / 0.06);
   --color-line-strong: oklch(1 0 0 / 0.12);
 
-  --radius-surface: 10px;
-  --radius-interior: 6px;
-  --radius-chip: 4px;
+  --radius-surface: 12px;
+  --radius-interior: 8px;
+  --radius-chip: 6px;
 }

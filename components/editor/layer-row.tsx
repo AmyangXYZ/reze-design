@@ -10,6 +10,15 @@
 // The summary is sans, not mono, for the same reason: a preset name is a name,
 // and monospacing it puts the readout back.
 //
+// Name bright, summary muted — always, not by open/closed state. The column is
+// meant to be read as a list of decisions, and dimming the names at rest makes
+// you hunt for the one you want instead of scanning them.
+//
+// Name and value are the SAME size. They sit on one line and are read as one
+// statement — "Background: Shining Stars" — so shrinking the right half makes it
+// read as a footnote to the row rather than as the row's answer. Colour already
+// separates them, and that is the only separation this needs.
+//
 // Only one row is open at a time — enforced by the caller, since the stack owns
 // which — so presets-then-parameters inside a row costs no ambient noise.
 
@@ -38,24 +47,31 @@ export function LayerRow({
         onClick={onToggle}
         aria-expanded={open}
         className={cn(
-          "flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors",
+          "flex w-full items-center gap-2.5 px-4 py-2 text-left transition-colors",
           open ? "bg-white/[0.05]" : "hover:bg-white/[0.04]",
         )}
       >
         <Icon className={cn("size-4 shrink-0", open ? "text-blue-400" : "text-muted-foreground")} />
-        <span className="shrink-0 text-xs">{name}</span>
+        <span className="shrink-0 text-[13px] text-foreground">{name}</span>
         {/* Hidden rather than unmounted while open: the row must not reflow when
             the body appears, and the summary is about to be redundant anyway. */}
         <span
           className={cn(
-            "ml-auto max-w-[8.25rem] truncate text-[11px] text-muted-foreground transition-opacity",
+            "ml-auto max-w-[8.25rem] truncate text-[13px] text-muted-foreground transition-opacity",
             open && "opacity-0",
           )}
         >
           {summary}
         </span>
       </button>
-      {open && <div className="px-3 pt-0.5 pb-3">{children}</div>}
+      {/* Symmetric padding, and pt has to MATCH pb rather than being the tighter
+          value that felt right in isolation. An open header carries a tint, so
+          its own py-2.5 reads as part of the header block and not as space below
+          it — the eye measures from the band's edge. With pt-1 the item sat 4px
+          under the band and 14px above the next divider, which is what made it
+          look mispositioned rather than merely close. Tighten both together or
+          not at all. */}
+      {open && <div className="px-4 py-3">{children}</div>}
     </div>
   )
 }
@@ -83,7 +99,7 @@ export function PresetChips({
           onClick={() => onPick(o)}
           className={cn(
             // 4px — the chip step of the radii scale.
-            "rounded-chip border px-2 py-0.5 text-[10.5px] transition-colors",
+            "rounded-chip border px-2 py-0.5 text-xs transition-colors",
             o === value
               ? "border-blue-400/40 bg-blue-400/15 text-blue-400"
               : "border-line-strong text-muted-foreground hover:border-white/25 hover:text-foreground",
@@ -96,13 +112,19 @@ export function PresetChips({
   )
 }
 
-/** A group label above a run of rows — Cast, Scene. Mono and quiet: it is a
- *  divider that happens to have a word on it, not a heading competing with the
- *  row names underneath. */
+/** A group label above a run of rows — Cast, Scene.
+ *
+ *  Body size, with mono + uppercase + colour carrying the difference instead of
+ *  scale. Tracking eases from 0.18em to 0.12em on the way up: letter-spacing is
+ *  there to keep small caps from clotting, and the amount that helps at 10px is
+ *  visibly loose at 14 — spacing has to come DOWN as size goes up. */
 export function StackGroup({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
-      <div className="px-3 pt-3 pb-1 font-mono text-[9.5px] tracking-[0.15em] text-muted-foreground uppercase">
+      {/* Tight under the label, looser above it. The whitespace has to say which
+          rows the label OWNS — a label floating equidistant between the block
+          above and the block below belongs to neither. */}
+      <div className="px-4 pt-4 pb-1 font-mono text-xs tracking-[0.12em] text-muted-foreground uppercase">
         {label}
       </div>
       {children}

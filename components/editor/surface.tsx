@@ -21,12 +21,13 @@ import type { ReactNode } from "react"
 import { cn } from "@/lib/utils"
 
 /**
- * NO backdrop-blur. The docks use it today, but a blur behind a surface that
- * floats over the 3D canvas re-samples the whole viewport every frame the scene
- * animates — which is exactly when these surfaces are open. The chrome study
- * dropped it for the same reason after profiling it on WebKit.
+ * The chrome the app already ships: zinc-950/70 behind a backdrop-blur, which is
+ * the docks' own recipe. The study drops the blur and raises the panel to 92%
+ * instead, citing the cost of re-sampling the viewport while the scene animates.
+ * Not used here — consistency beats either look being right in isolation, and if
+ * the blur goes it goes everywhere at once.
  */
-const SKIN = "border border-line-strong bg-surface shadow-float"
+const SKIN = "border border-line-strong bg-surface shadow-float backdrop-blur-xs"
 
 export type SurfacePlacement =
   /** Centred over a scrim. A decision to commit or abandon. */

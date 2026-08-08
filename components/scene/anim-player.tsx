@@ -276,7 +276,7 @@ export const AnimPlayer = memo(function AnimPlayer({
       <div
         ref={trackRef}
         className={cn(
-          "relative flex h-4 w-[min(16rem,30vw)] touch-none items-center select-none",
+          "relative mx-1 flex h-4 w-[min(16rem,30vw)] touch-none items-center select-none",
           hasClip ? "cursor-pointer" : "opacity-50",
         )}
         onPointerDown={(e) => {
