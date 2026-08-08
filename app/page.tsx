@@ -27,6 +27,7 @@ import { BackgroundLibrary } from "@/components/editor/background-library"
 import { WgslEditorPanel } from "@/components/editor/wgsl-editor"
 import { NodeLibrary } from "@/components/editor/node-library"
 import { RenderPanel } from "@/components/editor/render-panel"
+import { useAudioClock } from "@/hooks/use-audio-clock"
 import { useEngine } from "@/hooks/use-engine"
 import { useSceneSync } from "@/hooks/use-scene-sync"
 import { RaisableLayer } from "@/components/editor/raisable-layer"
@@ -1285,21 +1286,8 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   const masterDuration = masterId ? (animMetaByModel[masterId]?.duration ?? 0) : 0
   const extraModelNames = useMemo(() => animatedIds.slice(1), [animatedIds])
 
-  // Browsers block audio until the user interacts
-  const userInteracted = useRef(false)
-  useEffect(() => {
-    const on = () => {
-      userInteracted.current = true
-      window.removeEventListener("pointerdown", on)
-      window.removeEventListener("keydown", on)
-    }
-    window.addEventListener("pointerdown", on)
-    window.addEventListener("keydown", on)
-    return () => {
-      window.removeEventListener("pointerdown", on)
-      window.removeEventListener("keydown", on)
-    }
-  }, [])
+  // Music follows the model clock — shared with the 0.4.0 chrome.
+  useAudioClock({ engineRef, masterId, audioRef: audioElRef, disabled: exporting })
 
   // Everything a scene document carries beyond its models: motion, camera motion,
   // music, backdrop, skybox. loadSceneInto owns models, styles, camera and ground;
@@ -1378,87 +1366,6 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
     void loadDocExtras(bootScene)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, bootScene])
-
-  // Mirror the animation clock onto the audio element (model is the master).
-  useEffect(() => {
-    const audio = audioElRef.current
-    if (!audio) return
-    if (!masterId || exporting) {
-      audio.pause()
-      return
-    }
-    let raf = 0
-    let wasPlaying = false
-    let lastModelTime = -1
-    // The one correction free-run allows: when sound ACTUALLY starts (decode
-    // can lag play() by hundreds of ms on a cold cache), stamp the clock once.
-    // Fires per start, never during steady playback.
-    // Armed ONLY when the tick just stamped the clock (start/scrub/loop):
-    // sound may begin hundreds of ms after that stamp, so correct once at true
-    // onset. Plain resumes never arm it — seeking there flushes the decoder
-    // and mutes the first beat, which is worse than the drift.
-    let stampArmed = false
-    const onPlaying = () => {
-      if (!stampArmed) return
-      stampArmed = false
-      const p = engineRef.current?.getModel(masterId)?.getAnimationProgress()
-      if (p?.playing && Math.abs(audio.currentTime - p.current) > 0.05) audio.currentTime = p.current
-    }
-    audio.addEventListener("playing", onPlaying)
-    // preload="auto" is a hint iOS Safari ignores until a user gesture — warm
-    // the buffer on the FIRST gesture anywhere (usually well before play), so
-    // pressing play starts sound without a fetch+decode stall. Guarded: never
-    // fires once data is buffered or playback has begun.
-    const warm = () => {
-      if (audio.paused && audio.readyState < 3 && audio.src) audio.load()
-    }
-    window.addEventListener("pointerdown", warm, { once: true })
-    window.addEventListener("keydown", warm, { once: true })
-
-    const tick = () => {
-      raf = requestAnimationFrame(tick)
-      const p = engineRef.current?.getModel(masterId)?.getAnimationProgress()
-      if (!p) return
-      const playing = p.playing && userInteracted.current
-      // A frame advances the clock ≤ ~0.05s — anything bigger is a discrete jump.
-      const jumped = lastModelTime >= 0 && Math.abs(p.current - lastModelTime) > 0.35
-      lastModelTime = p.current
-      if (playing) {
-        // Free-running audio, like the reze.one demo: the clock is set at
-        // playback start and on explicit jumps (scrub, loop wrap) and is then
-        // LEFT ALONE — no drift lock, no rate bending. Continuous correction
-        // of any kind is what stuttered on mobile Safari; real clock drift
-        // over a dance is milliseconds and nobody hears it.
-        // Stamp only when the clocks genuinely disagree (scrubbed while
-        // stopped, loop wrap) — a resume with clocks already close plays on
-        // untouched, seek-free.
-        if ((!wasPlaying && Math.abs(audio.currentTime - p.current) > 0.15) || (!audio.seeking && jumped)) {
-          audio.currentTime = p.current
-          stampArmed = true
-        }
-        // A track SHORTER than the clip ends part-way through and leaves the
-        // element paused. Seeking it back to 0 when the motion loops does not
-        // resume an ended element — only play() does — so the second pass ran in
-        // silence. Guarded on there being audio left, or an element sitting at
-        // its own duration would be asked to start again every frame.
-        if (audio.paused && (!Number.isFinite(audio.duration) || p.current < audio.duration - 0.05)) {
-          void audio.play().catch(() => {})
-        }
-      } else if (!audio.paused) {
-        audio.pause()
-      }
-      wasPlaying = playing
-    }
-    raf = requestAnimationFrame(tick)
-    return () => {
-      cancelAnimationFrame(raf)
-      audio.removeEventListener("playing", onPlaying)
-      window.removeEventListener("pointerdown", warm)
-      window.removeEventListener("keydown", warm)
-    }
-    // audioElRef now comes from useSceneMedia, so the linter can no longer see
-    // that it is a ref and stable. Listing it costs nothing and keeps the rule on.
-  }, [masterId, engineRef, exporting, audioElRef])
 
   // The file's path: folder picks carry webkitRelativePath
   const relPath = (f: File) => (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name

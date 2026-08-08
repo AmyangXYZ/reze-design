@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
 import {
+  Atom,
   Camera,
   Clapperboard,
   Code2,
@@ -34,6 +35,7 @@ import {
   Share2,
   Sparkles,
   Sun,
+  Video,
   Workflow,
   Upload,
   WandSparkles,
@@ -42,7 +44,6 @@ import {
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { AccountButton } from "@/components/editor/account-panel"
 import { AnimPlayer } from "@/components/scene/anim-player"
 import { CastSwatch } from "@/components/editor/cast-swatch"
@@ -52,6 +53,7 @@ import { SceneName } from "@/components/editor/scene-name"
 import { Surface } from "@/components/editor/surface"
 import { LayerRow, PresetChips, StackGroup } from "@/components/editor/layer-row"
 import { SliderRow } from "@/components/scene/scene-sidebar"
+import { useAudioClock } from "@/hooks/use-audio-clock"
 import { useEngine } from "@/hooks/use-engine"
 import { DEFAULT_SCENE } from "@/lib/default-scene"
 import { hydrateScene } from "@/lib/scene"
@@ -59,7 +61,7 @@ import { expandUploadFiles } from "@/lib/uploads"
 import { castColour } from "@/lib/model-colour"
 import { castSourceFor } from "@/lib/cast-source"
 import { NEUTRAL_PALETTE, type CastPaletteId } from "@/lib/cast-palette"
-import { relFilePath } from "@/lib/scene-files"
+import { relFilePath, sceneFiles } from "@/lib/scene-files"
 import { cn } from "@/lib/utils"
 
 /** Floating chrome — editor-chrome.tsx's `floating`, taken through the surface
@@ -106,6 +108,12 @@ const LAYERS = [
     presets: ["Shining Stars", "Aurora", "Rain", "None"],
   },
   {
+    id: "grade",
+    name: "Grade",
+    icon: Contrast,
+    presets: ["Neutral", "Warm film", "Cool night", "Bleach"],
+  },
+  {
     id: "light",
     name: "Light",
     icon: Sun,
@@ -118,12 +126,11 @@ const LAYERS = [
     presets: ["Gentle", "Dreamy", "Hard", "Off"],
   },
   {
-    id: "grade",
-    name: "Grade",
-    icon: Contrast,
-    presets: ["Neutral", "Warm film", "Cool night", "Bleach"],
+    id: "physics",
+    name: "Physics",
+    icon: Atom,
+    presets: ["On", "Off"],
   },
-  { id: "music", name: "Music", icon: Music, presets: [] },
 ] as const
 
 /** A stand-in command set — enough to judge ranking, sections and the ">" mode.
@@ -258,83 +265,77 @@ const COMMANDS: PaletteItem[] = [
  *  swatch arrive TOGETHER or not at all, because a row that fills in piecemeal
  *  is three small movements instead of one appearance. */
 /**
- * One actionable line in a cast row — the model, or its motion.
+ * One actionable line — a cast member's name, their motion, a scene-wide clip.
  *
- * Plain `group`, not a named one: the two lines are siblings rather than nested,
- * so each `group-hover` resolves to its own line and nothing else.
- *
- * The action slot keeps its width whether or not it is visible, so the name
- * beside it does not re-truncate the moment the pointer arrives — the ellipsis
- * lands in the same place hovered or not.
- *
- * gap-2 between the name and the slot, not the gap-0.5 the buttons use among
- * themselves: a name that truncates flush against the first button reads as
- * having been cut off BY it. The space is what makes the ellipsis look chosen.
+ * The actions OVERLAY the text instead of reserving a slot beside it, so at
+ * rest the name owns the line's full width. On hover the text's tail fades out
+ * under the buttons via a mask — a mask and not padding, because padding would
+ * re-truncate the text and the ellipsis would jump the moment the pointer
+ * arrives. The fade is the no-reflow way to yield the space.
  */
 function CastLine({ text, actions }: { text: ReactNode; actions: ReactNode }) {
   return (
     // -mx-1 px-1: the highlight breathes past the text without moving it.
-    <span className="group -mx-1 flex h-5 items-center gap-2 rounded-interior px-1 transition-colors hover:bg-white/[0.05]">
-      {text}
-      <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+    <span className="group relative -mx-1 flex h-5 items-center rounded-interior px-1 transition-colors hover:bg-white/[0.05]">
+      {/* pr-12 ends a long name clear of the button zone entirely — the
+          buttons appear on empty reserve, never on text, so the row's own
+          highlight is all the hover needs. (Graded dims and edge fades were
+          tried on top and deleted: with a real reserve there is nothing left
+          for them to fix.) */}
+      <span className="flex min-w-0 flex-1 items-center pr-12">{text}</span>
+      <span className="absolute inset-y-0 right-0.5 flex items-center gap-0.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100 focus-within:opacity-100">
         {actions}
       </span>
     </span>
   )
 }
 
-/** Icon-only, so it always carries a tooltip. size-5 fits the line exactly —
- *  anything taller sets the row height from the buttons rather than the text. */
+
+/** NO tooltip, deliberately: these sit in stacked hover rows, and a tip pops
+ *  open across the cursor's travel line — hovering one row's actions physically
+ *  blocked the hover path to the row beneath. They are also upload/replace/
+ *  delete sitting beside the thing they act on; the context is the explanation.
+ *  The aria-label keeps the words for anyone not seeing the icons.
+ *
+ *  size-5 fits the line exactly — anything taller sets the row height from the
+ *  buttons rather than the text. */
 function CastAction({
   icon: Icon,
-  tip,
   label,
   onClick,
   danger,
   disabled,
   compact,
-  side = "bottom",
 }: {
   icon: ComponentType<{ className?: string }>
-  /** Shown on hover. */
-  tip: string
-  /** Names the model too, since a screen reader hears these out of context. */
+  /** Names the target too, since a screen reader hears these out of context. */
   label: string
   onClick: () => void
   danger?: boolean
-  /** size-4 instead of size-5, to sit in a text-xs line box without setting the
-   *  row's height from the button. The icon does NOT shrink with it — a 16px
-   *  target only needs a smaller box, not a smaller mark. */
-  compact?: boolean
   /** Rendered, dimmed and inert. Dropping the button instead would let the pair
    *  reflow between states, and a control that moves is worse than one that is
    *  visibly unavailable — the position is what you aim at. */
   disabled?: boolean
-  /** The model line opens UPWARD. A tooltip below it lands on the motion line
-   *  and takes the pointer, so hovering one row's actions made the row under it
-   *  unreachable — the tip has to open away from its sibling, not over it. */
-  side?: "top" | "bottom"
+  /** size-4 instead of size-5, to sit in a small line box without setting the
+   *  row's height from the button. The icon does NOT shrink with it — a 16px
+   *  target only needs a smaller box, not a smaller mark. */
+  compact?: boolean
 }) {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={label}
-          onClick={onClick}
-          disabled={disabled}
-          className={cn(
-            "shrink-0 rounded-chip text-muted-foreground hover:bg-white/10",
-            compact ? "size-4" : "size-5",
-            danger ? "hover:text-red-400" : "hover:text-foreground",
-          )}
-        >
-          <Icon className="size-3.5" />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side={side}>{tip}</TooltipContent>
-    </Tooltip>
+    <Button
+      variant="ghost"
+      size="icon"
+      aria-label={label}
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "shrink-0 rounded-chip text-muted-foreground hover:bg-white/10",
+        compact ? "size-4" : "size-5",
+        danger ? "hover:text-red-400" : "hover:text-foreground",
+      )}
+    >
+      <Icon className="size-3.5" />
+    </Button>
   )
 }
 
@@ -378,18 +379,83 @@ function LaneSlot({ label, onClick, disabled }: { label: string; onClick?: () =>
   )
 }
 
-// The same two lines at the same heights — a skeleton that is not the shape of
-// what replaces it is just a differently-timed layout shift.
+/**
+ * A scene-wide clip in the stack — the camera motion, the music. One line in
+ * the cast row's language: same hover reveal, same action pair, an icon where
+ * a cast member carries a swatch. These are two of MMD's five basic
+ * components, and an upload you must unfold the timeline to find is not an
+ * entry point — the lanes VIEW this state on the time axis; this is where it
+ * is set.
+ */
+function ClipRow({
+  icon: Icon,
+  clip,
+  empty,
+  kind,
+  of,
+  onPick,
+  onRemove,
+}: {
+  icon: ComponentType<{ className?: string }>
+  /** Loaded clip name, or null. */
+  clip: string | null
+  /** What the empty slot says — "No camera motion", "No music". */
+  empty: string
+  /** Names the kind for tooltips and screen readers: "camera motion", "music". */
+  kind: string
+  /** Whose clip, when several rows share a kind — aria only; the eye matches
+   *  rows to the cast by order, the way the timeline lanes do. */
+  of?: string
+  onPick: () => void
+  onRemove: () => void
+}) {
+  return (
+    // Bare size-4 icon at gap-2.5, exactly as LayerRow sets its own icon and
+    // name — a clip row and a Scene row are siblings in the same column, and
+    // an invisible centring box around the icon read as a wider gap.
+    <div className="flex items-center gap-2.5 px-4 py-1">
+      <Icon className="size-4 shrink-0 text-muted-foreground" />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <CastLine
+          text={
+            <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{clip ?? empty}</span>
+          }
+          actions={
+            <>
+              <CastAction
+                icon={clip ? RefreshCw : Upload}
+                label={`${clip ? "Replace" : "Upload"} ${kind}${of ? ` for ${of}` : ""}`}
+                onClick={onPick}
+              />
+              <CastAction
+                icon={X}
+                danger
+                disabled={!clip}
+                label={`Delete ${kind}${of ? ` for ${of}` : ""}`}
+                onClick={onRemove}
+              />
+            </>
+          }
+        />
+      </span>
+    </div>
+  )
+}
+
+// The row's true geometry, kept in step by hand: py-1.5, two h-5 lines, the
+// motion line's leading icon slot. A skeleton that is not the shape of what
+// replaces it is just a differently-timed layout shift — measure the real row
+// before touching this one.
 function CastRowSkeleton() {
   return (
-    <div className="flex items-center gap-2.5 px-4 py-1">
+    <div className="flex items-center gap-2.5 px-4 py-1.5">
       <Skeleton className="size-6 shrink-0 rounded-interior" />
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="flex h-5 items-center">
           <Skeleton className="h-3 w-28 rounded-chip" />
         </span>
         <span className="flex h-5 items-center">
-          <Skeleton className="h-3 w-20 rounded-chip" />
+          <Skeleton className="h-2.5 w-20 rounded-chip" />
         </span>
       </span>
     </div>
@@ -425,7 +491,17 @@ export default function Lab() {
   // Motion names by model id. One clip per character is already the document's
   // shape (lib/scene.ts: "the model plus ITS motion clip"), so this holds the
   // name to show and nothing more — the engine owns the clip itself.
-  const [animByModel, setAnimByModel] = useState<Record<string, string>>({})
+  //
+  // SEEDED from the document, not discovered from loading: the doc names every
+  // model's clip before a byte of VMD has parsed, and a row that says
+  // "No animation" for the seconds until the loader confirms what the doc
+  // already said is a flash of false state. The boot loader only corrects the
+  // seed when a clip genuinely fails.
+  const [animByModel, setAnimByModel] = useState<Record<string, string>>(() => {
+    const seed: Record<string, string> = {}
+    for (const entry of scene.assets.models) if (entry.animation) seed[entry.model.id] = entry.animation.name
+    return seed
+  })
   const vmdInput = useRef<HTMLInputElement | null>(null)
   // Which model the next .vmd pick lands on, set before the dialog opens.
   const animTarget = useRef<string | null>(null)
@@ -455,9 +531,18 @@ export default function Lab() {
         const clip = entry.animation
         if (!clip) continue
         const packed = bundleFile(clip.url)
-        await (packed ? loadVmdFile(entry.model.id, packed) : loadVmdUrl(entry.model.id, clip.name, clip.url))
+        const loaded = await (packed
+          ? loadVmdFile(entry.model.id, packed)
+          : loadVmdUrl(entry.model.id, clip.name, clip.url))
         if (cancelled) return
-        setAnimByModel((prev) => ({ ...prev, [entry.model.id]: clip.name }))
+        setAnimByModel((prev) => {
+          // Confirmations are no-ops (the seed already says this); only a
+          // FAILED clip changes anything, by retracting the seed's claim.
+          if (loaded) return prev[entry.model.id] === clip.name ? prev : { ...prev, [entry.model.id]: clip.name }
+          const next = { ...prev }
+          delete next[entry.model.id]
+          return next
+        })
         // Reveal even if the clip failed — a bind-pose model beats no model.
         engineRef.current?.setModelTransform(entry.model.id, { visible: true })
       }
@@ -468,6 +553,14 @@ export default function Lab() {
   }, [ready, scene, bundleFile, loadVmdFile, loadVmdUrl, engineRef])
   // Models that actually carry a clip — AnimPlayer drives the longest as master.
   const modelNames = useMemo(() => models.map((m) => m.id), [models])
+  // Music follows the model clock — the exact mirror main uses, shared.
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  useAudioClock({
+    engineRef,
+    masterId: models.find((m) => animByModel[m.id])?.id ?? null,
+    audioRef,
+    disabled: false,
+  })
 
   // Only one row open at a time — that is what lets presets-then-parameters sit
   // inside a row without the stack becoming a wall of sliders.
@@ -478,13 +571,39 @@ export default function Lab() {
   // one the engine can load today, so it is wired rather than drawn.
   const [cameraClip, setCameraClip] = useState<string | null>(null)
   const cameraInput = useRef<HTMLInputElement | null>(null)
+  const removeCamera = () => {
+    engineRef.current?.clearCameraVmd()
+    setCameraClip(null)
+  }
+  // Registered now, audible later: the file lands in sceneFiles.audio — the
+  // same slot the shipped editor reads — so the upload is real even though this
+  // route has no audio clock yet to play it against.
+  // Seeded from the scene document, exactly as main does — the default scene
+  // ships with a track, and an empty music row under a dancing model would be
+  // the chrome contradicting the scene. Uploads become object URLs, revoked on
+  // the way out so replaced tracks do not pin their bytes for the session.
+  const [musicClip, setMusicClip] = useState<{ name: string; url: string } | null>(() =>
+    scene.assets.audio ? { name: scene.assets.audio.name, url: scene.assets.audio.url } : null,
+  )
+  const musicInput = useRef<HTMLInputElement | null>(null)
+  const dropMusicUrl = (clip: { url: string } | null) => {
+    if (clip?.url.startsWith("blob:")) URL.revokeObjectURL(clip.url)
+  }
+  const removeMusic = () => {
+    sceneFiles.audio = null
+    setMusicClip((prev) => {
+      dropMusicUrl(prev)
+      return null
+    })
+  }
   const [openRow, setOpenRow] = useState<string | null>(null)
   const [picked, setPicked] = useState<Record<string, string>>({
     camera: "Wide",
     background: "Shining Stars",
     light: "Soft key",
-    bloom: "Gentle",
     grade: "Neutral",
+    bloom: "Gentle",
+    physics: "On",
   })
   const [expanded, setExpanded] = useState(true)
   // ── Model upload ──
@@ -515,7 +634,10 @@ export default function Lab() {
   const loadPicked = async (files: File[], pmx: File, target: ModelTarget) => {
     setUpload(null)
     try {
-      if (target.mode === "replace") await replaceModelFromFiles(target.id, files, pmx)
+      if (target.mode === "replace") {
+        const newId = await replaceModelFromFiles(target.id, files, pmx)
+        adoptReplacedModel(target.id, newId)
+      }
       else await addModelFromFiles(files, pmx)
     } catch (e) {
       setUpload({
@@ -573,13 +695,42 @@ export default function Lab() {
   // palette id directly, or null for a model it could not read (a bundled one,
   // say), which resolves to the neutral rather than shimmering forever.
   const castStarted = useRef(new Set<string>())
+  /**
+   * Replacing a model can mint a NEW id (ids come from the pmx filename), and a
+   * fresh id would flash the skeleton while its colour re-extracts. Instead the
+   * old id's palette transplants to the new one — the row repaints instantly in
+   * the old colour, and a fresh extraction overwrites it in place. The motion
+   * name does NOT transplant: clips are per engine instance and the new
+   * instance genuinely has none, so keeping the name would be the row lying.
+   */
+  const adoptReplacedModel = useCallback((oldId: string, newId: string) => {
+    castStarted.current.delete(oldId)
+    castStarted.current.delete(newId)
+    setAnimByModel((prev) => {
+      if (!(oldId in prev)) return prev
+      const next = { ...prev }
+      delete next[oldId]
+      return next
+    })
+    setPalettes((prev) => {
+      const old = prev[oldId]
+      if (!old || oldId === newId) return prev
+      const next = { ...prev }
+      delete next[oldId]
+      next[newId] = old
+      return next
+    })
+  }, [])
   useEffect(() => {
     for (const m of models) {
       if (castStarted.current.has(m.id)) continue
       castStarted.current.add(m.id)
       const source = castSourceFor(m.id, scene, groupsByModel[m.id])
       void (source ? castColour(source) : Promise.resolve(null)).then((palette) =>
-        setPalettes((p) => (p[m.id] ? p : { ...p, [m.id]: palette ?? NEUTRAL_PALETTE })),
+        // Unconditional: the started-set already dedupes, and a re-extraction
+        // after a model replace must be able to overwrite the transplanted
+        // colour it started from.
+        setPalettes((p) => ({ ...p, [m.id]: palette ?? NEUTRAL_PALETTE })),
       )
     }
   }, [models, scene, groupsByModel])
@@ -603,7 +754,7 @@ export default function Lab() {
     if (nextRecent.current.length) setRecentIds(nextRecent.current)
     setPaletteSession((n) => n + 1)
     setPaletteOpen(true)
-  }, [])
+  }, [setPaletteOpen])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -762,6 +913,25 @@ export default function Lab() {
         }}
       />
 
+      <audio ref={audioRef} src={musicClip?.url || undefined} preload="auto" playsInline className="hidden" />
+
+      <input
+        ref={musicInput}
+        type="file"
+        accept="audio/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          e.target.value = ""
+          if (!file) return
+          sceneFiles.audio = file
+          setMusicClip((prev) => {
+            dropMusicUrl(prev)
+            return { name: file.name, url: URL.createObjectURL(file) }
+          })
+        }}
+      />
+
       <input
         ref={cameraInput}
         type="file"
@@ -863,77 +1033,67 @@ export default function Lab() {
                 <CastAction
                   icon={Plus}
                   compact
-                  tip="Add model"
                   label="Add model"
                   onClick={() => pickModel({ mode: "add" })}
                 />
               }
             >
               {!ready && <CastRowSkeleton />}
-              {models.map((m) =>
-                !palettes[m.id] ? (
-                  <CastRowSkeleton key={m.id} />
-                ) : (
-                  // Two lines, one character. The swatch sits OUTSIDE both hover
-                  // regions and centres against the pair: it identifies the model,
-                  // it is not something you act on, and a highlight that lit up
-                  // from touching it would promise an action it does not have.
+              {/* The row appears WITH the model — same commit as `models`, so
+                  the canvas and the dock move as one. Only the swatch pends:
+                  extraction takes a few hundred ms, and a whole-row skeleton
+                  made every load feel like two arrivals. The square upgrades in
+                  place; nothing else moves. */}
+              {models.map((m) => (
+                  // Two lines, one character, and a hover EACH. The swatch sits
+                  // outside both regions and centres against the pair — it
+                  // identifies the model, it is not something you act on. Each
+                  // line lights up alone with its own action pair, so what the ⟳
+                  // will replace is always exactly the thing under the pointer.
                   //
-                  // Each line is its own hover target with its own actions, so you
-                  // are always pointing at the exact thing the buttons will change
-                  // — the model, or its motion.
-                  <div key={m.id} className="flex items-center gap-2.5 px-4 py-1">
-                    <CastSwatch palette={palettes[m.id]} />
+                  // The motion is the subheadline because it is per-model — the
+                  // document's own shape ("the model plus ITS motion clip").
+                  // Camera and music are scene-wide and live in Clips; in a flat
+                  // list, motion rows would bind to their models by row order
+                  // alone, which is the kind of invisible convention that breaks
+                  // at three models.
+                  <div key={m.id} className="flex items-center gap-2.5 px-4 py-1.5">
+                    {palettes[m.id] ? (
+                      <CastSwatch palette={palettes[m.id]} />
+                    ) : (
+                      <Skeleton className="size-6 shrink-0 rounded-interior" />
+                    )}
                     <span className="flex min-w-0 flex-1 flex-col">
-                      {/* Icon-only controls get tooltips; anything with a visible
-                      label does not — a tooltip repeating the word already on the
-                      button is noise that delays the pointer. Collapse toggles are
-                      the other exception: a chevron pointing where the thing will
-                      go has already said it. */}
                       <CastLine
-                        text={<span className="min-w-0 flex-1 truncate text-sm">{displayName(m.file)}</span>}
+                        text={
+                          <span className="min-w-0 flex-1 truncate text-sm">{displayName(m.file)}</span>
+                        }
                         actions={
                           <>
                             <CastAction
                               icon={RefreshCw}
-                              side="top"
-                              tip="Upload model folder"
                               label={`Upload model folder to replace ${displayName(m.file)}`}
                               onClick={() => pickModel({ mode: "replace", id: m.id })}
                             />
                             <CastAction
                               icon={X}
-                              side="top"
-                              tip="Delete model"
-                              label={`Delete ${displayName(m.file)}`}
                               danger
+                              label={`Delete ${displayName(m.file)}`}
                               onClick={() => removeModelById(m.id)}
                             />
                           </>
                         }
                       />
-                      {/* A motion is a DECISION the model carries, not a fact about
-                          it — the same reason LayerRow summarises "Golden hour"
-                          rather than "205° · 21°".
-
-                          13px against the name's 14: half a step, which is as
-                          far as it can go before it stops reading as part of the
-                          same row. Colour carries the hierarchy — bright name,
-                          muted value — and the size only softens it. */}
                       <CastLine
                         text={
-                          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                          <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">
                             {animByModel[m.id] ?? "No animation"}
                           </span>
                         }
                         actions={
                           <>
-                            {/* The icon states which it is: an empty slot takes a
-                                motion, a filled one swaps it. Same button, same
-                                place, two different jobs. */}
                             <CastAction
                               icon={animByModel[m.id] ? RefreshCw : Upload}
-                              tip={animByModel[m.id] ? "Replace animation" : "Upload animation"}
                               label={`${animByModel[m.id] ? "Replace" : "Upload"} animation for ${displayName(m.file)}`}
                               onClick={() => pickAnimation(m.id)}
                             />
@@ -941,7 +1101,6 @@ export default function Lab() {
                               icon={X}
                               danger
                               disabled={!animByModel[m.id]}
-                              tip="Delete animation"
                               label={`Delete animation on ${displayName(m.file)}`}
                               onClick={() => removeAnimation(m.id)}
                             />
@@ -950,8 +1109,7 @@ export default function Lab() {
                       />
                     </span>
                   </div>
-                ),
-              )}
+                ))}
               {/* Only when there is no cast. With rows on screen the + in the
                   group label is enough, and a standing row for something you use
                   once per scene costs more than it returns. With NOTHING on
@@ -970,6 +1128,29 @@ export default function Lab() {
                   </Button>
                 </div>
               )}
+            </StackGroup>
+
+            {/* The SCENE-WIDE clips. All five MMD components keep visible
+                intakes in the dock — model and motion on the cast rows, stage
+                on its Scene row — and the two with no owner land here. The
+                timeline lanes show WHEN these play; this is where they load. */}
+            <StackGroup label="Clips">
+              <ClipRow
+                icon={Video}
+                clip={cameraClip}
+                empty="No camera motion"
+                kind="camera motion"
+                onPick={() => cameraInput.current?.click()}
+                onRemove={removeCamera}
+              />
+              <ClipRow
+                icon={Music}
+                clip={musicClip?.name ?? null}
+                empty="No music"
+                kind="music"
+                onPick={() => musicInput.current?.click()}
+                onRemove={removeMusic}
+              />
             </StackGroup>
 
             <StackGroup label="Scene">
@@ -1113,12 +1294,15 @@ export default function Lab() {
                         <LaneSlot label="Drop a camera motion" onClick={() => cameraInput.current?.click()} />
                       )}
                     </Lane>
-                    {/* Disabled, not omitted. scene.assets.audio is a real slot,
-                        but nothing on this route mirrors the animation clock onto
-                        an audio element yet — so the lane says it exists and stays
-                        inert until it can keep the promise. */}
+                    {/* The audio clock is still to come, so a loaded track will
+                        not PLAY yet — but the slot is a real intake (it lands in
+                        sceneFiles.audio), so it behaves like one. */}
                     <Lane label="Music">
-                      <LaneSlot label="Music arrives with the audio clock" disabled />
+                      {musicClip ? (
+                        <LaneBlock>{musicClip.name}</LaneBlock>
+                      ) : (
+                        <LaneSlot label="Drop music" onClick={() => musicInput.current?.click()} />
+                      )}
                     </Lane>
                   </div>
                 </div>
