@@ -245,14 +245,26 @@
    RADII: 12px surface · 8px interior · 6px chip.
    ───────────────────────────────────────────────────────────────────────── */
 @theme inline {
-  /* Chrome ground — the values the app already ships: zinc-950/70 behind a
-     backdrop-blur for panels and pills (the docks' own recipe), /95 for anything
-     stacked on top. The chrome study instead drops the blur and raises the panel
-     to 92%, which does read crisper over the scene; consistency with the shipped
-     app wins, because if the blur goes it has to go everywhere at once. */
-  --color-surface: oklch(0.141 0.005 285.823 / 0.7);
+  /* Chrome ground. NO backdrop-blur behind it, and opaque enough not to need
+     one.
+
+     The shipped docks use zinc-950/70 behind a blur and keep doing so — they
+     carry their own literals, so this token draws the line cleanly. Everything
+     built on it goes without, for a reason that was measured rather than
+     assumed: a blur re-samples the whole viewport every frame, and these
+     surfaces float over a canvas that is rendering continuously. It is worst
+     when a surface is also ANIMATING — the transport unfolding into the
+     timeline visibly dropped frames until the blur came off it.
+
+     Lightness is raised from zinc-950's 0.141, and that is the blur being paid
+     for rather than a change of mind. A 70% pane over a blurred scene borrowed
+     the scene's brightness; take the blur away and hold the same alpha and the
+     panels read markedly darker than they used to. Lifting L restores the colour
+     they had while keeping them opaque — which is the whole point, since alpha
+     is what would put the canvas back underneath. */
+  --color-surface: oklch(0.178 0.006 286 / 0.92);
   /* Anything stacked ON the ground: a menu over a panel, a dialog over both. */
-  --color-surface-raised: oklch(0.141 0.005 285.823 / 0.95);
+  --color-surface-raised: oklch(0.196 0.006 286 / 0.96);
   /* The dim behind a centred, scrimmed surface. */
   --color-scrim: oklch(0.12 0.008 260 / 0.55);
 

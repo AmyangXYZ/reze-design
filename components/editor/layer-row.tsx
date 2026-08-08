@@ -118,16 +118,36 @@ export function PresetChips({
  *  scale. Tracking eases from 0.18em to 0.12em on the way up: letter-spacing is
  *  there to keep small caps from clotting, and the amount that helps at 10px is
  *  visibly loose at 14 — spacing has to come DOWN as size goes up. */
-export function StackGroup({ label, children }: { label: string; children: ReactNode }) {
+export function StackGroup({
+  label,
+  /** Acts on the whole group — adding to it. Revealed by hovering ANYWHERE in
+   *  the group, not only the label: the rows are what you are looking at when
+   *  you decide you want another one. */
+  action,
+  children,
+}: {
+  label: string
+  action?: ReactNode
+  children: ReactNode
+}) {
   return (
-    <>
+    <div className="group/stack">
       {/* Tight under the label, looser above it. The whitespace has to say which
           rows the label OWNS — a label floating equidistant between the block
           above and the block below belongs to neither. */}
-      <div className="px-4 pt-4 pb-1 font-mono text-xs tracking-[0.12em] text-muted-foreground uppercase">
-        {label}
+      <div className="flex items-center gap-2 px-4 pt-6 pb-1">
+        <span className="min-w-0 flex-1 truncate font-mono text-xs tracking-[0.12em] text-muted-foreground uppercase">
+          {label}
+        </span>
+        {/* The action has to fit the label's own line box, or a group that has
+            one is taller than a group that does not. */}
+        {action && (
+          <span className="flex shrink-0 items-center opacity-0 transition-opacity group-hover/stack:opacity-100 focus-within:opacity-100">
+            {action}
+          </span>
+        )}
       </div>
       {children}
-    </>
+    </div>
   )
 }

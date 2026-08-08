@@ -21,6 +21,8 @@ import {
   Camera,
   Clapperboard,
   Code2,
+  ChevronDown,
+  ChevronUp,
   Cloud,
   Contrast,
   Music,
@@ -62,7 +64,30 @@ import { cn } from "@/lib/utils"
 
 /** Floating chrome — editor-chrome.tsx's `floating`, taken through the surface
  *  token so the pills and the panel cannot drift apart. */
-const PILL = "rounded-xl border border-white/10 bg-surface shadow-float backdrop-blur-xs"
+const PILL = "rounded-xl border border-white/10 bg-surface shadow-float"
+
+/** The iOS sheet curve — decelerating, no overshoot. Width, height and radius
+ *  all ride it so the transport reads as ONE surface changing shape rather than
+ *  three properties animating near each other. */
+const FOLD = "duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+
+/**
+ * The working area — what the canvas has left between the docks.
+ *
+ * The right inset assumes the inspector matching the stack at 17rem, which does
+ * not exist on this route yet. Sizing against where it WILL be costs nothing now
+ * and stops the geometry changing the day it lands — and matching widths means
+ * the timeline stays centred on the canvas rather than drifting off it.
+ *
+ * Both insets hold whether the stack is open or not. Collapsing it must NOT let
+ * the timeline widen: the transport would then resize every time you hid a panel
+ * you were not even looking at, and a timeline whose scale changes underneath you
+ * is worse than one that leaves a strip of canvas unused.
+ *
+ * Written out rather than interpolated from a constant: Tailwind scans source
+ * for literal class names, so a template string here produces no CSS at all.
+ */
+const WORKSPACE = "left-[calc(17rem+1.5rem)] right-[calc(17rem+1.5rem)]"
 
 /** Each layer's presets. Static here — the real stack reads these from the
  *  document and the libraries; the shell only needs them to have names. */
@@ -267,6 +292,7 @@ function CastAction({
   onClick,
   danger,
   disabled,
+  compact,
   side = "bottom",
 }: {
   icon: ComponentType<{ className?: string }>
@@ -276,6 +302,10 @@ function CastAction({
   label: string
   onClick: () => void
   danger?: boolean
+  /** size-4 instead of size-5, to sit in a text-xs line box without setting the
+   *  row's height from the button. The icon does NOT shrink with it — a 16px
+   *  target only needs a smaller box, not a smaller mark. */
+  compact?: boolean
   /** Rendered, dimmed and inert. Dropping the button instead would let the pair
    *  reflow between states, and a control that moves is worse than one that is
    *  visibly unavailable — the position is what you aim at. */
@@ -295,7 +325,8 @@ function CastAction({
           onClick={onClick}
           disabled={disabled}
           className={cn(
-            "size-5 shrink-0 rounded-chip text-muted-foreground hover:bg-white/10",
+            "shrink-0 rounded-chip text-muted-foreground hover:bg-white/10",
+            compact ? "size-4" : "size-5",
             danger ? "hover:text-red-400" : "hover:text-foreground",
           )}
         >
@@ -304,6 +335,46 @@ function CastAction({
       </TooltipTrigger>
       <TooltipContent side={side}>{tip}</TooltipContent>
     </Tooltip>
+  )
+}
+
+/** One row of the timeline. Fixed height and a fixed label column, so lanes of
+ *  different kinds still read as one grid. */
+function Lane({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex h-10 items-center gap-3">
+      {/* Mono, uppercase and tracked — the study's lane key. It names the KIND of
+          thing the lane holds, so it must not look like content. */}
+      <span className="w-24 shrink-0 truncate font-mono text-[10px] tracking-[0.14em] text-muted-foreground uppercase">
+        {label}
+      </span>
+      <span className="relative h-7 min-w-0 flex-1">{children}</span>
+    </div>
+  )
+}
+
+/** What a lane holds. Full width, NOT a duration: the lanes have no shared time
+ *  axis to be proportional to yet, and a block sized to look like a measurement
+ *  that is not one is worse than one that plainly fills its lane. */
+function LaneBlock({ children }: { children: ReactNode }) {
+  return (
+    <span className="absolute inset-0 flex items-center overflow-hidden rounded-interior border border-blue-400/50 bg-blue-400/25 px-2.5 text-xs whitespace-nowrap text-foreground">
+      {children}
+    </span>
+  )
+}
+
+/** An empty lane, which is an invitation rather than a gap. */
+function LaneSlot({ label, onClick, disabled }: { label: string; onClick?: () => void; disabled?: boolean }) {
+  return (
+    <Button
+      variant="ghost"
+      onClick={onClick}
+      disabled={disabled}
+      className="absolute inset-0 h-auto w-full rounded-interior border border-dashed border-line-strong text-xs font-normal text-muted-foreground hover:border-blue-400/50 hover:bg-transparent hover:text-blue-400"
+    >
+      {label}
+    </Button>
   )
 }
 
@@ -520,6 +591,13 @@ export default function Lab() {
 
   // Only one row open at a time — that is what lets presets-then-parameters sit
   // inside a row without the stack becoming a wall of sliders.
+  // The transport IS the timeline, collapsed. Same surface, same controls in the
+  // same place — unfolding it must never feel like a different panel appeared.
+  const [timelineOpen, setTimelineOpen] = useState(false)
+  // The scene document already has cameraAnimation and audio slots. The camera
+  // one the engine can load today, so it is wired rather than drawn.
+  const [cameraClip, setCameraClip] = useState<string | null>(null)
+  const cameraInput = useRef<HTMLInputElement | null>(null)
   const [openRow, setOpenRow] = useState<string | null>(null)
   const [picked, setPicked] = useState<Record<string, string>>({
     camera: "Wide",
@@ -712,20 +790,15 @@ export default function Lab() {
                 needs the same px-1.5 and one pixel back to put the two glyph
                 runs in the same place. */}
             <SceneName name={sceneName} onRename={setSceneName} className="-ml-px truncate px-1.5" />
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setExpanded(true)}
-                  aria-label="Show panels"
-                  className="ml-1 size-7 shrink-0 rounded-lg text-muted-foreground hover:bg-white/5 hover:text-foreground"
-                >
-                  <PanelLeft className="size-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Show panels</TooltipContent>
-            </Tooltip>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setExpanded(true)}
+              aria-label="Show panels"
+              className="ml-1 size-7 shrink-0 rounded-lg text-muted-foreground hover:bg-white/5 hover:text-foreground"
+            >
+              <PanelLeft className="size-4" />
+            </Button>
           </div>
         )}
 
@@ -748,7 +821,7 @@ export default function Lab() {
           onClick={openPalette}
           className={cn(
             PILL,
-            "pointer-events-auto h-10 gap-2 px-3.5 text-[13px] font-medium text-muted-foreground hover:bg-white/5 hover:text-foreground",
+            "pointer-events-auto h-10 gap-2 px-3.5 text-xs font-medium text-muted-foreground hover:bg-white/5 hover:text-foreground",
           )}
         >
           Search or run
@@ -775,7 +848,7 @@ export default function Lab() {
       {/* Which .pmx, or why it failed — the shipped editor's dialog, reused
           rather than reinvented. */}
       <Dialog open={upload !== null} onOpenChange={(o) => !o && setUpload(null)}>
-        <DialogContent className="max-w-sm rounded-xl border-white/10 bg-zinc-950/95 backdrop-blur-xs">
+        <DialogContent className="max-w-sm rounded-xl border-line-strong bg-surface-raised">
           <DialogHeader>
             <DialogTitle className="text-sm">
               {upload?.kind === "pick" ? "Which model?" : "Couldn't load that"}
@@ -814,6 +887,22 @@ export default function Lab() {
         onChange={(e) => {
           void onModelPicked(Array.from(e.target.files ?? []))
           e.target.value = ""
+        }}
+      />
+
+      <input
+        ref={cameraInput}
+        type="file"
+        accept=".vmd"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          e.target.value = ""
+          if (!file) return
+          void file.arrayBuffer().then((buf) => {
+            engineRef.current?.loadCameraVmdFromBuffer(buf)
+            setCameraClip(file.name)
+          })
         }}
       />
 
@@ -857,7 +946,7 @@ export default function Lab() {
               outer edge. Here the row derives 40 from py-1.5 around size-7 with
               the panel's border OUTSIDE it, so the same icon lands at 7. One
               pixel, and the wordmark visibly steps as you toggle. */}
-          <div className="-mt-px flex w-full shrink-0 flex-col pb-2 leading-tight">
+          <div className="-mt-px flex w-full shrink-0 flex-col leading-tight">
             {/* Identical geometry to the collapsed pill's row — same gap-1.5, same
               py-1.5 pl-2, same size-7 logo slot. The slot is what sets the row
               height, so the wordmark lands on the SAME baseline whether the
@@ -870,20 +959,17 @@ export default function Lab() {
               <span className="shrink-0 rounded-full bg-blue-400/15 px-1.5 py-0.5 text-[11px] leading-none font-medium tracking-wide text-blue-400">
                 0.4.0 beta
               </span>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setExpanded(false)}
-                    aria-label="Hide panels"
-                    className="ml-auto size-7 shrink-0 rounded-lg text-muted-foreground hover:bg-white/5 hover:text-foreground"
-                  >
-                    <PanelLeftClose className="size-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">Hide panels</TooltipContent>
-              </Tooltip>
+              {/* Same as the timeline chevron: the glyph already shows the panel
+                  closing, so a tip repeating it is only latency. */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setExpanded(false)}
+                aria-label="Hide panels"
+                className="ml-auto size-7 shrink-0 rounded-lg text-muted-foreground hover:bg-white/5 hover:text-foreground"
+              >
+                <PanelLeftClose className="size-4" />
+              </Button>
             </div>
             {/* Pulled up under the wordmark past the 6px of bottom padding the
                 row above owns and cannot give back — that padding is what makes
@@ -899,7 +985,18 @@ export default function Lab() {
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <StackGroup label="Cast">
+            <StackGroup
+              label="Cast"
+              action={
+                <CastAction
+                  icon={Plus}
+                  compact
+                  tip="Add model"
+                  label="Add model"
+                  onClick={() => pickModel({ mode: "add" })}
+                />
+              }
+            >
               {!ready && <CastRowSkeleton />}
               {models.map((m) =>
                 !palettes[m.id] ? (
@@ -918,7 +1015,9 @@ export default function Lab() {
                     <span className="flex min-w-0 flex-1 flex-col">
                       {/* Icon-only controls get tooltips; anything with a visible
                       label does not — a tooltip repeating the word already on the
-                      button is noise that delays the pointer. */}
+                      button is noise that delays the pointer. Collapse toggles are
+                      the other exception: a chevron pointing where the thing will
+                      go has already said it. */}
                       <CastLine
                         text={<span className="min-w-0 flex-1 truncate text-sm">{displayName(m.file)}</span>}
                         actions={
@@ -951,7 +1050,7 @@ export default function Lab() {
                           muted value — and the size only softens it. */}
                       <CastLine
                         text={
-                          <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">
+                          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
                             {animByModel[m.id] ?? "No animation"}
                           </span>
                         }
@@ -981,25 +1080,24 @@ export default function Lab() {
                   </div>
                 ),
               )}
-              {/* Always visible, never hover-revealed. Adding a model is the one
-                thing a new scene needs, and an affordance you have to find by
-                waving the cursor around is not an affordance. Quiet, not
-                hidden — it costs one row and removes all doubt.
-
-                Centred and only as wide as its label: a full-bleed row lights up
-                a band the width of the panel for a target the width of two
-                words, which reads as another cast entry rather than an action
-                under them. */}
-              <div className="-mt-1 flex justify-center">
-                <Button
-                  variant="ghost"
-                  onClick={() => pickModel({ mode: "add" })}
-                  className="h-7 gap-1.5 rounded-interior px-2.5 text-xs font-normal text-muted-foreground hover:bg-white/[0.06] hover:text-foreground"
-                >
-                  <Plus className="size-3.5" />
-                  Add model
-                </Button>
-              </div>
+              {/* Only when there is no cast. With rows on screen the + in the
+                  group label is enough, and a standing row for something you use
+                  once per scene costs more than it returns. With NOTHING on
+                  screen there is nothing to hover, and an affordance you have to
+                  find by waving the cursor around an empty panel is not an
+                  affordance. */}
+              {ready && models.length === 0 && (
+                <div className="flex justify-center py-1">
+                  <Button
+                    variant="ghost"
+                    onClick={() => pickModel({ mode: "add" })}
+                    className="h-7 gap-1.5 rounded-interior px-2.5 text-xs font-normal text-muted-foreground hover:bg-white/[0.06] hover:text-foreground"
+                  >
+                    <Plus className="size-4" />
+                    Add model
+                  </Button>
+                </div>
+              )}
             </StackGroup>
 
             <StackGroup label="Scene">
@@ -1041,9 +1139,104 @@ export default function Lab() {
           The real AnimPlayer, not a mock of one. It already plays, scrubs, loops
           and follows a camera VMD, and it already looks the way the app looks —
           so a copy of it could only be a worse version that drifts. The layout
-          is what this route is testing; the controls inside it are not. */}
-      <div className="absolute bottom-3 left-1/2 -translate-x-1/2">
-        <AnimPlayer engineRef={engineRef} modelNames={modelNames} hasCamera={false} />
+          is what this route is testing; the controls inside it are not.
+
+          Collapsed it centres on the VIEWPORT, as a pill that clears everything
+          has always done. Open it spans the working area instead, stopping clear
+          of the stack — a timeline that runs under the panel you are reading is
+          a timeline you cannot see the end of. The right edge will take the same
+          treatment when the inspector lands. */}
+      <div
+        className={cn(
+          "pointer-events-none absolute bottom-3 flex justify-center",
+          WORKSPACE,
+        )}
+      >
+        {/* max-width, not width: auto does not interpolate, so a pill that hugs
+            its contents cannot animate to full-bleed. Two explicit values can,
+            and while collapsed the cap simply sits above the row's natural size
+            so the pill still hugs.
+            
+            The open value is 100%, not some large rem — a cap past the container
+            keeps animating after the element has stopped growing, which spends
+            most of the duration doing nothing visible and reads as a snap. */}
+        <div
+          className={cn(
+            "pointer-events-auto w-full transition-[max-width]",
+            FOLD,
+            timelineOpen ? "max-w-full" : "max-w-[31rem]",
+          )}
+        >
+          <AnimPlayer
+            engineRef={engineRef}
+            modelNames={modelNames}
+            hasCamera={cameraClip !== null}
+            // No tooltip. A chevron pointing at where the thing will go is the
+            // whole explanation, and a tip that only repeats the arrow delays a
+            // control people press repeatedly. aria-label still carries it for
+            // anyone not seeing the arrow.
+            trailing={
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-expanded={timelineOpen}
+                aria-label={timelineOpen ? "Hide timeline" : "Show timeline"}
+                onClick={() => setTimelineOpen((v) => !v)}
+                className="size-7 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+              >
+                {timelineOpen ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
+              </Button>
+            }
+            unfolded={timelineOpen}
+            below={
+              // grid-rows 0fr→1fr is the one way to animate to CONTENT height
+              // without measuring it. The inner element owns overflow-hidden;
+              // the row itself is what animates.
+              <div className={cn("grid transition-[grid-template-rows]", FOLD, timelineOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
+                <div className="overflow-hidden" inert={!timelineOpen}>
+                  {/* Border on the INNER element, so it folds away with the
+                      lanes instead of drawing a line under a closed pill. */}
+                  <div className="border-t border-line px-4 pt-3 pb-4">
+                    {/* One lane per cast member, then the scene-wide slots.
+                        Camera and music always show even with an empty cast: the
+                        timeline's shape should not depend on what happens to be
+                        loaded into it. */}
+                    {/* The label names the KIND of lane, so a lone cast member's
+                        motion row is "Animation" and not their name — the name is
+                        already the row above it in the stack, and CAMERA / MUSIC
+                        beside it are kinds too. Whose motion it is only becomes a
+                        question once there are several, and then the name earns
+                        the slot. Same rule the shipped assets panel uses for its
+                        motion rows. */}
+                    {models.map((m) => (
+                      <Lane key={m.id} label={models.length > 1 ? displayName(m.file) : "Animation"}>
+                        {animByModel[m.id] ? (
+                          <LaneBlock>{animByModel[m.id]}</LaneBlock>
+                        ) : (
+                          <LaneSlot label="Drop a motion" onClick={() => pickAnimation(m.id)} />
+                        )}
+                      </Lane>
+                    ))}
+                    <Lane label="Camera">
+                      {cameraClip ? (
+                        <LaneBlock>{cameraClip}</LaneBlock>
+                      ) : (
+                        <LaneSlot label="Drop a camera motion" onClick={() => cameraInput.current?.click()} />
+                      )}
+                    </Lane>
+                    {/* Disabled, not omitted. scene.assets.audio is a real slot,
+                        but nothing on this route mirrors the animation clock onto
+                        an audio element yet — so the lane says it exists and stays
+                        inert until it can keep the promise. */}
+                    <Lane label="Music">
+                      <LaneSlot label="Music arrives with the audio clock" disabled />
+                    </Lane>
+                  </div>
+                </div>
+              </div>
+            }
+          />
+        </div>
       </div>
     </main>
   )
