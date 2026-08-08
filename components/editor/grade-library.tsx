@@ -348,7 +348,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <ScrollArea className="min-h-0">
           <div className="px-3 pt-2 pb-2.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.builtin}</div>
-          <div className="grid grid-cols-5 content-start gap-2 px-3 pb-1.5">
+          <div className="grid grid-cols-4 content-start gap-2 px-3 pb-1.5">
             {builtinRows.map(renderCard)}
             {rows.length === 0 && (
               <div className="col-span-full py-16 text-center text-xs text-muted-foreground">
@@ -376,7 +376,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
             <div className="shrink-0 px-3 pt-2 pb-2.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.community}</div>
             <ScrollArea className="min-h-0 flex-1">
               {communityRows.length > 0 ? (
-                <div className="grid grid-cols-5 content-start gap-2 px-3 pb-3">{communityRows.map(renderCard)}</div>
+                <div className="grid grid-cols-4 content-start gap-2 px-3 pb-3">{communityRows.map(renderCard)}</div>
               ) : (
                 <div className="px-3 pb-3 text-xs text-muted-foreground/70">{t.rail.communityEmpty}</div>
               )}
@@ -406,7 +406,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                 </button>
               </div>
               <ScrollArea className="min-h-0 flex-1">
-                <div className="grid grid-cols-5 content-start gap-2 px-3 pb-3">
+                <div className="grid grid-cols-4 content-start gap-2 px-3 pb-3">
                 {localRows.map(renderCard)}
                 </div>
               </ScrollArea>

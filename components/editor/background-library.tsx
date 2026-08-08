@@ -51,8 +51,10 @@ type LibraryProps = {
   /** A draft was renamed — re-point anything applied by the old name. */
   onRenamed?: (oldName: string, newName: string) => void
   onRemove: () => void
-  /** Open the page-level floating WGSL editor on this effect (independent panel, same idiom */
-  onEdit: (effect: AppliedBackgroundEffect) => void
+  /** Open the page-level floating WGSL editor on this effect (independent panel, same idiom
+   *  as the graph editor). Optional: a host without the editor omits it, and
+   *  every edit/new affordance hides rather than sitting there doing nothing. */
+  onEdit?: (effect: AppliedBackgroundEffect) => void
 }
 
 export function BackgroundLibrary(props: LibraryProps) {
@@ -157,7 +159,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
 
   // "New effect": open the floating editor on the template. Nothing is created —
   // the editor is a scratchpad, and save-on-close is what makes a draft.
-  const startNew = () => onEdit({ id: "", name: t.bgLibrary.newEffect, wgsl: NEW_EFFECT_TEMPLATE })
+  const startNew = () => onEdit?.({ id: "", name: t.bgLibrary.newEffect, wgsl: NEW_EFFECT_TEMPLATE })
 
   const renderCard = (e: EffectItem) => {
     const sel = e.id === selectedId
@@ -172,7 +174,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                       }
                     }}
                     onClick={() => setSelectedId(e.id)}
-                    onDoubleClick={() => onEdit(seedDraft(e, applied)!)} // straight into the code
+                    onDoubleClick={() => onEdit?.(seedDraft(e, applied)!)} // straight into the code
                     className={cn(
                       "overflow-hidden rounded-md border text-left transition-colors",
                       sel ? "border-blue-400 ring-1 ring-blue-400" : "border-white/10 hover:border-white/25",
@@ -231,7 +233,9 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
       <ContextMenu key={e.id}>
         <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
         <ContextMenuContent className="w-40">
-          <ContextMenuItem onSelect={() => onEdit(seedDraft(e, applied)!)}>{t.bgLibrary.editShader}</ContextMenuItem>
+          {onEdit && (
+            <ContextMenuItem onSelect={() => onEdit(seedDraft(e, applied)!)}>{t.bgLibrary.editShader}</ContextMenuItem>
+          )}
           {isDraft && <ContextMenuItem
               onSelect={() => {
                 setRenameError(null)
@@ -312,6 +316,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
             />
           </div>
           {/* Creation lives in the header */}
+          {onEdit && (
           <button
             onClick={startNew}
             className="flex shrink-0 items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90"
@@ -319,6 +324,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
             <Plus className="size-3.5" />
             {t.bgLibrary.newEffect}
           </button>
+          )}
           <DialogClose className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
             <X className="size-4" />
             <span className="sr-only">{t.library.close}</span>
@@ -332,7 +338,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <ScrollArea className="min-h-0">
             <div className="px-3 pt-2 pb-2.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.builtin}</div>
-            <div className="grid grid-cols-5 content-start gap-2 px-3 pb-1.5">
+            <div className="grid grid-cols-4 content-start gap-2 px-3 pb-1.5">
               {builtinRows.map(renderCard)}
               {rows.length === 0 && (
                 <div className="col-span-full py-16 text-center text-xs text-muted-foreground">
@@ -360,7 +366,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
             <div className="shrink-0 px-3 pt-2 pb-2.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.community}</div>
             <ScrollArea className="min-h-0 flex-1">
               {communityRows.length > 0 ? (
-                <div className="grid grid-cols-5 content-start gap-2 px-3 pb-3">{communityRows.map(renderCard)}</div>
+                <div className="grid grid-cols-4 content-start gap-2 px-3 pb-3">{communityRows.map(renderCard)}</div>
               ) : (
                 <div className="px-3 pb-3 text-xs text-muted-foreground/70">{t.rail.communityEmpty}</div>
               )}
@@ -390,7 +396,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                 </button>
               </div>
               <ScrollArea className="min-h-0 flex-1">
-                <div className="grid grid-cols-5 content-start gap-2 px-3 pb-3">
+                <div className="grid grid-cols-4 content-start gap-2 px-3 pb-3">
                   {localRows.map(renderCard)}
                 </div>
               </ScrollArea>
@@ -406,7 +412,8 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                   {/* The preview IS the edit affordance, exactly like the graph library */}
                   <button
                     type="button"
-                    onClick={() => onEdit(draft)}
+                    disabled={!onEdit}
+                    onClick={() => onEdit?.(draft)}
                     className="group/prev relative block aspect-[16/10] w-full overflow-hidden rounded-md border border-white/10"
                   >
                     {/* The draft's code, not the def's — a forked/edited effect previews as forked. */}

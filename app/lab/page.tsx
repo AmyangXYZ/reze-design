@@ -24,12 +24,12 @@ import {
   Code2,
   ChevronDown,
   ChevronUp,
-  Cloud,
   Contrast,
   Music,
   Mountain,
   Plus,
   RefreshCw,
+  Palette,
   PanelLeftClose,
   PanelLeft,
   Share2,
@@ -57,22 +57,26 @@ import { LayerRow, PresetChips, StackGroup } from "@/components/editor/layer-row
 import { ColorRow, SliderRow } from "@/components/scene/scene-sidebar"
 import { QuickPick } from "@/components/scene/quick-pick"
 import { GradeLibrary } from "@/components/editor/grade-library"
+import { BackgroundLibrary } from "@/components/editor/background-library"
 import { ColorField } from "@/components/color-picker"
 import { useAudioClock } from "@/hooks/use-audio-clock"
 import { useEngine } from "@/hooks/use-engine"
+import { useSceneSync } from "@/hooks/use-scene-sync"
+import { useZOrder } from "@/hooks/use-z-order"
 import { DEFAULT_SCENE } from "@/lib/default-scene"
 import { hydrateScene } from "@/lib/scene"
 import { expandUploadFiles } from "@/lib/uploads"
-import { Vec3 } from "reze-engine"
-import { GRADE_PRESETS, gradeSpec, recallIntensity, rememberIntensity, resolveSpec } from "@/lib/grade"
-import { communityQuickPickItems, quickPickItems, type GradeItem } from "@/lib/library"
+import { GRADE_PRESETS, gradeSpec, recallIntensity, rememberIntensity } from "@/lib/grade"
+import { communityQuickPickItems, quickPickItems, type EffectItem, type GradeItem } from "@/lib/library"
 import { useCommunity } from "@/hooks/use-community"
 import { useDrafts } from "@/hooks/use-drafts"
+import { applyDefaults, BACKGROUND_EFFECTS } from "@/lib/background-effects"
+import { probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
 import { castColour } from "@/lib/model-colour"
 import { castSourceFor } from "@/lib/cast-source"
 import { NEUTRAL_PALETTE, type CastPaletteId } from "@/lib/cast-palette"
 import { relFilePath, sceneFiles } from "@/lib/scene-files"
-import { azElToDirection, hexToLinearVec3, hexToSrgbVec3, WIND_MAX, windDirection, windFreqFromSlider, windSliderFromFreq, windVariation, type SceneSettings } from "@/lib/scene-settings"
+import { WIND_MAX, windFreqFromSlider, windSliderFromFreq, type SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 
 /** Floating chrome — editor-chrome.tsx's `floating`, taken through the surface
@@ -112,12 +116,6 @@ const LAYERS = [
     presets: ["Wide", "Portrait", "Low angle", "Follow"],
   },
   { id: "stage", name: "Stage", icon: Mountain, presets: [] },
-  {
-    id: "background",
-    name: "Background",
-    icon: Cloud,
-    presets: ["Shining Stars", "Aurora", "Rain", "None"],
-  },
   { id: "grade", name: "Grade", icon: Contrast, presets: [] },
   { id: "light", name: "Light", icon: Sun, presets: [] },
   { id: "physics", name: "Physics", icon: Atom, presets: [] },
@@ -281,6 +279,35 @@ function CastLine({ text, actions }: { text: ReactNode; actions: ReactNode }) {
 }
 
 
+/** The empty file-slot invitation — muted, underlined, and ITSELF the button.
+ *  One visual verb for every asset kind: animation, camera, music, image. */
+function UploadInvite({
+  label,
+  onClick,
+  aria,
+  className,
+}: {
+  label: string
+  onClick: () => void
+  aria?: string
+  /** Size and alignment come from the HOST line — the invite must sit at
+   *  exactly the size its filled name would. */
+  className?: string
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={aria ?? label}
+      className={cn(
+        "min-w-0 flex-1 cursor-pointer truncate text-left text-[13px] text-muted-foreground underline decoration-current/40 underline-offset-2 transition-colors hover:decoration-current hover:text-foreground",
+        className,
+      )}
+    >
+      {label}
+    </button>
+  )
+}
+
 /** NO tooltip, deliberately: these sit in stacked hover rows, and a tip pops
  *  open across the cursor's travel line — hovering one row's actions physically
  *  blocked the hover path to the row beneath. They are also upload/replace/
@@ -406,9 +433,17 @@ function ClipRow({
     <div className="flex items-center gap-2.5 px-4 py-1">
       <Icon className="size-4 shrink-0 text-muted-foreground" />
       <span className="flex min-w-0 flex-1 flex-col">
+        {/* One differentiator, the underline: a filled name is muted plain
+            text, an empty slot is the same mute WITH an underline — the CTA
+            mark — and is itself the button. White-filled was tried and put two
+            white lines in every cast row, flattening name-over-value. */}
         <CastLine
           text={
-            <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{clip ?? empty}</span>
+            clip ? (
+              <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{clip}</span>
+            ) : (
+              <UploadInvite label={empty} onClick={onPick} aria={`Upload ${kind}${of ? ` for ${of}` : ""}`} />
+            )
           }
           actions={
             <>
@@ -599,59 +634,8 @@ export default function Lab() {
     })
   }
   const [openRow, setOpenRow] = useState<string | null>(null)
-  // Physics is the first REAL scene section: state seeded from the document,
-  // applied with exactly the lines use-scene-sync runs — same helpers, so the
-  // numbers cannot drift. Always simulating: MMD without physics is a
-  // mannequin, so there is no off switch to reach for. Full useSceneSync
-  // adoption waits for the Light/Bloom slice, where who-applies-the-boot-look
-  // has to be audited first; physics has no such conflict.
-  const [physics, setPhysics] = useState<SceneSettings["physics"]>(() => scene.state.settings.physics)
-  useEffect(() => {
-    const engine = engineRef.current
-    if (!ready || !engine) return
-    engine.setGravity(new Vec3(0, -physics.gravity, 0))
-    engine.setWind(
-      physics.wind > 0
-        ? {
-            direction: windDirection(physics.windAzimuth, physics.windElevation),
-            strength: physics.wind,
-            turbulence: windVariation(physics.wind, physics.windFrequency),
-            frequency: physics.windFrequency,
-          }
-        : null,
-    )
-  }, [ready, engineRef, physics])
 
-  // Ground edits re-run addGround with use-engine's own boot options — the same
-  // math, so a slider drag lands exactly where a reload would. addGround
-  // rebuilds GPU buffers, so edits coalesce to one rebuild per frame; the first
-  // run is skipped outright because boot already applied these exact values.
-  const [ground, setGround] = useState(() => scene.state.settings.ground)
   const stage = stages[0] ?? null
-  const groundRaf = useRef(0)
-  const groundBooted = useRef(false)
-  useEffect(() => {
-    if (!ready) return
-    if (!groundBooted.current) {
-      groundBooted.current = true
-      return
-    }
-    cancelAnimationFrame(groundRaf.current)
-    groundRaf.current = requestAnimationFrame(() => {
-      engineRef.current?.addGround({
-        diffuseColor: hexToLinearVec3(ground.color),
-        gridLineColor: hexToLinearVec3(ground.grid),
-        opacity: ground.opacity,
-        shadowStrength: ground.shadow ? 1 : 0,
-        gridLineOpacity: ground.gridEnabled ? 0.4 : 0,
-        width: ground.size,
-        height: ground.size,
-        fadeStart: ground.size * (10 / 160),
-        fadeEnd: ground.size * (80 / 160),
-      })
-    })
-    return () => cancelAnimationFrame(groundRaf.current)
-  }, [ready, engineRef, ground])
   const stageSummary = stage ? displayName(stage.file) : "Ground"
 
   // Sun, world and glow — seeded from the document, which is ALSO what the
@@ -659,10 +643,23 @@ export default function Lab() {
   // the canvas. Edits make the same calls use-scene-sync would; the first run
   // is skipped because construction already applied these exact values (and a
   // redundant setSun dirties the shadow map for a full extra pass).
+  // ONE settings object, applied by the SAME hook main and the viewer use.
+  // The per-section local applies this replaces were honest scaffolding while
+  // ownership was unaudited; the audit found the lab never applied the
+  // background effect at all, so adopting use-scene-sync both consolidates the
+  // apply layer and turns the document's effect on for the first time here.
+  const [settings, setSettings] = useState<SceneSettings>(() => scene.state.settings)
+  const patch = useCallback(
+    <K extends keyof SceneSettings>(key: K, part: Partial<SceneSettings[K]>) =>
+      setSettings((s2) => ({ ...s2, [key]: { ...s2[key], ...part } })),
+    [],
+  )
+  const { sun, world, bloom, grade, ground, physics } = settings
+  const [bgEffect, setBgEffect] = useState(scene.state.backgroundEffect)
+
   // Grade: main's full selection model. Drafts and community feed both the
   // quick list and NAME RESOLUTION — a scene applying a community grade must
   // resolve it the way the render will.
-  const [grade, setGrade] = useState(() => scene.state.settings.grade)
   const [gradeLibOpen, setGradeLibOpen] = useState(false)
   const { drafts: gradeDrafts } = useDrafts<GradeItem>("grade")
   const communityGrades = useCommunity<GradeItem>("grade")
@@ -679,59 +676,95 @@ export default function Lab() {
     [gradeDrafts, appliedGradeDraftId, communityGrades],
   )
   const pickGrade = useCallback(
-    (name: string) => setGrade({ preset: name, intensity: recallIntensity(name) }),
+    (name: string) => patch("grade", { preset: name, intensity: recallIntensity(name) }),
+    [patch],
+  )
+  const appliedGradeSpec = useMemo(
+    () => gradeSpec(grade.preset, [...gradeDrafts, ...communityGrades]),
+    [grade.preset, gradeDrafts, communityGrades],
+  )
+  type UploadState =
+    { kind: "pick"; files: File[]; paths: string[]; target: ModelTarget } | { kind: "notice"; message: string } | null
+  const [upload, setUpload] = useState<UploadState>(null)
+
+  // ONE background-image slot. Flat backdrop and 360° dome were two upload
+  // rows, but the format is detectable — an equirect panorama is always 2:1
+  // (the format's own definition), a flat backdrop essentially never is — so
+  // asking which kind a file is was a quiz about the user's own image. The
+  // row's icon and a 360° suffix show what the detector decided, so a
+  // misjudged edge case is visible and re-uploadable, not silent.
+  const bgImageInput = useRef<HTMLInputElement | null>(null)
+  const [bgImage, setBgImage] = useState<(BackdropMedia & { dome: boolean }) | null>(null)
+  const swapBgImage = (next: (BackdropMedia & { dome: boolean }) | null) =>
+    setBgImage((prev) => {
+      releaseBackdrop(prev)
+      return next
+    })
+  const onBgImagePicked = useCallback(
+    async (file: File | undefined) => {
+      if (!file) return
+      try {
+        const next = await probeBackdrop(file)
+        const ratio = next.width / next.height
+        swapBgImage({ ...next, dome: ratio > 1.9 && ratio < 2.1 })
+      } catch (e) {
+        setUpload({ kind: "notice", message: e instanceof Error ? e.message : String(e) })
+      }
+    },
     [],
   )
-  useEffect(() => {
-    const engine = engineRef.current
-    if (!ready || !engine) return
-    // No first-run skip: the engine boots ungraded, which IS Neutral — and a
-    // document carrying a real grade gets shown correctly instead of silently
-    // opening ungraded.
-    const cdl = resolveSpec(gradeSpec(grade.preset, [...gradeDrafts, ...communityGrades]), grade.intensity)
-    engine.setColorGrading({
-      shadows: hexToSrgbVec3(cdl.shadows),
-      midtones: hexToSrgbVec3(cdl.midtones),
-      highlights: hexToSrgbVec3(cdl.highlights),
-      contrast: cdl.contrast,
-      saturation: cdl.saturation,
-    })
-  }, [ready, engineRef, grade, gradeDrafts, communityGrades])
 
-  const [sun, setSun] = useState(() => scene.state.settings.sun)
-  const [world, setWorld] = useState(() => scene.state.settings.world)
-  const [bloom, setBloom] = useState(() => scene.state.settings.bloom)
-  const lightBooted = useRef(false)
-  useEffect(() => {
-    const engine = engineRef.current
-    if (!ready || !engine) return
-    if (!lightBooted.current) {
-      lightBooted.current = true
-      return
-    }
-    engine.setSun({
-      color: hexToLinearVec3(sun.color),
-      strength: sun.strength,
-      direction: azElToDirection(sun.azimuth, sun.elevation),
-    })
-    engine.setWorld({ color: hexToLinearVec3(world.color), strength: world.strength })
-    // Intensity 0 IS off — the slider is the only authority, so no stored
-    // enabled flag can lock bloom off forever (sync's own rule).
-    engine.setBloomOptions({
-      enabled: bloom.intensity > 0,
-      threshold: bloom.threshold,
-      knee: bloom.knee,
-      radius: bloom.radius,
-      intensity: bloom.intensity,
-      color: hexToLinearVec3(bloom.color),
-    })
-  }, [ready, engineRef, sun, world, bloom])
+  useSceneSync({
+    engineRef,
+    ready,
+    settings,
+    gradeSpec: appliedGradeSpec,
+    backgroundEffect: bgEffect,
+    hasBackdrop: !!bgImage && !bgImage.dome,
+    skybox: bgImage?.dome ? bgImage.file : null,
+  })
+
+  // Effects: the same selection model as grade, one library over.
+  const [effectLibOpen, setEffectLibOpen] = useState(false)
+  const { drafts: effectDrafts } = useDrafts<EffectItem>("effect")
+  const communityEffects = useCommunity<EffectItem>("effect")
+  const effectItems = useMemo(
+    () => [
+      ...quickPickItems(BACKGROUND_EFFECTS, effectDrafts, bgEffect?.id ?? null).map((e) => ({
+        id: e.name,
+        label: e.name,
+        section: e.owner === "local" ? ("local" as const) : ("builtin" as const),
+      })),
+      ...communityQuickPickItems(communityEffects),
+    ],
+    [effectDrafts, bgEffect, communityEffects],
+  )
+
+  const pickEffect = useCallback(
+    (name: string) => {
+      // Drafts and community rows carry their own shader — they apply by value.
+      const own = [...effectDrafts, ...communityEffects].find((e) => e.name === name)
+      if (own) {
+        setBgEffect({ id: own.id, name: own.name, wgsl: own.payload.wgsl })
+        return
+      }
+      // Straight from the definition — round-tripping a built-in through the
+      // by-name lookup with its id is what made every built-in "unknown".
+      const def = BACKGROUND_EFFECTS.find((e) => e.name === name)
+      if (def) setBgEffect(applyDefaults(def))
+    },
+    [effectDrafts, communityEffects],
+  )
 
   const [picked, setPicked] = useState<Record<string, string>>({
     camera: "Wide",
-    background: "Shining Stars",
   })
   const [expanded, setExpanded] = useState(true)
+  // The dock joins the desktop stack the libraries already live in: clicking
+  // (or tabbing into) it raises it over an open library, clicking the library
+  // raises it back. No Escape closer — Escape keeps closing the topmost
+  // LIBRARY; the stack walk skips surfaces that never close.
+  const dockZ = useZOrder()
   // ── Model upload ──
   // "Replace" is an upload too — same picker, same parsing, only the target
   // differs: a new slot, or an existing one that keeps its position and clip.
@@ -748,9 +781,6 @@ export default function Lab() {
   // Same shape the shipped editor uses: one dialog covering "which .pmx?" and
   // "that did not load", because both are the upload failing to resolve to a
   // single model and the user only cares which one they are looking at.
-  type UploadState =
-    { kind: "pick"; files: File[]; paths: string[]; target: ModelTarget } | { kind: "notice"; message: string } | null
-  const [upload, setUpload] = useState<UploadState>(null)
 
   const pickModel = (target: ModelTarget) => {
     modelTarget.current = target
@@ -930,6 +960,10 @@ export default function Lab() {
     <main className="relative h-dvh w-screen overflow-hidden bg-black">
       {/* Full bleed, always. Chrome floats over it; nothing ever shrinks the
           thing you are making. */}
+      {bgImage && !bgImage.dome && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={bgImage.url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+      )}
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none object-contain" />
 
       {error && (
@@ -1063,6 +1097,18 @@ export default function Lab() {
       <audio ref={audioRef} src={musicClip?.url || undefined} preload="auto" playsInline className="hidden" />
 
       <input
+        ref={bgImageInput}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          e.target.value = ""
+          void onBgImagePicked(file)
+        }}
+      />
+
+      <input
         ref={musicInput}
         type="file"
         accept="audio/*"
@@ -1117,7 +1163,20 @@ export default function Lab() {
         grade={grade}
         onApplyPreset={pickGrade}
         onRenamed={(oldName, newName) =>
-          setGrade((g) => (g.preset === oldName ? { ...g, preset: newName } : g))
+          setSettings((s2) =>
+            s2.grade.preset === oldName ? { ...s2, grade: { ...s2.grade, preset: newName } } : s2,
+          )
+        }
+      />
+
+      <BackgroundLibrary
+        open={effectLibOpen}
+        onOpenChange={setEffectLibOpen}
+        applied={bgEffect}
+        onApply={setBgEffect}
+        onRemove={() => setBgEffect(null)}
+        onRenamed={(oldName, newName) =>
+          setBgEffect((e) => (e?.name === oldName ? { ...e, name: newName } : e))
         }
       />
 
@@ -1139,6 +1198,9 @@ export default function Lab() {
           // timeline's side insets ended that overlap, so the reserve was only
           // clipping rows short — a half-visible Physics row at the bottom edge.
           className={cn("top-3 left-3 flex max-h-[calc(100%-1.5rem)] w-[17rem] flex-col overflow-hidden")}
+          style={{ zIndex: dockZ.z }}
+          onPointerDownCapture={dockZ.onPointerDownCapture}
+          onFocusCapture={dockZ.onFocusCapture}
         >
           {/* BrandPill's asHeader form: wordmark + version + toggle on one line,
             the scene name under it. Same paddings, so the header reads as part
@@ -1247,9 +1309,17 @@ export default function Lab() {
                       />
                       <CastLine
                         text={
-                          <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">
-                            {animByModel[m.id]?.name ?? "No animation"}
-                          </span>
+                          animByModel[m.id] ? (
+                            <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">
+                              {animByModel[m.id].name}
+                            </span>
+                          ) : (
+                            <UploadInvite
+                              label="Upload animation"
+                              onClick={() => pickAnimation(m.id)}
+                              aria={`Upload animation for ${displayName(m.file)}`}
+                            />
+                          )
                         }
                         actions={
                           <>
@@ -1299,7 +1369,7 @@ export default function Lab() {
               <ClipRow
                 icon={Video}
                 clip={cameraClip}
-                empty="No camera motion"
+                empty="Upload camera motion"
                 kind="camera motion"
                 onPick={() => cameraInput.current?.click()}
                 onRemove={removeCamera}
@@ -1307,7 +1377,7 @@ export default function Lab() {
               <ClipRow
                 icon={Music}
                 clip={musicClip?.name ?? null}
-                empty="No music"
+                empty="Upload music"
                 kind="music"
                 onPick={() => musicInput.current?.click()}
                 onRemove={removeMusic}
@@ -1343,6 +1413,7 @@ export default function Lab() {
                       <TabsList className="-mt-1 mb-2 w-full">
                         <TabsTrigger value="stage" className="flex-1">Stage</TabsTrigger>
                         <TabsTrigger value="ground" className="flex-1">Ground</TabsTrigger>
+                        <TabsTrigger value="background" className="flex-1">Background</TabsTrigger>
                       </TabsList>
                       <TabsContent value="stage">
                         {stage ? (
@@ -1413,32 +1484,103 @@ export default function Lab() {
                           disabled={!!stage}
                           className={cn(stage && "pointer-events-none opacity-40")}
                         >
-                          <ColorRow label="Color" value={ground.color} onChange={(hex) => setGround((g) => ({ ...g, color: hex }))} />
+                          <ColorRow label="Color" value={ground.color} onChange={(hex) => patch("ground", { color: hex })} />
                           <SliderRow
                             label="Opacity"
                             value={ground.opacity}
                             min={0}
                             max={1}
                             step={0.01}
-                            onChange={(v) => setGround((g) => ({ ...g, opacity: v }))}
+                            onChange={(v) => patch("ground", { opacity: v })}
                             fmt={(v) => v.toFixed(2)}
                           />
                           {/* Shadow persists below opacity (shadow catcher) — this
                               turns it off entirely. */}
                           <div className="mt-2.5 flex items-center justify-between">
                             <span className="text-xs">Shadow</span>
-                            <Switch size="sm" checked={ground.shadow} onCheckedChange={(v) => setGround((g) => ({ ...g, shadow: v }))} />
+                            <Switch size="sm" checked={ground.shadow} onCheckedChange={(v) => patch("ground", { shadow: v })} />
                           </div>
                           <div className="mt-2.5 flex items-center justify-between">
                             <span className="text-xs">Grid lines</span>
                             <div className="flex items-center gap-2">
                               {ground.gridEnabled && (
-                                <ColorField value={ground.grid} onChange={(hex) => setGround((g) => ({ ...g, grid: hex }))} />
+                                <ColorField value={ground.grid} onChange={(hex) => patch("ground", { grid: hex })} />
                               )}
-                              <Switch size="sm" checked={ground.gridEnabled} onCheckedChange={(v) => setGround((g) => ({ ...g, gridEnabled: v }))} />
+                              <Switch size="sm" checked={ground.gridEnabled} onCheckedChange={(v) => patch("ground", { gridEnabled: v })} />
                             </div>
                           </div>
                         </fieldset>
+                      </TabsContent>
+                      {/* Background is stage dressing too — that is the filing
+                          rule that puts it in this row. Colour, the WGSL effect
+                          layer, and ONE image slot that detects its own kind:
+                          flat behind the scene, or a 360° dome at 2:1. */}
+                      <TabsContent value="background">
+                        <ColorRow
+                          label="Color"
+                          value={settings.background.color}
+                          onChange={(hex) => patch("background", { color: hex })}
+                        />
+                        {/* Image before Effect, so the Library pill below sits
+                            beside the thing it browses — after the image row it
+                            read as an image library. The value text is the
+                            trigger, QuickPick's own language: muted invitation
+                            when empty, blue name when filled. */}
+                        {/* Colour, Image, Effect share one grid: mt-2.5, h-5,
+                            value flush at the right edge. The image's ✕ is a
+                            compact inline action, not a hover reserve — one
+                            always-relevant button does not earn 48px of blank
+                            right margin that breaks the column. */}
+                        <div className="mt-2.5 flex h-5 min-w-0 items-center gap-2">
+                          <span className="shrink-0 text-xs">Image</span>
+                          {bgImage ? (
+                            <>
+                              <span className="ml-auto min-w-0 truncate text-right text-xs text-muted-foreground">
+                                {bgImage.dome ? `${bgImage.name} · 360°` : bgImage.name}
+                              </span>
+                              <CastAction
+                                icon={RefreshCw}
+                                compact
+                                label="Replace background image"
+                                onClick={() => bgImageInput.current?.click()}
+                              />
+                              <CastAction
+                                icon={X}
+                                danger
+                                compact
+                                label="Remove background image"
+                                onClick={() => swapBgImage(null)}
+                              />
+                            </>
+                          ) : (
+                            <span className="ml-auto flex min-w-0 justify-end">
+                              <UploadInvite
+                                label="Upload image"
+                                onClick={() => bgImageInput.current?.click()}
+                                aria="Upload background image (flat or 360°)"
+                                className="text-right text-xs"
+                              />
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-2.5 flex h-5 min-w-0 items-center justify-between gap-2">
+                          <span className="shrink-0 text-xs">Effect</span>
+                          <QuickPick
+                            value={bgEffect?.name ?? null}
+                            items={effectItems}
+                            onPick={pickEffect}
+                            placeholder="None"
+                          />
+                        </div>
+                        <div className="mt-2.5 flex justify-center">
+                          <button
+                            onClick={() => setEffectLibOpen(true)}
+                            className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90"
+                          >
+                            <Palette className="size-3.5" />
+                            Library
+                          </button>
+                        </div>
                       </TabsContent>
                     </Tabs>
                   ) : l.id === "light" ? (
@@ -1455,26 +1597,26 @@ export default function Lab() {
                           <TabsTrigger value="sun" className="flex-1">Sun</TabsTrigger>
                         </TabsList>
                         <TabsContent value="world">
-                          <ColorRow label="Color" value={world.color} onChange={(hex) => setWorld((v) => ({ ...v, color: hex }))} />
+                          <ColorRow label="Color" value={world.color} onChange={(hex) => patch("world", { color: hex })} />
                           <SliderRow
                             label="Strength"
                             value={world.strength}
                             min={0}
                             max={2}
                             step={0.01}
-                            onChange={(v) => setWorld((w) => ({ ...w, strength: v }))}
+                            onChange={(v) => patch("world", { strength: v })}
                             fmt={(v) => v.toFixed(2)}
                           />
                         </TabsContent>
                         <TabsContent value="sun">
-                          <ColorRow label="Color" value={sun.color} onChange={(hex) => setSun((v) => ({ ...v, color: hex }))} />
+                          <ColorRow label="Color" value={sun.color} onChange={(hex) => patch("sun", { color: hex })} />
                           <SliderRow
                             label="Strength"
                             value={sun.strength}
                             min={0}
                             max={6}
                             step={0.05}
-                            onChange={(v) => setSun((s2) => ({ ...s2, strength: v }))}
+                            onChange={(v) => patch("sun", { strength: v })}
                             fmt={(v) => v.toFixed(2)}
                           />
                           <SliderRow
@@ -1483,7 +1625,7 @@ export default function Lab() {
                             min={0}
                             max={360}
                             step={1}
-                            onChange={(v) => setSun((s2) => ({ ...s2, azimuth: v }))}
+                            onChange={(v) => patch("sun", { azimuth: v })}
                             fmt={(v) => `${v.toFixed(0)}°`}
                           />
                           <SliderRow
@@ -1492,7 +1634,7 @@ export default function Lab() {
                             min={0}
                             max={90}
                             step={1}
-                            onChange={(v) => setSun((s2) => ({ ...s2, elevation: v }))}
+                            onChange={(v) => patch("sun", { elevation: v })}
                             fmt={(v) => `${v.toFixed(0)}°`}
                           />
                         </TabsContent>
@@ -1504,7 +1646,7 @@ export default function Lab() {
                           min={0}
                           max={1}
                           step={0.005}
-                          onChange={(v) => setBloom((b) => ({ ...b, intensity: v }))}
+                          onChange={(v) => patch("bloom", { intensity: v })}
                           fmt={(v) => v.toFixed(3)}
                         />
                       </div>
@@ -1532,19 +1674,23 @@ export default function Lab() {
                           max={1}
                           step={0.01}
                           onChange={(v) => {
-                            setGrade((g) => ({ ...g, intensity: v }))
+                            patch("grade", { intensity: v })
                             rememberIntensity(grade.preset, v)
                           }}
                           fmt={(v) => v.toFixed(2)}
                         />
                       </div>
-                      <Button
-                        variant="ghost"
-                        onClick={() => setGradeLibOpen(true)}
-                        className="mt-2.5 h-7 w-full rounded-interior text-xs font-normal text-muted-foreground hover:bg-white/[0.06] hover:text-foreground"
-                      >
-                        Browse library…
-                      </Button>
+                      {/* Main's own library-door pill, centred as the body's
+                          deliberate final action — same mark, same meaning. */}
+                      <div className="mt-2.5 flex justify-center">
+                        <button
+                          onClick={() => setGradeLibOpen(true)}
+                          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90"
+                        >
+                          <Palette className="size-3.5" />
+                          Library
+                        </button>
+                      </div>
                     </>
                   ) : l.id === "physics" ? (
                     <>
@@ -1554,7 +1700,7 @@ export default function Lab() {
                         min={0}
                         max={200}
                         step={1}
-                        onChange={(v) => setPhysics((p) => ({ ...p, gravity: v }))}
+                        onChange={(v) => patch("physics", { gravity: v })}
                         fmt={(v) => v.toFixed(0)}
                       />
                       <SliderRow
@@ -1563,7 +1709,7 @@ export default function Lab() {
                         min={0}
                         max={WIND_MAX}
                         step={1}
-                        onChange={(v) => setPhysics((p) => ({ ...p, wind: v }))}
+                        onChange={(v) => patch("physics", { wind: v })}
                         fmt={(v) => v.toFixed(0)}
                       />
                       {/* Rendered always, disabled while there is no air to
@@ -1577,7 +1723,7 @@ export default function Lab() {
                         max={1}
                         step={0.01}
                         disabled={physics.wind === 0}
-                        onChange={(v) => setPhysics((p) => ({ ...p, windFrequency: windFreqFromSlider(v) }))}
+                        onChange={(v) => patch("physics", { windFrequency: windFreqFromSlider(v) })}
                         fmt={(v) => windFreqFromSlider(v).toFixed(2)}
                       />
                       <SliderRow
@@ -1587,7 +1733,7 @@ export default function Lab() {
                         max={360}
                         step={1}
                         disabled={physics.wind === 0}
-                        onChange={(v) => setPhysics((p) => ({ ...p, windAzimuth: v }))}
+                        onChange={(v) => patch("physics", { windAzimuth: v })}
                         fmt={(v) => `${v.toFixed(0)}°`}
                       />
                     </>

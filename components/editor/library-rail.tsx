@@ -36,7 +36,7 @@ export const LIBRARY_SHELL =
   // 84dvh. The dialog is centred, so the margin below it is (100-h)/2: at 88
   // that left ~6%, under the transport bar's own height at fixed bottom-3, and
   // the two visibly touched. 80 cleared it but read as a band of dead space.
-  "flex h-[84dvh] max-h-[84dvh] w-[92vw] max-w-6xl flex-col gap-0 overflow-hidden border-white/10 bg-zinc-950/95 p-0 sm:max-w-6xl " +
+  "flex h-[84dvh] max-h-[84dvh] w-[90vw] max-w-5xl flex-col gap-0 overflow-hidden border-white/10 bg-zinc-950/95 p-0 sm:max-w-5xl " +
   "data-[state=closed]:animate-none data-[state=closed]:fade-out-100 data-[state=closed]:zoom-out-100 " +
   "data-[state=open]:animate-none data-[state=open]:fade-in-100 data-[state=open]:zoom-in-100"
 
