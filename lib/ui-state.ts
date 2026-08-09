@@ -26,7 +26,7 @@ export type UiState = {
   stageTab: "stage" | "ground" | "background"
   lightTab: "world" | "sun"
   cameraTab: "lens" | "focus"
-  postTab: "grade" | "bloom"
+  postTab: "grade" | "bloom" | "outline"
 }
 
 function defaults(): UiState {

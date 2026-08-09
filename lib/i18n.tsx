@@ -397,6 +397,7 @@ const en = {
       sun: "Sun",
       grade: "Grade",
       bloom: "Bloom",
+      outline: "Outline",
       lens: "Lens",
       focus: "Focus",
     },
@@ -410,6 +411,7 @@ const en = {
       background360: "360° background",
     },
     ctl: {
+      outline: "Outline",
       color: "Color",
       opacity: "Opacity",
       shadow: "Shadow",
@@ -474,7 +476,8 @@ const en = {
       physics: "Physics",
       capture: "Capture image",
       language: "Language",
-      outline: "Toggle outline",
+      outlineOn: "Turn on outline",
+      outlineOff: "Turn off outline",
     },
   },
   // Add-node menu category headers — keyed by the English category (also the color key).
@@ -948,6 +951,7 @@ const zh: Dictionary = {
       sun: "太阳",
       grade: "调色",
       bloom: "泛光",
+      outline: "描边",
       lens: "镜头",
       focus: "对焦",
     },
@@ -959,6 +963,7 @@ const zh: Dictionary = {
       background360: "360 全景背景",
     },
     ctl: {
+      outline: "描边",
       color: "颜色",
       opacity: "不透明度",
       shadow: "阴影",
@@ -1022,7 +1027,8 @@ const zh: Dictionary = {
       physics: "物理",
       capture: "截图",
       language: "语言",
-      outline: "切换描边",
+      outlineOn: "打开描边",
+      outlineOff: "关闭描边",
     },
   },
   nodeCategory: {
