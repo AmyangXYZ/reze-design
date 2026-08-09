@@ -139,12 +139,17 @@ export function StackGroup({
    *  the group, not only the label: the rows are what you are looking at when
    *  you decide you want another one. */
   action,
+  /** Space ABOVE the label. Groups that continue a thought sit closer (`tight`)
+   *  than groups that start a new one (`loose`) — the gap is what says whether
+   *  two blocks are one subject or two. */
+  gap = "normal",
   children,
 }: {
   label: string
   /** Addressable for go-to, like LayerRow's. */
   domId?: string
   action?: ReactNode
+  gap?: "tight" | "normal" | "loose"
   children: ReactNode
 }) {
   return (
@@ -152,7 +157,12 @@ export function StackGroup({
       {/* Tight under the label, looser above it. The whitespace has to say which
           rows the label OWNS — a label floating equidistant between the block
           above and the block below belongs to neither. */}
-      <div className="flex items-center gap-2 px-4 pt-6 pb-1">
+      <div
+        className={cn(
+          "flex items-center gap-2 px-4 pb-1",
+          gap === "tight" ? "pt-3" : gap === "loose" ? "pt-6" : "pt-4",
+        )}
+      >
         <span className="min-w-0 flex-1 truncate font-mono text-xs font-medium tracking-[0.12em] text-muted-foreground uppercase">
           {label}
         </span>
