@@ -88,16 +88,13 @@ import {
   storedGroupsFor,
   serializeSceneDoc,
   type Scene,
-  type AssetRef,
-  type ModelSource,
-  type SceneBackground,
   type SceneCamera,
   type SceneDoc,
-  type SceneModel,
 } from "@/lib/scene"
+import { collectSceneSlots as collectSlots } from "@/lib/scene-collect"
 import { downloadBlob, readSceneFile, sceneZipFileName } from "@/lib/scene-file"
-import { modelFilePaths, sceneFiles } from "@/lib/scene-files"
-import { buildZip, type BundleEntry } from "@/lib/bundle"
+import { sceneFiles } from "@/lib/scene-files"
+import { buildZip } from "@/lib/bundle"
 import { clearLocalBundle, saveLocalBundle } from "@/lib/asset-store"
 import { ShareSceneDialog, type ScenePublishSource } from "@/components/editor/share-scene"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -105,6 +102,7 @@ import { HandleDialog } from "@/components/editor/account-panel"
 import { LoadingPill } from "@/components/editor/loading-pill"
 import { SceneGallery, prefetchGallery } from "@/components/editor/scene-gallery"
 import type { SceneSettings } from "@/lib/scene-settings"
+import { loadUiState, saveUiState } from "@/lib/ui-state"
 import { cn } from "@/lib/utils"
 
 
@@ -192,27 +190,6 @@ const newGroupId = (material: string, groups: StyleGroup[]): string => {
   let i = 1
   while (ids.has(`${base}-${i}`)) i++
   return `${base}-${i}`
-}
-
-const UI_KEY = "reze-design.ui"
-function loadUiState(): { docks: boolean; leftTab: string; rightTab: string } {
-  // Mobile first-open: docks closed — two 300px docks bury a phone viewport
-  const coarse = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches
-  const def = { docks: !coarse, leftTab: "materials", rightTab: "assets" }
-  if (typeof window === "undefined") return def
-  try {
-    const raw = window.localStorage.getItem(UI_KEY)
-    return { ...def, ...(raw ? (JSON.parse(raw) as Partial<typeof def>) : {}) }
-  } catch {
-    return def
-  }
-}
-function saveUiState(state: { docks: boolean; leftTab: string; rightTab: string }) {
-  try {
-    window.localStorage.setItem(UI_KEY, JSON.stringify(state))
-  } catch {
-    // non-fatal
-  }
 }
 
 // The graph editor is a free-floating window; its position/size persist across sessions.
@@ -1483,96 +1460,24 @@ function Editor({ initialScene, forkedFrom }: { initialScene?: Scene; forkedFrom
   // uploaded assets need. Demo assets keep site paths; uploads become
   // bundle-relative paths backed by zip entries.
   const [shareOpen, setShareOpen] = useState(false)
-  /**
-   * Every slot's CURRENT value — uploaded assets as bundle-relative paths backed by
-   * File entries, served assets as their URLs — regardless of who supplied them. This
-   * is the one collector behind BOTH destinations: publish zips the entries to R2,
-   * local persistence writes them to the IndexedDB bundle. Persisting is publishing
-   * with a different store, which is why refresh, fork and publish can never disagree
-   * about what the scene is made of.
-   */
-  const collectSceneSlots = () => {
-    const entries: BundleEntry[] = []
-    // A file that came OUT of a bundle keeps its bundle path as its name; packing it
-    // under a fresh prefix would nest it one level deeper per generation
-    // (audio/audio/track.wav), and the local persist loop runs every session.
-    const packPath = (prefix: string, name: string) => (name.includes("/") ? name : `${prefix}/${name}`)
-    const liveModels: SceneModel[] = models.map((m) => {
-      const kept = sceneFiles.models.get(m.id)
-      const booted = bootScene.assets.models.find((d) => d.model.id === m.id)?.model.source ?? null
-      let source: ModelSource | null = null
-      if (kept) {
-        // Uploaded here: pack the files we were given.
-        const base = `models/${m.id}`
-        const paths = modelFilePaths(kept.files)
-        for (const f of kept.files) entries.push({ path: `${base}/${paths.get(f)!}`, file: f })
-        source = { kind: "bundle", path: `${base}/${paths.get(kept.pmx)!}` }
-      } else if (booted?.kind === "bundle") {
-        // Came out of a bundle (a forked scene): re-pack the files already
-        // unzipped in memory, so this scene owns its assets rather than pointing
-        // at someone else's — theirs can be deleted, and the bytes should be
-        // counted against whoever published them.
-        const dir = booted.path.slice(0, booted.path.lastIndexOf("/") + 1)
-        for (const f of bundleFiles()) {
-          if (f.name.startsWith(dir)) entries.push({ path: f.name, file: f })
-        }
-        source = booted
-      } else {
-        source = booted
-      }
-      const anim = animByModel[m.id]
-      let animation: AssetRef | null = null
-      if (anim?.source.kind === "file") {
-        const path = packPath(`motions/${m.id}`, anim.source.file.name)
-        entries.push({ path, file: anim.source.file })
-        animation = { name: anim.name, url: path }
-      } else if (anim?.source.kind === "url") {
-        animation = { name: anim.name, url: anim.source.url }
-      }
-      // Stages carry their placement and their switch weights in the document.
-      // Without the flag they reload as ordinary cast: physics, IK, a spawn
-      // offset, and no ground suppression.
-      const stage = stages.find((s) => s.id === m.id)
-      return {
-        model: { id: m.id, file: m.file, source: source! },
-        animation,
-        ...(stage ? { stage: true, transform: stage.transform } : {}),
-        ...(stage && Object.keys(stage.morphs).length ? { morphs: stage.morphs } : {}),
-      }
+  /** This editor's slots, normalised for the shared collector (lib/scene-collect):
+   *  backdrop and skybox are two slots here and one there, because only one of
+   *  them can be set at a time. */
+  const collectSceneSlots = () =>
+    collectSlots({
+      models,
+      stages,
+      booted: bootScene.assets.models,
+      bundleFiles: bundleFiles(),
+      anims: animByModel,
+      camera: { name: cameraName, booted: bootScene.assets.cameraAnimation },
+      audio: { name: audioName, url: audioSrc },
+      background: backdrop
+        ? { kind: "backdrop", name: backdrop.name, file: backdrop.file }
+        : skybox
+          ? { kind: "skybox", name: skybox.name, file: skybox.file }
+          : null,
     })
-    let cameraAnimation: AssetRef | null = null
-    if (cameraName && sceneFiles.camera) {
-      const path = packPath("camera", sceneFiles.camera.name)
-      entries.push({ path, file: sceneFiles.camera })
-      cameraAnimation = { name: cameraName, url: path }
-    } else if (cameraName && bootScene.assets.cameraAnimation?.name === cameraName) {
-      cameraAnimation = bootScene.assets.cameraAnimation
-    }
-    let audio: AssetRef | null = null
-    if (audioName && sceneFiles.audio) {
-      const path = packPath("audio", sceneFiles.audio.name)
-      entries.push({ path, file: sceneFiles.audio })
-      audio = { name: audioName, url: path }
-    } else if (audioName && audioSrc && !audioSrc.startsWith("blob:")) {
-      audio = { name: audioName, url: audioSrc }
-    }
-    let background: SceneBackground = null
-    if (backdrop) {
-      const path = packPath("backdrop", backdrop.name)
-      entries.push({ path, file: backdrop.file })
-      background = { kind: "backdrop", asset: { name: backdrop.name, url: path } }
-    } else if (skybox) {
-      const path = packPath("skybox", skybox.name)
-      entries.push({ path, file: skybox.file })
-      background = { kind: "skybox", asset: { name: skybox.name, url: path } }
-    }
-    const hidden = Object.fromEntries(
-      models
-        .map((m) => [m.id, m.materials.filter((mat) => !mat.visible).map((mat) => mat.name)] as const)
-        .filter(([, names]) => names.length),
-    )
-    return { entries, models: liveModels, cameraAnimation, audio, background, hidden }
-  }
 
   const collectScenePublish = (): ScenePublishSource => {
     const slots = collectSceneSlots()

@@ -23,16 +23,18 @@ import { useT } from "@/lib/i18n"
 const VIDEO_FPS = 60
 type Aspect = "16:9" | "9:16" | "2.39:1" | "1:1" | "4:3"
 const ASPECTS: Aspect[] = ["16:9", "9:16", "2.39:1", "1:1", "4:3"]
-type Quality = "720p" | "1080p" | "1440p" | "4k"
-const QUALITIES: Quality[] = ["720p", "1080p", "1440p", "4k"]
-const QUALITY_LABELS: Record<Quality, string> = { "720p": "720p", "1080p": "1080p", "1440p": "1440p", "4k": "4K" }
+type Quality = "1080p" | "1440p" | "4k"
+// 1080p is the floor: below it a dance reads as a compression artefact, and
+// every platform these get shared to upscales anyway.
+const QUALITIES: Quality[] = ["1080p", "1440p", "4k"]
+const QUALITY_LABELS: Record<Quality, string> = { "1080p": "1080p", "1440p": "1440p", "4k": "4K" }
 const DIMS: Record<Aspect, Record<Quality, [number, number]>> = {
-  "16:9": { "720p": [1280, 720], "1080p": [1920, 1080], "1440p": [2560, 1440], "4k": [3840, 2160] },
-  "9:16": { "720p": [720, 1280], "1080p": [1080, 1920], "1440p": [1440, 2560], "4k": [2160, 3840] },
+  "16:9": { "1080p": [1920, 1080], "1440p": [2560, 1440], "4k": [3840, 2160] },
+  "9:16": { "1080p": [1080, 1920], "1440p": [1440, 2560], "4k": [2160, 3840] },
   // Cinemascope (anamorphic ~2.39:1) — the movie-theater frame.
-  "2.39:1": { "720p": [1280, 536], "1080p": [1920, 804], "1440p": [2560, 1072], "4k": [3840, 1608] },
-  "1:1": { "720p": [720, 720], "1080p": [1080, 1080], "1440p": [1440, 1440], "4k": [2160, 2160] },
-  "4:3": { "720p": [960, 720], "1080p": [1440, 1080], "1440p": [1920, 1440], "4k": [2880, 2160] },
+  "2.39:1": { "1080p": [1920, 804], "1440p": [2560, 1072], "4k": [3840, 1608] },
+  "1:1": { "1080p": [1080, 1080], "1440p": [1440, 1440], "4k": [2160, 2160] },
+  "4:3": { "1080p": [1440, 1080], "1440p": [1920, 1440], "4k": [2880, 2160] },
 }
 
 // min-h-6 keeps every row the height of a select trigger, so the switch row (whose control

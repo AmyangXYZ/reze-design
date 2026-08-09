@@ -162,6 +162,8 @@ function SceneStage({ scene, sceneId, title, author, description, credits, likeC
     engineRef,
     ready: stageReady,
     settings: scene.state.settings,
+    camera: scene.state.camera,
+    cameraVmd: !!scene.assets.cameraAnimation,
     gradeSpec: specOf(scene.state.settings.grade),
     backgroundEffect: scene.state.backgroundEffect,
     hasBackdrop: !!backdropFile,

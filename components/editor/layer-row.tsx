@@ -160,7 +160,7 @@ export function StackGroup({
       <div
         className={cn(
           "flex items-center gap-2 px-4 pb-1",
-          gap === "tight" ? "pt-3" : gap === "loose" ? "pt-6" : "pt-4",
+          gap === "tight" ? "pt-0" : gap === "loose" ? "pt-6" : "pt-4",
         )}
       >
         <span className="min-w-0 flex-1 truncate font-mono text-xs font-medium tracking-[0.12em] text-muted-foreground uppercase">

@@ -57,6 +57,7 @@ import { RenderPanel } from "@/components/editor/render-panel"
 import { CastSwatch } from "@/components/editor/cast-swatch"
 import { CommandPalette } from "@/components/editor/command-palette"
 import type { PaletteItem } from "@/lib/command-search"
+import { SceneFileMenu } from "@/components/editor/scene-file-menu"
 import { SceneName } from "@/components/editor/scene-name"
 import { Surface } from "@/components/editor/surface"
 import { LayerRow, StackGroup } from "@/components/editor/layer-row"
@@ -76,15 +77,36 @@ import { useEngine } from "@/hooks/use-engine"
 import { useRenderFraming } from "@/hooks/use-render-framing"
 import { useSceneSync } from "@/hooks/use-scene-sync"
 import { useZOrder } from "@/hooks/use-z-order"
-import { DEFAULT_SCENE } from "@/lib/default-scene"
-import { hydrateScene, type SceneCamera } from "@/lib/scene"
+import { DEFAULT_SCENE, EMPTY_SCENE } from "@/lib/default-scene"
+import {
+  assetsDocOf,
+  CAMERA_DEFAULT_FOV,
+  hydrateScene,
+  idbBundleOf,
+  newSceneId,
+  parseSceneDoc,
+  saveSceneAssets,
+  saveSceneState,
+  serializeSceneDoc,
+  type Scene,
+  type SceneCamera,
+  type SceneDoc,
+  type SceneState,
+} from "@/lib/scene"
+import { collectSceneSlots as collectSlots, type CollectedAnim } from "@/lib/scene-collect"
+import { downloadBlob, sceneZipFileName } from "@/lib/scene-file"
+import { buildZip } from "@/lib/bundle"
+import { resolveSceneRefs } from "@/lib/resolve-refs"
+import { effectRef, gradeRef, graphRef } from "@/lib/refs"
+import { clearLocalBundle, saveLocalBundle } from "@/lib/asset-store"
+import { loadUiState, saveUiState } from "@/lib/ui-state"
 import { dictionaries, LOCALES, LOCALE_LABELS, useI18n, useT, type Dictionary } from "@/lib/i18n"
-import { expandUploadFiles } from "@/lib/uploads"
+import { expandUploadFiles, unzipToFiles } from "@/lib/uploads"
 import { GRADE_PRESETS, gradeSpec, recallIntensity, rememberIntensity } from "@/lib/grade"
 import { communityQuickPickItems, quickPickItems, type EffectItem, type GradeItem, type GraphItem } from "@/lib/library"
 import { communityItems, useCommunity } from "@/hooks/use-community"
 import { useDrafts } from "@/hooks/use-drafts"
-import { applyDefaults, BACKGROUND_EFFECTS } from "@/lib/background-effects"
+import { applyDefaults, BACKGROUND_EFFECTS, builtinEffect } from "@/lib/background-effects"
 import { probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
 import type { ExportProgress } from "@/lib/video-export"
 import { castColour } from "@/lib/model-colour"
@@ -92,7 +114,7 @@ import { castSourceFor } from "@/lib/cast-source"
 import { NEUTRAL_PALETTE, type CastPaletteId } from "@/lib/cast-palette"
 import { relFilePath, sceneFiles } from "@/lib/scene-files"
 import { loadDrafts } from "@/lib/drafts"
-import { GRAPH_LIBRARY } from "@/lib/materials"
+import { GRAPH_LIBRARY, libraryGraph } from "@/lib/materials"
 import { DEFAULT_GRAPH, type StyleGroup } from "reze-engine"
 import { WIND_MAX, windFreqFromSlider, windSliderFromFreq, type SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
@@ -129,6 +151,40 @@ const FRAME_ASPECT_TOL = 1.03
 
 /** Palette recents, persisted — Suggestions should remember across sessions. */
 const RECENTS_KEY = "reze-design.palette-recents"
+
+/** How long edits settle before the working scene is written to localStorage. */
+const SAVE_SETTLE_MS = 1000
+
+/** A path the site serves, as opposed to one that only means something inside
+ *  this scene's asset bundle. */
+const servedUrl = (url: string) => /^[/]|^https?:/.test(url)
+
+/** Release a track's object URL. Uploads become blob: URLs; a served path is not
+ *  ours to revoke. */
+const dropMusicUrl = (clip: { url: string } | null) => {
+  if (clip?.url.startsWith("blob:")) URL.revokeObjectURL(clip.url)
+}
+
+/**
+ * A document's motion rows before a byte of VMD has parsed — the claim the boot
+ * loader later confirms or retracts (see animByModel). Hoisted out of the state
+ * initializer because a scene SWAP has to seed the same rows the same way: two
+ * seeds is two answers to "what is this cast doing", and only one can be right.
+ */
+function seedAnims(scene: Scene): Record<string, { name: string; src: File | string }> {
+  const seed: Record<string, { name: string; src: File | string }> = {}
+  for (const entry of scene.assets.models)
+    if (entry.animation) seed[entry.model.id] = { name: entry.animation.name, src: entry.animation.url }
+  return seed
+}
+
+/** The music row's seed, hoisted for the same reason. A served track plays straight
+ *  off its URL; a packed one has no playable URL until the extras loader pulls it
+ *  out of the bundle, so the row fills in first and the audio element follows. */
+const seedMusic = (scene: Scene): { name: string; url: string } | null =>
+  scene.assets.audio
+    ? { name: scene.assets.audio.name, url: servedUrl(scene.assets.audio.url) ? scene.assets.audio.url : "" }
+    : null
 
 /** The dictionary the UI is NOT showing. Every palette row carries its labels
  *  as altLabels, which is what keeps the search bag bilingual while the list on
@@ -773,16 +829,25 @@ export default function Lab() {
   // (recents, go-to, the control lookup) is untouched by a language switch.
   const layers = useMemo(() => layersFor(t), [t])
   const commands = useMemo(() => commandsFor(t), [t])
-  const [scene] = useState(() => hydrateScene(DEFAULT_SCENE))
-  // Local for now — the Scene document has no name field; the shipped editor
-  // keeps it beside the doc, in the draft record.
-  const [sceneName, setSceneName] = useState("My first scene")
+  // The boot document: the bundled demo with the user's stored values merged over
+  // it, and their stored ASSETS replacing its cast outright when there are any.
+  // Presence is the signal — hydrateScene decides, so this route, the shipped
+  // editor and a fork all open on the same rules.
+  //
+  // STATE, not a frozen initializer: New, Reset and Import replace it (see
+  // applyLabScene), and it is the identity the whole persistence layer keys on —
+  // the assets record, the IndexedDB bundle and the autosave all write under
+  // `scene.state.id`. Frozen, a new scene would quietly persist under the identity
+  // of the one it replaced and only misbehave on the NEXT refresh.
+  const [scene, setScene] = useState(() => hydrateScene(DEFAULT_SCENE))
+  const [sceneName, setSceneName] = useState(scene.state.name)
   const {
     canvasRef,
     engineRef,
     models,
     ready,
     bundleFile,
+    bundleFiles,
     loadVmdFile,
     loadVmdUrl,
     error,
@@ -795,6 +860,7 @@ export default function Lab() {
     addStageFromFiles,
     setStageTransform,
     setCameraView,
+    swapScene,
     applyGroups,
     upsertGroup,
     highlight,
@@ -814,12 +880,9 @@ export default function Lab() {
   // Entries keep their SOURCE, not just a display name — that is what lets a
   // model replace re-apply the motion to the new engine instance (clips are
   // per instance), the way main's slots keep theirs.
-  const [animByModel, setAnimByModel] = useState<Record<string, { name: string; src: File | string }>>(() => {
-    const seed: Record<string, { name: string; src: File | string }> = {}
-    for (const entry of scene.assets.models)
-      if (entry.animation) seed[entry.model.id] = { name: entry.animation.name, src: entry.animation.url }
-    return seed
-  })
+  const [animByModel, setAnimByModel] = useState<Record<string, { name: string; src: File | string }>>(() =>
+    seedAnims(scene),
+  )
   const animRef = useRef(animByModel)
   useEffect(() => {
     animRef.current = animByModel
@@ -845,6 +908,10 @@ export default function Lab() {
   // pose instead of flashing bind pose. Whatever loads the clips owns the
   // reveal, and in the shipped editor that lives in app/page.tsx. Without it the
   // model loads, styles, and never becomes visible.
+  //
+  // Keyed on `scene`, so this is the loader for EVERY document, not just the
+  // first: a swap replaces the state and the clips of the incoming cast stream in
+  // through exactly this path. See applyLabScene.
   useEffect(() => {
     if (!ready) return
     let cancelled = false
@@ -958,11 +1025,13 @@ export default function Lab() {
   // The transport IS the timeline, collapsed. Same surface, same controls in the
   // same place — unfolding it must never feel like a different panel appeared.
   const [timelineOpen, setTimelineOpen] = useState(false)
-  // The scene document already has cameraAnimation and audio slots. The camera
-  // one the engine can load today, so it is wired rather than drawn.
-  const [cameraClip, setCameraClip] = useState<string | null>(null)
+  // The scene document's cameraAnimation slot. Seeded from the document like the
+  // motion rows: useEngine has already handed the clip to the engine by the time
+  // the chrome renders, so the name is known and there is nothing to wait for.
+  const [cameraClip, setCameraClip] = useState<string | null>(scene.assets.cameraAnimation?.name ?? null)
   const cameraInput = useRef<HTMLInputElement | null>(null)
   const removeCamera = () => {
+    sceneFiles.camera = null
     engineRef.current?.clearCameraVmd()
     setCameraClip(null)
   }
@@ -977,46 +1046,24 @@ export default function Lab() {
     },
     [setCameraView],
   )
-  // Orbit FOV in degrees; the engine default is π/4. A camera VMD animates fov
-  // itself and the engine restores the orbit value when the clip releases, so
-  // the slider only has to sit out while a camera clip is loaded.
-  const [fovDeg, setFovDeg] = useState(45)
-  const applyFov = (deg: number) => {
-    setFovDeg(deg)
-    // Optional call: the packaged engine's types predate setCameraFov — the
-    // guard (and this cast) drop with the next engine install.
-    const eng = engineRef.current as { setCameraFov?: (fov: number) => void } | null
-    eng?.setCameraFov?.((deg * Math.PI) / 180)
-  }
-  // Depth of field, mirrored locally like FOV. Focus is ALWAYS automatic: the
-  // engine tracks the character's own depth span every frame, which is both the
-  // right answer and one nobody can dial in by hand while a dance moves. That
-  // leaves one dial — how much blur — and the switch.
-  const [dof, setDof] = useState({ enabled: false, aperture: 1 })
-  const applyDof = (patch: Partial<typeof dof>) => {
-    // Engine call OUTSIDE the state updater — updaters run twice in StrictMode.
-    const next = { ...dof, ...patch }
-    setDof(next)
-    // Optional call, same story as setCameraFov above.
-    const eng = engineRef.current as {
-      setDepthOfField?: (p: { enabled: boolean; focusMode: "auto"; aperture: number }) => void
-    } | null
-    eng?.setDepthOfField?.({ enabled: next.enabled, focusMode: "auto", aperture: next.aperture })
-  }
-  // Registered now, audible later: the file lands in sceneFiles.audio — the
-  // same slot the shipped editor reads — so the upload is real even though this
-  // route has no audio clock yet to play it against.
+  // The file lands in sceneFiles.audio — the same slot the shipped editor reads —
+  // so the upload is real and the next persist packs its bytes.
   // Seeded from the scene document, exactly as main does — the default scene
   // ships with a track, and an empty music row under a dancing model would be
-  // the chrome contradicting the scene. Uploads become object URLs, revoked on
-  // the way out so replaced tracks do not pin their bytes for the session.
-  const [musicClip, setMusicClip] = useState<{ name: string; url: string } | null>(() =>
-    scene.assets.audio ? { name: scene.assets.audio.name, url: scene.assets.audio.url } : null,
-  )
+  // the chrome contradicting the scene. The NAME is always known here; a track
+  // living in the asset bundle has no playable URL until the boot loader below
+  // pulls the file out, so the row fills in first and the audio element follows.
+  // Uploads become object URLs, revoked on the way out so replaced tracks do not
+  // pin their bytes for the session.
+  const [musicClip, setMusicClip] = useState<{ name: string; url: string } | null>(() => seedMusic(scene))
   const musicInput = useRef<HTMLInputElement | null>(null)
-  const dropMusicUrl = (clip: { url: string } | null) => {
-    if (clip?.url.startsWith("blob:")) URL.revokeObjectURL(clip.url)
-  }
+  const setMusicFile = useCallback((file: File) => {
+    sceneFiles.audio = file
+    setMusicClip((prev) => {
+      dropMusicUrl(prev)
+      return { name: file.name, url: URL.createObjectURL(file) }
+    })
+  }, [])
   const removeMusic = () => {
     sceneFiles.audio = null
     setMusicClip((prev) => {
@@ -1024,16 +1071,17 @@ export default function Lab() {
       return null
     })
   }
-  const [openRow, setOpenRow] = useState<string | null>(null)
+  const [openRow, setOpenRow] = useState<string | null>(() => loadUiState().openRow)
 
   const stage = stages[0] ?? null
   const stageSummary = stage ? displayName(stage.file) : t.lab.tabs.ground
   // Controlled (not key-remounted): go-to deep-links need to land on a pane —
-  // "Background" opens this row on its background tab.
-  const [stageTab, setStageTab] = useState<"stage" | "ground" | "background">(stage ? "stage" : "ground")
-  const [cameraTab, setCameraTab] = useState<"lens" | "focus">("lens")
-  const [postTab, setPostTab] = useState<"grade" | "bloom">("grade")
-  const [lightTab, setLightTab] = useState<"world" | "sun">("world")
+  // "Background" opens this row on its background tab. Where you left each one
+  // is UI state, so it comes back from the same store the stack's own shape does.
+  const [stageTab, setStageTab] = useState(() => loadUiState().stageTab)
+  const [cameraTab, setCameraTab] = useState(() => loadUiState().cameraTab)
+  const [postTab, setPostTab] = useState(() => loadUiState().postTab)
+  const [lightTab, setLightTab] = useState(() => loadUiState().lightTab)
 
   // Sun, world and glow — seeded from the document, which is ALSO what the
   // Engine constructor was handed, so the sliders open already agreeing with
@@ -1051,7 +1099,7 @@ export default function Lab() {
       setSettings((s2) => ({ ...s2, [key]: { ...s2[key], ...part } })),
     [],
   )
-  const { sun, world, bloom, grade, ground, physics } = settings
+  const { sun, world, bloom, dof, grade, ground, physics } = settings
   const [bgEffect, setBgEffect] = useState(scene.state.backgroundEffect)
 
   // Grade: main's full selection model. Drafts and community feed both the
@@ -1101,29 +1149,96 @@ export default function Lab() {
   /** Set before the picker opens: does this upload fill the flat row or the 360 row? */
   const bgImageIsDome = useRef(false)
   const [bgImage, setBgImage] = useState<(BackdropMedia & { dome: boolean }) | null>(null)
-  const swapBgImage = (next: (BackdropMedia & { dome: boolean }) | null) =>
-    setBgImage((prev) => {
-      releaseBackdrop(prev)
-      return next
-    })
+  const swapBgImage = useCallback(
+    (next: (BackdropMedia & { dome: boolean }) | null) =>
+      setBgImage((prev) => {
+        releaseBackdrop(prev)
+        return next
+      }),
+    [],
+  )
   const pickBgImage = (dome: boolean) => {
     bgImageIsDome.current = dome
     bgImageInput.current?.click()
   }
-  const onBgImagePicked = useCallback(async (file: File | undefined) => {
-    if (!file) return
-    try {
-      const next = await probeBackdrop(file)
-      swapBgImage({ ...next, dome: bgImageIsDome.current })
-    } catch (e) {
-      setUpload({ kind: "notice", message: e instanceof Error ? e.message : String(e) })
+  const onBgImagePicked = useCallback(
+    async (file: File | undefined) => {
+      if (!file) return
+      try {
+        const next = await probeBackdrop(file)
+        swapBgImage({ ...next, dome: bgImageIsDome.current })
+      } catch (e) {
+        setUpload({ kind: "notice", message: e instanceof Error ? e.message : String(e) })
+      }
+    },
+    [swapBgImage],
+  )
+
+  // ── The rest of the document ──
+  //
+  // The cast's clips load with the models above; these are the slots nobody owns
+  // — music, the background image, and the camera clip's identity. Each resolves
+  // out of the scene's BUNDLE first (a published zip and the local IndexedDB
+  // bundle look identical through bundleFile) and out of its URL otherwise, so a
+  // stored scene comes back with the same files it was saved with. A slot that
+  // fails to resolve is simply empty; nothing here may take the scene down.
+  //
+  // Boot and swap both arrive here, for the same reason the clip loader above
+  // does: one loader per slot, or a reset would quietly keep the music the scene
+  // it replaced was playing.
+  useEffect(() => {
+    if (!ready) return
+    let cancelled = false
+    // ONE pass over the slots, in document order — the shipped editor's
+    // loadDocExtras, which is async because resolving a slot to a File is.
+    void (async () => {
+      // The engine already loaded the camera VMD inside loadSceneInto. What is
+      // left is the File behind it, so the next persist re-packs the same bytes
+      // instead of dropping the clip on the first save.
+      const cam = scene.assets.cameraAnimation
+      if (cam) {
+        const packed = bundleFile(cam.url)
+        if (packed) sceneFiles.camera = packed
+      }
+      const track = scene.assets.audio
+      // A served track plays straight off its URL and was seeded at boot; only a
+      // packed one has to be pulled out of the bundle and given an object URL.
+      if (track) {
+        const packed = bundleFile(track.url)
+        if (packed) setMusicFile(packed)
+      }
+      const bg = scene.assets.background
+      if (!bg) return
+      try {
+        const packed = bundleFile(bg.asset.url)
+        let file = packed
+        if (!file && servedUrl(bg.asset.url)) {
+          const blob = await (await fetch(bg.asset.url)).blob()
+          file = new File([blob], bg.asset.name, { type: blob.type })
+        }
+        if (!file) return
+        const media = await probeBackdrop(file)
+        // Probing minted an object URL; a superseded pass has to give it back.
+        if (cancelled) {
+          releaseBackdrop(media)
+          return
+        }
+        swapBgImage({ ...media, dome: bg.kind === "skybox" })
+      } catch {
+        // a missing or undecodable image degrades to no background, not a dead scene
+      }
+    })()
+    return () => {
+      cancelled = true
     }
-  }, [])
+  }, [ready, scene, bundleFile, setMusicFile, swapBgImage])
 
   useSceneSync({
     engineRef,
     ready,
     settings,
+    camera,
+    cameraVmd: cameraClip !== null,
     gradeSpec: appliedGradeSpec,
     backgroundEffect: bgEffect,
     hasBackdrop: !!bgImage && !bgImage.dome,
@@ -1193,7 +1308,14 @@ export default function Lab() {
     const id = setTimeout(() => setMounted(true), 0)
     return () => clearTimeout(id)
   }, [])
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(() => loadUiState().expanded)
+  // Written only once `mounted`, the same gate main's dock state uses: the
+  // initial values were READ from this store, and writing them straight back
+  // before the user has touched anything is a write that can only ever lose a
+  // race with another tab.
+  useEffect(() => {
+    if (mounted) saveUiState({ expanded, openRow, stageTab, lightTab, cameraTab, postTab })
+  }, [mounted, expanded, openRow, stageTab, lightTab, cameraTab, postTab])
   // The dock joins the desktop stack the libraries already live in: clicking
   // (or tabbing into) it raises it over an open library, clicking the library
   // raises it back. No Escape closer — Escape keeps closing the topmost
@@ -1210,24 +1332,20 @@ export default function Lab() {
   const [inspectedId, setInspectedId] = useState<string | null>(null)
   const inspected = models.find((m) => m.id === inspectedId) ?? null
   // The inverted-hull outline pass, off by default since 0.25.2 and reachable
-  // only by searching for it. Engine-global and not persisted yet; when
-  // outlines earn a document field they get size, opacity and colour
-  // overrides with it.
+  // only by searching for it. It lives in the document (settings.outline) like
+  // every other look setting; when outlines earn size, opacity and colour
+  // overrides they join it there.
   //
-  // The live value is a REF and the palette's On/Off hint is separate state,
-  // for the same reason the recents order is staged rather than applied (see
-  // openPalette): flipping it from the palette would otherwise rewrite the row
-  // you just chose while the dialog is still fading out. The engine changes
+  // The ref MIRRORS the document, and the palette's On/Off hint is separate
+  // state, for the same reason the recents order is staged rather than applied
+  // (see openPalette): flipping it from the palette would otherwise rewrite the
+  // row you just chose while the dialog is still fading out. The scene changes
   // now; the label catches up at the next open.
-  const outlineRef = useRef(false)
-  const [outlineShown, setOutlineShown] = useState(false)
-  const applyOutline = useCallback(
-    (on: boolean) => {
-      outlineRef.current = on
-      engineRef.current?.setOutlineEnabled(on)
-    },
-    [engineRef],
-  )
+  const outlineRef = useRef(settings.outline.enabled)
+  useEffect(() => {
+    outlineRef.current = settings.outline.enabled
+  })
+  const [outlineShown, setOutlineShown] = useState(settings.outline.enabled)
   /** Open the materials inspector on a model — the cast row's own click, the
    *  row's Materials button and the palette all come through here, so the
    *  one-right-panel-at-a-time rule lives in exactly one place. */
@@ -1591,7 +1709,7 @@ export default function Lab() {
       // Whichever model is already inspected, else the primary — the panel is
       // per-model and picking one for you beats opening on nothing.
       else if (item.id === "materials") openMaterials(inspectedId ?? models[0]?.id ?? null)
-      else if (item.id === "outline") applyOutline(!outlineRef.current)
+      else if (item.id === "outline") patch("outline", { enabled: !outlineRef.current })
       else if (item.id === "language") setLangOpen(true)
       else if (item.id.startsWith("ctl-")) {
         const c = DOCK_CONTROLS.find((x) => `ctl-${x.id}` === item.id)
@@ -1601,8 +1719,339 @@ export default function Lab() {
       }
       item.run?.()
     },
-    [recentIds, gotoSection, openMaterials, inspectedId, models, applyOutline, setLangOpen, openExport],
+    [recentIds, gotoSection, openMaterials, inspectedId, models, patch, setLangOpen, openExport],
   )
+
+  // ── Persistence ──
+  //
+  // Two halves, the shipped editor's own: saveSceneState stores how the scene
+  // LOOKS — settings, camera, grade, effect, style groups, hidden materials —
+  // and saveSceneAssets plus the IndexedDB bundle store what it is MADE OF. Both
+  // carry the scene id, and hydrateScene believes neither unless they agree.
+
+  // The last payload, held for the exit flush until it is actually written.
+  const pendingSave = useRef<SceneState | null>(null)
+  useEffect(() => {
+    const flush = () => {
+      if (!pendingSave.current) return
+      saveSceneState(pendingSave.current)
+      pendingSave.current = null
+    }
+    const onHidden = () => document.visibilityState === "hidden" && flush()
+    // pagehide covers reload/navigation
+    window.addEventListener("pagehide", flush)
+    document.addEventListener("visibilitychange", onHidden)
+    return () => {
+      window.removeEventListener("pagehide", flush)
+      document.removeEventListener("visibilitychange", onHidden)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!ready) return
+    let idle = 0
+    const payload: SceneState = {
+      id: scene.state.id,
+      name: sceneName,
+      // The DOCUMENT's camera, never the live one. Orbiting is how you look at a
+      // scene, not how you edit it: it changes no React state, so it never saves
+      // on its own, and the next unrelated edit must not bake wherever the mouse
+      // left the camera into the stored scene. The sliders write this; only they
+      // persist.
+      camera,
+      settings,
+      backgroundEffect: bgEffect,
+      groups: groupsByModel,
+      // DERIVED from the live model list rather than tracked separately.
+      // Empty lists are WRITTEN, not filtered: saveSceneState's retain() merges
+      // over the previous save, so a dropped key would leave the old hidden
+      // list in place — un-hiding the last material could never persist.
+      hidden: Object.fromEntries(
+        models.map((m) => [m.id, m.materials.filter((mat) => !mat.visible).map((mat) => mat.name)]),
+      ),
+    }
+    pendingSave.current = payload
+    const timer = setTimeout(() => {
+      const write = () => {
+        saveSceneState(payload)
+        pendingSave.current = null
+      }
+      idle =
+        typeof requestIdleCallback === "function"
+          ? requestIdleCallback(write, { timeout: 2000 })
+          : (setTimeout(write, 0) as unknown as number)
+    }, SAVE_SETTLE_MS)
+    return () => {
+      clearTimeout(timer)
+      if (idle && typeof cancelIdleCallback === "function") cancelIdleCallback(idle)
+    }
+  }, [ready, scene, sceneName, camera, settings, bgEffect, groupsByModel, models])
+
+  // What changes the BYTES: the set of files the scene points at. Placement and
+  // switches are not on this list — they change the doc, never the bundle, and
+  // repacking tens of megabytes of PMX every time a slider settles is what a
+  // stage drag used to cost.
+  const assetFingerprint = [
+    models.map((m) => m.id).join("|"),
+    Object.entries(animByModel)
+      .map(([k, v]) => `${k}:${v.name}`)
+      .join("|"),
+    musicClip?.name ?? "",
+    // One slot, two kinds: swapping a flat image for a 360 of the same name is
+    // still a different scene, so the kind travels in the fingerprint.
+    bgImage ? `${bgImage.dome ? "skybox" : "backdrop"}:${bgImage.name}` : "",
+    cameraClip ?? "",
+  ].join("//")
+
+  // The fingerprint the bundle in IndexedDB was written for, and the URL it got.
+  // Refs, not state: they record what already happened on disk and must not
+  // themselves trigger the effect that writes it.
+  const bundleWrittenFor = useRef<string | null>(null)
+  const bundleWrittenRef = useRef<string | null>(null)
+
+  /**
+   * This route's slots, normalised for the shared collector (lib/scene-collect) —
+   * the motion union and the single image slot are what differ from the shipped
+   * editor's shape. ONE collector behind both destinations, exactly as main has it:
+   * the persist effect writes the entries to IndexedDB, Export zips the same ones to
+   * disk, so a refresh and an exported file can never disagree about what the scene
+   * is made of.
+   *
+   * Memoized because the persist effect takes it as a dependency: an identity that
+   * changed every render would re-run the write on every render.
+   */
+  const collectLabSlots = useCallback(
+    () =>
+      collectSlots({
+        models,
+        stages,
+        booted: scene.assets.models,
+        bundleFiles: bundleFiles(),
+        // This route keeps a motion as {name, src} where src is the File or the
+        // URL it came from; the collector wants the tagged form.
+        anims: Object.fromEntries(
+          Object.entries(animByModel).map(([id2, a]): [string, CollectedAnim] => [
+            id2,
+            {
+              name: a.name,
+              source:
+                typeof a.src === "string" ? { kind: "url", name: a.name, url: a.src } : { kind: "file", file: a.src },
+            },
+          ]),
+        ),
+        camera: { name: cameraClip, booted: scene.assets.cameraAnimation },
+        audio: { name: musicClip?.name ?? null, url: musicClip?.url ?? null },
+        // ONE image slot here against main's two: which row it was uploaded from
+        // is what makes it a dome.
+        background: bgImage
+          ? { kind: bgImage.dome ? "skybox" : "backdrop", name: bgImage.name, file: bgImage.file }
+          : null,
+      }),
+    [models, stages, scene, bundleFiles, animByModel, cameraClip, musicClip, bgImage],
+  )
+
+  // Bytes land FIRST, then the doc: a doc pointing at a bundle that never finished
+  // writing would boot half a scene, so the record only ever describes what is down.
+  // When the byte write fails (quota), the doc records no bundle and boot degrades to
+  // the slots that still resolve — the lenient path in loadSceneInto.
+  // 150ms: just enough to coalesce one upload's burst of state commits (model list,
+  // groups, clip entry) into a single bundle write, while keeping upload→refresh a
+  // window a human hand cannot beat. The write order is the real guarantee — bytes,
+  // then the record — so a refresh that does land mid-write boots the previous state,
+  // never a broken one.
+  useEffect(() => {
+    if (!ready) return
+    const timer = setTimeout(() => {
+      const id = scene.state.id
+      const slots = collectLabSlots()
+      void (async () => {
+        // Only repack when the file set moved; otherwise keep pointing at the
+        // bundle already in IndexedDB.
+        let bundleUrl: string | null = bundleWrittenRef.current
+        if (bundleWrittenFor.current !== assetFingerprint) {
+          bundleUrl = slots.entries.length && (await saveLocalBundle(id, slots.entries)) ? idbBundleOf(id) : null
+          bundleWrittenFor.current = assetFingerprint
+          bundleWrittenRef.current = bundleUrl
+        }
+        saveSceneAssets(
+          id,
+          assetsDocOf({
+            models: slots.models,
+            cameraAnimation: slots.cameraAnimation,
+            audio: slots.audio,
+            background: slots.background,
+            bundle: bundleUrl,
+          }),
+        )
+      })()
+    }, 150)
+    return () => clearTimeout(timer)
+    // The collector carries the slot state: it re-identifies whenever any of them
+    // moves, `stages` included, so moving a stage or flipping a switch still
+    // reaches the DOC — the bundle write above is gated separately on
+    // assetFingerprint.
+  }, [ready, scene, collectLabSlots, assetFingerprint])
+
+  // ── Scene file operations ──
+  //
+  // New, Export, Import, Reset — the shipped editor's four, off the logo. None of
+  // them is memoized, main's own call: the compiler cannot preserve a manual memo
+  // across an async body, and nothing takes these as a dependency.
+
+  /**
+   * Swap the whole document in place.
+   *
+   * The engine's `swapScene` runs the same `loadSceneInto` that first boot does — so a
+   * swapped scene and a booted one can never mean different things — and it keeps the
+   * WebGPU device, its pipelines and every compiled shader. A page reload would have
+   * thrown all of that away and flashed the DOM on the way.
+   */
+  const applyLabScene = async (next: Scene) => {
+    // STARTED, not awaited yet. swapScene turns `ready` off synchronously, before its
+    // first await, so every re-seed below lands in the SAME commit as ready:false —
+    // which is what keeps the two document loaders from ever running against a
+    // half-swapped scene. They wake exactly once, on the new document, when the
+    // engine says ready again; that is why nothing here re-implements them.
+    const swapping = swapScene(next)
+
+    // Every local mirror of the document, re-seeded from the incoming one. The
+    // retained upload files (sceneFiles) are swapScene's own to clear.
+    setScene(next)
+    setSceneName(next.state.name)
+    setSettings(next.state.settings)
+    // The React mirror only: pushing the framing at the engine is swapScene's job,
+    // and it does it once the new cast is in and can be followed.
+    setCamera(next.state.camera)
+    setBgEffect(next.state.backgroundEffect)
+    // The per-preset intensity memory is keyed by NAME and outlives documents, so a
+    // swapped scene has to restate its own strength — otherwise the first switch away
+    // and back would overwrite what this document says with whatever the last scene
+    // happened to use that grade at.
+    rememberIntensity(next.state.settings.grade.preset, next.state.settings.grade.intensity)
+    setAnimByModel(seedAnims(next))
+    setCameraClip(next.assets.cameraAnimation?.name ?? null)
+    setMusicClip((prev) => {
+      dropMusicUrl(prev)
+      return seedMusic(next)
+    })
+    // Empty until the extras loader resolves the new document's image out of its
+    // bundle — the old one's would otherwise sit behind an unrelated scene.
+    swapBgImage(null)
+    // Both halves of the cast-colour bookkeeping. Clearing only the palettes would
+    // leave the started-set claiming every id was already extracted, and a new cast
+    // would shimmer forever; clearing only the set would leave a reused id (the same
+    // .pmx under a different document) wearing the colour it had in the old scene.
+    castStarted.current.clear()
+    setPalettes({})
+    // The transient surfaces are all ABOUT something the swap just removed.
+    setInspectedId(null)
+    setExportOpen(false)
+    setGradeLibOpen(false)
+    setEffectLibOpen(false)
+
+    await swapping
+
+    // Persisted NOW rather than left to the debounced effects: Reset and New are the
+    // user stating what the scene is, and a refresh inside the debounce window must
+    // not resurrect what they just discarded. One exception in the record: a blob:
+    // bundle (an imported zip) dies with this session, so it is stored as no bundle —
+    // a refresh in the window boots what resolves, and the persist effect re-points
+    // the record at the IndexedDB copy moments later.
+    const transient = !!next.assets.bundle && next.assets.bundle.startsWith("blob:")
+    saveSceneState(next.state)
+    saveSceneAssets(next.state.id, assetsDocOf({ ...next.assets, bundle: transient ? null : next.assets.bundle }))
+    if (!next.assets.bundle) void clearLocalBundle()
+  }
+
+  /** The curated first-open scene, assets included — under the id this scene already
+   *  has, because Reset restates what THIS document is rather than starting another. */
+  const resetSceneDefaults = () =>
+    void applyLabScene({ ...DEFAULT_SCENE, state: { ...DEFAULT_SCENE.state, id: scene.state.id } })
+
+  /** Blank: no assets, no effect, no grade, neutral settings — and a NEW identity, so the
+   *  uploads just cleared can never be re-adopted by it. */
+  const newScene = () => void applyLabScene({ ...EMPTY_SCENE, state: { ...EMPTY_SCENE.state, id: newSceneId() } })
+
+  /**
+   * The whole scene as one file: the publish pipeline aimed at disk. The same collector
+   * gathers the doc and the uploaded bytes, and the same zip format R2 receives is what
+   * the user downloads — `scene.json` beside the asset entries, so import, fork and boot
+   * all read one shape. Served assets stay URLs (they exist on every deployment);
+   * uploaded ones travel in the zip.
+   */
+  const exportScene = async () => {
+    const slots = collectLabSlots()
+    const doc = serializeSceneDoc(
+      {
+        models: slots.models,
+        cameraAnimation: slots.cameraAnimation,
+        audio: slots.audio,
+        background: slots.background,
+        // bundle: null in the written doc — the assets are BESIDE it in the same zip,
+        // and import points the parsed scene at the zip it came from.
+        bundle: null,
+        name: sceneName,
+        camera,
+        // A published grade pins; anything else carries its spec. `preset` is the
+        // label either way.
+        settings: {
+          ...settings,
+          grade: (() => {
+            const ref = gradeRef(appliedGradeSpec)
+            return ref
+              ? { preset: settings.grade.preset, intensity: settings.grade.intensity, from: ref }
+              : { ...settings.grade, spec: appliedGradeSpec }
+          })(),
+        },
+        backgroundEffect: bgEffect,
+        groups: groupsByModel,
+        hidden: slots.hidden,
+      },
+      { graph: graphRef, effect: effectRef },
+    )
+    const zip = await buildZip([
+      ...slots.entries,
+      { path: "scene.json", file: new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" }) },
+    ])
+    downloadBlob(zip, sceneZipFileName(sceneName))
+  }
+
+  /**
+   * A zip with `scene.json` beside its assets. Loaded exactly like a fork — parse the
+   * doc, point the scene at its bundle, swap — and then owned like one: the persist
+   * effect re-packs the zip's files into the IndexedDB bundle, so the import survives
+   * refresh with no dependence on the original file.
+   *
+   * Anything that is not one of those zips fails through unzipToFiles or the parse and
+   * lands in the upload notice, which is where every other file failure on this route
+   * is already read. (The shipped editor also still reads the legacy config-only
+   * `.reze.json`; this route never wrote one.)
+   */
+  const importScene = async (file: File) => {
+    try {
+      const files = await unzipToFiles(file)
+      const docFile = files.find((f) => f.name === "scene.json")
+      if (!docFile) throw new Error("no scene.json")
+      const doc = JSON.parse(await docFile.text()) as SceneDoc
+      const resolve = await resolveSceneRefs(doc)
+      const imported = parseSceneDoc(doc, builtinEffect, libraryGraph, resolve)
+      // A blob URL, so loadSceneInto's bundle fetch reads the zip we already hold.
+      const url = URL.createObjectURL(file)
+      try {
+        await applyLabScene({
+          ...imported,
+          assets: { ...imported.assets, bundle: url },
+          // Its own identity: an imported file may be shared around, and two people's
+          // working scenes must not collide on one id.
+          state: { ...imported.state, id: newSceneId() },
+        })
+      } finally {
+        URL.revokeObjectURL(url)
+      }
+    } catch {
+      setUpload({ kind: "notice", message: t.sceneFile.badFile })
+    }
+  }
 
   return (
     <main className="relative h-dvh w-screen overflow-hidden bg-black">
@@ -1654,9 +2103,20 @@ export default function Lab() {
             expanding only grows downward, so nothing ever shifts sideways. */}
           {!expanded && (
             <div className={cn(PILL, "pointer-events-auto flex h-10 w-[18rem] items-center gap-1.5 pr-1.5 pl-2")}>
-              <span className="flex size-7 shrink-0 items-center justify-center text-pink-400">
-                <WandSparkles className="size-4.5" />
-              </span>
+              {/* The logo is the menu, in both of its homes — scene-file-menu.tsx
+                  for why. The stack is not on screen here, so this pill's logo is
+                  the only door to the file operations. */}
+              <SceneFileMenu
+                onNew={newScene}
+                onExport={exportScene}
+                onImport={importScene}
+                onReset={resetSceneDefaults}
+                trigger={
+                  <span className="flex size-7 shrink-0 items-center justify-center text-pink-400">
+                    <WandSparkles className="size-4.5" />
+                  </span>
+                }
+              />
               <span className="whitespace-nowrap pb-0.5 text-sm font-semibold tracking-tight text-foreground">
                 Reze Design
               </span>
@@ -1846,12 +2306,7 @@ export default function Lab() {
         onChange={(e) => {
           const file = e.target.files?.[0]
           e.target.value = ""
-          if (!file) return
-          sceneFiles.audio = file
-          setMusicClip((prev) => {
-            dropMusicUrl(prev)
-            return { name: file.name, url: URL.createObjectURL(file) }
-          })
+          if (file) setMusicFile(file)
         }}
       />
 
@@ -1864,6 +2319,8 @@ export default function Lab() {
           const file = e.target.files?.[0]
           e.target.value = ""
           if (!file) return
+          // Kept for the persist/publish repack, like every other upload.
+          sceneFiles.camera = file
           void file.arrayBuffer().then((buf) => {
             engineRef.current?.loadCameraVmdFromBuffer(buf)
             setCameraClip(file.name)
@@ -1943,9 +2400,17 @@ export default function Lab() {
               height, so the wordmark lands on the SAME baseline whether the
               panel is open or closed and nothing shifts as you toggle. */}
             <div className="flex items-center gap-1.5 py-1.5 pr-1.5 pl-2">
-              <span className="flex size-7 shrink-0 items-center justify-center text-pink-400">
-                <WandSparkles className="size-4.5" />
-              </span>
+              <SceneFileMenu
+                onNew={newScene}
+                onExport={exportScene}
+                onImport={importScene}
+                onReset={resetSceneDefaults}
+                trigger={
+                  <span className="flex size-7 shrink-0 items-center justify-center text-pink-400">
+                    <WandSparkles className="size-4.5" />
+                  </span>
+                }
+              />
               <span className="truncate pb-0.5 text-sm font-semibold tracking-tight text-foreground">Reze Design</span>
               <span className="shrink-0 rounded-full bg-blue-400/15 px-1.5 py-0.5 text-[11px] leading-none font-medium tracking-wide text-blue-400">
                 0.4.0 beta
@@ -1975,7 +2440,12 @@ export default function Lab() {
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          {/* pb-2 so the last row can clear the rounded bottom edge when you
+              scroll to the end. With a tall row open (Camera's Lens is eight
+              controls) the stack is genuinely taller than the viewport, and
+              without the pad Physics sat flush in the corner radius and read as
+              broken rather than as scrollable. */}
+          <div className="min-h-0 flex-1 overflow-y-auto pb-2">
             <StackGroup label={t.lab.groups.cast} domId="group-cast">
               {!ready && <CastRowSkeleton />}
               {/* The row appears WITH the model — same commit as `models`, so
@@ -2077,7 +2547,7 @@ export default function Lab() {
                   model. Gating it on `ready` made the row appear a beat after
                   boot and shoved everything under it down — the drift the
                   skeleton above exists to prevent. */}
-              <div className="flex justify-center py-1">
+              <div className="flex justify-center pt-0.5 pb-1">
                 <Button
                   variant="ghost"
                   disabled={!ready}
@@ -2608,13 +3078,18 @@ export default function Lab() {
                               }
                             />
                           </div>
+                          {/* Degrees on the slider, radians in the document —
+                              the same boundary conversion azimuth and elevation
+                              make two rows down. A camera VMD animates fov
+                              itself, which is what the fieldset above greys the
+                              whole pane for. */}
                           <SliderRow
                             label={t.lab.ctl.fov}
-                            value={fovDeg}
+                            value={Math.round(((camera.fov ?? CAMERA_DEFAULT_FOV) * 180) / Math.PI)}
                             min={10}
                             max={120}
                             step={1}
-                            onChange={applyFov}
+                            onChange={(v) => changeCamera({ ...camera, fov: (v * Math.PI) / 180 })}
                             fmt={(v) => `${Math.round(v)}°`}
                           />
                           <SliderRow
@@ -2677,7 +3152,11 @@ export default function Lab() {
                             depth span every frame. Strength is the whole dial. */}
                         <div className="flex items-center justify-between">
                           <span className="text-xs">{t.lab.ctl.dof}</span>
-                          <Switch size="sm" checked={dof.enabled} onCheckedChange={(v) => applyDof({ enabled: v })} />
+                          <Switch
+                            size="sm"
+                            checked={dof.enabled}
+                            onCheckedChange={(v) => patch("dof", { enabled: v })}
+                          />
                         </div>
                         {/* mt-2.5 on the fieldset, not the row: SliderRow zeroes
                             its own top margin as a first child, which pinned
@@ -2692,7 +3171,7 @@ export default function Lab() {
                             min={0.2}
                             max={3}
                             step={0.05}
-                            onChange={(v) => applyDof({ aperture: v })}
+                            onChange={(v) => patch("dof", { aperture: v })}
                             fmt={(v) => v.toFixed(2)}
                           />
                         </fieldset>

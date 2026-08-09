@@ -3,7 +3,7 @@
 import type { ShaderGraph, StyleGroup } from "reze-engine"
 import pkg from "@/package.json"
 import type { AppliedBackgroundEffect } from "@/lib/background-effects"
-import { DEFAULT_PHYSICS, type SceneSettings } from "@/lib/scene-settings"
+import { DEFAULT_DOF, DEFAULT_OUTLINE, DEFAULT_PHYSICS, type SceneSettings } from "@/lib/scene-settings"
 
 export const SCENE_FORMAT_VERSION = 1
 
@@ -81,6 +81,9 @@ export type EffectSnapshot = { name: string; wgsl: string }
  *  angles were part of the schema (also what the DB patch stamped). */
 export const CAMERA_DEFAULT_ALPHA = Math.PI
 export const CAMERA_DEFAULT_BETA = Math.PI / 2.5
+/** The engine's stock vertical FOV, and the backfill for every document written
+ *  before the lens was authorable. */
+export const CAMERA_DEFAULT_FOV = Math.PI / 4
 
 /** Orbit framing: how far the camera sits, from which angle, at what it looks. */
 export type SceneCamera = {
@@ -90,6 +93,11 @@ export type SceneCamera = {
   alpha: number
   /** Orbit inclination in radians (0 = top-down pole). */
   beta: number
+  /** Vertical field of view in RADIANS — the unit alpha/beta use and the one the
+   *  engine takes, so nothing converts between here and the camera. Optional:
+   *  every document written before the lens was authorable simply has none, and
+   *  reads back as CAMERA_DEFAULT_FOV. */
+  fov?: number
   /** Where the camera looks — or, when `follow` is set, the offset from the bone
    *  it is following. The three sliders mean the same thing either way. */
   target: [number, number, number]
@@ -409,11 +417,12 @@ export function parseSceneDoc(
 
   const { camera: docCamera, background, ...settings } = doc.settings
   // Pre-angle documents (and forks copied from them) get the stock angles the
-  // engine always used — identical framing to what they had.
+  // engine always used — identical framing to what they had. Same for the lens.
   const camera: SceneCamera = {
     ...docCamera,
     alpha: docCamera.alpha ?? CAMERA_DEFAULT_ALPHA,
     beta: docCamera.beta ?? CAMERA_DEFAULT_BETA,
+    fov: docCamera.fov ?? CAMERA_DEFAULT_FOV,
   }
   const applied = background.effect
 
@@ -441,6 +450,11 @@ export function parseSceneDoc(
       settings: {
         ...settings,
         physics: { ...DEFAULT_PHYSICS, ...settings.physics },
+        // Same merge, same reason: a document written before the 0.4.0 chrome
+        // carries neither block, and spreading an absent one is a no-op that
+        // leaves the defaults — no blur, no outlines, exactly how it looked.
+        dof: { ...DEFAULT_DOF, ...settings.dof },
+        outline: { ...DEFAULT_OUTLINE, ...settings.outline },
         background: { color: background.color },
       },
       backgroundEffect: appliedEffect(applied, resolveEffect, resolveRef),
@@ -711,13 +725,19 @@ export function hydrateScene(base: Scene): Scene {
       // adopted — an edited demo is the user's own scene.
       id: stored?.id ?? newSceneId(),
       name: stored?.name ?? base.state.name,
-      camera: stored?.camera ?? base.state.camera,
+      // A stored blob is not read through parseSceneDoc, so the lens backfill
+      // has to happen here too — a camera saved before the field existed would
+      // otherwise come back with no fov, and every reader would need its own
+      // fallback.
+      camera: stored?.camera ? { ...stored.camera, fov: stored.camera.fov ?? CAMERA_DEFAULT_FOV } : base.state.camera,
       // Model-independent (unlike groups) — restores across model swaps.
       backgroundEffect: stored && "backgroundEffect" in stored ? stored.backgroundEffect ?? null : base.state.backgroundEffect,
       settings: {
         world: { ...base.state.settings.world, ...settingsBase.world },
         sun: { ...base.state.settings.sun, ...settingsBase.sun },
         bloom: { ...base.state.settings.bloom, ...settingsBase.bloom },
+        dof: { ...base.state.settings.dof, ...settingsBase.dof },
+        outline: { ...base.state.settings.outline, ...settingsBase.outline },
         background: { ...base.state.settings.background, ...settingsBase.background },
         grade: { ...base.state.settings.grade, ...settingsBase.grade },
         ground: { ...base.state.settings.ground, ...settingsBase.ground },
