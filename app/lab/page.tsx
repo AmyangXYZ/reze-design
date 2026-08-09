@@ -19,8 +19,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
 import {
   Atom,
+  ArrowDownToLine,
+  ArrowUpFromLine,
   Camera,
   Check,
+  FilePlus2,
   Globe,
   Grid3x3,
   Clapperboard,
@@ -35,6 +38,7 @@ import {
   Languages,
   Palette,
   PenLine,
+  RotateCcw,
   Share2,
   Sun,
   Video,
@@ -70,12 +74,19 @@ import {
 } from "@/components/scene/scene-sidebar"
 import { QuickPick } from "@/components/scene/quick-pick"
 import { GradeLibrary } from "@/components/editor/grade-library"
+import { GradeEditorPanel, type GradeEditorSubject } from "@/components/editor/grade-editor"
 import { BackgroundLibrary } from "@/components/editor/background-library"
+import { NodeLibrary } from "@/components/editor/node-library"
+import { GraphEditor } from "@/components/graph/graph-editor"
+import { WgslEditorPanel } from "@/components/editor/wgsl-editor"
+import { SaveCloseDialog } from "@/components/editor/save-close"
+import { FloatingPanel, type Rect } from "@/components/editor/floating-panel"
 import { ColorField } from "@/components/color-picker"
 import { useAudioClock } from "@/hooks/use-audio-clock"
 import { useEngine } from "@/hooks/use-engine"
 import { useRenderFraming } from "@/hooks/use-render-framing"
 import { useSceneSync } from "@/hooks/use-scene-sync"
+import { useStoredRect } from "@/hooks/use-stored-rect"
 import { useZOrder } from "@/hooks/use-z-order"
 import { DEFAULT_SCENE, EMPTY_SCENE } from "@/lib/default-scene"
 import {
@@ -102,20 +113,43 @@ import { clearLocalBundle, saveLocalBundle } from "@/lib/asset-store"
 import { loadUiState, saveUiState } from "@/lib/ui-state"
 import { dictionaries, LOCALES, LOCALE_LABELS, useI18n, useT, type Dictionary } from "@/lib/i18n"
 import { expandUploadFiles, unzipToFiles } from "@/lib/uploads"
-import { GRADE_PRESETS, gradeSpec, recallIntensity, rememberIntensity } from "@/lib/grade"
-import { communityQuickPickItems, quickPickItems, type EffectItem, type GradeItem, type GraphItem } from "@/lib/library"
+import { GRADE_PRESETS, gradeSpec, NEUTRAL_SPEC, NEW_GRADE_SPEC, recallIntensity, rememberIntensity } from "@/lib/grade"
+import {
+  communityQuickPickItems,
+  nameKey,
+  quickPickItems,
+  type EffectItem,
+  type GradeItem,
+  type GraphItem,
+} from "@/lib/library"
 import { communityItems, useCommunity } from "@/hooks/use-community"
 import { useDrafts } from "@/hooks/use-drafts"
-import { applyDefaults, BACKGROUND_EFFECTS, builtinEffect } from "@/lib/background-effects"
+import { useSession } from "@/lib/auth-client"
+import { freeName } from "@/lib/names"
+import {
+  applyDefaults,
+  BACKGROUND_EFFECTS,
+  builtinEffect,
+  NEW_EFFECT_TEMPLATE,
+  type AppliedBackgroundEffect,
+} from "@/lib/background-effects"
 import { probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
 import type { ExportProgress } from "@/lib/video-export"
 import { castColour } from "@/lib/model-colour"
 import { castSourceFor } from "@/lib/cast-source"
 import { NEUTRAL_PALETTE, type CastPaletteId } from "@/lib/cast-palette"
 import { relFilePath, sceneFiles } from "@/lib/scene-files"
-import { loadDrafts } from "@/lib/drafts"
-import { GRAPH_LIBRARY, libraryGraph } from "@/lib/materials"
-import { DEFAULT_GRAPH, type StyleGroup } from "reze-engine"
+import { cancelDraftWrites, createDraft, isDraft, loadDrafts, updateDraft, updateDraftSoon } from "@/lib/drafts"
+import { groupLabel, GRAPH_LIBRARY, libraryGraph, sameGraphLook, SLOT_GRAPHS } from "@/lib/materials"
+import {
+  compileGraph,
+  DEFAULT_GRAPH,
+  type CompileOptions,
+  type Diagnostic,
+  type MaterialPreset,
+  type ShaderGraph,
+  type StyleGroup,
+} from "reze-engine"
 import { WIND_MAX, windFreqFromSlider, windSliderFromFreq, type SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 
@@ -322,28 +356,70 @@ function commandsFor(t: Dictionary): PaletteItem[] {
   const l = t.lab
   const alt = otherThan(t).lab
   return [
+    // Three honest pairs: a NEW command starts a draft from a template, a
+    // LIBRARY command browses. Neither needs a subject, which is why neither can
+    // guess wrong. There is deliberately no "edit shader graph" — a scene has as
+    // many graphs as it has groups, so choosing one is the materials panel's job,
+    // not a command's.
     {
-      id: "graph",
+      id: "graph-new",
       suggested: true,
       repeatable: true,
       nextLikely: ["export", "publish"],
       section: "command",
       deep: true,
       icon: Workflow,
-      label: l.cmd.graph,
-      altLabels: [alt.cmd.graph],
-      keywords: ["wgsl", "material", "node"],
+      label: l.cmd.graphNew,
+      altLabels: [alt.cmd.graphNew],
+      keywords: ["wgsl", "material", "node", "shader", "着色器"],
     },
     {
-      id: "wgsl",
+      id: "graph-lib",
+      repeatable: true,
+      section: "command",
+      icon: Workflow,
+      label: l.cmd.graphLib,
+      altLabels: [alt.cmd.graphLib],
+      keywords: ["shader", "browse", "着色器", "库"],
+    },
+    {
+      id: "wgsl-new",
       repeatable: true,
       nextLikely: ["export"],
       section: "command",
       deep: true,
       icon: Code2,
-      label: l.cmd.wgsl,
-      altLabels: [alt.cmd.wgsl],
-      keywords: ["shader", "effect", "background"],
+      label: l.cmd.wgslNew,
+      altLabels: [alt.cmd.wgslNew],
+      keywords: ["shader", "effect", "background", "特效"],
+    },
+    {
+      id: "effect-lib",
+      repeatable: true,
+      section: "command",
+      icon: Sparkles,
+      label: l.cmd.effectLib,
+      altLabels: [alt.cmd.effectLib],
+      keywords: ["background", "wgsl", "browse", "特效", "库"],
+    },
+    {
+      id: "grade-new",
+      repeatable: true,
+      section: "command",
+      deep: true,
+      icon: Contrast,
+      label: l.cmd.gradeNew,
+      altLabels: [alt.cmd.gradeNew],
+      keywords: ["color", "look", "调色"],
+    },
+    {
+      id: "grade-lib",
+      repeatable: true,
+      section: "command",
+      icon: Palette,
+      label: l.cmd.gradeLib,
+      altLabels: [alt.cmd.gradeLib],
+      keywords: ["color", "browse", "调色", "库"],
     },
     {
       id: "export",
@@ -364,6 +440,53 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       label: l.cmd.publish,
       altLabels: [alt.cmd.publish],
       keywords: ["share", "upload", "link"],
+    },
+    // The logo menu's four operations, searchable. Same handlers, same labels —
+    // a second door to one function, which is the whole point of the palette.
+    {
+      id: "scene-new",
+      repeatable: true,
+      section: "command",
+      icon: FilePlus2,
+      label: t.sceneFile.newScene,
+      altLabels: [otherThan(t).sceneFile.newScene],
+      keywords: ["clear", "empty", "新建", "清空"],
+    },
+    {
+      id: "scene-reset",
+      repeatable: true,
+      section: "command",
+      icon: RotateCcw,
+      label: t.sceneFile.reset,
+      altLabels: [otherThan(t).sceneFile.reset],
+      keywords: ["default", "demo", "重置", "恢复"],
+    },
+    {
+      id: "scene-export",
+      repeatable: true,
+      section: "command",
+      icon: ArrowUpFromLine,
+      label: t.sceneFile.export,
+      altLabels: [otherThan(t).sceneFile.export],
+      keywords: ["download", "zip", "save", "导出", "备份"],
+    },
+    {
+      id: "scene-import",
+      repeatable: true,
+      section: "command",
+      icon: ArrowDownToLine,
+      label: t.sceneFile.import,
+      altLabels: [otherThan(t).sceneFile.import],
+      keywords: ["open", "zip", "load", "导入"],
+    },
+    {
+      id: "upload-animation",
+      repeatable: true,
+      section: "command",
+      icon: Clapperboard,
+      label: l.uploadAnimation,
+      altLabels: [alt.uploadAnimation],
+      keywords: ["vmd", "motion", "dance", "动作", "舞蹈"],
     },
     {
       id: "upload-stage",
@@ -605,6 +728,34 @@ const newGroupId = (material: string, groups: StyleGroup[]): string => {
   let i = 1
   while (ids.has(`${base}-${i}`)) i++
   return `${base}-${i}`
+}
+
+/**
+ * How a new draft relates to whatever it was edited from: your own published
+ * item (publishing updates it) or someone else's (publishing forks it). Neither,
+ * for a built-in or a from-scratch creation — those simply become new items.
+ */
+function draftOriginOf(community: { id: string; mine: boolean }[], editedId: string) {
+  const hit = community.find((i) => i.id === editedId)
+  if (!hit) return {}
+  return hit.mine ? { sourceId: hit.id } : { forkedFromId: hit.id }
+}
+
+// Where the three floating editors sit, remembered across sessions. The SAME
+// keys the shipped editor writes: it is one panel per kind, and dragging the
+// node editor somewhere on one route only to find it back in the middle on the
+// other would be the layout forgetting something it plainly knows.
+const GRAPH_PANEL_KEY = "reze-design.graphPanel"
+const GRADE_PANEL_KEY = "reze-design.gradePanel"
+const WGSL_PANEL_KEY = "reze-design.wgslPanel"
+
+/** First-open default: bottom-centred, clear of both docks and the transport. */
+function defaultPanelRect(): Rect {
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const w = Math.max(360, Math.min(vw - 648, 1200, vw - 48))
+  const h = Math.min(460, vh - 96)
+  return { x: Math.round((vw - w) / 2), y: Math.max(8, vh - h - 76), w, h }
 }
 
 /** The empty file-slot invitation — muted, underlined, and ITSELF the button.
@@ -1108,6 +1259,28 @@ export default function Lab() {
   const [gradeLibOpen, setGradeLibOpen] = useState(false)
   const { drafts: gradeDrafts } = useDrafts<GradeItem>("grade")
   const communityGrades = useCommunity<GradeItem>("grade")
+  // Whose name a saved draft carries. Signed out it is simply "you" — a draft
+  // never leaves this device until it is published, and publishing is where an
+  // account becomes the answer.
+  const { data: authSession } = useSession()
+  const authorName = authSession?.user.username ?? t.bgLibrary.you
+  // The grade editor is a floating SCRATCHPAD, the shipped editor's own:
+  // `subject` is the working copy — live on the render, written nowhere. Only
+  // the save-on-close dialog creates or updates a draft, so closing clean, or
+  // discarding, leaves no trace.
+  const [gradeEditor, setGradeEditor] = useState<{
+    sessionId: number
+    subject: GradeEditorSubject
+    opened: GradeEditorSubject
+    savePrompt: boolean
+  } | null>(null)
+  // Lazy: the rect resolves on first OPEN — an event handler, so a panel this
+  // session never uses costs no storage read and no second render.
+  const {
+    rect: gradePanelRect,
+    update: updateGradePanelRect,
+    ensure: ensureGradePanelRect,
+  } = useStoredRect(GRADE_PANEL_KEY, defaultPanelRect)
   const appliedGradeDraftId = gradeDrafts.find((d) => d.name === grade.preset)?.id ?? null
   // A built-in grade's name is its ID in the document and a TRANSLATION on
   // screen — the same split main uses. Drafts and community grades are user
@@ -1131,10 +1304,80 @@ export default function Lab() {
     (name: string) => patch("grade", { preset: name, intensity: recallIntensity(name) }),
     [patch],
   )
+  // An open session OVERRIDES the document's grade: the editor's working spec is
+  // what the render resolves to, which is the whole reason dragging a slider is
+  // visible on the canvas. The document is untouched until the session saves.
   const appliedGradeSpec = useMemo(
-    () => gradeSpec(grade.preset, [...gradeDrafts, ...communityGrades]),
-    [grade.preset, gradeDrafts, communityGrades],
+    () => (gradeEditor ? gradeEditor.subject.spec : gradeSpec(grade.preset, [...gradeDrafts, ...communityGrades])),
+    [gradeEditor, grade.preset, gradeDrafts, communityGrades],
   )
+  // Plain functions, the shipped editor's own call: they feed dialogs that are
+  // not memoized, so memoizing buys nothing.
+  const openGradeEditor = (subject: GradeEditorSubject) => {
+    ensureGradePanelRect()
+    setGradeEditor((prev) => ({ sessionId: (prev?.sessionId ?? 0) + 1, subject, opened: subject, savePrompt: false }))
+  }
+  const editGrade = (next: GradeEditorSubject) => {
+    setGradeEditor((prev) => (prev ? { ...prev, subject: next } : prev))
+    // Your own draft saves as you go. Only drafts: a built-in or someone else's
+    // published work has no local home to write to until the close prompt gives
+    // it one.
+    if (isDraft("grade", next.id)) updateDraftSoon("grade", next.id, { payload: { spec: next.spec } })
+  }
+  const freeGradeName = (wanted: string, editingId?: string) => freeName("grade", wanted, editingId)
+  /** The BUILT-IN spec an edit descends from — what "back to preset" reverts to.
+   *  Neutral, never the authoring starting point: revert means back to no grade. */
+  const gradeAncestor = (subject?: GradeEditorSubject) =>
+    GRADE_PRESETS.find((g) => g.name === (subject?.origin ?? subject?.name))?.payload.spec ?? NEUTRAL_SPEC
+  const requestCloseGradeEditor = () => {
+    if (!gradeEditor) return
+    const { subject, opened } = gradeEditor
+    const dirty = subject.name !== opened.name || JSON.stringify(subject.spec) !== JSON.stringify(opened.spec)
+    if (!dirty) {
+      setGradeEditor(null)
+      return
+    }
+    // An existing draft has a home — save in place, no questions.
+    if (isDraft("grade", subject.id)) {
+      updateDraft("grade", subject.id, { payload: { spec: subject.spec } })
+      setGradeEditor(null)
+      return
+    }
+    setGradeEditor({ ...gradeEditor, savePrompt: true })
+  }
+  const saveGradeEdit = (wanted: string): string | null => {
+    if (!gradeEditor) return null
+    const { subject } = gradeEditor
+    const keep = isDraft("grade", subject.id) ? subject.id : undefined
+    const name = freeGradeName(wanted, subject.id)
+    if (keep) updateDraft("grade", keep, { name, payload: { spec: subject.spec } })
+    else
+      createDraft("grade", {
+        name,
+        payload: { spec: subject.spec },
+        author: authorName,
+        // Editing your OWN published preset makes a working copy of it, so
+        // publishing writes that item's next version instead of a second item.
+        ...draftOriginOf(communityGrades, subject.id),
+      })
+    // Applying is what puts the result in the DOCUMENT — the session previewed
+    // through appliedGradeSpec and never touched settings.grade, so without this
+    // the saved scene would still be wearing whatever it wore before.
+    pickGrade(name)
+    setGradeEditor(null)
+    return null
+  }
+  /** A draft that saved as you went goes back to what the session opened on —
+   *  otherwise "discard" would keep everything except the last few hundred ms. */
+  const discardGradeEdit = () => {
+    if (!gradeEditor) return
+    const { subject, opened } = gradeEditor
+    if (isDraft("grade", subject.id)) {
+      cancelDraftWrites("grade", subject.id)
+      updateDraft("grade", subject.id, { payload: { spec: opened.spec } })
+    }
+    setGradeEditor(null)
+  }
   type UploadState =
     { kind: "pick"; files: File[]; paths: string[]; target: ModelTarget } | { kind: "notice"; message: string } | null
   const [upload, setUpload] = useState<UploadState>(null)
@@ -1233,7 +1476,11 @@ export default function Lab() {
     }
   }, [ready, scene, bundleFile, setMusicFile, swapBgImage])
 
-  useSceneSync({
+  // noteAppliedWgsl is the WGSL editor's half of the bargain: the editor
+  // compiles straight to the engine for its live preview, and telling the sync
+  // pass what is already on screen keeps it from compiling the same shader a
+  // second time when the applied effect lands in state.
+  const { noteAppliedWgsl } = useSceneSync({
     engineRef,
     ready,
     settings,
@@ -1278,6 +1525,116 @@ export default function Lab() {
     [effectDrafts, communityEffects],
   )
 
+  // ── The WGSL effect editor ──
+  //
+  // The same scratchpad one library over: `subject` is what opened (its wgsl is
+  // the dirty baseline), `prior` is what the scene showed before — restored on
+  // discard, and on any close that saved nothing. Compiles preview live; drafts
+  // are written only by the save-on-close dialog.
+  const [effectEditor, setEffectEditor] = useState<{
+    sessionId: number
+    subject: AppliedBackgroundEffect
+    prior: AppliedBackgroundEffect | null
+    savePrompt: string | null
+  } | null>(null)
+  const effectSessionRef = useRef(0)
+  const {
+    rect: effectPanelRect,
+    update: updateEffectPanelRect,
+    ensure: ensureEffectPanelRect,
+  } = useStoredRect(WGSL_PANEL_KEY, defaultPanelRect)
+  /** Compile + apply in one step — the scene mirrors the buffer. */
+  const commitEffectCode = useCallback(
+    async (subject: AppliedBackgroundEffect, wgsl: string) => {
+      const engine = engineRef.current
+      if (!engine) return { ok: false, diagnostics: [t.lab.engineNotReady] }
+      const r = await engine.setBackgroundEffect(wgsl)
+      if (r.ok) {
+        noteAppliedWgsl(wgsl)
+        setBgEffect({ ...subject, wgsl })
+        // Same rule as grades: your own draft saves as you go.
+        if (isDraft("effect", subject.id)) updateDraftSoon("effect", subject.id, { payload: { wgsl } })
+      }
+      return r
+    },
+    [engineRef, noteAppliedWgsl, t],
+  )
+  // Memoized (unlike the grade editor's opener) because the command palette runs
+  // it: a plain function in runCommand's dependency array is something the
+  // compiler cannot keep memoized.
+  const openEffectEditor = useCallback(
+    (subject: AppliedBackgroundEffect) => {
+      effectSessionRef.current += 1
+      // Opening AUTO-APPLIES the subject, which is what makes the canvas behind
+      // the panel the preview rather than a separate thing to keep in sync.
+      setEffectEditor({ sessionId: effectSessionRef.current, subject, prior: bgEffect, savePrompt: null })
+      ensureEffectPanelRect()
+      void commitEffectCode(subject, subject.wgsl)
+    },
+    [bgEffect, ensureEffectPanelRect, commitEffectCode],
+  )
+  /** Close request from the editor. Dirty → prompt; clean → the preview simply
+   *  ends, and whatever was applied before the session comes back. */
+  const requestCloseEffectEditor = async (code: string) => {
+    if (!effectEditor) return
+    if (code === effectEditor.subject.wgsl) {
+      setBgEffect(effectEditor.prior)
+      setEffectEditor(null)
+      return
+    }
+    // An existing draft saves in place when it compiles; a refusal (or a nameless
+    // new effect) goes through the dialog.
+    if (isDraft("effect", effectEditor.subject.id)) {
+      const engine = engineRef.current
+      const r = engine ? await engine.setBackgroundEffect(code) : { ok: false }
+      if (r.ok) {
+        noteAppliedWgsl(code)
+        const { id, name } = effectEditor.subject
+        updateDraft("effect", id, { payload: { wgsl: code } })
+        setBgEffect({ id, name, wgsl: code })
+        setEffectEditor(null)
+        return
+      }
+    }
+    setEffectEditor({ ...effectEditor, savePrompt: code })
+  }
+  const discardEffectEdit = () => {
+    if (!effectEditor) return
+    // Discard UNDOES the as-you-go writes, not just stops them.
+    if (isDraft("effect", effectEditor.subject.id)) {
+      cancelDraftWrites("effect", effectEditor.subject.id)
+      updateDraft("effect", effectEditor.subject.id, { payload: { wgsl: effectEditor.subject.wgsl } })
+    }
+    setBgEffect(effectEditor.prior)
+    setEffectEditor(null)
+  }
+  const freeEffectName = (wanted: string, editingId?: string) => freeName("effect", wanted, editingId)
+  const saveEffectEdit = async (wanted: string): Promise<string | null> => {
+    if (!effectEditor?.savePrompt) return null
+    const { subject, savePrompt: code } = effectEditor
+    // A broken shader must not land in the library — it would be auto-applied on
+    // every future pick. Compiling IS applying, which is also what save wants.
+    const isExisting = isDraft("effect", subject.id)
+    const engine = engineRef.current
+    const r = engine ? await engine.setBackgroundEffect(code) : { ok: false, diagnostics: [t.lab.engineNotReady] }
+    if (!r.ok) return r.diagnostics[0] ?? t.lab.compileFailed
+    noteAppliedWgsl(code)
+    const keep = isExisting ? subject.id : undefined
+    const name = freeEffectName(wanted, subject.id)
+    let id = keep
+    if (keep) updateDraft("effect", keep, { name, payload: { wgsl: code } })
+    else
+      id = createDraft("effect", {
+        name,
+        payload: { wgsl: code },
+        author: authorName,
+        ...draftOriginOf(communityEffects, subject.id),
+      }).id
+    setBgEffect({ id: id!, name, wgsl: code })
+    setEffectEditor(null)
+    return null
+  }
+
   // Width of the top-right pill cluster, mirrored onto the right panels so the
   // column has ONE edge. Observed rather than hardcoded: the label is
   // translated and the account chip changes with sign-in state.
@@ -1308,14 +1665,22 @@ export default function Lab() {
     const id = setTimeout(() => setMounted(true), 0)
     return () => clearTimeout(id)
   }, [])
-  const [expanded, setExpanded] = useState(() => loadUiState().expanded)
+  // Deliberately NOT restored from storage, unlike the row and tab selections
+  // below: collapsed is a way of LOOKING at the scene, not a piece of work in
+  // progress. Reopening to a collapsed dock reads as chrome that failed to
+  // load, and the person who likes it collapsed pays one click — the person who
+  // does not would be staring at an empty screen wondering where the app went.
+  // The device rule still applies: a coarse pointer starts collapsed.
+  const [expanded, setExpanded] = useState(
+    () => typeof window === "undefined" || !window.matchMedia("(pointer: coarse)").matches,
+  )
   // Written only once `mounted`, the same gate main's dock state uses: the
   // initial values were READ from this store, and writing them straight back
   // before the user has touched anything is a write that can only ever lose a
   // race with another tab.
   useEffect(() => {
-    if (mounted) saveUiState({ expanded, openRow, stageTab, lightTab, cameraTab, postTab })
-  }, [mounted, expanded, openRow, stageTab, lightTab, cameraTab, postTab])
+    if (mounted) saveUiState({ openRow, stageTab, lightTab, cameraTab, postTab })
+  }, [mounted, openRow, stageTab, lightTab, cameraTab, postTab])
   // The dock joins the desktop stack the libraries already live in: clicking
   // (or tabbing into) it raises it over an open library, clicking the library
   // raises it back. No Escape closer — Escape keeps closing the topmost
@@ -1327,10 +1692,19 @@ export default function Lab() {
   // Clicking a cast row selects the model and opens the right dock on ITS
   // style groups — the inspector is about what you picked. The real
   // MaterialsPanel mounts, not a lite copy: tree, drag-to-regroup, rename,
-  // visibility, hover-highlight, per-group look QuickPick. Its two deep doors
-  // (graph library, node editor) stay hidden until those surfaces port.
+  // visibility, hover-highlight, per-group look QuickPick. Both deep doors hang
+  // off it too — the shader-graph library and the node editor — and they are
+  // FLOATING panels rather than right-dock ones, so they join the z-order stack
+  // the libraries already live in instead of evicting the inspector that opened
+  // them. Editing a look while you cannot see the group you are editing is not
+  // a workflow.
   const [inspectedId, setInspectedId] = useState<string | null>(null)
   const inspected = models.find((m) => m.id === inspectedId) ?? null
+  // Which group the node editor is bound to. Per MODEL, which is why moving the
+  // inspector to another character clears it: group ids are per model ("hair"
+  // exists on both), so a kept id would silently rebind the open editor to a
+  // different character's group of the same name.
+  const [activeGroupId, setActiveGroupId] = useState<string | null>(null)
   // The inverted-hull outline pass, off by default since 0.25.2 and reachable
   // only by searching for it. It lives in the document (settings.outline) like
   // every other look setting; when outlines earn size, opacity and colour
@@ -1355,11 +1729,17 @@ export default function Lab() {
     setInspectedId(null)
     setExportOpen(true)
   }, [])
-  const openMaterials = useCallback((id: string | null) => {
-    if (!id) return
-    setExportOpen(false)
-    setInspectedId(id)
-  }, [])
+  const openMaterials = useCallback(
+    (id: string | null) => {
+      if (!id) return
+      setExportOpen(false)
+      // Only on a genuine change: re-opening the panel on the model you are
+      // already editing must not unbind the node editor you have open on it.
+      if (id !== inspectedId) setActiveGroupId(null)
+      setInspectedId(id)
+    },
+    [inspectedId],
+  )
   const inspectedGroups = useMemo(
     () => (inspectedId ? (groupsByModel[inspectedId] ?? []) : []),
     [groupsByModel, inspectedId],
@@ -1421,6 +1801,258 @@ export default function Lab() {
     },
     [inspectedId, inspectedGroups, inspectGroupsApply, upsertGroup],
   )
+
+  // ── The shader-graph library and the node editor ──
+  //
+  // The panel's two deep doors, mechanism and all: a floating window whose rect
+  // persists, a session id that raises it, and a SCRATCHPAD contract on both
+  // sides. Editing a group's graph previews by WRITING the group — that is the
+  // preview — so closing has to either keep the result in the library or put the
+  // group back, or a look built here could only ever live in this one scene:
+  // invisible in the library, unusable on another group, impossible to publish.
+  const communityGraphs = useCommunity<GraphItem>("graph")
+  // Eager, unlike the other two editors': this panel stays MOUNTED while closed
+  // (see the JSX), so it needs its rect on the first render it appears in.
+  const { rect: graphPanelRect, update: updateGraphPanelRect } = useStoredRect(GRAPH_PANEL_KEY, defaultPanelRect, {
+    eager: true,
+  })
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  // Bumped per open so the panel RAISES each time. It stays mounted while
+  // closed, so without this it would only ever surface on first mount, and
+  // opening the editor from the library would leave the library on top of it.
+  const [graphSession, setGraphSession] = useState(0)
+  // Which group the library was opened for; null groupId is a browse with no
+  // target. The whole object IS the open state, so two fields can never
+  // disagree about whether the library is up.
+  const [graphLib, setGraphLib] = useState<{ groupId: string | null } | null>(null)
+  // A standalone graph-editing session: a library act, never bound to a group.
+  const [graphLibEdit, setGraphLibEdit] = useState<{
+    sessionId: number
+    id: string
+    name: string
+    opened: ShaderGraph
+    savePrompt: boolean
+  } | null>(null)
+  const graphLibLatest = useRef<ShaderGraph | null>(null)
+  // What the group's graph was when the session opened, and WHOSE group it is.
+  // The model travels with it because the inspector can move to another
+  // character mid-session, and a discard has to reach the group it started on.
+  const groupGraphBaseline = useRef<{ modelId: string; groupId: string; graph: ShaderGraph } | null>(null)
+  const [groupGraphPrompt, setGroupGraphPrompt] = useState(false)
+  // Remounts the editor when the library swaps the bound group's graph underneath it.
+  const [libVersion, setLibVersion] = useState(0)
+
+  const activeGroup = inspectedGroups.find((g) => g.id === activeGroupId) ?? null
+  // The factory preset the editor's Reset returns to: the LIBRARY entry this
+  // group's graph came from, never the group's live graph — which would make
+  // Reset restore the state you were trying to leave.
+  const presetGraph = activeGroup
+    ? (GRAPH_LIBRARY.find((e) => e.name === activeGroup.graph?.name)?.payload.graph ??
+      SLOT_GRAPHS[activeGroup.id as MaterialPreset] ??
+      DEFAULT_GRAPH)
+    : null
+  /** The editor's onApply: compile the edited graph onto the bound group. This
+   *  goes through the same upsertGroup the QuickPick does, so the edit reaches
+   *  groupsByModel — which is what the debounced document save reads. */
+  const applyActiveGraph = useCallback(
+    (graph: ShaderGraph, opts?: CompileOptions): Promise<{ ok: boolean; diagnostics: Diagnostic[] }> =>
+      inspectedId && activeGroup
+        ? upsertGroup(inspectedId, { ...activeGroup, graph }, opts)
+        : Promise.resolve({ ok: false, diagnostics: [] }),
+    [inspectedId, activeGroup, upsertGroup],
+  )
+  /** Focus a group and open the node editor on it (snapshotting a baseline). */
+  const editGroupGraph = useCallback(
+    (id: string) => {
+      const g = inspectedGroups.find((x) => x.id === id)
+      if (!inspectedId || !g) return
+      groupGraphBaseline.current = { modelId: inspectedId, groupId: id, graph: structuredClone(g.graph) }
+      setActiveGroupId(id)
+      setGraphLibEdit(null)
+      setGraphSession((v) => v + 1)
+      setDrawerOpen(true)
+    },
+    [inspectedId, inspectedGroups],
+  )
+  const openGraphLibrary = useCallback((groupId: string | null) => setGraphLib({ groupId }), [])
+
+  // The session handlers are plain functions: nothing takes them as a
+  // dependency, and the compiler cannot preserve a manual memo across the async
+  // bodies among them anyway.
+
+  /** Your local draft that a graph name refers to — the thing an edit made from
+   *  the quick switch saves back into. */
+  const draftGraphNamed = (name: string) => loadDrafts().graph.find((d) => nameKey(d.name) === nameKey(name))
+  const freeGraphName = (wanted: string, editingId?: string) => freeName("graph", wanted, editingId)
+  /** The group a group-session is bound to, resolved through the BASELINE's
+   *  model rather than the inspector's — the inspector may have moved on. */
+  const baselineGroup = () => {
+    const base = groupGraphBaseline.current
+    const group = base ? (groupsByModel[base.modelId] ?? []).find((x) => x.id === base.groupId) : null
+    return base && group ? { base, group } : null
+  }
+  /**
+   * Closing a GROUP graph session.
+   *
+   * Unchanged closes silently. Changed asks to keep it. Editing one of YOUR
+   * drafts is not that situation — it already has a home, so it saves in place
+   * and closes; asking where to put it would mint another copy of the draft you
+   * were already editing every time you closed.
+   */
+  const closeGraphEdit = () => {
+    const hit = baselineGroup()
+    // Compared by LOOK, not bytes: merely opening the editor round-trips the
+    // graph through ReactFlow and stamps node layout onto it, so a raw compare
+    // calls every session dirty and asks to save a graph nobody touched.
+    if (!hit || sameGraphLook(hit.group.graph, hit.base.graph)) {
+      groupGraphBaseline.current = null
+      setDrawerOpen(false)
+      return
+    }
+    // By name, which IS the identity a group holds a look by.
+    const draft = draftGraphNamed(hit.group.graph.name)
+    // A save that does not compile is refused everywhere else; surfacing that
+    // needs the dialog, so fall through to it rather than keeping a dud.
+    if (draft && compileGraph(hit.group.graph).ok) {
+      updateDraft("graph", draft.id, { payload: { graph: hit.group.graph } })
+      groupGraphBaseline.current = null
+      setDrawerOpen(false)
+      return
+    }
+    setGroupGraphPrompt(true)
+  }
+  const saveGroupGraph = (wanted: string): string | null => {
+    const hit = baselineGroup()
+    if (!hit) return null
+    // Your own draft keeps its identity and its name — this is the same save the
+    // silent path does, reached only because a compile error had to be shown.
+    const keep = draftGraphNamed(hit.group.graph.name)
+    const name = keep?.name ?? freeGraphName(wanted)
+    const graph = { ...hit.group.graph, name }
+    const r = compileGraph(graph)
+    if (!r.ok) return r.diagnostics.find((d) => d.severity === "error")?.message ?? t.lab.compileFailed
+    if (keep) updateDraft("graph", keep.id, { payload: { graph } })
+    else createDraft("graph", { name, payload: { graph }, author: authorName })
+    // The group keeps it too, now under the saved name, so the scene and the
+    // library agree about what this look is called.
+    void upsertGroup(hit.base.modelId, { ...hit.group, graph })
+    groupGraphBaseline.current = null
+    setGroupGraphPrompt(false)
+    setDrawerOpen(false)
+    return null
+  }
+  const discardGroupGraph = () => {
+    const hit = baselineGroup()
+    if (hit) void upsertGroup(hit.base.modelId, { ...hit.group, graph: hit.base.graph })
+    groupGraphBaseline.current = null
+    setGroupGraphPrompt(false)
+    setDrawerOpen(false)
+  }
+
+  /** Standalone graph editing — the library's Edit. Same contract, except edits
+   *  compile PURELY: compileGraph needs no engine and no group. */
+  const openGraphLibEdit = (id: string, name: string, graph: ShaderGraph) => {
+    graphLibLatest.current = null
+    setGraphLibEdit((prev) => ({ sessionId: (prev?.sessionId ?? 0) + 1, id, name, opened: graph, savePrompt: false }))
+    setGraphSession((v) => v + 1) // raiseKey: the editor must surface above the library
+    setDrawerOpen(true)
+  }
+  const compileStandalone = (graph: ShaderGraph): Promise<{ ok: boolean; diagnostics: Diagnostic[] }> => {
+    graphLibLatest.current = graph
+    const r = compileGraph(graph)
+    // Editing your own draft saves as you go — closing it is then just closing,
+    // and a crash or a stray reload costs nothing. Only drafts: a built-in or
+    // someone else's published work has no local home to write to yet.
+    if (graphLibEdit && isDraft("graph", graphLibEdit.id))
+      updateDraftSoon("graph", graphLibEdit.id, { payload: { graph: { ...graph, name: graphLibEdit.name } } })
+    return Promise.resolve({ ok: r.ok, diagnostics: r.diagnostics })
+  }
+  const requestCloseGraphDrawer = () => {
+    if (!graphLibEdit) {
+      setDrawerOpen(false)
+      return
+    }
+    const latest = graphLibLatest.current ?? graphLibEdit.opened
+    // By LOOK, not bytes — the same compare the group path makes.
+    if (sameGraphLook(latest, graphLibEdit.opened)) {
+      setGraphLibEdit(null)
+      setDrawerOpen(false)
+      return
+    }
+    // An existing draft saves in place — unless it stopped compiling, in which
+    // case the dialog surfaces the refusal.
+    if (isDraft("graph", graphLibEdit.id) && saveGraphLibEdit(graphLibEdit.name) === null) return
+    setGraphLibEdit({ ...graphLibEdit, savePrompt: true })
+  }
+  const saveGraphLibEdit = (wanted: string): string | null => {
+    if (!graphLibEdit) return null
+    const keep = isDraft("graph", graphLibEdit.id) ? graphLibEdit.id : undefined
+    const name = freeGraphName(wanted, graphLibEdit.id)
+    const graph = { ...(graphLibLatest.current ?? graphLibEdit.opened), name }
+    const r = compileGraph(graph)
+    if (!r.ok) return r.diagnostics.find((d) => d.severity === "error")?.message ?? t.lab.compileFailed
+    if (keep) updateDraft("graph", keep, { name, payload: { graph } })
+    else
+      createDraft("graph", {
+        name,
+        payload: { graph },
+        author: authorName,
+        ...draftOriginOf(communityGraphs, graphLibEdit.id),
+      })
+    setGraphLibEdit(null)
+    setDrawerOpen(false)
+    return null
+  }
+  const discardGraphLibEdit = () => {
+    // Discard has to undo save-as-you-go, not just stop it — see discardGradeEdit.
+    if (graphLibEdit && isDraft("graph", graphLibEdit.id)) {
+      cancelDraftWrites("graph", graphLibEdit.id)
+      updateDraft("graph", graphLibEdit.id, { payload: { graph: { ...graphLibEdit.opened, name: graphLibEdit.name } } })
+    }
+    setGraphLibEdit(null)
+    setDrawerOpen(false)
+  }
+  /** Apply a library graph to the group the library was opened from. */
+  const applyGraphLibrary = (graph: ShaderGraph, name: string) => {
+    const group = inspectedGroups.find((g) => g.id === graphLib?.groupId)
+    if (!inspectedId || !group) return
+    const updated: StyleGroup = { ...group, graph: { ...graph, name } }
+    // The same split inspectPickGraph makes: grouped materials recompile through
+    // upsert, an empty group just records the choice.
+    if (updated.materials.length) void upsertGroup(inspectedId, updated)
+    else inspectGroupsApply(inspectedGroups.map((x) => (x.id === group.id ? updated : x)))
+    setActiveGroupId(group.id)
+    setLibVersion((v) => v + 1)
+    setGraphLib(null)
+  }
+  // A draft renamed in the library takes the groups wearing it along. A group
+  // holds its look BY VALUE, so without this the scene goes on calling the look
+  // by a name no library has — which then reads as "not in use" and lets the
+  // draft be deleted out from under it.
+  const renameGroupLooks = useCallback(
+    (oldName: string, newName: string) => {
+      for (const [modelId, list] of Object.entries(groupsByModel)) {
+        let changed = false
+        const next = list.map((g) => {
+          if (!g.graph || nameKey(g.graph.name) !== nameKey(oldName)) return g
+          changed = true
+          return { ...g, graph: { ...g.graph, name: newName } }
+        })
+        if (changed) void applyGroups(modelId, next)
+      }
+    },
+    [groupsByModel, applyGroups],
+  )
+  // Every look the scene is wearing, across ALL models — not just the group the
+  // library was opened from. A draft one of these is built on is in use.
+  const usedLookNames = useMemo(
+    () =>
+      [
+        ...new Set(Object.values(groupsByModel).flatMap((list) => list.map((g) => g.graph?.name).filter(Boolean))),
+      ] as string[],
+    [groupsByModel],
+  )
+  const libGroup = inspectedGroups.find((g) => g.id === graphLib?.groupId) ?? null
   // ── Model upload ──
   // "Replace" is an upload too — same picker, same parsing, only the target
   // differs: a new slot, or an existing one that keeps its position and clip.
@@ -1434,6 +2066,7 @@ export default function Lab() {
   // has no directory picker at all — that is a decision to make with the mobile
   // layout, not by bolting a second button onto this row.)
   const folderInput = useRef<HTMLInputElement>(null)
+  const sceneImportInput = useRef<HTMLInputElement>(null)
   // Same shape the shipped editor uses: one dialog covering "which .pmx?" and
   // "that did not load", because both are the upload failing to resolve to a
   // single model and the user only cares which one they are looking at.
@@ -1672,55 +2305,6 @@ export default function Lab() {
     [commands, outlineShown, localeShown, t],
   )
 
-  const runCommand = useCallback(
-    (item: PaletteItem) => {
-      // Most recent first, no duplicates, five deep — enough to be useful
-      // without the empty-query list becoming a second menu. Staged in a ref
-      // rather than state so nothing re-renders while the dialog closes.
-      const base = nextRecent.current.length ? nextRecent.current : recentIds
-      nextRecent.current = [item.id, ...base.filter((id) => id !== item.id)].slice(0, 5)
-      // Stored immediately even though the STATE commit waits for the next
-      // open (the no-reshuffle rule) — a refresh must not lose the last run.
-      try {
-        window.localStorage.setItem(RECENTS_KEY, JSON.stringify(nextRecent.current))
-      } catch {
-        /* storage full or blocked — suggestions just stay session-local */
-      }
-      // Real commands, by id — the registry will own this table; until then the
-      // page is the registry.
-      if (item.id === "export" || item.id === "capture") openExport()
-      else if (item.id === "add-model") {
-        // The refs directly, not pickModel: a plain function in the dep
-        // array is something the compiler cannot keep memoized.
-        modelTarget.current = { mode: "add" }
-        folderInput.current?.click()
-      } else if (item.id === "upload-camera") cameraInput.current?.click()
-      else if (item.id === "upload-music") musicInput.current?.click()
-      else if (item.id === "camera") gotoSection("camera")
-      else if (item.id === "stage" || item.id === "upload-stage") gotoSection("stage", { stage: "stage" })
-      else if (item.id === "ground") gotoSection("stage", { stage: "ground" })
-      else if (item.id === "background") gotoSection("stage", { stage: "background" })
-      else if (item.id === "effect") gotoSection("effect")
-      else if (item.id === "post") gotoSection("post")
-      else if (item.id === "light") gotoSection("light")
-      else if (item.id === "world") gotoSection("light", { light: "world" })
-      else if (item.id === "sun") gotoSection("light", { light: "sun" })
-      else if (item.id === "physics") gotoSection("physics")
-      // Whichever model is already inspected, else the primary — the panel is
-      // per-model and picking one for you beats opening on nothing.
-      else if (item.id === "materials") openMaterials(inspectedId ?? models[0]?.id ?? null)
-      else if (item.id === "outline") patch("outline", { enabled: !outlineRef.current })
-      else if (item.id === "language") setLangOpen(true)
-      else if (item.id.startsWith("ctl-")) {
-        const c = DOCK_CONTROLS.find((x) => `ctl-${x.id}` === item.id)
-        if (!c) return
-        if (c.row === "export") openExport()
-        else gotoSection(c.row, { stage: c.stageTab, light: c.lightTab, camera: c.cameraTab, post: c.postTab })
-      }
-      item.run?.()
-    },
-    [recentIds, gotoSection, openMaterials, inspectedId, models, patch, setLangOpen, openExport],
-  )
 
   // ── Persistence ──
   //
@@ -1943,11 +2527,24 @@ export default function Lab() {
     // .pmx under a different document) wearing the colour it had in the old scene.
     castStarted.current.clear()
     setPalettes({})
-    // The transient surfaces are all ABOUT something the swap just removed.
+    // The transient surfaces are all ABOUT something the swap just removed. The
+    // editors go too, baselines included: a session's "put it back" points at a
+    // group, a grade or a shader belonging to the document being replaced, and
+    // an open scratchpad would write the outgoing scene's work into the incoming
+    // one on its next close.
     setInspectedId(null)
     setExportOpen(false)
     setGradeLibOpen(false)
     setEffectLibOpen(false)
+    setGraphLib(null)
+    setDrawerOpen(false)
+    setGraphLibEdit(null)
+    setActiveGroupId(null)
+    setGroupGraphPrompt(false)
+    groupGraphBaseline.current = null
+    graphLibLatest.current = null
+    setGradeEditor(null)
+    setEffectEditor(null)
 
     await swapping
 
@@ -1971,6 +2568,7 @@ export default function Lab() {
   /** Blank: no assets, no effect, no grade, neutral settings — and a NEW identity, so the
    *  uploads just cleared can never be re-adopted by it. */
   const newScene = () => void applyLabScene({ ...EMPTY_SCENE, state: { ...EMPTY_SCENE.state, id: newSceneId() } })
+
 
   /**
    * The whole scene as one file: the publish pipeline aimed at disk. The same collector
@@ -2052,6 +2650,100 @@ export default function Lab() {
       setUpload({ kind: "notice", message: t.sceneFile.badFile })
     }
   }
+
+  const runCommand = useCallback(
+    (item: PaletteItem) => {
+      // Most recent first, no duplicates, five deep — enough to be useful
+      // without the empty-query list becoming a second menu. Staged in a ref
+      // rather than state so nothing re-renders while the dialog closes.
+      const base = nextRecent.current.length ? nextRecent.current : recentIds
+      nextRecent.current = [item.id, ...base.filter((id) => id !== item.id)].slice(0, 5)
+      // Stored immediately even though the STATE commit waits for the next
+      // open (the no-reshuffle rule) — a refresh must not lose the last run.
+      try {
+        window.localStorage.setItem(RECENTS_KEY, JSON.stringify(nextRecent.current))
+      } catch {
+        /* storage full or blocked — suggestions just stay session-local */
+      }
+      // Real commands, by id — the registry will own this table; until then the
+      // page is the registry.
+      if (item.id === "export" || item.id === "capture") openExport()
+      else if (item.id === "add-model") {
+        // The refs directly, not pickModel: a plain function in the dep
+        // array is something the compiler cannot keep memoized.
+        modelTarget.current = { mode: "add" }
+        folderInput.current?.click()
+      } else if (item.id === "upload-camera") cameraInput.current?.click()
+      else if (item.id === "upload-music") musicInput.current?.click()
+      else if (item.id === "camera") gotoSection("camera")
+      else if (item.id === "scene-new") newScene()
+      else if (item.id === "scene-reset") resetSceneDefaults()
+      else if (item.id === "scene-export") void exportScene()
+      else if (item.id === "scene-import") sceneImportInput.current?.click()
+      else if (item.id === "stage") gotoSection("stage", { stage: "stage" })
+      // Named "upload", so it uploads. Routing it to the pane and leaving the
+      // user to find the button again is what makes a palette feel like a
+      // table of contents instead of a set of verbs.
+      else if (item.id === "upload-stage") {
+        modelTarget.current = { mode: "stage" }
+        folderInput.current?.click()
+      }
+      // The primary model, always — not "whichever is inspected". A motion has
+      // to land somewhere and the palette cannot ask; a rule you can state in
+      // one sentence beats one that depends on what panel happens to be open.
+      // Per-model uploads live on the cast rows, where the target is visible.
+      else if (item.id === "upload-animation") {
+        const target = models[0]?.id
+        if (target) {
+          animTarget.current = target
+          vmdInput.current?.click()
+        }
+      } else if (item.id === "ground") gotoSection("stage", { stage: "ground" })
+      else if (item.id === "background") gotoSection("stage", { stage: "background" })
+      else if (item.id === "effect") gotoSection("effect")
+      else if (item.id === "post") gotoSection("post")
+      else if (item.id === "light") gotoSection("light")
+      else if (item.id === "world") gotoSection("light", { light: "world" })
+      else if (item.id === "sun") gotoSection("light", { light: "sun" })
+      else if (item.id === "physics") gotoSection("physics")
+      // Whichever model is already inspected, else the primary — the panel is
+      // per-model and picking one for you beats opening on nothing.
+      else if (item.id === "materials") openMaterials(inspectedId ?? models[0]?.id ?? null)
+      // Each opens exactly what it says. A new draft starts from the same
+      // template the library's own New button uses, so the two doors lead to
+      // one place.
+      else if (item.id === "graph-new") openGraphLibEdit("", t.library.newGraph, structuredClone(DEFAULT_GRAPH))
+      else if (item.id === "graph-lib") openGraphLibrary(activeGroupId)
+      else if (item.id === "wgsl-new")
+        openEffectEditor({ id: "", name: t.bgLibrary.newEffect, wgsl: NEW_EFFECT_TEMPLATE })
+      else if (item.id === "effect-lib") setEffectLibOpen(true)
+      else if (item.id === "grade-new") openGradeEditor({ id: "", name: t.gradeLibrary.newGrade, spec: NEW_GRADE_SPEC })
+      else if (item.id === "grade-lib") setGradeLibOpen(true)
+      else if (item.id === "outline") patch("outline", { enabled: !outlineRef.current })
+      else if (item.id === "language") setLangOpen(true)
+      else if (item.id.startsWith("ctl-")) {
+        const c = DOCK_CONTROLS.find((x) => `ctl-${x.id}` === item.id)
+        if (!c) return
+        if (c.row === "export") openExport()
+        else gotoSection(c.row, { stage: c.stageTab, light: c.lightTab, camera: c.cameraTab, post: c.postTab })
+      }
+      item.run?.()
+    },
+    [
+      recentIds,
+      gotoSection,
+      openMaterials,
+      inspectedId,
+      models,
+      patch,
+      setLangOpen,
+      openExport,
+      openGraphLibrary,
+      activeGroupId,
+      openEffectEditor,
+      bgEffect,
+    ],
+  )
 
   return (
     <main className="relative h-dvh w-screen overflow-hidden bg-black">
@@ -2270,6 +2962,20 @@ export default function Lab() {
       </Dialog>
 
       {/* Reset on change, so picking the same folder twice still fires. */}
+      {/* The logo menu owns its own picker; the palette needs one too, since the
+          command cannot reach inside that component. Same handler either way. */}
+      <input
+        ref={sceneImportInput}
+        type="file"
+        accept=".zip,.json,application/zip,application/json"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          e.target.value = ""
+          if (file) void importScene(file)
+        }}
+      />
+
       <input
         ref={folderInput}
         type="file"
@@ -2352,6 +3058,7 @@ export default function Lab() {
         onRenamed={(oldName, newName) =>
           setSettings((s2) => (s2.grade.preset === oldName ? { ...s2, grade: { ...s2.grade, preset: newName } } : s2))
         }
+        onEdit={openGradeEditor}
       />
 
       <BackgroundLibrary
@@ -2361,7 +3068,161 @@ export default function Lab() {
         onApply={setBgEffect}
         onRemove={() => setBgEffect(null)}
         onRenamed={(oldName, newName) => setBgEffect((e) => (e?.name === oldName ? { ...e, name: newName } : e))}
+        onEdit={openEffectEditor}
       />
+
+      {/* ── Shader-graph library ──
+          Non-modal and no scrim, like the other two: the canvas behind it is
+          the preview for everything it applies. */}
+      <NodeLibrary
+        open={graphLib !== null}
+        onOpenChange={(o) => !o && setGraphLib(null)}
+        canApply={libGroup !== null}
+        targetLabel={libGroup ? groupLabel(libGroup) : null}
+        currentGraphName={libGroup?.graph.name ?? null}
+        usedNames={usedLookNames}
+        onRenamed={renameGroupLooks}
+        onApply={applyGraphLibrary}
+        onEdit={openGraphLibEdit}
+      />
+
+      {/* ── Node editor ──
+          MOUNTED while closed, the shipped editor's own call: the panel owns its
+          rect and its place in the stack, and remounting it per open would drop
+          both. The BODY is what unmounts, so a session never resumes on the
+          previous graph's nodes. */}
+      {mounted && graphPanelRect && (
+        <FloatingPanel
+          rect={graphPanelRect}
+          onRectChange={updateGraphPanelRect}
+          raiseKey={graphSession}
+          // Gated on open: an ungated closer would sit at the top of the stack
+          // while invisible and swallow Escape from the libraries beneath it.
+          onEscape={drawerOpen ? requestCloseGraphDrawer : undefined}
+          fullscreen={false}
+          className={cn(
+            // The raised surface, opaque: this floats over an animating canvas,
+            // which is exactly when a backdrop-filter costs the most frames.
+            "overflow-hidden rounded-surface border border-line-strong bg-surface-raised shadow-float transition-opacity duration-300",
+            !drawerOpen && "pointer-events-none opacity-0",
+          )}
+        >
+          {!drawerOpen ? null : graphLibEdit ? (
+            <GraphEditor
+              key={`lib-${graphLibEdit.sessionId}`}
+              slotLabel={graphLibEdit.name}
+              presetGraph={graphLibEdit.opened}
+              getInitialGraph={() => graphLibEdit.opened}
+              onApply={compileStandalone}
+              engineReady={ready}
+              engineError={error}
+              open={drawerOpen}
+              onClose={requestCloseGraphDrawer}
+            />
+          ) : activeGroup && presetGraph ? (
+            <GraphEditor
+              key={`${activeGroup.id}-${libVersion}`}
+              slotLabel={activeGroup.graph.name || groupLabel(activeGroup)}
+              presetGraph={presetGraph}
+              getInitialGraph={() => activeGroup.graph ?? presetGraph}
+              onApply={applyActiveGraph}
+              engineReady={ready}
+              engineError={error}
+              open={drawerOpen}
+              onClose={closeGraphEdit}
+            />
+          ) : (
+            // Reachable by moving the inspector to another character mid-session
+            // — the binding is released, and the panel says so rather than
+            // vanishing under the cursor.
+            <div className="relative flex h-full items-center justify-center text-xs text-muted-foreground">
+              {t.editor.selectMaterial}
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={t.library.close}
+                className="absolute top-1 right-2 size-7 text-muted-foreground hover:text-foreground"
+                onClick={() => setDrawerOpen(false)}
+              >
+                <X className="size-4" />
+              </Button>
+            </div>
+          )}
+        </FloatingPanel>
+      )}
+
+      {/* ── Floating WGSL editor (drag it aside; the scene is the preview) ── */}
+      {mounted && effectEditor && (
+        <WgslEditorPanel
+          open
+          sessionId={effectEditor.sessionId}
+          rect={effectPanelRect}
+          onRectChange={updateEffectPanelRect}
+          title={effectEditor.subject.name}
+          initial={effectEditor.subject.wgsl}
+          onCompile={(wgsl) => commitEffectCode(effectEditor.subject, wgsl)}
+          onClose={(code) => void requestCloseEffectEditor(code)}
+        />
+      )}
+
+      {/* ── Floating grade editor (drag it aside; the scene is the preview) ── */}
+      {mounted && gradeEditor && (
+        <GradeEditorPanel
+          open
+          sessionId={gradeEditor.sessionId}
+          rect={gradePanelRect}
+          onRectChange={updateGradePanelRect}
+          subject={gradeEditor.subject}
+          origin={gradeAncestor(gradeEditor.subject)}
+          onChange={editGrade}
+          onClose={requestCloseGradeEditor}
+        />
+      )}
+
+      {/* ── Save-on-close, one per editor. All three read the same at a glance:
+              a draft is being saved back and is not renamed; anything else is
+              becoming a new item and gets a free name to confirm. ── */}
+      {mounted && effectEditor?.savePrompt != null && (
+        <SaveCloseDialog
+          defaultName={freeEffectName(effectEditor.subject.name, effectEditor.subject.id)}
+          askName={!isDraft("effect", effectEditor.subject.id)}
+          onSave={saveEffectEdit}
+          onDiscard={discardEffectEdit}
+          onCancel={() => setEffectEditor((prev) => (prev ? { ...prev, savePrompt: null } : prev))}
+        />
+      )}
+      {mounted && gradeEditor?.savePrompt && (
+        <SaveCloseDialog
+          askName={!isDraft("grade", gradeEditor.subject.id)}
+          defaultName={freeGradeName(gradeEditor.subject.name, gradeEditor.subject.id)}
+          onSave={saveGradeEdit}
+          onDiscard={discardGradeEdit}
+          onCancel={() => setGradeEditor((prev) => (prev ? { ...prev, savePrompt: false } : prev))}
+        />
+      )}
+      {mounted && groupGraphPrompt && (
+        <SaveCloseDialog
+          // Your own draft is not being named, it is being saved back — this
+          // dialog is here only because the compile failed.
+          askName={!draftGraphNamed(activeGroup?.graph.name ?? "")}
+          defaultName={
+            draftGraphNamed(activeGroup?.graph.name ?? "")?.name ??
+            freeGraphName(activeGroup?.graph.name ?? t.lab.newGroup)
+          }
+          onSave={saveGroupGraph}
+          onDiscard={discardGroupGraph}
+          onCancel={() => setGroupGraphPrompt(false)}
+        />
+      )}
+      {mounted && graphLibEdit?.savePrompt && (
+        <SaveCloseDialog
+          defaultName={freeGraphName(graphLibEdit.name, graphLibEdit.id)}
+          askName={!isDraft("graph", graphLibEdit.id)}
+          onSave={saveGraphLibEdit}
+          onDiscard={discardGraphLibEdit}
+          onCancel={() => setGraphLibEdit((prev) => (prev ? { ...prev, savePrompt: false } : prev))}
+        />
+      )}
 
       <CommandPalette
         key={paletteSession}
@@ -3212,15 +4073,20 @@ export default function Lab() {
             <MaterialsPanel
               dense
               modelTabs={models.map((m) => ({ id: m.id, file: m.file, active: m.id === inspected.id }))}
-              onSelectModel={setInspectedId}
+              // Through openMaterials, not setInspectedId: switching model here
+              // is the same act as opening the panel on another one, and the
+              // node editor's binding has to be released either way.
+              onSelectModel={openMaterials}
               materials={inspected.materials}
               groups={inspectedGroups}
-              activeGroupId={null}
+              activeGroupId={activeGroupId}
               onHover={(name) => highlight(inspected.id, name)}
               onToggleVisible={(name) => toggleVisible(inspected.id, name)}
+              onOpenLibrary={openGraphLibrary}
               onCreateGroup={inspectCreateGroup}
               onRenameGroup={inspectRenameGroup}
               onDeleteGroup={inspectDeleteGroup}
+              onEditGroupGraph={editGroupGraph}
               onMoveMaterial={inspectMoveMaterial}
               onPickGraph={inspectPickGraph}
             />

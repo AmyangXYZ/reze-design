@@ -16,8 +16,10 @@ export type UiState = {
   docks: boolean
   leftTab: string
   rightTab: string
-  /** 0.4.0 chrome: is the stack expanded, and which row is unfolded inside it. */
-  expanded: boolean
+  /** 0.4.0 chrome: which row is unfolded inside the stack. Whether the stack
+   *  itself is expanded is NOT here on purpose — that is a viewing posture, and
+   *  restoring it would greet a returning user with chrome that looks broken.
+   *  The device rule (collapsed on a coarse pointer) lives at the call site. */
   openRow: string | null
   /** The selected pane of each tabbed row — a go-to lands on a pane, so which
    *  pane you were last in is part of where you left off. */
@@ -34,7 +36,6 @@ function defaults(): UiState {
     docks: !coarse,
     leftTab: "materials",
     rightTab: "assets",
-    expanded: !coarse,
     openRow: null,
     stageTab: "ground",
     lightTab: "world",
