@@ -20,6 +20,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, 
 import {
   Atom,
   Camera,
+  Globe,
+  Grid3x3,
+  Users,
   Clapperboard,
   Code2,
   ChevronDown,
@@ -30,10 +33,7 @@ import {
   Plus,
   RefreshCw,
   Palette,
-  PanelLeftClose,
-  PanelLeft,
   Share2,
-  Sparkles,
   Sun,
   Video,
   Workflow,
@@ -48,6 +48,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { AccountButton } from "@/components/editor/account-panel"
 import { AnimPlayer } from "@/components/scene/anim-player"
+import { MaterialsPanel } from "@/components/scene/material-sidebar"
+import { RenderPanel } from "@/components/editor/render-panel"
 import { CastSwatch } from "@/components/editor/cast-swatch"
 import { CommandPalette } from "@/components/editor/command-palette"
 import type { PaletteItem } from "@/lib/command-search"
@@ -61,21 +63,26 @@ import { BackgroundLibrary } from "@/components/editor/background-library"
 import { ColorField } from "@/components/color-picker"
 import { useAudioClock } from "@/hooks/use-audio-clock"
 import { useEngine } from "@/hooks/use-engine"
+import { useRenderFraming } from "@/hooks/use-render-framing"
 import { useSceneSync } from "@/hooks/use-scene-sync"
 import { useZOrder } from "@/hooks/use-z-order"
 import { DEFAULT_SCENE } from "@/lib/default-scene"
 import { hydrateScene } from "@/lib/scene"
 import { expandUploadFiles } from "@/lib/uploads"
 import { GRADE_PRESETS, gradeSpec, recallIntensity, rememberIntensity } from "@/lib/grade"
-import { communityQuickPickItems, quickPickItems, type EffectItem, type GradeItem } from "@/lib/library"
-import { useCommunity } from "@/hooks/use-community"
+import { communityQuickPickItems, quickPickItems, type EffectItem, type GradeItem, type GraphItem } from "@/lib/library"
+import { communityItems, useCommunity } from "@/hooks/use-community"
 import { useDrafts } from "@/hooks/use-drafts"
 import { applyDefaults, BACKGROUND_EFFECTS } from "@/lib/background-effects"
 import { probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
+import type { ExportProgress } from "@/lib/video-export"
 import { castColour } from "@/lib/model-colour"
 import { castSourceFor } from "@/lib/cast-source"
 import { NEUTRAL_PALETTE, type CastPaletteId } from "@/lib/cast-palette"
 import { relFilePath, sceneFiles } from "@/lib/scene-files"
+import { loadDrafts } from "@/lib/drafts"
+import { GRAPH_LIBRARY } from "@/lib/materials"
+import { DEFAULT_GRAPH, type StyleGroup } from "reze-engine"
 import { WIND_MAX, windFreqFromSlider, windSliderFromFreq, type SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 
@@ -104,7 +111,13 @@ const FOLD = "duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
  * Written out rather than interpolated from a constant: Tailwind scans source
  * for literal class names, so a template string here produces no CSS at all.
  */
-const WORKSPACE = "left-[calc(17rem+1.5rem)] right-[calc(17rem+1.5rem)]"
+const WORKSPACE = "left-[calc(18rem+1.5rem)] right-[calc(18rem+1.5rem)]"
+
+/** A viewport a hair narrower than the target still counts as matching it. */
+const FRAME_ASPECT_TOL = 1.03
+
+/** Palette recents, persisted — Suggestions should remember across sessions. */
+const RECENTS_KEY = "reze-design.palette-recents"
 
 /** Each layer's presets. Static here — the real stack reads these from the
  *  document and the libraries; the shell only needs them to have names. */
@@ -115,11 +128,76 @@ const LAYERS = [
     icon: Camera,
     presets: ["Wide", "Portrait", "Low angle", "Follow"],
   },
-  { id: "stage", name: "Stage", icon: Mountain, presets: [] },
+  // "Environment", not "Stage": the row holds Stage | Ground | Background, and
+  // a container named after one of its tabs read as filing confusion.
+  { id: "stage", name: "Environment", icon: Mountain, presets: [] },
   { id: "grade", name: "Grade", icon: Contrast, presets: [] },
   { id: "light", name: "Light", icon: Sun, presets: [] },
-  { id: "physics", name: "Physics", icon: Atom, presets: [] },
 ] as const
+
+/**
+ * Every CONTROL in the dock, as data: where it lives (row, pane) and what it is
+ * called in both search languages. The palette's Settings section is generated
+ * from this, so "shadow" or 阴影 lands on Environment · Ground — searching a
+ * knob by name navigates to the knob, not to a guess.
+ */
+const DOCK_CONTROLS: {
+  id: string
+  en: string
+  zh: string
+  row: string
+  stageTab?: "stage" | "ground" | "background"
+  lightTab?: "world" | "sun"
+  keywords?: string[]
+}[] = [
+  { id: "stage-scale", en: "Stage scale", zh: "舞台缩放", row: "stage", stageTab: "stage" },
+  { id: "stage-position", en: "Stage position", zh: "舞台位置", row: "stage", stageTab: "stage" },
+  { id: "ground-color", en: "Ground color", zh: "地面颜色", row: "stage", stageTab: "ground" },
+  { id: "ground-opacity", en: "Ground opacity", zh: "地面不透明度", row: "stage", stageTab: "ground" },
+  { id: "shadow", en: "Shadow", zh: "阴影", row: "stage", stageTab: "ground" },
+  { id: "grid", en: "Grid lines", zh: "网格", row: "stage", stageTab: "ground" },
+  { id: "bg-color", en: "Background color", zh: "背景颜色", row: "stage", stageTab: "background" },
+  { id: "bg-image", en: "Background image", zh: "背景图片", row: "stage", stageTab: "background", keywords: ["360", "skybox", "backdrop"] },
+  { id: "bg-effect", en: "Background effect", zh: "背景特效", row: "stage", stageTab: "background", keywords: ["wgsl", "stars"] },
+  { id: "grade-preset", en: "Grade preset", zh: "调色预设", row: "grade" },
+  { id: "grade-intensity", en: "Grade intensity", zh: "调色强度", row: "grade" },
+  { id: "world-strength", en: "World strength", zh: "环境光强度", row: "light", lightTab: "world", keywords: ["ambient"] },
+  { id: "sun-strength", en: "Sun strength", zh: "太阳强度", row: "light", lightTab: "sun" },
+  { id: "sun-azimuth", en: "Sun azimuth", zh: "太阳方位", row: "light", lightTab: "sun" },
+  { id: "sun-elevation", en: "Sun elevation", zh: "太阳高度", row: "light", lightTab: "sun" },
+  { id: "glow", en: "Glow", zh: "泛光", row: "light", keywords: ["bloom", "辉光"] },
+  { id: "gravity", en: "Gravity", zh: "重力", row: "physics" },
+  { id: "wind", en: "Wind", zh: "风", row: "physics" },
+  { id: "wind-frequency", en: "Wind frequency", zh: "风频率", row: "physics" },
+  { id: "wind-direction", en: "Wind direction", zh: "风向", row: "physics" },
+]
+
+const ROW_META: Record<string, { icon: ComponentType<{ className?: string }>; name: string }> = {
+  camera: { icon: Camera, name: "Camera" },
+  stage: { icon: Mountain, name: "Environment" },
+  grade: { icon: Contrast, name: "Grade" },
+  light: { icon: Sun, name: "Light" },
+  physics: { icon: Atom, name: "Physics" },
+}
+const TAB_NAME: Record<string, string> = {
+  stage: "Stage",
+  ground: "Ground",
+  background: "Background",
+  world: "World",
+  sun: "Sun",
+}
+
+/** The generated Settings entries — the breadcrumb hint says where it lives. */
+const CONTROL_ITEMS: PaletteItem[] = DOCK_CONTROLS.map((c) => ({
+  id: `ctl-${c.id}`,
+  repeatable: true,
+  section: "setting" as const,
+  icon: ROW_META[c.row].icon,
+  label: c.en,
+  hint: ROW_META[c.row].name + (c.stageTab ?? c.lightTab ? ` · ${TAB_NAME[(c.stageTab ?? c.lightTab)!]}` : ""),
+  altLabels: [c.zh],
+  keywords: c.keywords,
+}))
 
 /** A stand-in command set — enough to judge ranking, sections and the ">" mode.
  *  The real one comes from the registry, where each entry owns its `when` and
@@ -140,8 +218,8 @@ const COMMANDS: PaletteItem[] = [
     icon: Workflow,
     label: "Edit shader graph",
     hint: "Dress",
-    altLabels: ["编辑着色器图", "シェーダーグラフを編集"],
-    keywords: ["wgsl", "material", "node", "しぇーだー"],
+    altLabels: ["编辑着色器图"],
+    keywords: ["wgsl", "material", "node"],
   },
   {
     id: "wgsl",
@@ -151,7 +229,7 @@ const COMMANDS: PaletteItem[] = [
     deep: true,
     icon: Code2,
     label: "Write a WGSL background effect",
-    altLabels: ["编写 WGSL 背景特效", "WGSL 背景エフェクトを書く"],
+    altLabels: ["编写 WGSL 背景特效"],
     keywords: ["shader", "effect", "background"],
   },
   {
@@ -162,7 +240,7 @@ const COMMANDS: PaletteItem[] = [
     icon: Clapperboard,
     label: "Export video",
     hint: "3840 × 2160",
-    altLabels: ["导出视频", "動画を書き出す"],
+    altLabels: ["导出视频"],
     keywords: ["mp4", "4k", "render", "encode"],
   },
   {
@@ -171,11 +249,11 @@ const COMMANDS: PaletteItem[] = [
     section: "command",
     icon: Share2,
     label: "Publish scene",
-    altLabels: ["发布场景", "シーンを公開"],
+    altLabels: ["发布场景"],
     keywords: ["share", "upload", "link"],
   },
   {
-    id: "stage",
+    id: "upload-stage",
     nextLikely: ["light", "grade"],
     section: "command",
     icon: Mountain,
@@ -190,8 +268,26 @@ const COMMANDS: PaletteItem[] = [
     icon: Music,
     label: "Upload music",
     hint: "One More Last Time",
-    altLabels: ["上传音乐", "音楽をアップロード"],
+    altLabels: ["上传音乐"],
     keywords: ["bgm", "audio", "mp3", "song"],
+  },
+  {
+    id: "cast",
+    repeatable: true,
+    section: "goto",
+    icon: Users,
+    label: "Cast",
+    altLabels: ["演员"],
+    keywords: ["model", "character", "模型"],
+  },
+  {
+    id: "clips",
+    repeatable: true,
+    section: "goto",
+    icon: Clapperboard,
+    label: "Clips",
+    altLabels: ["片段"],
+    keywords: ["camera motion", "music", "音乐"],
   },
   {
     id: "camera",
@@ -200,16 +296,34 @@ const COMMANDS: PaletteItem[] = [
     section: "goto",
     icon: Camera,
     label: "Camera",
-    altLabels: ["镜头", "カメラ"],
+    altLabels: ["镜头"],
   },
   {
-    id: "light",
+    id: "stage",
     repeatable: true,
-    nextLikely: ["grade", "bloom-int"],
     section: "goto",
-    icon: Sun,
-    label: "Light",
-    altLabels: ["灯光", "ライト"],
+    icon: Mountain,
+    label: "Stage",
+    altLabels: ["舞台"],
+    keywords: ["environment", "环境"],
+  },
+  {
+    id: "ground",
+    repeatable: true,
+    section: "goto",
+    icon: Grid3x3,
+    label: "Ground",
+    altLabels: ["地面"],
+    keywords: ["floor", "grid", "shadow"],
+  },
+  {
+    id: "background",
+    repeatable: true,
+    section: "goto",
+    icon: Mountain,
+    label: "Background",
+    altLabels: ["背景"],
+    keywords: ["backdrop", "skybox", "effect", "360"],
   },
   {
     id: "grade",
@@ -218,27 +332,45 @@ const COMMANDS: PaletteItem[] = [
     section: "goto",
     icon: Contrast,
     label: "Grade",
-    hint: "Neutral",
-    altLabels: ["调色", "グレード"],
+    altLabels: ["调色"],
   },
   {
-    id: "bloom-int",
+    id: "light",
     repeatable: true,
-    section: "setting",
-    icon: Sparkles,
-    label: "Bloom intensity",
-    hint: "0.05",
-    altLabels: ["泛光强度"],
-  },
-  {
-    id: "sun-elev",
-    repeatable: true,
-    section: "setting",
+    nextLikely: ["grade", "bloom-int"],
+    section: "goto",
     icon: Sun,
-    label: "Sun elevation",
-    hint: "21°",
-    altLabels: ["太阳高度"],
+    label: "Light",
+    altLabels: ["灯光"],
   },
+  {
+    id: "world",
+    repeatable: true,
+    section: "goto",
+    icon: Globe,
+    label: "World light",
+    altLabels: ["环境光"],
+    keywords: ["ambient"],
+  },
+  {
+    id: "sun",
+    repeatable: true,
+    section: "goto",
+    icon: Sun,
+    label: "Sun",
+    altLabels: ["太阳"],
+    keywords: ["azimuth", "elevation"],
+  },
+  {
+    id: "physics",
+    repeatable: true,
+    section: "goto",
+    icon: Atom,
+    label: "Physics",
+    altLabels: ["物理"],
+    keywords: ["gravity", "wind", "重力", "风"],
+  },
+  ...CONTROL_ITEMS,
 ]
 
 /**
@@ -279,6 +411,16 @@ function CastLine({ text, actions }: { text: ReactNode; actions: ReactNode }) {
 }
 
 
+/** Unique kebab id for a new (peeled / created) style group — main's own minting. */
+const newGroupId = (material: string, groups: StyleGroup[]): string => {
+  const base = material.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "group"
+  const ids = new Set(groups.map((g) => g.id))
+  if (!ids.has(base)) return base
+  let i = 1
+  while (ids.has(`${base}-${i}`)) i++
+  return `${base}-${i}`
+}
+
 /** The empty file-slot invitation — muted, underlined, and ITSELF the button.
  *  One visual verb for every asset kind: animation, camera, music, image. */
 function UploadInvite({
@@ -296,7 +438,10 @@ function UploadInvite({
 }) {
   return (
     <button
-      onClick={onClick}
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
       aria-label={aria ?? label}
       className={cn(
         "min-w-0 flex-1 cursor-pointer truncate text-left text-[13px] text-muted-foreground underline decoration-current/40 underline-offset-2 transition-colors hover:decoration-current hover:text-foreground",
@@ -343,7 +488,12 @@ function CastAction({
       variant="ghost"
       size="icon"
       aria-label={label}
-      onClick={onClick}
+      // stopPropagation: these sit inside rows that SELECT on click, and
+      // deleting a model must not also inspect it.
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
       disabled={disabled}
       className={cn(
         "shrink-0 rounded-chip text-muted-foreground hover:bg-white/10",
@@ -514,6 +664,10 @@ export default function Lab() {
     stages,
     addStageFromFiles,
     setStageTransform,
+    applyGroups,
+    upsertGroup,
+    highlight,
+    toggleVisible,
   } = useEngine(scene)
 
   // Motion names by model id. One clip per character is already the document's
@@ -590,13 +744,87 @@ export default function Lab() {
   }, [ready, scene, bundleFile, loadVmdFile, loadVmdUrl, engineRef])
   // Models that actually carry a clip — AnimPlayer drives the longest as master.
   const modelNames = useMemo(() => models.map((m) => m.id), [models])
-  // Music follows the model clock — the exact mirror main uses, shared.
+  // First model carrying a clip — the clock for audio AND the export.
+  const masterId = models.find((m) => animByModel[m.id])?.id ?? null
+  // Clip duration, polled until the engine reports it (main's approach — meta
+  // arrives whenever the VMD finishes parsing, so a one-shot read races it).
+  // Keyed by owner instead of reset-on-change: a stale value simply stops
+  // matching, so the effect never needs a synchronous zeroing write.
+  const [duration, setDuration] = useState<{ owner: string | null; value: number }>({ owner: null, value: 0 })
+  const masterClipName = masterId ? (animByModel[masterId]?.name ?? null) : null
+  const durationOwner = masterId && masterClipName ? masterId + "\0" + masterClipName : null
+  const animDuration = duration.owner !== null && duration.owner === durationOwner ? duration.value : 0
+  useEffect(() => {
+    if (!durationOwner || !masterId) return
+    const timer = setInterval(() => {
+      const d = engineRef.current?.getModel(masterId)?.getAnimationProgress().duration ?? 0
+      if (d > 0) {
+        setDuration({ owner: durationOwner, value: d })
+        clearInterval(timer)
+      }
+    }, 300)
+    return () => clearInterval(timer)
+  }, [durationOwner, masterId, engineRef])
+
+  // Export framing: letterbox preview, green screen, exporting — the shared
+  // hook, because an export in flight must survive whatever the chrome does.
+  const framing = useRenderFraming()
+  const [exportOpen, setExportOpen] = useState(false)
+  const exportZ = useZOrder(undefined, () => setExportOpen(false))
+  const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null)
+  // Pro settings live in a summoned RIGHT panel, never injected into the left
+  // dock — the dock is a fixed landmark, and furniture appearing in it behind
+  // your back is confusion, not convenience.
+  const [proPanel, setProPanel] = useState<"physics" | null>(null)
+  const proZ = useZOrder(undefined, () => setProPanel(null))
+  const exportPct =
+    exportProgress && exportProgress.phase === "video" && exportProgress.total > 0
+      ? Math.round((exportProgress.frame / exportProgress.total) * 100)
+      : null
+
+  // Pin the canvas to the framed aspect while composing/exporting (main's own
+  // effect): resize once, and only when the viewport genuinely cannot hold it.
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine || !ready) return
+    if (framing.exporting) return // the export pins the full output resolution itself
+    if (framing.activeFrame && !framing.frameVp) return
+    if (
+      framing.activeFrame &&
+      framing.frameVp &&
+      framing.activeFrame.aspect > (framing.frameVp.w / framing.frameVp.h) * FRAME_ASPECT_TOL
+    ) {
+      const dpr = window.devicePixelRatio || 1
+      engine.setRenderSize(
+        Math.round(framing.frameVp.w * dpr),
+        Math.round((framing.frameVp.w * dpr) / framing.activeFrame.aspect),
+      )
+    } else {
+      engine.setRenderSize(null)
+    }
+  }, [framing.activeFrame, framing.frameVp, framing.exporting, ready, engineRef])
+  // Frame rect in CSS pixels (the canvas fills the window; object-contain centres).
+  const frameRect =
+    framing.activeFrame && framing.frameVp
+      ? (() => {
+          const va = framing.frameVp.w / framing.frameVp.h
+          const a = framing.activeFrame.aspect
+          if (a <= va * FRAME_ASPECT_TOL && a >= va / FRAME_ASPECT_TOL)
+            return { x: 0, y: 0, w: framing.frameVp.w, h: framing.frameVp.h }
+          const w = a < va ? framing.frameVp.h * a : framing.frameVp.w
+          const h = a < va ? framing.frameVp.h : framing.frameVp.w / a
+          return { x: (framing.frameVp.w - w) / 2, y: (framing.frameVp.h - h) / 2, w, h }
+        })()
+      : null
+
+  // Music follows the model clock — the exact mirror main uses, shared. Silent
+  // while an export runs; the export mixes its own audio.
   const audioRef = useRef<HTMLAudioElement | null>(null)
   useAudioClock({
     engineRef,
-    masterId: models.find((m) => animByModel[m.id])?.id ?? null,
+    masterId,
     audioRef,
-    disabled: false,
+    disabled: framing.exporting,
   })
 
   // Only one row open at a time — that is what lets presets-then-parameters sit
@@ -637,6 +865,10 @@ export default function Lab() {
 
   const stage = stages[0] ?? null
   const stageSummary = stage ? displayName(stage.file) : "Ground"
+  // Controlled (not key-remounted): go-to deep-links need to land on a pane —
+  // "Background" opens this row on its background tab.
+  const [stageTab, setStageTab] = useState<"stage" | "ground" | "background">(stage ? "stage" : "ground")
+  const [lightTab, setLightTab] = useState<"world" | "sun">("world")
 
   // Sun, world and glow — seeded from the document, which is ALSO what the
   // Engine constructor was handed, so the sliders open already agreeing with
@@ -722,6 +954,7 @@ export default function Lab() {
     backgroundEffect: bgEffect,
     hasBackdrop: !!bgImage && !bgImage.dome,
     skybox: bgImage?.dome ? bgImage.file : null,
+    greenScreen: framing.liveGreenScreen,
   })
 
   // Effects: the same selection model as grade, one library over.
@@ -765,6 +998,77 @@ export default function Lab() {
   // raises it back. No Escape closer — Escape keeps closing the topmost
   // LIBRARY; the stack walk skips surfaces that never close.
   const dockZ = useZOrder()
+  const inspectorZ = useZOrder()
+
+  // ── Inspect a cast member ──
+  // Clicking a cast row selects the model and opens the right dock on ITS
+  // style groups — the inspector is about what you picked. The real
+  // MaterialsPanel mounts, not a lite copy: tree, drag-to-regroup, rename,
+  // visibility, hover-highlight, per-group look QuickPick. Its two deep doors
+  // (graph library, node editor) stay hidden until those surfaces port.
+  const [inspectedId, setInspectedId] = useState<string | null>(null)
+  const inspected = models.find((m) => m.id === inspectedId) ?? null
+  const inspectedGroups = useMemo(
+    () => (inspectedId ? (groupsByModel[inspectedId] ?? []) : []),
+    [groupsByModel, inspectedId],
+  )
+  const inspectGroupsApply = useCallback(
+    (next: StyleGroup[]) => {
+      if (inspectedId) void applyGroups(inspectedId, next)
+    },
+    [applyGroups, inspectedId],
+  )
+  const inspectCreateGroup = useCallback((): string => {
+    const id = newGroupId("group", inspectedGroups)
+    const labels = new Set(inspectedGroups.map((g) => g.label ?? g.id))
+    let label = "New group"
+    for (let n = 2; labels.has(label); n++) label = `New group ${n}`
+    inspectGroupsApply([
+      ...inspectedGroups,
+      { id, label, materials: [], graph: structuredClone(DEFAULT_GRAPH), renderClass: "auto" },
+    ])
+    return id
+  }, [inspectedGroups, inspectGroupsApply])
+  const inspectRenameGroup = useCallback(
+    (id: string, label: string) =>
+      inspectGroupsApply(inspectedGroups.map((g) => (g.id === id ? { ...g, label: label.trim() || id } : g))),
+    [inspectedGroups, inspectGroupsApply],
+  )
+  const inspectDeleteGroup = useCallback(
+    (id: string) => {
+      const g = inspectedGroups.find((x) => x.id === id)
+      if (!g || g.renderClass === "eye" || g.renderClass === "hair") return // Eye/Hair are pinned
+      inspectGroupsApply(inspectedGroups.filter((x) => x.id !== id))
+    },
+    [inspectedGroups, inspectGroupsApply],
+  )
+  const inspectMoveMaterial = useCallback(
+    (material: string, targetId: string | null) => {
+      const next = inspectedGroups.map((g) => ({ ...g, materials: g.materials.filter((m) => m !== material) }))
+      if (targetId) {
+        const target = next.find((g) => g.id === targetId)
+        if (target) target.materials = [...target.materials, material]
+      }
+      inspectGroupsApply(next)
+    },
+    [inspectedGroups, inspectGroupsApply],
+  )
+  const inspectPickGraph = useCallback(
+    (groupId: string, graphName: string) => {
+      if (!inspectedId) return
+      const entry = [...loadDrafts().graph, ...communityItems("graph"), ...GRAPH_LIBRARY].find(
+        (e) => e.name === graphName,
+      ) as GraphItem | undefined
+      const group = inspectedGroups.find((g) => g.id === groupId)
+      if (!entry || !group) return
+      const updated: StyleGroup = { ...group, graph: { ...entry.payload.graph, name: entry.name } }
+      // Grouped materials recompile through upsert; an EMPTY group has nothing
+      // to compile and just records the choice — main's own split.
+      if (updated.materials.length) void upsertGroup(inspectedId, updated)
+      else inspectGroupsApply(inspectedGroups.map((x) => (x.id === groupId ? updated : x)))
+    },
+    [inspectedId, inspectedGroups, inspectGroupsApply, upsertGroup],
+  )
   // ── Model upload ──
   // "Replace" is an upload too — same picker, same parsing, only the target
   // differs: a new slot, or an existing one that keeps its position and clip.
@@ -790,7 +1094,10 @@ export default function Lab() {
   const loadPicked = async (files: File[], pmx: File, target: ModelTarget) => {
     setUpload(null)
     try {
-      if (target.mode === "stage") await addStageFromFiles(files, pmx)
+      if (target.mode === "stage") {
+        await addStageFromFiles(files, pmx)
+        setStageTab("stage")
+      }
       else if (target.mode === "replace") {
         const newId = await replaceModelFromFiles(target.id, files, pmx)
         adoptReplacedModel(target.id, newId)
@@ -913,7 +1220,18 @@ export default function Lab() {
   }, [models, scene, groupsByModel])
 
   const [paletteOpen, setPaletteOpen] = useState(false)
-  const [recentIds, setRecentIds] = useState<string[]>([])
+  // Suggestions survive the session: what you reached for yesterday is still
+  // the best predictor today. Stale ids (a renamed command) are filtered on
+  // load rather than trusted.
+  const [recentIds, setRecentIds] = useState<string[]>(() => {
+    if (typeof window === "undefined") return []
+    try {
+      const stored: unknown = JSON.parse(window.localStorage.getItem(RECENTS_KEY) ?? "[]")
+      return Array.isArray(stored) ? stored.filter((id): id is string => COMMANDS.some((c) => c.id === id)) : []
+    } catch {
+      return []
+    }
+  })
   // What the list WILL say next time, held back deliberately — see openPalette.
   const nextRecent = useRef<string[]>([])
   // Bumped on every open so the palette remounts with fresh query/selection.
@@ -944,6 +1262,24 @@ export default function Lab() {
     return () => window.removeEventListener("keydown", onKey)
   }, [openPalette])
 
+  // Go-to: expand the dock, open the row, land on the right pane, scroll it
+  // into view once the expansion has rendered.
+  const gotoSection = useCallback(
+    (target: string, tabs?: { stage?: "stage" | "ground" | "background"; light?: "world" | "sun" }) => {
+      setExpanded(true)
+      // A Scene row opens; a group anchor ("group-cast") only scrolls.
+      const isRow = LAYERS.some((l) => l.id === target)
+      if (isRow) setOpenRow(target)
+      if (tabs?.stage) setStageTab(tabs.stage)
+      if (tabs?.light) setLightTab(tabs.light)
+      const domId = isRow ? `layer-${target}` : target
+      requestAnimationFrame(() =>
+        document.getElementById(domId)?.scrollIntoView({ block: "nearest", behavior: "smooth" }),
+      )
+    },
+    [],
+  )
+
   const runCommand = useCallback(
     (item: PaletteItem) => {
       // Most recent first, no duplicates, five deep — enough to be useful
@@ -951,9 +1287,49 @@ export default function Lab() {
       // rather than state so nothing re-renders while the dialog closes.
       const base = nextRecent.current.length ? nextRecent.current : recentIds
       nextRecent.current = [item.id, ...base.filter((id) => id !== item.id)].slice(0, 5)
+      // Stored immediately even though the STATE commit waits for the next
+      // open (the no-reshuffle rule) — a refresh must not lose the last run.
+      try {
+        window.localStorage.setItem(RECENTS_KEY, JSON.stringify(nextRecent.current))
+      } catch {
+        /* storage full or blocked — suggestions just stay session-local */
+      }
+      // Real commands, by id — the registry will own this table; until then the
+      // page is the registry.
+      if (item.id === "export") {
+        setInspectedId(null)
+        setProPanel(null)
+        setExportOpen(true)
+      }
+      else if (item.id === "cast") gotoSection("group-cast")
+      else if (item.id === "clips") gotoSection("group-clips")
+      else if (item.id === "camera") gotoSection("camera")
+      else if (item.id === "stage" || item.id === "upload-stage") gotoSection("stage", { stage: "stage" })
+      else if (item.id === "ground") gotoSection("stage", { stage: "ground" })
+      else if (item.id === "background") gotoSection("stage", { stage: "background" })
+      else if (item.id === "grade") gotoSection("grade")
+      else if (item.id === "light") gotoSection("light")
+      else if (item.id === "world") gotoSection("light", { light: "world" })
+      else if (item.id === "sun") gotoSection("light", { light: "sun" })
+      else if (item.id === "physics") {
+        setInspectedId(null)
+        setExportOpen(false)
+        setProPanel("physics")
+      }
+      else if (item.id.startsWith("ctl-")) {
+        const c = DOCK_CONTROLS.find((x) => `ctl-${x.id}` === item.id)
+        if (!c) return
+        // Physics controls live in the summoned right panel, not the dock.
+        if (c.row === "physics") {
+          setInspectedId(null)
+          setExportOpen(false)
+          setProPanel("physics")
+        }
+        else gotoSection(c.row, { stage: c.stageTab, light: c.lightTab })
+      }
       item.run?.()
     },
-    [recentIds],
+    [recentIds, gotoSection],
   )
 
   return (
@@ -972,14 +1348,30 @@ export default function Lab() {
         </div>
       )}
 
+      {frameRect && (
+        <div className="pointer-events-none absolute inset-0 z-10">
+          <div className="absolute bg-black/45" style={{ left: 0, right: 0, top: 0, height: frameRect.y }} />
+          <div className="absolute bg-black/45" style={{ left: 0, right: 0, bottom: 0, height: frameRect.y }} />
+          <div className="absolute bg-black/45" style={{ left: 0, top: frameRect.y, width: frameRect.x, height: frameRect.h }} />
+          <div className="absolute bg-black/45" style={{ right: 0, top: frameRect.y, width: frameRect.x, height: frameRect.h }} />
+          {/* Capture-tool convention: amber = framed (composing), red = recording. */}
+          <div
+            className={cn("absolute rounded-sm border", framing.exporting ? "border-red-500/90" : "border-amber-400/80")}
+            style={{ left: frameRect.x, top: frameRect.y, width: frameRect.w, height: frameRect.h }}
+          />
+        </div>
+      )}
+
       {/* ── Top bar ──
           Right cluster only. The brand belongs to the stack while the stack is
           open — BrandPill's own asHeader/collapsed split, which is also what
           stops a pill and a panel of different widths sitting on top of each
           other. */}
       <div className="pointer-events-none absolute top-3 right-3 left-3 flex items-start gap-2">
+        {/* Same 17rem as the open panel: this is a DROPDOWN, not a sidebar —
+            expanding only grows downward, so nothing ever shifts sideways. */}
         {!expanded && (
-          <div className={cn(PILL, "pointer-events-auto flex h-10 items-center gap-1.5 pr-1.5 pl-2")}>
+          <div className={cn(PILL, "pointer-events-auto flex h-10 w-[18rem] items-center gap-1.5 pr-1.5 pl-2")}>
             <span className="flex size-7 shrink-0 items-center justify-center text-pink-400">
               <WandSparkles className="size-4.5" />
             </span>
@@ -993,15 +1385,17 @@ export default function Lab() {
                 what stops its text jumping when it becomes editable), so it
                 needs the same px-1.5 and one pixel back to put the two glyph
                 runs in the same place. */}
-            <SceneName name={sceneName} onRename={setSceneName} className="-ml-px truncate px-1.5" />
+            <SceneName name={sceneName} onRename={setSceneName} className="-ml-px min-w-0 flex-1 truncate px-1.5" />
+            {/* Chevron, not a panel icon: it points where the content will go,
+                the same law as the timeline's toggle. */}
             <Button
               variant="ghost"
               size="icon"
               onClick={() => setExpanded(true)}
-              aria-label="Show panels"
-              className="ml-1 size-7 shrink-0 rounded-lg text-muted-foreground hover:bg-white/5 hover:text-foreground"
+              aria-label="Expand panel"
+              className="ml-auto size-7 shrink-0 rounded-lg text-muted-foreground hover:bg-white/5 hover:text-foreground"
             >
-              <PanelLeft className="size-4" />
+              <ChevronDown className="size-4" />
             </Button>
           </div>
         )}
@@ -1028,7 +1422,7 @@ export default function Lab() {
             "pointer-events-auto h-10 gap-2 px-3.5 text-xs font-medium text-muted-foreground hover:bg-white/5 hover:text-foreground",
           )}
         >
-          Search or run
+          Search commands
           {/* A key cap, so it should read as one: fixed height, centred, and the
               two glyphs spaced by a real gap rather than letter-spacing — which
               adds its space AFTER the K and pushes the pair off-centre. */}
@@ -1094,7 +1488,13 @@ export default function Lab() {
         }}
       />
 
-      <audio ref={audioRef} src={musicClip?.url || undefined} preload="auto" playsInline className="hidden" />
+      <audio
+        ref={audioRef}
+        src={musicClip?.url || undefined}
+        preload="auto"
+        playsInline
+        className="hidden"
+      />
 
       <input
         ref={bgImageInput}
@@ -1197,7 +1597,7 @@ export default function Lab() {
           // 5.5rem reserve cleared a transport that CENTRED under the dock; the
           // timeline's side insets ended that overlap, so the reserve was only
           // clipping rows short — a half-visible Physics row at the bottom edge.
-          className={cn("top-3 left-3 flex max-h-[calc(100%-1.5rem)] w-[17rem] flex-col overflow-hidden")}
+          className={cn("top-3 left-3 flex max-h-[calc(100%-1.5rem)] w-[18rem] flex-col overflow-hidden")}
           style={{ zIndex: dockZ.z }}
           onPointerDownCapture={dockZ.onPointerDownCapture}
           onFocusCapture={dockZ.onFocusCapture}
@@ -1230,10 +1630,10 @@ export default function Lab() {
                 variant="ghost"
                 size="icon"
                 onClick={() => setExpanded(false)}
-                aria-label="Hide panels"
+                aria-label="Collapse panel"
                 className="ml-auto size-7 shrink-0 rounded-lg text-muted-foreground hover:bg-white/5 hover:text-foreground"
               >
-                <PanelLeftClose className="size-4" />
+                <ChevronUp className="size-4" />
               </Button>
             </div>
             {/* Pulled up under the wordmark past the 6px of bottom padding the
@@ -1252,6 +1652,7 @@ export default function Lab() {
           <div className="min-h-0 flex-1 overflow-y-auto">
             <StackGroup
               label="Cast"
+              domId="group-cast"
               action={
                 <CastAction
                   icon={Plus}
@@ -1280,7 +1681,19 @@ export default function Lab() {
                   // list, motion rows would bind to their models by row order
                   // alone, which is the kind of invisible convention that breaks
                   // at three models.
-                  <div key={m.id} className="flex items-center gap-2.5 px-4 py-1.5">
+                  <div
+                    key={m.id}
+                    onClick={() => {
+                      // One right panel at a time — inspecting evicts the others.
+                      setExportOpen(false)
+                      setProPanel(null)
+                      setInspectedId((cur) => (cur === m.id ? null : m.id))
+                    }}
+                    className={cn(
+                      "flex cursor-pointer items-center gap-2.5 px-4 py-1.5 transition-colors",
+                      inspectedId === m.id && "bg-white/[0.06]",
+                    )}
+                  >
                     {palettes[m.id] ? (
                       <CastSwatch palette={palettes[m.id]} />
                     ) : (
@@ -1365,7 +1778,7 @@ export default function Lab() {
                 intakes in the dock — model and motion on the cast rows, stage
                 on its Scene row — and the two with no owner land here. The
                 timeline lanes show WHEN these play; this is where they load. */}
-            <StackGroup label="Clips">
+            <StackGroup label="Clips" domId="group-clips">
               <ClipRow
                 icon={Video}
                 clip={cameraClip}
@@ -1388,6 +1801,7 @@ export default function Lab() {
               {LAYERS.map((l) => (
                 <LayerRow
                   key={l.id}
+                  domId={`layer-${l.id}`}
                   icon={l.icon}
                   name={l.name}
                   summary={l.id === "stage" ? stageSummary : l.id === "grade" ? grade.preset : picked[l.id]}
@@ -1407,7 +1821,7 @@ export default function Lab() {
                     // ground), so the ground pane greys under a stage instead
                     // of a tab click ever deleting anything. Keyed so loading a
                     // stage lands you on its pane.
-                    <Tabs key={stage ? "s" : "g"} defaultValue={stage ? "stage" : "ground"}>
+                    <Tabs value={stageTab} onValueChange={(v) => setStageTab(v as typeof stageTab)}>
                       {/* Full-width and pulled up under the title: it is a badge
                           that switches panes, not a control in the pane. */}
                       <TabsList className="-mt-1 mb-2 w-full">
@@ -1591,7 +2005,7 @@ export default function Lab() {
                           World first: the ambient wash is the broader stroke.
                           Glow sits BELOW the tabs — bloom belongs to neither
                           source, and it is Bloom's whole surviving surface. */}
-                      <Tabs defaultValue="world">
+                      <Tabs value={lightTab} onValueChange={(v) => setLightTab(v as typeof lightTab)}>
                         <TabsList className="-mt-1 mb-2 w-full">
                           <TabsTrigger value="world" className="flex-1">World</TabsTrigger>
                           <TabsTrigger value="sun" className="flex-1">Sun</TabsTrigger>
@@ -1692,7 +2106,148 @@ export default function Lab() {
                         </button>
                       </div>
                     </>
-                  ) : l.id === "physics" ? (
+                  ) : (
+                    <SliderRow
+                      label="Amount"
+                      value={0.5}
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      onChange={() => {}}
+                      fmt={(v) => v.toFixed(2)}
+                    />
+                  )}
+                </LayerRow>
+              ))}
+            </StackGroup>
+          </div>
+        </Surface>
+      )}
+
+      {/* ── Inspector: the selected cast member's materials ── */}
+      {inspected && (
+        <Surface
+          placement="side"
+          // Starts BELOW the top-right pills (top-3 + their h-10 + 8px) and hugs
+          // its content like the left dock, capped above the transport: 100%
+          // minus 3.75rem top minus 4rem transport reserve. 18rem, symmetric
+          // with the left dock, sized to MEET the pill cluster's natural width
+          // — the pills stay content-hugging; the docks come to them.
+          className="top-[3.75rem] bottom-auto max-h-[calc(100%-7.75rem)] w-[18rem] animate-[panel-in_0.2s_cubic-bezier(0.32,0.72,0,1)]"
+          style={{ zIndex: inspectorZ.z }}
+          onPointerDownCapture={inspectorZ.onPointerDownCapture}
+          onFocusCapture={inspectorZ.onFocusCapture}
+        >
+          <div className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 py-2.5">
+            {palettes[inspected.id] ? (
+              <CastSwatch palette={palettes[inspected.id]} className="size-5" />
+            ) : (
+              <Skeleton className="size-5 shrink-0 rounded-interior" />
+            )}
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-[13px] font-medium">{displayName(inspected.file)}</span>
+              {/* The stats found their promised home — facts live in the
+                  inspector, not under the cast name. */}
+              <span className="truncate text-xs text-muted-foreground">
+                {inspected.stats.materials} materials · {inspected.stats.bones} bones
+              </span>
+            </span>
+            <CastAction icon={X} label="Close inspector" onClick={() => setInspectedId(null)} />
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <MaterialsPanel
+              modelTabs={models.map((m) => ({ id: m.id, file: m.file, active: m.id === inspected.id }))}
+              onSelectModel={setInspectedId}
+              materials={inspected.materials}
+              groups={inspectedGroups}
+              activeGroupId={null}
+              onHover={(name) => highlight(inspected.id, name)}
+              onToggleVisible={(name) => toggleVisible(inspected.id, name)}
+              onCreateGroup={inspectCreateGroup}
+              onRenameGroup={inspectRenameGroup}
+              onDeleteGroup={inspectDeleteGroup}
+              onMoveMaterial={inspectMoveMaterial}
+              onPickGraph={inspectPickGraph}
+            />
+          </div>
+        </Surface>
+      )}
+
+      {/* ── Export ──
+          MOUNTED even while closed: the export runs inside RenderPanel, and
+          unmounting would kill a render in flight. Close hides; the pill below
+          carries the progress; completion downloads by itself (iMovie-quiet),
+          so nothing reopens. */}
+      {(
+        <Surface
+          placement="side"
+          // Starts BELOW the top-right pills (top-3 + their h-10 + 8px) and hugs
+          // its content like the left dock, capped above the transport: 100%
+          // minus 3.75rem top minus 4rem transport reserve.
+          className={cn(
+            "top-[3.75rem] bottom-auto max-h-[calc(100%-7.75rem)] w-[18rem]",
+            "transition-[opacity,transform,visibility] duration-200 ease-[cubic-bezier(0.32,0.72,0,1)]",
+            !exportOpen && "invisible translate-x-2 opacity-0",
+          )}
+          style={{ zIndex: exportZ.z }}
+          onPointerDownCapture={exportZ.onPointerDownCapture}
+          onFocusCapture={exportZ.onFocusCapture}
+        >
+          <div className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 py-2.5">
+            <span className="min-w-0 flex-1 truncate text-[13px] font-medium">Export</span>
+            <CastAction icon={X} label="Close export" onClick={() => setExportOpen(false)} />
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <RenderPanel
+              active={exportOpen}
+              engineRef={engineRef}
+              canvasRef={canvasRef}
+              modelName={masterId ?? (models[0]?.id ?? "")}
+              extraModelNames={models.filter((m) => animByModel[m.id] && m.id !== masterId).map((m) => m.id)}
+              sceneName={sceneName}
+              animName={masterClipName}
+              animDuration={animDuration}
+              backdrop={bgImage && !bgImage.dome ? bgImage : null}
+              backgroundColor={settings.background.color}
+              musicUrl={musicClip?.url ?? null}
+              greenScreen={framing.greenScreen}
+              onGreenScreenChange={framing.setGreenScreen}
+              onExportingChange={framing.setExporting}
+              onFramePreviewChange={framing.handleFramePreview}
+              onProgressChange={setExportProgress}
+            />
+          </div>
+        </Surface>
+      )}
+
+      {/* A running export, folded to a pill while its panel is hidden. Click
+          reopens; no cancel here — destructive actions stay in the panel they
+          belong to, and the pill simply vanishes when the download lands. */}
+      {framing.exporting && !exportOpen && (
+        <button
+          onClick={() => setExportOpen(true)}
+          className={cn(PILL, "absolute right-3 bottom-3 flex h-10 cursor-pointer items-center gap-2 px-4 text-[13px] text-foreground")}
+        >
+          <span className="size-2 animate-pulse rounded-full bg-red-500" />
+          Exporting{exportPct !== null ? ` ${exportPct}%` : "…"}
+        </button>
+      )}
+
+      {/* ── Pro settings, summoned by search ── */}
+      {proPanel === "physics" && (
+        <Surface
+          placement="side"
+          className="top-[3.75rem] bottom-auto max-h-[calc(100%-7.75rem)] w-[18rem] animate-[panel-in_0.2s_cubic-bezier(0.32,0.72,0,1)]"
+          style={{ zIndex: proZ.z }}
+          onPointerDownCapture={proZ.onPointerDownCapture}
+          onFocusCapture={proZ.onFocusCapture}
+        >
+          <div className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 py-2.5">
+            <Atom className="size-4 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate text-[13px] font-medium">Physics</span>
+            <CastAction icon={X} label="Close physics" onClick={() => setProPanel(null)} />
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-2 pb-3 text-muted-foreground">
                     <>
                       <SliderRow
                         label="Gravity"
@@ -1737,20 +2292,6 @@ export default function Lab() {
                         fmt={(v) => `${v.toFixed(0)}°`}
                       />
                     </>
-                  ) : (
-                    <SliderRow
-                      label="Amount"
-                      value={0.5}
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      onChange={() => {}}
-                      fmt={(v) => v.toFixed(2)}
-                    />
-                  )}
-                </LayerRow>
-              ))}
-            </StackGroup>
           </div>
         </Surface>
       )}

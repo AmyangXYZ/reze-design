@@ -100,14 +100,17 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   /** Hover a material to highlight it on the model (null clears). */
   onHover: (name: string | null) => void
   onToggleVisible: (name: string) => void
-  /** Open the shader-graph library for a style group (browse / apply / edit its graph). */
-  onOpenLibrary: (groupId: string | null) => void
+  /** Open the shader-graph library for a style group (browse / apply / edit its
+   *  graph). Optional: a host without the library hides the door; the per-group
+   *  QuickPick still assigns looks. */
+  onOpenLibrary?: (groupId: string | null) => void
   /** Creates the group and returns its id — the panel opens rename mode on it. */
   onCreateGroup: () => string
   onRenameGroup: (id: string, label: string) => void
   onDeleteGroup: (id: string) => void
-  /** Open the node-graph editor on a group's shader graph. */
-  onEditGroupGraph: (id: string) => void
+  /** Open the node-graph editor on a group's shader graph. Optional — hosts
+   *  without the floating editor hide the edit affordances. */
+  onEditGroupGraph?: (id: string) => void
   /** Reassign a material to a group (target=null → ungroup). */
   onMoveMaterial: (material: string, targetId: string | null) => void
   /** Apply a library shader graph to a style group by name */
@@ -294,6 +297,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
         <IconAction icon={FolderPlus} label={t.materials.newGroup} onClick={() => setRenaming(onCreateGroup())} />
         <span className="flex-1" />
         {/* Library at the right end, matching Grade and Background. */}
+        {onOpenLibrary && (
         <button
           onClick={() => onOpenLibrary(libraryTarget)}
           className="ml-1 flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-white"
@@ -301,6 +305,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
           <Workflow className="size-3.5" />
           {t.materials.library}
         </button>
+        )}
       </div>
 
       {/* Scrollable, but scrollbar hidden (wheel/trackpad scroll works) so rows can sit close */}
@@ -379,8 +384,8 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                           label={g.graph.name === ENGINE_DEFAULT_GRAPH ? t.materials.defaultGraph : undefined}
                           items={itemsForGroup(g)}
                           onPick={(name) => onPickGraph(g.id, name)}
-                          onBrowse={() => onOpenLibrary(g.id)}
-                          onEdit={() => onEditGroupGraph(g.id)}
+                          onBrowse={onOpenLibrary ? () => onOpenLibrary(g.id) : undefined}
+                          onEdit={onEditGroupGraph ? () => onEditGroupGraph(g.id) : undefined}
                           placeholder={g.graph.name}
                         />
                       </span>

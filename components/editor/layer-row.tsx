@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils"
 export function LayerRow({
   icon: Icon,
   name,
+  domId,
   /** What this layer is SET TO. Omitted when the row has nothing to report. */
   summary,
   open,
@@ -36,13 +37,15 @@ export function LayerRow({
 }: {
   icon: ComponentType<{ className?: string }>
   name: string
+  /** Addressable for go-to: the palette scrolls a row into view by this id. */
+  domId?: string
   summary?: string | null
   open: boolean
   onToggle: () => void
   children: ReactNode
 }) {
   return (
-    <div className="border-t border-line first:border-t-0">
+    <div id={domId} className="border-t border-line first:border-t-0">
       <button
         onClick={onToggle}
         aria-expanded={open}
@@ -131,6 +134,7 @@ export function PresetChips({
  *  visibly loose at 14 — spacing has to come DOWN as size goes up. */
 export function StackGroup({
   label,
+  domId,
   /** Acts on the whole group — adding to it. Revealed by hovering ANYWHERE in
    *  the group, not only the label: the rows are what you are looking at when
    *  you decide you want another one. */
@@ -138,11 +142,13 @@ export function StackGroup({
   children,
 }: {
   label: string
+  /** Addressable for go-to, like LayerRow's. */
+  domId?: string
   action?: ReactNode
   children: ReactNode
 }) {
   return (
-    <div className="group/stack">
+    <div id={domId} className="group/stack">
       {/* Tight under the label, looser above it. The whitespace has to say which
           rows the label OWNS — a label floating equidistant between the block
           above and the block below belongs to neither. */}
