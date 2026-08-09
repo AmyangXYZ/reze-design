@@ -36,8 +36,13 @@ export type PaletteItem = {
   hint?: string
   /** Opens a deep surface (shader graph, WGSL, studio) — tinted in the list. */
   deep?: boolean
-  /** Offered under Suggestions before this user has a history of their own. */
-  suggested?: boolean
+  /**
+   * Offered under Suggestions before this user has a history of their own.
+   * `"key"` is the stronger tier: a headline feature with no other door in the
+   * chrome, which must stay one keystroke away even once history fills the
+   * list. Use it sparingly — everything cannot be the exception.
+   */
+  suggested?: boolean | "key"
   /**
    * Worth doing again soon. Tweaking a graph or a setting is; exporting the
    * video you just exported is not — the default is false, so a command drops
@@ -66,6 +71,10 @@ const W = {
   successor: 5,
   /** Hand-picked as a good first thing to see. */
   curated: 2,
+  /** A headline feature the palette is the ONLY door to (materials). Sits above
+   *  every recency step but the freshest, so it stays in the list for good
+   *  rather than aging out behind whatever you happen to have run lately. */
+  keyFeature: 5,
 } as const
 
 /**
@@ -92,7 +101,7 @@ export function suggestionsFor(items: PaletteItem[], history: string[]): Palette
       let score = 0
       if (i >= 0) score += Math.max(0, W.recencyTop - i * W.recencyDecay)
       if (last?.nextLikely?.includes(item.id)) score += W.successor
-      if (item.suggested) score += W.curated
+      if (item.suggested) score += item.suggested === "key" ? W.keyFeature : W.curated
       // The one you just ran, and it is not the repeating kind.
       if (item.id === last?.id && !item.repeatable) score = -1
       return { item, score }

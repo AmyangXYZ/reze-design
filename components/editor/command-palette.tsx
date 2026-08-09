@@ -99,10 +99,18 @@ export function CommandPalette({
 
   const groups: { key: string; label: string; items: PaletteItem[] }[] = []
   if (suggested.length) groups.push({ key: "suggested", label: SECTION_LABEL.suggested, items: suggested })
+  const sectioned: { key: string; label: string; items: PaletteItem[] }[] = []
   for (const section of ["command", "goto", "setting"] as CommandSection[]) {
     const inSection = results.filter((i) => i.section === section)
-    if (inSection.length) groups.push({ key: section, label: SECTION_LABEL[section], items: inSection })
+    if (inSection.length) sectioned.push({ key: section, label: SECTION_LABEL[section], items: inSection })
   }
+  // `results` is rank-ordered, but grouping by section re-buries it: with a
+  // fixed command→goto→setting order, a weak keyword hit in Commands sat above
+  // an exact label match in Go to — and since the keyboard starts on the first
+  // row, Enter ran the wrong thing (searching "material" ran a placeholder).
+  // While searching, the section holding the best match comes first.
+  if (query.trim()) sectioned.sort((a, b) => results.indexOf(a.items[0]) - results.indexOf(b.items[0]))
+  groups.push(...sectioned)
 
   let index = 0
 
@@ -127,10 +135,13 @@ export function CommandPalette({
           />
         </div>
 
-        {/* 21.5rem = 9 rows + 2 section headers, landing on a boundary so the
-            list never ends mid-row. Generous because this is the main entrance
-            to everything the app can do, not a dropdown. */}
-        <div ref={listRef} className="max-h-[21.5rem] overflow-y-auto border-t border-line py-1">
+        {/* 22rem = 9 rows (2rem) + 2 section headers (1.75rem) + this box's own
+            py-1 (0.5rem). The padding is the point: max-height bounds the BORDER
+            box, so the old 21.5rem — content-only arithmetic — spent half a rem
+            on padding and clipped the ninth row in half. Landing on a row
+            boundary is what stops the list ending mid-row. Generous because this
+            is the main entrance to everything the app can do, not a dropdown. */}
+        <div ref={listRef} className="max-h-[22rem] overflow-y-auto border-t border-line py-1">
           {flat.length === 0 && <p className="px-3.5 py-4 text-sm text-muted-foreground">Nothing matches.</p>}
 
           {groups.map((g) => (

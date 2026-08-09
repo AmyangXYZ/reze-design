@@ -89,6 +89,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   onEditGroupGraph,
   onMoveMaterial,
   onPickGraph,
+  dense,
 }: {
   /** All loaded models — the strip only renders with 2+. The panel body always shows the ACTIVE */
   modelTabs: { id: string; file: string; active: boolean }[]
@@ -115,6 +116,11 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   onMoveMaterial: (material: string, targetId: string | null) => void
   /** Apply a library shader graph to a style group by name */
   onPickGraph: (groupId: string, graphName: string) => void
+  /** Trim the outer vertical padding. The default 3.5 rhythm exists to line the
+   *  panel up with the Scene tab inside the dock; a panel that is a surface of
+   *  its own already has the header's rule and its own rounded edge doing that
+   *  work, and the full gutter reads as slack. */
+  dense?: boolean
   /** Discard hand-made grouping and re-derive it from the scene document. */
 }) {
   const t = useT()
@@ -269,7 +275,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
     <>
       {/* ── Model strip (multi-model scenes): which model this panel edits ── */}
       {modelTabs.length > 1 && (
-        <div className="flex flex-wrap gap-1 px-4 pt-3.5">
+        <div className={cn("flex flex-wrap gap-1 px-4", dense ? "pt-2" : "pt-3.5")}>
           {modelTabs.map((m) => (
             <button
               key={m.id}
@@ -289,7 +295,9 @@ export const MaterialsPanel = memo(function MaterialsPanel({
       )}
       {/* ── Section toolbar (VSCode explorer header): title + create/collapse ── */}
       {/* Same px-4 gutter and 3.5 vertical rhythm as the Scene tab, so the two panels line up */}
-      <div className={cn("flex items-center gap-0.5 px-4", modelTabs.length > 1 ? "pt-1.5" : "pt-3.5")}>
+      <div
+        className={cn("flex items-center gap-0.5 px-4", modelTabs.length > 1 ? "pt-1.5" : dense ? "pt-2" : "pt-3.5")}
+      >
         {/* Same type as the Scene tab's Section titles */}
         <span className="shrink-0 text-xs font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.materials.styleGroups}</span>
         {/* VSCode-style: a fresh group goes straight into rename mode (the row mounts this same */}
@@ -312,7 +320,10 @@ export const MaterialsPanel = memo(function MaterialsPanel({
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
-            className="no-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pt-2 pb-3.5"
+            className={cn(
+              "no-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pt-2",
+              dense ? "pb-2" : "pb-3.5",
+            )}
             onMouseLeave={() => onHover(null)}
             onContextMenuCapture={(e) => {
               if (!(e.target as HTMLElement).closest("[data-ctx]")) {

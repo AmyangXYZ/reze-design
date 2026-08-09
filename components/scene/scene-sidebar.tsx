@@ -109,12 +109,12 @@ export function SliderRow({
 
 /** The bone the camera follows. センター is the body's root in every standard MMD
  *  rig, so it tracks travel without inheriting the bob of a spine or a head. */
-const FOLLOW_BONE = "センター"
+export const FOLLOW_BONE = "センター"
 /** Defaults for the two meanings of the target triple: as an OFFSET from the
  *  followed bone (センター already sits at hip height, so only a small lift) and
  *  as an ABSOLUTE point (the scene default framing). */
-const FOLLOW_OFFSET_DEFAULT: [number, number, number] = [0, 3, 0]
-const TARGET_DEFAULT: [number, number, number] = [0, 11.4, 0]
+export const FOLLOW_OFFSET_DEFAULT: [number, number, number] = [0, 3, 0]
+export const TARGET_DEFAULT: [number, number, number] = [0, 11.4, 0]
 
 export function Section({
   title,
