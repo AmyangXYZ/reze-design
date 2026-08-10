@@ -138,11 +138,11 @@
             "type": "principled",
             "inputs": {
               "metallic": 0,
-              "specular": 0.82,
               "roughness": 0.24,
               "spec_clamp": 1e+30,
-              "sheen": 0,
-              "sheen_tint": 0
+              "sheen_tint": 0,
+              "specular_ior_level": 0.82,
+              "sheen_weight": 0
             }
           },
           {
@@ -341,7 +341,7 @@
             },
             "to": {
               "node": "principled",
-              "socket": "base"
+              "socket": "base_color"
             }
           },
           {
@@ -558,11 +558,11 @@
             "type": "principled",
             "inputs": {
               "metallic": 0,
-              "specular": 0.3,
               "roughness": 0.68,
               "spec_clamp": 10,
-              "sheen": 0,
-              "sheen_tint": 0
+              "sheen_tint": 0,
+              "specular_ior_level": 0.3,
+              "sheen_weight": 0
             }
           },
           {
@@ -781,7 +781,7 @@
             },
             "to": {
               "node": "principled",
-              "socket": "base"
+              "socket": "base_color"
             }
           },
           {
@@ -961,11 +961,11 @@
             "type": "principled",
             "inputs": {
               "metallic": 0,
-              "specular": 0.2,
               "roughness": 0.9,
               "spec_clamp": 1e+30,
-              "sheen": 0,
-              "sheen_tint": 0
+              "sheen_tint": 0,
+              "specular_ior_level": 0.2,
+              "sheen_weight": 0
             }
           },
           {
@@ -1164,7 +1164,7 @@
             },
             "to": {
               "node": "principled",
-              "socket": "base"
+              "socket": "base_color"
             }
           },
           {
@@ -1235,11 +1235,11 @@
             "type": "principled",
             "inputs": {
               "metallic": 0,
-              "specular": 0.7,
               "roughness": 0.2,
               "spec_clamp": 10,
-              "sheen": 0,
-              "sheen_tint": 0
+              "sheen_tint": 0,
+              "specular_ior_level": 0.7,
+              "sheen_weight": 0
             }
           }
         ],
@@ -1271,7 +1271,7 @@
             },
             "to": {
               "node": "principled",
-              "socket": "base"
+              "socket": "base_color"
             }
           }
         ],
@@ -1322,11 +1322,11 @@
             "type": "principled",
             "inputs": {
               "metallic": 0,
-              "specular": 0.95,
               "roughness": 0.06,
               "spec_clamp": 10,
-              "sheen": 0,
-              "sheen_tint": 0
+              "sheen_tint": 0,
+              "specular_ior_level": 0.95,
+              "sheen_weight": 0
             }
           }
         ],
@@ -1358,7 +1358,7 @@
             },
             "to": {
               "node": "principled",
-              "socket": "base"
+              "socket": "base_color"
             }
           }
         ],
@@ -1504,11 +1504,11 @@
             "type": "principled",
             "inputs": {
               "metallic": 0,
-              "specular": 0.15,
               "roughness": 0.92,
               "spec_clamp": 10,
-              "sheen": 0,
-              "sheen_tint": 0
+              "sheen_tint": 0,
+              "specular_ior_level": 0.15,
+              "sheen_weight": 0
             }
           },
           {
@@ -1727,7 +1727,7 @@
             },
             "to": {
               "node": "principled",
-              "socket": "base"
+              "socket": "base_color"
             }
           },
           {
@@ -1907,11 +1907,11 @@
             "type": "principled",
             "inputs": {
               "metallic": 0,
-              "specular": 0.35,
               "roughness": 0.72,
               "spec_clamp": 1e+30,
-              "sheen": 0,
-              "sheen_tint": 0
+              "sheen_tint": 0,
+              "specular_ior_level": 0.35,
+              "sheen_weight": 0
             }
           },
           {
@@ -2110,7 +2110,7 @@
             },
             "to": {
               "node": "principled",
-              "socket": "base"
+              "socket": "base_color"
             }
           },
           {
@@ -2276,11 +2276,11 @@
             "type": "principled",
             "inputs": {
               "metallic": 0,
-              "specular": 0.22,
               "roughness": 0.9,
               "spec_clamp": 10,
-              "sheen": 0,
-              "sheen_tint": 0
+              "sheen_tint": 0,
+              "specular_ior_level": 0.22,
+              "sheen_weight": 0
             }
           },
           {
@@ -2499,7 +2499,7 @@
             },
             "to": {
               "node": "principled",
-              "socket": "base"
+              "socket": "base_color"
             }
           },
           {
@@ -2580,11 +2580,11 @@
             "type": "principled",
             "inputs": {
               "metallic": 0,
-              "specular": 0.18,
               "roughness": 0.8,
               "spec_clamp": 10,
-              "sheen": 0.05,
-              "sheen_tint": 0
+              "sheen_tint": 0,
+              "specular_ior_level": 0.18,
+              "sheen_weight": 0.05
             }
           }
         ],
@@ -2616,7 +2616,7 @@
             },
             "to": {
               "node": "principled",
-              "socket": "base"
+              "socket": "base_color"
             }
           }
         ],
@@ -2762,11 +2762,11 @@
             "type": "principled",
             "inputs": {
               "metallic": 0,
-              "specular": 0.32,
               "roughness": 0.58,
               "spec_clamp": 10,
-              "sheen": 0,
-              "sheen_tint": 0
+              "sheen_tint": 0,
+              "specular_ior_level": 0.32,
+              "sheen_weight": 0
             }
           },
           {
@@ -2985,7 +2985,7 @@
             },
             "to": {
               "node": "principled",
-              "socket": "base"
+              "socket": "base_color"
             }
           },
           {
@@ -3066,11 +3066,11 @@
             "type": "principled",
             "inputs": {
               "metallic": 0,
-              "specular": 0.1,
               "roughness": 0.9,
               "spec_clamp": 10,
-              "sheen": 0,
-              "sheen_tint": 0
+              "sheen_tint": 0,
+              "specular_ior_level": 0.1,
+              "sheen_weight": 0
             }
           }
         ],
@@ -3102,7 +3102,7 @@
             },
             "to": {
               "node": "principled",
-              "socket": "base"
+              "socket": "base_color"
             }
           }
         ],
@@ -3153,11 +3153,11 @@
             "type": "principled",
             "inputs": {
               "metallic": 0,
-              "specular": 1,
               "roughness": 0.03,
               "spec_clamp": 10,
-              "sheen": 0,
-              "sheen_tint": 0
+              "sheen_tint": 0,
+              "specular_ior_level": 1,
+              "sheen_weight": 0
             }
           }
         ],
@@ -3189,7 +3189,7 @@
             },
             "to": {
               "node": "principled",
-              "socket": "base"
+              "socket": "base_color"
             }
           }
         ],
@@ -3339,11 +3339,11 @@
             "type": "principled",
             "inputs": {
               "metallic": 1,
-              "specular": 1,
               "roughness": 0.18,
               "spec_clamp": 1e+30,
-              "sheen": 0,
-              "sheen_tint": 0
+              "sheen_tint": 0,
+              "specular_ior_level": 1,
+              "sheen_weight": 0
             }
           },
           {
@@ -3542,7 +3542,7 @@
             },
             "to": {
               "node": "principled",
-              "socket": "base"
+              "socket": "base_color"
             }
           },
           {

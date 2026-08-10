@@ -167,6 +167,51 @@ export type StyleGroupDoc = {
   role?: "hair" | "eye" | "stockings"
 }
 
+/**
+ * Principled's sockets carry Blender 5.2's v2 names now — `base_color`,
+ * `specular_ior_level`, `sheen_weight` — where they used to carry 3.6's.
+ *
+ * A scene saved before that still names the old ones, and the engine DROPS any
+ * group whose graph will not compile rather than render it wrongly. The visible
+ * result is a fully grouped model with no look applied, which is what this
+ * migration exists to prevent.
+ *
+ * Done here rather than by bumping the document version because it has to reach
+ * every path a graph arrives by — restored local state, a published scene's
+ * pinned payload, an imported zip — and because it is a no-op on anything
+ * already current. Never mutates its input: a bundled graph is shared, and
+ * rewriting it in place would corrupt the library for the rest of the session.
+ */
+const V2_SOCKETS: Record<string, string> = {
+  base: "base_color",
+  specular: "specular_ior_level",
+  sheen: "sheen_weight",
+}
+
+export function migrateGraph(graph: ShaderGraph): ShaderGraph {
+  const principled = new Set(graph.nodes.filter((n) => n.type === "principled").map((n) => n.id))
+  if (principled.size === 0) return graph
+  let touched = false
+  const nodes = graph.nodes.map((n) => {
+    if (!principled.has(n.id) || !n.inputs) return n
+    const inputs: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(n.inputs)) {
+      const renamed = V2_SOCKETS[k]
+      if (renamed) touched = true
+      inputs[renamed ?? k] = v
+    }
+    return { ...n, inputs } as typeof n
+  })
+  const links = graph.links.map((l) => {
+    if (!principled.has(l.to.node)) return l
+    const renamed = V2_SOCKETS[l.to.socket]
+    if (!renamed) return l
+    touched = true
+    return { ...l, to: { ...l.to, socket: renamed } }
+  })
+  return touched ? { ...graph, nodes, links } : graph
+}
+
 /** Distinguishes the three `graph` forms without inspecting a ShaderGraph's shape. */
 export const isItemRef = (v: unknown): v is ItemRef =>
   typeof v === "object" && v !== null && "id" in v && "version" in v
@@ -405,12 +450,13 @@ export function parseSceneDoc(
         // with the wrong look — its materials fall back to the engine default,
         // which is visibly neutral instead of visibly wrong.
         if (!graph) return null
+        const migrated = migrateGraph(graph)
         const base =
           (g.label ?? g.role ?? "").toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "group"
         let id = base
         for (let n = 2; ids.has(id); n++) id = `${base}-${n}`
         ids.add(id)
-        return { id, label: g.label, materials: g.materials, graph, ...(g.role ? ROLE_INTEGRATION[g.role] : {}) }
+        return { id, label: g.label, materials: g.materials, graph: migrated, ...(g.role ? ROLE_INTEGRATION[g.role] : {}) }
       })
       .filter((g): g is StyleGroup => g !== null)
   }

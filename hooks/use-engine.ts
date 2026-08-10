@@ -5,11 +5,43 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Engine, Quat, Vec3, type ApplyStyleGroupResult, type CompileOptions, type Model, type RenderClass, type StyleGroup } from "reze-engine"
 import { SLOT_GRAPHS } from "@/lib/materials"
-import { idbBundleId, modelKey, modelPmxUrl, type Scene, type SceneCamera, type SceneStageTransform } from "@/lib/scene"
+import { idbBundleId, migrateGraph, modelKey, modelPmxUrl, type Scene, type SceneCamera, type SceneStageTransform } from "@/lib/scene"
 import { unzipToFiles } from "@/lib/uploads"
 import { loadLocalBundle } from "@/lib/asset-store"
 import { sceneFiles } from "@/lib/scene-files"
 import { azElToDirection, hexToLinearVec3, hexToSrgbVec3 } from "@/lib/scene-settings"
+
+/**
+ * Surface what the engine said about a style-group apply.
+ *
+ * applyStyleGroups returns per-group diagnostics and every call site here threw
+ * them away, so a graph that failed to compile looked exactly like one that had
+ * never been applied — the engine drops an uncompilable group rather than render
+ * it wrongly, which is right, and silent, which left us guessing.
+ */
+/**
+ * Bring a group's graph up to the current node vocabulary before the engine sees
+ * it.
+ *
+ * Doing this at parse time was not enough: a restored scene's groups come back
+ * from localStorage as already-hydrated StyleGroups and never pass through
+ * parseSceneDoc, so the migration there missed exactly the case that matters —
+ * the scene you had open. This is the one point every group reaches the engine
+ * by, whichever way it arrived.
+ */
+function migrated(groups: StyleGroup[]): StyleGroup[] {
+  return groups.map((g) => ({ ...g, graph: migrateGraph(g.graph) }))
+}
+
+function reportGroups(where: string, result: { ok: boolean; groups?: { groupId: string; ok: boolean; diagnostics: unknown[] }[] } | undefined) {
+  if (!result || result.ok) return
+  for (const g of result.groups ?? []) {
+    if (!g.ok)
+      // Stringified: a diagnostic is an object, and the console collapses those
+      // to {…} in a stack-heavy log — which hid the actual message for rounds.
+      console.error(`[style] ${where}: group "${g.groupId}" failed —`, JSON.stringify(g.diagnostics, null, 1))
+  }
+}
 
 // Eye and Hair are pinned, non-deletable groups
 const SPECIAL_GROUPS: { id: string; label: string; renderClass: RenderClass; preset: "eye" | "hair" }[] = [
@@ -199,7 +231,10 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
     const docGroups = scene.state.groups?.[entry.model.id]
     if (docGroups) {
       // Empty groups are UI-only drop targets — withheld from the engine.
-      await engine.applyStyleGroups(entry.model.id, docGroups.filter((g) => g.materials.length > 0))
+      reportGroups(
+        `load ${entry.model.file}`,
+        await engine.applyStyleGroups(entry.model.id, migrated(docGroups.filter((g) => g.materials.length > 0))),
+      )
     } else if (!entry.stage) {
       // Never auto-group a stage: resolvePreset matches material names by
       // substring against character hints, and the hair/eye presets carry a
@@ -618,9 +653,12 @@ export function useEngine(
   /** Replace one model's whole set (structural changes: create/move/remove groups). */
   const applyGroups = useCallback(async (modelId: string, next: StyleGroup[]) => {
     setGroupsByModel((prev) => ({ ...prev, [modelId]: next }))
-    await engineRef.current?.applyStyleGroups(
-      modelId,
-      next.filter((g) => g.materials.length > 0),
+    reportGroups(
+      "applyGroups",
+      await engineRef.current?.applyStyleGroups(
+        modelId,
+        migrated(next.filter((g) => g.materials.length > 0)),
+      ),
     )
   }, [])
 
@@ -630,7 +668,8 @@ export function useEngine(
   const resetStyleGroups = useCallback(async (modelId: string, groups?: StyleGroup[]) => {
     const engine = engineRef.current
     if (!engine) return
-    if (groups?.length) await engine.applyStyleGroups(modelId, groups.filter((g) => g.materials.length > 0))
+    if (groups?.length)
+      reportGroups("reset", await engine.applyStyleGroups(modelId, migrated(groups.filter((g) => g.materials.length > 0))))
     else await engine.autoStyleGroups(modelId)
     for (const m of modelsRef.current.find((x) => x.id === modelId)?.materials ?? []) {
       if (!m.visible) engine.toggleMaterialVisible(modelId, m.name)
