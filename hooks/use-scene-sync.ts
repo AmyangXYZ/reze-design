@@ -64,7 +64,7 @@ export function useSceneSync({
   useEffect(() => {
     const engine = engineRef.current
     if (!ready || !engine) return
-    const { world, sun, bloom, dof, outline, background, ground, grade, physics } = settings
+    const { world, sun, bloom, dof, outline, background, ground, grade, physics, view } = settings
     const p = prev.current
     const modeChanged = !p || p.backdrop !== hasBackdrop || p.green !== greenScreen
 
@@ -103,6 +103,10 @@ export function useSceneSync({
     }
     if (!p || p.settings.outline !== outline) {
       engine.setOutlineEnabled(outline.enabled)
+    }
+    // Before the grade, which is what the engine applies it to.
+    if (!p || p.settings.view !== view) {
+      engine.setViewTransformOptions({ transform: view.transform, exposure: view.exposure })
     }
     if (!p || p.settings.grade !== grade || p.gradeSpec !== gradeSpec) {
       const cdl = resolveSpec(gradeSpec, grade.intensity)

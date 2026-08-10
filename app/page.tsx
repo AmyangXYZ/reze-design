@@ -80,6 +80,7 @@ import {
   TARGET_DEFAULT,
 } from "@/components/scene/scene-sidebar"
 import { QuickPick } from "@/components/scene/quick-pick"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { GradeLibrary } from "@/components/editor/grade-library"
 import { GradeEditorPanel, type GradeEditorSubject } from "@/components/editor/grade-editor"
 import { BackgroundLibrary } from "@/components/editor/background-library"
@@ -261,6 +262,12 @@ function seedAnims(scene: Scene): Record<string, { name: string; src: File | str
 /** The music row's seed, hoisted for the same reason. A served track plays straight
  *  off its URL; a packed one has no playable URL until the extras loader pulls it
  *  out of the bundle, so the row fills in first and the audio element follows. */
+const TRANSFORM_LABEL: Record<SceneSettings["view"]["transform"], string> = {
+  standard: "Standard",
+  filmic: "Filmic",
+  agx: "AgX", // not offered in the picker; a document could still carry it
+}
+
 const seedMusic = (scene: Scene): { name: string; url: string } | null =>
   scene.assets.audio
     ? { name: scene.assets.audio.name, url: servedUrl(scene.assets.audio.url) ? scene.assets.audio.url : "" }
@@ -352,7 +359,7 @@ const DOCK_CONTROLS: {
   stageTab?: "stage" | "ground" | "background"
   lightTab?: "world" | "sun"
   cameraTab?: "lens" | "focus"
-  postTab?: "grade" | "bloom" | "outline"
+  postTab?: "grade" | "tone" | "bloom" | "outline"
   keywords?: string[]
   /** What this control is set to, for the right end of its palette row. Omitted
    *  where there is nothing honest to print — the export panel owns its own
@@ -379,6 +386,8 @@ const DOCK_CONTROLS: {
   { id: "effect", en: "Effect", zh: "特效", row: "effect", keywords: ["wgsl", "stars", "shader", "背景特效"], value: (v) => v.effect ?? v.t.lab.ctl.none },
   { id: "grade-preset", en: "Grade preset", zh: "调色预设", row: "post", postTab: "grade", keywords: ["color", "look", "后期"], value: (v) => v.gradeName },
   { id: "grade-intensity", en: "Grade intensity", zh: "调色强度", row: "post", postTab: "grade", value: (v) => dec2(v.settings.grade.intensity) },
+  { id: "view-transform", en: "View transform", zh: "视图变换", row: "post", postTab: "tone", keywords: ["tonemap", "tone map", "filmic", "agx", "standard", "color management", "色调映射", "色彩管理"], value: (v) => TRANSFORM_LABEL[v.settings.view.transform] },
+  { id: "exposure", en: "Exposure", zh: "曝光", row: "post", postTab: "tone", keywords: ["brightness", "ev", "亮度"], value: (v) => dec2(v.settings.view.exposure) },
   { id: "bloom-intensity", en: "Bloom intensity", zh: "泛光强度", row: "post", postTab: "bloom", keywords: ["glow", "辉光"], value: (v) => v.settings.bloom.intensity.toFixed(3) },
   { id: "bloom-threshold", en: "Bloom threshold", zh: "泛光阈值", row: "post", postTab: "bloom", keywords: ["cutoff"], value: (v) => dec2(v.settings.bloom.threshold) },
   { id: "bloom-radius", en: "Bloom radius", zh: "泛光半径", row: "post", postTab: "bloom", keywords: ["spread", "扩散"], value: (v) => dec1(v.settings.bloom.radius) },
@@ -1426,7 +1435,7 @@ export default function Lab() {
       setSettings((s2) => ({ ...s2, [key]: { ...s2[key], ...part } })),
     [],
   )
-  const { sun, world, bloom, dof, grade, ground, physics } = settings
+  const { sun, world, bloom, dof, grade, ground, physics, view } = settings
   const [bgEffect, setBgEffect] = useState(scene.state.backgroundEffect)
 
   // ONE slot for the three libraries — see useBrowseSurface. They were three
@@ -1896,7 +1905,10 @@ export default function Lab() {
   // is detected in an effect — so anything drawn on the first pass is drawn in
   // English and then rewritten, which is exactly the flash. The canvas, the
   // file inputs and the audio element stay outside the gate: they hold refs
-  // other effects reach for, and none of them render a word.
+  // other effects reach for, and none of them render a word. The audio element's
+  // SRC is still gated on this, though — see the element. An attribute fed by
+  // restored state is exactly the storage-during-render problem, whether or not
+  // the element draws a word.
   const [mounted, setMounted] = useState(false)
   useEffect(() => {
     const id = setTimeout(() => setMounted(true), 0)
@@ -2668,7 +2680,7 @@ export default function Lab() {
         stage?: "stage" | "ground" | "background"
         light?: "world" | "sun"
         camera?: "lens" | "focus"
-        post?: "grade" | "bloom" | "outline"
+        post?: "grade" | "tone" | "bloom" | "outline"
       },
     ) => {
       setExpanded(true)
@@ -3472,7 +3484,18 @@ export default function Lab() {
         }}
       />
 
-      <audio ref={audioRef} src={musicClip?.url || undefined} preload="auto" playsInline className="hidden" />
+      {/* The element stays outside the `mounted` gate because effects reach for its
+          ref, but the SRC has to wait: it comes from the restored scene, and the
+          server has no storage to restore from. Rendering it on the first pass made
+          the server emit the demo's served track while the client emitted the
+          restored one — a hydration mismatch on the only attribute that differed. */}
+      <audio
+        ref={audioRef}
+        src={mounted ? musicClip?.url || undefined : undefined}
+        preload="auto"
+        playsInline
+        className="hidden"
+      />
 
       <input
         ref={bgImageInput}
@@ -4335,6 +4358,9 @@ export default function Lab() {
                         <TabsTrigger value="grade" className="flex-1">
                           {t.lab.tabs.grade}
                         </TabsTrigger>
+                        <TabsTrigger value="tone" className="flex-1">
+                          {t.lab.tabs.tone}
+                        </TabsTrigger>
                         <TabsTrigger value="bloom" className="flex-1">
                           {t.lab.tabs.bloom}
                         </TabsTrigger>
@@ -4402,6 +4428,47 @@ export default function Lab() {
                             {t.lab.cmd.gradeLib}
                           </button>
                         </div>
+                      </TabsContent>
+                      <TabsContent value="tone">
+                        {/* The view transform is its own tab, next to Grade and in front
+                            of it: the transform maps the render to the display, the
+                            grade then works on its result. It is a LOOK
+                            decision, not a preference: Filmic rolls highlights off
+                            and desaturates doing it, Standard passes through what
+                            the shader computed, which is what NPR work expects and
+                            what the Wuthering Waves references render under. */}
+                        <div className="mb-1 flex min-w-0 items-center justify-between gap-2">
+                          <span className="shrink-0 text-xs">{t.lab.ctl.transform}</span>
+                          <Select
+                            value={view.transform}
+                            onValueChange={(v) => patch("view", { transform: v as SceneSettings["view"]["transform"] })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {/* Blender's own names — translating them would make
+                                  the preset they were authored against harder to find. */}
+                              {/* AgX is not offered. It is built for photographic
+                                  HDR — it rolls highlights off and desaturates
+                                  doing it, which is exactly the colour an anime
+                                  look is made of, and neither reference project
+                                  renders under it. The engine still supports it;
+                                  nothing here asks for it. */}
+                              <SelectItem value="standard">Standard</SelectItem>
+                              <SelectItem value="filmic">Filmic</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <SliderRow
+                          label={t.lab.ctl.exposure}
+                          value={view.exposure}
+                          min={-2}
+                          max={2}
+                          step={0.05}
+                          onChange={(v) => patch("view", { exposure: v })}
+                          fmt={(v) => v.toFixed(2)}
+                        />
                       </TabsContent>
                       {/* No on/off: intensity 0 IS off — useSceneSync maps it to
                           enabled:false and the pyramid is skipped entirely. The

@@ -25,6 +25,21 @@ export type SceneSettings = {
    *  scene LOOKS, so it travels with the document like any other look setting. */
   outline: { enabled: boolean }
   background: { color: string }
+  /**
+   * How the rendered image is mapped to the display, before the grade.
+   *
+   * Not a light: the sun's strength changes the scene, this changes how the
+   * result is shown. It belongs beside the grade because the grade runs
+   * immediately after it, and because the two are always tuned together — a
+   * different transform lands at a different brightness, so exposure follows it.
+   *
+   * The transform is a LOOK decision, not a preference. Filmic rolls highlights
+   * off and desaturates as it does; Standard passes the colours the graph
+   * computed straight through, which is what anime and NPR work expects and what
+   * both Wuthering Waves reference projects render under. A preset authored
+   * against one and viewed under the other is a different look.
+   */
+  view: { transform: "standard" | "filmic" | "agx"; exposure: number }
   /** Post-tonemap color grade. */
   grade: GradeSettings
   ground: {
@@ -66,6 +81,16 @@ export type SceneSettings = {
  *  must come back looking exactly as it did. */
 export const DEFAULT_DOF: SceneSettings["dof"] = { enabled: false, aperture: 1 }
 export const DEFAULT_OUTLINE: SceneSettings["outline"] = { enabled: false }
+
+/**
+ * What a document without a view block gets: the engine's own defaults, which
+ * are the Aether Gazer reference's Filmic at exposure 0.6.
+ *
+ * Every scene written before this setting existed was authored looking at that,
+ * so it is the only value that brings one back unchanged — a scene must not
+ * re-grade itself because the control it never touched became visible.
+ */
+export const DEFAULT_VIEW: SceneSettings["view"] = { transform: "filmic", exposure: 0.6 }
 
 /** What a document without a physics block gets. Documents published before
  *  the section existed are read through this rather than migrated — the same

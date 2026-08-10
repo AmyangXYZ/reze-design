@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Engine, Quat, Vec3, type ApplyStyleGroupResult, type CompileOptions, type Model, type RenderClass, type StyleGroup } from "reze-engine"
 import { SLOT_GRAPHS } from "@/lib/materials"
-import { idbBundleId, migrateGraph, modelKey, modelPmxUrl, type Scene, type SceneCamera, type SceneStageTransform } from "@/lib/scene"
+import { idbBundleId, modelKey, modelPmxUrl, type Scene, type SceneCamera, type SceneStageTransform } from "@/lib/scene"
 import { unzipToFiles } from "@/lib/uploads"
 import { loadLocalBundle } from "@/lib/asset-store"
 import { sceneFiles } from "@/lib/scene-files"
@@ -19,20 +19,6 @@ import { azElToDirection, hexToLinearVec3, hexToSrgbVec3 } from "@/lib/scene-set
  * never been applied — the engine drops an uncompilable group rather than render
  * it wrongly, which is right, and silent, which left us guessing.
  */
-/**
- * Bring a group's graph up to the current node vocabulary before the engine sees
- * it.
- *
- * Doing this at parse time was not enough: a restored scene's groups come back
- * from localStorage as already-hydrated StyleGroups and never pass through
- * parseSceneDoc, so the migration there missed exactly the case that matters —
- * the scene you had open. This is the one point every group reaches the engine
- * by, whichever way it arrived.
- */
-function migrated(groups: StyleGroup[]): StyleGroup[] {
-  return groups.map((g) => ({ ...g, graph: migrateGraph(g.graph) }))
-}
-
 function reportGroups(where: string, result: { ok: boolean; groups?: { groupId: string; ok: boolean; diagnostics: unknown[] }[] } | undefined) {
   if (!result || result.ok) return
   for (const g of result.groups ?? []) {
@@ -233,7 +219,7 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
       // Empty groups are UI-only drop targets — withheld from the engine.
       reportGroups(
         `load ${entry.model.file}`,
-        await engine.applyStyleGroups(entry.model.id, migrated(docGroups.filter((g) => g.materials.length > 0))),
+        await engine.applyStyleGroups(entry.model.id, docGroups.filter((g) => g.materials.length > 0)),
       )
     } else if (!entry.stage) {
       // Never auto-group a stage: resolvePreset matches material names by
@@ -657,7 +643,7 @@ export function useEngine(
       "applyGroups",
       await engineRef.current?.applyStyleGroups(
         modelId,
-        migrated(next.filter((g) => g.materials.length > 0)),
+        next.filter((g) => g.materials.length > 0),
       ),
     )
   }, [])
@@ -669,7 +655,7 @@ export function useEngine(
     const engine = engineRef.current
     if (!engine) return
     if (groups?.length)
-      reportGroups("reset", await engine.applyStyleGroups(modelId, migrated(groups.filter((g) => g.materials.length > 0))))
+      reportGroups("reset", await engine.applyStyleGroups(modelId, groups.filter((g) => g.materials.length > 0)))
     else await engine.autoStyleGroups(modelId)
     for (const m of modelsRef.current.find((x) => x.id === modelId)?.materials ?? []) {
       if (!m.visible) engine.toggleMaterialVisible(modelId, m.name)

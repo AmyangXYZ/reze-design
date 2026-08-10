@@ -3,7 +3,7 @@
 import { builtinEffect } from "@/lib/background-effects"
 import { libraryGraph } from "@/lib/materials"
 import { parseSceneDoc, type Scene, type SceneDoc } from "@/lib/scene"
-import { DEFAULT_DOF, DEFAULT_OUTLINE, DEFAULT_PHYSICS } from "@/lib/scene-settings"
+import { DEFAULT_DOF, DEFAULT_OUTLINE, DEFAULT_PHYSICS, DEFAULT_VIEW } from "@/lib/scene-settings"
 
 /**
  * Whether this build ships the demo model, motion and music.
@@ -37,7 +37,7 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
         animation: "/animations/One More Last Time.vmd",
         materials: {
           groups: [
-            { label: "Body", materials: ["皮肤", "手"], graph: "Body" },
+            { label: "Body", materials: ["皮肤", "手"], graph: "AG Body" },
             {
               label: "Smooth Cloth",
               materials: [
@@ -60,12 +60,12 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
                 "裙子白",
                 "裙子白1",
               ],
-              graph: "Smooth Cloth",
+              graph: "AG Smooth Cloth",
             },
-            { label: "Metal", materials: ["指甲"], graph: "Metal" },
-            { label: "Hair", materials: ["头发"], graph: "Hair", role: "hair" },
-            { label: "Face", materials: ["脸", "牙齿", "舌头", "口腔"], graph: "Face" },
-            { label: "Eye", materials: ["眼白", "眉毛", "眼睛", "眼睛1"], graph: "Eye", role: "eye" },
+            { label: "Metal", materials: ["指甲"], graph: "AG Metal" },
+            { label: "Hair", materials: ["头发"], graph: "AG Hair", role: "hair" },
+            { label: "Face", materials: ["脸", "牙齿", "舌头", "口腔"], graph: "AG Face" },
+            { label: "Eye", materials: ["眼白", "眉毛", "眼睛", "眼睛1"], graph: "AG Eye", role: "eye" },
           ],
           hidden: [],
         },
@@ -83,6 +83,7 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
     bloom: { enabled: true, threshold: 0.5, knee: 0.5, radius: 4.0, intensity: 0.05, color: "#ffc9c9" },
     dof: DEFAULT_DOF,
     outline: DEFAULT_OUTLINE,
+    view: DEFAULT_VIEW,
     background: { color: "#4b004f", effect: "Shining Stars" },
     grade: { preset: "Neutral", intensity: 1 },
     ground: { color: "#c800de", size: 160, opacity: 0.42, shadow: true, grid: "#fafaf9", gridEnabled: true },
@@ -116,6 +117,7 @@ export const EMPTY_SCENE_DOC: SceneDoc = {
     bloom: { enabled: true, threshold: 0.8, knee: 0.5, radius: 4.0, intensity: 0.03, color: "#ffffff" },
     dof: DEFAULT_DOF,
     outline: DEFAULT_OUTLINE,
+    view: DEFAULT_VIEW,
     background: { color: "#1c1c1e", effect: null },
     grade: { preset: "Neutral", intensity: 1 },
     ground: { color: "#3a3a3d", size: 160, opacity: 0.42, shadow: true, grid: "#fafaf9", gridEnabled: true },
