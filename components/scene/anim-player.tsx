@@ -330,7 +330,13 @@ export const AnimPlayer = memo(function AnimPlayer({
             // what gives — a min-width here made 506px the row's min-content, so
             // the pill overflowed any strip narrower than that instead of
             // adapting to it.
-            "relative mx-1 flex h-4 min-w-0 flex-[1_1_min(16rem,30vw)] touch-none items-center select-none",
+            //
+            // Three longhands and NOT flex-[1_1_min(…)]: Tailwind emits that as
+            // `flex: min(16rem, 30vw)`, dropping the grow/shrink, and a lone
+            // math function in the shorthand is the ambiguous grow-or-basis case
+            // browsers throw the whole declaration out for. The track then fell
+            // back to `flex: 0 1 auto` — content width, which here is zero.
+            "relative mx-1 flex h-4 min-w-0 grow shrink basis-[min(16rem,30vw)] touch-none items-center select-none",
             hasClip ? "cursor-pointer" : "opacity-50",
           )}
           onPointerDown={(e) => {
