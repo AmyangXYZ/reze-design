@@ -35,7 +35,7 @@
     "react-dom": "19.2.4",
     "react-resizable-panels": "^4.12.2",
     "react-syntax-highlighter": "^16.1.1",
-    "reze-engine": "^0.40.0",
+    "reze-engine": "^0.41.0",
     "server-only": "^0.0.1",
     "tailwind-merge": "^3.6.0",
     "ws": "^8.21.1"

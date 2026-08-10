@@ -322,21 +322,18 @@ export const AnimPlayer = memo(function AnimPlayer({
         <div
           ref={trackRef}
           className={cn(
-            // The shipped width is the flex BASIS, not a min-width, and min-w-0
-            // lets the item shrink under it. Both directions then work off one
-            // number: in a shrink-to-fit parent the basis IS the width (the
-            // collapsed pill is unchanged), in a full-width one the track takes
-            // the slack, and in a parent narrower than the pill the track is
-            // what gives — a min-width here made 506px the row's min-content, so
-            // the pill overflowed any strip narrower than that instead of
-            // adapting to it.
+            // min-width + grow, not a fixed width: in a shrink-to-fit parent the
+            // basis floor IS the width, so the shipped pill is unchanged, while
+            // in a full-width one the track takes the slack instead of leaving
+            // it at the end of the row.
             //
-            // Three longhands and NOT flex-[1_1_min(…)]: Tailwind emits that as
-            // `flex: min(16rem, 30vw)`, dropping the grow/shrink, and a lone
-            // math function in the shorthand is the ambiguous grow-or-basis case
-            // browsers throw the whole declaration out for. The track then fell
-            // back to `flex: 0 1 auto` — content width, which here is zero.
-            "relative mx-1 flex h-4 min-w-0 grow shrink basis-[min(16rem,30vw)] touch-none items-center select-none",
+            // The floor is viewport-relative for a reason — at 375px it is 30vw
+            // = 112px, which puts the whole row at ~294px and fits a phone. It
+            // is NOT what made the pill overflow; a container inset 40.5rem for
+            // the docks was (see the transport's placement in page.tsx). Moving
+            // this to a flex-basis to "let it shrink" only bought a track
+            // squeezed to nothing on a mid-size window.
+            "relative mx-1 flex h-4 min-w-[min(16rem,30vw)] flex-1 touch-none items-center select-none",
             hasClip ? "cursor-pointer" : "opacity-50",
           )}
           onPointerDown={(e) => {

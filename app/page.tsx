@@ -173,28 +173,28 @@ const PILL = "rounded-xl border border-white/10 bg-surface shadow-float backdrop
 const FOLD = "duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
 
 /**
- * The working area — what the canvas has left between the docks.
+ * The working area — what the canvas has left between the docks — is 40.5rem
+ * narrower than the window: the dock (18rem) plus 2.25rem either side, which is
+ * its own 0.75rem inset plus a 1.5rem gap. One rem of clear canvas either side,
+ * rather than the 0.75 the docks themselves sit at: at that width the open
+ * timeline read as touching them, and an edge that nearly meets another edge
+ * looks like a mistake in a way a plain gap never does. The right inset assumes
+ * the inspector matching the stack at 17rem, which does not exist on this route
+ * yet — sizing against where it WILL be stops the geometry changing the day it
+ * lands, and matching widths keeps the timeline centred on the canvas.
  *
- * The right inset assumes the inspector matching the stack at 17rem, which does
- * not exist on this route yet. Sizing against where it WILL be costs nothing now
- * and stops the geometry changing the day it lands — and matching widths means
- * the timeline stays centred on the canvas rather than drifting off it.
+ * It is a max-WIDTH on the timeline (see the transport, below) and not insets on
+ * its container, because the collapsed pill must not be squeezed by docks it
+ * floats over — that is what made its track a few pixels wide on any window
+ * under ~1080px. The number lives there, written out literally: Tailwind scans
+ * source for whole class names, so a constant interpolated into one produces no
+ * CSS at all.
  *
  * Both insets hold whether the stack is open or not. Collapsing it must NOT let
  * the timeline widen: the transport would then resize every time you hid a panel
  * you were not even looking at, and a timeline whose scale changes underneath you
  * is worse than one that leaves a strip of canvas unused.
- *
- * The insets are the dock (18rem) plus 2.25rem, which is its own 0.75rem inset
- * plus a 1.5rem gap. One rem of clear canvas either side, rather than the 0.75
- * the docks themselves sit at: at that width the open timeline read as touching
- * them, and an edge that nearly meets another edge looks like a mistake in a way
- * a plain gap never does.
- *
- * Written out rather than interpolated from a constant: Tailwind scans source
- * for literal class names, so a template string here produces no CSS at all.
  */
-const WORKSPACE = "left-[calc(18rem+2.25rem)] right-[calc(18rem+2.25rem)]"
 
 /**
  * The expanded timeline is OFF, and its code is deliberately still here.
@@ -1499,7 +1499,11 @@ export default function Lab() {
   // itself had changed.
   const gradeItems = useMemo(() => {
     const items = [
-      ...quickPickItems(GRADE_PRESETS, gradeDrafts, appliedGradeDraftId).map((g) => ({
+      // Sorted by the LABEL, which is the grade library's own ordering (it sorts
+      // its built-in rows the same way, through the same translation). The two
+      // lists hold the same set, so a different order between them means hunting
+      // for a name in a place it was not a moment ago.
+      ...quickPickItems([...GRADE_PRESETS].sort((a, b) => gradeLabel(a.name).localeCompare(gradeLabel(b.name))), gradeDrafts, appliedGradeDraftId).map((g) => ({
         id: g.name,
         label: gradeLabel(g.name),
         section: g.owner === "local" ? ("local" as const) : ("builtin" as const),
@@ -1729,7 +1733,8 @@ export default function Lab() {
   // is plainly running.
   const effectItems = useMemo(() => {
     const items = [
-      ...quickPickItems(BACKGROUND_EFFECTS, effectDrafts, bgEffect?.id ?? null).map((e) => ({
+      // By name, matching the effect library's own ordering — see the grade list.
+      ...quickPickItems([...BACKGROUND_EFFECTS].sort((a, b) => a.name.localeCompare(b.name)), effectDrafts, bgEffect?.id ?? null).map((e) => ({
         id: e.name,
         label: e.name,
         section: e.owner === "local" ? ("local" as const) : ("builtin" as const),
@@ -1793,7 +1798,7 @@ export default function Lab() {
     async (subject: AppliedBackgroundEffect, wgsl: string) => {
       const engine = engineRef.current
       if (!engine) return { ok: false, diagnostics: [t.lab.engineNotReady] }
-      const r = await engine.setBackgroundEffect(wgsl)
+      const r = await engine.setEffect(wgsl)
       if (r.ok) {
         noteAppliedWgsl(wgsl)
         setBgEffect({ ...subject, wgsl })
@@ -1836,7 +1841,7 @@ export default function Lab() {
     // new effect) goes through the dialog.
     if (isDraft("effect", effectEditor.subject.id)) {
       const engine = engineRef.current
-      const r = engine ? await engine.setBackgroundEffect(code) : { ok: false }
+      const r = engine ? await engine.setEffect(code) : { ok: false }
       if (r.ok) {
         noteAppliedWgsl(code)
         const { id, name } = effectEditor.subject
@@ -1866,7 +1871,7 @@ export default function Lab() {
     // every future pick. Compiling IS applying, which is also what save wants.
     const isExisting = isDraft("effect", subject.id)
     const engine = engineRef.current
-    const r = engine ? await engine.setBackgroundEffect(code) : { ok: false, diagnostics: [t.lab.engineNotReady] }
+    const r = engine ? await engine.setEffect(code) : { ok: false, diagnostics: [t.lab.engineNotReady] }
     if (!r.ok) return r.diagnostics[0] ?? t.lab.compileFailed
     noteAppliedWgsl(code)
     const keep = isExisting ? subject.id : undefined
@@ -2521,6 +2526,11 @@ export default function Lab() {
         next[newId] = old
         return next
       })
+      // The inspector follows the slot, not the file. Replacing the model you
+      // had open is a continuation of editing THAT cast member, so the panel
+      // should be looking at what replaced it — and leaving the old id behind
+      // would strand the panel on a model that no longer exists.
+      setInspectedId((prev) => (prev === oldId ? newId : prev))
     },
     [loadVmdFile, loadVmdUrl],
   )
@@ -3157,7 +3167,13 @@ export default function Lab() {
       else if (item.id === "physics") gotoSection("physics")
       // Whichever model is already inspected, else the primary — the panel is
       // per-model and picking one for you beats opening on nothing.
-      else if (item.id === "materials") openMaterials(inspectedId ?? models[0]?.id ?? null)
+      // `inspected?.id`, NOT inspectedId: a replaced model leaves the raw id
+      // naming something that is gone, and openMaterials short-circuits when the
+      // id it is handed is the one already held — so passing the stale one back
+      // in set it to itself, resolved to no model, and the panel could never be
+      // opened again. Going through the RESOLVED model means a stale id falls
+      // through to the first cast member instead of wedging.
+      else if (item.id === "materials") openMaterials(inspected?.id ?? models[0]?.id ?? null)
       // Each opens exactly what it says. A new draft starts from the same
       // template the library's own New button uses, so the two doors lead to
       // one place.
@@ -3190,7 +3206,10 @@ export default function Lab() {
       recentIds,
       gotoSection,
       openMaterials,
-      inspectedId,
+      // The RESOLVED id, not the raw one — the raw id can name a model that has
+      // been replaced away, and this callback must re-make itself when the
+      // resolution changes, not when the stale string happens to.
+      inspected?.id,
       models,
       patch,
       setLangOpen,
@@ -4201,7 +4220,12 @@ export default function Lab() {
                     // as the inner label — the row already says Effect.
                     <>
                       <div className="flex min-w-0 items-center justify-between gap-2">
-                        <span className="shrink-0 text-xs">{t.lab.ctl.preset}</span>
+                        {/* "Shader", not "Preset": the row's own Edit button says
+                            Edit shader, the library is WGSL, and every entry in
+                            this list IS one — a preset is what the Grade row
+                            below picks, where the thing being chosen is a set of
+                            values rather than code. */}
+                        <span className="shrink-0 text-xs">{t.lab.ctl.shader}</span>
                         <QuickPick
                           value={bgEffect?.name ?? null}
                           items={effectItems}
@@ -4212,17 +4236,9 @@ export default function Lab() {
                           // premise is that the canvas behind it IS the preview.
                           onEdit={bgEffect ? editCurrentEffect : undefined}
                           editLabel={t.bgLibrary.editShader}
+                          onBrowse={() => openBrowse({ kind: "effect" })}
                           placeholder={t.lab.ctl.none}
                         />
-                      </div>
-                      <div className="mt-2.5 flex justify-center">
-                        <button
-                          onClick={() => openBrowse({ kind: "effect" })}
-                          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90"
-                        >
-                          <Sparkles className="size-3.5" />
-                          {t.lab.cmd.effectLib}
-                        </button>
                       </div>
                     </>
                   ) : l.id === "light" ? (
@@ -4334,6 +4350,7 @@ export default function Lab() {
                             // how a look gets made from nothing.
                             onEdit={editCurrentGrade}
                             editLabel={t.gradeLibrary.edit}
+                            onBrowse={() => openBrowse({ kind: "grade" })}
                             placeholder={gradeLabel(grade.preset)}
                           />
                         </div>
@@ -4751,7 +4768,14 @@ export default function Lab() {
           a timeline you cannot see the end of. The right edge will take the same
           treatment when the inspector lands. */}
       {mounted && (
-        <div className={cn("pointer-events-none absolute bottom-3 flex justify-center", WORKSPACE)}>
+        // The container is the VIEWPORT, in both states, and the working area is
+        // expressed as a max-width instead (below). Insetting the container by
+        // the docks is what squeezed the collapsed pill: it needs ~434px, and
+        // WORKSPACE leaves only window − 40.5rem, so anything under a ~1080px
+        // window ate into the track until it was a few pixels wide. A pill
+        // floating over the canvas has never needed to clear the docks — it is
+        // centred, and they are not.
+        <div className="pointer-events-none absolute inset-x-3 bottom-3 flex justify-center">
           {/* max-w-fit is what returns the collapsed pill to the ORIGINAL slider
             length: the track is flex-1 with min-w-[min(16rem,30vw)], and a
             fit-content pill resolves a flex-1 child at its min-content size —
@@ -4760,15 +4784,23 @@ export default function Lab() {
             the only thing that stretches.
 
             interpolate-size lets the keyword cap animate (Chrome; Safari snaps
-            between correct layouts, which this dev route accepts). The open cap
-            is 100% and not some large rem, because a cap past the container
-            keeps "animating" after the element has stopped growing — dead time
-            that reads as a snap at the start of the close. */}
+            between correct layouts, which this dev route accepts).
+
+            Open caps at the WORKING AREA rather than at 100%, because the
+            container is now the viewport: 39rem is WORKSPACE's 40.5rem of dock
+            insets less the 1.5rem of gutter the container already spends, so
+            the opened panel lands exactly where WORKSPACE used to put it, and
+            stops clear of the stack. Expressing it against a container that
+            never resizes is what keeps the fold honest in both directions — a
+            cap measured against a box that jumps at the same moment would grow
+            the panel on its way closed. The max() floor only matters on a
+            window too narrow for the editor anyway; it keeps the open timeline
+            from resolving to zero width there. */}
           <div
             className={cn(
               "pointer-events-auto w-full transition-[max-width] [interpolate-size:allow-keywords]",
               FOLD,
-              timelineOpen ? "max-w-full" : "max-w-fit",
+              timelineOpen ? "max-w-[max(18rem,calc(100%_-_39rem))]" : "max-w-fit",
             )}
           >
             <AnimPlayer

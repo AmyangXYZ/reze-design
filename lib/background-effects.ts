@@ -29,9 +29,11 @@ export function builtinEffect(name: string): AppliedBackgroundEffect {
 
 /** The "New effect" starter: a terse contract reference and a replace-me body.
  *  Code, not content — it seeds the editor rather than appearing in the library. */
-export const NEW_EFFECT_TEMPLATE = `// One function = one background effect, drawn behind the model over the
-// background color/image.
+export const NEW_EFFECT_TEMPLATE = `// An effect is one file with one or both of these functions. WHICH ONE YOU
+// WRITE IS WHERE IT LANDS — there is no layer setting anywhere. Delete the one
+// you don't want; alpha is how much each covers what is behind it.
 
+// Behind the model, over the background color/image.
 fn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f {
   // For circles/shapes that must not stretch with the canvas, correct by the
   // live aspect ratio — never hardcode one:
@@ -40,6 +42,17 @@ fn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f {
   // Drifting glow — replace me.
   let n = noise2(uv * 3.0 + vec2f(time * 0.15, 0.0));
   return vec4f(0.35, 0.55, 1.0, 0.22 * n);
+}
+
+// In front of everything — rain, snow, petals, fog. \`depth\` is how many metres
+// away whatever the scene drew at this pixel is (the far plane where it drew
+// nothing), so particles are not stuck in front: compare a particle's own
+// distance against it and the model takes the pixel instead. Fog needs no
+// comparison at all — its alpha simply IS a function of distance, which is all
+// the haze below is.
+fn foreground(ray: vec3f, uv: vec2f, time: f32, depth: f32) -> vec4f {
+  let haze = 1.0 - exp(-depth * 0.004);
+  return vec4f(0.62, 0.68, 0.78, haze * 0.35);
 }
 
 // ── Toolbox (WGSL resolves in any order — helpers can live below main) ──
