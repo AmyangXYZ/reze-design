@@ -11,7 +11,6 @@
 import { useRef, useState, type ReactNode } from "react"
 import { ArrowDownToLine, ArrowUpFromLine, FilePlus2, GalleryThumbnails, RotateCcw } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useT } from "@/lib/i18n"
 
 function Row({
@@ -56,7 +55,6 @@ export function SceneFileMenu({ trigger, onNew, onGallery, onExport, onImport, o
   // it flashed and vanished under the popover — a label appearing at the exact
   // moment you no longer need it. It says what the logo does; once the menu is
   // open, the menu says that better.
-  const [tipOpen, setTipOpen] = useState(false)
   const input = useRef<HTMLInputElement>(null)
 
   const run = (fn: () => void) => () => {
@@ -83,20 +81,19 @@ export function SceneFileMenu({ trigger, onNew, onGallery, onExport, onImport, o
         }}
       />
       <Popover open={open} onOpenChange={setOpen}>
-        <Tooltip open={tipOpen && !open} onOpenChange={setTipOpen}>
-          <TooltipTrigger asChild>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                aria-label={t.sceneFile.label}
-                className="cursor-pointer rounded-md outline-none transition-colors hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-ring/50"
-              >
-                {trigger}
-              </button>
-            </PopoverTrigger>
-          </TooltipTrigger>
-          <TooltipContent side="right">{t.sceneFile.label}</TooltipContent>
-        </Tooltip>
+        {/* No tooltip. Radix hands focus back to the trigger when the menu
+            closes, which re-arms the tip and flashes it over the panel that just
+            opened — and a tip that only repeats the aria-label buys nothing on a
+            control this prominent. The label stays for screen readers. */}
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            aria-label={t.sceneFile.label}
+            className="cursor-pointer rounded-md outline-none transition-colors hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
+            {trigger}
+          </button>
+        </PopoverTrigger>
         {/* Radix returns focus to the trigger on close, and a programmatic focus counts
             as keyboard focus — so the logo kept its focus ring after every use. Same
             fix the material sidebar's context menu uses. */}
