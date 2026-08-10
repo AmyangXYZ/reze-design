@@ -43,7 +43,7 @@ covers where to find models, motion and music.
 - [2. Authoring your own look](#2-authoring-your-own-look)
   - [2.1 The rendering model](#21-the-rendering-model)
   - [2.2 Colour grades](#22-colour-grades)
-  - [2.3 Background effects in WGSL](#23-background-effects-in-wgsl)
+  - [2.3 Scene effects in WGSL](#23-scene-effects-in-wgsl)
   - [2.4 Material shader graphs](#24-material-shader-graphs)
   - [2.5 Drafts, publishing and versions](#25-drafts-publishing-and-versions)
 - [Appendix A. Control reference](#appendix-a-control-reference)
@@ -117,7 +117,7 @@ the `.zip` you downloaded. Drag and drop works for both.
 | `.pmx` | A model: mesh, materials, textures, skeleton, physics |
 | `.pmd` | The original model format. Convert to PMX in PMX Editor first |
 | `.vmd` | Keyframes — the same extension carries **body motion** and **camera motion**, which load in separate slots |
-| `.fx` | A MikuMikuEffect shader for DirectX 9. The counterparts here are [background effects](#23-background-effects-in-wgsl) and [shader graphs](#24-material-shader-graphs), in WGSL |
+| `.fx` | A MikuMikuEffect shader for DirectX 9. The counterparts here are [scene effects](#23-scene-effects-in-wgsl) and [shader graphs](#24-material-shader-graphs), in WGSL |
 
 **Keep the model's folder intact.** A PMX references its textures by relative
 path, so a `.pmx` pulled out on its own loads white or grey. This is the single
@@ -182,14 +182,16 @@ photographic backdrop.
 
 ## 1.5 What sits behind the character
 
-Four layers, back to front: the **background colour**, then either a **backdrop**
-(a flat image behind the scene) or a **skybox** (a 360° equirectangular panorama
-projected as a dome, which follows the camera so that orbiting looks out into an
-environment), and then a **background effect** — a shader drawn between the
-background and the character. Rain, stars, drifting petals, an aurora.
+Back to front: the **background colour**, then either a **backdrop** (a flat image
+behind the scene) or a **skybox** (a 360° equirectangular panorama projected as a
+dome, which follows the camera so that orbiting looks out into an environment),
+and then a **scene effect** — a shader that can paint on either side of the
+character. Stars and auroras go behind; rain, petals, sparks and fog go in front,
+and the ones in front know how far away the character is, so a raindrop passing
+behind a shoulder is hidden by it.
 
 Pick an effect from **Scene → Background**, or open the library for the full set.
-Writing your own is [§2.3](#23-background-effects-in-wgsl).
+Writing your own is [§2.3](#23-scene-effects-in-wgsl).
 
 ## 1.6 A stage
 
@@ -392,8 +394,8 @@ at a signed-out session or a name collision.
 Section 1 covered choosing from what exists. This section covers making your own,
 and it is the part of the platform that has no counterpart in other MMD tools:
 the look of a scene here is programmable, live, at three levels of one pipeline.
-**Grades** (§2.2) shape the whole frame's colour. **Background effects** (§2.3)
-are single WGSL functions painting the layer behind the character. **Material
+**Grades** (§2.2) shape the whole frame's colour. **Scene effects** (§2.3) are
+WGSL functions painting the layers behind and in front of the character. **Material
 graphs** (§2.4) define how each surface responds to light, as nodes that compile
 to WGSL. Each section states its full contract — read one and you can author in
 it, in the editor or by writing the document directly. §2.5 explains how drafts,
@@ -405,7 +407,7 @@ Knowing where each thing you author actually acts explains most of what follows.
 From the camera's point of view, back to front:
 
 ```
-  background colour  →  backdrop / skybox  →  BACKGROUND EFFECT (§2.3)
+  background colour  →  backdrop / skybox  →  fn background  (§2.3)
                                                        ↓
                                             the character, shaded by
                                             MATERIAL SHADER GRAPHS (§2.4)
@@ -416,14 +418,20 @@ From the camera's point of view, back to front:
                                             COLOUR GRADE (§2.2)
                                             applied to the whole image
                                                        ↓
+                                            fn foreground  (§2.3)
+                                            over the finished frame,
+                                            holding the scene's depth
+                                                       ↓
                                                   your screen,
                                               the video, the PNG
 ```
 
 So:
 
-- A **background effect** lives behind the character, and the character is painted
-  over it.
+- A **scene effect** is one file that can paint at two points in that stack, and
+  which of them it uses is decided by the functions it defines — `fn background`
+  behind the character, `fn foreground` over the finished frame. It may define
+  both, which is how one file is a whole weather system.
 - A **shader graph** governs one style group on one model, and works from that
   surface's own data — its texture, its normal, the view direction.
 - A **grade** applies last, to every pixel uniformly, when the image is already
@@ -499,42 +507,93 @@ an account. The same buttons sit in the shader-graph editor.
 **Publish** turns a draft into a library item under your name, visible to
 everyone. See [§2.5](#25-drafts-publishing-and-versions) for what that implies.
 
-## 2.3 Background effects in WGSL
+## 2.3 Scene effects in WGSL
 
-A background effect is a shader that paints the layer between the background and
-the character. Rain, snow, stars, an aurora, a moving gradient, a title card —
-anything computable per pixel from the view direction and the clock.
+A scene effect is a shader that paints a layer of the frame, per pixel, from the
+view direction and the clock. Rain, snow, stars, an aurora, fog on the ground, a
+moving gradient, a title card.
 
-The library ships five worked examples, each demonstrating a different technique:
-*Shining Stars* (hash-grid particle fields), *Quiet Rain* (column streaks), *REZE
-DESIGN* (signed-distance glyphs with exponential glow), *Orbiting Hearts*
-(implicit-curve outlines) and *Fuji Watercolor* (layered scene composition).
-Reading them is the fastest way into the idiom.
+The library ships six worked examples, each demonstrating a different technique:
+*Shining Stars* (hash-grid particle fields), *Quiet Rain* (column streaks, cut by
+the character's silhouette), *REZE DESIGN* (signed-distance glyphs with
+exponential glow), *Orbiting Hearts* (implicit-curve outlines), *Fireworks*
+(ballistics with a decaying streak) and *Ground Mist* (a volume walked along the
+view ray). Reading them is the fastest way into the idiom.
 
 ### The contract
 
-One function. That is the entire interface:
+Two functions, and **you write whichever ones you want**. There is no layer
+setting anywhere in the app: the code says where it goes.
 
 ```wgsl
 fn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f
+fn foreground(ray: vec3f, uv: vec2f, time: f32, depth: f32) -> vec4f
 ```
+
+`background` paints between the backdrop and the character — a sky, and anything
+belonging to the world behind. `foreground` paints over the finished frame, which
+is where weather lives. Define both and they are one effect: a storm is a dark sky
+and the rain in front of it, in one file.
 
 | Parameter | Meaning |
 | --- | --- |
 | `ray` | The pixel's world-space view direction, normalised. It **pans with the camera orbit**, so anything computed from it is pinned to the world rather than the screen |
 | `uv` | Screen coordinates, 0 – 1, origin **bottom-left** |
 | `time` | Seconds since the effect was applied |
+| `depth` | **`foreground` only.** How far away, in scene units, whatever the scene drew at this pixel is — the far plane where it drew nothing |
+
+Three helpers are in scope for both:
+
+| Helper | Gives you |
+| --- | --- |
+| `bgResolution()` | The canvas size in pixels, for aspect correction |
+| `bgCameraPos()` | Where the camera is, in world space |
+| `bgWorldPos(ray, depth)` | The world point the scene drew at this pixel |
 
 The return value is **sRGB colour with straight alpha**, and the alpha is the
 interesting part: it is the mask over everything behind you.
 
-- `alpha = 0` — transparent; the background colour, backdrop or skybox shows
-  through.
-- `alpha = 1` — opaque; your effect replaces what is behind it.
+- `alpha = 0` — transparent; whatever is behind shows through untouched.
+- `alpha = 1` — opaque; your effect replaces it.
 
-An **overlay** effect — rain, petals, sparks — holds alpha near 0 between its
-marks and raises it where a mark lands. A **full-scene** effect — a gradient sky, a
-painted backdrop — returns alpha 1 everywhere.
+A sparse effect — rain, petals, sparks — holds alpha near 0 between its marks and
+raises it where a mark lands. A covering one — a gradient sky, a painted backdrop —
+returns alpha 1 everywhere.
+
+### What `depth` is for
+
+A foreground is not stuck in front. `depth` is what lets it decide, per pixel, and
+there are two ways to use it.
+
+**Compare against it.** A particle knows its own distance. If the scene is nearer,
+the scene wins that pixel and the particle is hidden — so drops pass behind a
+shoulder and in front of a face in the same frame. Feather the comparison over a
+unit or so, or the silhouette comes out as a staircase:
+
+```wgsl
+// How much of a curtain hanging `dist` away survives at this pixel.
+fn curtain(dist: f32, depth: f32) -> f32 {
+  return smoothstep(dist - 0.6, dist + 0.6, depth);
+}
+```
+
+**Read it directly.** Fog needs no comparison at all — its opacity simply *is* a
+function of distance, so `1.0 - exp(-depth * density)` is already fog, and pixels
+the scene never drew report the far plane, which is why it closes over the sky on
+its own.
+
+For anything that belongs to a *place* rather than to a distance — mist pooling
+where the cast is standing, a pattern that must not swim as the camera orbits —
+turn the depth into a position with `bgWorldPos(ray, depth)` and work in world
+coordinates.
+
+One caution worth knowing before you reach for it: a foreground evaluated at that
+single depth is a function of the surface the scene drew, which is a texture ON
+that surface. It cannot know about the air *between* the camera and it. If you
+want something the character stands inside rather than behind — real volumetric
+fog — walk the ray yourself between `bgCameraPos()` and `bgWorldPos(...)`,
+accumulating as you go. *Ground Mist* does exactly this, and its comments explain
+why the simpler version reads as a dirty lens.
 
 ### Two orientations
 
@@ -542,8 +601,10 @@ painted backdrop — returns alpha 1 everywhere.
 the camera moves.
 
 **Screen-space**, from `uv` — glued to the frame. Rain falls down the screen
-regardless of where the camera looks. Correct for weather, vignettes, film grain,
-and anything conceptually *in front of* the world.
+regardless of where the camera looks. Correct for weather, vignettes and film
+grain. (Note that this is a separate decision from which function you write:
+`uv` is what makes something screen-*aligned*, `foreground` is what puts it in
+front. Weather usually wants both.)
 
 ```wgsl
 fn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f {

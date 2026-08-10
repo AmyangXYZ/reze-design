@@ -20,7 +20,7 @@ One piece of the **Reze MMD family**, covering the whole MMD workflow on the web
 
 - **Material shader graphs** — build a look in a Blender-style node editor, compiled to WGSL.
 - **Colour grading** — ASC CDL, curated presets and a wheel editor, previewed on your own scene.
-- **Background effects** — live-coded WGSL behind the model.
+- **Scene effects** — live-coded WGSL behind the model, in front of it, or both; the ones in front hold the scene's depth, so rain and petals are occluded by the character they pass behind.
 - **Scene lighting** — sun, world light and bloom over a colour, an image backdrop or a 360° skybox.
 - **Multi-model scenes** — a motion each, one camera VMD, one audio track.
 - **Stage models** — a stage PMX as the environment, placed and scaled, with the switches its author rigged.
@@ -57,18 +57,24 @@ JSON.
 
 ![Background effect editor](./screenshots/effect-editor.png)
 
-A background effect is one WGSL function — `fn background(ray, uv, time) ->
-vec4f` — rendered per pixel between the background layer and the model. Edit it
-in-app with the scene as the live preview; a failed compile keeps the previous
-shader and lists `line:col` diagnostics.
-→ [manual §2.3](./docs/manual/en.md#23-background-effects-in-wgsl)
+A scene effect is WGSL rendered per pixel, and it says where it goes by which
+functions it defines — `fn background(ray, uv, time)` between the background
+layer and the model, `fn foreground(ray, uv, time, depth)` over the finished
+frame. There is no layer setting: one library, one editor, and a file that
+defines both is one weather system. `depth` is how far away the scene is at that
+pixel, so a foreground can be occluded by the character rather than pasted over
+it — compare a particle's own distance against it, or read it directly, since
+fog's opacity simply is a function of distance. Edit in-app with the scene as the
+live preview; a failed compile keeps the previous shader and lists `line:col`
+diagnostics.
+→ [manual §2.3](./docs/manual/en.md#23-scene-effects-in-wgsl)
 
 Colour grades are ASC CDL — curated presets, a wheel-based editor, split toning.
 → [manual §2.2](./docs/manual/en.md#22-colour-grades)
 
 ## Content library
 
-Grades, shader graphs and background effects share one envelope
+Grades, shader graphs and scene effects share one envelope
 (`lib/library.ts`) and travel as data. Built-ins ship in the repo
 (`content/*.json`), so a clone runs with no server; community items merge in
 from the database at runtime. Published items are **immutable versions**:

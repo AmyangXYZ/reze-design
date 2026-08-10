@@ -4240,6 +4240,22 @@ export default function Lab() {
                           placeholder={t.lab.ctl.none}
                         />
                       </div>
+                      {/* Both doors on purpose. "Browse all" inside the menu is
+                          where you look once you have opened the picker and not
+                          found what you wanted; the pill is how you get to the
+                          library without opening the picker at all. Removing it
+                          in favour of the menu row hid the library behind a
+                          click that only makes sense after you have decided the
+                          shortlist is not enough. */}
+                      <div className="mt-2.5 flex justify-center">
+                        <button
+                          onClick={() => openBrowse({ kind: "effect" })}
+                          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90"
+                        >
+                          <Sparkles className="size-3.5" />
+                          {t.lab.cmd.effectLib}
+                        </button>
+                      </div>
                     </>
                   ) : l.id === "light" ? (
                     <>

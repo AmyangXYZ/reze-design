@@ -1,16 +1,42 @@
 /// <reference types="@webgpu/types" />
 "use client"
 
-// LIVE background-effect previews: each card/inspector canvas runs the effect's REAL WGSL
+// LIVE effect previews: each card/inspector canvas runs the effect's REAL WGSL
+//
+// The engine mounts an effect by which entry points its code defines, and so does
+// this — a foreground-only effect has no `background` to call, and wrapping every
+// effect as though it did is a shader that will not compile and a card that stays
+// blank. It also has to hand a foreground the things the engine does: a depth, a
+// camera, and a world position built from them. So the preview carries a stand-in
+// scene — a ground plane under a horizon — which is the least that makes fog and
+// rain legible, since both are defined by what they sit in front of.
 
 import { memo, useEffect, useRef } from "react"
 import { cn } from "@/lib/utils"
 
-// Same contract the engine's composite gives user code, minus the scene
-const PREVIEW_WRAPPER = /* wgsl */ `
+/** Same detection the engine does at install time — `fn` and the name. */
+const definesBackground = (wgsl: string) => /\bfn\s+background\s*\(/.test(wgsl)
+const definesForeground = (wgsl: string) => /\bfn\s+foreground\s*\(/.test(wgsl)
+
+// Same contract the engine's composite gives user code, over a stand-in scene.
+const PREVIEW_HEAD = /* wgsl */ `
 struct U { time: f32, _pad: f32, res: vec2f }
 @group(0) @binding(0) var<uniform> u: U;
 fn bgResolution() -> vec2f { return u.res; }
+
+// The stand-in camera: about where a character is framed, at roughly the scale
+// scenes use (a cast member is ~20 units tall and sits ~25 out), so distances
+// written against a real scene read the same here.
+const PV_CAM = vec3f(0.0, 8.0, -26.0);
+fn bgCameraPos() -> vec3f { return PV_CAM; }
+fn pvForward() -> vec3f {
+  let yaw = u.time * 0.06;
+  return vec3f(sin(yaw), 0.0, cos(yaw));
+}
+fn bgWorldPos(ray: vec3f, depth: f32) -> vec3f {
+  let axis = max(dot(normalize(ray), pvForward()), 1e-4);
+  return bgCameraPos() + normalize(ray) * (depth / axis);
+}
 
 USER_CODE
 
@@ -23,17 +49,51 @@ USER_CODE
 @fragment fn fs(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
   let uv = vec2f(fragCoord.x / u.res.x, 1.0 - fragCoord.y / u.res.y);
   let ndc = uv * 2.0 - 1.0;
-  let yaw = u.time * 0.06;
-  let fwd = vec3f(sin(yaw), 0.0, cos(yaw));
-  let right = vec3f(cos(yaw), 0.0, -sin(yaw));
+  let fwd = pvForward();
+  let right = vec3f(fwd.z, 0.0, -fwd.x);
   let dir = normalize(fwd + ndc.x * right * 0.9 + vec3f(0.0, ndc.y * 0.55, 0.0));
-  let c = background(dir, uv, u.time);
-  // Composite over a neutral dark base so alpha (the layer mask) reads honestly.
-  let base = vec3f(0.075, 0.06, 0.1);
-  let a = clamp(c.a, 0.0, 1.0);
-  return vec4f(clamp(c.rgb, vec3f(0.0), vec3f(1.0)) * a + base * (1.0 - a), 1.0);
+
+  // The stand-in scene: a floor at y=0, and nothing above the horizon. Depth is
+  // measured along the VIEW AXIS, exactly as the engine hands it over, so an
+  // effect's distances mean the same thing in both places.
+  var hit = 100000.0;
+  if (dir.y < -1e-4) {
+    hit = -PV_CAM.y / dir.y;
+  }
+  let depth = clamp(hit * max(dot(dir, fwd), 1e-4), 0.05, 100000.0);
+
+  // A dark base, then a hint of floor receding — a foreground needs something to
+  // be in front of, or its whole point is invisible.
+  var col = vec3f(0.075, 0.06, 0.1);
+  if (hit < 100000.0) {
+    col = mix(vec3f(0.16, 0.15, 0.19), col, clamp(hit / 140.0, 0.0, 1.0));
+  }
+
+  BACKGROUND_CALL
+  FOREGROUND_CALL
+  return vec4f(clamp(col, vec3f(0.0), vec3f(1.0)), 1.0);
 }
 `
+
+// Both mounts composite the same way the engine's do: straight alpha OVER.
+const BACKGROUND_CALL = /* wgsl */ `
+  {
+    let c = background(dir, uv, u.time);
+    let a = clamp(c.a, 0.0, 1.0);
+    col = clamp(c.rgb, vec3f(0.0), vec3f(1.0)) * a + col * (1.0 - a);
+  }`
+const FOREGROUND_CALL = /* wgsl */ `
+  {
+    let c = foreground(dir, uv, u.time, depth);
+    let a = clamp(c.a, 0.0, 1.0);
+    col = clamp(c.rgb, vec3f(0.0), vec3f(1.0)) * a + col * (1.0 - a);
+  }`
+
+function previewShader(wgsl: string): string {
+  return PREVIEW_HEAD.replace("USER_CODE", wgsl)
+    .replace("BACKGROUND_CALL", definesBackground(wgsl) ? BACKGROUND_CALL : "")
+    .replace("FOREGROUND_CALL", definesForeground(wgsl) ? FOREGROUND_CALL : "")
+}
 
 type Entry = { canvas: HTMLCanvasElement; ctx: GPUCanvasContext; wgsl: string }
 
@@ -83,7 +143,7 @@ function pipelineFor(d: GPUDevice, wgsl: string): GPURenderPipeline | null {
   if (cached) return cached
   pipelineCache.set(wgsl, "pending")
   d.pushErrorScope("validation")
-  const shader = d.createShaderModule({ code: PREVIEW_WRAPPER.replace("USER_CODE", wgsl) })
+  const shader = d.createShaderModule({ code: previewShader(wgsl) })
   void d
     .createRenderPipelineAsync({
       layout: d.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout!] }),

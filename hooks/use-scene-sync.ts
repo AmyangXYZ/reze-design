@@ -171,8 +171,14 @@ export function useSceneSync({
   const lastWgsl = useRef<string | null>(null)
   useEffect(() => {
     const engine = engineRef.current
-    if (!ready || !engine) return
+    if (!engine) return
     const wgsl = greenScreen ? null : (backgroundEffect?.wgsl ?? null)
+    // REMOVING one does not wait for `ready`. That flag is off for the whole
+    // scene swap — every model still to arrive — and gating removal on it left
+    // the outgoing scene's effect running over the incoming one until the last
+    // of them landed. Installing still waits: there is nothing to put an effect
+    // on yet, and the compile is better spent once the scene is there.
+    if (!ready && wgsl !== null) return
     if (wgsl === lastWgsl.current) return
     lastWgsl.current = wgsl
     let stale = false
