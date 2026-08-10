@@ -22,8 +22,10 @@ One piece of the **Reze MMD family**, covering the whole MMD workflow on the web
 - **Colour grading** — ASC CDL with curated presets and a wheel-based editor, previewed on your own scene.
 - **Background effects** — WGSL shaders behind the model, written and applied live in the editor.
 - **Scene lighting** — sun, world light and bloom over a background colour, image backdrop or 360° skybox.
+- **Command palette** — ⌘K finds every action and setting by name, in English or 中文, and says what each is set to.
 - **Multi-model support** — each with its own motion, plus a shared camera VMD and audio track.
 - **Stage models** — load a stage PMX as the scene's environment: place it with position, rotation and uniform scale, and flip the switches its author rigged as morphs. It replaces the ground plane, and its materials go through the same style groups and shader graphs as a character.
+- **Stage material presets** — fifteen stage looks, matched against a stage's own material names in Japanese, Chinese or English on load.
 - **Playback** — scrub and loop with audio synced to the motion, and a free or VMD-driven camera.
 - **Video export** — 60 fps mp4 up to 4K, from 2.39:1 cinemascope to vertical, with a green-screen mode.
 - **Still capture** — one PNG at the same framing and resolution as the video, for a scene's thumbnail.
@@ -116,6 +118,9 @@ shipping the demo model.
 
 A curated MMD platform built around the character and its dance. Next up:
 
+- **Timeline editing** — a shared time axis with a playhead across the lanes, then per-track trim and offset.
+- **Global effects** — WGSL effects in front of the scene as well as behind it.
+- **Sphere-map highlights** — MMD's specular maps in the shader graph, for the highlight hair textures already carry.
 - **More built-ins** — a growing shader-graph and colour-grade library tuned for the MMD aesthetic.
 - **Mobile layout** — a proper small-screen shell (the editor already runs there).
 
