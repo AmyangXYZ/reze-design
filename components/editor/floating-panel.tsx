@@ -12,6 +12,13 @@ type Mode = "move" | "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw"
 
 const PAD = 8 // keep this many px between the panel and the viewport edge
 
+/** Fullscreen is not edge-to-edge: it keeps a margin, and the FLOOR is the 4rem
+ *  the side panels already reserve for the transport. A maximized editor that
+ *  covered the play controls would make watching the scene you are editing cost
+ *  a trip out of fullscreen — which is the one thing the mode is for. */
+const FULL_PAD = 12
+const FULL_FLOOR = 64
+
 // Drop the backdrop-blur (which re-samples the whole background every frame) and hint
 function setPerf(el: HTMLElement, active: boolean) {
   if (active) {
@@ -123,7 +130,12 @@ export function FloatingPanel({
   }
 
   const style = fullscreen
-    ? { left: 12, top: 12, width: "calc(100vw - 24px)", height: "calc(100dvh - 24px)" }
+    ? {
+        left: FULL_PAD,
+        top: FULL_PAD,
+        width: `calc(100vw - ${FULL_PAD * 2}px)`,
+        height: `calc(100dvh - ${FULL_PAD + FULL_FLOOR}px)`,
+      }
     : { left: rect.x, top: rect.y, width: rect.w, height: rect.h }
 
   // Edge/corner resize affordances (invisible hit strips). Corners sit above edges.

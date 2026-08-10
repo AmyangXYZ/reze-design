@@ -10,7 +10,7 @@
 
 import { Heart } from "lucide-react"
 import { LIBRARY_FACETS, type LibraryFacet, type LibraryItem, type MaybeMine } from "@/lib/library"
-import type { ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
@@ -36,9 +36,119 @@ export const LIBRARY_SHELL =
   // 84dvh. The dialog is centred, so the margin below it is (100-h)/2: at 88
   // that left ~6%, under the transport bar's own height at fixed bottom-3, and
   // the two visibly touched. 80 cleared it but read as a band of dead space.
-  "flex h-[84dvh] max-h-[84dvh] w-[92vw] max-w-6xl flex-col gap-0 overflow-hidden border-white/10 bg-zinc-950/95 p-0 sm:max-w-6xl " +
+  "flex h-[84dvh] max-h-[84dvh] w-[90vw] max-w-5xl flex-col gap-0 overflow-hidden border-white/10 bg-zinc-950/95 p-0 sm:max-w-5xl " +
   "data-[state=closed]:animate-none data-[state=closed]:fade-out-100 data-[state=closed]:zoom-out-100 " +
   "data-[state=open]:animate-none data-[state=open]:fade-in-100 data-[state=open]:zoom-in-100"
+
+/**
+ * A shelf of cards, in every library.
+ *
+ * The `pt-1` is load-bearing: a selected card is marked with a ring, and a ring
+ * paints OUTSIDE the border box, so a first row flush against its scroll
+ * container had its top pixel clipped — a selection whose highlight was open at
+ * the top. Community and Local wear it worst, their headers sitting outside the
+ * scroll box, so their cards begin exactly at the clip edge.
+ *
+ * The 4px comes OUT of the header above rather than being added below it, so the
+ * shelves keep the spacing they had. Column count and the bottom are the
+ * caller's — the shelves differ in both.
+ */
+export const LIBRARY_GRID = "grid content-start gap-2 px-3 pt-1 pb-3"
+
+/**
+ * PARKED, and kept because the problem it solves is real.
+ *
+ * The shelves are plain CSS shares again (40% · 40% · 20%), which is
+ * predictable and wrong only in the small: three capped sections plus their
+ * top margin and their rules add up to a hair MORE than the height they are
+ * given, so the bottom shelf loses those few pixels, and a share of a dvh
+ * never divides evenly into a card row, so a shelf can still end on a card cut
+ * through the middle.
+ *
+ * This measures its way out of both — but it has to subtract the margins and
+ * borders from each share to do it, which the version below does not, and a
+ * measurement that is wrong is worse than an approximation that is honest. It
+ * wants a session with the dialog open in front of it.
+ *
+ * A shelf's height: its SHARE of the column, rounded down to whole card rows.
+ *
+ * The share has to be measured rather than declared. `max-h-[40%]` is a
+ * percentage of a dialog sized in dvh, and a card's height comes from the column
+ * WIDTH — a 16:10 thumbnail in one of four or five tracks — so the two never
+ * divide evenly and the shelf ends on a card sliced through the middle. What the
+ * eye reads there is not "scroll for more", it is a broken layout.
+ *
+ * So: measure one card and the gap, take the share, and keep the largest whole
+ * number of rows that fits. Everything it needs is already on screen, and the
+ * observer re-runs it when the dialog is resized or the card count changes the
+ * grid's shape.
+ *
+ * Applied to the SCROLLER rather than the section, so the header is outside the
+ * arithmetic and cannot be squeezed. At least one row always survives, even in a
+ * window too short for the share — a shelf showing nothing would hide items with
+ * no way to know they are there.
+ */
+export function useShelfCap(share: number) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [maxHeight, setMaxHeight] = useState<number | undefined>(undefined)
+  useEffect(() => {
+    const section = ref.current
+    const column = section?.parentElement
+    if (!section || !column) return
+    const measure = () => {
+      const header = section.firstElementChild as HTMLElement | null
+      const grid = section.querySelector<HTMLElement>("[data-shelf-grid]")
+      const card = grid?.firstElementChild as HTMLElement | null
+      // No cards — an empty Community says so in one line, which needs no cap.
+      if (!header || !grid || !card) return setMaxHeight(undefined)
+      const gs = getComputedStyle(grid)
+      const gap = parseFloat(gs.rowGap) || 0
+      const padTop = parseFloat(gs.paddingTop) || 0
+      const padBottom = parseFloat(gs.paddingBottom) || 0
+      const cardH = card.getBoundingClientRect().height
+      // Not laid out yet (a card with no measured height): leave the cap alone
+      // and wait — the observer watches the section, so the frame the cards
+      // gain height is a frame this runs again.
+      if (cardH <= 0) return
+      const room = column.clientHeight * share - header.getBoundingClientRect().height
+      const content = grid.scrollHeight
+      // Everything fits: take the CONTENT height, padding and all. Rounding to
+      // whole rows here would slice off the grid's bottom padding and produce a
+      // scrollbar for twelve pixels of air.
+      if (content <= room) return setMaxHeight(content)
+      // Otherwise the largest whole number of rows the share allows. n rows and
+      // the n-1 gaps BETWEEN them — counting the trailing gap would leave a
+      // sliver of the next row showing, which is the thing this exists to stop.
+      const rows = Math.max(1, Math.floor((room - padTop - padBottom + gap) / (cardH + gap)))
+      setMaxHeight(padTop + rows * cardH + (rows - 1) * gap)
+    }
+    // Fires once on observe, which is the first measurement — so there is no
+    // synchronous setState in the effect body and no second pass correcting a
+    // first guess. The COLUMN is watched for the dialog resizing, the SECTION
+    // for cards arriving and for the card height that follows column width.
+    const ro = new ResizeObserver(measure)
+    ro.observe(column)
+    ro.observe(section)
+    return () => ro.disconnect()
+  }, [share])
+  return { ref, style: maxHeight === undefined ? undefined : { maxHeight } }
+}
+
+/**
+ * How many are on this shelf, right after the word that names it.
+ *
+ * Beside the label rather than at the right edge: it is part of what the heading
+ * SAYS, not a second column of data — and a number alone at the far end of a
+ * wide header reads as belonging to whatever sits under it.
+ *
+ * Counts what is DISPLAYED, so a search or a facet narrows it. A total that
+ * disagrees with the rows you can see is a number you have to explain.
+ */
+export function ShelfCount({ n }: { n: number }) {
+  // tracking-normal: the headings run at 0.14em, which pushes a closing paren
+  // off its digits.
+  return <span className="ml-1.5 tracking-normal tabular-nums">({n})</span>
+}
 
 /** A titled block in the rail. Sections are separated by a rule so the rail reads
  *  as "how to browse" then "what to browse by". */

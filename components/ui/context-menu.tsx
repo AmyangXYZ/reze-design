@@ -5,6 +5,7 @@ import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 import { ChevronRight } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { preventFocusReturnOnPointer } from "@/lib/last-input"
 
 const ContextMenu = ContextMenuPrimitive.Root
 const ContextMenuTrigger = ContextMenuPrimitive.Trigger
@@ -21,7 +22,12 @@ const itemBase =
 function ContextMenuContent({ className, ...props }: React.ComponentProps<typeof ContextMenuPrimitive.Content>) {
   return (
     <ContextMenuPrimitive.Portal>
-      <ContextMenuPrimitive.Content data-slot="context-menu-content" className={cn(menuSurface, className)} {...props} />
+      <ContextMenuPrimitive.Content
+        data-slot="context-menu-content"
+        onCloseAutoFocus={preventFocusReturnOnPointer}
+        className={cn(menuSurface, className)}
+        {...props}
+      />
     </ContextMenuPrimitive.Portal>
   )
 }

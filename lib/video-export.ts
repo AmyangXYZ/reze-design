@@ -116,6 +116,13 @@ export async function captureStill(opts: {
   // Stopped, because the live loop would redraw at viewport size in the gap
   // between our frame and reading it back.
   engine.stopRenderLoop()
+  // Restore the exact pixels we found, NOT null: null means viewport-tracking,
+  // and if the host had pinned the canvas to a framed aspect, a null restore
+  // painted one viewport-sized frame before the host could re-pin — a visible
+  // aspect flash after every capture. Same-size restore has no wrong frame;
+  // the host then re-asserts pin-or-tracking invisibly.
+  const prevW = canvas.width
+  const prevH = canvas.height
   engine.setRenderSize(width, height)
   try {
     // dt = 0 redraws the current pose rather than advancing it.
@@ -129,7 +136,7 @@ export async function captureStill(opts: {
     ctx.drawImage(canvas, 0, 0, width, height)
     if (settings.watermark && !settings.greenScreen) drawWatermark(ctx, width, height, brandFontFamily())
   } finally {
-    engine.setRenderSize(null)
+    engine.setRenderSize(prevW, prevH)
     engine.renderFrame(0)
     engine.runRenderLoop()
   }
@@ -239,6 +246,9 @@ export async function exportVideo(opts: {
   // ── Engine: remember live state, switch to offline stepping ──
   const prior = model.getAnimationProgress()
   engine.stopRenderLoop()
+  // Same-size restore as captureStill — see the note there.
+  const prevW = canvas.width
+  const prevH = canvas.height
   engine.setRenderSize(width, height)
   // Green-screen state (background, ground surface, skybox suspension) is LIVE page state
   const fillColor = settings.greenScreen ? GREEN : bgColor
@@ -293,8 +303,9 @@ export async function exportVideo(opts: {
     if (output.state === "started") await output.cancel().catch(() => {})
     throw e
   } finally {
-    // Restore the live session: viewport-tracked size, background/skybox (green- screen mode
-    engine.setRenderSize(null)
+    // Restore the live session at the exact prior size (the host re-asserts
+    // pin-or-tracking afterwards), background/skybox (green-screen mode
+    engine.setRenderSize(prevW, prevH)
     for (const m of cast) {
       m.pause()
       m.seek(prior.current)

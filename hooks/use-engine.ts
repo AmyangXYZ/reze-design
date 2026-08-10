@@ -70,7 +70,18 @@ function applyCamera(engine: Engine, camera: SceneCamera, model: Model | null): 
   engine.setCameraBeta(camera.beta)
 }
 
-async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean, onStage?: () => void) {
+/** Progress hooks. Each fires the moment its subject is usable, so a host can
+ *  paint in the order the bytes arrive rather than waiting on the last model:
+ *  stage → bundle (clips, audio and the backdrop image resolve out of it) →
+ *  one call per model as it finishes loading and styling. */
+type LoadProgress = {
+  onStage?: () => void
+  onBundle?: (files: File[] | null) => void
+  onModel?: (info: EngineModelInfo, groups: StyleGroup[], stage: StageInfo | null) => void
+}
+
+async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean, progress: LoadProgress = {}) {
+  const { onStage, onBundle, onModel } = progress
   const s = scene.state.settings
   const infos: EngineModelInfo[] = []
   const groups: Record<string, StyleGroup[]> = {}
@@ -113,6 +124,10 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
     bundle = await unzipToFiles(new File([await res.blob()], "assets.zip"))
     if (stale()) return null
   }
+  // The bundle is what clips, audio and a background image resolve out of, and
+  // none of them have anything to do with how long the models take. Handed over
+  // the moment it is unzipped.
+  onBundle?.(bundle)
   // For a published zip a missing path is corruption and throwing is honest. Local
   // bytes are different: browsers evict IndexedDB under pressure, so "gone" is a
   // normal Tuesday — the scene boots with whatever still resolves and the user
@@ -195,22 +210,26 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
     if (stale()) return null
     const hidden = scene.state.hidden?.[entry.model.id] ?? []
     for (const name of hidden) engine.toggleMaterialVisible(entry.model.id, name)
-    infos.push(infoFor(entry.model.id, entry.model.file, model, hidden))
-    groups[entry.model.id] = withSpecialGroups(docGroups ?? engine.getStyleGroups(entry.model.id))
+    const info = infoFor(entry.model.id, entry.model.file, model, hidden)
+    const modelGroups = withSpecialGroups(docGroups ?? engine.getStyleGroups(entry.model.id))
+    infos.push(info)
+    groups[entry.model.id] = modelGroups
+    // Framing travels with the document, and it is bound to the FIRST model —
+    // `follow` rides that one's bone. Applied as soon as it exists rather than
+    // after the last: with three characters, waiting meant two of them stood in
+    // an unframed shot until the third finished, and the camera then jumped.
+    if (infos.length === 1) applyCamera(engine, scene.state.camera, model)
+    // Reveal this one NOW. Models with an animation stay hidden a moment longer:
+    // their clip loader reveals them after show(), so the first visible frame
+    // wears the motion's first pose instead of flashing bind pose. (If the clip
+    // fails, the loader still reveals.)
+    if (!entry.animation) engine.setModelTransform(entry.model.id, { visible: true })
+    onModel?.(info, modelGroups, entry.stage ? stageList[stageList.length - 1]! : null)
   }
 
-  // Framing travels with the document. Applied here rather than in either host,
-  // so a published scene opens on the shot its author chose whether it is being
-  // viewed or edited — the editor only pushed the camera when a slider moved, and
-  // the viewer never pushed it at all.
+  // Again at the end, for the empty-scene case and because the first model may
+  // have arrived before its follow bone existed.
   applyCamera(engine, scene.state.camera, engine.getModel(scene.assets.models[0]?.model.id ?? ""))
-  // Camera bound (follow included) and styles compiled — reveal. Models with an
-  // animation stay hidden a moment longer: their clip loader reveals them after
-  // show(), so the first visible frame wears the motion's first pose instead of
-  // flashing bind pose. (If the clip fails, the loader still reveals.)
-  for (const entry of scene.assets.models) {
-    if (!entry.animation) engine.setModelTransform(entry.model.id, { visible: true })
-  }
   return { infos, groups, bundle, stageList }
 }
 
@@ -288,6 +307,11 @@ export function useEngine(
   const [ready, setReady] = useState(false)
   // The stage (ground/camera/render loop) is live — models may still be loading.
   const [stageReady, setStageReady] = useState(false)
+  // The asset bundle is unzipped. Everything that resolves out of it — clips,
+  // audio, a background image — is available from here, which is well before
+  // the models it shares the zip with have finished loading. State and not just
+  // the ref, because a ref cannot tell anyone it changed.
+  const [bundleReady, setBundleReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [models, setModels] = useState<EngineModelInfo[]>([])
   // Which of `models` are environment rather than cast. Stages stay IN models so
@@ -331,10 +355,23 @@ export function useEngine(
         if (process.env.NODE_ENV === "development") (window as unknown as { __reze?: Engine }).__reze = engine
         await engine.init()
         if (disposed) return
-        const loaded = await loadSceneInto(engine, scene, () => disposed, () => {
-          // Stage up: paint now, models stream in behind.
-          engine.runRenderLoop()
-          setStageReady(true)
+        const loaded = await loadSceneInto(engine, scene, () => disposed, {
+          onStage: () => {
+            // Stage up: paint now, models stream in behind.
+            engine.runRenderLoop()
+            setStageReady(true)
+          },
+          onBundle: (files) => {
+            bundleRef.current = files
+            setBundleReady(true)
+          },
+          // Each model joins the lists as it lands, so a host can name it, show
+          // its row and give it its motion while the rest are still loading.
+          onModel: (info, groups, stage) => {
+            setModels((prev) => [...prev, info])
+            setGroupsByModel((prev) => ({ ...prev, [info.id]: groups }))
+            if (stage) setStages((prev) => [...prev, stage])
+          },
         })
         if (!loaded) return
         bundleRef.current = loaded.bundle
@@ -680,6 +717,7 @@ export function useEngine(
     engineRef,
     ready,
     stageReady,
+    bundleReady,
     error,
     models,
     stages,

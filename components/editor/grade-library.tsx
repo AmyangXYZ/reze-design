@@ -15,7 +15,7 @@ import {
   NEW_GRADE_SPEC,
   type GradeSettings,
 } from "@/lib/grade"
-import { LIBRARY_SHELL, LibraryRail, LibraryStats, LibraryTags } from "@/components/editor/library-rail"
+import { LIBRARY_GRID, LIBRARY_SHELL, LibraryRail, LibraryStats, LibraryTags, ShelfCount } from "@/components/editor/library-rail"
 import {
   conflictingName,
   matchesFacet,
@@ -52,8 +52,10 @@ type Props = {
   onApplyPreset: (id: string) => void
   /** A draft was renamed — re-point anything applied by the old name. */
   onRenamed?: (oldName: string, newName: string) => void
-  /** Open the page-level floating grade editor (independent panel, same idiom as the graph */
-  onEdit: (subject: GradeEditorSubject) => void
+  /** Open the page-level floating grade editor (independent panel, same idiom as the graph
+   *  editor). Optional: a host without the editor omits it, and every edit/new
+   *  affordance hides rather than sitting there doing nothing. */
+  onEdit?: (subject: GradeEditorSubject) => void
 }
 
 export function GradeLibrary(props: Props) {
@@ -161,12 +163,13 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
 
   /** Straight into the editor, no entry created */
   const startEdit = (g: GradeItem) => {
+    if (!onEdit) return
     setSelectedId(g.name)
     onEdit({ id: g.id, name: g.name, spec: g.payload.spec, origin: g.owner === "builtin" ? g.name : undefined })
   }
   // Nothing is created here — the editor is a scratchpad, and the save-on-close
   // dialog is what turns the work into a draft.
-  const startNew = () => onEdit({ id: "", name: t.gradeLibrary.newGrade, spec: NEW_GRADE_SPEC })
+  const startNew = () => onEdit?.({ id: "", name: t.gradeLibrary.newGrade, spec: NEW_GRADE_SPEC })
 
   /** Is this entry what the scene is currently showing? The scene stores the name. */
   const isApplied = (g: GradeItem) => grade.preset === g.name
@@ -245,7 +248,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
       <ContextMenu key={g.id}>
         <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
         <ContextMenuContent className="w-40">
-          <ContextMenuItem onSelect={() => startEdit(g)}>{t.gradeLibrary.edit}</ContextMenuItem>
+          {onEdit && <ContextMenuItem onSelect={() => startEdit(g)}>{t.gradeLibrary.edit}</ContextMenuItem>}
           {isDraft && <ContextMenuItem
               onSelect={() => {
                 setRenameError(null)
@@ -323,6 +326,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
             className="h-7 border-white/10 bg-white/5 pl-8 text-xs"
           />
         </div>
+        {onEdit && (
         <button
           onClick={startNew}
           className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90"
@@ -330,6 +334,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
           <Plus className="size-3.5" />
           {t.gradeLibrary.newGrade}
         </button>
+        )}
         <DialogClose className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
           <X className="size-4" />
           <span className="sr-only">{t.library.close}</span>
@@ -340,18 +345,51 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
         <LibraryRail items={all} facet={facet} onFacetChange={setFacet} tag={tag} onTagChange={setTag} isLiked={(i) => statFor(i.name).liked} />
 
         {/* ── Grid: every tile is the user's own scene under that grade ── */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <ScrollArea className="min-h-0">
-          <div className="px-3 pt-2 pb-2.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.builtin}</div>
-          <div className="grid grid-cols-5 content-start gap-2 px-3 pb-1.5">
-            {builtinRows.map(renderCard)}
-            {rows.length === 0 && (
-              <div className="col-span-full py-16 text-center text-xs text-muted-foreground">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {/* THE SHELVES: 38% · 38% · 20%, content-sized under that.
+
+            The shares are aimed at TWO rows up top and ONE for Local — but they
+            can only aim. A share is a fraction of a dialog measured in dvh; a
+            card row is a fraction of the column WIDTH (a 16:10 thumbnail in one
+            of five tracks) plus a fixed label. The two are unrelated, so the
+            same 34% is two rows and a sliver on one screen and not quite two on
+            another. Holding a row COUNT needs the measurement that is parked in
+            library-rail.tsx — see useShelfCap.
+
+            MAX, not min. The dialog is 84dvh, so a taller screen already makes
+            the column taller and every shelf proportionally taller with it —
+            that is where screen size is answered. A minimum would answer it
+            backwards: it would hold a third of the dialog open for a Community
+            shelf with nothing on it.
+
+            96 rather than 100, and shrinkable (min-h-0, no shrink-0). The top
+            margin and the two rules between shelves are real pixels; at a clean
+            100 they pushed the column over and the bottom shelf paid for it,
+            which is how Local ended up a card short of a full row. The 4% is
+            for them, and shrink is the guard if a font or a border ever moves.
+
+            Equal shares rather than one growing section — the built-ins are
+            a set you learn the shape of, Community is everyone else's work and is
+            the half of the library that grows forever, and Local is your own
+            drafts, which are few by nature. Any of them shorter than its share
+            simply ends; the slack collects at the BOTTOM of the column, where it
+            reads as the shelves ending rather than as a hole between them. */}
+        <div className="flex max-h-[38%] min-h-0 flex-col">
+          <div className="shrink-0 px-3 pt-2 pb-1.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
+            {t.rail.builtin}
+            <ShelfCount n={builtinRows.length} />
+          </div>
+          <ScrollArea className="min-h-0 flex-1">
+            <div data-shelf-grid className={cn(LIBRARY_GRID, "grid-cols-5 pb-1.5")}>
+              {builtinRows.map(renderCard)}
+              {rows.length === 0 && (
+                <div className="col-span-full py-16 text-center text-xs text-muted-foreground">
                   {facet === "yours" && !query ? t.rail.yoursEmpty : t.library.noMatch(query)}
                 </div>
-            )}
-          </div>
+              )}
+            </div>
           </ScrollArea>
+        </div>
 
           {/* Community is PINNED, like drafts, rather than scrolling below the
               built-ins. Both headers show even when empty: an empty Community is
@@ -359,28 +397,24 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
               do, and a section you must scroll to find cannot make that ask at
               all. Local stays conditional — your own drafts, and an empty one
               tells you nothing you did not know. */}
-          {/* Community takes the slack rather than a fixed cap. The dialog is a
-              fixed height, so a short built-in shelf leaves room over: parked
-              under a capped Community, that room read as a black band lying on
-              top of the section, community cards scrolling inside a box with
-              dead space beneath them. Growing into it costs nothing and never
-              takes the room the Local shelf needs, which is capped and pinned
-              last. The floor keeps a row of cards visible when the built-ins are
-              long enough to squeeze it. */}
-          <div className="mt-2 flex min-h-[7.5rem] flex-1 flex-col border-t border-white/10">
-            <div className="shrink-0 px-3 pt-2 pb-2.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.community}</div>
+          <div className="mt-2 flex max-h-[38%] min-h-0 flex-col border-t border-white/10">
+            <div className="shrink-0 px-3 pt-2 pb-1.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.community}
+              <ShelfCount n={communityRows.length} />
+            </div>
             <ScrollArea className="min-h-0 flex-1">
               {communityRows.length > 0 ? (
-                <div className="grid grid-cols-5 content-start gap-2 px-3 pb-3">{communityRows.map(renderCard)}</div>
+                <div data-shelf-grid className={cn(LIBRARY_GRID, "grid-cols-5")}>{communityRows.map(renderCard)}</div>
               ) : (
                 <div className="px-3 pb-3 text-xs text-muted-foreground/70">{t.rail.communityEmpty}</div>
               )}
             </ScrollArea>
           </div>
           {localRows.length > 0 && (
-            <div className="flex max-h-[10rem] shrink-0 flex-col border-t border-white/10">
-              <div className="flex shrink-0 items-center justify-between px-3 pt-1.5 pb-2.5">
-                <span className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.local}</span>
+            <div className="flex max-h-[20%] min-h-0 flex-col border-t border-white/10">
+              <div className="flex shrink-0 items-center justify-between px-3 pt-1.5 pb-1.5">
+                <span className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.local}
+                  <ShelfCount n={localRows.length} />
+                </span>
                 {/* Clears exactly what is LISTED, not every draft of this kind — a
                     search or facet can be narrowing this section, and wiping rows
                     you cannot see is not something a visible count can warn about.
@@ -401,9 +435,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                 </button>
               </div>
               <ScrollArea className="min-h-0 flex-1">
-                <div className="grid grid-cols-5 content-start gap-2 px-3 pb-3">
-                {localRows.map(renderCard)}
-                </div>
+                <div data-shelf-grid className={cn(LIBRARY_GRID, "grid-cols-5")}>{localRows.map(renderCard)}</div>
               </ScrollArea>
             </div>
           )}
@@ -417,6 +449,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                 {/* The preview IS the edit affordance, exactly like the other two libraries */}
                 <button
                   type="button"
+                  disabled={!onEdit}
                   onClick={() => startEdit(selected)}
                   className="group/prev relative block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-md border border-white/10"
                 >

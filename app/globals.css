@@ -3,6 +3,13 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -221,4 +228,53 @@
   box-shadow:
     0 20px 50px -12px rgb(0 0 0 / 0.7),
     0 8px 20px -8px rgb(0 0 0 / 0.55);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Editor chrome tokens.
+
+   An audit of the editor found text-muted-foreground at SEVEN opacities,
+   border-white at seven, and bg-zinc-950 at five — every one of them a
+   judgement made once at a call site and never compared with the others. The
+   fix is not to pick better numbers, it is to have somewhere for the number to
+   live. Reach for a token; if none fits, the design has a new case and that is
+   worth noticing rather than expressing as /55.
+
+   TEXT is only ever two: `text-foreground` and `text-muted-foreground`. Never
+   an opacity on either — a dimmer muted is not a third tier, it is the same
+   tier rendered inconsistently.
+
+   ACCENTS are three, and each means one thing:
+     blue-400   selected / active / focus
+     amber-400  warning — the thing still works, but read this
+     red-400    destructive — this removes something
+
+   RADII: 12px surface · 8px interior · 6px chip.
+   ───────────────────────────────────────────────────────────────────────── */
+@theme inline {
+  /* Chrome ground — the recipe the shipped docks use: zinc-950/70 behind a
+     backdrop-blur, /95 for anything stacked on top.
+
+     The blur was removed once and measured: the transport's fold animates
+     layout properties, and doing that through a backdrop-filter over a live
+     WebGPU canvas visibly dropped frames. It went back in anyway — the call is
+     that the 0.4.0 chrome looks identical to the shipped app, and a fold that
+     pays a few frames of its 300ms is the cheaper loss. If the fold ever has
+     to be perfectly smooth, drop the blur HERE and raise L to compensate
+     (0.178 at 0.92 alpha read the same); do not re-litigate it per surface. */
+  --color-surface: oklch(0.141 0.005 285.823 / 0.7);
+  /* Anything stacked ON the ground: a menu over a panel, a dialog over both. */
+  --color-surface-raised: oklch(0.141 0.005 285.823 / 0.95);
+  /* The dim behind a centred, scrimmed surface. */
+  --color-scrim: oklch(0.12 0.008 260 / 0.55);
+
+  /* Two edges, not seven. `line` divides things inside one surface; `strong`
+     bounds the surface itself. A prior review called unclear borders out
+     specifically, so neither goes below 6%. */
+  --color-line: oklch(1 0 0 / 0.06);
+  --color-line-strong: oklch(1 0 0 / 0.12);
+
+  --radius-surface: 12px;
+  --radius-interior: 8px;
+  --radius-chip: 6px;
 }

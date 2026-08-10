@@ -46,6 +46,7 @@ export function SliderRow({
   // style group, so it needs no affordance of its own.
   const t = useT()
   const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState("")
   const commit = (raw: string) => {
     setEditing(false)
     const parsed = Number(raw)
@@ -71,42 +72,49 @@ export function SliderRow({
         disabled={disabled}
         onValueChange={([v]) => onChange(v)}
       />
-      {/* Both states carry the same box: fixed height, same width, same border
-          box and zero padding. Only colour changes when it becomes editable, so
-          the row does not shift under the pointer that just double-clicked it. */}
-      {editing ? (
-        <input
-          autoFocus
-          defaultValue={String(value)}
-          onFocus={(e) => e.currentTarget.select()}
-          onBlur={(e) => commit(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") e.currentTarget.blur()
-            else if (e.key === "Escape") setEditing(false)
-          }}
-          className={cn(VALUE_BOX, "border-blue-400/50 bg-white/5 text-foreground outline-none")}
-        />
-      ) : (
-        <span
-          onDoubleClick={() => setEditing(true)}
-          title={t.scene.typeValue}
-          className={cn(VALUE_BOX, "cursor-text border-transparent text-muted-foreground")}
-        >
-          {fmt ? fmt(value) : value}
-        </span>
-      )}
+      {/* ONE element for both states. A span that becomes an input can never be
+          pixel-identical — the input reserves caret space and centres its text
+          by its own rules, so the value stepped a hair on every double-click.
+          The same input in both states cannot drift: read-only it shows the
+          formatted value, editable it shows the raw draft, and only the border
+          colour and readOnly change. */}
+      <input
+        readOnly={!editing}
+        value={editing ? draft : String(fmt ? fmt(value) : value)}
+        title={editing ? undefined : t.scene.typeValue}
+        onDoubleClick={(e) => {
+          if (editing) return
+          setDraft(String(value))
+          setEditing(true)
+          requestAnimationFrame(() => (e.target as HTMLInputElement).select())
+        }}
+        onChange={(e) => editing && setDraft(e.target.value)}
+        onBlur={() => editing && commit(draft)}
+        onKeyDown={(e) => {
+          if (!editing) return
+          if (e.key === "Enter") e.currentTarget.blur()
+          else if (e.key === "Escape") setEditing(false)
+        }}
+        className={cn(
+          VALUE_BOX,
+          "outline-none",
+          editing
+            ? "border-blue-400/50 bg-white/5 text-foreground"
+            : "cursor-text border-transparent text-muted-foreground select-none",
+        )}
+      />
     </div>
   )
 }
 
 /** The bone the camera follows. センター is the body's root in every standard MMD
  *  rig, so it tracks travel without inheriting the bob of a spine or a head. */
-const FOLLOW_BONE = "センター"
+export const FOLLOW_BONE = "センター"
 /** Defaults for the two meanings of the target triple: as an OFFSET from the
  *  followed bone (センター already sits at hip height, so only a small lift) and
  *  as an ABSOLUTE point (the scene default framing). */
-const FOLLOW_OFFSET_DEFAULT: [number, number, number] = [0, 3, 0]
-const TARGET_DEFAULT: [number, number, number] = [0, 11.4, 0]
+export const FOLLOW_OFFSET_DEFAULT: [number, number, number] = [0, 3, 0]
+export const TARGET_DEFAULT: [number, number, number] = [0, 11.4, 0]
 
 export function Section({
   title,

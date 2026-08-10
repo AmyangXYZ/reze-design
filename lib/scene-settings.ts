@@ -15,6 +15,15 @@ export type SceneSettings = {
     intensity: number
     color: string
   }
+  /** Camera depth of field. Focus is ALWAYS automatic — the engine tracks the
+   *  character's own depth span every frame, which is both the right answer and
+   *  one nobody can dial in by hand while a dance moves. That leaves the switch
+   *  and one dial, how much blur, so there is no focus mode to store. */
+  dof: { enabled: boolean; aperture: number }
+  /** The inverted-hull outline pass, scene-wide. A preference most scenes never
+   *  touch — no dock row, reachable from the palette — but it changes how the
+   *  scene LOOKS, so it travels with the document like any other look setting. */
+  outline: { enabled: boolean }
   background: { color: string }
   /** Post-tonemap color grade. */
   grade: GradeSettings
@@ -50,6 +59,13 @@ export type SceneSettings = {
     windFrequency: number
   }
 }
+
+/** Same story as DEFAULT_PHYSICS, one section over: both blocks arrived with the
+ *  0.4.0 chrome, so every document written before it is read through these. Off
+ *  is the honest default for both — a scene that never asked for blur or outlines
+ *  must come back looking exactly as it did. */
+export const DEFAULT_DOF: SceneSettings["dof"] = { enabled: false, aperture: 1 }
+export const DEFAULT_OUTLINE: SceneSettings["outline"] = { enabled: false }
 
 /** What a document without a physics block gets. Documents published before
  *  the section existed are read through this rather than migrated — the same

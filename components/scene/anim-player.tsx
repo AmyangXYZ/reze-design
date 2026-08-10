@@ -2,7 +2,7 @@
 
 // Persistent bottom transport: play/pause · scrub · time · loop.
 
-import { memo, useEffect, useRef, useState, type RefObject } from "react"
+import { memo, useEffect, useRef, useState, type ReactNode, type RefObject } from "react"
 import { cn } from "@/lib/utils"
 import type { Engine, Model } from "reze-engine"
 import { Orbit, Pause, Play, Repeat, RepeatOff, Video } from "lucide-react"
@@ -29,12 +29,28 @@ export const AnimPlayer = memo(function AnimPlayer({
   modelNames,
   hasCamera,
   onFollowingChange,
+  trailing,
+  below,
+  unfolded,
 }: {
   engineRef: RefObject<Engine | null>
   /** Models WITH a loaded clip, master (longest clip) first. */
   modelNames: string[]
   /** A camera VMD is loaded — show the Follow/Free toggle. */
   hasCamera: boolean
+  /** Extra controls at the right end of the row, after Loop. */
+  trailing?: ReactNode
+  /**
+   * Beneath the row — the timeline the transport IS when expanded. Kept MOUNTED
+   * while closed so the caller can fold it open; it is the caller's job to give
+   * it zero height, not this component's to unmount it.
+   */
+  below?: ReactNode
+  /** The fold is OPEN. Only affects room: a pill wants to be tight, a panel with
+   *  three lanes in it does not, and `below` cannot stand in for this because it
+   *  stays mounted while closed so the fold has something to animate. */
+  unfolded?: boolean
+
   /** Live camera-VMD drive state — fires on toggle and on initial sync, so the
    *  host can enable/disable its camera controls with the ACTUAL mode. */
   onFollowingChange?: (following: boolean) => void
@@ -257,82 +273,119 @@ export const AnimPlayer = memo(function AnimPlayer({
 
   const hasClip = modelNames.length > 0
   return (
-    <div className="flex items-center gap-2 rounded-full border border-white/10 bg-zinc-950/70 py-1 pr-3 pl-3 shadow-float backdrop-blur-xs">
-      <Button
-        variant="ghost"
-        size="icon"
-        className="size-7 shrink-0 rounded-full hover:bg-white/5 hover:text-foreground disabled:opacity-40"
-        disabled={!hasClip}
-        onClick={toggle}
-      >
-        {progress.playing ? <Pause className="size-4" /> : <Play className="size-4 translate-x-px" />}
-      </Button>
-      <span ref={timeRef} className="shrink-0 text-xs leading-none text-muted-foreground tabular-nums">
-        {fmt(0)}
-      </span>
-      {/* Ref-driven bar: transform-only updates from the rAF tick — never a
-          re-render. Styled identically to the ui Slider it replaced (bg-muted
-          track h-1, primary range, size-2.5 bordered white thumb). */}
+    <div
+      className={cn(
+        // The fold animates THROUGH the blur, which measurably costs frames —
+        // the decision to keep it anyway (visual consistency with the shipped
+        // chrome) is recorded on --color-surface in globals.css.
+        "border border-white/10 bg-zinc-950/70 shadow-float backdrop-blur-xs",
+        // ONE radius in both states, and deliberately not rounded-full.
+        //
+        // rounded-full is 9999px that the browser CLAMPS to half the box. It
+        // renders as a pill, but animating it to a panel radius interpolates the
+        // real number: 9999 → 16 only drops under half the height in the last
+        // fraction of a percent, so the corner stays fully round for the whole
+        // transition and then snaps at the end. That is the "big round shape
+        // first, wrapper after" — the radius was not following the box.
+        //
+        // 20px is just over half the COLLAPSED row (py-1 around size-7, plus
+        // borders = 38), so it clamps to a perfect pill there and is simply a
+        // 20px corner once open. Track the collapsed padding if that changes, or
+        // the pill turns back into a rounded rectangle.
+        "rounded-[1.25rem]",
+      )}
+    >
+      {/* Roomier only once open. Collapsed it is a pill you park over the scene
+          and it should stay tight; the same padding around three lanes reads
+          cramped. Rides the fold's own curve so it is one motion. */}
       <div
-        ref={trackRef}
         className={cn(
-          "relative flex h-4 w-[min(16rem,30vw)] touch-none items-center select-none",
-          hasClip ? "cursor-pointer" : "opacity-50",
+          "flex items-center gap-2 transition-[padding] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
+          unfolded ? "px-4 py-2" : "px-3 py-1",
         )}
-        onPointerDown={(e) => {
-          if (!hasClip) return
-          draggingRef.current = true
-          e.currentTarget.setPointerCapture(e.pointerId)
-          seekFromPointer(e)
-        }}
-        onPointerMove={(e) => {
-          if (draggingRef.current) seekFromPointer(e)
-        }}
-        onPointerUp={() => endSeek()}
-        onPointerCancel={() => endSeek()}
       >
-        <div className="relative h-1 w-full overflow-hidden rounded-full bg-muted">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7 shrink-0 rounded-full hover:bg-white/5 hover:text-foreground disabled:opacity-40"
+          disabled={!hasClip}
+          onClick={toggle}
+        >
+          {progress.playing ? <Pause className="size-4" /> : <Play className="size-4 translate-x-px" />}
+        </Button>
+        <span ref={timeRef} className="shrink-0 text-xs leading-none text-muted-foreground tabular-nums">
+          {fmt(0)}
+        </span>
+        {/* Ref-driven bar: transform-only updates from the rAF tick — never a
+            re-render. Styled identically to the ui Slider it replaced (bg-muted
+            track h-1, primary range, size-2.5 bordered white thumb). */}
+        <div
+          ref={trackRef}
+          className={cn(
+            // min-width + grow, not a fixed width: in a shrink-to-fit parent the
+          // basis floor IS the width, so the shipped pill is unchanged, while in
+          // a full-width one the track takes the slack instead of leaving it at
+          // the end of the row.
+          "relative mx-1 flex h-4 min-w-[min(16rem,30vw)] flex-1 touch-none items-center select-none",
+            hasClip ? "cursor-pointer" : "opacity-50",
+          )}
+          onPointerDown={(e) => {
+            if (!hasClip) return
+            draggingRef.current = true
+            e.currentTarget.setPointerCapture(e.pointerId)
+            seekFromPointer(e)
+          }}
+          onPointerMove={(e) => {
+            if (draggingRef.current) seekFromPointer(e)
+          }}
+          onPointerUp={() => endSeek()}
+          onPointerCancel={() => endSeek()}
+        >
+          <div className="relative h-1 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              ref={fillRef}
+              className="absolute inset-y-0 left-0 w-full origin-left bg-primary"
+              style={{ transform: "scaleX(0)" }}
+            />
+          </div>
           <div
-            ref={fillRef}
-            className="absolute inset-y-0 left-0 w-full origin-left bg-primary"
-            style={{ transform: "scaleX(0)" }}
+            ref={thumbRef}
+            className="absolute top-1/2 left-0 size-2.5 rounded-full border border-primary bg-white shadow-sm ring-ring/50 hover:ring-2"
+            style={{ transform: "translate(-50%, -50%)" }}
           />
         </div>
-        <div
-          ref={thumbRef}
-          className="absolute top-1/2 left-0 size-2.5 rounded-full border border-primary bg-white shadow-sm ring-ring/50 hover:ring-2"
-          style={{ transform: "translate(-50%, -50%)" }}
-        />
-      </div>
-      <span className="shrink-0 text-xs leading-none text-muted-foreground tabular-nums">{fmt(progress.duration)}</span>
-      {hasCamera && (
+        <span className="shrink-0 text-xs leading-none text-muted-foreground tabular-nums">{fmt(progress.duration)}</span>
+        {hasCamera && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={following ? "size-7 shrink-0 rounded-full text-blue-400" : "size-7 shrink-0 rounded-full text-muted-foreground hover:text-foreground"}
+                onClick={toggleCamera}
+              >
+                {following ? <Video className="size-4" /> : <Orbit className="size-4" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">{following ? t.transport.followCamera : t.transport.freeOrbit}</TooltipContent>
+          </Tooltip>
+        )}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className={following ? "size-7 shrink-0 rounded-full text-blue-400" : "size-7 shrink-0 rounded-full text-muted-foreground hover:text-foreground"}
-              onClick={toggleCamera}
+              className={loop ? "size-7 shrink-0 rounded-full text-blue-400" : "size-7 shrink-0 rounded-full text-muted-foreground hover:text-foreground"}
+              onClick={() => setLoop((v) => !v)}
             >
-              {following ? <Video className="size-4" /> : <Orbit className="size-4" />}
+              {loop ? <Repeat className="size-4" strokeWidth={2.4} /> : <RepeatOff className="size-4" />}
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="top">{following ? t.transport.followCamera : t.transport.freeOrbit}</TooltipContent>
+          <TooltipContent side="top">{loop ? t.transport.loopOn : t.transport.loopOff}</TooltipContent>
         </Tooltip>
-      )}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={loop ? "size-7 shrink-0 rounded-full text-blue-400" : "size-7 shrink-0 rounded-full text-muted-foreground hover:text-foreground"}
-            onClick={() => setLoop((v) => !v)}
-          >
-            {loop ? <Repeat className="size-4" strokeWidth={2.4} /> : <RepeatOff className="size-4" />}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="top">{loop ? t.transport.loopOn : t.transport.loopOff}</TooltipContent>
-      </Tooltip>
+        {trailing}
+      </div>
+      {below}
     </div>
   )
 })

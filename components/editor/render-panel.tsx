@@ -8,7 +8,6 @@ import { Camera, Clapperboard, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Switch } from "@/components/ui/switch"
-import { Section } from "@/components/scene/scene-sidebar"
 import {
   Select,
   SelectContent,
@@ -24,16 +23,18 @@ import { useT } from "@/lib/i18n"
 const VIDEO_FPS = 60
 type Aspect = "16:9" | "9:16" | "2.39:1" | "1:1" | "4:3"
 const ASPECTS: Aspect[] = ["16:9", "9:16", "2.39:1", "1:1", "4:3"]
-type Quality = "720p" | "1080p" | "1440p" | "4k"
-const QUALITIES: Quality[] = ["720p", "1080p", "1440p", "4k"]
-const QUALITY_LABELS: Record<Quality, string> = { "720p": "720p", "1080p": "1080p", "1440p": "1440p", "4k": "4K" }
+type Quality = "1080p" | "1440p" | "4k"
+// 1080p is the floor: below it a dance reads as a compression artefact, and
+// every platform these get shared to upscales anyway.
+const QUALITIES: Quality[] = ["1080p", "1440p", "4k"]
+const QUALITY_LABELS: Record<Quality, string> = { "1080p": "1080p", "1440p": "1440p", "4k": "4K" }
 const DIMS: Record<Aspect, Record<Quality, [number, number]>> = {
-  "16:9": { "720p": [1280, 720], "1080p": [1920, 1080], "1440p": [2560, 1440], "4k": [3840, 2160] },
-  "9:16": { "720p": [720, 1280], "1080p": [1080, 1920], "1440p": [1440, 2560], "4k": [2160, 3840] },
+  "16:9": { "1080p": [1920, 1080], "1440p": [2560, 1440], "4k": [3840, 2160] },
+  "9:16": { "1080p": [1080, 1920], "1440p": [1440, 2560], "4k": [2160, 3840] },
   // Cinemascope (anamorphic ~2.39:1) — the movie-theater frame.
-  "2.39:1": { "720p": [1280, 536], "1080p": [1920, 804], "1440p": [2560, 1072], "4k": [3840, 1608] },
-  "1:1": { "720p": [720, 720], "1080p": [1080, 1080], "1440p": [1440, 1440], "4k": [2160, 2160] },
-  "4:3": { "720p": [960, 720], "1080p": [1440, 1080], "1440p": [1920, 1440], "4k": [2880, 2160] },
+  "2.39:1": { "1080p": [1920, 804], "1440p": [2560, 1072], "4k": [3840, 1608] },
+  "1:1": { "1080p": [1080, 1080], "1440p": [1440, 1440], "4k": [2160, 2160] },
+  "4:3": { "1080p": [1440, 1080], "1440p": [1920, 1440], "4k": [2880, 2160] },
 }
 
 // min-h-6 keeps every row the height of a select trigger, so the switch row (whose control
@@ -67,7 +68,7 @@ const parseClock = (text: string): number | null => {
 }
 
 const rangeInputCls =
-  "h-6 w-14 rounded-md border border-white/10 bg-white/5 px-1 text-center text-xs tabular-nums outline-none transition-colors hover:bg-white/10 focus:border-blue-400/50 placeholder:text-muted-foreground/50 disabled:opacity-50"
+  "h-6 w-14 rounded-md border border-white/10 bg-white/5 px-1 text-center text-[11px] tabular-nums outline-none transition-colors hover:bg-white/10 focus:border-blue-400/50 placeholder:text-muted-foreground/50 disabled:opacity-50"
 
 /** Live framing state the page mirrors into the viewport while this tab is open */
 export type FramePreview = { aspect: number; watermark: boolean }
@@ -90,6 +91,7 @@ export const RenderPanel = memo(function RenderPanel({
   onGreenScreenChange,
   onExportingChange,
   onFramePreviewChange,
+  onProgressChange,
 }: {
   /** This tab is the visible one. */
   active: boolean
@@ -109,8 +111,12 @@ export const RenderPanel = memo(function RenderPanel({
   backgroundColor: string
   musicUrl: string | null
   /** Lifted to the page: also routes live audio (music element / backdrop video). */
-  audioSource: ExportAudioSource
-  onAudioSourceChange: (s: ExportAudioSource) => void
+  /** Optional as a pair: a host that omits them hides the audio row, and the
+   *  export derives the source itself — music when a track is loaded, silence
+   *  otherwise. The explicit choice only mattered for audio-bearing video
+   *  backgrounds, which do not exist. */
+  audioSource?: ExportAudioSource
+  onAudioSourceChange?: (s: ExportAudioSource) => void
   /** Lifted to the page: toggling it repaints the LIVE scene green too (WYSIWYG). */
   greenScreen: boolean
   onGreenScreenChange: (on: boolean) => void
@@ -118,6 +124,8 @@ export const RenderPanel = memo(function RenderPanel({
   onExportingChange: (exporting: boolean) => void
   /** Live framing (see FramePreview) — null when this tab closes. */
   onFramePreviewChange: (preview: FramePreview | null) => void
+  /** Mirrors the export progress out, for hosts that show it while the panel is hidden. */
+  onProgressChange?: (p: ExportProgress | null) => void
 }) {
   const t = useT()
   // Cinemascope by default — the whole reze-* series is named for the Chainsaw Man
@@ -128,10 +136,14 @@ export const RenderPanel = memo(function RenderPanel({
   const [rangeEnd, setRangeEnd] = useState("")
   const [watermark, setWatermark] = useState(true)
   const [exporting, setExporting] = useState(false)
-  const [progress, setProgress] = useState<ExportProgress | null>(null)
+  const [progress, setProgressState] = useState<ExportProgress | null>(null)
+  const setProgress = (p: ExportProgress | null) => {
+    setProgressState(p)
+    onProgressChange?.(p)
+  }
   // `file` names what actually landed, so the caption can point at it — a bare
   // "downloaded" leaves the user hunting through their downloads folder.
-  const [result, setResult] = useState<{ ok: boolean; message?: string; file?: string } | null>(null)
+  const [result, setResult] = useState<{ ok: boolean; message?: string; file?: string; still?: boolean } | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   // Guards a second click without touching the button's appearance. A capture is
   // over in well under a second; a spinner that fast is noise.
@@ -192,7 +204,16 @@ export const RenderPanel = memo(function RenderPanel({
         backdrop,
         backgroundColor,
       })
-      download(blob, filenameFor("png"))
+      const filename = filenameFor("png")
+      download(blob, filename)
+      // Same completion line the video uses: the caption names the file that
+      // just landed in the downloads folder.
+      setResult({ ok: true, file: filename, still: true })
+      // captureStill restores the render size to viewport-tracking, which
+      // silently unpins a framed-aspect canvas — the amber border then no
+      // longer matches what renders. Re-emitting the preview as a FRESH object
+      // makes the host's framing effect re-run and re-assert the pin.
+      if (active) onFramePreviewChange({ aspect: width / height, watermark: watermark && !greenScreen })
     } catch (e) {
       setResult({ ok: false, message: e instanceof Error ? e.message : String(e) })
     } finally {
@@ -244,7 +265,14 @@ export const RenderPanel = memo(function RenderPanel({
         extraModelNames,
         startTime: segStart,
         duration: segDuration,
-        settings: { width, height, fps: VIDEO_FPS, audioSource, watermark: greenScreen ? false : watermark, greenScreen },
+        settings: {
+          width,
+          height,
+          fps: VIDEO_FPS,
+          audioSource: audioSource ?? (musicUrl ? "music" : "none"),
+          watermark: greenScreen ? false : watermark,
+          greenScreen,
+        },
         backdrop,
         backgroundColor,
         musicUrl,
@@ -285,7 +313,9 @@ export const RenderPanel = memo(function RenderPanel({
   return (
     <ScrollArea className="min-h-0 flex-1">
       <div className="px-4 py-3.5">
-        <Section title={t.render.output}>
+        {/* No section title — the panel IS the output settings; a heading over
+            the only content is furniture. */}
+        <div className="mt-1">
           <Row label={t.render.aspect}>
             <Select value={aspect} onValueChange={(v) => setAspect(v as Aspect)} disabled={exporting}>
               <SelectTrigger>
@@ -344,6 +374,7 @@ export const RenderPanel = memo(function RenderPanel({
               />
             </div>
           </Row>
+          {onAudioSourceChange && (
           <Row label={t.render.audio}>
             <Select
               value={audioSource}
@@ -363,6 +394,7 @@ export const RenderPanel = memo(function RenderPanel({
               </SelectContent>
             </Select>
           </Row>
+          )}
           {/* Chroma-key mode for external compositing (the classic MMD PV flow) — pure #00FF00 replaces */}
           <Row label={t.render.greenScreen}>
             <Switch checked={greenScreen} onCheckedChange={onGreenScreenChange} disabled={exporting} className="scale-75" />
@@ -377,30 +409,29 @@ export const RenderPanel = memo(function RenderPanel({
             />
           </Row>
           {upscaled && !greenScreen && <div className="mt-2 text-[11px] text-amber-400/90">{t.render.upscaleWarn}</div>}
-        </Section>
+        </div>
 
-        <Section title={t.render.export}>
+        {/* No section title (the surface hosting this already says Export) and
+            no caption lines — the settings above state exactly what the file
+            will be. Two actions, one row: still and video are peers. */}
+        <div className="mt-5 flex">
           {/* Same framing, one frame. Needs no animation, so it stays available on
               a still scene where Render has nothing to render. */}
           <Button
             size="sm"
             disabled={exporting}
             onClick={() => void capture()}
-            className="h-8 w-full gap-1.5 bg-white text-xs font-medium text-zinc-950 hover:bg-white/90 disabled:opacity-40"
+            className="h-8 flex-1 gap-1.5 rounded-r-none bg-white text-xs font-medium text-zinc-950 hover:bg-white/90 disabled:opacity-40"
           >
             <Camera className="size-3.5" />
             {t.render.capturePng}
           </Button>
-          <div className="mt-1.5 mb-2.5 text-center text-[11px] text-muted-foreground/60 tabular-nums">
-            {width} × {height} · png
-          </div>
-
           {!exporting ? (
             <Button
               size="sm"
               disabled={!canRender}
               onClick={() => void start()}
-              className="h-8 w-full gap-1.5 bg-blue-400 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-40"
+              className="h-8 flex-1 gap-1.5 rounded-l-none bg-blue-400 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-40"
             >
               <Clapperboard className="size-3.5" />
               {t.render.renderVideo}
@@ -409,38 +440,31 @@ export const RenderPanel = memo(function RenderPanel({
             <Button
               size="sm"
               onClick={() => abortRef.current?.abort()}
-              className="h-8 w-full gap-1.5 bg-white/10 text-xs font-medium hover:bg-white/15"
+              className="h-8 flex-1 gap-1.5 rounded-l-none bg-white/10 text-xs font-medium hover:bg-white/15"
             >
               <Square className="size-3.5" />
               {t.render.cancel}
             </Button>
           )}
-          {/* The one line that matters — the file this button produces. */}
-          <div className="mt-1.5 text-center text-[11px] text-muted-foreground/60 tabular-nums">
-            {width} × {height} · {t.render.fps(String(VIDEO_FPS))} · {fmtClock(segDuration)} · mp4
-          </div>
-
-
-          {/* No preview card — the live viewport IS the preview */}
-          {exporting && (
-            <>
-              <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/10">
-                <div className="h-full rounded-full bg-blue-400 transition-[width]" style={{ width: `${pct}%` }} />
-              </div>
-              <div className="mt-1.5 text-center text-[11px] text-muted-foreground tabular-nums">
-                {progress?.phase === "video"
-                  ? t.render.progressLine(progress.frame, progress.total, fmtEta(progress.etaSeconds))
-                  : t.render.preparingAudio}
-              </div>
-            </>
-          )}
-
-          {result && (
-            <div className={`mt-2 text-[11px] ${result.ok ? "text-muted-foreground" : "text-red-400"}`}>
-              {result.ok ? t.render.done(result.file ?? "") : t.render.failed(result.message ?? "")}
+        </div>
+        {exporting ? (
+          <div className="mt-4">
+            <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
+              <div className="h-full rounded-full bg-blue-400 transition-[width]" style={{ width: `${pct}%` }} />
             </div>
-          )}
-        </Section>
+            <div className="mt-1.5 text-center text-[11px] text-muted-foreground tabular-nums">
+              {progress?.phase === "video"
+                ? t.render.progressLine(progress.frame, progress.total, fmtEta(progress.etaSeconds))
+                : t.render.preparingAudio}
+            </div>
+          </div>
+        ) : result ? (
+          <div className={`mt-2 text-center text-[11px] ${result.ok ? "text-muted-foreground" : "text-red-400"}`}>
+            {result.ok
+              ? (result.still ? t.render.stillDone : t.render.done)(result.file ?? "")
+              : t.render.failed(result.message ?? "")}
+          </div>
+        ) : null}
       </div>
     </ScrollArea>
   )

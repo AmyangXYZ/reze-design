@@ -3,7 +3,7 @@
 import { builtinEffect } from "@/lib/background-effects"
 import { libraryGraph } from "@/lib/materials"
 import { parseSceneDoc, type Scene, type SceneDoc } from "@/lib/scene"
-import { DEFAULT_PHYSICS } from "@/lib/scene-settings"
+import { DEFAULT_DOF, DEFAULT_OUTLINE, DEFAULT_PHYSICS } from "@/lib/scene-settings"
 
 /**
  * Whether this build ships the demo model, motion and music.
@@ -81,6 +81,8 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
     world: { color: "#ed6aff", strength: 0.66 },
     sun: { color: "#ffffff", strength: 2.0, azimuth: 205, elevation: 21 },
     bloom: { enabled: true, threshold: 0.5, knee: 0.5, radius: 4.0, intensity: 0.05, color: "#ffc9c9" },
+    dof: DEFAULT_DOF,
+    outline: DEFAULT_OUTLINE,
     background: { color: "#4b004f", effect: "Shining Stars" },
     grade: { preset: "Neutral", intensity: 1 },
     ground: { color: "#c800de", size: 160, opacity: 0.42, shadow: true, grid: "#fafaf9", gridEnabled: true },
@@ -112,6 +114,8 @@ export const EMPTY_SCENE_DOC: SceneDoc = {
     world: { color: "#ffffff", strength: 0.35 },
     sun: { color: "#ffffff", strength: 2.0, azimuth: 205, elevation: 21 },
     bloom: { enabled: true, threshold: 0.8, knee: 0.5, radius: 4.0, intensity: 0.03, color: "#ffffff" },
+    dof: DEFAULT_DOF,
+    outline: DEFAULT_OUTLINE,
     background: { color: "#1c1c1e", effect: null },
     grade: { preset: "Neutral", intensity: 1 },
     ground: { color: "#3a3a3d", size: 160, opacity: 0.42, shadow: true, grid: "#fafaf9", gridEnabled: true },

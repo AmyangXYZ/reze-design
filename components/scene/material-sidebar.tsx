@@ -89,6 +89,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   onEditGroupGraph,
   onMoveMaterial,
   onPickGraph,
+  dense,
 }: {
   /** All loaded models — the strip only renders with 2+. The panel body always shows the ACTIVE */
   modelTabs: { id: string; file: string; active: boolean }[]
@@ -100,18 +101,26 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   /** Hover a material to highlight it on the model (null clears). */
   onHover: (name: string | null) => void
   onToggleVisible: (name: string) => void
-  /** Open the shader-graph library for a style group (browse / apply / edit its graph). */
-  onOpenLibrary: (groupId: string | null) => void
+  /** Open the shader-graph library for a style group (browse / apply / edit its
+   *  graph). Optional: a host without the library hides the door; the per-group
+   *  QuickPick still assigns looks. */
+  onOpenLibrary?: (groupId: string | null) => void
   /** Creates the group and returns its id — the panel opens rename mode on it. */
   onCreateGroup: () => string
   onRenameGroup: (id: string, label: string) => void
   onDeleteGroup: (id: string) => void
-  /** Open the node-graph editor on a group's shader graph. */
-  onEditGroupGraph: (id: string) => void
+  /** Open the node-graph editor on a group's shader graph. Optional — hosts
+   *  without the floating editor hide the edit affordances. */
+  onEditGroupGraph?: (id: string) => void
   /** Reassign a material to a group (target=null → ungroup). */
   onMoveMaterial: (material: string, targetId: string | null) => void
   /** Apply a library shader graph to a style group by name */
   onPickGraph: (groupId: string, graphName: string) => void
+  /** Trim the outer vertical padding. The default 3.5 rhythm exists to line the
+   *  panel up with the Scene tab inside the dock; a panel that is a surface of
+   *  its own already has the header's rule and its own rounded edge doing that
+   *  work, and the full gutter reads as slack. */
+  dense?: boolean
   /** Discard hand-made grouping and re-derive it from the scene document. */
 }) {
   const t = useT()
@@ -266,7 +275,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
     <>
       {/* ── Model strip (multi-model scenes): which model this panel edits ── */}
       {modelTabs.length > 1 && (
-        <div className="flex flex-wrap gap-1 px-4 pt-3.5">
+        <div className={cn("flex flex-wrap gap-1 px-4", dense ? "pt-2" : "pt-3.5")}>
           {modelTabs.map((m) => (
             <button
               key={m.id}
@@ -286,7 +295,9 @@ export const MaterialsPanel = memo(function MaterialsPanel({
       )}
       {/* ── Section toolbar (VSCode explorer header): title + create/collapse ── */}
       {/* Same px-4 gutter and 3.5 vertical rhythm as the Scene tab, so the two panels line up */}
-      <div className={cn("flex items-center gap-0.5 px-4", modelTabs.length > 1 ? "pt-1.5" : "pt-3.5")}>
+      <div
+        className={cn("flex items-center gap-0.5 px-4", modelTabs.length > 1 ? "pt-1.5" : dense ? "pt-2" : "pt-3.5")}
+      >
         {/* Same type as the Scene tab's Section titles */}
         <span className="shrink-0 text-xs font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.materials.styleGroups}</span>
         {/* VSCode-style: a fresh group goes straight into rename mode (the row mounts this same */}
@@ -294,20 +305,25 @@ export const MaterialsPanel = memo(function MaterialsPanel({
         <IconAction icon={FolderPlus} label={t.materials.newGroup} onClick={() => setRenaming(onCreateGroup())} />
         <span className="flex-1" />
         {/* Library at the right end, matching Grade and Background. */}
+        {onOpenLibrary && (
         <button
           onClick={() => onOpenLibrary(libraryTarget)}
           className="ml-1 flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-white"
         >
           <Workflow className="size-3.5" />
-          {t.materials.library}
+          {t.lab.cmd.graphLib}
         </button>
+        )}
       </div>
 
       {/* Scrollable, but scrollbar hidden (wheel/trackpad scroll works) so rows can sit close */}
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
-            className="no-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pt-2 pb-3.5"
+            className={cn(
+              "no-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pt-2",
+              dense ? "pb-2" : "pb-3.5",
+            )}
             onMouseLeave={() => onHover(null)}
             onContextMenuCapture={(e) => {
               if (!(e.target as HTMLElement).closest("[data-ctx]")) {
@@ -379,8 +395,8 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                           label={g.graph.name === ENGINE_DEFAULT_GRAPH ? t.materials.defaultGraph : undefined}
                           items={itemsForGroup(g)}
                           onPick={(name) => onPickGraph(g.id, name)}
-                          onBrowse={() => onOpenLibrary(g.id)}
-                          onEdit={() => onEditGroupGraph(g.id)}
+                          onBrowse={onOpenLibrary ? () => onOpenLibrary(g.id) : undefined}
+                          onEdit={onEditGroupGraph ? () => onEditGroupGraph(g.id) : undefined}
                           placeholder={g.graph.name}
                         />
                       </span>

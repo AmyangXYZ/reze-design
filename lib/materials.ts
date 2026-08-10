@@ -1,11 +1,22 @@
 import { NODE_REGISTRY, type MaterialPreset, type ShaderGraph } from "reze-engine"
 import graphs from "@/content/graphs.json"
+import stageGraphs from "@/content/stage-graphs.json"
 import { asBuiltins, type GraphItem } from "@/lib/library"
 
 // Pinned SNAPSHOTS of the engine's presets rather than live imports. The library
 // presents these with authors and dates, so retuning a preset upstream shouldn't
 // silently rewrite what a user sees.
-export const GRAPH_LIBRARY = asBuiltins<GraphItem>(graphs as unknown as Omit<GraphItem, "owner">[])
+//
+// Two files, one shelf. The character set answers to a ROLE (body, hair, eye) and
+// the engine's auto-classifier fills those slots; the stage set answers to a
+// MATERIAL (tile, wood, glass) and nothing fills it automatically until someone
+// loads a stage. They are tagged apart — every stage entry carries `stage` — so
+// the rail can narrow to one or the other, and they share every other mechanism:
+// browse, apply, fork, publish.
+export const GRAPH_LIBRARY = asBuiltins<GraphItem>([
+  ...(graphs as unknown as Omit<GraphItem, "owner">[]),
+  ...(stageGraphs as unknown as Omit<GraphItem, "owner">[]),
+])
 
 /** Role → graph, for the slots that ship with a default look. */
 export const SLOT_GRAPHS = Object.fromEntries(

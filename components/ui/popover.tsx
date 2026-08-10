@@ -4,6 +4,7 @@ import * as React from "react"
 import { Popover as PopoverPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+import { preventFocusReturnOnPointer } from "@/lib/last-input"
 
 function Popover({
   ...props
@@ -27,6 +28,7 @@ function PopoverContent({
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Content
         data-slot="popover-content"
+        onCloseAutoFocus={preventFocusReturnOnPointer}
         align={align}
         sideOffset={sideOffset}
         className={cn(

@@ -22,7 +22,7 @@ import {
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
 import { compileGraph, validateGraph, type CompileOptions, type Diagnostic, type ShaderGraph } from "reze-engine"
-import { Code, Download, Grip, RotateCcw, Upload, Workflow, X } from "lucide-react"
+import { Check, Code, Download, Grip, Maximize2, Minimize2, RotateCcw, Upload, Workflow, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
@@ -70,6 +70,8 @@ export function GraphEditor({
   onApply,
   onGraphChange,
   onApplyStateChange,
+  fullscreen = false,
+  onToggleFullscreen,
 }: {
   /** The group's factory preset — what Reset returns to. */
   presetGraph: ShaderGraph
@@ -88,7 +90,11 @@ export function GraphEditor({
   onGraphChange?: (graph: ShaderGraph) => void
   /** Mirrors the compile/apply status dot — the page shows it on the collapsed pill. */
   onApplyStateChange?: (state: "ok" | "error" | "compiling") => void
-  /** Full-screen drawer state (page-owned) + toggle. */
+  /** Full-screen state (page-owned, since the PANEL is what resizes) + toggle.
+   *  No toggle passed = no button: a host that cannot resize its panel must not
+   *  show a control that would do nothing. */
+  fullscreen?: boolean
+  onToggleFullscreen?: () => void
 }) {
   const t = useT()
   // `base` supplies what the flow doesn't model (name, slot, output, params)
@@ -567,42 +573,110 @@ export function GraphEditor({
     onGraphChangeRef.current?.(currentGraph)
   }, [currentGraph])
 
-  // ── Topology tier: debounce → compile locally for the panels → apply to engine. ──
+  // ── Two tiers, and only one of them is free ──
+  //
+  // Generating WGSL from the graph is CPU work in this tab. Handing it to the
+  // engine is a shader compile and a pipeline rebuild, which stalls frames — and
+  // it ran 250ms after EVERY edit, so dragging one slider paid for a dozen of
+  // them. The local tier stays live, because a graph with a mistake in it should
+  // say so while you type; the engine tier is now something you ask for.
+  const previewOpts = useMemo(
+    () =>
+      previewId
+        ? {
+            previewNode: {
+              node: previewId,
+              socket:
+                socketsOf(nodes.find((n) => n.id === previewId)?.data.graphNode.type ?? "")?.outputs[0]?.[0] ?? "color",
+            },
+          }
+        : undefined,
+    [previewId, nodes],
+  )
+  // What the ENGINE is showing. Compared by value, so an edit that lands back on
+  // the applied graph puts the Apply button away instead of leaving it lit.
+  const appliedRef = useRef<string | null>(null)
+  const [dirty, setDirty] = useState(false)
+  // What an unmount would still owe the engine, kept beside the flag that
+  // decides it. Data rather than a callback, because what has to survive the
+  // teardown is the graph — the apply goes through the host's ref, which
+  // outlives this component.
+  const pendingRef = useRef<{ graph: ShaderGraph; opts?: CompileOptions } | null>(null)
+
+  // Local tier: WGSL + diagnostics, debounced, no GPU.
   useEffect(() => {
     if (engineError) return
-    const opts = previewId
-      ? {
-          previewNode: {
-            node: previewId,
-            socket:
-              socketsOf(nodes.find((n) => n.id === previewId)?.data.graphNode.type ?? "")?.outputs[0]?.[0] ?? "color",
-          },
-        }
-      : undefined
-    const timer = setTimeout(async () => {
-      const local = compileGraph(currentGraph, opts)
+    const timer = setTimeout(() => {
+      const local = compileGraph(currentGraph, previewOpts)
       setFsBody(local.fsBody)
-      // Before the GPU device is up, applying would explode
-      if (!engineReady) {
-        setDiagnostics(local.diagnostics)
-        return
-      }
-      setApplyState("compiling")
-      try {
-        const result = await onApplyRef.current(currentGraph, opts)
-        setDiagnostics(result.diagnostics)
-        setApplyState(result.ok ? "ok" : "error")
-      } catch (e) {
-        setDiagnostics([
-          ...local.diagnostics,
-          { severity: "error", message: `apply failed: ${e instanceof Error ? e.message : e}` },
-        ])
-        setApplyState("error")
-      }
+      setDiagnostics(local.diagnostics)
+      const behind = JSON.stringify([currentGraph, previewId]) !== appliedRef.current
+      setDirty(behind)
+      pendingRef.current = behind ? { graph: currentGraph, opts: previewOpts } : null
     }, 250)
     return () => clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentGraph, previewId, engineReady, engineError])
+  }, [currentGraph, previewId, previewOpts, engineError])
+
+  // Engine tier: what Apply and closing call.
+  const applyNow = useCallback(async () => {
+    if (!engineReady || engineError) return
+    const key = JSON.stringify([currentGraph, previewId])
+    const local = compileGraph(currentGraph, previewOpts)
+    setApplyState("compiling")
+    try {
+      const result = await onApplyRef.current(currentGraph, previewOpts)
+      setDiagnostics(result.diagnostics)
+      setApplyState(result.ok ? "ok" : "error")
+      // Recorded even when it FAILED: the engine has been told, and asking it
+      // the same failing question again changes nothing. Editing clears it.
+      appliedRef.current = key
+      setDirty(false)
+      pendingRef.current = null
+    } catch (e) {
+      setDiagnostics([
+        ...local.diagnostics,
+        { severity: "error", message: `apply failed: ${e instanceof Error ? e.message : e}` },
+      ])
+      setApplyState("error")
+    }
+  }, [currentGraph, previewId, previewOpts, engineReady, engineError, setApplyState])
+  // ONCE on open, so the canvas behind the panel is the preview from the first
+  // frame — the whole premise of editing a look here, and what makes the
+  // library's "edit this one" show you the thing you picked. The guard is what
+  // makes it once; depending on applyNow only keeps it holding the current
+  // graph, and every re-run after the first returns on the first line.
+  const booted = useRef(false)
+  useEffect(() => {
+    if (booted.current || !engineReady || engineError) return
+    booted.current = true
+    void applyNow()
+  }, [engineReady, engineError, applyNow])
+
+  // Previewing a node's output is a VIEW command, not an edit — you asked to see
+  // something, so it goes now rather than waiting behind Apply.
+  const shownPreview = useRef(previewId)
+  useEffect(() => {
+    if (shownPreview.current === previewId) return
+    shownPreview.current = previewId
+    void applyNow()
+  }, [previewId, applyNow])
+
+  // Every way out applies first. The host's save-on-close compares the group's
+  // APPLIED graph against the baseline, so edits left unapplied would not just
+  // be unshown — they would be invisible to the prompt and lost without a word.
+  const requestClose = async () => {
+    if (dirty) await applyNow()
+    onClose()
+  }
+  // Same rule for the ways out this component does not own: Escape closes the
+  // panel from outside and the body simply unmounts.
+  useEffect(
+    () => () => {
+      const pending = pendingRef.current
+      if (pending) void onApplyRef.current(pending.graph, pending.opts)
+    },
+    [],
+  )
 
   const errors = diagnostics.filter((d) => d.severity === "error")
 
@@ -629,7 +703,10 @@ export function GraphEditor({
         className={cn(
           // border-b (not a separate <Separator>) so the divider is part of the solid header's box
           "relative flex shrink-0 items-center gap-2 border-b border-white/10 bg-zinc-950 pt-1 pb-1 pr-2 pl-3",
-          "cursor-grab active:cursor-grabbing",
+          // Filling the screen, there is nowhere to drag TO — the same rule the
+          // shared EditorHeader follows, so the grab cursor never promises a
+          // move the panel will refuse.
+          !fullscreen && "cursor-grab active:cursor-grabbing",
         )}
       >
         <Workflow
@@ -640,9 +717,11 @@ export function GraphEditor({
           )}
         />
         <span className="min-w-0 truncate text-xs font-medium text-zinc-200">{slotLabel}</span>
-        <span className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-zinc-600">
-          <Grip className="size-4" />
-        </span>
+        {!fullscreen && (
+          <span className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-zinc-600">
+            <Grip className="size-4" />
+          </span>
+        )}
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           {/* ── Tools: code view + reset ── */}
           <Tooltip>
@@ -700,10 +779,54 @@ export function GraphEditor({
             }}
           />
 
+          {/* ── Apply: hand the graph to the engine ──
+              Lit while there is something to hand over, and gone quiet the rest
+              of the time. It is the only control here that costs frames, so it
+              is the only one that had to become a button rather than a
+              consequence of typing. ⌘⏎ does the same thing, matching the WGSL
+              editor's Compile. */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                disabled={!dirty || !engineReady}
+                onClick={() => void applyNow()}
+                className={cn("size-6", dirty ? "text-blue-400 hover:text-blue-300" : "text-zinc-400 hover:text-zinc-100")}
+              >
+                <Check className="size-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t.graph.apply}</TooltipContent>
+          </Tooltip>
+          <span className="mx-1 h-4 w-px shrink-0 bg-white/10" />
+
+          {/* ── Window: fill the screen, then come back ── */}
+          {onToggleFullscreen && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-6 text-zinc-400 hover:text-zinc-100"
+                  onClick={onToggleFullscreen}
+                >
+                  {fullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{fullscreen ? t.graph.exitFullscreen : t.graph.fullscreen}</TooltipContent>
+            </Tooltip>
+          )}
+
           {/* ── Exit: close (discard) or save (keep) ── */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="size-6 text-zinc-400 hover:text-zinc-100" onClick={onClose}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-6 text-zinc-400 hover:text-zinc-100"
+                onClick={() => void requestClose()}
+              >
                 <X className="size-3.5" />
               </Button>
             </TooltipTrigger>

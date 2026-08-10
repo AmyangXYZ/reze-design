@@ -13,6 +13,7 @@ import { useEffect, useRef } from "react"
 import { Vec3, type Engine } from "reze-engine"
 import type { AppliedBackgroundEffect } from "@/lib/background-effects"
 import { resolveSpec, type GradeSpec } from "@/lib/grade"
+import { CAMERA_DEFAULT_FOV, type SceneCamera } from "@/lib/scene"
 import { azElToDirection, windVariation, hexToLinearVec3, hexToSrgbVec3, windDirection, type SceneSettings } from "@/lib/scene-settings"
 
 const GREEN = "#00ff00"
@@ -21,6 +22,14 @@ export function useSceneSync({
   engineRef,
   ready,
   settings,
+  /** The document's framing. Only the LENS is applied here — distance, angles and
+   *  target go through useEngine's applyCamera, which is also what a drag moves.
+   *  Omit it and the fov is left alone entirely. */
+  camera,
+  /** Whether a camera VMD is loaded. Not read, only WATCHED: the engine backs the
+   *  orbit fov up when a clip takes the shot and restores it when the clip lets
+   *  go, so the document's lens has to be pushed again the moment that happens. */
+  cameraVmd = false,
   gradeSpec,
   backgroundEffect,
   /** A DOM image sits behind the canvas, so the canvas must stay transparent. */
@@ -34,6 +43,8 @@ export function useSceneSync({
   engineRef: React.RefObject<Engine | null>
   ready: boolean
   settings: SceneSettings
+  camera?: SceneCamera
+  cameraVmd?: boolean
   /** Resolved by the caller: the scene stores a NAME, and drafts live client-side. */
   gradeSpec: GradeSpec
   backgroundEffect: AppliedBackgroundEffect | null
@@ -53,7 +64,7 @@ export function useSceneSync({
   useEffect(() => {
     const engine = engineRef.current
     if (!ready || !engine) return
-    const { world, sun, bloom, background, ground, grade, physics } = settings
+    const { world, sun, bloom, dof, outline, background, ground, grade, physics } = settings
     const p = prev.current
     const modeChanged = !p || p.backdrop !== hasBackdrop || p.green !== greenScreen
 
@@ -83,6 +94,15 @@ export function useSceneSync({
         intensity: bloom.intensity,
         color: hexToLinearVec3(bloom.color),
       })
+    }
+    if (!p || p.settings.dof !== dof) {
+      // Focus mode is stated on every push rather than stored: "auto" is the
+      // only mode this app offers, so it is a property of the caller, not of
+      // the document.
+      engine.setDepthOfField({ enabled: dof.enabled, focusMode: "auto", aperture: dof.aperture })
+    }
+    if (!p || p.settings.outline !== outline) {
+      engine.setOutlineEnabled(outline.enabled)
     }
     if (!p || p.settings.grade !== grade || p.gradeSpec !== gradeSpec) {
       const cdl = resolveSpec(gradeSpec, grade.intensity)
@@ -131,6 +151,21 @@ export function useSceneSync({
     }
     prev.current = { settings, gradeSpec, backdrop: hasBackdrop, green: greenScreen }
   }, [settings, gradeSpec, ready, engineRef, hasBackdrop, greenScreen])
+
+  // The lens, on its own effect and keyed on the VALUE: `camera` is a new object
+  // every time a target slider moves, and the fov has no business being pushed
+  // for that.
+  const fov = camera ? (camera.fov ?? CAMERA_DEFAULT_FOV) : null
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!ready || !engine || fov === null) return
+    // A camera VMD animates fov itself, frame by frame — writing the orbit value
+    // underneath it would be overwritten anyway, and then clobbered again by the
+    // backup the engine restores on release. `cameraVmd` in the deps is what
+    // brings us back here at that release.
+    if (engine.isCameraVmdEnabled()) return
+    engine.setCameraFov(fov)
+  }, [fov, cameraVmd, ready, engineRef])
 
   // Recompile only when the shader itself (or its suspension) actually changes.
   const lastWgsl = useRef<string | null>(null)

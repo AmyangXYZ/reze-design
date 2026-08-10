@@ -30,5 +30,8 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    // The pre-0.4.0 editor, kept for reference only: not a route, not built,
+    // and not typechecked — it imports props that have since changed shape.
+    "reference", "node_modules"]
 }
