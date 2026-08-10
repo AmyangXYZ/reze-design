@@ -569,25 +569,41 @@ fn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f {
 接起来，编译成 WGSL，实时生效。
 
 从 Materials 标签点开某组的着色图名称，**Browse all…**，再对任意一条选 **Edit
-graph**。九个内置图——*Body*、*Eye*、*Face*、*Hair*、*Metal*、*Principled BSDF*、
-*Rough Cloth*、*Smooth Cloth*、*Stockings*——就是参考实现。挑一个 fork：*Principled
-BSDF* 是中性底子，其余八个是各类表面的现成例子。
+graph**。内置图分两套，外加一个中性底子，都是可以直接 fork 的参考实现：
+
+- **AG**——*AG Body*、*AG Eye*、*AG Face*、*AG Hair*、*AG Metal*、*AG Rough
+  Cloth*、*AG Smooth Cloth*、*AG Stockings*。八个各类表面的现成例子，都是围绕一个
+  光照闭包加一条渐变搭起来的。
+- **WuWa**——*WuWa Body*、*WuWa Cloth*、*WuWa Hair*、*WuWa Face*、*WuWa Metal*、
+  *WuWa Eye*。每张十三个节点，不走闭包而是直接用光：半兰伯特穿过一段很窄的软阈值，
+  阴影在转向受光的途中经过一段暖色，再叠上模型自带的球面贴图高光与边缘光。想要硬
+  转折的二次元观感就从这里起步。
+- ***Principled BSDF***——中性底子，也是未分组材质得到的效果。
+
+两套都不自带任何贴图。预设读的是材质本身的贴图与球面贴图，因此可以用在任何模型
+上——你自己发布预设时，这一点值得保持。
 
 ### 节点面板
 
 
 | 分类             | 内容                                                            |
 | -------------- | ------------------------------------------------------------- |
-| **Input**      | 表面自身的数据：贴图采样、几何（法线、视线方向、世界坐标与静止坐标、UV、反射）、材质自带的漫反射色、数值与 RGB 常量 |
-| **Colour**     | 色相/饱和度、亮度/对比度、反相，以及多种插值方式的颜色渐变——线性、常数、cardinal、抗锯齿常数、三角       |
-| **Texture**    | 程序化噪声与渐变                                                      |
-| **Vector**     | 映射（位移/旋转/缩放）、bump、分离 XYZ、叉乘                                   |
-| **Math / Mix** | 算术运算，以及按因子混合两个输入                                              |
-| **Shader**     | Principled BSDF、自发光、add/mix shader、shader-to-RGB、菲涅尔          |
+| **Input**      | 表面自身的数据：贴图采样、几何（法线、视线方向、世界坐标与静止坐标、UV、反射）、材质自带的漫反射色与球面贴图、数值与 RGB 常量 |
+| **Scene**      | `light`——主光源的方向、颜色、环境光、阴影；`head_basis`——头部骨骼的前/右/上轴          |
+| **Colour**     | 色相/饱和度、亮度/对比度、反相、gamma、RGB 曲线、RGB/HSV/HSL 的分离与合并，以及颜色渐变——线性、常数、cardinal、抗锯齿常数、三角，以及三色标线性 |
+| **Texture**    | 程序化噪声、渐变与 voronoi，另有样式组自带的至多四张图像贴图                            |
+| **Vector**     | 映射、bump、法线贴图、分离/合并 XYZ、矢量旋转、矢量变换，以及 24 种矢量运算                  |
+| **Math / Mix** | 39 种算术运算、20 种混合模式、映射范围                                        |
+| **Shader**     | Principled BSDF、自发光、add/mix shader、shader-to-RGB（颜色或标量）、漫反射与透明 BSDF、菲涅尔、layer weight |
 
 
 最常打交道的插槽名是 `color`、`alpha`、`normal`、`view`、`uv`、`fac`（0–1 混合因子）、
-`strength`、`roughness`、`metallic` 和 `base`。
+`strength`、`roughness`、`metallic` 和 `base_color`。
+
+**直接取用光源。**`shader_to_rgb_diffuse` 与 `bsdf_diffuse` 会把整个光照闭包算完再
+把结果交给你，这是 AG 那一套的写法。而 `light` 节点把太阳光以数值形式暴露出来，让图
+自己构造光照项——`dot(normal, direction)` 再送进渐变或阈值——这正是二次元着色硬转折
+的来源，也是 WuWa 那一套的基础。
 
 ### 搭建
 
@@ -723,25 +739,34 @@ BSDF* 是中性底子，其余八个是各类表面的现成例子。
 `(x, y, z)`，在这里是 `(x, z, y)`，符号还需再确认一遍。UV 不变。这一处弄错，画面
 看着像那么回事，但光是从错误的轴打过来的——手写图最常见的错误正是它。
 
-**这套词汇里没有的东西**，最好动手前就知道，而不是等校验时才发现：
+**这套词汇里有的东西**——它比 Blender 用户预想的要宽，先知道形状，省得去重建
+已经存在的东西：
 
-- **只有五种数学运算**，不是四十种：加、乘、幂、大于、clamp01。减法是加一个负的
-  字面值，除法是乘以倒数；min、max、abs、sqrt、floor、fract、取模和三角函数只能
-  重建或舍弃。
-- **只有六种混合模式**：blend、overlay、multiply、lighten、linear light，以及
-  `mix/add_emit`。没有 screen、difference、divide、subtract、dodge、burn、soft
-  light、色相、饱和度、颜色、明度。
-- **渐变只有两个色标**，且色标颜色只能是字面值。多色标渐变需拆成链式渐变加混合，
-  或者做近似；`ramp_tri` 覆盖了黑→白→黑这一种。这是 toon 风格撞得最狠的一堵墙，
-  因为多色标渐变正是做 toon 的标准工具。
-- **贴图只在网格自身的 UV 上取样。** `texture` 没有 vector 输入，因此 `mapping`
-  只能驱动程序化纹理。滚动 UV、matcap、三平面投影、第二套 UV，在这里都没有对应的
-  表达方式。
-- **向量能拆不能合**——没有 `combine_xyz`——叉乘是唯一的向量运算。
+- **39 种数学运算**与 **24 种矢量运算**——就是 Blender 的完整集合，连保护措施一起：
+  除以零得 0 而非无穷，取模是截断式的，各通道混合模式的钳制方式也与 Blender 一致。
+- **20 种混合模式**——Blender 的全部类型，含 screen、dodge、burn、soft light、
+  difference、色相、饱和度、颜色、明度，外加 `mix/add_emit`。
+- **渐变**：四种插值的双色标、一个**三色标线性渐变**（`ramp_linear_3`），以及
+  `ramp_tri` 覆盖黑→白→黑。三个色标才能让阴影在转向受光的途中经过一段颜色，而
+  toon 的暗部之所以是暖的而非灰的，多半就来自这一段。
+- **RGB 曲线**：一条曲线的五个采样点，作用于全部通道。
+- **样式组图像贴图**——`tex_image/0` 到 `tex_image/3`，由样式组携带的四张额外贴图，
+  默认在网格 UV 上取样，也可以喂任意向量给它。
+
+**这套词汇里仍然没有的东西**：
+
+- **节点图不携带贴图。** 内置图一张都不带；带了的预设就只是某一个角色的预设，而不是
+  一种风格。请优先使用材质自身的贴图与球面贴图。
+- **插槽属于节点，不属于运算。** 无论选中哪种运算，数学节点都有三个数值输入、矢量
+  节点都有三个矢量和一个 scale——用不到的那些是惰性的，与 Blender 一致，因此转写时
+  逐插槽对应即可。
 - **着色的结果就是颜色。** `add_shader` 编译成 `a + b`，`mix_shader` 编译成
-  `mix(a, b, fac)`，都作用在 `vec3f` 上——先把每一支求值成颜色，再合起来。这里
-  没有可供事先混合的 BSDF 对象。
-- **自发光是独立节点**，用 `add_shader` 叠加到着色结果上，九个内置图都是这么写的。
+  `mix(a, b, fac)`，都作用在 `vec3f` 上——先把每一支求值成颜色，再合起来。
+- **色标不能做成滑杆。** 色标颜色是 `vec4` 字面值，而参数只有 `float` 和 `color`；
+  想让暗部色可调，就让它经过一个 `mix/*` 节点，暴露该节点的颜色输入。
+- **没有 EEVEE Next 的光照。** 没有屏幕空间 GI、没有虚拟阴影贴图、没有辐照度探针。
+  Principled 中的 coat、透射、次表面、各向异性与薄膜是缺席，而非近似。
+- **一张图上限 64 个节点**、16 个暴露参数。
 
 **在编辑器之外检查。** reze-engine 导出 `validateGraph(graph)`，返回上述诊断；
 `compileGraph(graph)` 返回 `{ ok, wgsl, diagnostics }`。两者都以诊断报告问题，而
@@ -750,18 +775,31 @@ BSDF* 是中性底子，其余八个是各类表面的现成例子。
 
 ### 从 Blender 迁移
 
-节点语义冻结在 Blender 3.6 legacy EEVEE，因此一份材质大多能逐插槽搬过来；但 reze
-不读 `.blend` 文件——转换是创作阶段做一次的翻译。目标版本有两点决定了其余一切。用
-**4.x 及以后**创作的材质带的是 Principled v2 的插槽——约 32 个，而 3.6 是 21
-个——需要按下表译回去。以及**这里没有 EEVEE Next 的光照**：没有屏幕空间追踪的 GI，
-没有虚拟阴影贴图。由 `shader_to_rgb_diffuse` 驱动的 toon 色带读到的是 legacy EEVEE
-的环境光与阴影模型，因此照 4.2+ 的渲染结果调好的数值，需要凭眼睛重新调一遍。
+节点语义跟随 **Blender 5.2**，因此一份材质大多能逐插槽搬过来——Principled 带的就是
+v2 的插槽名（`base_color`、`specular_ior_level`、`sheen_weight`），数学、矢量与混合
+的运算集合也是 Blender 自己的，连同保护措施一起从它的 GLSL 转写而来。reze 不读
+`.blend` 文件：转换是创作阶段做一次的翻译。
+
+仍有两处不同，改变的是数值而非结构。**这里没有 EEVEE Next 的光照**——没有屏幕空间
+GI、没有虚拟阴影贴图、没有探针——因此照探针反弹调好的预设会显得平一些，需要凭眼睛
+重调。以及**视图变换由你决定**：Post 行的 Tone 里有 Standard 与 Filmic，一份在
+Standard 下渲染的 `.blend`，在你把它对上之前是不会一致的。二次元与 NPR 通常用
+Standard——图算出什么颜色，落到屏幕上就是什么颜色。
+
+**两种写法都能搬过来。** 基于漫反射闭包的材质——Shader to RGB 接一条渐变——直接对应
+`shader_to_rgb` / `shader_to_rgb_diffuse`。而自己从光线向量构造光照项的材质（大多数
+游戏 NPR 预设都是这么写的）对应 `light` 节点：原图从哪个灯光空物体经驱动器或属性读到
+方向，这里就读 `light.direction`，其余链路原样搬运。
+
+**搬不过来的**是图里读取的、模型本身并不携带的贴图：高光贴图、ID 遮罩、面部 SDF。
+那些属于某一个角色。原图用 ID 遮罩告诉着色器当前在着色哪个区域时，请改用样式组——那是
+同一份信息，内置图也正是这么做的。
 
 **节点对照：**
 
 | Blender 节点 | reze type |
 | --- | --- |
-| Principled BSDF | `principled`——只有八个输入，见下 |
+| Principled BSDF | `principled`——v2 插槽，见下 |
 | Emission | `emission` |
 | Mix Shader、Add Shader | `mix_shader`、`add_shader`——按 RGB 运算，见下 |
 | Shader to RGB | `shader_to_rgb_diffuse` |
@@ -783,22 +821,24 @@ Blender 里没有来源，值得主动用起来——`material_diffuse`（PMX �
 反射贴图乘上它，否则无贴图的材质会渲染成白色）、`ramp_constant_aa`、`ramp_tri`、
 `mix/add_emit` 和 `math/clamp01`。
 
-**Principled BSDF 映射八个输入。**
+**Principled BSDF 用的是 v2 插槽**，因此 4.x / 5.x 的材质按名字就能对应。
 
-| reze 插槽 | Blender 3.6 | Blender 4.x+ | 转换 |
-| --- | --- | --- | --- |
-| `base` | Base Color | Base Color | 直接对应 |
-| `metallic` | Metallic | Metallic | 直接对应；v2 的 F82 染色会丢失 |
-| `roughness` | Roughness | Roughness | 直接对应 |
-| `specular` | Specular | Specular IOR Level | 只是改了名；仍是 0–1，默认 0.5 |
-| `sheen` | Sheen | Sheen Weight | 3.6 是 Disney 的回射项，4.0+ 换成了微纤维 BSDF——数值能搬，观感搬不过来 |
-| `sheen_tint` | Sheen Tint（浮点） | Sheen Tint（颜色） | 取 v2 那个颜色的亮度 |
-| `normal` | Normal | Normal | 按上文换轴；不连线即为着色法线 |
-| `spec_clamp` | — | — | reze 独有，相当于 EEVEE 的 Light Clamp；除非带噪声的 bump 打出高光噪点，否则保持关闭 |
+| reze 插槽 | Blender 5.2 | 说明 |
+| --- | --- | --- |
+| `base_color` | Base Color | 直接对应 |
+| `metallic` | Metallic | 直接对应；v2 的 F82 染色会丢失 |
+| `roughness` | Roughness | 直接对应 |
+| `ior` | IOR | 与 `specular_ior_level` 一起给出 f0 |
+| `specular_ior_level` | Specular IOR Level | 0–1，默认 0.5 |
+| `sheen_weight` | Sheen Weight | 直接对应 |
+| `sheen_tint` | Sheen Tint（颜色） | 取其亮度 |
+| `emission_color`、`emission_strength` | Emission | 与 4.x+ 一样并进 Principled |
+| `normal` | Normal | 按上文换轴；不连线即为着色法线 |
+| `spec_clamp` | — | reze 独有，相当于 EEVEE 的 Light Clamp；除非带噪声的 bump 打出高光噪点，否则保持关闭 |
 
-其余的要么在创作阶段烘进 `base`，要么舍弃：coat、次表面、透射、IOR、alpha、各向
-异性、切线、薄膜、漫反射粗糙度。自发光是例外——4.x 把它并进了 Principled，而这里
-它是一个 `emission` 节点，用 `add_shader` 叠到结果上。
+`ior` 取 1.5 时，v2 这条链对旧约定是恒等的，因此 3.6 材质的 Specular 数值可以原样
+搬过来。其余的要么在创作阶段烘进 `base_color`，要么舍弃：coat、次表面、透射、alpha、
+各向异性、切线、薄膜、漫反射粗糙度。
 
 **混合 BSDF 的树是重写，不是誊写。** 先混合闭包、再统一求值的那种结构，必须改写成
 Shader-to-RGB 的写法——每一支各自求值成颜色，然后合并——改完的结果需要对着参考渲染

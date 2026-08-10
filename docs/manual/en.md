@@ -701,24 +701,44 @@ node graph in the Blender idiom — nodes with typed sockets, connected by links
 compiled to WGSL and applied live.
 
 From the Materials tab, click a group's graph name, **Browse all…**, then **Edit
-graph** on any entry. The nine built-ins — *Body*, *Eye*, *Face*, *Hair*, *Metal*,
-*Principled BSDF*, *Rough Cloth*, *Smooth Cloth*, *Stockings* — are the reference
-implementations. Fork one; *Principled BSDF* is the neutral base and the other
-eight are worked examples of specific surface types.
+graph** on any entry. The built-ins come as two sets plus a neutral base, and all
+of them are reference implementations to fork:
+
+- **AG** — *AG Body*, *AG Eye*, *AG Face*, *AG Hair*, *AG Metal*, *AG Rough
+  Cloth*, *AG Smooth Cloth*, *AG Stockings*. Eight worked examples of specific
+  surface types, each built around a lighting closure and a ramp.
+- **WuWa** — *WuWa Body*, *WuWa Cloth*, *WuWa Hair*, *WuWa Face*, *WuWa Metal*,
+  *WuWa Eye*. Thirteen nodes each, built around the light directly rather than a
+  closure: a half-Lambert through a narrow soft threshold, a shadow that passes
+  through a warm band on its way to lit, the model's own sphere-map highlight,
+  and a rim. Start here for a hard-terminator anime look.
+- ***Principled BSDF*** — the neutral base, and what an ungrouped material gets.
+
+Neither set carries an image of its own. A preset reads the material's own
+texture and sphere map, so it applies to any model — which is the property to
+preserve if you publish one.
 
 ### The palette
 
 | Category | What lives there |
 | --- | --- |
-| **Input** | The surface's own data: texture fetch, geometry (normal, view direction, world and rest position, UV, reflection), the material's diffuse colour, plain values and RGB constants |
-| **Colour** | Hue/saturation, brightness/contrast, invert, colour ramps in several interpolations — linear, constant, cardinal, anti-aliased constant, triangular |
-| **Texture** | Procedural noise and gradients |
-| **Vector** | Mapping (location/rotation/scale), bump, separate XYZ, cross product |
-| **Math / Mix** | Arithmetic, and blending two inputs by a factor |
-| **Shader** | Principled BSDF, emission, add and mix shader, shader-to-RGB, fresnel |
+| **Input** | The surface's own data: texture fetch, geometry (normal, view direction, world and rest position, UV, reflection), the material's diffuse colour, its sphere map, plain values and RGB constants |
+| **Scene** | `light` — the key light as values: direction, colour, ambient, shadow. `head_basis` — the head bone's forward/right/up |
+| **Colour** | Hue/saturation, brightness/contrast, invert, gamma, RGB curves, separate/combine in RGB, HSV and HSL, and colour ramps — linear, constant, cardinal, anti-aliased constant, triangular, and a three-stop linear |
+| **Texture** | Procedural noise, gradients and voronoi, plus up to four image maps carried by the style group |
+| **Vector** | Mapping, bump, normal map, separate/combine XYZ, vector rotate, vector transform, and 24 vector-math operations |
+| **Math / Mix** | 39 arithmetic operations, 20 blend modes, map range |
+| **Shader** | Principled BSDF, emission, add and mix shader, shader-to-RGB as colour or scalar, diffuse and transparent BSDFs, fresnel, layer weight |
 
 The socket names you will meet most often are `color`, `alpha`, `normal`, `view`,
-`uv`, `fac` (a 0–1 blend factor), `strength`, `roughness`, `metallic` and `base`.
+`uv`, `fac` (a 0–1 blend factor), `strength`, `roughness`, `metallic` and
+`base_color`.
+
+**Reaching the light directly.** `shader_to_rgb_diffuse` and `bsdf_diffuse` bake
+a whole lighting closure and hand back a result, which is the AG idiom. The `light`
+node instead exposes the sun as values, so a graph can build its own term —
+`dot(normal, direction)` pushed through a ramp or a threshold — which is what
+gives an anime shader a hard terminator, and what the WuWa set is built on.
 
 ### Building
 
@@ -795,17 +815,31 @@ The node vocabulary, by registry id — sockets in parentheses:
 | `ramp_constant`, `ramp_linear`, `ramp_cardinal` | `fac`, `pos0`, `color0`, `pos1`, `color1` → `color`, `alpha`, `fac_out` |
 | `ramp_constant_aa` | `fac`, `edge`, `color0`, `color1` → `color` — the anti-aliased two-band ramp; the cel-shading workhorse |
 | `ramp_tri` | `fac` → `value` — triangle wave |
-| `math/add`, `math/multiply`, `math/power`, `math/greater_than` | `a`, `b` → `value` |
-| `math/clamp01` | `a` → `value` |
-| `mix/blend`, `mix/overlay`, `mix/multiply`, `mix/lighten`, `mix/linear_light`, `mix/add_emit` | `fac`, `a`, `b` → `color` |
-| `principled` | `base`, `metallic`, `specular`, `roughness`, `spec_clamp`, `sheen`, `sheen_tint`, `normal` → `color` — the GGX core |
+| `math/*` | `a`, `b`, `c` → `value` — 39 operations, Blender's set: `add` `subtract` `multiply` `divide` `multiply_add` `power` `logarithm` `sqrt` `inversesqrt` `absolute` `exponent` `minimum` `maximum` `less_than` `greater_than` `sign` `compare` `smooth_min` `smooth_max` `round` `floor` `ceil` `truncate` `fraction` `modulo` `floored_modulo` `wrap` `snap` `pingpong` `sine` `cosine` `tangent` `arcsine` `arccosine` `arctangent` `arctan2` `radians` `degrees` `clamp01` |
+| `vector_math/*` | `a`, `b`, `c`, `scale` → `vector` or `value` — 24 operations: `add` `subtract` `multiply` `divide` `multiply_add` `cross` `project` `reflect` `refract` `dot` `distance` `length` `scale` `normalize` `absolute` `minimum` `maximum` `floor` `ceil` `fraction` `modulo` `wrap` `snap` `faceforward` |
+| `mix/*` | `fac`, `a`, `b` → `color` — 20 blend modes: `blend` `add` `subtract` `multiply` `divide` `screen` `overlay` `soft_light` `dodge` `burn` `darken` `lighten` `difference` `exclusion` `linear_light` `hue` `saturation` `color` `value` `add_emit` |
+| `map_range`, `map_range/linear`, `map_range/smoothstep` | `value`, `from_min`, `from_max`, `to_min`, `to_max` → `value` — the plain id clamps |
+| `principled` | `base_color`, `metallic`, `roughness`, `ior`, `specular_ior_level`, `sheen_weight`, `sheen_tint`, `emission_color`, `emission_strength`, `normal`, `spec_clamp` → `color` — the GGX core, Principled v2 sockets |
 | `emission` | `color`, `strength` → `color` |
 | `add_shader` | `a`, `b` → `color` |
 | `mix_shader` | `fac`, `a`, `b` → `color` |
 | `fresnel` | `ior` → `value` |
 | `layer_weight/fresnel`, `layer_weight/facing` | `blend` → `value` |
 | `shader_to_rgb_diffuse` | → `value` — the scene's diffuse lighting term (normal · light, sun, ambient, shadow), the input a toon ramp wants |
-| `separate_xyz` | `vector` → `x`, `y`, `z` |
+| `shader_to_rgb` | → `color` — the same closure as a colour, so a warm sun and cool ambient stay warm and cool |
+| `light` | → `direction`, `color`, `ambient`, `shadow` — the key light as values, for a graph that builds its own diffuse term |
+| `head_basis` | → `forward`, `right`, `up` — the head bone's world axes, for face shading that tracks the head |
+| `sphere_map` | `base`, `strength` → `color` — the model's own sphere map; an exact no-op on a material without one |
+| `bsdf_diffuse` | `color` → `color` · `bsdf_transparent` → `color` |
+| `tex_image/0`…`tex_image/3` | `uv` → `color`, `alpha` — the style group's own image maps, mesh UV by default |
+| `ramp_linear_3` | `fac`, `pos0`, `color0`, `pos1`, `color1`, `pos2`, `color2` → `color`, `alpha`, `fac_out` |
+| `rgb_curve` | `color`, `fac`, `y0`…`y4` → `color` — one curve sampled five times |
+| `separate_color`, `combine_color` (+ `/hsv`, `/hsl`) | `color` ↔ `r`, `g`, `b` |
+| `separate_xyz` | `vector` → `x`, `y`, `z` · `combine_xyz` | `x`, `y`, `z` → `vector` |
+| `normal_map` | `color`, `strength` → `normal` · `gamma` | `color`, `gamma` → `color` |
+| `vector_rotate/axis_angle`, `vector_rotate/euler_xyz` | `vector`, `center`, `axis`, `angle`, `rotation` → `vector` |
+| `vector_transform/*` | `vector` → `vector` — world↔camera |
+| `uv_map` | → `uv` · `attribute`, `object_info`, `light_path` — answered with honest constants on a PMX |
 | `vect_cross` | `a`, `b` → `vector` |
 | `mapping` | `vector`, `loc`, `rot`, `scl` → `vector` |
 | `bump` | `strength`, `height`, `normal` → `vector` |
@@ -827,8 +861,9 @@ in the editor's header validates the file before it reaches the canvas and lists
 what is wrong with it in the diagnostics panel. What follows is what you need to
 write one that lands clean.
 
-**Most graphs share one spine**, and starting from it gets a surface most of the
-way there:
+**There are two spines**, and starting from either gets a surface most of the way
+there. The first takes the engine's lighting closure and quantises it — the AG
+idiom:
 
 1. **Base colour** — `texture` multiplied by `material_diffuse`, as a
    `mix/multiply` with `fac: 1`. Leave the multiply out and untextured materials
@@ -841,6 +876,23 @@ way there:
 4. **Then add** — `fresnel` or `layer_weight/facing` into `emission`, joined with
    `add_shader`, for rim light; `mix/add_emit` for a glowing region; `bump` or
    `tex_noise` into `principled.normal` for surface detail.
+
+The second builds its own diffuse term from the light, which is how most game NPR
+presets work and what the WuWa set does. It costs a few more nodes and gives a
+much harder terminator:
+
+1. **The term** — `light.direction` and `geometry.normal` into `vector_math/dot`,
+   then `math/multiply_add` with `b: 0.5, c: 0.5`. That is a half-Lambert: −1…1
+   remapped to 0…1, keeping some shape in the unlit half instead of clipping it.
+2. **The terminator** — `map_range` (the clamping one) over a NARROW window, say
+   0.46 to 0.54. Width is the whole character of the look: wide is a soft
+   falloff, narrow is the hard step anime shading wants.
+3. **The colour** — `ramp_linear_3` on that, shadow → warm → lit. The middle stop
+   is what stops a shadow reading grey.
+4. **Over the texture** — `mix/multiply` of `texture.color` by the ramp, at a
+   factor below 1 so the tint sits over the texture rather than replacing it.
+5. **Then add** — `sphere_map` for the model's own highlight, and
+   `layer_weight/facing` into `mix/add_emit` for a rim.
 
 Expose the two or three numbers you will want to retune later as `params`, and
 they become sliders that adjust live without a recompile.
@@ -858,7 +910,7 @@ a float splatting to colour. A graph is capped at 64 nodes and 16 exposed params
 unlinked, and the shape has to fit the socket: a 3-vector on a `float` socket is
 an error, while a scalar splats onto colour, vector and `vec4` sockets. The
 sockets that carry the value a node processes — `invert.color`,
-`separate_xyz.vector`, `principled.base`, the ramps' `fac` — need either a link
+`separate_xyz.vector`, `principled.base_color`, the ramps' `fac` — need either a link
 or an explicit literal; leaving one at its registry default is the error, and it
 is only reported for nodes that actually feed the output. Ramp stop colours
 (`color0`, `color1`) are `vec4` and can only be literals; nothing links into them.
@@ -882,30 +934,42 @@ where Blender is right-handed and Z-up. The vertical component of a normal is
 and the shading looks plausible but lit from the wrong axis, which is the most
 common mistake in a hand-written graph.
 
-**What the vocabulary does not have** is worth knowing before you write against
-it rather than at validation time:
+**What the vocabulary has**, since it is wider than a Blender user tends to
+expect and knowing the shape saves rebuilding something that already exists:
 
-- **Five math operations**, not forty: add, multiply, power, greater-than,
-  clamp01. Subtract is add with a negative literal and divide is multiply by a
-  reciprocal; min, max, abs, sqrt, floor, fract, modulo and the trigonometric
-  ops have to be rebuilt or dropped.
-- **Six mix modes**: blend, overlay, multiply, lighten, linear light, and
-  `mix/add_emit`. No screen, difference, divide, subtract, dodge, burn, soft
-  light, hue, saturation, colour or value.
-- **Ramps have two stops**, and stop colours are literals. A multi-stop ramp
-  decomposes into chained ramps and mixes, or an approximation; `ramp_tri`
-  covers the black→white→black case. This is the limit a toon look hits
-  hardest, since multi-stop ramps are the standard tool for one.
-- **Textures are sampled at the mesh UV.** `texture` takes no vector input, so
-  `mapping` drives the procedural textures only. Scrolling UVs, matcaps,
-  triplanar projection and second UV sets have no expression here.
-- **Vectors come apart but not back together** — there is no `combine_xyz` — and
-  cross product is the only vector-math operation.
+- **39 math operations** and **24 vector-math operations** — the full Blender
+  sets, safeguards included: divide by zero is 0 rather than infinity, modulo is
+  truncated, and the per-channel blend modes clamp the way Blender's do.
+- **20 mix modes** — every Blender blend type, including screen, dodge, burn,
+  soft light, difference, hue, saturation, colour and value, plus `mix/add_emit`.
+- **Ramps** with two stops in four interpolations, a **three-stop linear ramp**
+  (`ramp_linear_3`), and `ramp_tri` for the black→white→black case. Three stops
+  is what lets a shadow pass through a colour on its way to lit, which is most of
+  what makes a toon shadow read as warm rather than grey.
+- **RGB curves**, as five samples of one curve applied to all channels.
+- **Group image maps** — `tex_image/0` to `tex_image/3`, four extra images
+  carried by the style group and sampled at the mesh UV by default, or at any
+  vector you feed them.
+
+**What it does not have**, still worth knowing before you write against it:
+
+- **A node graph does not carry an image.** The built-ins ship none, and a preset
+  that does is a preset for one character rather than a look. Prefer the
+  material's own texture and sphere map.
+- **Sockets belong to the node, not the operation.** Every math node offers three
+  value inputs and every vector-math node three vectors and a scale, whichever
+  operation is selected — the unused ones are inert, exactly as in Blender, so a
+  transcription maps socket for socket without knowing which the op reads.
 - **Shading is colour.** `add_shader` compiles to `a + b` and `mix_shader` to
   `mix(a, b, fac)`, both on `vec3f` — evaluate each branch to a colour, then
   combine. There is no BSDF object to mix beforehand.
-- **Emission is its own node**, added to the shaded result with `add_shader`,
-  which is how all nine built-ins are written.
+- **A ramp stop cannot be a slider.** Stop colours are `vec4` literals and a
+  param is `float` or `colour`, so to make a shadow tint adjustable, drive it
+  through a `mix/*` node and expose that node's colour input instead.
+- **No EEVEE Next lighting.** No screen-traced GI, no virtual shadow maps, no
+  irradiance probes. Coat, transmission, subsurface, anisotropy and thin film are
+  absent from Principled rather than approximated.
+- **A graph is capped at 64 nodes** and 16 exposed params.
 
 **Checking a graph outside the editor.** reze-engine exports
 `validateGraph(graph)`, which returns the diagnostics above, and
@@ -916,15 +980,32 @@ a graph over.
 
 ### Coming from Blender
 
-Node semantics are frozen at Blender 3.6 legacy EEVEE, so most of a material
-transfers socket for socket, but reze reads no `.blend` file — the conversion is
-an authoring-time translation you do once. Two facts about the target version
-shape it. A material authored in **4.x or later** carries Principled v2
-sockets — around 32 of them against 3.6's 21 — and needs translating back, as
-below. And **EEVEE Next lighting does not exist here**: no screen-traced GI, no
-virtual shadow maps. A toon ramp driven by `shader_to_rgb_diffuse` reads legacy
-EEVEE's ambient and shadow model, so values tuned against a 4.2+ render want
-re-tuning by eye.
+Node semantics track **Blender 5.2**, so most of a material transfers socket for
+socket — Principled carries its v2 names (`base_color`, `specular_ior_level`,
+`sheen_weight`), and the math, vector and mix operation sets are Blender's own,
+transcribed from its GLSL with the safeguards intact. reze reads no `.blend`
+file: the conversion is an authoring-time translation you do once.
+
+Two things still differ, and both change values rather than structure.
+**EEVEE Next lighting does not exist here** — no screen-traced GI, no virtual
+shadow maps, no probes — so a preset tuned against probe bounce reads flatter and
+wants re-tuning by eye. And **the view transform is yours to set**: the Tone
+controls in the Post row carry Standard and Filmic, and a `.blend` rendering under
+Standard will not match until you match it. Anime and NPR work is normally
+Standard; the colours the graph computes are the colours that land.
+
+**Two idioms transfer.** A material built on a diffuse closure — Shader to RGB
+into a ramp — maps onto `shader_to_rgb`/`shader_to_rgb_diffuse` directly. A
+material that builds its own term from a light vector, which is how most game NPR
+presets work, maps onto the `light` node: where the original reads a light empty's
+direction through a driver or an attribute, read `light.direction` and the rest of
+the chain transfers unchanged.
+
+**What will not transfer** is anything the graph reads from an image the model
+does not carry: highlight maps, ID masks, face SDFs. Those belong to one
+character. Where the original uses an ID mask to tell one shader which region it
+is shading, use style groups — that is the same information, and it is what the
+built-ins do.
 
 **Node for node:**
 
@@ -953,24 +1034,25 @@ source and are worth reaching for — `material_diffuse` (the PMX material's own
 tint; multiply the diffuse texture by it, or untextured materials render white),
 `ramp_constant_aa`, `ramp_tri`, `mix/add_emit` and `math/clamp01`.
 
-**Principled BSDF maps eight inputs.**
+**Principled BSDF carries v2 sockets**, so a 4.x or 5.x material maps by name.
 
-| reze socket | Blender 3.6 | Blender 4.x+ | Conversion |
-| --- | --- | --- | --- |
-| `base` | Base Color | Base Color | direct |
-| `metallic` | Metallic | Metallic | direct; v2's F82 tint is lost |
-| `roughness` | Roughness | Roughness | direct |
-| `specular` | Specular | Specular IOR Level | renamed; same 0–1 range, 0.5 default |
-| `sheen` | Sheen | Sheen Weight | 3.6 is a Disney retroreflective term, 4.0+ a microfiber BSDF — the number transfers, the look does not |
-| `sheen_tint` | Sheen Tint (float) | Sheen Tint (colour) | take the luminance of v2's colour |
-| `normal` | Normal | Normal | flipped as above; unlinked means the shading normal |
-| `spec_clamp` | — | — | reze-only, EEVEE's Light Clamp; leave it off unless a noisy bump throws specular fireflies |
+| reze socket | Blender 5.2 | Notes |
+| --- | --- | --- |
+| `base_color` | Base Color | direct |
+| `metallic` | Metallic | direct; v2's F82 tint is lost |
+| `roughness` | Roughness | direct |
+| `ior` | IOR | with `specular_ior_level`, gives f0 |
+| `specular_ior_level` | Specular IOR Level | 0–1, 0.5 default |
+| `sheen_weight` | Sheen Weight | direct |
+| `sheen_tint` | Sheen Tint (colour) | take the luminance |
+| `emission_color`, `emission_strength` | Emission | folded into Principled, as in 4.x+ |
+| `normal` | Normal | flipped as above; unlinked means the shading normal |
+| `spec_clamp` | — | reze-only, EEVEE's Light Clamp; leave it off unless a noisy bump throws specular fireflies |
 
-Everything else bakes into `base` at authoring time or is dropped: coat,
-subsurface, transmission, IOR, alpha, anisotropy, tangent, thin film, diffuse
-roughness. Emission is the exception — 4.x folds it into Principled, and here it
-is an `emission` node added to the result with `add_shader`, which is how all
-nine built-ins are written.
+At `ior` 1.5 the v2 chain is an identity onto the old convention, so a 3.6
+material's Specular value transfers unchanged. Everything else bakes into
+`base_color` at authoring time or is dropped: coat, subsurface, transmission,
+alpha, anisotropy, tangent, thin film, diffuse roughness.
 
 **Mixed BSDFs are a rewrite rather than a transcription.** A tree that mixes
 closures and evaluates the result afterwards has to be restructured in the

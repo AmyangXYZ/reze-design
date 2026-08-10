@@ -43,12 +43,19 @@ One piece of the **Reze MMD family**, covering the whole MMD workflow on the web
 Materials are styled per **style group** — a set of materials sharing one look —
 by a **shader graph**: a Blender-style node editor compiled to WGSL by
 reze-engine, with toon ramps, rim and fresnel, HSV, noise and Principled BSDF
-nodes. Graphs are plain JSON, compile errors surface as diagnostics rather than
-throws, and exposed params adjust live without a recompile.
+nodes, and the scene's light available as values so a graph can build its own
+diffuse term. Graphs are plain JSON, compile errors surface as diagnostics rather
+than throws, and exposed params adjust live without a recompile.
 → [manual §2.4](./docs/manual/en.md#24-material-shader-graphs)
 
-Node semantics are frozen at Blender 3.6 legacy EEVEE. The manual carries the
-whole authoring contract — every node's sockets, the spine most graphs share,
+Two built-in sets ship as reference implementations: **AG**, built around a
+lighting closure and a ramp, and **WuWa**, thirteen nodes each built around the
+light directly — a half-Lambert through a narrow soft threshold, a shadow that
+warms as it turns, the model's own sphere-map highlight. Neither carries an image
+of its own, so both apply to any model.
+
+Node semantics track Blender 5.2. The manual carries the whole authoring
+contract — every node's sockets, the two spines graphs are built on,
 the rules a document is checked against, and how a Blender material translates —
 so a graph can be written or generated from the document alone and imported as
 JSON.
