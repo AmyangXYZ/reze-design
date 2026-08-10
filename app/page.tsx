@@ -3944,11 +3944,17 @@ export default function Lab() {
                   boot and shoved everything under it down — the drift the
                   skeleton above exists to prevent. */}
               <div className="flex justify-center pt-0.5 pb-1">
+                {/* The dashed border is the app's word for an empty slot — the
+                    stage pane and the clip rows already say "there could be
+                    something here" that way. This is the same offer for a cast
+                    that can always take one more, so it wears the same outline
+                    and the same blue hover rather than inventing a third
+                    treatment for the same idea. */}
                 <Button
                   variant="ghost"
                   disabled={!ready}
                   onClick={() => pickModel({ mode: "add" })}
-                  className="h-7 gap-1.5 rounded-interior px-2.5 text-xs font-normal text-muted-foreground hover:bg-white/[0.06] hover:text-foreground"
+                  className="h-7 gap-1.5 rounded-interior border border-dashed border-line-strong px-2.5 text-xs font-normal text-muted-foreground hover:border-blue-400/50 hover:bg-transparent hover:text-blue-400"
                 >
                   <Plus className="size-4" />
                   {t.lab.addModel}
