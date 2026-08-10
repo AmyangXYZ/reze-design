@@ -13,6 +13,43 @@ export type CommandSection = "command" | "goto" | "setting"
 
 const SUGGESTION_COUNT = 4
 
+/**
+ * How deep the history is allowed to matter — and, because the two must agree,
+ * how many ids a host should store. At five, the fifth scored zero and was
+ * dropped by the filter: a stored id that could never appear.
+ */
+export const RECENT_DEPTH = 4
+
+/**
+ * What the scene is MISSING. Suggestions answer "what now?", and the scene knows
+ * the answer better than a hand-picked list does: with no cast there is nothing
+ * to look at, with no motion nothing to watch, and a scene you have never
+ * rendered is a scene whose next step is obvious.
+ *
+ * A short, closed set on purpose. Every gap here has exactly one command that
+ * fills it, and a gap nobody can act on is a mood, not a suggestion.
+ */
+export type SceneGap =
+  /** No cast member loaded — nothing else matters until this is filled. */
+  | "cast"
+  /** A cast, standing still — one of them has no clip. */
+  | "motion"
+  /** Something ARRIVED and has not been styled: a model or stage you just
+   *  uploaded is wearing whatever it was auto-grouped into, and the look is the
+   *  first thing anyone changes. Session-scoped and self-clearing — it closes
+   *  when you go and look, so it can lead the list without ever nagging. */
+  | "look"
+  /** No music. */
+  | "music"
+  /** Watchable, and never rendered. */
+  | "render"
+  /** This user has done nothing yet — where other people's scenes are. */
+  | "discover"
+
+/** The one gap that outranks everything, including what you did last: an empty
+ *  scene has no "what now?" other than filling it. */
+const BLOCKING: SceneGap = "cast"
+
 export type PaletteItem = {
   id: string
   /** Says what KIND of thing this is at a glance. Per-item, never a uniform
@@ -26,14 +63,32 @@ export type PaletteItem = {
   /** Synonyms and jargon translation cannot give: mp4, bgm, 4k, vmd, romaji. */
   keywords?: string[]
   section: CommandSection
+  /** The scene gap this command fills. Rises in Suggestions while that gap is
+   *  open and scores nothing once it is closed — which is the difference
+   *  between a suggestion and a menu. */
+  fills?: SceneGap
   /**
-   * What this row acts on, shown right-aligned and muted: the selected group for
-   * "Edit shader graph", the author for a library item, the filename for an
-   * asset. Omitted when there is nothing true to say — a navigation row needs no
-   * annotation, and filling the column with filler is worse than leaving it
-   * empty. Matched as well as shown, so "by amyang" finds their grades.
+   * What this row acts on: the selected group for "Edit shader graph", the
+   * author for a library item, the breadcrumb for a setting. Omitted when there
+   * is nothing true to say — a navigation row needs no annotation, and filling
+   * the column with filler is worse than leaving it empty.
+   *
+   * Always MATCHED, so "by amyang" finds their grades and "environment" finds
+   * everything in that row. Shown only when the row has no `value` to show
+   * instead — a control's breadcrumb keeps earning its place in the search bag
+   * long after it stopped earning the width.
    */
   hint?: string
+  /**
+   * What this row is SET TO. Takes the hint's place at the right end when there
+   * is one — a row gets ONE annotation, and this is the one that cannot be
+   * answered any other way without going there.
+   *
+   * Display only, deliberately NOT in the search bag: a settings row is already
+   * findable by its name in both languages, and matching live numbers would make
+   * the result set drift as the scene changes.
+   */
+  value?: string
   /** Opens a deep surface (shader graph, WGSL, studio) — tinted in the list. */
   deep?: boolean
   /**
@@ -69,8 +124,15 @@ const W = {
   recencyDecay: 1.5,
   /** The previous command names this one as a likely follow-up. */
   successor: 5,
-  /** Hand-picked as a good first thing to see. */
+  /** Hand-picked as a good first thing to see. Deliberately weak: it is a guess
+   *  about what matters, and both the history and the scene know better. */
   curated: 2,
+  /** Fills a gap the scene actually has. Above curated and above the third
+   *  recency step, below a fresh recent — a missing component is a better
+   *  suggestion than a stale one, and a worse one than what you just did. */
+  gap: 3.5,
+  /** Fills the gap that makes the scene unwatchable. Beats everything. */
+  gapBlocking: 8,
   /** A headline feature the palette is the ONLY door to (materials). Sits above
    *  every recency step but the freshest, so it stays in the list for good
    *  rather than aging out behind whatever you happen to have run lately. */
@@ -80,27 +142,43 @@ const W = {
 /**
  * What to offer when the query is empty.
  *
- * Recency carries the most weight — what you did last is the best single
- * predictor — but on its own it just replays your history, including the parts
- * you have finished with. Two corrections:
+ * Three signals, in the order they deserve:
  *
- *   - a non-repeatable command you JUST ran is dropped outright. Having exported
- *     is the strongest possible evidence you are not about to export again.
- *   - whatever the last command says usually follows it gets a large bump, so
- *     the palette leads you forward through a sequence instead of backward
- *     through a log.
+ *   - THE SCENE, first. What is missing from it is the least speculative thing
+ *     anyone knows about what you are about to do, and an empty scene outranks
+ *     even what you just did — there is nothing else to suggest to someone with
+ *     nothing on screen. A gap stops scoring the moment it is filled, so this
+ *     signal empties itself instead of nagging.
+ *   - RECENCY, for things worth doing again. What you did last is the best
+ *     single predictor, but on its own it just replays your history back at you,
+ *     including the parts you have finished with. A non-repeatable command earns
+ *     nothing from it — having exported is the strongest possible evidence that
+ *     you are not about to export again — and the one you just ran is dropped
+ *     outright.
+ *   - CURATION, weakest, for the two headline features no gap describes: the
+ *     materials panel (the palette is its only door) and starting a shader graph.
+ *
+ * Whatever the last command says usually follows it gets a large bump on top, so
+ * the palette leads you forward through a sequence instead of backward through a
+ * log.
  *
  * Deterministic and inspectable: no model, no training, and you can read why any
- * row is where it is.
+ * row is where it is. The weights are chosen not to collide, so the order is
+ * never decided by where an item happens to sit in the source.
  */
-export function suggestionsFor(items: PaletteItem[], history: string[]): PaletteItem[] {
+export function suggestionsFor(items: PaletteItem[], history: string[], gaps: SceneGap[] = []): PaletteItem[] {
   const last = history[0] ? items.find((i) => i.id === history[0]) : undefined
+  const open = new Set(gaps)
   const scored = items
     .map((item) => {
       const i = history.indexOf(item.id)
       let score = 0
-      if (i >= 0) score += Math.max(0, W.recencyTop - i * W.recencyDecay)
+      // Recency is for things worth doing again. A one-shot command that scored
+      // on it dropped out the moment you ran it and then walked back UP the list
+      // two commands later, which is a suggestion arguing with itself.
+      if (i >= 0 && i < RECENT_DEPTH && item.repeatable) score += Math.max(0, W.recencyTop - i * W.recencyDecay)
       if (last?.nextLikely?.includes(item.id)) score += W.successor
+      if (item.fills && open.has(item.fills)) score += item.fills === BLOCKING ? W.gapBlocking : W.gap
       if (item.suggested) score += item.suggested === "key" ? W.keyFeature : W.curated
       // The one you just ran, and it is not the repeating kind.
       if (item.id === last?.id && !item.repeatable) score = -1
@@ -158,14 +236,14 @@ function rank(item: PaletteItem, needle: string): Rank {
  * breaks ties but never beats a better text match, or the list starts arguing
  * with what you typed.
  */
-export function searchPalette(items: PaletteItem[], raw: string, recentIds: string[] = []) {
+export function searchPalette(items: PaletteItem[], raw: string, recentIds: string[] = [], gaps: SceneGap[] = []) {
   const needle = fold(raw.trim())
 
   if (!needle) {
     // "Suggestions", not "Recent" — the slot is a ranking, not a log. See
     // suggestionsFor: recency dominates, but a command you just finished with
     // drops out and whatever usually follows it moves up.
-    const suggested = suggestionsFor(items, recentIds)
+    const suggested = suggestionsFor(items, recentIds, gaps)
     const shownIds = new Set(suggested.map((i) => i.id))
     return { suggested, results: items.filter((i) => !shownIds.has(i.id)) }
   }

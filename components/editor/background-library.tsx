@@ -15,7 +15,7 @@ import {
   type AppliedBackgroundEffect,
 } from "@/lib/background-effects"
 import { EffectPreview } from "@/components/editor/effect-preview"
-import { LIBRARY_SHELL, LibraryRail, LibraryStats, LibraryTags } from "@/components/editor/library-rail"
+import { LIBRARY_GRID, LIBRARY_SHELL, LibraryRail, LibraryStats, LibraryTags, ShelfCount } from "@/components/editor/library-rail"
 import {
   conflictingName,
   matchesFacet,
@@ -337,8 +337,10 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
           {/* Thumbnail grid + pinned "New effect" (the graph library's New-graph idiom */}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <ScrollArea className="min-h-0">
-            <div className="px-3 pt-2 pb-2.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.builtin}</div>
-            <div className="grid grid-cols-4 content-start gap-2 px-3 pb-1.5">
+            <div className="px-3 pt-2 pb-1.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.builtin}
+              <ShelfCount n={builtinRows.length} />
+            </div>
+            <div className={cn(LIBRARY_GRID, "grid-cols-4 pb-1.5")}>
               {builtinRows.map(renderCard)}
               {rows.length === 0 && (
                 <div className="col-span-full py-16 text-center text-xs text-muted-foreground">
@@ -363,10 +365,12 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
               last. The floor keeps a row of cards visible when the built-ins are
               long enough to squeeze it. */}
           <div className="mt-2 flex min-h-[7.5rem] flex-1 flex-col border-t border-white/10">
-            <div className="shrink-0 px-3 pt-2 pb-2.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.community}</div>
+            <div className="shrink-0 px-3 pt-2 pb-1.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.community}
+              <ShelfCount n={communityRows.length} />
+            </div>
             <ScrollArea className="min-h-0 flex-1">
               {communityRows.length > 0 ? (
-                <div className="grid grid-cols-4 content-start gap-2 px-3 pb-3">{communityRows.map(renderCard)}</div>
+                <div className={cn(LIBRARY_GRID, "grid-cols-4")}>{communityRows.map(renderCard)}</div>
               ) : (
                 <div className="px-3 pb-3 text-xs text-muted-foreground/70">{t.rail.communityEmpty}</div>
               )}
@@ -374,8 +378,10 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
           </div>
           {localRows.length > 0 && (
             <div className="flex max-h-[10rem] shrink-0 flex-col border-t border-white/10">
-              <div className="flex shrink-0 items-center justify-between px-3 pt-1.5 pb-2.5">
-                <span className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.local}</span>
+              <div className="flex shrink-0 items-center justify-between px-3 pt-1.5 pb-1.5">
+                <span className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.local}
+                  <ShelfCount n={localRows.length} />
+                </span>
                 {/* Clears exactly what is LISTED, not every draft of this kind — a
                     search or facet can be narrowing this section, and wiping rows
                     you cannot see is not something a visible count can warn about.
@@ -396,9 +402,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                 </button>
               </div>
               <ScrollArea className="min-h-0 flex-1">
-                <div className="grid grid-cols-4 content-start gap-2 px-3 pb-3">
-                  {localRows.map(renderCard)}
-                </div>
+                <div className={cn(LIBRARY_GRID, "grid-cols-4")}>{localRows.map(renderCard)}</div>
               </ScrollArea>
             </div>
           )}

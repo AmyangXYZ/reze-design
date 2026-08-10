@@ -58,6 +58,10 @@ const en = {
   },
   gallery: {
     title: "Gallery",
+    // The DOOR's name, in the top bar and in the palette — one name for one
+    // place. The dialog's own header stays "Gallery": inside it, where you
+    // plainly are, the word "scene" is the thing every tile already is.
+    door: "Scene gallery",
     hot: "Hot",
     new: "New",
     top: "Top",
@@ -314,6 +318,9 @@ const en = {
   },
   graph: {
     generatedWgsl: "Generated WGSL",
+    apply: "Apply to the scene",
+    fullscreen: "Fill the screen",
+    exitFullscreen: "Back to a window",
     resetToPreset: "Reset to preset",
     exportJson: "Export graph JSON",
     importJson: "Import graph JSON",
@@ -352,7 +359,6 @@ const en = {
     showTimeline: "Show timeline",
     hideTimeline: "Hide timeline",
     exporting: "Exporting",
-    library: "Library",
     newGroup: "New group",
     newGroupN: (n: number) => `New group ${n}`,
     whichModel: "Which model?",
@@ -378,6 +384,18 @@ const en = {
     uploadImage: "Upload image",
     on: "On",
     off: "Off",
+    // The palette says what it actually holds: things you can DO (Actions and
+    // Go to, which is doing with a destination) and things you can SET. It used
+    // to offer "scenes, looks and actions" — two of which it cannot search.
+    palette: {
+      placeholder: "Search actions and settings",
+      title: "Search or run a command",
+      empty: "Nothing matches.",
+      suggested: "Suggestions",
+      command: "Actions",
+      goto: "Go to",
+      setting: "Settings",
+    },
     groups: { cast: "Cast", clips: "Clips", scene: "Scene" },
     // Dock rows — also the breadcrumb hint on every control inside them.
     rows: {
@@ -457,9 +475,9 @@ const en = {
     drop: { motion: "Drop a motion", camera: "Drop a camera motion", music: "Drop music" },
     cmd: {
       graphNew: "New shader graph",
-      graphLib: "Shader graph library",
-      wgslNew: "New background effect",
-      effectLib: "Background effect library",
+      graphLib: "Graph library",
+      wgslNew: "New effect",
+      effectLib: "Effect library",
       gradeNew: "New grade",
       gradeLib: "Grade library",
       exportVideo: "Export video",
@@ -625,6 +643,7 @@ const zh: Dictionary = {
   },
   gallery: {
     title: "画廊",
+    door: "场景画廊",
     hot: "热门",
     new: "最新",
     top: "最赞",
@@ -874,6 +893,9 @@ const zh: Dictionary = {
   },
   graph: {
     generatedWgsl: "生成的 WGSL",
+    apply: "应用到场景",
+    fullscreen: "铺满屏幕",
+    exitFullscreen: "恢复窗口",
     resetToPreset: "重置为预设",
     exportJson: "导出节点图 JSON",
     importJson: "导入节点图 JSON",
@@ -910,7 +932,6 @@ const zh: Dictionary = {
     showTimeline: "显示时间轴",
     hideTimeline: "隐藏时间轴",
     exporting: "导出中",
-    library: "素材库",
     newGroup: "新建组",
     newGroupN: (n: number) => `新建组 ${n}`,
     whichModel: "选择哪个模型？",
@@ -933,6 +954,15 @@ const zh: Dictionary = {
     uploadImage: "上传图片",
     on: "开",
     off: "关",
+    palette: {
+      placeholder: "搜索操作和设置",
+      title: "搜索或执行命令",
+      empty: "没有匹配项。",
+      suggested: "建议",
+      command: "操作",
+      goto: "跳转",
+      setting: "设置",
+    },
     groups: { cast: "角色", clips: "片段", scene: "场景" },
     rows: {
       camera: "相机",
@@ -1009,8 +1039,8 @@ const zh: Dictionary = {
     cmd: {
       graphNew: "新建着色器图",
       graphLib: "着色器图库",
-      wgslNew: "新建背景特效",
-      effectLib: "背景特效库",
+      wgslNew: "新建特效",
+      effectLib: "特效库",
       gradeNew: "新建调色",
       gradeLib: "调色库",
       exportVideo: "导出视频",

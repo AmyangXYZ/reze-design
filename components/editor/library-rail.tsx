@@ -40,6 +40,37 @@ export const LIBRARY_SHELL =
   "data-[state=closed]:animate-none data-[state=closed]:fade-out-100 data-[state=closed]:zoom-out-100 " +
   "data-[state=open]:animate-none data-[state=open]:fade-in-100 data-[state=open]:zoom-in-100"
 
+/**
+ * A shelf of cards, in every library.
+ *
+ * The `pt-1` is load-bearing: a selected card is marked with a ring, and a ring
+ * paints OUTSIDE the border box, so a first row flush against its scroll
+ * container had its top pixel clipped — a selection whose highlight was open at
+ * the top. Community and Local wear it worst, their headers sitting outside the
+ * scroll box, so their cards begin exactly at the clip edge.
+ *
+ * The 4px comes OUT of the header above rather than being added below it, so the
+ * shelves keep the spacing they had. Column count and the bottom are the
+ * caller's — the shelves differ in both.
+ */
+export const LIBRARY_GRID = "grid content-start gap-2 px-3 pt-1 pb-3"
+
+/**
+ * How many are on this shelf, right after the word that names it.
+ *
+ * Beside the label rather than at the right edge: it is part of what the heading
+ * SAYS, not a second column of data — and a number alone at the far end of a
+ * wide header reads as belonging to whatever sits under it.
+ *
+ * Counts what is DISPLAYED, so a search or a facet narrows it. A total that
+ * disagrees with the rows you can see is a number you have to explain.
+ */
+export function ShelfCount({ n }: { n: number }) {
+  // tracking-normal: the headings run at 0.14em, which pushes a closing paren
+  // off its digits.
+  return <span className="ml-1.5 tracking-normal tabular-nums">({n})</span>
+}
+
 /** A titled block in the rail. Sections are separated by a rule so the rail reads
  *  as "how to browse" then "what to browse by". */
 /**

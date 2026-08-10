@@ -23,15 +23,37 @@ for (const i of [...GRAPH_LIBRARY, ...BACKGROUND_EFFECTS, ...GRADE_PRESETS]) {
   bundled.set(i.id, { version: i.version, resolved: { ...(i.payload as Payload), name: i.name } })
 }
 
-/** A resolver for every pin in the document, built with one request at most. */
-export async function resolveSceneRefs(doc: SceneDoc): Promise<(ref: ItemRef) => Resolved | undefined> {
-  const remote = new Map<string, Resolved>()
-  const missing = sceneRefs(doc).filter((r) => {
+/** Pins this document has that the app bundle does not carry. */
+function missingRefs(doc: SceneDoc): ItemRef[] {
+  return sceneRefs(doc).filter((r) => {
     const hit = bundled.get(r.id)
     // A pinned version the bundle doesn't carry (retuned since) still has to be
     // fetched — the pin means that exact version, not "whatever ships today".
     return !hit || hit.version !== r.version
   })
+}
+
+/**
+ * The resolver WITHOUT the request — null when this document needs one.
+ *
+ * A scene wearing only built-in looks pins nothing the app has not already
+ * shipped, which is the common case. Saying so synchronously lets a host parse
+ * its document during the first render, so the canvas is in that render and the
+ * engine starts on mount: no awaited tick, no second pass, and nothing to show
+ * in the meantime.
+ */
+export function resolveSceneRefsSync(doc: SceneDoc): ((ref: ItemRef) => Resolved | undefined) | null {
+  if (missingRefs(doc).length > 0) return null
+  return (ref) => {
+    const hit = bundled.get(ref.id)
+    return hit && hit.version === ref.version ? hit.resolved : undefined
+  }
+}
+
+/** A resolver for every pin in the document, built with one request at most. */
+export async function resolveSceneRefs(doc: SceneDoc): Promise<(ref: ItemRef) => Resolved | undefined> {
+  const remote = new Map<string, Resolved>()
+  const missing = missingRefs(doc)
 
   if (missing.length > 0) {
     try {

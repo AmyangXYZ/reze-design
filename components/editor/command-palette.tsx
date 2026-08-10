@@ -19,21 +19,16 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { Search } from "lucide-react"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { searchPalette, type CommandSection, type PaletteItem } from "@/lib/command-search"
+import { searchPalette, type CommandSection, type PaletteItem, type SceneGap } from "@/lib/command-search"
+import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
-
-const SECTION_LABEL: Record<CommandSection | "suggested", string> = {
-  suggested: "Suggestions",
-  command: "Actions",
-  goto: "Go to",
-  setting: "Settings",
-}
 
 export function CommandPalette({
   open,
   onOpenChange,
   items,
   recentIds,
+  gaps,
   onRun,
 }: {
   open: boolean
@@ -41,8 +36,18 @@ export function CommandPalette({
   items: PaletteItem[]
   /** Most-recent-first ids, persisted by the caller. */
   recentIds: string[]
+  /** What the scene is missing — the strongest signal Suggestions has. */
+  gaps?: SceneGap[]
   onRun: (item: PaletteItem) => void
 }) {
+  const t = useT()
+  const label = t.lab.palette
+  const SECTION_LABEL: Record<CommandSection | "suggested", string> = {
+    suggested: label.suggested,
+    command: label.command,
+    goto: label.goto,
+    setting: label.setting,
+  }
   const [query, setQuery] = useState("")
   const [active, setActive] = useState(0)
   // Typing resets the selection and opening resets the query — both are
@@ -55,8 +60,8 @@ export function CommandPalette({
   const listRef = useRef<HTMLDivElement>(null)
 
   const { suggested, results } = useMemo(
-    () => searchPalette(items, query, recentIds),
-    [items, query, recentIds],
+    () => searchPalette(items, query, recentIds, gaps),
+    [items, query, recentIds, gaps],
   )
 
   // One flat list for the keyboard; the grouping below is presentation only, so
@@ -122,7 +127,7 @@ export function CommandPalette({
         className="top-[14%] max-w-[29rem] translate-y-0 gap-0 overflow-hidden rounded-surface border-line-strong bg-surface p-0 shadow-float backdrop-blur-xs"
         onKeyDown={onKeyDown}
       >
-        <DialogTitle className="sr-only">Search or run a command</DialogTitle>
+        <DialogTitle className="sr-only">{label.title}</DialogTitle>
 
         <div className="flex items-center gap-2.5 px-3">
           <Search className="size-4 shrink-0 text-muted-foreground" />
@@ -130,7 +135,7 @@ export function CommandPalette({
             autoFocus
             value={query}
             onChange={(e) => setQueryAndReset(e.target.value)}
-            placeholder="Search scenes, looks and actions"
+            placeholder={label.placeholder}
             className="h-11 border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0 dark:bg-transparent"
           />
         </div>
@@ -142,7 +147,7 @@ export function CommandPalette({
             boundary is what stops the list ending mid-row. Generous because this
             is the main entrance to everything the app can do, not a dropdown. */}
         <div ref={listRef} className="max-h-[22rem] overflow-y-auto border-t border-line py-1">
-          {flat.length === 0 && <p className="px-3.5 py-4 text-sm text-muted-foreground">Nothing matches.</p>}
+          {flat.length === 0 && <p className="px-3.5 py-4 text-sm text-muted-foreground">{label.empty}</p>}
 
           {groups.map((g) => (
             <div key={g.key}>
@@ -166,9 +171,20 @@ export function CommandPalette({
                       className={cn("size-4 shrink-0", item.deep ? "text-pink-400" : "text-muted-foreground")}
                     />
                     <span className="min-w-0 truncate">{item.label}</span>
-                    {item.hint && (
+                    {/* ONE annotation per row, and the value wins where there is
+                        one. Both at once was two muted strings competing at the
+                        same edge for the same attention — and of the two, where a
+                        control lives is the one you can answer by running the
+                        row, while what it is set to is why you searched. The
+                        label already names the control and the icon already names
+                        its row, so the path was the third way of saying it.
+
+                        The path is still SEARCHED (see searchKey) — typing
+                        "environment" still finds everything in that row, it just
+                        no longer spends the width saying so. */}
+                    {(item.value ?? item.hint) && (
                       <span className="ml-auto max-w-[10rem] shrink-0 truncate text-xs text-muted-foreground">
-                        {item.hint}
+                        {item.value ?? item.hint}
                       </span>
                     )}
                   </button>

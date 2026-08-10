@@ -24,6 +24,7 @@ import {
   Camera,
   Check,
   FilePlus2,
+  GalleryThumbnails,
   Globe,
   Grid3x3,
   Clapperboard,
@@ -31,8 +32,12 @@ import {
   ChevronDown,
   ChevronUp,
   Contrast,
+  Image,
+  ImageDown,
+  Lightbulb,
   Music,
   Mountain,
+  PersonStanding,
   Plus,
   RefreshCw,
   Languages,
@@ -53,14 +58,16 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { AccountButton } from "@/components/editor/account-panel"
+import { AccountButton, HandleDialog } from "@/components/editor/account-panel"
+import { SceneGallery, prefetchGallery } from "@/components/editor/scene-gallery"
+import { prefetchLibraryStats } from "@/hooks/use-library-stats"
 import { AnimPlayer } from "@/components/scene/anim-player"
 import { MaterialsPanel } from "@/components/scene/material-sidebar"
-import { MaterialSphereIcon } from "@/components/scene/slot-icons"
+import { GithubMark, MaterialSphereIcon } from "@/components/scene/slot-icons"
 import { RenderPanel } from "@/components/editor/render-panel"
 import { CastSwatch } from "@/components/editor/cast-swatch"
 import { CommandPalette } from "@/components/editor/command-palette"
-import type { PaletteItem } from "@/lib/command-search"
+import { RECENT_DEPTH, type PaletteItem, type SceneGap } from "@/lib/command-search"
 import { SceneFileMenu } from "@/components/editor/scene-file-menu"
 import { SceneName } from "@/components/editor/scene-name"
 import { Surface } from "@/components/editor/surface"
@@ -86,6 +93,7 @@ import { useAudioClock } from "@/hooks/use-audio-clock"
 import { useEngine } from "@/hooks/use-engine"
 import { useRenderFraming } from "@/hooks/use-render-framing"
 import { useSceneSync } from "@/hooks/use-scene-sync"
+import { useBrowseSurface } from "@/hooks/use-browse-surface"
 import { useStoredRect } from "@/hooks/use-stored-rect"
 import { useZOrder } from "@/hooks/use-z-order"
 import { DEFAULT_SCENE, EMPTY_SCENE } from "@/lib/default-scene"
@@ -104,11 +112,12 @@ import {
   type SceneDoc,
   type SceneState,
 } from "@/lib/scene"
-import { collectSceneSlots as collectSlots, type CollectedAnim } from "@/lib/scene-collect"
+import { collectSceneSlots as collectSlots, type CollectedAnim, type SceneSlots } from "@/lib/scene-collect"
 import { downloadBlob, sceneZipFileName } from "@/lib/scene-file"
 import { buildZip } from "@/lib/bundle"
 import { resolveSceneRefs } from "@/lib/resolve-refs"
-import { effectRef, gradeRef, graphRef } from "@/lib/refs"
+import { effectRef, gradeRef, graphRef, unpublishedUses } from "@/lib/refs"
+import { ShareSceneDialog, type ScenePublishSource } from "@/components/editor/share-scene"
 import { clearLocalBundle, saveLocalBundle } from "@/lib/asset-store"
 import { loadUiState, saveUiState } from "@/lib/ui-state"
 import { dictionaries, LOCALES, LOCALE_LABELS, useI18n, useT, type Dictionary, type Locale } from "@/lib/i18n"
@@ -175,16 +184,42 @@ const FOLD = "duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
  * you were not even looking at, and a timeline whose scale changes underneath you
  * is worse than one that leaves a strip of canvas unused.
  *
+ * The insets are the dock (18rem) plus 2.25rem, which is its own 0.75rem inset
+ * plus a 1.5rem gap. One rem of clear canvas either side, rather than the 0.75
+ * the docks themselves sit at: at that width the open timeline read as touching
+ * them, and an edge that nearly meets another edge looks like a mistake in a way
+ * a plain gap never does.
+ *
  * Written out rather than interpolated from a constant: Tailwind scans source
  * for literal class names, so a template string here produces no CSS at all.
  */
-const WORKSPACE = "left-[calc(18rem+1.5rem)] right-[calc(18rem+1.5rem)]"
+const WORKSPACE = "left-[calc(18rem+2.25rem)] right-[calc(18rem+2.25rem)]"
+
+/**
+ * The expanded timeline is OFF, and its code is deliberately still here.
+ *
+ * The lanes are a picture, not an editor: no shared time axis, no playhead, no
+ * trim — so a fold that opens onto them promises an editor that does not exist,
+ * and a control whose only outcome is disappointment is worse than no control.
+ * The transport is the timeline meanwhile, which was always the design.
+ *
+ * One boolean, not a deletion: what is missing is the axis (every lane
+ * proportional to the longest clip), a playhead drawn across all three, and
+ * per-track in/out — and the first two want a camera-VMD duration the engine
+ * does not expose yet. Everything below survives to be built on.
+ */
+const TIMELINE_EDITOR = false
 
 /** A viewport a hair narrower than the target still counts as matching it. */
 const FRAME_ASPECT_TOL = 1.03
 
 /** Palette recents, persisted — Suggestions should remember across sessions. */
 const RECENTS_KEY = "reze-design.palette-recents"
+
+/** The repository. It is also where the manuals live, linked from the README —
+ *  so the app carries ONE outbound link rather than a help menu that has to be
+ *  kept in step with the docs. */
+const REPO_URL = "https://github.com/AmyangXYZ/reze-design"
 
 /** How long edits settle before the working scene is written to localStorage. */
 const SAVE_SETTLE_MS = 1000
@@ -243,16 +278,59 @@ function layersFor(t: Dictionary) {
     // future character rim) stays in Light; those change how surfaces respond,
     // not what happens to the finished frame.
     { id: "post", name: t.lab.rows.post, icon: Contrast, presets: [] },
-    { id: "light", name: t.lab.rows.light, icon: Sun, presets: [] },
+    // A lamp, not the sun: Sun is the SUN — one of the two things this row
+    // holds, and a row wearing the icon of its own tab claims to be that tab.
+    { id: "light", name: t.lab.rows.light, icon: Lightbulb, presets: [] },
     { id: "physics", name: t.lab.rows.physics, icon: Atom, presets: [] },
   ] as const
 }
 
 /**
- * Every CONTROL in the dock, as data: where it lives (row, pane) and what it is
- * called in both search languages. The palette's Settings section is generated
- * from this, so "shadow" or 阴影 lands on Environment · Ground — searching a
- * knob by name navigates to the knob, not to a guess.
+ * What a palette row can PRINT: the live scene, in the shape the value functions
+ * below read it. A snapshot, committed when the palette opens — see openPalette
+ * for why nothing here is read live.
+ *
+ * `t` rides along because half of these values are words (On, Off, None) and a
+ * value function has no other way to reach the dictionary.
+ */
+type PaletteValues = {
+  t: Dictionary
+  settings: SceneSettings
+  camera: SceneCamera
+  locale: Locale
+  /** The loaded stage's placement, or null when there is none. */
+  stage: { scale: number; position: [number, number, number] } | null
+  /** Applied names, already resolved — a value function must not have to look
+   *  anything up. */
+  effect: string | null
+  gradeName: string
+  backdrop: string | null
+  dome: string | null
+}
+
+/**
+ * One formatter per shape, shared with the dock's own sliders below.
+ *
+ * The dock has always formatted its numbers inline; the palette printing the
+ * same numbers is the second reader, and two copies of `toFixed(2)` is how a
+ * value ends up reading 0.35 in one place and 0.4 in the other.
+ */
+const deg = (v: number) => `${Math.round(v)}°`
+const dec1 = (v: number) => v.toFixed(1)
+const dec2 = (v: number) => v.toFixed(2)
+const xyz = (v: readonly [number, number, number]) => v.map(dec1).join(", ")
+/** A switch, in the reader's language. */
+const sw = (on: boolean, t: Dictionary) => (on ? t.lab.on : t.lab.off)
+const rad2deg = (r: number) => (r * 180) / Math.PI
+
+/**
+ * Every CONTROL in the dock, as data: where it lives (row, pane), what it is
+ * called in both search languages, and what it is SET TO.
+ *
+ * The palette's Settings section is generated from this, so "shadow" or 阴影
+ * lands on Environment · Ground — searching a knob by name navigates to the
+ * knob, not to a guess — and the row says what the knob currently reads, so the
+ * search results answer the question as often as they navigate to it.
  */
 // prettier-ignore
 const DOCK_CONTROLS: {
@@ -265,43 +343,48 @@ const DOCK_CONTROLS: {
   cameraTab?: "lens" | "focus"
   postTab?: "grade" | "bloom" | "outline"
   keywords?: string[]
+  /** What this control is set to, for the right end of its palette row. Omitted
+   *  where there is nothing honest to print — the export panel owns its own
+   *  settings and they do not exist until it opens. Returning "" says the same
+   *  thing dynamically: a stage transform with no stage loaded. */
+  value?: (v: PaletteValues) => string
 }[] = [
-  { id: "camera-fov", en: "Camera FOV", zh: "相机视场角", row: "camera", cameraTab: "lens", keywords: ["fov", "field of view", "视野"] },
-  { id: "camera-follow", en: "Follow character", zh: "跟随角色", row: "camera", cameraTab: "lens", keywords: ["follow", "center", "センター"] },
-  { id: "camera-distance", en: "Camera distance", zh: "相机距离", row: "camera", cameraTab: "lens", keywords: ["zoom", "距离"] },
-  { id: "camera-azimuth", en: "Camera azimuth", zh: "相机方位角", row: "camera", cameraTab: "lens", keywords: ["orbit", "angle", "方位"] },
-  { id: "camera-elevation", en: "Camera elevation", zh: "相机仰角", row: "camera", cameraTab: "lens", keywords: ["orbit", "height", "俯仰"] },
-  { id: "camera-target", en: "Camera target", zh: "相机目标", row: "camera", cameraTab: "lens", keywords: ["offset", "look at", "偏移"] },
-  { id: "camera-dof", en: "Depth of field", zh: "景深", row: "camera", cameraTab: "focus", keywords: ["dof", "bokeh", "blur", "focus", "虚化"] },
-  { id: "stage-scale", en: "Stage scale", zh: "舞台缩放", row: "stage", stageTab: "stage" },
-  { id: "stage-position", en: "Stage position", zh: "舞台位置", row: "stage", stageTab: "stage" },
-  { id: "ground-color", en: "Ground color", zh: "地面颜色", row: "stage", stageTab: "ground" },
-  { id: "ground-opacity", en: "Ground opacity", zh: "地面不透明度", row: "stage", stageTab: "ground" },
-  { id: "shadow", en: "Shadow", zh: "阴影", row: "stage", stageTab: "ground" },
-  { id: "grid", en: "Grid lines", zh: "网格", row: "stage", stageTab: "ground" },
-  { id: "bg-color", en: "Background color", zh: "背景颜色", row: "stage", stageTab: "background" },
-  { id: "bg-image", en: "Background image", zh: "背景图片", row: "stage", stageTab: "background", keywords: ["backdrop", "photo"] },
-  { id: "bg-360", en: "360° background", zh: "360 全景背景", row: "stage", stageTab: "background", keywords: ["360", "skybox", "panorama", "equirect", "全景"] },
-  { id: "effect", en: "Effect", zh: "特效", row: "effect", keywords: ["wgsl", "stars", "shader", "背景特效"] },
-  { id: "grade-preset", en: "Grade preset", zh: "调色预设", row: "post", postTab: "grade", keywords: ["color", "look", "后期"] },
-  { id: "grade-intensity", en: "Grade intensity", zh: "调色强度", row: "post", postTab: "grade" },
-  { id: "bloom-intensity", en: "Bloom intensity", zh: "泛光强度", row: "post", postTab: "bloom", keywords: ["glow", "辉光"] },
-  { id: "bloom-threshold", en: "Bloom threshold", zh: "泛光阈值", row: "post", postTab: "bloom", keywords: ["cutoff"] },
-  { id: "bloom-radius", en: "Bloom radius", zh: "泛光半径", row: "post", postTab: "bloom", keywords: ["spread", "扩散"] },
-  { id: "outline-toggle", en: "Outline", zh: "描边", row: "post", postTab: "outline", keywords: ["edge", "rim", "线稿", "轮廓"] },
-  { id: "world-strength", en: "World strength", zh: "环境光强度", row: "light", lightTab: "world", keywords: ["ambient"] },
-  { id: "sun-strength", en: "Sun strength", zh: "太阳强度", row: "light", lightTab: "sun" },
-  { id: "sun-azimuth", en: "Sun azimuth", zh: "太阳方位", row: "light", lightTab: "sun" },
-  { id: "sun-elevation", en: "Sun elevation", zh: "太阳高度", row: "light", lightTab: "sun" },
+  { id: "camera-fov", en: "Camera FOV", zh: "相机视场角", row: "camera", cameraTab: "lens", keywords: ["fov", "field of view", "视野"], value: (v) => deg(rad2deg(v.camera.fov ?? CAMERA_DEFAULT_FOV)) },
+  { id: "camera-follow", en: "Follow character", zh: "跟随角色", row: "camera", cameraTab: "lens", keywords: ["follow", "center", "センター"], value: (v) => sw(!!v.camera.follow, v.t) },
+  { id: "camera-distance", en: "Camera distance", zh: "相机距离", row: "camera", cameraTab: "lens", keywords: ["zoom", "距离"], value: (v) => dec1(v.camera.distance) },
+  { id: "camera-azimuth", en: "Camera azimuth", zh: "相机方位角", row: "camera", cameraTab: "lens", keywords: ["orbit", "angle", "方位"], value: (v) => deg(rad2deg(v.camera.alpha)) },
+  { id: "camera-elevation", en: "Camera elevation", zh: "相机仰角", row: "camera", cameraTab: "lens", keywords: ["orbit", "height", "俯仰"], value: (v) => deg(90 - rad2deg(v.camera.beta)) },
+  { id: "camera-target", en: "Camera target", zh: "相机目标", row: "camera", cameraTab: "lens", keywords: ["offset", "look at", "偏移"], value: (v) => xyz(v.camera.target) },
+  { id: "camera-dof", en: "Depth of field", zh: "景深", row: "camera", cameraTab: "focus", keywords: ["dof", "bokeh", "blur", "focus", "虚化"], value: (v) => sw(v.settings.dof.enabled, v.t) },
+  { id: "stage-scale", en: "Stage scale", zh: "舞台缩放", row: "stage", stageTab: "stage", value: (v) => (v.stage ? `${dec2(v.stage.scale)}×` : "") },
+  { id: "stage-position", en: "Stage position", zh: "舞台位置", row: "stage", stageTab: "stage", value: (v) => (v.stage ? xyz(v.stage.position) : "") },
+  { id: "ground-color", en: "Ground color", zh: "地面颜色", row: "stage", stageTab: "ground", value: (v) => v.settings.ground.color },
+  { id: "ground-opacity", en: "Ground opacity", zh: "地面不透明度", row: "stage", stageTab: "ground", value: (v) => dec2(v.settings.ground.opacity) },
+  { id: "shadow", en: "Shadow", zh: "阴影", row: "stage", stageTab: "ground", value: (v) => sw(v.settings.ground.shadow, v.t) },
+  { id: "grid", en: "Grid lines", zh: "网格", row: "stage", stageTab: "ground", value: (v) => sw(v.settings.ground.gridEnabled, v.t) },
+  { id: "bg-color", en: "Background color", zh: "背景颜色", row: "stage", stageTab: "background", value: (v) => v.settings.background.color },
+  { id: "bg-image", en: "Background image", zh: "背景图片", row: "stage", stageTab: "background", keywords: ["backdrop", "photo"], value: (v) => v.backdrop ?? v.t.lab.ctl.none },
+  { id: "bg-360", en: "360° background", zh: "360 全景背景", row: "stage", stageTab: "background", keywords: ["360", "skybox", "panorama", "equirect", "全景"], value: (v) => v.dome ?? v.t.lab.ctl.none },
+  { id: "effect", en: "Effect", zh: "特效", row: "effect", keywords: ["wgsl", "stars", "shader", "背景特效"], value: (v) => v.effect ?? v.t.lab.ctl.none },
+  { id: "grade-preset", en: "Grade preset", zh: "调色预设", row: "post", postTab: "grade", keywords: ["color", "look", "后期"], value: (v) => v.gradeName },
+  { id: "grade-intensity", en: "Grade intensity", zh: "调色强度", row: "post", postTab: "grade", value: (v) => dec2(v.settings.grade.intensity) },
+  { id: "bloom-intensity", en: "Bloom intensity", zh: "泛光强度", row: "post", postTab: "bloom", keywords: ["glow", "辉光"], value: (v) => v.settings.bloom.intensity.toFixed(3) },
+  { id: "bloom-threshold", en: "Bloom threshold", zh: "泛光阈值", row: "post", postTab: "bloom", keywords: ["cutoff"], value: (v) => dec2(v.settings.bloom.threshold) },
+  { id: "bloom-radius", en: "Bloom radius", zh: "泛光半径", row: "post", postTab: "bloom", keywords: ["spread", "扩散"], value: (v) => dec1(v.settings.bloom.radius) },
+  { id: "outline-toggle", en: "Outline", zh: "描边", row: "post", postTab: "outline", keywords: ["edge", "rim", "线稿", "轮廓"], value: (v) => sw(v.settings.outline.enabled, v.t) },
+  { id: "world-strength", en: "World strength", zh: "环境光强度", row: "light", lightTab: "world", keywords: ["ambient"], value: (v) => dec2(v.settings.world.strength) },
+  { id: "sun-strength", en: "Sun strength", zh: "太阳强度", row: "light", lightTab: "sun", value: (v) => dec2(v.settings.sun.strength) },
+  { id: "sun-azimuth", en: "Sun azimuth", zh: "太阳方位", row: "light", lightTab: "sun", value: (v) => deg(v.settings.sun.azimuth) },
+  { id: "sun-elevation", en: "Sun elevation", zh: "太阳高度", row: "light", lightTab: "sun", value: (v) => deg(v.settings.sun.elevation) },
   { id: "resolution", en: "Resolution", zh: "分辨率", row: "export", keywords: ["1080", "4k", "size", "quality"] },
   { id: "aspect", en: "Aspect ratio", zh: "画面比例", row: "export", keywords: ["16:9", "9:16", "square", "vertical"] },
   { id: "duration", en: "Export duration", zh: "导出时长", row: "export", keywords: ["length", "range", "seconds"] },
   { id: "green-screen", en: "Green screen", zh: "绿幕", row: "export", keywords: ["chroma", "key", "transparent", "抠像"] },
   { id: "watermark", en: "Watermark", zh: "水印", row: "export", keywords: ["logo", "brand"] },
-  { id: "gravity", en: "Gravity", zh: "重力", row: "physics" },
-  { id: "wind", en: "Wind", zh: "风", row: "physics" },
-  { id: "wind-frequency", en: "Wind frequency", zh: "风频率", row: "physics" },
-  { id: "wind-direction", en: "Wind direction", zh: "风向", row: "physics" },
+  { id: "gravity", en: "Gravity", zh: "重力", row: "physics", value: (v) => v.settings.physics.gravity.toFixed(0) },
+  { id: "wind", en: "Wind", zh: "风", row: "physics", value: (v) => v.settings.physics.wind.toFixed(0) },
+  { id: "wind-frequency", en: "Wind frequency", zh: "风频率", row: "physics", value: (v) => dec2(v.settings.physics.windFrequency) },
+  { id: "wind-direction", en: "Wind direction", zh: "风向", row: "physics", value: (v) => deg(v.settings.physics.windAzimuth) },
 ]
 
 function rowMetaFor(t: Dictionary): Record<string, { icon: ComponentType<{ className?: string }>; name: string }> {
@@ -310,10 +393,10 @@ function rowMetaFor(t: Dictionary): Record<string, { icon: ComponentType<{ class
     stage: { icon: Mountain, name: t.lab.rows.stage },
     effect: { icon: Sparkles, name: t.lab.rows.effect },
     post: { icon: Contrast, name: t.lab.rows.post },
-    light: { icon: Sun, name: t.lab.rows.light },
+    light: { icon: Lightbulb, name: t.lab.rows.light },
     physics: { icon: Atom, name: t.lab.rows.physics },
     // Not a dock row — a summoned panel. Its controls are searchable all the same.
-    export: { icon: Video, name: t.lab.rows.export },
+    export: { icon: Clapperboard, name: t.lab.rows.export },
   }
 }
 function tabNameFor(t: Dictionary): Record<string, string> {
@@ -345,6 +428,19 @@ function controlItemsFor(t: Dictionary): PaletteItem[] {
   }))
 }
 
+/**
+ * Verb families, spread into the keyword bags below.
+ *
+ * A command's own keywords say what it IS. These say what someone might CALL the
+ * act: the app writes "New grade", and half the people looking for it will type
+ * "create". Labels already match in both locales, so what these add is the verbs
+ * NEITHER label uses — and they are shared consts rather than copied lists so a
+ * family cannot end up meaning "create" on three rows and "make" on a fourth.
+ */
+const MAKE = ["create", "make", "创建"]
+const LOAD = ["upload", "import", "load", "add", "上传", "导入", "加载"]
+const SAVE = ["save", "download", "保存", "下载"]
+
 /** A stand-in command set — enough to judge ranking, sections and the ">" mode.
  *  The real one comes from the registry, where each entry owns its `when` and
  *  `run`; these deliberately carry altLabels and keywords so folding and the
@@ -372,7 +468,7 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       icon: Workflow,
       label: l.cmd.graphNew,
       altLabels: [alt.cmd.graphNew],
-      keywords: ["wgsl", "material", "node", "shader", "着色器"],
+      keywords: [...MAKE, "wgsl", "material", "node", "shader", "着色器"],
     },
     {
       id: "graph-lib",
@@ -392,7 +488,7 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       icon: Code2,
       label: l.cmd.wgslNew,
       altLabels: [alt.cmd.wgslNew],
-      keywords: ["shader", "effect", "background", "特效"],
+      keywords: [...MAKE, "shader", "effect", "background", "特效"],
     },
     {
       id: "effect-lib",
@@ -408,10 +504,10 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       repeatable: true,
       section: "command",
       deep: true,
-      icon: Contrast,
+      icon: Palette,
       label: l.cmd.gradeNew,
       altLabels: [alt.cmd.gradeNew],
-      keywords: ["color", "look", "调色"],
+      keywords: [...MAKE, "color", "look", "调色"],
     },
     {
       id: "grade-lib",
@@ -424,14 +520,34 @@ function commandsFor(t: Dictionary): PaletteItem[] {
     },
     {
       id: "export",
-      suggested: true,
+      // No `suggested` — the SCENE says when this matters. It rises once there
+      // is something watchable and stops the moment you have rendered it.
+      fills: "render",
       nextLikely: ["publish"],
       section: "command",
       icon: Clapperboard,
       label: l.cmd.exportVideo,
-      hint: "3840 × 2160",
+      // No hint: the resolution lives in the export panel and changes there, so
+      // a number printed here is one nobody updated. A hint that can be wrong is
+      // worse than a row with nothing to add.
       altLabels: [alt.cmd.exportVideo],
-      keywords: ["mp4", "4k", "render", "encode"],
+      keywords: [...SAVE, "mp4", "4k", "render", "encode"],
+    },
+    // Not a goto — goto means a place in the dock. This LEAVES what you are
+    // making to look at what other people made, which is why it never became a
+    // library tab either.
+    {
+      id: "gallery",
+      // Offered while you have no history of your own: someone who has done
+      // nothing yet is exactly who needs to see that other people's scenes
+      // exist. It stops being offered the moment they have.
+      fills: "discover",
+      repeatable: true,
+      section: "command",
+      icon: GalleryThumbnails,
+      label: t.gallery.door,
+      altLabels: [otherThan(t).gallery.door, t.gallery.title, otherThan(t).gallery.title],
+      keywords: ["browse", "explore", "discover", "scenes", "community", "浏览", "发现", "场景", "作品"],
     },
     {
       id: "publish",
@@ -440,7 +556,7 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       icon: Share2,
       label: l.cmd.publish,
       altLabels: [alt.cmd.publish],
-      keywords: ["share", "upload", "link"],
+      keywords: ["share", "upload", "link", "url", "发布", "分享", "链接"],
     },
     // The logo menu's four operations, searchable. Same handlers, same labels —
     // a second door to one function, which is the whole point of the palette.
@@ -451,7 +567,7 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       icon: FilePlus2,
       label: t.sceneFile.newScene,
       altLabels: [otherThan(t).sceneFile.newScene],
-      keywords: ["clear", "empty", "新建", "清空"],
+      keywords: [...MAKE, "clear", "empty", "新建", "清空"],
     },
     {
       id: "scene-reset",
@@ -469,7 +585,7 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       icon: ArrowUpFromLine,
       label: t.sceneFile.export,
       altLabels: [otherThan(t).sceneFile.export],
-      keywords: ["download", "zip", "save", "导出", "备份"],
+      keywords: [...SAVE, "zip", "导出", "备份"],
     },
     {
       id: "scene-import",
@@ -478,16 +594,19 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       icon: ArrowDownToLine,
       label: t.sceneFile.import,
       altLabels: [otherThan(t).sceneFile.import],
-      keywords: ["open", "zip", "load", "导入"],
+      keywords: [...LOAD, "open", "zip", "导入"],
     },
     {
       id: "upload-animation",
+      fills: "motion",
       repeatable: true,
       section: "command",
-      icon: Clapperboard,
+      // A BODY performing, not a film slate: Clapperboard is the rendered video,
+      // and a motion is the thing a character does.
+      icon: PersonStanding,
       label: l.uploadAnimation,
       altLabels: [alt.uploadAnimation],
-      keywords: ["vmd", "motion", "dance", "动作", "舞蹈"],
+      keywords: [...LOAD, "vmd", "motion", "dance", "动作", "舞蹈"],
     },
     {
       id: "upload-stage",
@@ -496,17 +615,7 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       icon: Mountain,
       label: l.uploadStagePmx,
       altLabels: [alt.uploadStagePmx],
-      keywords: ["environment", "floor", "舞台"],
-    },
-    {
-      id: "music",
-      nextLikely: ["export"],
-      section: "command",
-      icon: Music,
-      label: l.uploadMusic,
-      hint: "One More Last Time",
-      altLabels: [alt.uploadMusic],
-      keywords: ["bgm", "audio", "mp3", "song"],
+      keywords: [...LOAD, "environment", "floor", "舞台"],
     },
     {
       id: "camera",
@@ -539,7 +648,7 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       id: "background",
       repeatable: true,
       section: "goto",
-      icon: Mountain,
+      icon: Image,
       label: l.cmd.background,
       altLabels: [alt.cmd.background],
       keywords: ["backdrop", "skybox", "360"],
@@ -568,7 +677,10 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       repeatable: true,
       nextLikely: ["post"],
       section: "goto",
-      icon: Sun,
+      // The ROW's icon, always: a goto is that row, said in the palette. Sun is
+      // the tab one level in, and having both wear it made the search result and
+      // the thing it scrolls to look like two different places.
+      icon: Lightbulb,
       label: l.cmd.light,
       altLabels: [alt.cmd.light],
     },
@@ -606,6 +718,10 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       // The palette is materials' only door — the cast row deliberately does not
       // open it — so the row has to be there without typing, not just findable.
       suggested: "key",
+      // Rises to the TOP the moment something is uploaded — a fresh model wears
+      // an auto-grouping nobody chose, and the look is the first thing anyone
+      // changes. Falls back to its standing slot once you have opened it.
+      fills: "look",
       repeatable: true,
       section: "command",
       icon: MaterialSphereIcon,
@@ -618,12 +734,14 @@ function commandsFor(t: Dictionary): PaletteItem[] {
     // rows run, reachable without knowing where the row is.
     {
       id: "add-model",
+      // The blocking gap: an empty scene has no other "what now?".
+      fills: "cast",
       repeatable: true,
       section: "command",
       icon: Plus,
       label: l.addModel,
       altLabels: [alt.addModel],
-      keywords: ["upload", "pmx", "character", "上传", "模型"],
+      keywords: [...LOAD, "pmx", "character", "模型", "角色"],
     },
     {
       id: "upload-camera",
@@ -632,25 +750,28 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       icon: Video,
       label: l.uploadCameraMotion,
       altLabels: [alt.uploadCameraMotion],
-      keywords: ["vmd", "camera", "镜头"],
+      keywords: [...LOAD, "vmd", "camera", "镜头"],
     },
     {
       id: "upload-music",
+      fills: "music",
       repeatable: true,
       section: "command",
       icon: Music,
       label: l.uploadMusic,
       altLabels: [alt.uploadMusic],
-      keywords: ["audio", "bgm", "wav", "mp3", "音乐"],
+      keywords: [...LOAD, "audio", "bgm", "wav", "mp3", "音乐"],
     },
     {
       id: "capture",
       repeatable: true,
       section: "command",
-      icon: Camera,
+      // A picture coming down, not a camera: Camera is the SHOT you are
+      // composing, this is the file it lands in.
+      icon: ImageDown,
       label: l.cmd.capture,
       altLabels: [alt.cmd.capture],
-      keywords: ["png", "screenshot", "still", "photo", "图片"],
+      keywords: [...SAVE, "png", "screenshot", "still", "photo", "截图", "图片"],
     },
     // Searchable in BOTH languages by design: whoever needs this is looking at a
     // UI they cannot read, and they will type the language they WANT. English
@@ -1095,6 +1216,32 @@ export default function Lab() {
     }
   }, [ready, scene, bundleFile, loadVmdFile, loadVmdUrl, engineRef])
   // Models that actually carry a clip — AnimPlayer drives the longest as master.
+  /**
+   * The CAST: everything loaded that is not scenery.
+   *
+   * Stages ride in `models` because their materials take the same style-group
+   * path — that is the whole reason a pure-PMX stage is worth supporting — and
+   * the Environment row already owns them, name, replace and delete. Listing one
+   * here would give it two homes and two delete buttons. The shipped editor
+   * filters by exactly this set.
+   */
+  const stageIds = useMemo(() => new Set(stages.map((s) => s.id)), [stages])
+  const cast = useMemo(() => models.filter((m) => !stageIds.has(m.id)), [models, stageIds])
+  /**
+   * Cast rows still ON THE WAY — one skeleton each.
+   *
+   * Two conditions, and both are load-bearing. WHILE LOADING, because that is
+   * the only time a row can be owed: the document is what promised it, and the
+   * live list is what has arrived. Models stream in one at a time and a scene
+   * swap keeps the outgoing cast until the incoming one lands, so "the engine is
+   * busy" alone would put a skeleton above rows that are already on screen.
+   *
+   * And ONLY while loading, because the document is the BOOT document and never
+   * hears about a deletion — once the engine is ready, everything it promised
+   * has either arrived or failed, and a scene you deleted a model from would
+   * otherwise keep a skeleton standing where it used to be, forever.
+   */
+  const pendingCast = ready ? 0 : Math.max(0, scene.assets.models.filter((m) => !m.stage).length - cast.length)
   const modelNames = useMemo(() => models.map((m) => m.id), [models])
   // First model carrying a clip — the clock for audio AND the export.
   const masterId = models.find((m) => animByModel[m.id])?.id ?? null
@@ -1256,10 +1403,26 @@ export default function Lab() {
   const { sun, world, bloom, dof, grade, ground, physics } = settings
   const [bgEffect, setBgEffect] = useState(scene.state.backgroundEffect)
 
+  // ONE slot for the three libraries — see useBrowseSurface. They were three
+  // independent booleans here, so opening one left the others up: a second
+  // library over the first, the same size and position, and the swap read as a
+  // flash. Exclusion is now structural rather than something each opener has to
+  // remember, which is also what makes LIBRARY_SHELL's suppressed animations
+  // land as one panel changing contents.
+  const {
+    facet: libraryFacet,
+    open: openBrowse,
+    close: closeBrowse,
+    closeIf: closeBrowseIf,
+    graphLibrary: graphLib,
+    gradesOpen: gradeLibOpen,
+    effectsOpen: effectLibOpen,
+    galleryOpen,
+  } = useBrowseSurface()
+
   // Grade: main's full selection model. Drafts and community feed both the
   // quick list and NAME RESOLUTION — a scene applying a community grade must
   // resolve it the way the render will.
-  const [gradeLibOpen, setGradeLibOpen] = useState(false)
   const { drafts: gradeDrafts } = useDrafts<GradeItem>("grade")
   const communityGrades = useCommunity<GradeItem>("grade")
   // Whose name a saved draft carries. Signed out it is simply "you" — a draft
@@ -1292,17 +1455,6 @@ export default function Lab() {
     (name: string) => t.scene.gradePresets[name as keyof typeof t.scene.gradePresets] ?? name,
     [t],
   )
-  const gradeItems = useMemo(
-    () => [
-      ...quickPickItems(GRADE_PRESETS, gradeDrafts, appliedGradeDraftId).map((g) => ({
-        id: g.name,
-        label: gradeLabel(g.name),
-        section: g.owner === "local" ? ("local" as const) : ("builtin" as const),
-      })),
-      ...communityQuickPickItems(communityGrades),
-    ],
-    [gradeDrafts, appliedGradeDraftId, communityGrades, gradeLabel],
-  )
   const pickGrade = useCallback(
     (name: string) => patch("grade", { preset: name, intensity: recallIntensity(name) }),
     [patch],
@@ -1314,11 +1466,54 @@ export default function Lab() {
     () => (gradeEditor ? gradeEditor.subject.spec : gradeSpec(grade.preset, [...gradeDrafts, ...communityGrades])),
     [gradeEditor, grade.preset, gradeDrafts, communityGrades],
   )
+  // Same three parts as the effect list, in the same order: the rows, an
+  // "edited" hint when what is applied has drifted from the entry it came from,
+  // and a transient row for a look no list holds. Both lists say the same thing
+  // the same way — otherwise an unsaved grade edit reads as though the preset
+  // itself had changed.
+  const gradeItems = useMemo(() => {
+    const items = [
+      ...quickPickItems(GRADE_PRESETS, gradeDrafts, appliedGradeDraftId).map((g) => ({
+        id: g.name,
+        label: gradeLabel(g.name),
+        section: g.owner === "local" ? ("local" as const) : ("builtin" as const),
+      })),
+      ...communityQuickPickItems(communityGrades),
+    ]
+    const preset = settings.grade.preset
+    const source = gradeSpec(preset, [...gradeDrafts, ...communityGrades])
+    if (JSON.stringify(appliedGradeSpec) === JSON.stringify(source)) return items
+    const known = items.some((i) => i.id === preset)
+    const withOwn = known ? items : [...items, { id: preset, label: preset, section: "local" as const }]
+    return withOwn.map((i) => (i.id === preset ? { ...i, hint: t.scene.edited } : i))
+  }, [gradeDrafts, appliedGradeDraftId, communityGrades, gradeLabel, settings.grade.preset, appliedGradeSpec, t])
   // Plain functions, the shipped editor's own call: they feed dialogs that are
   // not memoized, so memoizing buys nothing.
   const openGradeEditor = (subject: GradeEditorSubject) => {
     ensureGradePanelRect()
     setGradeEditor((prev) => ({ sessionId: (prev?.sessionId ?? 0) + 1, subject, opened: subject, savePrompt: false }))
+  }
+  /**
+   * Edit the grade the scene is WEARING — the quick list's own door, and the
+   * shipped editor's `editCurrentGrade` unchanged.
+   *
+   * The subject is the applied look resolved back to a library row: your draft
+   * or a community item when the name belongs to one (so the session saves back
+   * into it), the preset name itself when it is a built-in — and only then is
+   * there an `origin`, because only a built-in is something "back to preset" can
+   * revert to. Everything after that is the flow the editors already share:
+   * the session PREVIEWS through appliedGradeSpec and never writes
+   * settings.grade, so nothing is saved until the close prompt says so.
+   */
+  const editCurrentGrade = () => {
+    const preset = settings.grade.preset
+    const own = [...gradeDrafts, ...communityGrades].find((g) => nameKey(g.name) === nameKey(preset))
+    openGradeEditor({
+      id: own?.id ?? preset,
+      name: preset,
+      spec: appliedGradeSpec,
+      origin: own ? undefined : preset,
+    })
   }
   const editGrade = (next: GradeEditorSubject) => {
     setGradeEditor((prev) => (prev ? { ...prev, subject: next } : prev))
@@ -1497,23 +1692,44 @@ export default function Lab() {
   })
 
   // Effects: the same selection model as grade, one library over.
-  const [effectLibOpen, setEffectLibOpen] = useState(false)
   const { drafts: effectDrafts } = useDrafts<EffectItem>("effect")
   const communityEffects = useCommunity<EffectItem>("effect")
-  const effectItems = useMemo(
-    () => [
+  // "Edited" means the APPLIED shader differs from its saved source, built-in or
+  // draft. An editor session applies as you type, so the row says so while the
+  // session runs and stops saying it the moment you save or discard — the list
+  // and the canvas never disagree about what is on screen. An unsaved NEW effect
+  // is in no list at all, so it gets a transient row: without one the trigger
+  // falls through to its placeholder and the dock reads "None" while an effect
+  // is plainly running.
+  const effectItems = useMemo(() => {
+    const items = [
       ...quickPickItems(BACKGROUND_EFFECTS, effectDrafts, bgEffect?.id ?? null).map((e) => ({
         id: e.name,
         label: e.name,
         section: e.owner === "local" ? ("local" as const) : ("builtin" as const),
       })),
       ...communityQuickPickItems(communityEffects),
-    ],
-    [effectDrafts, bgEffect, communityEffects],
-  )
+    ]
+    if (!bgEffect?.name) return items
+    const pristine = [...BACKGROUND_EFFECTS, ...effectDrafts, ...communityEffects].some(
+      (e) => e.name === bgEffect.name && e.payload.wgsl === bgEffect.wgsl,
+    )
+    if (pristine) return items
+    const known = items.some((i) => i.id === bgEffect.name)
+    const withOwn = known ? items : [...items, { id: bgEffect.name, label: bgEffect.name, section: "local" as const }]
+    return withOwn.map((i) => (i.id === bgEffect.name ? { ...i, hint: t.scene.edited } : i))
+  }, [effectDrafts, bgEffect, communityEffects, t])
 
   const pickEffect = useCallback(
     (name: string) => {
+      // Picking what is ALREADY applied takes it off. An effect is the one thing
+      // in this dock a scene is routinely better without, and the alternative was
+      // a "None" row sitting permanently at the top of a list of effects. The
+      // ticked row is the affordance: a tick you can click off.
+      if (bgEffect?.name === name) {
+        setBgEffect(null)
+        return
+      }
       // Drafts and community rows carry their own shader — they apply by value.
       const own = [...effectDrafts, ...communityEffects].find((e) => e.name === name)
       if (own) {
@@ -1525,7 +1741,7 @@ export default function Lab() {
       const def = BACKGROUND_EFFECTS.find((e) => e.name === name)
       if (def) setBgEffect(applyDefaults(def))
     },
-    [effectDrafts, communityEffects],
+    [effectDrafts, communityEffects, bgEffect],
   )
 
   // ── The WGSL effect editor ──
@@ -1576,6 +1792,11 @@ export default function Lab() {
     },
     [bgEffect, ensureEffectPanelRect, commitEffectCode],
   )
+  /** Edit the effect the scene is wearing. No subject to resolve — an applied
+   *  effect already IS its row, carried by value. */
+  const editCurrentEffect = () => {
+    if (bgEffect) openEffectEditor(bgEffect)
+  }
   /** Close request from the editor. Dirty → prompt; clean → the preview simply
    *  ends, and whatever was applied before the session comes back. */
   const requestCloseEffectEditor = async (code: string) => {
@@ -1638,29 +1859,6 @@ export default function Lab() {
     return null
   }
 
-  // Width of the top-right pill cluster, mirrored onto the right panels so the
-  // column has ONE edge. Observed rather than hardcoded: the label is
-  // translated and the account chip changes with sign-in state.
-  const rightRailRef = useRef<HTMLDivElement>(null)
-  const [rightRailLeft, setRightRailLeft] = useState<number | null>(null)
-  useEffect(() => {
-    const el = rightRailRef.current
-    if (!el) return
-    // FLOOR, not the raw fraction: the cluster measures e.g. 306.4px, and a
-    // panel asked for 306.4 lands a pixel past the pills once the browser
-    // resolves both edges. Rounding down can only ever leave it flush or a
-    // hair inside, never overhanging.
-    // The pill cluster's LEFT EDGE, not its width. Both the cluster and the
-    // panels are anchored to the same right inset, so pinning the panel's left
-    // to this makes the two edges the same edge by construction — no width
-    // arithmetic to be a pixel out, and nothing to re-derive if the account
-    // chip changes size.
-    const measure = () => setRightRailLeft(Math.round(el.getBoundingClientRect().left))
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
   // The chrome waits one tick before it exists, which is main's own gate
   // (app/page.tsx `mounted`). Two things need it: values read from
   // localStorage cannot be read while rendering on the server, and the LOCALE
@@ -1727,7 +1925,6 @@ export default function Lab() {
   useEffect(() => {
     outlineRef.current = settings.outline.enabled
   })
-  const [outlineShown, setOutlineShown] = useState(settings.outline.enabled)
   /** Open the materials inspector on a model — the cast row's own click, the
    *  row's Materials button and the palette all come through here, so the
    *  one-right-panel-at-a-time rule lives in exactly one place. */
@@ -1737,6 +1934,19 @@ export default function Lab() {
     setInspectedId(null)
     setExportOpen(true)
   }, [])
+  /**
+   * Uploaded this session and not styled yet.
+   *
+   * Uploads happen from the DOCK, so the palette's history never sees them —
+   * without this, "I just added a model" is invisible to Suggestions. Ids go in
+   * when a model or stage arrives and come out when you open its materials,
+   * which is the act the suggestion was pointing at. Stages count: they are
+   * deliberately NOT auto-grouped, so a fresh one has no look at all.
+   */
+  const [unstyled, setUnstyled] = useState<string[]>([])
+  const noteArrival = useCallback((id: string) => setUnstyled((prev) => (prev.includes(id) ? prev : [...prev, id])), [])
+  const noteStyled = useCallback((id: string) => setUnstyled((prev) => prev.filter((x) => x !== id)), [])
+
   const openMaterials = useCallback(
     (id: string | null) => {
       if (!id) return
@@ -1745,8 +1955,10 @@ export default function Lab() {
       // already editing must not unbind the node editor you have open on it.
       if (id !== inspectedId) setActiveGroupId(null)
       setInspectedId(id)
+      // You came and looked — the suggestion has been taken.
+      noteStyled(id)
     },
-    [inspectedId],
+    [inspectedId, noteStyled],
   )
   const inspectedGroups = useMemo(
     () => (inspectedId ? (groupsByModel[inspectedId] ?? []) : []),
@@ -1829,10 +2041,17 @@ export default function Lab() {
   // closed, so without this it would only ever surface on first mount, and
   // opening the editor from the library would leave the library on top of it.
   const [graphSession, setGraphSession] = useState(0)
-  // Which group the library was opened for; null groupId is a browse with no
-  // target. The whole object IS the open state, so two fields can never
-  // disagree about whether the library is up.
-  const [graphLib, setGraphLib] = useState<{ groupId: string | null } | null>(null)
+  // An export has run this session. Not persisted: it answers "have you seen
+  // this rendered yet", which is a question about the sitting, not the document.
+  const [exportedOnce, setExportedOnce] = useState(false)
+  // Publishing. A scrimmed dialog, not a panel: this is the one task where the
+  // canvas is NOT what you are working on — you are naming and describing the
+  // thing you already made.
+  const [shareOpen, setShareOpen] = useState(false)
+  // Graph editor filling the screen. Session state, not stored with the rect:
+  // the rect is where your window LIVES and is worth remembering, while filling
+  // the screen is something you do for one dense graph and leave behind.
+  const [graphFull, setGraphFull] = useState(false)
   // A standalone graph-editing session: a library act, never bound to a group.
   const [graphLibEdit, setGraphLibEdit] = useState<{
     sessionId: number
@@ -1882,7 +2101,24 @@ export default function Lab() {
     },
     [inspectedId, inspectedGroups],
   )
-  const openGraphLibrary = useCallback((groupId: string | null) => setGraphLib({ groupId }), [])
+  const openGraphLibrary = useCallback(
+    (groupId: string | null) => openBrowse({ kind: "graph", groupId }),
+    [openBrowse],
+  )
+
+  /** The account panel's stat rows are doors: your scenes open the gallery, your
+   *  looks open their own library already filtered to yours — which is the whole
+   *  reason the slot carries a facet. Written out per kind rather than passed
+   *  through: each variant of the union is a different shape (a graph library
+   *  knows what group it applies to), and one of them is not a library at all. */
+  const openForAccount = useCallback(
+    (kind: "grade" | "effect" | "graph" | "scene") => {
+      if (kind === "scene") openBrowse({ kind: "gallery" })
+      else if (kind === "graph") openBrowse({ kind: "graph", groupId: null }, "yours")
+      else openBrowse(kind === "grade" ? { kind: "grade" } : { kind: "effect" }, "yours")
+    },
+    [openBrowse],
+  )
 
   // The session handlers are plain functions: nothing takes them as a
   // dependency, and the compiler cannot preserve a manual memo across the async
@@ -2031,7 +2267,7 @@ export default function Lab() {
     else inspectGroupsApply(inspectedGroups.map((x) => (x.id === group.id ? updated : x)))
     setActiveGroupId(group.id)
     setLibVersion((v) => v + 1)
-    setGraphLib(null)
+    closeBrowseIf("graph")
   }
   // A draft renamed in the library takes the groups wearing it along. A group
   // holds its look BY VALUE, so without this the scene goes on calling the look
@@ -2088,12 +2324,14 @@ export default function Lab() {
     setUpload(null)
     try {
       if (target.mode === "stage") {
-        await addStageFromFiles(files, pmx)
+        noteArrival(await addStageFromFiles(files, pmx))
         setStageTab("stage")
       } else if (target.mode === "replace") {
         const newId = await replaceModelFromFiles(target.id, files, pmx)
         adoptReplacedModel(target.id, newId)
-      } else await addModelFromFiles(files, pmx)
+        noteStyled(target.id)
+        noteArrival(newId)
+      } else noteArrival(await addModelFromFiles(files, pmx))
     } catch (e) {
       setUpload({
         kind: "notice",
@@ -2226,14 +2464,35 @@ export default function Lab() {
     const id = setTimeout(() => setLocale(next), 200)
     return () => clearTimeout(id)
   }, [langOpen, setLocale])
-  // Same deferred rule as the outline hint: the live locale is a ref, the one
-  // the palette PRINTS commits at open, so switching never rewrites the row
-  // you are looking at.
-  const localeRef = useRef(locale)
+  /**
+   * Everything a palette row PRINTS, live — and the copy it prints FROM.
+   *
+   * The law (generalised from the recents order): a value the palette shows is
+   * committed when the palette opens, never read live. The dock changes these
+   * constantly and running a command changes them by definition, so a live read
+   * would rewrite the row under your cursor as it fades. The ref carries the
+   * truth for anything that acts; the state carries what is on screen.
+   *
+   * ONE snapshot rather than a "shown" state per printed thing — outline and the
+   * locale each had their own, and the third would have made a pattern out of an
+   * accident.
+   */
+  const paletteValues: PaletteValues = {
+    t,
+    locale,
+    settings,
+    camera,
+    stage: stage ? { scale: stage.transform.scale, position: stage.transform.position } : null,
+    effect: bgEffect?.name ?? null,
+    gradeName: gradeLabel(settings.grade.preset),
+    backdrop: bgImage && !bgImage.dome ? bgImage.name : null,
+    dome: bgImage?.dome ? bgImage.name : null,
+  }
+  const valuesRef = useRef(paletteValues)
   useEffect(() => {
-    localeRef.current = locale
+    valuesRef.current = paletteValues
   })
-  const [localeShown, setLocaleShown] = useState(locale)
+  const [valuesShown, setValuesShown] = useState(paletteValues)
   const [paletteOpen, setPaletteOpen] = useState(false)
   // Suggestions survive the session: what you reached for yesterday is still
   // the best predictor today. Stale ids (a renamed command) are filtered on
@@ -2264,11 +2523,29 @@ export default function Lab() {
     if (nextRecent.current.length) setRecentIds(nextRecent.current)
     // Same rule for any row that prints its own state: catch the label up here,
     // never at run time.
-    setOutlineShown(outlineRef.current)
-    setLocaleShown(localeRef.current)
+    setValuesShown(valuesRef.current)
     setPaletteSession((n) => n + 1)
     setPaletteOpen(true)
   }, [setPaletteOpen])
+
+  // Like counts and the gallery's first page, warmed during idle after boot —
+  // opening either should be a render, not a fetch. A short timeout as well as
+  // idle: the render loop keeps this thread busy enough that idle may never
+  // arrive on its own, and the cost of these GETs is starting them.
+  useEffect(() => {
+    const warm = () => {
+      prefetchLibraryStats()
+      prefetchGallery()
+    }
+    const idle =
+      typeof requestIdleCallback === "function"
+        ? requestIdleCallback(warm, { timeout: 1000 })
+        : window.setTimeout(warm, 800)
+    return () => {
+      if (typeof cancelIdleCallback === "function") cancelIdleCallback(idle as number)
+      else clearTimeout(idle as number)
+    }
+  }, [])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -2309,21 +2586,55 @@ export default function Lab() {
     [layers],
   )
 
+  /**
+   * What this scene is MISSING, for the palette's Suggestions.
+   *
+   * Read live rather than committed at open like the printed values: a gap only
+   * changes when the scene does, running a command closes the palette, and a
+   * suggestion that describes the scene as it was is worse than no suggestion.
+   */
+  const paletteGaps = useMemo<SceneGap[]>(() => {
+    const list: SceneGap[] = []
+    // Anything that arrived and has not been looked at — a model OR a stage,
+    // which is why this reads the engine's list and not just the cast.
+    if (unstyled.some((id) => models.some((m) => m.id === id))) list.push("look")
+    if (cast.length === 0) list.push("cast")
+    else {
+      // PER MEMBER, not "no clips anywhere": with two characters and one
+      // motion, the scene still has someone standing still in it.
+      if (cast.some((m) => !animByModel[m.id])) list.push("motion")
+      if (!musicClip) list.push("music")
+      // Only once there is something to watch — offering to render a still
+      // model is offering a video of nothing.
+      if (cast.some((m) => animByModel[m.id]) && !exportedOnce) list.push("render")
+    }
+    // Not a scene gap but a user one, and the only signal available before
+    // anyone has done anything at all.
+    if (recentIds.length === 0) list.push("discover")
+    return list
+  }, [cast, models, unstyled, animByModel, musicClip, exportedOnce, recentIds.length])
+
   // The one row whose hint is state, not description: a toggle you reach only
   // by searching has to say which way it is currently pointing. Reads the
   // deferred copy, so the row never changes while you are looking at it.
   const paletteItems = useMemo(
     () =>
-      commands.map((c) =>
-        c.id === "outline"
-          ? // Deferred like every other printed state: the wording commits when
-            // the palette opens, so running it never rewrites the row you clicked.
-            { ...c, label: outlineShown ? t.lab.cmd.outlineOff : t.lab.cmd.outlineOn }
-          : c.id === "language"
-            ? { ...c, hint: LOCALE_LABELS[localeShown] }
-            : c,
-      ),
-    [commands, outlineShown, localeShown, t],
+      commands.map((c) => {
+        // A switch you reach only by searching has to say which way it points,
+        // and it says it in the LABEL — "Turn on outline" beats a row that names
+        // a switch and leaves you to guess.
+        if (c.id === "outline")
+          return { ...c, label: valuesShown.settings.outline.enabled ? t.lab.cmd.outlineOff : t.lab.cmd.outlineOn }
+        if (c.id === "language") return { ...c, hint: LOCALE_LABELS[valuesShown.locale] }
+        if (!c.id.startsWith("ctl-")) return c
+        // Settings print what they are SET TO, beside the breadcrumb that says
+        // where they live. An empty string means the control has nothing to
+        // report — a stage transform with no stage — and prints nothing rather
+        // than a placeholder.
+        const value = DOCK_CONTROLS.find((x) => `ctl-${x.id}` === c.id)?.value?.(valuesShown)
+        return value ? { ...c, value } : c
+      }),
+    [commands, valuesShown, t],
   )
 
   // ── Persistence ──
@@ -2554,9 +2865,7 @@ export default function Lab() {
     // one on its next close.
     setInspectedId(null)
     setExportOpen(false)
-    setGradeLibOpen(false)
-    setEffectLibOpen(false)
-    setGraphLib(null)
+    closeBrowse()
     setDrawerOpen(false)
     setGraphLibEdit(null)
     setActiveGroupId(null)
@@ -2596,17 +2905,22 @@ export default function Lab() {
    * all read one shape. Served assets stay URLs (they exist on every deployment);
    * uploaded ones travel in the zip.
    */
-  const exportScene = async () => {
-    const slots = collectLabSlots()
-    const doc = serializeSceneDoc(
+  /**
+   * The scene as a document, however it is leaving: `bundle` is the published
+   * bundle's URL when publishing, and null when the assets ship beside the doc.
+   *
+   * ONE builder for both doors. They were the same thirty lines twice in the
+   * shipped editor, which is how a field ends up in the published scene and
+   * missing from the exported one.
+   */
+  const makeSceneDoc = (slots: SceneSlots, bundle: string | null) =>
+    serializeSceneDoc(
       {
         models: slots.models,
         cameraAnimation: slots.cameraAnimation,
         audio: slots.audio,
         background: slots.background,
-        // bundle: null in the written doc — the assets are BESIDE it in the same zip,
-        // and import points the parsed scene at the zip it came from.
-        bundle: null,
+        bundle,
         name: sceneName,
         camera,
         // A published grade pins; anything else carries its spec. `preset` is the
@@ -2626,6 +2940,19 @@ export default function Lab() {
       },
       { graph: graphRef, effect: effectRef },
     )
+
+  /** What the publish dialog packs and uploads: the same slots the save path
+   *  collects, with the doc deferred until the bundle has a URL. */
+  const collectScenePublish = (): ScenePublishSource => {
+    const slots = collectLabSlots()
+    return { entries: slots.entries, makeDoc: (bundle) => makeSceneDoc(slots, bundle) }
+  }
+
+  const exportScene = async () => {
+    const slots = collectLabSlots()
+    // bundle: null — the assets travel BESIDE the doc in the same zip, and
+    // import points the parsed scene at the zip it came from.
+    const doc = makeSceneDoc(slots, null)
     const zip = await buildZip([
       ...slots.entries,
       { path: "scene.json", file: new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" }) },
@@ -2688,7 +3015,7 @@ export default function Lab() {
       // without the empty-query list becoming a second menu. Staged in a ref
       // rather than state so nothing re-renders while the dialog closes.
       const base = nextRecent.current.length ? nextRecent.current : recentIds
-      nextRecent.current = [item.id, ...base.filter((id) => id !== item.id)].slice(0, 5)
+      nextRecent.current = [item.id, ...base.filter((id) => id !== item.id)].slice(0, RECENT_DEPTH)
       // Stored immediately even though the STATE commit waits for the next
       // open (the no-reshuffle rule) — a refresh must not lose the last run.
       try {
@@ -2747,12 +3074,15 @@ export default function Lab() {
       else if (item.id === "graph-lib") openGraphLibrary(activeGroupId)
       else if (item.id === "wgsl-new")
         openEffectEditor({ id: "", name: t.bgLibrary.newEffect, wgsl: NEW_EFFECT_TEMPLATE })
-      else if (item.id === "effect-lib") setEffectLibOpen(true)
+      else if (item.id === "effect-lib") openBrowse({ kind: "effect" })
       else if (item.id === "grade-new")
         cmdRef.current.openGradeEditor({ id: "", name: t.gradeLibrary.newGrade, spec: NEW_GRADE_SPEC })
-      else if (item.id === "grade-lib") setGradeLibOpen(true)
+      else if (item.id === "grade-lib") openBrowse({ kind: "grade" })
       else if (item.id === "outline") patch("outline", { enabled: !outlineRef.current })
       else if (item.id === "language") setLangOpen(true)
+      // The same dialog the Share pill opens — one publish surface, two doors.
+      else if (item.id === "publish") setShareOpen(true)
+      else if (item.id === "gallery") openBrowse({ kind: "gallery" })
       else if (item.id.startsWith("ctl-")) {
         const c = DOCK_CONTROLS.find((x) => `ctl-${x.id}` === item.id)
         if (!c) return
@@ -2775,6 +3105,7 @@ export default function Lab() {
       setLangOpen,
       openExport,
       openGraphLibrary,
+      openBrowse,
       activeGroupId,
       openEffectEditor,
     ],
@@ -2835,6 +3166,7 @@ export default function Lab() {
                   the only door to the file operations. */}
               <SceneFileMenu
                 onNew={newScene}
+                onGallery={() => openBrowse({ kind: "gallery" })}
                 onExport={exportScene}
                 onImport={importScene}
                 onReset={resetSceneDefaults}
@@ -2869,59 +3201,58 @@ export default function Lab() {
             </div>
           )}
 
-          <span className="flex-1" />
+          {/* ── The right cluster ──
+              EXACTLY 18rem, the width of the panels below it. Both are anchored
+              to the same right inset, so the two left edges are the same edge by
+              construction — where a ResizeObserver used to measure the pills and
+              hand the panels a pixel value. Fixing the column and letting the
+              pills fill it is the same alignment with none of the arithmetic,
+              and nothing to re-derive when a label is translated or the account
+              chip changes with sign-in state.
 
-          {/* All three pills state h-10 rather than deriving it from contents.
-            Derived heights agreed only while every pill happened to hold size-7
-            children — one control with a different variant height and they
-            silently disagree, which is exactly what happened here. */}
-          {/* Two pills, as the study has them: the palette stands on its own, and
-            account + Share stay paired the way TopRightCluster already pairs
-            them. The palette needs a visible door — keyboard-only would hide it
-            from exactly the people most likely to miss it, and it is the only
-            route on touch. */}
-          {/* The button IS the pill — a wrapper around a single control leaves a
-            ring of padding the hover cannot reach. h-10 matches the other pills,
-            whose height comes from py-1.5 around size-7 contents. */}
-          {/* Measured, not guessed: the right panels take their width from this
-            cluster, and the cluster's width is its contents (a localized label
-            and a key cap). 18rem was close and therefore wrong — a few pixels
-            of overhang reads as a misalignment, which is worse than an obvious
-            difference. */}
-          <div ref={rightRailRef} className="flex items-start gap-2">
+              The palette takes the slack (flex-1) rather than the account pill:
+              slack inside that pill would open a hole between the avatar and
+              Share, while a wider search pill is just a wider search pill. It
+              lands at 10.75rem, a quarter of a rem off the width it was hand-set
+              to — which is the check that the number was right.
+
+              All pills state h-10 rather than deriving it from contents. Derived
+              heights agreed only while every pill happened to hold size-7
+              children — one control with a different variant height and they
+              silently disagree, which is exactly what happened here. */}
+          <div className="ml-auto flex w-[18rem] items-start gap-2">
+            {/* The palette needs a visible door — keyboard-only would hide it
+                from exactly the people most likely to miss it, and it is the
+                only route on touch. The button IS the pill: a wrapper around a
+                single control leaves a ring of padding the hover cannot reach. */}
             <Button
               variant="ghost"
               onClick={openPalette}
               className={cn(
                 PILL,
-                // FIXED width, not content-hugging: the right panels measure this
-                // cluster, so a label of a different length would drag the whole
-                // dock edge sideways on a language switch. The number is what
-                // ENGLISH needs and nothing more — px-3.5 both sides, the label,
-                // the gap, the key cap — so the pill is not visibly padded in the
-                // language it was designed in. Left-aligned, so the words start in
-                // the same place whatever their length. The zh label is written
-                // TO this width rather than translated literally: CJK glyphs run
-                // ~12px at this size, so 搜索命令、设置等 (8) lands within a few
-                // pixels of the English label where a literal 搜索命令 (4) would
-                // sit in a half-empty box.
-                "pointer-events-auto h-10 w-[10.5rem] justify-start gap-2 px-3.5 text-xs font-medium text-muted-foreground hover:bg-white/5 hover:text-foreground",
+                // Left-aligned, so the words start in the same place whatever
+                // their length. The zh label is written TO this width rather
+                // than translated literally: CJK glyphs run ~12px at this size,
+                // so 搜索命令、设置等 (8) lands within a few pixels of the English
+                // label where a literal 搜索命令 (4) would sit in a half-empty box.
+                "pointer-events-auto h-10 flex-1 justify-start gap-2 px-3.5 text-xs font-medium text-muted-foreground hover:bg-white/5 hover:text-foreground",
               )}
             >
               {t.lab.searchCommands}
               {/* A key cap, so it should read as one: fixed height, centred, and the
               two glyphs spaced by a real gap rather than letter-spacing — which
               adds its space AFTER the K and pushes the pair off-centre. */}
-              <kbd className="inline-flex h-5 min-w-[1.625rem] items-center justify-center gap-[3px] rounded-md border border-white/15 bg-white/[0.06] px-1 font-mono text-xs leading-none text-muted-foreground">
+              <kbd className="ml-auto inline-flex h-5 min-w-[1.625rem] shrink-0 items-center justify-center gap-[3px] rounded-md border border-white/15 bg-white/[0.06] px-1 font-mono text-xs leading-none text-muted-foreground">
                 <span className="text-sm">⌘</span>
                 <span>K</span>
               </kbd>
             </Button>
 
-            <div className={cn(PILL, "pointer-events-auto flex h-10 items-center gap-2 px-1.5")}>
-              <AccountButton />
+            <div className={cn(PILL, "pointer-events-auto flex h-10 shrink-0 items-center gap-2 px-1.5")}>
+              <AccountButton onOpenLibrary={openForAccount} />
               <Button
                 size="sm"
+                onClick={() => setShareOpen(true)}
                 className="h-7 w-[3.75rem] rounded-lg bg-blue-400 px-3 text-xs font-medium text-white hover:bg-blue-300"
               >
                 {t.lab.share}
@@ -3090,9 +3421,14 @@ export default function Lab() {
         }}
       />
 
+      {/* All three take `initialFacet` from the slot, so an entrance that means
+          "show me mine" arrives on that shelf. closeIf, never close: a stale
+          onOpenChange(false) from the library that just LOST the slot would
+          otherwise close its replacement. */}
       <GradeLibrary
         open={gradeLibOpen}
-        onOpenChange={setGradeLibOpen}
+        initialFacet={libraryFacet}
+        onOpenChange={(o) => !o && closeBrowseIf("grade")}
         grade={grade}
         onApplyPreset={pickGrade}
         onRenamed={(oldName, newName) =>
@@ -3103,7 +3439,8 @@ export default function Lab() {
 
       <BackgroundLibrary
         open={effectLibOpen}
-        onOpenChange={setEffectLibOpen}
+        initialFacet={libraryFacet}
+        onOpenChange={(o) => !o && closeBrowseIf("effect")}
         applied={bgEffect}
         onApply={setBgEffect}
         onRemove={() => setBgEffect(null)}
@@ -3116,7 +3453,8 @@ export default function Lab() {
           the preview for everything it applies. */}
       <NodeLibrary
         open={graphLib !== null}
-        onOpenChange={(o) => !o && setGraphLib(null)}
+        initialFacet={libraryFacet}
+        onOpenChange={(o) => !o && closeBrowseIf("graph")}
         canApply={libGroup !== null}
         targetLabel={libGroup ? groupLabel(libGroup) : null}
         currentGraphName={libGroup?.graph.name ?? null}
@@ -3139,7 +3477,7 @@ export default function Lab() {
           // Gated on open: an ungated closer would sit at the top of the stack
           // while invisible and swallow Escape from the libraries beneath it.
           onEscape={drawerOpen ? requestCloseGraphDrawer : undefined}
-          fullscreen={false}
+          fullscreen={graphFull}
           className={cn(
             // The raised surface, opaque: this floats over an animating canvas,
             // which is exactly when a backdrop-filter costs the most frames.
@@ -3158,6 +3496,8 @@ export default function Lab() {
               engineError={error}
               open={drawerOpen}
               onClose={requestCloseGraphDrawer}
+              fullscreen={graphFull}
+              onToggleFullscreen={() => setGraphFull((v) => !v)}
             />
           ) : activeGroup && presetGraph ? (
             <GraphEditor
@@ -3170,6 +3510,8 @@ export default function Lab() {
               engineError={error}
               open={drawerOpen}
               onClose={closeGraphEdit}
+              fullscreen={graphFull}
+              onToggleFullscreen={() => setGraphFull((v) => !v)}
             />
           ) : (
             // Reachable by moving the inspector to another character mid-session
@@ -3264,12 +3606,48 @@ export default function Lab() {
         />
       )}
 
+      {/* ── Publishing ──
+          Mounted under `mounted` like the rest of the chrome: it reads drafts
+          and the session, both client-only. The handle dialog opens itself the
+          first time a signed-in user has a handle they have not claimed —
+          which publishing is exactly when they need to. */}
+      {mounted && (
+        <ShareSceneDialog
+          open={shareOpen}
+          onOpenChange={setShareOpen}
+          sceneId={scene.state.id}
+          sceneName={sceneName}
+          onRename={setSceneName}
+          collect={collectScenePublish}
+          // Looks worn by this scene that exist in no library: publishing is
+          // blocked while any remain, since a published scene cannot point at a
+          // draft that only exists on this device.
+          unpublished={() =>
+            unpublishedUses({
+              gradeSpec: appliedGradeSpec,
+              gradeName: settings.grade.preset,
+              effect: bgEffect,
+              groups: groupsByModel,
+            })
+          }
+        />
+      )}
+      {mounted && <HandleDialog />}
+
+      {/* ── The gallery ──
+          In the same slot as the libraries, deliberately: it is a full-window
+          browse surface too, and it must never sit behind one. It is NOT a tab
+          among them, though — a library lends a look to the scene you are
+          making, the gallery leaves it for someone else's. */}
+      <SceneGallery open={galleryOpen} onOpenChange={(o) => !o && closeBrowseIf("gallery")} />
+
       <CommandPalette
         key={paletteSession}
         open={paletteOpen}
         onOpenChange={setPaletteOpen}
         items={paletteItems}
         recentIds={recentIds}
+        gaps={paletteGaps}
         onRun={runCommand}
       />
 
@@ -3303,6 +3681,7 @@ export default function Lab() {
             <div className="flex items-center gap-1.5 py-1.5 pr-1.5 pl-2">
               <SceneFileMenu
                 onNew={newScene}
+                onGallery={() => openBrowse({ kind: "gallery" })}
                 onExport={exportScene}
                 onImport={importScene}
                 onReset={resetSceneDefaults}
@@ -3316,6 +3695,22 @@ export default function Lab() {
               <span className="shrink-0 rounded-full bg-blue-400/15 px-1.5 py-0.5 text-[11px] leading-none font-medium tracking-wide text-blue-400">
                 0.4.0 beta
               </span>
+              {/* The repository, and through its README the manuals — which is
+                  why there is no separate Help entry: one link that stays
+                  current beats a second one to keep in step. Beside the version
+                  because that is the same subject — what this build is — and
+                  only in the OPEN header: collapsed is what a share link
+                  renders, and a viewer came for the scene. */}
+              <Button
+                variant="ghost"
+                size="icon"
+                asChild
+                className="size-7 shrink-0 rounded-lg text-foreground hover:bg-white/5 hover:text-foreground"
+              >
+                <a href={REPO_URL} target="_blank" rel="noreferrer" aria-label="GitHub">
+                  <GithubMark className="size-4" />
+                </a>
+              </Button>
               {/* Same as the timeline chevron: the glyph already shows the panel
                   closing, so a tip repeating it is only latency. */}
               <Button
@@ -3348,13 +3743,12 @@ export default function Lab() {
               broken rather than as scrollable. */}
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <StackGroup label={t.lab.groups.cast} domId="group-cast">
-              {!ready && <CastRowSkeleton />}
               {/* The row appears WITH the model — same commit as `models`, so
                   the canvas and the dock move as one. Only the swatch pends:
                   extraction takes a few hundred ms, and a whole-row skeleton
                   made every load feel like two arrivals. The square upgrades in
                   place; nothing else moves. */}
-              {models.map((m) => (
+              {cast.map((m) => (
                 // Two lines, one character, and a hover EACH. The swatch sits
                 // outside both regions and centres against the pair — it
                 // identifies the model, it is not something you act on. Each
@@ -3439,6 +3833,12 @@ export default function Lab() {
                     />
                   </span>
                 </div>
+              ))}
+              {/* AFTER the rows, because that is where the missing ones are:
+                  models arrive in document order, so what is outstanding is
+                  always the tail of the list. */}
+              {Array.from({ length: pendingCast }, (_, i) => (
+                <CastRowSkeleton key={`pending-${i}`} />
               ))}
               {/* Always standing, under the rows. It was a hover-only + on the
                   group label back when one model was the normal scene; a cast is
@@ -3708,16 +4108,22 @@ export default function Lab() {
                           value={bgEffect?.name ?? null}
                           items={effectItems}
                           onPick={pickEffect}
+                          // Only when something is applied: "Edit shader" with
+                          // nothing to edit would open the editor on a subject
+                          // the scene is not wearing, and the session's whole
+                          // premise is that the canvas behind it IS the preview.
+                          onEdit={bgEffect ? editCurrentEffect : undefined}
+                          editLabel={t.bgLibrary.editShader}
                           placeholder={t.lab.ctl.none}
                         />
                       </div>
                       <div className="mt-2.5 flex justify-center">
                         <button
-                          onClick={() => setEffectLibOpen(true)}
+                          onClick={() => openBrowse({ kind: "effect" })}
                           className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90"
                         >
-                          <Palette className="size-3.5" />
-                          {t.lab.library}
+                          <Sparkles className="size-3.5" />
+                          {t.lab.cmd.effectLib}
                         </button>
                       </div>
                     </>
@@ -3825,6 +4231,11 @@ export default function Lab() {
                             value={grade.preset}
                             items={gradeItems}
                             onPick={pickGrade}
+                            // Always available: a scene is always wearing SOME
+                            // grade, Neutral included, and editing Neutral is
+                            // how a look gets made from nothing.
+                            onEdit={editCurrentGrade}
+                            editLabel={t.gradeLibrary.edit}
                             placeholder={gradeLabel(grade.preset)}
                           />
                         </div>
@@ -3846,14 +4257,18 @@ export default function Lab() {
                           />
                         </div>
                         {/* Main's own library-door pill, centred as the body's
-                            deliberate final action — same mark, same meaning. */}
+                            deliberate final action. It NAMES the library it
+                            opens, in the palette's words: three doors that all
+                            said "Library" left position as the only thing
+                            telling them apart, and a door you identify by where
+                            you are standing is one you can open by mistake. */}
                         <div className="mt-2.5 flex justify-center">
                           <button
-                            onClick={() => setGradeLibOpen(true)}
+                            onClick={() => openBrowse({ kind: "grade" })}
                             className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90"
                           >
                             <Palette className="size-3.5" />
-                            {t.lab.library}
+                            {t.lab.cmd.gradeLib}
                           </button>
                         </div>
                       </TabsContent>
@@ -4106,13 +4521,14 @@ export default function Lab() {
       {mounted && inspected && (
         <Surface
           placement="side"
-          // Starts BELOW the top-right pills (top-3 + their h-10 + 8px) and hugs
-          // its content like the left dock, capped above the transport: 100%
-          // minus 3.75rem top minus 4rem transport reserve. 18rem, symmetric
-          // with the left dock, sized to MEET the pill cluster's natural width
-          // — the pills stay content-hugging; the docks come to them.
-          className="top-[3.75rem] bottom-auto max-h-[calc(100%-7.75rem)] w-[18rem] animate-[panel-in_0.2s_cubic-bezier(0.32,0.72,0,1)]"
-          style={{ zIndex: inspectorZ.z, ...(rightRailLeft === null ? {} : { left: rightRailLeft, width: "auto" }) }}
+          // Starts BELOW the top-right pills (top-3 + their h-10 + 8px), capped
+          // above the transport: 100% minus 3.75rem top minus 4rem transport
+          // reserve. 18rem, symmetric with the left dock — and the same 18rem
+          // the pill cluster above states, both anchored to the same right
+          // inset, so the two left edges coincide without either measuring the
+          // other. The pills come to the column now, not the other way round.
+          className="top-[3.75rem] bottom-auto max-h-[calc(100%-7.75rem)] animate-[panel-in_0.2s_cubic-bezier(0.32,0.72,0,1)]"
+          style={{ zIndex: inspectorZ.z }}
           onPointerDownCapture={inspectorZ.onPointerDownCapture}
           onFocusCapture={inspectorZ.onFocusCapture}
         >
@@ -4162,11 +4578,16 @@ export default function Lab() {
           // its content like the left dock, capped above the transport: 100%
           // minus 3.75rem top minus 4rem transport reserve.
           className={cn(
-            "top-[3.75rem] bottom-auto max-h-[calc(100%-7.75rem)] w-[18rem]",
-            "transition-[opacity,transform,visibility] duration-200 ease-[cubic-bezier(0.32,0.72,0,1)]",
-            !exportOpen && "invisible translate-x-2 opacity-0",
+            "top-[3.75rem] bottom-auto max-h-[calc(100%-7.75rem)]",
+            // Fade only. It used to slide 8px right on the way out, and against
+            // a panel whose left edge is the column's edge that reads as the
+            // panel resizing rather than leaving — the eye tracks the moving
+            // edge, not the fading one. Nothing else in this chrome translates
+            // to dismiss; the inspector simply unmounts.
+            "transition-[opacity,visibility] duration-200 ease-[cubic-bezier(0.32,0.72,0,1)]",
+            !exportOpen && "invisible opacity-0",
           )}
-          style={{ zIndex: exportZ.z, ...(rightRailLeft === null ? {} : { left: rightRailLeft, width: "auto" }) }}
+          style={{ zIndex: exportZ.z }}
           onPointerDownCapture={exportZ.onPointerDownCapture}
           onFocusCapture={exportZ.onFocusCapture}
         >
@@ -4189,7 +4610,13 @@ export default function Lab() {
               musicUrl={musicClip?.url ?? null}
               greenScreen={framing.greenScreen}
               onGreenScreenChange={framing.setGreenScreen}
-              onExportingChange={framing.setExporting}
+              onExportingChange={(v) => {
+                framing.setExporting(v)
+                // Closes the "render" gap for the rest of the session. Set when
+                // the export STARTS: the suggestion has done its job by then,
+                // and a failed render is not a reason to keep nagging.
+                if (v) setExportedOnce(true)
+              }}
               onFramePreviewChange={framing.handleFramePreview}
               onProgressChange={setExportProgress}
             />
@@ -4255,16 +4682,18 @@ export default function Lab() {
               // control people press repeatedly. aria-label still carries it for
               // anyone not seeing the arrow.
               trailing={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-expanded={timelineOpen}
-                  aria-label={timelineOpen ? t.lab.hideTimeline : t.lab.showTimeline}
-                  onClick={() => setTimelineOpen((v) => !v)}
-                  className="size-7 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
-                >
-                  {timelineOpen ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
-                </Button>
+                TIMELINE_EDITOR ? (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-expanded={timelineOpen}
+                    aria-label={timelineOpen ? t.lab.hideTimeline : t.lab.showTimeline}
+                    onClick={() => setTimelineOpen((v) => !v)}
+                    className="size-7 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+                  >
+                    {timelineOpen ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
+                  </Button>
+                ) : undefined
               }
               unfolded={timelineOpen}
               below={

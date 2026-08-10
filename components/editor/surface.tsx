@@ -41,7 +41,13 @@ const PLACEMENT: Record<SurfacePlacement, string> = {
   center: "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-surface",
   // Insets rather than full height: the surface floats over the canvas, it does
   // not become a wall beside it.
-  side: "absolute top-3 right-3 bottom-3 w-[19rem] rounded-surface flex flex-col",
+  //
+  // 18rem is the right COLUMN — the same width the left dock states and the same
+  // width the top-right pill cluster states, all three anchored to the same
+  // insets so their edges coincide without anyone measuring anyone. It was 19rem
+  // here while both callers passed 18, which is a default that only ever
+  // described a panel nobody built.
+  side: "absolute top-3 right-3 bottom-3 w-[18rem] rounded-surface flex flex-col",
   float: "absolute rounded-surface flex flex-col",
   sheet: "absolute bottom-3 left-1/2 -translate-x-1/2 rounded-surface",
 }

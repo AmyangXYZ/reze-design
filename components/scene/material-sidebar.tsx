@@ -311,7 +311,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
           className="ml-1 flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-white"
         >
           <Workflow className="size-3.5" />
-          {t.materials.library}
+          {t.lab.cmd.graphLib}
         </button>
         )}
       </div>

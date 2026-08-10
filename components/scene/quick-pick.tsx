@@ -6,6 +6,7 @@ import { useState } from "react"
 import { Check } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { ShelfCount } from "@/components/editor/library-rail"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
@@ -48,6 +49,11 @@ export function QuickPick({
   // deliberately does NOT close, so several looks can be tried in a row.
   const [open, setOpen] = useState(false)
   const current = items.find((i) => i.id === value)
+  // Derived once: the rows and the number beside the heading come from the same
+  // list, which is the only way they cannot disagree.
+  const builtins = items.filter((i) => (i.section ?? "builtin") === "builtin")
+  const community = items.filter((i) => i.section === "community")
+  const local = items.filter((i) => i.section === "local")
   const row = (i: QuickPickItem) => (
     <button
       key={i.id}
@@ -90,24 +96,29 @@ export function QuickPick({
         // list running the full window. The fallback in the var() matters — the
         // variable is only set when collision detection runs, and without it the
         // whole max-height declaration would be dropped as invalid.
-        className="flex max-h-[min(28rem,var(--radix-popover-content-available-height,28rem))] w-44 flex-col rounded-xl border-white/10 bg-zinc-950/95 p-1 shadow-float backdrop-blur-xs"
+        className="flex max-h-[min(28rem,var(--radix-popover-content-available-height,28rem))] w-44 flex-col overflow-y-auto rounded-xl border-white/10 bg-zinc-950/95 p-1 shadow-float backdrop-blur-xs"
         // Returning focus to the trigger draws a stuck ring on the value text, and
         // grabbing it on open leaves the first row ringed and flashing on close.
         onCloseAutoFocus={(e) => e.preventDefault()}
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        {/* Three compartments, same as the full libraries.
-            Built-ins and Community are PEERS: both flex-1 with the same cap, so
-            they share the popover evenly and neither can push the other out of
-            sight. Both hold a whole library now — nine-odd built-ins, and every
-            published row — and there is no reason the app's own list should
-            outrank everyone else's. Local is pinned small below them: your own
-            drafts on this device, a short list by nature.
+        {/* Row height is 1.75rem — text-xs (a 1rem line box) inside py-1.5 — and
+            every cap below is a MULTIPLE of it: 10.5rem is six rows, 7rem is
+            four, 3.5rem is two.
 
-            flex-1 with a max-h rather than a fixed height, so a SHORT list still
-            shrink-wraps instead of leaving a hole where rows would be. An empty
-            Community drops back to shrink-0 for the same reason — a section with
-            one line of text in it must not claim half the panel.
+            The caps only hold because nothing here flexes. As flex-1 children
+            these sections grew into spare room and shrank when the popover was
+            tight, both in PIXELS — so a shelf ended up 163px or 174px tall and
+            drew a row with its bottom sliced off. Content-sized up to a whole
+            number of rows means a shelf is either exactly as tall as its rows or
+            exactly as tall as its cap, and never a fraction in between. The
+            popover itself takes the overflow in the rare case where all three
+            shelves are full at once.
+
+            Three compartments, same as the full libraries. Built-ins get the
+            deepest shelf because that list is fixed and learnable; Community is
+            shallower here only because the library exists for browsing it, and
+            Local is your own drafts on this device — a short list by nature.
 
             Every header sits OUTSIDE its scroller, so it stays put while the rows
             move under it: a heading that scrolls away leaves you reading a list
@@ -115,37 +126,33 @@ export function QuickPick({
             full libraries — an empty Community is the one place a quick switch
             can suggest that publishing exists. Local stays conditional; an empty
             one tells you nothing you did not know. */}
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex shrink-0 flex-col">
           <div className="shrink-0 px-2 pt-1.5 pb-1 text-xs font-medium text-muted-foreground/60">
             {t.rail.builtin}
+            <ShelfCount n={builtins.length} />
           </div>
-          <ScrollArea bars className="min-h-0 max-h-44 flex-1">
-            {items.filter((i) => (i.section ?? "builtin") === "builtin").map(row)}
-          </ScrollArea>
+          <ScrollArea bars className="max-h-[10.5rem]">{builtins.map(row)}</ScrollArea>
         </div>
         <div
-          className={cn(
-            "mt-1 flex min-h-0 flex-col border-t border-white/10 pt-1",
-            items.some((i) => i.section === "community") ? "flex-1" : "shrink-0",
-          )}
+          className="mt-1 flex shrink-0 flex-col border-t border-white/10 pt-1"
         >
           <div className="shrink-0 px-2 pt-0.5 pb-1 text-xs font-medium text-muted-foreground/60">
             {t.rail.community}
+            <ShelfCount n={community.length} />
           </div>
-          {items.some((i) => i.section === "community") ? (
-            <ScrollArea bars className="min-h-0 max-h-44 flex-1">
-              {items.filter((i) => i.section === "community").map(row)}
-            </ScrollArea>
+          {community.length ? (
+            <ScrollArea bars className="max-h-[7rem]">{community.map(row)}</ScrollArea>
           ) : (
             <div className="px-2 pb-1 text-xs text-muted-foreground/50">{t.rail.communityEmpty}</div>
           )}
         </div>
-        {items.some((i) => i.section === "local") && (
+        {local.length > 0 && (
           <div className="mt-1 shrink-0 border-t border-white/10 pt-1">
             <div className="px-2 pt-0.5 pb-1 text-xs font-medium text-muted-foreground/60">
               {t.rail.local}
+              <ShelfCount n={local.length} />
             </div>
-            <ScrollArea bars className="max-h-16">{items.filter((i) => i.section === "local").map(row)}</ScrollArea>
+            <ScrollArea bars className="max-h-[3.5rem]">{local.map(row)}</ScrollArea>
           </div>
         )}
         {(onEdit || onBrowse) && (
