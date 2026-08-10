@@ -18,23 +18,21 @@ One piece of the **Reze MMD family**, covering the whole MMD workflow on the web
 
 ## Features
 
-- **Material shader graph** — build material looks in a Blender-style node graph editor, compiled to WGSL and applied live.
-- **Colour grading** — ASC CDL with curated presets and a wheel-based editor, previewed on your own scene.
-- **Background effects** — WGSL shaders behind the model, written and applied live in the editor.
-- **Scene lighting** — sun, world light and bloom over a background colour, image backdrop or 360° skybox.
-- **Command palette** — ⌘K finds every action and setting by name, in English or 中文, and says what each is set to.
-- **Multi-model support** — each with its own motion, plus a shared camera VMD and audio track.
-- **Stage models** — load a stage PMX as the scene's environment: place it with position, rotation and uniform scale, and flip the switches its author rigged as morphs. It replaces the ground plane, and its materials go through the same style groups and shader graphs as a character.
-- **Stage material presets** — fifteen stage looks, matched against a stage's own material names in Japanese, Chinese or English on load.
-- **Playback** — scrub and loop with audio synced to the motion, and a free or VMD-driven camera.
-- **Video export** — 60 fps mp4 up to 4K, from 2.39:1 cinemascope to vertical, with a green-screen mode.
-- **Still capture** — one PNG at the same framing and resolution as the video, for a scene's thumbnail.
-- **Publishing** — a scene becomes a live 3D page at a permanent URL, with its uploaded assets packed into one archive.
-- **Gallery** — browse what people have published, sorted by hot, new or top, narrowed by tag or by what you liked.
-- **Accounts** — sign in with GitHub or Google, take a handle, and own what you publish.
-- **Persistent scene state** — every edit is recorded as you make it: settings, materials and camera to localStorage, uploaded models, motion and music to IndexedDB. Refresh mid-edit, close the tab, come back tomorrow — the editor reopens exactly where you left off, uploads included, and nothing touches a server until you publish.
-- **Scene files** — export the whole scene as one zip (document + assets) from the logo menu, and import it on any machine; forking a published scene lands in the same flow.
-- **Undo and redo** — ⌘/Ctrl+Z anywhere, scoped to the panel or editor you are working in.
+- **Material shader graphs** — build a look in a Blender-style node editor, compiled to WGSL.
+- **Colour grading** — ASC CDL, curated presets and a wheel editor, previewed on your own scene.
+- **Background effects** — live-coded WGSL behind the model.
+- **Scene lighting** — sun, world light and bloom over a colour, an image backdrop or a 360° skybox.
+- **Multi-model scenes** — a motion each, one camera VMD, one audio track.
+- **Stage models** — a stage PMX as the environment, placed and scaled, with the switches its author rigged.
+- **Stage material presets** — fifteen stage looks, matched against a stage's own material names in Japanese, Chinese or English.
+- **Command palette** — ⌘K for every action and every setting, and what it is set to.
+- **Video export** — 60 fps mp4 up to 4K, cinemascope to vertical, with a green-screen mode.
+- **Still capture** — a PNG at the export's framing.
+- **Publishing** — a permanent URL anyone can open and orbit.
+- **Gallery** — hot, new and top, by tag or by what you liked.
+- **Accounts** — GitHub or Google, and a handle you own.
+- **Nothing lost** — every edit survives a refresh, uploads included, and nothing reaches a server until you publish.
+- **Scene files** — the whole scene as one zip, out and back in.
 
 ![Video export](./screenshots/video-export.png)
 
