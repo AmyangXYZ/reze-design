@@ -96,7 +96,7 @@ export function QuickPick({
         // list running the full window. The fallback in the var() matters — the
         // variable is only set when collision detection runs, and without it the
         // whole max-height declaration would be dropped as invalid.
-        className="flex max-h-[min(28rem,var(--radix-popover-content-available-height,28rem))] w-44 flex-col overflow-y-auto rounded-xl border-white/10 bg-zinc-950/95 p-1 shadow-float backdrop-blur-xs"
+        className="flex max-h-[min(28rem,var(--radix-popover-content-available-height,28rem))] w-44 flex-col rounded-xl border-white/10 bg-zinc-950/95 p-1 shadow-float backdrop-blur-xs"
         // Returning focus to the trigger draws a stuck ring on the value text, and
         // grabbing it on open leaves the first row ringed and flashing on close.
         onCloseAutoFocus={(e) => e.preventDefault()}
@@ -125,36 +125,44 @@ export function QuickPick({
             with no idea whose it is. Both headers always render, matching the
             full libraries — an empty Community is the one place a quick switch
             can suggest that publishing exists. Local stays conditional; an empty
-            one tells you nothing you did not know. */}
-        <div className="flex shrink-0 flex-col">
+            one tells you nothing you did not know.
+
+            EACH SHELF SCROLLS ITSELF — there is no scroller around the group, so
+            a wheel over Local moves Local. That is what sets the caps: five rows,
+            three and two, which is what the 28rem ceiling has left once three
+            headers, two rules and the footer are paid for. Bigger caps and a
+            full popover would spill past its own rounded corner. The shelves
+            stay shrinkable for the viewport too short even for that. */}
+        <div className="flex min-h-0 flex-col">
           <div className="shrink-0 px-2 pt-1.5 pb-1 text-xs font-medium text-muted-foreground/60">
             {t.rail.builtin}
             <ShelfCount n={builtins.length} />
           </div>
-          <ScrollArea bars className="max-h-[10.5rem]">{builtins.map(row)}</ScrollArea>
+          <ScrollArea bars className="max-h-[8.75rem]">{builtins.map(row)}</ScrollArea>
         </div>
         <div
-          className="mt-1 flex shrink-0 flex-col border-t border-white/10 pt-1"
+          className="mt-1 flex min-h-0 flex-col border-t border-white/10 pt-1"
         >
           <div className="shrink-0 px-2 pt-0.5 pb-1 text-xs font-medium text-muted-foreground/60">
             {t.rail.community}
             <ShelfCount n={community.length} />
           </div>
           {community.length ? (
-            <ScrollArea bars className="max-h-[7rem]">{community.map(row)}</ScrollArea>
+            <ScrollArea bars className="max-h-[5.25rem]">{community.map(row)}</ScrollArea>
           ) : (
             <div className="px-2 pb-1 text-xs text-muted-foreground/50">{t.rail.communityEmpty}</div>
           )}
         </div>
         {local.length > 0 && (
-          <div className="mt-1 shrink-0 border-t border-white/10 pt-1">
-            <div className="px-2 pt-0.5 pb-1 text-xs font-medium text-muted-foreground/60">
+          <div className="mt-1 flex min-h-0 flex-col border-t border-white/10 pt-1">
+            <div className="shrink-0 px-2 pt-0.5 pb-1 text-xs font-medium text-muted-foreground/60">
               {t.rail.local}
               <ShelfCount n={local.length} />
             </div>
             <ScrollArea bars className="max-h-[3.5rem]">{local.map(row)}</ScrollArea>
           </div>
         )}
+
         {(onEdit || onBrowse) && (
         <div className="mt-1 shrink-0 border-t border-white/10 pt-1">
           {onEdit && (

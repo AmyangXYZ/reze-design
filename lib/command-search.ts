@@ -43,12 +43,30 @@ export type SceneGap =
   | "music"
   /** Watchable, and never rendered. */
   | "render"
-  /** This user has done nothing yet — where other people's scenes are. */
+  /** This user has never opened the gallery. Closes for good the first time
+   *  they do, by any door — it is a fact about the person, not the scene, so it
+   *  outlives the session the way the rest of these do not. */
   | "discover"
 
-/** The one gap that outranks everything, including what you did last: an empty
- *  scene has no "what now?" other than filling it. */
-const BLOCKING: SceneGap = "cast"
+/**
+ * What each gap is worth, in one table.
+ *
+ * `cast` outranks everything, including what you just did: an empty scene has no
+ * "what now?" other than filling it. `discover` sits just under a fresh recent
+ * and just over the key feature, because it is the one gap about the APP rather
+ * than the scene — someone who has not found the gallery cannot miss it by
+ * accident, they miss it by never being told, and one slot until they go once is
+ * the cheapest way to tell them. The rest are ordinary next steps: better than a
+ * curated guess, worse than what you did a moment ago.
+ */
+const GAP_WEIGHT: Record<SceneGap, number> = {
+  cast: 8,
+  discover: 5.5,
+  look: 3.5,
+  motion: 3.5,
+  music: 3.5,
+  render: 3.5,
+}
 
 export type PaletteItem = {
   id: string
@@ -127,12 +145,6 @@ const W = {
   /** Hand-picked as a good first thing to see. Deliberately weak: it is a guess
    *  about what matters, and both the history and the scene know better. */
   curated: 2,
-  /** Fills a gap the scene actually has. Above curated and above the third
-   *  recency step, below a fresh recent — a missing component is a better
-   *  suggestion than a stale one, and a worse one than what you just did. */
-  gap: 3.5,
-  /** Fills the gap that makes the scene unwatchable. Beats everything. */
-  gapBlocking: 8,
   /** A headline feature the palette is the ONLY door to (materials). Sits above
    *  every recency step but the freshest, so it stays in the list for good
    *  rather than aging out behind whatever you happen to have run lately. */
@@ -178,7 +190,7 @@ export function suggestionsFor(items: PaletteItem[], history: string[], gaps: Sc
       // two commands later, which is a suggestion arguing with itself.
       if (i >= 0 && i < RECENT_DEPTH && item.repeatable) score += Math.max(0, W.recencyTop - i * W.recencyDecay)
       if (last?.nextLikely?.includes(item.id)) score += W.successor
-      if (item.fills && open.has(item.fills)) score += item.fills === BLOCKING ? W.gapBlocking : W.gap
+      if (item.fills && open.has(item.fills)) score += GAP_WEIGHT[item.fills]
       if (item.suggested) score += item.suggested === "key" ? W.keyFeature : W.curated
       // The one you just ran, and it is not the repeating kind.
       if (item.id === last?.id && !item.repeatable) score = -1

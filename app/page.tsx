@@ -150,6 +150,7 @@ import { NEUTRAL_PALETTE, type CastPaletteId } from "@/lib/cast-palette"
 import { relFilePath, sceneFiles } from "@/lib/scene-files"
 import { cancelDraftWrites, createDraft, isDraft, loadDrafts, updateDraft, updateDraftSoon } from "@/lib/drafts"
 import { groupLabel, GRAPH_LIBRARY, libraryGraph, sameGraphLook, SLOT_GRAPHS } from "@/lib/materials"
+import { stageStyleGroups } from "@/lib/stage-style"
 import {
   compileGraph,
   DEFAULT_GRAPH,
@@ -215,6 +216,16 @@ const FRAME_ASPECT_TOL = 1.03
 
 /** Palette recents, persisted — Suggestions should remember across sessions. */
 const RECENTS_KEY = "reze-design.palette-recents"
+
+/**
+ * Whether this person has ever opened the gallery.
+ *
+ * Persisted, unlike every other suggestion signal, because it is a fact about
+ * THEM rather than about the scene: the point of offering it is that someone who
+ * has not found the gallery has no way to know it exists, and a reminder that
+ * resets every session is a reminder that never stops.
+ */
+const GALLERY_SEEN_KEY = "reze-design.gallerySeen"
 
 /** The repository. It is also where the manuals live, linked from the README —
  *  so the app carries ONE outbound link rather than a help menu that has to be
@@ -728,6 +739,19 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       label: l.editMaterials,
       altLabels: [alt.editMaterials],
       keywords: ["style groups", "shader", "look", "材质", "材料"],
+    },
+    // The one bulk act on materials, and the only door to re-running it: the
+    // upload path classifies a stage on arrival, but a scene imported from
+    // before this existed, or one you have hand-grouped since, has no other way
+    // to ask again.
+    {
+      id: "stage-autogroup",
+      repeatable: true,
+      section: "command",
+      icon: MaterialSphereIcon,
+      label: l.cmd.stageAutoGroup,
+      altLabels: [alt.cmd.stageAutoGroup],
+      keywords: ["stage", "auto", "classify", "group", "pmx", "舞台", "自动", "分组", "材质"],
     },
     // The cast/clips GROUPS left the palette — they never collapse, so "go to"
     // them means nothing. Their actions did not: these are the functions those
@@ -1269,7 +1293,22 @@ export default function Lab() {
   // hook, because an export in flight must survive whatever the chrome does.
   const framing = useRenderFraming()
   const [exportOpen, setExportOpen] = useState(false)
-  const exportZ = useZOrder(undefined, () => setExportOpen(false))
+  /**
+   * Bumped every time a right panel is SUMMONED, which is what raises it.
+   *
+   * The newest window goes to the front — desktop's oldest rule, and the one
+   * useZOrder already applies on mount. Two panels here do not mount when they
+   * open, so they never got it: export is mounted while closed (a render in
+   * flight must survive its panel being hidden) and so it only ever raised at
+   * boot, and the inspector, already open on one model, does not remount when
+   * you summon it again. Both surfaced UNDER a library or an editor opened
+   * since.
+   */
+  const [exportRaise, setExportRaise] = useState(0)
+  // The Escape closer only while OPEN: registered permanently, a hidden panel
+  // sitting at the top of the stack ate the key that should have closed the
+  // library underneath it.
+  const exportZ = useZOrder(exportRaise, exportOpen ? () => setExportOpen(false) : undefined)
   const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null)
   const exportPct =
     exportProgress && exportProgress.phase === "video" && exportProgress.total > 0
@@ -1892,7 +1931,8 @@ export default function Lab() {
   // raises it back. No Escape closer — Escape keeps closing the topmost
   // LIBRARY; the stack walk skips surfaces that never close.
   const dockZ = useZOrder()
-  const inspectorZ = useZOrder()
+  const [inspectorRaise, setInspectorRaise] = useState(0)
+  const inspectorZ = useZOrder(inspectorRaise)
 
   // ── Inspect a cast member ──
   // Clicking a cast row selects the model and opens the right dock on ITS
@@ -1933,6 +1973,7 @@ export default function Lab() {
   const openExport = useCallback(() => {
     setInspectedId(null)
     setExportOpen(true)
+    setExportRaise((n) => n + 1)
   }, [])
   /**
    * Uploaded this session and not styled yet.
@@ -1951,6 +1992,9 @@ export default function Lab() {
     (id: string | null) => {
       if (!id) return
       setExportOpen(false)
+      // Summoned, so it comes forward — even when it was already open on this
+      // model and nothing remounts.
+      setInspectorRaise((n) => n + 1)
       // Only on a genuine change: re-opening the panel on the model you are
       // already editing must not unbind the node editor you have open on it.
       if (id !== inspectedId) setActiveGroupId(null)
@@ -2106,6 +2150,22 @@ export default function Lab() {
     [openBrowse],
   )
 
+  const [gallerySeen, setGallerySeen] = useState(
+    () => typeof window !== "undefined" && !!window.localStorage.getItem(GALLERY_SEEN_KEY),
+  )
+  /** Every entrance to the gallery goes through here — the logo menu, the
+   *  palette, the account panel's scene count — so "they have been" cannot be
+   *  true through one door and false through another. */
+  const openGallery = useCallback(() => {
+    try {
+      window.localStorage.setItem(GALLERY_SEEN_KEY, "1")
+    } catch {
+      // private mode — the suggestion simply keeps offering, which is harmless
+    }
+    setGallerySeen(true)
+    openBrowse({ kind: "gallery" })
+  }, [openBrowse])
+
   /** The account panel's stat rows are doors: your scenes open the gallery, your
    *  looks open their own library already filtered to yours — which is the whole
    *  reason the slot carries a facet. Written out per kind rather than passed
@@ -2113,11 +2173,11 @@ export default function Lab() {
    *  knows what group it applies to), and one of them is not a library at all. */
   const openForAccount = useCallback(
     (kind: "grade" | "effect" | "graph" | "scene") => {
-      if (kind === "scene") openBrowse({ kind: "gallery" })
+      if (kind === "scene") openGallery()
       else if (kind === "graph") openBrowse({ kind: "graph", groupId: null }, "yours")
       else openBrowse(kind === "grade" ? { kind: "grade" } : { kind: "effect" }, "yours")
     },
-    [openBrowse],
+    [openBrowse, openGallery],
   )
 
   // The session handlers are plain functions: nothing takes them as a
@@ -2320,11 +2380,33 @@ export default function Lab() {
     folderInput.current?.click()
   }
 
+  /**
+   * Classify a stage's materials into style groups and apply them.
+   *
+   * Read from the ENGINE rather than from `models`: a stage that arrived a
+   * moment ago is still a queued state update here, and the list this needs is
+   * already sitting on the loaded model.
+   *
+   * Silent when nothing matches — a stage whose materials are named Material1..9
+   * gets no groups and no notice, which is the same thing the engine's own
+   * refusal to auto-group scenery says.
+   */
+  const autoStyleStage = useCallback(
+    (id: string) => {
+      const names = engineRef.current?.getModel(id)?.getMaterials().map((m) => m.name) ?? []
+      const next = stageStyleGroups(names, groupsByModel[id] ?? [])
+      if (next) void applyGroups(id, next)
+    },
+    [engineRef, groupsByModel, applyGroups],
+  )
+
   const loadPicked = async (files: File[], pmx: File, target: ModelTarget) => {
     setUpload(null)
     try {
       if (target.mode === "stage") {
-        noteArrival(await addStageFromFiles(files, pmx))
+        const id = await addStageFromFiles(files, pmx)
+        noteArrival(id)
+        autoStyleStage(id)
         setStageTab("stage")
       } else if (target.mode === "replace") {
         const newId = await replaceModelFromFiles(target.id, files, pmx)
@@ -2608,11 +2690,11 @@ export default function Lab() {
       // model is offering a video of nothing.
       if (cast.some((m) => animByModel[m.id]) && !exportedOnce) list.push("render")
     }
-    // Not a scene gap but a user one, and the only signal available before
-    // anyone has done anything at all.
-    if (recentIds.length === 0) list.push("discover")
+    // Not a scene gap but a user one: open until they have been to the gallery
+    // once, whichever door they used.
+    if (!gallerySeen) list.push("discover")
     return list
-  }, [cast, models, unstyled, animByModel, musicClip, exportedOnce, recentIds.length])
+  }, [cast, models, unstyled, animByModel, musicClip, exportedOnce, gallerySeen])
 
   // The one row whose hint is state, not description: a toggle you reach only
   // by searching has to say which way it is currently pointing. Reads the
@@ -3082,7 +3164,17 @@ export default function Lab() {
       else if (item.id === "language") setLangOpen(true)
       // The same dialog the Share pill opens — one publish surface, two doors.
       else if (item.id === "publish") setShareOpen(true)
-      else if (item.id === "gallery") openBrowse({ kind: "gallery" })
+      else if (item.id === "gallery") openGallery()
+      // Classify, then SHOW: a bulk edit you cannot see the result of is one you
+      // have to take on faith. The panel lists what landed in which group, and
+      // what stayed ungrouped because nothing recognised it.
+      else if (item.id === "stage-autogroup") {
+        const target = stages[0]?.id
+        if (target) {
+          autoStyleStage(target)
+          openMaterials(target)
+        }
+      }
       else if (item.id.startsWith("ctl-")) {
         const c = DOCK_CONTROLS.find((x) => `ctl-${x.id}` === item.id)
         if (!c) return
@@ -3106,6 +3198,9 @@ export default function Lab() {
       openExport,
       openGraphLibrary,
       openBrowse,
+      openGallery,
+      autoStyleStage,
+      stages,
       activeGroupId,
       openEffectEditor,
     ],
@@ -3166,7 +3261,7 @@ export default function Lab() {
                   the only door to the file operations. */}
               <SceneFileMenu
                 onNew={newScene}
-                onGallery={() => openBrowse({ kind: "gallery" })}
+                onGallery={openGallery}
                 onExport={exportScene}
                 onImport={importScene}
                 onReset={resetSceneDefaults}
@@ -3681,7 +3776,7 @@ export default function Lab() {
             <div className="flex items-center gap-1.5 py-1.5 pr-1.5 pl-2">
               <SceneFileMenu
                 onNew={newScene}
-                onGallery={() => openBrowse({ kind: "gallery" })}
+                onGallery={openGallery}
                 onExport={exportScene}
                 onImport={importScene}
                 onReset={resetSceneDefaults}

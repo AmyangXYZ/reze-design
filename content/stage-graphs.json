@@ -1,0 +1,3576 @@
+[
+  {
+    "id": "c9bdaf4d-893c-475e-93ff-1b334d6b4693",
+    "kind": "graph",
+    "name": "Tile",
+    "author": "frost",
+    "description": "Fine specular over low metalness — floors and walls.",
+    "tags": [
+      "stage",
+      "tile"
+    ],
+    "version": 1,
+    "payload": {
+      "graph": {
+        "version": 1,
+        "name": "Tile",
+        "tags": [
+          "stage",
+          "tile"
+        ],
+        "nodes": [
+          {
+            "id": "tex",
+            "type": "texture"
+          },
+          {
+            "id": "geo",
+            "type": "geometry"
+          },
+          {
+            "id": "tex_tint",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 1,
+              "value": 0.800000011920929,
+              "fac": 1
+            }
+          },
+          {
+            "id": "str",
+            "type": "shader_to_rgb_diffuse"
+          },
+          {
+            "id": "ramp_008",
+            "type": "ramp_constant_aa",
+            "inputs": {
+              "edge": 0.2966
+            }
+          },
+          {
+            "id": "mix04_fac",
+            "type": "math/multiply",
+            "inputs": {
+              "b": 0.5
+            }
+          },
+          {
+            "id": "dark_tex",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 1,
+              "value": 0.19999998807907104,
+              "fac": 1
+            }
+          },
+          {
+            "id": "mix_004",
+            "type": "mix/blend"
+          },
+          {
+            "id": "hue_004",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 1,
+              "value": 2,
+              "fac": 1
+            }
+          },
+          {
+            "id": "npr_overlay",
+            "type": "mix/overlay",
+            "inputs": {
+              "fac": 1
+            }
+          },
+          {
+            "id": "npr_emit",
+            "type": "emission",
+            "inputs": {
+              "strength": 8.100000381469727
+            }
+          },
+          {
+            "id": "voro_cross",
+            "type": "vect_cross",
+            "inputs": {
+              "b": [
+                0,
+                1,
+                0
+              ]
+            }
+          },
+          {
+            "id": "voro",
+            "type": "tex_voronoi/color",
+            "inputs": {
+              "scale": 14
+            }
+          },
+          {
+            "id": "voro_ramp",
+            "type": "ramp_linear",
+            "inputs": {
+              "pos0": 0,
+              "pos1": 1
+            }
+          },
+          {
+            "id": "hue_006",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 1.5,
+              "value": 1.2999999523162842,
+              "fac": 1
+            }
+          },
+          {
+            "id": "albedo",
+            "type": "mix/blend"
+          },
+          {
+            "id": "principled",
+            "type": "principled",
+            "inputs": {
+              "metallic": 0,
+              "specular": 0.82,
+              "roughness": 0.24,
+              "spec_clamp": 1e+30,
+              "sheen": 0,
+              "sheen_tint": 0
+            }
+          },
+          {
+            "id": "mix_shader_001",
+            "type": "mix_shader",
+            "inputs": {
+              "fac": 0.22
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": {
+              "node": "tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "tex_tint",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "str",
+              "socket": "value"
+            },
+            "to": {
+              "node": "ramp_008",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "ramp_008",
+              "socket": "fac_out"
+            },
+            "to": {
+              "node": "mix04_fac",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "tex_tint",
+              "socket": "color"
+            },
+            "to": {
+              "node": "dark_tex",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "mix04_fac",
+              "socket": "value"
+            },
+            "to": {
+              "node": "mix_004",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "dark_tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_004",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "tex_tint",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_004",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "mix_004",
+              "socket": "color"
+            },
+            "to": {
+              "node": "hue_004",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "mix_004",
+              "socket": "color"
+            },
+            "to": {
+              "node": "npr_overlay",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "hue_004",
+              "socket": "color"
+            },
+            "to": {
+              "node": "npr_overlay",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "npr_overlay",
+              "socket": "color"
+            },
+            "to": {
+              "node": "npr_emit",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "geo",
+              "socket": "reflection"
+            },
+            "to": {
+              "node": "voro_cross",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "voro_cross",
+              "socket": "vector"
+            },
+            "to": {
+              "node": "voro",
+              "socket": "vector"
+            }
+          },
+          {
+            "from": {
+              "node": "voro",
+              "socket": "color"
+            },
+            "to": {
+              "node": "voro_ramp",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "tex_tint",
+              "socket": "color"
+            },
+            "to": {
+              "node": "hue_006",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "voro_ramp",
+              "socket": "fac_out"
+            },
+            "to": {
+              "node": "albedo",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "voro_ramp",
+              "socket": "fac_out"
+            },
+            "to": {
+              "node": "albedo",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "hue_006",
+              "socket": "color"
+            },
+            "to": {
+              "node": "albedo",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "albedo",
+              "socket": "color"
+            },
+            "to": {
+              "node": "principled",
+              "socket": "base"
+            }
+          },
+          {
+            "from": {
+              "node": "npr_emit",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_shader_001",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "principled",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_shader_001",
+              "socket": "b"
+            }
+          }
+        ],
+        "output": {
+          "node": "mix_shader_001",
+          "socket": "color"
+        }
+      }
+    }
+  },
+  {
+    "id": "ace76614-b7c7-42c5-8482-29a069a51e26",
+    "kind": "graph",
+    "name": "Emissive",
+    "author": "frost",
+    "description": "Material colour driven straight into emission — bulbs, neon and signage.",
+    "tags": [
+      "stage",
+      "emission"
+    ],
+    "version": 1,
+    "payload": {
+      "graph": {
+        "version": 1,
+        "name": "Emissive",
+        "tags": [
+          "stage",
+          "emission"
+        ],
+        "nodes": [
+          {
+            "id": "tex",
+            "type": "texture"
+          },
+          {
+            "id": "emit",
+            "type": "emission",
+            "inputs": {
+              "strength": 5
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": {
+              "node": "tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "emit",
+              "socket": "color"
+            }
+          }
+        ],
+        "output": {
+          "node": "emit",
+          "socket": "color"
+        }
+      }
+    }
+  },
+  {
+    "id": "171d306c-3529-4034-8716-a9e6f194a11c",
+    "kind": "graph",
+    "name": "Wood",
+    "author": "frost",
+    "description": "Warm, rough surface with a light procedural grain and bump.",
+    "tags": [
+      "stage",
+      "wood"
+    ],
+    "version": 1,
+    "payload": {
+      "graph": {
+        "version": 1,
+        "name": "Wood",
+        "tags": [
+          "stage",
+          "wood"
+        ],
+        "nodes": [
+          {
+            "id": "tex",
+            "type": "texture"
+          },
+          {
+            "id": "geo",
+            "type": "geometry"
+          },
+          {
+            "id": "str",
+            "type": "shader_to_rgb_diffuse"
+          },
+          {
+            "id": "ramp_008",
+            "type": "ramp_constant_aa",
+            "inputs": {
+              "edge": 0.2966
+            }
+          },
+          {
+            "id": "mix04_fac",
+            "type": "math/multiply",
+            "inputs": {
+              "b": 0.5
+            }
+          },
+          {
+            "id": "dark_tex",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 1,
+              "value": 0.19999998807907104,
+              "fac": 1
+            }
+          },
+          {
+            "id": "mix_004",
+            "type": "mix/blend"
+          },
+          {
+            "id": "sep_n",
+            "type": "separate_xyz"
+          },
+          {
+            "id": "bevel_clamp",
+            "type": "math/clamp01"
+          },
+          {
+            "id": "mix_003",
+            "type": "mix/blend"
+          },
+          {
+            "id": "hue_004",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 0.800000011920929,
+              "value": 2,
+              "fac": 1
+            }
+          },
+          {
+            "id": "npr_overlay",
+            "type": "mix/overlay",
+            "inputs": {
+              "fac": 1
+            }
+          },
+          {
+            "id": "npr_emit",
+            "type": "emission",
+            "inputs": {
+              "strength": 18.200000762939453
+            }
+          },
+          {
+            "id": "noise",
+            "type": "tex_noise",
+            "inputs": {
+              "scale": 5.5,
+              "detail": 2,
+              "roughness": 0.65
+            }
+          },
+          {
+            "id": "noise_ramp",
+            "type": "ramp_linear",
+            "inputs": {
+              "pos0": 0,
+              "pos1": 1
+            }
+          },
+          {
+            "id": "bump",
+            "type": "bump",
+            "inputs": {
+              "strength": 1
+            }
+          },
+          {
+            "id": "principled_base",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 1,
+              "value": 0.800000011920929,
+              "fac": 1
+            }
+          },
+          {
+            "id": "principled",
+            "type": "principled",
+            "inputs": {
+              "metallic": 0,
+              "specular": 0.3,
+              "roughness": 0.68,
+              "spec_clamp": 10,
+              "sheen": 0,
+              "sheen_tint": 0
+            }
+          },
+          {
+            "id": "mix_shader_001",
+            "type": "mix_shader",
+            "inputs": {
+              "fac": 0.8999999761581421
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": {
+              "node": "str",
+              "socket": "value"
+            },
+            "to": {
+              "node": "ramp_008",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "ramp_008",
+              "socket": "fac_out"
+            },
+            "to": {
+              "node": "mix04_fac",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "dark_tex",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "mix04_fac",
+              "socket": "value"
+            },
+            "to": {
+              "node": "mix_004",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "dark_tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_004",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_004",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "geo",
+              "socket": "normal"
+            },
+            "to": {
+              "node": "sep_n",
+              "socket": "vector"
+            }
+          },
+          {
+            "from": {
+              "node": "sep_n",
+              "socket": "y"
+            },
+            "to": {
+              "node": "bevel_clamp",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "bevel_clamp",
+              "socket": "value"
+            },
+            "to": {
+              "node": "mix_003",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "mix_004",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_003",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "dark_tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_003",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "mix_003",
+              "socket": "color"
+            },
+            "to": {
+              "node": "hue_004",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "mix_003",
+              "socket": "color"
+            },
+            "to": {
+              "node": "npr_overlay",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "hue_004",
+              "socket": "color"
+            },
+            "to": {
+              "node": "npr_overlay",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "npr_overlay",
+              "socket": "color"
+            },
+            "to": {
+              "node": "npr_emit",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "geo",
+              "socket": "rest_pos"
+            },
+            "to": {
+              "node": "noise",
+              "socket": "vector"
+            }
+          },
+          {
+            "from": {
+              "node": "noise",
+              "socket": "value"
+            },
+            "to": {
+              "node": "noise_ramp",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "noise_ramp",
+              "socket": "fac_out"
+            },
+            "to": {
+              "node": "bump",
+              "socket": "height"
+            }
+          },
+          {
+            "from": {
+              "node": "geo",
+              "socket": "normal"
+            },
+            "to": {
+              "node": "bump",
+              "socket": "normal"
+            }
+          },
+          {
+            "from": {
+              "node": "tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "principled_base",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "principled_base",
+              "socket": "color"
+            },
+            "to": {
+              "node": "principled",
+              "socket": "base"
+            }
+          },
+          {
+            "from": {
+              "node": "bump",
+              "socket": "vector"
+            },
+            "to": {
+              "node": "principled",
+              "socket": "normal"
+            }
+          },
+          {
+            "from": {
+              "node": "npr_emit",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_shader_001",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "principled",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_shader_001",
+              "socket": "b"
+            }
+          }
+        ],
+        "output": {
+          "node": "mix_shader_001",
+          "socket": "color"
+        }
+      }
+    }
+  },
+  {
+    "id": "4bb0c425-0c0f-46a7-b364-fb2ad2d38d83",
+    "kind": "graph",
+    "name": "Brick",
+    "author": "frost",
+    "description": "High roughness and a weak highlight, for brickwork and masonry.",
+    "tags": [
+      "stage",
+      "brick"
+    ],
+    "version": 1,
+    "payload": {
+      "graph": {
+        "version": 1,
+        "name": "Brick",
+        "tags": [
+          "stage",
+          "brick"
+        ],
+        "nodes": [
+          {
+            "id": "tex",
+            "type": "texture"
+          },
+          {
+            "id": "geo",
+            "type": "geometry"
+          },
+          {
+            "id": "tex_tint",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 1,
+              "value": 0.800000011920929,
+              "fac": 1
+            }
+          },
+          {
+            "id": "str",
+            "type": "shader_to_rgb_diffuse"
+          },
+          {
+            "id": "ramp_008",
+            "type": "ramp_constant_aa",
+            "inputs": {
+              "edge": 0.2966
+            }
+          },
+          {
+            "id": "mix04_fac",
+            "type": "math/multiply",
+            "inputs": {
+              "b": 0.5
+            }
+          },
+          {
+            "id": "dark_tex",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 1,
+              "value": 0.19999998807907104,
+              "fac": 1
+            }
+          },
+          {
+            "id": "mix_004",
+            "type": "mix/blend"
+          },
+          {
+            "id": "hue_004",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 1,
+              "value": 2,
+              "fac": 1
+            }
+          },
+          {
+            "id": "npr_overlay",
+            "type": "mix/overlay",
+            "inputs": {
+              "fac": 1
+            }
+          },
+          {
+            "id": "npr_emit",
+            "type": "emission",
+            "inputs": {
+              "strength": 8.100000381469727
+            }
+          },
+          {
+            "id": "voro_cross",
+            "type": "vect_cross",
+            "inputs": {
+              "b": [
+                0,
+                1,
+                0
+              ]
+            }
+          },
+          {
+            "id": "voro",
+            "type": "tex_voronoi/color",
+            "inputs": {
+              "scale": 6.5
+            }
+          },
+          {
+            "id": "voro_ramp",
+            "type": "ramp_linear",
+            "inputs": {
+              "pos0": 0,
+              "pos1": 1
+            }
+          },
+          {
+            "id": "hue_006",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 1.5,
+              "value": 1.2999999523162842,
+              "fac": 1
+            }
+          },
+          {
+            "id": "albedo",
+            "type": "mix/blend"
+          },
+          {
+            "id": "principled",
+            "type": "principled",
+            "inputs": {
+              "metallic": 0,
+              "specular": 0.2,
+              "roughness": 0.9,
+              "spec_clamp": 1e+30,
+              "sheen": 0,
+              "sheen_tint": 0
+            }
+          },
+          {
+            "id": "mix_shader_001",
+            "type": "mix_shader",
+            "inputs": {
+              "fac": 0.1
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": {
+              "node": "tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "tex_tint",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "str",
+              "socket": "value"
+            },
+            "to": {
+              "node": "ramp_008",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "ramp_008",
+              "socket": "fac_out"
+            },
+            "to": {
+              "node": "mix04_fac",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "tex_tint",
+              "socket": "color"
+            },
+            "to": {
+              "node": "dark_tex",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "mix04_fac",
+              "socket": "value"
+            },
+            "to": {
+              "node": "mix_004",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "dark_tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_004",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "tex_tint",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_004",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "mix_004",
+              "socket": "color"
+            },
+            "to": {
+              "node": "hue_004",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "mix_004",
+              "socket": "color"
+            },
+            "to": {
+              "node": "npr_overlay",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "hue_004",
+              "socket": "color"
+            },
+            "to": {
+              "node": "npr_overlay",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "npr_overlay",
+              "socket": "color"
+            },
+            "to": {
+              "node": "npr_emit",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "geo",
+              "socket": "reflection"
+            },
+            "to": {
+              "node": "voro_cross",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "voro_cross",
+              "socket": "vector"
+            },
+            "to": {
+              "node": "voro",
+              "socket": "vector"
+            }
+          },
+          {
+            "from": {
+              "node": "voro",
+              "socket": "color"
+            },
+            "to": {
+              "node": "voro_ramp",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "tex_tint",
+              "socket": "color"
+            },
+            "to": {
+              "node": "hue_006",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "voro_ramp",
+              "socket": "fac_out"
+            },
+            "to": {
+              "node": "albedo",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "voro_ramp",
+              "socket": "fac_out"
+            },
+            "to": {
+              "node": "albedo",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "hue_006",
+              "socket": "color"
+            },
+            "to": {
+              "node": "albedo",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "albedo",
+              "socket": "color"
+            },
+            "to": {
+              "node": "principled",
+              "socket": "base"
+            }
+          },
+          {
+            "from": {
+              "node": "npr_emit",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_shader_001",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "principled",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_shader_001",
+              "socket": "b"
+            }
+          }
+        ],
+        "output": {
+          "node": "mix_shader_001",
+          "socket": "color"
+        }
+      }
+    }
+  },
+  {
+    "id": "143457b8-7087-4bcb-9adf-18062ca0cc85",
+    "kind": "graph",
+    "name": "Plastic",
+    "author": "frost",
+    "description": "Clean, even non-metal with a controllable highlight.",
+    "tags": [
+      "stage",
+      "plastic"
+    ],
+    "version": 1,
+    "payload": {
+      "graph": {
+        "version": 1,
+        "name": "Plastic",
+        "tags": [
+          "stage",
+          "plastic"
+        ],
+        "nodes": [
+          {
+            "id": "tex",
+            "type": "texture"
+          },
+          {
+            "id": "mat",
+            "type": "material_diffuse"
+          },
+          {
+            "id": "base",
+            "type": "mix/multiply",
+            "inputs": {
+              "fac": 1
+            }
+          },
+          {
+            "id": "principled",
+            "type": "principled",
+            "inputs": {
+              "metallic": 0,
+              "specular": 0.7,
+              "roughness": 0.2,
+              "spec_clamp": 10,
+              "sheen": 0,
+              "sheen_tint": 0
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": {
+              "node": "tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "base",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "mat",
+              "socket": "color"
+            },
+            "to": {
+              "node": "base",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "base",
+              "socket": "color"
+            },
+            "to": {
+              "node": "principled",
+              "socket": "base"
+            }
+          }
+        ],
+        "output": {
+          "node": "principled",
+          "socket": "color"
+        }
+      }
+    }
+  },
+  {
+    "id": "670cf1eb-e626-4deb-806f-5317c34d037d",
+    "kind": "graph",
+    "name": "Glass",
+    "author": "frost",
+    "description": "Clear, hard specular for panes, lenses and covers.",
+    "tags": [
+      "stage",
+      "glass"
+    ],
+    "version": 1,
+    "payload": {
+      "graph": {
+        "version": 1,
+        "name": "Glass",
+        "tags": [
+          "stage",
+          "glass"
+        ],
+        "nodes": [
+          {
+            "id": "tex",
+            "type": "texture"
+          },
+          {
+            "id": "mat",
+            "type": "material_diffuse"
+          },
+          {
+            "id": "base",
+            "type": "mix/multiply",
+            "inputs": {
+              "fac": 1
+            }
+          },
+          {
+            "id": "principled",
+            "type": "principled",
+            "inputs": {
+              "metallic": 0,
+              "specular": 0.95,
+              "roughness": 0.06,
+              "spec_clamp": 10,
+              "sheen": 0,
+              "sheen_tint": 0
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": {
+              "node": "tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "base",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "mat",
+              "socket": "color"
+            },
+            "to": {
+              "node": "base",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "base",
+              "socket": "color"
+            },
+            "to": {
+              "node": "principled",
+              "socket": "base"
+            }
+          }
+        ],
+        "output": {
+          "node": "principled",
+          "socket": "color"
+        }
+      }
+    }
+  },
+  {
+    "id": "5fe933a4-a1c8-4117-baad-3f3ed76bbc0b",
+    "kind": "graph",
+    "name": "Concrete",
+    "author": "frost",
+    "description": "Fine-grained roughness with almost no gloss — walls and floors.",
+    "tags": [
+      "stage",
+      "concrete"
+    ],
+    "version": 1,
+    "payload": {
+      "graph": {
+        "version": 1,
+        "name": "Concrete",
+        "tags": [
+          "stage",
+          "concrete"
+        ],
+        "nodes": [
+          {
+            "id": "tex",
+            "type": "texture"
+          },
+          {
+            "id": "geo",
+            "type": "geometry"
+          },
+          {
+            "id": "str",
+            "type": "shader_to_rgb_diffuse"
+          },
+          {
+            "id": "ramp_008",
+            "type": "ramp_constant_aa",
+            "inputs": {
+              "edge": 0.2966
+            }
+          },
+          {
+            "id": "mix04_fac",
+            "type": "math/multiply",
+            "inputs": {
+              "b": 0.5
+            }
+          },
+          {
+            "id": "dark_tex",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 1,
+              "value": 0.19999998807907104,
+              "fac": 1
+            }
+          },
+          {
+            "id": "mix_004",
+            "type": "mix/blend"
+          },
+          {
+            "id": "sep_n",
+            "type": "separate_xyz"
+          },
+          {
+            "id": "bevel_clamp",
+            "type": "math/clamp01"
+          },
+          {
+            "id": "mix_003",
+            "type": "mix/blend"
+          },
+          {
+            "id": "hue_004",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 0.800000011920929,
+              "value": 2,
+              "fac": 1
+            }
+          },
+          {
+            "id": "npr_overlay",
+            "type": "mix/overlay",
+            "inputs": {
+              "fac": 1
+            }
+          },
+          {
+            "id": "npr_emit",
+            "type": "emission",
+            "inputs": {
+              "strength": 18.200000762939453
+            }
+          },
+          {
+            "id": "noise",
+            "type": "tex_noise",
+            "inputs": {
+              "scale": 4,
+              "detail": 2,
+              "roughness": 0.8
+            }
+          },
+          {
+            "id": "noise_ramp",
+            "type": "ramp_linear",
+            "inputs": {
+              "pos0": 0,
+              "pos1": 1
+            }
+          },
+          {
+            "id": "bump",
+            "type": "bump",
+            "inputs": {
+              "strength": 0.45
+            }
+          },
+          {
+            "id": "principled_base",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 1,
+              "value": 0.800000011920929,
+              "fac": 1
+            }
+          },
+          {
+            "id": "principled",
+            "type": "principled",
+            "inputs": {
+              "metallic": 0,
+              "specular": 0.15,
+              "roughness": 0.92,
+              "spec_clamp": 10,
+              "sheen": 0,
+              "sheen_tint": 0
+            }
+          },
+          {
+            "id": "mix_shader_001",
+            "type": "mix_shader",
+            "inputs": {
+              "fac": 0.8999999761581421
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": {
+              "node": "str",
+              "socket": "value"
+            },
+            "to": {
+              "node": "ramp_008",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "ramp_008",
+              "socket": "fac_out"
+            },
+            "to": {
+              "node": "mix04_fac",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "dark_tex",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "mix04_fac",
+              "socket": "value"
+            },
+            "to": {
+              "node": "mix_004",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "dark_tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_004",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_004",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "geo",
+              "socket": "normal"
+            },
+            "to": {
+              "node": "sep_n",
+              "socket": "vector"
+            }
+          },
+          {
+            "from": {
+              "node": "sep_n",
+              "socket": "y"
+            },
+            "to": {
+              "node": "bevel_clamp",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "bevel_clamp",
+              "socket": "value"
+            },
+            "to": {
+              "node": "mix_003",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "mix_004",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_003",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "dark_tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_003",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "mix_003",
+              "socket": "color"
+            },
+            "to": {
+              "node": "hue_004",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "mix_003",
+              "socket": "color"
+            },
+            "to": {
+              "node": "npr_overlay",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "hue_004",
+              "socket": "color"
+            },
+            "to": {
+              "node": "npr_overlay",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "npr_overlay",
+              "socket": "color"
+            },
+            "to": {
+              "node": "npr_emit",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "geo",
+              "socket": "rest_pos"
+            },
+            "to": {
+              "node": "noise",
+              "socket": "vector"
+            }
+          },
+          {
+            "from": {
+              "node": "noise",
+              "socket": "value"
+            },
+            "to": {
+              "node": "noise_ramp",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "noise_ramp",
+              "socket": "fac_out"
+            },
+            "to": {
+              "node": "bump",
+              "socket": "height"
+            }
+          },
+          {
+            "from": {
+              "node": "geo",
+              "socket": "normal"
+            },
+            "to": {
+              "node": "bump",
+              "socket": "normal"
+            }
+          },
+          {
+            "from": {
+              "node": "tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "principled_base",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "principled_base",
+              "socket": "color"
+            },
+            "to": {
+              "node": "principled",
+              "socket": "base"
+            }
+          },
+          {
+            "from": {
+              "node": "bump",
+              "socket": "vector"
+            },
+            "to": {
+              "node": "principled",
+              "socket": "normal"
+            }
+          },
+          {
+            "from": {
+              "node": "npr_emit",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_shader_001",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "principled",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_shader_001",
+              "socket": "b"
+            }
+          }
+        ],
+        "output": {
+          "node": "mix_shader_001",
+          "socket": "color"
+        }
+      }
+    }
+  },
+  {
+    "id": "0b64af72-8da9-4e8a-96a4-ed404881aa67",
+    "kind": "graph",
+    "name": "Stone",
+    "author": "frost",
+    "description": "Irregular mottled grain for stone walls, worktops and ornaments.",
+    "tags": [
+      "stage",
+      "stone"
+    ],
+    "version": 1,
+    "payload": {
+      "graph": {
+        "version": 1,
+        "name": "Stone",
+        "tags": [
+          "stage",
+          "stone"
+        ],
+        "nodes": [
+          {
+            "id": "tex",
+            "type": "texture"
+          },
+          {
+            "id": "geo",
+            "type": "geometry"
+          },
+          {
+            "id": "tex_tint",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 1,
+              "value": 0.800000011920929,
+              "fac": 1
+            }
+          },
+          {
+            "id": "str",
+            "type": "shader_to_rgb_diffuse"
+          },
+          {
+            "id": "ramp_008",
+            "type": "ramp_constant_aa",
+            "inputs": {
+              "edge": 0.2966
+            }
+          },
+          {
+            "id": "mix04_fac",
+            "type": "math/multiply",
+            "inputs": {
+              "b": 0.5
+            }
+          },
+          {
+            "id": "dark_tex",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 1,
+              "value": 0.19999998807907104,
+              "fac": 1
+            }
+          },
+          {
+            "id": "mix_004",
+            "type": "mix/blend"
+          },
+          {
+            "id": "hue_004",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 1,
+              "value": 2,
+              "fac": 1
+            }
+          },
+          {
+            "id": "npr_overlay",
+            "type": "mix/overlay",
+            "inputs": {
+              "fac": 1
+            }
+          },
+          {
+            "id": "npr_emit",
+            "type": "emission",
+            "inputs": {
+              "strength": 8.100000381469727
+            }
+          },
+          {
+            "id": "voro_cross",
+            "type": "vect_cross",
+            "inputs": {
+              "b": [
+                0,
+                1,
+                0
+              ]
+            }
+          },
+          {
+            "id": "voro",
+            "type": "tex_voronoi/color",
+            "inputs": {
+              "scale": 3.2
+            }
+          },
+          {
+            "id": "voro_ramp",
+            "type": "ramp_linear",
+            "inputs": {
+              "pos0": 0,
+              "pos1": 1
+            }
+          },
+          {
+            "id": "hue_006",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 1.5,
+              "value": 1.2999999523162842,
+              "fac": 1
+            }
+          },
+          {
+            "id": "albedo",
+            "type": "mix/blend"
+          },
+          {
+            "id": "principled",
+            "type": "principled",
+            "inputs": {
+              "metallic": 0,
+              "specular": 0.35,
+              "roughness": 0.72,
+              "spec_clamp": 1e+30,
+              "sheen": 0,
+              "sheen_tint": 0
+            }
+          },
+          {
+            "id": "mix_shader_001",
+            "type": "mix_shader",
+            "inputs": {
+              "fac": 0.08
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": {
+              "node": "tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "tex_tint",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "str",
+              "socket": "value"
+            },
+            "to": {
+              "node": "ramp_008",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "ramp_008",
+              "socket": "fac_out"
+            },
+            "to": {
+              "node": "mix04_fac",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "tex_tint",
+              "socket": "color"
+            },
+            "to": {
+              "node": "dark_tex",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "mix04_fac",
+              "socket": "value"
+            },
+            "to": {
+              "node": "mix_004",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "dark_tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_004",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "tex_tint",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_004",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "mix_004",
+              "socket": "color"
+            },
+            "to": {
+              "node": "hue_004",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "mix_004",
+              "socket": "color"
+            },
+            "to": {
+              "node": "npr_overlay",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "hue_004",
+              "socket": "color"
+            },
+            "to": {
+              "node": "npr_overlay",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "npr_overlay",
+              "socket": "color"
+            },
+            "to": {
+              "node": "npr_emit",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "geo",
+              "socket": "reflection"
+            },
+            "to": {
+              "node": "voro_cross",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "voro_cross",
+              "socket": "vector"
+            },
+            "to": {
+              "node": "voro",
+              "socket": "vector"
+            }
+          },
+          {
+            "from": {
+              "node": "voro",
+              "socket": "color"
+            },
+            "to": {
+              "node": "voro_ramp",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "tex_tint",
+              "socket": "color"
+            },
+            "to": {
+              "node": "hue_006",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "voro_ramp",
+              "socket": "fac_out"
+            },
+            "to": {
+              "node": "albedo",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "voro_ramp",
+              "socket": "fac_out"
+            },
+            "to": {
+              "node": "albedo",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "hue_006",
+              "socket": "color"
+            },
+            "to": {
+              "node": "albedo",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "albedo",
+              "socket": "color"
+            },
+            "to": {
+              "node": "principled",
+              "socket": "base"
+            }
+          },
+          {
+            "from": {
+              "node": "npr_emit",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_shader_001",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "principled",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_shader_001",
+              "socket": "b"
+            }
+          }
+        ],
+        "output": {
+          "node": "mix_shader_001",
+          "socket": "color"
+        }
+      }
+    }
+  },
+  {
+    "id": "f70446da-03b4-4290-b696-182f6a92bd34",
+    "kind": "graph",
+    "name": "Fabric",
+    "author": "frost",
+    "description": "Dense weave and a soft highlight, for curtains and soft furnishing.",
+    "tags": [
+      "stage",
+      "fabric"
+    ],
+    "version": 1,
+    "payload": {
+      "graph": {
+        "version": 1,
+        "name": "Fabric",
+        "tags": [
+          "stage",
+          "fabric"
+        ],
+        "nodes": [
+          {
+            "id": "tex",
+            "type": "texture"
+          },
+          {
+            "id": "geo",
+            "type": "geometry"
+          },
+          {
+            "id": "str",
+            "type": "shader_to_rgb_diffuse"
+          },
+          {
+            "id": "ramp_008",
+            "type": "ramp_constant_aa",
+            "inputs": {
+              "edge": 0.2966
+            }
+          },
+          {
+            "id": "mix04_fac",
+            "type": "math/multiply",
+            "inputs": {
+              "b": 0.5
+            }
+          },
+          {
+            "id": "dark_tex",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 1,
+              "value": 0.19999998807907104,
+              "fac": 1
+            }
+          },
+          {
+            "id": "mix_004",
+            "type": "mix/blend"
+          },
+          {
+            "id": "sep_n",
+            "type": "separate_xyz"
+          },
+          {
+            "id": "bevel_clamp",
+            "type": "math/clamp01"
+          },
+          {
+            "id": "mix_003",
+            "type": "mix/blend"
+          },
+          {
+            "id": "hue_004",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 0.800000011920929,
+              "value": 2,
+              "fac": 1
+            }
+          },
+          {
+            "id": "npr_overlay",
+            "type": "mix/overlay",
+            "inputs": {
+              "fac": 1
+            }
+          },
+          {
+            "id": "npr_emit",
+            "type": "emission",
+            "inputs": {
+              "strength": 18.200000762939453
+            }
+          },
+          {
+            "id": "noise",
+            "type": "tex_noise",
+            "inputs": {
+              "scale": 38,
+              "detail": 2,
+              "roughness": 0.7
+            }
+          },
+          {
+            "id": "noise_ramp",
+            "type": "ramp_linear",
+            "inputs": {
+              "pos0": 0,
+              "pos1": 1
+            }
+          },
+          {
+            "id": "bump",
+            "type": "bump",
+            "inputs": {
+              "strength": 0.55
+            }
+          },
+          {
+            "id": "principled_base",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 1,
+              "value": 0.800000011920929,
+              "fac": 1
+            }
+          },
+          {
+            "id": "principled",
+            "type": "principled",
+            "inputs": {
+              "metallic": 0,
+              "specular": 0.22,
+              "roughness": 0.9,
+              "spec_clamp": 10,
+              "sheen": 0,
+              "sheen_tint": 0
+            }
+          },
+          {
+            "id": "mix_shader_001",
+            "type": "mix_shader",
+            "inputs": {
+              "fac": 0.84
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": {
+              "node": "str",
+              "socket": "value"
+            },
+            "to": {
+              "node": "ramp_008",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "ramp_008",
+              "socket": "fac_out"
+            },
+            "to": {
+              "node": "mix04_fac",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "dark_tex",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "mix04_fac",
+              "socket": "value"
+            },
+            "to": {
+              "node": "mix_004",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "dark_tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_004",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_004",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "geo",
+              "socket": "normal"
+            },
+            "to": {
+              "node": "sep_n",
+              "socket": "vector"
+            }
+          },
+          {
+            "from": {
+              "node": "sep_n",
+              "socket": "y"
+            },
+            "to": {
+              "node": "bevel_clamp",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "bevel_clamp",
+              "socket": "value"
+            },
+            "to": {
+              "node": "mix_003",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "mix_004",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_003",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "dark_tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_003",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "mix_003",
+              "socket": "color"
+            },
+            "to": {
+              "node": "hue_004",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "mix_003",
+              "socket": "color"
+            },
+            "to": {
+              "node": "npr_overlay",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "hue_004",
+              "socket": "color"
+            },
+            "to": {
+              "node": "npr_overlay",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "npr_overlay",
+              "socket": "color"
+            },
+            "to": {
+              "node": "npr_emit",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "geo",
+              "socket": "rest_pos"
+            },
+            "to": {
+              "node": "noise",
+              "socket": "vector"
+            }
+          },
+          {
+            "from": {
+              "node": "noise",
+              "socket": "value"
+            },
+            "to": {
+              "node": "noise_ramp",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "noise_ramp",
+              "socket": "fac_out"
+            },
+            "to": {
+              "node": "bump",
+              "socket": "height"
+            }
+          },
+          {
+            "from": {
+              "node": "geo",
+              "socket": "normal"
+            },
+            "to": {
+              "node": "bump",
+              "socket": "normal"
+            }
+          },
+          {
+            "from": {
+              "node": "tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "principled_base",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "principled_base",
+              "socket": "color"
+            },
+            "to": {
+              "node": "principled",
+              "socket": "base"
+            }
+          },
+          {
+            "from": {
+              "node": "bump",
+              "socket": "vector"
+            },
+            "to": {
+              "node": "principled",
+              "socket": "normal"
+            }
+          },
+          {
+            "from": {
+              "node": "npr_emit",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_shader_001",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "principled",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_shader_001",
+              "socket": "b"
+            }
+          }
+        ],
+        "output": {
+          "node": "mix_shader_001",
+          "socket": "color"
+        }
+      }
+    }
+  },
+  {
+    "id": "88c712a1-08cf-4619-989f-e4ec4c031710",
+    "kind": "graph",
+    "name": "Rubber",
+    "author": "frost",
+    "description": "Matte and soft, for tyres, seals and soft plastics.",
+    "tags": [
+      "stage",
+      "rubber"
+    ],
+    "version": 1,
+    "payload": {
+      "graph": {
+        "version": 1,
+        "name": "Rubber",
+        "tags": [
+          "stage",
+          "rubber"
+        ],
+        "nodes": [
+          {
+            "id": "tex",
+            "type": "texture"
+          },
+          {
+            "id": "mat",
+            "type": "material_diffuse"
+          },
+          {
+            "id": "base",
+            "type": "mix/multiply",
+            "inputs": {
+              "fac": 1
+            }
+          },
+          {
+            "id": "principled",
+            "type": "principled",
+            "inputs": {
+              "metallic": 0,
+              "specular": 0.18,
+              "roughness": 0.8,
+              "spec_clamp": 10,
+              "sheen": 0.05,
+              "sheen_tint": 0
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": {
+              "node": "tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "base",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "mat",
+              "socket": "color"
+            },
+            "to": {
+              "node": "base",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "base",
+              "socket": "color"
+            },
+            "to": {
+              "node": "principled",
+              "socket": "base"
+            }
+          }
+        ],
+        "output": {
+          "node": "principled",
+          "socket": "color"
+        }
+      }
+    }
+  },
+  {
+    "id": "4d0d1c33-08c4-4426-b579-e3f9dad91fa2",
+    "kind": "graph",
+    "name": "Leather",
+    "author": "frost",
+    "description": "Light grain and a gentle sheen, for sofas, bags and belts.",
+    "tags": [
+      "stage",
+      "leather"
+    ],
+    "version": 1,
+    "payload": {
+      "graph": {
+        "version": 1,
+        "name": "Leather",
+        "tags": [
+          "stage",
+          "leather"
+        ],
+        "nodes": [
+          {
+            "id": "tex",
+            "type": "texture"
+          },
+          {
+            "id": "geo",
+            "type": "geometry"
+          },
+          {
+            "id": "str",
+            "type": "shader_to_rgb_diffuse"
+          },
+          {
+            "id": "ramp_008",
+            "type": "ramp_constant_aa",
+            "inputs": {
+              "edge": 0.2966
+            }
+          },
+          {
+            "id": "mix04_fac",
+            "type": "math/multiply",
+            "inputs": {
+              "b": 0.5
+            }
+          },
+          {
+            "id": "dark_tex",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 1,
+              "value": 0.19999998807907104,
+              "fac": 1
+            }
+          },
+          {
+            "id": "mix_004",
+            "type": "mix/blend"
+          },
+          {
+            "id": "sep_n",
+            "type": "separate_xyz"
+          },
+          {
+            "id": "bevel_clamp",
+            "type": "math/clamp01"
+          },
+          {
+            "id": "mix_003",
+            "type": "mix/blend"
+          },
+          {
+            "id": "hue_004",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 0.800000011920929,
+              "value": 2,
+              "fac": 1
+            }
+          },
+          {
+            "id": "npr_overlay",
+            "type": "mix/overlay",
+            "inputs": {
+              "fac": 1
+            }
+          },
+          {
+            "id": "npr_emit",
+            "type": "emission",
+            "inputs": {
+              "strength": 18.200000762939453
+            }
+          },
+          {
+            "id": "noise",
+            "type": "tex_noise",
+            "inputs": {
+              "scale": 9,
+              "detail": 2,
+              "roughness": 0.65
+            }
+          },
+          {
+            "id": "noise_ramp",
+            "type": "ramp_linear",
+            "inputs": {
+              "pos0": 0,
+              "pos1": 1
+            }
+          },
+          {
+            "id": "bump",
+            "type": "bump",
+            "inputs": {
+              "strength": 0.35
+            }
+          },
+          {
+            "id": "principled_base",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 1,
+              "value": 0.800000011920929,
+              "fac": 1
+            }
+          },
+          {
+            "id": "principled",
+            "type": "principled",
+            "inputs": {
+              "metallic": 0,
+              "specular": 0.32,
+              "roughness": 0.58,
+              "spec_clamp": 10,
+              "sheen": 0,
+              "sheen_tint": 0
+            }
+          },
+          {
+            "id": "mix_shader_001",
+            "type": "mix_shader",
+            "inputs": {
+              "fac": 0.8999999761581421
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": {
+              "node": "str",
+              "socket": "value"
+            },
+            "to": {
+              "node": "ramp_008",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "ramp_008",
+              "socket": "fac_out"
+            },
+            "to": {
+              "node": "mix04_fac",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "dark_tex",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "mix04_fac",
+              "socket": "value"
+            },
+            "to": {
+              "node": "mix_004",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "dark_tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_004",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_004",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "geo",
+              "socket": "normal"
+            },
+            "to": {
+              "node": "sep_n",
+              "socket": "vector"
+            }
+          },
+          {
+            "from": {
+              "node": "sep_n",
+              "socket": "y"
+            },
+            "to": {
+              "node": "bevel_clamp",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "bevel_clamp",
+              "socket": "value"
+            },
+            "to": {
+              "node": "mix_003",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "mix_004",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_003",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "dark_tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_003",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "mix_003",
+              "socket": "color"
+            },
+            "to": {
+              "node": "hue_004",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "mix_003",
+              "socket": "color"
+            },
+            "to": {
+              "node": "npr_overlay",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "hue_004",
+              "socket": "color"
+            },
+            "to": {
+              "node": "npr_overlay",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "npr_overlay",
+              "socket": "color"
+            },
+            "to": {
+              "node": "npr_emit",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "geo",
+              "socket": "rest_pos"
+            },
+            "to": {
+              "node": "noise",
+              "socket": "vector"
+            }
+          },
+          {
+            "from": {
+              "node": "noise",
+              "socket": "value"
+            },
+            "to": {
+              "node": "noise_ramp",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "noise_ramp",
+              "socket": "fac_out"
+            },
+            "to": {
+              "node": "bump",
+              "socket": "height"
+            }
+          },
+          {
+            "from": {
+              "node": "geo",
+              "socket": "normal"
+            },
+            "to": {
+              "node": "bump",
+              "socket": "normal"
+            }
+          },
+          {
+            "from": {
+              "node": "tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "principled_base",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "principled_base",
+              "socket": "color"
+            },
+            "to": {
+              "node": "principled",
+              "socket": "base"
+            }
+          },
+          {
+            "from": {
+              "node": "bump",
+              "socket": "vector"
+            },
+            "to": {
+              "node": "principled",
+              "socket": "normal"
+            }
+          },
+          {
+            "from": {
+              "node": "npr_emit",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_shader_001",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "principled",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_shader_001",
+              "socket": "b"
+            }
+          }
+        ],
+        "output": {
+          "node": "mix_shader_001",
+          "socket": "color"
+        }
+      }
+    }
+  },
+  {
+    "id": "d01b2b4e-92c3-40bb-809f-83a7720deb64",
+    "kind": "graph",
+    "name": "Paper",
+    "author": "frost",
+    "description": "Flat, matte and light — paper, posters and books.",
+    "tags": [
+      "stage",
+      "paper"
+    ],
+    "version": 1,
+    "payload": {
+      "graph": {
+        "version": 1,
+        "name": "Paper",
+        "tags": [
+          "stage",
+          "paper"
+        ],
+        "nodes": [
+          {
+            "id": "tex",
+            "type": "texture"
+          },
+          {
+            "id": "mat",
+            "type": "material_diffuse"
+          },
+          {
+            "id": "base",
+            "type": "mix/multiply",
+            "inputs": {
+              "fac": 1
+            }
+          },
+          {
+            "id": "principled",
+            "type": "principled",
+            "inputs": {
+              "metallic": 0,
+              "specular": 0.1,
+              "roughness": 0.9,
+              "spec_clamp": 10,
+              "sheen": 0,
+              "sheen_tint": 0
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": {
+              "node": "tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "base",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "mat",
+              "socket": "color"
+            },
+            "to": {
+              "node": "base",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "base",
+              "socket": "color"
+            },
+            "to": {
+              "node": "principled",
+              "socket": "base"
+            }
+          }
+        ],
+        "output": {
+          "node": "principled",
+          "socket": "color"
+        }
+      }
+    }
+  },
+  {
+    "id": "60b78cae-d36e-4ef7-b231-55e9f0e3736a",
+    "kind": "graph",
+    "name": "Water",
+    "author": "frost",
+    "description": "Strong specular at very low roughness — an approximation for ponds and glasses.",
+    "tags": [
+      "stage",
+      "water"
+    ],
+    "version": 1,
+    "payload": {
+      "graph": {
+        "version": 1,
+        "name": "Water",
+        "tags": [
+          "stage",
+          "water"
+        ],
+        "nodes": [
+          {
+            "id": "tex",
+            "type": "texture"
+          },
+          {
+            "id": "mat",
+            "type": "material_diffuse"
+          },
+          {
+            "id": "base",
+            "type": "mix/multiply",
+            "inputs": {
+              "fac": 1
+            }
+          },
+          {
+            "id": "principled",
+            "type": "principled",
+            "inputs": {
+              "metallic": 0,
+              "specular": 1,
+              "roughness": 0.03,
+              "spec_clamp": 10,
+              "sheen": 0,
+              "sheen_tint": 0
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": {
+              "node": "tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "base",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "mat",
+              "socket": "color"
+            },
+            "to": {
+              "node": "base",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "base",
+              "socket": "color"
+            },
+            "to": {
+              "node": "principled",
+              "socket": "base"
+            }
+          }
+        ],
+        "output": {
+          "node": "principled",
+          "socket": "color"
+        }
+      }
+    }
+  },
+  {
+    "id": "039d3d0d-55d1-4127-b24e-bfd086c841a3",
+    "kind": "graph",
+    "name": "Gold",
+    "author": "frost",
+    "description": "Warm, fully metallic reflection for trim, frames and ornaments.",
+    "tags": [
+      "stage",
+      "gold"
+    ],
+    "version": 1,
+    "payload": {
+      "graph": {
+        "version": 1,
+        "name": "Gold",
+        "tags": [
+          "stage",
+          "gold"
+        ],
+        "nodes": [
+          {
+            "id": "tex",
+            "type": "texture"
+          },
+          {
+            "id": "geo",
+            "type": "geometry"
+          },
+          {
+            "id": "tex_tint",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 1,
+              "value": 0.800000011920929,
+              "fac": 1
+            }
+          },
+          {
+            "id": "str",
+            "type": "shader_to_rgb_diffuse"
+          },
+          {
+            "id": "ramp_008",
+            "type": "ramp_constant_aa",
+            "inputs": {
+              "edge": 0.2966
+            }
+          },
+          {
+            "id": "mix04_fac",
+            "type": "math/multiply",
+            "inputs": {
+              "b": 0.5
+            }
+          },
+          {
+            "id": "dark_tex",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 1,
+              "value": 0.19999998807907104,
+              "fac": 1
+            }
+          },
+          {
+            "id": "mix_004",
+            "type": "mix/blend"
+          },
+          {
+            "id": "hue_004",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.5,
+              "saturation": 1,
+              "value": 2,
+              "fac": 1
+            }
+          },
+          {
+            "id": "npr_overlay",
+            "type": "mix/overlay",
+            "inputs": {
+              "fac": 1
+            }
+          },
+          {
+            "id": "npr_emit",
+            "type": "emission",
+            "inputs": {
+              "strength": 8.100000381469727
+            }
+          },
+          {
+            "id": "voro_cross",
+            "type": "vect_cross",
+            "inputs": {
+              "b": [
+                0,
+                1,
+                0
+              ]
+            }
+          },
+          {
+            "id": "voro",
+            "type": "tex_voronoi/color",
+            "inputs": {
+              "scale": 4.3
+            }
+          },
+          {
+            "id": "voro_ramp",
+            "type": "ramp_linear",
+            "inputs": {
+              "pos0": 0,
+              "pos1": 1
+            }
+          },
+          {
+            "id": "hue_006",
+            "type": "hue_sat",
+            "inputs": {
+              "hue": 0.08,
+              "saturation": 1.35,
+              "value": 1.1,
+              "fac": 1
+            }
+          },
+          {
+            "id": "albedo",
+            "type": "mix/blend"
+          },
+          {
+            "id": "principled",
+            "type": "principled",
+            "inputs": {
+              "metallic": 1,
+              "specular": 1,
+              "roughness": 0.18,
+              "spec_clamp": 1e+30,
+              "sheen": 0,
+              "sheen_tint": 0
+            }
+          },
+          {
+            "id": "mix_shader_001",
+            "type": "mix_shader",
+            "inputs": {
+              "fac": 0.6967
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": {
+              "node": "tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "tex_tint",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "str",
+              "socket": "value"
+            },
+            "to": {
+              "node": "ramp_008",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "ramp_008",
+              "socket": "fac_out"
+            },
+            "to": {
+              "node": "mix04_fac",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "tex_tint",
+              "socket": "color"
+            },
+            "to": {
+              "node": "dark_tex",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "mix04_fac",
+              "socket": "value"
+            },
+            "to": {
+              "node": "mix_004",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "dark_tex",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_004",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "tex_tint",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_004",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "mix_004",
+              "socket": "color"
+            },
+            "to": {
+              "node": "hue_004",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "mix_004",
+              "socket": "color"
+            },
+            "to": {
+              "node": "npr_overlay",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "hue_004",
+              "socket": "color"
+            },
+            "to": {
+              "node": "npr_overlay",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "npr_overlay",
+              "socket": "color"
+            },
+            "to": {
+              "node": "npr_emit",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "geo",
+              "socket": "reflection"
+            },
+            "to": {
+              "node": "voro_cross",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "voro_cross",
+              "socket": "vector"
+            },
+            "to": {
+              "node": "voro",
+              "socket": "vector"
+            }
+          },
+          {
+            "from": {
+              "node": "voro",
+              "socket": "color"
+            },
+            "to": {
+              "node": "voro_ramp",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "tex_tint",
+              "socket": "color"
+            },
+            "to": {
+              "node": "hue_006",
+              "socket": "color"
+            }
+          },
+          {
+            "from": {
+              "node": "voro_ramp",
+              "socket": "fac_out"
+            },
+            "to": {
+              "node": "albedo",
+              "socket": "fac"
+            }
+          },
+          {
+            "from": {
+              "node": "voro_ramp",
+              "socket": "fac_out"
+            },
+            "to": {
+              "node": "albedo",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "hue_006",
+              "socket": "color"
+            },
+            "to": {
+              "node": "albedo",
+              "socket": "b"
+            }
+          },
+          {
+            "from": {
+              "node": "albedo",
+              "socket": "color"
+            },
+            "to": {
+              "node": "principled",
+              "socket": "base"
+            }
+          },
+          {
+            "from": {
+              "node": "npr_emit",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_shader_001",
+              "socket": "a"
+            }
+          },
+          {
+            "from": {
+              "node": "principled",
+              "socket": "color"
+            },
+            "to": {
+              "node": "mix_shader_001",
+              "socket": "b"
+            }
+          }
+        ],
+        "output": {
+          "node": "mix_shader_001",
+          "socket": "color"
+        }
+      }
+    }
+  }
+]

@@ -10,7 +10,7 @@
 
 import { Heart } from "lucide-react"
 import { LIBRARY_FACETS, type LibraryFacet, type LibraryItem, type MaybeMine } from "@/lib/library"
-import type { ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
@@ -54,6 +54,85 @@ export const LIBRARY_SHELL =
  * caller's — the shelves differ in both.
  */
 export const LIBRARY_GRID = "grid content-start gap-2 px-3 pt-1 pb-3"
+
+/**
+ * PARKED, and kept because the problem it solves is real.
+ *
+ * The shelves are plain CSS shares again (40% · 40% · 20%), which is
+ * predictable and wrong only in the small: three capped sections plus their
+ * top margin and their rules add up to a hair MORE than the height they are
+ * given, so the bottom shelf loses those few pixels, and a share of a dvh
+ * never divides evenly into a card row, so a shelf can still end on a card cut
+ * through the middle.
+ *
+ * This measures its way out of both — but it has to subtract the margins and
+ * borders from each share to do it, which the version below does not, and a
+ * measurement that is wrong is worse than an approximation that is honest. It
+ * wants a session with the dialog open in front of it.
+ *
+ * A shelf's height: its SHARE of the column, rounded down to whole card rows.
+ *
+ * The share has to be measured rather than declared. `max-h-[40%]` is a
+ * percentage of a dialog sized in dvh, and a card's height comes from the column
+ * WIDTH — a 16:10 thumbnail in one of four or five tracks — so the two never
+ * divide evenly and the shelf ends on a card sliced through the middle. What the
+ * eye reads there is not "scroll for more", it is a broken layout.
+ *
+ * So: measure one card and the gap, take the share, and keep the largest whole
+ * number of rows that fits. Everything it needs is already on screen, and the
+ * observer re-runs it when the dialog is resized or the card count changes the
+ * grid's shape.
+ *
+ * Applied to the SCROLLER rather than the section, so the header is outside the
+ * arithmetic and cannot be squeezed. At least one row always survives, even in a
+ * window too short for the share — a shelf showing nothing would hide items with
+ * no way to know they are there.
+ */
+export function useShelfCap(share: number) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [maxHeight, setMaxHeight] = useState<number | undefined>(undefined)
+  useEffect(() => {
+    const section = ref.current
+    const column = section?.parentElement
+    if (!section || !column) return
+    const measure = () => {
+      const header = section.firstElementChild as HTMLElement | null
+      const grid = section.querySelector<HTMLElement>("[data-shelf-grid]")
+      const card = grid?.firstElementChild as HTMLElement | null
+      // No cards — an empty Community says so in one line, which needs no cap.
+      if (!header || !grid || !card) return setMaxHeight(undefined)
+      const gs = getComputedStyle(grid)
+      const gap = parseFloat(gs.rowGap) || 0
+      const padTop = parseFloat(gs.paddingTop) || 0
+      const padBottom = parseFloat(gs.paddingBottom) || 0
+      const cardH = card.getBoundingClientRect().height
+      // Not laid out yet (a card with no measured height): leave the cap alone
+      // and wait — the observer watches the section, so the frame the cards
+      // gain height is a frame this runs again.
+      if (cardH <= 0) return
+      const room = column.clientHeight * share - header.getBoundingClientRect().height
+      const content = grid.scrollHeight
+      // Everything fits: take the CONTENT height, padding and all. Rounding to
+      // whole rows here would slice off the grid's bottom padding and produce a
+      // scrollbar for twelve pixels of air.
+      if (content <= room) return setMaxHeight(content)
+      // Otherwise the largest whole number of rows the share allows. n rows and
+      // the n-1 gaps BETWEEN them — counting the trailing gap would leave a
+      // sliver of the next row showing, which is the thing this exists to stop.
+      const rows = Math.max(1, Math.floor((room - padTop - padBottom + gap) / (cardH + gap)))
+      setMaxHeight(padTop + rows * cardH + (rows - 1) * gap)
+    }
+    // Fires once on observe, which is the first measurement — so there is no
+    // synchronous setState in the effect body and no second pass correcting a
+    // first guess. The COLUMN is watched for the dialog resizing, the SECTION
+    // for cards arriving and for the card height that follows column width.
+    const ro = new ResizeObserver(measure)
+    ro.observe(column)
+    ro.observe(section)
+    return () => ro.disconnect()
+  }, [share])
+  return { ref, style: maxHeight === undefined ? undefined : { maxHeight } }
+}
 
 /**
  * How many are on this shelf, right after the word that names it.

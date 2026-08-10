@@ -141,11 +141,13 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
     onRenamed?.(item.name, name)
   }
 
-  // Built-ins by name: a fixed set you learn the shape of, so it must not move.
-  const builtinRows = useMemo(
-    () => rows.filter((x) => x.owner === "builtin").sort((a, b) => a.name.localeCompare(b.name)),
-    [rows],
-  )
+  // Built-ins in DECLARATION order, not by name: the shelf holds two sets — the
+  // character looks first, then the stage materials — and sorting alphabetically
+  // interleaved them, so Brick sat between Body and Concrete and neither set
+  // read as a set. Declaration order is just as fixed as alphabetical, which is
+  // the property that matters: a curated shelf you learn the shape of must not
+  // move under you.
+  const builtinRows = useMemo(() => rows.filter((x) => x.owner === "builtin"), [rows])
   // Community in server order, which is newest first — nobody knows these names,
   // so recency is the only signal there is.
   const communityRows = useMemo(() => rows.filter((x) => x.owner === "user"), [rows])
@@ -328,20 +330,51 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
         <LibraryRail items={ROWS} facet={facet} onFacetChange={setFacet} tag={tag} onTagChange={setTag} isLiked={(i) => statFor(i.name).liked} />
 
         {/* ── Minimap grid ── */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <ScrollArea className="min-h-0">
-            <div className="px-3 pt-2 pb-1.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.builtin}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          {/* THE SHELVES: 38% · 38% · 20%, content-sized under that.
+
+            The shares are aimed at TWO rows up top and ONE for Local — but they
+            can only aim. A share is a fraction of a dialog measured in dvh; a
+            card row is a fraction of the column WIDTH (a 16:10 thumbnail in one
+            of five tracks) plus a fixed label. The two are unrelated, so the
+            same 34% is two rows and a sliver on one screen and not quite two on
+            another. Holding a row COUNT needs the measurement that is parked in
+            library-rail.tsx — see useShelfCap.
+
+              MAX, not min. The dialog is 84dvh, so a taller screen already makes
+              the column taller and every shelf proportionally taller with it —
+              that is where screen size is answered. A minimum would answer it
+              backwards: it would hold a third of the dialog open for a Community
+              shelf with nothing on it.
+
+              96 rather than 100, and shrinkable (min-h-0, no shrink-0). The top
+              margin and the two rules between shelves are real pixels; at a clean
+              100 they pushed the column over and the bottom shelf paid for it,
+              which is how Local ended up a card short of a full row. The 4% is
+              for them, and shrink is the guard if a font or a border ever moves.
+
+              Equal shares rather than one growing section — the built-ins are
+              a set you learn the shape of, Community is everyone else's work and is
+              the half of the library that grows forever, and Local is your own
+              drafts, which are few by nature. Any of them shorter than its share
+              simply ends; the slack collects at the BOTTOM of the column, where it
+              reads as the shelves ending rather than as a hole between them. */}
+          <div className="flex max-h-[38%] min-h-0 flex-col">
+            <div className="shrink-0 px-3 pt-2 pb-1.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
+              {t.rail.builtin}
               <ShelfCount n={builtinRows.length} />
             </div>
-            <div className={cn(LIBRARY_GRID, "grid-cols-5 pb-1.5")}>
-              {builtinRows.map(renderCard)}
-              {rows.length === 0 && (
-                <div className="col-span-full py-16 text-center text-xs text-muted-foreground">
-                  {facet === "yours" && !query ? t.rail.yoursEmpty : t.library.noMatch(query)}
-                </div>
-              )}
-            </div>
-          </ScrollArea>
+            <ScrollArea className="min-h-0 flex-1">
+              <div data-shelf-grid className={cn(LIBRARY_GRID, "grid-cols-5 pb-1.5")}>
+                {builtinRows.map(renderCard)}
+                {rows.length === 0 && (
+                  <div className="col-span-full py-16 text-center text-xs text-muted-foreground">
+                    {facet === "yours" && !query ? t.rail.yoursEmpty : t.library.noMatch(query)}
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+          </div>
 
           {/* Community is PINNED, like drafts, rather than scrolling below the
               built-ins. Both headers show even when empty: an empty Community is
@@ -349,28 +382,20 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
               do, and a section you have to scroll to find cannot make that ask
               at all. Local stays conditional — your own drafts, and an empty one
               tells you nothing you did not know. */}
-          {/* Community takes the slack rather than a fixed cap. The dialog is a
-              fixed height, so a short built-in shelf leaves room over: parked
-              under a capped Community, that room read as a black band lying on
-              top of the section, community cards scrolling inside a box with
-              dead space beneath them. Growing into it costs nothing and never
-              takes the room the Local shelf needs, which is capped and pinned
-              last. The floor keeps a row of cards visible when the built-ins are
-              long enough to squeeze it. */}
-          <div className="mt-2 flex min-h-[7.5rem] flex-1 flex-col border-t border-white/10">
+          <div className="mt-2 flex max-h-[38%] min-h-0 flex-col border-t border-white/10">
             <div className="shrink-0 px-3 pt-2 pb-1.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.community}
               <ShelfCount n={communityRows.length} />
             </div>
             <ScrollArea className="min-h-0 flex-1">
               {communityRows.length > 0 ? (
-                <div className={cn(LIBRARY_GRID, "grid-cols-5")}>{communityRows.map(renderCard)}</div>
+                <div data-shelf-grid className={cn(LIBRARY_GRID, "grid-cols-5")}>{communityRows.map(renderCard)}</div>
               ) : (
                 <div className="px-3 pb-3 text-xs text-muted-foreground/70">{t.rail.communityEmpty}</div>
               )}
             </ScrollArea>
           </div>
           {localRows.length > 0 && (
-            <div className="flex max-h-[10rem] shrink-0 flex-col border-t border-white/10">
+            <div className="flex max-h-[20%] min-h-0 flex-col border-t border-white/10">
               <div className="flex shrink-0 items-center justify-between px-3 pt-1.5 pb-1.5">
                 <span className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.local}
                   <ShelfCount n={localRows.length} />
@@ -397,7 +422,7 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
                 </button>
               </div>
               <ScrollArea className="min-h-0 flex-1">
-                <div className={cn(LIBRARY_GRID, "grid-cols-5")}>{localRows.map(renderCard)}</div>
+                <div data-shelf-grid className={cn(LIBRARY_GRID, "grid-cols-5")}>{localRows.map(renderCard)}</div>
               </ScrollArea>
             </div>
           )}
