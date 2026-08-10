@@ -2528,7 +2528,7 @@ export default function Lab() {
     for (const m of models) {
       if (castStarted.current.has(m.id)) continue
       castStarted.current.add(m.id)
-      const source = castSourceFor(m.id, scene, groupsByModel[m.id])
+      const source = castSourceFor(m.id, scene, groupsByModel[m.id], bundleFiles())
       void (source ? castColour(source) : Promise.resolve(null)).then((palette) =>
         // Unconditional: the started-set already dedupes, and a re-extraction
         // after a model replace must be able to overwrite the transplanted
@@ -2536,7 +2536,7 @@ export default function Lab() {
         setPalettes((p) => ({ ...p, [m.id]: palette ?? NEUTRAL_PALETTE })),
       )
     }
-  }, [models, scene, groupsByModel])
+  }, [models, scene, groupsByModel, bundleFiles])
 
   // A dialog rather than a toggle: two locales fit in a switch, but "Toggle
   // language" says a switch exists without saying where it lands. The picker

@@ -17,7 +17,16 @@ import type { CastColourSource } from "@/lib/model-colour"
  *  sides (pmx-mesh for texture paths, relFilePath for Files). */
 const fold = (p: string) => p.toLowerCase()
 
-export function castSourceFor(id: string, scene: Scene, groups: StyleGroup[] | undefined): CastColourSource | null {
+export function castSourceFor(
+  id: string,
+  scene: Scene,
+  groups: StyleGroup[] | undefined,
+  /** The scene's unzipped asset bundle, when there is one. A model you uploaded
+   *  keeps its Files only for THIS session; after a refresh the same bytes are
+   *  in here, and without them the swatch fell back to neutral on every reload
+   *  — the colour appeared to be a property of having just uploaded. */
+  bundle?: File[],
+): CastColourSource | null {
   // The render class, not the group id: ids are label slugs ("long-hair"), the
   // render class is the role the engine actually assigned. ROLE_WEIGHT in
   // model-colour speaks role vocabulary.
@@ -46,8 +55,31 @@ export function castSourceFor(id: string, scene: Scene, groups: StyleGroup[] | u
   }
 
   const model = scene.assets.models.find((m) => m.model.id === id)?.model
-  const pmx = model ? modelPmxUrl(model) : null
-  if (!model || !pmx || model.source.kind !== "folder") return null
+  if (!model) return null
+
+  // Out of the bundle: File.name carries the bundle-relative PATH (lib/uploads),
+  // which is what the engine resolves textures against too. Scoped to this
+  // model's own folder, because two models in one bundle can share a texture
+  // basename and a bare-name match would hand one of them the other's colour.
+  if (model.source.kind === "bundle" && bundle?.length) {
+    const path = model.source.path
+    const pmxFile = bundle.find((f) => fold(f.name) === fold(path))
+    if (!pmxFile) return null
+    const dir = fold(path).slice(0, fold(path).lastIndexOf("/") + 1)
+    return {
+      pmx: pmxFile,
+      resolveTexture: (texture) => {
+        const want = fold(texture)
+        const base = want.split("/").pop()
+        const inDir = bundle.filter((f) => fold(f.name).startsWith(dir))
+        return inDir.find((f) => fold(f.name).endsWith(want) || fold(f.name).split("/").pop() === base) ?? null
+      },
+      roleOf,
+    }
+  }
+
+  const pmx = modelPmxUrl(model)
+  if (!pmx || model.source.kind !== "folder") return null
   const dir = model.source.dir
   return { pmx, resolveTexture: (path) => assetUrl(dir, path), roleOf }
 }
