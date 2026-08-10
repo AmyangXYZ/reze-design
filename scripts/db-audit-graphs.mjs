@@ -124,8 +124,15 @@ const add = (kind, name, label) => {
   const k = kind + "\u0000" + name.trim().toLowerCase()
   byName.set(k, [...(byName.get(k) ?? []), label])
 }
+// db-seed mirrors every built-in into library_items under its AUTHORED uuid, so
+// the same entity appears in both lists. That is the design (likes and usage
+// stats need a row to reference), not a clash — matched by id, not by name.
+const builtinIds = new Set(builtins.map((b) => b.id))
 for (const b of builtins) add("graph", b.name, `built-in graph "${b.name}"`)
-for (const row of rows) add(row.kind, row.name, `${row.kind} "${row.name}" by ${row.author}`)
+for (const row of rows) {
+  if (builtinIds.has(row.id)) continue
+  add(row.kind, row.name, `${row.kind} "${row.name}" by ${row.author}`)
+}
 const clashes = [...byName.values()].filter((v) => v.length > 1)
 console.log(`\n=== names that collide (second one unreachable): ${clashes.length} ===`)
 for (const c of clashes) console.log("  " + c.join("  vs  "))
