@@ -322,11 +322,15 @@ export const AnimPlayer = memo(function AnimPlayer({
         <div
           ref={trackRef}
           className={cn(
-            // min-width + grow, not a fixed width: in a shrink-to-fit parent the
-          // basis floor IS the width, so the shipped pill is unchanged, while in
-          // a full-width one the track takes the slack instead of leaving it at
-          // the end of the row.
-          "relative mx-1 flex h-4 min-w-[min(16rem,30vw)] flex-1 touch-none items-center select-none",
+            // The shipped width is the flex BASIS, not a min-width, and min-w-0
+            // lets the item shrink under it. Both directions then work off one
+            // number: in a shrink-to-fit parent the basis IS the width (the
+            // collapsed pill is unchanged), in a full-width one the track takes
+            // the slack, and in a parent narrower than the pill the track is
+            // what gives — a min-width here made 506px the row's min-content, so
+            // the pill overflowed any strip narrower than that instead of
+            // adapting to it.
+            "relative mx-1 flex h-4 min-w-0 flex-[1_1_min(16rem,30vw)] touch-none items-center select-none",
             hasClip ? "cursor-pointer" : "opacity-50",
           )}
           onPointerDown={(e) => {

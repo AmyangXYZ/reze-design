@@ -408,8 +408,14 @@ function SceneStage({ scene }: ViewerProps & { scene: Scene }) {
       )}
 
       {ready && models.length > 0 && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2">
-          <AnimPlayer engineRef={engineRef} modelNames={animated} hasCamera={!!scene.assets.cameraAnimation} />
+        // Centred by a bounded row, not by a translate off the midpoint: an
+        // absolutely positioned pill has nothing to size against, so on a phone
+        // it ran off both edges. inset-x-3 gives it the viewport minus the same
+        // gutter the bottom uses, and the transport shrinks into it.
+        <div className="pointer-events-none absolute inset-x-3 bottom-3 flex justify-center">
+          <div className="pointer-events-auto max-w-full">
+            <AnimPlayer engineRef={engineRef} modelNames={animated} hasCamera={!!scene.assets.cameraAnimation} />
+          </div>
         </div>
       )}
 
