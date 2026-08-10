@@ -740,19 +740,6 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       altLabels: [alt.editMaterials],
       keywords: ["style groups", "shader", "look", "材质", "材料"],
     },
-    // The one bulk act on materials, and the only door to re-running it: the
-    // upload path classifies a stage on arrival, but a scene imported from
-    // before this existed, or one you have hand-grouped since, has no other way
-    // to ask again.
-    {
-      id: "stage-autogroup",
-      repeatable: true,
-      section: "command",
-      icon: MaterialSphereIcon,
-      label: l.cmd.stageAutoGroup,
-      altLabels: [alt.cmd.stageAutoGroup],
-      keywords: ["stage", "auto", "classify", "group", "pmx", "舞台", "自动", "分组", "材质"],
-    },
     // The cast/clips GROUPS left the palette — they never collapse, so "go to"
     // them means nothing. Their actions did not: these are the functions those
     // rows run, reachable without knowing where the row is.
@@ -2400,13 +2387,35 @@ export default function Lab() {
     [engineRef, groupsByModel, applyGroups],
   )
 
+  /**
+   * A stage classifies itself, once, the moment it has materials — uploaded now
+   * or restored from a document written before this existed.
+   *
+   * Quiet and automatic, the way a MODEL is: the engine auto-groups a character
+   * on load and nobody presses a button for it. This is the same act for
+   * scenery, held out of the engine only because a keyword table is taste and
+   * must never reach the render classes.
+   *
+   * Skips a stage that already carries a real grouping — the document said so,
+   * or you did — where "real" means a group with materials in it, since a fresh
+   * stage arrives with empty eye/hair seeds it will never use.
+   */
+  const styled = useRef(new Set<string>())
+  useEffect(() => {
+    if (!ready) return
+    for (const stage of stages) {
+      if (styled.current.has(stage.id)) continue
+      styled.current.add(stage.id)
+      if ((groupsByModel[stage.id] ?? []).some((g) => g.materials.length > 0)) continue
+      autoStyleStage(stage.id)
+    }
+  }, [ready, stages, groupsByModel, autoStyleStage])
+
   const loadPicked = async (files: File[], pmx: File, target: ModelTarget) => {
     setUpload(null)
     try {
       if (target.mode === "stage") {
-        const id = await addStageFromFiles(files, pmx)
-        noteArrival(id)
-        autoStyleStage(id)
+        noteArrival(await addStageFromFiles(files, pmx))
         setStageTab("stage")
       } else if (target.mode === "replace") {
         const newId = await replaceModelFromFiles(target.id, files, pmx)
@@ -3165,16 +3174,6 @@ export default function Lab() {
       // The same dialog the Share pill opens — one publish surface, two doors.
       else if (item.id === "publish") setShareOpen(true)
       else if (item.id === "gallery") openGallery()
-      // Classify, then SHOW: a bulk edit you cannot see the result of is one you
-      // have to take on faith. The panel lists what landed in which group, and
-      // what stayed ungrouped because nothing recognised it.
-      else if (item.id === "stage-autogroup") {
-        const target = stages[0]?.id
-        if (target) {
-          autoStyleStage(target)
-          openMaterials(target)
-        }
-      }
       else if (item.id.startsWith("ctl-")) {
         const c = DOCK_CONTROLS.find((x) => `ctl-${x.id}` === item.id)
         if (!c) return
@@ -3199,8 +3198,6 @@ export default function Lab() {
       openGraphLibrary,
       openBrowse,
       openGallery,
-      autoStyleStage,
-      stages,
       activeGroupId,
       openEffectEditor,
     ],

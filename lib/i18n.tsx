@@ -475,7 +475,6 @@ const en = {
     drop: { motion: "Drop a motion", camera: "Drop a camera motion", music: "Drop music" },
     cmd: {
       graphNew: "New shader graph",
-      stageAutoGroup: "Auto-group stage materials",
       graphLib: "Graph library",
       wgslNew: "New effect",
       effectLib: "Effect library",
@@ -1039,7 +1038,6 @@ const zh: Dictionary = {
     drop: { motion: "拖入动作", camera: "拖入镜头动作", music: "拖入音乐" },
     cmd: {
       graphNew: "新建着色器图",
-      stageAutoGroup: "自动分组舞台材质",
       graphLib: "着色器图库",
       wgslNew: "新建特效",
       effectLib: "特效库",
