@@ -106,7 +106,22 @@ let format: GPUTextureFormat = "bgra8unorm"
 let uniformBuffer: GPUBuffer | null = null
 let bindGroupLayout: GPUBindGroupLayout | null = null
 let bindGroup: GPUBindGroup | null = null
+// Keyed by the shader text, so every edit that ever gets previewed mints a new
+// entry — and a render pipeline is GPU memory that nothing else will reclaim
+// while this Map holds it. Editing a draft would grow it a pipeline per save, for
+// the life of the tab. Capped and evicted oldest-first: Map preserves insertion
+// order, so the first key is the least recently added.
+const PIPELINE_CACHE_MAX = 24
 const pipelineCache = new Map<string, GPURenderPipeline | "failed" | "pending">()
+
+function rememberPipeline(wgsl: string, value: GPURenderPipeline | "failed" | "pending") {
+  pipelineCache.set(wgsl, value)
+  while (pipelineCache.size > PIPELINE_CACHE_MAX) {
+    const oldest = pipelineCache.keys().next().value
+    if (oldest === undefined || oldest === wgsl) break
+    pipelineCache.delete(oldest)
+  }
+}
 let rafId = 0
 const uniforms = new Float32Array(4)
 
@@ -140,8 +155,13 @@ async function getDevice(): Promise<GPUDevice | null> {
 function pipelineFor(d: GPUDevice, wgsl: string): GPURenderPipeline | null {
   const cached = pipelineCache.get(wgsl)
   if (cached === "failed" || cached === "pending") return null
-  if (cached) return cached
-  pipelineCache.set(wgsl, "pending")
+  if (cached) {
+    // Touch it, so what is on screen is never what gets evicted.
+    pipelineCache.delete(wgsl)
+    pipelineCache.set(wgsl, cached)
+    return cached
+  }
+  rememberPipeline(wgsl, "pending")
   d.pushErrorScope("validation")
   const shader = d.createShaderModule({ code: previewShader(wgsl) })
   void d
@@ -152,8 +172,8 @@ function pipelineFor(d: GPUDevice, wgsl: string): GPURenderPipeline | null {
       primitive: { topology: "triangle-list" },
     })
     .then(
-      (p) => pipelineCache.set(wgsl, p),
-      () => pipelineCache.set(wgsl, "failed"),
+      (p) => rememberPipeline(wgsl, p),
+      () => rememberPipeline(wgsl, "failed"),
     )
   void d.popErrorScope().catch(() => {})
   return null

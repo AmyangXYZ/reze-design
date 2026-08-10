@@ -2,7 +2,7 @@
 
 // WGSL editor — a free-floating, draggable, resizable panel (FloatingPanel, the graph
 
-import { useCallback, useMemo, useRef, useState } from "react"
+import { memo, useCallback, useMemo, useRef, useState } from "react"
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism"
 import { Code, RotateCcw } from "lucide-react"
@@ -22,6 +22,52 @@ const CODE_STYLE: React.CSSProperties = {
 }
 
 export type WgslCompileResult = { ok: boolean; diagnostics: string[] }
+
+/**
+ * One highlighted line.
+ *
+ * The whole document used to go through the highlighter on every keystroke —
+ * Prism re-tokenising all of it, and React reconciling a <span> per token. At
+ * 400 lines that is thousands of elements rebuilt per character: the editor
+ * stalls, and a long session of it is a plausible way to lose the tab.
+ *
+ * Split per line and memoised, a keystroke re-tokenises the ONE line it touched;
+ * the rest fail a string compare and are skipped. That keeps highlighting
+ * synchronous, which is what matters — deferring it instead meant either the
+ * text lagged behind the caret or it flashed from plain to coloured on every
+ * edit, and the caret's own line is exactly the one you are looking at.
+ *
+ * The tokeniser sees one line at a time, so a BLOCK comment spanning lines only
+ * colours its first. WGSL has no multi-line strings, so nothing else carries
+ * state across a newline, and `//` — which is what shader code overwhelmingly
+ * uses — is unaffected.
+ */
+const HighlightedLine = memo(function HighlightedLine({ text }: { text: string }) {
+  return (
+    <SyntaxHighlighter
+      language="wgsl"
+      style={oneDark}
+      PreTag="div"
+      customStyle={{
+        ...CODE_STYLE,
+        margin: 0,
+        padding: 0,
+        background: "transparent",
+        overflow: "visible",
+        whiteSpace: "pre",
+        // max-content so the widest line sets the scroll width; 100% so a short
+        // one still fills the column rather than collapsing.
+        width: "max-content",
+        minWidth: "100%",
+      }}
+      codeTagProps={{ style: CODE_STYLE }}
+    >
+      {/* A space, not "", so an empty line keeps its height and stays in step
+          with the gutter beside it. */}
+      {text === "" ? " " : text}
+    </SyntaxHighlighter>
+  )
+})
 
 export function WgslEditorPanel({
   open,
@@ -95,7 +141,10 @@ function EditorBody({
   }
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<WgslCompileResult | null>(null)
-  const lineCount = useMemo(() => code.split("\n").length, [code])
+  // Split once per edit and handed to memoised lines, so the cost of a keystroke
+  // is one line's worth of highlighting rather than the document's.
+  const lines = useMemo(() => code.split("\n"), [code])
+  const lineCount = lines.length
 
   const compile = useCallback(async () => {
     if (busy) return
@@ -138,15 +187,11 @@ function EditorBody({
             ))}
           </div>
           <div className="relative min-w-0 flex-1">
-            <SyntaxHighlighter
-              language="wgsl"
-              style={oneDark}
-              customStyle={{ ...CODE_STYLE, margin: 0, padding: "12px 14px", background: "transparent", overflow: "visible", whiteSpace: "pre" }}
-              codeTagProps={{ style: CODE_STYLE }}
-            >
-              {/* Trailing newline keeps the last line's height when the caret sits on it. */}
-              {code + "\n"}
-            </SyntaxHighlighter>
+            <div aria-hidden style={{ padding: "12px 14px" }}>
+              {lines.map((line, i) => (
+                <HighlightedLine key={i} text={line} />
+              ))}
+            </div>
             {/* overflow-hidden + box ≥ content ⇒ the textarea never scrolls itself */}
             <textarea
               value={code}
