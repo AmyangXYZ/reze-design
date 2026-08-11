@@ -323,6 +323,9 @@ type PaletteValues = {
   gradeName: string
   backdrop: string | null
   dome: string | null
+  /** The rendering style the scene is wearing, or null when it wears neither
+   *  set whole. */
+  pack: LookPack | null
 }
 
 /**
@@ -2644,6 +2647,7 @@ export default function Lab() {
     gradeName: gradeLabel(settings.grade.preset),
     backdrop: bgImage && !bgImage.dome ? bgImage.name : null,
     dome: bgImage?.dome ? bgImage.name : null,
+    pack: activePack,
   }
   const valuesRef = useRef(paletteValues)
   useEffect(() => {
@@ -2783,6 +2787,10 @@ export default function Lab() {
         if (c.id === "outline")
           return { ...c, label: valuesShown.settings.outline.enabled ? t.lab.cmd.outlineOff : t.lab.cmd.outlineOn }
         if (c.id === "language") return { ...c, hint: LOCALE_LABELS[valuesShown.locale] }
+        // Same as language: the row says what it is SET TO, so the palette
+        // answers "which style am I on" without opening anything.
+        if (c.id === "look")
+          return { ...c, hint: valuesShown.pack ? valuesShown.t.brand.styles[valuesShown.pack] : valuesShown.t.lab.ctl.none }
         if (!c.id.startsWith("ctl-")) return c
         // Settings print what they are SET TO, beside the breadcrumb that says
         // where they live. An empty string means the control has nothing to
@@ -3448,7 +3456,7 @@ export default function Lab() {
               {upload.paths.map((path) => (
                 <button
                   key={path}
-                  className="block w-full cursor-pointer truncate rounded-lg px-3 py-2 text-left text-xs transition-colors hover:bg-white/5 hover:text-foreground"
+                  className="block w-full cursor-pointer truncate rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-white/5 hover:text-foreground"
                   onClick={() => {
                     const pmx = upload.files.find((f) => relFilePath(f) === path)
                     if (pmx) void loadPicked(upload.files, pmx, upload.target)
@@ -3488,7 +3496,7 @@ export default function Lab() {
                   applyLookPack(pack)
                 }}
                 className={cn(
-                  "flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-left text-xs transition-colors hover:bg-white/5",
+                  "flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-white/5",
                   pack === activePack ? "text-foreground" : "text-muted-foreground hover:text-foreground",
                 )}
               >
@@ -3524,7 +3532,7 @@ export default function Lab() {
                   setLangOpen(false)
                 }}
                 className={cn(
-                  "flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-left text-xs transition-colors hover:bg-white/5",
+                  "flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-white/5",
                   code === locale ? "text-foreground" : "text-muted-foreground hover:text-foreground",
                 )}
               >
