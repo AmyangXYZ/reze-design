@@ -43,3 +43,8 @@ next-env.d.ts
 # Third-party MMD assets dropped in for testing — never ours to commit
 /【*】*/
 /Models/
+
+# Authoring aids for porting a .blend into shader graphs. Local by choice:
+# they read files that live on whoever is doing the port, and what they emit is
+# a research artefact rather than anything that ships.
+tools/blender-port/
