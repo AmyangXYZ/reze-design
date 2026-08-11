@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { NoNativeContextMenu } from "@/components/no-native-context-menu";
 import { NoStickyFocus } from "@/components/no-sticky-focus";
+import { CrashLogCapture } from "@/components/crash-log-capture";
 import { I18nProvider } from "@/lib/i18n";
 import "./globals.css";
 import { Analytics } from "@vercel/analytics/next"
@@ -54,6 +55,8 @@ export default function RootLayout({
         {/* A small delay lets hover-revealed triggers finish laying out before the tooltip opens */}
         <NoNativeContextMenu />
         <NoStickyFocus />
+        {/* Capture starts here so a crash report carries what led up to it. */}
+        <CrashLogCapture />
         {/* I18nProvider is client-side; it keeps <html lang> in sync post-mount. */}
         <I18nProvider>
           <TooltipProvider delayDuration={200}>{children}</TooltipProvider>

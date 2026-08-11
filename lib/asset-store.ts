@@ -103,6 +103,38 @@ export async function loadLocalBundle(sceneId: string): Promise<File[] | null> {
   })
 }
 
+/**
+ * What is actually in the store, without the bytes and without an id to match.
+ *
+ * `loadLocalBundle` answers "is my scene's bundle here", which is the right
+ * question everywhere except a crash report — where the interesting answer is
+ * "there IS a bundle, belonging to a different scene", and a matching read would
+ * have reported the same `null` as an empty store.
+ */
+export async function peekLocalBundle(): Promise<{ sceneId: string; entries: number; bytes: number } | null> {
+  const db = await open()
+  if (!db) return null
+  return new Promise((resolve) => {
+    try {
+      const req = db.transaction(STORE, "readonly").objectStore(STORE).get(KEY)
+      req.onsuccess = () => {
+        const rec = req.result as BundleRecord | undefined
+        if (!rec) return resolve(null)
+        resolve({
+          sceneId: rec.sceneId,
+          entries: rec.entries.length,
+          bytes: rec.entries.reduce((n, e) => n + (e.file?.size ?? 0), 0),
+        })
+      }
+      req.onerror = () => resolve(null)
+    } catch {
+      resolve(null)
+    } finally {
+      db.close()
+    }
+  })
+}
+
 export async function clearLocalBundle(): Promise<void> {
   const db = await open()
   if (!db) return

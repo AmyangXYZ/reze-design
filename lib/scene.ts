@@ -702,8 +702,35 @@ function loadStoredAssets(sceneId: string): SceneAssetsDoc | null {
   }
 }
 
-/** The boot document: `base` (the bundled default) with the user's stored values merged over */
+/**
+ * The boot document: `base` (the bundled default) with the user's stored values
+ * merged over.
+ *
+ * The try/catch is not defensive noise — it is the difference between a failed
+ * restore and a dead site. This runs inside the editor's `useState` initializer,
+ * so it runs DURING A RENDER: a throw in here does not fail the load, it stops
+ * the page mounting, and it does so again on every refresh, because the blob
+ * that caused it is still there. The user's only escape is clearing site data,
+ * which is not something anyone should have to guess at.
+ *
+ * And the blob is not trustworthy input just because this code wrote it. It may
+ * have been written by an earlier version whose shape has since moved on (the
+ * stamped `version` is not checked on this path, only on file import), or by a
+ * build that stored a field this one parses differently. Restoring is a
+ * convenience; booting is not.
+ */
 export function hydrateScene(base: Scene): Scene {
+  try {
+    return restored(base)
+  } catch (e) {
+    // Loud: this is the user losing their working scene, and the console line is
+    // what the crash report carries when they ask why.
+    console.error("[reze] stored scene could not be restored — booting the default instead:", e)
+    return base
+  }
+}
+
+function restored(base: Scene): Scene {
   const stored = loadStoredState()
   // The stored assets record replaces the demo's cast outright — presence is the
   // signal, so an empty record (a New scene) is an empty cast, not a fallthrough to
