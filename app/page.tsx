@@ -150,6 +150,7 @@ import { NEUTRAL_PALETTE, type CastPaletteId } from "@/lib/cast-palette"
 import { relFilePath, sceneFiles } from "@/lib/scene-files"
 import { cancelDraftWrites, createDraft, isDraft, loadDrafts, updateDraft, updateDraftSoon } from "@/lib/drafts"
 import { DEFAULT_LOOK, saveLookPref } from "@/lib/look-pref"
+import { clearForkTarget, forkTarget } from "@/lib/fork"
 import { activeLookPack, graphRole, groupLabel, GRAPH_LIBRARY, libraryGraph, LOOK_PACK_ORDER, LOOK_PACKS, packGraph, sameGraphLook, SLOT_GRAPHS, type LookPack } from "@/lib/materials"
 import { stageStyleGroups } from "@/lib/stage-style"
 import {
@@ -3090,6 +3091,45 @@ export default function Lab() {
     saveSceneAssets(next.state.id, assetsDocOf({ ...next.assets, bundle: transient ? null : next.assets.bundle }))
     if (!next.assets.bundle) void clearLocalBundle()
   }
+
+  /**
+   * Open the scene the viewer sent us here to fork.
+   *
+   * The viewer stores a target and routes to the editor; nothing read it back,
+   * so Fork opened your own working scene instead of theirs. Consumed ONCE — a
+   * target left in place re-forks on every refresh, overwriting whatever you had
+   * done since.
+   *
+   * It arrives as a NEW document: a fork is yours from the moment it opens, and
+   * two people's working scenes must not collide on one id.
+   */
+  const forkDone = useRef(false)
+  useEffect(() => {
+    if (!ready || forkDone.current) return
+    const id = forkTarget()
+    if (!id) return
+    forkDone.current = true
+    void (async () => {
+      try {
+        const res = await fetch(`/api/library/${id}`)
+        if (!res.ok) throw new Error(String(res.status))
+        const { item } = (await res.json()) as { item: { name: string; payload: { doc: SceneDoc } } }
+        const resolve = await resolveSceneRefs(item.payload.doc)
+        const scene = parseSceneDoc(item.payload.doc, builtinEffect, libraryGraph, resolve)
+        await applyLabScene({ ...scene, state: { ...scene.state, id: newSceneId(), name: item.name } })
+      } catch {
+        setUpload({ kind: "notice", message: t.sceneFile.badFile })
+      } finally {
+        // Spent either way: a fork that failed to load will fail again on refresh,
+        // and leaving it armed traps the editor on someone else's scene.
+        clearForkTarget()
+      }
+    })()
+    // `ready` only. applyLabScene is rebuilt every render and the dictionary
+    // changes with the locale; either in the list would re-arm an effect whose
+    // whole contract is to fire once. The ref is what actually guards it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready])
 
   /** The curated first-open scene, assets included — under the id this scene already
    *  has, because Reset restates what THIS document is rather than starting another. */
