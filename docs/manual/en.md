@@ -733,7 +733,9 @@ of them are reference implementations to fork:
   closure: a half-Lambert through a narrow soft threshold, a shadow that passes
   through a warm band on its way to lit, the model's own sphere-map highlight,
   and a rim. Start here for a hard-terminator anime look.
-- ***Principled BSDF*** — the neutral base, and what an ungrouped material gets.
+The neutral base is not in the library: it is what an ungrouped material already
+renders and what a new group and a new graph both start from, so listing it as
+something to apply would have been a shelf copy of the blank page.
 
 Neither set carries an image of its own. A preset reads the material's own
 texture and sphere map, so it applies to any model — which is the property to

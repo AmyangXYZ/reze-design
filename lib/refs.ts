@@ -6,7 +6,7 @@
 // genuinely is no longer that item, so it must travel by value. No provenance
 // state to keep in sync, and no way for a stale tag to mispin someone else's work.
 
-import type { ShaderGraph } from "reze-engine"
+import { DEFAULT_GRAPH, type ShaderGraph } from "reze-engine"
 import { BACKGROUND_EFFECTS } from "@/lib/background-effects"
 import { GRADE_PRESETS, type GradeSpec } from "@/lib/grade"
 import { GRAPH_LIBRARY, sameGraphLook } from "@/lib/materials"
@@ -75,6 +75,12 @@ export function unpublishedUses(scene: {
   for (const list of Object.values(scene.groups)) {
     for (const g of list) {
       if (!g.graph || graphRef(g.graph)) continue
+      // The engine's neutral base is not a draft. It is what every new group
+      // starts on and what an ungrouped material already renders, so it travels
+      // by value and reproduces anywhere — it is simply not IN the library, and
+      // blocking a publish over it would name a built-in as someone's unshared
+      // work.
+      if (sameGraphLook(g.graph, DEFAULT_GRAPH)) continue
       // One entry per look, however many groups wear it.
       if (seen.has(g.graph.name)) continue
       seen.add(g.graph.name)
