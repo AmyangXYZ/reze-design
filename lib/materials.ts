@@ -118,3 +118,49 @@ export function sameGraphLook(a: ShaderGraph | undefined, b: ShaderGraph | undef
     )
   return bare(a) === bare(b)
 }
+
+// ── Look packs ───────────────────────────────────────────────────────────────
+//
+// A pack is a whole rendering style: which graph each ROLE gets, and the view
+// transform the set was authored against. The transform is part of the pack, not
+// a preference — WuWa was tuned under Standard, which passes through the colours
+// the shader computes, and reading it under Filmic desaturates exactly what makes
+// it that look. Nothing else in the scene belongs here: world colour and sun are
+// the user's art direction, and a pack that overwrote them would undo work every
+// time it was applied.
+
+export type LookPack = "ag" | "wuwa"
+
+export const LOOK_PACKS: Record<LookPack, { tag: string; transform: "standard" | "filmic"; exposure: number }> = {
+  ag: { tag: "aether-gazer", transform: "filmic", exposure: 0.6 },
+  wuwa: { tag: "wuthering-waves", transform: "standard", exposure: 0 },
+}
+
+// Roles a pack may not cover. WuWa has one cloth look where AG has three, so a
+// rough-cloth or stockings group lands on the cloth graph rather than being left
+// behind on the other pack's — the group keeps its own alpha mode either way,
+// which is what actually made stockings work.
+const ROLE_FALLBACK: Record<string, string> = {
+  cloth_rough: "cloth_smooth",
+  stockings: "cloth_smooth",
+}
+
+/** The role a graph plays, as its own tags declare it. */
+export function graphRole(graph: ShaderGraph): string | undefined {
+  return graph.tags?.[0]
+}
+
+/**
+ * The pack's graph for a role, or undefined when the pack has nothing for it.
+ *
+ * Undefined means LEAVE IT ALONE. A group wearing a community look, or the
+ * neutral default, is not something a pack switch should quietly replace — the
+ * user chose it, and it is not part of either set.
+ */
+export function packGraph(pack: LookPack, role: string | undefined): ShaderGraph | undefined {
+  if (!role || role === "default") return undefined
+  const { tag } = LOOK_PACKS[pack]
+  const inPack = GRAPH_LIBRARY.filter((g) => g.tags.includes(tag))
+  const find = (r: string) => inPack.find((g) => graphRole(g.payload.graph) === r)?.payload.graph
+  return find(role) ?? find(ROLE_FALLBACK[role] ?? "")
+}

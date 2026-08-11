@@ -500,6 +500,8 @@ const en = {
       language: "Language",
       outlineOn: "Turn on outline",
       outlineOff: "Turn off outline",
+      lookWuwa: "Switch to Wuthering Waves rendering",
+      lookAg: "Switch to Aether Gazer rendering",
     },
   },
   // Add-node menu category headers — keyed by the English category (also the color key).
@@ -1067,6 +1069,8 @@ const zh: Dictionary = {
       language: "语言",
       outlineOn: "打开描边",
       outlineOff: "关闭描边",
+      lookWuwa: "切换到鸣潮风格渲染",
+      lookAg: "切换到深空之眼风格渲染",
     },
   },
   nodeCategory: {

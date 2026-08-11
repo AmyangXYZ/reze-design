@@ -149,7 +149,7 @@ import { castSourceFor } from "@/lib/cast-source"
 import { NEUTRAL_PALETTE, type CastPaletteId } from "@/lib/cast-palette"
 import { relFilePath, sceneFiles } from "@/lib/scene-files"
 import { cancelDraftWrites, createDraft, isDraft, loadDrafts, updateDraft, updateDraftSoon } from "@/lib/drafts"
-import { groupLabel, GRAPH_LIBRARY, libraryGraph, sameGraphLook, SLOT_GRAPHS } from "@/lib/materials"
+import { graphRole, groupLabel, GRAPH_LIBRARY, libraryGraph, LOOK_PACKS, packGraph, sameGraphLook, SLOT_GRAPHS, type LookPack } from "@/lib/materials"
 import { stageStyleGroups } from "@/lib/stage-style"
 import {
   compileGraph,
@@ -817,6 +817,27 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       label: l.cmd.outlineOn,
       altLabels: [alt.cmd.outlineOn, l.cmd.outlineOff, alt.cmd.outlineOff],
       keywords: ["edge", "rim", "outline", "描边", "线稿", "轮廓"],
+    },
+    // Palette-only, like outline above: switching the whole scene's rendering
+    // style is something you reach for by name a few times, not a control worth
+    // a permanent row in the dock.
+    {
+      id: "look-wuwa",
+      repeatable: true,
+      section: "command",
+      icon: Palette,
+      label: l.cmd.lookWuwa,
+      altLabels: [alt.cmd.lookWuwa],
+      keywords: ["wuwa", "wuthering", "鸣潮", "style", "look", "preset", "风格", "渲染"],
+    },
+    {
+      id: "look-ag",
+      repeatable: true,
+      section: "command",
+      icon: Palette,
+      label: l.cmd.lookAg,
+      altLabels: [alt.cmd.lookAg],
+      keywords: ["ag", "aether", "gazer", "深空之眼", "style", "look", "preset", "风格", "渲染"],
     },
     ...controlItemsFor(t),
   ]
@@ -2049,6 +2070,33 @@ export default function Lab() {
     },
     [inspectedGroups, inspectGroupsApply],
   )
+  /**
+   * Switch the whole scene to a rendering style.
+   *
+   * Role for role, across every model: a body group takes the pack's body graph,
+   * a hair group its hair graph. A group whose look belongs to neither pack — a
+   * community graph, or the neutral default — is left alone, because the user
+   * chose it and a style switch is not a reset.
+   *
+   * The view transform comes with it. That is not a preference the pack is
+   * overreaching into: WuWa is authored under Standard and reads washed under
+   * Filmic, so applying the graphs without it delivers a look nobody tuned.
+   * World and sun stay untouched — those are the scene's art direction.
+   */
+  const applyLookPack = useCallback(
+    (pack: LookPack) => {
+      for (const [modelId, list] of Object.entries(groupsByModel)) {
+        const next = list.map((g) => {
+          const graph = packGraph(pack, graphRole(g.graph))
+          return graph ? { ...g, graph: structuredClone(graph) } : g
+        })
+        if (next.some((g, i) => g !== list[i])) void applyGroups(modelId, next)
+      }
+      const { transform, exposure } = LOOK_PACKS[pack]
+      setSettings((prev) => ({ ...prev, view: { transform, exposure } }))
+    },
+    [groupsByModel, applyGroups],
+  )
   const inspectPickGraph = useCallback(
     (groupId: string, graphName: string) => {
       if (!inspectedId) return
@@ -3195,6 +3243,8 @@ export default function Lab() {
       else if (item.id === "grade-lib") openBrowse({ kind: "grade" })
       else if (item.id === "outline") patch("outline", { enabled: !outlineRef.current })
       else if (item.id === "language") setLangOpen(true)
+      else if (item.id === "look-wuwa") applyLookPack("wuwa")
+      else if (item.id === "look-ag") applyLookPack("ag")
       // The same dialog the Share pill opens — one publish surface, two doors.
       else if (item.id === "publish") setShareOpen(true)
       else if (item.id === "gallery") openGallery()
@@ -3214,6 +3264,7 @@ export default function Lab() {
       recentIds,
       gotoSection,
       openMaterials,
+      applyLookPack,
       // The RESOLVED id, not the raw one — the raw id can name a model that has
       // been replaced away, and this callback must re-make itself when the
       // resolution changes, not when the stale string happens to.
