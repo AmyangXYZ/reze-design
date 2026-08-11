@@ -248,7 +248,11 @@ set fights the other. Your sun is left alone — where the key light sits is
 staging, and a style switch has no business moving it.
 
 The choice is remembered, so the next model you load arrives in the same style
-instead of the set it was auto-grouped into.
+instead of the set it was auto-grouped into. **Restore default scene** clears it
+back to Aether Gazer, since the demo's own cast and world are that set and a
+remembered other would dress the next model against them. **New scene** leaves it
+alone — an empty stage has no cast to disagree with, so the style you are working
+in carries.
 
 Two systems decide how the scene reads, and they work at different scales.
 

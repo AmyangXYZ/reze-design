@@ -149,7 +149,7 @@ import { castSourceFor } from "@/lib/cast-source"
 import { NEUTRAL_PALETTE, type CastPaletteId } from "@/lib/cast-palette"
 import { relFilePath, sceneFiles } from "@/lib/scene-files"
 import { cancelDraftWrites, createDraft, isDraft, loadDrafts, updateDraft, updateDraftSoon } from "@/lib/drafts"
-import { saveLookPref } from "@/lib/look-pref"
+import { DEFAULT_LOOK, saveLookPref } from "@/lib/look-pref"
 import { activeLookPack, graphRole, groupLabel, GRAPH_LIBRARY, libraryGraph, LOOK_PACK_ORDER, LOOK_PACKS, packGraph, sameGraphLook, SLOT_GRAPHS, type LookPack } from "@/lib/materials"
 import { stageStyleGroups } from "@/lib/stage-style"
 import {
@@ -3077,8 +3077,17 @@ export default function Lab() {
 
   /** The curated first-open scene, assets included — under the id this scene already
    *  has, because Reset restates what THIS document is rather than starting another. */
-  const resetSceneDefaults = () =>
+  const resetSceneDefaults = () => {
+    // The demo IS the default style: its groups and its world are the Aether
+    // Gazer set. Leaving the remembered style on something else would restore
+    // the demo and then dress the next model you loaded in a style the cast in
+    // front of you is not wearing.
+    //
+    // A NEW scene deliberately does NOT do this: it has no cast to disagree
+    // with, so the style you have been working in carries.
+    saveLookPref(DEFAULT_LOOK)
     void applyLabScene({ ...DEFAULT_SCENE, state: { ...DEFAULT_SCENE.state, id: scene.state.id } })
+  }
 
   /** Blank: no assets, no effect, no grade, neutral settings — and a NEW identity, so the
    *  uploads just cleared can never be re-adopted by it. */
