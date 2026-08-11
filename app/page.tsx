@@ -498,7 +498,10 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       id: "graph-new",
       suggested: true,
       repeatable: true,
-      nextLikely: ["export", "publish"],
+      // Where it LANDED, then who else can have it. A graph you just wrote is in
+      // the library under a name you have not seen yet, and publishing is what
+      // turns it from a local draft into something a scene can pin.
+      nextLikely: ["graph-lib", "publish", "materials"],
       section: "command",
       deep: true,
       icon: Workflow,
@@ -518,7 +521,7 @@ function commandsFor(t: Dictionary): PaletteItem[] {
     {
       id: "wgsl-new",
       repeatable: true,
-      nextLikely: ["export"],
+      nextLikely: ["effect-lib", "publish", "export"],
       section: "command",
       deep: true,
       icon: Code2,
@@ -538,6 +541,7 @@ function commandsFor(t: Dictionary): PaletteItem[] {
     {
       id: "grade-new",
       repeatable: true,
+      nextLikely: ["grade-lib", "publish"],
       section: "command",
       deep: true,
       icon: Palette,
@@ -635,6 +639,7 @@ function commandsFor(t: Dictionary): PaletteItem[] {
     {
       id: "upload-animation",
       fills: "motion",
+      nextLikely: ["camera", "export"],
       repeatable: true,
       section: "command",
       // A BODY performing, not a film slate: Clapperboard is the rendered video,
@@ -758,6 +763,7 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       // an auto-grouping nobody chose, and the look is the first thing anyone
       // changes. Falls back to its standing slot once you have opened it.
       fills: "look",
+      nextLikely: ["look", "export", "publish"],
       repeatable: true,
       section: "command",
       icon: MaterialSphereIcon,
@@ -772,6 +778,10 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       id: "add-model",
       // The blocking gap: an empty scene has no other "what now?".
       fills: "cast",
+      // Uploading is the entry action and styling is what it is for, so it names
+      // both doors: the pack switch for a whole look in one step, the panel for
+      // group-by-group work.
+      nextLikely: ["look", "materials", "upload-animation"],
       repeatable: true,
       section: "command",
       icon: Plus,
@@ -791,6 +801,7 @@ function commandsFor(t: Dictionary): PaletteItem[] {
     {
       id: "upload-music",
       fills: "music",
+      nextLikely: ["export"],
       repeatable: true,
       section: "command",
       icon: Music,
@@ -844,6 +855,11 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       // deliberately not a dock row — so it has to be there without typing
       // rather than merely findable.
       suggested: "key",
+      // Rises with a freshly uploaded model, alongside materials: an auto-grouped
+      // model wears a look nobody chose, and a whole-scene style is the fastest
+      // way to a deliberate one.
+      fills: "look",
+      nextLikely: ["materials", "export"],
       repeatable: true,
       section: "command",
       icon: Sparkles,
