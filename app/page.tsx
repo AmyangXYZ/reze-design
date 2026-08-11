@@ -90,6 +90,7 @@ import { WgslEditorPanel } from "@/components/editor/wgsl-editor"
 import { SaveCloseDialog } from "@/components/editor/save-close"
 import { FloatingPanel, type Rect } from "@/components/editor/floating-panel"
 import { LoadingPill, useLoadingLabel } from "@/components/editor/loading-pill"
+import { VERSION_LABEL } from "@/lib/version"
 import { ColorField } from "@/components/color-picker"
 import { useAudioClock } from "@/hooks/use-audio-clock"
 import { useEngine } from "@/hooks/use-engine"
@@ -167,7 +168,7 @@ import {
 import { WIND_MAX, windFreqFromSlider, windSliderFromFreq, type SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 
-/** Floating chrome — editor-chrome.tsx's `floating`, taken through the surface
+/** Floating chrome — the 0.3.x chrome's `floating`, taken through the surface
  *  token so the pills and the panel cannot drift apart. */
 const PILL = "rounded-xl border border-white/10 bg-surface shadow-float backdrop-blur-xs"
 
@@ -3506,7 +3507,7 @@ export default function Lab() {
 
       {/* ── Top bar ──
           Right cluster only. The brand belongs to the stack while the stack is
-          open — BrandPill's own asHeader/collapsed split, which is also what
+          open — the brand block's own header/collapsed split, which is also what
           stops a pill and a panel of different widths sitting on top of each
           other. */}
       {mounted && (
@@ -4092,7 +4093,7 @@ export default function Lab() {
           onPointerDownCapture={dockZ.onPointerDownCapture}
           onFocusCapture={dockZ.onFocusCapture}
         >
-          {/* BrandPill's asHeader form: wordmark + version + toggle on one line,
+          {/* The brand block's header form: wordmark + version + toggle on one line,
             the scene name under it. Same paddings, so the header reads as part
             of the panel rather than a pill that wandered into it. */}
           {/* -mt-px is not a nudge, it is the border. The collapsed pill states
@@ -4121,7 +4122,7 @@ export default function Lab() {
               />
               <span className="truncate pb-0.5 text-sm font-semibold tracking-tight text-foreground">Reze Design</span>
               <span className="shrink-0 rounded-full bg-blue-400/15 px-1.5 py-0.5 text-[11px] leading-none font-medium tracking-wide text-blue-400">
-                0.4.0 beta
+                {VERSION_LABEL}
               </span>
               {/* The repository, and through its README the manuals — which is
                   why there is no separate Help entry: one link that stays

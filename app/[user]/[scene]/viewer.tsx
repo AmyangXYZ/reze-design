@@ -118,7 +118,7 @@ export function SceneViewer(props: ViewerProps) {
           contact with the product, and nothing else on the page says its name. */}
       <Link
         href="/"
-        // The editor's collapsed BrandPill, box model and all: same top-3/left-3
+        // The editor's collapsed brand pill, box model and all: same top-3/left-3
         // origin, same 1px border, same pl-2/pr-1.5, same size-7 icon well. Only
         // the pill's surface is missing, so the mark and wordmark land on the exact
         // pixels they occupy in the editor and nothing shifts between the two.

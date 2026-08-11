@@ -14,8 +14,7 @@
 // text-base and carries a focus ring — every one of which would have to be
 // overridden here, and a primitive you override everywhere is not a primitive
 // you are using. This is the extension instead: one box, owned in one place.
-// editor-chrome.tsx still has its own copy of this (NAME_BOX); it should adopt
-// this component when the shipped chrome is retired.
+// The 0.3.x chrome carried a second copy of this box; it went with that chrome.
 
 import { useState } from "react"
 import { cn } from "@/lib/utils"
