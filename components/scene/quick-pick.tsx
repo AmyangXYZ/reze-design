@@ -2,7 +2,7 @@
 
 // Quick-switch list behind a section's blue value text.
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Check } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -49,6 +49,17 @@ export function QuickPick({
   // deliberately does NOT close, so several looks can be tried in a row.
   const [open, setOpen] = useState(false)
   const current = items.find((i) => i.id === value)
+  // Scroll the applied row into view when the list opens. Each shelf scrolls on
+  // its own and the shelves are short, so an applied look a dozen rows down
+  // opened to a list with no tick anywhere in it — indistinguishable from
+  // nothing being applied. `nearest` so a row already visible does not jump, and
+  // a frame late because Radix positions the popover after mount.
+  const activeRow = useRef<HTMLButtonElement | null>(null)
+  useEffect(() => {
+    if (!open) return
+    const id = requestAnimationFrame(() => activeRow.current?.scrollIntoView({ block: "nearest" }))
+    return () => cancelAnimationFrame(id)
+  }, [open])
   // Derived once: the rows and the number beside the heading come from the same
   // list, which is the only way they cannot disagree.
   const builtins = items.filter((i) => (i.section ?? "builtin") === "builtin")
@@ -57,6 +68,7 @@ export function QuickPick({
   const row = (i: QuickPickItem) => (
     <button
       key={i.id}
+      ref={i.id === value ? activeRow : undefined}
       onClick={() => onPick(i.id)}
       className={cn(
         "flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors hover:bg-white/5",
