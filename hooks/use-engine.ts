@@ -6,6 +6,8 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { Engine, Quat, Vec3, type ApplyStyleGroupResult, type CompileOptions, type Model, type RenderClass, type StyleGroup } from "reze-engine"
 import { SLOT_GRAPHS } from "@/lib/materials"
 import { graphLibraryName } from "@/lib/refs"
+import { graphRole, packGraph } from "@/lib/materials"
+import { loadLookPref } from "@/lib/look-pref"
 import { idbBundleId, modelKey, modelPmxUrl, type Scene, type SceneCamera, type SceneStageTransform } from "@/lib/scene"
 import { unzipToFiles } from "@/lib/uploads"
 import { loadLocalBundle } from "@/lib/asset-store"
@@ -233,7 +235,9 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
     const hidden = scene.state.hidden?.[entry.model.id] ?? []
     for (const name of hidden) engine.toggleMaterialVisible(entry.model.id, name)
     const info = infoFor(entry.model.id, entry.model.file, model, hidden)
-    const modelGroups = withSpecialGroups(docGroups ?? engine.getStyleGroups(entry.model.id))
+    const modelGroups = withSpecialGroups(
+      docGroups ?? (await restyled(engine, entry.model.id, engine.getStyleGroups(entry.model.id))),
+    )
     infos.push(info)
     groups[entry.model.id] = modelGroups
     // Framing travels with the document, and it is bound to the FIRST model —
@@ -272,6 +276,35 @@ function named(list: StyleGroup[]): StyleGroup[] {
     const name = graphLibraryName(g.graph)
     return !name || name === g.graph.name ? g : { ...g, graph: { ...g.graph, name } }
   })
+}
+
+/**
+ * Dress freshly auto-derived groups in the browser's preferred style.
+ *
+ * The engine's auto-grouping fills a model with the engine's own presets, which
+ * are the Aether Gazer set. Someone who switched the scene to another style and
+ * then loads a second character should get that character in the same style,
+ * not in the one they switched away from.
+ *
+ * Only for AUTO-derived groups. A document's own groups are the user's saved
+ * work and are never restyled — the preference answers "what should a NEW model
+ * look like", not "what should every scene look like".
+ *
+ * A no-op when the preference is already what the engine produced, so the common
+ * case costs no second compile.
+ */
+async function restyled(engine: Engine, modelId: string, list: StyleGroup[]): Promise<StyleGroup[]> {
+  const pack = loadLookPref()
+  const next = list.map((g) => {
+    const graph = packGraph(pack, graphRole(g.graph))
+    return graph ? { ...g, graph: structuredClone(graph) } : g
+  })
+  if (next.every((g, i) => g === list[i])) return list
+  reportGroups(
+    "restyle",
+    await engine.applyStyleGroups(modelId, next.filter((g) => g.materials.length > 0)),
+  )
+  return next
 }
 
 function withSpecialGroups(list: StyleGroup[]): StyleGroup[] {
@@ -493,7 +526,7 @@ export function useEngine(
     const offset = spawnOffsetX(modelsRef.current.length)
     if (offset !== 0) engine.setModelTransform(id, { position: new Vec3(offset, 0, 0) })
     await engine.autoStyleGroups(id)
-    const groups = withSpecialGroups(engine.getStyleGroups(id))
+    const groups = withSpecialGroups(await restyled(engine, id, engine.getStyleGroups(id)))
     setModels((prev) => [...prev, infoFor(id, pmxBaseName(pmxFile.name), model)])
     setGroupsByModel((prev) => ({ ...prev, [id]: groups }))
     return id

@@ -149,6 +149,7 @@ import { castSourceFor } from "@/lib/cast-source"
 import { NEUTRAL_PALETTE, type CastPaletteId } from "@/lib/cast-palette"
 import { relFilePath, sceneFiles } from "@/lib/scene-files"
 import { cancelDraftWrites, createDraft, isDraft, loadDrafts, updateDraft, updateDraftSoon } from "@/lib/drafts"
+import { saveLookPref } from "@/lib/look-pref"
 import { activeLookPack, graphRole, groupLabel, GRAPH_LIBRARY, libraryGraph, LOOK_PACK_ORDER, LOOK_PACKS, packGraph, sameGraphLook, SLOT_GRAPHS, type LookPack } from "@/lib/materials"
 import { stageStyleGroups } from "@/lib/stage-style"
 import {
@@ -310,6 +311,19 @@ function layersFor(t: Dictionary) {
  * `t` rides along because half of these values are words (On, Off, None) and a
  * value function has no other way to reach the dictionary.
  */
+/**
+ * What to call a .pmx in the picker: its filename, since the folders above it
+ * are the archive's business rather than the reader's.
+ *
+ * Falls back to the full path for a name that appears twice — a variant pack
+ * ships the same filename in several folders, and two identical rows is a choice
+ * nobody can make.
+ */
+function pmxLabel(path: string, all: string[]): string {
+  const name = path.split("/").pop() ?? path
+  return all.filter((p) => (p.split("/").pop() ?? p) === name).length > 1 ? path : name
+}
+
 type PaletteValues = {
   t: Dictionary
   settings: SceneSettings
@@ -826,6 +840,10 @@ function commandsFor(t: Dictionary): PaletteItem[] {
     // a permanent row in the dock.
     {
       id: "look",
+      // The palette is this one's only door, same as materials — it is
+      // deliberately not a dock row — so it has to be there without typing
+      // rather than merely findable.
+      suggested: "key",
       repeatable: true,
       section: "command",
       icon: Sparkles,
@@ -2096,6 +2114,9 @@ export default function Lab() {
       }
       const { transform, exposure } = LOOK_PACKS[pack]
       setSettings((prev) => ({ ...prev, view: { transform, exposure } }))
+      // Remembered for the NEXT model, not for this scene — the scene already
+      // carries what it is wearing.
+      saveLookPref(pack)
     },
     [groupsByModel, applyGroups],
   )
@@ -3461,8 +3482,12 @@ export default function Lab() {
                     const pmx = upload.files.find((f) => relFilePath(f) === path)
                     if (pmx) void loadPicked(upload.files, pmx, upload.target)
                   }}
+                  // The path is still the identity and still the tooltip: two
+                  // .pmx in one archive can share a filename, and a picker that
+                  // shows the same word twice is worse than a long one.
+                  title={path}
                 >
-                  {path}
+                  {pmxLabel(path, upload.paths)}
                 </button>
               ))}
             </div>
