@@ -891,7 +891,13 @@ much harder terminator:
    is what stops a shadow reading grey.
 4. **Over the texture** — `mix/multiply` of `texture.color` by the ramp, at a
    factor below 1 so the tint sits over the texture rather than replacing it.
-5. **Then add** — `sphere_map` for the model's own highlight, and
+5. **The scene's light** — multiply that by `light.color × (band × light.shadow ÷ π)`
+   plus `light.ambient`. This is the step to remember: build a term from
+   `light.direction` alone and the material ignores sun colour, sun strength,
+   world colour and cast shadows entirely, rendering the same under every
+   lighting setup in the scene. Folding `light.shadow` into the band before the
+   ramp also makes a cast shadow wear the same colour the terminator does.
+6. **Then add** — `sphere_map` for the model's own highlight, and
    `layer_weight/facing` into `mix/add_emit` for a rim.
 
 Expose the two or three numbers you will want to retune later as `params`, and

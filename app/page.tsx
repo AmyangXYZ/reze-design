@@ -120,7 +120,6 @@ import { resolveSceneRefs } from "@/lib/resolve-refs"
 import { effectRef, gradeRef, graphRef, unpublishedUses } from "@/lib/refs"
 import { ShareSceneDialog, type ScenePublishSource } from "@/components/editor/share-scene"
 import { clearLocalBundle, saveLocalBundle } from "@/lib/asset-store"
-import { loadUiState, saveUiState } from "@/lib/ui-state"
 import { dictionaries, LOCALES, LOCALE_LABELS, useI18n, useT, type Dictionary, type Locale } from "@/lib/i18n"
 import { expandUploadFiles, unzipToFiles } from "@/lib/uploads"
 import { GRADE_PRESETS, gradeSpec, NEUTRAL_SPEC, NEW_GRADE_SPEC, recallIntensity, rememberIntensity } from "@/lib/grade"
@@ -1407,17 +1406,21 @@ export default function Lab() {
       return null
     })
   }
-  const [openRow, setOpenRow] = useState<string | null>(() => loadUiState().openRow)
+  // Not restored. Which row is unfolded and which pane it was showing is where
+  // you happened to stop, not where you want to start — reopening the editor
+  // inside someone's half-finished chrome reads as a stuck panel rather than as
+  // a memory. Every session opens on the same, closed, posture.
+  const [openRow, setOpenRow] = useState<string | null>(null)
 
   const stage = stages[0] ?? null
   const stageSummary = stage ? displayName(stage.file) : t.lab.tabs.ground
   // Controlled (not key-remounted): go-to deep-links need to land on a pane —
   // "Background" opens this row on its background tab. Where you left each one
   // is UI state, so it comes back from the same store the stack's own shape does.
-  const [stageTab, setStageTab] = useState(() => loadUiState().stageTab)
-  const [cameraTab, setCameraTab] = useState(() => loadUiState().cameraTab)
-  const [postTab, setPostTab] = useState(() => loadUiState().postTab)
-  const [lightTab, setLightTab] = useState(() => loadUiState().lightTab)
+  const [stageTab, setStageTab] = useState<"stage" | "ground" | "background">("ground")
+  const [cameraTab, setCameraTab] = useState<"lens" | "focus">("lens")
+  const [postTab, setPostTab] = useState<"grade" | "tone" | "bloom" | "outline">("grade")
+  const [lightTab, setLightTab] = useState<"world" | "sun">("world")
 
   // Sun, world and glow — seeded from the document, which is ALSO what the
   // Engine constructor was handed, so the sliders open already agreeing with
@@ -1923,13 +1926,6 @@ export default function Lab() {
   const [expanded, setExpanded] = useState(
     () => typeof window === "undefined" || !window.matchMedia("(pointer: coarse)").matches,
   )
-  // Written only once `mounted`, the same gate main's dock state uses: the
-  // initial values were READ from this store, and writing them straight back
-  // before the user has touched anything is a write that can only ever lose a
-  // race with another tab.
-  useEffect(() => {
-    if (mounted) saveUiState({ openRow, stageTab, lightTab, cameraTab, postTab })
-  }, [mounted, openRow, stageTab, lightTab, cameraTab, postTab])
   // The dock joins the desktop stack the libraries already live in: clicking
   // (or tabbing into) it raises it over an open library, clicking the library
   // raises it back. No Escape closer — Escape keeps closing the topmost

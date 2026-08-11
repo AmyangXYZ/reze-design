@@ -3429,6 +3429,10 @@
       }
      },
      {
+      "id": "bs",
+      "type": "math/multiply"
+     },
+     {
       "id": "ramp",
       "type": "ramp_linear_3",
       "inputs": {
@@ -3494,6 +3498,34 @@
       }
      },
      {
+      "id": "bpi",
+      "type": "math/multiply",
+      "inputs": {
+       "b": 0.3183098861837907
+      }
+     },
+     {
+      "id": "suncol",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lightterm",
+      "type": "mix/add",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lit",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
       "id": "out",
       "type": "mix/add_emit"
      }
@@ -3545,6 +3577,26 @@
        "socket": "value"
       },
       "to": {
+       "node": "bs",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lt",
+       "socket": "shadow"
+      },
+      "to": {
+       "node": "bs",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "bs",
+       "socket": "value"
+      },
+      "to": {
        "node": "ramp",
        "socket": "fac"
       }
@@ -3581,7 +3633,77 @@
      },
      {
       "from": {
+       "node": "bs",
+       "socket": "value"
+      },
+      "to": {
+       "node": "bpi",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lt",
+       "socket": "color"
+      },
+      "to": {
+       "node": "suncol",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "bpi",
+       "socket": "value"
+      },
+      "to": {
+       "node": "suncol",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "suncol",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lightterm",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lt",
+       "socket": "ambient"
+      },
+      "to": {
+       "node": "lightterm",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
        "node": "hs",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lightterm",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "lit",
        "socket": "color"
       },
       "to": {
@@ -3684,6 +3806,10 @@
       }
      },
      {
+      "id": "bs",
+      "type": "math/multiply"
+     },
+     {
       "id": "ramp",
       "type": "ramp_linear_3",
       "inputs": {
@@ -3749,6 +3875,34 @@
       }
      },
      {
+      "id": "bpi",
+      "type": "math/multiply",
+      "inputs": {
+       "b": 0.3183098861837907
+      }
+     },
+     {
+      "id": "suncol",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lightterm",
+      "type": "mix/add",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lit",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
       "id": "out",
       "type": "mix/add_emit"
      }
@@ -3800,6 +3954,26 @@
        "socket": "value"
       },
       "to": {
+       "node": "bs",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lt",
+       "socket": "shadow"
+      },
+      "to": {
+       "node": "bs",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "bs",
+       "socket": "value"
+      },
+      "to": {
        "node": "ramp",
        "socket": "fac"
       }
@@ -3836,7 +4010,77 @@
      },
      {
       "from": {
+       "node": "bs",
+       "socket": "value"
+      },
+      "to": {
+       "node": "bpi",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lt",
+       "socket": "color"
+      },
+      "to": {
+       "node": "suncol",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "bpi",
+       "socket": "value"
+      },
+      "to": {
+       "node": "suncol",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "suncol",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lightterm",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lt",
+       "socket": "ambient"
+      },
+      "to": {
+       "node": "lightterm",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
        "node": "hs",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lightterm",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "lit",
        "socket": "color"
       },
       "to": {
@@ -3939,6 +4183,10 @@
       }
      },
      {
+      "id": "bs",
+      "type": "math/multiply"
+     },
+     {
       "id": "ramp",
       "type": "ramp_linear_3",
       "inputs": {
@@ -4004,6 +4252,34 @@
       }
      },
      {
+      "id": "bpi",
+      "type": "math/multiply",
+      "inputs": {
+       "b": 0.3183098861837907
+      }
+     },
+     {
+      "id": "suncol",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lightterm",
+      "type": "mix/add",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lit",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
       "id": "out",
       "type": "mix/add_emit"
      }
@@ -4055,6 +4331,26 @@
        "socket": "value"
       },
       "to": {
+       "node": "bs",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lt",
+       "socket": "shadow"
+      },
+      "to": {
+       "node": "bs",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "bs",
+       "socket": "value"
+      },
+      "to": {
        "node": "ramp",
        "socket": "fac"
       }
@@ -4091,7 +4387,77 @@
      },
      {
       "from": {
+       "node": "bs",
+       "socket": "value"
+      },
+      "to": {
+       "node": "bpi",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lt",
+       "socket": "color"
+      },
+      "to": {
+       "node": "suncol",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "bpi",
+       "socket": "value"
+      },
+      "to": {
+       "node": "suncol",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "suncol",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lightterm",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lt",
+       "socket": "ambient"
+      },
+      "to": {
+       "node": "lightterm",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
        "node": "hs",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lightterm",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "lit",
        "socket": "color"
       },
       "to": {
@@ -4194,6 +4560,10 @@
       }
      },
      {
+      "id": "bs",
+      "type": "math/multiply"
+     },
+     {
       "id": "ramp",
       "type": "ramp_linear_3",
       "inputs": {
@@ -4259,6 +4629,34 @@
       }
      },
      {
+      "id": "bpi",
+      "type": "math/multiply",
+      "inputs": {
+       "b": 0.3183098861837907
+      }
+     },
+     {
+      "id": "suncol",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lightterm",
+      "type": "mix/add",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lit",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
       "id": "out",
       "type": "mix/add_emit"
      }
@@ -4310,6 +4708,26 @@
        "socket": "value"
       },
       "to": {
+       "node": "bs",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lt",
+       "socket": "shadow"
+      },
+      "to": {
+       "node": "bs",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "bs",
+       "socket": "value"
+      },
+      "to": {
        "node": "ramp",
        "socket": "fac"
       }
@@ -4346,7 +4764,77 @@
      },
      {
       "from": {
+       "node": "bs",
+       "socket": "value"
+      },
+      "to": {
+       "node": "bpi",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lt",
+       "socket": "color"
+      },
+      "to": {
+       "node": "suncol",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "bpi",
+       "socket": "value"
+      },
+      "to": {
+       "node": "suncol",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "suncol",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lightterm",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lt",
+       "socket": "ambient"
+      },
+      "to": {
+       "node": "lightterm",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
        "node": "hs",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lightterm",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "lit",
        "socket": "color"
       },
       "to": {
@@ -4449,6 +4937,10 @@
       }
      },
      {
+      "id": "bs",
+      "type": "math/multiply"
+     },
+     {
       "id": "ramp",
       "type": "ramp_linear_3",
       "inputs": {
@@ -4514,6 +5006,34 @@
       }
      },
      {
+      "id": "bpi",
+      "type": "math/multiply",
+      "inputs": {
+       "b": 0.3183098861837907
+      }
+     },
+     {
+      "id": "suncol",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lightterm",
+      "type": "mix/add",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lit",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
       "id": "out",
       "type": "mix/add_emit"
      }
@@ -4565,6 +5085,26 @@
        "socket": "value"
       },
       "to": {
+       "node": "bs",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lt",
+       "socket": "shadow"
+      },
+      "to": {
+       "node": "bs",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "bs",
+       "socket": "value"
+      },
+      "to": {
        "node": "ramp",
        "socket": "fac"
       }
@@ -4601,7 +5141,77 @@
      },
      {
       "from": {
+       "node": "bs",
+       "socket": "value"
+      },
+      "to": {
+       "node": "bpi",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lt",
+       "socket": "color"
+      },
+      "to": {
+       "node": "suncol",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "bpi",
+       "socket": "value"
+      },
+      "to": {
+       "node": "suncol",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "suncol",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lightterm",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lt",
+       "socket": "ambient"
+      },
+      "to": {
+       "node": "lightterm",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
        "node": "hs",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lightterm",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "lit",
        "socket": "color"
       },
       "to": {
@@ -4704,6 +5314,10 @@
       }
      },
      {
+      "id": "bs",
+      "type": "math/multiply"
+     },
+     {
       "id": "ramp",
       "type": "ramp_linear_3",
       "inputs": {
@@ -4769,6 +5383,34 @@
       }
      },
      {
+      "id": "bpi",
+      "type": "math/multiply",
+      "inputs": {
+       "b": 0.3183098861837907
+      }
+     },
+     {
+      "id": "suncol",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lightterm",
+      "type": "mix/add",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lit",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
       "id": "out",
       "type": "mix/add_emit"
      }
@@ -4820,6 +5462,26 @@
        "socket": "value"
       },
       "to": {
+       "node": "bs",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lt",
+       "socket": "shadow"
+      },
+      "to": {
+       "node": "bs",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "bs",
+       "socket": "value"
+      },
+      "to": {
        "node": "ramp",
        "socket": "fac"
       }
@@ -4856,7 +5518,77 @@
      },
      {
       "from": {
+       "node": "bs",
+       "socket": "value"
+      },
+      "to": {
+       "node": "bpi",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lt",
+       "socket": "color"
+      },
+      "to": {
+       "node": "suncol",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "bpi",
+       "socket": "value"
+      },
+      "to": {
+       "node": "suncol",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "suncol",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lightterm",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lt",
+       "socket": "ambient"
+      },
+      "to": {
+       "node": "lightterm",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
        "node": "hs",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lightterm",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "lit",
        "socket": "color"
       },
       "to": {
