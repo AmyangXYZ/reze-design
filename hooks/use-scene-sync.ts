@@ -182,7 +182,20 @@ export function useSceneSync({
     // the outgoing scene's effect running over the incoming one until the last
     // of them landed. Installing still waits: there is nothing to put an effect
     // on yet, and the compile is better spent once the scene is there.
-    if (!ready && wgsl !== null) return
+    if (!ready && wgsl !== null) {
+      // Mid-swap, with another effect due once the scene lands. Installing has to
+      // wait — there is nothing to put it on — but the OUTGOING one must not: it
+      // is still rendering every frame over a scene that is still arriving, and a
+      // heavy one starves the very frames the swap needs to finish. Reset to the
+      // demo hit this, because the demo has an effect of its own: the early
+      // return meant a costly foreground kept running for the whole swap and the
+      // reset appeared to hang.
+      if (lastWgsl.current !== null) {
+        lastWgsl.current = null
+        void engineRef.current?.setEffect(null)
+      }
+      return
+    }
     if (wgsl === lastWgsl.current) return
     lastWgsl.current = wgsl
     let stale = false
