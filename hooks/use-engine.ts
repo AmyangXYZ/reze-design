@@ -308,8 +308,22 @@ async function restyled(engine: Engine, modelId: string, list: StyleGroup[]): Pr
 }
 
 function withSpecialGroups(list: StyleGroup[]): StyleGroup[] {
+  // Seeded in the preferred style too. These are empty drop targets, so they
+  // render nothing either way — but a scene switched to another style that still
+  // showed its pinned Eye and Hair groups wearing the default set's names would
+  // be telling the user something untrue about what they are about to drop into.
+  const pack = loadLookPref()
   const seeds = SPECIAL_GROUPS.filter((s) => !list.some((g) => (g.renderClass ?? "auto") === s.renderClass)).map(
-    (s): StyleGroup => ({ id: s.id, label: s.label, materials: [], graph: structuredClone(SLOT_GRAPHS[s.preset]!), renderClass: s.renderClass }),
+    (s): StyleGroup => {
+      const base = SLOT_GRAPHS[s.preset]!
+      return {
+        id: s.id,
+        label: s.label,
+        materials: [],
+        graph: structuredClone(packGraph(pack, graphRole(base)) ?? base),
+        renderClass: s.renderClass,
+      }
+    },
   )
   return named([...list, ...seeds])
 }
@@ -605,7 +619,7 @@ export function useEngine(
       if (transform) engine.setModelTransform(id, { position: transform.position })
       // Uploaded models have no curated map — auto-group from name hints alone.
       await engine.autoStyleGroups(id)
-      const groups = withSpecialGroups(engine.getStyleGroups(id))
+      const groups = withSpecialGroups(await restyled(engine, id, engine.getStyleGroups(id)))
       setModels((prev) => prev.map((m) => (m.id === targetId ? infoFor(id, pmxBaseName(pmxFile.name), model) : m)))
       setGroupsByModel((prev) => {
         const next = { ...prev }
@@ -716,7 +730,8 @@ export function useEngine(
     setModels((prev) =>
       prev.map((m) => (m.id === modelId ? { ...m, materials: m.materials.map((x) => ({ ...x, visible: true })) } : m)),
     )
-    setGroupsByModel((prev) => ({ ...prev, [modelId]: withSpecialGroups(groups ?? engine.getStyleGroups(modelId)) }))
+    const next = groups ?? (await restyled(engine, modelId, engine.getStyleGroups(modelId)))
+    setGroupsByModel((prev) => ({ ...prev, [modelId]: withSpecialGroups(next) }))
   }, [])
 
   /**
