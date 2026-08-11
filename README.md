@@ -21,6 +21,7 @@ One piece of the **Reze MMD family**, covering the whole MMD workflow on the web
 - **Material shader graphs** — build a look in a Blender-style node editor, compiled to WGSL.
 - **Colour grading** — ASC CDL, curated presets and a wheel editor, previewed on your own scene.
 - **Scene effects** — live-coded WGSL behind the model, in front of it, or both; the ones in front hold the scene's depth, so rain and petals are occluded by the character they pass behind.
+- **Effects that react to the cast** — an effect asks for the bones it wants by name and gets their position, velocity, facing and recent path, plus each character's floor point and hips. A halo parented to a head, a neon ribbon along the path a hand actually took, marks left where the feet landed.
 - **Scene lighting** — sun, world light and bloom over a colour, an image backdrop or a 360° skybox.
 - **Multi-model scenes** — a motion each, one camera VMD, one audio track.
 - **Stage models** — a stage PMX as the environment, placed and scaled, with the switches its author rigged.

@@ -568,13 +568,66 @@ and the rain in front of it, in one file.
 | `time` | Seconds since the effect was applied |
 | `depth` | **`foreground` only.** How far away, in scene units, whatever the scene drew at this pixel is — the far plane where it drew nothing |
 
-Three helpers are in scope for both:
+These helpers are in scope for both:
 
 | Helper | Gives you |
 | --- | --- |
-| `bgResolution()` | The canvas size in pixels, for aspect correction |
-| `bgCameraPos()` | Where the camera is, in world space |
-| `bgWorldPos(ray, depth)` | The world point the scene drew at this pixel |
+| `rzResolution()` | The canvas size in pixels, for aspect correction |
+| `rzCameraPos()` | Where the camera is, in world space |
+| `rzWorldPos(ray, depth)` | The world point the scene drew at this pixel |
+| `rzProject(p)` | A world point as the camera sees it — `xy` the uv it lands on, `z` its distance along the view axis |
+| `rzSubjectCount()` | How many characters are in the scene, up to four |
+| `rzSubjectHip(i)` | Where character `i` is — **at the hips**, not on the floor |
+| `rzSubject(i)` | `{ root, center, bounds, valid }` — `root` is the **floor** under them, `center` the hips, `bounds` a generous cull sphere |
+| `rzAnchor(subject, slot)` | `{ pos, vel, fwd, valid }` for a bone you asked for by name |
+| `rzTrailCount(subject, slot)` · `rzTrail(subject, slot, i)` | That bone's recent **path** — `xyz` where it was, `w` how many seconds ago |
+
+### Asking for bones
+
+An effect names the bones it wants at the top of its own source, the same way it
+declares its mounts by which entry points it defines:
+
+```wgsl
+// @anchor 頭
+// @anchor 左手首 trail
+```
+
+That gives you `rzAnchor(subject, 0)` for the head and slot `1` for the left
+wrist — **slots are declaration order**. Any bone the model has works; `valid` is
+false on a rig that spells it differently, which is the ordinary case and worth
+checking, or your effect draws a hand flourish at the world origin.
+
+`trail` additionally keeps that bone's recent path. It is opt-in because a path
+is far more data than a point, and it is what a ribbon is made of: one position
+and one velocity give a straight segment that jitters, because a velocity is the
+difference between two frames. The path is what actually happened, sampled at a
+fixed rate on the **scene clock** — so a trail is identical in the editor, in an
+export, and in a re-export, and its spacing does not change with your framerate.
+
+Loop to `rzTrailCount()`, never to a fixed number. The limits — four characters,
+eight bones, 128 samples (about two seconds) — are **minimums**, and they can
+grow without breaking a published effect precisely because nothing hardcodes
+them.
+
+`rzSubjectHip` is the one to read twice. It is the character's centre, at about
+waist height, so a ripple drawn straight at it appears around the waist. For
+anything on the ground take its `.xz` and supply your own floor height.
+
+`rzProject` is what makes anything anchored to the world affordable. Measuring
+distance to a point in 3D costs you a full calculation per pixel; projecting the
+point once and measuring in 2D costs a subtraction. Its `z` is directly
+comparable to `depth`, so occlusion is one test — draw where your `z` is nearer
+than the scene's — and it is negative behind the camera, which is worth rejecting
+before you use the uv.
+
+Older effects call these `bgResolution`, `bgCameraPos`, `bgWorldPos`,
+`bgSubjectCount` and `bgSubjectPos`. Those names still work and always will —
+a published scene is a permanent link, so nothing it depends on is ever removed.
+
+**Halo**, **Hand Ribbon** and **Footprints** are the worked examples: a ring
+parented to a head bone, a neon trail along the path a hand actually took, and
+marks left where the feet landed. Each one is commented with the mistakes it is
+built to avoid — they are the fastest way in.
 
 The return value is **sRGB colour with straight alpha**, and the alpha is the
 interesting part: it is the mask over everything behind you.

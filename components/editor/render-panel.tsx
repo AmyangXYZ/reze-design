@@ -28,6 +28,47 @@ type Quality = "1080p" | "1440p" | "4k"
 // every platform these get shared to upscales anyway.
 const QUALITIES: Quality[] = ["1080p", "1440p", "4k"]
 const QUALITY_LABELS: Record<Quality, string> = { "1080p": "1080p", "1440p": "1440p", "4k": "4K" }
+/**
+ * Framing and quality, remembered across sessions.
+ *
+ * These are CHROME, not document state — a scene does not own the shape of a
+ * video someone chose to render from it, and two people exporting the same
+ * scene want their own frame. Which is exactly why they belong in localStorage
+ * rather than in the document, next to where the floating panels keep their
+ * rects.
+ *
+ * Read once at mount and written on change, validated on the way in: a
+ * hand-edited or half-written entry falls back to the default rather than
+ * putting the panel into a state with no matching option.
+ */
+const EXPORT_PREFS_KEY = "reze-design.export"
+type ExportPrefs = { aspect: Aspect; quality: Quality; watermark: boolean }
+const EXPORT_DEFAULTS: ExportPrefs = { aspect: "2.39:1", quality: "4k", watermark: true }
+
+function readExportPrefs(): ExportPrefs {
+  if (typeof window === "undefined") return EXPORT_DEFAULTS
+  try {
+    const raw = window.localStorage.getItem(EXPORT_PREFS_KEY)
+    if (!raw) return EXPORT_DEFAULTS
+    const p = JSON.parse(raw) as Partial<ExportPrefs>
+    return {
+      aspect: ASPECTS.includes(p.aspect as Aspect) ? (p.aspect as Aspect) : EXPORT_DEFAULTS.aspect,
+      quality: QUALITIES.includes(p.quality as Quality) ? (p.quality as Quality) : EXPORT_DEFAULTS.quality,
+      watermark: typeof p.watermark === "boolean" ? p.watermark : EXPORT_DEFAULTS.watermark,
+    }
+  } catch {
+    return EXPORT_DEFAULTS
+  }
+}
+
+function writeExportPrefs(prefs: ExportPrefs): void {
+  try {
+    window.localStorage.setItem(EXPORT_PREFS_KEY, JSON.stringify(prefs))
+  } catch {
+    // Storage blocked — the settings simply do not carry to the next session.
+  }
+}
+
 const DIMS: Record<Aspect, Record<Quality, [number, number]>> = {
   "16:9": { "1080p": [1920, 1080], "1440p": [2560, 1440], "4k": [3840, 2160] },
   "9:16": { "1080p": [1080, 1920], "1440p": [1440, 2560], "4k": [2160, 3840] },
@@ -129,12 +170,20 @@ export const RenderPanel = memo(function RenderPanel({
 }) {
   const t = useT()
   // Cinemascope by default — the whole reze-* series is named for the Chainsaw Man
-  const [aspect, setAspect] = useState<Aspect>("2.39:1")
-  const [quality, setQuality] = useState<Quality>("4k")
+  // — then whatever was chosen last, which is what actually gets exported twice.
+  const [prefs] = useState(readExportPrefs)
+  const [aspect, setAspect] = useState<Aspect>(prefs.aspect)
+  const [quality, setQuality] = useState<Quality>(prefs.quality)
   // Export segment, "m:ss" text; blank = the whole clip (our default
   const [rangeStart, setRangeStart] = useState("")
   const [rangeEnd, setRangeEnd] = useState("")
-  const [watermark, setWatermark] = useState(true)
+  const [watermark, setWatermark] = useState(prefs.watermark)
+  // Written on change, not on export: someone who sets up a frame and then walks
+  // away should find it there next time, whether or not they rendered anything.
+  useEffect(() => {
+    writeExportPrefs({ aspect, quality, watermark })
+  }, [aspect, quality, watermark])
+
   const [exporting, setExporting] = useState(false)
   const [progress, setProgressState] = useState<ExportProgress | null>(null)
   const setProgress = (p: ExportProgress | null) => {

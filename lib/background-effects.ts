@@ -55,6 +55,41 @@ fn foreground(ray: vec3f, uv: vec2f, time: f32, depth: f32) -> vec4f {
   return vec4f(0.62, 0.68, 0.78, haze * 0.35);
 }
 
+// ── Reading the scene ──
+//
+// An effect is not limited to the pixel. It can ask where the CAST is, which is
+// what separates a decoration from something that reacts:
+//
+//   rzSubjectCount()          how many characters, up to four
+//   rzSubject(i)              { root, center, bounds, valid } — root is the
+//                             FLOOR under them, center the hips, bounds a
+//                             generous sphere to cull against
+//   rzProject(p)              a world point as the camera sees it: xy the uv it
+//                             lands on, z its distance along the view axis.
+//                             Compare that z against \`depth\` for occlusion —
+//                             and measure in 2D instead of marching in 3D
+//   rzWorldPos(ray, depth)    this pixel's depth turned into a PLACE
+//
+// And it can ask for BONES, by name, at the top of the file:
+//
+//   // @anchor 頭
+//   // @anchor 左手首 trail
+//
+// giving rzAnchor(subject, slot) = { pos, vel, fwd, valid } — slots in
+// declaration order. Check \`valid\`: a rig that spells the bone differently
+// reports false, and the alternative is drawing at the world origin.
+//
+// \`trail\` also keeps that bone's recent PATH: rzTrailCount(subject, slot) and
+// rzTrail(subject, slot, i) = xyz where it was, w how many seconds ago. That is
+// what a ribbon is made of — one position and one velocity give a straight
+// segment that jitters, because a velocity is a difference between two frames.
+//
+// Loop to the count functions, never to a fixed number: the limits are minimums
+// and can grow, which stays true only while nobody hardcodes them.
+//
+// The built-in Halo, Hand Ribbon and Footprints are worked examples, each
+// commented with the mistake it is built to avoid.
+
 // ── Toolbox (WGSL resolves in any order — helpers can live below main) ──
 
 // Pseudo-random vec2 in 0..1 from any 2D point.
