@@ -15,7 +15,7 @@ import {
   type AppliedBackgroundEffect,
 } from "@/lib/background-effects"
 import { EffectPreview } from "@/components/editor/effect-preview"
-import { LIBRARY_GRID, LIBRARY_SHELL, LibraryRail, LibraryStats, LibraryTags, ShelfCount } from "@/components/editor/library-rail"
+import { LIBRARY_GRID, LIBRARY_SHELL, LibraryRail, LibraryShelf, LibraryShelves, LibraryStats, LibraryTags, ShelfCount, ShelfHandle } from "@/components/editor/library-rail"
 import {
   conflictingName,
   matchesFacet,
@@ -336,35 +336,18 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
 
           {/* Thumbnail grid + pinned "New effect" (the graph library's New-graph idiom */}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          {/* THE SHELVES: 38% · 38% · 20%, content-sized under that.
+          {/* THE SHELVES. 38 · 38 · 20 to start, then wherever you drag them — the
+              split is per library and remembered; see LibraryShelves.
 
-            The shares are aimed at TWO rows up top and ONE for Local — but they
-            can only aim. A share is a fraction of a dialog measured in dvh; a
-            card row is a fraction of the column WIDTH (a 16:10 thumbnail in one
-            of five tracks) plus a fixed label. The two are unrelated, so the
-            same 34% is two rows and a sliver on one screen and not quite two on
-            another. Holding a row COUNT needs the measurement that is parked in
-            library-rail.tsx — see useShelfCap.
-
-              MAX, not min. The dialog is 84dvh, so a taller screen already makes
-              the column taller and every shelf proportionally taller with it —
-              that is where screen size is answered. A minimum would answer it
-              backwards: it would hold a third of the dialog open for a Community
-              shelf with nothing on it.
-
-              96 rather than 100, and shrinkable (min-h-0, no shrink-0). The top
-              margin and the two rules between shelves are real pixels; at a clean
-              100 they pushed the column over and the bottom shelf paid for it,
-              which is how Local ended up a card short of a full row. The 4% is
-              for them, and shrink is the guard if a font or a border ever moves.
-
-              Equal shares rather than one growing section — the built-ins are
-              a set you learn the shape of, Community is everyone else's work and is
-              the half of the library that grows forever, and Local is your own
-              drafts, which are few by nature. Any of them shorter than its share
-              simply ends; the slack collects at the BOTTOM of the column, where it
-              reads as the shelves ending rather than as a hole between them. */}
-          <div className="flex max-h-[38%] min-h-0 flex-col">
+              A share can only aim: it is a fraction of a dialog measured in dvh,
+              while a card row is a fraction of the column WIDTH (a 16:10
+              thumbnail in one of five tracks) plus a label. The two are
+              unrelated, so any share lands mid-card on some screen. That is now
+              the reader's to fix by dragging, which is most of why the handles
+              are here; holding a whole row COUNT instead still wants the
+              measurement parked in library-rail.tsx — see useShelfCap. */}
+          <LibraryShelves id="effect" hasLocal={localRows.length > 0}>
+          <LibraryShelf id="builtin" defaultSize="38">
             <div className="shrink-0 px-3 pt-2 pb-1.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
               {t.rail.builtin}
               <ShelfCount n={builtinRows.length} />
@@ -379,7 +362,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                 )}
               </div>
             </ScrollArea>
-          </div>
+          </LibraryShelf>
 
           {/* Community is PINNED, like drafts, rather than scrolling below the
               built-ins. Both headers show even when empty: an empty Community is
@@ -387,7 +370,8 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
               do, and a section you must scroll to find cannot make that ask at
               all. Local stays conditional — your own drafts, and an empty one
               tells you nothing you did not know. */}
-          <div className="mt-2 flex max-h-[38%] min-h-0 flex-col border-t border-white/10">
+          <ShelfHandle />
+          <LibraryShelf id="community" defaultSize="38">
             <div className="shrink-0 px-3 pt-2 pb-1.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.community}
               <ShelfCount n={communityRows.length} />
             </div>
@@ -398,9 +382,11 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                 <div className="px-3 pb-3 text-xs text-muted-foreground/70">{t.rail.communityEmpty}</div>
               )}
             </ScrollArea>
-          </div>
+          </LibraryShelf>
           {localRows.length > 0 && (
-            <div className="flex max-h-[20%] min-h-0 flex-col border-t border-white/10">
+            <>
+              <ShelfHandle />
+              <LibraryShelf id="local" defaultSize="20">
               <div className="flex shrink-0 items-center justify-between px-3 pt-1.5 pb-1.5">
                 <span className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.local}
                   <ShelfCount n={localRows.length} />
@@ -427,8 +413,10 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
               <ScrollArea className="min-h-0 flex-1">
                 <div data-shelf-grid className={cn(LIBRARY_GRID, "grid-cols-5")}>{localRows.map(renderCard)}</div>
               </ScrollArea>
-            </div>
+            </LibraryShelf>
+            </>
           )}
+          </LibraryShelves>
           </div>
 
           {/* Inspector: preview · meta · params · Apply (pinned, but the column scrolls */}
@@ -452,12 +440,12 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                   </button>
                 </div>
                 <div className="min-h-0 p-3">
-                  <div className="truncate text-sm font-semibold">{selected.name}</div>
+                  <div className="truncate text-sm font-semibold select-text">{selected.name}</div>
                   <div className="mt-0.5 font-mono text-[13px] text-muted-foreground/70">
-                    {builtinAuthor("effect", selected.name, selected.author)} · v{selected.version}
+                    <span className="select-text">{builtinAuthor("effect", selected.name, selected.author)}</span> · v{selected.version}
                   {statFor(selected.name).scenes > 0 && ` · ${t.library.usedInScenes(statFor(selected.name).scenes)}`}
                   </div>
-                  <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">{selected.description}</p>
+                  <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground select-text">{selected.description}</p>
                   <LibraryTags tags={selected.tags} />
                 </div>
 

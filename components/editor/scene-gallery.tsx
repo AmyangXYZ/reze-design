@@ -607,12 +607,12 @@ function GalleryContent({
                 </button>
               </div>
               <div className="min-h-0 p-3">
-                <div className="truncate text-sm font-semibold">{selected.name}</div>
+                <div className="truncate text-sm font-semibold select-text">{selected.name}</div>
                 <div className="mt-0.5 font-mono text-[13px] text-muted-foreground/70">
-                  {selected.author} · {stamp(selected.createdAt)}
+                  <span className="select-text">{selected.author}</span> · {stamp(selected.createdAt)}
                 </div>
                 {selected.description && (
-                  <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">{selected.description}</p>
+                  <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground select-text">{selected.description}</p>
                 )}
                 <LibraryTags tags={selected.tags} />
                 {/* Who made the model, the motion and the music — the thing the
@@ -622,7 +622,9 @@ function GalleryContent({
                     <div className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground/60 uppercase">
                       {t.share.credits}
                     </div>
-                    <p className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap text-[13px] leading-relaxed text-muted-foreground">
+                    {/* The 借物表 is the one block here people copy verbatim, to
+                        carry the same names into their own credits. */}
+                    <p className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap text-[13px] leading-relaxed text-muted-foreground select-text">
                       {selected.credits}
                     </p>
                   </div>

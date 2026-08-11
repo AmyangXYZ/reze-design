@@ -11,6 +11,8 @@
 import { Heart } from "lucide-react"
 import { LIBRARY_FACETS, type LibraryFacet, type LibraryItem, type MaybeMine } from "@/lib/library"
 import { useEffect, useRef, useState, type ReactNode } from "react"
+import { useDefaultLayout } from "react-resizable-panels"
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
@@ -372,4 +374,74 @@ export function LibraryStats({
       </button>
     </span>
   )
+}
+
+/**
+ * The three shelves every library stacks — Built-in, Community, Local — with the
+ * splits between them draggable and remembered.
+ *
+ * The shares were fixed at 38 / 38 / 20, reasoning that the built-ins are a set
+ * you learn the shape of, Community grows forever, and Local is few by nature.
+ * That is a good DEFAULT and stays the default. It was a poor rule, because
+ * which shelf is worth height depends entirely on whose library it is.
+ *
+ * `useDefaultLayout` persists to localStorage, per library rather than shared —
+ * the shelf you keep tall in Shaders is not the one you keep tall in Grades —
+ * and `panelIds` keys the saved layout to the set of panels present, which is
+ * what stops a two-shelf column from inheriting a three-shelf split.
+ *
+ * Takes children rather than a shelf per prop so the reasoning written between
+ * these sections stays between them, where it explains the thing it is next to.
+ *
+ * What this gives up, deliberately: panels fill their column, so a shelf shorter
+ * than its share now ends in its own gap instead of pooling every shelf's slack
+ * at the bottom. Dragging a cap would have kept that pooling, but then the
+ * handle does nothing visible whenever a shelf is under-full, and a control that
+ * sometimes ignores you is worse than a gap.
+ */
+export function LibraryShelves({
+  id,
+  hasLocal,
+  children,
+}: {
+  /** Which library's remembered split this is. */
+  id: string
+  hasLocal: boolean
+  children: ReactNode
+}) {
+  const panelIds = hasLocal ? ["builtin", "community", "local"] : ["builtin", "community"]
+  const { defaultLayout, onLayoutChanged } = useDefaultLayout({ id: `reze-design.shelves.${id}`, panelIds })
+  return (
+    <ResizablePanelGroup
+      orientation="vertical"
+      defaultLayout={defaultLayout}
+      onLayoutChanged={onLayoutChanged}
+      className="min-h-0 flex-1"
+    >
+      {children}
+    </ResizablePanelGroup>
+  )
+}
+
+/**
+ * One shelf.
+ *
+ * Sizes are the old shares verbatim — 38 / 38 / 20 — so the dialog opens looking
+ * exactly as it did. They sum to 96 rather than 100 and are normalised back up,
+ * which is right: the missing 4 was compensation for a top margin and two rules
+ * between the shelves, and the handles have replaced all three.
+ */
+export function LibraryShelf({ id, defaultSize, children }: { id: string; defaultSize: string; children: ReactNode }) {
+  return (
+    <ResizablePanel id={id} defaultSize={defaultSize} minSize="12" className="flex min-h-0 flex-col">
+      {children}
+    </ResizablePanel>
+  )
+}
+
+/** The hairline that used to be a `border-t`, now grabbable. It stays a hairline
+ *  until pointed at: a divider advertising itself on a shelf nobody wants to
+ *  resize is noise on every other visit. */
+export function ShelfHandle() {
+  return <ResizableHandle className="bg-white/10 transition-colors hover:bg-blue-400/50 data-[state=drag]:bg-blue-400" />
 }

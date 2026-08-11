@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { GraphMinimap } from "@/components/editor/graph-minimap"
 import { GRAPH_LIBRARY } from "@/lib/materials"
-import { LIBRARY_GRID, LIBRARY_SHELL, LibraryRail, LibraryStats, LibraryTags, ShelfCount } from "@/components/editor/library-rail"
+import { LIBRARY_GRID, LIBRARY_SHELL, LibraryRail, LibraryShelf, LibraryShelves, LibraryStats, LibraryTags, ShelfCount, ShelfHandle } from "@/components/editor/library-rail"
 import {
   conflictingName,
   matchesFacet,
@@ -60,6 +60,16 @@ type LibraryProps = {
   /** A draft was renamed — re-point the groups wearing it, or the scene keeps
    *  calling the look by a name the library no longer has. */
   onRenamed?: (oldName: string, newName: string) => void
+  /**
+   * A draft just made from this library, to open selected.
+   *
+   * Editing a built-in or a community graph from here saves a LOCAL COPY and
+   * applies it to nothing — there may be no group to apply it to. So the usual
+   * rule (select what the group is wearing) has nothing to say about it, and the
+   * library reopened on the original, leaving the copy you had just made to be
+   * hunted for on the Local shelf.
+   */
+  freshDraftId?: string | null
 }
 
 export function NodeLibrary(props: LibraryProps) {
@@ -71,7 +81,7 @@ export function NodeLibrary(props: LibraryProps) {
   )
 }
 
-function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [], onApply, onRenamed, onEdit, onOpenChange, initialFacet }: LibraryProps) {
+function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [], onApply, onRenamed, onEdit, onOpenChange, initialFacet, freshDraftId }: LibraryProps) {
   const onClose = () => onOpenChange(false)
   const t = useT()
   // Desktop-style stacking: clicking a library raises it over any editor.
@@ -95,7 +105,21 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
   // you came to look at. Opened from the library button there is no such thing,
   // and falling through to the first row selected Body every time: a detail
   // panel about an item nobody asked for, and one stray Enter from applying it.
-  const [selectedId, setSelectedId] = useState<string | null>(() => ROWS.find(isCurrent)?.id ?? null)
+  // A draft just saved from here wins: it is the most recent thing you did, and
+  // the reason you are looking at this library again.
+  const [selectedId, setSelectedId] = useState<string | null>(
+    () => freshDraftId ?? ROWS.find(isCurrent)?.id ?? null,
+  )
+  // Adjusted during render rather than in an effect, because the library is
+  // NEVER unmounted for this: the editor opens ABOVE it and saving happens with
+  // this list still on screen behind it, so the initial state above only covers
+  // the case where the library was closed the whole time. React supports exactly
+  // this shape for "a prop changed and some state derived from it must move".
+  const [seenFresh, setSeenFresh] = useState<string | null>(freshDraftId ?? null)
+  if (freshDraftId && freshDraftId !== seenFresh) {
+    setSeenFresh(freshDraftId)
+    setSelectedId(freshDraftId)
+  }
 
   // Filtering only — each section below sorts by what that section is FOR, and
   // one order across all three would either scramble the built-ins or bury the
@@ -331,35 +355,18 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
 
         {/* ── Minimap grid ── */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          {/* THE SHELVES: 38% · 38% · 20%, content-sized under that.
+          {/* THE SHELVES. 38 · 38 · 20 to start, then wherever you drag them — the
+              split is per library and remembered; see LibraryShelves.
 
-            The shares are aimed at TWO rows up top and ONE for Local — but they
-            can only aim. A share is a fraction of a dialog measured in dvh; a
-            card row is a fraction of the column WIDTH (a 16:10 thumbnail in one
-            of five tracks) plus a fixed label. The two are unrelated, so the
-            same 34% is two rows and a sliver on one screen and not quite two on
-            another. Holding a row COUNT needs the measurement that is parked in
-            library-rail.tsx — see useShelfCap.
-
-              MAX, not min. The dialog is 84dvh, so a taller screen already makes
-              the column taller and every shelf proportionally taller with it —
-              that is where screen size is answered. A minimum would answer it
-              backwards: it would hold a third of the dialog open for a Community
-              shelf with nothing on it.
-
-              96 rather than 100, and shrinkable (min-h-0, no shrink-0). The top
-              margin and the two rules between shelves are real pixels; at a clean
-              100 they pushed the column over and the bottom shelf paid for it,
-              which is how Local ended up a card short of a full row. The 4% is
-              for them, and shrink is the guard if a font or a border ever moves.
-
-              Equal shares rather than one growing section — the built-ins are
-              a set you learn the shape of, Community is everyone else's work and is
-              the half of the library that grows forever, and Local is your own
-              drafts, which are few by nature. Any of them shorter than its share
-              simply ends; the slack collects at the BOTTOM of the column, where it
-              reads as the shelves ending rather than as a hole between them. */}
-          <div className="flex max-h-[38%] min-h-0 flex-col">
+              A share can only aim: it is a fraction of a dialog measured in dvh,
+              while a card row is a fraction of the column WIDTH (a 16:10
+              thumbnail in one of five tracks) plus a label. The two are
+              unrelated, so any share lands mid-card on some screen. That is now
+              the reader's to fix by dragging, which is most of why the handles
+              are here; holding a whole row COUNT instead still wants the
+              measurement parked in library-rail.tsx — see useShelfCap. */}
+          <LibraryShelves id="graph" hasLocal={localRows.length > 0}>
+          <LibraryShelf id="builtin" defaultSize="38">
             <div className="shrink-0 px-3 pt-2 pb-1.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
               {t.rail.builtin}
               <ShelfCount n={builtinRows.length} />
@@ -374,7 +381,7 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
                 )}
               </div>
             </ScrollArea>
-          </div>
+          </LibraryShelf>
 
           {/* Community is PINNED, like drafts, rather than scrolling below the
               built-ins. Both headers show even when empty: an empty Community is
@@ -382,7 +389,8 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
               do, and a section you have to scroll to find cannot make that ask
               at all. Local stays conditional — your own drafts, and an empty one
               tells you nothing you did not know. */}
-          <div className="mt-2 flex max-h-[38%] min-h-0 flex-col border-t border-white/10">
+          <ShelfHandle />
+          <LibraryShelf id="community" defaultSize="38">
             <div className="shrink-0 px-3 pt-2 pb-1.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.community}
               <ShelfCount n={communityRows.length} />
             </div>
@@ -393,9 +401,11 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
                 <div className="px-3 pb-3 text-xs text-muted-foreground/70">{t.rail.communityEmpty}</div>
               )}
             </ScrollArea>
-          </div>
+          </LibraryShelf>
           {localRows.length > 0 && (
-            <div className="flex max-h-[20%] min-h-0 flex-col border-t border-white/10">
+            <>
+              <ShelfHandle />
+              <LibraryShelf id="local" defaultSize="20">
               <div className="flex shrink-0 items-center justify-between px-3 pt-1.5 pb-1.5">
                 <span className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.local}
                   <ShelfCount n={localRows.length} />
@@ -424,8 +434,10 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
               <ScrollArea className="min-h-0 flex-1">
                 <div data-shelf-grid className={cn(LIBRARY_GRID, "grid-cols-5")}>{localRows.map(renderCard)}</div>
               </ScrollArea>
-            </div>
+            </LibraryShelf>
+            </>
           )}
+          </LibraryShelves>
         </div>
 
         {/* ── Inspector: preview (= fork-&-edit) · meta · Apply pinned ── */}
@@ -447,13 +459,13 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
                 </button>
               </div>
               <div className="min-h-0 p-3">
-                <div className="truncate text-sm font-semibold">{selected.name}</div>
+                <div className="truncate text-sm font-semibold select-text">{selected.name}</div>
                 <div className="mt-0.5 font-mono text-[13px] text-muted-foreground/70">
-                  {builtinAuthor("graph", selected.name, selected.author)} · v{selected.version}
+                  <span className="select-text">{builtinAuthor("graph", selected.name, selected.author)}</span> · v{selected.version}
                   {statFor(selected.name).scenes > 0 && ` · ${t.library.usedInScenes(statFor(selected.name).scenes)}`}
                 </div>
                 {selected.description && (
-                  <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">{selected.description}</p>
+                  <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground select-text">{selected.description}</p>
                 )}
                 <LibraryTags tags={selected.tags} />
               </div>

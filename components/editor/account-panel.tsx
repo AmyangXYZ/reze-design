@@ -11,7 +11,7 @@ import { CircleUserRound, GalleryThumbnails, Heart, LogOut, Palette, Sparkles, W
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { GithubMark, GoogleMark } from "@/components/icons"
 import { authClient, signIn, signOut, useSession } from "@/lib/auth-client"
 import { useT } from "@/lib/i18n"
@@ -122,17 +122,21 @@ function Portfolio({ onOpenLibrary }: { onOpenLibrary?: (kind: "grade" | "effect
     // left, count right, the whole row a target. Likes sit with them because it is
     // the same kind of fact, not a footnote in a different size.
     <div className="border-t border-white/10 py-1">
+      {/* Each row is a door out of this menu, so each row closes it. Left open,
+          the panel stayed floating over the library it had just summoned —
+          pointing at the thing you asked for while covering it. */}
       {cells.map((c) => (
-        <button
-          key={c.key}
-          type="button"
-          onClick={c.onClick}
-          className="flex w-full cursor-pointer items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-white/5"
-        >
-          <c.icon className="size-4 shrink-0 text-muted-foreground" />
-          <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{c.label}</span>
-          <span className="shrink-0 font-mono text-[13px] text-foreground">{n(stats?.[c.key])}</span>
-        </button>
+        <PopoverClose key={c.key} asChild>
+          <button
+            type="button"
+            onClick={c.onClick}
+            className="flex w-full cursor-pointer items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-white/5"
+          >
+            <c.icon className="size-4 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{c.label}</span>
+            <span className="shrink-0 font-mono text-[13px] text-foreground">{n(stats?.[c.key])}</span>
+          </button>
+        </PopoverClose>
       ))}
       <div className="flex items-center gap-2.5 px-4 py-2">
         <Heart className="size-4 shrink-0 text-muted-foreground" />

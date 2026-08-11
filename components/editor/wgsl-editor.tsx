@@ -209,7 +209,10 @@ function EditorBody({
               autoCapitalize="off"
               autoCorrect="off"
               wrap="off"
-              className="absolute inset-0 resize-none overflow-hidden bg-transparent text-transparent outline-none selection:bg-blue-400/30"
+              // select-text: a code editor selects, whatever the surface around
+              // it says. The dialog turns selection off so labels cannot be
+              // dragged into a highlight by accident; this is the exception.
+              className="absolute inset-0 resize-none overflow-hidden bg-transparent text-transparent outline-none select-text selection:bg-blue-400/30"
               style={{ ...CODE_STYLE, caretColor: "#fafafa", padding: "12px 14px", whiteSpace: "pre" }}
             />
           </div>

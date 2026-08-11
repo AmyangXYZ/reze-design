@@ -91,6 +91,7 @@ import { SaveCloseDialog } from "@/components/editor/save-close"
 import { FloatingPanel, type Rect } from "@/components/editor/floating-panel"
 import { LoadingPill, useLoadingLabel } from "@/components/editor/loading-pill"
 import { VERSION_LABEL } from "@/lib/version"
+import { ChoiceList } from "@/components/ui/choice-list"
 import { ColorField } from "@/components/color-picker"
 import { useAudioClock } from "@/hooks/use-audio-clock"
 import { useEngine } from "@/hooks/use-engine"
@@ -512,7 +513,10 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       icon: Workflow,
       label: l.cmd.graphNew,
       altLabels: [alt.cmd.graphNew],
-      keywords: [...MAKE, "wgsl", "material", "node", "shader", "着色器"],
+      // NOT "wgsl". A graph compiles TO WGSL, but the person who types it wants
+      // the editor they can write it in — which is wgsl-new, one entry below.
+      // Claiming the word here is what sent them to the node canvas instead.
+      keywords: [...MAKE, "material", "node", "shader", "着色器"],
     },
     {
       id: "graph-lib",
@@ -532,7 +536,7 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       icon: Code2,
       label: l.cmd.wgslNew,
       altLabels: [alt.cmd.wgslNew],
-      keywords: [...MAKE, "shader", "effect", "background", "特效"],
+      keywords: [...MAKE, "wgsl", "shader", "effect", "background", "特效"],
     },
     {
       id: "effect-lib",
@@ -2234,6 +2238,9 @@ export default function Lab() {
     savePrompt: boolean
   } | null>(null)
   const graphLibLatest = useRef<ShaderGraph | null>(null)
+  /** The draft the last library edit made, so the library reopens on it. Spent
+   *  when the library closes: it answers "what did you just make", once. */
+  const [freshGraphDraft, setFreshGraphDraft] = useState<string | null>(null)
   // What the group's graph was when the session opened, and WHOSE group it is.
   // The model travels with it because the inspector can move to another
   // character mid-session, and a discard has to reach the group it started on.
@@ -2431,12 +2438,18 @@ export default function Lab() {
     if (!r.ok) return r.diagnostics.find((d) => d.severity === "error")?.message ?? t.lab.compileFailed
     if (keep) updateDraft("graph", keep, { name, payload: { graph } })
     else
-      createDraft("graph", {
-        name,
-        payload: { graph },
-        author: authorName,
-        ...draftOriginOf(communityGraphs, graphLibEdit.id),
-      })
+      // Remembered so the library opens ON it. This save applies the graph to
+      // nothing — the library may have been opened with no group behind it — so
+      // without this the copy you just made is the one thing the library cannot
+      // tell you about.
+      setFreshGraphDraft(
+        createDraft("graph", {
+          name,
+          payload: { graph },
+          author: authorName,
+          ...draftOriginOf(communityGraphs, graphLibEdit.id),
+        }).id,
+      )
     setGraphLibEdit(null)
     setDrawerOpen(false)
     return null
@@ -3468,7 +3481,7 @@ export default function Lab() {
   )
 
   return (
-    <main className="relative h-dvh w-screen overflow-hidden bg-black">
+    <main className="relative h-dvh w-screen overflow-hidden bg-black select-none">
       {/* Full bleed, always. Chrome floats over it; nothing ever shrinks the
           thing you are making. */}
       {bgImage && !bgImage.dome && (
@@ -3637,7 +3650,7 @@ export default function Lab() {
             <DialogTitle className="text-sm">{upload?.kind === "pick" ? t.lab.whichModel : t.lab.cantLoad}</DialogTitle>
           </DialogHeader>
           {upload?.kind === "pick" ? (
-            <div className="max-h-64 space-y-0.5 overflow-y-auto overscroll-contain">
+            <ChoiceList className="max-h-64 overflow-y-auto overscroll-contain">
               {upload.paths.map((path) => (
                 <button
                   key={path}
@@ -3654,7 +3667,7 @@ export default function Lab() {
                   {pmxLabel(path, upload.paths)}
                 </button>
               ))}
-            </div>
+            </ChoiceList>
           ) : (
             <p className="text-xs text-muted-foreground">{upload?.kind === "notice" ? upload.message : null}</p>
           )}
@@ -3672,10 +3685,11 @@ export default function Lab() {
           <DialogHeader>
             <DialogTitle className="text-sm">{t.brand.style}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-0.5">
+          <ChoiceList>
             {LOOK_PACK_ORDER.map((pack) => (
               <button
                 key={pack}
+                data-current={pack === activePack}
                 onClick={() => {
                   // Close first, apply after — the same law the language dialog
                   // follows, and it matters more here: applying recompiles every
@@ -3693,7 +3707,7 @@ export default function Lab() {
                 {pack === activePack && <Check className="size-3.5 shrink-0 text-pink-400" />}
               </button>
             ))}
-          </div>
+          </ChoiceList>
         </DialogContent>
       </Dialog>
 
@@ -3707,10 +3721,11 @@ export default function Lab() {
                 whichever reader opened it. */}
             <DialogTitle className="text-sm">Language · 语言</DialogTitle>
           </DialogHeader>
-          <div className="space-y-0.5">
+          <ChoiceList>
             {LOCALES.map((code) => (
               <button
                 key={code}
+                data-current={code === locale}
                 onClick={() => {
                   // Close FIRST, apply after — the same law the palette follows.
                   // Switching language while the dialog is still fading rewrites
@@ -3729,7 +3744,7 @@ export default function Lab() {
                 {code === locale && <Check className="size-3.5 text-blue-400" />}
               </button>
             ))}
-          </div>
+          </ChoiceList>
         </DialogContent>
       </Dialog>
 
@@ -3889,7 +3904,14 @@ export default function Lab() {
       <NodeLibrary
         open={graphLib !== null}
         initialFacet={libraryFacet}
-        onOpenChange={(o) => !o && closeBrowseIf("graph")}
+        freshDraftId={freshGraphDraft}
+        onOpenChange={(o) => {
+          if (o) return
+          closeBrowseIf("graph")
+          // Spent on close, not on open: the library reads it while mounting, and
+          // clearing it any earlier would select the original again.
+          setFreshGraphDraft(null)
+        }}
         canApply={libGroup !== null}
         targetLabel={libGroup ? groupLabel(libGroup) : null}
         currentGraphName={libGroup?.graph.name ?? null}
