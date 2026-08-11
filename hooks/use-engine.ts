@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Engine, Quat, Vec3, type ApplyStyleGroupResult, type CompileOptions, type Model, type RenderClass, type StyleGroup } from "reze-engine"
 import { SLOT_GRAPHS } from "@/lib/materials"
+import { graphLibraryName } from "@/lib/refs"
 import { idbBundleId, modelKey, modelPmxUrl, type Scene, type SceneCamera, type SceneStageTransform } from "@/lib/scene"
 import { unzipToFiles } from "@/lib/uploads"
 import { loadLocalBundle } from "@/lib/asset-store"
@@ -254,11 +255,30 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
   return { infos, groups, bundle, stageList }
 }
 
+/**
+ * Give a group's graph the name this library knows it by.
+ *
+ * A graph carries its own name, and an auto-grouped model gets its graphs from
+ * the ENGINE, whose built-ins are called "Body", "Face", "Hair" — the names this
+ * repo's content used before the Aether Gazer set was packaged as "AG Body" and
+ * so on. The engine has no business knowing about that packaging, so the rename
+ * happens here, where an engine graph first becomes an app group.
+ *
+ * Matched by look rather than by name, which is what makes it a rename and not a
+ * guess: an edited graph matches nothing and keeps whatever it is called.
+ */
+function named(list: StyleGroup[]): StyleGroup[] {
+  return list.map((g) => {
+    const name = graphLibraryName(g.graph)
+    return !name || name === g.graph.name ? g : { ...g, graph: { ...g.graph, name } }
+  })
+}
+
 function withSpecialGroups(list: StyleGroup[]): StyleGroup[] {
   const seeds = SPECIAL_GROUPS.filter((s) => !list.some((g) => (g.renderClass ?? "auto") === s.renderClass)).map(
     (s): StyleGroup => ({ id: s.id, label: s.label, materials: [], graph: structuredClone(SLOT_GRAPHS[s.preset]!), renderClass: s.renderClass }),
   )
-  return [...list, ...seeds]
+  return named([...list, ...seeds])
 }
 
 export type MaterialRow = {
