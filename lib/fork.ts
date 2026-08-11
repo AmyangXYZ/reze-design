@@ -11,9 +11,22 @@
 
 const KEY = "reze-design.fork"
 
-export function setForkTarget(sceneId: string): void {
+/**
+ * What the viewer hands over.
+ *
+ * `bundle` is the IndexedDB scene id the viewer parked its ALREADY UNZIPPED
+ * assets under before navigating. The viewer necessarily holds them — it is
+ * rendering them — so a fork that re-fetched and re-unzipped the same zip was
+ * paying twice for bytes already in memory. Absent when the write failed or the
+ * bundle had not finished loading, in which case the editor opens the scene the
+ * ordinary way.
+ */
+export type ForkHandoff = { scene: string; bundle?: string }
+
+export function setForkTarget(sceneId: string, bundleId?: string): void {
   try {
-    window.sessionStorage.setItem(KEY, sceneId)
+    const handoff: ForkHandoff = bundleId ? { scene: sceneId, bundle: bundleId } : { scene: sceneId }
+    window.sessionStorage.setItem(KEY, JSON.stringify(handoff))
   } catch {
     // Storage blocked: the fork simply doesn't carry, and the editor opens normally.
   }
@@ -28,10 +41,16 @@ export function clearForkTarget(): void {
   }
 }
 
-export function forkTarget(): string | null {
+export function forkTarget(): ForkHandoff | null {
   if (typeof window === "undefined") return null
   try {
-    return window.sessionStorage.getItem(KEY)
+    const raw = window.sessionStorage.getItem(KEY)
+    if (!raw) return null
+    // A tab that loaded before this became a record stored the bare scene id.
+    // Reading it as one costs a character test and saves that tab a failed fork.
+    if (!raw.startsWith("{")) return { scene: raw }
+    const parsed = JSON.parse(raw) as ForkHandoff
+    return typeof parsed?.scene === "string" ? parsed : null
   } catch {
     return null
   }

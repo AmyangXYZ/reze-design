@@ -89,6 +89,7 @@ import { GraphEditor } from "@/components/graph/graph-editor"
 import { WgslEditorPanel } from "@/components/editor/wgsl-editor"
 import { SaveCloseDialog } from "@/components/editor/save-close"
 import { FloatingPanel, type Rect } from "@/components/editor/floating-panel"
+import { LoadingPill, useLoadingLabel } from "@/components/editor/loading-pill"
 import { ColorField } from "@/components/color-picker"
 import { useAudioClock } from "@/hooks/use-audio-clock"
 import { useEngine } from "@/hooks/use-engine"
@@ -119,7 +120,7 @@ import { buildZip } from "@/lib/bundle"
 import { resolveSceneRefs } from "@/lib/resolve-refs"
 import { effectRef, gradeRef, graphRef, unpublishedUses } from "@/lib/refs"
 import { ShareSceneDialog, type ScenePublishSource } from "@/components/editor/share-scene"
-import { clearLocalBundle, saveLocalBundle } from "@/lib/asset-store"
+import { clearLocalBundle, loadLocalBundle, saveLocalBundle } from "@/lib/asset-store"
 import { dictionaries, LOCALES, LOCALE_LABELS, useI18n, useT, type Dictionary, type Locale } from "@/lib/i18n"
 import { expandUploadFiles, unzipToFiles } from "@/lib/uploads"
 import { GRADE_PRESETS, gradeSpec, NEUTRAL_SPEC, NEW_GRADE_SPEC, recallIntensity, rememberIntensity } from "@/lib/grade"
@@ -157,6 +158,7 @@ import {
   compileGraph,
   DEFAULT_GRAPH,
   type CompileOptions,
+  VMDLoader,
   type Diagnostic,
   type MaterialPreset,
   type ShaderGraph,
@@ -1185,13 +1187,27 @@ export default function Lab() {
   // the assets record, the IndexedDB bundle and the autosave all write under
   // `scene.state.id`. Frozen, a new scene would quietly persist under the identity
   // of the one it replaced and only misbehave on the NEXT refresh.
-  const [scene, setScene] = useState(() => hydrateScene(DEFAULT_SCENE))
+  /**
+   * A pending fork must not flash the scene you were last working on.
+   *
+   * The editor used to hydrate stored state unconditionally, so opening someone
+   * else's scene booted YOURS in full — models, motions, the lot — and then
+   * swapped it out from under you the moment the fork resolved. Two complete
+   * loads, and the first one is of a scene you did not ask for.
+   *
+   * Read once, at the initial state: `forkTarget` is spent by the effect below,
+   * and this must agree with what that effect is about to do.
+   */
+  const [forkOnBoot] = useState(forkTarget)
+  const [forkPending, setForkPending] = useState(forkOnBoot !== null)
+  const [scene, setScene] = useState(() => (forkOnBoot ? EMPTY_SCENE : hydrateScene(DEFAULT_SCENE)))
   const [sceneName, setSceneName] = useState(scene.state.name)
   const {
     canvasRef,
     engineRef,
     models,
     ready,
+    bundleReady,
     bundleFile,
     bundleFiles,
     loadVmdFile,
@@ -1212,6 +1228,12 @@ export default function Lab() {
     highlight,
     toggleVisible,
   } = useEngine(scene)
+  // No byte stats here. The editor's scene comes out of IndexedDB or off the
+  // local disk in almost every case, so a download line would be a phase the
+  // user practically never sees — and now that a published bundle is cached
+  // immutably, even opening someone else's scene reads it back from disk rather
+  // than the network. `null` collapses the pill to the general wait.
+  const loadingLabel = useLoadingLabel({ scene, bundleProgress: null, bundleReady, loaded: models.length })
 
   // Motion names by model id. One clip per character is already the document's
   // shape (lib/scene.ts: "the model plus ITS motion clip"), so this holds the
@@ -1313,7 +1335,24 @@ export default function Lab() {
    * otherwise keep a skeleton standing where it used to be, forever.
    */
   const pendingCast = ready ? 0 : Math.max(0, scene.assets.models.filter((m) => !m.stage).length - cast.length)
-  const modelNames = useMemo(() => models.map((m) => m.id), [models])
+  /**
+   * The transport's models: cast carrying a clip, in document order.
+   *
+   * AnimPlayer reads index 0 as the MASTER — the clock the other models, the
+   * audio and the export all follow — so this cannot be "every model". A stage
+   * rides in `models` because its materials take the same style-group path, and
+   * it never carries a clip; a scene whose stage was uploaded first therefore
+   * put scenery at the head of this list and the transport polled ITS progress,
+   * reading 0:00 over a cast that was posed and ready to play. Same for a
+   * character with no motion of its own standing ahead of one that has it.
+   *
+   * That is the "the VMD duration is sometimes 0" report, and the "sometimes"
+   * was only ever whether something clip-less happened to sort first.
+   */
+  const modelNames = useMemo(
+    () => models.filter((m) => !stageIds.has(m.id) && animByModel[m.id]).map((m) => m.id),
+    [models, stageIds, animByModel],
+  )
   // First model carrying a clip — the clock for audio AND the export.
   const masterId = models.find((m) => animByModel[m.id])?.id ?? null
   // Clip duration, polled until the engine reports it (main's approach — meta
@@ -2603,10 +2642,23 @@ export default function Lab() {
         return next
       })
       if (clip) {
-        void (
-          typeof clip.src === "string" ? loadVmdUrl(newId, clip.name, clip.src) : loadVmdFile(newId, clip.src)
-        ).then((loaded) => {
-          if (loaded) return
+        // Resolved through the bundle first, exactly as the boot loader does — a
+        // clip that came from the scene's own bundle is named by its path INSIDE
+        // that bundle, which is not a URL anything can fetch. Boot upgrades the
+        // seeded src to the packed File once the clip loads, so whether this
+        // string is still a bundle path at the moment of a replace is a matter of
+        // timing. That is what made the motion carry over only sometimes: an
+        // uploaded File or a served /animations path inherited fine, and a
+        // bundled clip replaced before boot had upgraded it silently did not.
+        const packed = typeof clip.src === "string" ? bundleFile(clip.src) : null
+        const src = packed ?? clip.src
+        void (typeof src === "string" ? loadVmdUrl(newId, clip.name, src) : loadVmdFile(newId, src)).then((loaded) => {
+          if (loaded) {
+            // Bank the resolved File, so a second replace does not have to find
+            // it again from a seed that has since been overwritten.
+            if (packed) setAnimByModel((prev) => (prev[newId] ? { ...prev, [newId]: { name: clip.name, src: packed } } : prev))
+            return
+          }
           setAnimByModel((prev) => {
             const next = { ...prev }
             delete next[newId]
@@ -2628,7 +2680,7 @@ export default function Lab() {
       // would strand the panel on a model that no longer exists.
       setInspectedId((prev) => (prev === oldId ? newId : prev))
     },
-    [loadVmdFile, loadVmdUrl],
+    [loadVmdFile, loadVmdUrl, bundleFile],
   )
   useEffect(() => {
     for (const m of models) {
@@ -2866,7 +2918,12 @@ export default function Lab() {
   }, [])
 
   useEffect(() => {
-    if (!ready) return
+    // Never persist the placeholder a pending fork boots on. An empty scene
+    // reaches `ready` almost immediately, well inside the settle delay, so
+    // without this the blank document would be written over the working scene
+    // you had — and if the fork then failed to load, that work would be gone
+    // rather than one refresh away.
+    if (!ready || forkPending) return
     let idle = 0
     const payload: SceneState = {
       id: scene.state.id,
@@ -2903,7 +2960,7 @@ export default function Lab() {
       clearTimeout(timer)
       if (idle && typeof cancelIdleCallback === "function") cancelIdleCallback(idle)
     }
-  }, [ready, scene, sceneName, camera, settings, bgEffect, groupsByModel, models])
+  }, [ready, forkPending, scene, sceneName, camera, settings, bgEffect, groupsByModel, models])
 
   // What changes the BYTES: the set of files the scene points at. Placement and
   // switches are not on this list — they change the doc, never the bundle, and
@@ -2978,7 +3035,9 @@ export default function Lab() {
   // then the record — so a refresh that does land mid-write boots the previous state,
   // never a broken one.
   useEffect(() => {
-    if (!ready) return
+    // Same reason as the state save above: the fork's placeholder owns no assets
+    // and must not record that it does.
+    if (!ready || forkPending) return
     const timer = setTimeout(() => {
       const id = scene.state.id
       const slots = collectLabSlots()
@@ -2987,7 +3046,18 @@ export default function Lab() {
         // bundle already in IndexedDB.
         let bundleUrl: string | null = bundleWrittenRef.current
         if (bundleWrittenFor.current !== assetFingerprint) {
+          // The other half of a slow scene open, and the half nobody suspects:
+          // changing scenes changes the file set, so the WHOLE bundle is rewritten
+          // into IndexedDB. At a hundred-odd files that is real time, spent after
+          // the scene is already on screen.
+          const tWrite = performance.now()
+          const bytes = slots.entries.reduce((n, e) => n + (e.file?.size ?? 0), 0)
           bundleUrl = slots.entries.length && (await saveLocalBundle(id, slots.entries)) ? idbBundleOf(id) : null
+          if (slots.entries.length)
+            console.info(
+              `[reze] local bundle written: ${slots.entries.length} file(s), ` +
+                `${(bytes / 1024 / 1024).toFixed(1)}MB in ${((performance.now() - tWrite) / 1000).toFixed(2)}s`,
+            )
           bundleWrittenFor.current = assetFingerprint
           bundleWrittenRef.current = bundleUrl
         }
@@ -3008,7 +3078,7 @@ export default function Lab() {
     // moves, `stages` included, so moving a stage or flipping a switch still
     // reaches the DOC — the bundle write above is gated separately on
     // assetFingerprint.
-  }, [ready, scene, collectLabSlots, assetFingerprint])
+  }, [ready, forkPending, scene, collectLabSlots, assetFingerprint])
 
   // ── Scene file operations ──
   //
@@ -3106,23 +3176,40 @@ export default function Lab() {
   const forkDone = useRef(false)
   useEffect(() => {
     if (!ready || forkDone.current) return
-    const id = forkTarget()
-    if (!id) return
+    const handoff = forkOnBoot
+    if (!handoff) return
     forkDone.current = true
     void (async () => {
       try {
-        const res = await fetch(`/api/library/${id}`)
+        const res = await fetch(`/api/library/${handoff.scene}`)
         if (!res.ok) throw new Error(String(res.status))
         const { item } = (await res.json()) as { item: { name: string; payload: { doc: SceneDoc } } }
         const resolve = await resolveSceneRefs(item.payload.doc)
         const scene = parseSceneDoc(item.payload.doc, builtinEffect, libraryGraph, resolve)
-        await applyLabScene({ ...scene, state: { ...scene.state, id: newSceneId(), name: item.name } })
+        // The viewer parked its unzipped assets on the way here. Opening them
+        // from IndexedDB skips both the download and the unzip of a bundle this
+        // browser already holds — and the scene takes the id they were stored
+        // under, because that is what `loadLocalBundle` matches on.
+        const parked = handoff.bundle ? await loadLocalBundle(handoff.bundle) : null
+        const id = parked && handoff.bundle ? handoff.bundle : newSceneId()
+        const assets = parked && handoff.bundle ? { ...scene.assets, bundle: idbBundleOf(handoff.bundle) } : scene.assets
+        await applyLabScene({
+          ...scene,
+          assets,
+          state: { ...scene.state, id, name: t.share.forkedName(item.name) },
+        })
       } catch {
         setUpload({ kind: "notice", message: t.sceneFile.badFile })
+        // Put back what booting for the fork stood down. Nothing has been
+        // persisted while the fork was pending, so stored state is still the
+        // scene that was there before — this restores it without a refresh
+        // rather than leaving the editor blank.
+        await applyLabScene(hydrateScene(DEFAULT_SCENE))
       } finally {
         // Spent either way: a fork that failed to load will fail again on refresh,
         // and leaving it armed traps the editor on someone else's scene.
         clearForkTarget()
+        setForkPending(false)
       }
     })()
     // `ready` only. applyLabScene is rebuilt every render and the dictionary
@@ -3382,6 +3469,11 @@ export default function Lab() {
         <img src={bgImage.url} alt="" className="absolute inset-0 h-full w-full object-cover" />
       )}
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none object-contain" />
+
+      {/* The same pill the viewer shows, for the same load — opening a scene
+          here runs the identical path, and the editor said nothing at all while
+          it ran. */}
+      {(!ready || forkPending) && !error && <LoadingPill label={loadingLabel} />}
 
       {error && (
         <div className="absolute inset-0 grid place-items-center p-8 text-center text-xs text-muted-foreground">
@@ -3728,8 +3820,31 @@ export default function Lab() {
           const id = animTarget.current
           e.target.value = ""
           if (!file || !id) return
-          void loadVmdFile(id, file).then((name) => {
-            if (name) setAnimByModel((prev) => ({ ...prev, [id]: { name, src: file } }))
+          void file.arrayBuffer().then((buf) => {
+            // A camera VMD carries no bone or morph frames, so loading it on a
+            // model builds a clip of zero length: the row fills in with the file
+            // name and the transport reads 0:00, which looks exactly like a file
+            // that failed to parse. It parsed perfectly — it is simply not a
+            // motion for a character, and the scene has a Camera slot that wants
+            // it. Say so rather than accept a clip that can never play.
+            //
+            // Not auto-routed: the camera slot may already hold someone's shot,
+            // and silently overwriting it to be helpful is the worse surprise.
+            let usable = 0
+            let cameraFrames = 0
+            try {
+              usable = VMDLoader.loadFromBuffer(buf).length
+              cameraFrames = VMDLoader.loadCameraFromBuffer(buf).length
+            } catch {
+              // Unreadable: let loadVmdFile run and report the failure it finds.
+            }
+            if (usable === 0) {
+              setUpload({ kind: "notice", message: cameraFrames > 0 ? t.lab.cameraVmd : t.lab.emptyVmd })
+              return
+            }
+            void loadVmdFile(id, file).then((name) => {
+              if (name) setAnimByModel((prev) => ({ ...prev, [id]: { name, src: file } }))
+            })
           })
         }}
       />

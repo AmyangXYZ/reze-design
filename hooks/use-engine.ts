@@ -91,6 +91,19 @@ function applyCamera(engine: Engine, camera: SceneCamera, model: Model | null): 
   engine.setCameraBeta(camera.beta)
 }
 
+/**
+ * The model the camera follows: the first CAST member, never the stage.
+ *
+ * Stage-ness is a flag on an entry, not a separate list, so a stage sits
+ * wherever it was added — and a scene built stage-first has scenery at index 0.
+ * Binding `follow` there aims the shot at a building, which never moves, so the
+ * framing sat still through a motion that travelled. It only happened to some
+ * scenes because it is purely a question of what order the author uploaded in.
+ */
+function firstCastId(entries: readonly { model: { id: string }; stage?: boolean }[]): string {
+  return entries.find((e) => !e.stage)?.model.id ?? ""
+}
+
 /** Progress hooks. Each fires the moment its subject is usable, so a host can
  *  paint in the order the bytes arrive rather than waiting on the last model:
  *  stage → bundle (clips, audio and the backdrop image resolve out of it) →
@@ -99,10 +112,23 @@ type LoadProgress = {
   onStage?: () => void
   onBundle?: (files: File[] | null) => void
   onModel?: (info: EngineModelInfo, groups: StyleGroup[], stage: StageInfo | null) => void
+  /** Bundle download, while it is downloading. Null once the bytes are in. */
+  onBytes?: (p: BundleProgress | null) => void
 }
 
+/**
+ * A bundle download in flight. `total` is 0 when the server sent no length.
+ *
+ * `done` marks the last report, sent once the bytes are all in and the zip is
+ * being walked. It is what tells "the download has not started" (null) apart
+ * from "the download has finished" — the two are otherwise the same absence,
+ * and a host that cannot separate them has to call the first wait by the second
+ * wait's name.
+ */
+export type BundleProgress = { received: number; total: number; bytesPerSecond: number; done?: boolean }
+
 async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean, progress: LoadProgress = {}) {
-  const { onStage, onBundle, onModel } = progress
+  const { onStage, onBundle, onModel, onBytes } = progress
   const s = scene.state.settings
   const infos: EngineModelInfo[] = []
   const groups: Record<string, StyleGroup[]> = {}
@@ -134,7 +160,14 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
   // the working scene's is the same entries in IndexedDB (an `idb:` bundle). Either
   // way the File names carry bundle paths, which is exactly what the engine resolves
   // textures against — one seam, two stores.
+  // Opening a scene is four serial costs and it is not obvious which one a given
+  // user is waiting on: a big published bundle is network-bound, a big MODEL is
+  // decode-bound, and the two want opposite fixes. Timed rather than guessed —
+  // the line lands in the console ring buffer, so a slow-open report carries the
+  // breakdown instead of the word "slow".
+  const t0 = performance.now()
   let bundle: File[] | null = null
+  let bundleBytes = 0
   const idbId = idbBundleId(scene.assets.bundle)
   if (idbId) {
     bundle = await loadLocalBundle(idbId)
@@ -142,9 +175,45 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
   } else if (scene.assets.bundle) {
     const res = await fetch(scene.assets.bundle)
     if (!res.ok) throw new Error(`Can't fetch scene assets: ${res.status}`)
-    bundle = await unzipToFiles(new File([await res.blob()], "assets.zip"))
+    // Read the body in chunks rather than awaiting .blob(), so the wait can be
+    // reported. This is the dominant cost of opening someone else's scene —
+    // measured at 5.5s of a 6.1s open for a 165MB bundle — and an unmoving
+    // "loading…" for that long is indistinguishable from a hang.
+    const total = Number(res.headers.get("content-length")) || 0
+    let blob: Blob
+    if (res.body && onBytes) {
+      const reader = res.body.getReader()
+      const chunks: BlobPart[] = []
+      let received = 0
+      const started = performance.now()
+      let painted = 0
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        chunks.push(value as unknown as BlobPart)
+        received += value.byteLength
+        // Four updates a second. The number is being read by a human, and a
+        // per-chunk setState on a 165MB download is thousands of renders.
+        const now = performance.now()
+        if (now - painted > 250) {
+          painted = now
+          onBytes({ received, total, bytesPerSecond: received / Math.max(0.001, (now - started) / 1000) })
+        }
+        if (stale()) return null
+      }
+      blob = new Blob(chunks)
+    } else {
+      blob = await res.blob()
+    }
+    // Not null: the wait is not over, it has changed kind. Unzipping a 165MB
+    // bundle is its own visible pause, and reporting "no download" here would
+    // send the pill back to the name it uses before one has started.
+    bundleBytes = blob.size
+    onBytes?.({ received: bundleBytes, total: total || bundleBytes, bytesPerSecond: 0, done: true })
+    bundle = await unzipToFiles(new File([blob], "assets.zip"))
     if (stale()) return null
   }
+  const tBundle = performance.now()
   // The bundle is what clips, audio and a background image resolve out of, and
   // none of them have anything to do with how long the models take. Handed over
   // the moment it is unzipped.
@@ -240,11 +309,12 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
     )
     infos.push(info)
     groups[entry.model.id] = modelGroups
-    // Framing travels with the document, and it is bound to the FIRST model —
-    // `follow` rides that one's bone. Applied as soon as it exists rather than
+    // Framing travels with the document, and it is bound to the first CAST
+    // member — `follow` rides that one's bone, and scenery has no bone worth
+    // riding. Applied as soon as it exists rather than
     // after the last: with three characters, waiting meant two of them stood in
     // an unframed shot until the third finished, and the camera then jumped.
-    if (infos.length === 1) applyCamera(engine, scene.state.camera, model)
+    if (!entry.stage && infos.length - stageList.length === 1) applyCamera(engine, scene.state.camera, model)
     // Reveal this one NOW. Models with an animation stay hidden a moment longer:
     // their clip loader reveals them after show(), so the first visible frame
     // wears the motion's first pose instead of flashing bind pose. (If the clip
@@ -255,7 +325,14 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
 
   // Again at the end, for the empty-scene case and because the first model may
   // have arrived before its follow bone existed.
-  applyCamera(engine, scene.state.camera, engine.getModel(scene.assets.models[0]?.model.id ?? ""))
+  applyCamera(engine, scene.state.camera, engine.getModel(firstCastId(scene.assets.models)))
+  const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)}MB`
+  const secs = (a: number, b: number) => `${((b - a) / 1000).toFixed(2)}s`
+  console.info(
+    `[reze] scene loaded in ${secs(t0, performance.now())} — assets ${secs(t0, tBundle)}` +
+      `${bundleBytes ? ` (${mb(bundleBytes)} over the network)` : bundle ? " (from IndexedDB)" : ""}` +
+      `, ${scene.assets.models.length} model(s) ${secs(tBundle, performance.now())}`,
+  )
   return { infos, groups, bundle, stageList }
 }
 
@@ -395,6 +472,7 @@ export function useEngine(
   const [ready, setReady] = useState(false)
   // The stage (ground/camera/render loop) is live — models may still be loading.
   const [stageReady, setStageReady] = useState(false)
+  const [bundleProgress, setBundleProgress] = useState<BundleProgress | null>(null)
   // The asset bundle is unzipped. Everything that resolves out of it — clips,
   // audio, a background image — is available from here, which is well before
   // the models it shares the zip with have finished loading. State and not just
@@ -449,6 +527,7 @@ export function useEngine(
             engine.runRenderLoop()
             setStageReady(true)
           },
+          onBytes: setBundleProgress,
           onBundle: (files) => {
             bundleRef.current = files
             setBundleReady(true)
@@ -748,6 +827,9 @@ export function useEngine(
     const token = ++swapToken.current
     const stale = () => token !== swapToken.current
     setReady(false)
+    // The outgoing scene's last report was `done` — left standing, the incoming
+    // scene opens on "unpacking" before it has fetched anything.
+    setBundleProgress(null)
     try {
       // The outgoing scene's models and its retained upload files go together —
       // keeping either would leak into the incoming document.
@@ -757,14 +839,14 @@ export function useEngine(
       sceneFiles.camera = null
       engine.clearCameraVmd()
 
-      const loaded = await loadSceneInto(engine, scene, stale)
+      const loaded = await loadSceneInto(engine, scene, stale, { onBytes: setBundleProgress })
       if (!loaded) return null
       bundleRef.current = loaded.bundle
       sceneRef.current = scene
       setModels(loaded.infos)
       setStages(loaded.stageList)
       setGroupsByModel(loaded.groups)
-      applyCamera(engine, scene.state.camera, engine.getModel(scene.assets.models[0]?.model.id ?? ""))
+      applyCamera(engine, scene.state.camera, engine.getModel(firstCastId(scene.assets.models)))
       setError(null)
       return null
     } catch (e) {
@@ -783,7 +865,10 @@ export function useEngine(
   const setCameraView = useCallback((c: SceneCamera) => {
     const engine = engineRef.current
     if (!engine) return
-    applyCamera(engine, c, engine.getModel(modelsRef.current[0]?.id ?? ""))
+    // Same rule as the load path — `models` carries stages too, so index 0 is
+    // not necessarily a character.
+    const stageIds = new Set(stagesRef.current.map((s) => s.id))
+    applyCamera(engine, c, engine.getModel(modelsRef.current.find((m) => !stageIds.has(m.id))?.id ?? ""))
   }, [])
 
   /** Instant adjust-tier: write one exposed param on a group's graph (no recompile). */
@@ -810,6 +895,7 @@ export function useEngine(
     engineRef,
     ready,
     stageReady,
+    bundleProgress,
     bundleReady,
     error,
     models,

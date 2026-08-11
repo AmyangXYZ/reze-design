@@ -4,7 +4,7 @@
 // editing. Assets come out of the scene's zip (models, motions, audio) — which is
 // why publishing bundles them in the first place.
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { GitFork, Heart, WandSparkles } from "lucide-react"
@@ -14,15 +14,14 @@ import { useEngine } from "@/hooks/use-engine"
 import { useSceneSync } from "@/hooks/use-scene-sync"
 import { specOf } from "@/lib/grade"
 import { libraryGraph } from "@/lib/materials"
-import { parseSceneDoc, type Scene, type SceneDoc } from "@/lib/scene"
+import { newSceneId, parseSceneDoc, type Scene, type SceneDoc } from "@/lib/scene"
+import { saveLocalBundle } from "@/lib/asset-store"
 import { setForkTarget } from "@/lib/fork"
-import { LoadingPill } from "@/components/editor/loading-pill"
+import { LoadingPill, useLoadingLabel } from "@/components/editor/loading-pill"
 import { resolveSceneRefs, resolveSceneRefsSync } from "@/lib/resolve-refs"
 import { useSession } from "@/lib/auth-client"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
-
-
 
 type ViewerProps = {
   doc: SceneDoc
@@ -72,12 +71,48 @@ export function SceneViewer(props: ViewerProps) {
     }
   }, [props.doc, scene])
 
+  // The unzipped bundle, reached up from the stage below. The engine holds it
+  // because it is rendering it; Fork hands the same Files to the editor rather
+  // than sending it back to the network for a zip this tab already has.
+  const bundleFilesRef = useRef<() => File[]>(() => [])
+  const [forking, setForking] = useState(false)
+
+  /**
+   * Park the assets, then go.
+   *
+   * The write is awaited: the editor looks for the record the moment it boots,
+   * and a fork that navigated first would race it and quietly fall back to
+   * downloading. If there is nothing to park — the bundle is still loading, the
+   * scene has no assets, storage is full — the fork carries no bundle id and the
+   * editor opens the scene the ordinary way.
+   */
+  const openInEditor = async () => {
+    if (forking) return
+    setForking(true)
+    try {
+      const files = bundleFilesRef.current()
+      if (files.length) {
+        const bundleId = newSceneId()
+        const entries = files.map((file) => ({ path: file.name, file }))
+        if (await saveLocalBundle(bundleId, entries)) {
+          setForkTarget(props.sceneId, bundleId)
+          router.push("/")
+          return
+        }
+      }
+      setForkTarget(props.sceneId)
+      router.push("/")
+    } finally {
+      setForking(false)
+    }
+  }
+
   return (
     <main className="fixed inset-0 overflow-hidden bg-zinc-950">
       {/* The scene, under the chrome — its own component so `useEngine` never
           runs conditionally. Until it exists there is a pill, and the text
           around it is already readable. */}
-      {scene ? <SceneStage {...props} scene={scene} /> : <LoadingPill />}
+      {scene ? <SceneStage {...props} scene={scene} bundleFilesRef={bundleFilesRef} /> : <LoadingPill />}
 
       {/* Top left: whose site this is. A shared link is often someone's first
           contact with the product, and nothing else on the page says its name. */}
@@ -114,11 +149,9 @@ export function SceneViewer(props: ViewerProps) {
         {/* Desktop header: the two actions, pushed apart, over the panel they act on. */}
         <div className="hidden items-center justify-between gap-2 border-b border-white/10 px-3 py-2.5 md:flex">
           <button
-            onClick={() => {
-              setForkTarget(props.sceneId)
-              router.push("/")
-            }}
-            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md bg-blue-400 px-3 text-xs font-medium text-white transition-colors hover:bg-blue-300"
+            onClick={() => void openInEditor()}
+            disabled={forking}
+            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md bg-blue-400 px-3 text-xs font-medium text-white transition-colors hover:bg-blue-300 disabled:cursor-default disabled:opacity-60"
           >
             <GitFork className="size-3.5" />
             {t.share.fork}
@@ -231,9 +264,20 @@ function LikeButton({ like, compact, className }: { like: LikeState; compact?: b
 
 /** The scene layer: canvas, backdrop, transport, audio. Everything that has to
  *  wait on bytes — and nothing that doesn't, which all lives in the page above. */
-function SceneStage({ scene }: ViewerProps & { scene: Scene }) {
+function SceneStage({
+  scene,
+  bundleFilesRef,
+}: ViewerProps & { scene: Scene; bundleFilesRef: RefObject<() => File[]> }) {
   const t = useT()
-  const { canvasRef, engineRef, ready, stageReady, bundleReady, error, models, bundleFile } = useEngine(scene)
+  const { canvasRef, engineRef, ready, stageReady, bundleReady, bundleProgress, error, models, bundleFile, bundleFiles } =
+    useEngine(scene)
+  // Published upward so Fork can hand the unzipped assets to the editor. A ref,
+  // not state: nothing renders differently for it, and the getter is stable.
+  useEffect(() => {
+    bundleFilesRef.current = bundleFiles
+  }, [bundleFilesRef, bundleFiles])
+
+  const loadingLabel = useLoadingLabel({ scene, bundleProgress, bundleReady, loaded: models.length })
 
   // Background. A published scene packs its image, so both kinds resolve out of
   // the bundle synchronously. A flat backdrop is a DOM layer BEHIND the canvas,
@@ -400,7 +444,7 @@ function SceneStage({ scene }: ViewerProps & { scene: Scene }) {
       )}
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none object-contain" />
 
-      {!ready && !error && <LoadingPill />}
+      {!ready && !error && <LoadingPill label={loadingLabel} />}
       {error && (
         <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-xs text-red-400">
           {t.editor.engineError(error)}

@@ -82,6 +82,9 @@ const en = {
   share: {
     label: "Share",
     fork: "Open in editor",
+    /** A fork opens under its own name, so the original's is never quietly
+     *  overwritten in the library and two copies are told apart at a glance. */
+    forkedName: (name: string) => `${name} - fork`,
     thumbnail: "Thumbnail",
     thumbnailPick: "Choose image",
     thumbnailTooBig: "That image is over 20MB — pick a smaller one.",
@@ -105,7 +108,18 @@ const en = {
     unpublishedKind: { graph: "Shader", grade: "Grade", effect: "Effect" },
   },
   editor: {
-    loadingModel: "loading model…",
+    /** The general wait, before there is anything specific to say about it. */
+    loadingScene: "Loading scene…",
+    // Opening someone else's scene is four serial waits and the pill named none
+    // of them. A 165MB bundle is most of a six-second open, and an unmoving
+    // "loading…" for that long reads as a hang — so each phase says what it is
+    // and, where there are real numbers, what it has got through.
+    downloadingAssets: (received: string, total: string, speed: string) =>
+      `Downloading assets · ${received} / ${total} · ${speed}`,
+    /** No content-length: report what has arrived, and claim no total. */
+    downloadingAssetsUnsized: (received: string, speed: string) => `Downloading assets · ${received} · ${speed}`,
+    unpackingAssets: "Unpacking assets",
+    loadingModels: (index: number, total: number, name: string) => `Loading models · ${index} of ${total} · ${name}`,
     selectMaterial: "Select a material to edit its shader graph",
     engineError: (message: string) => `Engine: ${message}`,
   },
@@ -368,6 +382,8 @@ const en = {
     whichModel: "Which model?",
     cantLoad: "Couldn't load that",
     noPmx: "No .pmx found — keep the model's folder intact.",
+    cameraVmd: "That's a camera motion, not a character motion — load it under Camera.",
+    emptyVmd: "That .vmd has no motion in it.",
     stageOverridesGround: "The stage overrides the ground while it is loaded.",
     cameraDrivesView: "The camera motion drives the view while it is loaded.",
     editMaterials: "Material style groups",
@@ -671,6 +687,7 @@ const zh: Dictionary = {
   share: {
     label: "分享",
     fork: "在编辑器中打开",
+    forkedName: (name: string) => `${name} - 复刻`,
     thumbnail: "封面图",
     thumbnailPick: "选择图片",
     thumbnailTooBig: "图片超过 20MB，请换一张。",
@@ -693,7 +710,12 @@ const zh: Dictionary = {
     unpublishedKind: { graph: "着色器", grade: "调色", effect: "特效" },
   },
   editor: {
-    loadingModel: "正在加载模型…",
+    loadingScene: "正在加载场景…",
+    downloadingAssets: (received: string, total: string, speed: string) =>
+      `正在下载素材 · ${received} / ${total} · ${speed}`,
+    downloadingAssetsUnsized: (received: string, speed: string) => `正在下载素材 · ${received} · ${speed}`,
+    unpackingAssets: "正在解压素材",
+    loadingModels: (index: number, total: number, name: string) => `正在加载模型 · ${index}/${total} · ${name}`,
     selectMaterial: "选择一个材质以编辑其外观",
     engineError: (message: string) => `引擎：${message}`,
   },
@@ -948,6 +970,8 @@ const zh: Dictionary = {
     whichModel: "选择哪个模型？",
     cantLoad: "无法加载",
     noPmx: "未找到 .pmx —— 请保持模型文件夹完整。",
+    cameraVmd: "这是相机动作，不是角色动作 —— 请在「相机」中加载。",
+    emptyVmd: "该 .vmd 中没有动作数据。",
     stageOverridesGround: "舞台加载后会覆盖地面。",
     cameraDrivesView: "相机动作加载后由它驱动视角。",
     editMaterials: "材质样式组",

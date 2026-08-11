@@ -599,9 +599,38 @@ export function newSceneId(): string {
   return `scn_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
 }
 
-// ".3": name-keyed references and the {preset, intensity} grade — older blobs
-// don't parse into this shape, and there are no compatibility shims by design.
-const STATE_KEY = "reze-design.sceneState.3"
+// ".4": the graph socket vocabulary moved to Blender 5.2 (base_color,
+// specular_ior_level, sheen_weight). migrateGraph used to rewrite the old names
+// on every read; it was removed once the rename was baked into the database,
+// which was right for published rows and left every BROWSER holding pre-5.2
+// groups that no longer compile. The engine drops a graph it cannot compile
+// rather than render it wrongly, so those users saw a fully grouped model with
+// no look and one console line per group.
+//
+// A stored blob is not migrated, it is retired: the key carries the vocabulary
+// it was written under, so an old one is simply never read, and boot falls back
+// to the default scene. ".3" and older are swept below so the quota they held is
+// returned rather than stranded forever.
+const STATE_KEY = "reze-design.sceneState.4"
+const RETIRED_KEYS = ["reze-design.sceneState.3", "reze-design.sceneState.2", "reze-design.sceneState.1"]
+
+/**
+ * Drop blobs written under a vocabulary this build no longer reads.
+ *
+ * Called once per boot, before anything reads storage. Cheap, idempotent, and
+ * the only thing standing between a user and a few hundred KB of dead JSON they
+ * cannot see or clear without opening devtools.
+ */
+export function sweepRetiredState(): void {
+  if (typeof window === "undefined") return
+  for (const key of RETIRED_KEYS) {
+    try {
+      window.localStorage.removeItem(key)
+    } catch {
+      // storage blocked — nothing to reclaim, and nothing depends on this
+    }
+  }
+}
 
 /**
  * Model ids are minted from the .pmx filename (see `modelKey`), so re-importing
@@ -721,6 +750,9 @@ function loadStoredAssets(sceneId: string): SceneAssetsDoc | null {
  */
 export function hydrateScene(base: Scene): Scene {
   try {
+    // Before anything reads storage: return the quota held by blobs written
+    // under a vocabulary this build no longer reads.
+    sweepRetiredState()
     return restored(base)
   } catch (e) {
     // Loud: this is the user losing their working scene, and the console line is

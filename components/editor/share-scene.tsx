@@ -61,12 +61,16 @@ function putWithProgress(
   url: string,
   body: Blob,
   contentType: string,
+  /** Signed into the presigned URL by /api/upload — must be sent back verbatim
+   *  or R2 rejects the PUT on a signature mismatch. */
+  cacheControl: string,
   onProgress: (fraction: number) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open("PUT", url)
     xhr.setRequestHeader("content-type", contentType)
+    if (cacheControl) xhr.setRequestHeader("cache-control", cacheControl)
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(e.loaded / e.total)
     }
@@ -205,13 +209,14 @@ function ShareSceneForm({
           body: JSON.stringify({ sceneId: publishScope, size: zip.size }),
         })
         if (!presign.ok) throw new Error(`presign ${presign.status}`)
-        const { uploadUrl, key, publicUrl } = (await presign.json()) as {
+        const { uploadUrl, key, publicUrl, cacheControl } = (await presign.json()) as {
           uploadUrl: string
           key: string
           publicUrl: string
+          cacheControl: string
         }
         setProgress(0)
-        await putWithProgress(uploadUrl, zip, "application/zip", setProgress)
+        await putWithProgress(uploadUrl, zip, "application/zip", cacheControl, setProgress)
         bundle = publicUrl
         bundleKey = key
         bundleBytes = zip.size
@@ -223,8 +228,12 @@ function ShareSceneForm({
           body: JSON.stringify({ sceneId: publishScope, size: poster.size, kind: "poster", contentType: poster.type }),
         })
         if (!presign.ok) throw new Error(await reason(presign))
-        const { uploadUrl, key } = (await presign.json()) as { uploadUrl: string; key: string }
-        await putWithProgress(uploadUrl, poster, poster.type, () => {})
+        const { uploadUrl, key, cacheControl } = (await presign.json()) as {
+          uploadUrl: string
+          key: string
+          cacheControl: string
+        }
+        await putWithProgress(uploadUrl, poster, poster.type, cacheControl, () => {})
         posterKey = key
       }
 
