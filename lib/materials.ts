@@ -131,6 +131,9 @@ export function sameGraphLook(a: ShaderGraph | undefined, b: ShaderGraph | undef
 
 export type LookPack = "ag" | "wuwa"
 
+/** Menu order — declared, not derived, because it is a curated shelf. */
+export const LOOK_PACK_ORDER: LookPack[] = ["ag", "wuwa"]
+
 export const LOOK_PACKS: Record<LookPack, { tag: string; transform: "standard" | "filmic"; exposure: number }> = {
   ag: { tag: "aether-gazer", transform: "filmic", exposure: 0.6 },
   wuwa: { tag: "wuthering-waves", transform: "standard", exposure: 0 },
@@ -163,4 +166,27 @@ export function packGraph(pack: LookPack, role: string | undefined): ShaderGraph
   const inPack = GRAPH_LIBRARY.filter((g) => g.tags.includes(tag))
   const find = (r: string) => inPack.find((g) => graphRole(g.payload.graph) === r)?.payload.graph
   return find(role) ?? find(ROLE_FALLBACK[role] ?? "")
+}
+
+
+/**
+ * Which pack a set of groups is wearing, or null when it is not wearing one
+ * whole.
+ *
+ * Only groups a pack HAS an opinion about count: a stage material or the neutral
+ * default is left alone by a switch, so letting it vote would mean no scene ever
+ * reads as a pack. A scene half-switched, or with one group on a community look,
+ * is genuinely neither — and says so.
+ */
+export function activeLookPack(graphs: ShaderGraph[]): LookPack | null {
+  const packs = new Set<LookPack>()
+  for (const g of graphs) {
+    const role = graphRole(g)
+    if (!role || !packGraph("ag", role)) continue
+    const name = g.name
+    const hit = LOOK_PACK_ORDER.find((p) => GRAPH_LIBRARY.some((i) => i.name === name && i.tags.includes(LOOK_PACKS[p].tag)))
+    if (!hit) return null
+    packs.add(hit)
+  }
+  return packs.size === 1 ? [...packs][0] : null
 }

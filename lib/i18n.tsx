@@ -21,6 +21,10 @@ const en = {
     showPanels: "Show panels",
     renameScene: "Double-click to rename",
     language: "Language",
+    style: "Rendering style",
+    // The packs' own names, not translated: they name the games these looks come
+    // from, and a player searching for one searches for it by name.
+    styles: { ag: "Aether Gazer 深空之眼", wuwa: "Wuthering Waves 鸣潮" },
   },
   // Export / import / reset all act on the same slice: the scene's look, not its files.
   sceneFile: {
@@ -500,8 +504,7 @@ const en = {
       language: "Language",
       outlineOn: "Turn on outline",
       outlineOff: "Turn off outline",
-      lookWuwa: "Switch to Wuthering Waves rendering",
-      lookAg: "Switch to Aether Gazer rendering",
+      look: "Rendering style",
     },
   },
   // Add-node menu category headers — keyed by the English category (also the color key).
@@ -613,6 +616,8 @@ const zh: Dictionary = {
     showPanels: "显示面板",
     renameScene: "双击重命名",
     language: "语言",
+    style: "渲染风格",
+    styles: { ag: "深空之眼 Aether Gazer", wuwa: "鸣潮 Wuthering Waves" },
   },
   sceneFile: {
     label: "场景",
@@ -1069,8 +1074,7 @@ const zh: Dictionary = {
       language: "语言",
       outlineOn: "打开描边",
       outlineOff: "关闭描边",
-      lookWuwa: "切换到鸣潮风格渲染",
-      lookAg: "切换到深空之眼风格渲染",
+      look: "渲染风格",
     },
   },
   nodeCategory: {

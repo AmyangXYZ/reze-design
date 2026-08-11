@@ -149,7 +149,7 @@ import { castSourceFor } from "@/lib/cast-source"
 import { NEUTRAL_PALETTE, type CastPaletteId } from "@/lib/cast-palette"
 import { relFilePath, sceneFiles } from "@/lib/scene-files"
 import { cancelDraftWrites, createDraft, isDraft, loadDrafts, updateDraft, updateDraftSoon } from "@/lib/drafts"
-import { graphRole, groupLabel, GRAPH_LIBRARY, libraryGraph, LOOK_PACKS, packGraph, sameGraphLook, SLOT_GRAPHS, type LookPack } from "@/lib/materials"
+import { activeLookPack, graphRole, groupLabel, GRAPH_LIBRARY, libraryGraph, LOOK_PACK_ORDER, LOOK_PACKS, packGraph, sameGraphLook, SLOT_GRAPHS, type LookPack } from "@/lib/materials"
 import { stageStyleGroups } from "@/lib/stage-style"
 import {
   compileGraph,
@@ -822,22 +822,15 @@ function commandsFor(t: Dictionary): PaletteItem[] {
     // style is something you reach for by name a few times, not a control worth
     // a permanent row in the dock.
     {
-      id: "look-wuwa",
+      id: "look",
       repeatable: true,
       section: "command",
-      icon: Palette,
-      label: l.cmd.lookWuwa,
-      altLabels: [alt.cmd.lookWuwa],
-      keywords: ["wuwa", "wuthering", "鸣潮", "style", "look", "preset", "风格", "渲染"],
-    },
-    {
-      id: "look-ag",
-      repeatable: true,
-      section: "command",
-      icon: Palette,
-      label: l.cmd.lookAg,
-      altLabels: [alt.cmd.lookAg],
-      keywords: ["ag", "aether", "gazer", "深空之眼", "style", "look", "preset", "风格", "渲染"],
+      icon: Sparkles,
+      label: l.cmd.look,
+      altLabels: [alt.cmd.look],
+      // Both packs' names in both languages: someone reaching for this is
+      // thinking "wuwa", not "rendering style".
+      keywords: ["wuwa", "wuthering", "鸣潮", "ag", "aether", "gazer", "深空之眼", "style", "look", "preset", "风格", "渲染"],
     },
     ...controlItemsFor(t),
   ]
@@ -2083,6 +2076,12 @@ export default function Lab() {
    * Filmic, so applying the graphs without it delivers a look nobody tuned.
    * World and sun stay untouched — those are the scene's art direction.
    */
+  /** Which style the scene is wearing, for the shelf's tick. Null when it wears
+   *  neither whole — a half-switched scene is genuinely neither. */
+  const activePack = useMemo(
+    () => activeLookPack(Object.values(groupsByModel).flat().map((g) => g.graph)),
+    [groupsByModel],
+  )
   const applyLookPack = useCallback(
     (pack: LookPack) => {
       for (const [modelId, list] of Object.entries(groupsByModel)) {
@@ -2610,6 +2609,7 @@ export default function Lab() {
   // the same shape as "Which model?" in the upload flow.
   const { locale, setLocale } = useI18n()
   const [langOpen, setLangOpen] = useState(false)
+  const [styleOpen, setStyleOpen] = useState(false)
   const pendingLocale = useRef<Locale | null>(null)
   useEffect(() => {
     if (langOpen || !pendingLocale.current) return
@@ -3243,8 +3243,7 @@ export default function Lab() {
       else if (item.id === "grade-lib") openBrowse({ kind: "grade" })
       else if (item.id === "outline") patch("outline", { enabled: !outlineRef.current })
       else if (item.id === "language") setLangOpen(true)
-      else if (item.id === "look-wuwa") applyLookPack("wuwa")
-      else if (item.id === "look-ag") applyLookPack("ag")
+      else if (item.id === "look") setStyleOpen(true)
       // The same dialog the Share pill opens — one publish surface, two doors.
       else if (item.id === "publish") setShareOpen(true)
       else if (item.id === "gallery") openGallery()
@@ -3264,7 +3263,6 @@ export default function Lab() {
       recentIds,
       gotoSection,
       openMaterials,
-      applyLookPack,
       // The RESOLVED id, not the raw one — the raw id can name a model that has
       // been replaced away, and this callback must re-make itself when the
       // resolution changes, not when the stale string happens to.
@@ -3463,6 +3461,42 @@ export default function Lab() {
           ) : (
             <p className="text-xs text-muted-foreground">{upload?.kind === "notice" ? upload.message : null}</p>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* A shelf, not a switch: the same shape as the language dialog because it
+          is the same act — pick one of a short curated list — and a third pack
+          costs a row here and nothing else. */}
+      <Dialog open={styleOpen} onOpenChange={setStyleOpen}>
+        <DialogContent
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          className="max-w-sm rounded-xl border-line-strong bg-surface-raised backdrop-blur-xs"
+        >
+          <DialogHeader>
+            <DialogTitle className="text-sm">{t.brand.style}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-0.5">
+            {LOOK_PACK_ORDER.map((pack) => (
+              <button
+                key={pack}
+                onClick={() => {
+                  // Close first, apply after — the same law the language dialog
+                  // follows, and it matters more here: applying recompiles every
+                  // group, and doing that under a dialog still fading reads as a
+                  // stutter rather than as the change you asked for.
+                  setStyleOpen(false)
+                  applyLookPack(pack)
+                }}
+                className={cn(
+                  "flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-left text-xs transition-colors hover:bg-white/5",
+                  pack === activePack ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {t.brand.styles[pack]}
+                {pack === activePack && <Check className="size-3.5 shrink-0 text-pink-400" />}
+              </button>
+            ))}
+          </div>
         </DialogContent>
       </Dialog>
 
