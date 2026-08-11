@@ -13,21 +13,17 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 import { auth } from "@/lib/auth"
 import { hasDatabase } from "@/lib/db"
 
-/**
- * A published object is immutable, so it may be cached forever.
- *
- * Every publish creates a new scene row and a new key (see the note above), so
- * no URL this route signs is ever rewritten — the one thing `immutable` demands.
- * Without it R2 serves the zip with no cache headers at all and the browser
- * re-fetches the whole bundle every time: opening a scene in the editor after
- * viewing it downloaded the same 165MB twice, and so did every revisit and
- * refresh.
- *
- * Returned to the client rather than only signed, because a presigned PUT is
- * signed OVER this header — the browser has to send back the identical string
- * or R2 rejects the upload, and two copies of it would eventually disagree.
- */
-const IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable"
+// A published object is immutable — every publish mints a new scene row and a
+// new key — so it wants `public, max-age=31536000, immutable`, and without it R2
+// serves the zip with no cache headers and every browser re-fetches the whole
+// bundle on every visit, refresh and fork.
+//
+// It is NOT signed into the presigned PUT, though that is the obvious place for
+// it. Signing a header puts it in the browser's Access-Control-Request-Headers,
+// and the bucket's CORS policy allows a fixed list that does not include
+// cache-control — so the preflight failed and every publish died as an
+// unexplained "network error", which is all XHR reports for a refused preflight.
+// The header is applied out of band instead; see scripts/r2-backfill-cache.mjs.
 
 const MAX_BUNDLE_BYTES = 200 * 1024 * 1024
 const MAX_POSTER_BYTES = 20 * 1024 * 1024
@@ -77,14 +73,8 @@ export async function POST(request: Request) {
       Bucket: process.env.R2_BUCKET,
       Key: key,
       ContentType: poster ? posterType : "application/zip",
-      CacheControl: IMMUTABLE_CACHE_CONTROL,
     }),
     { expiresIn: 600 },
   )
-  return NextResponse.json({
-    uploadUrl,
-    key,
-    publicUrl: `${process.env.R2_PUBLIC_BASE_URL}/${key}`,
-    cacheControl: IMMUTABLE_CACHE_CONTROL,
-  })
+  return NextResponse.json({ uploadUrl, key, publicUrl: `${process.env.R2_PUBLIC_BASE_URL}/${key}` })
 }

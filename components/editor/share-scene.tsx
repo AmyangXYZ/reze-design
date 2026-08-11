@@ -57,20 +57,21 @@ function readDraft(sceneId: string): Draft {
  * which for a 200MB bundle is several silent minutes — indistinguishable from a
  * hang, and the first thing anyone does about a hang is reload and lose the work.
  */
+// Only `content-type` goes on this request. Every header set here has to be in
+// the bucket's CORS allow-list or the preflight is refused, and XHR reports that
+// as a bare "network error" with no status to go on — which is exactly how an
+// attempt to send `cache-control` presented. Cache headers are applied to the
+// object out of band; see scripts/r2-backfill-cache.mjs.
 function putWithProgress(
   url: string,
   body: Blob,
   contentType: string,
-  /** Signed into the presigned URL by /api/upload — must be sent back verbatim
-   *  or R2 rejects the PUT on a signature mismatch. */
-  cacheControl: string,
   onProgress: (fraction: number) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open("PUT", url)
     xhr.setRequestHeader("content-type", contentType)
-    if (cacheControl) xhr.setRequestHeader("cache-control", cacheControl)
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(e.loaded / e.total)
     }
@@ -209,14 +210,13 @@ function ShareSceneForm({
           body: JSON.stringify({ sceneId: publishScope, size: zip.size }),
         })
         if (!presign.ok) throw new Error(`presign ${presign.status}`)
-        const { uploadUrl, key, publicUrl, cacheControl } = (await presign.json()) as {
+        const { uploadUrl, key, publicUrl } = (await presign.json()) as {
           uploadUrl: string
           key: string
           publicUrl: string
-          cacheControl: string
         }
         setProgress(0)
-        await putWithProgress(uploadUrl, zip, "application/zip", cacheControl, setProgress)
+        await putWithProgress(uploadUrl, zip, "application/zip", setProgress)
         bundle = publicUrl
         bundleKey = key
         bundleBytes = zip.size
@@ -228,12 +228,8 @@ function ShareSceneForm({
           body: JSON.stringify({ sceneId: publishScope, size: poster.size, kind: "poster", contentType: poster.type }),
         })
         if (!presign.ok) throw new Error(await reason(presign))
-        const { uploadUrl, key, cacheControl } = (await presign.json()) as {
-          uploadUrl: string
-          key: string
-          cacheControl: string
-        }
-        await putWithProgress(uploadUrl, poster, poster.type, cacheControl, () => {})
+        const { uploadUrl, key } = (await presign.json()) as { uploadUrl: string; key: string }
+        await putWithProgress(uploadUrl, poster, poster.type, () => {})
         posterKey = key
       }
 
