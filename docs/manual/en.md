@@ -368,14 +368,19 @@ every link already shared working.
 
 ## 1.10 The gallery
 
-The gallery button, below the Scene tab, opens what everyone has published,
-browsable by hot, new, top, yours or liked, and narrowed by tag.
+**Scene gallery**, in the menu behind the logo — and in ⌘K — opens what everyone
+has published. Its rail is the one every library has: **All**, **Yours**,
+**Liked**, each with a count, and tags narrow whichever you are on. Publishing a
+scene offers the same door on its way out, next to the link; your account's scene
+count opens it already on **Yours**.
 
 On a scene's page you can orbit, play, and like it. **Open in editor** brings the
 whole scene into your editor as **your own copy** — every model, motion, light,
-grade and material assignment, ready to take somewhere else. The copy is
-independent, so publishing it creates a new scene and leaves the original
-untouched. Its credits come with it; extend them as you go.
+grade and material assignment, ready to take somewhere else. It reuses what the
+page already downloaded, so nothing arrives twice, and your own scene is left
+alone until the copy is ready. The copy is independent: it opens under the
+original's name with `- fork` appended, publishing it creates a new scene, and
+the original is untouched. Its credits come with it; extend them as you go.
 
 Accounts exist to own what you publish. On first sign-in you choose your name,
 which appears in every scene link you create and can be set only once — permanence

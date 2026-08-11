@@ -29,7 +29,8 @@ One piece of the **Reze MMD family**, covering the whole MMD workflow on the web
 - **Video export** — 60 fps mp4 up to 4K, cinemascope to vertical, with a green-screen mode.
 - **Still capture** — a PNG at the export's framing.
 - **Publishing** — a permanent URL anyone can open and orbit.
-- **Gallery** — hot, new and top, by tag or by what you liked.
+- **Open in editor** — take any published scene as your own copy, out of what its page already loaded.
+- **Gallery** — everything published, your own, or what you liked, narrowed by tag.
 - **Accounts** — GitHub or Google, and a handle you own.
 - **Nothing lost** — every edit survives a refresh, uploads included, and nothing reaches a server until you publish.
 - **Scene files** — the whole scene as one zip, out and back in.
@@ -109,6 +110,11 @@ document that points at it. A scene needs a name, description, tags, a
 thumbnail and **credits** — naming the artists behind the model, motion and
 music is required. The URL is `reze.design/<handle>/<short-id>`; the short id
 is what resolves, so renaming a scene or an author never breaks a link.
+
+**Open in editor**, on a published scene's page, brings the whole thing back as
+your own copy. It opens from the assets that page had already downloaded to
+render what you were watching, so forking a scene does not fetch its models a
+second time.
 
 ## Development
 

@@ -18,6 +18,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { LIBRARY_SHELL, LibraryTags, RailRow, RailSection, RailTags } from "@/components/editor/library-rail"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
 import { useSession } from "@/lib/auth-client"
+import type { LibraryFacet } from "@/lib/library"
 import { useZOrder } from "@/hooks/use-z-order"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -35,9 +36,16 @@ export type GalleryScene = {
   createdAt: string
 }
 
-/** How the gallery is being browsed: three orderings of everything, then two
- *  narrowings. One axis, because to a reader they are the same question. */
-const VIEWS = ["hot", "new", "top", "yours", "liked"] as const
+/**
+ * How the gallery is being browsed — the same three shelves as every other
+ * library, minus `builtin`, because nobody ships a built-in scene.
+ *
+ * It used to carry the orderings too (hot / new / top) as rail rows beside the
+ * narrowings, which made one list answer two different questions. The gallery is
+ * the fourth library and now reads like the other three: the rail says WHICH
+ * scenes, and `all` is ordered the way the gallery has always opened.
+ */
+const VIEWS = ["all", "yours", "liked"] as const
 type View = (typeof VIEWS)[number]
 type Page = { scenes: GalleryScene[]; nextCursor: number | null }
 
@@ -70,9 +78,18 @@ const announce = () => {
 let tagCounts: [string, number][] | null = null
 let tagsInflight: Promise<[string, number][]> | null = null
 
+/** Rail counts, for the same reason and over the same whole: a rail counting the
+ *  loaded window would climb as you scrolled it. */
+export type FacetCounts = Record<View, number>
+let facetCounts: FacetCounts | null = null
+let facetsInflight: Promise<FacetCounts> | null = null
+
 async function firstPage(v: View): Promise<Page> {
-  const params = new URLSearchParams({ kind: "scene", sort: isFacet(v) ? "new" : v })
-  // Only a narrowing needs a session; the three orderings stay one public query.
+  // `all` keeps the ranking the gallery has always opened on — a young scene with
+  // a few likes above an old one with the same. The narrowings are yours and are
+  // newest-first, where recency is what you are actually looking for.
+  const params = new URLSearchParams({ kind: "scene", sort: isFacet(v) ? "new" : "hot" })
+  // Only a narrowing needs a session; `all` stays one public query.
   if (isFacet(v)) params.set("facet", v)
   const res = await fetch(`/api/library?${params}`)
   if (!res.ok) throw new Error(String(res.status))
@@ -127,11 +144,50 @@ function loadTags(): Promise<[string, number][]> {
   return tagsInflight
 }
 
+/**
+ * What can be painted for a view before its own request lands.
+ *
+ * "Yours" is a subset of every other list, and `author` is the handle
+ * denormalised onto the row, so it can be sieved out of whatever is already
+ * cached and shown at once — the fresh page lands underneath it, which is the
+ * rule the rest of this cache follows. "Liked" gets nothing: a list row carries
+ * no like state, and guessing would be worse than the spinner.
+ */
+function cachedFallback(v: View, username: string | null | undefined): GalleryScene[] {
+  if (v !== "yours" || !username) return []
+  const seen = new Set<string>()
+  const out: GalleryScene[] = []
+  for (const page of pages.values()) {
+    for (const s of page.scenes) {
+      if (s.author !== username || seen.has(s.id)) continue
+      seen.add(s.id)
+      out.push(s)
+    }
+  }
+  return out
+}
+
+function loadFacetCounts(): Promise<FacetCounts> {
+  facetsInflight ??= fetch("/api/library?kind=scene&counts=facets")
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+    .then((d: FacetCounts) => {
+      facetCounts = d
+      facetsInflight = null
+      return d
+    })
+    .catch((e: unknown) => {
+      facetsInflight = null
+      throw e
+    })
+  return facetsInflight
+}
+
 /** Warm the default view and the tag cloud while the page is idle, so opening the
  *  gallery is a render rather than a wait. */
 export function prefetchGallery(): void {
-  if (!pages.has("hot")) void loadPage("hot").catch(() => {})
+  if (!pages.has("all")) void loadPage("all").catch(() => {})
   if (!tagCounts) void loadTags().catch(() => {})
+  if (!facetCounts) void loadFacetCounts().catch(() => {})
 }
 
 /** Your scene, in the lists it belongs to, without waiting for a round trip. */
@@ -159,28 +215,58 @@ export function noteSceneRenamed(id: string, name: string): void {
   announce()
 }
 
-export function SceneGallery({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+/**
+ * `initialFacet` is the browse slot's, the same one the three libraries take, so
+ * an entrance that means "show me mine" arrives on that shelf here too — the
+ * account panel's scene count is exactly that entrance. Only the two narrowings
+ * exist in both vocabularies; a slot asking for `all` or `builtin` has said
+ * nothing about ordering, so the gallery opens the way it always does.
+ */
+export function SceneGallery({
+  open,
+  initialFacet,
+  onOpenChange,
+}: {
+  open: boolean
+  initialFacet?: LibraryFacet
+  onOpenChange: (open: boolean) => void
+}) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
-      {open && <GalleryContent onOpenChange={onOpenChange} />}
+      {open && <GalleryContent initialFacet={initialFacet} onOpenChange={onOpenChange} />}
     </Dialog>
   )
 }
 
-function GalleryContent({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
+function GalleryContent({
+  initialFacet,
+  onOpenChange,
+}: {
+  initialFacet?: LibraryFacet
+  onOpenChange: (open: boolean) => void
+}) {
   const t = useT()
   const router = useRouter()
   const { data: session } = useSession()
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, () => onOpenChange(false))
-  const [view, setView] = useState<View>("hot")
+  const [view, setView] = useState<View>(() =>
+    initialFacet === "yours" || initialFacet === "liked" ? initialFacet : "all",
+  )
   const [tag, setTag] = useState<string | null>(null)
   const [query, setQuery] = useState("")
-  const [scenes, setScenes] = useState<GalleryScene[]>(() => pages.get("hot")?.scenes ?? [])
-  const [cursor, setCursor] = useState<number | null>(() => pages.get("hot")?.nextCursor ?? null)
+  // Seeded from the view this opened ON, not from the default one: an entrance
+  // that means "show me mine" would otherwise paint the whole gallery first.
+  const [scenes, setScenes] = useState<GalleryScene[]>(
+    () => pages.get(view)?.scenes ?? cachedFallback(view, session?.user.username),
+  )
+  const [cursor, setCursor] = useState<number | null>(() => pages.get(view)?.nextCursor ?? null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [tags, setTags] = useState<[string, number][]>(() => tagCounts ?? [])
-  const [loading, setLoading] = useState(() => !pages.has("hot"))
+  const [counts, setCounts] = useState<FacetCounts | null>(() => facetCounts)
+  // Only when there is genuinely nothing to show. Rows sieved out of another
+  // list are worth more than a spinner over an empty grid.
+  const [loading, setLoading] = useState(() => !pages.has(view) && scenes.length === 0)
   const [failed, setFailed] = useState(false)
 
   // Cached rows paint immediately and the refresh lands underneath them, so
@@ -228,6 +314,34 @@ function GalleryContent({ onOpenChange }: { onOpenChange: (open: boolean) => voi
       stale = true
     }
   }, [])
+
+  useEffect(() => {
+    if (facetCounts) return
+    let stale = false
+    loadFacetCounts()
+      .then((c) => !stale && setCounts(c))
+      .catch(() => {})
+    return () => {
+      stale = true
+    }
+  }, [])
+
+  // Warm both personal shelves while you are looking at the gallery, so clicking
+  // either is a render rather than a wait. Signed-in only: these are the two
+  // queries here that need a session, and asking without one returns an empty
+  // list every time.
+  //
+  // Fetched rather than sieved out of `all`, which is what `cachedFallback` can
+  // do for "yours": a list row carries no like state, so deriving "liked" would
+  // mean shipping your liked ids down with every page — and it would still only
+  // cover the scenes currently in the window. Two small queries buy the real
+  // answer, and by the time either shelf is clicked it is usually already here.
+  useEffect(() => {
+    if (!session?.user.username) return
+    for (const v of ["yours", "liked"] as const) {
+      if (!pages.has(v)) void loadPage(v).catch(() => {})
+    }
+  }, [session?.user.username])
 
   const loadMore = () => {
     if (!cursor) return
@@ -340,25 +454,28 @@ function GalleryContent({ onOpenChange }: { onOpenChange: (open: boolean) => voi
       </DialogHeader>
 
       <div className="flex min-h-0 flex-1">
-        {/* Rail: how to order, then what to order by. */}
+        {/* Rail: which scenes. The same three shelves, in the same words and with
+            the same counts, as every other library. */}
         <div className="hidden w-50 shrink-0 flex-col border-r border-white/10 p-2 md:flex">
-          {/* One section, like every other library: ordering the whole gallery and
-              narrowing it to your own are both ways of browsing it. */}
           <RailSection title={t.rail.browse}>
             <div className="flex flex-col gap-0.5">
               {VIEWS.map((v) => (
                 <RailRow
                   key={v}
-                  label={v === "yours" || v === "liked" ? t.rail[v] : t.gallery[v]}
+                  label={t.rail[v]}
+                  count={counts?.[v]}
                   active={view === v}
                   onClick={() => {
                     if (v === view) return
-                    // Cached view swaps instantly; an unseen one shows the spinner
-                    // rather than the previous view's scenes under a new label.
+                    // Cached view swaps instantly; an unseen one falls back to
+                    // whatever can be sieved out of the lists already held, and
+                    // only shows the spinner when that comes up empty — never the
+                    // previous view's scenes under a new label.
                     const cached = pages.get(v)
-                    setScenes(cached?.scenes ?? [])
+                    const rows = cached?.scenes ?? cachedFallback(v, session?.user.username)
+                    setScenes(rows)
                     setCursor(cached?.nextCursor ?? null)
-                    setLoading(!cached)
+                    setLoading(!cached && rows.length === 0)
                     setFailed(false)
                     setView(v)
                   }}

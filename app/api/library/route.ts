@@ -59,6 +59,7 @@ export async function GET(request: Request) {
     const url = new URL(request.url)
     if (url.searchParams.get("kind") !== "scene") return NextResponse.json({ items: [] })
     if (url.searchParams.get("counts") === "tags") return NextResponse.json({ tags: [] })
+    if (url.searchParams.get("counts") === "facets") return NextResponse.json({ all: 0, yours: 0, liked: 0 })
     return NextResponse.json({ scenes: [], nextCursor: null })
   }
 
@@ -90,6 +91,40 @@ export async function GET(request: Request) {
         )
         .groupBy(sql`tag`)
       return NextResponse.json({ tags: rows.sort((a, b) => b.n - a.n || a.tag.localeCompare(b.tag)) })
+    }
+
+    // Facet counts for the rail, over the WHOLE gallery rather than the page in
+    // front of you — a rail that counted the loaded window would climb as you
+    // scrolled. `yours` and `liked` need a session and are 0 without one, which
+    // is also what those rails hold for a signed-out reader.
+    if (url.searchParams.get("counts") === "facets") {
+      const published = and(
+        eq(schema.libraryItems.kind, "scene"),
+        eq(schema.libraryItems.visibility, "public"),
+        isNull(schema.libraryItems.deletedAt),
+      )
+      const viewer = await auth.api.getSession({ headers: request.headers })
+      const n = sql<number>`count(*)::int`
+      const [all, yours, liked] = await Promise.all([
+        db.select({ n }).from(schema.libraryItems).where(published),
+        viewer
+          ? db
+              .select({ n })
+              .from(schema.libraryItems)
+              .where(and(published, eq(schema.libraryItems.ownerId, viewer.user.id)))
+          : Promise.resolve([{ n: 0 }]),
+        viewer
+          ? db
+              .select({ n })
+              .from(schema.libraryItems)
+              .innerJoin(
+                schema.likes,
+                and(eq(schema.likes.itemId, schema.libraryItems.id), eq(schema.likes.userId, viewer.user.id)),
+              )
+              .where(published)
+          : Promise.resolve([{ n: 0 }]),
+      ])
+      return NextResponse.json({ all: all[0]?.n ?? 0, yours: yours[0]?.n ?? 0, liked: liked[0]?.n ?? 0 })
     }
 
     const sort = url.searchParams.get("sort") ?? "hot"

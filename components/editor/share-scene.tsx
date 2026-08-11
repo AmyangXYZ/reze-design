@@ -6,7 +6,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { Check, Copy, ExternalLink, Globe, ImagePlus, Loader2 } from "lucide-react"
+import { Check, Copy, ExternalLink, GalleryThumbnails, Globe, ImagePlus, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -106,6 +106,8 @@ export function ShareSceneDialog(props: {
   forkedFromId?: string
   collect: () => ScenePublishSource
   unpublished: () => UnpublishedUse[]
+  /** Closes this dialog and opens the gallery — offered once the scene is up. */
+  onGallery: () => void
 }) {
   // Mounted only while open, so every publish starts from a clean form. Kept
   // mounted, the dialog reopened onto the previous publish's success screen —
@@ -124,6 +126,7 @@ function ShareSceneForm({
   forkedFromId,
   collect,
   unpublished,
+  onGallery,
 }: {
   /** The working scene's client-minted id. Keys the saved draft — the upload gets
    *  its own id per publish (see `publishScope`). */
@@ -137,6 +140,7 @@ function ShareSceneForm({
   /** Looks this scene uses that exist in no library. Publishing is blocked while
    *  this is non-empty — see lib/refs.ts for why. */
   unpublished: () => UnpublishedUse[]
+  onGallery: () => void
 }) {
   const t = useT()
   const { data: session } = useSession()
@@ -369,6 +373,14 @@ function ShareSceneForm({
                 <ExternalLink className="size-3.5" />
                 {t.share.openScene}
               </Link>
+            </Button>
+            {/* The other place the scene now exists. Below opening it, because
+                seeing your own scene is the first thing you want and the shelf
+                it landed on is the second — and it is the same door as the top
+                bar's, so it carries that door's name rather than a new one. */}
+            <Button size="sm" className="h-8 w-full text-xs font-medium" onClick={onGallery}>
+              <GalleryThumbnails className="size-3.5" />
+              {t.gallery.door}
             </Button>
           </div>
         ) : (

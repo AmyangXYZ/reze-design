@@ -66,9 +66,6 @@ const en = {
     // place. The dialog's own header stays "Gallery": inside it, where you
     // plainly are, the word "scene" is the thing every tile already is.
     door: "Scene gallery",
-    hot: "Hot",
-    new: "New",
-    top: "Top",
     more: "Load more",
     loading: "Fetching scenes…",
     open: "Open scene",
@@ -671,9 +668,6 @@ const zh: Dictionary = {
   gallery: {
     title: "画廊",
     door: "场景画廊",
-    hot: "热门",
-    new: "最新",
-    top: "最赞",
     more: "加载更多",
     loading: "正在获取场景…",
     open: "打开场景",

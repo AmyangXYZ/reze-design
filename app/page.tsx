@@ -132,6 +132,7 @@ import {
   type EffectItem,
   type GradeItem,
   type GraphItem,
+  type LibraryFacet,
 } from "@/lib/library"
 import { communityItems, useCommunity } from "@/hooks/use-community"
 import { useDrafts } from "@/hooks/use-drafts"
@@ -2284,15 +2285,18 @@ export default function Lab() {
   /** Every entrance to the gallery goes through here — the logo menu, the
    *  palette, the account panel's scene count — so "they have been" cannot be
    *  true through one door and false through another. */
-  const openGallery = useCallback(() => {
-    try {
-      window.localStorage.setItem(GALLERY_SEEN_KEY, "1")
-    } catch {
-      // private mode — the suggestion simply keeps offering, which is harmless
-    }
-    setGallerySeen(true)
-    openBrowse({ kind: "gallery" })
-  }, [openBrowse])
+  const openGallery = useCallback(
+    (facet: LibraryFacet = "all") => {
+      try {
+        window.localStorage.setItem(GALLERY_SEEN_KEY, "1")
+      } catch {
+        // private mode — the suggestion simply keeps offering, which is harmless
+      }
+      setGallerySeen(true)
+      openBrowse({ kind: "gallery" }, facet)
+    },
+    [openBrowse],
+  )
 
   /** The account panel's stat rows are doors: your scenes open the gallery, your
    *  looks open their own library already filtered to yours — which is the whole
@@ -2301,7 +2305,9 @@ export default function Lab() {
    *  knows what group it applies to), and one of them is not a library at all. */
   const openForAccount = useCallback(
     (kind: "grade" | "effect" | "graph" | "scene") => {
-      if (kind === "scene") openGallery()
+      // "yours" for all four, including the gallery: the count you clicked was a
+      // count of YOUR scenes, so the shelf it opens has to be the same set.
+      if (kind === "scene") openGallery("yours")
       else if (kind === "graph") openBrowse({ kind: "graph", groupId: null }, "yours")
       else openBrowse(kind === "grade" ? { kind: "grade" } : { kind: "effect" }, "yours")
     },
@@ -4047,6 +4053,12 @@ export default function Lab() {
           sceneId={scene.state.id}
           sceneName={sceneName}
           onRename={setSceneName}
+          // The scene is up; the gallery is where it landed. Closing first, or
+          // the browse surface opens underneath a dialog still sitting on it.
+          onGallery={() => {
+            setShareOpen(false)
+            openGallery()
+          }}
           collect={collectScenePublish}
           // Looks worn by this scene that exist in no library: publishing is
           // blocked while any remain, since a published scene cannot point at a
@@ -4068,7 +4080,11 @@ export default function Lab() {
           browse surface too, and it must never sit behind one. It is NOT a tab
           among them, though — a library lends a look to the scene you are
           making, the gallery leaves it for someone else's. */}
-      <SceneGallery open={galleryOpen} onOpenChange={(o) => !o && closeBrowseIf("gallery")} />
+      <SceneGallery
+        open={galleryOpen}
+        initialFacet={libraryFacet}
+        onOpenChange={(o) => !o && closeBrowseIf("gallery")}
+      />
 
       <CommandPalette
         key={paletteSession}
