@@ -489,7 +489,14 @@ export const RenderPanel = memo(function RenderPanel({
             <Button
               size="sm"
               onClick={() => abortRef.current?.abort()}
-              className="h-8 flex-1 gap-1.5 rounded-l-none bg-white/10 text-xs font-medium hover:bg-white/15"
+              // SOLID red, white text — the same weight as the blue Publish
+              // button, because it is the same kind of control: the one thing
+              // this panel is for while it is exporting. A translucent tint
+              // reads as a disabled surface, which is the opposite of what a
+              // button you may urgently want should look like. Red because
+              // stopping throws the render away: the encoded frames are gone,
+              // not paused.
+              className="h-8 flex-1 gap-1.5 rounded-l-none bg-red-500 text-xs font-medium text-white hover:bg-red-400"
             >
               <Square className="size-3.5" />
               {t.render.cancel}
