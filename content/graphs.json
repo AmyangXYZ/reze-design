@@ -262,6 +262,17 @@
       "inputs": {
        "fac": 0.5
       }
+     },
+     {
+      "id": "mat_diffuse",
+      "type": "material_diffuse"
+     },
+     {
+      "id": "tex_base",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
      }
     ],
     "links": [
@@ -277,7 +288,7 @@
      },
      {
       "from": {
-       "node": "tex",
+       "node": "tex_base",
        "socket": "color"
       },
       "to": {
@@ -287,7 +298,7 @@
      },
      {
       "from": {
-       "node": "tex",
+       "node": "tex_base",
        "socket": "color"
       },
       "to": {
@@ -634,6 +645,26 @@
        "node": "mix_shader_001",
        "socket": "b"
       }
+     },
+     {
+      "from": {
+       "node": "tex",
+       "socket": "color"
+      },
+      "to": {
+       "node": "tex_base",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "mat_diffuse",
+       "socket": "color"
+      },
+      "to": {
+       "node": "tex_base",
+       "socket": "b"
+      }
      }
     ],
     "output": {
@@ -692,12 +723,23 @@
      {
       "id": "add",
       "type": "add_shader"
+     },
+     {
+      "id": "mat_diffuse",
+      "type": "material_diffuse"
+     },
+     {
+      "id": "tex_base",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
      }
     ],
     "links": [
      {
       "from": {
-       "node": "tex",
+       "node": "tex_base",
        "socket": "color"
       },
       "to": {
@@ -707,7 +749,7 @@
      },
      {
       "from": {
-       "node": "tex",
+       "node": "tex_base",
        "socket": "color"
       },
       "to": {
@@ -732,6 +774,26 @@
       },
       "to": {
        "node": "add",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "tex",
+       "socket": "color"
+      },
+      "to": {
+       "node": "tex_base",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "mat_diffuse",
+       "socket": "color"
+      },
+      "to": {
+       "node": "tex_base",
        "socket": "b"
       }
      }
@@ -1033,6 +1095,17 @@
       "inputs": {
        "fac": 0.5
       }
+     },
+     {
+      "id": "mat_diffuse",
+      "type": "material_diffuse"
+     },
+     {
+      "id": "tex_base",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
      }
     ],
     "links": [
@@ -1048,7 +1121,7 @@
      },
      {
       "from": {
-       "node": "tex",
+       "node": "tex_base",
        "socket": "color"
       },
       "to": {
@@ -1058,7 +1131,7 @@
      },
      {
       "from": {
-       "node": "tex",
+       "node": "tex_base",
        "socket": "color"
       },
       "to": {
@@ -1465,6 +1538,26 @@
        "node": "mix_shader_001",
        "socket": "b"
       }
+     },
+     {
+      "from": {
+       "node": "tex",
+       "socket": "color"
+      },
+      "to": {
+       "node": "tex_base",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "mat_diffuse",
+       "socket": "color"
+      },
+      "to": {
+       "node": "tex_base",
+       "socket": "b"
+      }
      }
     ],
     "output": {
@@ -1655,12 +1748,23 @@
       "inputs": {
        "fac": 0.2
       }
+     },
+     {
+      "id": "mat_diffuse",
+      "type": "material_diffuse"
+     },
+     {
+      "id": "tex_base",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
      }
     ],
     "links": [
      {
       "from": {
-       "node": "tex",
+       "node": "tex_base",
        "socket": "color"
       },
       "to": {
@@ -1680,7 +1784,7 @@
      },
      {
       "from": {
-       "node": "tex",
+       "node": "tex_base",
        "socket": "color"
       },
       "to": {
@@ -1907,6 +2011,26 @@
        "node": "mix_shader_001",
        "socket": "b"
       }
+     },
+     {
+      "from": {
+       "node": "tex",
+       "socket": "color"
+      },
+      "to": {
+       "node": "tex_base",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "mat_diffuse",
+       "socket": "color"
+      },
+      "to": {
+       "node": "tex_base",
+       "socket": "b"
+      }
      }
     ],
     "output": {
@@ -2072,12 +2196,23 @@
       "inputs": {
        "fac": 0.6967
       }
+     },
+     {
+      "id": "mat_diffuse",
+      "type": "material_diffuse"
+     },
+     {
+      "id": "tex_base",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
      }
     ],
     "links": [
      {
       "from": {
-       "node": "tex",
+       "node": "tex_base",
        "socket": "color"
       },
       "to": {
@@ -2282,6 +2417,26 @@
       },
       "to": {
        "node": "mix_shader_001",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "tex",
+       "socket": "color"
+      },
+      "to": {
+       "node": "tex_base",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "mat_diffuse",
+       "socket": "color"
+      },
+      "to": {
+       "node": "tex_base",
        "socket": "b"
       }
      }
@@ -2530,6 +2685,17 @@
       "inputs": {
        "fac": 0.8999999761581421
       }
+     },
+     {
+      "id": "mat_diffuse",
+      "type": "material_diffuse"
+     },
+     {
+      "id": "tex_base",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
      }
     ],
     "links": [
@@ -2555,7 +2721,7 @@
      },
      {
       "from": {
-       "node": "tex",
+       "node": "tex_base",
        "socket": "color"
       },
       "to": {
@@ -2585,7 +2751,7 @@
      },
      {
       "from": {
-       "node": "tex",
+       "node": "tex_base",
        "socket": "color"
       },
       "to": {
@@ -2725,7 +2891,7 @@
      },
      {
       "from": {
-       "node": "tex",
+       "node": "tex_base",
        "socket": "color"
       },
       "to": {
@@ -2770,6 +2936,26 @@
       },
       "to": {
        "node": "mix_shader_001",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "tex",
+       "socket": "color"
+      },
+      "to": {
+       "node": "tex_base",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "mat_diffuse",
+       "socket": "color"
+      },
+      "to": {
+       "node": "tex_base",
        "socket": "b"
       }
      }
@@ -2908,6 +3094,17 @@
       "inputs": {
        "fac": 0.8999999761581421
       }
+     },
+     {
+      "id": "mat_diffuse",
+      "type": "material_diffuse"
+     },
+     {
+      "id": "tex_base",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
      }
     ],
     "links": [
@@ -2933,7 +3130,7 @@
      },
      {
       "from": {
-       "node": "tex",
+       "node": "tex_base",
        "socket": "color"
       },
       "to": {
@@ -2963,7 +3160,7 @@
      },
      {
       "from": {
-       "node": "tex",
+       "node": "tex_base",
        "socket": "color"
       },
       "to": {
@@ -3063,7 +3260,7 @@
      },
      {
       "from": {
-       "node": "tex",
+       "node": "tex_base",
        "socket": "color"
       },
       "to": {
@@ -3098,6 +3295,26 @@
       },
       "to": {
        "node": "mix_shader_001",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "tex",
+       "socket": "color"
+      },
+      "to": {
+       "node": "tex_base",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "mat_diffuse",
+       "socket": "color"
+      },
+      "to": {
+       "node": "tex_base",
        "socket": "b"
       }
      }
@@ -3231,6 +3448,17 @@
      {
       "id": "mix_shader_001",
       "type": "mix_shader"
+     },
+     {
+      "id": "mat_diffuse",
+      "type": "material_diffuse"
+     },
+     {
+      "id": "tex_base",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
      }
     ],
     "links": [
@@ -3316,7 +3544,7 @@
      },
      {
       "from": {
-       "node": "tex",
+       "node": "tex_base",
        "socket": "color"
       },
       "to": {
@@ -3326,7 +3554,7 @@
      },
      {
       "from": {
-       "node": "tex",
+       "node": "tex_base",
        "socket": "color"
       },
       "to": {
@@ -3363,6 +3591,26 @@
        "node": "mix_shader_001",
        "socket": "fac"
       }
+     },
+     {
+      "from": {
+       "node": "tex",
+       "socket": "color"
+      },
+      "to": {
+       "node": "tex_base",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "mat_diffuse",
+       "socket": "color"
+      },
+      "to": {
+       "node": "tex_base",
+       "socket": "b"
+      }
      }
     ],
     "output": {
@@ -3397,6 +3645,17 @@
      {
       "id": "tex",
       "type": "texture"
+     },
+     {
+      "id": "mat_diffuse",
+      "type": "material_diffuse"
+     },
+     {
+      "id": "tex_base",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
      },
      {
       "id": "geo",
@@ -3519,6 +3778,18 @@
       }
      },
      {
+      "id": "soften",
+      "type": "mix/blend",
+      "inputs": {
+       "fac": 0.5,
+       "a": [
+        1,
+        1,
+        1
+       ]
+      }
+     },
+     {
       "id": "lit",
       "type": "mix/multiply",
       "inputs": {
@@ -3607,6 +3878,26 @@
        "socket": "color"
       },
       "to": {
+       "node": "tex_base",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "mat_diffuse",
+       "socket": "color"
+      },
+      "to": {
+       "node": "tex_base",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "tex_base",
+       "socket": "color"
+      },
+      "to": {
        "node": "shade",
        "socket": "a"
       }
@@ -3683,6 +3974,16 @@
      },
      {
       "from": {
+       "node": "lightterm",
+       "socket": "color"
+      },
+      "to": {
+       "node": "soften",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
        "node": "hs",
        "socket": "color"
       },
@@ -3693,7 +3994,7 @@
      },
      {
       "from": {
-       "node": "lightterm",
+       "node": "soften",
        "socket": "color"
       },
       "to": {
@@ -3774,6 +4075,17 @@
      {
       "id": "tex",
       "type": "texture"
+     },
+     {
+      "id": "mat_diffuse",
+      "type": "material_diffuse"
+     },
+     {
+      "id": "tex_base",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
      },
      {
       "id": "geo",
@@ -3896,6 +4208,18 @@
       }
      },
      {
+      "id": "soften",
+      "type": "mix/blend",
+      "inputs": {
+       "fac": 0.5,
+       "a": [
+        1,
+        1,
+        1
+       ]
+      }
+     },
+     {
       "id": "lit",
       "type": "mix/multiply",
       "inputs": {
@@ -3984,6 +4308,26 @@
        "socket": "color"
       },
       "to": {
+       "node": "tex_base",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "mat_diffuse",
+       "socket": "color"
+      },
+      "to": {
+       "node": "tex_base",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "tex_base",
+       "socket": "color"
+      },
+      "to": {
        "node": "shade",
        "socket": "a"
       }
@@ -4060,6 +4404,16 @@
      },
      {
       "from": {
+       "node": "lightterm",
+       "socket": "color"
+      },
+      "to": {
+       "node": "soften",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
        "node": "hs",
        "socket": "color"
       },
@@ -4070,7 +4424,7 @@
      },
      {
       "from": {
-       "node": "lightterm",
+       "node": "soften",
        "socket": "color"
       },
       "to": {
@@ -4151,6 +4505,17 @@
      {
       "id": "tex",
       "type": "texture"
+     },
+     {
+      "id": "mat_diffuse",
+      "type": "material_diffuse"
+     },
+     {
+      "id": "tex_base",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
      },
      {
       "id": "geo",
@@ -4273,6 +4638,18 @@
       }
      },
      {
+      "id": "soften",
+      "type": "mix/blend",
+      "inputs": {
+       "fac": 0.5,
+       "a": [
+        1,
+        1,
+        1
+       ]
+      }
+     },
+     {
       "id": "lit",
       "type": "mix/multiply",
       "inputs": {
@@ -4361,6 +4738,26 @@
        "socket": "color"
       },
       "to": {
+       "node": "tex_base",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "mat_diffuse",
+       "socket": "color"
+      },
+      "to": {
+       "node": "tex_base",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "tex_base",
+       "socket": "color"
+      },
+      "to": {
        "node": "shade",
        "socket": "a"
       }
@@ -4437,6 +4834,16 @@
      },
      {
       "from": {
+       "node": "lightterm",
+       "socket": "color"
+      },
+      "to": {
+       "node": "soften",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
        "node": "hs",
        "socket": "color"
       },
@@ -4447,7 +4854,7 @@
      },
      {
       "from": {
-       "node": "lightterm",
+       "node": "soften",
        "socket": "color"
       },
       "to": {
@@ -4528,6 +4935,17 @@
      {
       "id": "tex",
       "type": "texture"
+     },
+     {
+      "id": "mat_diffuse",
+      "type": "material_diffuse"
+     },
+     {
+      "id": "tex_base",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
      },
      {
       "id": "geo",
@@ -4650,6 +5068,18 @@
       }
      },
      {
+      "id": "soften",
+      "type": "mix/blend",
+      "inputs": {
+       "fac": 0.5,
+       "a": [
+        1,
+        1,
+        1
+       ]
+      }
+     },
+     {
       "id": "lit",
       "type": "mix/multiply",
       "inputs": {
@@ -4738,6 +5168,26 @@
        "socket": "color"
       },
       "to": {
+       "node": "tex_base",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "mat_diffuse",
+       "socket": "color"
+      },
+      "to": {
+       "node": "tex_base",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "tex_base",
+       "socket": "color"
+      },
+      "to": {
        "node": "shade",
        "socket": "a"
       }
@@ -4814,6 +5264,16 @@
      },
      {
       "from": {
+       "node": "lightterm",
+       "socket": "color"
+      },
+      "to": {
+       "node": "soften",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
        "node": "hs",
        "socket": "color"
       },
@@ -4824,7 +5284,7 @@
      },
      {
       "from": {
-       "node": "lightterm",
+       "node": "soften",
        "socket": "color"
       },
       "to": {
@@ -4905,6 +5365,17 @@
      {
       "id": "tex",
       "type": "texture"
+     },
+     {
+      "id": "mat_diffuse",
+      "type": "material_diffuse"
+     },
+     {
+      "id": "tex_base",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
      },
      {
       "id": "geo",
@@ -5027,6 +5498,18 @@
       }
      },
      {
+      "id": "soften",
+      "type": "mix/blend",
+      "inputs": {
+       "fac": 0.5,
+       "a": [
+        1,
+        1,
+        1
+       ]
+      }
+     },
+     {
       "id": "lit",
       "type": "mix/multiply",
       "inputs": {
@@ -5115,6 +5598,26 @@
        "socket": "color"
       },
       "to": {
+       "node": "tex_base",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "mat_diffuse",
+       "socket": "color"
+      },
+      "to": {
+       "node": "tex_base",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "tex_base",
+       "socket": "color"
+      },
+      "to": {
        "node": "shade",
        "socket": "a"
       }
@@ -5191,6 +5694,16 @@
      },
      {
       "from": {
+       "node": "lightterm",
+       "socket": "color"
+      },
+      "to": {
+       "node": "soften",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
        "node": "hs",
        "socket": "color"
       },
@@ -5201,7 +5714,7 @@
      },
      {
       "from": {
-       "node": "lightterm",
+       "node": "soften",
        "socket": "color"
       },
       "to": {
@@ -5282,6 +5795,17 @@
      {
       "id": "tex",
       "type": "texture"
+     },
+     {
+      "id": "mat_diffuse",
+      "type": "material_diffuse"
+     },
+     {
+      "id": "tex_base",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
      },
      {
       "id": "geo",
@@ -5404,6 +5928,18 @@
       }
      },
      {
+      "id": "soften",
+      "type": "mix/blend",
+      "inputs": {
+       "fac": 0.5,
+       "a": [
+        1,
+        1,
+        1
+       ]
+      }
+     },
+     {
       "id": "lit",
       "type": "mix/multiply",
       "inputs": {
@@ -5492,6 +6028,26 @@
        "socket": "color"
       },
       "to": {
+       "node": "tex_base",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "mat_diffuse",
+       "socket": "color"
+      },
+      "to": {
+       "node": "tex_base",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "tex_base",
+       "socket": "color"
+      },
+      "to": {
        "node": "shade",
        "socket": "a"
       }
@@ -5568,6 +6124,16 @@
      },
      {
       "from": {
+       "node": "lightterm",
+       "socket": "color"
+      },
+      "to": {
+       "node": "soften",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
        "node": "hs",
        "socket": "color"
       },
@@ -5578,7 +6144,7 @@
      },
      {
       "from": {
-       "node": "lightterm",
+       "node": "soften",
        "socket": "color"
       },
       "to": {

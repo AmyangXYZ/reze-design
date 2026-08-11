@@ -22,9 +22,9 @@ const en = {
     renameScene: "Double-click to rename",
     language: "Language",
     style: "Rendering style",
-    // The packs' own names, not translated: they name the games these looks come
-    // from, and a player searching for one searches for it by name.
-    styles: { ag: "Aether Gazer 深空之眼", wuwa: "Wuthering Waves 鸣潮" },
+    // One locale's name each. The palette's KEYWORDS carry both languages, so
+    // searching either still finds it — the row itself does not have to.
+    styles: { ag: "Aether Gazer", wuwa: "Wuthering Waves" },
   },
   // Export / import / reset all act on the same slice: the scene's look, not its files.
   sceneFile: {
@@ -617,7 +617,7 @@ const zh: Dictionary = {
     renameScene: "双击重命名",
     language: "语言",
     style: "渲染风格",
-    styles: { ag: "深空之眼 Aether Gazer", wuwa: "鸣潮 Wuthering Waves" },
+    styles: { ag: "深空之眼", wuwa: "鸣潮" },
   },
   sceneFile: {
     label: "场景",

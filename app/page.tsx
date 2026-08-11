@@ -2112,8 +2112,8 @@ export default function Lab() {
         })
         if (next.some((g, i) => g !== list[i])) void applyGroups(modelId, next)
       }
-      const { transform, exposure } = LOOK_PACKS[pack]
-      setSettings((prev) => ({ ...prev, view: { transform, exposure } }))
+      const { transform, exposure, world } = LOOK_PACKS[pack]
+      setSettings((prev) => ({ ...prev, view: { transform, exposure }, world: { ...prev.world, ...world } }))
       // Remembered for the NEXT model, not for this scene — the scene already
       // carries what it is wearing.
       saveLookPref(pack)

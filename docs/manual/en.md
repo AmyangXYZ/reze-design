@@ -233,6 +233,23 @@ not a setting.
 
 ## 1.7 The look
 
+**The quickest way to change everything: press ⌘K and type a rendering style.**
+The two built-in sets — *Aether Gazer* and *Wuthering Waves* — are whole styles,
+and picking one restyles every group in the scene role for role: the body group
+takes that set's body look, the hair group its hair look. Groups the set has no
+opinion about are left alone, so a stage material, a look you built yourself and
+the neutral default all survive a switch.
+
+Two scene settings travel with it, because they are part of the look rather than
+beside it: the **view transform** (WuWa is authored under Standard, AG under
+Filmic, and reading either under the other's is a different picture) and the
+**world light**, since every surface multiplies ambient and a world tuned for one
+set fights the other. Your sun is left alone — where the key light sits is
+staging, and a style switch has no business moving it.
+
+The choice is remembered, so the next model you load arrives in the same style
+instead of the set it was auto-grouped into.
+
 Two systems decide how the scene reads, and they work at different scales.
 
 A **colour grade** transforms the whole finished image, after lighting and before
@@ -708,7 +725,7 @@ of them are reference implementations to fork:
   Cloth*, *AG Smooth Cloth*, *AG Stockings*. Eight worked examples of specific
   surface types, each built around a lighting closure and a ramp.
 - **WuWa** — *WuWa Body*, *WuWa Cloth*, *WuWa Hair*, *WuWa Face*, *WuWa Metal*,
-  *WuWa Eye*. Thirteen nodes each, built around the light directly rather than a
+  *WuWa Eye*. Twenty-one nodes each, built around the light directly rather than a
   closure: a half-Lambert through a narrow soft threshold, a shadow that passes
   through a warm band on its way to lit, the model's own sphere-map highlight,
   and a rim. Start here for a hard-terminator anime look.
@@ -891,12 +908,16 @@ much harder terminator:
    is what stops a shadow reading grey.
 4. **Over the texture** — `mix/multiply` of `texture.color` by the ramp, at a
    factor below 1 so the tint sits over the texture rather than replacing it.
-5. **The scene's light** — multiply that by `light.color × (band × light.shadow ÷ π)`
-   plus `light.ambient`. This is the step to remember: build a term from
-   `light.direction` alone and the material ignores sun colour, sun strength,
-   world colour and cast shadows entirely, rendering the same under every
-   lighting setup in the scene. Folding `light.shadow` into the band before the
-   ramp also makes a cast shadow wear the same colour the terminator does.
+5. **The scene's light** — `light.color × (band × light.shadow ÷ π)` plus
+   `light.ambient`, mixed HALFWAY TOWARD WHITE, then multiplied over the result.
+   Two things to remember here. Build a term from `light.direction` alone and the
+   material ignores sun colour, sun strength, world colour and cast shadows
+   entirely, rendering the same under every lighting setup in the scene. But take
+   that term whole and every surface multiplies the world's hue, so a saturated
+   world drags the whole figure toward it and collapses shadow to the ambient —
+   the softening is what keeps all four legible without handing the world the
+   character. Folding `light.shadow` into the band before the ramp also makes a
+   cast shadow wear the same colour the terminator does.
 6. **Then add** — `sphere_map` for the model's own highlight, and
    `layer_weight/facing` into `mix/add_emit` for a rim.
 

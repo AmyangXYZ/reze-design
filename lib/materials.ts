@@ -126,17 +126,24 @@ export function sameGraphLook(a: ShaderGraph | undefined, b: ShaderGraph | undef
 // a preference — WuWa was tuned under Standard, which passes through the colours
 // the shader computes, and reading it under Filmic desaturates exactly what makes
 // it that look. Nothing else in the scene belongs here: world colour and sun are
-// the user's art direction, and a pack that overwrote them would undo work every
-// time it was applied.
+// the user's art direction — except the WORLD, which turned out to be part of the
+// look rather than beside it: the demo ships a saturated magenta world tuned for
+// the AG set, and every surface multiplies ambient, so WuWa read magenta under it
+// however well its own ramp was tuned. Each pack carries the world its look was
+// authored under. The sun stays the user's: direction and strength are staging,
+// and a style switch has no business moving the key light.
 
 export type LookPack = "ag" | "wuwa"
 
 /** Menu order — declared, not derived, because it is a curated shelf. */
 export const LOOK_PACK_ORDER: LookPack[] = ["ag", "wuwa"]
 
-export const LOOK_PACKS: Record<LookPack, { tag: string; transform: "standard" | "filmic"; exposure: number }> = {
-  ag: { tag: "aether-gazer", transform: "filmic", exposure: 0.6 },
-  wuwa: { tag: "wuthering-waves", transform: "standard", exposure: 0 },
+export const LOOK_PACKS: Record<
+  LookPack,
+  { tag: string; transform: "standard" | "filmic"; exposure: number; world: { color: string; strength: number } }
+> = {
+  ag: { tag: "aether-gazer", transform: "filmic", exposure: 0.6, world: { color: "#ed6aff", strength: 0.66 } },
+  wuwa: { tag: "wuthering-waves", transform: "standard", exposure: 0, world: { color: "#fdf2f8", strength: 0.36 } },
 }
 
 // Roles a pack may not cover. WuWa has one cloth look where AG has three, so a

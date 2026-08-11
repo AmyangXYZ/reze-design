@@ -49,10 +49,12 @@ than throws, and exposed params adjust live without a recompile.
 → [manual §2.4](./docs/manual/en.md#24-material-shader-graphs)
 
 Two built-in sets ship as reference implementations: **AG**, built around a
-lighting closure and a ramp, and **WuWa**, thirteen nodes each built around the
-light directly — a half-Lambert through a narrow soft threshold, a shadow that
-warms as it turns, the model's own sphere-map highlight. Neither carries an image
-of its own, so both apply to any model.
+lighting closure and a ramp, and **WuWa**, built around the light directly — a
+half-Lambert through a narrow soft threshold, a shadow that warms as it turns,
+the model's own sphere-map highlight. Neither carries an image of its own, so both
+apply to any model, and either can be applied to a whole scene from the command
+palette — every group restyled role for role, with the view transform and world
+light the set was authored under.
 
 Node semantics track Blender 5.2. The manual carries the whole authoring
 contract — every node's sockets, the two spines graphs are built on,
