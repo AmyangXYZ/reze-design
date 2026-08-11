@@ -74,15 +74,21 @@ export const AnimPlayer = memo(function AnimPlayer({
   const draggingRef = useRef(false)
   const paintBarRef = useRef<(current: number, duration: number, snap?: boolean) => void>(() => {})
   // Whether the loaded camera VMD is currently driving the view (vs. free orbit).
+  //
+  // Mirrored from the engine in the tick below rather than read once on mount.
+  // Asking once was wrong twice over: the host assigns the Engine reference
+  // BEFORE awaiting init(), so the question arrived at a half-built engine, and
+  // even answered it would have been answered before the scene's camera VMD had
+  // loaded — a scene that boots with one would have reported free orbit while
+  // the VMD was in fact driving, with no later event to correct it.
   const [following, setFollowing] = useState(true)
-  // Camera VMD is default-on when loaded — mirror the engine's actual state.
+  const followingRef = useRef(following)
+  const hasCameraRef = useRef(hasCamera)
+  const onFollowingChangeRef = useRef(onFollowingChange)
   useEffect(() => {
-    if (!hasCamera) return
-    const live = engineRef.current?.isCameraVmdEnabled() ?? true
-    setFollowing(live)
-    onFollowingChange?.(live)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasCamera, engineRef])
+    hasCameraRef.current = hasCamera
+    onFollowingChangeRef.current = onFollowingChange
+  })
   const toggleCamera = () => {
     const engine = engineRef.current
     if (!engine) return
@@ -92,6 +98,7 @@ export const AnimPlayer = memo(function AnimPlayer({
     // toggling off simply returns to it — no recentering, no manipulation.
     engine.setCameraVmdEnabled(next)
     onFollowingChange?.(next)
+    followingRef.current = next // else the tick reads this back as a change and re-fires
     setFollowing(next)
   }
 
@@ -161,6 +168,16 @@ export const AnimPlayer = memo(function AnimPlayer({
     paintBarRef.current = paintBar
     const tick = () => {
       raf = requestAnimationFrame(tick)
+      // Above the no-model return: a camera VMD can drive a scene whose models
+      // have no clip of their own, and that scene still needs its toggle right.
+      if (hasCameraRef.current) {
+        const live = engineRef.current?.isCameraVmdEnabled() ?? false
+        if (live !== followingRef.current) {
+          followingRef.current = live
+          setFollowing(live)
+          onFollowingChangeRef.current?.(live)
+        }
+      }
       const m = master()
       if (!m) {
         // Every clip removed: clear the frozen last progress (time + duration), otherwise
