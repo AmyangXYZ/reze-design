@@ -32,6 +32,13 @@ export const metadata: Metadata = {
   // leads to. Published scenes override this with their own title and blurb.
   openGraph: { title: "Reze Design", description: DESCRIPTION, type: "website" },
   twitter: { card: "summary_large_image", title: "Reze Design", description: DESCRIPTION },
+  // The app translates itself — see lib/i18n. A machine translator on top of it
+  // rewrites text nodes React is holding references to, and React's next
+  // deletion walks into a node that is no longer its child: "Failed to execute
+  // 'removeChild' on 'Node'", which takes the whole editor down. Reported from
+  // the wild by a zh user, whose browser had every reason to offer it — `lang`
+  // stays "en" while the UI renders Chinese.
+  other: { google: "notranslate" },
 };
 
 export default function RootLayout({
@@ -49,7 +56,10 @@ export default function RootLayout({
 
     <html
       lang="en"
-      className={`dark ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      // Belt and braces with the notranslate meta above: Chrome honours the
+      // attribute, and the class is what older/other translators look for.
+      translate="no"
+      className={`dark notranslate ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col text-foreground">
         {/* A small delay lets hover-revealed triggers finish laying out before the tooltip opens */}

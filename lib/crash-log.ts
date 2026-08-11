@@ -121,8 +121,12 @@ function describe(key: string, raw: string): string {
   try {
     const v = JSON.parse(raw) as Record<string, unknown>
     if (key === SCENE_STATE_KEY) {
+      // `id`, not `sceneId` — saveSceneState spreads SceneState, whose field is
+      // `id`. The assets record wraps its doc and keys it `sceneId`; reading the
+      // wrong one printed "scene ?" on the first report this ever produced, and
+      // the whole point of the line is to show whether the two agree.
       const groups = Object.keys((v.groups as object) ?? {}).length
-      return `scene ${String(v.sceneId ?? "?")} · v${String(v.version ?? "?")} · ${groups} styled model(s)`
+      return `scene ${String(v.id ?? "?")} · v${String(v.version ?? "?")} · ${groups} styled model(s)`
     }
     if (key === SCENE_ASSETS_KEY) {
       const assets = (v.assets ?? {}) as Record<string, unknown>
