@@ -15,7 +15,7 @@ import {
   NEW_GRADE_SPEC,
   type GradeSettings,
 } from "@/lib/grade"
-import { LIBRARY_GRID, LIBRARY_SHELL, LibraryRail, LibraryShelf, LibraryShelves, LibraryStats, LibraryTags, ShelfCount, ShelfHandle } from "@/components/editor/library-rail"
+import { LIBRARY_GRID, LIBRARY_SHELL, LibraryItemStats, LibraryRail, LibraryShelf, LibraryShelves, LibraryStats, LibraryTags, ShelfCount, ShelfHandle } from "@/components/editor/library-rail"
 import {
   conflictingName,
   matchesFacet,
@@ -72,7 +72,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
   // Desktop-style stacking: clicking a library raises it over any editor.
   // Radix would close on Escape whatever is stacked above it; the z-order
   // stack closes only the topmost surface.
-  const { statFor, signedIn, toggleLike } = useLibraryStats("grade")
+  const { statFor, canLike, toggleLike } = useLibraryStats()
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, () => onOpenChange(false))
   const [query, setQuery] = useState("")
   const [facet, setFacet] = useState<LibraryFacet>(initialFacet ?? "all")
@@ -100,7 +100,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
   const selected = all.find((g) => g.name === selectedId) ?? all[0]
 
   const rows = useMemo(
-    () => all.filter((g) => matchesFacet(g, facet, statFor(g.name).liked) && (!tag || g.tags.includes(tag)) && matchesQuery(g, query, nameOf(g))),
+    () => all.filter((g) => matchesFacet(g, facet, statFor(g.id).liked) && (!tag || g.tags.includes(tag)) && matchesQuery(g, query, nameOf(g))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [all, query, facet, tag, t],
   )
@@ -228,10 +228,10 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                           <span className="min-w-0 flex-1 truncate text-xs font-medium">{nameOf(g)}</span>
                         )}
                         <LibraryStats
-                          likeCount={statFor(g.name).likeCount}
-                          liked={statFor(g.name).liked}
-                          canLike={signedIn}
-                          onToggle={() => void toggleLike(g.name)}
+                          likeCount={statFor(g.id).likeCount}
+                          liked={statFor(g.id).liked}
+                          canLike={canLike(g.id)}
+                          onToggle={() => void toggleLike(g.id)}
                         />
                       </div>
                     {renamingId === g.id && renameError && (
@@ -342,7 +342,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
       </DialogHeader>
 
       <div className="flex min-h-0 flex-1">
-        <LibraryRail items={all} facet={facet} onFacetChange={setFacet} tag={tag} onTagChange={setTag} isLiked={(i) => statFor(i.name).liked} />
+        <LibraryRail items={all} facet={facet} onFacetChange={setFacet} tag={tag} onTagChange={setTag} isLiked={(i) => statFor(i.id).liked} />
 
         {/* ── Grid: every tile is the user's own scene under that grade ── */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -453,12 +453,18 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                 <div className="truncate text-sm font-semibold select-text">{nameOf(selected)}</div>
                 <div className="mt-0.5 font-mono text-[13px] text-muted-foreground/70">
                   <span className="select-text">{builtinAuthor("grade", selected.name, selected.author)}</span> · v{selected.version}
-                  {statFor(selected.name).scenes > 0 && ` · ${t.library.usedInScenes(statFor(selected.name).scenes)}`}
                 </div>
                 {selected.description && (
                   <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground select-text">{selected.description}</p>
                 )}
                 <LibraryTags tags={selected.tags} />
+                <LibraryItemStats
+                  likeCount={statFor(selected.id).likeCount}
+                  liked={statFor(selected.id).liked}
+                  canLike={canLike(selected.id)}
+                  scenes={statFor(selected.id).scenes}
+                  onToggle={() => void toggleLike(selected.id)}
+                />
               </div>
 
               <div className="mt-auto shrink-0 space-y-1.5 border-t border-white/10 p-3">
@@ -476,7 +482,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                       // Promotion: the draft's content now lives on the server —
                       // keeping the local copy would show the same thing twice.
                       addCommunityItem(item)
-                      noteItemPublished("grade", item.name, item.id)
+                      noteItemPublished(item.id)
                       removeDraft(selected.id)
                       setSelectedId(item.name)
                       onRenamed?.(selected.name, item.name)

@@ -12,6 +12,7 @@ import { Heart } from "lucide-react"
 import { LIBRARY_FACETS, type LibraryFacet, type LibraryItem, type MaybeMine } from "@/lib/library"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { useDefaultLayout } from "react-resizable-panels"
+import { Button } from "@/components/ui/button"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -336,43 +337,122 @@ export function LibraryTags({ tags }: { tags: string[] }) {
   )
 }
 
-/** Likes and scene-usage, sitting at the end of an item's author line.
- *  Outline heart until you've liked it, then solid — the convention people
- *  already read without being told. */
-export function LibraryStats({
+/**
+ * Liking, in the two places a library does it.
+ *
+ * Outline heart until you've liked it, then solid red — the convention people
+ * already read without being told. The one accent that steps outside the three
+ * meanings in globals.css, deliberately: a red heart is not read as destructive by
+ * anyone, and a blue one is not read as a like by anyone.
+ *
+ * No border in either variant. It is an inline reading of what people think of the
+ * item, sitting among the item's other facts, not an action bar — the Apply and
+ * Publish buttons at the foot of the pane are what a button looks like here.
+ *
+ * `canLike` is false for a signed-out visitor AND for a local draft, which has no
+ * row on the server to like yet. Both get a title saying so rather than a control
+ * that looks live and does nothing.
+ */
+function LikeButton({
   likeCount,
   liked,
   canLike,
   onToggle,
+  compact,
 }: {
   likeCount: number
   liked: boolean
   canLike: boolean
   onToggle?: () => void
+  /** The card variant: no chrome, sized to sit at the end of a name line. */
+  compact?: boolean
 }) {
   const t = useT()
   return (
-    <span className="flex shrink-0 items-center gap-2 font-mono text-[11px]">
-      <button
-        type="button"
-        disabled={!canLike}
-        title={canLike ? undefined : t.library.signInToLike}
-        onClick={(e) => {
-          // The card underneath selects; the heart must not also select it.
-          e.stopPropagation()
-          onToggle?.()
-        }}
-        className={cn(
-          "flex items-center gap-1 rounded transition-colors",
-          canLike && "cursor-pointer",
-          liked ? "text-red-400" : "text-muted-foreground/70",
-          canLike && !liked && "hover:text-red-400",
-        )}
-      >
-        <Heart className={cn("size-3", liked && "fill-current")} />
-        {likeCount}
-      </button>
-    </span>
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      disabled={!canLike}
+      title={canLike ? undefined : t.library.signInToLike}
+      aria-pressed={liked}
+      onClick={(e) => {
+        // The card underneath selects; the heart must not also select it.
+        e.stopPropagation()
+        onToggle?.()
+      }}
+      className={cn(
+        "gap-1 rounded-chip font-mono transition-colors",
+        // disabled:opacity-50 comes from the primitive and would dim the COUNT,
+        // which is a fact about the item rather than about your ability to act.
+        "disabled:opacity-100",
+        compact ? "h-5 shrink-0 px-1 text-[11px] has-[>svg]:px-1" : "h-6 px-1 text-xs has-[>svg]:px-1",
+        liked ? "text-red-400" : "text-muted-foreground",
+        canLike && !liked && "hover:text-red-400",
+      )}
+    >
+      <Heart className={cn(compact ? "size-3" : "size-3.5", liked && "fill-current")} />
+      {likeCount}
+    </Button>
+  )
+}
+
+type LikeProps = { likeCount: number; liked: boolean; canLike: boolean; onToggle?: () => void }
+
+/** The card variant: likes at the end of an item's name line, likeable without
+ *  first selecting the card. */
+export function LibraryStats(props: LikeProps) {
+  return <LikeButton compact {...props} />
+}
+
+/** The inspector variant on its own, for a surface whose other number is not a
+ *  usage count — the gallery, where a scene shows views instead. */
+export function LibraryLike(props: LikeProps) {
+  return <LikeButton {...props} />
+}
+
+/**
+ * The inspector variant: what this item is worth to people, in one strip.
+ *
+ * The three libraries each showed likes only as a 12px heart on the card, and
+ * usage only as a fragment tacked onto the author line — and only when it was
+ * above zero, so the common case showed nothing at all and read as a missing
+ * feature rather than as "nobody has used this yet". Both numbers now live in one
+ * place, always, in the pane you are already reading about the item in.
+ *
+ * Zero is printed. It is the honest answer, and it is the number that makes the
+ * first non-zero mean something.
+ */
+export function LibraryItemStats({
+  likeCount,
+  liked,
+  canLike,
+  scenes,
+  onToggle,
+}: {
+  likeCount: number
+  liked: boolean
+  canLike: boolean
+  scenes: number
+  onToggle?: () => void
+}) {
+  const t = useT()
+  return (
+    // No box, no rule. Two numbers about the item, among the item's other facts —
+    // fencing them off would say they are a separate thing to act on, and the pane
+    // has enough edges already.
+    //
+    // Usage reads first because it starts on the same left margin as the
+    // description and tags above it, so the pane still has one column of prose. The
+    // heart is the only thing here you can press, and it goes where the pane's other
+    // pressable things are — the right edge. -mr-1 cancels its own padding so it
+    // ends flush with them.
+    <div className="mt-3 -mr-1 flex items-center gap-2">
+      <span className="min-w-0 flex-1 text-[11px] leading-tight text-muted-foreground">
+        {t.library.usedInScenes(scenes)}
+      </span>
+      <LikeButton likeCount={likeCount} liked={liked} canLike={canLike} onToggle={onToggle} />
+    </div>
   )
 }
 

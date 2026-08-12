@@ -15,7 +15,7 @@ import {
   type AppliedBackgroundEffect,
 } from "@/lib/background-effects"
 import { EffectPreview } from "@/components/editor/effect-preview"
-import { LIBRARY_GRID, LIBRARY_SHELL, LibraryRail, LibraryShelf, LibraryShelves, LibraryStats, LibraryTags, ShelfCount, ShelfHandle } from "@/components/editor/library-rail"
+import { LIBRARY_GRID, LIBRARY_SHELL, LibraryItemStats, LibraryRail, LibraryShelf, LibraryShelves, LibraryStats, LibraryTags, ShelfCount, ShelfHandle } from "@/components/editor/library-rail"
 import {
   conflictingName,
   matchesFacet,
@@ -76,7 +76,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   // Desktop-style stacking: clicking a library raises it over any editor.
   // Radix would close on Escape whatever is stacked above it; the z-order
   // stack closes only the topmost surface.
-  const { statFor, signedIn, toggleLike } = useLibraryStats("effect")
+  const { statFor, canLike, toggleLike } = useLibraryStats()
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, () => onOpenChange(false))
   const [query, setQuery] = useState("")
   const [facet, setFacet] = useState<LibraryFacet>(initialFacet ?? "all")
@@ -107,7 +107,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
     setDraft(seedDraft(selected, applied))
   }
 
-  const rows = useMemo(() => all.filter((e) => matchesFacet(e, facet, statFor(e.name).liked) && (!tag || e.tags.includes(tag)) && matchesQuery(e, query)), [all, query, facet, tag, statFor])
+  const rows = useMemo(() => all.filter((e) => matchesFacet(e, facet, statFor(e.id).liked) && (!tag || e.tags.includes(tag)) && matchesQuery(e, query)), [all, query, facet, tag, statFor])
   const [renamingId, setRenamingId] = useState<string | null>(null)
   // A typed name that is already in use — see the graph library's commitRename.
   const [renameError, setRenameError] = useState<string | null>(null)
@@ -213,10 +213,10 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                           <span className="min-w-0 flex-1 truncate text-xs font-medium">{e.name}</span>
                         )}
                         <LibraryStats
-                          likeCount={statFor(e.name).likeCount}
-                          liked={statFor(e.name).liked}
-                          canLike={signedIn}
-                          onToggle={() => void toggleLike(e.name)}
+                          likeCount={statFor(e.id).likeCount}
+                          liked={statFor(e.id).liked}
+                          canLike={canLike(e.id)}
+                          onToggle={() => void toggleLike(e.id)}
                         />
                       </div>
                       {renamingId === e.id && renameError && (
@@ -332,7 +332,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1">
-          <LibraryRail items={all} facet={facet} onFacetChange={setFacet} tag={tag} onTagChange={setTag} isLiked={(i) => statFor(i.name).liked} />
+          <LibraryRail items={all} facet={facet} onFacetChange={setFacet} tag={tag} onTagChange={setTag} isLiked={(i) => statFor(i.id).liked} />
 
           {/* Thumbnail grid + pinned "New effect" (the graph library's New-graph idiom */}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -443,10 +443,16 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                   <div className="truncate text-sm font-semibold select-text">{selected.name}</div>
                   <div className="mt-0.5 font-mono text-[13px] text-muted-foreground/70">
                     <span className="select-text">{builtinAuthor("effect", selected.name, selected.author)}</span> · v{selected.version}
-                  {statFor(selected.name).scenes > 0 && ` · ${t.library.usedInScenes(statFor(selected.name).scenes)}`}
                   </div>
                   <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground select-text">{selected.description}</p>
                   <LibraryTags tags={selected.tags} />
+                  <LibraryItemStats
+                    likeCount={statFor(selected.id).likeCount}
+                    liked={statFor(selected.id).liked}
+                    canLike={canLike(selected.id)}
+                    scenes={statFor(selected.id).scenes}
+                    onToggle={() => void toggleLike(selected.id)}
+                  />
                 </div>
 
                 {/* Pinned action: red destructive Remove when applied (the counterpart of the blue Apply) */}
@@ -465,7 +471,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                       // Promotion: the draft's content now lives on the server —
                       // keeping the local copy would show the same thing twice.
                       addCommunityItem(item)
-                      noteItemPublished("effect", item.name, item.id)
+                      noteItemPublished(item.id)
                       removeDraft(selected.id)
                       onRenamed?.(selected.name, item.name)
                     }}

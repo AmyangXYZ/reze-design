@@ -10,12 +10,13 @@
 import { Fragment, useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { GalleryThumbnails, Heart, Loader2, Search, X } from "lucide-react"
+import { GalleryThumbnails, Loader2, Search, X } from "lucide-react"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { LIBRARY_SHELL, LibraryTags, RailRow, RailSection, RailTags } from "@/components/editor/library-rail"
+import { LIBRARY_SHELL, LibraryLike, LibraryStats, LibraryTags, RailRow, RailSection, RailTags } from "@/components/editor/library-rail"
+import { useLibraryStats } from "@/hooks/use-library-stats"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
 import { useSession } from "@/lib/auth-client"
 import type { LibraryFacet } from "@/lib/library"
@@ -249,6 +250,16 @@ function GalleryContent({
   const router = useRouter()
   const { data: session } = useSession()
   const [renamingId, setRenamingId] = useState<string | null>(null)
+  // A scene is a library item like any other, so its likes come from the same
+  // snapshot the three preset libraries read. A list row carries no like state of
+  // its own — deriving one used to mean shipping your liked ids down with every
+  // page, which is exactly what this one prefetched request already does for
+  // everything at once.
+  const { statFor, known, canLike, toggleLike } = useLibraryStats()
+  /** The snapshot's count when it has the row, the page's otherwise: a scene
+   *  published this session is in the list before the snapshot refetches, and a
+   *  heart reading 0 beside a scene with likes is worse than a beat of lag. */
+  const likesOf = (s: GalleryScene) => (known(s.id) ? statFor(s.id).likeCount : s.likeCount)
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, () => onOpenChange(false))
   const [view, setView] = useState<View>(() =>
     initialFacet === "yours" || initialFacet === "liked" ? initialFacet : "all",
@@ -540,10 +551,12 @@ function GalleryContent({
                       ) : (
                         <span className="min-w-0 flex-1 truncate text-xs font-medium">{s.name}</span>
                       )}
-                      <span className="flex shrink-0 items-center gap-1 font-mono text-[11px] text-muted-foreground/70">
-                        <Heart className="size-3" />
-                        {s.likeCount}
-                      </span>
+                      <LibraryStats
+                        likeCount={likesOf(s)}
+                        liked={statFor(s.id).liked}
+                        canLike={canLike(s.id)}
+                        onToggle={() => void toggleLike(s.id)}
+                      />
                     </div>
                   </div>
                 </div>
@@ -629,12 +642,20 @@ function GalleryContent({
                     </p>
                   </div>
                 )}
-                <div className="mt-3 flex items-center gap-3 font-mono text-[11px] text-muted-foreground/70">
-                  <span className="flex items-center gap-1">
-                    <Heart className="size-3" />
-                    {selected.likeCount}
+                {/* Same strip as the three preset libraries — the other number on
+                    the left, the heart at the right edge — except a scene's other
+                    number is its views. Nothing uses a scene, so there is no
+                    usage count to show here. */}
+                <div className="mt-3 -mr-1 flex items-center gap-2">
+                  <span className="min-w-0 flex-1 font-mono text-[11px] leading-tight text-muted-foreground">
+                    {t.gallery.views(selected.viewCount)}
                   </span>
-                  <span>{t.gallery.views(selected.viewCount)}</span>
+                  <LibraryLike
+                    likeCount={likesOf(selected)}
+                    liked={statFor(selected.id).liked}
+                    canLike={canLike(selected.id)}
+                    onToggle={() => void toggleLike(selected.id)}
+                  />
                 </div>
               </div>
               <div className="mt-auto shrink-0 border-t border-white/10 p-3">

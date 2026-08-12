@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { GraphMinimap } from "@/components/editor/graph-minimap"
 import { GRAPH_LIBRARY } from "@/lib/materials"
-import { LIBRARY_GRID, LIBRARY_SHELL, LibraryRail, LibraryShelf, LibraryShelves, LibraryStats, LibraryTags, ShelfCount, ShelfHandle } from "@/components/editor/library-rail"
+import { LIBRARY_GRID, LIBRARY_SHELL, LibraryItemStats, LibraryRail, LibraryShelf, LibraryShelves, LibraryStats, LibraryTags, ShelfCount, ShelfHandle } from "@/components/editor/library-rail"
 import {
   conflictingName,
   matchesFacet,
@@ -95,7 +95,7 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
     () => [...GRAPH_LIBRARY.map((i) => ({ ...i, mine: isMine(i.id) })), ...community, ...drafts],
     [community, drafts],
   )
-  const { statFor, signedIn, toggleLike } = useLibraryStats("graph")
+  const { statFor, canLike, toggleLike } = useLibraryStats()
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, onClose)
   const [query, setQuery] = useState("")
   const [facet, setFacet] = useState<LibraryFacet>(initialFacet ?? "all")
@@ -125,7 +125,7 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
   // one order across all three would either scramble the built-ins or bury the
   // newest community work.
   const rows = useMemo(
-    () => ROWS.filter((r) => matchesFacet(r, facet, statFor(r.name).liked) && (!tag || r.tags.includes(tag)) && matchesQuery(r, query)),
+    () => ROWS.filter((r) => matchesFacet(r, facet, statFor(r.id).liked) && (!tag || r.tags.includes(tag)) && matchesQuery(r, query)),
     [ROWS, query, facet, tag, statFor],
   )
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -241,10 +241,10 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
                           <span className="min-w-0 flex-1 truncate text-xs font-medium">{r.name}</span>
                         )}
                         <LibraryStats
-                          likeCount={statFor(r.name).likeCount}
-                          liked={statFor(r.name).liked}
-                          canLike={signedIn}
-                          onToggle={() => void toggleLike(r.name)}
+                          likeCount={statFor(r.id).likeCount}
+                          liked={statFor(r.id).liked}
+                          canLike={canLike(r.id)}
+                          onToggle={() => void toggleLike(r.id)}
                         />
                       </div>
                       {renamingId === r.id && renameError && (
@@ -351,7 +351,7 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
       </DialogHeader>
 
       <div className="flex min-h-0 flex-1">
-        <LibraryRail items={ROWS} facet={facet} onFacetChange={setFacet} tag={tag} onTagChange={setTag} isLiked={(i) => statFor(i.name).liked} />
+        <LibraryRail items={ROWS} facet={facet} onFacetChange={setFacet} tag={tag} onTagChange={setTag} isLiked={(i) => statFor(i.id).liked} />
 
         {/* ── Minimap grid ── */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -462,12 +462,18 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
                 <div className="truncate text-sm font-semibold select-text">{selected.name}</div>
                 <div className="mt-0.5 font-mono text-[13px] text-muted-foreground/70">
                   <span className="select-text">{builtinAuthor("graph", selected.name, selected.author)}</span> · v{selected.version}
-                  {statFor(selected.name).scenes > 0 && ` · ${t.library.usedInScenes(statFor(selected.name).scenes)}`}
                 </div>
                 {selected.description && (
                   <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground select-text">{selected.description}</p>
                 )}
                 <LibraryTags tags={selected.tags} />
+                <LibraryItemStats
+                  likeCount={statFor(selected.id).likeCount}
+                  liked={statFor(selected.id).liked}
+                  canLike={canLike(selected.id)}
+                  scenes={statFor(selected.id).scenes}
+                  onToggle={() => void toggleLike(selected.id)}
+                />
               </div>
               <div className="mt-auto shrink-0 space-y-1.5 border-t border-white/10 p-3">
                 {selected.owner === "local" && (
@@ -484,7 +490,7 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
                       // Promotion: the draft's content now lives on the server —
                       // keeping the local copy would show the same thing twice.
                       addCommunityItem(item)
-                      noteItemPublished("graph", item.name, item.id)
+                      noteItemPublished(item.id)
                       removeDraft(selected.id)
                       
                     }}
