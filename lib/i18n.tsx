@@ -330,6 +330,7 @@ const en = {
     freeOrbit: "Free orbit — click to follow camera",
     loopOn: "Loop on",
     loopOff: "Loop off",
+    scrub: "Scrub the timeline",
   },
   graph: {
     generatedWgsl: "Generated WGSL",
@@ -917,6 +918,7 @@ const zh: Dictionary = {
     freeOrbit: "自由环绕 —— 点击跟随相机",
     loopOn: "循环开",
     loopOff: "循环关",
+    scrub: "拖动时间轴",
   },
   graph: {
     generatedWgsl: "生成的 WGSL",

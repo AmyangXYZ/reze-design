@@ -16,7 +16,15 @@
 // One collapse toggle instead — collapsed IS the view state, so "what a share
 // link renders" stops being a mode anybody has to maintain.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from "react"
 import {
   Atom,
   ArrowDownToLine,
@@ -61,7 +69,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { AccountButton, HandleDialog } from "@/components/editor/account-panel"
 import { SceneGallery, prefetchGallery } from "@/components/editor/scene-gallery"
 import { prefetchLibraryStats } from "@/hooks/use-library-stats"
-import { AnimPlayer } from "@/components/scene/anim-player"
+import { AnimPlayer, type Scrub } from "@/components/scene/anim-player"
 import { MaterialsPanel } from "@/components/scene/material-sidebar"
 import { GithubMark, MaterialSphereIcon } from "@/components/scene/slot-icons"
 import { RenderPanel } from "@/components/editor/render-panel"
@@ -94,6 +102,8 @@ import { VERSION_LABEL } from "@/lib/version"
 import { ChoiceList } from "@/components/ui/choice-list"
 import { ColorField } from "@/components/color-picker"
 import { useAudioClock } from "@/hooks/use-audio-clock"
+import { TimelineLanes } from "@/components/scene/timeline-lanes"
+import { primeClipDensity } from "@/hooks/use-lane-graphs"
 import { useEngine } from "@/hooks/use-engine"
 import { useRenderFraming } from "@/hooks/use-render-framing"
 import { useSceneSync } from "@/hooks/use-scene-sync"
@@ -204,19 +214,25 @@ const FOLD = "duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
  */
 
 /**
- * The expanded timeline is OFF, and its code is deliberately still here.
+ * The expanded timeline is ON, as a VIEW.
  *
- * The lanes are a picture, not an editor: no shared time axis, no playhead, no
- * trim — so a fold that opens onto them promises an editor that does not exist,
- * and a control whose only outcome is disappointment is worse than no control.
- * The transport is the timeline meanwhile, which was always the design.
+ * It was off while the lanes were a picture — no shared time axis, no playhead —
+ * because a fold that opens onto them promised an editor that did not exist, and
+ * a control whose only outcome is disappointment is worse than no control. Both
+ * are now built: every block is drawn proportional to the longest clip in the
+ * scene, and one playhead crosses all of them. The camera-VMD duration the axis
+ * needed is `getCameraVmdDuration()`, which the engine has exposed since 0.42.2.
  *
- * One boolean, not a deletion: what is missing is the axis (every lane
- * proportional to the longest clip), a playhead drawn across all three, and
- * per-track in/out — and the first two want a camera-VMD duration the engine
- * does not expose yet. Everything below survives to be built on.
+ * Still no trim, no per-track in/out, and deliberately so. What the lanes answer
+ * is "how long is each of these, and where am I in them" — a question the rest
+ * of the editor cannot answer at all, since a camera VMD that stops before the
+ * dance ends is invisible everywhere else. Arranging clips is reze-studio's job,
+ * and the fold must not grow into a second one of those.
+ *
+ * The boolean stays as a kill switch rather than being deleted: cheap to keep,
+ * and it is the fastest way to take the fold away again if the view misleads.
  */
-const TIMELINE_EDITOR = false
+const TIMELINE_EDITOR = true
 
 /** A viewport a hair narrower than the target still counts as matching it. */
 const FRAME_ASPECT_TOL = 1.03
@@ -272,7 +288,11 @@ const dropMusicUrl = (clip: { url: string } | null) => {
 function seedAnims(scene: Scene): Record<string, { name: string; src: File | string }> {
   const seed: Record<string, { name: string; src: File | string }> = {}
   for (const entry of scene.assets.models)
-    if (entry.animation) seed[entry.model.id] = { name: entry.animation.name, src: entry.animation.url }
+    // Stages skipped. Scenery rides in `models` because its materials take the
+    // same style-group path, but it is not cast and never dances — and a stage
+    // that holds a clip becomes the MASTER when it was uploaded first, which
+    // hands the audio clock and the export a track that is not the dance.
+    if (entry.animation && !entry.stage) seed[entry.model.id] = { name: entry.animation.name, src: entry.animation.url }
   return seed
 }
 
@@ -1057,46 +1077,6 @@ function CastAction({
   )
 }
 
-/** One row of the timeline. Fixed height and a fixed label column, so lanes of
- *  different kinds still read as one grid. */
-function Lane({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex h-10 items-center gap-3">
-      {/* Mono, uppercase and tracked — the study's lane key. It names the KIND of
-          thing the lane holds, so it must not look like content. */}
-      <span className="w-24 shrink-0 truncate font-mono text-[10px] tracking-[0.14em] text-muted-foreground uppercase">
-        {label}
-      </span>
-      <span className="relative h-7 min-w-0 flex-1">{children}</span>
-    </div>
-  )
-}
-
-/** What a lane holds. Full width, NOT a duration: the lanes have no shared time
- *  axis to be proportional to yet, and a block sized to look like a measurement
- *  that is not one is worse than one that plainly fills its lane. */
-function LaneBlock({ children }: { children: ReactNode }) {
-  return (
-    <span className="absolute inset-0 flex items-center overflow-hidden rounded-interior border border-blue-400/50 bg-blue-400/25 px-2.5 text-xs whitespace-nowrap text-foreground">
-      {children}
-    </span>
-  )
-}
-
-/** An empty lane, which is an invitation rather than a gap. */
-function LaneSlot({ label, onClick, disabled }: { label: string; onClick?: () => void; disabled?: boolean }) {
-  return (
-    <Button
-      variant="ghost"
-      onClick={onClick}
-      disabled={disabled}
-      className="absolute inset-0 h-auto w-full rounded-interior border border-dashed border-line-strong text-xs font-normal text-muted-foreground hover:border-blue-400/50 hover:bg-transparent hover:text-blue-400"
-    >
-      {label}
-    </Button>
-  )
-}
-
 /**
  * A scene-wide clip in the stack — the camera motion, the music. One line in
  * the cast row's language: same hover reveal, same action pair, an icon where
@@ -1303,20 +1283,44 @@ export default function Lab() {
     void (async () => {
       for (const entry of scene.assets.models) {
         const clip = entry.animation
-        if (!clip) continue
+        if (!clip || entry.stage) continue
         const packed = bundleFile(clip.url)
         const loaded = await (packed
           ? loadVmdFile(entry.model.id, packed)
           : loadVmdUrl(entry.model.id, clip.name, clip.url))
         if (cancelled) return
-        setAnimByModel((prev) => {
-          // Success upgrades the seed's src to what actually loaded (a bundled
-          // File outlives its idb url); failure retracts the seed's claim.
-          if (loaded) return { ...prev, [entry.model.id]: { name: clip.name, src: packed ?? clip.url } }
-          const next = { ...prev }
-          delete next[entry.model.id]
-          return next
-        })
+        if (!loaded) {
+          // A failed LOAD must not retract the document's CLAIM.
+          //
+          // This used to delete the entry, on the reasoning that a motion which
+          // is not playing should not be listed. The consequence was data loss:
+          // animByModel is what the collector writes the document from, so a
+          // transient miss — a bundle not finished writing, an idb url that
+          // outlived its blob, a reload landing mid-write — was persisted as
+          // `animation: null` a moment later, and the motion was gone from the
+          // scene for good. No refresh brought it back, because by then the
+          // document no longer said there had ever been one.
+          //
+          // Keeping the claim costs a row naming a clip the engine does not
+          // currently hold, which the next boot retries and usually resolves. A
+          // dangling name is visible and fixable; a deleted one is neither.
+          console.warn(`[scene] motion failed to load for ${entry.model.id}, keeping its claim:`, clip.name)
+          engineRef.current?.setModelTransform(entry.model.id, { visible: true })
+          continue
+        }
+        // Success upgrades the seed's src to what actually loaded — a bundled
+        // File outlives the idb url it came from.
+        setAnimByModel((prev) => ({ ...prev, [entry.model.id]: { name: clip.name, src: packed ?? clip.url } }))
+        // Measure the timeline strip BEFORE revealing the model.
+        //
+        // Walking a dance for the lane graph is tens of milliseconds of main
+        // thread. Left to the lane's own hook it ran the moment the clip landed,
+        // which is the same moment the model appears and physics begins stepping
+        // — so the hitch showed up in the hair and the skirt, the two things that
+        // make a stall look like a bug rather than a load. One line earlier and
+        // it lands while the loading indicator is still up, which is where a
+        // stall is invisible and expected.
+        primeClipDensity(engineRef.current, entry.model.id, clip.name)
         // Reveal even if the clip failed — a bind-pose model beats no model.
         engineRef.current?.setModelTransform(entry.model.id, { visible: true })
       }
@@ -1371,7 +1375,13 @@ export default function Lab() {
     [models, stageIds, animByModel],
   )
   // First model carrying a clip — the clock for audio AND the export.
-  const masterId = models.find((m) => animByModel[m.id])?.id ?? null
+  //
+  // Stages excluded, exactly as modelNames above excludes them. Scenery has no
+  // motion, so a stage holding one is already wrong; but a scene whose stage was
+  // uploaded FIRST put it at the head of this list, and the audio and the export
+  // then followed a clip that is not the dance — the transport reading 0:00 over
+  // a cast that is posed and ready to play.
+  const masterId = models.find((m) => !stageIds.has(m.id) && animByModel[m.id])?.id ?? null
   // Clip duration, polled until the engine reports it (main's approach — meta
   // arrives whenever the VMD finishes parsing, so a one-shot read races it).
   // Keyed by owner instead of reset-on-change: a stale value simply stops
@@ -1532,6 +1542,13 @@ export default function Lab() {
     audio.pause()
     audio.load()
   }, [musicClip])
+  const clipByModel = useMemo(
+    () => Object.fromEntries(Object.entries(animByModel).map(([id, a]) => [id, a?.name])),
+    [animByModel],
+  )
+
+  const scrubRef = useRef<Scrub | null>(null)
+
   // Not restored. Which row is unfolded and which pane it was showing is where
   // you happened to stop, not where you want to start — reopening the editor
   // inside someone's half-finished chrome reads as a stuck panel rather than as
@@ -5297,74 +5314,20 @@ export default function Lab() {
                 ) : undefined
               }
               unfolded={timelineOpen}
+              axisDuration={animDuration}
+              scrubRef={scrubRef}
               below={
-                // grid-rows 0fr→1fr is the one way to animate to CONTENT height
-                // without measuring it. The inner element owns overflow-hidden;
-                // the row itself is what animates.
-                <div
-                  className={cn(
-                    "grid transition-[grid-template-rows]",
-                    FOLD,
-                    timelineOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
-                  )}
-                >
-                  <div className="overflow-hidden" inert={!timelineOpen}>
-                    {/* Border on the INNER element, so it folds away with the
-                      lanes instead of drawing a line under a closed pill.
-
-                      The fade is asymmetric on purpose. The fold only CLIPS the
-                      lanes — they stay fully opaque under the shrinking edge, so
-                      the last visible strip vanished in one frame, a flash right
-                      at the end of the close. Fading out at half the fold's
-                      duration means the fold closes over content that is already
-                      gone; opening gets the full duration, since content
-                      arriving with the fold is what a fold should look like. */}
-                    <div
-                      className={cn(
-                        "border-t border-line px-4 pt-3 pb-4 transition-opacity ease-out",
-                        timelineOpen ? "opacity-100 duration-300" : "opacity-0 duration-150",
-                      )}
-                    >
-                      {/* One lane per cast member, then the scene-wide slots.
-                        Camera and music always show even with an empty cast: the
-                        timeline's shape should not depend on what happens to be
-                        loaded into it. */}
-                      {/* The label names the KIND of lane, so a lone cast member's
-                        motion row is "Animation" and not their name — the name is
-                        already the row above it in the stack, and CAMERA / MUSIC
-                        beside it are kinds too. Whose motion it is only becomes a
-                        question once there are several, and then the name earns
-                        the slot. Same rule the shipped assets panel uses for its
-                        motion rows. */}
-                      {models.map((m) => (
-                        <Lane key={m.id} label={models.length > 1 ? displayName(m.file) : t.lab.lanes.animation}>
-                          {animByModel[m.id] ? (
-                            <LaneBlock>{animByModel[m.id].name}</LaneBlock>
-                          ) : (
-                            <LaneSlot label={t.lab.drop.motion} onClick={() => pickAnimation(m.id)} />
-                          )}
-                        </Lane>
-                      ))}
-                      <Lane label={t.lab.lanes.camera}>
-                        {cameraClip ? (
-                          <LaneBlock>{cameraClip}</LaneBlock>
-                        ) : (
-                          <LaneSlot label={t.lab.drop.camera} onClick={() => cameraInput.current?.click()} />
-                        )}
-                      </Lane>
-                      {/* The audio clock is still to come, so a loaded track will
-                        not PLAY yet — but the slot is a real intake (it lands in
-                        sceneFiles.audio), so it behaves like one. */}
-                      <Lane label={t.lab.lanes.music}>
-                        {musicClip ? (
-                          <LaneBlock>{musicClip.name}</LaneBlock>
-                        ) : (
-                          <LaneSlot label={t.lab.drop.music} onClick={() => musicInput.current?.click()} />
-                        )}
-                      </Lane>
-                    </div>
-                  </div>
-                </div>
+                <TimelineLanes
+                  engineRef={engineRef}
+                  models={cast}
+                  clipByModel={clipByModel}
+                  cameraClip={cameraClip}
+                  music={musicClip}
+                  audioRef={audioRef}
+                  playableDuration={animDuration}
+                  scrubRef={scrubRef}
+                  open={timelineOpen}
+                />
               }
             />
           </div>

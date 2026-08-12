@@ -64,6 +64,26 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
   // under a fresh prefix would nest it one level deeper per generation
   // (audio/audio/track.wav), and the local persist loop runs every session.
   const packPath = (prefix: string, name: string) => (name.includes("/") ? name : `${prefix}/${name}`)
+  /**
+   * Re-add a file that is already IN the bundle but was not re-uploaded here.
+   *
+   * A repack writes a new bundle out of `entries` alone, so anything pointing at
+   * a bundle-relative path that nobody re-added is silently dropped — the
+   * document still names it, and the bytes are gone. Models never hit this
+   * because the branch above copies their files forward; a motion, a camera
+   * track and an audio file did, and that is how a scene booted from a bundle
+   * lost its VMD on the first repack. Adding a stage is enough to trigger one,
+   * which is why it looked like stages were to blame.
+   *
+   * Served assets (http, blob, data, site-absolute) own their own bytes and are
+   * left alone.
+   */
+  const carry = (url: string | null | undefined) => {
+    if (!url || /^(?:https?:|blob:|data:|\/)/.test(url)) return
+    if (entries.some((e) => e.path === url)) return
+    const f = input.bundleFiles.find((b) => b.name === url)
+    if (f) entries.push({ path: url, file: f })
+  }
   const liveModels: SceneModel[] = input.models.map((m) => {
     const kept = sceneFiles.models.get(m.id)
     const booted = input.booted.find((d) => d.model.id === m.id)?.model.source ?? null
@@ -95,6 +115,7 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
       animation = { name: anim.name, url: path }
     } else if (anim?.source.kind === "url") {
       animation = { name: anim.name, url: anim.source.url }
+      carry(animation.url)
     }
     // Stages carry their placement and their switch weights in the document.
     // Without the flag they reload as ordinary cast: physics, IK, a spawn
@@ -114,6 +135,7 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
     cameraAnimation = { name: input.camera.name, url: path }
   } else if (input.camera.name && input.camera.booted?.name === input.camera.name) {
     cameraAnimation = input.camera.booted
+    carry(cameraAnimation.url)
   }
   let audio: AssetRef | null = null
   if (input.audio.name && sceneFiles.audio) {
@@ -122,6 +144,7 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
     audio = { name: input.audio.name, url: path }
   } else if (input.audio.name && input.audio.url && !input.audio.url.startsWith("blob:")) {
     audio = { name: input.audio.name, url: input.audio.url }
+    carry(audio.url)
   }
   let background: SceneBackground = null
   if (input.background) {

@@ -23,6 +23,25 @@ const AT_END_EPS = 0.02
 
 type Progress = { current: number; duration: number; playing: boolean; paused: boolean }
 
+/**
+ * The transport's scrub, handed out so another surface can drive it.
+ *
+ * The lanes below need to seek, and seeking is more than assigning a time: every
+ * cast member moves together, the bar has to be repainted from the new position
+ * rather than from the clock it is no longer following, and a jump big enough to
+ * be a teleport has to settle the physics or the hair and skirt arrive from
+ * wherever the character used to be. Reimplementing that against the engine
+ * would be a second copy of it, correct until one of them changed.
+ */
+export type Scrub = {
+  /** Take the bar off the clock for the duration of a drag. */
+  begin: () => void
+  /** Move every clip to `seconds`. */
+  to: (seconds: number) => void
+  /** Release, settling physics if the whole gesture moved far enough. */
+  end: () => void
+}
+
 // Memoized: props are stable across unrelated Home re-renders (e.g.
 export const AnimPlayer = memo(function AnimPlayer({
   engineRef,
@@ -32,6 +51,8 @@ export const AnimPlayer = memo(function AnimPlayer({
   trailing,
   below,
   unfolded,
+  axisDuration = 0,
+  scrubRef,
 }: {
   engineRef: RefObject<Engine | null>
   /** Models WITH a loaded clip, master (longest clip) first. */
@@ -50,6 +71,23 @@ export const AnimPlayer = memo(function AnimPlayer({
    *  three lanes in it does not, and `below` cannot stand in for this because it
    *  stays mounted while closed so the fold has something to animate. */
   unfolded?: boolean
+  /**
+   * The lanes' time extent in seconds — the longest clip in the scene, which is
+   * not always the master's. Publishes the playhead to `below` as a `--playhead`
+   * custom property, 0..1 across that extent.
+   *
+   * A custom property rather than a prop because the bar deliberately never
+   * re-renders while playing (see the tick), and a React-driven playhead across
+   * four lanes would undo exactly that. The variable is set on this component's
+   * root, so anything in `below` can position against it in CSS alone.
+   *
+   * 0 disables the write entirely — a closed fold has nothing to move, and the
+   * cheapest write is the one that does not happen.
+   */
+  axisDuration?: number
+  /** Filled in with this transport's scrub, for a caller that draws its own
+   *  playhead — see Scrub. Nulled on unmount. */
+  scrubRef?: RefObject<Scrub | null>
 
   /** Live camera-VMD drive state — fires on toggle and on initial sync, so the
    *  host can enable/disable its camera controls with the ACTUAL mode. */
@@ -67,6 +105,11 @@ export const AnimPlayer = memo(function AnimPlayer({
   // re-render, which is what iOS Safari needs with a blurred pane over the
   // canvas. React keeps only structural state (playing/duration).
   const trackRef = useRef<HTMLDivElement | null>(null)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const axisRef = useRef(axisDuration)
+  useEffect(() => {
+    axisRef.current = axisDuration
+  })
   const fillRef = useRef<HTMLDivElement | null>(null)
   const thumbRef = useRef<HTMLDivElement | null>(null)
   const timeRef = useRef<HTMLSpanElement | null>(null)
@@ -130,12 +173,35 @@ export const AnimPlayer = memo(function AnimPlayer({
     // thread idle (a forced reflow lands in "unaccounted", not in script).
     let trackW = 0
     const track0 = trackRef.current
+    // Where the track sits, published for the lanes to line up with.
+    //
+    // They must align with the TRACK, not with the panel: the gutter to its left
+    // holds a play button and a running time whose width moves with the locale
+    // and with the clip's length, and the one to its right holds the duration,
+    // loop and fold. Neither is a constant, so both are measured — a hardcoded
+    // inset is right for exactly one language and one clip.
+    //
+    // Custom properties for the same reason --playhead is one: the fold reads
+    // them in CSS, so a resize never costs a render. Safe to measure in here
+    // because the lanes are absolutely positioned and cannot feed a width back
+    // into the track, which is what would make this observer loop.
+    const publishInset = () => {
+      const root = rootRef.current
+      const el = trackRef.current
+      if (!root || !el) return
+      const a = root.getBoundingClientRect()
+      const b = el.getBoundingClientRect()
+      root.style.setProperty("--track-left", `${b.left - a.left}px`)
+      root.style.setProperty("--track-right", `${a.right - b.right}px`)
+    }
     const ro = new ResizeObserver((entries) => {
       trackW = entries[0]?.contentRect.width ?? track0?.clientWidth ?? 0
+      publishInset()
     })
     if (track0) {
       trackW = track0.clientWidth
       ro.observe(track0)
+      publishInset()
     }
     // Per frame on desktop; a 4Hz tick on touch devices.
     //
@@ -160,6 +226,14 @@ export const AnimPlayer = memo(function AnimPlayer({
       const ratio = duration > 0 ? Math.min(1, current / duration) : 0
       if (fillRef.current) fillRef.current.style.transform = `scaleX(${ratio})`
       if (thumbRef.current) thumbRef.current.style.transform = `translateX(${ratio * trackW}px) translate(-50%, -50%)`
+      // The lanes' playhead, on this same throttled write — one clock, so the
+      // bar and the lanes cannot disagree by a frame. Its own ratio, because the
+      // lanes span the LONGEST clip while the bar spans the master's: with music
+      // running past the dance the two are different numbers for the same instant.
+      const axis = axisRef.current
+      if (axis > 0 && rootRef.current) {
+        rootRef.current.style.setProperty("--playhead", `${Math.min(1, current / axis)}`)
+      }
       if (timeRef.current && now - lastLabel > 250) {
         lastLabel = now
         timeRef.current.textContent = fmt(current)
@@ -288,9 +362,27 @@ export const AnimPlayer = memo(function AnimPlayer({
     seek(ratio * m.getAnimationProgress().duration)
   }
 
+  // Reassigned every render rather than on a dep list: `seek` and `endSeek` are
+  // plain closures over this render's props, and a stale one would seek the cast
+  // the transport had a moment ago.
+  useEffect(() => {
+    if (!scrubRef) return
+    scrubRef.current = {
+      begin: () => {
+        draggingRef.current = true
+      },
+      to: seek,
+      end: endSeek,
+    }
+    return () => {
+      scrubRef.current = null
+    }
+  })
+
   const hasClip = modelNames.length > 0
   return (
     <div
+      ref={rootRef}
       className={cn(
         // The fold animates THROUGH the blur, which measurably costs frames —
         // the decision to keep it anyway (visual consistency with the shipped
