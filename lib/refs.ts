@@ -7,7 +7,7 @@
 // state to keep in sync, and no way for a stale tag to mispin someone else's work.
 
 import { DEFAULT_GRAPH, type ShaderGraph } from "reze-engine"
-import { BACKGROUND_EFFECTS } from "@/lib/background-effects"
+import { EFFECTS } from "@/lib/effects"
 import { GRADE_PRESETS, type GradeSpec } from "@/lib/grade"
 import { GRAPH_LIBRARY, sameGraphLook } from "@/lib/materials"
 import { communityItems } from "@/hooks/use-community"
@@ -41,7 +41,7 @@ export function graphLibraryName(graph: ShaderGraph): string | undefined {
 }
 
 export function effectRef(wgsl: string): ItemRef | undefined {
-  return pin(candidates<EffectItem>("effect", BACKGROUND_EFFECTS).find((i) => i.payload.wgsl === wgsl))
+  return pin(candidates<EffectItem>("effect", EFFECTS).find((i) => i.payload.wgsl === wgsl))
 }
 
 export function gradeRef(spec: GradeSpec): ItemRef | undefined {

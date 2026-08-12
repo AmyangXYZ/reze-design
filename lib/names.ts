@@ -7,7 +7,7 @@
 // Asking three slightly different questions is how one name came to mean two
 // things depending on which list you were looking at.
 
-import { BACKGROUND_EFFECTS } from "@/lib/background-effects"
+import { EFFECTS } from "@/lib/effects"
 import { GRADE_PRESETS } from "@/lib/grade"
 import { GRAPH_LIBRARY } from "@/lib/materials"
 import { communityItems } from "@/hooks/use-community"
@@ -16,7 +16,7 @@ import { conflictingName, type LibraryItem } from "@/lib/library"
 
 const BUILTINS: Record<DraftKind, LibraryItem[]> = {
   grade: GRADE_PRESETS,
-  effect: BACKGROUND_EFFECTS,
+  effect: EFFECTS,
   graph: GRAPH_LIBRARY,
 }
 

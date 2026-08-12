@@ -10,7 +10,7 @@ import { notFound } from "next/navigation"
 import { headers } from "next/headers"
 import { desc, sql } from "drizzle-orm"
 import { requireAdmin } from "@/lib/admin"
-import { authorStats, presetUsage, siteStats } from "@/lib/db/stats"
+import { authorStats, sceneUsage, siteStats } from "@/lib/db/stats"
 import { db, schema } from "@/lib/db"
 import { user } from "@/lib/db/auth-schema"
 import { AssetTable, ItemTables, UserTable, type ItemRow, type UserRow } from "./tables"
@@ -46,7 +46,7 @@ export default async function AdminPage() {
       .from(user)
       .orderBy(desc(user.createdAt)),
     siteStats(),
-    presetUsage(),
+    sceneUsage(),
     authorStats(),
   ])
 
@@ -58,7 +58,7 @@ export default async function AdminPage() {
     likeCount: i.likeCount,
     visibility: i.visibility,
     createdAt: i.createdAt.toISOString(),
-    usedInScenes: usage.grade[i.id] ?? usage.effect[i.id] ?? 0,
+    usedInScenes: usage.get(i.id) ?? 0,
   }))
 
   const users: UserRow[] = rawUsers.map((u) => {

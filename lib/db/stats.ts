@@ -7,10 +7,11 @@ import "server-only"
 // rather than a join table we would have to keep in step. Slower, but it cannot
 // drift from the thing it describes.
 
-import { eq, sql } from "drizzle-orm"
+import { and, eq, isNull, sql } from "drizzle-orm"
+import { alias } from "drizzle-orm/pg-core"
 import { db } from "@/lib/db"
 import { user } from "@/lib/db/auth-schema"
-import { libraryItems } from "@/lib/db/schema"
+import { libraryItems, sceneUses } from "@/lib/db/schema"
 
 export type SiteStats = {
   users: number
@@ -33,33 +34,31 @@ export async function siteStats(): Promise<SiteStats> {
 }
 
 /**
- * How many published scenes reference each grade and each background effect.
+ * How many live published scenes use each library item, by item id.
  *
- * Built-ins are referenced by bare id, so this counts usage of `content/*.json`
- * entries too — which is the interesting number: it says which of the curated
- * looks people actually reach for.
+ * This scanned each scene's JSON for `doc.backgroundEffect` and
+ * `doc.settings.grade.preset`. Neither has existed for a while: a grade is
+ * `settings.grade.from` and an effect is `settings.background.effect`, both
+ * `{ id, version }` pins (see sceneRefs in lib/scene.ts). It also keyed by NAME
+ * while the admin page looked the result up by ID, and never counted shader
+ * graphs at all — so every number on that page was either zero or an accident.
+ *
+ * scene_uses is what publish actually writes, keyed by id, covering every kind.
+ * Built-ins are in it like anything else, which is the interesting number: it says
+ * which of the curated looks people reach for.
  */
-export async function presetUsage(): Promise<{ grade: Record<string, number>; effect: Record<string, number> }> {
+export async function sceneUsage(): Promise<Map<string, number>> {
+  const scenes = alias(libraryItems, "scenes")
   const rows = await db
-    .select({
-      grade: sql<string | null>`${libraryItems.payload}->'doc'->'settings'->'grade'->>'preset'`,
-      // A built-in effect travels as a bare id string; an edited one as an object
-      // carrying its own id.
-      effect: sql<string | null>`coalesce(
-        ${libraryItems.payload}->'doc'->>'backgroundEffect',
-        ${libraryItems.payload}->'doc'->'backgroundEffect'->>'id'
-      )`,
-    })
-    .from(libraryItems)
-    .where(eq(libraryItems.kind, "scene"))
-
-  const grade: Record<string, number> = {}
-  const effect: Record<string, number> = {}
-  for (const r of rows) {
-    if (r.grade) grade[r.grade] = (grade[r.grade] ?? 0) + 1
-    if (r.effect) effect[r.effect] = (effect[r.effect] ?? 0) + 1
-  }
-  return { grade, effect }
+    .select({ itemId: sceneUses.itemId, n: sql<number>`count(*)::int` })
+    .from(sceneUses)
+    .innerJoin(scenes, eq(scenes.id, sceneUses.sceneId))
+    // Only scenes someone can still go and look at — usage_count on the item is
+    // incremented at publish and never decremented, so counting here is what keeps
+    // the number true after a takedown.
+    .where(and(eq(scenes.visibility, "public"), isNull(scenes.deletedAt)))
+    .groupBy(sceneUses.itemId)
+  return new Map(rows.map((r) => [r.itemId, r.n]))
 }
 
 /**

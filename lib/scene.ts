@@ -2,7 +2,7 @@
 
 import type { ShaderGraph, StyleGroup } from "reze-engine"
 import pkg from "@/package.json"
-import type { AppliedBackgroundEffect } from "@/lib/background-effects"
+import type { AppliedEffect } from "@/lib/effects"
 import { DEFAULT_DOF, DEFAULT_OUTLINE, DEFAULT_PHYSICS, DEFAULT_VIEW, type SceneSettings } from "@/lib/scene-settings"
 
 export const SCENE_FORMAT_VERSION = 1
@@ -118,7 +118,7 @@ export type SceneState = {
   camera: SceneCamera
   settings: SceneSettings
   /** WGSL effect layered between the base background and the model (stars, water…). */
-  backgroundEffect: AppliedBackgroundEffect | null
+  backgroundEffect: AppliedEffect | null
   /** Per-group shader graphs — the user's actual creative work */
   groups: Record<string, StyleGroup[]> | null
   /** Materials the user has hidden, per model id. */
@@ -276,9 +276,9 @@ type LibraryPayloadLike = { graph?: ShaderGraph; wgsl?: string; spec?: unknown; 
 /** The applied effect a document describes: a pin, a snapshot, or a built-in name. */
 function appliedEffect(
   applied: SceneSettingsDoc["background"]["effect"],
-  resolveEffect: (name: string) => AppliedBackgroundEffect,
+  resolveEffect: (name: string) => AppliedEffect,
   resolveRef?: (ref: ItemRef) => LibraryPayloadLike | undefined,
-): AppliedBackgroundEffect | null {
+): AppliedEffect | null {
   if (!applied) return null
   if (typeof applied === "string") return resolveEffect(applied)
   if (isItemRef(applied)) {
@@ -376,7 +376,7 @@ export function assetsDocOf(a: SceneAssets): SceneAssetsDoc {
  */
 export function parseSceneDoc(
   doc: SceneDoc,
-  resolveEffect: (name: string) => AppliedBackgroundEffect,
+  resolveEffect: (name: string) => AppliedEffect,
   resolveGraph?: (name: string) => ShaderGraph | undefined,
   /** Resolves a pin to its published payload. Built-ins come from the app bundle;
    *  community items must be fetched first (see resolveSceneRefs). */
@@ -524,7 +524,7 @@ export function serializeSceneDoc(
     name: string
     camera: SceneCamera
     settings: SceneSettings
-    backgroundEffect: AppliedBackgroundEffect | null
+    backgroundEffect: AppliedEffect | null
     groups: Record<string, StyleGroup[]>
     hidden: Record<string, string[]>
   },

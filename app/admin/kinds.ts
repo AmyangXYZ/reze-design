@@ -5,7 +5,7 @@
 export const KINDS = [
   { kind: "scene", label: "Scenes" },
   { kind: "graph", label: "Shader graphs" },
-  { kind: "effect", label: "Background effects" },
+  { kind: "effect", label: "Effects" },
   { kind: "grade", label: "Colour grades" },
 ] as const
 

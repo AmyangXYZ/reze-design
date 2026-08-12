@@ -18,10 +18,10 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   applyDefaults,
-  BACKGROUND_EFFECTS,
+  EFFECTS,
   NEW_EFFECT_TEMPLATE,
-  type AppliedBackgroundEffect,
-} from "@/lib/background-effects"
+  type AppliedEffect,
+} from "@/lib/effects"
 import { EffectPreview } from "@/components/editor/effect-preview"
 import { LIBRARY_GRID, LIBRARY_SHELL, LibraryItemStats, LibraryRail, LibraryShelf, LibraryShelves, LibraryStats, LibraryTags, ShelfCount, ShelfHandle } from "@/components/editor/library-rail"
 import {
@@ -54,15 +54,15 @@ type LibraryProps = {
   onOpenChange: (open: boolean) => void
   /** Facet the library opens on — the account tab opens straight to "yours". */
   initialFacet?: LibraryFacet
-  applied: AppliedBackgroundEffect | null
-  onApply: (effect: AppliedBackgroundEffect) => void
+  applied: AppliedEffect | null
+  onApply: (effect: AppliedEffect) => void
   /** A draft was renamed — re-point anything applied by the old name. */
   onRenamed?: (oldName: string, newName: string) => void
   onRemove: () => void
   /** Open the page-level floating WGSL editor on this effect (independent panel, same idiom
    *  as the graph editor). Optional: a host without the editor omits it, and
    *  every edit/new affordance hides rather than sitting there doing nothing. */
-  onEdit?: (effect: AppliedBackgroundEffect) => void
+  onEdit?: (effect: AppliedEffect) => void
 }
 
 export function EffectLibrary(props: LibraryProps) {
@@ -76,7 +76,7 @@ export function EffectLibrary(props: LibraryProps) {
 }
 
 /** Seed the inspector's param draft */
-const seedDraft = (selected: EffectItem | null, applied: AppliedBackgroundEffect | null): AppliedBackgroundEffect | null =>
+const seedDraft = (selected: EffectItem | null, applied: AppliedEffect | null): AppliedEffect | null =>
   selected ? (applied?.id === selected.id ? { ...applied } : applyDefaults(selected)) : null
 
 function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove, onRenamed, onEdit }: LibraryProps) {
@@ -89,7 +89,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   const [query, setQuery] = useState("")
   const [facet, setFacet] = useState<LibraryFacet>(initialFacet ?? "all")
   const [tag, setTag] = useState<string | null>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(applied?.id ?? BACKGROUND_EFFECTS[0]?.id ?? null)
+  const [selectedId, setSelectedId] = useState<string | null>(applied?.id ?? EFFECTS[0]?.id ?? null)
   // Follow the applied effect when it CHANGES — creating or editing one should move
   // the selection with it, rather than leaving the ring on the previous entry.
   const [lastApplied, setLastApplied] = useState(applied?.id ?? null)
@@ -103,12 +103,12 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   const community = useCommunity<EffectItem>("effect")
   const all = useMemo(
     // Bundled items carry no idea who is asking; the fetched rows do.
-    () => [...BACKGROUND_EFFECTS.map((i) => ({ ...i, mine: isMine(i.id) })), ...community, ...drafts],
+    () => [...EFFECTS.map((i) => ({ ...i, mine: isMine(i.id) })), ...community, ...drafts],
     [community, drafts],
   )
   const selected: EffectItem | null = useMemo(() => all.find((e) => e.id === selectedId) ?? null, [all, selectedId])
   // Draft = what Apply applies for the current selection.
-  const [draft, setDraft] = useState<AppliedBackgroundEffect | null>(() => seedDraft(selected, applied))
+  const [draft, setDraft] = useState<AppliedEffect | null>(() => seedDraft(selected, applied))
   const [draftFor, setDraftFor] = useState(selectedId)
   if (selectedId !== draftFor) {
     setDraftFor(selectedId)
@@ -129,7 +129,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
     // Refused, not silently suffixed — see the graph library's commitRename.
     const clash = conflictingName(
       wanted,
-      [...BACKGROUND_EFFECTS, ...community, ...drafts].filter((x) => x.id !== item.id).map((x) => x.name),
+      [...EFFECTS, ...community, ...drafts].filter((x) => x.id !== item.id).map((x) => x.name),
     )
     if (clash) {
       setRenameError(t.library.nameTakenBy(clash))

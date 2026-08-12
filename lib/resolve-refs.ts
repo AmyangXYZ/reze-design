@@ -5,7 +5,7 @@
 // is fetched in a single request, whatever the document pins.
 
 import type { ShaderGraph } from "reze-engine"
-import { BACKGROUND_EFFECTS } from "@/lib/background-effects"
+import { EFFECTS } from "@/lib/effects"
 import { GRADE_PRESETS } from "@/lib/grade"
 import { GRAPH_LIBRARY } from "@/lib/materials"
 import type { ItemRef, SceneDoc } from "@/lib/scene"
@@ -19,7 +19,7 @@ type Payload = { graph?: ShaderGraph; wgsl?: string; spec?: unknown }
 type Resolved = Payload & { name: string }
 
 const bundled = new Map<string, { version: number; resolved: Resolved }>()
-for (const i of [...GRAPH_LIBRARY, ...BACKGROUND_EFFECTS, ...GRADE_PRESETS]) {
+for (const i of [...GRAPH_LIBRARY, ...EFFECTS, ...GRADE_PRESETS]) {
   bundled.set(i.id, { version: i.version, resolved: { ...(i.payload as Payload), name: i.name } })
 }
 

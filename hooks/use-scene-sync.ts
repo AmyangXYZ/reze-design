@@ -11,7 +11,7 @@
 
 import { useEffect, useRef } from "react"
 import { Vec3, type Engine } from "reze-engine"
-import type { AppliedBackgroundEffect } from "@/lib/background-effects"
+import type { AppliedEffect } from "@/lib/effects"
 import { resolveSpec, type GradeSpec } from "@/lib/grade"
 import { CAMERA_DEFAULT_FOV, type SceneCamera } from "@/lib/scene"
 import { azElToDirection, windVariation, hexToLinearVec3, hexToSrgbVec3, windDirection, type SceneSettings } from "@/lib/scene-settings"
@@ -47,7 +47,7 @@ export function useSceneSync({
   cameraVmd?: boolean
   /** Resolved by the caller: the scene stores a NAME, and drafts live client-side. */
   gradeSpec: GradeSpec
-  backgroundEffect: AppliedBackgroundEffect | null
+  backgroundEffect: AppliedEffect | null
   hasBackdrop?: boolean
   skybox?: File | null
   greenScreen?: boolean

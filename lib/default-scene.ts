@@ -1,6 +1,6 @@
 // The bundled demo — the scene a first-time visitor lands on.
 
-import { builtinEffect } from "@/lib/background-effects"
+import { builtinEffect } from "@/lib/effects"
 import { libraryGraph } from "@/lib/materials"
 import { parseSceneDoc, type Scene, type SceneDoc } from "@/lib/scene"
 import { DEFAULT_DOF, DEFAULT_OUTLINE, DEFAULT_PHYSICS, DEFAULT_VIEW } from "@/lib/scene-settings"

@@ -141,11 +141,11 @@ import { useSession } from "@/lib/auth-client"
 import { freeName } from "@/lib/names"
 import {
   applyDefaults,
-  BACKGROUND_EFFECTS,
+  EFFECTS,
   builtinEffect,
   NEW_EFFECT_TEMPLATE,
-  type AppliedBackgroundEffect,
-} from "@/lib/background-effects"
+  type AppliedEffect,
+} from "@/lib/effects"
 import { probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
 import type { ExportProgress } from "@/lib/video-export"
 import { castColour } from "@/lib/model-colour"
@@ -1872,7 +1872,7 @@ export default function Lab() {
   const effectItems = useMemo(() => {
     const items = [
       // By name, matching the effect library's own ordering — see the grade list.
-      ...quickPickItems([...BACKGROUND_EFFECTS].sort((a, b) => a.name.localeCompare(b.name)), effectDrafts, bgEffect?.id ?? null).map((e) => ({
+      ...quickPickItems([...EFFECTS].sort((a, b) => a.name.localeCompare(b.name)), effectDrafts, bgEffect?.id ?? null).map((e) => ({
         id: e.name,
         label: e.name,
         section: e.owner === "local" ? ("local" as const) : ("builtin" as const),
@@ -1880,7 +1880,7 @@ export default function Lab() {
       ...communityQuickPickItems(communityEffects),
     ]
     if (!bgEffect?.name) return items
-    const pristine = [...BACKGROUND_EFFECTS, ...effectDrafts, ...communityEffects].some(
+    const pristine = [...EFFECTS, ...effectDrafts, ...communityEffects].some(
       (e) => e.name === bgEffect.name && e.payload.wgsl === bgEffect.wgsl,
     )
     if (pristine) return items
@@ -1907,7 +1907,7 @@ export default function Lab() {
       }
       // Straight from the definition — round-tripping a built-in through the
       // by-name lookup with its id is what made every built-in "unknown".
-      const def = BACKGROUND_EFFECTS.find((e) => e.name === name)
+      const def = EFFECTS.find((e) => e.name === name)
       if (def) setBgEffect(applyDefaults(def))
     },
     [effectDrafts, communityEffects, bgEffect],
@@ -1921,8 +1921,8 @@ export default function Lab() {
   // are written only by the save-on-close dialog.
   const [effectEditor, setEffectEditor] = useState<{
     sessionId: number
-    subject: AppliedBackgroundEffect
-    prior: AppliedBackgroundEffect | null
+    subject: AppliedEffect
+    prior: AppliedEffect | null
     savePrompt: string | null
   } | null>(null)
   const effectSessionRef = useRef(0)
@@ -1933,7 +1933,7 @@ export default function Lab() {
   } = useStoredRect(WGSL_PANEL_KEY, defaultPanelRect)
   /** Compile + apply in one step — the scene mirrors the buffer. */
   const commitEffectCode = useCallback(
-    async (subject: AppliedBackgroundEffect, wgsl: string) => {
+    async (subject: AppliedEffect, wgsl: string) => {
       const engine = engineRef.current
       if (!engine) return { ok: false, diagnostics: [t.lab.engineNotReady] }
       const r = await engine.setEffect(wgsl)
@@ -1951,7 +1951,7 @@ export default function Lab() {
   // it: a plain function in runCommand's dependency array is something the
   // compiler cannot keep memoized.
   const openEffectEditor = useCallback(
-    (subject: AppliedBackgroundEffect) => {
+    (subject: AppliedEffect) => {
       effectSessionRef.current += 1
       // Opening AUTO-APPLIES the subject, which is what makes the canvas behind
       // the panel the preview rather than a separate thing to keep in sync.

@@ -10,7 +10,7 @@
 // would double every builtin card.
 
 import { useEffect, useState, useSyncExternalStore } from "react"
-import { BACKGROUND_EFFECTS } from "@/lib/background-effects"
+import { EFFECTS } from "@/lib/effects"
 import { GRADE_PRESETS } from "@/lib/grade"
 import { GRAPH_LIBRARY } from "@/lib/materials"
 import type { LibraryItem, LibraryKind } from "@/lib/library"
@@ -19,7 +19,7 @@ export type CommunityItem = LibraryItem & { mine: boolean }
 
 const BUILTIN_NAMES: Partial<Record<LibraryKind, Set<string>>> = {
   grade: new Set(GRADE_PRESETS.map((i) => i.name)),
-  effect: new Set(BACKGROUND_EFFECTS.map((i) => i.name)),
+  effect: new Set(EFFECTS.map((i) => i.name)),
   graph: new Set(GRAPH_LIBRARY.map((i) => i.name)),
 }
 

@@ -1,4 +1,10 @@
-// Curated WGSL background effects — the seed of the Backgrounds library.
+// Curated WGSL effects — the built-in shelf of the effects library.
+//
+// The TYPE names dropped "Background" with the library; the FIELD names did not
+// and cannot. `SceneState.backgroundEffect` is read out of exported scene files
+// and out of localStorage, and `SceneDoc.settings.background.effect` is inside
+// every published scene — both are frozen shapes, and both are still literally
+// where the effect is layered.
 //
 // Shader source lives inside the JSON payload rather than beside it as .wgsl
 // files: nobody hand-edits these (they're authored in the app's editor or with
@@ -8,21 +14,21 @@ import effects from "@/content/effects.json"
 import { asBuiltins, type EffectItem } from "@/lib/library"
 
 /** What a scene stores when an effect is applied */
-export type AppliedBackgroundEffect = {
+export type AppliedEffect = {
   id: string
   name: string
   wgsl: string
 }
 
-export const applyDefaults = (def: EffectItem): AppliedBackgroundEffect => ({
+export const applyDefaults = (def: EffectItem): AppliedEffect => ({
   id: def.id,
   name: def.name,
   wgsl: def.payload.wgsl,
 })
 
 /** A built-in effect as an applied snapshot, by name — how scene documents refer to it. */
-export function builtinEffect(name: string): AppliedBackgroundEffect {
-  const def = BACKGROUND_EFFECTS.find((e) => e.name === name)
+export function builtinEffect(name: string): AppliedEffect {
+  const def = EFFECTS.find((e) => e.name === name)
   if (!def) throw new Error(`unknown background effect: ${name}`)
   return applyDefaults(def)
 }
@@ -108,4 +114,4 @@ fn noise2(p: vec2f) -> f32 {
 }
 `
 
-export const BACKGROUND_EFFECTS = asBuiltins<EffectItem>(effects as Omit<EffectItem, "owner">[])
+export const EFFECTS = asBuiltins<EffectItem>(effects as Omit<EffectItem, "owner">[])
