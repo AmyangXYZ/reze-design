@@ -192,7 +192,6 @@ const en = {
     effects: "Effect",
     noEffect: "None",
     edited: "edited",
-    bgEffects: "Background effects",
   },
   gradeLibrary: {
     newGrade: "New grade",
@@ -221,9 +220,10 @@ const en = {
     liked: "Liked",
     yoursEmpty: "Nothing here yet — anything you create or publish shows up here.",
   },
-  bgLibrary: {
+  effectLibrary: {
+    title: "Effects",
     applied: "Applied",
-    apply: "Apply background",
+    apply: "Apply effect",
     remove: "Remove effect",
     editShader: "Edit shader",
     compile: "Compile",
@@ -782,7 +782,6 @@ const zh: Dictionary = {
     effects: "特效",
     noEffect: "无",
     edited: "已修改",
-    bgEffects: "背景特效",
   },
   gradeLibrary: {
     newGrade: "新建调色",
@@ -811,9 +810,10 @@ const zh: Dictionary = {
     liked: "喜欢",
     yoursEmpty: "还没有内容——你创建或发布的都会出现在这里。",
   },
-  bgLibrary: {
+  effectLibrary: {
+    title: "特效",
     applied: "已应用",
-    apply: "应用背景",
+    apply: "应用特效",
     remove: "移除特效",
     editShader: "编辑着色器",
     compile: "编译",

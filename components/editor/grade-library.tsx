@@ -72,7 +72,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
   // Desktop-style stacking: clicking a library raises it over any editor.
   // Radix would close on Escape whatever is stacked above it; the z-order
   // stack closes only the topmost surface.
-  const { statFor, canLike, toggleLike } = useLibraryStats()
+  const { statFor, signedIn, toggleLike } = useLibraryStats()
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, () => onOpenChange(false))
   const [query, setQuery] = useState("")
   const [facet, setFacet] = useState<LibraryFacet>(initialFacet ?? "all")
@@ -199,7 +199,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                     <GradePreview spec={g.payload.spec} />
                     {isApplied(g) && (
                       <span className="absolute top-1.5 left-1.5 rounded border border-blue-400/40 bg-zinc-950/70 px-1.5 py-0.5 font-mono text-[9px] font-semibold tracking-wide text-blue-400 uppercase">
-                        {t.bgLibrary.applied}
+                        {t.effectLibrary.applied}
                       </span>
                     )}
                   </div>
@@ -230,8 +230,6 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                         <LibraryStats
                           likeCount={statFor(g.id).likeCount}
                           liked={statFor(g.id).liked}
-                          canLike={canLike(g.id)}
-                          onToggle={() => void toggleLike(g.id)}
                         />
                       </div>
                     {renamingId === g.id && renameError && (
@@ -358,7 +356,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
               measurement parked in library-rail.tsx — see useShelfCap. */}
         <LibraryShelves id="grade" hasLocal={localRows.length > 0}>
           <LibraryShelf id="builtin" defaultSize="38">
-          <div className="shrink-0 px-3 pt-2 pb-1.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
+          <div className="shrink-0 px-3 pt-2 pb-1.5 text-[11px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
             {t.rail.builtin}
             <ShelfCount n={builtinRows.length} />
           </div>
@@ -382,7 +380,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
               tells you nothing you did not know. */}
           <ShelfHandle />
           <LibraryShelf id="community" defaultSize="38">
-            <div className="shrink-0 px-3 pt-2 pb-1.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.community}
+            <div className="shrink-0 px-3 pt-2 pb-1.5 text-[11px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.community}
               <ShelfCount n={communityRows.length} />
             </div>
             <ScrollArea className="min-h-0 flex-1">
@@ -398,7 +396,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
               <ShelfHandle />
               <LibraryShelf id="local" defaultSize="20">
               <div className="flex shrink-0 items-center justify-between px-3 pt-1.5 pb-1.5">
-                <span className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.local}
+                <span className="text-[11px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.local}
                   <ShelfCount n={localRows.length} />
                 </span>
                 {/* Clears exactly what is LISTED, not every draft of this kind — a
@@ -461,7 +459,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                 <LibraryItemStats
                   likeCount={statFor(selected.id).likeCount}
                   liked={statFor(selected.id).liked}
-                  canLike={canLike(selected.id)}
+                  canLike={signedIn && selected.owner !== "local"}
                   scenes={statFor(selected.id).scenes}
                   onToggle={() => void toggleLike(selected.id)}
                 />

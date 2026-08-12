@@ -338,35 +338,54 @@ export function LibraryTags({ tags }: { tags: string[] }) {
 }
 
 /**
- * Liking, in the two places a library does it.
+ * The card reading: how many people liked this, and whether you are one of them.
  *
- * Outline heart until you've liked it, then solid red — the convention people
- * already read without being told. The one accent that steps outside the three
- * meanings in globals.css, deliberately: a red heart is not read as destructive by
- * anyone, and a blue one is not read as a like by anyone.
+ * Not a control. A grid cell is a thing you pick, and twenty hearts in it are
+ * twenty small targets in front of the one target that matters — liking belongs in
+ * the inspector, where you have already decided which item you are looking at.
  *
- * No border in either variant. It is an inline reading of what people think of the
- * item, sitting among the item's other facts, not an action bar — the Apply and
- * Publish buttons at the foot of the pane are what a button looks like here.
+ * Outline heart until you've liked it, then solid red. Red is the one accent that
+ * steps outside the three meanings in globals.css, deliberately: nobody reads a
+ * heart as destructive, and nobody reads a blue one as a like.
+ *
+ * Sits flush at the right end of the name line — no padding of its own, so it lines
+ * up with the card's edge rather than floating a few pixels inside it.
+ */
+export function LibraryStats({ likeCount, liked }: { likeCount: number; liked: boolean }) {
+  return (
+    <span
+      className={cn(
+        // leading-none, and the count in its own span: a bare text node in a flex
+        // row is an anonymous item as tall as the INHERITED line-height, so
+        // items-center centred a 12px glyph against a text box half again its
+        // height and the number sat visibly low. Tight leading makes the box the
+        // glyphs, and then centring is centring.
+        "flex shrink-0 items-center gap-1 font-mono text-[11px] leading-none",
+        liked ? "text-red-400" : "text-muted-foreground",
+      )}
+    >
+      <Heart className={cn("size-3 shrink-0", liked && "fill-current")} />
+      <span className="leading-none">{likeCount}</span>
+    </span>
+  )
+}
+
+type LikeProps = { likeCount: number; liked: boolean; canLike: boolean; onToggle?: () => void }
+
+/**
+ * The inspector control: a button, and shaped like one.
+ *
+ * No edge — its button-ness is its size, its hover and its cursor, not a rule
+ * around it. It can afford that because the card heart beside it is now a plain
+ * reading with none of those: this is the only heart in the library you can press,
+ * so it does not have to out-shout a second one that looks the same.
  *
  * `canLike` is false for a signed-out visitor AND for a local draft, which has no
- * row on the server to like yet. Both get a title saying so rather than a control
- * that looks live and does nothing.
+ * row on the server to like yet. Both keep pointer events so the title can say
+ * which — the primitive's `disabled:pointer-events-none` would otherwise hide the
+ * one explanation, in exactly the state that needs it.
  */
-function LikeButton({
-  likeCount,
-  liked,
-  canLike,
-  onToggle,
-  compact,
-}: {
-  likeCount: number
-  liked: boolean
-  canLike: boolean
-  onToggle?: () => void
-  /** The card variant: no chrome, sized to sit at the end of a name line. */
-  compact?: boolean
-}) {
+export function LibraryLike({ likeCount, liked, canLike, onToggle }: LikeProps) {
   const t = useT()
   return (
     <Button
@@ -377,38 +396,28 @@ function LikeButton({
       title={canLike ? undefined : t.library.signInToLike}
       aria-pressed={liked}
       onClick={(e) => {
-        // The card underneath selects; the heart must not also select it.
+        // The surface underneath may select; the heart must not also select it.
         e.stopPropagation()
         onToggle?.()
       }}
       className={cn(
-        "gap-1 rounded-chip font-mono transition-colors",
+        "h-7 gap-1.5 rounded-interior px-2.5 font-mono text-xs transition-colors has-[>svg]:px-2.5",
+        // Unconditional, with the disabled variant overriding it: gating the hand
+        // on canLike meant the cursor and the control disagreed for a beat every
+        // time the stats snapshot landed, and a heart you CAN press is the case
+        // that has to look pressable.
+        "cursor-pointer",
         // disabled:opacity-50 comes from the primitive and would dim the COUNT,
         // which is a fact about the item rather than about your ability to act.
-        "disabled:opacity-100",
-        compact ? "h-5 shrink-0 px-1 text-[11px] has-[>svg]:px-1" : "h-6 px-1 text-xs has-[>svg]:px-1",
+        "disabled:pointer-events-auto disabled:cursor-default disabled:opacity-100",
         liked ? "text-red-400" : "text-muted-foreground",
         canLike && !liked && "hover:text-red-400",
       )}
     >
-      <Heart className={cn(compact ? "size-3" : "size-3.5", liked && "fill-current")} />
-      {likeCount}
+      <Heart className={cn("size-3.5", liked && "fill-current")} />
+      <span className="leading-none">{likeCount}</span>
     </Button>
   )
-}
-
-type LikeProps = { likeCount: number; liked: boolean; canLike: boolean; onToggle?: () => void }
-
-/** The card variant: likes at the end of an item's name line, likeable without
- *  first selecting the card. */
-export function LibraryStats(props: LikeProps) {
-  return <LikeButton compact {...props} />
-}
-
-/** The inspector variant on its own, for a surface whose other number is not a
- *  usage count — the gallery, where a scene shows views instead. */
-export function LibraryLike(props: LikeProps) {
-  return <LikeButton {...props} />
 }
 
 /**
@@ -445,13 +454,14 @@ export function LibraryItemStats({
     // Usage reads first because it starts on the same left margin as the
     // description and tags above it, so the pane still has one column of prose. The
     // heart is the only thing here you can press, and it goes where the pane's other
-    // pressable things are — the right edge. -mr-1 cancels its own padding so it
-    // ends flush with them.
-    <div className="mt-3 -mr-1 flex items-center gap-2">
+    // pressable things are — the right edge. -mr-2.5 cancels the button's own
+    // padding, so the count lands on the same right margin as the description above
+    // it and the hover fill bleeds out to the pane's edge instead of stopping short.
+    <div className="mt-3 -mr-2.5 flex items-center gap-2">
       <span className="min-w-0 flex-1 text-[11px] leading-tight text-muted-foreground">
         {t.library.usedInScenes(scenes)}
       </span>
-      <LikeButton likeCount={likeCount} liked={liked} canLike={canLike} onToggle={onToggle} />
+      <LibraryLike likeCount={likeCount} liked={liked} canLike={canLike} onToggle={onToggle} />
     </div>
   )
 }

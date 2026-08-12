@@ -95,7 +95,7 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
     () => [...GRAPH_LIBRARY.map((i) => ({ ...i, mine: isMine(i.id) })), ...community, ...drafts],
     [community, drafts],
   )
-  const { statFor, canLike, toggleLike } = useLibraryStats()
+  const { statFor, signedIn, toggleLike } = useLibraryStats()
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, onClose)
   const [query, setQuery] = useState("")
   const [facet, setFacet] = useState<LibraryFacet>(initialFacet ?? "all")
@@ -243,8 +243,6 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
                         <LibraryStats
                           likeCount={statFor(r.id).likeCount}
                           liked={statFor(r.id).liked}
-                          canLike={canLike(r.id)}
-                          onToggle={() => void toggleLike(r.id)}
                         />
                       </div>
                       {renamingId === r.id && renameError && (
@@ -367,7 +365,7 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
               measurement parked in library-rail.tsx — see useShelfCap. */}
           <LibraryShelves id="graph" hasLocal={localRows.length > 0}>
           <LibraryShelf id="builtin" defaultSize="38">
-            <div className="shrink-0 px-3 pt-2 pb-1.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
+            <div className="shrink-0 px-3 pt-2 pb-1.5 text-[11px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
               {t.rail.builtin}
               <ShelfCount n={builtinRows.length} />
             </div>
@@ -391,7 +389,7 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
               tells you nothing you did not know. */}
           <ShelfHandle />
           <LibraryShelf id="community" defaultSize="38">
-            <div className="shrink-0 px-3 pt-2 pb-1.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.community}
+            <div className="shrink-0 px-3 pt-2 pb-1.5 text-[11px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.community}
               <ShelfCount n={communityRows.length} />
             </div>
             <ScrollArea className="min-h-0 flex-1">
@@ -407,7 +405,7 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
               <ShelfHandle />
               <LibraryShelf id="local" defaultSize="20">
               <div className="flex shrink-0 items-center justify-between px-3 pt-1.5 pb-1.5">
-                <span className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.local}
+                <span className="text-[11px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.local}
                   <ShelfCount n={localRows.length} />
                 </span>
                 {/* Clears exactly what is LISTED, not every draft of this kind — a
@@ -470,7 +468,7 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
                 <LibraryItemStats
                   likeCount={statFor(selected.id).likeCount}
                   liked={statFor(selected.id).liked}
-                  canLike={canLike(selected.id)}
+                  canLike={signedIn && selected.owner !== "local"}
                   scenes={statFor(selected.id).scenes}
                   onToggle={() => void toggleLike(selected.id)}
                 />

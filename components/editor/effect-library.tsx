@@ -1,6 +1,14 @@
 "use client"
 
-// Backgrounds library — the shared three-column shell (facet rail · thumbnail grid · slim
+// Effects library — the shared three-column shell (facet rail · thumbnail grid · slim
+// inspector).
+//
+// Named for what the items ARE, not for where the first ones happened to sit. The
+// kind has been `effect` in the envelope, the database and the publish route since
+// they existed; only the UI still said "background", and an effect has not been
+// confined to the background since it learned where the cast is. The scene
+// document's own `settings.background.effect` keeps its name — that shape is frozen
+// once scenes are in the wild, and it is still literally where the effect is layered.
 
 import { useMemo, useState } from "react"
 import { Check, Plus, Search, Sparkles, SquarePen, X } from "lucide-react"
@@ -57,7 +65,7 @@ type LibraryProps = {
   onEdit?: (effect: AppliedBackgroundEffect) => void
 }
 
-export function BackgroundLibrary(props: LibraryProps) {
+export function EffectLibrary(props: LibraryProps) {
   return (
     // Non-modal + no overlay, mirroring the shader-graph library
     <Dialog open={props.open} onOpenChange={props.onOpenChange} modal={false}>
@@ -76,7 +84,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   // Desktop-style stacking: clicking a library raises it over any editor.
   // Radix would close on Escape whatever is stacked above it; the z-order
   // stack closes only the topmost surface.
-  const { statFor, canLike, toggleLike } = useLibraryStats()
+  const { statFor, signedIn, toggleLike } = useLibraryStats()
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, () => onOpenChange(false))
   const [query, setQuery] = useState("")
   const [facet, setFacet] = useState<LibraryFacet>(initialFacet ?? "all")
@@ -159,7 +167,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
 
   // "New effect": open the floating editor on the template. Nothing is created —
   // the editor is a scratchpad, and save-on-close is what makes a draft.
-  const startNew = () => onEdit?.({ id: "", name: t.bgLibrary.newEffect, wgsl: NEW_EFFECT_TEMPLATE })
+  const startNew = () => onEdit?.({ id: "", name: t.effectLibrary.newEffect, wgsl: NEW_EFFECT_TEMPLATE })
 
   const renderCard = (e: EffectItem) => {
     const sel = e.id === selectedId
@@ -184,7 +192,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                       <EffectPreview wgsl={e.payload.wgsl} />
                       {applied?.id === e.id && (
                         <span className="absolute top-1.5 left-1.5 rounded border border-blue-400/40 bg-zinc-950/70 px-1.5 py-0.5 font-mono text-[9px] font-semibold tracking-wide text-blue-400 uppercase">
-                          {t.bgLibrary.applied}
+                          {t.effectLibrary.applied}
                         </span>
                       )}
                     </div>
@@ -215,8 +223,6 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                         <LibraryStats
                           likeCount={statFor(e.id).likeCount}
                           liked={statFor(e.id).liked}
-                          canLike={canLike(e.id)}
-                          onToggle={() => void toggleLike(e.id)}
                         />
                       </div>
                       {renamingId === e.id && renameError && (
@@ -234,7 +240,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
         <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
         <ContextMenuContent className="w-40">
           {onEdit && (
-            <ContextMenuItem onSelect={() => onEdit(seedDraft(e, applied)!)}>{t.bgLibrary.editShader}</ContextMenuItem>
+            <ContextMenuItem onSelect={() => onEdit(seedDraft(e, applied)!)}>{t.effectLibrary.editShader}</ContextMenuItem>
           )}
           {isDraft && <ContextMenuItem
               onSelect={() => {
@@ -304,7 +310,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
         <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-white/10 bg-zinc-950 px-4 py-2 text-left">
           <DialogTitle className="flex shrink-0 items-center gap-2 text-sm font-medium">
             <Sparkles className="size-4 text-blue-400" />
-            {t.scene.bgEffects}
+            {t.effectLibrary.title}
           </DialogTitle>
           <div className="relative ml-auto w-64 max-w-[45%]">
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -322,7 +328,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
             className="flex shrink-0 items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90"
           >
             <Plus className="size-3.5" />
-            {t.bgLibrary.newEffect}
+            {t.effectLibrary.newEffect}
           </button>
           )}
           <DialogClose className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
@@ -348,7 +354,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
               measurement parked in library-rail.tsx — see useShelfCap. */}
           <LibraryShelves id="effect" hasLocal={localRows.length > 0}>
           <LibraryShelf id="builtin" defaultSize="38">
-            <div className="shrink-0 px-3 pt-2 pb-1.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
+            <div className="shrink-0 px-3 pt-2 pb-1.5 text-[11px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
               {t.rail.builtin}
               <ShelfCount n={builtinRows.length} />
             </div>
@@ -372,7 +378,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
               tells you nothing you did not know. */}
           <ShelfHandle />
           <LibraryShelf id="community" defaultSize="38">
-            <div className="shrink-0 px-3 pt-2 pb-1.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.community}
+            <div className="shrink-0 px-3 pt-2 pb-1.5 text-[11px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.community}
               <ShelfCount n={communityRows.length} />
             </div>
             <ScrollArea className="min-h-0 flex-1">
@@ -388,7 +394,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
               <ShelfHandle />
               <LibraryShelf id="local" defaultSize="20">
               <div className="flex shrink-0 items-center justify-between px-3 pt-1.5 pb-1.5">
-                <span className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.local}
+                <span className="text-[11px] font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.rail.local}
                   <ShelfCount n={localRows.length} />
                 </span>
                 {/* Clears exactly what is LISTED, not every draft of this kind — a
@@ -435,7 +441,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                     <EffectPreview wgsl={draft.wgsl} />
                     <div className="absolute inset-0 flex items-center justify-center gap-1.5 bg-zinc-950/70 text-xs font-medium text-foreground opacity-0 transition-opacity group-hover/prev:opacity-100">
                       <SquarePen className="size-4" />
-                      {t.bgLibrary.editShader}
+                      {t.effectLibrary.editShader}
                     </div>
                   </button>
                 </div>
@@ -449,7 +455,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                   <LibraryItemStats
                     likeCount={statFor(selected.id).likeCount}
                     liked={statFor(selected.id).liked}
-                    canLike={canLike(selected.id)}
+                    canLike={signedIn && selected.owner !== "local"}
                     scenes={statFor(selected.id).scenes}
                     onToggle={() => void toggleLike(selected.id)}
                   />
@@ -485,7 +491,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                       className="h-8 w-full border-white/10 bg-white/5 text-xs font-medium hover:bg-white/10"
                     >
                       <X className="size-3.5" />
-                      {t.bgLibrary.remove}
+                      {t.effectLibrary.remove}
                     </Button>
                   ) : (
                     <Button
@@ -497,7 +503,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                       className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-300"
                     >
                       <Check className="size-3.5" />
-                      {t.bgLibrary.apply}
+                      {t.effectLibrary.apply}
                     </Button>
                   )}
                 </div>

@@ -83,7 +83,7 @@ import { QuickPick } from "@/components/scene/quick-pick"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { GradeLibrary } from "@/components/editor/grade-library"
 import { GradeEditorPanel, type GradeEditorSubject } from "@/components/editor/grade-editor"
-import { BackgroundLibrary } from "@/components/editor/background-library"
+import { EffectLibrary } from "@/components/editor/effect-library"
 import { NodeLibrary } from "@/components/editor/node-library"
 import { GraphEditor } from "@/components/graph/graph-editor"
 import { WgslEditorPanel } from "@/components/editor/wgsl-editor"
@@ -1593,7 +1593,7 @@ export default function Lab() {
   // never leaves this device until it is published, and publishing is where an
   // account becomes the answer.
   const { data: authSession } = useSession()
-  const authorName = authSession?.user.username ?? t.bgLibrary.you
+  const authorName = authSession?.user.username ?? t.effectLibrary.you
   // The grade editor is a floating SCRATCHPAD, the shipped editor's own:
   // `subject` is the working copy — live on the render, written nowhere. Only
   // the save-on-close dialog creates or updates a draft, so closing clean, or
@@ -3492,7 +3492,7 @@ export default function Lab() {
       else if (item.id === "graph-new") openGraphLibEdit("", t.library.newGraph, structuredClone(DEFAULT_GRAPH))
       else if (item.id === "graph-lib") openGraphLibrary(activeGroupId)
       else if (item.id === "wgsl-new")
-        openEffectEditor({ id: "", name: t.bgLibrary.newEffect, wgsl: NEW_EFFECT_TEMPLATE })
+        openEffectEditor({ id: "", name: t.effectLibrary.newEffect, wgsl: NEW_EFFECT_TEMPLATE })
       else if (item.id === "effect-lib") openBrowse({ kind: "effect" })
       else if (item.id === "grade-new")
         cmdRef.current.openGradeEditor({ id: "", name: t.gradeLibrary.newGrade, spec: NEW_GRADE_SPEC })
@@ -3942,7 +3942,7 @@ export default function Lab() {
         onEdit={openGradeEditor}
       />
 
-      <BackgroundLibrary
+      <EffectLibrary
         open={effectLibOpen}
         initialFacet={libraryFacet}
         onOpenChange={(o) => !o && closeBrowseIf("effect")}
@@ -4646,7 +4646,7 @@ export default function Lab() {
                           // the scene is not wearing, and the session's whole
                           // premise is that the canvas behind it IS the preview.
                           onEdit={bgEffect ? editCurrentEffect : undefined}
-                          editLabel={t.bgLibrary.editShader}
+                          editLabel={t.effectLibrary.editShader}
                           onBrowse={() => openBrowse({ kind: "effect" })}
                           placeholder={t.lab.ctl.none}
                         />

@@ -232,7 +232,7 @@ function EditorBody({
         )}
         {result?.ok && (
           <span className="min-w-0 truncate text-[11px] text-muted-foreground" style={{ fontFamily: CODE_FONT }}>
-            {t.bgLibrary.appliedOk}
+            {t.effectLibrary.appliedOk}
           </span>
         )}
         <div className="flex-1" />
@@ -243,7 +243,7 @@ function EditorBody({
           title="⌘/Ctrl + Enter"
           className="h-7 bg-blue-400 px-3 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-50"
         >
-          {t.bgLibrary.compile}
+          {t.effectLibrary.compile}
         </Button>
       </div>
     </div>

@@ -86,24 +86,40 @@ export function useLibraryStats() {
    *  knows when to trust that one instead of a zero from here. */
   const known = useCallback((id: string): boolean => id in stats, [stats])
 
-  /** Whether this item can be liked at all: signed in, and it exists on the
-   *  server. A local draft fails the second test — there is nothing to like yet. */
-  const canLike = useCallback((id: string): boolean => signedIn && id in stats, [signedIn, stats])
-
+  /**
+   * Signing in is the ONLY thing this hook gates liking on.
+   *
+   * It also required the item to be in the snapshot, which sounds like the same
+   * "does it exist on the server" question and is not. The snapshot is one
+   * request that can be stale, can have failed, and — the case that actually bit
+   * — is empty of built-ins in any deployment whose database has not been seeded.
+   * A built-in is a perfectly real row to the like route; the client just had no
+   * entry for it yet, so every heart in the library was disabled and read as a
+   * counter. The server already knows whether an id can be liked and answers 404
+   * when it cannot, which is the check that cannot go stale.
+   *
+   * Callers that know an item is a local DRAFT still pass false: it has no server
+   * row by definition, and a click that can only 404 is not an affordance.
+   */
   const toggleLike = useCallback(
     async (id: string) => {
-      // Drafts and rows the seed hasn't mirrored have no server identity to like.
-      if (!signedIn || !(id in stats)) return
-      // Optimistic: a heart that waits on Singapore feels broken.
+      if (!signedIn) return
+      // Optimistic: a heart that waits on Singapore feels broken. Seeds an entry
+      // when there is none, so an item the snapshot never carried still counts up
+      // under the cursor rather than sitting at zero until the next refetch.
       const flip = (s: Record<string, ItemStats>) => {
-        const cur = s[id]
-        if (!cur) return s
-        return { ...s, [id]: { ...cur, liked: !cur.liked, likeCount: cur.likeCount + (cur.liked ? -1 : 1) } }
+        const cur = s[id] ?? EMPTY
+        return {
+          ...s,
+          [id]: { ...cur, liked: !cur.liked, likeCount: Math.max(0, cur.likeCount + (cur.liked ? -1 : 1)) },
+        }
       }
       setStats(flip)
       const res = await fetch(`/api/library/${id}/like`, { method: "POST" })
       if (!res.ok) {
-        // Roll back rather than leave a count the server disagrees with.
+        // Roll back rather than leave a count the server disagrees with. A 404
+        // here is an item with no row — a draft, or an unseeded built-in — and
+        // the heart returning to where it was IS the answer.
         setStats(flip)
         return
       }
@@ -112,8 +128,8 @@ export function useLibraryStats() {
       // The next surface to mount should see the new count, not the stale snapshot.
       if (cache) cache.stats[id] = { ...(cache.stats[id] ?? EMPTY), liked, likeCount }
     },
-    [signedIn, stats],
+    [signedIn],
   )
 
-  return { statFor, signedIn, known, canLike, ready, toggleLike }
+  return { statFor, signedIn, known, ready, toggleLike }
 }
