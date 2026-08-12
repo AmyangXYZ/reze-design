@@ -234,6 +234,17 @@ const RECENTS_KEY = "reze-design.palette-recents"
  */
 const GALLERY_SEEN_KEY = "reze-design.gallerySeen"
 
+/**
+ * Whether the left dock is open.
+ *
+ * The ROOT toggle only — which rows inside it are open stays per-session, because
+ * a row is where you happen to be working and the dock as a whole is how much of
+ * the screen you want the app to take. Someone who works collapsed on a laptop
+ * re-collapses it every single time the page loads otherwise, which is a click
+ * that means "you already knew this".
+ */
+const DOCK_OPEN_KEY = "reze-design.dockOpen"
+
 /** The repository. It is also where the manuals live, linked from the README —
  *  so the app carries ONE outbound link rather than a help menu that has to be
  *  kept in step with the docs. */
@@ -1503,6 +1514,24 @@ export default function Lab() {
       return null
     })
   }
+  // Taking the track away has to be TOLD to the element. React drops the `src`
+  // attribute, and dropping it is not the same as setting it: the media load
+  // algorithm runs when src is set or changed, so a removed attribute leaves the
+  // element still holding — and still playing — bytes it already decoded, from a
+  // blob URL that has by now been revoked. Pausing alone does not hold either,
+  // because the clock resumes anything paused while the motion runs, so the track
+  // came back on the next play and only a reload was rid of it.
+  //
+  // load() on the src-less element is what actually empties it. Guarded on there
+  // being no clip so it cannot interrupt a track that is merely being replaced —
+  // that path sets src, which reloads on its own.
+  useEffect(() => {
+    if (musicClip) return
+    const audio = audioRef.current
+    if (!audio) return
+    audio.pause()
+    audio.load()
+  }, [musicClip])
   // Not restored. Which row is unfolded and which pane it was showing is where
   // you happened to stop, not where you want to start — reopening the editor
   // inside someone's half-finished chrome reads as a stuck panel rather than as
@@ -2014,15 +2043,37 @@ export default function Lab() {
     const id = setTimeout(() => setMounted(true), 0)
     return () => clearTimeout(id)
   }, [])
-  // Deliberately NOT restored from storage, unlike the row and tab selections
-  // below: collapsed is a way of LOOKING at the scene, not a piece of work in
-  // progress. Reopening to a collapsed dock reads as chrome that failed to
-  // load, and the person who likes it collapsed pays one click — the person who
-  // does not would be staring at an empty screen wondering where the app went.
-  // The device rule still applies: a coarse pointer starts collapsed.
-  const [expanded, setExpanded] = useState(
-    () => typeof window === "undefined" || !window.matchMedia("(pointer: coarse)").matches,
-  )
+  // Restored from storage — the ROOT toggle, not the row and tab selections
+  // below, which stay per-session. Collapsing the dock is a standing preference
+  // about how much screen the app gets, and re-collapsing it on every load is a
+  // click that tells you nothing. Only ever set by the toggle itself, so the
+  // stored value is always something the person chose.
+  //
+  // Nothing stored yet falls back to the device rule: a coarse pointer starts
+  // collapsed. Read lazily rather than in an effect, so the first paint is the
+  // real state and the dock does not open and then shut. Same private-mode
+  // tolerance as everywhere else here — storage that throws just means the
+  // preference does not stick.
+  const [expanded, setExpanded] = useState(() => {
+    if (typeof window === "undefined") return true
+    try {
+      const stored = window.localStorage.getItem(DOCK_OPEN_KEY)
+      if (stored === "0" || stored === "1") return stored === "1"
+    } catch {
+      // private mode — fall through to the device default
+    }
+    return !window.matchMedia("(pointer: coarse)").matches
+  })
+  /** The dock's only way in or out, so the preference cannot be written by one
+   *  caller and skipped by another. */
+  const setDockExpanded = useCallback((next: boolean) => {
+    setExpanded(next)
+    try {
+      window.localStorage.setItem(DOCK_OPEN_KEY, next ? "1" : "0")
+    } catch {
+      // private mode — the dock still opens, it just forgets by the next load
+    }
+  }, [])
   // The dock joins the desktop stack the libraries already live in: clicking
   // (or tabbing into) it raises it over an open library, clicking the library
   // raises it back. No Escape closer — Escape keeps closing the topmost
@@ -2841,6 +2892,10 @@ export default function Lab() {
         post?: "grade" | "tone" | "bloom" | "outline"
       },
     ) => {
+      // Not setDockExpanded: a goto opens the dock to show you somewhere, which
+      // is not the same as asking for it open. Someone who works collapsed and
+      // jumps to a control through the palette should still find it collapsed
+      // next load — the toggle is the only thing that states a preference.
       setExpanded(true)
       // A Scene row opens; a group anchor ("group-cast") only scrolls.
       const isRow = layers.some((l) => l.id === target)
@@ -3566,7 +3621,7 @@ export default function Lab() {
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => setExpanded(true)}
+                onClick={() => setDockExpanded(true)}
                 aria-label={t.lab.expandPanel}
                 className="ml-auto size-7 shrink-0 rounded-lg text-muted-foreground hover:bg-white/5 hover:text-foreground"
               >
@@ -4183,7 +4238,7 @@ export default function Lab() {
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => setExpanded(false)}
+                onClick={() => setDockExpanded(false)}
                 aria-label={t.lab.collapsePanel}
                 className="ml-auto size-7 shrink-0 rounded-lg text-muted-foreground hover:bg-white/5 hover:text-foreground"
               >

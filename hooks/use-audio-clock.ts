@@ -99,7 +99,11 @@ export function useAudioClock({
         // resume an ended element — only play() does — so the second pass ran in
         // silence. Guarded on there being audio left, or an element sitting at
         // its own duration would be asked to start again every frame.
-        if (audio.paused && (!Number.isFinite(audio.duration) || p.current < audio.duration - 0.05)) {
+        //
+        // `audio.src` is the same guard `warm` uses: a scene with no track, or one
+        // whose track was just removed, otherwise fires a play() that can only
+        // reject, once per frame, for as long as the motion runs.
+        if (audio.src && audio.paused && (!Number.isFinite(audio.duration) || p.current < audio.duration - 0.05)) {
           void audio.play().catch(() => {})
         }
       } else if (!audio.paused) {
