@@ -37,6 +37,116 @@ fn bgWorldPos(ray: vec3f, depth: f32) -> vec3f {
   let axis = max(dot(normalize(ray), pvForward()), 1e-4);
   return bgCameraPos() + normalize(ray) * (depth / axis);
 }
+fn rzResolution() -> vec2f { return u.res; }
+fn rzCameraPos() -> vec3f { return PV_CAM; }
+fn rzCamPos() -> vec3f { return PV_CAM; }
+fn rzWorldPos(ray: vec3f, depth: f32) -> vec3f { return bgWorldPos(ray, depth); }
+fn rzCameraForward() -> vec3f { return pvForward(); }
+fn rzCameraRight() -> vec3f { let f = pvForward(); return vec3f(f.z, 0.0, -f.x); }
+fn rzCameraUp() -> vec3f { return vec3f(0.0, 1.0, 0.0); }
+
+// The exact inverse of the ray this preview builds per pixel, the same way the
+// engine's rzProject inverts its own — so an effect that projects a world point
+// and measures against it in 2D lands where it does in a real scene.
+fn rzProject(p: vec3f) -> vec3f {
+  let fwd = pvForward();
+  let d = p - PV_CAM;
+  let z = dot(d, fwd);
+  let inv = 1.0 / select(z, 1e-4, z < 1e-4);
+  let right = vec3f(fwd.z, 0.0, -fwd.x);
+  let ndc = vec2f(dot(d, right) * inv / 0.9, d.y * inv / 0.55);
+  return vec3f(ndc * 0.5 + 0.5, z);
+}
+
+// ── A stand-in CAST ──
+//
+// Effects that read the cast are the majority now, and every one of them failed
+// to compile here — a missing rzSubject is a shader error, and a shader error is
+// a blank card with nothing to say why. A stand-in scene needs a stand-in cast
+// for the same reason it needs a floor: fog is invisible without something to
+// sit in front of, and an aura is invisible without somebody to sit around.
+//
+// One figure, roughly the size and place a real cast member is framed at.
+struct RzSubject {
+  root: vec3f,
+  center: vec3f,
+  bounds: vec4f,
+  valid: bool,
+}
+struct RzAnchor {
+  pos: vec3f,
+  vel: vec3f,
+  fwd: vec3f,
+  valid: bool,
+}
+const PV_HIP = 10.0;
+fn rzSubjectCount() -> i32 { return 1; }
+fn bgSubjectCount() -> i32 { return 1; }
+fn rzSubject(i: i32) -> RzSubject {
+  var s: RzSubject;
+  s.valid = i == 0;
+  if (!s.valid) { return s; }
+  s.root = vec3f(0.0, 0.0, 0.0);
+  s.center = vec3f(0.0, PV_HIP, 0.0);
+  s.bounds = vec4f(0.0, PV_HIP, 0.0, 14.0);
+  return s;
+}
+fn rzSubjectHip(i: i32) -> vec3f { return rzSubject(i).center; }
+fn bgSubjectPos(i: i32) -> vec3f { return rzSubject(i).center; }
+
+// Eight anchors spiralling up a body-sized column, swaying gently.
+//
+// The preview cannot know WHICH bone a slot asked for — that is the effect's
+// own declaration order, and it is different in every file. What it can do is
+// make every slot land somewhere plausible on a body, so an effect that rings
+// limbs or burns off them has limb-shaped geometry to work with and the card
+// shows its real character rather than nothing.
+fn rzAnchor(subject: i32, slot: i32) -> RzAnchor {
+  var a: RzAnchor;
+  a.valid = subject == 0 && slot >= 0 && slot < 8;
+  if (!a.valid) { return a; }
+  let t = f32(slot) / 7.0;
+  let sway = sin(u.time * 0.8 + t * 5.0) * 1.4;
+  a.pos = vec3f(sin(t * 6.2) * 3.5 + sway, 2.5 + t * 15.0, cos(t * 6.2) * 1.5);
+  a.vel = vec3f(cos(u.time * 0.8 + t * 5.0) * 1.1, 0.0, 0.0);
+  a.fwd = vec3f(0.0, 0.0, -1.0);
+  return a;
+}
+
+// And a stand-in PATH for each: a step cycle, so an effect looking for the
+// moment a foot stopped descending finds real touchdowns rather than a
+// straight line, and a ribbon has something curved to run along.
+fn rzTrailCount(subject: i32, slot: i32) -> i32 {
+  if (subject != 0 || slot < 0 || slot >= 8) { return 0; }
+  return 48;
+}
+fn rzTrail(subject: i32, slot: i32, i: i32) -> vec4f {
+  let n = rzTrailCount(subject, slot);
+  if (i < 0 || i >= n) { return vec4f(0.0); }
+  let age = f32(i) * (1.0 / 24.0);
+  let ph = (u.time - age) * 1.7 + select(0.0, 3.14159, (slot % 2) == 1);
+  let side = select(-2.6, 2.6, (slot % 2) == 1);
+  return vec4f(side, max(0.0, sin(ph)) * 3.5, sin(ph * 0.5) * 7.0, age);
+}
+
+// ── Stand-in AUDIO ──
+//
+// A plain pulse with a bass-heavy spectrum. The real analysis is a whole song
+// precomputed; a card two centimetres across only has to show that the effect
+// moves with one.
+fn rzAudioFrames() -> i32 { return 3600; }
+fn rzAudioBandCount() -> i32 { return 32; }
+fn rzAudioPlaying() -> f32 { return 1.0; }
+fn rzAudioTime() -> f32 { return u.time; }
+fn rzAudioLevelAt(o: f32) -> f32 { return 0.35 + 0.35 * sin((u.time + o) * 3.1); }
+fn rzAudioLevel() -> f32 { return rzAudioLevelAt(0.0); }
+fn rzAudioOnsetAt(o: f32) -> f32 { return pow(max(0.0, sin((u.time + o) * 6.2831853 * 2.0)), 8.0); }
+fn rzAudioOnset() -> f32 { return rzAudioOnsetAt(0.0); }
+fn rzAudioBandAt(i: i32, o: f32) -> f32 {
+  let f = f32(i) / max(f32(rzAudioBandCount()), 1.0);
+  return clamp((1.0 - f * 0.75) * (0.35 + 0.65 * abs(sin((u.time + o) * 2.0 + f * 9.0))), 0.0, 1.0);
+}
+fn rzAudioBand(i: i32) -> f32 { return rzAudioBandAt(i, 0.0); }
 
 USER_CODE
 

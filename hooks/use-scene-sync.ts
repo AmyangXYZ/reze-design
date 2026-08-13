@@ -200,7 +200,7 @@ export function useSceneSync({
     lastWgsl.current = wgsl
     let stale = false
     void engine.setEffect(wgsl).then((r) => {
-      if (!stale && !r.ok) console.error("background effect failed:", r.diagnostics)
+      if (!stale && !r.ok) console.error("[effect] failed to install:", r.diagnostics)
     })
     return () => {
       stale = true

@@ -21,7 +21,9 @@ One piece of the **Reze MMD family**, covering the whole MMD workflow on the web
 - **Material shader graphs** — build a look in a Blender-style node editor, compiled to WGSL.
 - **Colour grading** — ASC CDL, curated presets and a wheel editor, previewed on your own scene.
 - **Scene effects** — live-coded WGSL behind the model, in front of it, or both; the ones in front hold the scene's depth, so rain and petals are occluded by the character they pass behind.
-- **Effects that react to the cast** — an effect asks for the bones it wants by name and gets their position, velocity, facing and recent path, plus each character's floor point and hips. A halo parented to a head, a neon ribbon along the path a hand actually took, marks left where the feet landed.
+- **Effects that react to the cast** — an effect asks for the bones it wants by name and gets their position, velocity, facing and recent path, plus each character's floor point and hips. Lightning arcing along the limbs, fire climbing off the shoulders, a sigil turning on the ground underfoot, marks left where the feet landed.
+- **GPU particles and ribbon trails** — declare a pool size and three functions and a hundred thousand particles run entirely on the GPU, depth-tested against the cast; declare a bone with `trail` and two more functions draw a ribbon along the path it actually took.
+- **Effects that react to the music** — loudness, a kick detector and a 32-band spectrum, readable seconds into the past or the future. Analysed once ahead of time, so an exported video reacts exactly as the editor did.
 - **Scene lighting** — sun, world light and bloom over a colour, an image backdrop or a 360° skybox.
 - **Multi-model scenes** — a motion each, one camera VMD, one audio track.
 - **Stage models** — a stage PMX as the environment, placed and scaled, with the switches its author rigged.
@@ -68,16 +70,32 @@ JSON.
 
 ![Background effect editor](./screenshots/effect-editor.png)
 
-A scene effect is WGSL rendered per pixel, and it says where it goes by which
-functions it defines — `fn background(ray, uv, time)` between the background
-layer and the model, `fn foreground(ray, uv, time, depth)` over the finished
-frame. There is no layer setting: one library, one editor, and a file that
-defines both is one weather system. `depth` is how far away the scene is at that
-pixel, so a foreground can be occluded by the character rather than pasted over
-it — compare a particle's own distance against it, or read it directly, since
-fog's opacity simply is a function of distance. Edit in-app with the scene as the
-live preview; a failed compile keeps the previous shader and lists `line:col`
-diagnostics.
+A scene effect is WGSL, and it says what it is and where it goes by **which
+functions it defines**. There is no layer setting anywhere: one library, one
+editor, and a file that defines two mounts is one effect.
+
+| Define | You get |
+| --- | --- |
+| `background(ray, uv, time)` | A layer between the background and the model |
+| `foreground(ray, uv, time, depth)` | A layer over the finished frame |
+| `particleInit` · `particleStep` · `particleShade` | A GPU particle pool |
+| `trailWidth` · `trailShade` | Ribbons along bones the file asked for |
+
+`depth` is how far away the scene is at that pixel, so a foreground is occluded
+by the character rather than pasted over her — compare something's own distance
+against it, or read it directly, since fog's opacity simply is a function of
+distance. Beyond its own pixel an effect can ask where the cast is: each
+character's floor point, hips and bounding sphere, any bone by name with its
+position, velocity and facing, and that bone's recorded path. It can ask where
+the song is, through a precomputed analysis that reads the same in the editor and
+in an export. And it can project a world point to screen, which is what makes
+anchored work affordable — measuring in 2D instead of marching in 3D.
+
+Edit in-app with the scene as the live preview; a failed compile keeps the
+previous shader and lists `line:col` diagnostics rebased to your own code. Every
+preset is a worked example commented with the mistake it is built to avoid, and
+**New effect** seeds the editor with the whole contract as comments — enough,
+with the manual, to hand an AI and get a working effect back.
 → [manual §2.3](./docs/manual/en.md#23-scene-effects-in-wgsl)
 
 Colour grades are ASC CDL — curated presets, a wheel-based editor, split toning.

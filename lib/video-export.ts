@@ -58,18 +58,35 @@ const brandFontFamily = () => {
   return fam ? `${fam}, system-ui, sans-serif` : "system-ui, sans-serif"
 }
 
+/**
+ * The wordmark, in the engine demo's own style (web/components/header.tsx):
+ * uppercase, ONE regular weight, 0.3em tracking, and a two-part shadow — a soft
+ * white bloom over a tight dark drop, so it reads as lit on dark footage and
+ * stays legible on bright. No second weight, no icon, no colour: the spacing
+ * carries it, which is why that header works.
+ *
+ * Canvas allows one shadow per fill, so the bloom and the drop are two passes.
+ */
 function drawWatermark(ctx: CanvasRenderingContext2D, w: number, h: number, font: string) {
   const size = Math.max(14, Math.round(h * 0.028))
-  const pad = Math.round(h * 0.022)
+  const pad = Math.round(h * 0.024)
+  const cx = ctx as CanvasRenderingContext2D & { letterSpacing?: string }
   ctx.save()
-  ctx.font = `500 ${size}px ${font}`
-  // Wide tracking sells the uppercase wordmark (Chromium supports canvas letterSpacing).
-  ;(ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = `${(size * 0.22).toFixed(1)}px`
   ctx.textBaseline = "top"
+  ctx.font = `400 ${size}px ${font}`
+  cx.letterSpacing = `${(size * 0.3).toFixed(1)}px`
+  ctx.fillStyle = "rgba(255, 255, 255, 0.92)"
+
+  // 0 0 20px rgba(255,255,255,0.3) — the demo's bloom, scaled to type size.
+  ctx.shadowColor = "rgba(255, 255, 255, 0.3)"
+  ctx.shadowBlur = size * 0.83
+  ctx.shadowOffsetY = 0
+  ctx.fillText("REZE DESIGN", pad, pad)
+
+  // 0 2px 10px rgba(0,0,0,0.5) — and its drop.
   ctx.shadowColor = "rgba(0, 0, 0, 0.5)"
-  ctx.shadowBlur = size * 0.6
-  ctx.shadowOffsetY = size * 0.08
-  ctx.fillStyle = "rgba(255, 255, 255, 0.88)"
+  ctx.shadowBlur = size * 0.42
+  ctx.shadowOffsetY = size * 0.083
   ctx.fillText("REZE DESIGN", pad, pad)
   ctx.restore()
 }
@@ -266,6 +283,10 @@ export async function exportVideo(opts: {
       m.seek(startTime)
     }
     engine.resetPhysics()
+    // The rzAudio* clock, driven with the export's own exact frame times — the
+    // reason analysis is precomputed instead of live: this loop does not play
+    // audio, it states what time it is.
+    engine.setAudioTime(startTime)
     for (let i = 0; i < WARMUP_FRAMES; i++) engine.renderFrame(1 / fps)
     for (const m of cast) m.play()
 
@@ -274,6 +295,8 @@ export async function exportVideo(opts: {
       if (opts.signal?.aborted) throw new DOMException("Export canceled", "AbortError")
       const t = i / fps
       // dt=0 renders the t=0 pose itself; afterwards each call advances one frame.
+      // Audio time is TRACK time: the export may start mid-song.
+      engine.setAudioTime(startTime + t)
       engine.renderFrame(i === 0 ? 0 : 1 / fps)
 
       ctx.fillStyle = fillColor

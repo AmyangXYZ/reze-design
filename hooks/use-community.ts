@@ -8,6 +8,13 @@
 // Built-ins are excluded here even though the seed mirrors them into the
 // database: the repo is the authority for their content, and showing the mirror
 // would double every builtin card.
+//
+// Matched by ID, not by name. A name is the human key and it changes — a preset
+// gets renamed, or retired from the repo entirely — and the moment it does, its
+// mirror row stops matching and comes back as somebody's community item. Worse,
+// built-ins are seeded to the ADMIN account, so for that account the stray rows
+// also land under "Yours" and inflate the count. An id is minted once and never
+// moves, which is the whole reason ids exist alongside names here.
 
 import { useEffect, useState, useSyncExternalStore } from "react"
 import { EFFECTS } from "@/lib/effects"
@@ -17,10 +24,10 @@ import type { LibraryItem, LibraryKind } from "@/lib/library"
 
 export type CommunityItem = LibraryItem & { mine: boolean }
 
-const BUILTIN_NAMES: Partial<Record<LibraryKind, Set<string>>> = {
-  grade: new Set(GRADE_PRESETS.map((i) => i.name)),
-  effect: new Set(EFFECTS.map((i) => i.name)),
-  graph: new Set(GRAPH_LIBRARY.map((i) => i.name)),
+const BUILTIN_IDS: Partial<Record<LibraryKind, Set<string>>> = {
+  grade: new Set(GRADE_PRESETS.map((i) => i.id)),
+  effect: new Set(EFFECTS.map((i) => i.id)),
+  graph: new Set(GRAPH_LIBRARY.map((i) => i.id)),
 }
 
 let cache: CommunityItem[] | null = null
@@ -47,9 +54,9 @@ function load(force = false): Promise<CommunityItem[]> {
       const rows = d.items ?? []
       mineIds = new Set(rows.filter((i) => i.mine).map((i) => i.id))
       for (const i of rows) {
-        if (BUILTIN_NAMES[i.kind]?.has(i.name)) builtinAuthors.set(`${i.kind}:${i.name}`, i.author)
+        if (BUILTIN_IDS[i.kind]?.has(i.id)) builtinAuthors.set(i.id, i.author)
       }
-      cache = rows.filter((i) => !BUILTIN_NAMES[i.kind]?.has(i.name))
+      cache = rows.filter((i) => !BUILTIN_IDS[i.kind]?.has(i.id))
       settled = true
       inflight = null
       for (const l of listeners) l()
@@ -71,8 +78,8 @@ export function isMine(id: string): boolean {
 
 /** The live author to display for a built-in (the admin account's handle), or
  *  the repo's fallback when the mirror hasn't been fetched. */
-export function builtinAuthor(kind: LibraryKind, name: string, fallback: string): string {
-  return builtinAuthors.get(`${kind}:${name}`) ?? fallback
+export function builtinAuthor(id: string, fallback: string): string {
+  return builtinAuthors.get(id) ?? fallback
 }
 
 /** The cached rows for a kind, without subscribing — for callbacks that must not

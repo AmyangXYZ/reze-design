@@ -35,68 +35,152 @@ export function builtinEffect(name: string): AppliedEffect {
 
 /** The "New effect" starter: a terse contract reference and a replace-me body.
  *  Code, not content — it seeds the editor rather than appearing in the library. */
-export const NEW_EFFECT_TEMPLATE = `// An effect is one file with one or both of these functions. WHICH ONE YOU
-// WRITE IS WHERE IT LANDS — there is no layer setting anywhere. Delete the one
-// you don't want; alpha is how much each covers what is behind it.
+export const NEW_EFFECT_TEMPLATE = `// An effect is ONE WGSL file, and WHICH FUNCTIONS YOU DEFINE decides both what
+// it is and where it lands. There is no layer setting anywhere in the app.
+//
+//   fn background(ray, uv, time)                   behind the model, over the
+//                                                  backdrop colour or image
+//   fn foreground(ray, uv, time, depth)            over the finished frame
+//   fn particleInit / particleStep / particleShade a GPU particle pool
+//   fn trailWidth / trailShade                     ribbons along bones you ask for
+//
+// Define background AND foreground and they are one effect: a storm is a dark
+// sky and the rain in front of it, in one file. Particles and trails each stand
+// alone — an effect declares field mounts (background/foreground) or particles,
+// not both, so sparks that need their own sky are two effects today.
+//
+// Delete whichever of the two below you do not want.
 
-// Behind the model, over the background color/image.
+// ── Behind the model ──
 fn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f {
-  // For circles/shapes that must not stretch with the canvas, correct by the
-  // live aspect ratio — never hardcode one:
-  //   let aspect = bgResolution().x / bgResolution().y;
-  //   let p = vec2f((uv.x - 0.5) * aspect, uv.y - 0.5);
+  // Anything that must not stretch with the canvas is measured in a SQUARE
+  // space, corrected by the live aspect — never a hardcoded one.
+  let aspect = rzResolution().x / rzResolution().y;
+  let p = vec2f((uv.x - 0.5) * aspect, uv.y - 0.5);
   // Drifting glow — replace me.
-  let n = noise2(uv * 3.0 + vec2f(time * 0.15, 0.0));
+  let n = noise2(p * 3.0 + vec2f(time * 0.15, 0.0));
   return vec4f(0.35, 0.55, 1.0, 0.22 * n);
 }
 
-// In front of everything — rain, snow, petals, fog. \`depth\` is how many metres
-// away whatever the scene drew at this pixel is (the far plane where it drew
-// nothing), so particles are not stuck in front: compare a particle's own
-// distance against it and the model takes the pixel instead. Fog needs no
-// comparison at all — its alpha simply IS a function of distance, which is all
-// the haze below is.
+// ── Over the finished frame ──
+//
+// depth is how many metres away whatever the scene drew at this pixel is, and
+// the far plane where it drew nothing. So a foreground is NOT stuck in front:
+// compare something's own distance against it and the model takes the pixel
+// instead. Fog needs no comparison at all — its alpha simply IS a function of
+// distance, which is all the haze below is.
 fn foreground(ray: vec3f, uv: vec2f, time: f32, depth: f32) -> vec4f {
   let haze = 1.0 - exp(-depth * 0.004);
   return vec4f(0.62, 0.68, 0.78, haze * 0.35);
 }
 
+// ── What you return ──
+//
+// sRGB colour with STRAIGHT alpha, and the alpha is the interesting half: it is
+// your mask over everything behind you. 0 lets it through untouched, 1 replaces
+// it. Sparse effects — rain, sparks, prints — sit near 0 and rise where a mark
+// lands. A painted sky returns 1 everywhere.
+
+// ── Declaring what you need ──
+//
+// Comments at the top of the file, each on its own line:
+//
+//   // @anchor 頭              a bone, by name -> rzAnchor(subject, 0)
+//   // @anchor 左手首 trail    ...and keep its recent PATH -> rzTrail(...)
+//   // @particles 4096         pool size, if you write the particle mounts
+//   // @blend additive         particles add light instead of covering (fire)
+//   // @bloom                  particles reach the bloom pyramid
+//   // @fullres                field mounts run at full resolution
+//
+// @anchor slots are DECLARATION ORDER: the first is slot 0. Any bone the model
+// has works, and .valid is false on a rig that spells it differently — check
+// it, or your hand effect draws at the world origin on half the library.
+//
+// @fullres costs double and buys sub-pixel detail. Hairlines, thin rings and
+// scanlines need it. Anything soft — smoke, glow, billowing noise — does not:
+// an upsample carries that for free, which is the whole point of the default.
+
 // ── Reading the scene ──
 //
-// An effect is not limited to the pixel. It can ask where the CAST is, which is
-// what separates a decoration from something that reacts:
+// An effect is not limited to its own pixel. This is what separates a
+// decoration from something that reacts to the performance.
 //
+//   rzResolution()            canvas size in pixels
+//   rzCameraPos()             where the camera is
+//   rzCameraRight/Up/Forward()  its axes, in world space
 //   rzSubjectCount()          how many characters, up to four
-//   rzSubject(i)              { root, center, bounds, valid } — root is the
-//                             FLOOR under them, center the hips, bounds a
-//                             generous sphere to cull against
-//   rzProject(p)              a world point as the camera sees it: xy the uv it
-//                             lands on, z its distance along the view axis.
-//                             Compare that z against \`depth\` for occlusion —
-//                             and measure in 2D instead of marching in 3D
+//   rzSubject(i)              { root, center, bounds, valid }
+//                             root is the FLOOR under them, center the hips,
+//                             bounds a GENEROUS cull sphere — generous enough
+//                             to cover a raised arm, so do not size anything
+//                             off it that should match the body
+//   rzAnchor(subject, slot)   { pos, vel, fwd, valid } for a bone you declared
+//   rzTrailCount(subject, slot)   how many path samples that bone has yet
+//   rzTrail(subject, slot, i)     xyz where it was, w how many seconds ago.
+//                                 i = 0 is NOW and runs backwards in time
 //   rzWorldPos(ray, depth)    this pixel's depth turned into a PLACE
+//   rzProject(p)              a world point as the camera sees it: xy the uv it
+//                             lands on, z its distance along the view axis
 //
-// And it can ask for BONES, by name, at the top of the file:
+// rzProject is the one to learn. Marching a curve in 3D costs a distance
+// evaluation per sample per pixel; projecting its points once and measuring in
+// 2D costs a subtraction. Its z is directly comparable to depth, so occlusion
+// is a single test — draw where your z is nearer than the scene's — and it is
+// negative behind the camera, which is worth rejecting before using the uv.
 //
-//   // @anchor 頭
-//   // @anchor 左手首 trail
-//
-// giving rzAnchor(subject, slot) = { pos, vel, fwd, valid } — slots in
-// declaration order. Check \`valid\`: a rig that spells the bone differently
-// reports false, and the alternative is drawing at the world origin.
-//
-// \`trail\` also keeps that bone's recent PATH: rzTrailCount(subject, slot) and
-// rzTrail(subject, slot, i) = xyz where it was, w how many seconds ago. That is
-// what a ribbon is made of — one position and one velocity give a straight
-// segment that jitters, because a velocity is a difference between two frames.
-//
-// Loop to the count functions, never to a fixed number: the limits are minimums
-// and can grow, which stays true only while nobody hardcodes them.
-//
-// The built-in Halo, Hand Ribbon and Footprints are worked examples, each
-// commented with the mistake it is built to avoid.
+// Loop to the count functions, never to a constant. Four characters, eight
+// anchors, 128 trail samples are MINIMUMS and are free to grow, which stays
+// true only while nobody hardcodes them.
 
-// ── Toolbox (WGSL resolves in any order — helpers can live below main) ──
+// ── Reacting to the music ──
+//
+//   rzAudioLevel()            loudness now, 0..1
+//   rzAudioOnset()            how hard the bass is RISING — the kick detector
+//   rzAudioBandCount()        how many spectrum bands there are
+//   rzAudioBand(i)            band i now, 0..1
+//   rzAudioLevelAt(offset)    the same, SECONDS away: negative is the past,
+//   rzAudioOnsetAt(offset)    positive is the future. A bar that leans into a
+//   rzAudioBandAt(i, offset)  beat before it lands reads the future
+//   rzAudioTime()             where the song is, in seconds
+//   rzAudioPlaying()          1 while it is playing, 0 while paused
+//
+// The analysis is computed ONCE for the whole song, not sampled live, so the
+// editor, the viewer and an exported video all read identical numbers for
+// identical frames. Everything is zero when the scene has no music.
+
+// ── Making it fast ──
+//
+// This runs behind a full character render, every frame, at up to 4K, and an
+// export multiplies it by thousands of frames.
+//
+// CULL FIRST, and cull HIERARCHICALLY. If your effect belongs to a character,
+// reject the pixels nowhere near her before setting up anything per-mark: most
+// of any frame is empty, and the cheapest reject is one circle around her.
+// DERIVE the radius from what you actually draw rather than guessing — a
+// guessed one clips your own effect, and near the top of a circle the boundary
+// is flat to within a pixel, so it does not even look like a circle when it
+// fails. It looks like someone drew a straight line across your work.
+//
+// Bound every glow. A 1/r falloff never reaches zero and so gives you no radius
+// to cull with; a bounded falloff does, and nobody can tell them apart.
+//
+// Keep loops fixed and small, and hoist anything shared out of them. Setting
+// the effect to None for one export tells you how much of the frame time is
+// yours.
+
+// ── Rules ──
+//
+// Self-contained: no textures, no external bindings, no state between frames.
+// Drive ALL motion from time — it is the only clock, and it is what makes an
+// exported video reproducible. fwidth and friends are legal only in uniform
+// control flow, so keep them out of code following a data-dependent branch.
+// WGSL resolves in any order, so helpers may live below the functions that use
+// them.
+//
+// The library ships worked examples of every mount, each commented with the
+// mistake it is built to avoid. Reading them is the fastest way in.
+
+// ── Toolbox ──
 
 // Pseudo-random vec2 in 0..1 from any 2D point.
 fn hash2(p: vec2f) -> vec2f {

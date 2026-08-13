@@ -459,7 +459,7 @@ function LibraryContent({ canApply, targetLabel, currentGraphName, usedNames = [
               <div className="min-h-0 p-3">
                 <div className="truncate text-sm font-semibold select-text">{selected.name}</div>
                 <div className="mt-0.5 font-mono text-[13px] text-muted-foreground/70">
-                  <span className="select-text">{builtinAuthor("graph", selected.name, selected.author)}</span> · v{selected.version}
+                  <span className="select-text">{builtinAuthor(selected.id, selected.author)}</span> · v{selected.version}
                 </div>
                 {selected.description && (
                   <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground select-text">{selected.description}</p>

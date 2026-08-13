@@ -102,6 +102,7 @@ import { VERSION_LABEL } from "@/lib/version"
 import { ChoiceList } from "@/components/ui/choice-list"
 import { ColorField } from "@/components/color-picker"
 import { useAudioClock } from "@/hooks/use-audio-clock"
+import { primeAudioAnalysis } from "@/lib/audio-analysis"
 import { TimelineLanes } from "@/components/scene/timeline-lanes"
 import { primeClipDensity } from "@/hooks/use-lane-graphs"
 import { useEngine } from "@/hooks/use-engine"
@@ -1548,6 +1549,26 @@ export default function Lab() {
   )
 
   const scrubRef = useRef<Scrub | null>(null)
+
+  // The track's analysis, for audio-reactive effects (rzAudio*). Primed when
+  // the track changes; cleared when it goes. The engine samples it by the time
+  // the audio clock above writes, so effects, sound and export agree.
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine || !ready) return
+    if (!musicClip?.url) {
+      engine.setAudioData(null, 0, 0)
+      return
+    }
+    let stale = false
+    void primeAudioAnalysis(musicClip.url).then((a) => {
+      if (stale || !a) return
+      engineRef.current?.setAudioData(a.data, a.bands, a.secondsPerFrame)
+    })
+    return () => {
+      stale = true
+    }
+  }, [musicClip?.url, ready, engineRef])
 
   // Not restored. Which row is unfolded and which pane it was showing is where
   // you happened to stop, not where you want to start — reopening the editor
@@ -3593,6 +3614,26 @@ export default function Lab() {
             )}
             style={{ left: frameRect.x, top: frameRect.y, width: frameRect.w, height: frameRect.h }}
           />
+          {/* The watermark, WHERE the export will put it — same layout maths as
+              drawWatermark in lib/video-export.ts (size h·0.028, pad h·0.024)
+              and the engine demo's own type style, so what you frame is what you
+              get. Keep the two in step. */}
+          {framing.activeFrame?.watermark && (
+            <div
+              className="absolute font-sans text-white/90 uppercase"
+              style={{
+                left: frameRect.x + frameRect.h * 0.024,
+                top: frameRect.y + frameRect.h * 0.024,
+                fontSize: Math.max(14, Math.round(frameRect.h * 0.028)),
+                lineHeight: 1,
+                fontWeight: 400,
+                letterSpacing: "0.3em",
+                textShadow: "0 0 0.83em rgba(255,255,255,0.3), 0 0.083em 0.42em rgba(0,0,0,0.5)",
+              }}
+            >
+              Reze Design
+            </div>
+          )}
         </div>
       )}
 

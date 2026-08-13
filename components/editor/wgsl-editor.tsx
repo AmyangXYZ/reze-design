@@ -37,12 +37,37 @@ export type WgslCompileResult = { ok: boolean; diagnostics: string[] }
  * text lagged behind the caret or it flashed from plain to coloured on every
  * edit, and the caret's own line is exactly the one you are looking at.
  *
- * The tokeniser sees one line at a time, so a BLOCK comment spanning lines only
- * colours its first. WGSL has no multi-line strings, so nothing else carries
- * state across a newline, and `//` — which is what shader code overwhelmingly
- * uses — is unaffected.
+ * The tokeniser sees one line at a time, so the ONE thing that carries state
+ * across a newline has to be carried in: a block comment. `inBlock` says this
+ * line began inside one, and a line that is still inside it is painted as a
+ * comment without troubling Prism at all — cheaper than tokenising, and correct,
+ * which the previous per-line-only version was not for a `/** … *\/` header.
+ * Nothing else in WGSL spans lines: it has no multi-line strings.
  */
-const HighlightedLine = memo(function HighlightedLine({ text }: { text: string }) {
+const COMMENT_COLOR = (oneDark['comment'] as { color?: string } | undefined)?.color ?? "#7f848e"
+
+const HighlightedLine = memo(function HighlightedLine({ text, inBlock }: { text: string; inBlock: boolean }) {
+  if (inBlock) {
+    const end = text.indexOf("*/")
+    // Still inside it: the whole line is comment.
+    if (end === -1) {
+      return (
+        <div style={{ ...CODE_STYLE, color: COMMENT_COLOR, whiteSpace: "pre", width: "max-content", minWidth: "100%" }}>
+          {text === "" ? " " : text}
+        </div>
+      )
+    }
+    // The line that closes it: comment up to and including the terminator, then
+    // ordinary code — which is rare, but a `*/ let x = 1;` should not be grey.
+    const head = text.slice(0, end + 2)
+    const tail = text.slice(end + 2)
+    return (
+      <div style={{ ...CODE_STYLE, whiteSpace: "pre", width: "max-content", minWidth: "100%" }}>
+        <span style={{ color: COMMENT_COLOR }}>{head}</span>
+        {tail && <HighlightedLine text={tail} inBlock={false} />}
+      </div>
+    )
+  }
   return (
     <SyntaxHighlighter
       language="wgsl"
@@ -145,6 +170,40 @@ function EditorBody({
   // is one line's worth of highlighting rather than the document's.
   const lines = useMemo(() => code.split("\n"), [code])
   const lineCount = lines.length
+  /**
+   * Which lines BEGIN inside a block comment.
+   *
+   * One scan of the text per edit, which is nothing next to tokenising — the
+   * expensive part was always Prism plus React reconciling a span per token, and
+   * this feeds the memo so a line whose flag did not change is still skipped.
+   *
+   * `//` wins when it comes first on a line, so a commented-out `// /*` does not
+   * open a block that never closes.
+   */
+  const blockAt = useMemo(() => {
+    const flags: boolean[] = []
+    let open = false
+    for (const line of lines) {
+      flags.push(open)
+      let i = 0
+      while (i < line.length) {
+        if (open) {
+          const end = line.indexOf("*/", i)
+          if (end === -1) break
+          open = false
+          i = end + 2
+        } else {
+          const start = line.indexOf("/*", i)
+          const lineComment = line.indexOf("//", i)
+          if (start === -1) break
+          if (lineComment !== -1 && lineComment < start) break
+          open = true
+          i = start + 2
+        }
+      }
+    }
+    return flags
+  }, [lines])
 
   const compile = useCallback(async () => {
     if (busy) return
@@ -189,7 +248,7 @@ function EditorBody({
           <div className="relative min-w-0 flex-1">
             <div aria-hidden style={{ padding: "12px 14px" }}>
               {lines.map((line, i) => (
-                <HighlightedLine key={i} text={line} />
+                <HighlightedLine key={i} text={line} inBlock={blockAt[i]} />
               ))}
             </div>
             {/* overflow-hidden + box ≥ content ⇒ the textarea never scrolls itself */}

@@ -77,6 +77,9 @@ export function useAudioClock({
       raf = requestAnimationFrame(tick)
       const p = engineRef.current?.getModel(masterId)?.getAnimationProgress()
       if (!p) return
+      // The rzAudio* clock for effects — a 4-byte header write, every tick, so
+      // audio-reactive shaders follow scrubs and pauses exactly as sound does.
+      engineRef.current?.setAudioTime(p.current, p.playing)
       const playing = p.playing && userInteracted.current
       // A frame advances the clock ≤ ~0.05s — anything bigger is a discrete jump.
       const jumped = lastModelTime >= 0 && Math.abs(p.current - lastModelTime) > 0.35

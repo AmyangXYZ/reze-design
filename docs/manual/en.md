@@ -535,31 +535,57 @@ everyone. See [§2.5](#25-drafts-publishing-and-versions) for what that implies.
 
 ## 2.3 Scene effects in WGSL
 
-A scene effect is a shader that paints a layer of the frame, per pixel, from the
-view direction and the clock. Rain, snow, stars, an aurora, fog on the ground, a
-moving gradient, a title card.
+A scene effect is a shader that paints part of the frame, per pixel, from the
+view direction and the clock. Rain, snow, an aurora, fog on the ground, lightning
+clinging to a body, a sigil under someone's feet, a title card.
 
-The library ships six worked examples, each demonstrating a different technique:
-*Shining Stars* (hash-grid particle fields), *Quiet Rain* (column streaks, cut by
-the character's silhouette), *REZE DESIGN* (signed-distance glyphs with
-exponential glow), *Orbiting Hearts* (implicit-curve outlines), *Fireworks*
-(ballistics with a decaying streak) and *Ground Mist* (a volume walked along the
-view ray). Reading them is the fastest way into the idiom.
+### The five mounts
+
+**Which functions you define decides both what the effect is and where it lands.**
+There is no layer setting anywhere in the app; the code says.
+
+| Define | You get |
+| --- | --- |
+| `fn background(ray, uv, time)` | A layer between the backdrop and the character |
+| `fn foreground(ray, uv, time, depth)` | A layer over the finished frame |
+| `fn particleInit` · `particleStep` · `particleShade` | A GPU particle pool |
+| `fn trailWidth` · `trailShade` | Ribbons along bones you asked for |
+
+Define `background` **and** `foreground` and they are one effect: a storm is a
+dark sky and the rain in front of it, in one file.
+
+Particles and trails each stand alone. An effect declares field mounts
+(`background`/`foreground`) **or** particles, not both, so sparks that need their
+own sky are two effects applied one after another.
+
+### Declaring what you need
+
+Comments at the top of the file, each on its own line. They are part of the
+contract, not documentation:
+
+```wgsl
+// @anchor 頭              a bone by name        -> rzAnchor(subject, 0)
+// @anchor 左手首 trail    ...and keep its PATH  -> rzTrail(subject, 1, i)
+// @particles 4096         pool size, with the particle mounts
+// @blend additive         particles add light instead of covering it
+// @bloom                  particles reach the bloom pyramid
+// @fullres                field mounts run at full resolution
+```
+
+`@anchor` slots are **declaration order** — the first is slot 0. Any bone the
+model has works, and `.valid` is false on a rig that spells it differently. Check
+it, or the effect draws a hand flourish at the world origin on half the library.
+
+`@fullres` costs double and buys sub-pixel detail. Hairlines, thin rings and
+scanlines need it. Anything soft — smoke, glow, billowing noise — does not: a
+bilinear upsample carries that for free, which is the whole point of the default.
 
 ### The contract
-
-Two functions, and **you write whichever ones you want**. There is no layer
-setting anywhere in the app: the code says where it goes.
 
 ```wgsl
 fn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f
 fn foreground(ray: vec3f, uv: vec2f, time: f32, depth: f32) -> vec4f
 ```
-
-`background` paints between the backdrop and the character — a sky, and anything
-belonging to the world behind. `foreground` paints over the finished frame, which
-is where weather lives. Define both and they are one effect: a storm is a dark sky
-and the rain in front of it, in one file.
 
 | Parameter | Meaning |
 | --- | --- |
@@ -568,86 +594,89 @@ and the rain in front of it, in one file.
 | `time` | Seconds since the effect was applied |
 | `depth` | **`foreground` only.** How far away, in scene units, whatever the scene drew at this pixel is — the far plane where it drew nothing |
 
-These helpers are in scope for both:
-
-| Helper | Gives you |
-| --- | --- |
-| `rzResolution()` | The canvas size in pixels, for aspect correction |
-| `rzCameraPos()` | Where the camera is, in world space |
-| `rzWorldPos(ray, depth)` | The world point the scene drew at this pixel |
-| `rzProject(p)` | A world point as the camera sees it — `xy` the uv it lands on, `z` its distance along the view axis |
-| `rzSubjectCount()` | How many characters are in the scene, up to four |
-| `rzSubjectHip(i)` | Where character `i` is — **at the hips**, not on the floor |
-| `rzSubject(i)` | `{ root, center, bounds, valid }` — `root` is the **floor** under them, `center` the hips, `bounds` a generous cull sphere |
-| `rzAnchor(subject, slot)` | `{ pos, vel, fwd, valid }` for a bone you asked for by name |
-| `rzTrailCount(subject, slot)` · `rzTrail(subject, slot, i)` | That bone's recent **path** — `xyz` where it was, `w` how many seconds ago |
-
-### Asking for bones
-
-An effect names the bones it wants at the top of its own source, the same way it
-declares its mounts by which entry points it defines:
-
-```wgsl
-// @anchor 頭
-// @anchor 左手首 trail
-```
-
-That gives you `rzAnchor(subject, 0)` for the head and slot `1` for the left
-wrist — **slots are declaration order**. Any bone the model has works; `valid` is
-false on a rig that spells it differently, which is the ordinary case and worth
-checking, or your effect draws a hand flourish at the world origin.
-
-`trail` additionally keeps that bone's recent path. It is opt-in because a path
-is far more data than a point, and it is what a ribbon is made of: one position
-and one velocity give a straight segment that jitters, because a velocity is the
-difference between two frames. The path is what actually happened, sampled at a
-fixed rate on the **scene clock** — so a trail is identical in the editor, in an
-export, and in a re-export, and its spacing does not change with your framerate.
-
-Loop to `rzTrailCount()`, never to a fixed number. The limits — four characters,
-eight bones, 128 samples (about two seconds) — are **minimums**, and they can
-grow without breaking a published effect precisely because nothing hardcodes
-them.
-
-`rzSubjectHip` is the one to read twice. It is the character's centre, at about
-waist height, so a ripple drawn straight at it appears around the waist. For
-anything on the ground take its `.xz` and supply your own floor height.
-
-`rzProject` is what makes anything anchored to the world affordable. Measuring
-distance to a point in 3D costs you a full calculation per pixel; projecting the
-point once and measuring in 2D costs a subtraction. Its `z` is directly
-comparable to `depth`, so occlusion is one test — draw where your `z` is nearer
-than the scene's — and it is negative behind the camera, which is worth rejecting
-before you use the uv.
-
-Older effects call these `bgResolution`, `bgCameraPos`, `bgWorldPos`,
-`bgSubjectCount` and `bgSubjectPos`. Those names still work and always will —
-a published scene is a permanent link, so nothing it depends on is ever removed.
-
-**Halo**, **Hand Ribbon** and **Footprints** are the worked examples: a ring
-parented to a head bone, a neon trail along the path a hand actually took, and
-marks left where the feet landed. Each one is commented with the mistakes it is
-built to avoid — they are the fastest way in.
-
 The return value is **sRGB colour with straight alpha**, and the alpha is the
-interesting part: it is the mask over everything behind you.
+interesting half: it is your mask over everything behind you.
 
 - `alpha = 0` — transparent; whatever is behind shows through untouched.
 - `alpha = 1` — opaque; your effect replaces it.
 
-A sparse effect — rain, petals, sparks — holds alpha near 0 between its marks and
-raises it where a mark lands. A covering one — a gradient sky, a painted backdrop —
-returns alpha 1 everywhere.
+A sparse effect — rain, sparks, footprints — holds alpha near 0 between its marks
+and raises it where one lands. A covering one — a gradient sky, a painted
+backdrop — returns 1 everywhere.
+
+### Reading the scene
+
+An effect is not limited to its own pixel. This is what separates a decoration
+from something that reacts to the performance.
+
+| Helper | Gives you |
+| --- | --- |
+| `rzResolution()` | Canvas size in pixels, for aspect correction |
+| `rzCameraPos()` | Where the camera is, in world space |
+| `rzCameraRight()` · `rzCameraUp()` · `rzCameraForward()` | Its axes |
+| `rzSubjectCount()` | How many characters are in the scene, up to four |
+| `rzSubject(i)` | `{ root, center, bounds, valid }` |
+| `rzAnchor(subject, slot)` | `{ pos, vel, fwd, valid }` for a bone you declared |
+| `rzTrailCount(subject, slot)` · `rzTrail(subject, slot, i)` | That bone's recent **path** — `xyz` where it was, `w` how many seconds ago |
+| `rzWorldPos(ray, depth)` | This pixel's depth turned into a **place** |
+| `rzProject(p)` | A world point as the camera sees it — `xy` the uv it lands on, `z` its distance along the view axis |
+
+Three of these repay a second reading.
+
+**`rzSubject().bounds` is a *generous* cull sphere, not a fit.** It is sized to
+cover a raised arm, so it is the right thing to reject against and the wrong
+thing to size anything by. For a measure of how big someone actually is, take the
+hip height — `center.y - root.y` — which is a dependable fraction of any rig's
+height. Sizing a ground sigil off `bounds.w` puts it several body-heights across.
+
+**`rzProject` is what makes anything anchored to the world affordable.** Marching
+a curve in 3D costs a distance evaluation per sample per pixel; projecting its
+points once and measuring in 2D costs a subtraction. Its `z` is directly
+comparable to `depth`, so occlusion is a single test — draw where your `z` is
+nearer than the scene's — and it is negative behind the camera, which is worth
+rejecting before you use the `uv`.
+
+**A trail is what a ribbon is made of.** One position and one velocity give a
+straight segment that jitters, because a velocity is the difference between two
+frames; the path is what actually happened. It is sampled at a fixed rate on the
+**scene clock**, so it is identical in the editor, in an export and in a
+re-export, and its spacing does not change with your framerate.
+
+Loop to the count functions, never to a constant. Four characters, eight anchors
+and 128 trail samples are **minimums** and are free to grow, which stays true
+only while nobody hardcodes them.
+
+Older effects call these `bgResolution`, `bgCameraPos`, `bgWorldPos`,
+`bgSubjectCount` and `bgSubjectPos`. Those names still work and always will — a
+published scene is a permanent link, so nothing it depends on is ever removed.
+
+### Reacting to the music
+
+| Helper | Gives you |
+| --- | --- |
+| `rzAudioLevel()` | Loudness now, 0 – 1 |
+| `rzAudioOnset()` | How hard the bass is **rising** — the kick detector |
+| `rzAudioBandCount()` · `rzAudioBand(i)` | The spectrum, log-spaced, each band 0 – 1 |
+| `rzAudioLevelAt(o)` · `rzAudioOnsetAt(o)` · `rzAudioBandAt(i, o)` | The same, `o` **seconds away** — negative is the past, positive the future |
+| `rzAudioTime()` · `rzAudioPlaying()` | Where the song is, and whether it is running |
+
+The whole track is analysed **once, ahead of time**, not sampled live. That is
+what lets an export be identical to the editor: an export steps the engine frame
+by frame rather than playing in real time, so a live analyser would hear silence
+and every audio-reactive effect would quietly vanish from the video.
+
+It is also why the `At(offset)` forms exist. The future is already computed, so a
+bar can lean into a beat *before* it lands — something no live analyser can do.
+Everything reads zero when the scene has no music.
 
 ### What `depth` is for
 
-A foreground is not stuck in front. `depth` is what lets it decide, per pixel, and
-there are two ways to use it.
+A foreground is not stuck in front. `depth` is what lets it decide, per pixel.
 
 **Compare against it.** A particle knows its own distance. If the scene is nearer,
-the scene wins that pixel and the particle is hidden — so drops pass behind a
-shoulder and in front of a face in the same frame. Feather the comparison over a
-unit or so, or the silhouette comes out as a staircase:
+the scene wins that pixel — so drops pass behind a shoulder and in front of a face
+in the same frame. Feather the comparison, or the silhouette comes out as a
+staircase:
 
 ```wgsl
 // How much of a curtain hanging `dist` away survives at this pixel.
@@ -661,18 +690,15 @@ function of distance, so `1.0 - exp(-depth * density)` is already fog, and pixel
 the scene never drew report the far plane, which is why it closes over the sky on
 its own.
 
-For anything that belongs to a *place* rather than to a distance — mist pooling
-where the cast is standing, a pattern that must not swim as the camera orbits —
-turn the depth into a position with `bgWorldPos(ray, depth)` and work in world
-coordinates.
+**Turn it into a place.** For anything belonging to a *location* rather than a
+distance, `rzWorldPos(ray, depth)` gives the world point the scene drew, and the
+pattern stops swimming when the camera orbits.
 
-One caution worth knowing before you reach for it: a foreground evaluated at that
-single depth is a function of the surface the scene drew, which is a texture ON
-that surface. It cannot know about the air *between* the camera and it. If you
-want something the character stands inside rather than behind — real volumetric
-fog — walk the ray yourself between `bgCameraPos()` and `bgWorldPos(...)`,
-accumulating as you go. *Ground Mist* does exactly this, and its comments explain
-why the simpler version reads as a dirty lens.
+One caution before you reach for it: a foreground evaluated at that single depth
+is a function of the surface the scene drew — a texture *on* that surface. It
+cannot know about the air *between* the camera and it. For something the
+character stands inside rather than behind, walk the ray yourself between
+`rzCameraPos()` and `rzWorldPos(...)`, accumulating as you go.
 
 ### Two orientations
 
@@ -680,98 +706,146 @@ why the simpler version reads as a dirty lens.
 the camera moves.
 
 **Screen-space**, from `uv` — glued to the frame. Rain falls down the screen
-regardless of where the camera looks. Correct for weather, vignettes and film
-grain. (Note that this is a separate decision from which function you write:
-`uv` is what makes something screen-*aligned*, `foreground` is what puts it in
-front. Weather usually wants both.)
+regardless of where the camera looks. Correct for weather, vignettes and grain.
 
 ```wgsl
 fn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f {
   // Aspect-correct so circles come out round.
-  let res = bgResolution();
+  let res = rzResolution();
   let p = (uv - 0.5) * vec2f(res.x / res.y, 1.0);
-  let d = length(p);
-  let vignette = smoothstep(0.8, 0.2, d);
+  let vignette = smoothstep(0.8, 0.2, length(p));
   return vec4f(vec3f(0.02, 0.03, 0.08), 1.0 - vignette);
 }
 ```
 
-**World-space**, from `ray` — part of the environment. Orbit the camera and it
-stays put, as a real sky would. Project the ray to spherical coordinates using the
-same mapping the skybox samples by:
+**World-space**, from `ray` — part of the environment. Orbit and it stays put, as
+a real sky would. Project the ray the same way the skybox is sampled:
 
 ```wgsl
 fn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f {
   // Longitude/latitude — the skybox's own projection.
   let sky = vec2f(atan2(ray.x, ray.z), asin(clamp(ray.y, -1.0, 1.0)));
   let band = smoothstep(0.0, 0.35, sky.y);          // horizon → zenith
-  let dusk = mix(vec3f(0.85, 0.45, 0.30), vec3f(0.06, 0.09, 0.22), band);
-  return vec4f(dusk, 1.0);
+  return vec4f(mix(vec3f(0.85, 0.45, 0.30), vec3f(0.06, 0.09, 0.22), band), 1.0);
 }
 ```
 
 Choose deliberately: stars built from `uv` slide across the sky when the camera
 orbits, which reads as wrong immediately even to a viewer who cannot say why.
 
-### A worked overlay
+There is a third case that catches people. If your effect is attached to a
+character and something in it points **up** — flames climbing, a column of light —
+screen up is not world up. Measuring against the frame's `+y` makes flames tilt
+with the camera and climb sideways out of frame when you orbit under someone.
+Project a world-up vector from the subject instead; its screen direction is what
+you want, and its foreshortened length is how tall the effect should look from
+that angle.
 
-Drifting motes, using the hash helper from the starter template:
+### Particles
+
+Three functions, and the pool never touches the CPU: one compute dispatch steps
+every particle, one instanced draw puts them on screen.
 
 ```wgsl
-const COUNT: i32 = 48;
-const FALL_SPEED: f32 = 0.04;
-const RADIUS: f32 = 0.006;
-
-fn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f {
-  let res = bgResolution();
-  let p = (uv - 0.5) * vec2f(res.x / res.y, 1.0);
-
-  var acc = 0.0;
-  for (var i = 0; i < COUNT; i = i + 1) {
-    // A stable pseudo-random home for each mote.
-    let seed = hash2(vec2f(f32(i), 7.0));
-    // Descends, wraps at the bottom, drifts sideways on its own phase.
-    let y = fract(seed.y - time * FALL_SPEED) - 0.5;
-    let x = (seed.x - 0.5) * 1.8 + sin(time * 0.6 + seed.x * 30.0) * 0.02;
-    let d = length(p - vec2f(x, y));
-    // Proportional falloff keeps the edge crisp at any resolution.
-    acc = acc + smoothstep(RADIUS, 0.0, d);
-  }
-
-  let glow = clamp(acc, 0.0, 1.0);
-  return vec4f(vec3f(1.0, 0.94, 0.82), glow * 0.85);
-}
+// @particles 4096
+fn particleInit(i: u32, seed: f32) -> Particle    // a fresh particle
+fn particleStep(p: Particle, dt: f32) -> Particle // one frame of motion
+fn particleShade(p: Particle, uv: vec2f) -> vec4f // its billboard, uv 0–1
 ```
 
-Note the idioms: tunables as named `const`s at the top, `fract` to wrap motion so
-nothing accumulates over a long take, and `smoothstep` for edges.
+`Particle` carries `pos`, `vel`, `age`, `life`, `size`, `rot`, `seed` and
+`stretch`. Setting `life` to zero in `particleStep` retires one, and it comes back
+through `particleInit` with a new seed. `stretch` is aspect along the direction of
+travel: 1 is a square billboard, a raindrop is 10 or 20.
+
+Particles are drawn **inside the scene pass**, so they are depth-tested against
+the cast for free — one behind a shoulder is simply hidden, with no work from you.
+*Snow* and *Rain* are the worked examples.
+
+### Trails
+
+Two functions, over the recorded path of every bone you declared with `trail`:
+
+```wgsl
+// @anchor 右手首 trail
+fn trailWidth(u: f32, age: f32) -> f32                                  // pixels
+fn trailShade(u: f32, v: f32, age: f32, weight: f32, slot: i32) -> vec4f
+```
+
+`u` runs along the ribbon and `v` across it, so a soft edge is a function of `v`
+and a taper is a function of `u`. The path is smoothed into a spline and extruded
+in screen space, so a ribbon holds its width whatever the camera does.
+
+Ribbons composite in their own layer with MAX blending, after tone mapping. That
+is what keeps a bright ribbon crossing itself from stacking into a white blob.
+*Hand Ribbon* is the worked example.
+
+### Making it fast
+
+This runs behind a full character render, every frame, at up to 4K, and an export
+multiplies it by thousands of frames. Two habits carry almost all of it.
+
+**Cull first, and cull hierarchically.** If your effect belongs to a character,
+reject the pixels nowhere near her before setting up anything per-mark — most of
+any frame is empty. Then reject per *limb* before setting up per *mark*: a pixel
+beside one arm can throw out everything on the other arm and both legs with a
+single comparison, and that is worth far more than making the marks themselves
+cheaper.
+
+**Derive the cull radius; never guess it.** A guessed radius clips your own
+effect, and it fails in a way that does not look like a radius: near the top of a
+circle the boundary is flat to within a pixel, so a too-small bound reads as
+someone having drawn a straight line across your work. Write the radius as the sum
+of the things that actually reach — how far a mark can sit from its anchor, plus
+how far it spreads — so it tracks when you retune them.
+
+**Bound every glow.** A `1/r` falloff never reaches zero and so gives you no
+radius to cull with. A bounded falloff does, and nobody can tell them apart.
+
+Setting the effect to *None* for a single export tells you how much of the frame
+time is yours.
 
 ### The editing loop
 
-Open **Scene → Background → Library**, then **New effect** for a commented starter
+Open **Scene → Effects → Library**, then **New effect** for a commented starter
 template, or right-click any preset and **Edit shader** to fork it.
 
 **<kbd>⌘/Ctrl</kbd>+<kbd>Enter</kbd> compiles and applies.** The scene is the
-preview — no separate render button, no preview window. On success the effect is
-live immediately. On failure the previous shader stays applied and you get
-diagnostics with `line:column` positions rebased to your own code, so iterating
-never leaves you looking at a black screen.
+preview — no separate render button. On success the effect is live immediately. On
+failure the previous shader stays applied and you get diagnostics with
+`line:column` positions rebased to your own code, so iterating never leaves you
+looking at a black screen.
 
 ### Rules
 
-- **Self-contained.** Everything comes from `ray`, `uv` and `time` — no textures,
-  no external bindings, no state between frames.
+- **Self-contained.** No textures, no external bindings, no state between frames.
 - **Drive all motion from `time`.** It is the only clock, and what makes an
   exported video reproducible.
-- **Keep loops small and fixed.** This runs behind a full character render, every
-  frame, at up to 4K; fifty iterations is comfortable. Export multiplies the cost
-  by thousands of frames, so if one is unexpectedly slow, setting the effect to
-  *None* for a single export tells you how much of the time is yours.
-- **`fwidth` only in uniform control flow.** `fwidth`-based `smoothstep` gives
-  resolution-independent edges, and the derivative holds as long as neighbouring
-  pixels took the same branch — keep it out of code following a data-dependent
-  early return.
-- **WGSL resolves in any order**, so helpers may sit below `background()`.
+- **Keep loops fixed and small**, and hoist anything shared out of them.
+- **`fwidth` only in uniform control flow.** The derivative holds as long as
+  neighbouring pixels took the same branch — keep it out of code following a
+  data-dependent early return.
+- **WGSL resolves in any order**, so helpers may sit below the functions that use
+  them.
+
+### The built-ins, and what each one is for
+
+Every preset is a worked example, commented with the mistake it is built to
+avoid. Reading them is the fastest way into the idiom.
+
+| Effect | The technique it demonstrates |
+| --- | --- |
+| *Snow* · *Rain* | GPU particle pools — one compute step, one instanced draw, depth-tested against the cast |
+| *Hand Ribbon* | A trail along a bone's recorded path, max-blended in its own layer |
+| *Footprints* | Reading a trail in **world** space: contacts inferred from the moment a foot stops descending, each with a light pillar integrated through the air above it |
+| *Vyke's Dragonbolt* | Arcs on the limbs — screen-space paths carrying real depth, so half of each ring passes behind the body; and a two-tier cull |
+| *Immolation* | One domain-warped noise field over a silhouette distance field, measured against **world** up |
+| *Summoning Circle* | A figure on the ground plane by ray-plane intersection, depth-tested by hand, with line widths in measured pixels |
+| *Stage Lights* | Volumetric beams marched through their own cylinder, aimed by a damped follow |
+| *Waveform* | The audio interface driving a ported Shadertoy visualiser |
+| *Shining Stars* | Hash-grid fields |
+| *REZE DESIGN* | Signed-distance glyphs |
+| *Fireworks* | World-anchored ballistics, projected per frame |
 
 ## 2.4 Material shader graphs
 

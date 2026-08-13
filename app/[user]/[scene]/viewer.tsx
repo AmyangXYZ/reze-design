@@ -5,6 +5,7 @@
 // why publishing bundles them in the first place.
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react"
+import { primeAudioAnalysis } from "@/lib/audio-analysis"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { GitFork, Heart, WandSparkles } from "lucide-react"
@@ -372,6 +373,25 @@ function SceneStage({
   }, [audioSrc])
 
   const audioElRef = useRef<HTMLAudioElement>(null)
+  // The track's analysis for rzAudio* — same contract as the editor: primed on
+  // load, sampled by the tick's setAudioTime, so a published scene's reactive
+  // effects run identically to where they were authored.
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine || !ready) return
+    if (!audioSrc) {
+      engine.setAudioData(null, 0, 0)
+      return
+    }
+    let stale = false
+    void primeAudioAnalysis(audioSrc).then((a) => {
+      if (stale || !a) return
+      engineRef.current?.setAudioData(a.data, a.bands, a.secondsPerFrame)
+    })
+    return () => {
+      stale = true
+    }
+  }, [audioSrc, ready, engineRef])
   // The animation clock is the master, exactly as in the editor.
   useEffect(() => {
     const audio = audioElRef.current
@@ -402,11 +422,27 @@ function SceneStage({
     }
     window.addEventListener("pointerdown", warm, { once: true })
     window.addEventListener("keydown", warm, { once: true })
+    // iOS Safari honours play() only inside a user-gesture call stack. The
+    // editor never hits this: its playback starts from the transport's own tap,
+    // so the first play() rides that gesture. The viewer AUTOPLAYS — its first
+    // play() comes from the rAF tick with no gesture behind it, is rejected,
+    // and every rAF retry is rejected for the same reason: none of them are
+    // gestures either. So the first tap anywhere joins the audio in, from
+    // inside the gesture where iOS will allow it. Not { once: true } — the
+    // first tap may land while the scene is paused, and the next one still
+    // needs to work.
+    const unlock = () => {
+      const master = animated[0] ? engineRef.current?.getModel(animated[0]) : null
+      if (master?.getAnimationProgress()?.playing && audio.paused) void audio.play().catch(() => {})
+    }
+    window.addEventListener("pointerdown", unlock)
+    window.addEventListener("keydown", unlock)
     const tick = () => {
       // Progress lives on the model (the animation clock's owner); the first
       // animated model is the master, as in the editor.
       const master = animated[0] ? engine.getModel(animated[0]) : null
       const p = master?.getAnimationProgress()
+      if (p) engine.setAudioTime(p.current, p.playing)
       const wasPaused = audio.paused
       if (p?.playing && audio.paused) void audio.play().catch(() => {})
       if (!p?.playing && !audio.paused) audio.pause()
@@ -427,6 +463,8 @@ function SceneStage({
     raf = requestAnimationFrame(tick)
     return () => {
       cancelAnimationFrame(raf)
+      window.removeEventListener("pointerdown", unlock)
+      window.removeEventListener("keydown", unlock)
       audio.removeEventListener("playing", onPlaying)
       window.removeEventListener("pointerdown", warm)
       window.removeEventListener("keydown", warm)
