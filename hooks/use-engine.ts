@@ -711,7 +711,6 @@ export function useEngine(
     [],
   )
 
-  /** Load a local .vmd onto ONE model (object URL), posed at frame 0 but PAUSED */
   /**
    * Drop a model's spawn offset.
    *
@@ -726,6 +725,7 @@ export function useEngine(
     engineRef.current?.setModelTransform(modelId, { position: new Vec3(0, 0, 0) })
   }, [])
 
+  /** Load a local .vmd onto ONE model (object URL), posed at frame 0 but PAUSED */
   const loadVmdFile = useCallback(async (modelId: string, file: File): Promise<string | null> => {
     const model = engineRef.current?.getModel(modelId)
     if (!model) return null
@@ -733,6 +733,7 @@ export function useEngine(
     try {
       await model.loadVmd(file.name, url)
       model.show(file.name) // activate + pose frame 0, paused (user presses play)
+      centerModel(modelId) // the clip places this model from here on
       // Frame 0 of a new clip is an arbitrary jump from whatever pose was held
       engineRef.current?.resetPhysics()
       return file.name
@@ -741,7 +742,7 @@ export function useEngine(
     } finally {
       URL.revokeObjectURL(url)
     }
-  }, [])
+  }, [centerModel])
 
   /** A file out of the scene's asset bundle, by its bundle-relative path. */
   const bundleFile = useCallback((path: string): File | null => bundleRef.current?.find((f) => f.name === path) ?? null, [])
@@ -758,12 +759,13 @@ export function useEngine(
     try {
       await model.loadVmd(name, url)
       model.show(name) // activate + pose frame 0, paused (user presses play)
+      centerModel(modelId) // same handover to the clip as loadVmdFile
       engineRef.current?.resetPhysics() // same arbitrary jump to frame 0 as loadVmdFile
       return name
     } catch {
       return null
     }
-  }, [])
+  }, [centerModel])
 
   // ── Style-group mutators (host owns the set; these mirror to state + engine). ──
 
