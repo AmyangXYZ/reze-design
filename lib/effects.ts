@@ -96,9 +96,15 @@ fn foreground(ray: vec3f, uv: vec2f, time: f32, depth: f32) -> vec4f {
 // has works, and .valid is false on a rig that spells it differently — check
 // it, or your hand effect draws at the world origin on half the library.
 //
-// @fullres costs double and buys sub-pixel detail. Hairlines, thin rings and
-// scanlines need it. Anything soft — smoke, glow, billowing noise — does not:
-// an upsample carries that for free, which is the whole point of the default.
+// @fullres costs four times the pixels and buys sub-pixel detail. Hairlines,
+// thin rings and scanlines need it. Anything soft — smoke, glow, billowing
+// noise — does not: an upsample carries that for free, which is the point of
+// the default.
+//
+// The trap: what decides this is not how soft the effect LOOKS, it is whether
+// its ALPHA has a hard edge anywhere. A foreground that compares against \`depth\`
+// has one along every silhouette in the scene, however soft the rest of it is,
+// and at half resolution that edge arrives as stair-steps up the character.
 
 // ── Reading the scene ──
 //
