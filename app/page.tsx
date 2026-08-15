@@ -1603,7 +1603,10 @@ export default function Lab() {
     [],
   )
   const { sun, world, bloom, dof, grade, ground, physics, view } = settings
-  const [bgEffect, setBgEffect] = useState(scene.state.backgroundEffect)
+  // The picker still authors ONE. The document holds a list — see
+  // SceneState.backgroundEffects — and this is its first entry until the
+  // add/remove/reorder UI lands.
+  const [bgEffect, setBgEffect] = useState<AppliedEffect | null>(scene.state.backgroundEffects[0] ?? null)
 
   // ONE slot for the three libraries — see useBrowseSurface. They were three
   // independent booleans here, so opening one left the others up: a second
@@ -1891,7 +1894,7 @@ export default function Lab() {
     camera,
     cameraVmd: cameraClip !== null,
     gradeSpec: appliedGradeSpec,
-    backgroundEffect: bgEffect,
+    backgroundEffects: bgEffect ? [bgEffect] : [],
     hasBackdrop: !!bgImage && !bgImage.dome,
     skybox: bgImage?.dome ? bgImage.file : null,
     greenScreen: framing.liveGreenScreen,
@@ -3048,7 +3051,7 @@ export default function Lab() {
       // persist.
       camera,
       settings,
-      backgroundEffect: bgEffect,
+      backgroundEffects: bgEffect ? [bgEffect] : [],
       groups: groupsByModel,
       // DERIVED from the live model list rather than tracked separately.
       // Empty lists are WRITTEN, not filtered: saveSceneState's retain() merges
@@ -3223,7 +3226,7 @@ export default function Lab() {
     // The React mirror only: pushing the framing at the engine is swapScene's job,
     // and it does it once the new cast is in and can be followed.
     setCamera(next.state.camera)
-    setBgEffect(next.state.backgroundEffect)
+    setBgEffect(next.state.backgroundEffects[0] ?? null)
     // The per-preset intensity memory is keyed by NAME and outlives documents, so a
     // swapped scene has to restate its own strength — otherwise the first switch away
     // and back would overwrite what this document says with whatever the last scene
@@ -3385,7 +3388,7 @@ export default function Lab() {
               : { ...settings.grade, spec: appliedGradeSpec }
           })(),
         },
-        backgroundEffect: bgEffect,
+        backgroundEffects: bgEffect ? [bgEffect] : [],
         groups: groupsByModel,
         hidden: slots.hidden,
       },

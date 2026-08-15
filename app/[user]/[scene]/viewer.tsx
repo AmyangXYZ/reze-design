@@ -311,7 +311,7 @@ function SceneStage({
     camera: scene.state.camera,
     cameraVmd: !!scene.assets.cameraAnimation,
     gradeSpec: specOf(scene.state.settings.grade),
-    backgroundEffect: scene.state.backgroundEffect,
+    backgroundEffects: scene.state.backgroundEffects,
     hasBackdrop: !!backdropFile,
     skybox: skyboxFile,
   })

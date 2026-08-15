@@ -117,8 +117,10 @@ export type SceneState = {
   /** `target` is the orbit centre — tune to the model's height. */
   camera: SceneCamera
   settings: SceneSettings
-  /** WGSL effect layered between the base background and the model (stars, water…). */
-  backgroundEffect: AppliedEffect | null
+  /** WGSL effects, in layer order — the first is drawn first (stars, water…).
+   *  A list because a scene runs several at once: notes behind the cast,
+   *  ribbons off her hands, prints under her feet. Empty is no effect. */
+  backgroundEffects: AppliedEffect[]
   /** Per-group shader graphs — the user's actual creative work */
   groups: Record<string, StyleGroup[]> | null
   /** Materials the user has hidden, per model id. */
@@ -217,8 +219,14 @@ export type SceneSettingsDoc = Omit<SceneSettings, "background"> & {
     /**
      * A pin to a published effect, a snapshot when it is still a draft, or a
      * built-in's name for this repo's own documents.
+     *
+     * SUPERSEDED BY `effects`, and read-only now: documents published before a
+     * scene could hold several still say `effect`, and they must keep opening.
+     * Nothing writes it any more.
      */
     effect?: ItemRef | EffectSnapshot | string | null
+    /** The same, as an ordered layer list — what a scene writes today. */
+    effects?: (ItemRef | EffectSnapshot | string)[] | null
   }
 }
 
@@ -273,6 +281,17 @@ function parseModelSource(path: string): { source: ModelSource; file: string } {
  *  needn't import the library's payload types. */
 type LibraryPayloadLike = { graph?: ShaderGraph; wgsl?: string; spec?: unknown; name?: string }
 
+/** The same migration for a localStorage state, which stores resolved effects
+ *  rather than document forms: the list when it has one, otherwise the single
+ *  field as a list of one, otherwise whatever the base scene came with. */
+function effectsFromStored(stored: unknown, fallback: AppliedEffect[]): AppliedEffect[] {
+  if (!stored || typeof stored !== "object") return fallback
+  const s = stored as { backgroundEffects?: AppliedEffect[] | null; backgroundEffect?: AppliedEffect | null }
+  if ("backgroundEffects" in s) return s.backgroundEffects ?? []
+  if ("backgroundEffect" in s) return s.backgroundEffect ? [s.backgroundEffect] : []
+  return fallback
+}
+
 /** The applied effect a document describes: a pin, a snapshot, or a built-in name. */
 function appliedEffect(
   applied: SceneSettingsDoc["background"]["effect"],
@@ -290,6 +309,24 @@ function appliedEffect(
   }
   // A snapshot's runtime id is its name, the same aliasing built-ins use.
   return { id: applied.name, name: applied.name, wgsl: applied.wgsl }
+}
+
+/**
+ * Every effect a document describes, in layer order.
+ *
+ * THE MIGRATION, and it is the whole of it: a document written before a scene
+ * could hold more than one says `effect`, so that is read as a list of one.
+ * Nothing writes `effect` any more, so a scene opened and saved once is
+ * migrated. Entries that will not resolve — a pin to something unpublished —
+ * drop out rather than taking the rest of the list with them.
+ */
+function appliedEffects(
+  background: SceneSettingsDoc["background"],
+  resolveEffect: (name: string) => AppliedEffect,
+  resolveRef?: (ref: ItemRef) => LibraryPayloadLike | undefined,
+): AppliedEffect[] {
+  const list = background.effects ?? (background.effect ? [background.effect] : [])
+  return list.map((e) => appliedEffect(e, resolveEffect, resolveRef)).filter((e): e is AppliedEffect => e !== null)
 }
 
 /** Role → engine pass integration, both directions of the round trip. */
@@ -424,7 +461,6 @@ export function parseSceneDoc(
     beta: docCamera.beta ?? CAMERA_DEFAULT_BETA,
     fov: docCamera.fov ?? CAMERA_DEFAULT_FOV,
   }
-  const applied = background.effect
 
   const assets = parseAssetsDoc(doc.assets)
   // Keys were minted by parseAssetsDoc in document order — the doc itself is id-free.
@@ -460,7 +496,7 @@ export function parseSceneDoc(
         view: { ...DEFAULT_VIEW, ...settings.view },
         background: { color: background.color },
       },
-      backgroundEffect: appliedEffect(applied, resolveEffect, resolveRef),
+      backgroundEffects: appliedEffects(background, resolveEffect, resolveRef),
       groups: materials.length ? Object.fromEntries(materials.map(([id, m]) => [id, resolveGroups(m.groups)])) : null,
       hidden: hidden.length ? Object.fromEntries(hidden.map(([id, m]) => [id, m.hidden!])) : null,
     },
@@ -524,7 +560,7 @@ export function serializeSceneDoc(
     name: string
     camera: SceneCamera
     settings: SceneSettings
-    backgroundEffect: AppliedEffect | null
+    backgroundEffects: AppliedEffect[]
     groups: Record<string, StyleGroup[]>
     hidden: Record<string, string[]>
   },
@@ -534,7 +570,6 @@ export function serializeSceneDoc(
     effect: (wgsl: string) => ItemRef | undefined
   },
 ): SceneDoc {
-  const applied = live.backgroundEffect
   const toDoc = (g: StyleGroup): StyleGroupDoc => ({
     label: g.label,
     materials: g.materials,
@@ -569,7 +604,10 @@ export function serializeSceneDoc(
       ...live.settings,
       background: {
         ...live.settings.background,
-        effect: applied ? (refs?.effect(applied.wgsl) ?? { name: applied.name, wgsl: applied.wgsl }) : null,
+        // The list, in layer order. `effect` is not written: a reader takes
+        // `effects` when present and falls back to the old single field, so a
+        // scene saved once is migrated and old documents keep opening.
+        effects: live.backgroundEffects.map((e) => refs?.effect(e.wgsl) ?? { name: e.name, wgsl: e.wgsl }),
       },
     },
   }
@@ -793,7 +831,10 @@ function restored(base: Scene): Scene {
       // fallback.
       camera: stored?.camera ? { ...stored.camera, fov: stored.camera.fov ?? CAMERA_DEFAULT_FOV } : base.state.camera,
       // Model-independent (unlike groups) — restores across model swaps.
-      backgroundEffect: stored && "backgroundEffect" in stored ? stored.backgroundEffect ?? null : base.state.backgroundEffect,
+      // A localStorage state written before scenes held several says
+      // backgroundEffect; read it as a list of one, same migration as the
+      // document takes.
+      backgroundEffects: effectsFromStored(stored, base.state.backgroundEffects),
       settings: {
         world: { ...base.state.settings.world, ...settingsBase.world },
         sun: { ...base.state.settings.sun, ...settingsBase.sun },

@@ -75,7 +75,7 @@ export function useSceneSync({
    *  go, so the document's lens has to be pushed again the moment that happens. */
   cameraVmd = false,
   gradeSpec,
-  backgroundEffect,
+  backgroundEffects,
   /** A DOM image sits behind the canvas, so the canvas must stay transparent. */
   hasBackdrop = false,
   /** 360 skybox source, or null. Re-uploaded whenever the file changes. */
@@ -91,7 +91,7 @@ export function useSceneSync({
   cameraVmd?: boolean
   /** Resolved by the caller: the scene stores a NAME, and drafts live client-side. */
   gradeSpec: GradeSpec
-  backgroundEffect: AppliedEffect | null
+  backgroundEffects: AppliedEffect[]
   hasBackdrop?: boolean
   skybox?: File | null
   greenScreen?: boolean
@@ -220,10 +220,11 @@ export function useSceneSync({
   useEffect(() => {
     const engine = engineRef.current
     if (!engine) return
-    const applied = greenScreen ? null : (backgroundEffect ?? null)
-    // The scene's own effect first — order is the layer order — then whatever
-    // the demo runs beside it.
-    const sources = applied ? [applied.wgsl, ...companionSources(applied.name)] : []
+    // The document's list, in layer order, plus whatever the demo still runs
+    // beside the first of them. Companions stay until the editor can author a
+    // list directly; the shape they will fold into already exists here.
+    const applied = greenScreen ? [] : backgroundEffects
+    const sources = applied.flatMap((e, i) => [e.wgsl, ...(i === 0 ? companionSources(e.name) : [])])
     // One key for the whole list, so adding a companion recompiles and a
     // re-render with the same list does not.
     const wgsl = sources.length ? sources.join(" ") : null
@@ -262,7 +263,7 @@ export function useSceneSync({
     return () => {
       stale = true
     }
-  }, [backgroundEffect, greenScreen, ready, engineRef])
+  }, [backgroundEffects, greenScreen, ready, engineRef])
 
   useEffect(() => {
     const engine = engineRef.current

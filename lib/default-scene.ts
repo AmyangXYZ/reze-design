@@ -90,7 +90,7 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
     // Note Fall brings Hand Ribbon and Shining Stars with it — see
     // COMPANION_EFFECTS in use-scene-sync, which is where a scene says "run
     // these together" until the document itself carries a list.
-    background: { color: "#0a0a12", effect: "Note Fall" },
+    background: { color: "#0a0a12", effects: ["Note Fall"] },
     grade: { preset: "Neutral", intensity: 1 },
     // Invisible, but still a shadow catcher: Note Fall draws a keyboard ON this
     // plane, and a lit ground would sit in front of it and wash the keys out.
@@ -128,7 +128,7 @@ export const EMPTY_SCENE_DOC: SceneDoc = {
     dof: DEFAULT_DOF,
     outline: DEFAULT_OUTLINE,
     view: DEFAULT_VIEW,
-    background: { color: "#1c1c1e", effect: null },
+    background: { color: "#1c1c1e", effects: [] },
     grade: { preset: "Neutral", intensity: 1 },
     ground: { color: "#3a3a3d", size: 160, opacity: 0.42, shadow: true, grid: "#fafaf9", gridEnabled: true },
     physics: DEFAULT_PHYSICS,
