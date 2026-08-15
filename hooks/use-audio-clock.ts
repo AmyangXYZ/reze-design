@@ -80,6 +80,11 @@ export function useAudioClock({
       // The rzAudio* clock for effects — a 4-byte header write, every tick, so
       // audio-reactive shaders follow scrubs and pauses exactly as sound does.
       engineRef.current?.setAudioTime(p.current, p.playing)
+      // The score's clock, on the SAME tick and the same value. Notes and the
+      // music they were transcribed from have to advance together or the whole
+      // point is lost — and driving both from the model's animation progress is
+      // what makes a scrub, a pause and an offline export all agree.
+      engineRef.current?.setScoreTime(p.current, p.playing)
       const playing = p.playing && userInteracted.current
       // A frame advances the clock ≤ ~0.05s — anything bigger is a discrete jump.
       const jumped = lastModelTime >= 0 && Math.abs(p.current - lastModelTime) > 0.35

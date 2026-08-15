@@ -287,6 +287,7 @@ export async function exportVideo(opts: {
     // reason analysis is precomputed instead of live: this loop does not play
     // audio, it states what time it is.
     engine.setAudioTime(startTime)
+    engine.setScoreTime(startTime)
     for (let i = 0; i < WARMUP_FRAMES; i++) engine.renderFrame(1 / fps)
     for (const m of cast) m.play()
 
@@ -297,6 +298,10 @@ export async function exportVideo(opts: {
       // dt=0 renders the t=0 pose itself; afterwards each call advances one frame.
       // Audio time is TRACK time: the export may start mid-song.
       engine.setAudioTime(startTime + t)
+      // The score's clock, on the same frame time. Both are per-frame state an
+      // effect reads, and both freeze if this loop forgets one — a score-driven
+      // effect exported a still keyboard while everything else animated.
+      engine.setScoreTime(startTime + t)
       engine.renderFrame(i === 0 ? 0 : 1 / fps)
 
       ctx.fillStyle = fillColor

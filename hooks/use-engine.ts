@@ -4,12 +4,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { EFFECTS } from "@/lib/effects"
-import { Engine, Quat, Vec3, type ApplyStyleGroupResult, type CompileOptions, type Model, type RenderClass, type StyleGroup } from "reze-engine"
+import { Engine, parseMidi, Quat, Vec3, type ApplyStyleGroupResult, type CompileOptions, type Model, type RenderClass, type ScoreNote, type StyleGroup } from "reze-engine"
 import { SLOT_GRAPHS } from "@/lib/materials"
 import { graphLibraryName } from "@/lib/refs"
 import { graphRole, packGraph } from "@/lib/materials"
 import { loadLookPref } from "@/lib/look-pref"
-import { idbBundleId, modelKey, modelPmxUrl, type Scene, type SceneCamera, type SceneStageTransform } from "@/lib/scene"
+import { idbBundleId, modelKey, modelPmxUrl, type AssetRef, type Scene, type SceneCamera, type SceneStageTransform } from "@/lib/scene"
 import { unzipToFiles } from "@/lib/uploads"
 import { loadLocalBundle } from "@/lib/asset-store"
 import { sceneFiles } from "@/lib/scene-files"
@@ -463,6 +463,58 @@ function spawnOffsetX(existingCount: number): number {
   return existingCount % 2 === 1 ? step : -step
 }
 
+/**
+ * Drop a transcription's lead-in, so its first note lands where the track's
+ * first note is heard.
+ *
+ * A .mid ripped from a performance video starts where the VIDEO starts — title
+ * card, count-in, the pianist sitting down — while the audio published beside it
+ * is trimmed to the music. The two then disagree by however long that intro ran,
+ * and nothing downstream can tell: the clock is shared and correct, the notes
+ * are simply written late. For the Reze arc piano transcription the intro is
+ * 12.5s, which showed as twelve seconds of music with an empty screen.
+ *
+ * Anchoring the first note at zero needs no per-file constant and lands within
+ * 27ms of the offset a cross-correlation of the two files' onset envelopes
+ * picks (12.527s against this pair, constant across the piece — the residual
+ * over six windows spans 80ms, so there is no tempo drift to chase).
+ *
+ * It is wrong for one case: a track whose transcribed instrument genuinely
+ * enters late over an intro that IS in the audio. Pad the .mid's own start if
+ * that comes up, since that is where the lead-in would then be real.
+ */
+function alignToTrack(notes: ScoreNote[]): ScoreNote[] {
+  const lead = notes.length ? notes[0].start : 0 // parseMidi sorts by onset
+  if (lead <= 0) return notes
+  return notes.map((n) => ({ ...n, start: n.start - lead }))
+}
+
+/**
+ * Install the score that goes with the scene's track, if one is published
+ * beside it: `/audios/X.mp3` pairs with `/audios/X.mid`.
+ *
+ * Paired by NAME rather than by url. An uploaded track's url is a `blob:`
+ * handle out of IndexedDB and has no path to look beside, but its name survives
+ * upload, persist and publish alike — so the same rule works for a site-served
+ * track and a user's own file.
+ *
+ * A miss is silence. Most tracks have no transcription, so a 404 here is the
+ * ordinary case and must not read as a failure: a score-driven effect draws its
+ * line and waits, which is what it already does before any file arrives.
+ */
+async function loadScoreFor(audio: AssetRef | null, engine: Engine, cancelled: () => boolean): Promise<void> {
+  if (!audio?.name) return
+  const base = audio.name.replace(/\.[^./]+$/, "")
+  try {
+    const res = await fetch(`/audios/${encodeURIComponent(base)}.mid`)
+    if (!res.ok || cancelled()) return
+    const notes = parseMidi(await res.arrayBuffer())
+    if (!cancelled()) engine.setScore(alignToTrack(notes))
+  } catch {
+    // No transcription beside the track, or one that will not parse.
+  }
+}
+
 export function useEngine(
   /** The scene to boot into — read ONCE (constructor options + first loadModel + addGround) */
   initialScene: Scene,
@@ -527,9 +579,24 @@ export function useEngine(
           ;(window as unknown as { __rezeEffects?: Record<string, string> }).__rezeEffects = Object.fromEntries(
             EFFECTS.map((e) => [e.name, e.payload.wgsl]),
           )
+          // Fetch + parse + install a .mid in one call. The score UI does not
+          // exist yet, and a parser that can only be reached by rebuilding the
+          // app is a parser nobody tries.
+          ;(window as unknown as { __rezeLoadScore?: (url: string) => Promise<number> }).__rezeLoadScore = async (
+            url: string,
+          ) => {
+            const res = await fetch(url)
+            if (!res.ok) throw new Error(`${res.status} ${res.statusText} — check the path under /public`)
+            const notes = alignToTrack(parseMidi(await res.arrayBuffer()))
+            engine.setScore(notes)
+            return notes.length
+          }
         }
         await engine.init()
         if (disposed) return
+        // The notes for the track, when a transcription is published beside it.
+        // Not awaited: a scene must paint whether or not one exists.
+        void loadScoreFor(scene.assets.audio, engine, () => disposed)
         const loaded = await loadSceneInto(engine, scene, () => disposed, {
           onStage: () => {
             // Stage up: paint now, models stream in behind.

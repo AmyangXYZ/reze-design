@@ -11,12 +11,56 @@
 
 import { useEffect, useRef } from "react"
 import { Vec3, type Engine } from "reze-engine"
-import type { AppliedEffect } from "@/lib/effects"
+import { EFFECTS, type AppliedEffect } from "@/lib/effects"
 import { resolveSpec, type GradeSpec } from "@/lib/grade"
 import { CAMERA_DEFAULT_FOV, type SceneCamera } from "@/lib/scene"
 import { azElToDirection, windVariation, hexToLinearVec3, hexToSrgbVec3, windDirection, type SceneSettings } from "@/lib/scene-settings"
 
 const GREEN = "#00ff00"
+
+/**
+ * Built-ins installed ALONGSIDE the scene's own effect, keyed by that effect's
+ * name.
+ *
+ * A document stores exactly one effect, so a scene that wants two has nowhere
+ * to say so — this is where the demo says it instead, until the document
+ * carries an ordered list. The ENGINE has taken a list since the multi-effect
+ * work, so nothing below this constant is a workaround; only the source of the
+ * list is.
+ *
+ * Composing is contained: setEffects reports per effect, so a companion that
+ * will not compile is logged and skipped rather than taking the scene's own
+ * effect down with it.
+ */
+const COMPANION_EFFECTS: Record<string, string[]> = {
+  // The piano demo: notes falling behind the cast, ribbons off her hands, stars
+  // behind all of it, and prints under her feet.
+  //
+  // Footprints is the one that stops the shot reading as a composite. The other
+  // three are all BEHIND her, so nothing in the frame says she is standing in
+  // the same room; Footprints is a foreground effect that reads scene depth and
+  // lays its marks on the floor at her own root, so it is the only one that
+  // touches her. On a dark stage her shadow has nothing to fall on, and this is
+  // what replaces it.
+  //
+  // Order is free: Note Fall and Shining Stars are both ADDITIVE backgrounds so
+  // they sum rather than paint over one another, Hand Ribbon is on the particle
+  // and trail mounts, and Footprints is the only foreground.
+  "Note Fall": ["Hand Ribbon", "Shining Stars", "Footprints"],
+}
+
+/** Companion sources for an applied effect. An unknown name is skipped loudly
+ *  rather than throwing — a bad entry here must not cost the scene its effect. */
+function companionSources(name: string): string[] {
+  return (COMPANION_EFFECTS[name] ?? []).flatMap((n) => {
+    const def = EFFECTS.find((e) => e.name === n)
+    if (!def) {
+      console.warn(`[effect] companion "${n}" is not a built-in — skipping`)
+      return []
+    }
+    return [def.payload.wgsl]
+  })
+}
 
 export function useSceneSync({
   engineRef,
@@ -176,7 +220,13 @@ export function useSceneSync({
   useEffect(() => {
     const engine = engineRef.current
     if (!engine) return
-    const wgsl = greenScreen ? null : (backgroundEffect?.wgsl ?? null)
+    const applied = greenScreen ? null : (backgroundEffect ?? null)
+    // The scene's own effect first — order is the layer order — then whatever
+    // the demo runs beside it.
+    const sources = applied ? [applied.wgsl, ...companionSources(applied.name)] : []
+    // One key for the whole list, so adding a companion recompiles and a
+    // re-render with the same list does not.
+    const wgsl = sources.length ? sources.join(" ") : null
     // REMOVING one does not wait for `ready`. That flag is off for the whole
     // scene swap — every model still to arrive — and gating removal on it left
     // the outgoing scene's effect running over the incoming one until the last
@@ -192,15 +242,22 @@ export function useSceneSync({
       // reset appeared to hang.
       if (lastWgsl.current !== null) {
         lastWgsl.current = null
-        void engineRef.current?.setEffect(null)
+        void engineRef.current?.setEffects(null)
       }
       return
     }
     if (wgsl === lastWgsl.current) return
     lastWgsl.current = wgsl
     let stale = false
-    void engine.setEffect(wgsl).then((r) => {
-      if (!stale && !r.ok) console.error("[effect] failed to install:", r.diagnostics)
+    void engine.setEffects(sources.length ? sources.map((s) => ({ wgsl: s })) : null).then((rs) => {
+      if (stale) return
+      rs.forEach((r, i) => {
+        if (r.ok) return
+        // Named by position: the scene's effect is the one the user picked, a
+        // companion is one this file added, and confusing them sends whoever
+        // reads this to the wrong shader.
+        console.error(`[effect] ${i === 0 ? "scene effect" : `companion ${i}`} failed to install:`, r.diagnostics)
+      })
     })
     return () => {
       stale = true

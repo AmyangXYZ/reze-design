@@ -442,7 +442,11 @@ function SceneStage({
       // animated model is the master, as in the editor.
       const master = animated[0] ? engine.getModel(animated[0]) : null
       const p = master?.getAnimationProgress()
+      // Both per-frame clocks an effect reads. The score's has three owners —
+      // this tick, the editor's, and the export loop — and an effect is frozen
+      // in whichever one forgets it.
       if (p) engine.setAudioTime(p.current, p.playing)
+      if (p) engine.setScoreTime(p.current, p.playing)
       const wasPaused = audio.paused
       if (p?.playing && audio.paused) void audio.play().catch(() => {})
       if (!p?.playing && !audio.paused) audio.pause()

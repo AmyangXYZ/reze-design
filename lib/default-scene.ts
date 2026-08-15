@@ -72,7 +72,10 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
       },
     ],
     cameraAnimation: null,
-    audio: USE_DEFAULT_ASSETS ? "/audios/One More Last Time.wav" : null,
+    // A .mid of the same basename sits beside this, and the score loads itself
+    // from that pairing — see loadScoreFor. Renaming one without the other is
+    // what silently leaves a score-driven effect with no notes.
+    audio: USE_DEFAULT_ASSETS ? "/audios/Chainsaw Man： Reze Arc OST - in the pool (Piano) ｜ Kensuke Ushio.mp3" : null,
     backdrop: null,
     skybox: null,
   },
@@ -84,9 +87,16 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
     dof: DEFAULT_DOF,
     outline: DEFAULT_OUTLINE,
     view: DEFAULT_VIEW,
-    background: { color: "#4b004f", effect: "Shining Stars" },
+    // Note Fall brings Hand Ribbon and Shining Stars with it — see
+    // COMPANION_EFFECTS in use-scene-sync, which is where a scene says "run
+    // these together" until the document itself carries a list.
+    background: { color: "#0a0a12", effect: "Note Fall" },
     grade: { preset: "Neutral", intensity: 1 },
-    ground: { color: "#c800de", size: 160, opacity: 0.42, shadow: true, grid: "#fafaf9", gridEnabled: true },
+    // Invisible, but still a shadow catcher: Note Fall draws a keyboard ON this
+    // plane, and a lit ground would sit in front of it and wash the keys out.
+    // Keeping `shadow` on is what lands the cast's shadow across the keys, which
+    // is most of what stops her reading as pasted over a picture.
+    ground: { color: "#c800de", size: 160, opacity: 0, shadow: true, grid: "#fafaf9", gridEnabled: false },
     physics: DEFAULT_PHYSICS,
   },
 }
