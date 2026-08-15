@@ -3,6 +3,7 @@
 // Engine lifecycle for the scene page
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { EFFECTS } from "@/lib/effects"
 import { Engine, Quat, Vec3, type ApplyStyleGroupResult, type CompileOptions, type Model, type RenderClass, type StyleGroup } from "reze-engine"
 import { SLOT_GRAPHS } from "@/lib/materials"
 import { graphLibraryName } from "@/lib/refs"
@@ -519,6 +520,14 @@ export function useEngine(
         engineRef.current = engine
         // Dev-only console handle — lets new engine APIs be exercised before any UI exists (e.g.
         if (process.env.NODE_ENV === "development") (window as unknown as { __reze?: Engine }).__reze = engine
+        // …and the built-in sources beside it, keyed by name. The effects are
+        // bundled rather than served, so a console trying a new multi-effect API
+        // otherwise has no way to reach a real shader to pass it.
+        if (process.env.NODE_ENV === "development") {
+          ;(window as unknown as { __rezeEffects?: Record<string, string> }).__rezeEffects = Object.fromEntries(
+            EFFECTS.map((e) => [e.name, e.payload.wgsl]),
+          )
+        }
         await engine.init()
         if (disposed) return
         const loaded = await loadSceneInto(engine, scene, () => disposed, {
