@@ -46,8 +46,6 @@ export function parseSceneFile(raw: unknown): Partial<SceneConfig> | null {
   if (f.camera && typeof f.camera === "object") config.camera = f.camera
   if (f.settings && typeof f.settings === "object") config.settings = f.settings
   if ("backgroundEffects" in f) config.backgroundEffects = (f.backgroundEffects as AppliedEffect[]) ?? []
-  // A file exported before a scene could hold several. One effect is a list of one.
-  else if ("backgroundEffect" in f) config.backgroundEffects = f.backgroundEffect ? [f.backgroundEffect as AppliedEffect] : []
   if (f.groups && typeof f.groups === "object") config.groups = f.groups
   if (f.hidden && typeof f.hidden === "object") config.hidden = f.hidden
   return config

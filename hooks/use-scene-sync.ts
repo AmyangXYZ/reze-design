@@ -11,56 +11,12 @@
 
 import { useEffect, useRef } from "react"
 import { Vec3, type Engine } from "reze-engine"
-import { EFFECTS, type AppliedEffect } from "@/lib/effects"
+import { type AppliedEffect } from "@/lib/effects"
 import { resolveSpec, type GradeSpec } from "@/lib/grade"
 import { CAMERA_DEFAULT_FOV, type SceneCamera } from "@/lib/scene"
 import { azElToDirection, windVariation, hexToLinearVec3, hexToSrgbVec3, windDirection, type SceneSettings } from "@/lib/scene-settings"
 
 const GREEN = "#00ff00"
-
-/**
- * Built-ins installed ALONGSIDE the scene's own effect, keyed by that effect's
- * name.
- *
- * A document stores exactly one effect, so a scene that wants two has nowhere
- * to say so — this is where the demo says it instead, until the document
- * carries an ordered list. The ENGINE has taken a list since the multi-effect
- * work, so nothing below this constant is a workaround; only the source of the
- * list is.
- *
- * Composing is contained: setEffects reports per effect, so a companion that
- * will not compile is logged and skipped rather than taking the scene's own
- * effect down with it.
- */
-const COMPANION_EFFECTS: Record<string, string[]> = {
-  // The piano demo: notes falling behind the cast, ribbons off her hands, stars
-  // behind all of it, and prints under her feet.
-  //
-  // Footprints is the one that stops the shot reading as a composite. The other
-  // three are all BEHIND her, so nothing in the frame says she is standing in
-  // the same room; Footprints is a foreground effect that reads scene depth and
-  // lays its marks on the floor at her own root, so it is the only one that
-  // touches her. On a dark stage her shadow has nothing to fall on, and this is
-  // what replaces it.
-  //
-  // Order is free: Note Fall and Shining Stars are both ADDITIVE backgrounds so
-  // they sum rather than paint over one another, Hand Ribbon is on the particle
-  // and trail mounts, and Footprints is the only foreground.
-  "Note Fall": ["Hand Ribbon", "Shining Stars", "Footprints"],
-}
-
-/** Companion sources for an applied effect. An unknown name is skipped loudly
- *  rather than throwing — a bad entry here must not cost the scene its effect. */
-function companionSources(name: string): string[] {
-  return (COMPANION_EFFECTS[name] ?? []).flatMap((n) => {
-    const def = EFFECTS.find((e) => e.name === n)
-    if (!def) {
-      console.warn(`[effect] companion "${n}" is not a built-in — skipping`)
-      return []
-    }
-    return [def.payload.wgsl]
-  })
-}
 
 export function useSceneSync({
   engineRef,
@@ -220,12 +176,13 @@ export function useSceneSync({
   useEffect(() => {
     const engine = engineRef.current
     if (!engine) return
-    // The document's list, in layer order, plus whatever the demo still runs
-    // beside the first of them. Companions stay until the editor can author a
-    // list directly; the shape they will fold into already exists here.
-    const applied = greenScreen ? [] : backgroundEffects
-    const sources = applied.flatMap((e, i) => [e.wgsl, ...(i === 0 ? companionSources(e.name) : [])])
-    // One key for the whole list, so adding a companion recompiles and a
+    // The document's list, in layer order, and nothing else. A constant here
+    // used to add the demo's other three, which meant a published URL rendered
+    // four effects because this file said so rather than because the scene did
+    // — so nobody else could author one, and the same link would have changed
+    // if the constant did.
+    const sources = (greenScreen ? [] : backgroundEffects).map((e) => e.wgsl)
+    // One key for the whole list, so adding an effect recompiles and a
     // re-render with the same list does not.
     const wgsl = sources.length ? sources.join(" ") : null
     // REMOVING one does not wait for `ready`. That flag is off for the whole
@@ -253,11 +210,13 @@ export function useSceneSync({
     void engine.setEffects(sources.length ? sources.map((s) => ({ wgsl: s })) : null).then((rs) => {
       if (stale) return
       rs.forEach((r, i) => {
-        if (r.ok) return
-        // Named by position: the scene's effect is the one the user picked, a
-        // companion is one this file added, and confusing them sends whoever
-        // reads this to the wrong shader.
-        console.error(`[effect] ${i === 0 ? "scene effect" : `companion ${i}`} failed to install:`, r.diagnostics)
+        // Named, not numbered: every entry is one the scene asked for now, and
+        // a name is what the person reading the console can go and look at.
+        // Diagnostics also arrive on a SUCCESSFUL install — a directive that
+        // parsed but will never fire — so ok is what decides the level.
+        const name = backgroundEffects[i]?.name ?? `effect ${i + 1}`
+        if (!r.ok) console.error(`[effect] "${name}" failed to install:`, r.diagnostics)
+        else if (r.diagnostics.length) console.warn(`[effect] "${name}":`, r.diagnostics.join(" "))
       })
     })
     return () => {

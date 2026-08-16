@@ -87,10 +87,22 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
     dof: DEFAULT_DOF,
     outline: DEFAULT_OUTLINE,
     view: DEFAULT_VIEW,
-    // Note Fall brings Hand Ribbon and Shining Stars with it — see
-    // COMPANION_EFFECTS in use-scene-sync, which is where a scene says "run
-    // these together" until the document itself carries a list.
-    background: { color: "#0a0a12", effects: ["Note Fall"] },
+    // The piano demo, and the document says so itself — this list IS the
+    // composition, in layer order.
+    //
+    // Footprints is the one that stops the shot reading as a composite. The
+    // other three are all BEHIND her, so nothing in the frame says she is
+    // standing in the same room; Footprints is a foreground effect that reads
+    // scene depth and lays its marks on the floor at her own root, so it is the
+    // only one that touches her. On a dark stage her shadow has nothing to fall
+    // on, and this is what replaces it.
+    //
+    // Note Fall and Shining Stars are both ADDITIVE backgrounds so they sum
+    // rather than paint over one another; Hand Ribbon is on the particle and
+    // trail mounts; Footprints is the only foreground. Ordering is therefore
+    // free HERE, and is not in general — a full-cover backdrop must come first
+    // or it erases what is under it.
+    background: { color: "#0a0a12", effects: ["Note Fall", "Shining Stars", "Hand Ribbon", "Footprints"] },
     grade: { preset: "Neutral", intensity: 1 },
     // Invisible, but still a shadow catcher: Note Fall draws a keyboard ON this
     // plane, and a lit ground would sit in front of it and wash the keys out.

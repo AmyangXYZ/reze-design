@@ -54,11 +54,13 @@ type LibraryProps = {
   onOpenChange: (open: boolean) => void
   /** Facet the library opens on — the account tab opens straight to "yours". */
   initialFacet?: LibraryFacet
-  applied: AppliedEffect | null
+  /** Every effect the scene wears, in layer order. Membership, not a
+   *  selection: applying adds and applying again takes off. */
+  applied: AppliedEffect[]
   onApply: (effect: AppliedEffect) => void
   /** A draft was renamed — re-point anything applied by the old name. */
   onRenamed?: (oldName: string, newName: string) => void
-  onRemove: () => void
+  onRemove: (id: string) => void
   /** Open the page-level floating WGSL editor on this effect (independent panel, same idiom
    *  as the graph editor). Optional: a host without the editor omits it, and
    *  every edit/new affordance hides rather than sitting there doing nothing. */
@@ -76,8 +78,12 @@ export function EffectLibrary(props: LibraryProps) {
 }
 
 /** Seed the inspector's param draft */
-const seedDraft = (selected: EffectItem | null, applied: AppliedEffect | null): AppliedEffect | null =>
-  selected ? (applied?.id === selected.id ? { ...applied } : applyDefaults(selected)) : null
+/** The card's own applied entry when the scene wears it — so opening the editor
+ *  on a card edits what is RUNNING rather than the library's pristine copy. */
+const appliedById = (applied: AppliedEffect[], id: string | undefined) => applied.find((e) => e.id === id) ?? null
+
+const seedDraft = (selected: EffectItem | null, applied: AppliedEffect[]): AppliedEffect | null =>
+  selected ? ({ ...(appliedById(applied, selected.id) ?? applyDefaults(selected)) }) : null
 
 function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove, onRenamed, onEdit }: LibraryProps) {
   const t = useT()
@@ -89,13 +95,14 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   const [query, setQuery] = useState("")
   const [facet, setFacet] = useState<LibraryFacet>(initialFacet ?? "all")
   const [tag, setTag] = useState<string | null>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(applied?.id ?? EFFECTS[0]?.id ?? null)
-  // Follow the applied effect when it CHANGES — creating or editing one should move
+  const [selectedId, setSelectedId] = useState<string | null>(applied[0]?.id ?? EFFECTS[0]?.id ?? null)
+  // Follow the TOP applied layer when the list changes — creating or editing one should move
   // the selection with it, rather than leaving the ring on the previous entry.
-  const [lastApplied, setLastApplied] = useState(applied?.id ?? null)
-  if ((applied?.id ?? null) !== lastApplied) {
-    setLastApplied(applied?.id ?? null)
-    if (applied) setSelectedId(applied.id)
+  const [lastApplied, setLastApplied] = useState(applied.at(-1)?.id ?? null)
+  if ((applied.at(-1)?.id ?? null) !== lastApplied) {
+    setLastApplied(applied.at(-1)?.id ?? null)
+    const top = applied.at(-1)
+    if (top) setSelectedId(top.id)
   }
 
   const { drafts, update: updateDraft, remove: removeDraft, clear: clearDrafts } = useDrafts<EffectItem>("effect")
@@ -160,10 +167,10 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   const communityRows = useMemo(() => rows.filter((x) => x.owner === "user"), [rows])
   const localRows = useMemo(() => rows.filter((x) => x.owner === "local"), [rows])
   // The applied effect cannot be deleted — see the graph library's `inUse`.
-  const inUse = (e: EffectItem) => e.owner === "local" && applied?.id === e.id
+  const inUse = (e: EffectItem) => e.owner === "local" && applied.some((a) => a.id === e.id)
   const clearable = localRows.filter((e) => !inUse(e))
 
-  const isAppliedSelected = applied !== null && selected !== null && applied.id === selected.id
+  const isAppliedSelected = selected !== null && applied.some((a) => a.id === selected.id)
 
   // "New effect": open the floating editor on the template. Nothing is created —
   // the editor is a scratchpad, and save-on-close is what makes a draft.
@@ -190,7 +197,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                   >
                     <div className="relative aspect-[16/10] border-b border-white/5 bg-zinc-900">
                       <EffectPreview wgsl={e.payload.wgsl} />
-                      {applied?.id === e.id && (
+                      {applied.some((a) => a.id === e.id) && (
                         <span className="absolute top-1.5 left-1.5 rounded border border-blue-400/40 bg-zinc-950/70 px-1.5 py-0.5 font-mono text-[9px] font-semibold tracking-wide text-blue-400 uppercase">
                           {t.effectLibrary.applied}
                         </span>
@@ -487,7 +494,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={onRemove}
+                      onClick={() => selected && onRemove(selected.id)}
                       className="h-8 w-full border-white/10 bg-white/5 text-xs font-medium hover:bg-white/10"
                     >
                       <X className="size-3.5" />

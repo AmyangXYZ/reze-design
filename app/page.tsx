@@ -934,16 +934,27 @@ function commandsFor(t: Dictionary): PaletteItem[] {
  * re-truncate the text and the ellipsis would jump the moment the pointer
  * arrives. The fade is the no-reflow way to yield the space.
  */
-function CastLine({ text, actions }: { text: ReactNode; actions: ReactNode }) {
+function CastLine({
+  text,
+  actions,
+  /** Width of the button reserve. The default fits TWO actions; a row with
+   *  three (raise, lower, remove) has to say so, or the third button lands on
+   *  the name it is meant to sit clear of. */
+  reserve = "pr-12",
+}: {
+  text: ReactNode
+  actions: ReactNode
+  reserve?: string
+}) {
   return (
     // -mx-1 px-1: the highlight breathes past the text without moving it.
     <span className="group relative -mx-1 flex h-5 items-center rounded-interior px-1 transition-colors hover:bg-white/[0.05]">
-      {/* pr-12 ends a long name clear of the button zone entirely — the
+      {/* The reserve ends a long name clear of the button zone entirely — the
           buttons appear on empty reserve, never on text, so the row's own
           highlight is all the hover needs. (Graded dims and edge fades were
           tried on top and deleted: with a real reserve there is nothing left
           for them to fix.) */}
-      <span className="flex min-w-0 flex-1 items-center pr-12">{text}</span>
+      <span className={cn("flex min-w-0 flex-1 items-center", reserve)}>{text}</span>
       <span className="absolute inset-y-0 right-0.5 flex items-center gap-0.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100 focus-within:opacity-100">
         {actions}
       </span>
@@ -1603,10 +1614,10 @@ export default function Lab() {
     [],
   )
   const { sun, world, bloom, dof, grade, ground, physics, view } = settings
-  // The picker still authors ONE. The document holds a list — see
-  // SceneState.backgroundEffects — and this is its first entry until the
-  // add/remove/reorder UI lands.
-  const [bgEffect, setBgEffect] = useState<AppliedEffect | null>(scene.state.backgroundEffects[0] ?? null)
+  // The scene's effects, IN LAYER ORDER. The document has held a list for a
+  // while and the viewer has rendered one; this was its first entry only, so a
+  // four-effect scene opened here kept one and saved one back.
+  const [bgEffects, setBgEffects] = useState<AppliedEffect[]>(scene.state.backgroundEffects)
 
   // ONE slot for the three libraries — see useBrowseSurface. They were three
   // independent booleans here, so opening one left the others up: a second
@@ -1894,7 +1905,7 @@ export default function Lab() {
     camera,
     cameraVmd: cameraClip !== null,
     gradeSpec: appliedGradeSpec,
-    backgroundEffects: bgEffect ? [bgEffect] : [],
+    backgroundEffects: bgEffects,
     hasBackdrop: !!bgImage && !bgImage.dome,
     skybox: bgImage?.dome ? bgImage.file : null,
     greenScreen: framing.liveGreenScreen,
@@ -1913,46 +1924,84 @@ export default function Lab() {
   const effectItems = useMemo(() => {
     const items = [
       // By name, matching the effect library's own ordering — see the grade list.
-      ...quickPickItems([...EFFECTS].sort((a, b) => a.name.localeCompare(b.name)), effectDrafts, bgEffect?.id ?? null).map((e) => ({
+      ...quickPickItems([...EFFECTS].sort((a, b) => a.name.localeCompare(b.name)), effectDrafts, null).map((e) => ({
         id: e.name,
         label: e.name,
         section: e.owner === "local" ? ("local" as const) : ("builtin" as const),
       })),
       ...communityQuickPickItems(communityEffects),
     ]
-    if (!bgEffect?.name) return items
-    const pristine = [...EFFECTS, ...effectDrafts, ...communityEffects].some(
-      (e) => e.name === bgEffect.name && e.payload.wgsl === bgEffect.wgsl,
-    )
-    if (pristine) return items
-    const known = items.some((i) => i.id === bgEffect.name)
-    const withOwn = known ? items : [...items, { id: bgEffect.name, label: bgEffect.name, section: "local" as const }]
-    return withOwn.map((i) => (i.id === bgEffect.name ? { ...i, hint: t.scene.edited } : i))
-  }, [effectDrafts, bgEffect, communityEffects, t])
+    // Every applied effect that is no longer identical to any library entry gets
+    // the "edited" hint, and one that is in no list at all gets a row of its
+    // own — otherwise the scene wears a shader the picker cannot show.
+    const known = [...EFFECTS, ...effectDrafts, ...communityEffects]
+    let out = items
+    for (const applied of bgEffects) {
+      const pristine = known.some((e) => e.name === applied.name && e.payload.wgsl === applied.wgsl)
+      if (pristine) continue
+      if (!out.some((i) => i.id === applied.name)) {
+        out = [...out, { id: applied.name, label: applied.name, section: "local" as const }]
+      }
+      out = out.map((i) => (i.id === applied.name ? { ...i, hint: t.scene.edited } : i))
+    }
+    return out
+  }, [effectDrafts, bgEffects, communityEffects, t])
 
   const pickEffect = useCallback(
     (name: string) => {
-      // Picking what is ALREADY applied takes it off. An effect is the one thing
-      // in this dock a scene is routinely better without, and the alternative was
-      // a "None" row sitting permanently at the top of a list of effects. The
-      // ticked row is the affordance: a tick you can click off.
-      if (bgEffect?.name === name) {
-        setBgEffect(null)
+      // Picking what is ALREADY applied takes it off — the tick is a tick you
+      // can click off, which is also what spares the list a permanent "None"
+      // row at the top. With several applied it is per effect, so this is now
+      // membership rather than replacement.
+      if (bgEffects.some((e) => e.name === name)) {
+        setBgEffects((list) => list.filter((e) => e.name !== name))
         return
       }
+      // APPENDED, so a newly picked effect lands on top of what is already
+      // there. Where it belongs is the list's business, and the Background row
+      // is where that gets said.
+      const add = (e: AppliedEffect) => setBgEffects((list) => [...list, e])
       // Drafts and community rows carry their own shader — they apply by value.
       const own = [...effectDrafts, ...communityEffects].find((e) => e.name === name)
       if (own) {
-        setBgEffect({ id: own.id, name: own.name, wgsl: own.payload.wgsl })
+        add({ id: own.id, name: own.name, wgsl: own.payload.wgsl })
         return
       }
       // Straight from the definition — round-tripping a built-in through the
       // by-name lookup with its id is what made every built-in "unknown".
       const def = EFFECTS.find((e) => e.name === name)
-      if (def) setBgEffect(applyDefaults(def))
+      if (def) add(applyDefaults(def))
     },
-    [effectDrafts, communityEffects, bgEffect],
+    [effectDrafts, communityEffects, bgEffects],
   )
+  /** What the row, the picker and the palette all say at rest.
+   *
+   *  One effect is NAMED — that is the decision, and reciting a count instead
+   *  would make you open the row to learn something the row could have said.
+   *  Several are COUNTED, because the list below is where they are read and no
+   *  one of them is the answer. */
+  const effectSummary =
+    bgEffects.length === 0 ? null : bgEffects.length === 1 ? bgEffects[0].name : t.lab.ctl.shadersN(bgEffects.length)
+
+  /** One layer up or down. Up is TOWARD THE VIEWER, matching the row order:
+   *  later in the list draws later, over what came before. */
+  const moveEffect = (from: number, delta: number) =>
+    setBgEffects((list) => {
+      const to = from + delta
+      if (to < 0 || to >= list.length) return list
+      const next = [...list]
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      return next
+    })
+
+  /** The edited effect back into the list it came from — IN PLACE when it was
+   *  already applied, appended when the session created it. Editing a layer
+   *  must not move it: the order is the composition. */
+  const mergeEffect = (list: AppliedEffect[], e: AppliedEffect): AppliedEffect[] => {
+    const at = list.findIndex((x) => x.id === e.id)
+    return at >= 0 ? list.map((x, i) => (i === at ? e : x)) : [...list, e]
+  }
 
   // ── The WGSL effect editor ──
   //
@@ -1963,7 +2012,10 @@ export default function Lab() {
   const [effectEditor, setEffectEditor] = useState<{
     sessionId: number
     subject: AppliedEffect
-    prior: AppliedEffect | null
+    /** The WHOLE list the scene wore before the session, not just the entry
+     *  being edited: a session previews its subject ALONE, so discarding has to
+     *  put every other layer back. */
+    prior: AppliedEffect[]
     savePrompt: string | null
   } | null>(null)
   const effectSessionRef = useRef(0)
@@ -1977,10 +2029,13 @@ export default function Lab() {
     async (subject: AppliedEffect, wgsl: string) => {
       const engine = engineRef.current
       if (!engine) return { ok: false, diagnostics: [t.lab.engineNotReady] }
+      // setEffect, singular: a session previews its subject ALONE, so the
+      // canvas behind the panel is that shader and nothing else competing with
+      // it. The rest of the scene's layers come back from `prior` on close.
       const r = await engine.setEffect(wgsl)
       if (r.ok) {
         noteAppliedWgsl(wgsl)
-        setBgEffect({ ...subject, wgsl })
+        setBgEffects([{ ...subject, wgsl }])
         // Same rule as grades: your own draft saves as you go.
         if (isDraft("effect", subject.id)) updateDraftSoon("effect", subject.id, { payload: { wgsl } })
       }
@@ -1996,23 +2051,27 @@ export default function Lab() {
       effectSessionRef.current += 1
       // Opening AUTO-APPLIES the subject, which is what makes the canvas behind
       // the panel the preview rather than a separate thing to keep in sync.
-      setEffectEditor({ sessionId: effectSessionRef.current, subject, prior: bgEffect, savePrompt: null })
+      setEffectEditor({ sessionId: effectSessionRef.current, subject, prior: bgEffects, savePrompt: null })
       ensureEffectPanelRect()
       void commitEffectCode(subject, subject.wgsl)
     },
-    [bgEffect, ensureEffectPanelRect, commitEffectCode],
+    [bgEffects, ensureEffectPanelRect, commitEffectCode],
   )
   /** Edit the effect the scene is wearing. No subject to resolve — an applied
-   *  effect already IS its row, carried by value. */
+   *  effect already IS its row, carried by value.
+   *
+   *  Only meaningful with ONE applied: "Edit shader" cannot say which of four
+   *  it means. With several, each row in the Background stack carries its own
+   *  edit, which can. */
   const editCurrentEffect = () => {
-    if (bgEffect) openEffectEditor(bgEffect)
+    if (bgEffects.length === 1) openEffectEditor(bgEffects[0])
   }
   /** Close request from the editor. Dirty → prompt; clean → the preview simply
    *  ends, and whatever was applied before the session comes back. */
   const requestCloseEffectEditor = async (code: string) => {
     if (!effectEditor) return
     if (code === effectEditor.subject.wgsl) {
-      setBgEffect(effectEditor.prior)
+      setBgEffects(effectEditor.prior)
       setEffectEditor(null)
       return
     }
@@ -2025,7 +2084,7 @@ export default function Lab() {
         noteAppliedWgsl(code)
         const { id, name } = effectEditor.subject
         updateDraft("effect", id, { payload: { wgsl: code } })
-        setBgEffect({ id, name, wgsl: code })
+        setBgEffects(mergeEffect(effectEditor.prior, { id, name, wgsl: code }))
         setEffectEditor(null)
         return
       }
@@ -2039,7 +2098,7 @@ export default function Lab() {
       cancelDraftWrites("effect", effectEditor.subject.id)
       updateDraft("effect", effectEditor.subject.id, { payload: { wgsl: effectEditor.subject.wgsl } })
     }
-    setBgEffect(effectEditor.prior)
+    setBgEffects(effectEditor.prior)
     setEffectEditor(null)
   }
   const freeEffectName = (wanted: string, editingId?: string) => freeName("effect", wanted, editingId)
@@ -2064,7 +2123,7 @@ export default function Lab() {
         author: authorName,
         ...draftOriginOf(communityEffects, subject.id),
       }).id
-    setBgEffect({ id: id!, name, wgsl: code })
+    setBgEffects(mergeEffect(effectEditor.prior, { id: id!, name, wgsl: code }))
     setEffectEditor(null)
     return null
   }
@@ -2845,7 +2904,7 @@ export default function Lab() {
     settings,
     camera,
     stage: stage ? { scale: stage.transform.scale, position: stage.transform.position } : null,
-    effect: bgEffect?.name ?? null,
+    effect: effectSummary,
     gradeName: gradeLabel(settings.grade.preset),
     backdrop: bgImage && !bgImage.dome ? bgImage.name : null,
     dome: bgImage?.dome ? bgImage.name : null,
@@ -3051,7 +3110,7 @@ export default function Lab() {
       // persist.
       camera,
       settings,
-      backgroundEffects: bgEffect ? [bgEffect] : [],
+      backgroundEffects: bgEffects,
       groups: groupsByModel,
       // DERIVED from the live model list rather than tracked separately.
       // Empty lists are WRITTEN, not filtered: saveSceneState's retain() merges
@@ -3076,7 +3135,7 @@ export default function Lab() {
       clearTimeout(timer)
       if (idle && typeof cancelIdleCallback === "function") cancelIdleCallback(idle)
     }
-  }, [ready, forkPending, scene, sceneName, camera, settings, bgEffect, groupsByModel, models])
+  }, [ready, forkPending, scene, sceneName, camera, settings, bgEffects, groupsByModel, models])
 
   // What changes the BYTES: the set of files the scene points at. Placement and
   // switches are not on this list — they change the doc, never the bundle, and
@@ -3226,7 +3285,7 @@ export default function Lab() {
     // The React mirror only: pushing the framing at the engine is swapScene's job,
     // and it does it once the new cast is in and can be followed.
     setCamera(next.state.camera)
-    setBgEffect(next.state.backgroundEffects[0] ?? null)
+    setBgEffects(next.state.backgroundEffects)
     // The per-preset intensity memory is keyed by NAME and outlives documents, so a
     // swapped scene has to restate its own strength — otherwise the first switch away
     // and back would overwrite what this document says with whatever the last scene
@@ -3388,7 +3447,7 @@ export default function Lab() {
               : { ...settings.grade, spec: appliedGradeSpec }
           })(),
         },
-        backgroundEffects: bgEffect ? [bgEffect] : [],
+        backgroundEffects: bgEffects,
         groups: groupsByModel,
         hidden: slots.hidden,
       },
@@ -4007,10 +4066,17 @@ export default function Lab() {
         open={effectLibOpen}
         initialFacet={libraryFacet}
         onOpenChange={(o) => !o && closeBrowseIf("effect")}
-        applied={bgEffect}
-        onApply={setBgEffect}
-        onRemove={() => setBgEffect(null)}
-        onRenamed={(oldName, newName) => setBgEffect((e) => (e?.name === oldName ? { ...e, name: newName } : e))}
+        applied={bgEffects}
+        // Applying from the library APPENDS, and applying what is already on
+        // takes it off — the same membership rule as the dock's picker, since
+        // they are two doors onto one list.
+        onApply={(e) =>
+          setBgEffects((list) => (list.some((x) => x.id === e.id) ? list.filter((x) => x.id !== e.id) : [...list, e]))
+        }
+        onRemove={(id) => setBgEffects((list) => list.filter((e) => e.id !== id))}
+        onRenamed={(oldName, newName) =>
+          setBgEffects((list) => list.map((e) => (e.name === oldName ? { ...e, name: newName } : e)))
+        }
         onEdit={openEffectEditor}
       />
 
@@ -4205,7 +4271,7 @@ export default function Lab() {
             unpublishedUses({
               gradeSpec: appliedGradeSpec,
               gradeName: settings.grade.preset,
-              effect: bgEffect,
+              effects: bgEffects,
               groups: groupsByModel,
             })
           }
@@ -4489,7 +4555,7 @@ export default function Lab() {
                       : l.id === "stage"
                         ? stageSummary
                         : l.id === "effect"
-                          ? (bgEffect?.name ?? t.lab.ctl.none)
+                          ? (effectSummary ?? t.lab.ctl.none)
                           : l.id === "post"
                             ? gradeLabel(grade.preset)
                             : undefined
@@ -4699,19 +4765,73 @@ export default function Lab() {
                             values rather than code. */}
                         <span className="shrink-0 text-xs">{t.lab.ctl.shader}</span>
                         <QuickPick
-                          value={bgEffect?.name ?? null}
+                          value={effectSummary}
                           items={effectItems}
                           onPick={pickEffect}
                           // Only when something is applied: "Edit shader" with
                           // nothing to edit would open the editor on a subject
                           // the scene is not wearing, and the session's whole
                           // premise is that the canvas behind it IS the preview.
-                          onEdit={bgEffect ? editCurrentEffect : undefined}
+                          onEdit={bgEffects.length === 1 ? editCurrentEffect : undefined}
                           editLabel={t.effectLibrary.editShader}
                           onBrowse={() => openBrowse({ kind: "effect" })}
                           placeholder={t.lab.ctl.none}
                         />
                       </div>
+                      {/* The stack, and only once there IS one. A single effect
+                          has no order to read and the picker above already
+                          names it, so a list of one would restate the row and
+                          add a control that cannot do anything. From two up,
+                          order is the composition — a full-cover backdrop drawn
+                          last erases what is under it — so it has to be visible
+                          and movable.
+
+                          TOPMOST FIRST, so the list is reversed against the
+                          document: the document draws in array order, so its
+                          LAST entry is the one nearest the viewer, and that is
+                          the one a layer stack puts at the top. Rendering the
+                          array as-is would have shown the backdrop above the
+                          things drawn over it, and then "up" would have had to
+                          mean down. */}
+                      {bgEffects.length > 1 && (
+                        <div className="mt-2 flex flex-col">
+                          {[...bgEffects].reverse().map((e, r) => {
+                            const i = bgEffects.length - 1 - r
+                            return (
+                              <CastLine
+                                key={e.id}
+                                reserve="pr-16"
+                                text={<span className="min-w-0 flex-1 truncate text-[13px]">{e.name}</span>}
+                                actions={
+                                  <>
+                                    <CastAction
+                                      compact
+                                      icon={ChevronUp}
+                                      disabled={r === 0}
+                                      label={t.lab.aria.raiseEffect(e.name)}
+                                      onClick={() => moveEffect(i, 1)}
+                                    />
+                                    <CastAction
+                                      compact
+                                      icon={ChevronDown}
+                                      disabled={r === bgEffects.length - 1}
+                                      label={t.lab.aria.lowerEffect(e.name)}
+                                      onClick={() => moveEffect(i, -1)}
+                                    />
+                                    <CastAction
+                                      compact
+                                      icon={X}
+                                      danger
+                                      label={t.lab.aria.removeEffect(e.name)}
+                                      onClick={() => setBgEffects((list) => list.filter((x) => x.id !== e.id))}
+                                    />
+                                  </>
+                                }
+                              />
+                            )
+                          })}
+                        </div>
+                      )}
                       {/* Both doors on purpose. "Browse all" inside the menu is
                           where you look once you have opened the picker and not
                           found what you wanted; the pill is how you get to the

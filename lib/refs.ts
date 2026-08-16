@@ -65,12 +65,15 @@ export type UnpublishedUse = { kind: LibraryKind; name: string }
 export function unpublishedUses(scene: {
   gradeSpec: GradeSpec
   gradeName: string
-  effect: { name: string; wgsl: string } | null
+  /** EVERY applied effect. A scene layers several, and checking only the first
+   *  would let the other three publish as pins to drafts that exist on one
+   *  device. */
+  effects: { name: string; wgsl: string }[]
   groups: Record<string, { graph?: ShaderGraph }[]>
 }): UnpublishedUse[] {
   const out: UnpublishedUse[] = []
   if (!gradeRef(scene.gradeSpec)) out.push({ kind: "grade", name: scene.gradeName })
-  if (scene.effect && !effectRef(scene.effect.wgsl)) out.push({ kind: "effect", name: scene.effect.name })
+  for (const e of scene.effects) if (!effectRef(e.wgsl)) out.push({ kind: "effect", name: e.name })
   const seen = new Set<string>()
   for (const list of Object.values(scene.groups)) {
     for (const g of list) {

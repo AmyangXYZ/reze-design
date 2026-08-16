@@ -217,15 +217,13 @@ export type SceneSettingsDoc = Omit<SceneSettings, "background"> & {
   camera: SceneCamera
   background: SceneSettings["background"] & {
     /**
-     * A pin to a published effect, a snapshot when it is still a draft, or a
-     * built-in's name for this repo's own documents.
+     * The scene's effects, in LAYER ORDER — each a pin to a published effect, a
+     * snapshot while it is still a draft, or a built-in's name for this repo's
+     * own documents.
      *
-     * SUPERSEDED BY `effects`, and read-only now: documents published before a
-     * scene could hold several still say `effect`, and they must keep opening.
-     * Nothing writes it any more.
+     * Order is meaning, not preference: a full-cover backdrop drawn last erases
+     * everything under it, so the list is the composition.
      */
-    effect?: ItemRef | EffectSnapshot | string | null
-    /** The same, as an ordered layer list — what a scene writes today. */
     effects?: (ItemRef | EffectSnapshot | string)[] | null
   }
 }
@@ -281,20 +279,20 @@ function parseModelSource(path: string): { source: ModelSource; file: string } {
  *  needn't import the library's payload types. */
 type LibraryPayloadLike = { graph?: ShaderGraph; wgsl?: string; spec?: unknown; name?: string }
 
-/** The same migration for a localStorage state, which stores resolved effects
- *  rather than document forms: the list when it has one, otherwise the single
- *  field as a list of one, otherwise whatever the base scene came with. */
+/** A localStorage state stores RESOLVED effects rather than document forms.
+ *  Absent means "this state predates the list" and the base scene's own effects
+ *  stand; present-but-empty means the user removed them all, which is different
+ *  and must survive a reload. */
 function effectsFromStored(stored: unknown, fallback: AppliedEffect[]): AppliedEffect[] {
   if (!stored || typeof stored !== "object") return fallback
-  const s = stored as { backgroundEffects?: AppliedEffect[] | null; backgroundEffect?: AppliedEffect | null }
+  const s = stored as { backgroundEffects?: AppliedEffect[] | null }
   if ("backgroundEffects" in s) return s.backgroundEffects ?? []
-  if ("backgroundEffect" in s) return s.backgroundEffect ? [s.backgroundEffect] : []
   return fallback
 }
 
 /** The applied effect a document describes: a pin, a snapshot, or a built-in name. */
 function appliedEffect(
-  applied: SceneSettingsDoc["background"]["effect"],
+  applied: NonNullable<SceneSettingsDoc["background"]["effects"]>[number] | null,
   resolveEffect: (name: string) => AppliedEffect,
   resolveRef?: (ref: ItemRef) => LibraryPayloadLike | undefined,
 ): AppliedEffect | null {
@@ -314,19 +312,22 @@ function appliedEffect(
 /**
  * Every effect a document describes, in layer order.
  *
- * THE MIGRATION, and it is the whole of it: a document written before a scene
- * could hold more than one says `effect`, so that is read as a list of one.
- * Nothing writes `effect` any more, so a scene opened and saved once is
- * migrated. Entries that will not resolve — a pin to something unpublished —
- * drop out rather than taking the rest of the list with them.
+ * Entries that will not resolve — a pin to something unpublished — drop out
+ * rather than taking the rest of the list with them.
+ *
+ * There is no fallback to the old single `effect` field. Documents written
+ * before a scene could hold several will read as having none and get their
+ * effects re-applied by hand; that is a handful of scenes, and carrying a
+ * second document shape forever to avoid it is the more expensive half.
  */
 function appliedEffects(
   background: SceneSettingsDoc["background"],
   resolveEffect: (name: string) => AppliedEffect,
   resolveRef?: (ref: ItemRef) => LibraryPayloadLike | undefined,
 ): AppliedEffect[] {
-  const list = background.effects ?? (background.effect ? [background.effect] : [])
-  return list.map((e) => appliedEffect(e, resolveEffect, resolveRef)).filter((e): e is AppliedEffect => e !== null)
+  return (background.effects ?? [])
+    .map((e) => appliedEffect(e, resolveEffect, resolveRef))
+    .filter((e): e is AppliedEffect => e !== null)
 }
 
 /** Role → engine pass integration, both directions of the round trip. */
@@ -623,7 +624,9 @@ export function sceneRefs(doc: SceneDoc): ItemRef[] {
   const add = (v: unknown) => {
     if (isItemRef(v)) found.set(v.id, v)
   }
-  add(doc.settings.background.effect)
+  // EVERY effect, not the first: each is its own pin, and a scene that used
+  // four of them recorded none once this became a list.
+  for (const e of doc.settings.background.effects ?? []) add(e)
   add(doc.settings.grade.from)
   for (const m of doc.assets.models) for (const g of m.materials?.groups ?? []) add(g.graph)
   return [...found.values()]
