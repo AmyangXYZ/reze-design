@@ -83,7 +83,10 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
     camera: { distance: 26.2, alpha: Math.PI, beta: Math.PI / 2.5, target: [0, 11.4, 0] },
     world: { color: "#ed6aff", strength: 0.66 },
     sun: { color: "#ffffff", strength: 2.0, azimuth: 205, elevation: 21 },
-    bloom: { enabled: true, threshold: 0.5, knee: 0.5, radius: 4.0, intensity: 0.05, color: "#ffc9c9" },
+    // intensity was 0.05 — bloom effectively off, which is why nothing glowed
+    // however bright an effect burned. Emissive only reads if the pyramid is
+    // actually mixed back in.
+    bloom: { enabled: true, threshold: 0.45, knee: 0.5, radius: 5.0, intensity: 0.34, color: "#ffd9d9" },
     dof: DEFAULT_DOF,
     outline: DEFAULT_OUTLINE,
     view: DEFAULT_VIEW,
