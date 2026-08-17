@@ -102,6 +102,7 @@ import { VERSION_LABEL } from "@/lib/version"
 import { ChoiceList } from "@/components/ui/choice-list"
 import { ColorField } from "@/components/color-picker"
 import { useAudioClock } from "@/hooks/use-audio-clock"
+import { LyricSubtitles } from "@/components/editor/lyric-subtitles"
 import { primeAudioAnalysis } from "@/lib/audio-analysis"
 import { TimelineLanes } from "@/components/scene/timeline-lanes"
 import { primeClipDensity } from "@/hooks/use-lane-graphs"
@@ -1236,6 +1237,7 @@ export default function Lab() {
     upsertGroup,
     highlight,
     toggleVisible,
+    lyricLines,
   } = useEngine(scene)
   // No byte stats here. The editor's scene comes out of IndexedDB or off the
   // local disk in almost every case, so a download line would be a phase the
@@ -3650,6 +3652,12 @@ export default function Lab() {
         <img src={bgImage.url} alt="" className="absolute inset-0 h-full w-full object-cover" />
       )}
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none object-contain" />
+
+      {/* Karaoke subtitles for the track's .lrc, riding the same clock the
+          engine's lyric interface reads. */}
+      {lyricLines && lyricLines.length > 0 && (
+        <LyricSubtitles lines={lyricLines} engineRef={engineRef} masterId={masterId} />
+      )}
 
       {/* The same pill the viewer shows, for the same load — opening a scene
           here runs the identical path, and the editor said nothing at all while

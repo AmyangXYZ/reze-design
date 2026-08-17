@@ -72,11 +72,11 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
       },
     ],
     cameraAnimation: null,
-    // A .mid of the same basename sits beside this, and the score loads itself
-    // from that pairing — see loadScoreFor; an .lrc pairs the same way for
-    // lyrics. Renaming the track without its companions is what silently
-    // leaves a score- or lyric-driven effect with nothing to read.
-    audio: USE_DEFAULT_ASSETS ? "/audios/Chainsaw Man： Reze Arc OST - in the pool (Piano) ｜ Kensuke Ushio.mp3" : null,
+    // A .mid and an .lrc of the same basename sit beside this, and the score
+    // and lyrics load themselves from that pairing — see loadScoreFor /
+    // loadLyricsFor. Renaming the track without its companions is what
+    // silently leaves a score- or lyric-driven effect with nothing to read.
+    audio: USE_DEFAULT_ASSETS ? "/audios/ビビデバ.mp3" : null,
     backdrop: null,
     skybox: null,
   },
@@ -103,7 +103,7 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
     // trail mounts; Footprints is the only foreground. Ordering is therefore
     // free HERE, and is not in general — a full-cover backdrop must come first
     // or it erases what is under it.
-    background: { color: "#0a0a12", effects: ["Note Fall", "Shining Stars", "Hand Ribbon", "Footprints"] },
+    background: { color: "#0a0a12", effects: ["Note Fall", "Signature"] },
     grade: { preset: "Neutral", intensity: 1 },
     // Invisible, but still a shadow catcher: Note Fall draws a keyboard ON this
     // plane, and a lit ground would sit in front of it and wash the keys out.

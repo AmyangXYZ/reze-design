@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { EFFECTS } from "@/lib/effects"
-import { Engine, parseLRC, parseMidi, Quat, Vec3, type ApplyStyleGroupResult, type CompileOptions, type Model, type RenderClass, type ScoreNote, type StyleGroup } from "reze-engine"
+import { Engine, parseLRC, parseMidi, Quat, Vec3, type ApplyStyleGroupResult, type CompileOptions, type LyricLine, type Model, type RenderClass, type ScoreNote, type StyleGroup } from "reze-engine"
 import { SLOT_GRAPHS } from "@/lib/materials"
 import { graphLibraryName } from "@/lib/refs"
 import { graphRole, packGraph } from "@/lib/materials"
@@ -522,14 +522,23 @@ async function loadScoreFor(audio: AssetRef | null, engine: Engine, cancelled: (
  * score-driven one does. No alignment step: an .lrc is authored against the
  * published track itself, so its clock is already the audio's.
  */
-async function loadLyricsFor(audio: AssetRef | null, engine: Engine, cancelled: () => boolean): Promise<void> {
+async function loadLyricsFor(
+  audio: AssetRef | null,
+  engine: Engine,
+  cancelled: () => boolean,
+  /** The parsed lines, for anything CPU-side that shows text — the engine's
+   *  buffer only carries timing, and a subtitle needs the words themselves. */
+  onLines?: (lines: LyricLine[]) => void,
+): Promise<void> {
   if (!audio?.name) return
   const base = audio.name.replace(/\.[^./]+$/, "")
   try {
     const res = await fetch(`/audios/${encodeURIComponent(base)}.lrc`)
     if (!res.ok || cancelled()) return
     const lines = parseLRC(await res.text())
-    if (!cancelled()) engine.setLyrics(lines)
+    if (cancelled()) return
+    engine.setLyrics(lines)
+    onLines?.(lines)
   } catch {
     // No lyric file beside the track.
   }
@@ -553,6 +562,9 @@ export function useEngine(
   const [bundleReady, setBundleReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [models, setModels] = useState<EngineModelInfo[]>([])
+  // The track's parsed lyric lines, when an .lrc pairs with it — the words for
+  // a subtitle; the engine buffer holds only their timing.
+  const [lyricLines, setLyricLines] = useState<LyricLine[] | null>(null)
   // Which of `models` are environment rather than cast. Stages stay IN models so
   // their materials reach the group/graph path; this list is what keeps them out
   // of the cast, the motion rows and the spawn-offset walk.
@@ -627,7 +639,7 @@ export function useEngine(
         // The notes for the track, when a transcription is published beside it.
         // Not awaited: a scene must paint whether or not one exists.
         void loadScoreFor(scene.assets.audio, engine, () => disposed)
-        void loadLyricsFor(scene.assets.audio, engine, () => disposed)
+        void loadLyricsFor(scene.assets.audio, engine, () => disposed, setLyricLines)
         const loaded = await loadSceneInto(engine, scene, () => disposed, {
           onStage: () => {
             // Stage up: paint now, models stream in behind.
@@ -1031,5 +1043,6 @@ export function useEngine(
     loadVmdUrl,
     centerModel,
     stopAnimation,
+    lyricLines,
   }
 }
