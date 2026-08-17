@@ -706,6 +706,17 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       keywords: [...LOAD, "vmd", "motion", "dance", "动作", "舞蹈"],
     },
     {
+      id: "upload-morph",
+      repeatable: true,
+      section: "command",
+      // The face the cast row already shows for it — a command and the row it
+      // fills are the same act, so they cannot look like two different ones.
+      icon: Smile,
+      label: l.uploadMorph,
+      altLabels: [alt.uploadMorph],
+      keywords: [...LOAD, "vmd", "morph", "expression", "face", "表情", "口型"],
+    },
+    {
       id: "upload-stage",
       nextLikely: ["light", "post"],
       section: "command",
@@ -864,6 +875,29 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       label: l.uploadMusic,
       altLabels: [alt.uploadMusic],
       keywords: [...LOAD, "audio", "bgm", "wav", "mp3", "音乐"],
+    },
+    // The track's companions. Both point at `effect` next, because that is what
+    // they are FOR: notes and words are data nothing draws until an effect
+    // reads them, and a scene that loads one and stops shows nothing new.
+    {
+      id: "upload-midi",
+      nextLikely: ["effect"],
+      repeatable: true,
+      section: "command",
+      icon: ListMusic,
+      label: l.uploadMidi,
+      altLabels: [alt.uploadMidi],
+      keywords: [...LOAD, "mid", "midi", "notes", "score", "piano", "音符", "乐谱", "钢琴"],
+    },
+    {
+      id: "upload-lyrics",
+      nextLikely: ["effect"],
+      repeatable: true,
+      section: "command",
+      icon: Captions,
+      label: l.uploadLyrics,
+      altLabels: [alt.uploadLyrics],
+      keywords: [...LOAD, "lrc", "lyrics", "subtitle", "words", "歌词", "字幕"],
     },
     {
       id: "capture",
@@ -3793,6 +3827,8 @@ export default function Lab() {
         folderInput.current?.click()
       } else if (item.id === "upload-camera") cameraInput.current?.click()
       else if (item.id === "upload-music") musicInput.current?.click()
+      else if (item.id === "upload-midi") midiInput.current?.click()
+      else if (item.id === "upload-lyrics") lyricsInput.current?.click()
       else if (item.id === "camera") gotoSection("camera")
       else if (item.id === "scene-new") cmdRef.current.newScene()
       else if (item.id === "scene-reset") cmdRef.current.resetSceneDefaults()
@@ -3815,6 +3851,14 @@ export default function Lab() {
         if (target) {
           animTarget.current = target
           vmdInput.current?.click()
+        }
+      } else if (item.id === "upload-morph") {
+        // The primary model, by the same rule as the motion above: an
+        // expression has to land on someone and the palette cannot ask which.
+        const target = models[0]?.id
+        if (target) {
+          morphTarget.current = target
+          morphInput.current?.click()
         }
       } else if (item.id === "ground") gotoSection("stage", { stage: "ground" })
       else if (item.id === "background") gotoSection("stage", { stage: "background" })
