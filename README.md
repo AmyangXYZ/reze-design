@@ -20,12 +20,13 @@ One piece of the **Reze MMD family**, covering the whole MMD workflow on the web
 
 - **Material shader graphs** — build a look in a Blender-style node editor, compiled to WGSL.
 - **Colour grading** — ASC CDL, curated presets and a wheel editor, previewed on your own scene.
-- **Scene effects** — live-coded WGSL behind the model, in front of it, or both; the ones in front hold the scene's depth, so rain and petals are occluded by the character they pass behind.
+- **Scene effects** — live-coded WGSL behind the model, in front of it, or both; the ones in front hold the scene's depth, so rain and petals are occluded by the character they pass behind. A scene runs as many as you apply, and the order you applied them is the order they compose.
 - **Effects that react to the cast** — an effect asks for the bones it wants by name and gets their position, velocity, facing and recent path, plus each character's floor point and hips. Lightning arcing along the limbs, fire climbing off the shoulders, a sigil turning on the ground underfoot, marks left where the feet landed.
 - **GPU particles and ribbon trails** — declare a pool size and three functions and a hundred thousand particles run entirely on the GPU, depth-tested against the cast; declare a bone with `trail` and two more functions draw a ribbon along the path it actually took.
 - **Effects that react to the music** — loudness, a kick detector and a 32-band spectrum, readable seconds into the past or the future. Analysed once ahead of time, so an exported video reacts exactly as the editor did.
-- **Scene lighting** — sun, world light and bloom over a colour, an image backdrop or a 360° skybox.
-- **Multi-model scenes** — a motion and an expression each, one camera VMD, one audio track with its score and lyrics.
+- **Effects that read the score and the words** — drop a `.mid` and a `.lrc` beside the track, and effects read the notes, the keys under them and the lyric line due on screen, off the same clock as the audio. Notes falling to the beat, subtitles you style in the shader.
+- **Scene lighting** — sun, world light and bloom over a colour, an image backdrop or an HDR skybox that lights the cast as well as standing behind it.
+- **Multi-model scenes** — a motion and an expression VMD each, one camera VMD, one audio track with its `.mid` and `.lrc`.
 - **Stage models** — a stage PMX as the environment, placed and scaled, with the switches its author rigged.
 - **Stage material presets** — fifteen stage looks, matched against a stage's own material names in Japanese, Chinese or English.
 - **Command palette** — ⌘K for every action and every setting, and what it is set to.
@@ -156,9 +157,7 @@ shipping the demo model.
 
 A curated MMD platform built around the character and its dance. Next up:
 
-- **Timeline editing** — a shared time axis with a playhead across the lanes, then per-track trim and offset.
-- **Global effects** — WGSL effects in front of the scene as well as behind it.
-- **Sphere-map highlights** — MMD's specular maps in the shader graph, for the highlight hair textures already carry.
+- **Timeline editing** — per-track trim and offset, on the lanes that already share a playhead.
 - **More built-ins** — a growing shader-graph and colour-grade library tuned for the MMD aesthetic.
 - **Mobile layout** — a proper small-screen shell (the editor already runs there).
 
