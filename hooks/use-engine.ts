@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { EFFECTS } from "@/lib/effects"
-import { Engine, parseMidi, Quat, Vec3, type ApplyStyleGroupResult, type CompileOptions, type Model, type RenderClass, type ScoreNote, type StyleGroup } from "reze-engine"
+import { Engine, parseLRC, parseMidi, Quat, Vec3, type ApplyStyleGroupResult, type CompileOptions, type Model, type RenderClass, type ScoreNote, type StyleGroup } from "reze-engine"
 import { SLOT_GRAPHS } from "@/lib/materials"
 import { graphLibraryName } from "@/lib/refs"
 import { graphRole, packGraph } from "@/lib/materials"
@@ -515,6 +515,26 @@ async function loadScoreFor(audio: AssetRef | null, engine: Engine, cancelled: (
   }
 }
 
+/**
+ * Install the lyrics that go with the scene's track: `/audios/X.mp3` pairs
+ * with `/audios/X.lrc`, by name, under exactly the score's rules — a miss is
+ * the ordinary case, and a lyric-driven effect waits the same way a
+ * score-driven one does. No alignment step: an .lrc is authored against the
+ * published track itself, so its clock is already the audio's.
+ */
+async function loadLyricsFor(audio: AssetRef | null, engine: Engine, cancelled: () => boolean): Promise<void> {
+  if (!audio?.name) return
+  const base = audio.name.replace(/\.[^./]+$/, "")
+  try {
+    const res = await fetch(`/audios/${encodeURIComponent(base)}.lrc`)
+    if (!res.ok || cancelled()) return
+    const lines = parseLRC(await res.text())
+    if (!cancelled()) engine.setLyrics(lines)
+  } catch {
+    // No lyric file beside the track.
+  }
+}
+
 export function useEngine(
   /** The scene to boot into — read ONCE (constructor options + first loadModel + addGround) */
   initialScene: Scene,
@@ -591,12 +611,23 @@ export function useEngine(
             engine.setScore(notes)
             return notes.length
           }
+          // The same courtesy for lyrics: fetch + parse + install an .lrc.
+          ;(window as unknown as { __rezeLoadLyrics?: (url: string) => Promise<number> }).__rezeLoadLyrics = async (
+            url: string,
+          ) => {
+            const res = await fetch(url)
+            if (!res.ok) throw new Error(`${res.status} ${res.statusText} — check the path under /public`)
+            const lines = parseLRC(await res.text())
+            engine.setLyrics(lines)
+            return lines.length
+          }
         }
         await engine.init()
         if (disposed) return
         // The notes for the track, when a transcription is published beside it.
         // Not awaited: a scene must paint whether or not one exists.
         void loadScoreFor(scene.assets.audio, engine, () => disposed)
+        void loadLyricsFor(scene.assets.audio, engine, () => disposed)
         const loaded = await loadSceneInto(engine, scene, () => disposed, {
           onStage: () => {
             // Stage up: paint now, models stream in behind.

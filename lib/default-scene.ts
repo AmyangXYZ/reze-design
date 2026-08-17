@@ -73,8 +73,9 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
     ],
     cameraAnimation: null,
     // A .mid of the same basename sits beside this, and the score loads itself
-    // from that pairing — see loadScoreFor. Renaming one without the other is
-    // what silently leaves a score-driven effect with no notes.
+    // from that pairing — see loadScoreFor; an .lrc pairs the same way for
+    // lyrics. Renaming the track without its companions is what silently
+    // leaves a score- or lyric-driven effect with nothing to read.
     audio: USE_DEFAULT_ASSETS ? "/audios/Chainsaw Man： Reze Arc OST - in the pool (Piano) ｜ Kensuke Ushio.mp3" : null,
     backdrop: null,
     skybox: null,
