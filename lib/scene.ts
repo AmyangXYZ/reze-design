@@ -616,6 +616,25 @@ export function serializeSceneDoc(
     engine: ENGINE_VERSION,
     name: live.name,
     assets: {
+      // Through assetsDocOf, NOT field by field. Listing them here a second
+      // time is exactly how the track's companions went missing: `midi` and
+      // `lyrics` were added to the live assets and to assetsDocOf, and this
+      // copy kept writing the six fields it already knew — so a scene packed
+      // the .mid and .lrc into its zip and then shipped a document that never
+      // named them. Import read no lyrics from a file that contained them, and
+      // every publish did the same to its viewer.
+      ...assetsDocOf({
+        models: live.models,
+        cameraAnimation: live.cameraAnimation,
+        audio: live.audio,
+        midi: live.midi,
+        lyrics: live.lyrics,
+        background: live.background,
+        bundle: live.bundle,
+      }),
+      // The one thing that mapping cannot carry: material groups belong to the
+      // editor's document rather than to the asset, so the models are rebuilt
+      // here with their looks attached.
       models: live.models.map((m) => {
         const hidden = live.hidden[m.model.id]
         const groups = live.groups[m.model.id]
@@ -627,11 +646,6 @@ export function serializeSceneDoc(
           ...(groups ? { materials: { groups: groups.map(toDoc), ...(hidden?.length ? { hidden } : {}) } } : {}),
         }
       }),
-      cameraAnimation: live.cameraAnimation?.url ?? null,
-      audio: live.audio?.url ?? null,
-      backdrop: live.background?.kind === "backdrop" ? live.background.asset.url : null,
-      skybox: live.background?.kind === "skybox" ? live.background.asset.url : null,
-      bundle: live.bundle,
     },
     settings: {
       camera: live.camera,
