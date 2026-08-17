@@ -13,10 +13,17 @@
 import { LYRIC_ATLAS_MAX_H, LYRIC_ATLAS_MAX_W, type LyricLine, type LyricRect } from "reze-engine"
 
 const FONT_STACK = '"Hiragino Maru Gothic ProN", "Yu Gothic", "Meiryo", sans-serif'
-/** Rows taller than this buy nothing: the line is drawn at a fraction of the
- *  canvas height, so past roughly this the atlas is being minified anyway. */
-const ROW_H_MAX = 96
+/**
+ * A row's height is aimed at the size the line is DRAWN at — the whole reason
+ * the text can look soft is a row rasterised at one size and sampled at
+ * another. The karaoke effect's default box is 0.05 of canvas height; the
+ * headroom above that covers an author who makes the type bigger.
+ */
+const TARGET_ROW_FRAC = 0.065
+const ROW_H_MAX = 176
 const ROW_H_MIN = 32
+/** Fallback when the canvas has not been sized yet — a middling retina row. */
+const ROW_H_DEFAULT = 96
 /** Margin around the ink, as a fraction of the row — the room an effect's
  *  outline and shadow taps grow into instead of clipping at the rect edge. */
 const PAD_FRAC = 0.14
@@ -28,9 +35,14 @@ export type LyricAtlas = {
   rects: LyricRect[]
 }
 
-export function rasterizeLyrics(lines: LyricLine[]): LyricAtlas | null {
+export function rasterizeLyrics(lines: LyricLine[], canvasHeightPx = 0): LyricAtlas | null {
   if (lines.length === 0) return null
-  const rowH = Math.max(ROW_H_MIN, Math.min(ROW_H_MAX, Math.floor(LYRIC_ATLAS_MAX_H / lines.length)))
+  // Aim for the drawn size, then take whatever the atlas budget allows. A long
+  // song trades row height for fitting its lines, which degrades to soft text
+  // rather than to missing text.
+  const target = canvasHeightPx > 0 ? Math.round(canvasHeightPx * TARGET_ROW_FRAC) : ROW_H_DEFAULT
+  const budget = Math.floor(LYRIC_ATLAS_MAX_H / lines.length)
+  const rowH = Math.max(ROW_H_MIN, Math.min(ROW_H_MAX, target, budget))
   const pad = Math.max(4, Math.round(rowH * PAD_FRAC))
   const size = rowH - 2 * pad
 

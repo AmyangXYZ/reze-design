@@ -509,7 +509,14 @@ async function loadScoreFor(audio: AssetRef | null, engine: Engine, cancelled: (
  * when it runs late against a particular rip, its own [offset:] tag is the
  * knob — positive shows lines earlier.
  */
-async function loadLyricsFor(audio: AssetRef | null, engine: Engine, cancelled: () => boolean): Promise<void> {
+async function loadLyricsFor(
+  audio: AssetRef | null,
+  engine: Engine,
+  cancelled: () => boolean,
+  /** Canvas backing height, so lines are rasterised at the size they are drawn
+   *  at — a row stored at one size and sampled at another is what soft text is. */
+  canvasHeightPx: number,
+): Promise<void> {
   if (!audio?.name) return
   const base = audio.name.replace(/\.[^./]+$/, "")
   try {
@@ -521,7 +528,7 @@ async function loadLyricsFor(audio: AssetRef | null, engine: Engine, cancelled: 
     if (!res.ok || cancelled()) return
     const lines = parseLRC(await res.text())
     if (cancelled()) return
-    engine.setLyrics(lines, rasterizeLyrics(lines) ?? undefined)
+    engine.setLyrics(lines, rasterizeLyrics(lines, canvasHeightPx) ?? undefined)
   } catch {
     // No lyric file beside the track.
   }
@@ -610,7 +617,7 @@ export function useEngine(
             const res = await fetch(url)
             if (!res.ok) throw new Error(`${res.status} ${res.statusText} — check the path under /public`)
             const lines = parseLRC(await res.text())
-            engine.setLyrics(lines, rasterizeLyrics(lines) ?? undefined)
+            engine.setLyrics(lines, rasterizeLyrics(lines, canvasRef.current?.height ?? 0) ?? undefined)
             return lines.length
           }
         }
@@ -619,7 +626,7 @@ export function useEngine(
         // The notes for the track, when a transcription is published beside it.
         // Not awaited: a scene must paint whether or not one exists.
         void loadScoreFor(scene.assets.audio, engine, () => disposed)
-        void loadLyricsFor(scene.assets.audio, engine, () => disposed)
+        void loadLyricsFor(scene.assets.audio, engine, () => disposed, canvasRef.current?.height ?? 0)
         const loaded = await loadSceneInto(engine, scene, () => disposed, {
           onStage: () => {
             // Stage up: paint now, models stream in behind.
