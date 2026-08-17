@@ -244,7 +244,15 @@ export function useSceneSync({
           engine.setBackdropEquirect(img)
           // The install receipt: with this line and __reze.getWorldLighting(),
           // "is the sky lighting her" is a console question, not a guess.
-          console.info(`[skybox] HDRI world installed (${img.width}x${img.height}) — lighting:`, engine.getWorldLighting())
+          const wl = engine.getWorldLighting()
+          console.info(`[skybox] HDRI world installed (${img.width}x${img.height}) — lighting:`, wl)
+          // The trap that cost a debugging round: the sky's light rides the
+          // World strength dial (the Blender semantic), and a scene with the
+          // dial at zero installs a sky that lights nothing — silently, unless
+          // this says so.
+          if (wl.strength === 0) {
+            console.warn("[skybox] World strength is 0 — the sky lights nothing until it is raised (settings > World).")
+          }
         })
         .catch((e) => console.error("[skybox] .hdr failed to parse:", e))
     } else {
