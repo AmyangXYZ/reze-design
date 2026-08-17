@@ -52,3 +52,6 @@ next-env.d.ts
 # they read files that live on whoever is doing the port, and what they emit is
 # a research artefact rather than anything that ships.
 tools/blender-port/
+
+# Worktrees this tool creates — checkouts, never content.
+.claude/worktrees/
