@@ -25,6 +25,15 @@ export function coverCrop(
 
 /** Load + inspect an image upload into BackdropMedia. Throws on undecodable files. */
 export async function probeBackdrop(file: File): Promise<BackdropMedia> {
+  if (/\.hdr$/i.test(file.name)) {
+    // Radiance HDRI: the DOM decoder rejects it, so size it with the engine's
+    // parser — which also validates the file at upload time, when an error can
+    // still reach the person who picked it. The object URL is kept for slot
+    // bookkeeping; nothing DOM-renders it (the 360 slot draws in-canvas).
+    const { parseHDR } = await import("reze-engine")
+    const img = parseHDR(await file.arrayBuffer())
+    return { file, url: URL.createObjectURL(file), name: file.name, width: img.width, height: img.height }
+  }
   const url = URL.createObjectURL(file)
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {

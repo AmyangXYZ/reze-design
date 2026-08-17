@@ -1826,6 +1826,12 @@ export default function Lab() {
     async (file: File | undefined) => {
       if (!file) return
       try {
+        // An HDRI is radiance, and only the in-canvas 360 dome can show it —
+        // the flat backdrop is a DOM <img>, which cannot decode it.
+        if (/\.hdr$/i.test(file.name) && !bgImageIsDome.current) {
+          setUpload({ kind: "notice", message: "An .hdr is a 360\u00b0 world \u2014 use it as the 360 background." })
+          return
+        }
         const next = await probeBackdrop(file)
         swapBgImage({ ...next, dome: bgImageIsDome.current })
       } catch (e) {
@@ -3968,7 +3974,7 @@ export default function Lab() {
       <input
         ref={bgImageInput}
         type="file"
-        accept="image/*"
+        accept="image/*,.hdr"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0]

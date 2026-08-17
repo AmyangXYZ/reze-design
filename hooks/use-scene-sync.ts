@@ -10,7 +10,7 @@
 // document and neither knows the difference.
 
 import { useEffect, useRef } from "react"
-import { Vec3, type Engine } from "reze-engine"
+import { Vec3, parseHDR, type Engine } from "reze-engine"
 import { type AppliedEffect } from "@/lib/effects"
 import { resolveSpec, type GradeSpec } from "@/lib/grade"
 import { CAMERA_DEFAULT_FOV, type SceneCamera } from "@/lib/scene"
@@ -232,9 +232,21 @@ export function useSceneSync({
       return
     }
     let stale = false
-    void createImageBitmap(skybox).then((b) => {
-      if (!stale) engine.setBackdropEquirect(b)
-    })
+    if (/\.hdr$/i.test(skybox.name)) {
+      // An HDRI world: scene-linear radiance through the engine's own parser —
+      // createImageBitmap cannot decode Radiance files, and flattening one to
+      // 8-bit would throw away exactly the range that makes it an HDRI.
+      void skybox
+        .arrayBuffer()
+        .then((buf) => {
+          if (!stale) engine.setBackdropEquirect(parseHDR(buf))
+        })
+        .catch((e) => console.error("[skybox] .hdr failed to parse:", e))
+    } else {
+      void createImageBitmap(skybox).then((b) => {
+        if (!stale) engine.setBackdropEquirect(b)
+      })
+    }
     return () => {
       stale = true
     }
