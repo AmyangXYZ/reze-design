@@ -103,7 +103,7 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
     // trail mounts; Footprints is the only foreground. Ordering is therefore
     // free HERE, and is not in general — a full-cover backdrop must come first
     // or it erases what is under it.
-    background: { color: "#0a0a12", effects: ["Note Fall", "Signature"] },
+    background: { color: "#0a0a12", effects: ["Note Fall", "Lyrics", "Signature"] },
     grade: { preset: "Neutral", intensity: 1 },
     // Invisible, but still a shadow catcher: Note Fall draws a keyboard ON this
     // plane, and a lit ground would sit in front of it and wash the keys out.

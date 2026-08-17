@@ -4,7 +4,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { EFFECTS } from "@/lib/effects"
-import { Engine, parseLRC, parseMidi, Quat, Vec3, type ApplyStyleGroupResult, type CompileOptions, type LyricLine, type Model, type RenderClass, type ScoreNote, type StyleGroup } from "reze-engine"
+import { Engine, parseLRC, parseMidi, Quat, Vec3, type ApplyStyleGroupResult, type CompileOptions, type Model, type RenderClass, type ScoreNote, type StyleGroup } from "reze-engine"
+import { rasterizeLyrics } from "@/lib/lyrics-raster"
 import { SLOT_GRAPHS } from "@/lib/materials"
 import { graphLibraryName } from "@/lib/refs"
 import { graphRole, packGraph } from "@/lib/materials"
@@ -464,32 +465,6 @@ function spawnOffsetX(existingCount: number): number {
 }
 
 /**
- * Drop a transcription's lead-in, so its first note lands where the track's
- * first note is heard.
- *
- * A .mid ripped from a performance video starts where the VIDEO starts — title
- * card, count-in, the pianist sitting down — while the audio published beside it
- * is trimmed to the music. The two then disagree by however long that intro ran,
- * and nothing downstream can tell: the clock is shared and correct, the notes
- * are simply written late. For the Reze arc piano transcription the intro is
- * 12.5s, which showed as twelve seconds of music with an empty screen.
- *
- * Anchoring the first note at zero needs no per-file constant and lands within
- * 27ms of the offset a cross-correlation of the two files' onset envelopes
- * picks (12.527s against this pair, constant across the piece — the residual
- * over six windows spans 80ms, so there is no tempo drift to chase).
- *
- * It is wrong for one case: a track whose transcribed instrument genuinely
- * enters late over an intro that IS in the audio. Pad the .mid's own start if
- * that comes up, since that is where the lead-in would then be real.
- */
-function alignToTrack(notes: ScoreNote[]): ScoreNote[] {
-  const lead = notes.length ? notes[0].start : 0 // parseMidi sorts by onset
-  if (lead <= 0) return notes
-  return notes.map((n) => ({ ...n, start: n.start - lead }))
-}
-
-/**
  * Install the score that goes with the scene's track, if one is published
  * beside it: `/audios/X.mp3` pairs with `/audios/X.mid`.
  *
@@ -497,6 +472,15 @@ function alignToTrack(notes: ScoreNote[]): ScoreNote[] {
  * handle out of IndexedDB and has no path to look beside, but its name survives
  * upload, persist and publish alike — so the same rule works for a site-served
  * track and a user's own file.
+ *
+ * The file's own timeline is TRUSTED. A ripped transcription rarely arrives
+ * aligned — video lead-ins, DAW-default tempo grids — but guessing here (the
+ * loader used to anchor the first note at zero) breaks every file whose
+ * instrument genuinely enters late, and 2.63s of silence is exactly what the
+ * BIBBIDIBA transcription opens with. Alignment is measured ONCE, offline, by
+ * cross-correlating the mid's onsets against the audio's onset envelope, and
+ * baked into the published file (the Reze arc piano carried 12.5s of video
+ * intro, now removed; BIBBIDIBA gained its 2.63s lead).
  *
  * A miss is silence. Most tracks have no transcription, so a 404 here is the
  * ordinary case and must not read as a failure: a score-driven effect draws its
@@ -509,7 +493,7 @@ async function loadScoreFor(audio: AssetRef | null, engine: Engine, cancelled: (
     const res = await fetch(`/audios/${encodeURIComponent(base)}.mid`)
     if (!res.ok || cancelled()) return
     const notes = parseMidi(await res.arrayBuffer())
-    if (!cancelled()) engine.setScore(alignToTrack(notes))
+    if (!cancelled()) engine.setScore(notes)
   } catch {
     // No transcription beside the track, or one that will not parse.
   }
@@ -519,17 +503,13 @@ async function loadScoreFor(audio: AssetRef | null, engine: Engine, cancelled: (
  * Install the lyrics that go with the scene's track: `/audios/X.mp3` pairs
  * with `/audios/X.lrc`, by name, under exactly the score's rules — a miss is
  * the ordinary case, and a lyric-driven effect waits the same way a
- * score-driven one does. No alignment step: an .lrc is authored against the
- * published track itself, so its clock is already the audio's.
+ * score-driven one does. The lines are rasterised here (Canvas2D — the one
+ * rasteriser that speaks every script) so an effect can draw the words, not
+ * just their timing. An .lrc is authored against the published track itself;
+ * when it runs late against a particular rip, its own [offset:] tag is the
+ * knob — positive shows lines earlier.
  */
-async function loadLyricsFor(
-  audio: AssetRef | null,
-  engine: Engine,
-  cancelled: () => boolean,
-  /** The parsed lines, for anything CPU-side that shows text — the engine's
-   *  buffer only carries timing, and a subtitle needs the words themselves. */
-  onLines?: (lines: LyricLine[]) => void,
-): Promise<void> {
+async function loadLyricsFor(audio: AssetRef | null, engine: Engine, cancelled: () => boolean): Promise<void> {
   if (!audio?.name) return
   const base = audio.name.replace(/\.[^./]+$/, "")
   try {
@@ -537,8 +517,7 @@ async function loadLyricsFor(
     if (!res.ok || cancelled()) return
     const lines = parseLRC(await res.text())
     if (cancelled()) return
-    engine.setLyrics(lines)
-    onLines?.(lines)
+    engine.setLyrics(lines, rasterizeLyrics(lines) ?? undefined)
   } catch {
     // No lyric file beside the track.
   }
@@ -562,9 +541,6 @@ export function useEngine(
   const [bundleReady, setBundleReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [models, setModels] = useState<EngineModelInfo[]>([])
-  // The track's parsed lyric lines, when an .lrc pairs with it — the words for
-  // a subtitle; the engine buffer holds only their timing.
-  const [lyricLines, setLyricLines] = useState<LyricLine[] | null>(null)
   // Which of `models` are environment rather than cast. Stages stay IN models so
   // their materials reach the group/graph path; this list is what keeps them out
   // of the cast, the motion rows and the spawn-offset walk.
@@ -619,18 +595,18 @@ export function useEngine(
           ) => {
             const res = await fetch(url)
             if (!res.ok) throw new Error(`${res.status} ${res.statusText} — check the path under /public`)
-            const notes = alignToTrack(parseMidi(await res.arrayBuffer()))
+            const notes = parseMidi(await res.arrayBuffer())
             engine.setScore(notes)
             return notes.length
           }
-          // The same courtesy for lyrics: fetch + parse + install an .lrc.
+          // The same courtesy for lyrics: fetch + parse + rasterise + install.
           ;(window as unknown as { __rezeLoadLyrics?: (url: string) => Promise<number> }).__rezeLoadLyrics = async (
             url: string,
           ) => {
             const res = await fetch(url)
             if (!res.ok) throw new Error(`${res.status} ${res.statusText} — check the path under /public`)
             const lines = parseLRC(await res.text())
-            engine.setLyrics(lines)
+            engine.setLyrics(lines, rasterizeLyrics(lines) ?? undefined)
             return lines.length
           }
         }
@@ -639,7 +615,7 @@ export function useEngine(
         // The notes for the track, when a transcription is published beside it.
         // Not awaited: a scene must paint whether or not one exists.
         void loadScoreFor(scene.assets.audio, engine, () => disposed)
-        void loadLyricsFor(scene.assets.audio, engine, () => disposed, setLyricLines)
+        void loadLyricsFor(scene.assets.audio, engine, () => disposed)
         const loaded = await loadSceneInto(engine, scene, () => disposed, {
           onStage: () => {
             // Stage up: paint now, models stream in behind.
@@ -1043,6 +1019,5 @@ export function useEngine(
     loadVmdUrl,
     centerModel,
     stopAnimation,
-    lyricLines,
   }
 }
