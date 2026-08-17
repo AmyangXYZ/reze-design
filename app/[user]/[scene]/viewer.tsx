@@ -446,7 +446,7 @@ function SceneStage({
       // this tick, the editor's, and the export loop — and an effect is frozen
       // in whichever one forgets it.
       if (p) engine.setAudioTime(p.current, p.playing)
-      if (p) engine.setScoreTime(p.current, p.playing)
+      if (p) engine.setMidiTime(p.current, p.playing)
       const wasPaused = audio.paused
       if (p?.playing && audio.paused) void audio.play().catch(() => {})
       if (!p?.playing && !audio.paused) audio.pause()

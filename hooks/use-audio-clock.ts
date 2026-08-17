@@ -84,7 +84,7 @@ export function useAudioClock({
       // music they were transcribed from have to advance together or the whole
       // point is lost — and driving both from the model's animation progress is
       // what makes a scrub, a pause and an offline export all agree.
-      engineRef.current?.setScoreTime(p.current, p.playing)
+      engineRef.current?.setMidiTime(p.current, p.playing)
       const playing = p.playing && userInteracted.current
       // A frame advances the clock ≤ ~0.05s — anything bigger is a discrete jump.
       const jumped = lastModelTime >= 0 && Math.abs(p.current - lastModelTime) > 0.35

@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { EFFECTS } from "@/lib/effects"
-import { Engine, parseLRC, parseMidi, Quat, Vec3, type ApplyStyleGroupResult, type CompileOptions, type Model, type RenderClass, type ScoreNote, type StyleGroup } from "reze-engine"
+import { Engine, parseLRC, parseMidi, Quat, Vec3, type ApplyStyleGroupResult, type CompileOptions, type Model, type RenderClass, type MidiNote, type StyleGroup } from "reze-engine"
 import { rasterizeLyrics } from "@/lib/lyrics-raster"
 import { SLOT_GRAPHS } from "@/lib/materials"
 import { graphLibraryName } from "@/lib/refs"
@@ -493,7 +493,7 @@ async function loadScoreFor(audio: AssetRef | null, engine: Engine, cancelled: (
     const res = await fetch(`/audios/${encodeURIComponent(base)}.mid`)
     if (!res.ok || cancelled()) return
     const notes = parseMidi(await res.arrayBuffer())
-    if (!cancelled()) engine.setScore(notes)
+    if (!cancelled()) engine.setMidiNotes(notes)
   } catch {
     // No transcription beside the track, or one that will not parse.
   }
@@ -513,7 +513,11 @@ async function loadLyricsFor(audio: AssetRef | null, engine: Engine, cancelled: 
   if (!audio?.name) return
   const base = audio.name.replace(/\.[^./]+$/, "")
   try {
-    const res = await fetch(`/audios/${encodeURIComponent(base)}.lrc`)
+    // no-cache, not no-store: still a 304 on an unchanged file, but a lyric
+    // sheet edited between reloads always shows the edit. These are content
+    // files an author iterates on by hand, and a browser holding the previous
+    // copy reads exactly like the parser ignoring the change.
+    const res = await fetch(`/audios/${encodeURIComponent(base)}.lrc`, { cache: "no-cache" })
     if (!res.ok || cancelled()) return
     const lines = parseLRC(await res.text())
     if (cancelled()) return
@@ -596,7 +600,7 @@ export function useEngine(
             const res = await fetch(url)
             if (!res.ok) throw new Error(`${res.status} ${res.statusText} — check the path under /public`)
             const notes = parseMidi(await res.arrayBuffer())
-            engine.setScore(notes)
+            engine.setMidiNotes(notes)
             return notes.length
           }
           // The same courtesy for lyrics: fetch + parse + rasterise + install.
