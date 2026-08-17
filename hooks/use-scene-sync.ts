@@ -239,7 +239,12 @@ export function useSceneSync({
       void skybox
         .arrayBuffer()
         .then((buf) => {
-          if (!stale) engine.setBackdropEquirect(parseHDR(buf))
+          if (stale) return
+          const img = parseHDR(buf)
+          engine.setBackdropEquirect(img)
+          // The install receipt: with this line and __reze.getWorldLighting(),
+          // "is the sky lighting her" is a console question, not a guess.
+          console.info(`[skybox] HDRI world installed (${img.width}x${img.height}) — lighting:`, engine.getWorldLighting())
         })
         .catch((e) => console.error("[skybox] .hdr failed to parse:", e))
     } else {

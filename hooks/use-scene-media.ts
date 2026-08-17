@@ -108,7 +108,12 @@ export function useSceneMedia({
       if (!file) return
       try {
         const next = await probeBackdrop(file)
-        engineRef.current?.setBackdropEquirect(await createImageBitmap(file))
+        if (/\.hdr$/i.test(file.name)) {
+          const { parseHDR } = await import("reze-engine")
+          engineRef.current?.setBackdropEquirect(parseHDR(await file.arrayBuffer()))
+        } else {
+          engineRef.current?.setBackdropEquirect(await createImageBitmap(file))
+        }
         swap(setSkybox, next)
         swap(setBackdrop, null)
       } catch (e) {
