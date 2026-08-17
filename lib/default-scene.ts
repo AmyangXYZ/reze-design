@@ -72,11 +72,9 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
       },
     ],
     cameraAnimation: null,
-    // A .mid and an .lrc of the same basename sit beside this, and the score
-    // and lyrics load themselves from that pairing — see loadScoreFor /
-    // loadLyricsFor. Renaming the track without its companions is what
-    // silently leaves a score- or lyric-driven effect with nothing to read.
-    audio: USE_DEFAULT_ASSETS ? "/audios/ビビデバ.mp3" : null,
+    audio: USE_DEFAULT_ASSETS ? "/audios/One More Last Time.wav" : null,
+    midi: null,
+    lyrics: null,
     backdrop: null,
     skybox: null,
   },
@@ -88,28 +86,14 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
     dof: DEFAULT_DOF,
     outline: DEFAULT_OUTLINE,
     view: DEFAULT_VIEW,
-    // The piano demo, and the document says so itself — this list IS the
-    // composition, in layer order.
-    //
-    // Footprints is the one that stops the shot reading as a composite. The
-    // other three are all BEHIND her, so nothing in the frame says she is
-    // standing in the same room; Footprints is a foreground effect that reads
-    // scene depth and lays its marks on the floor at her own root, so it is the
-    // only one that touches her. On a dark stage her shadow has nothing to fall
-    // on, and this is what replaces it.
-    //
-    // Note Fall and Shining Stars are both ADDITIVE backgrounds so they sum
-    // rather than paint over one another; Hand Ribbon is on the particle and
-    // trail mounts; Footprints is the only foreground. Ordering is therefore
-    // free HERE, and is not in general — a full-cover backdrop must come first
-    // or it erases what is under it.
-    background: { color: "#0a0a12", effects: ["Lyrics", "Signature"] },
+    // Both are ADDITIVE-friendly and sit on different mounts — Shining Stars is
+    // a background field, Hand Ribbon is particles and trails — so neither can
+    // paint over the other and the order here is free. It is not free in
+    // general: a full-cover backdrop has to come first or it erases what is
+    // under it.
+    background: { color: "#4b004f", effects: ["Shining Stars", "Hand Ribbon"] },
     grade: { preset: "Neutral", intensity: 1 },
-    // Invisible, but still a shadow catcher: Note Fall draws a keyboard ON this
-    // plane, and a lit ground would sit in front of it and wash the keys out.
-    // Keeping `shadow` on is what lands the cast's shadow across the keys, which
-    // is most of what stops her reading as pasted over a picture.
-    ground: { color: "#c800de", size: 160, opacity: 0, shadow: true, grid: "#fafaf9", gridEnabled: false },
+    ground: { color: "#c800de", size: 160, opacity: 0.42, shadow: true, grid: "#fafaf9", gridEnabled: true },
     physics: DEFAULT_PHYSICS,
   },
 }
@@ -132,7 +116,7 @@ export const DEFAULT_SCENE: Scene = parseSceneDoc(DEFAULT_SCENE_DOC, builtinEffe
 export const EMPTY_SCENE_DOC: SceneDoc = {
   version: 1,
   name: "Untitled scene",
-  assets: { models: [], cameraAnimation: null, audio: null, backdrop: null, skybox: null },
+  assets: { models: [], cameraAnimation: null, audio: null, midi: null, lyrics: null, backdrop: null, skybox: null },
   settings: {
     camera: DEFAULT_SCENE_DOC.settings.camera,
     world: { color: "#ffffff", strength: 0.35 },

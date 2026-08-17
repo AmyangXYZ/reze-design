@@ -83,3 +83,21 @@ export function castSourceFor(
   const dir = model.source.dir
   return { pmx, resolveTexture: (path) => assetUrl(dir, path), roleOf }
 }
+
+/**
+ * A stable key for a model's extracted colour: its own source path.
+ *
+ * Stable across reloads for a site-served model (its URL) and for one unpacked
+ * from a scene bundle (its bundle path), which are the two cases a cache can
+ * help. A model uploaded this second has no path in the document yet, so it
+ * returns null and that first load extracts — the next one reads the cache.
+ * Two different models can never collide, because two different models cannot
+ * share a path.
+ */
+export function castPaletteKey(scene: Scene, id: string): string | null {
+  const source = scene.assets.models.find((m) => m.model.id === id)?.model.source
+  if (!source) return null
+  if (source.kind === "folder") return `${source.dir}/${id}`
+  if (source.kind === "zip") return source.url
+  return source.path
+}

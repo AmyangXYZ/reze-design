@@ -166,6 +166,78 @@ export function useClipDensity({
 }
 
 /**
+ * How much a FACE is doing, over time.
+ *
+ * The same idea as the motion strip, deliberately not the same measure. Morph
+ * tracks are keyed densely — lip-sync keys every few frames — so counting keys
+ * draws a flat bar, exactly the failure the bone version documents above.
+ * Summing how far the WEIGHTS travel shows the phrasing instead: a still face
+ * between lines, a burst through a sung phrase.
+ *
+ * Keyed by the morph FILE as well as the clip, because loading a morph does not
+ * change the clip's NAME — only its morph tracks — so a cache keyed by the clip
+ * alone would keep drawing the previous file's shape forever.
+ */
+export function primeMorphDensity(
+  engine: Engine | null,
+  modelId: string,
+  clipName: string,
+  morphName: string,
+): boolean {
+  const key = `${modelId}\u0000${clipName}\u0000${morphName}`
+  if (densityCache.has(key)) return true
+  const model = engine?.getModel(modelId)
+  if (!model) return false
+  const active = model.getAnimationProgress().animationName
+  const clip = (active ? model.getClip(active) : null) ?? model.getClip(clipName)
+  if (!clip || clip.frameCount <= 0) return false
+  const n = Math.max(1, Math.min(DENSITY_COLUMNS, clip.frameCount))
+  const cols = new Array<number>(n).fill(0)
+  for (const track of clip.morphTracks.values()) {
+    for (let i = 1; i < track.length; i++) {
+      const from = track[i - 1].frame
+      const to = track[i].frame
+      // Spread over the frames it takes, like the bone measure: a slow fade and
+      // a snap of the same size are different things, and banking both at one
+      // frame would draw them the same.
+      const per = Math.abs(track[i].weight - track[i - 1].weight) / Math.max(1, to - from)
+      for (let f = from; f < to; f++) cols[Math.min(n - 1, Math.floor((f / clip.frameCount) * n))] += per
+    }
+  }
+  densityCache.set(key, normalise(cols))
+  publish()
+  return true
+}
+
+export function useMorphDensity({
+  engineRef,
+  modelId,
+  clipName,
+  morphName,
+}: {
+  engineRef: RefObject<Engine | null>
+  modelId: string | null
+  clipName: string | null
+  morphName: string | null
+}): number[] | null {
+  const key = modelId && clipName && morphName ? `${modelId}\u0000${clipName}\u0000${morphName}` : null
+
+  useEffect(() => {
+    if (!key || !modelId || !clipName || !morphName || densityCache.has(key)) return
+    let tries = 0
+    const read = () => primeMorphDensity(engineRef.current, modelId, clipName, morphName)
+    if (read()) return
+    const timer = setInterval(() => {
+      if (read() || ++tries > 40) clearInterval(timer)
+    }, 300)
+    return () => clearInterval(timer)
+  }, [key, modelId, clipName, morphName, engineRef])
+
+  const snapshot = useCallback(() => (key ? (densityCache.get(key) ?? NONE) : NONE), [key])
+  return useSyncExternalStore(subscribe, snapshot, () => NONE)
+}
+
+/**
  * Where the camera's keys sit.
  *
  * Counted, not measured as movement — the opposite of the motion lane, and for

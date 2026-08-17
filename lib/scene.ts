@@ -4,6 +4,7 @@ import type { ShaderGraph, StyleGroup } from "reze-engine"
 import pkg from "@/package.json"
 import type { AppliedEffect } from "@/lib/effects"
 import { DEFAULT_DOF, DEFAULT_OUTLINE, DEFAULT_PHYSICS, DEFAULT_VIEW, type SceneSettings } from "@/lib/scene-settings"
+import { storageKey } from "@/lib/storage"
 
 export const SCENE_FORMAT_VERSION = 1
 
@@ -42,6 +43,9 @@ export type SceneStageTransform = {
 export type SceneModel = {
   model: ModelRef
   animation: AssetRef | null
+  /** An morph VMD (表情モーション) laid over the motion's own morphs.
+   *  Null is not "no morphs" — it means the motion's own morphs play. */
+  morph?: AssetRef | null
   /** Environment geometry — no motion slot, placed by `transform`, and it
    *  suppresses the ground. */
   stage?: boolean
@@ -59,6 +63,10 @@ export type SceneAssets = {
   /** Camera VMD — drives target/rotation/distance/fov, overriding `state.camera`. */
   cameraAnimation: AssetRef | null
   audio: AssetRef | null
+  /** The track's companions, named by the document — never inferred from the
+   *  audio's filename. Null is a real answer: this scene has none. */
+  midi: AssetRef | null
+  lyrics: AssetRef | null
   background: SceneBackground
   /** Asset zip these models/clips live in, or null when every path is site-served. */
   bundle: string | null
@@ -178,6 +186,7 @@ export type SceneModelDoc = {
   model: string
   /** Path to this model's motion, or null. */
   animation?: string | null
+  morph?: string | null
   /** Environment model. Absent = a cast member, which is the old shape — so
    *  every scene written before stages existed still parses as it always did. */
   stage?: boolean
@@ -196,6 +205,18 @@ export type SceneAssetsDoc = {
   /** Camera VMD — overrides `settings.camera` while enabled. */
   cameraAnimation?: string | null
   audio?: string | null
+  /**
+   * The track's companions, NAMED rather than inferred.
+   *
+   * These used to be found by filename — X.mp3 pairs with X.mid — which meant
+   * the app loaded files nobody chose, renamed the ones you did choose so they
+   * would keep pairing, and could not tell "this track has no lyrics" apart
+   * from "I have not found them yet". Every other asset here is named by the
+   * document; these are now too. Written explicitly as null when absent, so a
+   * reader never has to guess whether a missing key means empty or old.
+   */
+  midi?: string | null
+  lyrics?: string | null
   /** Two slots, as in the Assets panel. Mutually exclusive at runtime — a set
    *  backdrop wins over a set skybox, matching the editor's replace behaviour. */
   backdrop?: string | null
@@ -369,6 +390,7 @@ export function parseAssetsDoc(a: SceneAssetsDoc): SceneAssets {
     return {
       model: { id, file, source },
       animation: m.animation ? assetFromPath(m.animation) : null,
+      morph: m.morph ? assetFromPath(m.morph) : null,
       // Spread-if-present, so a cast member parses to the same shape a pre-stage
       // build produced.
       ...stageFieldsOf(m),
@@ -378,6 +400,11 @@ export function parseAssetsDoc(a: SceneAssetsDoc): SceneAssets {
     models,
     cameraAnimation: a.cameraAnimation ? assetFromPath(a.cameraAnimation) : null,
     audio: a.audio ? assetFromPath(a.audio) : null,
+    // A document written before these existed parses to null — the same value a
+    // document that deliberately has none writes. That is the whole point of
+    // naming them: "no lyrics" stops being a thing the reader has to infer.
+    midi: a.midi ? assetFromPath(a.midi) : null,
+    lyrics: a.lyrics ? assetFromPath(a.lyrics) : null,
     background: a.backdrop
       ? { kind: "backdrop", asset: assetFromPath(a.backdrop) }
       : a.skybox
@@ -395,10 +422,13 @@ export function assetsDocOf(a: SceneAssets): SceneAssetsDoc {
     models: a.models.map((m) => ({
       model: modelPath(m.model),
       animation: m.animation?.url ?? null,
+      morph: m.morph?.url ?? null,
       ...stageFieldsOf(m),
     })),
     cameraAnimation: a.cameraAnimation?.url ?? null,
     audio: a.audio?.url ?? null,
+    midi: a.midi?.url ?? null,
+    lyrics: a.lyrics?.url ?? null,
     backdrop: a.background?.kind === "backdrop" ? a.background.asset.url : null,
     skybox: a.background?.kind === "skybox" ? a.background.asset.url : null,
     bundle: a.bundle,
@@ -555,6 +585,8 @@ export function serializeSceneDoc(
     models: SceneModel[]
     cameraAnimation: AssetRef | null
     audio: AssetRef | null
+    midi: AssetRef | null
+    lyrics: AssetRef | null
     background: SceneBackground
     /** Public URL of the uploaded asset zip, or null for a bundle-free scene. */
     bundle: string | null
@@ -590,6 +622,7 @@ export function serializeSceneDoc(
         return {
           model: modelPath(m.model),
           animation: m.animation?.url ?? null,
+          morph: m.morph?.url ?? null,
           ...stageFieldsOf(m),
           ...(groups ? { materials: { groups: groups.map(toDoc), ...(hidden?.length ? { hidden } : {}) } } : {}),
         }
@@ -652,8 +685,21 @@ export function newSceneId(): string {
 // it was written under, so an old one is simply never read, and boot falls back
 // to the default scene. ".3" and older are swept below so the quota they held is
 // returned rather than stranded forever.
-const STATE_KEY = "reze-design.sceneState.4"
-const RETIRED_KEYS = ["reze-design.sceneState.3", "reze-design.sceneState.2", "reze-design.sceneState.1"]
+export const STATE_KEY = storageKey("sceneState")
+// Everything an older build wrote under this app's name. The hand-numbered
+// series predates storage.ts; nothing new joins it, because a version bump now
+// retires a whole generation of keys at once rather than one at a time.
+const RETIRED_KEYS = [
+  "reze-design.sceneState.4",
+  "reze-design.sceneState.3",
+  "reze-design.sceneState.2",
+  "reze-design.sceneState.1",
+  "reze-design.sceneAssets.1",
+  "reze-design.drafts.1",
+  "reze-design.gradeIntensity.1",
+  "reze-design.look",
+  "reze-design.fork",
+]
 
 /**
  * Drop blobs written under a vocabulary this build no longer reads.
@@ -750,7 +796,7 @@ export function storedGroupsFor(modelId: string): StyleGroup[] | null {
  * synchronously — which is what lets the boot document be decided before the engine
  * exists, with no async gap for a demo model to flash through.
  */
-const ASSETS_KEY = "reze-design.sceneAssets.1"
+export const ASSETS_KEY = storageKey("sceneAssets")
 
 export function saveSceneAssets(sceneId: string, assets: SceneAssetsDoc): void {
   try {

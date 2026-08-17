@@ -9,6 +9,7 @@
 // that needed an account would put a sign-in wall in front of experimenting.
 
 import { nameKey, normalizeName } from "@/lib/library"
+import { storageKey } from "@/lib/storage"
 import type { EffectPayload, GradePayload, GraphPayload, LibraryItem } from "@/lib/library"
 
 export type DraftKind = "grade" | "effect" | "graph"
@@ -24,7 +25,7 @@ export type DraftKind = "grade" | "effect" | "graph"
 export type Draft = LibraryItem & { sourceId?: string; forkedFromId?: string }
 export type DraftPayload = GradePayload | EffectPayload | GraphPayload
 
-const KEY = "reze-design.drafts.1"
+const KEY = storageKey("drafts")
 const EMPTY: Record<DraftKind, Draft[]> = { grade: [], effect: [], graph: [] }
 
 // Every mutation bumps a version and notifies subscribers, so two components

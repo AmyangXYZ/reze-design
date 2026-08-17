@@ -29,7 +29,7 @@ export function CastSwatch({
   const { from, to } = castPalette(palette)
   return (
     <span
-      className={cn("relative size-6 shrink-0 overflow-hidden rounded-interior", className)}
+      className={cn("relative size-5 shrink-0 overflow-hidden rounded-interior", className)}
       // The deep stop lands at 72%, not 100%: past that the square is solid
       // colour. Running the ramp to the far corner left the whole swatch in
       // transition, which reads as pale whatever the two ends are.

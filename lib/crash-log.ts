@@ -14,6 +14,9 @@ const CAPACITY = 80
 /** Long enough to hold a WebGPU validation message; short enough to paste. */
 const MAX_ENTRY = 600
 
+import { ASSETS_KEY, STATE_KEY } from "@/lib/scene"
+import { storageKey } from "@/lib/storage"
+
 export type LogEntry = { at: number; level: "warn" | "error"; text: string }
 
 const ring: LogEntry[] = []
@@ -112,15 +115,16 @@ export type StorageSnapshot = {
   quota: string
 }
 
-const SCENE_STATE_KEY = "reze-design.sceneState.3"
-const SCENE_ASSETS_KEY = "reze-design.sceneAssets.1"
-const REPORTED_KEYS = [SCENE_STATE_KEY, SCENE_ASSETS_KEY, "reze-design.drafts.1", "reze-design.fork"]
+// Imported, never restated: this list drifted once already — it profiled
+// sceneState.3 while the app had moved on to .4, so every crash report
+// described a key nobody was writing.
+const REPORTED_KEYS = [STATE_KEY, ASSETS_KEY, storageKey("drafts"), storageKey("fork")]
 
 /** A one-line summary of a stored blob: what it is, never what is in it. */
 function describe(key: string, raw: string): string {
   try {
     const v = JSON.parse(raw) as Record<string, unknown>
-    if (key === SCENE_STATE_KEY) {
+    if (key === STATE_KEY) {
       // `id`, not `sceneId` — saveSceneState spreads SceneState, whose field is
       // `id`. The assets record wraps its doc and keys it `sceneId`; reading the
       // wrong one printed "scene ?" on the first report this ever produced, and
@@ -128,7 +132,7 @@ function describe(key: string, raw: string): string {
       const groups = Object.keys((v.groups as object) ?? {}).length
       return `scene ${String(v.id ?? "?")} · v${String(v.version ?? "?")} · ${groups} styled model(s)`
     }
-    if (key === SCENE_ASSETS_KEY) {
+    if (key === ASSETS_KEY) {
       const assets = (v.assets ?? {}) as Record<string, unknown>
       const models = (assets.models as unknown[] | undefined)?.length ?? 0
       return `scene ${String(v.sceneId ?? "?")} · ${models} model(s) · stage ${assets.stage ? "yes" : "no"} · camera ${

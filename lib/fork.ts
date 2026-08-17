@@ -9,7 +9,7 @@
 // target re-forked on every refresh, overwriting whatever had been done since:
 // uploads vanished, a reset sprang back to the fork, and the scene loaded twice.
 
-const KEY = "reze-design.fork"
+const KEY = storageKey("fork")
 
 /**
  * What the viewer hands over.
@@ -21,6 +21,8 @@ const KEY = "reze-design.fork"
  * bundle had not finished loading, in which case the editor opens the scene the
  * ordinary way.
  */
+import { storageKey } from "@/lib/storage"
+
 export type ForkHandoff = { scene: string; bundle?: string }
 
 export function setForkTarget(sceneId: string, bundleId?: string): void {

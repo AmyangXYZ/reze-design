@@ -17,10 +17,10 @@ export const sceneFiles = {
   /** Keyed by engine model id. */
   models: new Map<string, ModelFiles>(),
   audio: null as File | null,
-  /** The track's companions, retained WHEREVER they loaded from — the site
-   *  pair, or a published bundle. Kept so collect can pack them beside the
-   *  track: pair-by-name is the whole contract, and a scene that depended on
-   *  them being site-served only worked for the site's own tracks. */
+  /** The track's companions, retained WHEREVER they loaded from — a served
+   *  path, or a published bundle. Kept so collect can pack them: the document
+   *  names them, and a scene that depended on them being site-served only
+   *  worked for the site's own tracks. */
   score: null as File | null,
   lyrics: null as File | null,
   camera: null as File | null,

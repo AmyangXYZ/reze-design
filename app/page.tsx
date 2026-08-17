@@ -44,6 +44,10 @@ import {
   ImageDown,
   Lightbulb,
   Music,
+  ListMusic,
+  Captions,
+  Footprints,
+  Smile,
   Mountain,
   PersonStanding,
   Plus,
@@ -100,12 +104,13 @@ import { FloatingPanel, type Rect } from "@/components/editor/floating-panel"
 import { LoadingPill, useLoadingLabel } from "@/components/editor/loading-pill"
 import { VERSION_LABEL } from "@/lib/version"
 import { ChoiceList } from "@/components/ui/choice-list"
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { ColorField } from "@/components/color-picker"
 import { useAudioClock } from "@/hooks/use-audio-clock"
 import { primeAudioAnalysis } from "@/lib/audio-analysis"
 import { TimelineLanes } from "@/components/scene/timeline-lanes"
 import { primeClipDensity } from "@/hooks/use-lane-graphs"
-import { useEngine } from "@/hooks/use-engine"
+import { useEngine, type EngineModelInfo } from "@/hooks/use-engine"
 import { useRenderFraming } from "@/hooks/use-render-framing"
 import { useSceneSync } from "@/hooks/use-scene-sync"
 import { useBrowseSurface } from "@/hooks/use-browse-surface"
@@ -133,7 +138,7 @@ import { buildZip } from "@/lib/bundle"
 import { resolveSceneRefs } from "@/lib/resolve-refs"
 import { effectRef, gradeRef, graphRef, unpublishedUses } from "@/lib/refs"
 import { ShareSceneDialog, type ScenePublishSource } from "@/components/editor/share-scene"
-import { clearLocalBundle, loadLocalBundle, saveLocalBundle } from "@/lib/asset-store"
+import { clearLocalBundle, loadCastPalette, loadLocalBundle, saveCastPalette, saveLocalBundle } from "@/lib/asset-store"
 import { dictionaries, LOCALES, LOCALE_LABELS, useI18n, useT, type Dictionary, type Locale } from "@/lib/i18n"
 import { expandUploadFiles, unzipToFiles } from "@/lib/uploads"
 import { GRADE_PRESETS, gradeSpec, NEUTRAL_SPEC, NEW_GRADE_SPEC, recallIntensity, rememberIntensity } from "@/lib/grade"
@@ -160,7 +165,7 @@ import {
 import { probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
 import type { ExportProgress } from "@/lib/video-export"
 import { castColour } from "@/lib/model-colour"
-import { castSourceFor } from "@/lib/cast-source"
+import { castPaletteKey, castSourceFor } from "@/lib/cast-source"
 import { NEUTRAL_PALETTE, type CastPaletteId } from "@/lib/cast-palette"
 import { relFilePath, sceneFiles } from "@/lib/scene-files"
 import { cancelDraftWrites, createDraft, isDraft, loadDrafts, updateDraft, updateDraftSoon } from "@/lib/drafts"
@@ -180,6 +185,7 @@ import {
 } from "reze-engine"
 import { WIND_MAX, windFreqFromSlider, windSliderFromFreq, type SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
+import { storageKey } from "@/lib/storage"
 
 /** Floating chrome — the 0.3.x chrome's `floating`, taken through the surface
  *  token so the pills and the panel cannot drift apart. */
@@ -239,7 +245,7 @@ const TIMELINE_EDITOR = true
 const FRAME_ASPECT_TOL = 1.03
 
 /** Palette recents, persisted — Suggestions should remember across sessions. */
-const RECENTS_KEY = "reze-design.palette-recents"
+const RECENTS_KEY = storageKey("palette-recents")
 
 /**
  * Whether this person has ever opened the gallery.
@@ -249,7 +255,7 @@ const RECENTS_KEY = "reze-design.palette-recents"
  * has not found the gallery has no way to know it exists, and a reminder that
  * resets every session is a reminder that never stops.
  */
-const GALLERY_SEEN_KEY = "reze-design.gallerySeen"
+const GALLERY_SEEN_KEY = storageKey("gallerySeen")
 
 /**
  * Whether the left dock is open.
@@ -260,7 +266,7 @@ const GALLERY_SEEN_KEY = "reze-design.gallerySeen"
  * re-collapses it every single time the page loads otherwise, which is a click
  * that means "you already knew this".
  */
-const DOCK_OPEN_KEY = "reze-design.dockOpen"
+const DOCK_OPEN_KEY = storageKey("dockOpen")
 
 /** The repository. It is also where the manuals live, linked from the README —
  *  so the app carries ONE outbound link rather than a help menu that has to be
@@ -294,6 +300,15 @@ function seedAnims(scene: Scene): Record<string, { name: string; src: File | str
     // that holds a clip becomes the MASTER when it was uploaded first, which
     // hands the audio clock and the export a track that is not the dance.
     if (entry.animation && !entry.stage) seed[entry.model.id] = { name: entry.animation.name, src: entry.animation.url }
+  return seed
+}
+
+/** The morph rows' seed. Same rule as seedAnims, minus the master logic:
+ *  an morph never decides who the clock follows. */
+function seedMorphs(scene: Scene): Record<string, { name: string; src: File | string }> {
+  const seed: Record<string, { name: string; src: File | string }> = {}
+  for (const entry of scene.assets.models)
+    if (entry.morph && !entry.stage) seed[entry.model.id] = { name: entry.morph.name, src: entry.morph.url }
   return seed
 }
 
@@ -436,7 +451,7 @@ const DOCK_CONTROLS: {
   { id: "grid", en: "Grid lines", zh: "网格", row: "stage", stageTab: "ground", value: (v) => sw(v.settings.ground.gridEnabled, v.t) },
   { id: "bg-color", en: "Background color", zh: "背景颜色", row: "stage", stageTab: "background", value: (v) => v.settings.background.color },
   { id: "bg-image", en: "Background image", zh: "背景图片", row: "stage", stageTab: "background", keywords: ["backdrop", "photo"], value: (v) => v.backdrop ?? v.t.lab.ctl.none },
-  { id: "bg-360", en: "360° background", zh: "360 全景背景", row: "stage", stageTab: "background", keywords: ["360", "skybox", "panorama", "equirect", "全景"], value: (v) => v.dome ?? v.t.lab.ctl.none },
+  { id: "bg-360", en: "Skybox", zh: "天空盒", row: "stage", stageTab: "background", keywords: ["360", "skybox", "panorama", "equirect", "全景"], value: (v) => v.dome ?? v.t.lab.ctl.none },
   { id: "effect", en: "Effect", zh: "特效", row: "effect", keywords: ["wgsl", "stars", "shader", "背景特效"], value: (v) => v.effect ?? v.t.lab.ctl.none },
   { id: "grade-preset", en: "Grade preset", zh: "调色预设", row: "post", postTab: "grade", keywords: ["color", "look", "后期"], value: (v) => v.gradeName },
   { id: "grade-intensity", en: "Grade intensity", zh: "调色强度", row: "post", postTab: "grade", value: (v) => dec2(v.settings.grade.intensity) },
@@ -991,9 +1006,9 @@ function draftOriginOf(community: { id: string; mine: boolean }[], editedId: str
 // keys the shipped editor writes: it is one panel per kind, and dragging the
 // node editor somewhere on one route only to find it back in the middle on the
 // other would be the layout forgetting something it plainly knows.
-const GRAPH_PANEL_KEY = "reze-design.graphPanel"
-const GRADE_PANEL_KEY = "reze-design.gradePanel"
-const WGSL_PANEL_KEY = "reze-design.wgslPanel"
+const GRAPH_PANEL_KEY = storageKey("graphPanel")
+const GRADE_PANEL_KEY = storageKey("gradePanel")
+const WGSL_PANEL_KEY = storageKey("wgslPanel")
 
 /** First-open default: bottom-centred, clear of both docks and the transport. */
 function defaultPanelRect(): Rect {
@@ -1134,7 +1149,9 @@ function ClipRow({
         <CastLine
           text={
             clip ? (
-              <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{clip}</span>
+              <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground" title={clip}>
+                {clip}
+              </span>
             ) : (
               <UploadInvite label={empty} onClick={onPick} aria={t.lab.aria.upload(kind, of)} />
             )
@@ -1159,16 +1176,82 @@ function ClipRow({
 // motion line's leading icon slot. A skeleton that is not the shape of what
 // replaces it is just a differently-timed layout shift — measure the real row
 // before touching this one.
-function CastRowSkeleton() {
+/**
+ * A group's "+": the optional slots it can still take, as a menu.
+ *
+ * ALWAYS a menu, even at one item. Cast's + adds the only thing a cast can
+ * take and so opens the file picker directly; these groups hold several kinds,
+ * and a control that sometimes opens a menu and sometimes a file dialog is one
+ * nobody can predict. A slot already filled is not offered — its own row is
+ * where it gets replaced — so the menu shrinks as the scene fills up and goes
+ * away entirely when there is nothing left to attach.
+ */
+function AttachMenu({
+  label,
+  items,
+  disabled,
+}: {
+  label: string
+  items: { key: string; label: string; onPick: () => void }[]
+  /** Nothing here can act before the engine exists — every installer behind
+   *  these rows needs it. Gated with the same flag Cast's + uses, so the three
+   *  become live together instead of one of them offering an action that
+   *  silently does nothing. */
+  disabled?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  if (disabled || items.length === 0) {
+    return (
+      <span className="-mr-1 flex items-center">
+        <CastAction icon={Plus} label={label} onClick={() => {}} disabled />
+      </span>
+    )
+  }
   return (
-    <div className="flex items-center gap-2.5 px-4 py-1.5">
-      <Skeleton className="size-6 shrink-0 rounded-interior" />
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="flex h-5 items-center">
-          <Skeleton className="h-3 w-28 rounded-chip" />
+    <Popover open={open} onOpenChange={setOpen}>
+      {/* Anchor rather than Trigger: CastAction stops click propagation, because
+          it lives in rows that select on click — a Trigger would never see it. */}
+      <PopoverAnchor asChild>
+        <span className="-mr-1 flex items-center">
+          <CastAction icon={Plus} label={label} onClick={() => setOpen((o) => !o)} />
         </span>
-        <span className="flex h-5 items-center">
-          <Skeleton className="h-2.5 w-20 rounded-chip" />
+      </PopoverAnchor>
+      <PopoverContent
+        align="end"
+        sideOffset={6}
+        className="w-44 rounded-xl border-white/10 bg-zinc-950/95 p-1 shadow-float backdrop-blur-xs"
+      >
+        <ChoiceList>
+          {items.map((i) => (
+            <button
+              key={i.key}
+              className="block w-full cursor-pointer truncate rounded-lg px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+              onClick={() => {
+                setOpen(false)
+                i.onPick()
+              }}
+            >
+              {i.label}
+            </button>
+          ))}
+        </ChoiceList>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function CastRowSkeleton({ slot }: { slot: number }) {
+  return (
+    <div className="flex h-8 items-center gap-2.5 px-4">
+      <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{slot}</span>
+      <Skeleton className="size-5 shrink-0 rounded-interior" />
+      {/* ONE line, because the row it stands in for is one line: the motion
+          moved to the Clips group, and a two-line skeleton resolving into a
+          one-line row makes everything under it jump on arrival — the exact
+          drift the skeleton exists to prevent. */}
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="relative -mx-1 flex h-5 items-center rounded-interior px-1">
+          <Skeleton className="h-3 w-28 rounded-chip" />
         </span>
       </span>
     </div>
@@ -1221,6 +1304,14 @@ export default function Lab() {
     bundleFiles,
     loadVmdFile,
     loadVmdUrl,
+    loadMorphFile,
+    loadMorphUrl,
+    installMidiFile,
+    installLyricsFile,
+    midiClip,
+    lyricsClip,
+    clearMidi,
+    clearLyrics,
     error,
     groupsByModel,
     addModelFromFiles,
@@ -1260,11 +1351,17 @@ export default function Lab() {
   const [animByModel, setAnimByModel] = useState<Record<string, { name: string; src: File | string }>>(() =>
     seedAnims(scene),
   )
+  const [morphByModel, setMorphByModel] = useState<Record<string, { name: string; src: File | string }>>(() =>
+    seedMorphs(scene),
+  )
   const animRef = useRef(animByModel)
   useEffect(() => {
     animRef.current = animByModel
   })
   const vmdInput = useRef<HTMLInputElement | null>(null)
+  const morphInput = useRef<HTMLInputElement | null>(null)
+  const midiInput = useRef<HTMLInputElement | null>(null)
+  const lyricsInput = useRef<HTMLInputElement | null>(null)
   // Which model the next .vmd pick lands on, set before the dialog opens.
   const animTarget = useRef<string | null>(null)
   const pickAnimation = (id: string) => {
@@ -1279,6 +1376,54 @@ export default function Lab() {
       return next
     })
   }
+  const morphTarget = useRef<string | null>(null)
+  const pickMorph = (id: string) => {
+    morphTarget.current = id
+    morphInput.current?.click()
+  }
+  const removeMorph = (id: string) => {
+    setMorphByModel((prev) => {
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+    // Putting the motion's OWN morphs back means rebuilding its clip: the
+    // morph overwrote them, and nothing else remembers what they were.
+    const anim = animRef.current[id]
+    if (!anim) return
+    void (typeof anim.src === "string" ? loadVmdUrl(id, anim.name, anim.src) : loadVmdFile(id, anim.src))
+  }
+  /** A cast member's own clips: the motion, and the morph that dresses it.
+   *  One definition for both layouts — tabbed and single — so the two cannot
+   *  drift into disagreeing about what a character's clips are. */
+  const castClipRows = (m: EngineModelInfo) => (
+    <>
+      <ClipRow
+        icon={Footprints}
+        clip={animByModel[m.id]?.name ?? null}
+        empty={t.lab.uploadAnimation}
+        kind={t.lab.kinds.motion}
+        of={displayName(m.file)}
+        onPick={() => pickAnimation(m.id)}
+        onRemove={() => removeAnimation(m.id)}
+      />
+      {/* Only once there IS one. Motion and camera keep empty rows because
+          almost every scene wants them, and the empty row is the invite; a
+          morph is occasional, so the group's + is its door and a permanent
+          empty row would just be a slot most scenes never fill. */}
+      {morphByModel[m.id] && (
+        <ClipRow
+          icon={Smile}
+          clip={morphByModel[m.id]?.name ?? null}
+          empty={t.lab.uploadMorph}
+          kind={t.lab.kinds.morph}
+          of={displayName(m.file)}
+          onPick={() => pickMorph(m.id)}
+          onRemove={() => removeMorph(m.id)}
+        />
+      )}
+    </>
+  )
 
   // loadSceneInto deliberately leaves ANIMATED models hidden — it reveals only
   // the ones with no clip, so the first visible frame wears the motion's first
@@ -1336,11 +1481,31 @@ export default function Lab() {
         // Reveal even if the clip failed — a bind-pose model beats no model.
         engineRef.current?.setModelTransform(entry.model.id, { visible: true })
       }
+      // Morphs AFTER every motion, in their own pass: loading one merges
+      // into the motion's clip, and a motion arriving later rebuilds that clip
+      // and drops the merge. One pass each keeps the order guaranteed rather
+      // than incidental.
+      for (const entry of scene.assets.models) {
+        const expr = entry.morph
+        if (!expr || entry.stage) continue
+        const packed = bundleFile(expr.url)
+        const loaded = await (packed
+          ? loadMorphFile(entry.model.id, packed)
+          : loadMorphUrl(entry.model.id, expr.name, expr.url))
+        if (cancelled) return
+        // Same rule as the motion above: a failed load keeps the claim, because
+        // the collector writes the document from this state.
+        if (!loaded) {
+          console.warn(`[scene] morph failed to load for ${entry.model.id}, keeping its claim:`, expr.name)
+          continue
+        }
+        setMorphByModel((prev) => ({ ...prev, [entry.model.id]: { name: expr.name, src: packed ?? expr.url } }))
+      }
     })()
     return () => {
       cancelled = true
     }
-  }, [ready, scene, bundleFile, loadVmdFile, loadVmdUrl, engineRef])
+  }, [ready, scene, bundleFile, loadVmdFile, loadVmdUrl, loadMorphFile, loadMorphUrl, engineRef])
   // Models that actually carry a clip — AnimPlayer drives the longest as master.
   /**
    * The CAST: everything loaded that is not scenery.
@@ -1494,6 +1659,13 @@ export default function Lab() {
   // motion rows: useEngine has already handed the clip to the engine by the time
   // the chrome renders, so the name is known and there is nothing to wait for.
   const [cameraClip, setCameraClip] = useState<string | null>(scene.assets.cameraAnimation?.name ?? null)
+  // Which cast member the Clips tabs are showing. Only rendered as tabs when
+  // there are several — one model is just its rows.
+  const [clipTab, setClipTab] = useState<string | null>(null)
+  /** The cast member the Clips group is showing. Falls back to the first, so a
+   *  selection naming a model that has since been removed never leaves the
+   *  group blank — the tab is a view, not a second source of truth. */
+  const clipModel = cast.find((m) => m.id === clipTab) ?? cast[0] ?? null
   const cameraInput = useRef<HTMLInputElement | null>(null)
   const removeCamera = () => {
     sceneFiles.camera = null
@@ -1524,7 +1696,8 @@ export default function Lab() {
   const musicInput = useRef<HTMLInputElement | null>(null)
   const setMusicFile = useCallback((file: File) => {
     sceneFiles.audio = file
-    // A new track's companions are whatever pairs with ITS name, not the last one's.
+    // The companions belonged to the track being replaced — a new song's notes
+    // and words are not this one's, so the slots empty with it.
     sceneFiles.score = null
     sceneFiles.lyrics = null
     setMusicClip((prev) => {
@@ -1562,6 +1735,10 @@ export default function Lab() {
   const clipByModel = useMemo(
     () => Object.fromEntries(Object.entries(animByModel).map(([id, a]) => [id, a?.name])),
     [animByModel],
+  )
+  const morphNameByModel = useMemo(
+    () => Object.fromEntries(Object.entries(morphByModel).map(([id, a]) => [id, a?.name])),
+    [morphByModel],
   )
 
   const scrubRef = useRef<Scrub | null>(null)
@@ -1958,20 +2135,31 @@ export default function Lab() {
     return out
   }, [effectDrafts, bgEffects, communityEffects, t])
 
+  /** The row a pick should REPLACE, or null when a pick means "add". Set by a
+   *  row's replace button; both doors onto the list read it, so replacing works
+   *  from the dock picker and from the library alike. */
+  const [replaceTarget, setReplaceTarget] = useState<number | null>(null)
   const pickEffect = useCallback(
     (name: string) => {
       // Picking what is ALREADY applied takes it off — the tick is a tick you
       // can click off, which is also what spares the list a permanent "None"
       // row at the top. With several applied it is per effect, so this is now
       // membership rather than replacement.
-      if (bgEffects.some((e) => e.name === name)) {
+      if (replaceTarget === null && bgEffects.some((e) => e.name === name)) {
         setBgEffects((list) => list.filter((e) => e.name !== name))
         return
       }
       // APPENDED, so a newly picked effect lands on top of what is already
       // there. Where it belongs is the list's business, and the Background row
       // is where that gets said.
-      const add = (e: AppliedEffect) => setBgEffects((list) => [...list, e])
+      const add = (e: AppliedEffect) =>
+        setBgEffects((list) => {
+          if (replaceTarget === null) return [...list, e]
+          const next = [...list]
+          next[replaceTarget] = e
+          return next
+        })
+      if (replaceTarget !== null) setReplaceTarget(null)
       // Drafts and community rows carry their own shader — they apply by value.
       const own = [...effectDrafts, ...communityEffects].find((e) => e.name === name)
       if (own) {
@@ -1983,7 +2171,7 @@ export default function Lab() {
       const def = EFFECTS.find((e) => e.name === name)
       if (def) add(applyDefaults(def))
     },
-    [effectDrafts, communityEffects, bgEffects],
+    [effectDrafts, communityEffects, bgEffects, replaceTarget],
   )
   /** What the row, the picker and the palette all say at rest.
    *
@@ -1992,19 +2180,8 @@ export default function Lab() {
    *  Several are COUNTED, because the list below is where they are read and no
    *  one of them is the answer. */
   const effectSummary =
-    bgEffects.length === 0 ? null : bgEffects.length === 1 ? bgEffects[0].name : t.lab.ctl.shadersN(bgEffects.length)
+    bgEffects.length === 0 ? null : bgEffects.length === 1 ? bgEffects[0].name : t.lab.ctl.effectsN(bgEffects.length)
 
-  /** One layer up or down. Up is TOWARD THE VIEWER, matching the row order:
-   *  later in the list draws later, over what came before. */
-  const moveEffect = (from: number, delta: number) =>
-    setBgEffects((list) => {
-      const to = from + delta
-      if (to < 0 || to >= list.length) return list
-      const next = [...list]
-      const [moved] = next.splice(from, 1)
-      next.splice(to, 0, moved)
-      return next
-    })
 
   /** The edited effect back into the list it came from — IN PLACE when it was
    *  already applied, appended when the session created it. Editing a layer
@@ -2074,9 +2251,6 @@ export default function Lab() {
    *  Only meaningful with ONE applied: "Edit shader" cannot say which of four
    *  it means. With several, each row in the Background stack carries its own
    *  edit, which can. */
-  const editCurrentEffect = () => {
-    if (bgEffects.length === 1) openEffectEditor(bgEffects[0])
-  }
   /** Close request from the editor. Dirty → prompt; clean → the preview simply
    *  ends, and whatever was applied before the session comes back. */
   const requestCloseEffectEditor = async (code: string) => {
@@ -2868,13 +3042,26 @@ export default function Lab() {
     for (const m of models) {
       if (castStarted.current.has(m.id)) continue
       castStarted.current.add(m.id)
-      const source = castSourceFor(m.id, scene, groupsByModel[m.id], bundleFiles())
-      void (source ? castColour(source) : Promise.resolve(null)).then((palette) =>
+      const key = castPaletteKey(scene, m.id)
+      void (async () => {
+        // Remembered from a previous load, if this model has been seen before.
+        // Extraction decodes every texture the model carries, which is why the
+        // swatch used to arrive a beat after the row it sits in.
+        if (key) {
+          const cached = await loadCastPalette(key)
+          if (cached) {
+            setPalettes((p) => ({ ...p, [m.id]: cached as CastPaletteId }))
+            return
+          }
+        }
+        const source = castSourceFor(m.id, scene, groupsByModel[m.id], bundleFiles())
+        const palette = source ? await castColour(source) : null
         // Unconditional: the started-set already dedupes, and a re-extraction
         // after a model replace must be able to overwrite the transplanted
         // colour it started from.
-        setPalettes((p) => ({ ...p, [m.id]: palette ?? NEUTRAL_PALETTE })),
-      )
+        setPalettes((p) => ({ ...p, [m.id]: palette ?? NEUTRAL_PALETTE }))
+        if (key && palette) void saveCastPalette(key, palette)
+      })()
     }
   }, [models, scene, groupsByModel, bundleFiles])
 
@@ -3157,7 +3344,16 @@ export default function Lab() {
     Object.entries(animByModel)
       .map(([k, v]) => `${k}:${v.name}`)
       .join("|"),
+    // The morph VMDs, and the track's two companions. Every FILE that can
+    // land in the bundle has to be here: the fingerprint is what decides whether
+    // the bundle is rewritten, so a file it cannot see is a file that never
+    // reaches IndexedDB and is gone on the next refresh.
+    Object.entries(morphByModel)
+      .map(([k, v]) => `${k}:${v.name}`)
+      .join("|"),
     musicClip?.name ?? "",
+    midiClip ?? "",
+    lyricsClip ?? "",
     // One slot, two kinds: swapping a flat image for a 360 of the same name is
     // still a different scene, so the kind travels in the fingerprint.
     bgImage ? `${bgImage.dome ? "skybox" : "backdrop"}:${bgImage.name}` : "",
@@ -3200,15 +3396,27 @@ export default function Lab() {
             },
           ]),
         ),
+        morphAnims: Object.fromEntries(
+          Object.entries(morphByModel).map(([id2, a]): [string, CollectedAnim] => [
+            id2,
+            {
+              name: a.name,
+              source:
+                typeof a.src === "string" ? { kind: "url", name: a.name, url: a.src } : { kind: "file", file: a.src },
+            },
+          ]),
+        ),
         camera: { name: cameraClip, booted: scene.assets.cameraAnimation },
         audio: { name: musicClip?.name ?? null, url: musicClip?.url ?? null },
+        midi: { name: midiClip, booted: scene.assets.midi },
+        lyrics: { name: lyricsClip, booted: scene.assets.lyrics },
         // ONE image slot here against main's two: which row it was uploaded from
         // is what makes it a dome.
         background: bgImage
           ? { kind: bgImage.dome ? "skybox" : "backdrop", name: bgImage.name, file: bgImage.file }
           : null,
       }),
-    [models, stages, scene, bundleFiles, animByModel, cameraClip, musicClip, bgImage],
+    [models, stages, scene, bundleFiles, animByModel, morphByModel, cameraClip, musicClip, midiClip, lyricsClip, bgImage],
   )
 
   // Bytes land FIRST, then the doc: a doc pointing at a bundle that never finished
@@ -3253,6 +3461,8 @@ export default function Lab() {
             models: slots.models,
             cameraAnimation: slots.cameraAnimation,
             audio: slots.audio,
+            midi: slots.midi,
+            lyrics: slots.lyrics,
             background: slots.background,
             bundle: bundleUrl,
           }),
@@ -3303,6 +3513,15 @@ export default function Lab() {
     // happened to use that grade at.
     rememberIntensity(next.state.settings.grade.preset, next.state.settings.grade.intensity)
     setAnimByModel(seedAnims(next))
+    setMorphByModel(seedMorphs(next))
+    // The companions, cleared HERE rather than trusted to clear themselves. The
+    // loaders empty them on entry and refill them, which is correct only when
+    // the loaders actually run — and they are fired from swapScene, which can
+    // bail on a superseded swap or a missing engine. Then the rows keep the
+    // previous scene's names and the engine keeps its data, which is exactly a
+    // reset that looks like it did nothing. This is the document speaking.
+    clearMidi()
+    clearLyrics()
     setCameraClip(next.assets.cameraAnimation?.name ?? null)
     setMusicClip((prev) => {
       dropMusicUrl(prev)
@@ -3415,6 +3634,21 @@ export default function Lab() {
     // A NEW scene deliberately does NOT do this: it has no cast to disagree
     // with, so the style you have been working in carries.
     saveLookPref(DEFAULT_LOOK)
+    // RESET IS THE DOCUMENT, not the document plus whatever this session
+    // accumulated. Every asset the default scene names is site-served, so a
+    // retained upload or a local bundle can only be residue — and residue here
+    // does not sit quietly: companions pair by NAME, so a .mid or .lrc left in
+    // the bundle is re-adopted by the very next load and reads as a reset that
+    // did not work. Reset keeps the scene's IDENTITY (that is what makes it a
+    // reset rather than a new scene) and the stored records are keyed by it, so
+    // each one has to be overwritten rather than left to be found again.
+    sceneFiles.models.clear()
+    sceneFiles.audio = null
+    sceneFiles.score = null
+    sceneFiles.lyrics = null
+    sceneFiles.camera = null
+    void clearLocalBundle()
+    saveSceneAssets(scene.state.id, assetsDocOf(DEFAULT_SCENE.assets))
     void applyLabScene({ ...DEFAULT_SCENE, state: { ...DEFAULT_SCENE.state, id: scene.state.id } })
   }
 
@@ -3443,6 +3677,8 @@ export default function Lab() {
         models: slots.models,
         cameraAnimation: slots.cameraAnimation,
         audio: slots.audio,
+        midi: slots.midi,
+        lyrics: slots.lyrics,
         background: slots.background,
         bundle,
         name: sceneName,
@@ -4019,6 +4255,48 @@ export default function Lab() {
       />
 
       <input
+        ref={morphInput}
+        type="file"
+        accept=".vmd"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          const id = morphTarget.current
+          e.target.value = ""
+          if (!file || !id) return
+          void loadMorphFile(id, file).then((name) => {
+            if (name) setMorphByModel((prev) => ({ ...prev, [id]: { name, src: file } }))
+          })
+        }}
+      />
+
+      <input
+        ref={midiInput}
+        type="file"
+        accept=".mid,.midi"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          e.target.value = ""
+          if (!file) return
+          void installMidiFile(file)
+        }}
+      />
+
+      <input
+        ref={lyricsInput}
+        type="file"
+        accept=".lrc"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          e.target.value = ""
+          if (!file) return
+          void installLyricsFile(file)
+        }}
+      />
+
+      <input
         ref={vmdInput}
         type="file"
         accept=".vmd"
@@ -4082,7 +4360,15 @@ export default function Lab() {
         // takes it off — the same membership rule as the dock's picker, since
         // they are two doors onto one list.
         onApply={(e) =>
-          setBgEffects((list) => (list.some((x) => x.id === e.id) ? list.filter((x) => x.id !== e.id) : [...list, e]))
+          setBgEffects((list) => {
+            if (replaceTarget !== null) {
+              const next = [...list]
+              next[replaceTarget] = e
+              setReplaceTarget(null)
+              return next
+            }
+            return list.some((x) => x.id === e.id) ? list.filter((x) => x.id !== e.id) : [...list, e]
+          })
         }
         onRemove={(id) => setBgEffects((list) => list.filter((e) => e.id !== id))}
         onRenamed={(oldName, newName) =>
@@ -4401,14 +4687,25 @@ export default function Lab() {
               controls) the stack is genuinely taller than the viewport, and
               without the pad Physics sat flush in the corner radius and read as
               broken rather than as scrollable. */}
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            <StackGroup label={t.lab.groups.cast} domId="group-cast">
+          <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <StackGroup
+              label={t.lab.groups.cast}
+              domId="group-cast"
+              // On the label's line rather than under the rows: a full-width
+              // button is a row's worth of height spent on an action taken
+              // once or twice a scene, and the dock is one column deep.
+              action={
+                <span className="-mr-1 flex items-center">
+                  <CastAction icon={Plus} label={t.lab.addModel} onClick={() => pickModel({ mode: "add" })} disabled={!ready} />
+                </span>
+              }
+            >
               {/* The row appears WITH the model — same commit as `models`, so
                   the canvas and the dock move as one. Only the swatch pends:
                   extraction takes a few hundred ms, and a whole-row skeleton
                   made every load feel like two arrivals. The square upgrades in
                   place; nothing else moves. */}
-              {cast.map((m) => (
+              {cast.map((m, slot) => (
                 // Two lines, one character, and a hover EACH. The swatch sits
                 // outside both regions and centres against the pair — it
                 // identifies the model, it is not something you act on. Each
@@ -4428,18 +4725,19 @@ export default function Lab() {
                   // row does not own. The tint still marks which model the
                   // open panel is editing.
                   className={cn(
-                    "flex items-center gap-2.5 px-4 py-1.5 transition-colors",
+                    "flex h-8 items-center gap-2.5 px-4 transition-colors",
                     inspectedId === m.id && "bg-white/[0.06]",
                   )}
                 >
+                  <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{slot + 1}</span>
                   {palettes[m.id] ? (
                     <CastSwatch palette={palettes[m.id]} />
                   ) : (
-                    <Skeleton className="size-6 shrink-0 rounded-interior" />
+                    <Skeleton className="size-5 shrink-0 rounded-interior" />
                   )}
                   <span className="flex min-w-0 flex-1 flex-col">
                     <CastLine
-                      text={<span className="min-w-0 flex-1 truncate text-sm">{displayName(m.file)}</span>}
+                      text={<span className="min-w-0 flex-1 truncate text-[13px]" title={displayName(m.file)}>{displayName(m.file)}</span>}
                       actions={
                         <>
                           <CastAction
@@ -4456,41 +4754,6 @@ export default function Lab() {
                         </>
                       }
                     />
-                    <CastLine
-                      text={
-                        animByModel[m.id] ? (
-                          <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">
-                            {animByModel[m.id].name}
-                          </span>
-                        ) : (
-                          <UploadInvite
-                            label={t.lab.uploadAnimation}
-                            onClick={() => pickAnimation(m.id)}
-                            aria={t.lab.aria.uploadAnimationFor(displayName(m.file))}
-                          />
-                        )
-                      }
-                      actions={
-                        <>
-                          <CastAction
-                            icon={animByModel[m.id] ? RefreshCw : Upload}
-                            label={
-                              animByModel[m.id]
-                                ? t.lab.aria.replaceAnimationFor(displayName(m.file))
-                                : t.lab.aria.uploadAnimationFor(displayName(m.file))
-                            }
-                            onClick={() => pickAnimation(m.id)}
-                          />
-                          <CastAction
-                            icon={X}
-                            danger
-                            disabled={!animByModel[m.id]}
-                            label={t.lab.aria.deleteAnimationOn(displayName(m.file))}
-                            onClick={() => removeAnimation(m.id)}
-                          />
-                        </>
-                      }
-                    />
                   </span>
                 </div>
               ))}
@@ -4498,40 +4761,81 @@ export default function Lab() {
                   models arrive in document order, so what is outstanding is
                   always the tail of the list. */}
               {Array.from({ length: pendingCast }, (_, i) => (
-                <CastRowSkeleton key={`pending-${i}`} />
+                <CastRowSkeleton key={`pending-${i}`} slot={cast.length + i + 1} />
               ))}
               {/* Always standing, under the rows. It was a hover-only + on the
                   group label back when one model was the normal scene; a cast is
                   something people keep adding to, and the button you use again
                   and again cannot be one you have to go looking for. */}
-              {/* Rendered unconditionally, disabled until the engine can take a
-                  model. Gating it on `ready` made the row appear a beat after
-                  boot and shoved everything under it down — the drift the
-                  skeleton above exists to prevent. */}
-              <div className="flex justify-center pt-0.5 pb-1">
-                {/* The dashed border is the app's word for an empty slot — the
-                    stage pane and the clip rows already say "there could be
-                    something here" that way. This is the same offer for a cast
-                    that can always take one more, so it wears the same outline
-                    and the same blue hover rather than inventing a third
-                    treatment for the same idea. */}
-                <Button
-                  variant="ghost"
-                  disabled={!ready}
-                  onClick={() => pickModel({ mode: "add" })}
-                  className="h-7 gap-1.5 rounded-interior border border-dashed border-line-strong px-2.5 text-xs font-normal text-muted-foreground hover:border-blue-400/50 hover:bg-transparent hover:text-blue-400"
-                >
-                  <Plus className="size-4" />
-                  {t.lab.addModel}
-                </Button>
-              </div>
             </StackGroup>
 
-            {/* The SCENE-WIDE clips. All five MMD components keep visible
-                intakes in the dock — model and motion on the cast rows, stage
-                on its Scene row — and the two with no owner land here. The
-                timeline lanes show WHEN these play; this is where they load. */}
-            <StackGroup label={t.lab.groups.clips} domId="group-clips" gap="tight">
+            {/* EVERY clip the scene plays, in one place. A character's motion
+                and morph belong to that character, so they sit behind a
+                tab per cast member — the dock is one column and N models of
+                two rows each would run it off the bottom of the page. The
+                camera belongs to no one, so it sits below the tabs, in the
+                same group: it is still a clip, and hiding it inside whichever
+                model happened to be selected would be a lie about who owns it.
+                The timeline lanes show WHEN these play; this is where they load. */}
+            <StackGroup
+              label={t.lab.groups.clips}
+              domId="group-clips"
+              action={
+                <AttachMenu
+                  disabled={!ready}
+                  label={t.lab.groups.clips}
+                  items={[
+                    ...(clipModel && !morphByModel[clipModel.id]
+                      ? [
+                          {
+                            key: "morph",
+                            label: t.lab.uploadMorph,
+                            onPick: () => pickMorph(clipModel.id),
+                          },
+                        ]
+                      : []),
+                  ]}
+                />
+              }
+            >
+              {/* Chips rather than a tab bar, matching the material panel: a
+                  chip is as wide as the name it carries and wraps to the next
+                  line, where equal-width tabs would squeeze every name to fit
+                  the longest one. */}
+              {cast.length > 1 && (
+                <div className="flex flex-wrap gap-1 px-4 pb-1.5">
+                  {cast.map((m, slot) => (
+                    <button
+                      key={m.id}
+                      aria-pressed={m.id === clipModel?.id}
+                      onClick={() => setClipTab(m.id)}
+                      className={cn(
+                        "flex max-w-full items-center gap-1.5 rounded-chip border px-2 py-0.5 text-xs transition-colors",
+                        m.id === clipModel?.id
+                          ? "border-blue-400/40 bg-blue-400/15 text-blue-400"
+                          : "border-line-strong text-muted-foreground hover:border-white/25 hover:text-foreground",
+                      )}
+                    >
+                      <span className="shrink-0 font-mono text-[11px]">{slot + 1}</span>
+                      <span className="truncate" title={displayName(m.file)}>{displayName(m.file)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {clipModel ? (
+                castClipRows(clipModel)
+              ) : pendingCast > 0 ? (
+                // Inert until its model lands: it is holding the row's height,
+                // not offering an upload there is nothing to attach to.
+                <ClipRow
+                  icon={Footprints}
+                  clip={null}
+                  empty={t.lab.uploadAnimation}
+                  kind={t.lab.kinds.motion}
+                  onPick={() => {}}
+                  onRemove={() => {}}
+                />
+              ) : null}
               <ClipRow
                 icon={Video}
                 clip={cameraClip}
@@ -4540,6 +4844,28 @@ export default function Lab() {
                 onPick={() => cameraInput.current?.click()}
                 onRemove={removeCamera}
               />
+            </StackGroup>
+
+            {/* The track and the two files that are only meaningful beside it.
+                Not per model: one scene, one song. */}
+            <StackGroup
+              label={t.lab.groups.music}
+              domId="group-music"
+              action={
+                <AttachMenu
+                  disabled={!ready}
+                  label={t.lab.groups.music}
+                  items={[
+                    ...(midiClip
+                      ? []
+                      : [{ key: "midi", label: t.lab.uploadMidi, onPick: () => midiInput.current?.click() }]),
+                    ...(lyricsClip
+                      ? []
+                      : [{ key: "lyrics", label: t.lab.uploadLyrics, onPick: () => lyricsInput.current?.click() }]),
+                  ]}
+                />
+              }
+            >
               <ClipRow
                 icon={Music}
                 clip={musicClip?.name ?? null}
@@ -4548,9 +4874,29 @@ export default function Lab() {
                 onPick={() => musicInput.current?.click()}
                 onRemove={removeMusic}
               />
+              {midiClip && (
+                <ClipRow
+                  icon={ListMusic}
+                  clip={midiClip}
+                  empty={t.lab.uploadMidi}
+                  kind={t.lab.kinds.midi}
+                  onPick={() => midiInput.current?.click()}
+                  onRemove={clearMidi}
+                />
+              )}
+              {lyricsClip && (
+                <ClipRow
+                  icon={Captions}
+                  clip={lyricsClip}
+                  empty={t.lab.uploadLyrics}
+                  kind={t.lab.kinds.lyrics}
+                  onPick={() => lyricsInput.current?.click()}
+                  onRemove={clearLyrics}
+                />
+              )}
             </StackGroup>
 
-            <StackGroup label={t.lab.groups.scene} gap="loose">
+            <StackGroup label={t.lab.groups.scene}>
               {layers.map((l) => (
                 <LayerRow
                   key={l.id}
@@ -4764,38 +5110,57 @@ export default function Lab() {
                       </TabsContent>
                     </Tabs>
                   ) : l.id === "effect" ? (
-                    // Grade's own body shape: quick-pick on the value text,
-                    // the library door as the deliberate final action. "Preset"
-                    // as the inner label — the row already says Effect.
+                    // A list, not a value: the rows below are what the scene
+                    // wears, and the control above them adds to it.
                     <>
-                      <div className="flex min-w-0 items-center justify-between gap-2">
-                        {/* "Shader", not "Preset": the row's own Edit button says
-                            Edit shader, the library is WGSL, and every entry in
-                            this list IS one — a preset is what the Grade row
-                            below picks, where the thing being chosen is a set of
-                            values rather than code. */}
-                        <span className="shrink-0 text-xs">{t.lab.ctl.shader}</span>
+                      {/* The two doors, side by side and equal: the shortlist
+                          you add from, and the library you go to when the
+                          shortlist has not got it. Both are ACTIONS, so both
+                          wear a button's clothes — solid bordered, distinct
+                          from the rows they put things into. The picker still
+                          holds MEMBERSHIP: every applied effect ticks, and a
+                          ticked row clicks off. */}
+                      <div className="flex items-center gap-1.5">
                         <QuickPick
-                          value={effectSummary}
+                          value={null}
+                          applied={bgEffects.map((e) => e.name)}
                           items={effectItems}
                           onPick={pickEffect}
-                          // Only when something is applied: "Edit shader" with
-                          // nothing to edit would open the editor on a subject
-                          // the scene is not wearing, and the session's whole
-                          // premise is that the canvas behind it IS the preview.
-                          onEdit={bgEffects.length === 1 ? editCurrentEffect : undefined}
-                          editLabel={t.effectLibrary.editShader}
                           onBrowse={() => openBrowse({ kind: "effect" })}
                           placeholder={t.lab.ctl.none}
+                          trigger={
+                            <button className="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground ring-1 ring-line-strong transition-colors hover:text-blue-400 hover:ring-blue-400/50">
+                              <Plus className="size-3.5 shrink-0" />
+                              <span className="truncate">{t.lab.ctl.selectEffect}</span>
+                            </button>
+                          }
                         />
+                        {/* The library keeps the white pill every library door
+                            in the app wears — the three doors are told apart by
+                            what they NAME, and a door that changed its clothes
+                            in one row would stop reading as the same kind of
+                            place. It sits second: adding from the shortlist is
+                            the common move, the library is where you go when
+                            the shortlist has not got it. */}
+                        <button
+                          onClick={() => openBrowse({ kind: "effect" })}
+                          className="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90"
+                        >
+                          <Sparkles className="size-3.5 shrink-0" />
+                          <span className="truncate">{t.lab.cmd.effectLib}</span>
+                        </button>
                       </div>
-                      {/* The stack, and only once there IS one. A single effect
-                          has no order to read and the picker above already
-                          names it, so a list of one would restate the row and
-                          add a control that cannot do anything. From two up,
-                          order is the composition — a full-cover backdrop drawn
-                          last erases what is under it — so it has to be visible
-                          and movable.
+                      {/* Every applied effect gets a row, from the first one:
+                          the row is where an effect is edited, swapped and
+                          removed, and a picker cannot hold three of those for
+                          three effects.
+
+                          Order still IS the composition — a full-cover backdrop
+                          drawn last erases what is under it — so the list shows
+                          it. Changing it is delete-and-add-again rather than
+                          arrows: replace covers the common case of wanting a
+                          different effect in the same place, which is most of
+                          what reordering was used for.
 
                           TOPMOST FIRST, so the list is reversed against the
                           document: the document draws in array order, so its
@@ -4804,7 +5169,7 @@ export default function Lab() {
                           array as-is would have shown the backdrop above the
                           things drawn over it, and then "up" would have had to
                           mean down. */}
-                      {bgEffects.length > 1 && (
+                      {bgEffects.length > 0 && (
                         <div className="mt-2 flex flex-col">
                           {[...bgEffects].reverse().map((e, r) => {
                             const i = bgEffects.length - 1 - r
@@ -4812,25 +5177,27 @@ export default function Lab() {
                               <CastLine
                                 key={e.id}
                                 reserve="pr-16"
-                                text={<span className="min-w-0 flex-1 truncate text-[13px]">{e.name}</span>}
+                                text={
+                                  <span className="min-w-0 flex-1 truncate text-[13px]" title={e.name}>
+                                    {e.name}
+                                  </span>
+                                }
                                 actions={
                                   <>
                                     <CastAction
-                                      compact
-                                      icon={ChevronUp}
-                                      disabled={r === 0}
-                                      label={t.lab.aria.raiseEffect(e.name)}
-                                      onClick={() => moveEffect(i, 1)}
+                                      icon={PenLine}
+                                      label={t.lab.aria.editEffect(e.name)}
+                                      onClick={() => openEffectEditor(e)}
                                     />
                                     <CastAction
-                                      compact
-                                      icon={ChevronDown}
-                                      disabled={r === bgEffects.length - 1}
-                                      label={t.lab.aria.lowerEffect(e.name)}
-                                      onClick={() => moveEffect(i, -1)}
+                                      icon={RefreshCw}
+                                      label={t.lab.aria.replaceEffect(e.name)}
+                                      onClick={() => {
+                                        setReplaceTarget(i)
+                                        openBrowse({ kind: "effect" })
+                                      }}
                                     />
                                     <CastAction
-                                      compact
                                       icon={X}
                                       danger
                                       label={t.lab.aria.removeEffect(e.name)}
@@ -4843,22 +5210,6 @@ export default function Lab() {
                           })}
                         </div>
                       )}
-                      {/* Both doors on purpose. "Browse all" inside the menu is
-                          where you look once you have opened the picker and not
-                          found what you wanted; the pill is how you get to the
-                          library without opening the picker at all. Removing it
-                          in favour of the menu row hid the library behind a
-                          click that only makes sense after you have decided the
-                          shortlist is not enough. */}
-                      <div className="mt-2.5 flex justify-center">
-                        <button
-                          onClick={() => openBrowse({ kind: "effect" })}
-                          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90"
-                        >
-                          <Sparkles className="size-3.5" />
-                          {t.lab.cmd.effectLib}
-                        </button>
-                      </div>
                     </>
                   ) : l.id === "light" ? (
                     <>
@@ -5496,6 +5847,7 @@ export default function Lab() {
                   engineRef={engineRef}
                   models={cast}
                   clipByModel={clipByModel}
+                  morphByModel={morphNameByModel}
                   cameraClip={cameraClip}
                   music={musicClip}
                   audioRef={audioRef}

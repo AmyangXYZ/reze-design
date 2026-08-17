@@ -167,12 +167,14 @@ export function StackGroup({
           {label}
         </span>
         {/* The action has to fit the label's own line box, or a group that has
-            one is taller than a group that does not. */}
-        {action && (
-          <span className="flex shrink-0 items-center opacity-0 transition-opacity group-hover/stack:opacity-100 focus-within:opacity-100">
-            {action}
-          </span>
-        )}
+            one is taller than a group that does not.
+
+            Always visible, never hover-revealed: this is how you add to the
+            group, and an intake you cannot see is one you have to already know
+            about. Hiding it saves nothing — the space is the label's line
+            either way — and costs the one person who has not used the app
+            before the ability to find it at all. */}
+        {action && <span className="flex shrink-0 items-center">{action}</span>}
       </div>
       {children}
     </div>

@@ -1,6 +1,7 @@
 // Color grading — the LOOK layer, and the clearest example of this app's posture
 
 import presets from "@/content/grades.json"
+import { storageKey } from "@/lib/storage"
 import { asBuiltins, type GradeItem } from "@/lib/library"
 
 export function hslToHex(h: number, s: number, l: number): string {
@@ -118,7 +119,7 @@ export function gradeSpec(name: string, drafts: GradeItem[] = []): GradeSpec {
 // A UX nicety, not scene content: switching back to a preset restores the
 // strength you last used it at. Lives in localStorage, never in the document.
 
-const INTENSITY_KEY = "reze-design.gradeIntensity.1"
+const INTENSITY_KEY = storageKey("gradeIntensity")
 
 function intensityMap(): Record<string, number> {
   if (typeof window === "undefined") return {}

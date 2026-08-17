@@ -12,7 +12,7 @@ import { graphRole, packGraph } from "@/lib/materials"
 import { loadLookPref } from "@/lib/look-pref"
 import { idbBundleId, modelKey, modelPmxUrl, type AssetRef, type Scene, type SceneCamera, type SceneStageTransform } from "@/lib/scene"
 import { unzipToFiles } from "@/lib/uploads"
-import { loadLocalBundle } from "@/lib/asset-store"
+import { loadLocalBundle, sweepRetiredBundles } from "@/lib/asset-store"
 import { sceneFiles } from "@/lib/scene-files"
 import { azElToDirection, hexToLinearVec3, hexToSrgbVec3 } from "@/lib/scene-settings"
 
@@ -328,13 +328,6 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
   // Again at the end, for the empty-scene case and because the first model may
   // have arrived before its follow bone existed.
   applyCamera(engine, scene.state.camera, engine.getModel(firstCastId(scene.assets.models)))
-  const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)}MB`
-  const secs = (a: number, b: number) => `${((b - a) / 1000).toFixed(2)}s`
-  console.info(
-    `[reze] scene loaded in ${secs(t0, performance.now())} — assets ${secs(t0, tBundle)}` +
-      `${bundleBytes ? ` (${mb(bundleBytes)} over the network)` : bundle ? " (from IndexedDB)" : ""}` +
-      `, ${scene.assets.models.length} model(s) ${secs(tBundle, performance.now())}`,
-  )
   return { infos, groups, bundle, stageList }
 }
 
@@ -465,92 +458,104 @@ function spawnOffsetX(existingCount: number): number {
 }
 
 /**
- * Install the score that goes with the scene's track, if one is published
- * beside it: `/audios/X.mp3` pairs with `/audios/X.mid`.
+ * Fetch an asset the document names, or null if it is not really there.
  *
- * Paired by NAME rather than by url. An uploaded track's url is a `blob:`
- * handle out of IndexedDB and has no path to look beside, but its name survives
- * upload, persist and publish alike — so the same rule works for a site-served
- * track and a user's own file.
- *
- * The file's own timeline is TRUSTED. A ripped transcription rarely arrives
- * aligned — video lead-ins, DAW-default tempo grids — but guessing here (the
- * loader used to anchor the first note at zero) breaks every file whose
- * instrument genuinely enters late, and 2.63s of silence is exactly what the
- * BIBBIDIBA transcription opens with. Alignment is measured ONCE, offline, by
- * cross-correlating the mid's onsets against the audio's onset envelope, and
- * baked into the published file (the Reze arc piano carried 12.5s of video
- * intro, now removed; BIBBIDIBA gained its 2.63s lead).
- *
- * A miss is silence. Most tracks have no transcription, so a 404 here is the
- * ordinary case and must not read as a failure: a score-driven effect draws its
- * line and waits, which is what it already does before any file arrives.
+ * `ok` is not proof a file exists: a dev server answers a path it no longer has
+ * with its own 404 PAGE at status 200. Nothing loaded here is ever HTML, so the
+ * content type is what separates a file from an error page — without it a
+ * deleted companion kept "loading" and putting its name on a row.
  */
-async function loadScoreFor(
-  audio: AssetRef | null,
-  engine: Engine,
-  cancelled: () => boolean,
-  bundleFiles: File[] | null,
-): Promise<void> {
-  sceneFiles.score = null
-  if (!audio?.name) return
-  const base = audio.name.replace(/\.[^./]+$/, "")
-  try {
-    const packed = bundleFiles?.find((f) => f.name === `audio/${base}.mid`) ?? null
-    const bytes = packed ? await packed.arrayBuffer() : await fetchCompanion(`${base}.mid`)
-    if (!bytes || cancelled()) return
-    engine.setMidiNotes(parseMidi(bytes))
-    // RETAINED wherever it came from, so the collector packs it beside the
-    // track — that is what makes the score travel through publish and fork.
-    sceneFiles.score = new File([bytes], `${base}.mid`)
-  } catch {
-    // No transcription beside the track, or one that will not parse.
-  }
-}
-
-/** A companion file published beside the site's tracks, or null if there is
- *  none. `no-cache` still yields a 304 on an unchanged file, but a sheet
- *  edited between reloads always shows the edit — these are content files an
- *  author iterates on by hand, and a stale copy reads exactly like a parser
- *  ignoring the change. */
-async function fetchCompanion(name: string): Promise<ArrayBuffer | null> {
-  const res = await fetch(`/audios/${encodeURIComponent(name)}`, { cache: "no-cache" })
-  return res.ok ? await res.arrayBuffer() : null
+async function fetchAsset(url: string): Promise<ArrayBuffer | null> {
+  // No cache override: /audios is immutable by next.config's headers rule, and
+  // these files are named by the document rather than by convention — so the
+  // "rename, never overwrite in place" discipline that rule asks for holds here
+  // too. `no-cache` was added while a deleted file kept reappearing, which the
+  // content-type check below actually fixed; leaving it in would cost a
+  // revalidation round trip on every load for nothing.
+  const res = await fetch(url)
+  if (!res.ok) return null
+  if ((res.headers.get("content-type") ?? "").includes("text/html")) return null
+  return await res.arrayBuffer()
 }
 
 /**
- * Install the lyrics that go with the scene's track: `/audios/X.mp3` pairs
- * with `/audios/X.lrc`, by name, under exactly the score's rules — a miss is
- * the ordinary case, and a lyric-driven effect waits the same way a
- * score-driven one does. The lines are rasterised here (Canvas2D — the one
- * rasteriser that speaks every script) so an effect can draw the words, not
- * just their timing. An .lrc is authored against the published track itself;
- * when it runs late against a particular rip, its own [offset:] tag is the
- * knob — positive shows lines earlier.
+ * Install the track's companions — the MIDI its notes come from, the .lrc its
+ * words come from — from the refs the DOCUMENT holds.
+ *
+ * NAMED, never inferred. These used to be found by filename: X.mp3 pairs with
+ * X.mid. That meant the app loaded files nobody chose, renamed the files you
+ * did choose so they would keep pairing, and could not tell "this track has no
+ * lyrics" from "I have not found them yet". Every other asset in a scene is
+ * named by the document; these are now too, so a picked file keeps its own name
+ * and a null in the document is a real answer.
+ *
+ * The MIDI's own timeline is TRUSTED. A ripped transcription rarely arrives
+ * aligned, but guessing (the loader used to anchor the first note at zero)
+ * breaks every file whose instrument genuinely enters late — indistinguishable
+ * from a lead-in without listening to both. Alignment is measured once,
+ * offline, and baked into the file.
+ *
+ * A miss is silence: an effect that reads notes or words draws its line and
+ * waits, exactly as it does before any file arrives.
  */
+async function loadMidiFor(
+  ref: AssetRef | null,
+  engine: Engine,
+  cancelled: () => boolean,
+  bundleFiles: File[] | null,
+  onLoaded?: (name: string | null) => void,
+): Promise<void> {
+  // Cleared first, all three: the retained bytes, the row's name, and the
+  // ENGINE. A swap to a scene with no MIDI used to leave the previous scene's
+  // notes installed and still driving effects.
+  sceneFiles.score = null
+  onLoaded?.(null)
+  engine.setMidiNotes(null)
+  if (!ref) return
+  try {
+    const packed = bundleFiles?.find((f) => f.name === ref.url) ?? null
+    const bytes = packed ? await packed.arrayBuffer() : await fetchAsset(ref.url)
+    if (!bytes || cancelled()) return
+    const notes = parseMidi(bytes)
+    // Parsed to nothing is not a file — see fetchAsset.
+    if (notes.length === 0) return
+    engine.setMidiNotes(notes)
+    // Retained under its OWN name, so the collector packs what you gave it.
+    sceneFiles.score = new File([bytes], ref.name)
+    onLoaded?.(ref.name)
+  } catch {
+    // Not there, or will not parse. Either way the scene plays without it.
+  }
+}
+
 async function loadLyricsFor(
-  audio: AssetRef | null,
+  ref: AssetRef | null,
   engine: Engine,
   cancelled: () => boolean,
   /** Canvas backing height, so lines are rasterised at the size they are drawn
    *  at — a row stored at one size and sampled at another is what soft text is. */
   canvasHeightPx: number,
   bundleFiles: File[] | null,
+  onLoaded?: (name: string | null) => void,
 ): Promise<void> {
   sceneFiles.lyrics = null
-  if (!audio?.name) return
-  const base = audio.name.replace(/\.[^./]+$/, "")
+  onLoaded?.(null)
+  engine.setLyrics(null)
+  if (!ref) return
   try {
-    const packed = bundleFiles?.find((f) => f.name === `audio/${base}.lrc`) ?? null
-    const bytes = packed ? await packed.arrayBuffer() : await fetchCompanion(`${base}.lrc`)
+    const packed = bundleFiles?.find((f) => f.name === ref.url) ?? null
+    const bytes = packed ? await packed.arrayBuffer() : await fetchAsset(ref.url)
     if (!bytes || cancelled()) return
     const lines = parseLRC(new TextDecoder().decode(bytes))
+    if (lines.length === 0) return
     engine.setLyrics(lines, rasterizeLyrics(lines, canvasHeightPx) ?? undefined)
-    sceneFiles.lyrics = new File([bytes], `${base}.lrc`)
+    sceneFiles.lyrics = new File([bytes], ref.name)
+    onLoaded?.(ref.name)
   } catch {
-    // No lyric file beside the track.
+    // Same rule as the MIDI above.
   }
 }
+
 
 export function useEngine(
   /** The scene to boot into — read ONCE (constructor options + first loadModel + addGround) */
@@ -563,6 +568,10 @@ export function useEngine(
   // The stage (ground/camera/render loop) is live — models may still be loading.
   const [stageReady, setStageReady] = useState(false)
   const [bundleProgress, setBundleProgress] = useState<BundleProgress | null>(null)
+  /** The track's companions by display name — set when the document's refs load
+   *  and when a file is picked by hand, so the rows show either. */
+  const [midiClip, setMidiClip] = useState<string | null>(null)
+  const [lyricsClip, setLyricsClip] = useState<string | null>(null)
   // The asset bundle is unzipped. Everything that resolves out of it — clips,
   // audio, a background image — is available from here, which is well before
   // the models it shares the zip with have finished loading. State and not just
@@ -590,6 +599,10 @@ export function useEngine(
     let disposed = false
     const boot = async () => {
       if (!canvasRef.current) return
+      // Before anything reads the bundle store: drop what an older key wrote.
+      // The document sweep in hydrateScene has always done this for
+      // localStorage; the bundle had no version to sweep by until now.
+      void sweepRetiredBundles()
       try {
         const scene = sceneRef.current
         const s = scene.state.settings
@@ -665,8 +678,8 @@ export function useEngine(
         // The track's companions — AFTER the bundle, which is where a published
         // scene carries its own copies. Not awaited: a scene must paint whether
         // or not either exists.
-        void loadScoreFor(scene.assets.audio, engine, () => disposed, bundleRef.current)
-        void loadLyricsFor(scene.assets.audio, engine, () => disposed, canvasRef.current?.height ?? 0, bundleRef.current)
+        void loadMidiFor(scene.assets.midi, engine, () => disposed, bundleRef.current, setMidiClip)
+        void loadLyricsFor(scene.assets.lyrics, engine, () => disposed, canvasRef.current?.height ?? 0, bundleRef.current, setLyricsClip)
         const { infos, groups: groupsMap } = loaded
         setModels(infos)
         setStages(loaded.stageList)
@@ -741,10 +754,26 @@ export function useEngine(
     // needs them again.
     sceneFiles.models.set(id, { pmx: pmxFile, files: Array.from(files) })
     const model = await engine.loadModel(id, { files, pmxFile })
+    // HIDDEN until it is finished. A loaded model draws immediately, so without
+    // this the arrival is three separate events: a raw untextured mesh, then the
+    // same mesh restyled a beat later, then its row appearing in the dock. The
+    // boot path already works this way — loadSceneInto leaves animated models
+    // hidden so the first visible frame wears the motion's first pose — and a
+    // model added by hand deserves the same courtesy.
+    engine.setModelTransform(id, { visible: false })
     const offset = spawnOffsetX(modelsRef.current.length)
     if (offset !== 0) engine.setModelTransform(id, { position: new Vec3(offset, 0, 0) })
-    await engine.autoStyleGroups(id)
-    const groups = withSpecialGroups(await restyled(engine, id, engine.getStyleGroups(id)))
+    let groups: StyleGroup[]
+    try {
+      await engine.autoStyleGroups(id)
+      groups = withSpecialGroups(await restyled(engine, id, engine.getStyleGroups(id)))
+    } finally {
+      // Whatever happened to the styling, the model comes back: an unstyled
+      // model is a look to fix, an invisible one is a model you cannot find.
+      engine.setModelTransform(id, { visible: true })
+    }
+    // One commit with the reveal above it — the mesh, its shading and its row
+    // land on the same frame.
     setModels((prev) => [...prev, infoFor(id, pmxBaseName(pmxFile.name), model)])
     setGroupsByModel((prev) => ({ ...prev, [id]: groups }))
     return id
@@ -869,6 +898,111 @@ export function useEngine(
     }
   }, [centerModel])
 
+  /**
+   * Lay an morph VMD (表情モーション) over a model's motion.
+   *
+   * `clipName` is the MOTION's clip, because the morph dresses that clip
+   * rather than standing on its own — loaded under its own name it would be a
+   * second clip, and only one clip plays at a time. With no motion loaded yet
+   * the morph becomes the clip and is shown, so a face still moves; when a
+   * motion arrives later it rebuilds the clip, and the caller re-applies the
+   * morph it still holds.
+   */
+  const loadMorphFile = useCallback(
+    async (modelId: string, file: File): Promise<string | null> => {
+      const model = engineRef.current?.getModel(modelId)
+      if (!model) return null
+      const url = URL.createObjectURL(file)
+      // ASK THE MODEL which clip is playing rather than naming one ourselves.
+      // A clip's engine key is whatever loaded it: an uploaded VMD keys by its
+      // file name, but one unpacked from a scene bundle keeps its bundle PATH
+      // as its name — so the document's display name is NOT the key. Naming
+      // the clip from the document merged morphs into a clip nothing
+      // plays, which looked exactly like a file with no morphs in it.
+      const playing = model.getAnimationProgress().animationName
+      const target = playing ?? file.name
+      try {
+        await model.loadVmd(target, url, { tracks: "morphs" })
+        // Only when the morph IS the clip. With a motion playing, showing
+        // it again would restart the dance from frame 0.
+        if (!playing) model.show(target)
+        return file.name
+      } catch (e) {
+        console.warn("[clips] morph failed to install:", e)
+        return null
+      } finally {
+        URL.revokeObjectURL(url)
+      }
+    },
+    [],
+  )
+
+  /** The same, for an morph already published or packed in the bundle. */
+  const loadMorphUrl = useCallback(
+    async (modelId: string, name: string, url: string): Promise<string | null> => {
+      const model = engineRef.current?.getModel(modelId)
+      if (!model) return null
+      const playing = model.getAnimationProgress().animationName
+      const target = playing ?? name
+      try {
+        await model.loadVmd(target, url, { tracks: "morphs" })
+        if (!playing) model.show(target)
+        return name
+      } catch {
+        return null
+      }
+    },
+    [],
+  )
+
+  /**
+   * Install a MIDI or an .lrc the user picked by hand.
+   *
+   * Retained under its OWN name. The document names these files, so nothing has
+   * to be renamed to keep a convention working — what you picked is what
+   * travels, and what the document points at.
+   */
+  const installMidiFile = useCallback(async (file: File): Promise<string | null> => {
+    const engine = engineRef.current
+    if (!engine) return null
+    try {
+      const bytes = await file.arrayBuffer()
+      engine.setMidiNotes(parseMidi(bytes))
+      sceneFiles.score = new File([bytes], file.name)
+      setMidiClip(file.name)
+      return file.name
+    } catch {
+      return null
+    }
+  }, [])
+
+  const installLyricsFile = useCallback(async (file: File): Promise<string | null> => {
+    const engine = engineRef.current
+    if (!engine) return null
+    try {
+      const bytes = await file.arrayBuffer()
+      const lines = parseLRC(new TextDecoder().decode(bytes))
+      engine.setLyrics(lines, rasterizeLyrics(lines, canvasRef.current?.height ?? 0) ?? undefined)
+      sceneFiles.lyrics = new File([bytes], file.name)
+      setLyricsClip(file.name)
+      return file.name
+    } catch {
+      return null
+    }
+  }, [])
+
+  const clearMidi = useCallback(() => {
+    engineRef.current?.setMidiNotes(null)
+    sceneFiles.score = null
+    setMidiClip(null)
+  }, [])
+
+  const clearLyrics = useCallback(() => {
+    engineRef.current?.setLyrics(null)
+    sceneFiles.lyrics = null
+    setLyricsClip(null)
+  }, [])
+
   /** A file out of the scene's asset bundle, by its bundle-relative path. */
   const bundleFile = useCallback((path: string): File | null => bundleRef.current?.find((f) => f.name === path) ?? null, [])
 
@@ -971,8 +1105,8 @@ export function useEngine(
       const loaded = await loadSceneInto(engine, scene, stale, { onBytes: setBundleProgress })
       if (!loaded) return null
       bundleRef.current = loaded.bundle
-      void loadScoreFor(scene.assets.audio, engine, stale, bundleRef.current)
-      void loadLyricsFor(scene.assets.audio, engine, stale, canvasRef.current?.height ?? 0, bundleRef.current)
+      void loadMidiFor(scene.assets.midi, engine, stale, bundleRef.current, setMidiClip)
+      void loadLyricsFor(scene.assets.lyrics, engine, stale, canvasRef.current?.height ?? 0, bundleRef.current, setLyricsClip)
       sceneRef.current = scene
       setModels(loaded.infos)
       setStages(loaded.stageList)
@@ -1051,6 +1185,14 @@ export function useEngine(
     removeModelById,
     loadVmdFile,
     loadVmdUrl,
+    loadMorphFile,
+    loadMorphUrl,
+    installMidiFile,
+    installLyricsFile,
+    midiClip,
+    lyricsClip,
+    clearMidi,
+    clearLyrics,
     centerModel,
     stopAnimation,
   }

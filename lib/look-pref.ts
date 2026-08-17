@@ -1,4 +1,5 @@
 import { LOOK_PACK_ORDER, type LookPack } from "@/lib/materials"
+import { storageKey } from "@/lib/storage"
 
 // Which rendering style this browser prefers.
 //
@@ -11,7 +12,7 @@ import { LOOK_PACK_ORDER, type LookPack } from "@/lib/materials"
 // Aether Gazer by default, because that is what the engine's own auto-grouping
 // fills a fresh model with; anything else would mean a first-time scene disagreed
 // with the presets it shipped with.
-const KEY = "reze-design.look"
+const KEY = storageKey("look")
 export const DEFAULT_LOOK: LookPack = "ag"
 
 export function loadLookPref(): LookPack {

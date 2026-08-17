@@ -271,9 +271,6 @@ export async function castColour(source: CastColourSource): Promise<CastPaletteI
       .sort((a, b) => b.m - a.m)
       .map(({ id, m }) => `${id} ${pct(m)}`)
       .join(" · ")
-    console.log(
-      `[cast colour] colourless ${pct(colourless)} (light ${pct(colourlessLight)} / dark ${pct(colourlessDark)}) · ${table || "no colour"} → ${verdict}`,
-    )
   }
   return verdict
 }

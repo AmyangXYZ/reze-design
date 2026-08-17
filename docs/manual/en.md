@@ -839,13 +839,16 @@ avoid. Reading them is the fastest way into the idiom.
 | *Hand Ribbon* | A trail along a bone's recorded path, max-blended in its own layer |
 | *Footprints* | Reading a trail in **world** space: contacts inferred from the moment a foot stops descending, each with a light pillar integrated through the air above it |
 | *Vyke's Dragonbolt* | Arcs on the limbs — screen-space paths carrying real depth, so half of each ring passes behind the body; and a two-tier cull |
-| *Immolation* | One domain-warped noise field over a silhouette distance field, measured against **world** up |
 | *Summoning Circle* | A figure on the ground plane by ray-plane intersection, depth-tested by hand, with line widths in measured pixels |
 | *Stage Lights* | Volumetric beams marched through their own cylinder, aimed by a damped follow |
 | *Waveform* | The audio interface driving a ported Shadertoy visualiser |
 | *Shining Stars* | Hash-grid fields |
 | *REZE DESIGN* | Signed-distance glyphs |
 | *Fireworks* | World-anchored ballistics, projected per frame |
+| *Note Fall* | The MIDI interface as geometry — height above the strike line IS time ahead of now, so a bar's length is its own duration |
+| *Dry Ice* | A persistent simulation grid: velocity and density advected on the floor between frames, then marched as a volume |
+| *Lyrics* | The lyric interface over a host-rasterised text atlas, sampled across a pixel rather than at a point |
+| *Signature* | Stroke-median hanzi as segment distance fields, beside the same neon the wordmark is drawn with |
 
 ## 2.4 Material shader graphs
 
@@ -1325,9 +1328,12 @@ presets renders correctly with no network and no database at all.
 | Control | Accepts | Notes |
 | --- | --- | --- |
 | Model | `.pmx` folder or `.zip` | Multiple models, one per slot |
-| Animation | `.vmd` body motion | Per model |
+| Motion | `.vmd` body motion | Per model |
+| Morph | `.vmd` expression motion | Per model; replaces the motion's own morphs, so the body keeps dancing while the face follows this file |
 | Camera | `.vmd` camera motion | Scene-wide; owns the camera while active |
 | Music | `.mp3` / `.wav` / `.ogg` | Bound to the timeline |
+| MIDI | `.mid` | The track's notes, for effects that read a score |
+| Lyrics | `.lrc` | The track's words and their timings, for effects that draw them |
 | Backdrop | image | Flat, behind the scene |
 | Skybox | equirectangular 2:1 image | 360° dome, display-only |
 

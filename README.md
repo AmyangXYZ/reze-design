@@ -25,7 +25,7 @@ One piece of the **Reze MMD family**, covering the whole MMD workflow on the web
 - **GPU particles and ribbon trails** — declare a pool size and three functions and a hundred thousand particles run entirely on the GPU, depth-tested against the cast; declare a bone with `trail` and two more functions draw a ribbon along the path it actually took.
 - **Effects that react to the music** — loudness, a kick detector and a 32-band spectrum, readable seconds into the past or the future. Analysed once ahead of time, so an exported video reacts exactly as the editor did.
 - **Scene lighting** — sun, world light and bloom over a colour, an image backdrop or a 360° skybox.
-- **Multi-model scenes** — a motion each, one camera VMD, one audio track.
+- **Multi-model scenes** — a motion and an expression each, one camera VMD, one audio track with its score and lyrics.
 - **Stage models** — a stage PMX as the environment, placed and scaled, with the switches its author rigged.
 - **Stage material presets** — fifteen stage looks, matched against a stage's own material names in Japanese, Chinese or English.
 - **Command palette** — ⌘K for every action and every setting, and what it is set to.

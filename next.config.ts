@@ -5,7 +5,7 @@ import { version } from "./package.json"
 const nextConfig: NextConfig = {
   // outputFileTracingRoot: join(__dirname, ".."),
   devIndicators: false,
-
+  reactStrictMode: false,
   /** The version badge reads the manifest, so it cannot go stale. Baked in here
    *  rather than imported by the client, which would ship package.json with it. */
   env: { NEXT_PUBLIC_APP_VERSION: version },

@@ -148,6 +148,85 @@ fn rzAudioBandAt(i: i32, o: f32) -> f32 {
 }
 fn rzAudioBand(i: i32) -> f32 { return rzAudioBandAt(i, 0.0); }
 
+// The light struct, declared exactly as the engine declares it in every module
+// it splices user code into.
+//
+// The preview never CALLS lightEmit — a card has no scene to light — but an
+// effect that defines one still has to compile, and a missing struct is a
+// shader error, which renders as a blank card with nothing said anywhere. That
+// is precisely how Summoning Circle and Stage Lights came to preview as
+// nothing: both draw a perfectly good foreground, and both were rejected for a
+// type the wrapper had never heard of.
+struct RzLight {
+  pos: vec3f,
+  color: vec3f,
+  intensity: f32,
+  radius: f32,
+}
+
+// The MIDI interface, over a stand-in score.
+//
+// Stubbed for the same reason the cast is: an effect that reads notes cannot
+// COMPILE without these, and a shader error is a blank card rather than a
+// visible failure — which is exactly how Note Fall came to preview as nothing
+// at all. The notes are synthetic and deliberately regular: a scale walking up
+// the keyboard, one per beat, so a falling-note effect has something moving to
+// draw without a file behind it.
+const PV_NOTES: i32 = 48;
+const PV_BEAT: f32 = 0.5;
+fn rzNoteCount() -> i32 { return PV_NOTES; }
+fn rzMidiTime() -> f32 { return u.time; }
+fn rzMidiPlaying() -> f32 { return 1.0; }
+fn rzMidiDuration() -> f32 { return f32(PV_NOTES) * PV_BEAT; }
+fn rzPitchLow() -> f32 { return 48.0; }
+fn rzPitchHigh() -> f32 { return 84.0; }
+fn rzNoteStart(i: i32) -> f32 { return f32(i) * PV_BEAT; }
+fn rzNoteLength(i: i32) -> f32 { return PV_BEAT * 0.8; }
+fn rzNotePitch(i: i32) -> f32 { return 48.0 + f32(i % 36); }
+fn rzNoteVelocity(i: i32) -> f32 { return 0.55 + 0.35 * abs(sin(f32(i) * 1.7)); }
+fn rzNoteAge(i: i32) -> f32 { return u.time - rzNoteStart(i); }
+fn rzNoteHeld(i: i32) -> f32 {
+  let age = rzNoteAge(i);
+  return select(0.0, 1.0, age >= 0.0 && age < rzNoteLength(i));
+}
+fn rzKeyEnergy(pitch: f32) -> f32 {
+  // Whichever note is sounding now, decaying after it — the same shape the
+  // engine's per-pitch map has, without needing the map.
+  let i = i32(floor(u.time / PV_BEAT));
+  let hit = abs(pitch - rzNotePitch(i));
+  return select(0.0, max(0.0, 1.0 - fract(u.time / PV_BEAT)), hit < 0.5);
+}
+fn rzPitchX(pitch: f32) -> f32 {
+  return clamp((pitch - rzPitchLow()) / max(1.0, rzPitchHigh() - rzPitchLow()), 0.0, 1.0);
+}
+
+// The lyric interface, over one stand-in line.
+//
+// The words themselves live in a texture the host rasterises, which a preview
+// card has no host for — so rzLyricText draws a legible BLOCK per character
+// instead. An effect's layout, sweep and fades are what a card is showing off;
+// the glyphs are the one part it can honestly fake.
+const PV_LINE: f32 = 3.0;
+fn rzLyricCount() -> i32 { return 8; }
+fn rzLyricStart(i: i32) -> f32 { return f32(i) * PV_LINE; }
+fn rzLyricEnd(i: i32) -> f32 { return f32(i + 1) * PV_LINE; }
+fn rzLyricChars(i: i32) -> f32 { return 12.0; }
+fn rzLyricIndex(t: f32) -> i32 { return i32(floor(t / PV_LINE)) % rzLyricCount(); }
+fn rzLyricProgress(i: i32, t: f32) -> f32 { return clamp(fract(t / PV_LINE), 0.0, 1.0); }
+fn rzLyricRect(i: i32) -> vec4f { return vec4f(0.0, 0.0, 1.0, 1.0); }
+fn rzLyricHasText(i: i32) -> bool { return true; }
+fn rzLyricAspect(i: i32) -> f32 { return 8.0; }
+fn rzLyricPixels(i: i32) -> vec2f { return vec2f(768.0, 96.0); }
+fn rzLyricText(i: i32, uv: vec2f) -> f32 {
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) { return 0.0; }
+  let n = rzLyricChars(i);
+  let cell = fract(uv.x * n);
+  // A bar per character, with gaps between them and margins top and bottom —
+  // enough for an outline, a wipe and a fade to read as they will on real text.
+  let ink = step(0.18, cell) * step(cell, 0.82);
+  return ink * step(0.22, uv.y) * step(uv.y, 0.78);
+}
+
 USER_CODE
 
 @vertex fn vs(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4f {
@@ -221,7 +300,13 @@ let bindGroup: GPUBindGroup | null = null
 // while this Map holds it. Editing a draft would grow it a pipeline per save, for
 // the life of the tab. Capped and evicted oldest-first: Map preserves insertion
 // order, so the first key is the least recently added.
-const PIPELINE_CACHE_MAX = 24
+// Sized to hold a WHOLE library page, not a handful of it. At 24 a grid showing
+// more shaders than that evicted pipelines while they were still on screen, and
+// closing the library meant recompiling everything on the way back in — the
+// compile is the expensive part, and a retained pipeline costs far less than
+// making it twice. The cap still exists so a long session of editing WGSL (a
+// new key per keystroke-settled edit) cannot grow without bound.
+const PIPELINE_CACHE_MAX = 96
 const pipelineCache = new Map<string, GPURenderPipeline | "failed" | "pending">()
 
 function rememberPipeline(wgsl: string, value: GPURenderPipeline | "failed" | "pending") {
@@ -347,8 +432,31 @@ export const EffectPreview = memo(function EffectPreview({ wgsl, className }: { 
   useEffect(() => {
     const canvas = ref.current
     if (!canvas) return
-    register(canvas, wgsl)
-    return () => unregister(canvas)
+    // ON SCREEN ONLY. Every card here runs its own fragment shader every frame,
+    // so a library page draws all of them at once — including the ones scrolled
+    // past, which cost exactly as much as the ones being looked at and show
+    // nobody anything. Registering on entry also defers the pipeline compile
+    // until a card is actually about to be seen, which is what makes opening
+    // the library land quickly instead of after every shader in the list.
+    //
+    // The margin is deliberate: a card starts a frame before its edge appears,
+    // so scrolling reveals moving effects rather than black squares filling in.
+    if (typeof IntersectionObserver === "undefined") {
+      register(canvas, wgsl)
+      return () => unregister(canvas)
+    }
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) register(canvas, wgsl)
+        else unregister(canvas)
+      },
+      { rootMargin: "200px" },
+    )
+    io.observe(canvas)
+    return () => {
+      io.disconnect()
+      unregister(canvas)
+    }
   }, [wgsl])
   // Fallback gradient shows until (unless) the pipeline lands.
   return <canvas ref={ref} className={cn("h-full w-full bg-gradient-to-br from-zinc-900 to-zinc-800", className)} />

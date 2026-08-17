@@ -13,16 +13,14 @@
 // trims or reorders. What it answers is "how long is each of these, and where am
 // I in them" — which nothing else in the editor answers at all.
 
-import { useMemo, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react"
+import { Fragment, useMemo, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react"
 import type { Engine } from "reze-engine"
 import type { Scrub } from "@/components/scene/anim-player"
 import { useLaneDurations } from "@/hooks/use-lane-durations"
-import { useAudioPeaks, useCameraDensity, useClipDensity } from "@/hooks/use-lane-graphs"
+import { useAudioPeaks, useCameraDensity, useClipDensity, useMorphDensity } from "@/hooks/use-lane-graphs"
 import { LaneGraph } from "@/components/scene/lane-graph"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
-
-const displayName = (file: string) => file.replace(/\.pmx$/i, "")
 
 /** The transport's fold curve. Mirrored here because the fold's chrome moved in
  *  with the lanes it folds; keep the two in step if either changes. */
@@ -31,16 +29,16 @@ const FOLD = "duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
 
 /** One row of the timeline. Fixed height and a fixed label column, so lanes of
  *  different kinds still read as one grid. */
-function Lane({ label, children }: { label: string; children: ReactNode }) {
+function Lane({ label, note, children }: { label: string; note?: string; children: ReactNode }) {
   return (
     <div className="relative h-10">
       {/* Mono, uppercase and tracked — the study's lane key. It names the KIND of
           thing the lane holds, so it must not look like content. */}
       <span
-        className="absolute top-1/2 left-4 -translate-y-1/2 truncate font-mono text-xs tracking-[0.14em] text-muted-foreground uppercase"
+        className="absolute top-1/2 left-4 flex -translate-y-1/2 flex-col justify-center"
         style={{ width: "calc(var(--track-left, 7.5rem) - 1.5rem)" }}
       >
-        {label}
+        <span className="truncate font-mono text-xs tracking-[0.14em] text-muted-foreground uppercase">{label}</span>
       </span>
       {/* Pinned to the transport's own track, measured and published by
           AnimPlayer. A lane that starts where the scrub bar starts and ends
@@ -53,6 +51,22 @@ function Lane({ label, children }: { label: string; children: ReactNode }) {
       >
         {children}
       </span>
+      {/* WHOSE lane this is, in the gutter RIGHT of the track — the strip under
+          the transport's duration, loop and fold controls, which the lanes
+          never reach because the track ends where the scrub bar does. The label
+          on the left has to keep naming the KIND now that morphs have their own
+          lane, and this is the only empty space left. Inert and quiet: it
+          identifies a lane, it is not something to press. */}
+      {note && (
+        <span
+          className="pointer-events-none absolute top-1/2 flex -translate-y-1/2 items-center justify-end"
+          style={{ right: "1rem", width: "max(0px, calc(var(--track-right, 1rem) - 1.5rem))" }}
+        >
+          <span className="truncate text-[11px] text-muted-foreground" title={note}>
+            {note}
+          </span>
+        </span>
+      )}
     </div>
   )
 }
@@ -129,17 +143,19 @@ function MotionLane({
   modelId,
   clipName,
   label,
+  note,
   span,
 }: {
   engineRef: RefObject<Engine | null>
   modelId: string
   clipName: string | null
   label: string
+  note?: string
   span?: number
 }) {
   const density = useClipDensity({ engineRef, modelId, clipName })
   return (
-    <Lane label={label}>
+    <Lane label={label} note={note}>
       {clipName ? (
         <LaneBlock span={span} graph={density}>
           {clipName}
@@ -147,6 +163,35 @@ function MotionLane({
       ) : (
         <LaneBlock empty />
       )}
+    </Lane>
+  )
+}
+
+/** One cast member's morph lane. Its own component so it can own its density
+ *  hook, exactly like MotionLane. */
+function MorphLane({
+  engineRef,
+  modelId,
+  clipName,
+  morphName,
+  label,
+  note,
+  span,
+}: {
+  engineRef: RefObject<Engine | null>
+  modelId: string
+  clipName: string | null
+  morphName: string
+  label: string
+  note?: string
+  span?: number
+}) {
+  const density = useMorphDensity({ engineRef, modelId, clipName, morphName })
+  return (
+    <Lane label={label} note={note}>
+      <LaneBlock span={span} graph={density}>
+        {morphName}
+      </LaneBlock>
     </Lane>
   )
 }
@@ -161,6 +206,7 @@ export function TimelineLanes({
   engineRef,
   models,
   clipByModel,
+  morphByModel,
   cameraClip,
   music,
   audioRef,
@@ -174,6 +220,9 @@ export function TimelineLanes({
    *  scenery. */
   models: { id: string; file: string }[]
   clipByModel: Record<string, string | undefined>
+  /** The morph VMD laid over each model's motion, by model id. Absent for
+   *  most scenes — a lane appears only where one is loaded. */
+  morphByModel?: Record<string, string | undefined>
   cameraClip: string | null
   music: { name: string; url: string } | null
   audioRef: RefObject<HTMLAudioElement | null>
@@ -262,19 +311,38 @@ export function TimelineLanes({
         under it, and the fold's own height animation makes that read as a
         glitch rather than as arrival. */}
       {models.length === 0 && (
-        <Lane label={t.lab.lanes.animation}>
+        <Lane label={t.lab.lanes.motion}>
           <LaneBlock empty />
         </Lane>
       )}
-      {models.map((m) => (
-        <MotionLane
-          key={m.id}
-          engineRef={engineRef}
-          modelId={m.id}
-          clipName={clipByModel[m.id] ?? null}
-          label={models.length > 1 ? displayName(m.file) : t.lab.lanes.animation}
-          span={span(durations.byModel[m.id] ?? 0)}
-        />
+      {models.map((m, slot) => (
+        <Fragment key={m.id}>
+          <MotionLane
+            engineRef={engineRef}
+            modelId={m.id}
+            clipName={clipByModel[m.id] ?? null}
+            label={t.lab.lanes.motion}
+            note={models.length > 1 ? `${slot + 1} · ${m.id}` : undefined}
+            span={span(durations.byModel[m.id] ?? 0)}
+          />
+          {/* Only where one is loaded, and directly under the motion it dresses.
+              It shares that motion's span because it IS that clip — an
+              morph replaces the clip's morph tracks rather than playing
+              beside it, so a second, independent bar would be a lie about how
+              the two relate. The lane above already names the model when there
+              are several, so this one only has to say what it is. */}
+          {morphByModel?.[m.id] && (
+            <MorphLane
+              engineRef={engineRef}
+              modelId={m.id}
+              clipName={clipByModel[m.id] ?? null}
+              morphName={morphByModel[m.id]!}
+              label={t.lab.lanes.morph}
+              note={models.length > 1 ? `${slot + 1} · ${m.id}` : undefined}
+              span={span(durations.byModel[m.id] ?? 0)}
+            />
+          )}
+        </Fragment>
       ))}
       <Lane label={t.lab.lanes.camera}>
         {cameraClip ? (

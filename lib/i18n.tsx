@@ -3,6 +3,7 @@
 // The whole i18n layer in one file
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react"
+import { storageKey } from "@/lib/storage"
 
 export const LOCALES = ["en", "zh"] as const
 export type Locale = (typeof LOCALES)[number]
@@ -395,8 +396,11 @@ const en = {
     // One phrase per intake, shared by the empty slot and the palette command.
     addModel: "Add model",
     uploadAnimation: "Upload animation",
+    uploadMorph: "Upload morph",
     uploadCameraMotion: "Upload camera motion",
     uploadMusic: "Upload music",
+    uploadMidi: "Upload MIDI",
+    uploadLyrics: "Upload lyrics",
     uploadStageFolder: "Upload stage PMX folder",
     uploadStagePmx: "Upload stage PMX",
     uploadImage: "Upload image",
@@ -414,7 +418,7 @@ const en = {
       goto: "Go to",
       setting: "Settings",
     },
-    groups: { cast: "Cast", clips: "Clips", scene: "Scene" },
+    groups: { cast: "Cast", clips: "Clips", music: "Music", scene: "Scene" },
     // Dock rows — also the breadcrumb hint on every control inside them.
     rows: {
       camera: "Camera",
@@ -443,9 +447,13 @@ const en = {
     // What a row acts on, spoken mid-sentence by the aria templates below.
     kinds: {
       cameraMotion: "camera motion",
+      motion: "motion",
+      morph: "morph",
       music: "music",
+      midi: "MIDI",
+      lyrics: "lyrics",
       backgroundImage: "background image",
-      background360: "360° background",
+      background360: "skybox",
     },
     ctl: {
       outline: "Outline",
@@ -457,9 +465,10 @@ const en = {
       pos: (axis: string) => `Pos ${axis}`,
       preset: "Preset",
       shader: "Shader",
+      selectEffect: "Select effect",
       /** The trigger when a scene layers several. One is named; several are counted,
        *  because the list below is where they are read. */
-      shadersN: (n: number) => `${n} shaders`,
+      effectsN: (n: number) => `${n} effects`,
       none: "None",
       strength: "Strength",
       azimuth: "Azimuth",
@@ -491,17 +500,20 @@ const en = {
       deleteModel: (name: string) => `Delete ${name}`,
       // Layers, not list positions: "up" is toward the viewer, which is what the
       // order MEANS. A screen reader hears these with no list around them.
-      raiseEffect: (name: string) => `Move ${name} up a layer`,
-      lowerEffect: (name: string) => `Move ${name} down a layer`,
+      editEffect: (name: string) => `Edit ${name}`,
+      replaceEffect: (name: string) => `Replace ${name}`,
       removeEffect: (name: string) => `Remove ${name} from the scene`,
       uploadAnimationFor: (name: string) => `Upload animation for ${name}`,
       replaceAnimationFor: (name: string) => `Replace animation for ${name}`,
       deleteAnimationOn: (name: string) => `Delete animation on ${name}`,
+      uploadMorphFor: (name: string) => `Upload morph for ${name}`,
+      replaceMorphFor: (name: string) => `Replace morph for ${name}`,
+      deleteMorphOn: (name: string) => `Delete morph on ${name}`,
       replaceStage: (name: string) => `Upload stage PMX folder to replace ${name}`,
       deleteStage: (name: string) => `Delete stage ${name}`,
     },
     // A lane names the KIND of thing it holds, never the thing itself.
-    lanes: { animation: "Animation", camera: "Camera", music: "Music" },
+    lanes: { motion: "Motion", morph: "Morph", camera: "Camera", music: "Music" },
     drop: { motion: "Drop a motion", camera: "Drop a camera motion", music: "Drop music" },
     cmd: {
       graphNew: "New shader graph",
@@ -986,8 +998,11 @@ const zh: Dictionary = {
     engineNotReady: "引擎未就绪",
     addModel: "添加模型",
     uploadAnimation: "上传动作",
+    uploadMorph: "上传表情",
     uploadCameraMotion: "上传镜头动作",
     uploadMusic: "上传音乐",
+    uploadMidi: "上传 MIDI",
+    uploadLyrics: "上传歌词",
     uploadStageFolder: "上传舞台 PMX 文件夹",
     uploadStagePmx: "上传舞台 PMX",
     uploadImage: "上传图片",
@@ -1002,7 +1017,7 @@ const zh: Dictionary = {
       goto: "跳转",
       setting: "设置",
     },
-    groups: { cast: "角色", clips: "片段", scene: "场景" },
+    groups: { cast: "角色", clips: "片段", music: "音乐", scene: "场景" },
     rows: {
       camera: "相机",
       stage: "环境",
@@ -1028,9 +1043,13 @@ const zh: Dictionary = {
     summary: { follow: "跟随", orbit: "环绕" },
     kinds: {
       cameraMotion: "镜头动作",
+      motion: "动作",
+      morph: "表情",
       music: "音乐",
+      midi: "MIDI",
+      lyrics: "歌词",
       backgroundImage: "背景图片",
-      background360: "360 全景背景",
+      background360: "天空盒",
     },
     ctl: {
       outline: "描边",
@@ -1042,7 +1061,8 @@ const zh: Dictionary = {
       pos: (axis: string) => `位置 ${axis}`,
       preset: "预设",
       shader: "着色器",
-      shadersN: (n: number) => `${n} 个着色器`,
+      selectEffect: "选择特效",
+      effectsN: (n: number) => `${n} 个特效`,
       none: "无",
       strength: "强度",
       azimuth: "方位角",
@@ -1072,16 +1092,19 @@ const zh: Dictionary = {
       remove: (kind: string) => `移除${kind}`,
       replaceModel: (name: string) => `上传模型文件夹以替换 ${name}`,
       deleteModel: (name: string) => `删除 ${name}`,
-      raiseEffect: (name: string) => `将 ${name} 上移一层`,
-      lowerEffect: (name: string) => `将 ${name} 下移一层`,
+      editEffect: (name: string) => `编辑 ${name}`,
+      replaceEffect: (name: string) => `替换 ${name}`,
       removeEffect: (name: string) => `从场景中移除 ${name}`,
       uploadAnimationFor: (name: string) => `为 ${name} 上传动作`,
       replaceAnimationFor: (name: string) => `替换 ${name} 的动作`,
+      uploadMorphFor: (name: string) => `为 ${name} 上传表情`,
+      replaceMorphFor: (name: string) => `替换 ${name} 的表情`,
+      deleteMorphOn: (name: string) => `删除 ${name} 的表情`,
       deleteAnimationOn: (name: string) => `删除 ${name} 的动作`,
       replaceStage: (name: string) => `上传舞台 PMX 文件夹以替换 ${name}`,
       deleteStage: (name: string) => `删除舞台 ${name}`,
     },
-    lanes: { animation: "动作", camera: "相机", music: "音乐" },
+    lanes: { motion: "动作", morph: "表情", camera: "相机", music: "音乐" },
     drop: { motion: "拖入动作", camera: "拖入镜头动作", music: "拖入音乐" },
     cmd: {
       graphNew: "新建着色器图",
@@ -1213,7 +1236,7 @@ const zh: Dictionary = {
 export const dictionaries: Record<Locale, Dictionary> = { en, zh }
 
 // ── The tiny reactive layer ──
-const STORAGE_KEY = "reze-design.locale"
+const STORAGE_KEY = storageKey("locale")
 const isLocale = (v: string): v is Locale => (LOCALES as readonly string[]).includes(v)
 
 /** Saved choice wins; otherwise map the browser language onto a supported locale. */

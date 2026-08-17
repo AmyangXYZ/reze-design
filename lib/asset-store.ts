@@ -20,15 +20,21 @@
 // user re-uploads.
 
 import type { BundleEntry } from "@/lib/bundle"
+import { storageKey } from "@/lib/storage"
 
 const DB_NAME = "reze-design"
 // v2: an earlier (reverted) experiment shipped this database at v1 with a different
 // store. Same name + same version means onupgradeneeded never fires, the store this
 // code needs never exists, and every transaction throws — silently, through the
 // failure-tolerant wrappers. The bump forces the upgrade on browsers that ran it.
-const DB_VERSION = 2
+// v3: adds the palette store below.
+const DB_VERSION = 3
 const STORE = "local-bundle"
-const KEY = "local"
+const KEY = storageKey("local-bundle")
+/** Extracted cast colours, keyed by a model's own source path. Its own store
+ *  rather than a second shape in the bundle's: these outlive any one scene,
+ *  and clearing a scene's bytes must not throw its colours away. */
+const PALETTE_STORE = "cast-palette"
 
 type BundleRecord = { sceneId: string; entries: BundleEntry[] }
 
@@ -43,6 +49,7 @@ function open(): Promise<IDBDatabase | null> {
     }
     req.onupgradeneeded = () => {
       if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE)
+      if (!req.result.objectStoreNames.contains(PALETTE_STORE)) req.result.createObjectStore(PALETTE_STORE)
       // Left behind by the reverted first attempt; its records are unreadable garbage.
       if (req.result.objectStoreNames.contains("local-scene")) req.result.deleteObjectStore("local-scene")
     }
@@ -135,6 +142,35 @@ export async function peekLocalBundle(): Promise<{ sceneId: string; entries: num
   })
 }
 
+/**
+ * Drop bundles written under a key this build no longer reads.
+ *
+ * The localStorage sweep has done this for documents since there were versions
+ * to sweep; the bundle was the half that had none, so a file packed by an older
+ * build kept being found and installed by a newer one long after the document
+ * that named it was gone. Runs once at boot, costs one delete, and is the only
+ * thing standing between a user and megabytes they cannot see or clear.
+ */
+export async function sweepRetiredBundles(): Promise<void> {
+  const db = await open()
+  if (!db) return
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(STORE, "readwrite")
+      // The un-versioned original. Nothing else joins this list: a version bump
+      // now retires a whole generation at once.
+      tx.objectStore(STORE).delete("local")
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => resolve()
+      tx.onabort = () => resolve()
+    } catch {
+      resolve()
+    } finally {
+      db.close()
+    }
+  })
+}
+
 export async function clearLocalBundle(): Promise<void> {
   const db = await open()
   if (!db) return
@@ -142,6 +178,55 @@ export async function clearLocalBundle(): Promise<void> {
     try {
       const tx = db.transaction(STORE, "readwrite")
       tx.objectStore(STORE).delete(KEY)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => resolve()
+      tx.onabort = () => resolve()
+    } catch {
+      resolve()
+    } finally {
+      db.close()
+    }
+  })
+}
+
+/**
+ * A model's extracted cast colour, remembered.
+ *
+ * Extraction decodes the model's textures and weighs them, which costs a few
+ * hundred milliseconds — long enough that the swatch visibly arrives after the
+ * row it belongs to. The answer only depends on the model's own bytes, so it is
+ * worth remembering: the same model shows its colour immediately on every load
+ * after the first.
+ *
+ * Keyed by the model's SOURCE PATH, which is stable across reloads for both a
+ * site-served model and one unpacked from a scene bundle. A model uploaded this
+ * second has no path until the scene is saved, so its first load extracts and
+ * the next one reads this. Wrong colours are impossible by construction: a
+ * different path is a different key.
+ */
+export async function loadCastPalette(key: string): Promise<string | null> {
+  const db = await open()
+  if (!db) return null
+  return new Promise((resolve) => {
+    try {
+      const req = db.transaction(PALETTE_STORE, "readonly").objectStore(PALETTE_STORE).get(key)
+      req.onsuccess = () => resolve(typeof req.result === "string" ? req.result : null)
+      req.onerror = () => resolve(null)
+    } catch {
+      resolve(null)
+    } finally {
+      db.close()
+    }
+  })
+}
+
+export async function saveCastPalette(key: string, palette: string): Promise<void> {
+  const db = await open()
+  if (!db) return
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(PALETTE_STORE, "readwrite")
+      tx.objectStore(PALETTE_STORE).put(palette, key)
       tx.oncomplete = () => resolve()
       tx.onerror = () => resolve()
       tx.onabort = () => resolve()

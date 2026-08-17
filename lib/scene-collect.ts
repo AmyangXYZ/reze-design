@@ -31,12 +31,22 @@ export type SceneSlotsInput = {
   bundleFiles: File[]
   /** Per-model motion by model id. */
   anims: Record<string, CollectedAnim>
+  /** Per-model EXPRESSION VMD by model id — the file laid over the motion's
+   *  own morphs. Optional, and absent means the motion's own morphs are what
+   *  plays: a caller with no morph slot at all (the viewer) is a scene
+   *  without morphs, not a scene that cannot be collected. */
+  morphAnims?: Record<string, CollectedAnim>
   /** The camera VMD's display name, and the boot document's entry for it (what a
    *  served, never-re-uploaded camera track resolves back to). */
   camera: { name: string | null; booted: AssetRef | null }
   /** The track's name, and its live src — a blob: URL means the bytes are in
    *  `sceneFiles.audio`, anything else is a served path that travels as a URL. */
   audio: { name: string | null; url: string | null }
+  /** The track's companions, each the camera slot's own shape: the display
+   *  name, and the boot document's entry for one never re-uploaded this
+   *  session. */
+  midi: { name: string | null; booted: AssetRef | null }
+  lyrics: { name: string | null; booted: AssetRef | null }
   /** The background image, whichever slot it came from. */
   background: { kind: "backdrop" | "skybox"; name: string; file: File } | null
 }
@@ -46,6 +56,8 @@ export type SceneSlots = {
   models: SceneModel[]
   cameraAnimation: AssetRef | null
   audio: AssetRef | null
+  midi: AssetRef | null
+  lyrics: AssetRef | null
   background: SceneBackground
   hidden: Record<string, string[]>
 }
@@ -117,6 +129,18 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
       animation = { name: anim.name, url: anim.source.url }
       carry(animation.url)
     }
+    // The morph file, packed under the same per-model folder as the
+    // motion it dresses — one clip's worth of files stays together.
+    const expr = input.morphAnims?.[m.id]
+    let morph: AssetRef | null = null
+    if (expr?.source.kind === "file") {
+      const path = packPath(`motions/${m.id}`, expr.source.file.name)
+      entries.push({ path, file: expr.source.file })
+      morph = { name: expr.name, url: path }
+    } else if (expr?.source.kind === "url") {
+      morph = { name: expr.name, url: expr.source.url }
+      carry(morph.url)
+    }
     // Stages carry their placement and their switch weights in the document.
     // Without the flag they reload as ordinary cast: physics, IK, a spawn
     // offset, and no ground suppression.
@@ -124,6 +148,7 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
     return {
       model: { id: m.id, file: m.file, source: source! },
       animation,
+      ...(morph ? { morph } : {}),
       ...(stage ? { stage: true, transform: stage.transform } : {}),
       ...(stage && Object.keys(stage.morphs).length ? { morphs: stage.morphs } : {}),
     }
@@ -146,21 +171,25 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
     audio = { name: input.audio.name, url: input.audio.url }
     carry(audio.url)
   }
-  // The track's companions, packed beside it — for a SERVED track too, so the
-  // published bundle is self-contained even where the audio travels as a URL.
-  // The document never names them: pair-by-name IS the contract, so the base
-  // names must agree or the slot is a leftover from an earlier track and
-  // packing it would pair the wrong words to the wrong song.
-  if (audio?.name) {
-    const trackBase = audio.name.replace(/\.[^./]+$/, "")
-    for (const companion of [sceneFiles.score, sceneFiles.lyrics]) {
-      if (!companion) continue
-      const leaf = companion.name.split("/").pop() ?? companion.name
-      if (leaf.replace(/\.[^./]+$/, "") !== trackBase) continue
-      const path = packPath("audio", leaf)
-      if (!entries.some((e) => e.path === path)) entries.push({ path, file: companion })
+  // The track's companions, named by the DOCUMENT exactly as the camera track
+  // is: an uploaded file is packed under its own name and pointed at, a served
+  // one travels as its URL. Nothing is inferred from the audio's filename, so a
+  // picked file keeps the name you gave it and "this scene has no lyrics" is
+  // something the document can say rather than something a reader infers.
+  const companionOf = (slot: { name: string | null; booted: AssetRef | null }, file: File | null): AssetRef | null => {
+    if (slot.name && file) {
+      const path = packPath("audio", file.name)
+      if (!entries.some((e) => e.path === path)) entries.push({ path, file })
+      return { name: slot.name, url: path }
     }
+    if (slot.name && slot.booted?.name === slot.name) {
+      carry(slot.booted.url)
+      return slot.booted
+    }
+    return null
   }
+  const midi = companionOf(input.midi, sceneFiles.score)
+  const lyrics = companionOf(input.lyrics, sceneFiles.lyrics)
   let background: SceneBackground = null
   if (input.background) {
     const path = packPath(input.background.kind, input.background.name)
@@ -172,5 +201,5 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
       .map((m) => [m.id, m.materials.filter((mat) => !mat.visible).map((mat) => mat.name)] as const)
       .filter(([, names]) => names.length),
   )
-  return { entries, models: liveModels, cameraAnimation, audio, background, hidden }
+  return { entries, models: liveModels, cameraAnimation, audio, midi, lyrics, background, hidden }
 }
