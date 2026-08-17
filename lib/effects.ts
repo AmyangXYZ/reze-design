@@ -1,10 +1,10 @@
 // Curated WGSL effects — the built-in shelf of the effects library.
 //
-// The TYPE names dropped "Background" with the library; the FIELD names did not
-// and cannot. `SceneState.backgroundEffect` is read out of exported scene files
-// and out of localStorage, and `SceneDoc.settings.background.effect` is inside
-// every published scene — both are frozen shapes, and both are still literally
-// where the effect is layered.
+// The TYPE names dropped "Background" with the library; the FIELD names did
+// not. `SceneState.backgroundEffects` is read out of exported scene files and
+// out of localStorage, and `SceneDoc.settings.background.effects` is inside
+// every published scene — both are stored shapes, and both are still literally
+// where the effects are layered.
 //
 // Shader source lives inside the JSON payload rather than beside it as .wgsl
 // files: nobody hand-edits these (they're authored in the app's editor or with

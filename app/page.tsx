@@ -1524,6 +1524,9 @@ export default function Lab() {
   const musicInput = useRef<HTMLInputElement | null>(null)
   const setMusicFile = useCallback((file: File) => {
     sceneFiles.audio = file
+    // A new track's companions are whatever pairs with ITS name, not the last one's.
+    sceneFiles.score = null
+    sceneFiles.lyrics = null
     setMusicClip((prev) => {
       dropMusicUrl(prev)
       return { name: file.name, url: URL.createObjectURL(file) }
@@ -1531,6 +1534,8 @@ export default function Lab() {
   }, [])
   const removeMusic = () => {
     sceneFiles.audio = null
+    sceneFiles.score = null
+    sceneFiles.lyrics = null
     setMusicClip((prev) => {
       dropMusicUrl(prev)
       return null

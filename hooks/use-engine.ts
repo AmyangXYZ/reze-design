@@ -486,17 +486,36 @@ function spawnOffsetX(existingCount: number): number {
  * ordinary case and must not read as a failure: a score-driven effect draws its
  * line and waits, which is what it already does before any file arrives.
  */
-async function loadScoreFor(audio: AssetRef | null, engine: Engine, cancelled: () => boolean): Promise<void> {
+async function loadScoreFor(
+  audio: AssetRef | null,
+  engine: Engine,
+  cancelled: () => boolean,
+  bundleFiles: File[] | null,
+): Promise<void> {
+  sceneFiles.score = null
   if (!audio?.name) return
   const base = audio.name.replace(/\.[^./]+$/, "")
   try {
-    const res = await fetch(`/audios/${encodeURIComponent(base)}.mid`)
-    if (!res.ok || cancelled()) return
-    const notes = parseMidi(await res.arrayBuffer())
-    if (!cancelled()) engine.setMidiNotes(notes)
+    const packed = bundleFiles?.find((f) => f.name === `audio/${base}.mid`) ?? null
+    const bytes = packed ? await packed.arrayBuffer() : await fetchCompanion(`${base}.mid`)
+    if (!bytes || cancelled()) return
+    engine.setMidiNotes(parseMidi(bytes))
+    // RETAINED wherever it came from, so the collector packs it beside the
+    // track — that is what makes the score travel through publish and fork.
+    sceneFiles.score = new File([bytes], `${base}.mid`)
   } catch {
     // No transcription beside the track, or one that will not parse.
   }
+}
+
+/** A companion file published beside the site's tracks, or null if there is
+ *  none. `no-cache` still yields a 304 on an unchanged file, but a sheet
+ *  edited between reloads always shows the edit — these are content files an
+ *  author iterates on by hand, and a stale copy reads exactly like a parser
+ *  ignoring the change. */
+async function fetchCompanion(name: string): Promise<ArrayBuffer | null> {
+  const res = await fetch(`/audios/${encodeURIComponent(name)}`, { cache: "no-cache" })
+  return res.ok ? await res.arrayBuffer() : null
 }
 
 /**
@@ -516,19 +535,18 @@ async function loadLyricsFor(
   /** Canvas backing height, so lines are rasterised at the size they are drawn
    *  at — a row stored at one size and sampled at another is what soft text is. */
   canvasHeightPx: number,
+  bundleFiles: File[] | null,
 ): Promise<void> {
+  sceneFiles.lyrics = null
   if (!audio?.name) return
   const base = audio.name.replace(/\.[^./]+$/, "")
   try {
-    // no-cache, not no-store: still a 304 on an unchanged file, but a lyric
-    // sheet edited between reloads always shows the edit. These are content
-    // files an author iterates on by hand, and a browser holding the previous
-    // copy reads exactly like the parser ignoring the change.
-    const res = await fetch(`/audios/${encodeURIComponent(base)}.lrc`, { cache: "no-cache" })
-    if (!res.ok || cancelled()) return
-    const lines = parseLRC(await res.text())
-    if (cancelled()) return
+    const packed = bundleFiles?.find((f) => f.name === `audio/${base}.lrc`) ?? null
+    const bytes = packed ? await packed.arrayBuffer() : await fetchCompanion(`${base}.lrc`)
+    if (!bytes || cancelled()) return
+    const lines = parseLRC(new TextDecoder().decode(bytes))
     engine.setLyrics(lines, rasterizeLyrics(lines, canvasHeightPx) ?? undefined)
+    sceneFiles.lyrics = new File([bytes], `${base}.lrc`)
   } catch {
     // No lyric file beside the track.
   }
@@ -623,10 +641,6 @@ export function useEngine(
         }
         await engine.init()
         if (disposed) return
-        // The notes for the track, when a transcription is published beside it.
-        // Not awaited: a scene must paint whether or not one exists.
-        void loadScoreFor(scene.assets.audio, engine, () => disposed)
-        void loadLyricsFor(scene.assets.audio, engine, () => disposed, canvasRef.current?.height ?? 0)
         const loaded = await loadSceneInto(engine, scene, () => disposed, {
           onStage: () => {
             // Stage up: paint now, models stream in behind.
@@ -648,6 +662,11 @@ export function useEngine(
         })
         if (!loaded) return
         bundleRef.current = loaded.bundle
+        // The track's companions — AFTER the bundle, which is where a published
+        // scene carries its own copies. Not awaited: a scene must paint whether
+        // or not either exists.
+        void loadScoreFor(scene.assets.audio, engine, () => disposed, bundleRef.current)
+        void loadLyricsFor(scene.assets.audio, engine, () => disposed, canvasRef.current?.height ?? 0, bundleRef.current)
         const { infos, groups: groupsMap } = loaded
         setModels(infos)
         setStages(loaded.stageList)
@@ -944,12 +963,16 @@ export function useEngine(
       for (const m of modelsRef.current) engine.removeModel(m.id)
       sceneFiles.models.clear()
       sceneFiles.audio = null
+      sceneFiles.score = null
+      sceneFiles.lyrics = null
       sceneFiles.camera = null
       engine.clearCameraVmd()
 
       const loaded = await loadSceneInto(engine, scene, stale, { onBytes: setBundleProgress })
       if (!loaded) return null
       bundleRef.current = loaded.bundle
+      void loadScoreFor(scene.assets.audio, engine, stale, bundleRef.current)
+      void loadLyricsFor(scene.assets.audio, engine, stale, canvasRef.current?.height ?? 0, bundleRef.current)
       sceneRef.current = scene
       setModels(loaded.infos)
       setStages(loaded.stageList)

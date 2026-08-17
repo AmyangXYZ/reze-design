@@ -146,6 +146,21 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
     audio = { name: input.audio.name, url: input.audio.url }
     carry(audio.url)
   }
+  // The track's companions, packed beside it — for a SERVED track too, so the
+  // published bundle is self-contained even where the audio travels as a URL.
+  // The document never names them: pair-by-name IS the contract, so the base
+  // names must agree or the slot is a leftover from an earlier track and
+  // packing it would pair the wrong words to the wrong song.
+  if (audio?.name) {
+    const trackBase = audio.name.replace(/\.[^./]+$/, "")
+    for (const companion of [sceneFiles.score, sceneFiles.lyrics]) {
+      if (!companion) continue
+      const leaf = companion.name.split("/").pop() ?? companion.name
+      if (leaf.replace(/\.[^./]+$/, "") !== trackBase) continue
+      const path = packPath("audio", leaf)
+      if (!entries.some((e) => e.path === path)) entries.push({ path, file: companion })
+    }
+  }
   let background: SceneBackground = null
   if (input.background) {
     const path = packPath(input.background.kind, input.background.name)

@@ -605,9 +605,9 @@ export function serializeSceneDoc(
       ...live.settings,
       background: {
         ...live.settings.background,
-        // The list, in layer order. `effect` is not written: a reader takes
-        // `effects` when present and falls back to the old single field, so a
-        // scene saved once is migrated and old documents keep opening.
+        // The list, in layer order — the only shape written or read. The old
+        // single `effect` field is gone from both ends; documents predating
+        // the list open with no effects rather than with their one.
         effects: live.backgroundEffects.map((e) => refs?.effect(e.wgsl) ?? { name: e.name, wgsl: e.wgsl }),
       },
     },
