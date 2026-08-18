@@ -56,6 +56,24 @@ export function useAudioClock({
     // onset. Plain resumes never arm it — seeking there flushes the decoder
     // and mutes the first beat, which is worse than the drift.
     let stampArmed = false
+    /**
+     * Whether a play() is already in flight.
+     *
+     * The tick asks an element that should be sounding and is not to play, and
+     * it asks EVERY FRAME until it is. That is right while the answer is "no
+     * user gesture yet" and wrong the moment the element is merely loading:
+     * play() on a loading element resolves when it starts, and a second play()
+     * before then aborts the first. At 60fps that is a new load request every
+     * 16ms, each cancelling the one before, and the element never gets far
+     * enough to sound — which is exactly the state a replaced or re-uploaded
+     * track puts it in, since the clock is already running when the new bytes
+     * arrive. A reload cleared it only because the element loads there while the
+     * clock is stopped.
+     *
+     * So: one request at a time. A rejection (no gesture, src pulled) frees it
+     * for the next frame to try again, which keeps the retry loop this relies on.
+     */
+    let playPending = false
     const onPlaying = () => {
       if (!stampArmed) return
       stampArmed = false
@@ -111,8 +129,19 @@ export function useAudioClock({
         // `audio.src` is the same guard `warm` uses: a scene with no track, or one
         // whose track was just removed, otherwise fires a play() that can only
         // reject, once per frame, for as long as the motion runs.
-        if (audio.src && audio.paused && (!Number.isFinite(audio.duration) || p.current < audio.duration - 0.05)) {
-          void audio.play().catch(() => {})
+        if (
+          audio.src &&
+          audio.paused &&
+          !playPending &&
+          (!Number.isFinite(audio.duration) || p.current < audio.duration - 0.05)
+        ) {
+          playPending = true
+          void audio
+            .play()
+            .catch(() => {})
+            .finally(() => {
+              playPending = false
+            })
         }
       } else if (!audio.paused) {
         audio.pause()

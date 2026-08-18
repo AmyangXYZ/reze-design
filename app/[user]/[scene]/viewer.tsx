@@ -373,6 +373,71 @@ function SceneStage({
   }, [audioSrc])
 
   const audioElRef = useRef<HTMLAudioElement>(null)
+  // Whether the animation clock currently wants sound. Written by the tick
+  // below, read by the gesture handler above it — a ref rather than state
+  // because the handler is registered once, at mount, and must see the CURRENT
+  // answer rather than the one that was true when it was created.
+  const wantAudioRef = useRef(false)
+  /**
+   * iOS: take the element's autoplay blessing from the FIRST gesture, whenever
+   * that turns out to be.
+   *
+   * The viewer autoplays, so its first play() comes from the rAF tick with no
+   * user gesture behind it — WebKit rejects it, and rejects every retry too,
+   * none of them being gestures either. The standing fix was to listen for a tap
+   * and join the audio in from inside it, and the fix is still below. What broke
+   * is WHEN it starts listening: it lives in the tick's effect, which is gated on
+   * `ready`, and `ready` does not arrive until the last model of the scene has
+   * loaded. On a phone that is most of a minute, and the one tap a reader gives a
+   * loading page lands on the loading pill, where nothing is listening. The track
+   * then stays silent until they happen to touch the screen a second time — which
+   * on desktop never shows, because desktop autoplay needs no gesture at all.
+   *
+   * So this listens from mount. play() called inside a user gesture clears the
+   * element's autoplay restriction in WebKit BEFORE it looks at the source, so
+   * the blessing can be taken while the bundle is still downloading and the
+   * element still has no src — which is exactly when the tap arrives. The
+   * restriction stays cleared for the life of the element, across the src React
+   * sets later, so the tick's own play() is allowed when the scene finally runs.
+   *
+   * Pausing straight back is the point: this call buys the permission, not the
+   * sound. Unless the clock is already running, in which case the tap IS the
+   * reader asking for the track and it should keep playing.
+   */
+  useEffect(() => {
+    const audio = audioElRef.current
+    if (!audio) return
+    let blessed = false
+    const bless = () => {
+      if (blessed) return
+      blessed = true
+      // Muted for the duration of the call. The tap usually lands while the
+      // bundle is still downloading and there is nothing to hear, but it can
+      // also land in the window after the track has loaded and before the clock
+      // starts it — and there this play() would put a tenth of a second of the
+      // song's opening on the room before pausing it again. Restored either way:
+      // if the clock IS running, the tap was a reader asking for the track.
+      const wasMuted = audio.muted
+      audio.muted = true
+      // Rejected when there is no source yet, which is the common case and not a
+      // failure: the restriction has already been lifted by the time it throws.
+      void audio
+        .play()
+        .then(() => {
+          if (!wantAudioRef.current) audio.pause()
+        })
+        .catch(() => {})
+        .finally(() => {
+          audio.muted = wasMuted
+        })
+    }
+    window.addEventListener("pointerdown", bless)
+    window.addEventListener("keydown", bless)
+    return () => {
+      window.removeEventListener("pointerdown", bless)
+      window.removeEventListener("keydown", bless)
+    }
+  }, [])
   // The track's analysis for rzAudio* — same contract as the editor: primed on
   // load, sampled by the tick's setAudioTime, so a published scene's reactive
   // effects run identically to where they were authored.
@@ -405,6 +470,8 @@ function SceneStage({
     // once at true sound onset. Plain resumes never arm it — a seek there
     // flushes the decoder and mutes the first beat.
     let stampArmed = false
+    /** A play() is already in flight; asking again would abort it. */
+    let playPending = false
     const onPlaying = () => {
       if (!stampArmed) return
       stampArmed = false
@@ -413,24 +480,14 @@ function SceneStage({
       if (p?.playing && Math.abs(audio.currentTime - p.current) > 0.05) audio.currentTime = p.current
     }
     audio.addEventListener("playing", onPlaying)
-    // preload="auto" is a hint iOS Safari ignores until a user gesture — warm
-    // the buffer on the FIRST gesture anywhere (usually well before play), so
-    // pressing play starts sound without a fetch+decode stall. Guarded: never
-    // fires once data is buffered or playback has begun.
-    const warm = () => {
-      if (audio.paused && audio.readyState < 3 && audio.src) audio.load()
-    }
-    window.addEventListener("pointerdown", warm, { once: true })
-    window.addEventListener("keydown", warm, { once: true })
-    // iOS Safari honours play() only inside a user-gesture call stack. The
-    // editor never hits this: its playback starts from the transport's own tap,
-    // so the first play() rides that gesture. The viewer AUTOPLAYS — its first
-    // play() comes from the rAF tick with no gesture behind it, is rejected,
-    // and every rAF retry is rejected for the same reason: none of them are
-    // gestures either. So the first tap anywhere joins the audio in, from
-    // inside the gesture where iOS will allow it. Not { once: true } — the
-    // first tap may land while the scene is paused, and the next one still
-    // needs to work.
+    // The buffer is warmed by the blessing above, not here. preload="auto" is a
+    // hint iOS Safari ignores until a user gesture, and the play() that takes the
+    // blessing starts the fetch inside that gesture — so a separate load() at the
+    // same moment only reset an element that was already loading.
+    //
+    // This one stays: the blessing is taken once, and a tap that lands while the
+    // scene is paused still has to be able to join the audio in later. Not
+    // { once: true } for the same reason.
     const unlock = () => {
       const master = animated[0] ? engineRef.current?.getModel(animated[0]) : null
       if (master?.getAnimationProgress()?.playing && audio.paused) void audio.play().catch(() => {})
@@ -447,8 +504,21 @@ function SceneStage({
       // in whichever one forgets it.
       if (p) engine.setAudioTime(p.current, p.playing)
       if (p) engine.setMidiTime(p.current, p.playing)
+      // What the blessing handler reads to decide whether to pause straight back
+      // out of the play() it just made.
+      wantAudioRef.current = !!p?.playing
       const wasPaused = audio.paused
-      if (p?.playing && audio.paused) void audio.play().catch(() => {})
+      // One play() in flight at a time — see the editor's audio clock for what
+      // asking every frame does to an element that is merely still loading.
+      if (p?.playing && audio.paused && !playPending) {
+        playPending = true
+        void audio
+          .play()
+          .catch(() => {})
+          .finally(() => {
+            playPending = false
+          })
+      }
       if (!p?.playing && !audio.paused) audio.pause()
       if (p) {
         // Free-running audio, like the reze.one demo: set the clock when
@@ -470,8 +540,6 @@ function SceneStage({
       window.removeEventListener("pointerdown", unlock)
       window.removeEventListener("keydown", unlock)
       audio.removeEventListener("playing", onPlaying)
-      window.removeEventListener("pointerdown", warm)
-      window.removeEventListener("keydown", warm)
     }
   }, [ready, engineRef, audioSrc, animated])
 
