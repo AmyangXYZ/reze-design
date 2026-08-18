@@ -22,6 +22,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ComponentType,
   type ReactNode,
 } from "react"
@@ -240,6 +241,17 @@ const FOLD = "duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
  * and it is the fastest way to take the fold away again if the view misleads.
  */
 const TIMELINE_EDITOR = true
+
+/** Where the collapsed transport plus the lanes stop leaving the canvas a usable
+ *  share of the window. A coarse pointer is short by definition once the
+ *  keyboard or the browser chrome is up, so it counts whatever the height says. */
+const TIMELINE_ROOM_QUERY = "(pointer: coarse), (max-height: 40rem)"
+const subscribeTimelineRoom = (onChange: () => void) => {
+  const mq = window.matchMedia(TIMELINE_ROOM_QUERY)
+  mq.addEventListener("change", onChange)
+  return () => mq.removeEventListener("change", onChange)
+}
+const timelineRoomNow = () => !window.matchMedia(TIMELINE_ROOM_QUERY).matches
 
 /** A viewport a hair narrower than the target still counts as matching it. */
 const FRAME_ASPECT_TOL = 1.03
@@ -1139,6 +1151,20 @@ function CastAction({
 }
 
 /**
+ * What a clip row CALLS a file: its filename, never the folder above it.
+ *
+ * A slot's stored name is whatever the file arrived as, and a file that came out
+ * of a bundle arrives under its bundle path — so a scene reloaded from its own
+ * zip started calling its track "audio/track.wav" while the same track picked
+ * from disk was "track.wav". The bundle path is the packer's business, and a row
+ * that names the folder names an implementation detail at the one place a reader
+ * looks to identify their own file. Applied at the row rather than at each
+ * assignment: display is the only thing that was ever wrong, and the document
+ * keeps pointing at the path it packed.
+ */
+const clipLabel = (name: string) => name.split("/").pop() || name
+
+/**
  * A scene-wide clip in the stack — the camera motion, the music. One line in
  * the cast row's language: same hover reveal, same action pair, an icon where
  * a cast member carries a swatch. These are two of MMD's five basic
@@ -1183,8 +1209,8 @@ function ClipRow({
         <CastLine
           text={
             clip ? (
-              <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground" title={clip}>
-                {clip}
+              <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground" title={clipLabel(clip)}>
+                {clipLabel(clip)}
               </span>
             ) : (
               <UploadInvite label={empty} onClick={onPick} aria={t.lab.aria.upload(kind, of)} />
@@ -1293,8 +1319,11 @@ function CastRowSkeleton({ slot }: { slot: number }) {
 }
 
 /** What to call a model on screen. The extension is filesystem detail — every
- *  model here is a .pmx, so printing it on every row says nothing. */
-const displayName = (file: string) => file.replace(/\.pmx$/i, "")
+ *  model here is a .pmx, so printing it on every row says nothing; the folders
+ *  above it are the archive's own business, exactly as they are for a clip
+ *  (see clipLabel), so a model that came out of a bundle is called by its file
+ *  rather than by `models/<id>/`. */
+const displayName = (file: string) => clipLabel(file).replace(/\.pmx$/i, "")
 
 export default function Lab() {
   const t = useT()
@@ -1689,6 +1718,30 @@ export default function Lab() {
   // The transport IS the timeline, collapsed. Same surface, same controls in the
   // same place — unfolding it must never feel like a different panel appeared.
   const [timelineOpen, setTimelineOpen] = useState(false)
+  /**
+   * Whether there is room to unfold the timeline at all.
+   *
+   * The lanes are a HEIGHT: unfolded they take a third of a desktop window and
+   * all of a phone, which leaves the canvas — the thing being edited — as a
+   * strip. A control that can only make the view worse is not a choice, so on a
+   * coarse pointer or a short window the chevron is simply not there.
+   *
+   * Subscribed rather than read once: a phone rotating and a window dragged
+   * shorter are the same event to this. Through useSyncExternalStore because
+   * that is what it is — the browser holds the value, React reads it — and it
+   * has a server snapshot, so the markup does not disagree with itself the way
+   * a matchMedia call in a state initializer would.
+   */
+  const timelineRoom = useSyncExternalStore(subscribeTimelineRoom, timelineRoomNow, () => true)
+  /**
+   * Folded is the AND, not a second piece of state.
+   *
+   * Writing the fold back when the room goes would make "you asked for lanes"
+   * and "there is somewhere to put them" one flag, and the rotation back would
+   * have nothing to restore. Kept apart, a window that gets its height back gets
+   * the timeline back exactly as it was left.
+   */
+  const timelineUnfolded = timelineOpen && timelineRoom
   // The scene document's cameraAnimation slot. Seeded from the document like the
   // motion rows: useEngine has already handed the clip to the engine by the time
   // the chrome renders, so the name is known and there is nothing to wait for.
@@ -5858,7 +5911,7 @@ export default function Lab() {
             className={cn(
               "pointer-events-auto w-full transition-[max-width] [interpolate-size:allow-keywords]",
               FOLD,
-              timelineOpen ? "max-w-[max(18rem,calc(100%_-_39rem))]" : "max-w-fit",
+              timelineUnfolded ? "max-w-[max(18rem,calc(100%_-_39rem))]" : "max-w-fit",
             )}
           >
             <AnimPlayer
@@ -5870,20 +5923,20 @@ export default function Lab() {
               // control people press repeatedly. aria-label still carries it for
               // anyone not seeing the arrow.
               trailing={
-                TIMELINE_EDITOR ? (
+                TIMELINE_EDITOR && timelineRoom ? (
                   <Button
                     variant="ghost"
                     size="icon"
-                    aria-expanded={timelineOpen}
-                    aria-label={timelineOpen ? t.lab.hideTimeline : t.lab.showTimeline}
+                    aria-expanded={timelineUnfolded}
+                    aria-label={timelineUnfolded ? t.lab.hideTimeline : t.lab.showTimeline}
                     onClick={() => setTimelineOpen((v) => !v)}
                     className="size-7 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
                   >
-                    {timelineOpen ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
+                    {timelineUnfolded ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
                   </Button>
                 ) : undefined
               }
-              unfolded={timelineOpen}
+              unfolded={timelineUnfolded}
               axisDuration={animDuration}
               scrubRef={scrubRef}
               below={
@@ -5897,7 +5950,7 @@ export default function Lab() {
                   audioRef={audioRef}
                   playableDuration={animDuration}
                   scrubRef={scrubRef}
-                  open={timelineOpen}
+                  open={timelineUnfolded}
                 />
               }
             />
