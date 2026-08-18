@@ -378,6 +378,10 @@ function SceneStage({
   // because the handler is registered once, at mount, and must see the CURRENT
   // answer rather than the one that was true when it was created.
   const wantAudioRef = useRef(false)
+  // What ?audiodebug reports. Refs because the gesture handler writes them and
+  // it is registered once — see the readout at the bottom of this file.
+  const gestureCountRef = useRef(0)
+  const lastAudioErrorRef = useRef("—")
   /**
    * iOS: take the element's autoplay blessing from the FIRST gesture, whenever
    * that turns out to be.
@@ -400,42 +404,53 @@ function SceneStage({
    * restriction stays cleared for the life of the element, across the src React
    * sets later, so the tick's own play() is allowed when the scene finally runs.
    *
-   * Pausing straight back is the point: this call buys the permission, not the
-   * sound. Unless the clock is already running, in which case the tap IS the
-   * reader asking for the track and it should keep playing.
+   * Three things this gets wrong if written casually, all learned the hard way:
+   *
+   * NOT MUTED. Priming a muted element does not buy the AUDIO permission —
+   * WebKit tracks the video and audio rate-change restrictions separately, and a
+   * silent prime lifts the wrong one. An earlier version muted across the call
+   * to avoid a blip and bought nothing at all.
+   *
+   * PAUSED SYNCHRONOUSLY, not in the promise. pause() on the next line runs
+   * before the element has produced a sample, so there is no blip to mute in the
+   * first place; waiting for the promise means waiting until sound has already
+   * started. The play() then rejects with AbortError, which is the expected
+   * outcome and not a failure — the restriction was lifted on the way in.
+   *
+   * NOT ONCE. A prime taken before the element has a src may not stick, so this
+   * keeps listening and primes again on a later gesture once there is a source
+   * to prime with. Cheap, and the alternative is a reader whose only tap landed
+   * on the loading pill hearing nothing for the rest of the scene.
    */
   useEffect(() => {
     const audio = audioElRef.current
     if (!audio) return
-    let blessed = false
-    const bless = () => {
-      if (blessed) return
-      blessed = true
-      // Muted for the duration of the call. The tap usually lands while the
-      // bundle is still downloading and there is nothing to hear, but it can
-      // also land in the window after the track has loaded and before the clock
-      // starts it — and there this play() would put a tenth of a second of the
-      // song's opening on the room before pausing it again. Restored either way:
-      // if the clock IS running, the tap was a reader asking for the track.
-      const wasMuted = audio.muted
-      audio.muted = true
-      // Rejected when there is no source yet, which is the common case and not a
-      // failure: the restriction has already been lifted by the time it throws.
-      void audio
-        .play()
-        .then(() => {
-          if (!wantAudioRef.current) audio.pause()
-        })
-        .catch(() => {})
-        .finally(() => {
-          audio.muted = wasMuted
-        })
+    let primedWithSource = false
+    const note = (e: unknown) => {
+      lastAudioErrorRef.current = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
     }
-    window.addEventListener("pointerdown", bless)
-    window.addEventListener("keydown", bless)
+    const bless = () => {
+      gestureCountRef.current++
+      // The clock is already running: this tap is the reader asking for the
+      // track, so join it in and leave it playing.
+      if (wantAudioRef.current) {
+        if (audio.paused) void audio.play().catch(note)
+        return
+      }
+      if (primedWithSource) return
+      void audio.play().catch(note)
+      audio.pause()
+      // Only a prime that had a source to load counts as the one that stuck.
+      if (audio.src) primedWithSource = true
+    }
+    // Capture, so a handler that stops propagation on its way up cannot quietly
+    // take the one gesture this depends on.
+    const opts = { capture: true } as const
+    window.addEventListener("pointerdown", bless, opts)
+    window.addEventListener("keydown", bless, opts)
     return () => {
-      window.removeEventListener("pointerdown", bless)
-      window.removeEventListener("keydown", bless)
+      window.removeEventListener("pointerdown", bless, opts)
+      window.removeEventListener("keydown", bless, opts)
     }
   }, [])
   // The track's analysis for rzAudio* — same contract as the editor: primed on
@@ -480,20 +495,14 @@ function SceneStage({
       if (p?.playing && Math.abs(audio.currentTime - p.current) > 0.05) audio.currentTime = p.current
     }
     audio.addEventListener("playing", onPlaying)
-    // The buffer is warmed by the blessing above, not here. preload="auto" is a
-    // hint iOS Safari ignores until a user gesture, and the play() that takes the
-    // blessing starts the fetch inside that gesture — so a separate load() at the
-    // same moment only reset an element that was already loading.
-    //
-    // This one stays: the blessing is taken once, and a tap that lands while the
-    // scene is paused still has to be able to join the audio in later. Not
-    // { once: true } for the same reason.
-    const unlock = () => {
-      const master = animated[0] ? engineRef.current?.getModel(animated[0]) : null
-      if (master?.getAnimationProgress()?.playing && audio.paused) void audio.play().catch(() => {})
-    }
-    window.addEventListener("pointerdown", unlock)
-    window.addEventListener("keydown", unlock)
+    // No gesture listener here any more. The blessing effect above owns every
+    // gesture: it registers at mount rather than waiting for `ready`, and it
+    // already joins the track in when the clock is running — which is all this
+    // one did. Two listeners for one tap meant two play() calls racing, and the
+    // second aborts the first, which is the very failure the latch below exists
+    // to prevent. Buffer warming is the blessing's too: its play() starts the
+    // fetch from inside the gesture, so a separate load() only reset an element
+    // that was already loading.
     const tick = () => {
       // Progress lives on the model (the animation clock's owner); the first
       // animated model is the master, as in the editor.
@@ -537,11 +546,43 @@ function SceneStage({
     raf = requestAnimationFrame(tick)
     return () => {
       cancelAnimationFrame(raf)
-      window.removeEventListener("pointerdown", unlock)
-      window.removeEventListener("keydown", unlock)
       audio.removeEventListener("playing", onPlaying)
     }
   }, [ready, engineRef, audioSrc, animated])
+
+  /**
+   * ?audiodebug — what the media element is actually doing, on the device.
+   *
+   * iOS Safari cannot be inspected without a Mac attached, so "the audio does
+   * not play" arrives with no way to tell WHICH of the four possible failures it
+   * is: no source reached the element, the source will not load, the element is
+   * loaded and paused because nothing asked it to play, or a play() was refused.
+   * Those want four different fixes and look identical from the outside.
+   *
+   * Sampled on a timer rather than from the tick, because the tick is gated on
+   * `ready` and the interesting minute is the one before that.
+   */
+  const [audioDebug, setAudioDebug] = useState<string[] | null>(null)
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has("audiodebug")) return
+    const READY = ["NOTHING", "METADATA", "CURRENT", "FUTURE", "ENOUGH"]
+    const NET = ["EMPTY", "IDLE", "LOADING", "NO_SOURCE"]
+    const id = window.setInterval(() => {
+      const a = audioElRef.current
+      if (!a) return setAudioDebug(["element: (not mounted)"])
+      setAudioDebug([
+        `src      ${a.src ? (a.src.startsWith("blob:") ? "blob ✓" : a.src.slice(-28)) : "(none)"}`,
+        `state    ${READY[a.readyState] ?? a.readyState} / net ${NET[a.networkState] ?? a.networkState}`,
+        `paused   ${a.paused} muted ${a.muted} vol ${a.volume}`,
+        `time     ${a.currentTime.toFixed(2)} / ${Number.isFinite(a.duration) ? a.duration.toFixed(2) : "?"}`,
+        `clock    wants ${wantAudioRef.current}`,
+        `gestures ${gestureCountRef.current}`,
+        `mediaErr ${a.error ? `code ${a.error.code}` : "—"}`,
+        `lastPlay ${lastAudioErrorRef.current}`,
+      ])
+    }, 250)
+    return () => window.clearInterval(id)
+  }, [])
 
   return (
     // A fragment: the page above owns <main> and the chrome, so nothing here has
@@ -553,6 +594,15 @@ function SceneStage({
         <img src={backdropUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
       )}
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none object-contain" />
+
+      {/* pointer-events-none is load-bearing, not tidiness: this thing exists to
+          diagnose a missing gesture, and a panel that swallowed taps would be
+          the reason the gesture went missing. */}
+      {audioDebug && (
+        <div className="pointer-events-none absolute top-3 left-3 z-50 rounded-interior border border-line-strong bg-surface px-3 py-2 font-mono text-[10px] leading-relaxed whitespace-pre text-muted-foreground">
+          {audioDebug.join("\n")}
+        </div>
+      )}
 
       {!ready && !error && <LoadingPill label={loadingLabel} />}
       {error && (

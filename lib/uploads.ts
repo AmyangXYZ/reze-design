@@ -4,6 +4,52 @@ const EOCD_SIG = 0x06054b50;
 const CDIR_SIG = 0x02014b50;
 const UNICODE_PATH_EXTRA = 0x7075;
 
+/**
+ * A zip entry carries no content type, so one is named from the extension.
+ *
+ * This is not cosmetic. A File built without a `type` makes an object URL that
+ * serves no Content-Type, and WebKit will not play media it has not been told
+ * the type of — `<audio src="blob:…">` fails with MEDIA_ERR_SRC_NOT_SUPPORTED
+ * where Chrome sniffs the bytes and plays it anyway. That is the whole of "the
+ * published scene is silent on iPhone and fine on the desktop": the editor's
+ * track comes from a file input, which the OS types for us, while a viewer's
+ * comes out of the scene's own zip, which does not.
+ *
+ * Only the kinds that travel in a bundle and are handed to an element or a
+ * decoder. A .pmx or a .vmd is read as bytes by code that never asks, and
+ * inventing a type for those would be noise.
+ */
+const MIME_BY_EXT: Record<string, string> = {
+  mp3: "audio/mpeg",
+  m4a: "audio/mp4",
+  aac: "audio/aac",
+  wav: "audio/wav",
+  ogg: "audio/ogg",
+  opus: "audio/ogg",
+  flac: "audio/flac",
+  mp4: "video/mp4",
+  webm: "video/webm",
+  mov: "video/quicktime",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+  gif: "image/gif",
+  avif: "image/avif",
+  bmp: "image/bmp",
+  hdr: "image/vnd.radiance",
+  mid: "audio/midi",
+  midi: "audio/midi",
+  lrc: "text/plain",
+};
+
+/** The content type for a path, or "" when we have nothing useful to say —
+ *  which is what a File gets today and stays correct for bytes nobody types. */
+export function mimeForPath(path: string): string {
+  const ext = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
+  return MIME_BY_EXT[ext] ?? "";
+}
+
 /** UTF-8 name from the Info-ZIP Unicode Path extra field, if present. */
 function unicodePathFromExtra(
   u8: Uint8Array,
@@ -143,7 +189,7 @@ export async function unzipToFiles(zip: File): Promise<File[]> {
       throw new Error(
         `Unsupported zip compression (${e.method}) in ${zip.name}`,
       );
-    out.push(new File([blob], name));
+    out.push(new File([blob], name, { type: mimeForPath(name) }));
   }
   return out;
 }
@@ -178,7 +224,16 @@ export async function readDroppedFiles(
         (entry as FileSystemFileEntry).file(resolve, reject),
       );
       // Re-wrap with the path in the name (webkitRelativePath is read-only "").
-      out.push(prefix ? new File([file], prefix + file.name) : file);
+      // Carrying `type` across the re-wrap, since dropping it is the same silent
+      // failure the zip path had: the OS typed this file for us and a File built
+      // without one makes an object URL WebKit will not play.
+      out.push(
+        prefix
+          ? new File([file], prefix + file.name, {
+              type: file.type || mimeForPath(file.name),
+            })
+          : file,
+      );
     } else if (entry.isDirectory) {
       const reader = (entry as FileSystemDirectoryEntry).createReader();
       for (;;) {
