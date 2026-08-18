@@ -378,10 +378,6 @@ function SceneStage({
   // because the handler is registered once, at mount, and must see the CURRENT
   // answer rather than the one that was true when it was created.
   const wantAudioRef = useRef(false)
-  // What ?audiodebug reports. Refs because the gesture handler writes them and
-  // it is registered once — see the readout at the bottom of this file.
-  const gestureCountRef = useRef(0)
-  const lastAudioErrorRef = useRef("—")
   /**
    * iOS: take the element's autoplay blessing from the FIRST gesture, whenever
    * that turns out to be.
@@ -426,19 +422,15 @@ function SceneStage({
     const audio = audioElRef.current
     if (!audio) return
     let primedWithSource = false
-    const note = (e: unknown) => {
-      lastAudioErrorRef.current = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
-    }
     const bless = () => {
-      gestureCountRef.current++
       // The clock is already running: this tap is the reader asking for the
       // track, so join it in and leave it playing.
       if (wantAudioRef.current) {
-        if (audio.paused) void audio.play().catch(note)
+        if (audio.paused) void audio.play().catch(() => {})
         return
       }
       if (primedWithSource) return
-      void audio.play().catch(note)
+      void audio.play().catch(() => {})
       audio.pause()
       // Only a prime that had a source to load counts as the one that stuck.
       if (audio.src) primedWithSource = true
@@ -550,40 +542,6 @@ function SceneStage({
     }
   }, [ready, engineRef, audioSrc, animated])
 
-  /**
-   * ?audiodebug — what the media element is actually doing, on the device.
-   *
-   * iOS Safari cannot be inspected without a Mac attached, so "the audio does
-   * not play" arrives with no way to tell WHICH of the four possible failures it
-   * is: no source reached the element, the source will not load, the element is
-   * loaded and paused because nothing asked it to play, or a play() was refused.
-   * Those want four different fixes and look identical from the outside.
-   *
-   * Sampled on a timer rather than from the tick, because the tick is gated on
-   * `ready` and the interesting minute is the one before that.
-   */
-  const [audioDebug, setAudioDebug] = useState<string[] | null>(null)
-  useEffect(() => {
-    if (!new URLSearchParams(window.location.search).has("audiodebug")) return
-    const READY = ["NOTHING", "METADATA", "CURRENT", "FUTURE", "ENOUGH"]
-    const NET = ["EMPTY", "IDLE", "LOADING", "NO_SOURCE"]
-    const id = window.setInterval(() => {
-      const a = audioElRef.current
-      if (!a) return setAudioDebug(["element: (not mounted)"])
-      setAudioDebug([
-        `src      ${a.src ? (a.src.startsWith("blob:") ? "blob ✓" : a.src.slice(-28)) : "(none)"}`,
-        `state    ${READY[a.readyState] ?? a.readyState} / net ${NET[a.networkState] ?? a.networkState}`,
-        `paused   ${a.paused} muted ${a.muted} vol ${a.volume}`,
-        `time     ${a.currentTime.toFixed(2)} / ${Number.isFinite(a.duration) ? a.duration.toFixed(2) : "?"}`,
-        `clock    wants ${wantAudioRef.current}`,
-        `gestures ${gestureCountRef.current}`,
-        `mediaErr ${a.error ? `code ${a.error.code}` : "—"}`,
-        `lastPlay ${lastAudioErrorRef.current}`,
-      ])
-    }, 250)
-    return () => window.clearInterval(id)
-  }, [])
-
   return (
     // A fragment: the page above owns <main> and the chrome, so nothing here has
     // to wait for anything here.
@@ -594,15 +552,6 @@ function SceneStage({
         <img src={backdropUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
       )}
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none object-contain" />
-
-      {/* pointer-events-none is load-bearing, not tidiness: this thing exists to
-          diagnose a missing gesture, and a panel that swallowed taps would be
-          the reason the gesture went missing. */}
-      {audioDebug && (
-        <div className="pointer-events-none absolute top-3 left-3 z-50 rounded-interior border border-line-strong bg-surface px-3 py-2 font-mono text-[10px] leading-relaxed whitespace-pre text-muted-foreground">
-          {audioDebug.join("\n")}
-        </div>
-      )}
 
       {!ready && !error && <LoadingPill label={loadingLabel} />}
       {error && (
