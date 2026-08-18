@@ -603,6 +603,17 @@ export function useEngine(
       // The document sweep in hydrateScene has always done this for
       // localStorage; the bundle had no version to sweep by until now.
       void sweepRetiredBundles()
+      // ?hdr=rgba16float — put a Safari device back on the desktop's HDR target.
+      //
+      // A phone is the one machine you cannot bisect by editing and reloading a
+      // dozen times, so the one render-target difference between it and a
+      // desktop is reachable from the URL instead. Read here rather than inside
+      // the engine: the engine has no business knowing what a query string is,
+      // and the flag has to be set before init() probes the device. Ignored
+      // unless it names a format the switch actually offers, so a typo cannot
+      // hand the engine a target no pipeline can be built against.
+      const forced = new URLSearchParams(window.location.search).get("hdr")
+      if (forced === "rgba16float" || forced === "rg11b10ufloat") Engine.HDR_FORMAT_OVERRIDE = forced
       try {
         const scene = sceneRef.current
         const s = scene.state.settings
