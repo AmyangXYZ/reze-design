@@ -731,6 +731,17 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       keywords: [...LOAD, "vmd", "morph", "expression", "face", "表情", "口型"],
     },
     {
+      id: "lipsync",
+      repeatable: true,
+      section: "command",
+      // The same smile the morph row wears: generating lips FILLS that row,
+      // and a command and the row it fills are the same act.
+      icon: Smile,
+      label: l.lipSyncFromLyrics,
+      altLabels: [alt.lipSyncFromLyrics],
+      keywords: ["lip", "lyrics", "mouth", "sync", "vmd", "口型", "歌词", "口パク", "リップシンク"],
+    },
+    {
       id: "upload-stage",
       nextLikely: ["light", "post"],
       section: "command",
@@ -1446,29 +1457,6 @@ export default function Lab() {
     morphTarget.current = id
     morphInput.current?.click()
   }
-  /**
-   * Lip sync, from the lyrics the scene already carries — a rule table over the
-   * .lrc, never a model (see lib/lipsync.ts). One-shot by design: the output is
-   * an ORDINARY morph VMD that attaches through the same door as an upload and
-   * persists as a plain scene file, so a published scene never knows its lips
-   * came from lyrics. It also downloads, because it is a real, standard VMD any
-   * MMD tool can read — regenerate any time the lyrics change.
-   */
-  const generateLipSync = async (id: string) => {
-    const lyrics = sceneFiles.lyrics
-    if (!lyrics) return
-    const lines = parseLRC(await lyrics.text())
-    const file = lipSyncVmdFile(lines, lyrics.name)
-    if (!file) return
-    const name = await loadMorphFile(id, file)
-    if (name) setMorphByModel((prev) => ({ ...prev, [id]: { name, src: file } }))
-    const url = URL.createObjectURL(file)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = file.name
-    a.click()
-    URL.revokeObjectURL(url)
-  }
   const removeMorph = (id: string) => {
     setMorphByModel((prev) => {
       const next = { ...prev }
@@ -1805,6 +1793,29 @@ export default function Lab() {
   // Uploads become object URLs, revoked on the way out so replaced tracks do not
   // pin their bytes for the session.
   const [musicClip, setMusicClip] = useState<{ name: string; url: string } | null>(() => seedMusic(scene))
+  /**
+   * Lip sync, from the lyrics the scene already carries — a rule table over the
+   * .lrc, never a model (see lib/lipsync.ts). One-shot by design: the output is
+   * an ORDINARY morph VMD that attaches through the same door as an upload and
+   * persists as a plain scene file, so a published scene never knows its lips
+   * came from lyrics. It also downloads, because it is a real, standard VMD any
+   * MMD tool can read — regenerate any time the lyrics change.
+   */
+  const generateLipSync = useCallback(async (id: string) => {
+    const lyrics = sceneFiles.lyrics
+    if (!lyrics) return
+    const lines = parseLRC(await lyrics.text())
+    const file = lipSyncVmdFile(lines, lyrics.name)
+    if (!file) return
+    const name = await loadMorphFile(id, file)
+    if (name) setMorphByModel((prev) => ({ ...prev, [id]: { name, src: file } }))
+    const url = URL.createObjectURL(file)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = file.name
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [loadMorphFile])
   const musicInput = useRef<HTMLInputElement | null>(null)
   const setMusicFile = useCallback((file: File) => {
     sceneFiles.audio = file
@@ -3907,6 +3918,16 @@ export default function Lab() {
       else if (item.id === "upload-music") musicInput.current?.click()
       else if (item.id === "upload-midi") midiInput.current?.click()
       else if (item.id === "upload-lyrics") lyricsInput.current?.click()
+      // Generate on the primary model, by upload-morph's own rule: the lips
+      // have to land on someone and the palette cannot ask which. With no
+      // lyrics yet it opens the door to them instead — the same door the
+      // upload-lyrics command is — because a verb that silently does nothing
+      // reads as broken.
+      else if (item.id === "lipsync") {
+        const target = models[0]?.id
+        if (target && lyricsClip) void generateLipSync(target)
+        else if (target) lyricsInput.current?.click()
+      }
       else if (item.id === "camera") gotoSection("camera")
       else if (item.id === "scene-new") cmdRef.current.newScene()
       else if (item.id === "scene-reset") cmdRef.current.resetSceneDefaults()
@@ -3993,6 +4014,8 @@ export default function Lab() {
       // resolution changes, not when the stale string happens to.
       inspected?.id,
       models,
+      lyricsClip,
+      generateLipSync,
       patch,
       setLangOpen,
       openExport,
