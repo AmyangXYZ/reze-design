@@ -25,6 +25,7 @@ One piece of the **Reze MMD family**, covering the whole MMD workflow on the web
 - **GPU particles and ribbon trails** — declare a pool size and three functions and a hundred thousand particles run entirely on the GPU, depth-tested against the cast; declare a bone with `trail` and two more functions draw a ribbon along the path it actually took.
 - **Effects that react to the music** — loudness, a kick detector and a 32-band spectrum, readable seconds into the past or the future. Analysed once ahead of time, so an exported video reacts exactly as the editor did.
 - **Effects that read the score and the words** — drop a `.mid` and a `.lrc` beside the track, and effects read the notes, the keys under them and the lyric line due on screen, off the same clock as the audio. Notes falling to the beat, subtitles you style in the shader.
+- **Lip sync from the lyrics** — one click turns the `.lrc` into a mouth-morph VMD: kana, romaji, Korean and pinyin map by rule onto the five MMD mouth shapes, timed to each line and articulated per syllable. It attaches to the model's morph slot and downloads as a standard VMD any MMD tool can read.
 - **Scene lighting** — sun, world light and bloom over a colour, an image backdrop or an HDR skybox that lights the cast as well as standing behind it.
 - **Multi-model scenes** — a motion and an expression VMD each, one camera VMD, one audio track with its `.mid` and `.lrc`.
 - **Stage models** — a stage PMX as the environment, placed and scaled, with the switches its author rigged.

@@ -183,7 +183,9 @@ import {
   type MaterialPreset,
   type ShaderGraph,
   type StyleGroup,
+  parseLRC,
 } from "reze-engine"
+import { lipSyncVmdFile } from "@/lib/lipsync"
 import { WIND_MAX, windFreqFromSlider, windSliderFromFreq, type SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 import { storageKey } from "@/lib/storage"
@@ -1443,6 +1445,29 @@ export default function Lab() {
   const pickMorph = (id: string) => {
     morphTarget.current = id
     morphInput.current?.click()
+  }
+  /**
+   * Lip sync, from the lyrics the scene already carries — a rule table over the
+   * .lrc, never a model (see lib/lipsync.ts). One-shot by design: the output is
+   * an ORDINARY morph VMD that attaches through the same door as an upload and
+   * persists as a plain scene file, so a published scene never knows its lips
+   * came from lyrics. It also downloads, because it is a real, standard VMD any
+   * MMD tool can read — regenerate any time the lyrics change.
+   */
+  const generateLipSync = async (id: string) => {
+    const lyrics = sceneFiles.lyrics
+    if (!lyrics) return
+    const lines = parseLRC(await lyrics.text())
+    const file = lipSyncVmdFile(lines, lyrics.name)
+    if (!file) return
+    const name = await loadMorphFile(id, file)
+    if (name) setMorphByModel((prev) => ({ ...prev, [id]: { name, src: file } }))
+    const url = URL.createObjectURL(file)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = file.name
+    a.click()
+    URL.revokeObjectURL(url)
   }
   const removeMorph = (id: string) => {
     setMorphByModel((prev) => {
@@ -4894,6 +4919,17 @@ export default function Lab() {
                             label: t.lab.uploadMorph,
                             onPick: () => pickMorph(clipModel.id),
                           },
+                          // Only when the scene HAS lyrics to derive from — an
+                          // action that opens on nothing is a broken promise.
+                          ...(lyricsClip
+                            ? [
+                                {
+                                  key: "lipsync",
+                                  label: t.lab.lipSyncFromLyrics,
+                                  onPick: () => void generateLipSync(clipModel.id),
+                                },
+                              ]
+                            : []),
                         ]
                       : []),
                   ]}
