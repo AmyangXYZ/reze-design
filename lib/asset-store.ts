@@ -21,6 +21,7 @@
 
 import type { BundleEntry } from "@/lib/bundle"
 import { storageKey } from "@/lib/storage"
+import { mimeForPath } from "@/lib/uploads"
 
 const DB_NAME = "reze-design"
 // v2: an earlier (reverted) experiment shipped this database at v1 with a different
@@ -99,7 +100,15 @@ export async function loadLocalBundle(sceneId: string): Promise<File[] | null> {
         // type), and whatever name an original File had, `path` was computed before
         // storing and is authoritative. webkitRelativePath would not have survived
         // structured clone anyway.
-        resolve(rec.entries.map((e) => new File([e.file], e.path, { type: e.file.type })))
+        //
+        // The type is named from the path when the stored blob has none, which is
+        // the common case: entries are Blobs, and a Blob out of the zip packer
+        // carries no type at all. Without this the unzip fix does not reach the
+        // path the editor actually reloads from — a locally persisted scene would
+        // keep handing the audio element a typeless object URL, which WebKit
+        // refuses to play. It also repairs records written before any of this,
+        // since the fallback is applied on the way OUT.
+        resolve(rec.entries.map((e) => new File([e.file], e.path, { type: e.file.type || mimeForPath(e.path) })))
       }
       req.onerror = () => resolve(null)
     } catch {
