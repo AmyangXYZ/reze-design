@@ -4321,10 +4321,15 @@ export default function Lab() {
         }}
       />
 
+      {/* Named formats, not `audio/*`. A .mid IS audio/midi, so the wildcard
+          offered the score file in the picker for the TRACK — two slots one
+          `audio/*` cannot tell apart, and picking wrong there gives you a
+          silent song rather than an error. These are the containers a media
+          element will actually decode. */}
       <input
         ref={musicInput}
         type="file"
-        accept="audio/*"
+        accept=".mp3,.m4a,.aac,.wav,.ogg,.opus,.flac,audio/mpeg,audio/mp4,audio/aac,audio/wav,audio/ogg,audio/flac"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0]
