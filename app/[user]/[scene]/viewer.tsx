@@ -335,7 +335,8 @@ function SceneStage({
     for (const m of fresh) clipped.current.add(m.id)
     clipQueue.current = clipQueue.current.then(async () => {
       for (const m of fresh) {
-        const clip = scene.assets.models.find((e) => e.model.id === m.id)?.animation
+        const entry = scene.assets.models.find((e) => e.model.id === m.id)
+        const clip = entry?.animation
         const model = engine.getModel(m.id)
         if (!clip || !model) continue
         const file = bundleFile(clip.url)
@@ -350,6 +351,38 @@ function SceneStage({
           if (file) URL.revokeObjectURL(url)
           // Hidden since load so bind pose never shows — reveal on the clip's
           // first pose (or reveal anyway if the clip failed).
+          engine.setModelTransform(m.id, { visible: true })
+        }
+      }
+      // The morph VMDs (表情モーション), AFTER every motion in this batch — the
+      // editor's rule, and the same reason: a morph merges INTO the motion's
+      // clip, and loading the motion afterwards rebuilds that clip and drops the
+      // merge. Without this pass the viewer played a published scene's dance
+      // with the motion's own face, which is what the editor never shows.
+      for (const m of fresh) {
+        const entry = scene.assets.models.find((e) => e.model.id === m.id)
+        const expr = entry?.morph
+        const model = engine.getModel(m.id)
+        if (!expr || !model || entry?.stage) continue
+        const file = bundleFile(expr.url)
+        const url = file ? URL.createObjectURL(file) : expr.url
+        // ASK THE MODEL which clip is playing rather than naming one ourselves:
+        // a bundled clip keeps its bundle PATH as its engine key, so the
+        // document's display name is not the key. Naming it from the document
+        // merges the morphs into a clip nothing plays — indistinguishable from
+        // a file with no morphs in it.
+        const playing = model.getAnimationProgress().animationName
+        const target = playing ?? expr.name
+        try {
+          await model.loadVmd(target, url, { tracks: "morphs" })
+          // Only when the morph IS the clip. With a motion playing, showing it
+          // again would restart the dance from frame 0.
+          if (!playing) model.show(target)
+        } catch (e) {
+          console.warn(`[scene] morph failed to load for ${m.id}:`, expr.name, e)
+        } finally {
+          if (file) URL.revokeObjectURL(url)
+          // A morph-only model is still hidden if loadSceneInto left it so.
           engine.setModelTransform(m.id, { visible: true })
         }
       }
