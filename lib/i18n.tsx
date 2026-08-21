@@ -522,6 +522,7 @@ const en = {
       close: "Close the timeline editor",
       scrub: "Scrub playhead",
       zoom: "Timeline zoom",
+      resize: "Resize timeline",
       /** The two zoom rulers: one scales time, one scales the curve's values. */
       axisTime: "Time",
       axisValue: "Value",
@@ -1214,6 +1215,7 @@ const zh: Dictionary = {
       close: "关闭时间轴编辑器",
       scrub: "拖动播放头",
       zoom: "时间轴缩放",
+      resize: "调整时间轴高度",
       axisTime: "时间",
       axisValue: "数值",
       boneGroups: {

@@ -1,6 +1,6 @@
 "use client"
 
-// Where you left the timeline: zoom, scroll, and which channel was open.
+// Where you left the timeline: zoom, scroll, height, and which channel was open.
 //
 // CHROME, not document state — the same distinction use-stored-rect draws. None
 // of this changes the scene, nothing here is published or exported, and undo
@@ -34,6 +34,15 @@ export type TimelineView = {
   scrollX: number
   /** Which channel the curve half was showing. */
   tab: string
+  /**
+   * How tall the fold was, in px.
+   *
+   * OPTIONAL, and that is not laziness: a view stored before the editor was
+   * resizable is still a perfectly good view. Requiring it would fail
+   * validation for everyone who has used the timeline until now and throw away
+   * their zoom and scroll along with it.
+   */
+  height?: number
 }
 
 const KEY = storageKey("timeline-view")
@@ -54,6 +63,9 @@ function read(): TimelineView | null {
     const nums = [v.pxPerFrame, v.yZoom, v.scrollX]
     if (!nums.every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0)) return null
     if (typeof v.tab !== "string" || !v.tab) return null
+    // Dropped rather than rejected: a height that is missing or nonsense costs
+    // the DEFAULT height, not the whole stored view.
+    if (typeof v.height !== "number" || !Number.isFinite(v.height) || v.height <= 0) delete v.height
     return v as TimelineView
   } catch {
     return null

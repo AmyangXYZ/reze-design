@@ -12,6 +12,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -29,6 +30,7 @@ import {
 import { BONE_GROUPS } from "@/lib/animation";
 import { cn } from "@/lib/utils";
 import { useTimelineView } from "@/hooks/use-timeline-view";
+import { useT } from "@/lib/i18n";
 
 /** The transport's fold curve, mirrored from page.tsx's FOLD. Keep the two in
  *  step: the panel's width and this height are one motion, and two curves that
@@ -36,7 +38,10 @@ import { useTimelineView } from "@/hooks/use-timeline-view";
 const FOLD = "duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]";
 
 /**
- * How tall the editor is, open. A CONSTANT, and that is the whole trick.
+ * How tall the editor is, open — the default, and the floor and ceiling a drag
+ * is held between.
+ *
+ * A FIXED height at any given moment, which is the whole trick.
  *
  * The old lanes could animate to content height (grid-rows 0fr→1fr) because
  * they were DOM: the browser reflowed them and they looked right at every
@@ -52,8 +57,33 @@ const FOLD = "duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]";
  * that was already correct. Which is also exactly what the iOS-style expand
  * looks like: content that was always there, uncovered, rather than content
  * that inflates into place.
+ *
+ * Being DRAGGABLE does not break that. What the fold must not do is animate
+ * through heights on its own; a drag is the user asking for each of those sizes
+ * one at a time, watching the result, and the canvas's ResizeObserver already
+ * coalesces to one repaint per frame. The cost is the same per frame either
+ * way — the difference is whether anyone asked for it.
  */
-const OPEN_H = "h-[17rem]";
+/**
+ * The floor, and the height it opens at — one number, because the size this
+ * shipped at is a size every band was laid out against: toolbar, ruler, curve
+ * half, dope strip and the music lane all fit it. Anything shorter was reachable
+ * by dragging and looked like the editor had been squashed rather than resized,
+ * so the drag only goes UP from here.
+ */
+const MIN_H = 272;
+const DEFAULT_H = MIN_H;
+
+/** The ceiling, measured against the window at drag time rather than fixed.
+ *
+ *  It is really the question "how much canvas may this take", and the answer
+ *  depends on the window: 180px is the transport bar, the insets under it and a
+ *  strip of scene left visible above — below that the editor stops being a panel
+ *  over a scene and becomes the whole page. Measured on every clamp so a height
+ *  stored on a large monitor cannot open past the bottom of a laptop, and so a
+ *  window that shrinks takes the room back. */
+const roomFor = () => Math.max(MIN_H, window.innerHeight - 180);
+const clampH = (h: number) => Math.min(Math.max(h, MIN_H), roomFor());
 
 export function Dopesheet({
   playheadDrawRef,
@@ -100,7 +130,11 @@ export function Dopesheet({
   // belong in undo, so it stays local — but it IS worth remembering between
   // sessions, along with the zoom, the scroll and the playhead. All of it is
   // chrome; see use-timeline-view.
+  const dict = useT();
   const { restored, save } = useTimelineView();
+  // Clamped on the way in: a height stored on a large monitor must not open
+  // taller than the window it is reopened on.
+  const [height, setHeight] = useState(() => (restored?.height ? clampH(restored.height) : DEFAULT_H));
   // SHARED chrome now, so it lives in the store rather than here.
   //
   // It was local state, which was right while the timeline was the only thing
@@ -259,14 +293,69 @@ export function Dopesheet({
   // Reads the playhead through a ref rather than taking it as a dep: a view
   // change is a zoom or a scroll, and rebuilding this callback on every frame
   // of a scrub would make the timeline's own onViewChange effect re-run with it.
+  // The whole stored view, assembled from the two halves that move
+  // independently: the timeline reports zoom and scroll, the drag handle below
+  // reports height, and either can be the one that changed. Refs, so a scrub
+  // does not rebuild the callback the timeline is holding.
+  const viewRef = useRef({ pxPerFrame: 0, yZoom: 0, scrollX: 0 });
   const tabForSave = useRef(tab);
+  const heightForSave = useRef(height);
   useEffect(() => {
     tabForSave.current = tab;
+    heightForSave.current = height;
   });
+  const persist = useCallback(() => {
+    if (viewRef.current.pxPerFrame <= 0) return;
+    save({ ...viewRef.current, tab: tabForSave.current, height: heightForSave.current });
+  }, [save]);
   const onViewChange = useCallback(
-    (v: { pxPerFrame: number; yZoom: number; scrollX: number }) => save({ ...v, tab: tabForSave.current }),
-    [save],
+    (v: { pxPerFrame: number; yZoom: number; scrollX: number }) => {
+      viewRef.current = v;
+      persist();
+    },
+    [persist],
   );
+
+  // ─── The drag ──────────────────────────────────────────────────────────
+  //
+  // Pointer capture, so a fast drag that leaves the 6px strip keeps resizing
+  // rather than stopping wherever the pointer crossed the edge. Written on
+  // every move — the canvas is what the user is judging, and a preview line
+  // would show them a number instead of the thing the number does — and stored
+  // once, on release.
+  const drag = useRef<{ y: number; h: number } | null>(null);
+  const onResizeDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    drag.current = { y: e.clientY, h: heightForSave.current };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }, []);
+  const onResizeMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (!d) return;
+    // UP is taller: the editor is anchored to the bottom of the window and
+    // grows into the canvas.
+    setHeight(clampH(d.h - (e.clientY - d.y)));
+  }, []);
+  const onResizeUp = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!drag.current) return;
+      drag.current = null;
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {
+        // Capture can already be gone (pointercancel); nothing to release.
+      }
+      persist();
+    },
+    [persist],
+  );
+
+  // A window that shrinks under a tall editor takes the room back.
+  useEffect(() => {
+    const onResize = () => setHeight((h) => clampH(h));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   return (
     // grid-rows 0fr→1fr animates to the inner element's height without anyone
@@ -299,12 +388,30 @@ export function Dopesheet({
             something already gone; opening gets the full duration, since content
             arriving with the fold is what a fold should look like. */}
         <div
+          // An inline height, not a class: Tailwind scans source for whole class
+          // names, so a computed `h-[${n}px]` produces no CSS at all.
+          style={{ height }}
           className={cn(
-            "border-t border-line transition-opacity ease-out",
-            OPEN_H,
+            "relative border-t border-line transition-opacity ease-out",
             open ? "opacity-100 duration-300" : "opacity-0 duration-150",
           )}
         >
+          {/* The top edge, which is already a line — so the handle is a hit area
+              over it rather than another piece of furniture. It brightens on
+              hover and while dragging, which is the whole affordance: a grip
+              texture on a 6px strip is decoration at this size. */}
+          <div
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label={dict.lab.timeline.resize}
+            onPointerDown={onResizeDown}
+            onPointerMove={onResizeMove}
+            onPointerUp={onResizeUp}
+            onPointerCancel={onResizeUp}
+            className="group absolute inset-x-0 -top-[3px] z-10 h-1.5 cursor-ns-resize touch-none"
+          >
+            <div className="mt-[2px] h-px w-full bg-transparent transition-colors group-hover:bg-blue-400/60 group-active:bg-blue-400" />
+          </div>
           {/* Picker beside the editor, not above it: both are about the same
               clip and reading across is how you work — pick a bone on the left,
               read its curve on the right. */}
