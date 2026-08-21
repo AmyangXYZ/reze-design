@@ -4,6 +4,7 @@
 
 import { memo, useEffect, useRef, useState, type ReactNode, type RefObject } from "react"
 import { cn } from "@/lib/utils"
+import { FPS } from "@/lib/clip"
 import type { Engine, Model } from "reze-engine"
 import { Orbit, Pause, Play, Repeat, RepeatOff, Video } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -42,6 +43,24 @@ export type Scrub = {
   end: () => void
 }
 
+/**
+ * What the transport hands to whatever it opens into.
+ *
+ * `playing` and `togglePlay` are here rather than being reimplemented below for
+ * the same reason `Scrub` is: starting a scene is not calling play() on one
+ * model. It is every cast member together, from wherever each was paused, with
+ * an end-of-clip restart that has to reset physics or the hair arrives from the
+ * last frame. A second copy of that would be correct until one of them changed.
+ */
+export type TransportSlot = {
+  /** Camera follow, loop and the host's `trailing`, or null while collapsed —
+   *  the pill still has a row of its own to show them in. */
+  chrome: ReactNode
+  /** What the ENGINE is doing, not what anything asked for. */
+  playing: boolean
+  togglePlay: () => void
+}
+
 // Memoized: props are stable across unrelated Home re-renders (e.g.
 export const AnimPlayer = memo(function AnimPlayer({
   engineRef,
@@ -53,6 +72,7 @@ export const AnimPlayer = memo(function AnimPlayer({
   unfolded,
   axisDuration = 0,
   scrubRef,
+  playheadDrawRef,
 }: {
   engineRef: RefObject<Engine | null>
   /** Models WITH a loaded clip, master (longest clip) first. */
@@ -65,8 +85,16 @@ export const AnimPlayer = memo(function AnimPlayer({
    * Beneath the row — the timeline the transport IS when expanded. Kept MOUNTED
    * while closed so the caller can fold it open; it is the caller's job to give
    * it zero height, not this component's to unmount it.
+   *
+   * Given a function, it receives this transport's CHROME — camera follow, loop
+   * and whatever `trailing` holds — to place inside itself. That is how the row
+   * above can go away entirely when open: the three controls that still mean
+   * something once there is an editor move into the editor's own toolbar, and
+   * the ones that do not (play, scrub, the two clocks) simply stop existing
+   * rather than sitting there duplicated. A plain node keeps the old behaviour
+   * and the chrome stays in the row.
    */
-  below?: ReactNode
+  below?: ReactNode | ((transport: TransportSlot) => ReactNode)
   /** The fold is OPEN. Only affects room: a pill wants to be tight, a panel with
    *  three lanes in it does not, and `below` cannot stand in for this because it
    *  stays mounted while closed so the fold has something to animate. */
@@ -88,6 +116,23 @@ export const AnimPlayer = memo(function AnimPlayer({
   /** Filled in with this transport's scrub, for a caller that draws its own
    *  playhead — see Scrub. Nulled on unmount. */
   scrubRef?: RefObject<Scrub | null>
+  /**
+   * The dopesheet's playhead, in CLIP FRAMES, called off this same tick.
+   *
+   * The timeline below draws to a canvas, and a canvas cannot be moved by a
+   * custom property the way the lanes are — something has to hand it the number
+   * every frame. This is that hand-off, and it belongs HERE rather than in a
+   * loop of the timeline's own: two rAFs both reading `getAnimationProgress()`
+   * is duplicate work that can also disagree by a frame, which is visible as
+   * the bar and the keys drifting apart during playback.
+   *
+   * Deliberately ABOVE the bar's throttle. The bar is inside a backdrop-blur
+   * pane, so dirtying it on a phone costs a full blur recomposite and it drops
+   * to 4Hz there; the canvas is outside that pane and pays none of it. Sharing
+   * the clock does not have to mean sharing the paint rate, and a dopesheet
+   * playhead ticking four times a second is not an editor.
+   */
+  playheadDrawRef?: RefObject<((frame: number) => void) | null>
 
   /** Live camera-VMD drive state — fires on toggle and on initial sync, so the
    *  host can enable/disable its camera controls with the ACTUAL mode. */
@@ -128,9 +173,11 @@ export const AnimPlayer = memo(function AnimPlayer({
   const followingRef = useRef(following)
   const hasCameraRef = useRef(hasCamera)
   const onFollowingChangeRef = useRef(onFollowingChange)
+  const dopeDrawRef = useRef(playheadDrawRef)
   useEffect(() => {
     hasCameraRef.current = hasCamera
     onFollowingChangeRef.current = onFollowingChange
+    dopeDrawRef.current = playheadDrawRef
   })
   const toggleCamera = () => {
     const engine = engineRef.current
@@ -221,6 +268,11 @@ export const AnimPlayer = memo(function AnimPlayer({
     let lastPaintMs = -Infinity
     const paintBar = (current: number, duration: number, snap = false) => {
       const now = performance.now()
+      // The dopesheet first, and unthrottled — see playheadDrawRef. It draws to
+      // its own canvas outside the blurred pane, so the reason the bar below
+      // ticks at 4Hz on a phone does not apply to it, and an editor's playhead
+      // is the last thing that should be sampled coarsely.
+      dopeDrawRef.current?.current?.(current * FPS)
       if (!snap && now - lastPaintMs < MIN_PAINT_MS) return
       lastPaintMs = now
       const ratio = duration > 0 ? Math.min(1, current / duration) : 0
@@ -380,6 +432,48 @@ export const AnimPlayer = memo(function AnimPlayer({
   })
 
   const hasClip = modelNames.length > 0
+  // Camera follow, loop, and whatever the host appended. Built once and placed
+  // in whichever row is actually on screen: the pill's, when collapsed, or the
+  // editor's toolbar, when open. `btn` is the only thing that differs — a
+  // size-7 pill button is taller than the 26px toolbar it would land in.
+  const btn = unfolded
+    ? "size-5 shrink-0 rounded-chip"
+    : "size-7 shrink-0 rounded-full"
+  const ico = unfolded ? "size-3.5" : "size-4"
+  const chrome = (
+    <>
+      {hasCamera && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(btn, following ? "text-blue-400" : "text-muted-foreground hover:text-foreground")}
+              onClick={toggleCamera}
+            >
+              {following ? <Video className={ico} /> : <Orbit className={ico} />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">{following ? t.transport.followCamera : t.transport.freeOrbit}</TooltipContent>
+        </Tooltip>
+      )}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn(btn, loop ? "text-blue-400" : "text-muted-foreground hover:text-foreground")}
+            onClick={() => setLoop((v) => !v)}
+          >
+            {loop ? <Repeat className={ico} strokeWidth={2.4} /> : <RepeatOff className={ico} />}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">{loop ? t.transport.loopOn : t.transport.loopOff}</TooltipContent>
+      </Tooltip>
+      {trailing}
+    </>
+  )
+
   return (
     <div
       ref={rootRef}
@@ -402,15 +496,37 @@ export const AnimPlayer = memo(function AnimPlayer({
         // 20px corner once open. Track the collapsed padding if that changes, or
         // the pill turns back into a rounded rectangle.
         "rounded-[1.25rem]",
+        // The editor inside has square corners and its toolbar paints a solid
+        // background right up to them, so without this it covers the radius and
+        // the open panel reads as a rectangle. Clipping to the root is also what
+        // lets the fold reveal the canvas from behind a rounded edge instead of
+        // over one. Tooltips and popovers portal out, so nothing that needs to
+        // escape is caught by it.
+        "overflow-hidden",
       )}
     >
-      {/* Roomier only once open. Collapsed it is a pill you park over the scene
-          and it should stay tight; the same padding around three lanes reads
-          cramped. Rides the fold's own curve so it is one motion. */}
+      {/* The pill's own row, and it exists only while the pill does.
+          Open, every control in it is either duplicated by the editor's toolbar
+          (play, step, the frame readout) or meaningless at that scale (a
+          whole-scene scrub bar sitting above a frame-accurate one), so rather
+          than hide four things individually the row folds away as one — same
+          0fr→1fr grid trick and the same curve as the editor opening below it,
+          so the two read as ONE box changing shape instead of a row leaving
+          while a panel arrives.
+
+          Its chrome does not go with it: camera and loop still mean something
+          open, and they reappear at the end of the editor's toolbar. */}
       <div
         className={cn(
-          "flex items-center gap-2 transition-[padding] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-          unfolded ? "px-4 py-2" : "px-3 py-1",
+          "grid transition-[grid-template-rows] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
+          unfolded ? "grid-rows-[0fr]" : "grid-rows-[1fr]",
+        )}
+      >
+      <div className="overflow-hidden" inert={unfolded}>
+      <div
+        className={cn(
+          "flex items-center gap-2 px-3 py-1 transition-opacity ease-out",
+          unfolded ? "opacity-0 duration-150" : "opacity-100 duration-300",
         )}
       >
         <Button
@@ -471,37 +587,13 @@ export const AnimPlayer = memo(function AnimPlayer({
           />
         </div>
         <span className="shrink-0 text-xs leading-none text-muted-foreground tabular-nums">{fmt(progress.duration)}</span>
-        {hasCamera && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className={following ? "size-7 shrink-0 rounded-full text-blue-400" : "size-7 shrink-0 rounded-full text-muted-foreground hover:text-foreground"}
-                onClick={toggleCamera}
-              >
-                {following ? <Video className="size-4" /> : <Orbit className="size-4" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top">{following ? t.transport.followCamera : t.transport.freeOrbit}</TooltipContent>
-          </Tooltip>
-        )}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={loop ? "size-7 shrink-0 rounded-full text-blue-400" : "size-7 shrink-0 rounded-full text-muted-foreground hover:text-foreground"}
-              onClick={() => setLoop((v) => !v)}
-            >
-              {loop ? <Repeat className="size-4" strokeWidth={2.4} /> : <RepeatOff className="size-4" />}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">{loop ? t.transport.loopOn : t.transport.loopOff}</TooltipContent>
-        </Tooltip>
-        {trailing}
+        {!unfolded && chrome}
       </div>
-      {below}
+      </div>
+      </div>
+      {typeof below === "function"
+        ? below({ chrome: unfolded ? chrome : null, playing: progress.playing, togglePlay: toggle })
+        : below}
     </div>
   )
 })

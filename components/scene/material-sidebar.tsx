@@ -308,7 +308,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
         {onOpenLibrary && (
         <button
           onClick={() => onOpenLibrary(libraryTarget)}
-          className="ml-1 flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-white"
+          className="ml-1 flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white px-2 py-1 text-xs font-medium text-zinc-900 transition-colors hover:bg-white/90 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-white"
         >
           <Workflow className="size-3.5" />
           {t.lab.cmd.graphLib}
@@ -410,7 +410,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                       return m ? materialRow(m, g.id, name + "#" + i) : null
                     })}
                     {g.materials.length === 0 && (
-                      <div className="px-2 py-1 pl-3 text-[11px] text-muted-foreground/60 italic">{t.materials.dragHere}</div>
+                      <div className="px-2 py-1 pl-3 text-xs text-muted-foreground/60 italic">{t.materials.dragHere}</div>
                     )}
                   </div>
                 )}

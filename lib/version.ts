@@ -10,4 +10,4 @@
  * semver number, and `0.4.1-beta` would make every published scene's version
  * pin read as a prerelease.
  */
-export const VERSION_LABEL = `${process.env.NEXT_PUBLIC_APP_VERSION ?? ""} beta`.trim()
+export const VERSION_LABEL = `${process.env.NEXT_PUBLIC_APP_VERSION ?? ""}`.trim()

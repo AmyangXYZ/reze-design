@@ -55,14 +55,14 @@ export function LayerRow({
         )}
       >
         <Icon className={cn("size-4 shrink-0", open ? "text-blue-400" : "text-muted-foreground")} />
-        <span className="shrink-0 text-[13px] text-foreground font-medium">{name}</span>
+        <span className="shrink-0 text-xs text-foreground font-medium">{name}</span>
         {/* Hidden rather than unmounted while open: the row must not reflow when
             the body appears, and the summary is about to be redundant anyway. */}
         <span
           className={cn(
             // No transition: the body swaps instantly when rows switch, and a
             // summary that FADES back in reads as the value arriving late.
-            "ml-auto max-w-[8.25rem] truncate text-[13px] text-muted-foreground",
+            "ml-auto max-w-[8.25rem] truncate text-xs text-muted-foreground",
             open && "opacity-0",
           )}
         >

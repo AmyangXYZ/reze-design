@@ -109,7 +109,7 @@ const parseClock = (text: string): number | null => {
 }
 
 const rangeInputCls =
-  "h-6 w-14 rounded-md border border-white/10 bg-white/5 px-1 text-center text-[11px] tabular-nums outline-none transition-colors hover:bg-white/10 focus:border-blue-400/50 placeholder:text-muted-foreground/50 disabled:opacity-50"
+  "h-6 w-14 rounded-md border border-white/10 bg-white/5 px-1 text-center text-xs tabular-nums outline-none transition-colors hover:bg-white/10 focus:border-blue-400/50 placeholder:text-muted-foreground/50 disabled:opacity-50"
 
 /** Live framing state the page mirrors into the viewport while this tab is open */
 export type FramePreview = { aspect: number; watermark: boolean }
@@ -457,7 +457,7 @@ export const RenderPanel = memo(function RenderPanel({
               className="scale-75"
             />
           </Row>
-          {upscaled && !greenScreen && <div className="mt-2 text-[11px] text-amber-400/90">{t.render.upscaleWarn}</div>}
+          {upscaled && !greenScreen && <div className="mt-2 text-xs text-amber-400/90">{t.render.upscaleWarn}</div>}
         </div>
 
         {/* No section title (the surface hosting this already says Export) and
@@ -508,14 +508,14 @@ export const RenderPanel = memo(function RenderPanel({
             <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
               <div className="h-full rounded-full bg-blue-400 transition-[width]" style={{ width: `${pct}%` }} />
             </div>
-            <div className="mt-1.5 text-center text-[11px] text-muted-foreground tabular-nums">
+            <div className="mt-1.5 text-center text-xs text-muted-foreground tabular-nums">
               {progress?.phase === "video"
                 ? t.render.progressLine(progress.frame, progress.total, fmtEta(progress.etaSeconds))
                 : t.render.preparingAudio}
             </div>
           </div>
         ) : result ? (
-          <div className={`mt-2 text-center text-[11px] ${result.ok ? "text-muted-foreground" : "text-red-400"}`}>
+          <div className={`mt-2 text-center text-xs ${result.ok ? "text-muted-foreground" : "text-red-400"}`}>
             {result.ok
               ? (result.still ? t.render.stillDone : t.render.done)(result.file ?? "")
               : t.render.failed(result.message ?? "")}

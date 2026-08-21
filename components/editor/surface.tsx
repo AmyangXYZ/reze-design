@@ -42,12 +42,23 @@ const PLACEMENT: Record<SurfacePlacement, string> = {
   // Insets rather than full height: the surface floats over the canvas, it does
   // not become a wall beside it.
   //
-  // 18rem is the right COLUMN — the same width the left dock states and the same
+  // 16rem is the right COLUMN — the same width the left dock states and the same
   // width the top-right pill cluster states, all three anchored to the same
   // insets so their edges coincide without anyone measuring anyone. It was 19rem
   // here while both callers passed 18, which is a default that only ever
   // described a panel nobody built.
-  side: "absolute top-3 right-3 bottom-3 w-[18rem] rounded-surface flex flex-col",
+  //
+  // Four sites state this number and two more are derived from it (the working
+  // area and the open timeline's cap, both in app/page.tsx). They are coupled by
+  // arithmetic, not by a token, so changing one means changing all six.
+  // text-xs is the dock's BASE, not a per-element choice: most text in a panel
+  // carries no size class at all and was inheriting the document's, which at
+  // this width is a different typographic scale from the one the panel was
+  // designed at. Set here so the exceptions are the things that state a size —
+  // the wordmark and the chips — rather than the rule being restated on every
+  // span. Primitives that carry their own size (Button, Input) still win, and
+  // are overridden per instance.
+  side: "absolute top-3 right-3 bottom-3 w-[16rem] rounded-surface flex flex-col text-xs",
   float: "absolute rounded-surface flex flex-col",
   sheet: "absolute bottom-3 left-1/2 -translate-x-1/2 rounded-surface",
 }

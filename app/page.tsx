@@ -109,8 +109,10 @@ import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { ColorField } from "@/components/color-picker"
 import { useAudioClock } from "@/hooks/use-audio-clock"
 import { primeAudioAnalysis } from "@/lib/audio-analysis"
-import { TimelineLanes } from "@/components/scene/timeline-lanes"
-import { primeClipDensity } from "@/hooks/use-lane-graphs"
+import { Dopesheet } from "@/components/scene/dopesheet"
+import { ClipBridge } from "@/components/scene/clip-bridge"
+import { ClipEditor, type ClipEditKind } from "@/context/clip-editor"
+import { primeClipDensity, useAudioPeaks } from "@/hooks/use-lane-graphs"
 import { useEngine, type EngineModelInfo } from "@/hooks/use-engine"
 import { useRenderFraming } from "@/hooks/use-render-framing"
 import { useSceneSync } from "@/hooks/use-scene-sync"
@@ -156,13 +158,7 @@ import { communityItems, useCommunity } from "@/hooks/use-community"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useSession } from "@/lib/auth-client"
 import { freeName } from "@/lib/names"
-import {
-  applyDefaults,
-  EFFECTS,
-  builtinEffect,
-  NEW_EFFECT_TEMPLATE,
-  type AppliedEffect,
-} from "@/lib/effects"
+import { applyDefaults, EFFECTS, builtinEffect, NEW_EFFECT_TEMPLATE, type AppliedEffect } from "@/lib/effects"
 import { probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
 import type { ExportProgress } from "@/lib/video-export"
 import { castColour } from "@/lib/model-colour"
@@ -172,7 +168,19 @@ import { relFilePath, sceneFiles } from "@/lib/scene-files"
 import { cancelDraftWrites, createDraft, isDraft, loadDrafts, updateDraft, updateDraftSoon } from "@/lib/drafts"
 import { DEFAULT_LOOK, saveLookPref } from "@/lib/look-pref"
 import { clearForkTarget, forkTarget } from "@/lib/fork"
-import { activeLookPack, graphRole, groupLabel, GRAPH_LIBRARY, libraryGraph, LOOK_PACK_ORDER, LOOK_PACKS, packGraph, sameGraphLook, SLOT_GRAPHS, type LookPack } from "@/lib/materials"
+import {
+  activeLookPack,
+  graphRole,
+  groupLabel,
+  GRAPH_LIBRARY,
+  libraryGraph,
+  LOOK_PACK_ORDER,
+  LOOK_PACKS,
+  packGraph,
+  sameGraphLook,
+  SLOT_GRAPHS,
+  type LookPack,
+} from "@/lib/materials"
 import { stageStyleGroups } from "@/lib/stage-style"
 import {
   compileGraph,
@@ -200,15 +208,38 @@ const PILL = "rounded-xl border border-white/10 bg-surface shadow-float backdrop
 const FOLD = "duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
 
 /**
- * The working area — what the canvas has left between the docks — is 40.5rem
- * narrower than the window: the dock (18rem) plus 2.25rem either side, which is
- * its own 0.75rem inset plus a 1.5rem gap. One rem of clear canvas either side,
- * rather than the 0.75 the docks themselves sit at: at that width the open
- * timeline read as touching them, and an edge that nearly meets another edge
- * looks like a mistake in a way a plain gap never does. The right inset assumes
- * the inspector matching the stack at 17rem, which does not exist on this route
- * yet — sizing against where it WILL be stops the geometry changing the day it
- * lands, and matching widths keeps the timeline centred on the canvas.
+ * How wide the open editor is allowed to get, stated in the viewport rather
+ * than in a percentage of whatever box it happens to sit in.
+ *
+ * It was a percentage of the transport's container, which matched only as long
+ * as that container stayed inset by exactly 1.5rem — an invisible coupling, and
+ * one that made a panel spanning nearly the whole window look like the cap was
+ * simply not applying. Written out, the arithmetic is checkable:
+ *
+ *     2 × 16rem   the two docks
+ *   + 2 × 0.75rem their own outer insets
+ *   + 2 × 0.75rem the gap between each dock and this panel
+ *   = 35rem
+ *
+ * The gap is the dock's OWN inset from the window edge, not something wider.
+ * One spacing repeated is a grid; two nearly-equal spacings beside each other
+ * read as a mistake, and the panel used to sit twice as far from the docks as
+ * they sit from the screen.
+ *
+ * The floor is a separate min-width rather than a max() inside the calc: it
+ * matters on a window too narrow to run the editor on at all, where the
+ * subtraction goes negative and the panel would resolve to nothing, and keeping
+ * it out of the arbitrary value leaves that value a plain comma-free calc.
+ */
+const OPEN_TIMELINE_W = "min-w-[20rem] max-w-[calc(100vw_-_35rem)]"
+
+/**
+ * The working area — what the canvas has left between the docks — is 35rem
+ * narrower than the window: the dock (16rem) plus 1.5rem either side, which is
+ * its own 0.75rem inset plus a 0.75rem gap. ONE spacing, used twice: the panel
+ * sits as far from a dock as that dock sits from the window edge. It used to be
+ * a 1.5rem gap against a 0.75rem inset, and two nearly-equal spacings side by
+ * side read as a mistake in a way a repeated one never does.
  *
  * It is a max-WIDTH on the timeline (see the transport, below) and not insets on
  * its container, because the collapsed pill must not be squeezed by docks it
@@ -982,7 +1013,20 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       altLabels: [alt.cmd.look],
       // Both packs' names in both languages: someone reaching for this is
       // thinking "wuwa", not "rendering style".
-      keywords: ["wuwa", "wuthering", "鸣潮", "ag", "aether", "gazer", "深空之眼", "style", "look", "preset", "风格", "渲染"],
+      keywords: [
+        "wuwa",
+        "wuthering",
+        "鸣潮",
+        "ag",
+        "aether",
+        "gazer",
+        "深空之眼",
+        "style",
+        "look",
+        "preset",
+        "风格",
+        "渲染",
+      ],
     },
     ...controlItemsFor(t),
   ]
@@ -1101,7 +1145,7 @@ function UploadInvite({
       }}
       aria-label={aria ?? label}
       className={cn(
-        "min-w-0 flex-1 cursor-pointer truncate text-left text-[13px] text-muted-foreground underline decoration-current/40 underline-offset-2 transition-colors hover:decoration-current hover:text-foreground",
+        "min-w-0 flex-1 cursor-pointer truncate text-left text-xs text-muted-foreground underline decoration-current/40 underline-offset-2 transition-colors hover:decoration-current hover:text-foreground",
         className,
       )}
     >
@@ -1125,6 +1169,7 @@ function CastAction({
   danger,
   disabled,
   compact,
+  iconClass = "size-3.5",
 }: {
   icon: ComponentType<{ className?: string }>
   /** Names the target too, since a screen reader hears these out of context. */
@@ -1139,6 +1184,11 @@ function CastAction({
    *  row's height from the button. The icon does NOT shrink with it — a 16px
    *  target only needs a smaller box, not a smaller mark. */
   compact?: boolean
+  /** Override the glyph size. Lucide marks do not all fill their box the same
+   *  way — X spans corner to corner while Upload and PenLine sit inside their
+   *  own padding — so a shared px size does not read as a shared size. This is
+   *  for putting a row's icons on the same APPARENT scale. */
+  iconClass?: string
 }) {
   return (
     <Button
@@ -1158,7 +1208,7 @@ function CastAction({
         danger ? "hover:text-red-400" : "hover:text-foreground",
       )}
     >
-      <Icon className="size-3.5" />
+      <Icon className={iconClass} />
     </Button>
   )
 }
@@ -1193,6 +1243,7 @@ function ClipRow({
   of,
   onPick,
   onRemove,
+  onEdit,
 }: {
   icon: ComponentType<{ className?: string }>
   /** Loaded clip name, or null. */
@@ -1206,6 +1257,9 @@ function ClipRow({
   of?: string
   onPick: () => void
   onRemove: () => void
+  /** Open this clip in the timeline editor. Absent on rows there is nothing to
+   *  edit in — music, and anything the editor cannot key. */
+  onEdit?: () => void
 }) {
   const t = useT()
   return (
@@ -1220,9 +1274,12 @@ function ClipRow({
             mark — and is itself the button. White-filled was tried and put two
             white lines in every cast row, flattening name-over-value. */}
         <CastLine
+          // Three buttons, not the default two — otherwise a long filename runs
+          // under the last one instead of ending clear of the button zone.
+          reserve="pr-[4.5rem]"
           text={
             clip ? (
-              <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground" title={clipLabel(clip)}>
+              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={clipLabel(clip)}>
                 {clipLabel(clip)}
               </span>
             ) : (
@@ -1231,11 +1288,19 @@ function ClipRow({
           }
           actions={
             <>
+              {/* Upload, edit, delete — the order the row is used in. Putting a
+                  file here is what an empty row is FOR, editing needs one, and
+                  deleting ends it. Fixed in every state so the control under
+                  the cursor does not move as a scene fills in. */}
               <CastAction
-                icon={clip ? RefreshCw : Upload}
+                icon={Upload}
+                iconClass="size-3"
                 label={clip ? t.lab.aria.replace(kind, of) : t.lab.aria.upload(kind, of)}
                 onClick={onPick}
               />
+              {onEdit && (
+                <CastAction icon={PenLine} iconClass="size-3" label={t.lab.aria.edit(kind, of)} onClick={onEdit} />
+              )}
               <CastAction icon={X} danger disabled={!clip} label={t.lab.aria.delete(kind, of)} onClick={onRemove} />
             </>
           }
@@ -1265,7 +1330,7 @@ function AttachMenu({
   disabled,
 }: {
   label: string
-  items: { key: string; label: string; onPick: () => void }[]
+  items: { key: string; label: string; onPick: () => void; disabled?: boolean }[]
   /** Nothing here can act before the engine exists — every installer behind
    *  these rows needs it. Gated with the same flag Cast's + uses, so the three
    *  become live together instead of one of them offering an action that
@@ -1298,7 +1363,8 @@ function AttachMenu({
           {items.map((i) => (
             <button
               key={i.key}
-              className="block w-full cursor-pointer truncate rounded-lg px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+              disabled={i.disabled}
+              className="block w-full cursor-pointer truncate rounded-lg px-2 py-1.5 text-left text-xs text-muted-foreground disabled:pointer-events-none disabled:opacity-40 transition-colors hover:bg-white/5 hover:text-foreground"
               onClick={() => {
                 setOpen(false)
                 i.onPick()
@@ -1482,22 +1548,22 @@ export default function Lab() {
         of={displayName(m.file)}
         onPick={() => pickAnimation(m.id)}
         onRemove={() => removeAnimation(m.id)}
+        onEdit={() => editClip(m.id, "motion")}
       />
-      {/* Only once there IS one. Motion and camera keep empty rows because
-          almost every scene wants them, and the empty row is the invite; a
-          morph is occasional, so the group's + is its door and a permanent
-          empty row would just be a slot most scenes never fill. */}
-      {morphByModel[m.id] && (
-        <ClipRow
-          icon={Smile}
-          clip={morphByModel[m.id]?.name ?? null}
-          empty={t.lab.uploadMorph}
-          kind={t.lab.kinds.morph}
-          of={displayName(m.file)}
-          onPick={() => pickMorph(m.id)}
-          onRemove={() => removeMorph(m.id)}
-        />
-      )}
+      {/* Always, like motion and camera. It used to appear only once a scene
+          already had one, which made the morph the single clip kind you had to
+          already know about in order to find — the group's + was its only door.
+          An empty row IS the invite, and it costs one row. */}
+      <ClipRow
+        icon={Smile}
+        clip={morphByModel[m.id]?.name ?? null}
+        empty={t.lab.uploadMorph}
+        kind={t.lab.kinds.morph}
+        of={displayName(m.file)}
+        onPick={() => pickMorph(m.id)}
+        onRemove={() => removeMorph(m.id)}
+        onEdit={() => editClip(m.id, "morph")}
+      />
     </>
   )
 
@@ -1801,21 +1867,24 @@ export default function Lab() {
    * came from lyrics. It also downloads, because it is a real, standard VMD any
    * MMD tool can read — regenerate any time the lyrics change.
    */
-  const generateLipSync = useCallback(async (id: string) => {
-    const lyrics = sceneFiles.lyrics
-    if (!lyrics) return
-    const lines = parseLRC(await lyrics.text())
-    const file = lipSyncVmdFile(lines, lyrics.name)
-    if (!file) return
-    const name = await loadMorphFile(id, file)
-    if (name) setMorphByModel((prev) => ({ ...prev, [id]: { name, src: file } }))
-    const url = URL.createObjectURL(file)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = file.name
-    a.click()
-    URL.revokeObjectURL(url)
-  }, [loadMorphFile])
+  const generateLipSync = useCallback(
+    async (id: string) => {
+      const lyrics = sceneFiles.lyrics
+      if (!lyrics) return
+      const lines = parseLRC(await lyrics.text())
+      const file = lipSyncVmdFile(lines, lyrics.name)
+      if (!file) return
+      const name = await loadMorphFile(id, file)
+      if (name) setMorphByModel((prev) => ({ ...prev, [id]: { name, src: file } }))
+      const url = URL.createObjectURL(file)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = file.name
+      a.click()
+      URL.revokeObjectURL(url)
+    },
+    [loadMorphFile],
+  )
   const musicInput = useRef<HTMLInputElement | null>(null)
   const setMusicFile = useCallback((file: File) => {
     sceneFiles.audio = file
@@ -1855,16 +1924,14 @@ export default function Lab() {
     audio.pause()
     audio.load()
   }, [musicClip])
-  const clipByModel = useMemo(
-    () => Object.fromEntries(Object.entries(animByModel).map(([id, a]) => [id, a?.name])),
-    [animByModel],
-  )
-  const morphNameByModel = useMemo(
-    () => Object.fromEntries(Object.entries(morphByModel).map(([id, a]) => [id, a?.name])),
-    [morphByModel],
-  )
 
   const scrubRef = useRef<Scrub | null>(null)
+
+  // ─── Clip editing ──────────────────────────────────────────────
+  //     The dopesheet's playhead, driven straight off AnimPlayer's tick — see
+  //     the prop's note there for why this is a ref and not state.
+  const dopePlayheadRef = useRef<((frame: number) => void) | null>(null)
+  const musicPeaks = useAudioPeaks({ url: musicClip?.url ?? null })
 
   // The track's analysis, for audio-reactive effects (rzAudio*). Primed when
   // the track changes; cleared when it goes. The engine samples it by the time
@@ -1998,7 +2065,11 @@ export default function Lab() {
       // its built-in rows the same way, through the same translation). The two
       // lists hold the same set, so a different order between them means hunting
       // for a name in a place it was not a moment ago.
-      ...quickPickItems([...GRADE_PRESETS].sort((a, b) => gradeLabel(a.name).localeCompare(gradeLabel(b.name))), gradeDrafts, appliedGradeDraftId).map((g) => ({
+      ...quickPickItems(
+        [...GRADE_PRESETS].sort((a, b) => gradeLabel(a.name).localeCompare(gradeLabel(b.name))),
+        gradeDrafts,
+        appliedGradeDraftId,
+      ).map((g) => ({
         id: g.name,
         label: gradeLabel(g.name),
         section: g.owner === "local" ? ("local" as const) : ("builtin" as const),
@@ -2102,7 +2173,9 @@ export default function Lab() {
     setGradeEditor(null)
   }
   type UploadState =
-    { kind: "pick"; files: File[]; paths: string[]; target: ModelTarget } | { kind: "notice"; message: string } | null
+    | { kind: "pick"; files: File[]; paths: string[]; target: ModelTarget }
+    | { kind: "notice"; message: string }
+    | null
   const [upload, setUpload] = useState<UploadState>(null)
 
   // ONE background-image slot, filled from TWO rows. Detecting the kind from
@@ -2235,7 +2308,11 @@ export default function Lab() {
   const effectItems = useMemo(() => {
     const items = [
       // By name, matching the effect library's own ordering — see the grade list.
-      ...quickPickItems([...EFFECTS].sort((a, b) => a.name.localeCompare(b.name)), effectDrafts, null).map((e) => ({
+      ...quickPickItems(
+        [...EFFECTS].sort((a, b) => a.name.localeCompare(b.name)),
+        effectDrafts,
+        null,
+      ).map((e) => ({
         id: e.name,
         label: e.name,
         section: e.owner === "local" ? ("local" as const) : ("builtin" as const),
@@ -2304,7 +2381,6 @@ export default function Lab() {
    *  one of them is the answer. */
   const effectSummary =
     bgEffects.length === 0 ? null : bgEffects.length === 1 ? bgEffects[0].name : t.lab.ctl.effectsN(bgEffects.length)
-
 
   /** The edited effect back into the list it came from — IN PLACE when it was
    *  already applied, appended when the session created it. Editing a layer
@@ -2501,6 +2577,34 @@ export default function Lab() {
   // them. Editing a look while you cannot see the group you are editing is not
   // a workflow.
   const [inspectedId, setInspectedId] = useState<string | null>(null)
+  //     Whose clip the timeline edits. ONE at a time — a scene has a cast, but
+  //     a dopesheet's bone gutter can only honestly name one character's bones,
+  //     and two casts of keys on one axis is a chart, not an editor. Follows
+  //     the inspected member so picking a character in the viewport is also how
+  //     you choose whose motion to key; falls back to the first of the cast so
+  //     opening the fold on an untouched scene edits something rather than
+  //     nothing. A shut fold edits nobody, which is what hands the clip back.
+  /**
+   * What the timeline was opened ON — whose clip, and which of its three tracks.
+   *
+   * Set by a clip row's edit button, so the editor arrives already showing the
+   * thing you pressed edit on rather than whatever it happened to show last.
+   * Survives the fold closing: reopening with the chevron returns you to the
+   * same track, which is the behaviour a stored zoom and playhead already
+   * imply.
+   */
+  const [editTarget, setEditTarget] = useState<{ modelId: string; kind: ClipEditKind } | null>(null)
+  // A plain function: the React Compiler memoizes this file, and a hand-written
+  // useCallback here is one it reports it cannot preserve — which makes it skip
+  // optimising the component around it. Same reason castClipRows is plain.
+  const editClip = (modelId: string, kind: ClipEditKind) => {
+    setEditTarget({ modelId, kind })
+    setTimelineOpen(true)
+  }
+  // The inspected cast member is the fallback, so opening the fold from the
+  // chevron alone still edits something sensible.
+  const editingModelId = timelineUnfolded ? (editTarget?.modelId ?? inspectedId ?? cast[0]?.id ?? null) : null
+  const editingKind: ClipEditKind = editTarget?.kind ?? "motion"
   const inspected = models.find((m) => m.id === inspectedId) ?? null
   // Which group the node editor is bound to. Per MODEL, which is why moving the
   // inspector to another character clears it: group ids are per model ("hair"
@@ -2621,7 +2725,12 @@ export default function Lab() {
   /** Which style the scene is wearing, for the shelf's tick. Null when it wears
    *  neither whole — a half-switched scene is genuinely neither. */
   const activePack = useMemo(
-    () => activeLookPack(Object.values(groupsByModel).flat().map((g) => g.graph)),
+    () =>
+      activeLookPack(
+        Object.values(groupsByModel)
+          .flat()
+          .map((g) => g.graph),
+      ),
     [groupsByModel],
   )
   const applyLookPack = useCallback(
@@ -2740,10 +2849,7 @@ export default function Lab() {
     },
     [inspectedId, inspectedGroups],
   )
-  const openGraphLibrary = useCallback(
-    (groupId: string | null) => openBrowse({ kind: "graph", groupId }),
-    [openBrowse],
-  )
+  const openGraphLibrary = useCallback((groupId: string | null) => openBrowse({ kind: "graph", groupId }), [openBrowse])
 
   const [gallerySeen, setGallerySeen] = useState(
     () => typeof window !== "undefined" && !!window.localStorage.getItem(GALLERY_SEEN_KEY),
@@ -2999,7 +3105,11 @@ export default function Lab() {
    */
   const autoStyleStage = useCallback(
     (id: string) => {
-      const names = engineRef.current?.getModel(id)?.getMaterials().map((m) => m.name) ?? []
+      const names =
+        engineRef.current
+          ?.getModel(id)
+          ?.getMaterials()
+          .map((m) => m.name) ?? []
       const next = stageStyleGroups(names, groupsByModel[id] ?? [])
       if (next) void applyGroups(id, next)
     },
@@ -3135,7 +3245,8 @@ export default function Lab() {
           if (loaded) {
             // Bank the resolved File, so a second replace does not have to find
             // it again from a seed that has since been overwritten.
-            if (packed) setAnimByModel((prev) => (prev[newId] ? { ...prev, [newId]: { name: clip.name, src: packed } } : prev))
+            if (packed)
+              setAnimByModel((prev) => (prev[newId] ? { ...prev, [newId]: { name: clip.name, src: packed } } : prev))
             return
           }
           setAnimByModel((prev) => {
@@ -3376,7 +3487,10 @@ export default function Lab() {
         // Same as language: the row says what it is SET TO, so the palette
         // answers "which style am I on" without opening anything.
         if (c.id === "look")
-          return { ...c, hint: valuesShown.pack ? valuesShown.t.brand.styles[valuesShown.pack] : valuesShown.t.lab.ctl.none }
+          return {
+            ...c,
+            hint: valuesShown.pack ? valuesShown.t.brand.styles[valuesShown.pack] : valuesShown.t.lab.ctl.none,
+          }
         if (!c.id.startsWith("ctl-")) return c
         // Settings print what they are SET TO, beside the breadcrumb that says
         // where they live. An empty string means the control has nothing to
@@ -3539,7 +3653,19 @@ export default function Lab() {
           ? { kind: bgImage.dome ? "skybox" : "backdrop", name: bgImage.name, file: bgImage.file }
           : null,
       }),
-    [models, stages, scene, bundleFiles, animByModel, morphByModel, cameraClip, musicClip, midiClip, lyricsClip, bgImage],
+    [
+      models,
+      stages,
+      scene,
+      bundleFiles,
+      animByModel,
+      morphByModel,
+      cameraClip,
+      musicClip,
+      midiClip,
+      lyricsClip,
+      bgImage,
+    ],
   )
 
   // Bytes land FIRST, then the doc: a doc pointing at a bundle that never finished
@@ -3720,7 +3846,8 @@ export default function Lab() {
         // under, because that is what `loadLocalBundle` matches on.
         const parked = handoff.bundle ? await loadLocalBundle(handoff.bundle) : null
         const id = parked && handoff.bundle ? handoff.bundle : newSceneId()
-        const assets = parked && handoff.bundle ? { ...scene.assets, bundle: idbBundleOf(handoff.bundle) } : scene.assets
+        const assets =
+          parked && handoff.bundle ? { ...scene.assets, bundle: idbBundleOf(handoff.bundle) } : scene.assets
         await applyLabScene({
           ...scene,
           assets,
@@ -3927,8 +4054,7 @@ export default function Lab() {
         const target = models[0]?.id
         if (target && lyricsClip) void generateLipSync(target)
         else if (target) lyricsInput.current?.click()
-      }
-      else if (item.id === "camera") gotoSection("camera")
+      } else if (item.id === "camera") gotoSection("camera")
       else if (item.id === "scene-new") cmdRef.current.newScene()
       else if (item.id === "scene-reset") cmdRef.current.resetSceneDefaults()
       else if (item.id === "scene-export") void cmdRef.current.exportScene()
@@ -4101,7 +4227,7 @@ export default function Lab() {
           {/* Same 17rem as the open panel: this is a DROPDOWN, not a sidebar —
             expanding only grows downward, so nothing ever shifts sideways. */}
           {!expanded && (
-            <div className={cn(PILL, "pointer-events-auto flex h-10 w-[18rem] items-center gap-1.5 pr-1.5 pl-2")}>
+            <div className={cn(PILL, "pointer-events-auto flex h-10 w-[16rem] items-center gap-1.5 pr-1.5 pl-2")}>
               {/* The logo is the menu, in both of its homes — scene-file-menu.tsx
                   for why. The stack is not on screen here, so this pill's logo is
                   the only door to the file operations. */}
@@ -4143,7 +4269,7 @@ export default function Lab() {
           )}
 
           {/* ── The right cluster ──
-              EXACTLY 18rem, the width of the panels below it. Both are anchored
+              EXACTLY 16rem, the width of the panels below it. Both are anchored
               to the same right inset, so the two left edges are the same edge by
               construction — where a ResizeObserver used to measure the pills and
               hand the panels a pixel value. Fixing the column and letting the
@@ -4161,7 +4287,7 @@ export default function Lab() {
               heights agreed only while every pill happened to hold size-7
               children — one control with a different variant height and they
               silently disagree, which is exactly what happened here. */}
-          <div className="ml-auto flex w-[18rem] items-start gap-2">
+          <div className="ml-auto flex w-[16rem] items-start gap-2">
             {/* The palette needs a visible door — keyboard-only would hide it
                 from exactly the people most likely to miss it, and it is the
                 only route on touch. The button IS the pill: a wrapper around a
@@ -4176,15 +4302,20 @@ export default function Lab() {
                 // than translated literally: CJK glyphs run ~12px at this size,
                 // so 搜索命令、设置等 (8) lands within a few pixels of the English
                 // label where a literal 搜索命令 (4) would sit in a half-empty box.
-                "pointer-events-auto h-10 flex-1 justify-start gap-2 px-3.5 text-xs font-medium text-muted-foreground hover:bg-white/5 hover:text-foreground",
+                "pointer-events-auto h-10 min-w-0 flex-1 justify-start gap-2 px-3.5 text-xs font-medium text-muted-foreground hover:bg-white/5 hover:text-foreground",
               )}
             >
-              {t.lab.searchCommands}
+              {/* min-w-0 + truncate, because this is the only shrinkable thing
+                  in a fixed-width cluster. Without it the button floors at its
+                  own min-content, the row cannot fit 16rem, and the whole
+                  cluster is pushed past the right edge — which is exactly what
+                  narrowing the docks from 18rem exposed. */}
+              <span className="min-w-0 truncate">{t.lab.searchCommands}</span>
               {/* A key cap, so it should read as one: fixed height, centred, and the
               two glyphs spaced by a real gap rather than letter-spacing — which
               adds its space AFTER the K and pushes the pair off-centre. */}
-              <kbd className="ml-auto inline-flex h-5 min-w-[1.625rem] shrink-0 items-center justify-center gap-[3px] rounded-md border border-white/15 bg-white/[0.06] px-1 font-mono text-xs leading-none text-muted-foreground">
-                <span className="text-sm">⌘</span>
+              <kbd className="ml-auto inline-flex h-4 min-w-[1.375rem] shrink-0 items-center justify-center gap-[3px] rounded-md border border-white/15 bg-white/[0.06] px-1 font-mono text-[10px] leading-none text-muted-foreground">
+                <span className="text-[11px]">⌘</span>
                 <span>K</span>
               </kbd>
             </Button>
@@ -4755,7 +4886,7 @@ export default function Lab() {
           // 5.5rem reserve cleared a transport that CENTRED under the dock; the
           // timeline's side insets ended that overlap, so the reserve was only
           // clipping rows short — a half-visible Physics row at the bottom edge.
-          className={cn("top-3 left-3 flex max-h-[calc(100%-1.5rem)] w-[18rem] flex-col overflow-hidden")}
+          className={cn("top-3 left-3 flex max-h-[calc(100%-1.5rem)] w-[16rem] flex-col overflow-hidden text-xs")}
           style={{ zIndex: dockZ.z }}
           onPointerDownCapture={dockZ.onPointerDownCapture}
           onFocusCapture={dockZ.onFocusCapture}
@@ -4788,7 +4919,7 @@ export default function Lab() {
                 }
               />
               <span className="truncate pb-0.5 text-sm font-semibold tracking-tight text-foreground">Reze Design</span>
-              <span className="shrink-0 rounded-full bg-blue-400/15 px-1.5 py-0.5 text-[11px] leading-none font-medium tracking-wide text-blue-400">
+              <span className="shrink-0 rounded-full bg-blue-400/15 px-1.5 py-0.5 text-[10px] leading-none font-medium tracking-wide text-blue-400">
                 {VERSION_LABEL}
               </span>
               {/* The repository, and through its README the manuals — which is
@@ -4846,7 +4977,12 @@ export default function Lab() {
               // once or twice a scene, and the dock is one column deep.
               action={
                 <span className="-mr-1 flex items-center">
-                  <CastAction icon={Plus} label={t.lab.addModel} onClick={() => pickModel({ mode: "add" })} disabled={!ready} />
+                  <CastAction
+                    icon={Plus}
+                    label={t.lab.addModel}
+                    onClick={() => pickModel({ mode: "add" })}
+                    disabled={!ready}
+                  />
                 </span>
               }
             >
@@ -4879,7 +5015,7 @@ export default function Lab() {
                     inspectedId === m.id && "bg-white/[0.06]",
                   )}
                 >
-                  <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{slot + 1}</span>
+                  <span className="shrink-0 font-mono text-xs text-muted-foreground">{slot + 1}</span>
                   {palettes[m.id] ? (
                     <CastSwatch palette={palettes[m.id]} />
                   ) : (
@@ -4887,11 +5023,15 @@ export default function Lab() {
                   )}
                   <span className="flex min-w-0 flex-1 flex-col">
                     <CastLine
-                      text={<span className="min-w-0 flex-1 truncate text-[13px]" title={displayName(m.file)}>{displayName(m.file)}</span>}
+                      text={
+                        <span className="min-w-0 flex-1 truncate text-xs" title={displayName(m.file)}>
+                          {displayName(m.file)}
+                        </span>
+                      }
                       actions={
                         <>
                           <CastAction
-                            icon={RefreshCw}
+                            icon={Upload}
                             label={t.lab.aria.replaceModel(displayName(m.file))}
                             onClick={() => pickModel({ mode: "replace", id: m.id })}
                           />
@@ -4934,28 +5074,27 @@ export default function Lab() {
                 <AttachMenu
                   disabled={!ready}
                   label={t.lab.groups.clips}
-                  items={[
-                    ...(clipModel && !morphByModel[clipModel.id]
+                  // One item. Uploading a morph moved to the morph ROW, which
+                  // now always exists, so the menu no longer needs to be that
+                  // slot's only door — and a menu holding one obvious action
+                  // beside one derived one made the derived one look optional.
+                  //
+                  // Shown-but-disabled without lyrics rather than hidden:
+                  // hiding it teaches nobody that a lyric file turns into a
+                  // mouth track, which is the one thing about this action worth
+                  // knowing before you have the file.
+                  items={
+                    clipModel
                       ? [
                           {
-                            key: "morph",
-                            label: t.lab.uploadMorph,
-                            onPick: () => pickMorph(clipModel.id),
+                            key: "lipsync",
+                            label: t.lab.lipSyncFromLyrics,
+                            disabled: !lyricsClip,
+                            onPick: () => void generateLipSync(clipModel.id),
                           },
-                          // Only when the scene HAS lyrics to derive from — an
-                          // action that opens on nothing is a broken promise.
-                          ...(lyricsClip
-                            ? [
-                                {
-                                  key: "lipsync",
-                                  label: t.lab.lipSyncFromLyrics,
-                                  onPick: () => void generateLipSync(clipModel.id),
-                                },
-                              ]
-                            : []),
                         ]
-                      : []),
-                  ]}
+                      : []
+                  }
                 />
               }
             >
@@ -4977,8 +5116,10 @@ export default function Lab() {
                           : "border-line-strong text-muted-foreground hover:border-white/25 hover:text-foreground",
                       )}
                     >
-                      <span className="shrink-0 font-mono text-[11px]">{slot + 1}</span>
-                      <span className="truncate" title={displayName(m.file)}>{displayName(m.file)}</span>
+                      <span className="shrink-0 font-mono text-xs">{slot + 1}</span>
+                      <span className="truncate" title={displayName(m.file)}>
+                        {displayName(m.file)}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -5004,6 +5145,11 @@ export default function Lab() {
                 kind={t.lab.kinds.cameraMotion}
                 onPick={() => cameraInput.current?.click()}
                 onRemove={removeCamera}
+                // The camera belongs to the SCENE, not to a character — the VMD
+                // format keeps them in separate files for the same reason — but
+                // the editor still needs a model to hang a clock off, so it
+                // rides whichever cast member is already being edited.
+                onEdit={() => editClip(editTarget?.modelId ?? inspectedId ?? cast[0]?.id ?? "", "camera")}
               />
             </StackGroup>
 
@@ -5105,13 +5251,11 @@ export default function Lab() {
                         {stage ? (
                           <>
                             <CastLine
-                              text={
-                                <span className="min-w-0 flex-1 truncate text-[13px]">{displayName(stage.file)}</span>
-                              }
+                              text={<span className="min-w-0 flex-1 truncate text-xs">{displayName(stage.file)}</span>}
                               actions={
                                 <>
                                   <CastAction
-                                    icon={RefreshCw}
+                                    icon={Upload}
                                     label={t.lab.aria.replaceStage(displayName(stage.file))}
                                     onClick={() => pickModel({ mode: "stage" })}
                                   />
@@ -5161,7 +5305,7 @@ export default function Lab() {
                         )}
                       </TabsContent>
                       <TabsContent value="ground">
-                        {stage && <p className="mb-2 text-[11px]">{t.lab.stageOverridesGround}</p>}
+                        {stage && <p className="mb-2 text-xs">{t.lab.stageOverridesGround}</p>}
                         <fieldset disabled={!!stage} className={cn(stage && "pointer-events-none opacity-40")}>
                           <ColorRow
                             label={t.lab.ctl.color}
@@ -5242,7 +5386,7 @@ export default function Lab() {
                                     {filled.name}
                                   </span>
                                   <CastAction
-                                    icon={RefreshCw}
+                                    icon={Upload}
                                     compact
                                     label={t.lab.aria.replace(row.kind)}
                                     onClick={() => pickBgImage(row.dome)}
@@ -5290,7 +5434,7 @@ export default function Lab() {
                           onBrowse={() => openBrowse({ kind: "effect" })}
                           placeholder={t.lab.ctl.none}
                           trigger={
-                            <button className="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground ring-1 ring-line-strong transition-colors hover:text-blue-400 hover:ring-blue-400/50">
+                            <button className="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground ring-1 ring-line-strong transition-colors hover:text-blue-400 hover:ring-blue-400/50">
                               <Plus className="size-3.5 shrink-0" />
                               <span className="truncate">{t.lab.ctl.selectEffect}</span>
                             </button>
@@ -5305,7 +5449,7 @@ export default function Lab() {
                             the shortlist has not got it. */}
                         <button
                           onClick={() => openBrowse({ kind: "effect" })}
-                          className="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90"
+                          className="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-md bg-white px-2 py-1 text-xs font-medium text-zinc-900 transition-colors hover:bg-white/90"
                         >
                           <Sparkles className="size-3.5 shrink-0" />
                           <span className="truncate">{t.lab.cmd.effectLib}</span>
@@ -5339,7 +5483,7 @@ export default function Lab() {
                                 key={e.id}
                                 reserve="pr-16"
                                 text={
-                                  <span className="min-w-0 flex-1 truncate text-[13px]" title={e.name}>
+                                  <span className="min-w-0 flex-1 truncate text-xs" title={e.name}>
                                     {e.name}
                                   </span>
                                 }
@@ -5514,7 +5658,7 @@ export default function Lab() {
                         <div className="mt-2.5 flex justify-center">
                           <button
                             onClick={() => openBrowse({ kind: "grade" })}
-                            className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white/90"
+                            className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white px-2 py-1 text-xs font-medium text-zinc-900 transition-colors hover:bg-white/90"
                           >
                             <Palette className="size-3.5" />
                             {t.lab.cmd.gradeLib}
@@ -5673,7 +5817,7 @@ export default function Lab() {
                         {/* Same shape as the ground-under-stage pane: a loaded
                             camera VMD owns the shot, so the orbit controls grey
                             out under a one-line note instead of fighting it. */}
-                        {cameraClip && <p className="mb-2 text-[11px]">{t.lab.cameraDrivesView}</p>}
+                        {cameraClip && <p className="mb-2 text-xs">{t.lab.cameraDrivesView}</p>}
                         <fieldset
                           disabled={!!cameraClip}
                           className={cn(cameraClip && "pointer-events-none opacity-40")}
@@ -5813,7 +5957,7 @@ export default function Lab() {
           placement="side"
           // Starts BELOW the top-right pills (top-3 + their h-10 + 8px), capped
           // above the transport: 100% minus 3.75rem top minus 4rem transport
-          // reserve. 18rem, symmetric with the left dock — and the same 18rem
+          // reserve. 16rem, symmetric with the left dock — and the same 16rem
           // the pill cluster above states, both anchored to the same right
           // inset, so the two left edges coincide without either measuring the
           // other. The pills come to the column now, not the other way round.
@@ -5828,7 +5972,7 @@ export default function Lab() {
               times. One title, matching the palette entry that opened it. */}
           <div className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 py-2.5">
             <MaterialSphereIcon className="size-4 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{t.lab.editMaterials}</span>
+            <span className="min-w-0 flex-1 truncate text-xs font-medium">{t.lab.editMaterials}</span>
             <CastAction icon={X} label={t.lab.closeMaterials} onClick={() => setInspectedId(null)} />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
@@ -5882,7 +6026,7 @@ export default function Lab() {
           onFocusCapture={exportZ.onFocusCapture}
         >
           <div className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 py-2.5">
-            <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{t.lab.exportPanel}</span>
+            <span className="min-w-0 flex-1 truncate text-xs font-medium">{t.lab.exportPanel}</span>
             <CastAction icon={X} label={t.lab.closeExport} onClick={() => setExportOpen(false)} />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
@@ -5946,12 +6090,18 @@ export default function Lab() {
         // The container is the VIEWPORT, in both states, and the working area is
         // expressed as a max-width instead (below). Insetting the container by
         // the docks is what squeezed the collapsed pill: it needs ~434px, and
-        // WORKSPACE leaves only window − 40.5rem, so anything under a ~1080px
+        // WORKSPACE leaves only window − 35rem, so anything under a ~1080px
         // window ate into the track until it was a few pixels wide. A pill
         // floating over the canvas has never needed to clear the docks — it is
         // centred, and they are not.
         <div className="pointer-events-none absolute inset-x-3 bottom-3 flex justify-center">
-          {/* max-w-fit is what returns the collapsed pill to the ORIGINAL slider
+          {/* The clip under edit, and the playhead's position in it. Scoped to
+              the transport rather than the page: nothing above this line reads
+              a keyframe, and a provider wrapping <Home> would put a store
+              behind six thousand lines that do not use it. */}
+          <ClipEditor>
+            <ClipBridge engineRef={engineRef} scrubRef={scrubRef} editingModelId={editingModelId} />
+            {/* max-w-fit is what returns the collapsed pill to the ORIGINAL slider
             length: the track is flex-1 with min-w-[min(16rem,30vw)], and a
             fit-content pill resolves a flex-1 child at its min-content size —
             which IS that floor, the shipped transport's exact track width. Open
@@ -5961,64 +6111,78 @@ export default function Lab() {
             interpolate-size lets the keyword cap animate (Chrome; Safari snaps
             between correct layouts, which this dev route accepts).
 
-            Open caps at the WORKING AREA rather than at 100%, because the
-            container is now the viewport: 39rem is WORKSPACE's 40.5rem of dock
-            insets less the 1.5rem of gutter the container already spends, so
-            the opened panel lands exactly where WORKSPACE used to put it, and
-            stops clear of the stack. Expressing it against a container that
+            Open caps at the WORKING AREA rather than at 100%. The number is
+            OPEN_TIMELINE_W, stated in viewport units with its arithmetic
+            written out there, so the panel stops clear of both docks without
+            depending on how this container happens to be inset. Expressing it
+            against a box that
             never resizes is what keeps the fold honest in both directions — a
             cap measured against a box that jumps at the same moment would grow
             the panel on its way closed. The max() floor only matters on a
             window too narrow for the editor anyway; it keeps the open timeline
             from resolving to zero width there. */}
-          <div
-            className={cn(
-              "pointer-events-auto w-full transition-[max-width] [interpolate-size:allow-keywords]",
-              FOLD,
-              timelineUnfolded ? "max-w-[max(18rem,calc(100%_-_39rem))]" : "max-w-fit",
-            )}
-          >
-            <AnimPlayer
-              engineRef={engineRef}
-              modelNames={modelNames}
-              hasCamera={cameraClip !== null}
-              // No tooltip. A chevron pointing at where the thing will go is the
-              // whole explanation, and a tip that only repeats the arrow delays a
-              // control people press repeatedly. aria-label still carries it for
-              // anyone not seeing the arrow.
-              trailing={
-                TIMELINE_EDITOR && timelineRoom ? (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-expanded={timelineUnfolded}
-                    aria-label={timelineUnfolded ? t.lab.hideTimeline : t.lab.showTimeline}
-                    onClick={() => setTimelineOpen((v) => !v)}
-                    className="size-7 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
-                  >
-                    {timelineUnfolded ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
-                  </Button>
-                ) : undefined
-              }
-              unfolded={timelineUnfolded}
-              axisDuration={animDuration}
-              scrubRef={scrubRef}
-              below={
-                <TimelineLanes
-                  engineRef={engineRef}
-                  models={cast}
-                  clipByModel={clipByModel}
-                  morphByModel={morphNameByModel}
-                  cameraClip={cameraClip}
-                  music={musicClip}
-                  audioRef={audioRef}
-                  playableDuration={animDuration}
-                  scrubRef={scrubRef}
-                  open={timelineUnfolded}
-                />
-              }
-            />
-          </div>
+            <div
+              className={cn(
+                "pointer-events-auto w-full transition-[max-width] [interpolate-size:allow-keywords]",
+                FOLD,
+                timelineUnfolded ? OPEN_TIMELINE_W : "max-w-fit",
+              )}
+            >
+              <AnimPlayer
+                engineRef={engineRef}
+                modelNames={modelNames}
+                hasCamera={cameraClip !== null}
+                // No tooltip. A chevron pointing at where the thing will go is the
+                // whole explanation, and a tip that only repeats the arrow delays a
+                // control people press repeatedly. aria-label still carries it for
+                // anyone not seeing the arrow.
+                trailing={
+                  TIMELINE_EDITOR && timelineRoom ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-expanded={timelineUnfolded}
+                      aria-label={timelineUnfolded ? t.lab.hideTimeline : t.lab.showTimeline}
+                      onClick={() => setTimelineOpen((v) => !v)}
+                      className="size-7 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+                    >
+                      {timelineUnfolded ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
+                    </Button>
+                  ) : undefined
+                }
+                unfolded={timelineUnfolded}
+                axisDuration={animDuration}
+                scrubRef={scrubRef}
+                playheadDrawRef={dopePlayheadRef}
+                below={
+                  // The dopesheet, where the lanes used to be. The lanes answered
+                  // "how long is each of these and where am I in them"; this
+                  // answers that too — its ruler and its dope strip are the same
+                  // question at a scale you can hit a keyframe at — and then lets
+                  // you move what it is showing. A view that could only be read
+                  // was the right thing to ship first and the wrong thing to keep
+                  // once the editor it was a study for existed.
+                  //
+                  // Mounted whether or not the fold is open, as `below` requires;
+                  // with no clip in the store it draws an empty ruler and costs a
+                  // blit. What the fold actually gates is ClipBridge pulling a
+                  // clip out of the engine at all — see editingModelId.
+                  ({ chrome, playing, togglePlay }) => (
+                    <Dopesheet
+                      playheadDrawRef={dopePlayheadRef}
+                      audioPeaks={musicPeaks}
+                      audioDuration={animDuration}
+                      open={timelineUnfolded}
+                      kind={editingKind}
+                      trailing={chrome}
+                      enginePlaying={playing}
+                      onTogglePlay={togglePlay}
+                    />
+                  )
+                }
+              />
+            </div>
+          </ClipEditor>
         </div>
       )}
     </main>

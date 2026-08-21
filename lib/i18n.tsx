@@ -495,6 +495,7 @@ const en = {
     aria: {
       upload: (kind: string, of?: string) => `Upload ${kind}${of ? ` for ${of}` : ""}`,
       replace: (kind: string, of?: string) => `Replace ${kind}${of ? ` for ${of}` : ""}`,
+      edit: (kind: string, of?: string) => `Edit ${kind}${of ? ` for ${of}` : ""}`,
       delete: (kind: string, of?: string) => `Delete ${kind}${of ? ` for ${of}` : ""}`,
       remove: (kind: string) => `Remove ${kind}`,
       replaceModel: (name: string) => `Upload model folder to replace ${name}`,
@@ -1090,6 +1091,7 @@ const zh: Dictionary = {
     aria: {
       upload: (kind: string, of?: string) => `上传${of ? `${of} 的` : ""}${kind}`,
       replace: (kind: string, of?: string) => `替换${of ? `${of} 的` : ""}${kind}`,
+      edit: (kind: string, of?: string) => `编辑${of ? `${of} 的` : ""}${kind}`,
       delete: (kind: string, of?: string) => `删除${of ? `${of} 的` : ""}${kind}`,
       remove: (kind: string) => `移除${kind}`,
       replaceModel: (name: string) => `上传模型文件夹以替换 ${name}`,
