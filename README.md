@@ -2,6 +2,8 @@
 
 **The authentic MMD experience, resurrected in WebGPU and TypeScript.** Design, render and share MMD scenes in the browser: everything the 2008 desktop made possible — models, motions, camera work, MME effects — alive again in a tab. Nothing to install, and a permanent link anyone can open.
 
+**→ [reze.design](https://reze.design)**
+
 Every part of it is next-generation. WGSL scene effects compiled in real-time as you type. Blender-style node graphs for materials. Motion, morph and camera editing on a real timeline. Lyrics, MIDI and one-click lip sync. 4K 60 fps export at 4× MSAA. Next.js and TypeScript end to end, on a rendering engine of its own — [reze-engine](https://github.com/AmyangXYZ/reze-engine), built for MMD, zero third-party dependencies.
 
 ![Hero](./screenshots/design.png)

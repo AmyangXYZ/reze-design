@@ -36,10 +36,11 @@ covers where to find models, motion and music.
   - [1.5 What sits behind the character](#15-what-sits-behind-the-character)
   - [1.6 A stage](#16-a-stage)
   - [1.7 The look](#17-the-look)
-  - [1.8 Export](#18-export)
-  - [1.9 Publishing](#19-publishing)
-  - [1.10 The gallery](#110-the-gallery)
-  - [1.11 When something goes wrong](#111-when-something-goes-wrong)
+  - [1.8 Editing the motion](#18-editing-the-motion)
+  - [1.9 Export](#19-export)
+  - [1.10 Publishing](#110-publishing)
+  - [1.11 The gallery](#111-the-gallery)
+  - [1.12 When something goes wrong](#112-when-something-goes-wrong)
 - [2. Authoring your own look](#2-authoring-your-own-look)
   - [2.1 The rendering model](#21-the-rendering-model)
   - [2.2 Colour grades](#22-colour-grades)
@@ -49,6 +50,7 @@ covers where to find models, motion and music.
 - [Appendix A. Control reference](#appendix-a-control-reference)
 - [Appendix B. Finding models, motions and music](#appendix-b-finding-models-motions-and-music)
 - [Appendix C. Glossary](#appendix-c-glossary)
+- [Appendix D. Shader graph node reference](#appendix-d-shader-graph-node-reference)
 
 ---
 
@@ -81,10 +83,10 @@ reference for what the web can already do with MMD.
 a renderer written for MMD specifically rather than layered onto a general-purpose
 engine. Two applications sit on it — **Reze Design**, described here, for
 designing, rendering and publishing scenes; and
-[**Reze Studio**](https://github.com/AmyangXYZ/reze-studio), an animation editor
-with a timeline, dope sheet and Bézier curve editing. Both run on any machine with
-a current browser, read the ecosystem's files as they are, and turn a scene into a
-URL somebody else can open, orbit and take further.
+[**Reze Studio**](https://github.com/AmyangXYZ/reze-studio), the standalone
+animation editor its timeline came from. Both run on any machine with a current
+browser, read the ecosystem's files as they are, and turn a scene into a URL
+somebody else can open, orbit and take further.
 
 ---
 
@@ -289,7 +291,42 @@ differently from a cloth one.
 
 Building a graph node by node is [§2.4](#24-material-shader-graphs).
 
-## 1.8 Export
+## 1.8 Editing the motion
+
+A loaded motion is not fixed. The timeline under the transport opens onto the
+keyframes of whatever is playing, and edits go back into the scene as VMD.
+
+Three choices decide what you are looking at:
+
+| | |
+| --- | --- |
+| **Which track** | The edit button on a motion, expression or camera row |
+| **Which channel** | The tab strip — rotation, translation, weight, or a camera channel |
+| **Which bone** | The list on the left, or a double-click on the character in the viewport |
+
+**Posing.** Drag the gizmo on the selected bone and the pose is written to the
+frame under the playhead, creating a key there if none exists. The sliders in the
+properties dock do the same thing by number, and the channel you drag is the one
+the timeline follows.
+
+**Timing.** Drag a key along the dope strip to move it in time. The curve half
+plots the same keys as values, so a key can be moved in time and value at once.
+
+**Easing.** The bezier between two keys is the VMD's own — the same four bytes
+MMD writes — shown as a 127×127 square with two control points. Drag them, or
+take one of the eight presets. A curve belongs to a key, so the editor is live
+only when a key is selected or the playhead sits on one.
+
+**Track operations.** Insert and Delete act at the playhead. **Simplify** fits a
+curve through a dense track and drops the keys it does not need, which is what
+makes a captured or retargeted motion editable by hand. **Clear** empties the
+track.
+
+⌘Z and ⇧⌘Z undo and redo, per clip. Everything is written back as a standard VMD
+in the scene's own slot, so an edit survives a reload, travels with a publish, and
+downloads from the row it belongs to.
+
+## 1.9 Export
 
 The **Render** tab sets aspect and quality — 2.39:1 cinemascope through vertical
 9:16, at up to 4K — and optionally a range, so you can export `0:12` to `0:30`
@@ -331,7 +368,7 @@ reopens exactly where you left off, uploads included. Only four actions change
 what loads — New scene, Reset, importing a scene file, and opening someone
 else's scene in the editor.
 
-## 1.9 Publishing
+## 1.10 Publishing
 
 Publishing turns your scene into a page anyone can open — a live 3D render they
 can orbit.
@@ -366,7 +403,7 @@ The result is a permanent link of the form `reze.design/<your-name>/<id>`. The
 short id is what resolves, so renaming the scene, or renaming yourself, keeps
 every link already shared working.
 
-## 1.10 The gallery
+## 1.11 The gallery
 
 **Scene gallery**, in the menu behind the logo — and in ⌘K — opens what everyone
 has published. Its rail is the one every library has: **All**, **Yours**,
@@ -386,7 +423,7 @@ Accounts exist to own what you publish. On first sign-in you choose your name,
 which appears in every scene link you create and can be set only once — permanence
 is what keeps a shared link working forever.
 
-## 1.11 When something goes wrong
+## 1.12 When something goes wrong
 
 **The model loads white, grey or black.** Textures were not found, almost always
 because the `.pmx` was loaded without its folder. Load the whole folder or the
@@ -539,7 +576,7 @@ A scene effect is a shader that paints part of the frame, per pixel, from the
 view direction and the clock. Rain, snow, an aurora, fog on the ground, lightning
 clinging to a body, a sigil under someone's feet, a title card.
 
-### The five mounts
+### The six mounts
 
 **Which functions you define decides both what the effect is and where it lands.**
 There is no layer setting anywhere in the app; the code says.
@@ -550,6 +587,8 @@ There is no layer setting anywhere in the app; the code says.
 | `fn foreground(ray, uv, time, depth)` | A layer over the finished frame |
 | `fn particleInit` · `particleStep` · `particleShade` | A GPU particle pool |
 | `fn trailWidth` · `trailShade` | Ribbons along bones you asked for |
+| `fn lightEmit` | Real lights that shade the cast |
+| `fn gridStep` | A simulation grid that persists between frames |
 
 Define `background` **and** `foreground` and they are one effect: a storm is a
 dark sky and the rain in front of it, in one file.
@@ -570,7 +609,17 @@ contract, not documentation:
 // @blend additive         particles add light instead of covering it
 // @bloom                  particles reach the bloom pyramid
 // @fullres                field mounts run at full resolution
+// @layer additive         the FIELD adds light instead of covering
+// @lights 4               light slots, with fn lightEmit
+// @grid 768               simulation resolution, with fn gridStep
 ```
+
+**`@layer additive` is the one most new effects need and most forget.** The
+default composites alpha-over, which is right for anything with mass — smoke,
+fog, a painted sky. It is wrong for light, and visibly so the moment two glows
+cross: the later one occludes the earlier instead of adding to it, so a second
+bolt punches a hole through the first. Seven of the fifteen built-ins declare it.
+If what you are drawing is light rather than matter, so should you.
 
 `@anchor` slots are **declaration order** — the first is slot 0. Any bone the
 model has works, and `.valid` is false on a rig that spells it differently. Check
@@ -669,6 +718,47 @@ It is also why the `At(offset)` forms exist. The future is already computed, so 
 bar can lean into a beat *before* it lands — something no live analyser can do.
 Everything reads zero when the scene has no music.
 
+### The score and the words
+
+A `.mid` beside the track gives an effect the notes; a `.lrc` gives it the line on
+screen. Both run on the same prepared clock as the audio, so an export matches the
+editor exactly.
+
+| Helper | Gives you |
+| --- | --- |
+| `rzMidiTime()` · `rzMidiDuration()` · `rzMidiPlaying()` | Where the score is, how long it runs, whether it is running |
+| `rzNoteCount()` | How many notes the file holds |
+| `rzNoteStart(i)` · `rzNoteLength(i)` | When note `i` begins and how long it lasts, in seconds |
+| `rzNotePitch(i)` · `rzNoteVelocity(i)` | Its MIDI pitch, and how hard it was struck, 0 – 1 |
+| `rzNoteAge(i)` · `rzNoteHeld(i)` | Seconds since it began; whether it is sounding now |
+| `rzPitchLow()` · `rzPitchHigh()` | The pitch range the file actually uses — the keyboard's own extent, not 0 – 127 |
+| `rzPitchX(pitch)` | That pitch as 0 – 1 across the range, so a layout does not have to know the tune |
+| `rzKeyEnergy(pitch)` | How much that pitch is sounding right now, decayed — a key that is still ringing |
+
+Notes are **sorted by start time**, so a binary search finds the live window
+rather than a scan over every note in the file. *Note Fall* does exactly that, and
+that is the reason it can carry a whole piano roll.
+
+| Helper | Gives you |
+| --- | --- |
+| `rzLyricCount()` · `rzLyricIndex(t)` | How many lines; which is live at time `t`, or `-1` between them |
+| `rzLyricStart(i)` · `rzLyricEnd(i)` | That line's window, in seconds |
+| `rzLyricProgress(i, t)` | 0 – 1 through the line — the karaoke sweep |
+| `rzLyricHasText(i)` | Whether the line rasterised to anything |
+| `rzLyricText(i, uv)` | Glyph coverage of line `i`; `uv` is 0 – 1 across its own box |
+| `rzLyricAspect(i)` · `rzLyricPixels(i)` · `rzLyricRect(i)` | Its width over height, its size in atlas texels, its place in the atlas |
+| `rzLyricChars(i)` | How many characters it holds |
+
+The text is rasterised by the host, not by the shader — the effect samples
+coverage. Sample it **across a pixel** rather than at a point: a glyph edge is a
+step, and point-sampling one at small sizes shimmers as the line moves.
+`rzLyricPixels` is what turns a screen-space footprint into the right filter
+width.
+
+Everything here reads zero, `-1` or `false` when the scene has no `.mid` or
+`.lrc`, so an effect that uses them still compiles and draws in a scene that has
+neither.
+
 ### What `depth` is for
 
 A foreground is not stuck in front. `depth` is what lets it decide, per pixel.
@@ -741,6 +831,36 @@ Project a world-up vector from the subject instead; its screen direction is what
 you want, and its foreshortened length is how tall the effect should look from
 that angle.
 
+### Lights
+
+An effect can put light **into the shading**, not just pixels on the frame. Declare
+how many slots and fill them:
+
+```wgsl
+// @lights 4
+
+fn lightEmit(i: u32, time: f32) -> RzLight {
+  var l: RzLight;
+  l.pos = vec3f(0.0, 12.0, 0.0);   // world space
+  l.color = vec3f(1.0, 0.85, 0.6);
+  l.intensity = 0.0;                // 0 is OFF, not "a dark light"
+  l.radius = 8.0;                   // falloff distance
+  return l;
+}
+```
+
+Called once per slot per frame. The count and the function come as a pair — one
+without the other is a compile error, and `@lights` is capped by the engine.
+
+`intensity = 0` retires the slot entirely, which is what makes a burst effect
+cheap: a firework between bursts is not a light at zero brightness sitting
+somewhere, it is no light. Set every field on every call — a slot you leave alone
+keeps whatever the previous frame put there.
+
+This is the only mount that changes how the CHARACTER looks. Bloom does not: it
+spreads bright pixels in screen space after shading, so a glowing ribbon does not
+illuminate the dress next to it. A light does.
+
 ### Particles
 
 Three functions, and the pool never touches the CPU: one compute dispatch steps
@@ -779,6 +899,41 @@ in screen space, so a ribbon holds its width whatever the camera does.
 Ribbons composite in their own layer with MAX blending, after tone mapping. That
 is what keeps a bright ribbon crossing itself from stacking into a white blob.
 *Hand Ribbon* is the worked example.
+
+### A simulation grid
+
+Everything else here is stateless — the same `time` gives the same frame. A grid
+is the exception: a texture the effect owns, stepped once per frame, where each
+frame reads the last one.
+
+```wgsl
+// @grid 768
+
+fn gridStep(uv: vec2f, prev: vec4f, dt: f32) -> vec4f {
+  if (rzGridFrame() == 0) { return vec4f(0.0); }   // frame 0 is your seed
+  let te = rzGridTexel();                          // one texel, in uv
+  let left = rzGridPrev(uv - vec2f(te, 0.0));      // any cell, last frame
+  return prev;                                     // four floats, yours to define
+}
+```
+
+The four channels mean whatever you decide. *Dry Ice* carries velocity in `xy`,
+density in `z` and pressure in `w`, which is enough for a real fluid: project,
+advect backwards, inject, decay. The field mounts then read the settled grid with
+`rzGrid(uv)` and shade it — in that effect, marched as a volume above the floor.
+
+| Helper | Gives you |
+| --- | --- |
+| `rzGrid(uv)` | This frame's cell |
+| `rzGridPrev(uv)` | Last frame's — what `gridStep` reads |
+| `rzGridTexel()` · `rzGridSize()` | One texel in uv, and the resolution |
+| `rzGridFrame()` | Frames since the effect was applied; `0` is the one to seed on |
+
+Resolution is a cost like any other: 768² is half a million cells stepped every
+frame. Default is 256, and the engine caps the top. `dt` is real elapsed time, so
+anything integrated with it survives a frame-rate change — but a simulation is
+history, and an export that starts mid-scene starts from an empty grid rather
+than from what you were watching.
 
 ### Making it fast
 
@@ -827,6 +982,27 @@ looking at a black screen.
   data-dependent early return.
 - **WGSL resolves in any order**, so helpers may sit below the functions that use
   them.
+
+And five learned by getting them wrong, each of which cost a round of "it looks
+wrong but I cannot say why":
+
+- **March a volume, do not shade the depth buffer.** Sampling density at the world
+  position the depth buffer reports can only ever be a function of where the floor
+  is — a texture painted on the ground. It cannot represent the air in FRONT of
+  someone, so it can never wrap around them.
+- **Bound the march analytically.** Solve the ray against the volume's own shape
+  first. Undersampling reads as grain, and a step length that jumps where a ray
+  stops on the ground rather than reaching the sky reads as a horizon-shaped crack.
+- **Every `1/r` glow needs a finite edge.** `size / (d + ε)` never reaches zero, so
+  a cull truncates live signal and bloom turns the cut into a ring. Fade to zero
+  AT the cull radius — `smoothstep(REACH, 0.0, d)` — so the boundary is a
+  definition rather than an estimate.
+- **Derive cull radii from the visibility floor, and remember tone mapping lifts
+  it.** Alpha resolves as `1 − exp(−1.52·c)`, so a value stays visible far below
+  1/255 of its raw size. Radii checked against the raw value cut into the image.
+- **Brightness is opacity.** A layer's alpha is its own energy, so a dim streak is
+  a see-through one and a `1/r` glow spreads as it brightens. Keep width and
+  brightness as separate dials, or the only legible streak is a fat one.
 
 ### The built-ins, and what each one is for
 
@@ -1445,3 +1621,77 @@ compiled to WGSL.
 
 **WGSL** — WebGPU Shading Language. Background effects are written in it, and
 shader graphs compile to it.
+
+---
+
+# Appendix D. Shader graph node reference
+
+Every node type the compiler accepts, with its socket names — the exact strings
+a `type` and a `socket` take in the document. Generated from the engine's own
+registry. A graph holds at most 64 nodes and 16 exposed params.
+
+## Families
+
+One type id per operation, written `family/operation`.
+
+| Type | In | Out | Operations |
+| --- | --- | --- | --- |
+| `math/…` | `a` `b` `c` | `value` | `absolute` `sqrt` `inversesqrt` `exponent` `sign` `round` `floor` `ceil` `truncate` `fraction` `sine` `cosine` `tangent` `arcsine` `arccosine` `arctangent` `radians` `degrees` `subtract` `divide` `logarithm` `minimum` `maximum` `less_than` `modulo` `floored_modulo` `snap` `pingpong` `arctan2` `multiply_add` `compare` `smooth_min` `smooth_max` `wrap` `add` `multiply` `power` `greater_than` `clamp01` |
+| `vector_math/…` | `a` `b` `c` `scale` | `vector` | `normalize` `absolute` `floor` `ceil` `fraction` `add` `subtract` `multiply` `divide` `cross` `project` `reflect` `minimum` `maximum` `modulo` `snap` `dot` `distance` `length` `scale` `multiply_add` `faceforward` `refract` `wrap` |
+| `mix/…` | `fac` `a` `b` | `color` | `add` `subtract` `darken` `difference` `exclusion` `screen` `soft_light` `dodge` `burn` `divide` `hue` `saturation` `value` `color` `blend` `overlay` `multiply` `lighten` `linear_light` `add_emit` |
+| `vector_transform/…` | `vector` | `vector` | `world_to_camera` `camera_to_world` `point_world_to_camera` |
+| `tex_image/…` | `uv` | `color` `alpha` | `0` `1` `2` `3` |
+| `separate_color/…` | `color` | `h` `s` `v` | `hsv` `hsl` |
+| `combine_color/…` | `h` `s` `v` | `color` | `hsv` `hsl` |
+| `map_range/…` | `value` `from_min` `from_max` `to_min` `to_max` | `value` | `linear` `smoothstep` |
+| `vector_rotate/…` | `vector` `center` `axis` `angle` `rotation` | `vector` | `axis_angle` `euler_xyz` |
+| `layer_weight/…` | `blend` | `value` | `fresnel` `facing` |
+| `tex_voronoi/…` | `vector` `scale` | `value` | `f1` `color` |
+
+## Nodes
+
+| Type | In | Out |
+| --- | --- | --- |
+| `texture` | — | `color` `alpha` |
+| `geometry` | — | `normal` `view` `world_pos` `rest_pos` `uv` `reflection` |
+| `light` | — | `direction` `color` `ambient` `shadow` |
+| `head_basis` | — | `forward` `right` `up` |
+| `material_diffuse` | — | `color` |
+| `sphere_map` | `base` `strength` | `color` |
+| `rgb_curve` | `color` `fac` `y0` `y1` `y2` `y3` `y4` | `color` |
+| `uv_map` | — | `uv` |
+| `normal_map` | `color` `strength` | `normal` |
+| `bsdf_transparent` | — | `color` |
+| `bsdf_diffuse` | `color` | `color` |
+| `attribute` | — | `color` `fac` |
+| `object_info` | — | `location` `color` `random` |
+| `light_path` | — | `is_camera_ray` `is_shadow_ray` `ray_depth` |
+| `separate_color` | `color` | `r` `g` `b` |
+| `combine_color` | `r` `g` `b` | `color` |
+| `combine_xyz` | `x` `y` `z` | `vector` |
+| `gamma` | `color` `gamma` | `color` |
+| `map_range` | `value` `from_min` `from_max` `to_min` `to_max` | `value` |
+| `value` | `value` | `value` |
+| `rgb` | `color` | `color` |
+| `hue_sat` | `hue` `saturation` `value` `fac` `color` | `color` |
+| `bright_contrast` | `color` `bright` `contrast` | `color` |
+| `invert` | `fac` `color` | `color` |
+| `ramp_constant` | `fac` `pos0` `color0` `pos1` `color1` | `color` `alpha` `fac_out` |
+| `ramp_linear` | `fac` `pos0` `color0` `pos1` `color1` | `color` `alpha` `fac_out` |
+| `ramp_cardinal` | `fac` `pos0` `color0` `pos1` `color1` | `color` `alpha` `fac_out` |
+| `ramp_constant_aa` | `fac` `edge` `color0` `color1` | `color` `alpha` `fac_out` |
+| `ramp_linear_3` | `fac` `pos0` `color0` `pos1` `color1` `pos2` `color2` | `color` `alpha` `fac_out` |
+| `ramp_tri` | `fac` | `value` |
+| `emission` | `color` `strength` | `color` |
+| `add_shader` | `a` `b` | `color` |
+| `mix_shader` | `fac` `a` `b` | `color` |
+| `fresnel` | `ior` | `value` |
+| `shader_to_rgb_diffuse` | — | `value` |
+| `shader_to_rgb` | — | `color` |
+| `separate_xyz` | `vector` | `x` `y` `z` |
+| `vect_cross` | `a` `b` | `vector` |
+| `mapping` | `vector` `loc` `rot` `scl` | `vector` |
+| `bump` | `strength` `height` `normal` | `vector` |
+| `tex_noise` | `vector` `scale` `detail` `roughness` `distortion` | `value` |
+| `tex_gradient` | `vector` | `value` |
+| `principled` | `base_color` `metallic` `roughness` `ior` `specular_ior_level` `sheen_weight` `sheen_tint` `emission_color` `emission_strength` `normal` `spec_clamp` | `color` |
