@@ -52,8 +52,13 @@ export function ClipAutosave({
   onSaveCamera: (file: File) => void
 }) {
   const editRevision = useClipSelector((s) => s.editRevision)
-  const clipSnapshot = useClipSelector((s) => s.clipSnapshot)
-  const cameraSnapshot = useClipSelector((s) => s.cameraSnapshot)
+  // WHICH half moved. The store used to hand out immutable clones and this
+  // compared their identities; the clones are gone (see ClipDocState), and a
+  // counter answers the same question without copying a clip to ask it.
+  const clipRevision = useClipSelector((s) => s.clipRevision)
+  const cameraRevision = useClipSelector((s) => s.cameraRevision)
+  const clip = useClipSelector((s) => s.clip)
+  const cameraTrack = useClipSelector((s) => s.cameraTrack)
   const modelId = useClipSelector((s) => s.modelId)
 
   // Everything the write needs but must not re-trigger on.
@@ -62,12 +67,10 @@ export function ClipAutosave({
     latest.current = { slotNames, cameraName, onSaveMotion, onSaveCamera }
   })
 
-  // What has already been written. Identity, not content: both snapshots are
-  // replaced wholesale on commit and never mutated, so a reference that has not
-  // changed is a half that has not been edited — which is what keeps a bone
-  // tweak from re-encoding a two-hundred-key camera track.
-  const wroteClip = useRef(clipSnapshot)
-  const wroteCamera = useRef(cameraSnapshot)
+  // What has already been written, as the revision it was written at — which is
+  // what keeps a bone tweak from re-encoding a two-hundred-key camera track.
+  const wroteClip = useRef(clipRevision)
+  const wroteCamera = useRef(cameraRevision)
 
   useEffect(() => {
     // Only a real edit. `editRevision` is bumped by commits and never by loads,
@@ -78,19 +81,19 @@ export function ClipAutosave({
       const { slotNames, cameraName, onSaveMotion, onSaveCamera } = latest.current
       const writer = new VMDWriter()
 
-      if (clipSnapshot !== wroteClip.current) {
-        wroteClip.current = clipSnapshot
-        if (clipSnapshot && modelId) {
+      if (clipRevision !== wroteClip.current) {
+        wroteClip.current = clipRevision
+        // The live clip, read not written: VMDWriter only reads it, and the
+        // encode happens after the settle, so no drag is mid-flight through it.
+        if (clip && modelId) {
           const names = slotNames(modelId)
           // "all" when the scene has no separate expression slot — one file
           // holding bone and morph tracks, which is what MMD itself exports.
-          const motion = new File(
-            [writer.write(clipSnapshot, { tracks: names.morph ? "motion" : "all" })],
-            names.motion,
-            { type: "application/octet-stream" },
-          )
+          const motion = new File([writer.write(clip, { tracks: names.morph ? "motion" : "all" })], names.motion, {
+            type: "application/octet-stream",
+          })
           const morphs = names.morph
-            ? new File([writer.write(clipSnapshot, { tracks: "morphs" })], names.morph, {
+            ? new File([writer.write(clip, { tracks: "morphs" })], names.morph, {
                 type: "application/octet-stream",
               })
             : null
@@ -98,14 +101,14 @@ export function ClipAutosave({
         }
       }
 
-      if (cameraSnapshot !== wroteCamera.current) {
-        wroteCamera.current = cameraSnapshot
+      if (cameraRevision !== wroteCamera.current) {
+        wroteCamera.current = cameraRevision
         // An empty track is a camera that was cleared, and writing a zero-key
         // VMD would leave the scene carrying a file that drives nothing. The
         // slot is cleared by the Clear operation itself, not from here.
-        if (cameraSnapshot.length > 0) {
+        if (cameraTrack.length > 0) {
           onSaveCamera(
-            new File([writer.writeCamera(cameraSnapshot)], cameraName ?? "camera.vmd", {
+            new File([writer.writeCamera([...cameraTrack])], cameraName ?? "camera.vmd", {
               type: "application/octet-stream",
             }),
           )
@@ -113,7 +116,7 @@ export function ClipAutosave({
       }
     }, SETTLE_MS)
     return () => clearTimeout(timer)
-  }, [editRevision, clipSnapshot, cameraSnapshot, modelId])
+  }, [editRevision, clipRevision, cameraRevision, clip, cameraTrack, modelId])
 
   return null
 }

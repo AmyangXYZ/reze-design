@@ -25,7 +25,7 @@
 //            cast member together and settling physics on a big jump.
 
 import { useEffect, useRef } from "react"
-import type { AnimationClip, Engine, Quat, Vec3 } from "reze-engine"
+import type { AnimationClip, CameraKeyframe, Engine, Quat, Vec3 } from "reze-engine"
 import type { ViewportHandlers } from "@/hooks/use-engine"
 import type { RefObject } from "react"
 import type { Scrub } from "@/components/scene/anim-player"
@@ -55,6 +55,22 @@ import { cloneAnimationClip, interpolationTemplateForFrame, readLocalPoseAfterSe
  */
 function stampOf(name: string, clip: AnimationClip): string {
   return `${name}\0${clip.boneTracks.size}\0${clip.morphTracks.size}\0${clip.frameCount}`
+}
+
+/**
+ * Push the camera track WITHOUT changing whether the camera is VMD-driven.
+ *
+ * `loadCameraClip` calls `setVmdDriven(true)` for any non-empty track, so every
+ * commit and every preview re-armed the shot — someone who had deliberately
+ * toggled to free orbit got yanked back into the VMD the moment they touched a
+ * camera keyframe, on their own edit. Editing a shot is not a request to watch
+ * through it. The mode is the user's; this only replaces the data behind it.
+ */
+function loadCameraKeepingMode(engine: Engine | null, track: CameraKeyframe[]): void {
+  if (!engine) return
+  const wasDriven = engine.isCameraVmdEnabled()
+  engine.loadCameraClip(track)
+  if (!wasDriven) engine.setCameraVmdEnabled(false)
 }
 
 export function ClipBridge({
@@ -209,7 +225,7 @@ export function ClipBridge({
     // The camera half of the same commit. commitCamera and commit share one
     // editRevision because they are edits to one document, so both write back
     // here; loadCameraClip is a no-op against an unchanged track.
-    if (cameraTrack.length > 0) engineRef.current?.loadCameraClip(cameraTrack)
+    if (cameraTrack.length > 0) loadCameraKeepingMode(engineRef.current, cameraTrack)
     // Re-seek, or the viewport keeps showing the pose it sampled before the
     // upload — a key you just moved appears not to have moved until something
     // else advances the clock, which reads as the edit having been dropped.
@@ -398,7 +414,7 @@ export function ClipBridge({
       previewCamera: (track) => {
         // Length is what the watcher compares, and a drag does not change it —
         // so pushing a preview here cannot be read back in as a new shot.
-        engineRef.current?.loadCameraClip(track)
+        loadCameraKeepingMode(engineRef.current, track)
       },
       morphWeight: (morph) => {
         const model = modelNow()

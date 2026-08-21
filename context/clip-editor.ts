@@ -42,7 +42,7 @@ import {
 } from "react"
 import type { AnimationClip, CameraKeyframe, Quat, Vec3 } from "reze-engine"
 import { BONE_GROUPS } from "@/lib/animation"
-import { clipAfterKeyframeEdit, cloneAnimationClip } from "@/lib/clip"
+import { clipAfterKeyframeEdit } from "@/lib/clip"
 
 export { FPS, framesToSeconds, secondsToFrames } from "@/lib/clip"
 
@@ -217,12 +217,22 @@ export type ClipDocState = {
    * already where the user is pointing.
    */
   revealBone: { bone: string; epoch: number } | null
-  /** Immutable clone taken at the last commit. A keyframe drag mutates the live
-   *  clip in place — that is what keeps a drag off React entirely — so the
-   *  clean copy for the history stack has to be captured at commit time rather
-   *  than derived from `clip` afterwards. */
-  clipSnapshot: AnimationClip | null
-  cameraSnapshot: CameraKeyframe[]
+  /**
+   * Which HALF moved, counted separately.
+   *
+   * `editRevision` says the document changed and is what the bridge writes back
+   * on; these two say whether it was the clip or the shot. Undo needs it to diff
+   * only the half that moved, and autosave needs it to avoid re-encoding a
+   * two-hundred-key camera VMD because someone nudged a knee.
+   *
+   * Counters rather than the immutable clones that used to live here. Those were
+   * for a history that stored whole clips: at fifteen thousand keyframes a clone
+   * is ~12.7MB, so the stack ran to a gigabyte and every commit paid a deep copy
+   * to fill it. The history diffs against one baseline of its own now, and a
+   * commit costs nothing but a counter.
+   */
+  clipRevision: number
+  cameraRevision: number
   /**
    * Bumped when a whole new clip ARRIVES — never by an edit.
    *
@@ -295,17 +305,10 @@ const EMPTY_DOC: ClipDocState = {
   // showed a tab strip with nothing selected.
   tab: "allRot",
   revealBone: null,
-  clipSnapshot: null,
-  cameraSnapshot: [],
+  clipRevision: 0,
+  cameraRevision: 0,
   loadRevision: 0,
   editRevision: 0,
-}
-
-/** Deep-enough copy of a camera track: a drag mutates the keyframe objects, so
- *  those are replaced, while the Vec3s inside are swapped whole by the channel
- *  setters rather than mutated and are safe to share. */
-function cloneCameraTrack(track: CameraKeyframe[]): CameraKeyframe[] {
-  return track.map((kf) => ({ ...kf }))
 }
 
 function createClipDocStore(): ClipDocStore {
@@ -331,11 +334,11 @@ function createClipDocStore(): ClipDocStore {
         set({
           ...state,
           clip: null,
-          clipSnapshot: null,
           selectedBone: null,
           selectedMorph: null,
           selectedKeyframes: [],
           editRevision: state.editRevision + 1,
+          clipRevision: state.clipRevision + 1,
         })
         return
       }
@@ -343,8 +346,8 @@ function createClipDocStore(): ClipDocStore {
       set({
         ...state,
         clip: settled,
-        clipSnapshot: cloneAnimationClip(settled),
         editRevision: state.editRevision + 1,
+        clipRevision: state.clipRevision + 1,
       })
     },
     replaceClip: (next, modelId, clipName) => {
@@ -355,7 +358,6 @@ function createClipDocStore(): ClipDocStore {
           ...EMPTY_DOC,
           loadRevision: state.loadRevision + 1,
           cameraTrack: state.cameraTrack,
-          cameraSnapshot: state.cameraSnapshot,
           tab: state.tab,
         })
         return
@@ -364,7 +366,6 @@ function createClipDocStore(): ClipDocStore {
       set({
         ...state,
         clip: settled,
-        clipSnapshot: cloneAnimationClip(settled),
         modelId,
         clipName,
         selectedKeyframes: [],
@@ -390,13 +391,13 @@ function createClipDocStore(): ClipDocStore {
       set({
         ...state,
         cameraTrack: sorted,
-        cameraSnapshot: cloneCameraTrack(sorted),
         editRevision: state.editRevision + 1,
+        cameraRevision: state.cameraRevision + 1,
       })
     },
     replaceCameraTrack: (next) => {
       const sorted = [...next].sort((a, b) => a.frame - b.frame)
-      set({ ...state, cameraTrack: sorted, cameraSnapshot: cloneCameraTrack(sorted) })
+      set({ ...state, cameraTrack: sorted })
     },
     setCameraSelected: (payload) => update("cameraSelected", payload),
     setRig: (boneNames, morphNames) => {
