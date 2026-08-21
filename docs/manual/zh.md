@@ -30,10 +30,11 @@ Reze Design 是一个 MMD 场景的设计、渲染与分享平台，运行在浏
   - [1.5 角色背后的层](#15-角色背后的层)
   - [1.6 舞台](#16-舞台)
   - [1.7 风格](#17-风格)
-  - [1.8 导出](#18-导出)
-  - [1.9 发布](#19-发布)
-  - [1.10 画廊](#110-画廊)
-  - [1.11 出问题时](#111-出问题时)
+  - [1.8 编辑动作](#18-编辑动作)
+  - [1.9 导出](#19-导出)
+  - [1.10 发布](#110-发布)
+  - [1.11 画廊](#111-画廊)
+  - [1.12 出问题时](#112-出问题时)
 - [2. 做出自己的风格](#2-做出自己的风格)
   - [2.1 渲染管线](#21-渲染管线)
   - [2.2 调色预设](#22-调色预设)
@@ -43,6 +44,7 @@ Reze Design 是一个 MMD 场景的设计、渲染与分享平台，运行在浏
 - [附录 A. 控件速查](#附录-a-控件速查)
 - [附录 B. 去哪里找模型、动作和音乐](#附录-b-去哪里找模型动作和音乐)
 - [附录 C. 术语表](#附录-c-术语表)
+- [附录 D. 着色图节点速查](#附录-d-着色图节点速查)
 
 ---
 
@@ -66,8 +68,8 @@ MMD 带动的这套画风，如今早已进入主流。原神、深空之眼、�
 **[reze-engine](https://github.com/AmyangXYZ/reze-engine)** 选择了另一条路：不架设在
 通用引擎之上，而是为 MMD 专门编写一个渲染器。引擎之上有两个应用：**Reze Design**，即
 本手册所讲的这个，负责场景的设计、渲染与发布；以及
-**[Reze Studio](https://github.com/AmyangXYZ/reze-studio)**，一个带时间轴、摄影表与贝
-塞尔曲线编辑的动画编辑器。两者只需一台装有现代浏览器的机器即可运行，直接读取生态中现
+**[Reze Studio](https://github.com/AmyangXYZ/reze-studio)**，本项目时间轴的来处、独立
+的动画编辑器。两者只需一台装有现代浏览器的机器即可运行，直接读取生态中现
 成的文件，并把一个场景变成一条链接——他人打开即可转动视角，也可以继续做下去。
 
 ---
@@ -227,7 +229,39 @@ hashing 才能在多层叠加时正确排序。角色由系统推断，头发组
 
 逐个节点搭建着色图的方法见 [§2.4](#24-材质着色图)。
 
-## 1.8 导出
+## 1.8 编辑动作
+
+载入的动作不是定死的。播放条下面的时间轴打开的就是当前正在播放的东西的关键帧，
+改动会作为 VMD 写回场景。
+
+看的是什么，由三个选择决定：
+
+| | |
+| --- | --- |
+| **哪条轨道** | 动作、表情或镜头那一行上的编辑按钮 |
+| **哪个通道** | 标签栏——旋转、位移、权重，或镜头的某个通道 |
+| **哪根骨骼** | 左边的列表，或者在视图里双击角色 |
+
+**摆姿势。** 拖动选中骨骼上的操纵器，姿势就写到播放头所在的那一帧，那里没有关键帧
+就新建一个。属性面板里的滑块做的是同一件事，只是用数值；你拖哪个通道，时间轴就跟到
+哪个通道。
+
+**时间。** 在关键帧条上拖动一个关键帧就是把它在时间上挪位置。曲线那一半画的是同一
+批关键帧的数值，所以一个关键帧可以同时改时间和改数值。
+
+**缓动。** 两个关键帧之间的贝塞尔就是 VMD 自己的那一条——和 MMD 写进文件的是同样的
+四个字节——显示成一个 127×127 的方框和两个控制点。拖它们，或者取八个预设之一。曲线
+属于某一个关键帧，所以只有选中了关键帧、或者播放头正好停在关键帧上时，编辑器才是可
+用的。
+
+**轨道操作。** Insert 和 Delete 作用在播放头处。**Simplify** 对稠密的轨道拟合曲线，
+丢掉不需要的关键帧——这正是让一段捕捉或重定向来的动作变得可以手工编辑的关键。
+**Clear** 清空整条轨道。
+
+⌘Z 和 ⇧⌘Z 撤销与重做，按片段独立。所有改动都作为标准 VMD 写回场景自己的槽位，因此
+一次编辑能挺过刷新、会跟着发布一起走，也能从它所属的那一行下载下来。
+
+## 1.9 导出
 
 **Render** 标签用于设定画幅与画质，从 2.39:1 宽银幕到竖屏 9:16，最高 4K；也可以只导出
 一段，例如 `0:12` 到 `0:30`。该标签打开时，视口会叠加一层取景预览：框住的即是将要录制
@@ -257,7 +291,7 @@ hashing 才能在多层叠加时正确排序。角色由系统推断，头发组
 传的素材也一并还原。只有四种操作会改变打开时加载的内容：新建场景、恢复默认、导入场景文
 件，以及在编辑器中打开他人的场景。
 
-## 1.9 发布
+## 1.10 发布
 
 发布会把你的场景变成一个任何人都能打开的页面：一份可自由转动视角的实时渲染。
 
@@ -284,7 +318,7 @@ hashing 才能在多层叠加时正确排序。角色由系统推断，头发组
 最终得到一条 `reze.design/<你的名字>/<id>` 的永久链接。真正用于解析的是那个短 id，因
 此之后修改场景名称、甚至修改你自己的名字，已经分享出去的链接都不会失效。
 
-## 1.10 画廊
+## 1.11 画廊
 
 **场景画廊**位于左上角标志背后的菜单中，⌘K 里同样可以找到，打开的是所有人发布过的场
 景。它的侧栏与其他库完全一致：**全部**、**我的**、**已赞**，各自带有数量，标签则在当
@@ -301,7 +335,7 @@ hashing 才能在多层叠加时正确排序。角色由系统推断，头发组
 创建的每一条场景链接中，且**只能设定一次**——正因不可更改，分享出去的链接才能长期
 有效。
 
-## 1.11 出问题时
+## 1.12 出问题时
 
 **模型呈现为白色、灰色或黑色。** 贴图未找到，几乎都是因为只载入了 `.pmx` 本身。请载入
 整个文件夹，或原始的 `.zip`。
@@ -421,7 +455,7 @@ Neutral 停两秒，这次调色是否值得保留便一目了然。其二，**�
 场景特效是一段着色器，按像素、从视线方向和时钟画出画面的一层。雨、雪、极光、
 地面上的雾、缠在身上的闪电、脚下旋转的法阵、片头字卡。
 
-### 五个挂载点
+### 六个挂载点
 
 **你定义了哪些函数，就决定了这个特效是什么、画在哪一层。** 应用里没有任何"图层"
 设置项，代码本身就是答案。
@@ -432,6 +466,8 @@ Neutral 停两秒，这次调色是否值得保留便一目了然。其二，**�
 | `fn foreground(ray, uv, time, depth)` | 覆盖在成片之上的一层 |
 | `fn particleInit` · `particleStep` · `particleShade` | 一个 GPU 粒子池 |
 | `fn trailWidth` · `trailShade` | 沿着你申请的骨骼画的飘带 |
+| `fn lightEmit` | 真正参与角色着色的光源 |
+| `fn gridStep` | 一张跨帧保留的模拟网格 |
 
 同时定义 `background` 和 `foreground`，它们就是一个特效：一场暴雨是压暗的天空
 加上它前面的雨丝，写在同一个文件里。
@@ -450,7 +486,15 @@ Neutral 停两秒，这次调色是否值得保留便一目了然。其二，**�
 // @blend additive         粒子叠加发光，而不是覆盖
 // @bloom                  粒子进入辉光金字塔
 // @fullres                场挂载点按全分辨率运行
+// @layer additive         场本身叠加发光，而不是覆盖
+// @lights 4               光源槽位数，配合 fn lightEmit
+// @grid 768               模拟网格分辨率，配合 fn gridStep
 ```
+
+**`@layer additive` 是新特效最常需要、也最常漏掉的一条。** 默认按 alpha-over
+合成，这对有实体的东西是对的——烟、雾、画出来的天空；对"光"就是错的，而且两道
+辉光一交叉就立刻看得出来：后画的那道会遮住先画的，于是第二道闪电在第一道上打了
+个洞。十五个内置特效里有七个声明了它。如果你画的是光而不是物质，你也应该声明。
 
 `@anchor` 的槽位就是**声明顺序**——第一条是槽位 0。模型有的骨骼都能用，遇到写法
 不同的模型 `.valid` 会是 false。一定要判断，否则你的手部特效会在半数模型上画到
@@ -539,6 +583,42 @@ fn foreground(ray: vec3f, uv: vec2f, time: f32, depth: f32) -> vec4f
 这也是 `At(offset)` 这几个形式存在的理由。未来已经算好了，所以一根柱子可以在鼓点
 **落下之前**就开始迎上去——这是实时分析器做不到的。场景没有音乐时，全部读数为零。
 
+### 乐谱与歌词
+
+音轨旁边放一个 `.mid`，特效就能读到音符；放一个 `.lrc`，就能读到此刻该出现的那
+一句。两者都跑在与音频同一条预先算好的时钟上，所以导出与编辑器里完全一致。
+
+| 函数 | 给你什么 |
+| --- | --- |
+| `rzMidiTime()` · `rzMidiDuration()` · `rzMidiPlaying()` | 乐谱走到哪、总长多少、是否在走 |
+| `rzNoteCount()` | 文件里有多少个音符 |
+| `rzNoteStart(i)` · `rzNoteLength(i)` | 第 `i` 个音符何时开始、持续多久，单位秒 |
+| `rzNotePitch(i)` · `rzNoteVelocity(i)` | 它的 MIDI 音高，以及力度 0 – 1 |
+| `rzNoteAge(i)` · `rzNoteHeld(i)` | 距它开始过了多少秒；此刻是否还在响 |
+| `rzPitchLow()` · `rzPitchHigh()` | 这个文件实际用到的音域——键盘的真实跨度，而不是 0 – 127 |
+| `rzPitchX(pitch)` | 把音高映射到音域上的 0 – 1，于是布局不必知道曲子是什么 |
+| `rzKeyEnergy(pitch)` | 这个音此刻还剩多少能量（带衰减）——一个仍在余响的琴键 |
+
+音符**按开始时间排好序**，所以用二分查找定位当前窗口，而不是遍历整个文件。
+*Note Fall* 就是这么做的，这也是它能承载一整卷钢琴谱的原因。
+
+| 函数 | 给你什么 |
+| --- | --- |
+| `rzLyricCount()` · `rzLyricIndex(t)` | 一共几句；`t` 时刻是第几句，句与句之间返回 `-1` |
+| `rzLyricStart(i)` · `rzLyricEnd(i)` | 这一句的时间窗，单位秒 |
+| `rzLyricProgress(i, t)` | 这一句走了多少，0 – 1——卡拉 OK 的扫光 |
+| `rzLyricHasText(i)` | 这一句有没有栅格化出内容 |
+| `rzLyricText(i, uv)` | 第 `i` 句的字形覆盖率；`uv` 是它自己那个框上的 0 – 1 |
+| `rzLyricAspect(i)` · `rzLyricPixels(i)` · `rzLyricRect(i)` | 宽高比、在图集里占多少纹素、位于图集何处 |
+| `rzLyricChars(i)` | 这一句有多少个字 |
+
+文字由宿主栅格化，不在着色器里排版——特效采样的是覆盖率。要**按一个像素的宽度去
+采**，而不是采一个点：字形边缘是一个阶跃，小字号下采点会随着这一句移动而闪烁。
+`rzLyricPixels` 就是把屏幕上的足迹换算成正确滤波宽度的那个量。
+
+场景里没有 `.mid` 或 `.lrc` 时，这里的一切返回 0、`-1` 或 `false`，所以用到它们
+的特效在两样都没有的场景里照样能编译、能画。
+
 ### `depth` 是用来做什么的
 
 前景并不是被钉在最前面。`depth` 让它可以逐像素地决定。
@@ -603,6 +683,33 @@ fn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f {
 向上的向量：它在屏幕上的方向才是你要的，而它被透视压缩后的长度，正好就是从这个角度
 看过去这个特效该有多高。
 
+### 光源
+
+特效可以把光送进**着色**里，而不只是往画面上糊像素。声明槽位数，然后填满它们：
+
+```wgsl
+// @lights 4
+
+fn lightEmit(i: u32, time: f32) -> RzLight {
+  var l: RzLight;
+  l.pos = vec3f(0.0, 12.0, 0.0);   // 世界坐标
+  l.color = vec3f(1.0, 0.85, 0.6);
+  l.intensity = 0.0;                // 0 是"关掉"，不是"一盏很暗的灯"
+  l.radius = 8.0;                   // 衰减距离
+  return l;
+}
+```
+
+每帧对每个槽位调用一次。数量与函数成对出现——只写其中一个是编译错误，`@lights`
+的上限由引擎决定。
+
+`intensity = 0` 会把这个槽位整个撤掉，这正是爆发类特效便宜的原因：烟花在两次绽放
+之间不是"一盏亮度为零、还杵在某处的灯"，而是根本没有灯。每次调用都要把每个字段都
+写一遍——你不管的字段会留着上一帧的值。
+
+这是**唯一**会改变角色本身长相的挂载点。辉光不会：它在着色之后于屏幕空间扩散亮
+像素，所以一条发光的飘带并不会照亮它旁边的裙子。光源会。
+
 ### 粒子
 
 三个函数，而且整个粒子池从不经过 CPU：一次 compute dispatch 推进所有粒子，一次
@@ -637,6 +744,37 @@ fn trailShade(u: f32, v: f32, age: f32, weight: f32, slot: i32) -> vec4f
 
 飘带在自己的图层里用 MAX 混合、在色调映射之后合成。这正是一条明亮的飘带自我交叉时
 不会叠成一团白的原因。*Hand Ribbon* 是范例。
+
+### 模拟网格
+
+这里其他所有东西都是无状态的——同样的 `time` 给出同样的一帧。网格是例外：一张归
+特效自己所有的纹理，每帧步进一次，每一帧读上一帧。
+
+```wgsl
+// @grid 768
+
+fn gridStep(uv: vec2f, prev: vec4f, dt: f32) -> vec4f {
+  if (rzGridFrame() == 0) { return vec4f(0.0); }   // 第 0 帧是你的初值
+  let te = rzGridTexel();                          // 一个纹素，折算成 uv
+  let left = rzGridPrev(uv - vec2f(te, 0.0));      // 上一帧的任意一格
+  return prev;                                     // 四个浮点，含义由你定
+}
+```
+
+四个通道装什么由你决定。*Dry Ice* 把速度放在 `xy`、密度放在 `z`、压力放在 `w`，
+这已经够跑一个真正的流体了：投影、逆向平流、注入、衰减。场挂载点再用 `rzGrid(uv)`
+读这张稳定下来的网格并着色——在那个特效里，是把它当作地面上方的体积去 march。
+
+| 函数 | 给你什么 |
+| --- | --- |
+| `rzGrid(uv)` | 这一帧的格子 |
+| `rzGridPrev(uv)` | 上一帧的——`gridStep` 读的就是它 |
+| `rzGridTexel()` · `rzGridSize()` | 一个纹素折算成 uv，以及分辨率 |
+| `rzGridFrame()` | 特效应用以来的帧数；`0` 是该写初值的那一帧 |
+
+分辨率和别的开销一样是要花钱的：768² 是每帧步进五十多万个格子。默认 256，上限由引
+擎卡住。`dt` 是真实经过的时间，所以用它积分出来的东西在帧率变化时依然成立——但模拟
+是一段历史，从场景中途开始的导出，拿到的是一张空网格，而不是你刚才看到的那一张。
 
 ### 让它跑得快
 
@@ -675,6 +813,23 @@ fn trailShade(u: f32, v: f32, age: f32, weight: f32, slot: i32) -> vec4f
 - **`fwidth` 只能用在一致控制流里。** 只要相邻像素走了同一条分支，导数就是成立的
   ——别把它放在依赖数据的提前返回之后。
 - **WGSL 不区分声明顺序**，所以辅助函数可以写在用到它们的函数下面。
+
+另外五条是踩出来的，每一条都换来过一轮"看着不对，但说不清哪里不对"：
+
+- **体积要 march 光线，而不是给深度缓冲上的那个点着色。** 在深度缓冲报告的世界
+  坐标处采样密度，结果只可能是"地板在哪里"的函数——一张画在地上的贴图。它表达不了
+  角色**前面**的空气，所以永远也裹不住一个人。
+- **march 的范围要解析地卡住。** 先把光线和体积自己的形状求交。采样不足会表现为
+  颗粒感；而步长在"打到地面"和"射向天空"之间突变，会表现为一道地平线形状的裂缝。
+- **每一个 `1/r` 辉光都需要一个有限的边界。** `size / (d + ε)` 永远到不了零，于是
+  裁剪会切掉仍然有效的信号，辉光再把这道切口变成一个环。让它在裁剪半径处**恰好衰
+  减到零**——`smoothstep(REACH, 0.0, d)`——边界才是一个定义，而不是一个估计。
+- **裁剪半径要从可见度下限推出来，并且记得色调映射会把它抬高。** alpha 按
+  `1 − exp(−1.52·c)` 解算，所以一个值远在自身大小的 1/255 以下时仍然可见。拿原始
+  值去估半径，会切进画面里。
+- **亮度就是不透明度。** 一层的 alpha 就是它自己的能量，所以暗的光带同时也是透的，
+  而 `1/r` 辉光会随着调亮而变粗。把宽度和亮度做成两个独立的旋钮，否则唯一看得清的
+  光带就只有粗的那种。
 
 ### 内置特效，以及每一个是做什么用的
 
@@ -1146,3 +1301,76 @@ slope/offset/power 颜色变换。
 **WebGPU**——本应用所基于的浏览器 GPU 接口。
 
 **WGSL**——WebGPU 着色语言。背景特效用它编写，着色图编译为它。
+
+---
+
+# 附录 D. 着色图节点速查
+
+编译器接受的每一个节点类型及其接口名——文档里 `type` 和 `socket` 要写的确切字符
+串。由引擎自己的注册表生成。一张图最多 64 个节点、16 个暴露参数。
+
+## 系列
+
+每个运算一个类型 id，写作 `family/operation`。
+
+| 类型 | 输入 | 输出 | 运算 |
+| --- | --- | --- | --- |
+| `math/…` | `a` `b` `c` | `value` | `absolute` `sqrt` `inversesqrt` `exponent` `sign` `round` `floor` `ceil` `truncate` `fraction` `sine` `cosine` `tangent` `arcsine` `arccosine` `arctangent` `radians` `degrees` `subtract` `divide` `logarithm` `minimum` `maximum` `less_than` `modulo` `floored_modulo` `snap` `pingpong` `arctan2` `multiply_add` `compare` `smooth_min` `smooth_max` `wrap` `add` `multiply` `power` `greater_than` `clamp01` |
+| `vector_math/…` | `a` `b` `c` `scale` | `vector` | `normalize` `absolute` `floor` `ceil` `fraction` `add` `subtract` `multiply` `divide` `cross` `project` `reflect` `minimum` `maximum` `modulo` `snap` `dot` `distance` `length` `scale` `multiply_add` `faceforward` `refract` `wrap` |
+| `mix/…` | `fac` `a` `b` | `color` | `add` `subtract` `darken` `difference` `exclusion` `screen` `soft_light` `dodge` `burn` `divide` `hue` `saturation` `value` `color` `blend` `overlay` `multiply` `lighten` `linear_light` `add_emit` |
+| `vector_transform/…` | `vector` | `vector` | `world_to_camera` `camera_to_world` `point_world_to_camera` |
+| `tex_image/…` | `uv` | `color` `alpha` | `0` `1` `2` `3` |
+| `separate_color/…` | `color` | `h` `s` `v` | `hsv` `hsl` |
+| `combine_color/…` | `h` `s` `v` | `color` | `hsv` `hsl` |
+| `map_range/…` | `value` `from_min` `from_max` `to_min` `to_max` | `value` | `linear` `smoothstep` |
+| `vector_rotate/…` | `vector` `center` `axis` `angle` `rotation` | `vector` | `axis_angle` `euler_xyz` |
+| `layer_weight/…` | `blend` | `value` | `fresnel` `facing` |
+| `tex_voronoi/…` | `vector` `scale` | `value` | `f1` `color` |
+
+## 节点
+
+| 类型 | 输入 | 输出 |
+| --- | --- | --- |
+| `texture` | — | `color` `alpha` |
+| `geometry` | — | `normal` `view` `world_pos` `rest_pos` `uv` `reflection` |
+| `light` | — | `direction` `color` `ambient` `shadow` |
+| `head_basis` | — | `forward` `right` `up` |
+| `material_diffuse` | — | `color` |
+| `sphere_map` | `base` `strength` | `color` |
+| `rgb_curve` | `color` `fac` `y0` `y1` `y2` `y3` `y4` | `color` |
+| `uv_map` | — | `uv` |
+| `normal_map` | `color` `strength` | `normal` |
+| `bsdf_transparent` | — | `color` |
+| `bsdf_diffuse` | `color` | `color` |
+| `attribute` | — | `color` `fac` |
+| `object_info` | — | `location` `color` `random` |
+| `light_path` | — | `is_camera_ray` `is_shadow_ray` `ray_depth` |
+| `separate_color` | `color` | `r` `g` `b` |
+| `combine_color` | `r` `g` `b` | `color` |
+| `combine_xyz` | `x` `y` `z` | `vector` |
+| `gamma` | `color` `gamma` | `color` |
+| `map_range` | `value` `from_min` `from_max` `to_min` `to_max` | `value` |
+| `value` | `value` | `value` |
+| `rgb` | `color` | `color` |
+| `hue_sat` | `hue` `saturation` `value` `fac` `color` | `color` |
+| `bright_contrast` | `color` `bright` `contrast` | `color` |
+| `invert` | `fac` `color` | `color` |
+| `ramp_constant` | `fac` `pos0` `color0` `pos1` `color1` | `color` `alpha` `fac_out` |
+| `ramp_linear` | `fac` `pos0` `color0` `pos1` `color1` | `color` `alpha` `fac_out` |
+| `ramp_cardinal` | `fac` `pos0` `color0` `pos1` `color1` | `color` `alpha` `fac_out` |
+| `ramp_constant_aa` | `fac` `edge` `color0` `color1` | `color` `alpha` `fac_out` |
+| `ramp_linear_3` | `fac` `pos0` `color0` `pos1` `color1` `pos2` `color2` | `color` `alpha` `fac_out` |
+| `ramp_tri` | `fac` | `value` |
+| `emission` | `color` `strength` | `color` |
+| `add_shader` | `a` `b` | `color` |
+| `mix_shader` | `fac` `a` `b` | `color` |
+| `fresnel` | `ior` | `value` |
+| `shader_to_rgb_diffuse` | — | `value` |
+| `shader_to_rgb` | — | `color` |
+| `separate_xyz` | `vector` | `x` `y` `z` |
+| `vect_cross` | `a` `b` | `vector` |
+| `mapping` | `vector` `loc` `rot` `scl` | `vector` |
+| `bump` | `strength` `height` `normal` | `vector` |
+| `tex_noise` | `vector` `scale` `detail` `roughness` `distortion` | `value` |
+| `tex_gradient` | `vector` | `value` |
+| `principled` | `base_color` `metallic` `roughness` `ior` `specular_ior_level` `sheen_weight` `sheen_tint` `emission_color` `emission_strength` `normal` `spec_clamp` | `color` |
