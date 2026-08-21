@@ -2,7 +2,7 @@
 
 **English** · [简体中文](https://github.com/AmyangXYZ/reze-design/blob/main/docs/manual/zh.md)
 
-Reze Design is the authentic MMD experience, resurrected in WebGPU and
+Reze Design is the authentic MMD experience, reforged in WebGPU and
 TypeScript. It runs in a browser tab: it reads the models and motions the
 MikuMikuDance community has been making since 2008, renders them on WebGPU, and
 turns the result into a video file or a live page anyone can open and orbit.

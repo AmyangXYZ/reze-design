@@ -1,6 +1,6 @@
 # Reze Design
 
-**The authentic MMD experience, resurrected in WebGPU and TypeScript.** Design, render and share MMD scenes in the browser: everything the 2008 desktop made possible — models, motions, camera work, MME effects — alive again in a tab. Nothing to install, and a permanent link anyone can open.
+**The authentic MMD experience, reforged in WebGPU and TypeScript.** Design, render and share MMD scenes in the browser: everything the 2008 desktop made possible — models, motions, camera work, MME effects — in a tab. Nothing to install, and a permanent link anyone can open.
 
 **→ [reze.design](https://reze.design)**
 

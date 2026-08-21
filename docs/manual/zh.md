@@ -2,7 +2,7 @@
 
 [English](https://github.com/AmyangXYZ/reze-design/blob/main/docs/manual/en.md) · **简体中文**
 
-Reze Design 是被 WebGPU 与 TypeScript 复活的、原汁原味的 MMD：运行在一个浏览器标签
+Reze Design 是以 WebGPU 与 TypeScript 重铸的、原汁原味的 MMD：运行在一个浏览器标签
 页里，读取 MMD 社区自 2008 年以来积累的模型与动作，以 WebGPU 渲染，最终输出为一个视频
 文件，或一个任何人都能打开并自由转动视角的实时页面。
 
