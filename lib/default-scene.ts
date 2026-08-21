@@ -34,7 +34,13 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
       : [
       {
         model: "/models/托特-扉页之吻/苍鹭·托特「扉页之吻」白衣.pmx",
-        animation: "/animations/One More Last Time.vmd",
+        // The Classic set, the four files reze-studio boots on: a dance, the
+        // expressions that go with it, the shot that frames it, and the track
+        // they were all timed to. A first-time visitor should land on a scene
+        // that is doing all four things at once — a character dancing in
+        // silence, staring straight ahead, is a demo of a loader.
+        animation: "/animations/Classic.vmd",
+        morph: "/animations/Classic_morph.vmd",
         materials: {
           groups: [
             { label: "Body", materials: ["皮肤", "手"], graph: "AG Body" },
@@ -71,8 +77,10 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
         },
       },
     ],
-    cameraAnimation: null,
-    audio: USE_DEFAULT_ASSETS ? "/audios/One More Last Time.wav" : null,
+    // The camera overrides `settings.camera` below while it is enabled; those
+    // values stay as what the scene falls back to when it is turned off.
+    cameraAnimation: USE_DEFAULT_ASSETS ? "/animations/Classic_camera.vmd" : null,
+    audio: USE_DEFAULT_ASSETS ? "/audios/Classic.mp3" : null,
     midi: null,
     lyrics: null,
     backdrop: null,
