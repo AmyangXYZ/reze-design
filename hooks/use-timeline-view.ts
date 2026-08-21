@@ -1,12 +1,20 @@
 "use client"
 
-// Where you left the timeline: zoom, scroll, playhead, which channel was open.
+// Where you left the timeline: zoom, scroll, and which channel was open.
 //
 // CHROME, not document state — the same distinction use-stored-rect draws. None
 // of this changes the scene, nothing here is published or exported, and undo
 // must never walk back through it. It is remembered for the same reason a
 // panel's position is: reopening an editor that has forgotten where you were
 // working makes you find your place again every time.
+//
+// The PLAYHEAD used to be in here too, and it is the one thing that could not
+// be. Zoom and scroll change how the editor is drawn; the playhead moves the
+// scene — every cast member, the music with them. Restoring it meant opening
+// the fold teleported the scene to a frame from a previous session, which is
+// "never mutate what the user is looking at" broken by the surface whose whole
+// job is to show you what you are looking at. The scene's own position is the
+// truth on open, and clip-bridge adopts it.
 //
 // Global rather than per-scene, which is what reze-studio does. A per-clip key
 // would arguably be better — a zoom that suits a three-minute dance is wrong for
@@ -24,8 +32,6 @@ export type TimelineView = {
   yZoom: number
   /** Horizontal scroll, in pixels. */
   scrollX: number
-  /** Playhead, in clip frames. */
-  frame: number
   /** Which channel the curve half was showing. */
   tab: string
 }
@@ -45,7 +51,7 @@ function read(): TimelineView | null {
     const v = JSON.parse(raw) as Partial<TimelineView>
     // A hand-edited or half-written entry must not open the editor at NaN
     // frames per pixel, which renders nothing and looks like a broken canvas.
-    const nums = [v.pxPerFrame, v.yZoom, v.scrollX, v.frame]
+    const nums = [v.pxPerFrame, v.yZoom, v.scrollX]
     if (!nums.every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0)) return null
     if (typeof v.tab !== "string" || !v.tab) return null
     return v as TimelineView

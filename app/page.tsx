@@ -57,6 +57,7 @@ import {
   Palette,
   PenLine,
   RotateCcw,
+  Download,
   Share2,
   Sun,
   Video,
@@ -111,6 +112,10 @@ import { useAudioClock } from "@/hooks/use-audio-clock"
 import { primeAudioAnalysis } from "@/lib/audio-analysis"
 import { Dopesheet } from "@/components/scene/dopesheet"
 import { ClipBridge } from "@/components/scene/clip-bridge"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { ClipAutosave } from "@/components/scene/clip-autosave"
+import { ClipHistory } from "@/components/scene/clip-history"
+import { ClipInspector } from "@/components/scene/clip-inspector"
 import { ClipEditor, type ClipEditKind } from "@/context/clip-editor"
 import { primeClipDensity, useAudioPeaks } from "@/hooks/use-lane-graphs"
 import { useEngine, type EngineModelInfo } from "@/hooks/use-engine"
@@ -1244,6 +1249,7 @@ function ClipRow({
   onPick,
   onRemove,
   onEdit,
+  onDownload,
 }: {
   icon: ComponentType<{ className?: string }>
   /** Loaded clip name, or null. */
@@ -1260,8 +1266,13 @@ function ClipRow({
   /** Open this clip in the timeline editor. Absent on rows there is nothing to
    *  edit in — music, and anything the editor cannot key. */
   onEdit?: () => void
+  /** Save this slot's file. Absent on rows whose bytes the app does not hold as
+   *  a file it can hand over. */
+  onDownload?: () => void
 }) {
   const t = useT()
+  // Deleting a clip asks first. Not window.confirm — see ConfirmDialog.
+  const [confirming, setConfirming] = useState(false)
   return (
     // Bare size-4 icon at gap-2.5, exactly as LayerRow sets its own icon and
     // name — a clip row and a Scene row are siblings in the same column, and
@@ -1276,7 +1287,9 @@ function ClipRow({
         <CastLine
           // Three buttons, not the default two — otherwise a long filename runs
           // under the last one instead of ending clear of the button zone.
-          reserve="pr-[4.5rem]"
+          // Reserved so a long filename ends clear of the buttons rather than
+          // running under them. Four controls where there are four.
+          reserve={onEdit && onDownload ? "pr-[6rem]" : "pr-[4.5rem]"}
           text={
             clip ? (
               <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={clipLabel(clip)}>
@@ -1294,18 +1307,51 @@ function ClipRow({
                   the cursor does not move as a scene fills in. */}
               <CastAction
                 icon={Upload}
-                iconClass="size-3"
+                // A step up from size-3: the Upload mark sits inside its own
+                // padding, so at the size the row's other glyphs use it reads
+                // as the smallest thing in a row where it is the primary act.
+                iconClass="size-3.5"
                 label={clip ? t.lab.aria.replace(kind, of) : t.lab.aria.upload(kind, of)}
                 onClick={onPick}
               />
-              {onEdit && (
-                <CastAction icon={PenLine} iconClass="size-3" label={t.lab.aria.edit(kind, of)} onClick={onEdit} />
+              {/* No iconClass — the same PenLine at the same size as the one on
+                  an effect row. Editing a clip and editing an effect are the
+                  same act on two kinds of thing, and they were drawn a size
+                  apart. */}
+              {onEdit && <CastAction icon={PenLine} label={t.lab.aria.edit(kind, of)} onClick={onEdit} />}
+              {/* Between edit and delete, which is the order of consequence:
+                  put a file in, change it, take a copy, end it. Taking a copy
+                  belongs beside the edit it preserves rather than beside the
+                  delete it protects against. */}
+              {onDownload && (
+                <CastAction
+                  icon={Download}
+                  iconClass="size-3.5"
+                  disabled={!clip}
+                  label={t.lab.aria.download(kind, of)}
+                  onClick={onDownload}
+                />
               )}
-              <CastAction icon={X} danger disabled={!clip} label={t.lab.aria.delete(kind, of)} onClick={onRemove} />
+              <CastAction
+                icon={X}
+                danger
+                disabled={!clip}
+                label={t.lab.aria.delete(kind, of)}
+                onClick={() => setConfirming(true)}
+              />
             </>
           }
         />
       </span>
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={t.lab.deleteClip.title(kind)}
+        body={t.lab.deleteClip.body}
+        confirmLabel={t.lab.deleteClip.confirm}
+        cancelLabel={t.lab.deleteClip.cancel}
+        onConfirm={onRemove}
+      />
     </div>
   )
 }
@@ -1439,6 +1485,7 @@ export default function Lab() {
   const {
     canvasRef,
     engineRef,
+    viewportRef,
     models,
     ready,
     bundleReady,
@@ -1535,6 +1582,30 @@ export default function Lab() {
     if (!anim) return
     void (typeof anim.src === "string" ? loadVmdUrl(id, anim.name, anim.src) : loadVmdFile(id, anim.src))
   }
+  /**
+   * Hand a slot's file to the user.
+   *
+   * Two shapes reach here, because a slot holds whichever it was given: a File
+   * (uploaded this session, or re-encoded by the timeline) goes straight out,
+   * and a served URL is fetched first. Anchor-with-href would be one line
+   * shorter and would silently ignore `download` on a cross-origin response,
+   * handing back a navigation instead of a file.
+   */
+  const downloadClip = useCallback((src: File | string | null | undefined, name: string) => {
+    if (!src) return
+    if (typeof src !== "string") {
+      downloadBlob(src, name)
+      return
+    }
+    void fetch(src)
+      .then((r) => r.blob())
+      .then((b) => downloadBlob(b, name))
+      .catch(() => {
+        // A slot whose bytes are gone (evicted bundle, dead URL) is not worth
+        // failing an edit session over; the row still says what it holds.
+      })
+  }, [])
+
   /** A cast member's own clips: the motion, and the morph that dresses it.
    *  One definition for both layouts — tabbed and single — so the two cannot
    *  drift into disagreeing about what a character's clips are. */
@@ -1549,6 +1620,7 @@ export default function Lab() {
         onPick={() => pickAnimation(m.id)}
         onRemove={() => removeAnimation(m.id)}
         onEdit={() => editClip(m.id, "motion")}
+        onDownload={() => downloadClip(animByModel[m.id]?.src, animByModel[m.id]?.name ?? "motion.vmd")}
       />
       {/* Always, like motion and camera. It used to appear only once a scene
           already had one, which made the morph the single clip kind you had to
@@ -1563,6 +1635,7 @@ export default function Lab() {
         onPick={() => pickMorph(m.id)}
         onRemove={() => removeMorph(m.id)}
         onEdit={() => editClip(m.id, "morph")}
+        onDownload={() => downloadClip(morphByModel[m.id]?.src, morphByModel[m.id]?.name ?? "morphs.vmd")}
       />
     </>
   )
@@ -1825,6 +1898,10 @@ export default function Lab() {
   // motion rows: useEngine has already handed the clip to the engine by the time
   // the chrome renders, so the name is known and there is nothing to wait for.
   const [cameraClip, setCameraClip] = useState<string | null>(scene.assets.cameraAnimation?.name ?? null)
+  /** How many times the timeline has written a clip back into the scene. Feeds
+   *  `assetFingerprint`, which is otherwise blind to a file whose name did not
+   *  change — see there. */
+  const [clipEdits, setClipEdits] = useState(0)
   // Which cast member the Clips tabs are showing. Only rendered as tabs when
   // there are several — one model is just its rows.
   const [clipTab, setClipTab] = useState<string | null>(null)
@@ -3595,6 +3672,14 @@ export default function Lab() {
     // still a different scene, so the kind travels in the fingerprint.
     bgImage ? `${bgImage.dome ? "skybox" : "backdrop"}:${bgImage.name}` : "",
     cameraClip ?? "",
+    // Edited clips are the one asset whose BYTES change while its name does
+    // not. Everything else in this list is a slot whose file arrives with a new
+    // name, so a name is enough to notice it; a keyframe edit rewrites
+    // "dance.vmd" in place and would slip past every entry above — the exact
+    // failure the note above describes, reached from the other direction.
+    // Counted rather than hashed: hashing megabytes of VMD on every render to
+    // learn something the writer already knows would be work done twice.
+    `edits:${clipEdits}`,
   ].join("//")
 
   // The fingerprint the bundle in IndexedDB was written for, and the URL it got.
@@ -4297,12 +4382,20 @@ export default function Lab() {
               onClick={openPalette}
               className={cn(
                 PILL,
-                // Left-aligned, so the words start in the same place whatever
-                // their length. The zh label is written TO this width rather
-                // than translated literally: CJK glyphs run ~12px at this size,
-                // so 搜索命令、设置等 (8) lands within a few pixels of the English
-                // label where a literal 搜索命令 (4) would sit in a half-empty box.
-                "pointer-events-auto h-10 min-w-0 flex-1 justify-start gap-2 px-3.5 text-xs font-medium text-muted-foreground hover:bg-white/5 hover:text-foreground",
+                // Left-aligned, so the word starts in the same place whatever
+                // the language.
+                //
+                // ONE word, in both. The label had been written to fill this
+                // pill — "Search commands", and a zh label sized to match it —
+                // which only worked while the pill was as wide as it was drawn
+                // at. It is the only flex-1 in a cluster fixed at 16rem, so it
+                // absorbs every change around it, and it ended up ~10px short
+                // of its own label: "Search comm…", a truncation in the one
+                // control whose whole job is to be legible at a glance.
+                //
+                // A door named for what is behind it, and what is behind it is
+                // a search field. The ⌘K cap beside it says the rest.
+                "pointer-events-auto h-10 min-w-0 flex-1 justify-start gap-2 px-3 text-xs font-medium text-muted-foreground hover:bg-white/5 hover:text-foreground",
               )}
             >
               {/* min-w-0 + truncate, because this is the only shrinkable thing
@@ -4325,7 +4418,12 @@ export default function Lab() {
               <Button
                 size="sm"
                 onClick={() => setShareOpen(true)}
-                className="h-7 w-[3.75rem] rounded-lg bg-blue-400 px-3 text-xs font-medium text-white hover:bg-blue-300"
+                // Sized to its label with tight padding, rather than to a
+                // hand-set 3.75rem. Every pixel it gives up goes to the palette
+                // beside it — that is the only flex-1 in a cluster fixed at
+                // 16rem — so the pair still measures exactly what it did, with
+                // more of it spent on the control that has words to show.
+                className="h-7 shrink-0 rounded-lg bg-blue-400 px-2 text-xs font-medium text-white hover:bg-blue-300"
               >
                 {t.lab.share}
               </Button>
@@ -4919,7 +5017,11 @@ export default function Lab() {
                 }
               />
               <span className="truncate pb-0.5 text-sm font-semibold tracking-tight text-foreground">Reze Design</span>
-              <span className="shrink-0 rounded-full bg-blue-400/15 px-1.5 py-0.5 text-[10px] leading-none font-medium tracking-wide text-blue-400">
+              {/* Mono: it is a version, and digits that share a column read as
+                  a build stamp rather than as a word. The tracking goes with
+                  the proportional face — a mono figure already carries its own
+                  spacing, and adding more only loosens the chip. */}
+              <span className="shrink-0 rounded-full bg-blue-400/15 px-1.5 py-0.5 font-mono text-[10px] leading-none font-medium text-blue-400">
                 {VERSION_LABEL}
               </span>
               {/* The repository, and through its README the manuals — which is
@@ -5145,6 +5247,14 @@ export default function Lab() {
                 kind={t.lab.kinds.cameraMotion}
                 onPick={() => cameraInput.current?.click()}
                 onRemove={removeCamera}
+                // sceneFiles first: boot resolves the document's camera to a
+                // File there, and the timeline re-encodes into the same slot,
+                // so it holds the current bytes whether or not they were ever
+                // uploaded. The document's URL is the fallback for a served
+                // camera whose bundle was never packed.
+                onDownload={() =>
+                  downloadClip(sceneFiles.camera ?? scene.assets.cameraAnimation?.url, cameraClip ?? "camera.vmd")
+                }
                 // The camera belongs to the SCENE, not to a character — the VMD
                 // format keeps them in separate files for the same reason — but
                 // the editor still needs a model to hang a clock off, so it
@@ -6087,20 +6197,68 @@ export default function Lab() {
           a timeline you cannot see the end of. The right edge will take the same
           treatment when the inspector lands. */}
       {mounted && (
-        // The container is the VIEWPORT, in both states, and the working area is
-        // expressed as a max-width instead (below). Insetting the container by
-        // the docks is what squeezed the collapsed pill: it needs ~434px, and
-        // WORKSPACE leaves only window − 35rem, so anything under a ~1080px
-        // window ate into the track until it was a few pixels wide. A pill
-        // floating over the canvas has never needed to clear the docks — it is
-        // centred, and they are not.
-        <div className="pointer-events-none absolute inset-x-3 bottom-3 flex justify-center">
-          {/* The clip under edit, and the playhead's position in it. Scoped to
-              the transport rather than the page: nothing above this line reads
-              a keyframe, and a provider wrapping <Home> would put a store
-              behind six thousand lines that do not use it. */}
-          <ClipEditor>
-            <ClipBridge engineRef={engineRef} scrubRef={scrubRef} editingModelId={editingModelId} />
+        // The clip under edit, and the playhead's position in it. Scoped to the
+        // editing surfaces rather than to the page: nothing above this line
+        // reads a keyframe, and a provider wrapping <Home> would put a store
+        // behind six thousand lines that do not use it.
+        //
+        // It wraps TWO siblings now — the transport and the right dock. The
+        // dock shows the values under the playhead, so it is as much a clip
+        // consumer as the timeline is; what it cannot be is a child of the
+        // transport, which is a centred strip at the bottom of the window.
+        // Provider first, positioned boxes inside it: <ClipEditor> renders no
+        // DOM of its own, so neither one's layout changed by moving.
+        <ClipEditor>
+          <ClipBridge
+            engineRef={engineRef}
+            scrubRef={scrubRef}
+            viewportRef={viewportRef}
+            editingModelId={editingModelId}
+          />
+          {/* ⌘Z over keyframe edits. Headless, and scoped by DOM: the timeline
+              and the properties dock tag their roots, so the keystroke reaches
+              this only while the user is working in one of them. */}
+          <ClipHistory />
+          {/* An edit becomes one of the scene's own files — the same slot an
+              upload fills, so persistence, export and publish all carry it
+              without knowing an editor exists. */}
+          <ClipAutosave
+            cameraName={cameraClip}
+            // The scene decides whether morphs are their own file. One that
+            // already carries an expression VMD keeps carrying one; one whose
+            // morphs live inside its motion keeps them there. Writing both
+            // would play every expression twice.
+            slotNames={(id) => ({
+              motion: animByModel[id]?.name ?? "motion.vmd",
+              morph: morphByModel[id]?.name ?? null,
+            })}
+            onSaveMotion={(id, motion, morphs) => {
+              setAnimByModel((prev) => ({ ...prev, [id]: { name: prev[id]?.name ?? motion.name, src: motion } }))
+              if (morphs) {
+                setMorphByModel((prev) => ({ ...prev, [id]: { name: prev[id]?.name ?? morphs.name, src: morphs } }))
+              }
+              setClipEdits((n) => n + 1)
+            }}
+            onSaveCamera={(file) => {
+              // sceneFiles is where the camera's BYTES live; the state beside it
+              // is only its display name, so a first-ever camera keyframe has to
+              // set both or the collector finds a name with nothing behind it.
+              sceneFiles.camera = file
+              setCameraClip((prev) => prev ?? file.name)
+              // Also the only thing that re-triggers the persist effect for a
+              // camera-only edit: the bytes live on a module object, not in
+              // state, so nothing else about this render would have moved.
+              setClipEdits((n) => n + 1)
+            }}
+          />
+          {/* The container is the VIEWPORT, in both states, and the working
+              area is expressed as a max-width instead (below). Insetting the
+              container by the docks is what squeezed the collapsed pill: it
+              needs ~434px, and WORKSPACE leaves only window − 35rem, so
+              anything under a ~1080px window ate into the track until it was a
+              few pixels wide. A pill floating over the canvas has never needed
+              to clear the docks — it is centred, and they are not. */}
+          <div className="pointer-events-none absolute inset-x-3 bottom-3 flex justify-center">
             {/* max-w-fit is what returns the collapsed pill to the ORIGINAL slider
             length: the track is flex-1 with min-w-[min(16rem,30vw)], and a
             fit-content pill resolves a flex-1 child at its min-content size —
@@ -6182,8 +6340,19 @@ export default function Lab() {
                 }
               />
             </div>
-          </ClipEditor>
-        </div>
+          </div>
+
+          {/* ── Properties ──
+              The other half of the editor: the timeline says WHERE the keys
+              are, this says what the one under the playhead is worth.
+
+              Mounted with the fold and gone with it — the transient, summoned
+              right-hand surface this layout allows, never a permanent dock. It
+              costs no space to make room for, either: the open timeline is
+              already capped at `100vw - 35rem` so it stops clear of both
+              columns, and this lands in the one on the right. */}
+          {timelineUnfolded && <ClipInspector onClose={() => setTimelineOpen(false)} />}
+        </ClipEditor>
       )}
     </main>
   )

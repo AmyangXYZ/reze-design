@@ -24,6 +24,7 @@ export const TrackPicker = memo(function TrackPicker({ kind }: { kind: ClipEditK
   const selectedBone = useClipSelector((s) => s.selectedBone)
   const selectedMorph = useClipSelector((s) => s.selectedMorph)
   const boneGroup = useClipSelector((s) => s.boneGroup)
+  const revealRequest = useClipSelector((s) => s.revealBone)
   const { setSelectedBone, setSelectedMorph, setBoneGroup } = useClipActions()
 
   if (kind === "camera") return null
@@ -63,9 +64,9 @@ export const TrackPicker = memo(function TrackPicker({ kind }: { kind: ClipEditK
           // open a different group. Selecting the open one clears it instead.
           onSelectGroup={(g) => setBoneGroup((prev) => (prev === g ? "" : g))}
           onSelectBone={setSelectedBone}
-          // Viewport picking does not route here yet — when a double-click in
-          // the scene selects a bone, this is what scrolls the row into view.
-          revealRequest={null}
+          // A double-click in the scene lands here: the pick widens the group
+          // if it has to, then bumps an epoch, and this scrolls the row in.
+          revealRequest={revealRequest}
         />
       )}
     </div>

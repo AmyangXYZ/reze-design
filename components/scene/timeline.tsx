@@ -20,7 +20,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { useClipActions, useClipSelector, usePlayhead, type SelectedKeyframe } from "@/context/clip-editor"
+import { useClipActions, useClipEngine, useClipSelector, usePlayhead, usePlayheadFrameRef, type SelectedKeyframe } from "@/context/clip-editor"
 import type { AnimationClip, BoneKeyframe, CameraKeyframe, MorphKeyframe } from "reze-engine"
 import { bezierInterpolate } from "reze-engine"
 import {
@@ -226,7 +226,7 @@ const CAM_TABS: TabDef[] = CAMERA_TABS.map((t) => ({ key: t.key, label: t.label,
  * this one". Swapping the set means every tab on screen is one you can press,
  * and the count itself tells you what kind of thing you are editing.
  */
-function tabsForSelection(kind: "bone" | "morph" | "camera"): TabDef[] {
+export function tabsForSelection(kind: "bone" | "morph" | "camera"): TabDef[] {
   if (kind === "camera") return CAM_TABS
   if (kind === "morph") return MORPH_TABS
   return BONE_TABS
@@ -445,6 +445,9 @@ interface TimelineCanvasProps {
   tab: string
   onSetCurrentFrame: (f: number) => void
   onSelectKeyframe: (kf: SelectedKeyframe, multi: boolean) => void
+  /** Clicking anything that is NOT a keyframe. See the ruler branch of
+   *  `onMouseDown` for why this is its own callback. */
+  onClearSelection: () => void
   onMoveDopeKeyframe: (
     boneRefs: Array<{ bone: string; kf: BoneKeyframe }>,
     morphRefs: Array<{ morph: string; kf: MorphKeyframe }>,
@@ -484,6 +487,7 @@ function TimelineCanvas({
   tab,
   onSetCurrentFrame,
   onSelectKeyframe,
+  onClearSelection,
   onMoveDopeKeyframe,
   onMoveCurveKeyframe,
   onMoveMorphKeyframe,
@@ -1009,7 +1013,12 @@ function TimelineCanvas({
       ctx.save()
       ctx.translate(x, dopeMid)
       ctx.rotate(Math.PI / 4)
-      const sz = DIAMOND + (count > 1 && !selectedBone ? 1.5 : 0)
+      // One size, always. Growing a diamond because the frame carries several
+      // keys made the whole strip lumpy the moment nothing was selected —
+      // which is how the editor first opens — and it says the same thing the
+      // alpha above already says. Density belongs in one channel, and the one
+      // that does not change the shape of a row is the right one.
+      const sz = DIAMOND
       ctx.fillStyle = isSel ? C.diamondSel : `rgba(170,170,195,${intensity})`
       ctx.fillRect(-sz / 2, -sz / 2, sz, sz)
       if (isSel) {
@@ -1328,6 +1337,20 @@ function TimelineCanvas({
       const hit = hitTest(e)
       if (!hit) return
       if (hit.zone === "ruler") {
+        // Clicking empty space DESELECTS.
+        //
+        // "ruler" is the fall-through: hitTest only names a keyframe zone when
+        // a diamond or a curve dot is actually under the pointer, so every
+        // click on the ruler, on empty curve space or on a gap in the dope
+        // strip lands here. It moved the playhead and left the selection
+        // alone, so a selected key stayed drawn at its larger radius for the
+        // rest of the session — while the interpolation panel dimmed, because
+        // that reads whether the PLAYHEAD is on a key, not what is selected.
+        // Two different questions, and the canvas was answering the older one.
+        //
+        // Shift is the additive gesture everywhere else here, so it is spared:
+        // shift-clicking to extend a selection must not begin by dropping it.
+        if (!e.shiftKey) onClearSelection()
         onSetCurrentFrame(hit.frame)
         drag.current = { type: "scrub" }
       } else if (hit.zone === "dope") {
@@ -1403,7 +1426,7 @@ function TimelineCanvas({
         }
       }
     },
-    [hitTest, onSetCurrentFrame, onSelectKeyframe, clip, tab, selectedBone, selectedMorph, cameraTrack, visibleBones],
+    [hitTest, onSetCurrentFrame, onSelectKeyframe, onClearSelection, clip, tab, selectedBone, selectedMorph, cameraTrack, visibleBones],
   )
 
   const onMouseMove = useCallback(
@@ -1572,6 +1595,9 @@ export function Timeline({
       : "bone"
   const visibleTabs = tabsForSelection(selectionKind)
   const { currentFrame, setCurrentFrame, playing, setPlaying } = usePlayhead()
+  // Written, not read, by this component: the draw callback below publishes the
+  // live frame into it for every consumer that must not subscribe. See there.
+  const frameRef = usePlayheadFrameRef()
   // The timeline spans whichever is longer. A camera VMD carries no bone or
   // morph frames, so a camera-only load leaves `clip.frameCount` at its default
   // while the shot itself runs for minutes — without this the ruler would end
@@ -1713,6 +1739,20 @@ export function Timeline({
   useEffect(() => {
     if (!playheadDrawRef) return
     playheadDrawRef.current = (frame: number) => {
+      // The live frame, published for everyone who is NOT this canvas.
+      //
+      // The store documents `frameRef` as "written by AnimPlayer's rAF without
+      // notifying anyone", and nothing was writing it: the transport's clock
+      // reached this callback and stopped, so the ref held whatever the last
+      // deliberate scrub had put there. Everything that reads the playhead
+      // without subscribing was therefore reading a stale number during
+      // playback — including the pause path, which flushes `frameRef` into the
+      // store and so snapped the playhead back to wherever play STARTED, and
+      // the inspector, which samples the pose it is showing from it.
+      //
+      // A ref write notifies nobody, so this stays as free as the rest of the
+      // draw path.
+      frameRef.current = frame
       // Follow the playhead only while it is going somewhere.
       //
       // In reze-studio this callback exists only during playback, so following
@@ -1750,7 +1790,7 @@ export function Timeline({
     return () => {
       if (playheadDrawRef.current) playheadDrawRef.current = null
     }
-  }, [playheadDrawRef])
+  }, [playheadDrawRef, frameRef])
 
   // Zoom anchored on the playhead: adjust scrollX so the playhead stays at the
   // same screen-relative position before and after the pxPerFrame change.
@@ -1832,6 +1872,31 @@ export function Timeline({
   //     store for downstream subscribers (inspector, etc.).
   const dragRedrawRef = useRef<(() => void) | null>(null)
   const dragTouchedRef = useRef(false)
+  const engine = useClipEngine()
+
+  /**
+   * Stand on the keyframe while it is being dragged.
+   *
+   * Two halves, and both are needed for the viewport to show the edit as it
+   * happens. The clip being mutated is the editor's CLONE, so the engine is
+   * still playing the pre-drag motion — pushing it through the door is what
+   * makes the pose change at all. Moving the playhead is what makes it change
+   * where you are looking, since a keyframe only means anything at its own
+   * frame.
+   *
+   * Per tick, which the drag path otherwise avoids — but the door seeks one
+   * model rather than scrubbing the cast, and the ruler's own scrub has always
+   * written the playhead on every tick, so this is the cost that path already
+   * pays. Physics settles once, on release, which is what Scrub.end is for.
+   */
+  const followDrag = useCallback(
+    (frame: number, kind: "clip" | "camera") => {
+      if (kind === "camera") engine.current?.previewCamera(cameraTrack)
+      else if (clip) engine.current?.preview(clip, frame)
+      setCurrentFrame(frame)
+    },
+    [engine, clip, cameraTrack, setCurrentFrame],
+  )
 
   const onMoveDopeKeyframe = useCallback(
     (
@@ -1858,8 +1923,9 @@ export function Timeline({
       }
       dragTouchedRef.current = true
       dragRedrawRef.current?.()
+      followDrag(clamped, cameraRefs.length > 0 ? "camera" : "clip")
     },
-    [clip, selectedKeyframes],
+    [clip, selectedKeyframes, followDrag],
   )
 
   const onMoveCurveKeyframe = useCallback(
@@ -1884,8 +1950,9 @@ export function Timeline({
       }
       dragTouchedRef.current = true
       dragRedrawRef.current?.()
+      followDrag(clamped, "clip")
     },
-    [clip, selectedKeyframes],
+    [clip, selectedKeyframes, followDrag],
   )
 
   const onMoveMorphKeyframe = useCallback(
@@ -1912,8 +1979,9 @@ export function Timeline({
       }
       dragTouchedRef.current = true
       dragRedrawRef.current?.()
+      followDrag(clamped, "clip")
     },
-    [clip, selectedKeyframes],
+    [clip, selectedKeyframes, followDrag],
   )
 
   /** Live camera edit: mutate the keyframe in place (the engine is handed the
@@ -1936,9 +2004,17 @@ export function Timeline({
       }
       dragTouchedRef.current = true
       dragRedrawRef.current?.()
+      followDrag(clamped, "camera")
     },
-    [cameraTrack, selectedKeyframes],
+    [cameraTrack, selectedKeyframes, followDrag],
   )
+
+  const clearSelection = useCallback(() => {
+    // Guarded, so a click on empty space does not notify every keyframe
+    // consumer when there was nothing selected to begin with — which is most
+    // clicks in a timeline.
+    setSelectedKeyframes((prev) => (prev.length === 0 ? prev : []))
+  }, [setSelectedKeyframes])
 
   const onEndKeyframeDrag = useCallback(() => {
     if (!dragTouchedRef.current) return
@@ -2190,6 +2266,7 @@ export function Timeline({
               setCurrentFrame(f)
             }}
             onSelectKeyframe={onSelectKeyframe}
+            onClearSelection={clearSelection}
             onMoveDopeKeyframe={onMoveDopeKeyframe}
             onMoveCurveKeyframe={onMoveCurveKeyframe}
             onMoveMorphKeyframe={onMoveMorphKeyframe}

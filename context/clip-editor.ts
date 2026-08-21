@@ -33,7 +33,6 @@ import {
   createContext,
   createElement,
   useContext,
-  useRef,
   useState,
   useSyncExternalStore,
   type Dispatch,
@@ -41,7 +40,8 @@ import {
   type RefObject,
   type SetStateAction,
 } from "react"
-import type { AnimationClip, CameraKeyframe } from "reze-engine"
+import type { AnimationClip, CameraKeyframe, Quat, Vec3 } from "reze-engine"
+import { BONE_GROUPS } from "@/lib/animation"
 import { clipAfterKeyframeEdit, cloneAnimationClip } from "@/lib/clip"
 
 export { FPS, framesToSeconds, secondsToFrames } from "@/lib/clip"
@@ -50,6 +50,38 @@ export { FPS, framesToSeconds, secondsToFrames } from "@/lib/clip"
  *  morphs belong to the character; the camera belongs to the scene but is edited
  *  on the same clock, so it rides the same target. */
 export type ClipEditKind = "motion" | "morph" | "camera"
+
+/**
+ * The engine, as much of it as an editor surface is allowed to touch.
+ *
+ * clip-bridge states the rule this exists to keep: it is the ONLY crossing
+ * between the engine's copy of a clip and the editor's, and nothing else may
+ * call getClip/loadClip. But a slider drag genuinely needs the viewport to move
+ * while the pointer is down, and routing that through `commit` instead would
+ * clone the clip for the history snapshot and re-seek the whole cast on every
+ * tick — a scene-wide physics settle per pixel of drag.
+ *
+ * So the bridge registers these four, and the inspector calls them. The
+ * crossing stays in one file; what changes is that the file now exposes a door
+ * rather than being the only room with a window.
+ */
+export type ClipEngine = {
+  /** Push the edited clip and seek the edited model — that model only, not the
+   *  scene. The preview half of a drag. */
+  preview: (clip: AnimationClip, frame: number) => void
+  /** The bone's local pose. `seekFrame` first when paused (React owns the clock
+   *  then); null while playing, when the engine's own clock is ahead of us and
+   *  seeking would fight playback. */
+  samplePose: (bone: string, seekFrame: number | null) => { rotation: Quat; translation: Vec3 } | null
+  /** The camera half of `preview`. The shot lives on the engine rather than on
+   *  a model, so it is pushed whole. */
+  previewCamera: (track: CameraKeyframe[]) => void
+  /** The morph's live weight, interpolated — whatever the viewport is showing. */
+  morphWeight: (morph: string) => number | null
+  /** Walk the playhead through a freshly-fitted clip once so the first playback
+   *  after a Simplify does not stutter while beziers JIT and caches fill. */
+  prewarm: (clip: AnimationClip) => void
+}
 
 /** Dopesheet diamond vs curve-editor handle — shared by timeline hit-testing. */
 export interface SelectedKeyframe {
@@ -166,6 +198,25 @@ export type ClipDocState = {
   morphNames: string[]
   /** Which bone group the picker is narrowed to. Chrome, not document. */
   boneGroup: string
+  /**
+   * Which channel the curve half is showing — "allRot", "rx", "morph", a camera
+   * tab. Chrome as well, and it lived in <Dopesheet> as local state until the
+   * inspector needed it too: dragging a rotation slider points the timeline at
+   * the curve being dragged, which is one surface writing another's view. Two
+   * surfaces sharing a value is what this store is for; the persistence of it
+   * stays in use-timeline-view, which is where the rest of the view lives.
+   */
+  tab: string
+  /**
+   * "Scroll the picker to this bone."
+   *
+   * An epoch rather than a bare name, so picking the SAME bone twice still
+   * scrolls — a second double-click on a bone you already have selected is
+   * someone asking where it is in the list, and a name-only signal would be a
+   * no-op exactly then. Set by viewport picks only: a click in the list is
+   * already where the user is pointing.
+   */
+  revealBone: { bone: string; epoch: number } | null
   /** Immutable clone taken at the last commit. A keyframe drag mutates the live
    *  clip in place — that is what keeps a drag off React entirely — so the
    *  clean copy for the history stack has to be captured at commit time rather
@@ -214,6 +265,9 @@ export type ClipDocActions = {
    *  not part of the document — it describes the RIG, not the clip. */
   setRig: (boneNames: string[], morphNames: string[]) => void
   setBoneGroup: Dispatch<SetStateAction<string>>
+  setTab: Dispatch<SetStateAction<string>>
+  /** Select a bone AND ask the picker to scroll to it. For viewport picks. */
+  revealBone: (bone: string | null) => void
 }
 
 type ClipDocStore = {
@@ -236,6 +290,11 @@ const EMPTY_DOC: ClipDocState = {
   // A key BONE_GROUPS actually has — "all" matched nothing, so the picker
   // opened with every group shut.
   boneGroup: "All Bones",
+  // A real tab key, matching the timeline's own TABS. It was "rotX" in the
+  // dopesheet's initialiser, which is not one of them — so a first-ever open
+  // showed a tab strip with nothing selected.
+  tab: "allRot",
+  revealBone: null,
   clipSnapshot: null,
   cameraSnapshot: [],
   loadRevision: 0,
@@ -290,7 +349,15 @@ function createClipDocStore(): ClipDocStore {
     },
     replaceClip: (next, modelId, clipName) => {
       if (next == null) {
-        set({ ...EMPTY_DOC, loadRevision: state.loadRevision + 1, cameraTrack: state.cameraTrack, cameraSnapshot: state.cameraSnapshot })
+        // `tab` rides along for the same reason cameraTrack does: it is not
+        // this clip's, so losing a clip must not reset it.
+        set({
+          ...EMPTY_DOC,
+          loadRevision: state.loadRevision + 1,
+          cameraTrack: state.cameraTrack,
+          cameraSnapshot: state.cameraSnapshot,
+          tab: state.tab,
+        })
         return
       }
       const settled = clipAfterKeyframeEdit(next)
@@ -347,6 +414,26 @@ function createClipDocStore(): ClipDocStore {
       set({ ...state, boneNames, morphNames })
     },
     setBoneGroup: (payload) => update("boneGroup", payload),
+    setTab: (payload) => update("tab", payload),
+    revealBone: (bone) => {
+      if (bone == null) {
+        set({ ...state, selectedBone: null, selectedMorph: null, revealBone: null })
+        return
+      }
+      // The group has to CONTAIN the bone, or its row is not rendered and the
+      // scroll lands on nothing. Widening to All Bones is the honest fallback:
+      // the pick came from the viewport, where every bone is reachable whatever
+      // the list happens to be filtered to.
+      const group = BONE_GROUPS[state.boneGroup]
+      const boneGroup = group && !group.includes(bone) ? "All Bones" : state.boneGroup
+      set({
+        ...state,
+        selectedBone: bone,
+        selectedMorph: null,
+        boneGroup,
+        revealBone: { bone, epoch: (state.revealBone?.epoch ?? 0) + 1 },
+      })
+    },
   }
 
   return {
@@ -365,14 +452,44 @@ function createClipDocStore(): ClipDocStore {
 // Provider + hooks
 // ─────────────────────────────────────────────────────────────────────────
 
-type Stores = { playhead: PlayheadStore; doc: ClipDocStore }
+/**
+ * The engine door's box, and the only way to fill it.
+ *
+ * Written through `set` rather than by assigning `.current` at the call site:
+ * the compiler can only see that a value is safe to mutate when it came from
+ * `useRef`, and this one comes from the provider's store object. Handing out a
+ * setter moves the write into a plain closure, which is honest as well as
+ * quiet — filling the slot is an action, like every other one on these stores.
+ */
+type EngineSlot = {
+  ref: RefObject<ClipEngine | null>
+  set: (ops: ClipEngine | null) => void
+}
+
+function createEngineSlot(): EngineSlot {
+  const ref: RefObject<ClipEngine | null> = { current: null }
+  return {
+    ref,
+    set: (ops) => {
+      ref.current = ops
+    },
+  }
+}
+
+type Stores = { playhead: PlayheadStore; doc: ClipDocStore; engine: EngineSlot }
 const StoresContext = createContext<Stores | null>(null)
 
 export function ClipEditor({ children }: { children: ReactNode }) {
   // useState's lazy initialiser, not a ref written during render: the stores
   // are created exactly once either way, but a ref READ during render is what
   // this repo's lint forbids, and rightly — the value is being used to render.
-  const [stores] = useState(() => ({ playhead: createPlayheadStore(), doc: createClipDocStore() }))
+  const [stores] = useState(() => ({
+    playhead: createPlayheadStore(),
+    doc: createClipDocStore(),
+    // A plain box, like `frameRef`: filled by <ClipBridge/> on mount and read
+    // inside callbacks, so nothing re-renders when the engine appears.
+    engine: createEngineSlot(),
+  }))
   return createElement(StoresContext.Provider, { value: stores }, children)
 }
 
@@ -421,6 +538,17 @@ export function useClipSelector<T>(selector: (state: ClipDocState) => T): T {
 
 export function useClipActions(): ClipDocActions {
   return useStores().doc.actions
+}
+
+/** The engine door described on ClipEngine. Written by <ClipBridge/>, read by
+ *  the inspector; null whenever nothing is being edited. */
+export function useClipEngine(): RefObject<ClipEngine | null> {
+  return useStores().engine.ref
+}
+
+/** Fill the door, or empty it. <ClipBridge/> is the only caller. */
+export function useClipEngineRegister(): (ops: ClipEngine | null) => void {
+  return useStores().engine.set
 }
 
 /** Non-subscribing read of the whole document — for imperative paths (canvas

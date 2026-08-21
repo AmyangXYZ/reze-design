@@ -184,7 +184,7 @@ export function useSceneSync({
     const sources = (greenScreen ? [] : backgroundEffects).map((e) => e.wgsl)
     // One key for the whole list, so adding an effect recompiles and a
     // re-render with the same list does not.
-    const wgsl = sources.length ? sources.join(" ") : null
+    const wgsl = sources.length ? sources.join("\0") : null
     // REMOVING one does not wait for `ready`. That flag is off for the whole
     // scene swap — every model still to arrive — and gating removal on it left
     // the outgoing scene's effect running over the incoming one until the last

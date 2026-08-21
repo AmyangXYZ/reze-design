@@ -369,7 +369,7 @@ const en = {
   // The 0.4.0 chrome. Row names, pane tabs, control labels and the command
   // palette — the UI shows one locale, the palette matches against both.
   lab: {
-    searchCommands: "Search commands",
+    searchCommands: "Search…",
     share: "Share",
     expandPanel: "Expand panel",
     collapsePanel: "Collapse panel",
@@ -492,11 +492,19 @@ const en = {
       image: "Image",
       dome: "360°",
     },
+    /** The delete confirmation shared by every clip row. */
+    deleteClip: {
+      title: (kind: string) => `Delete ${kind}?`,
+      body: "It leaves this scene. The file you uploaded is not touched.",
+      confirm: "Delete",
+      cancel: "Cancel",
+    },
     aria: {
       upload: (kind: string, of?: string) => `Upload ${kind}${of ? ` for ${of}` : ""}`,
       replace: (kind: string, of?: string) => `Replace ${kind}${of ? ` for ${of}` : ""}`,
       edit: (kind: string, of?: string) => `Edit ${kind}${of ? ` for ${of}` : ""}`,
       delete: (kind: string, of?: string) => `Delete ${kind}${of ? ` for ${of}` : ""}`,
+      download: (kind: string, of?: string) => `Download ${kind}${of ? ` for ${of}` : ""}`,
       remove: (kind: string) => `Remove ${kind}`,
       replaceModel: (name: string) => `Upload model folder to replace ${name}`,
       deleteModel: (name: string) => `Delete ${name}`,
@@ -976,7 +984,7 @@ const zh: Dictionary = {
     cantLoadCamera: (message: string) => `无法加载该相机：${message}`,
   },
   lab: {
-    searchCommands: "搜索命令、设置等",
+    searchCommands: "搜索…",
     share: "分享",
     expandPanel: "展开面板",
     collapsePanel: "收起面板",
@@ -1088,11 +1096,18 @@ const zh: Dictionary = {
       image: "图片",
       dome: "360°",
     },
+    deleteClip: {
+      title: (kind: string) => `删除${kind}？`,
+      body: "它将从此场景中移除，你上传的文件不受影响。",
+      confirm: "删除",
+      cancel: "取消",
+    },
     aria: {
       upload: (kind: string, of?: string) => `上传${of ? `${of} 的` : ""}${kind}`,
       replace: (kind: string, of?: string) => `替换${of ? `${of} 的` : ""}${kind}`,
       edit: (kind: string, of?: string) => `编辑${of ? `${of} 的` : ""}${kind}`,
       delete: (kind: string, of?: string) => `删除${of ? `${of} 的` : ""}${kind}`,
+      download: (kind: string, of?: string) => `下载${of ? `${of} 的` : ""}${kind}`,
       remove: (kind: string) => `移除${kind}`,
       replaceModel: (name: string) => `上传模型文件夹以替换 ${name}`,
       deleteModel: (name: string) => `删除 ${name}`,

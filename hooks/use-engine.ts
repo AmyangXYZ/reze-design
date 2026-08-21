@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { EFFECTS } from "@/lib/effects"
-import { Engine, parseLRC, parseMidi, Quat, Vec3, type ApplyStyleGroupResult, type CompileOptions, type Model, type RenderClass, type MidiNote, type StyleGroup } from "reze-engine"
+import { Engine, parseLRC, parseMidi, Quat, Vec3, type ApplyStyleGroupResult, type CompileOptions, type GizmoDragEvent, type Model, type RenderClass, type MidiNote, type StyleGroup } from "reze-engine"
 import { rasterizeLyrics } from "@/lib/lyrics-raster"
 import { SLOT_GRAPHS } from "@/lib/materials"
 import { graphLibraryName } from "@/lib/refs"
@@ -557,6 +557,19 @@ async function loadLyricsFor(
 }
 
 
+/** What the viewport hands back: a pick, and a gizmo drag. Filled by the
+ *  surface that is editing; see ClipBridge. */
+export type ViewportHandlers = {
+  onRaycast?: (
+    modelName: string,
+    material: string | null,
+    bone: string | null,
+    screenX: number,
+    screenY: number,
+  ) => void
+  onGizmoDrag?: (event: GizmoDragEvent) => void
+}
+
 export function useEngine(
   /** The scene to boot into — read ONCE (constructor options + first loadModel + addGround) */
   initialScene: Scene,
@@ -564,6 +577,8 @@ export function useEngine(
   const sceneRef = useRef(initialScene)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const engineRef = useRef<Engine | null>(null)
+  // Empty until an editor fills it — see ViewportHandlers.
+  const viewportRef = useRef<ViewportHandlers>({})
   const [ready, setReady] = useState(false)
   // The stage (ground/camera/render loop) is live — models may still be loading.
   const [stageReady, setStageReady] = useState(false)
@@ -618,6 +633,17 @@ export function useEngine(
             direction: azElToDirection(s.sun.azimuth, s.sun.elevation),
           },
           bloom: { ...s.bloom, color: hexToLinearVec3(s.bloom.color) },
+          // Viewport picking and the bone gizmo.
+          //
+          // Thunks reading a ref, because the Engine takes these ONCE at
+          // construction and exposes no setter — a handler that closed over
+          // React state would need a new Engine to change, which is the whole
+          // scene. The ref is filled by whoever is editing (see ClipBridge) and
+          // emptied when nothing is, so a stray double-click in a scene with no
+          // editor open reaches nothing.
+          onRaycast: (modelName, material, bone, screenX, screenY) =>
+            viewportRef.current.onRaycast?.(modelName, material, bone, screenX, screenY),
+          onGizmoDrag: (event) => viewportRef.current.onGizmoDrag?.(event),
         })
         engineRef.current = engine
         // Dev-only console handle — lets new engine APIs be exercised before any UI exists (e.g.
@@ -1158,6 +1184,7 @@ export function useEngine(
   return {
     canvasRef,
     engineRef,
+    viewportRef,
     ready,
     stageReady,
     bundleProgress,
