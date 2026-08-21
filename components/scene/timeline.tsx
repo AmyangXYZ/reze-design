@@ -55,6 +55,9 @@ const MAX_PX = 40
 const Y_ZOOM_MIN = 0.5
 const Y_ZOOM_MAX = 8
 
+/** The fold's own 300ms, plus a frame — see `measurable`. */
+const FOLD_SETTLE_MS = 340
+
 function minPxPerFrameForViewport(trackWidthPx: number, frameCount: number): number {
   if (frameCount <= 0 || trackWidthPx <= LABEL_W + 1) return MIN_PX
   const fit = (trackWidthPx - LABEL_W) / frameCount
@@ -1179,12 +1182,18 @@ function TimelineCanvas({
         g.addColorStop(1, "transparent")
         ctx.fillStyle = g
         ctx.fillRect(px - 14, RULER_H, 28, h - RULER_H)
+        // Dashed, so the line reads as a MARKER over the content rather than as
+        // another curve drawn on it — at one pixel wide in a band full of
+        // one-pixel curves, solid red was just the reddest of them. The head
+        // and the glow stay solid: those are the parts you aim at.
         ctx.strokeStyle = C.playhead
         ctx.lineWidth = 1
+        ctx.setLineDash([4, 3])
         ctx.beginPath()
         ctx.moveTo(px, 0)
         ctx.lineTo(px, h)
         ctx.stroke()
+        ctx.setLineDash([])
         ctx.fillStyle = C.playhead
         ctx.beginPath()
         ctx.moveTo(px - 5, 0)
@@ -1344,6 +1353,11 @@ function TimelineCanvas({
 
   const onMouseDown = useCallback(
     (e: React.MouseEvent) => {
+      // Left button only. Every gesture on this canvas — scrub, select, drag a
+      // keyframe — starts here, so without this a right-click anywhere in the
+      // ruler or the dope strip moved the playhead on its way to opening a
+      // context menu, and a middle-click did it silently.
+      if (e.button !== 0) return
       const hit = hitTest(e)
       if (!hit) return
       if (hit.zone === "ruler") {
@@ -1567,6 +1581,9 @@ interface TimelineProps {
    *  already mounted with the plain defaults below). */
   audioPeaks: readonly number[] | null
   audioDuration: number
+  /** Whether the fold is open. The canvas stops MEASURING itself when it is
+   *  not — see the ResizeObserver. */
+  open: boolean
   initialView?: { pxPerFrame: number; yZoom: number; scrollX: number }
   /** Fires after mount on every view change (not on the initial render) —
    *  lets the parent persist it without owning this state itself. */
@@ -1587,6 +1604,7 @@ export function Timeline({
   playheadDrawRef,
   audioPeaks,
   audioDuration,
+  open,
   initialView,
   onViewChange,
   trailing,
@@ -1641,11 +1659,51 @@ export function Timeline({
   const [trackWidth, setTrackWidth] = useState(0)
 
   const minPxPerFrame = useMemo(() => minPxPerFrameForViewport(trackWidth, fc), [trackWidth, fc])
+  /**
+   * Whether a width measured right now means anything.
+   *
+   * False while the fold is shut, and ALSO for as long as it is opening. Both
+   * directions matter and only the first is obvious. Opening flips `open` to
+   * true immediately and then animates the transport from fit-content to the
+   * working area over 300ms, so the first measurements after a reopen are of a
+   * pill — narrow enough that `minPxPerFrame` spikes and the effect below
+   * ratchets `pxPerFrame` up to meet it. Nothing lowers it again, so the editor
+   * came back rezoomed, showing a different range with the playhead somewhere
+   * else, which is what a reopened fold must never do.
+   *
+   * One deliberate measurement when the motion is over, rather than sixty
+   * during it.
+   */
+  const measurable = useRef(false)
+  useEffect(() => {
+    measurable.current = false
+    if (!open) return
+    const t = setTimeout(() => {
+      measurable.current = true
+      const el = timelineAreaRef.current
+      if (el) setTrackWidth(el.clientWidth)
+    }, FOLD_SETTLE_MS)
+    return () => clearTimeout(t)
+  }, [open])
 
   useEffect(() => {
     const el = timelineAreaRef.current
     if (!el) return
-    const ro = new ResizeObserver(() => setTrackWidth(el.clientWidth))
+    // Not while the fold is SHUT.
+    //
+    // Collapsing does not just hide this — the transport pill it lives in
+    // shrinks from the working area to fit-content, so the measured width drops
+    // to a few hundred pixels. `minPxPerFrame` is derived from that width and
+    // the effect below raises `pxPerFrame` to meet it. Reopening restores the
+    // width and lowers the minimum again, but nothing lowers the ZOOM back:
+    // Math.max only ever raises it. So a collapse quietly rezoomed the editor,
+    // and reopening showed a different range with the playhead somewhere else
+    // on screen — the one thing a fold must not do. Measuring only while open
+    // means the width this knows is the width it was last usable at.
+    const ro = new ResizeObserver(() => {
+      if (!measurable.current) return
+      setTrackWidth(el.clientWidth)
+    })
     ro.observe(el)
     setTrackWidth(el.clientWidth)
     return () => ro.disconnect()
@@ -1655,11 +1713,26 @@ export function Timeline({
     setPxPerFrame((p) => Math.min(MAX_PX, Math.max(minPxPerFrame, p)))
   }, [minPxPerFrame])
 
-  // Reset local view state when a new clip is loaded or editor is reset.
+  // Reset local view state when a DIFFERENT clip is loaded, or the editor reset.
+  //
+  // The first arrival is not a swap, and counting it was wiping the restore.
+  // This component mounts with the transport, long before a clip is read out of
+  // the engine — reze-studio mounts its timeline only once boot has resolved, so
+  // the version it baselines against is already the real one, and the guard that
+  // works there does not work here. So `initialView` was applied at mount and
+  // then thrown away a moment later, when null→clip counted as a change: after
+  // any refresh the editor opened at scroll 0 and zoom 4 having just been told
+  // where it was. `sawClip` is the missing half — the baseline is the first REAL
+  // version, not whatever was there before one existed.
   const clipVersionRef = useRef(clipVersion)
+  const sawClip = useRef(false)
   useEffect(() => {
     if (clipVersionRef.current === clipVersion) return
     clipVersionRef.current = clipVersion
+    if (!sawClip.current) {
+      sawClip.current = true
+      return
+    }
     setScrollX(0)
     setPxPerFrame(4)
     setYZoom(1)

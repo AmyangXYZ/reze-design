@@ -587,7 +587,11 @@ export const AnimPlayer = memo(function AnimPlayer({
           />
         </div>
         <span className="shrink-0 text-xs leading-none text-muted-foreground tabular-nums">{fmt(progress.duration)}</span>
-        {!unfolded && chrome}
+        {/* Their own tighter group. The row's gap-2 is the spacing between the
+            transport's PARTS — button, time, track, controls — and these are
+            one part: two or three icon toggles that belong together and read as
+            a cluster rather than as three more members of the row. */}
+        {!unfolded && <span className="flex shrink-0 items-center gap-0.5">{chrome}</span>}
       </div>
       </div>
       </div>

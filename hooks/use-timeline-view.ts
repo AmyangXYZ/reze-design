@@ -1,6 +1,7 @@
 "use client"
 
-// Where you left the timeline: zoom, scroll, height, and which channel was open.
+// Where you left the timeline: zoom, scroll, height, playhead, and which channel
+// was open — everything needed to reopen it looking identical.
 //
 // CHROME, not document state — the same distinction use-stored-rect draws. None
 // of this changes the scene, nothing here is published or exported, and undo
@@ -35,6 +36,20 @@ export type TimelineView = {
   /** Which channel the curve half was showing. */
   tab: string
   /**
+   * The playhead, in clip frames.
+   *
+   * It was taken OUT of here once, on the argument that zoom and scroll change
+   * how the editor is drawn while a playhead moves the scene — restoring one
+   * therefore moves every cast member and the music on open. That argument is
+   * sound and the decision was still wrong: reopening an editor at a different
+   * frame is not the same editor, and reze-studio restores it. What made it feel
+   * broken before was not the restore, it was arriving TWICE — the store opened
+   * at 0, the scene was elsewhere, so the seek pulled the cast to 0 and the
+   * restore then pulled it back. clip-bridge adopts the scene's own position
+   * now, so this is one deliberate move instead of two.
+   */
+  frame?: number
+  /**
    * How tall the fold was, in px.
    *
    * OPTIONAL, and that is not laziness: a view stored before the editor was
@@ -66,6 +81,7 @@ function read(): TimelineView | null {
     // Dropped rather than rejected: a height that is missing or nonsense costs
     // the DEFAULT height, not the whole stored view.
     if (typeof v.height !== "number" || !Number.isFinite(v.height) || v.height <= 0) delete v.height
+    if (typeof v.frame !== "number" || !Number.isFinite(v.frame) || v.frame < 0) delete v.frame
     return v as TimelineView
   } catch {
     return null

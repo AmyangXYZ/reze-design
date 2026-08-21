@@ -217,7 +217,29 @@ export function Dopesheet({
     setTab(defaultTabForSelection(selectionKind));
   }, [selectionKind, tab, setTab]);
 
+  // The channel is the EDITOR's, and it SURVIVES a collapse.
+  //
+  // Picking a second bone while reading Trans Y keeps Trans Y: you are looking
+  // at a channel across the rig, and snapping back to Rotation on every pick
+  // would make comparing one channel on two bones impossible. Closing the fold
+  // does not forget it either — a fold is a way of looking, and reopening it
+  // should return you to what you were doing, not to the start. The rule above
+  // still handles the changes that genuinely invalidate a tab: a morph has no
+  // rotation to show, and a camera's tabs are its own.
+
   const { setPlaying, setCurrentFrame } = usePlayheadActions();
+  const currentFrame = usePlayheadSelector((s) => s.currentFrame);
+
+  // Last session's playhead, applied ONCE and only once a clip exists to apply
+  // it to — restoring it against an empty editor would clamp it to zero and
+  // lose it, and the clip arrives a frame or two after the fold does.
+  const restoredFrame = useRef<number | null>(restored?.frame ?? null);
+  useEffect(() => {
+    const f = restoredFrame.current;
+    if (f == null || !clip) return;
+    restoredFrame.current = null;
+    setCurrentFrame(Math.max(0, Math.min(clip.frameCount, f)));
+  }, [clip, setCurrentFrame]);
 
   // WHICH clip, not how many times one has loaded.
   //
@@ -300,14 +322,27 @@ export function Dopesheet({
   const viewRef = useRef({ pxPerFrame: 0, yZoom: 0, scrollX: 0 });
   const tabForSave = useRef(tab);
   const heightForSave = useRef(height);
+  const frameForSave = useRef(currentFrame);
   useEffect(() => {
     tabForSave.current = tab;
     heightForSave.current = height;
+    frameForSave.current = currentFrame;
   });
   const persist = useCallback(() => {
     if (viewRef.current.pxPerFrame <= 0) return;
-    save({ ...viewRef.current, tab: tabForSave.current, height: heightForSave.current });
+    save({
+      ...viewRef.current,
+      tab: tabForSave.current,
+      height: heightForSave.current,
+      frame: frameForSave.current,
+    });
   }, [save]);
+
+  // Scrubbing is a change to the view like any other. The 400ms settle in
+  // use-timeline-view is what keeps a drag from being four hundred writes.
+  useEffect(() => {
+    persist();
+  }, [currentFrame, persist]);
   const onViewChange = useCallback(
     (v: { pxPerFrame: number; yZoom: number; scrollX: number }) => {
       viewRef.current = v;
@@ -426,6 +461,7 @@ export function Dopesheet({
                 // editor that has just restored last session's view — counting
                 // it would wipe the restore every time the fold opened.
                 clipVersion={clipVersion}
+                open={open}
                 tab={tab}
                 setTab={setTab}
                 playheadDrawRef={playheadDrawRef}

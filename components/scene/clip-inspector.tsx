@@ -144,6 +144,19 @@ const CHIP_OFF = "border-line-strong text-muted-foreground hover:border-white/25
 
 type IpTab = "rot" | "tx" | "ty" | "tz"
 
+/**
+ * Which curve the dock eases, for a timeline tab or a selected channel.
+ *
+ * The three rotation axes collapse to one entry because MMD eases them on a
+ * single bezier — the same fact that gives the camera one rotation channel out
+ * of three tabs. "All Trans" opens on X, the way an "All" camera tab opens on
+ * the first channel it spans.
+ */
+const BONE_IP_FOR_CHANNEL: Record<string, IpTab> = {
+  allRot: "rot", rx: "rot", ry: "rot", rz: "rot",
+  allTra: "tx", tx: "tx", ty: "ty", tz: "tz",
+}
+
 const BONE_IP_TABS = [
   { key: "rot", label: "Rotation" },
   { key: "tx", label: "Trans X" },
@@ -647,6 +660,34 @@ function BoneInterpolationSection({ clip, selectedBone }: { clip: AnimationClip 
   const kfSample = useLiveActiveKeyframe(clip, selectedBone)
   const currentFrame = usePlayheadSelector((s) => s.currentFrame)
   const selectedKeyframes = useClipSelector((st) => st.selectedKeyframes)
+  const tab = useClipSelector((st) => st.tab)
+
+  // The dock follows the timeline, one way.
+  //
+  // Reading Trans Y and then easing it should not mean finding the curve again
+  // in a second control — the channel you are looking at is the channel you
+  // mean. Only on a CHANGE, and never back: the camera panel documents why, and
+  // it holds here too. Picking a curve to ease is not a request to move the
+  // timeline off whatever you were watching.
+  // Adjusted during render against a state copy, which is React's documented way
+  // to follow a changing input — an effect that calls setState is what this
+  // repo's lint forbids, and it would also paint one frame on the old curve.
+  const [lastTab, setLastTab] = useState(tab)
+  if (lastTab !== tab) {
+    setLastTab(tab)
+    const next = BONE_IP_FOR_CHANNEL[tab]
+    if (next && next !== ipTab) setIpTab(next)
+  }
+
+  // Selecting a keyframe on a curve says which channel just as plainly as the
+  // tab strip does — a curve hit carries the channel it was on.
+  const selChannel = selectedKeyframes.find((sk) => sk.channel && sk.bone === selectedBone)?.channel
+  const [lastChannel, setLastChannel] = useState(selChannel)
+  if (lastChannel !== selChannel) {
+    setLastChannel(selChannel)
+    const next = selChannel ? BONE_IP_FOR_CHANNEL[selChannel] : undefined
+    if (next && next !== ipTab) setIpTab(next)
+  }
 
   /**
    * Which key this curve belongs to: the one SELECTED, else the one under the

@@ -122,6 +122,11 @@ export function ClipBridge({
   /** Which model's playhead has already been taken from the engine — see the
    *  adopt step in the watcher. */
   const adopted = useRef<string | null>(null)
+  /** The editor's playhead, readable inside the watcher without re-running it. */
+  const frameNow = useRef(currentFrame)
+  useEffect(() => {
+    frameNow.current = currentFrame
+  })
   useEffect(() => {
     // A shut fold stops WATCHING; it does not throw the clip away.
     //
@@ -184,7 +189,16 @@ export function ClipBridge({
       // should leave the playhead where you are standing.
       if (adopted.current !== editingModelId) {
         adopted.current = editingModelId
-        setCurrentFrame(model.getAnimationProgress().current * FPS)
+        // Only when the scene has actually moved away from where the editor
+        // left its playhead. Adopting unconditionally is right the first time
+        // and wrong on every reopen: closing the fold stops the watcher, so
+        // reopening runs this again, and a scene sitting exactly where you left
+        // it would still have its frame re-asserted — which, with the restored
+        // view arriving in the same breath, is the editor reopening somewhere
+        // other than where you shut it. A frame of tolerance, because the
+        // engine's clock is seconds and this is comparing it to integers.
+        const at = model.getAnimationProgress().current * FPS
+        if (Math.abs(at - frameNow.current) > 1) setCurrentFrame(at)
       }
     }
     // The camera shot belongs to the SCENE — reze-engine keeps it off the model
