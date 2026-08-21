@@ -28,6 +28,7 @@ import {
 } from "react"
 import {
   Atom,
+  AudioWaveform,
   ArrowDownToLine,
   ArrowUpFromLine,
   Camera,
@@ -996,6 +997,53 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       label: l.cmd.outlineOn,
       altLabels: [alt.cmd.outlineOn, l.cmd.outlineOff, alt.cmd.outlineOff],
       keywords: ["edge", "rim", "outline", "描边", "线稿", "轮廓"],
+    },
+    // The editor's fold, and the three tracks it opens onto.
+    //
+    // Four rows rather than one, because "open the timeline" and "edit this
+    // character's expressions" are different intents: the second names the
+    // track it wants, and arriving already pointed at it is most of the value.
+    // Each has an unambiguous subject by RULE — the model being edited, else the
+    // inspected one, else the first of the cast — which is the same rule the
+    // clip rows' own edit buttons resolve through, never an inspection of what
+    // happens to be selected.
+    {
+      id: "timeline",
+      repeatable: true,
+      section: "command",
+      icon: AudioWaveform,
+      // Filled in by paletteItems, like outline: a toggle you reach only by
+      // searching has to say which way it currently points.
+      label: l.cmd.timelineShow,
+      altLabels: [alt.cmd.timelineShow, l.cmd.timelineHide, alt.cmd.timelineHide],
+      keywords: ["timeline", "dopesheet", "keyframe", "keys", "curve", "时间轴", "关键帧", "曲线"],
+    },
+    {
+      id: "edit-motion",
+      repeatable: true,
+      section: "command",
+      icon: Footprints,
+      label: l.cmd.editMotion,
+      altLabels: [alt.cmd.editMotion],
+      keywords: ["motion", "dance", "vmd", "bone", "pose", "动作", "舞蹈", "骨骼", "姿势"],
+    },
+    {
+      id: "edit-morph",
+      repeatable: true,
+      section: "command",
+      icon: Smile,
+      label: l.cmd.editMorph,
+      altLabels: [alt.cmd.editMorph],
+      keywords: ["morph", "expression", "face", "blendshape", "表情", "面部", "口型"],
+    },
+    {
+      id: "edit-camera",
+      repeatable: true,
+      section: "command",
+      icon: Video,
+      label: l.cmd.editCamera,
+      altLabels: [alt.cmd.editCamera],
+      keywords: ["camera", "shot", "cut", "vmd", "镜头", "运镜", "分镜"],
     },
     // Palette-only, like outline above: switching the whole scene's rendering
     // style is something you reach for by name a few times, not a control worth
@@ -2678,6 +2726,22 @@ export default function Lab() {
     setEditTarget({ modelId, kind })
     setTimelineOpen(true)
   }
+  /**
+   * Whose clip a palette command opens.
+   *
+   * A ref rather than a value in runCommand's dependency list: that callback is
+   * memoized over a long list already, and adding two more moving parts to it so
+   * four rows can read one string is how a memo stops being preserved. The rule
+   * is the same one `editingModelId` resolves through below.
+   */
+  const clipTargetRef = useRef("")
+  /** `editClip` is a plain function, remade every render; the palette reads it
+   *  through here for the same reason. */
+  const editClipRef = useRef(editClip)
+  useEffect(() => {
+    clipTargetRef.current = editTarget?.modelId ?? inspectedId ?? cast[0]?.id ?? ""
+    editClipRef.current = editClip
+  })
   // The inspected cast member is the fallback, so opening the fold from the
   // chevron alone still edits something sensible.
   const editingModelId = timelineUnfolded ? (editTarget?.modelId ?? inspectedId ?? cast[0]?.id ?? null) : null
@@ -3554,29 +3618,43 @@ export default function Lab() {
   // deferred copy, so the row never changes while you are looking at it.
   const paletteItems = useMemo(
     () =>
-      commands.map((c) => {
-        // A switch you reach only by searching has to say which way it points,
-        // and it says it in the LABEL — "Turn on outline" beats a row that names
-        // a switch and leaves you to guess.
-        if (c.id === "outline")
-          return { ...c, label: valuesShown.settings.outline.enabled ? t.lab.cmd.outlineOff : t.lab.cmd.outlineOn }
-        if (c.id === "language") return { ...c, hint: LOCALE_LABELS[valuesShown.locale] }
-        // Same as language: the row says what it is SET TO, so the palette
-        // answers "which style am I on" without opening anything.
-        if (c.id === "look")
-          return {
-            ...c,
-            hint: valuesShown.pack ? valuesShown.t.brand.styles[valuesShown.pack] : valuesShown.t.lab.ctl.none,
-          }
-        if (!c.id.startsWith("ctl-")) return c
-        // Settings print what they are SET TO, beside the breadcrumb that says
-        // where they live. An empty string means the control has nothing to
-        // report — a stage transform with no stage — and prints nothing rather
-        // than a placeholder.
-        const value = DOCK_CONTROLS.find((x) => `ctl-${x.id}` === c.id)?.value?.(valuesShown)
-        return value ? { ...c, value } : c
-      }),
-    [commands, valuesShown, t],
+      commands
+        .filter((c) => {
+          // A door onto a track that does not exist is a door onto nothing —
+          // and every one of these opens the fold, which a window too short for
+          // it cannot show at all.
+          if (c.id === "timeline" || c.id === "edit-camera") return timelineRoom
+          // The camera belongs to the SCENE, so it needs no cast; a motion and
+          // an expression belong to a character.
+          if (c.id === "edit-motion" || c.id === "edit-morph") return timelineRoom && cast.length > 0
+          return true
+        })
+        .map((c) => {
+          // A switch you reach only by searching has to say which way it points,
+          // and it says it in the LABEL — "Turn on outline" beats a row that names
+          // a switch and leaves you to guess.
+          if (c.id === "outline")
+            return { ...c, label: valuesShown.settings.outline.enabled ? t.lab.cmd.outlineOff : t.lab.cmd.outlineOn }
+          // Same rule as outline: say what pressing it WILL do.
+          if (c.id === "timeline")
+            return { ...c, label: timelineUnfolded ? t.lab.cmd.timelineHide : t.lab.cmd.timelineShow }
+          if (c.id === "language") return { ...c, hint: LOCALE_LABELS[valuesShown.locale] }
+          // Same as language: the row says what it is SET TO, so the palette
+          // answers "which style am I on" without opening anything.
+          if (c.id === "look")
+            return {
+              ...c,
+              hint: valuesShown.pack ? valuesShown.t.brand.styles[valuesShown.pack] : valuesShown.t.lab.ctl.none,
+            }
+          if (!c.id.startsWith("ctl-")) return c
+          // Settings print what they are SET TO, beside the breadcrumb that says
+          // where they live. An empty string means the control has nothing to
+          // report — a stage transform with no stage — and prints nothing rather
+          // than a placeholder.
+          const value = DOCK_CONTROLS.find((x) => `ctl-${x.id}` === c.id)?.value?.(valuesShown)
+          return value ? { ...c, value } : c
+        }),
+    [commands, valuesShown, t, cast.length, timelineRoom, timelineUnfolded],
   )
 
   // ── Persistence ──
@@ -4199,6 +4277,10 @@ export default function Lab() {
         cmdRef.current.openGradeEditor({ id: "", name: t.gradeLibrary.newGrade, spec: NEW_GRADE_SPEC })
       else if (item.id === "grade-lib") openBrowse({ kind: "grade" })
       else if (item.id === "outline") patch("outline", { enabled: !outlineRef.current })
+      else if (item.id === "timeline") setTimelineOpen((v) => !v)
+      else if (item.id === "edit-motion") editClipRef.current(clipTargetRef.current, "motion")
+      else if (item.id === "edit-morph") editClipRef.current(clipTargetRef.current, "morph")
+      else if (item.id === "edit-camera") editClipRef.current(clipTargetRef.current, "camera")
       else if (item.id === "language") setLangOpen(true)
       else if (item.id === "look") setStyleOpen(true)
       // The same dialog the Share pill opens — one publish surface, two doors.

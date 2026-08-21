@@ -63,6 +63,7 @@ import {
 } from "@/context/clip-editor"
 import { CLIP_UNDO_SCOPE } from "@/components/scene/clip-history"
 import { useClipOps } from "@/hooks/use-clip-ops"
+import { useT } from "@/lib/i18n"
 import { useZOrder } from "@/hooks/use-z-order"
 import { cn } from "@/lib/utils"
 
@@ -386,6 +387,7 @@ function SubjectHeader({
   frameCount: number | null
   onClose: () => void
 }) {
+  const t = useT()
   // ONE header row, not two. A panel title above a subject line spent two rows
   // of a short dock saying "Properties" over the name of the thing whose
   // properties these are — and what the panel is is already obvious from its
@@ -397,7 +399,7 @@ function SubjectHeader({
       <Button
         variant="ghost"
         size="icon-xs"
-        aria-label="Close the timeline editor"
+        aria-label={t.lab.timeline.close}
         onClick={onClose}
         className="-mr-1 shrink-0 text-muted-foreground hover:text-foreground"
       >
@@ -432,8 +434,9 @@ function InterpolationPanel({
   disabled: boolean
   onChange: (p1: CurvePoint, p2: CurvePoint) => void
 }) {
+  const t = useT()
   return (
-    <Group title="Interpolation">
+    <Group title={t.lab.timeline.interpolation}>
       <div className="mb-2 flex flex-wrap gap-1">
         {tabs.map((t) => (
           <Button
@@ -469,7 +472,7 @@ function InterpolationPanel({
                 onClick={() => onChange(pr.p1, pr.p2)}
                 className={cn(CHIP, "flex-1 truncate", active ? CHIP_ON : CHIP_OFF)}
               >
-                {pr.label}
+                {t.lab.timeline.presets[pr.label] ?? pr.label}
               </Button>
             )
           })}
@@ -503,23 +506,28 @@ function OperationsSection({
   canClear: boolean
   simplifyTitle?: string
 }) {
+  const t = useT()
   // Chip height. Four buttons at button height read as the loudest thing in a
   // panel whose subject is the numbers above them.
   const row = "h-5 flex-1 rounded-chip px-1 text-[11px]"
   return (
-    <Group title="Operations">
+    <Group title={t.lab.timeline.operations}>
       <div className="space-y-1.5">
         <div className="flex items-center gap-1.5">
-          <span className="w-9 shrink-0 text-[10px] tracking-wider text-muted-foreground uppercase">Key</span>
+          <span className="w-9 shrink-0 text-[10px] tracking-wider text-muted-foreground uppercase">
+            {t.lab.timeline.key}
+          </span>
           <Button type="button" variant="secondary" size="xs" className={row} disabled={!canInsert} onClick={onInsert}>
-            Insert
+            {t.lab.timeline.insert}
           </Button>
           <Button type="button" variant="secondary" size="xs" className={row} disabled={!canDelete} onClick={onDelete}>
-            Delete
+            {t.lab.timeline.delete}
           </Button>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="w-9 shrink-0 text-[10px] tracking-wider text-muted-foreground uppercase">Track</span>
+          <span className="w-9 shrink-0 text-[10px] tracking-wider text-muted-foreground uppercase">
+            {t.lab.timeline.track}
+          </span>
           <Button
             type="button"
             variant="secondary"
@@ -527,9 +535,9 @@ function OperationsSection({
             className={row}
             disabled={!canSimplify}
             onClick={onSimplify}
-            title={simplifyTitle ?? "Fit a curve through the selected bone's keys and drop the ones it does not need"}
+            title={simplifyTitle ?? t.lab.timeline.simplifyHint}
           >
-            Simplify
+            {t.lab.timeline.simplify}
           </Button>
           <Button
             type="button"
@@ -538,9 +546,9 @@ function OperationsSection({
             className={row}
             disabled={!canClear}
             onClick={onClear}
-            title="Remove every keyframe on the selected track"
+            title={t.lab.timeline.clearHint}
           >
-            Clear
+            {t.lab.timeline.clear}
           </Button>
         </div>
       </div>
@@ -566,6 +574,7 @@ function LiveBoneSliders({
   applyRotationAxis: (axisIdx: 0 | 1 | 2, v: number, mode: "preview" | "commit") => void
   applyTranslationAxis: (axisIdx: 0 | 1 | 2, v: number, mode: "preview" | "commit") => void
 }) {
+  const t = useT()
   const tab = useClipSelector((s) => s.tab)
   const { setTab } = useClipActions()
   const livePose = useLivePose(selectedBone, clip)
@@ -574,7 +583,7 @@ function LiveBoneSliders({
 
   return (
     <>
-      <Group title="Rotation">
+      <Group title={t.lab.timeline.rotation}>
         <div>
           {rot ? (
             ROT_CHANNELS.map((ch, i) => (
@@ -600,7 +609,7 @@ function LiveBoneSliders({
         </div>
       </Group>
 
-      <Group title="Translation">
+      <Group title={t.lab.timeline.translation}>
         <div>
           {tra ? (
             TRA_CHANNELS.map((ch, i) => (
@@ -632,6 +641,7 @@ function LiveBoneSliders({
 /** Owns the interpolation tab and the curve. Subscribes to the playhead itself
  *  so the sliders above do not re-render when the playhead crosses a key. */
 function BoneInterpolationSection({ clip, selectedBone }: { clip: AnimationClip | null; selectedBone: string }) {
+  const t = useT()
   const { commit } = useClipActions()
   const [ipTab, setIpTab] = useState<IpTab>("rot")
   const kfSample = useLiveActiveKeyframe(clip, selectedBone)
@@ -689,7 +699,7 @@ function BoneInterpolationSection({ clip, selectedBone }: { clip: AnimationClip 
 
   return (
     <InterpolationPanel
-      tabs={BONE_IP_TABS}
+      tabs={BONE_IP_TABS.map((x) => ({ key: x.key, label: t.lab.timeline.labels[x.label] ?? x.label }))}
       activeTab={ipTab}
       onTabChange={(k) => setIpTab(k as IpTab)}
       p1={ipPair[0]}
@@ -720,8 +730,8 @@ const CAMERA_RANGES: Record<string, { min: number; max: number; decimals: number
  *  get no heading of their own: a one-row section whose title repeats the row's
  *  label is a header saying nothing. */
 const CAMERA_GROUPS = [
-  { group: "rot" as const, label: "Rotation", strip: true },
-  { group: "tgt" as const, label: "Target", strip: true },
+  { group: "rot" as const, label: "rotation" as const, strip: true },
+  { group: "tgt" as const, label: "target" as const, strip: true },
   { group: "dist" as const, label: null, strip: false },
   { group: "fov" as const, label: null, strip: false },
 ]
@@ -761,7 +771,21 @@ function withCameraIp(ip: Uint8Array | undefined, channel: number, p1: CurvePoin
   return next
 }
 
+/**
+ * What a camera row calls itself.
+ *
+ * Rotation and target rows drop their prefix — the group heading above already
+ * says which they are — and what is left is a bare axis letter that reads the
+ * same in any language. Distance and FOV have no heading of their own, so their
+ * label carries the whole meaning and has to be translated.
+ */
+function cameraAxisLabel(label: string, strip: boolean, labels: Record<string, string>): string {
+  const bare = strip ? label.replace(/^(Tgt|Rot)\./, "") : label
+  return labels[bare] ?? bare
+}
+
 const CameraSection = memo(function CameraSection({ onClose }: { onClose: () => void }) {
+  const t = useT()
   const cameraTrack = useClipSelector((s) => s.cameraTrack)
   const tab = useClipSelector((s) => s.tab)
   const { commitCamera, setTab } = useClipActions()
@@ -880,7 +904,7 @@ const CameraSection = memo(function CameraSection({ onClose }: { onClose: () => 
 
   return (
     <>
-      <SubjectHeader onClose={onClose} title="Camera" frameCount={null} />
+      <SubjectHeader onClose={onClose} title={t.lab.timeline.camera} frameCount={null} />
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3">
         {CAMERA_GROUPS.map((g) => {
           const rows = (
@@ -890,7 +914,7 @@ const CameraSection = memo(function CameraSection({ onClose }: { onClose: () => 
                 return (
                   <AxisSliderRow
                     key={ch.key}
-                    axis={g.strip ? ch.label.replace(/^(Tgt|Rot)\./, "") : ch.label}
+                    axis={cameraAxisLabel(ch.label, g.strip, t.lab.timeline.labels)}
                     color={ch.color}
                     value={ch.get(displayed)}
                     min={r.min}
@@ -913,7 +937,7 @@ const CameraSection = memo(function CameraSection({ onClose }: { onClose: () => 
           // Distance and FOV are separated from Target by space rather than by
           // a heading of their own — see CAMERA_GROUPS.
           return g.label ? (
-            <Group key={g.group} title={g.label}>
+            <Group key={g.group} title={t.lab.timeline[g.label]}>
               {rows}
             </Group>
           ) : (
@@ -928,7 +952,10 @@ const CameraSection = memo(function CameraSection({ onClose }: { onClose: () => 
         })}
 
         <InterpolationPanel
-          tabs={CAMERA_IP_TABS.map((t) => ({ key: String(t.ip), label: t.label }))}
+          tabs={CAMERA_IP_TABS.map((c) => ({
+            key: String(c.ip),
+            label: t.lab.timeline.labels[c.label] ?? c.label,
+          }))}
           activeTab={String(ipChannel)}
           onTabChange={(k) => setIpChannel(Number(k))}
           p1={ipPair[0]}
@@ -949,7 +976,7 @@ const CameraSection = memo(function CameraSection({ onClose }: { onClose: () => 
           // this row one control wide and the whole block a different shape
           // from the bone one.
           canSimplify={false}
-          simplifyTitle="Simplify applies to dense bone tracks — a camera's keys are its cuts"
+          simplifyTitle={t.lab.timeline.simplifyCameraHint}
           canClear={cameraTrack.length > 0}
         />
       </div>
@@ -965,6 +992,7 @@ function InspectorBody({ onClose }: { onClose: () => void }) {
   const selectedMorph = useClipSelector((s) => s.selectedMorph)
   const cameraSelected = useClipSelector((s) => s.cameraSelected)
   const { commit, setTab } = useClipActions()
+  const t = useT()
   const engine = useClipEngine()
   const frameRef = usePlayheadFrameRef()
   const ops = useClipOps()
@@ -1087,7 +1115,7 @@ function InspectorBody({ onClose }: { onClose: () => void }) {
       <>
         <SubjectHeader onClose={onClose} title={selectedMorph} frameCount={clip?.frameCount ?? null} />
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3">
-          <Group title="Weight">
+          <Group title={t.lab.timeline.weight}>
             <LiveMorphSlider selectedMorph={selectedMorph} clip={clip} applyMorphWeight={applyMorphWeight} />
           </Group>
           <OperationsSection
@@ -1100,7 +1128,7 @@ function InspectorBody({ onClose }: { onClose: () => void }) {
             // A morph track has no curve to fit — a VMD morph frame carries a
             // weight and no interpolation at all.
             canSimplify={false}
-            simplifyTitle="Simplify fits bezier handles, which a morph keyframe does not have"
+            simplifyTitle={t.lab.timeline.simplifyMorphHint}
             canClear={ops.canClear}
           />
         </div>

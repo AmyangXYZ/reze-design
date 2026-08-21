@@ -20,6 +20,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { useT } from "@/lib/i18n"
 import { useClipActions, useClipEngine, useClipSelector, usePlayhead, usePlayheadFrameRef, type SelectedKeyframe } from "@/context/clip-editor"
 import type { AnimationClip, BoneKeyframe, CameraKeyframe, MorphKeyframe } from "reze-engine"
 import { bezierInterpolate } from "reze-engine"
@@ -198,18 +199,18 @@ const MORPH_COLOR = "#c084fc"
 type TabDef = { key: string; label: string; color: string | null; sep: boolean }
 
 const BONE_TABS: TabDef[] = [
-  { key: "allRot", label: "All Rot", color: null, sep: false },
+  { key: "allRot", label: "Rotation", color: null, sep: false },
   { key: "rx", label: "X", color: C.rotX, sep: false },
   { key: "ry", label: "Y", color: C.rotY, sep: false },
   { key: "rz", label: "Z", color: C.rotZ, sep: false },
   { key: "_sep1", label: "", color: null, sep: true },
-  { key: "allTra", label: "All Trans", color: null, sep: false },
+  { key: "allTra", label: "Translation", color: null, sep: false },
   { key: "tx", label: "X", color: C.traX, sep: false },
   { key: "ty", label: "Y", color: C.traY, sep: false },
   { key: "tz", label: "Z", color: C.traZ, sep: false },
 ]
 
-// Colour-less, like "All Rot" and "All Trans": those three are the only tab in
+// Colour-less, like "Rotation" and "Translation": those three are the only tab in
 // their set, so a coloured chip would be keying a hue to nothing — there is no
 // sibling channel to tell it apart from. The curve itself still draws in
 // MORPH_COLOR; this is only the chip.
@@ -254,6 +255,7 @@ function TransportFrameSlider({
   value: number
   onChange: (f: number) => void
 }) {
+  const dict = useT()
   const trackRef = useRef<HTMLDivElement>(null)
   const dragging = useRef(false)
 
@@ -294,7 +296,7 @@ function TransportFrameSlider({
       <div
         ref={trackRef}
         role="slider"
-        aria-label="Scrub playhead"
+        aria-label={dict.lab.timeline.scrub}
         aria-valuemin={0}
         aria-valuemax={frameCount}
         aria-valuenow={Math.round(value)}
@@ -342,6 +344,7 @@ function ZoomRuler({
   value: number
   onChange: (v: number) => void
 }) {
+  const dict = useT()
   const trackRef = useRef<HTMLDivElement>(null)
   const dragging = useRef(false)
   const span = max - min
@@ -393,7 +396,7 @@ function ZoomRuler({
       <div
         ref={trackRef}
         role="slider"
-        aria-label="Timeline zoom"
+        aria-label={dict.lab.timeline.zoom}
         aria-valuemin={min}
         aria-valuemax={max}
         aria-valuenow={value}
@@ -496,6 +499,7 @@ function TimelineCanvas({
   playheadDrawRef,
   dragRedrawRef,
 }: TimelineCanvasProps) {
+  const dict = useT()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   /** Latest frame for the draw closure to read — keeps `currentFrame` out of
    *  the `draw` useCallback deps so playback ticks don't re-run layout effects. */
@@ -835,7 +839,7 @@ function TimelineCanvas({
         ctx.font = `13px ${FONT}`
         ctx.textAlign = "center"
         ctx.textBaseline = "middle"
-        ctx.fillText("No keyframes \u2014 Camera", (w + LABEL_W) / 2, (curveTop + curveBot) / 2)
+        ctx.fillText(dict.lab.timeline.noKeys(dict.lab.timeline.camera), (w + LABEL_W) / 2, (curveTop + curveBot) / 2)
       }
     } else if (isMorphTab) {
       // ── Morph weight curve ──
@@ -878,14 +882,14 @@ function TimelineCanvas({
           ctx.font = `13px ${FONT}`
           ctx.textAlign = "center"
           ctx.textBaseline = "middle"
-          ctx.fillText("No keyframes — " + selectedMorph, (w + LABEL_W) / 2, (curveTop + curveBot) / 2)
+          ctx.fillText(dict.lab.timeline.noKeys(selectedMorph), (w + LABEL_W) / 2, (curveTop + curveBot) / 2)
         }
       } else {
         ctx.fillStyle = C.label
         ctx.font = `13px ${FONT}`
         ctx.textAlign = "center"
         ctx.textBaseline = "middle"
-        ctx.fillText("Select a morph to view curve", (w + LABEL_W) / 2, (curveTop + curveBot) / 2)
+        ctx.fillText(dict.lab.timeline.pickMorph, (w + LABEL_W) / 2, (curveTop + curveBot) / 2)
       }
     } else if (selectedBone) {
       const keyframes = clip.boneTracks.get(selectedBone)
@@ -955,14 +959,14 @@ function TimelineCanvas({
         ctx.font = `13px ${FONT}`
         ctx.textAlign = "center"
         ctx.textBaseline = "middle"
-        ctx.fillText("No keyframes — " + boneDisplayLabel(selectedBone), (w + LABEL_W) / 2, (curveTop + curveBot) / 2)
+        ctx.fillText(dict.lab.timeline.noKeys(boneDisplayLabel(selectedBone)), (w + LABEL_W) / 2, (curveTop + curveBot) / 2)
       }
     } else {
       ctx.fillStyle = C.label
       ctx.font = `13px ${FONT}`
       ctx.textAlign = "center"
       ctx.textBaseline = "middle"
-      ctx.fillText("Select a bone to view curves", (w + LABEL_W) / 2, (curveTop + curveBot) / 2)
+      ctx.fillText(dict.lab.timeline.pickBone, (w + LABEL_W) / 2, (curveTop + curveBot) / 2)
     }
     ctx.restore()
 
@@ -1157,7 +1161,11 @@ function TimelineCanvas({
               if (k.frame <= frame) val = ch.get(k)
             }
             ctx.fillStyle = ch.color
-            ctx.fillText(`${ch.label}: ${formatVal(val)}`, w - 8, curveTop + 5 + i * 13)
+            ctx.fillText(
+              `${dict.lab.timeline.labels[ch.label] ?? ch.label}: ${formatVal(val)}`,
+              w - 8,
+              curveTop + 5 + i * 13,
+            )
           })
         }
       }
@@ -1186,7 +1194,9 @@ function TimelineCanvas({
         ctx.fill()
       }
     }
-  }, [clip, pxPerFrame, yZoom, scrollX, selectedBone, selectedMorph, cameraTrack, frameCount, audioPeaks, audioDuration, visibleBones, selectedKeyframes, tab, getDopeFrames])
+    // dict.lab.timeline, because the canvas PAINTS its own empty states — a
+    // language change has to repaint them, and nothing else here would.
+  }, [clip, pxPerFrame, yZoom, scrollX, selectedBone, selectedMorph, cameraTrack, frameCount, audioPeaks, audioDuration, visibleBones, selectedKeyframes, tab, getDopeFrames, dict.lab.timeline])
 
   // Layout-phase paint: `useEffect`+nested rAF ran after browser paint → playhead lagged 1–2 frames behind transport.
   // `currentFrame` is in deps (not in `draw`'s deps) so scrubbing + throttled
@@ -1581,6 +1591,7 @@ export function Timeline({
   onViewChange,
   trailing,
 }: TimelineProps) {
+  const dict = useT()
   const clip = useClipSelector((s) => s.clip)
   const selectedBone = useClipSelector((s) => s.selectedBone)
   const selectedMorph = useClipSelector((s) => s.selectedMorph)
@@ -2132,7 +2143,7 @@ export function Timeline({
             type="text"
             inputMode="numeric"
             ref={frameFieldRef}
-            aria-label="Current frame"
+            aria-label={dict.lab.timeline.currentFrame}
             disabled={!clip}
             value={frameDraft ?? padFrame4(currentFrame)}
             onFocus={() => setFrameDraft(padFrame4(currentFrame))}
@@ -2158,7 +2169,7 @@ export function Timeline({
           <input
             type="text"
             inputMode="numeric"
-            aria-label="Clip end frame"
+            aria-label={dict.lab.timeline.endFrame}
             disabled={!clip}
             value={endDraft ?? padFrame4(fc)}
             onFocus={() => setEndDraft(padFrame4(fc))}
@@ -2213,7 +2224,7 @@ export function Timeline({
                 active
                   ? t.color
                     ? "text-[#0f0f12] hover:text-[#0f0f12] hover:opacity-90 dark:hover:bg-transparent"
-                    // The aggregate tabs (All Rot / All Trans / All Tgt) and
+                    // The aggregate tabs (Rotation / Translation / Target) and
                     // Weight carry no hue of their own, so they cannot use the
                     // solid-fill treatment the axis tabs get from `t.color`.
                     // bg-secondary is barely a shade off the toolbar and read
@@ -2232,14 +2243,18 @@ export function Timeline({
                     : undefined
               }
             >
-              {t.label}
+              {dict.lab.timeline.labels[t.label] ?? t.label}
             </Button>
           )
         })}
         <div className="min-w-0 flex-1" />
-        <span className="shrink-0 px-1 text-[10px] uppercase tracking-wide text-muted-foreground">Time</span>
+        <span className="shrink-0 px-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+          {dict.lab.timeline.axisTime}
+        </span>
         <ZoomRuler min={minPxPerFrame} max={MAX_PX} value={pxPerFrame} onChange={zoomTo} />
-        <span className="shrink-0 px-1 pl-2 text-[10px] uppercase tracking-wide text-muted-foreground">Value</span>
+        <span className="shrink-0 px-1 pl-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+          {dict.lab.timeline.axisValue}
+        </span>
         <ZoomRuler min={Y_ZOOM_MIN} max={Y_ZOOM_MAX} value={yZoom} onChange={setYZoom} />
         {trailing && <div className="ml-1.5 flex shrink-0 items-center gap-0.5 pl-1.5">{trailing}</div>}
       </div>

@@ -485,12 +485,12 @@ export function cameraChannelsForTab(tab: string): CameraChannel[] {
 /** The timeline's camera tabs, laid out like the bone set: aggregate, axes,
  *  separator, aggregate, axes, separator, scalars. */
 export const CAMERA_TABS = [
-  { key: "camAllRot", label: "All Rot", color: null, sep: false },
+  { key: "camAllRot", label: "Rotation", color: null, sep: false },
   { key: "camRx", label: "X", color: "#e25555", sep: false },
   { key: "camRy", label: "Y", color: "#44bb55", sep: false },
   { key: "camRz", label: "Z", color: "#4477dd", sep: false },
   { key: "_camSep1", label: "", color: null, sep: true },
-  { key: "camAllTgt", label: "All Tgt", color: null, sep: false },
+  { key: "camAllTgt", label: "Target", color: null, sep: false },
   { key: "camTx", label: "X", color: "#e2a055", sep: false },
   { key: "camTy", label: "Y", color: "#55bba0", sep: false },
   { key: "camTz", label: "Z", color: "#7755dd", sep: false },
@@ -539,7 +539,7 @@ export function cameraIpPair(
   ]
 }
 
-/** Which interpolation channel a timeline tab is easing. An "All Tgt" view
+/** Which interpolation channel a timeline tab is easing. A "Target" view
  *  spans three of them, so it opens on the first. */
 export function cameraIpChannelForTab(tab: string): number {
   const chans = cameraChannelsForTab(tab)

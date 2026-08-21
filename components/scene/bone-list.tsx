@@ -3,6 +3,7 @@
 import { useRef, useState, useEffect, useCallback, useMemo, memo } from "react"
 import { ChevronRight } from "lucide-react"
 import { BONE_GROUPS } from "@/lib/animation"
+import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import type { AnimationClip } from "reze-engine"
 
@@ -40,6 +41,7 @@ const GroupRow = memo(function GroupRow({
   isSelected: boolean
   onClick: () => void
 }) {
+  const dict = useT()
   return (
     <button
       type="button"
@@ -60,7 +62,7 @@ const GroupRow = memo(function GroupRow({
           strokeWidth={2.5}
         />
       </span>
-      <span className="min-w-0 flex-1 truncate py-[1px]">{name}</span>
+      <span className="min-w-0 flex-1 truncate py-[1px]">{dict.lab.timeline.boneGroups[name] ?? name}</span>
       {/* Right edge, in the same column as the bone rows' keyframe counts, so
           the whole picker reads as two columns rather than as text that
           sometimes ends in a number. Parentheses rather than the rows'
