@@ -70,14 +70,31 @@ export function sceneZipFileName(name: string): string {
   return `reze-design-${slug(name)}-${stamp}.zip`
 }
 
+/**
+ * Hand a blob to the user as a file.
+ *
+ * The anchor goes in the DOM before it is clicked and the URL is revoked a long
+ * time afterwards, and both are Safari. A detached anchor is ignored there, and
+ * a URL revoked promptly is a download cancelled: WebKit resolves the blob
+ * asynchronously, well after the click returns, and a revoked one fails as
+ * "WebKitBlobResource error 1" with no other symptom. `setTimeout(0)` looks like
+ * a delay and is not one — it is the same turn as far as the download machinery
+ * is concerned, which is why scene export failed there while video export, whose
+ * own copy of this used ten seconds, did not.
+ *
+ * Ten seconds is arbitrary and generous; the cost of being wrong the other way
+ * is one blob held slightly too long in a session that is about to be replaced.
+ */
 export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")
   a.href = url
   a.download = filename
+  a.style.display = "none"
+  document.body.appendChild(a)
   a.click()
-  // Revoking in the same turn cancels the download in some browsers.
-  setTimeout(() => URL.revokeObjectURL(url), 0)
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
 
 export async function readSceneFile(file: File): Promise<Partial<SceneConfig> | null> {

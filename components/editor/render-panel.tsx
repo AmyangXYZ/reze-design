@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select"
 import type { BackdropMedia } from "@/lib/backdrop"
 import { captureStill, exportVideo, type ExportAudioSource, type ExportProgress } from "@/lib/video-export"
+import { downloadBlob } from "@/lib/scene-file"
 import { useT } from "@/lib/i18n"
 
 // Minimal config, iMovie-export style
@@ -228,14 +229,9 @@ export const RenderPanel = memo(function RenderPanel({
     return `reze-design-${scene}-${width}x${height}-${when}.${ext}`
   }
 
-  const download = (blob: Blob, filename: string) => {
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = filename
-    a.click()
-    setTimeout(() => URL.revokeObjectURL(url), 10_000)
-  }
+  /** lib/scene-file's, not a second copy — the two had already drifted, and the
+   *  one that was wrong was the one nobody had exported from on Safari. */
+  const download = downloadBlob
 
   /** A still of the shot as framed, at the output size — the thumbnail a publish
    *  asks for, without leaving for a screenshot tool. */
