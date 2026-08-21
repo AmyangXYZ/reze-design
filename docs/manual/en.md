@@ -2,26 +2,30 @@
 
 **English** · [简体中文](https://github.com/AmyangXYZ/reze-design/blob/main/docs/manual/zh.md)
 
-Reze Design is an MMD design, rendering and sharing platform. It runs in the
-browser: it reads the models and motions the MikuMikuDance community has been
-making since 2008, renders them on WebGPU, and turns the result into a video file
-or a live page anyone can open and orbit.
+Reze Design is the authentic MMD experience, resurrected in WebGPU and
+TypeScript. It runs in a browser tab: it reads the models and motions the
+MikuMikuDance community has been making since 2008, renders them on WebGPU, and
+turns the result into a video file or a live page anyone can open and orbit.
 
-It renders on its own engine — reze-engine, a WebGPU renderer built for this
-platform — and that is where its reach comes from: materials are node graphs
-compiled straight to WGSL, background effects are shaders you edit against the
-live scene, and video export steps the clock offline, frame by frame, so a 4K
-60 fps render comes out pixel-identical on any machine. Around the engine sits a
-modern editor that keeps your work across sessions, and a platform where every
-published scene is a live page others can open, orbit and fork.
+It renders on its own engine — reze-engine, built for MMD — and that is where its
+reach comes from: materials are node graphs compiled straight to WGSL, scene
+effects are shaders you edit against the live scene, motion, expressions and the
+camera are editable on a timeline, and video export steps the clock offline,
+frame by frame, so a 4K 60 fps render comes out pixel-identical on any machine.
+Around the engine sits an editor that keeps your work across sessions, and a
+platform where every published scene is a live page others can open, orbit and
+fork.
 
 The manual follows the same path your work will: **Section 0** is background, for
 anyone who has never heard of MMD. **Section 1** walks the whole journey once —
-assets in, shot framed, lit, styled, exported, published. **Section 2** goes
-deeper into the three authoring surfaces — colour grades, WGSL background
-shaders, and material node graphs — each complete enough to write from without
-reading anything else. [Appendix B](#appendix-b-finding-models-motions-and-music)
-covers where to find models, motion and music.
+assets in, shot framed, lit, styled, motion edited, exported, published.
+**Section 2** goes deeper into the three authoring surfaces — colour grades, WGSL
+scene effects, and material node graphs — each complete enough to write from
+without reading anything else.
+[Appendix B](#appendix-b-finding-models-motions-and-music) covers where to find
+models, motion and music, and
+[Appendix D](#appendix-d-shader-graph-node-reference) is the node registry a
+generated graph is written against.
 
 ---
 
@@ -1598,7 +1602,7 @@ smooth gradient. The characteristic MMD look.
 **Grade** — a colour transform applied to the whole finished image.
 
 **MME (MikuMikuEffect)** — the DirectX 9 HLSL effect plugin for desktop MMD. Its
-counterparts here are background effects and shader graphs, in WGSL.
+counterparts here are scene effects and shader graphs, in WGSL.
 
 **Morph** — a named blend shape, most often a facial expression, driven by motion
 files alongside bones.
@@ -1619,7 +1623,7 @@ compiled to WGSL.
 
 **WebGPU** — the browser GPU API this application is built on.
 
-**WGSL** — WebGPU Shading Language. Background effects are written in it, and
+**WGSL** — WebGPU Shading Language. Scene effects are written in it, and
 shader graphs compile to it.
 
 ---
