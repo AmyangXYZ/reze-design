@@ -2569,6 +2569,21 @@ export default function Lab() {
     },
     [bgEffects, ensureEffectPanelRect, commitEffectCode],
   )
+
+  /**
+   * What the scene is WEARING, as opposed to what the canvas is previewing.
+   *
+   * An open effect session narrows `bgEffects` to its subject on purpose — the
+   * canvas behind the panel is that shader and nothing competing with it — and
+   * `prior` puts the rest back on close. What must not follow the preview is
+   * anything that WRITES: the debounced state save would store a scene wearing
+   * one effect, so a refresh with the editor open lost the others for good
+   * (closing restores them, a reload never gets there), and makeSceneDoc feeds
+   * export and publish, so publishing mid-session shipped the preview.
+   *
+   * A preview is a way of looking. It has no business in the document.
+   */
+  const documentEffects = effectEditor ? effectEditor.prior : bgEffects
   /** Edit the effect the scene is wearing. No subject to resolve — an applied
    *  effect already IS its row, carried by value.
    *
@@ -3700,7 +3715,7 @@ export default function Lab() {
       // persist.
       camera,
       settings,
-      backgroundEffects: bgEffects,
+      backgroundEffects: documentEffects,
       groups: groupsByModel,
       // DERIVED from the live model list rather than tracked separately.
       // Empty lists are WRITTEN, not filtered: saveSceneState's retain() merges
@@ -4107,7 +4122,7 @@ export default function Lab() {
               : { ...settings.grade, spec: appliedGradeSpec }
           })(),
         },
-        backgroundEffects: bgEffects,
+        backgroundEffects: documentEffects,
         groups: groupsByModel,
         hidden: slots.hidden,
       },

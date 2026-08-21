@@ -572,7 +572,28 @@ function OperationsSection({
 // ─── Bone ─────────────────────────────────────────────────────────────────
 
 const ROT_RANGE = { min: -180, max: 180 }
-const TRA_RANGE = { min: -10, max: 10 }
+/**
+ * How far a translation slider reaches, and how it grows.
+ *
+ * ±10 was too small for the thing translation is mostly used for: a character
+ * is about twenty units tall in MMD's scale, so any real jump or lift on センター
+ * ran off the end of its own slider and could only be typed in.
+ *
+ * A fixed ceiling only moves the problem, though — whatever it is, some motion
+ * exceeds it. So the base is 25 and it DOUBLES to cover whatever the pose
+ * actually holds. Doubling rather than fitting exactly, because a range that
+ * tracked the value continuously would move the thumb under a stationary
+ * pointer; this way it steps at 25, 50, 100, and between steps the scale is
+ * fixed.
+ */
+const TRA_BASE = 25
+
+function traRangeFor(value: number): number {
+  let range = TRA_BASE
+  const a = Math.abs(value)
+  while (a > range) range *= 2
+  return range
+}
 
 /** Isolated from the panel so its rAF, which ticks while the scene plays, only
  *  reconciles the six sliders — not the interpolation editor or the buttons. */
@@ -593,6 +614,22 @@ function LiveBoneSliders({
   const livePose = useLivePose(selectedBone, clip)
   const rot = livePose ? [livePose.euler.x, livePose.euler.y, livePose.euler.z] : null
   const tra = livePose ? [livePose.translation.x, livePose.translation.y, livePose.translation.z] : null
+
+  // ONE range for the three axes, so they stay comparable — three sliders at
+  // three scales look alike and mean different things, which is worse than a
+  // coarse scale.
+  //
+  // It only ever grows while a bone is selected. Shrinking it the moment the
+  // pose came back under a step would make the thumb jump on the way back
+  // through the same value it just jumped on. A different bone starts over.
+  const [traMax, setTraMax] = useState(TRA_BASE)
+  const [rangeBone, setRangeBone] = useState(selectedBone)
+  if (rangeBone !== selectedBone) {
+    setRangeBone(selectedBone)
+    setTraMax(TRA_BASE)
+  }
+  const needed = tra ? Math.max(...tra.map(traRangeFor)) : TRA_BASE
+  if (needed > traMax) setTraMax(needed)
 
   return (
     <>
@@ -631,8 +668,8 @@ function LiveBoneSliders({
                 axis={["X", "Y", "Z"][i]}
                 color={ch.color}
                 value={tra[i]}
-                min={TRA_RANGE.min}
-                max={TRA_RANGE.max}
+                min={-traMax}
+                max={traMax}
                 decimals={3}
                 disabled={!clip}
                 onChange={(v) => {

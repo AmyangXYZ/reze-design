@@ -193,7 +193,14 @@ function getAxisConfig(tab: string) {
     // short. 45° steps keep the tick count the same as before.
     return { min: -180, max: 180, tickMin: -180, tickMax: 180, unit: "°", side: "left" as const, step: 45, subStep: 15 }
   } else {
-    return { min: -10, max: 10, ...UNBOUNDED, unit: "", side: "left" as const, step: 5, subStep: 2.5 }
+    // ±25, the same base the properties dock's translation sliders use — the
+    // curve and the slider are two views of one number and disagreeing about
+    // its scale makes them look like two numbers. ±10 was short for what
+    // translation is mostly used for: a character is about twenty units tall in
+    // MMD's scale, so a jump on センター left the band entirely and read as
+    // broken data rather than a short axis. UNBOUNDED already lets the value
+    // zoom take it further when a motion needs it.
+    return { min: -25, max: 25, ...UNBOUNDED, unit: "", side: "left" as const, step: 10, subStep: 5 }
   }
 }
 
@@ -632,7 +639,11 @@ function TimelineCanvas({
       cache.dragVersion !== dragVersionRef.current
 
     const ox = LABEL_W - scrollX
-    const audioH = audioPeaks ? AUDIO_H : 0
+    // The lane is a SLOT, so it is there whether or not a track is in it. A
+    // row that appears when you load music and vanishes when you remove it
+    // makes the editor's whole layout shift under an unrelated action — and
+    // an empty lane is also the only thing that says the slot exists at all.
+    const audioH = AUDIO_H
     const audioY = h - audioH
     const dopeY = audioY - DOPE_H
     const curveTop = RULER_H
@@ -1043,7 +1054,7 @@ function TimelineCanvas({
     // cannot tell you. Drawn to REAL TIME (its own duration at 30fps), not to
     // the clip's length, so a song longer than the dance still reads correctly
     // and its end lands where it actually falls.
-    if (audioPeaks && audioPeaks.length > 0) {
+    {
       ctx.fillStyle = C.dopeBg
       ctx.fillRect(LABEL_W, audioY, w - LABEL_W, audioH)
       ctx.strokeStyle = C.dopeBorder
@@ -1060,14 +1071,24 @@ function TimelineCanvas({
       // One bar per pixel column across the visible span, each reading the
       // precomputed RMS array — sampling a fixed array beats re-walking the
       // decoded buffer on every zoom step.
-      for (let px = LABEL_W; px < w; px++) {
-        const frame = (px - ox) / pxPerFrame
-        if (frame < 0 || frame > audioEndFrame) continue
-        const t = audioEndFrame > 0 ? frame / audioEndFrame : 0
-        const idx = Math.min(audioPeaks.length - 1, Math.max(0, Math.round(t * (audioPeaks.length - 1))))
-        const a = audioPeaks[idx] * half
-        if (a <= 0) continue
-        ctx.fillRect(px, mid - a, 1, a * 2)
+      if (audioPeaks && audioPeaks.length > 0) {
+        for (let px = LABEL_W; px < w; px++) {
+          const frame = (px - ox) / pxPerFrame
+          if (frame < 0 || frame > audioEndFrame) continue
+          const t = audioEndFrame > 0 ? frame / audioEndFrame : 0
+          const idx = Math.min(audioPeaks.length - 1, Math.max(0, Math.round(t * (audioPeaks.length - 1))))
+          const a = audioPeaks[idx] * half
+          if (a <= 0) continue
+          ctx.fillRect(px, mid - a, 1, a * 2)
+        }
+      } else {
+        // Empty, and saying so with a line rather than with words: a lane that
+        // holds a waveform reads as a lane holding silence, which is what it is.
+        ctx.strokeStyle = C.dopeBorder
+        ctx.beginPath()
+        ctx.moveTo(LABEL_W, mid + 0.5)
+        ctx.lineTo(w, mid + 0.5)
+        ctx.stroke()
       }
 
       // Its own label cell, like the dopesheet's.
@@ -1279,7 +1300,7 @@ function TimelineCanvas({
         my = e.clientY - rect.top
       const ox = LABEL_W - scrollX
       const h = el.clientHeight
-      const dopeY = h - DOPE_H - (audioPeaks ? AUDIO_H : 0)
+      const dopeY = h - DOPE_H - AUDIO_H
       const curveH = dopeY - 1 - RULER_H
       const ax = getAxisConfig(tab)
       const axCenter = (ax.min + ax.max) / 2
