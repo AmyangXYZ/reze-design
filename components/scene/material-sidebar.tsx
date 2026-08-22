@@ -5,8 +5,8 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react"
 import type { StyleGroup } from "reze-engine"
 import { ChevronDown, ChevronRight, Circle, Eye, EyeOff, FolderPlus, Pencil, Trash2, Workflow } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -33,42 +33,6 @@ const ENGINE_DEFAULT_GRAPH = "Principled BSDF"
 
 // Eye/Hair own the special render classes
 const isProtected = (g: StyleGroup) => g.renderClass === "eye" || g.renderClass === "hair"
-
-// A compact tooltip'd icon button — the shared vocabulary for row + toolbar actions.
-function IconAction({
-  icon: Icon,
-  label,
-  onClick,
-  disabled,
-  danger,
-  side = "bottom",
-}: {
-  icon: React.ComponentType<{ className?: string }>
-  label: string
-  onClick: (e: React.MouseEvent) => void
-  disabled?: boolean
-  danger?: boolean
-  side?: "top" | "bottom"
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          disabled={disabled}
-          onClick={onClick}
-          className={cn(
-            "rounded p-0.5 text-muted-foreground transition-colors hover:bg-white/10",
-            danger ? "hover:text-red-400" : "hover:text-foreground",
-            "disabled:opacity-30 disabled:hover:bg-transparent",
-          )}
-        >
-          <Icon className="size-3.5" />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side={side}>{label}</TooltipContent>
-    </Tooltip>
-  )
-}
 
 // What the ONE shared context menu is pointed at.
 type MenuTarget = { kind: "material"; name: string; groupId: string | null } | { kind: "group"; id: string }
@@ -293,22 +257,39 @@ export const MaterialsPanel = memo(function MaterialsPanel({
           ))}
         </div>
       )}
-      {/* ── Section toolbar (VSCode explorer header): title + create/collapse ── */}
+      {/* ── Section toolbar (VSCode explorer header): create + library ── */}
       {/* Same px-4 gutter and 3.5 vertical rhythm as the Scene tab, so the two panels line up */}
       <div
-        className={cn("flex items-center gap-0.5 px-4", modelTabs.length > 1 ? "pt-1.5" : dense ? "pt-2" : "pt-3.5")}
+        className={cn("flex items-center gap-1 px-4", modelTabs.length > 1 ? "pt-1.5" : dense ? "pt-2" : "pt-3.5")}
       >
-        {/* Same type as the Scene tab's Section titles */}
-        <span className="shrink-0 text-xs font-medium tracking-[0.14em] text-muted-foreground uppercase">{t.materials.styleGroups}</span>
-        {/* VSCode-style: a fresh group goes straight into rename mode (the row mounts this same */}
-        {/* Create sits WITH the title it acts */}
-        <IconAction icon={FolderPlus} label={t.materials.newGroup} onClick={() => setRenaming(onCreateGroup())} />
+        {/* This row used to open with STYLE GROUPS in the Scene tab's uppercase and
+            carry create as a bare icon beside it. The title cost more width than it
+            earned — the panel is already the Materials tab, and every row under it
+            is a style group — and at the dock's reduced width it pushed the Library
+            door off the right edge. Create takes its place and says the same noun,
+            so the row lost a label rather than an action.
+            The negative margin cancels the button's own padding, keeping the text
+            on the px-4 gutter the rows and the Scene tab both sit on — which is why
+            the glyph trails the label rather than leading it: a leading icon would
+            put a symbol where every row below starts with a word. */}
+        <Button
+          variant="outline"
+          size="xs"
+          onClick={() => setRenaming(onCreateGroup())}
+          className="-ml-2 min-w-0 border-line-strong bg-surface-raised text-muted-foreground hover:bg-white/5 hover:text-foreground [&_svg:not([class*='size-'])]:size-3.5"
+        >
+          {/* First to give up room. Truncating a label whose glyph still says
+              "folder, plus" costs less than pushing the Library door off-panel. */}
+          <span className="truncate">{t.materials.newGroup}</span>
+          <FolderPlus />
+        </Button>
         <span className="flex-1" />
-        {/* Library at the right end, matching Grade and Background. */}
+        {/* Library at the right end, matching Grade and Background. Last to give up
+            room: the label is what tells the three doors apart. */}
         {onOpenLibrary && (
         <button
           onClick={() => onOpenLibrary(libraryTarget)}
-          className="ml-1 flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white px-2 py-1 text-xs font-medium text-zinc-900 transition-colors hover:bg-white/90 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-white"
+          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white py-1 pr-1.5 pl-2 text-xs font-medium text-zinc-900 transition-colors hover:bg-white/90 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-white"
         >
           <Workflow className="size-3.5" />
           {t.lab.cmd.graphLib}

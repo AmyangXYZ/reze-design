@@ -130,7 +130,6 @@ const en = {
   },
   // Shared column / metadata field labels (materials inspector + library table).
   materials: {
-    styleGroups: "Style groups",
     newGroup: "New group",
     moveTo: "Move to",
     ungrouped: "Ungrouped",
@@ -852,7 +851,6 @@ const zh: Dictionary = {
     render: "渲染",
   },
   materials: {
-    styleGroups: "样式组",
     newGroup: "新建组",
     moveTo: "移动到",
     ungrouped: "未分组",

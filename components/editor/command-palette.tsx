@@ -64,9 +64,44 @@ export function CommandPalette({
     [items, query, recentIds, gaps],
   )
 
-  // One flat list for the keyboard; the grouping below is presentation only, so
-  // arrowing never has to know a section boundary exists.
-  const flat = useMemo(() => [...suggested, ...results], [suggested, results])
+  // The rows, grouped, in the order they are DRAWN — and the keyboard's flat list
+  // derived from that rather than assembled beside it.
+  //
+  // These were two lists. The flat one was `suggested + results` in rank order,
+  // while the drawn one splits results by section and, while searching, reorders
+  // the sections. The moment a search hit more than one section the two orders
+  // disagreed: the highlight followed the drawn order and Enter followed the rank
+  // order, so arrowing down to a row and pressing Enter ran a different one.
+  // Deriving one from the other is what makes that unrepresentable.
+  const groups = useMemo(() => {
+    const out: { key: string; label: string; items: PaletteItem[] }[] = []
+    if (suggested.length) out.push({ key: "suggested", label: SECTION_LABEL.suggested, items: suggested })
+    const sectioned: typeof out = []
+    for (const section of ["command", "goto", "setting"] as CommandSection[]) {
+      const inSection = results.filter((i) => i.section === section)
+      if (inSection.length) sectioned.push({ key: section, label: SECTION_LABEL[section], items: inSection })
+    }
+    // `results` is rank-ordered, but grouping by section re-buries it: with a
+    // fixed command→goto→setting order, a weak keyword hit in Commands sat above
+    // an exact label match in Go to — and since the keyboard starts on the first
+    // row, Enter ran the wrong thing (searching "material" ran a placeholder).
+    // While searching, the section holding the best match comes first.
+    if (query.trim()) sectioned.sort((a, b) => results.indexOf(a.items[0]) - results.indexOf(b.items[0]))
+    out.push(...sectioned)
+    // Each group's first row index, so a row can name its own position without a
+    // counter mutated during render.
+    let start = 0
+    return out.map((g) => {
+      const withStart = { ...g, start }
+      start += g.items.length
+      return withStart
+    })
+    // SECTION_LABEL is rebuilt every render from `t`; the labels it carries are
+    // presentational and never affect order or identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suggested, results, query, t])
+
+  const flat = useMemo(() => groups.flatMap((g) => g.items), [groups])
 
 
   // Keep the selection in view without scrolling the whole dialog.
@@ -101,23 +136,6 @@ export function CommandPalette({
       run(flat[active])
     }
   }
-
-  const groups: { key: string; label: string; items: PaletteItem[] }[] = []
-  if (suggested.length) groups.push({ key: "suggested", label: SECTION_LABEL.suggested, items: suggested })
-  const sectioned: { key: string; label: string; items: PaletteItem[] }[] = []
-  for (const section of ["command", "goto", "setting"] as CommandSection[]) {
-    const inSection = results.filter((i) => i.section === section)
-    if (inSection.length) sectioned.push({ key: section, label: SECTION_LABEL[section], items: inSection })
-  }
-  // `results` is rank-ordered, but grouping by section re-buries it: with a
-  // fixed command→goto→setting order, a weak keyword hit in Commands sat above
-  // an exact label match in Go to — and since the keyboard starts on the first
-  // row, Enter ran the wrong thing (searching "material" ran a placeholder).
-  // While searching, the section holding the best match comes first.
-  if (query.trim()) sectioned.sort((a, b) => results.indexOf(a.items[0]) - results.indexOf(b.items[0]))
-  groups.push(...sectioned)
-
-  let index = 0
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -154,8 +172,8 @@ export function CommandPalette({
               <div className="flex h-7 items-end px-3.5 pb-1 font-mono text-xs tracking-[0.14em] text-muted-foreground uppercase">
                 {g.label}
               </div>
-              {g.items.map((item) => {
-                const i = index++
+              {g.items.map((item, k) => {
+                const i = g.start + k
                 return (
                   <button
                     key={item.id}
