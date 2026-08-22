@@ -561,6 +561,14 @@ function SceneStage({
         // correction is what stuttered on mobile Safari.
         const jumped = lastCurrent >= 0 && Math.abs(p.current - lastCurrent) > 0.35
         lastCurrent = p.current
+        // Arm the onset correction on EVERY start, not only the starts that
+        // needed a stamp — see the editor's audio clock for the full note. In
+        // short: starting at frame 0 leaves both clocks at 0, so the 0.15
+        // threshold never trips, nothing armed, and onPlaying returned at its
+        // !stampArmed guard. The cold-buffer decode latency then rode the whole
+        // take as a fixed offset. onPlaying's own 0.05 guard keeps plain resumes
+        // seek-free.
+        if (p.playing && wasPaused) stampArmed = true
         if (((p.playing && wasPaused) && Math.abs(audio.currentTime - p.current) > 0.15) || jumped) {
           audio.currentTime = p.current
           stampArmed = true

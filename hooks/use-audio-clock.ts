@@ -116,6 +116,21 @@ export function useAudioClock({
         // Stamp only when the clocks genuinely disagree (scrubbed while
         // stopped, loop wrap) — a resume with clocks already close plays on
         // untouched, seek-free.
+        //
+        // Arm the onset correction on EVERY start, not only the starts that
+        // needed a stamp. Arming used to live inside the branch below, which
+        // meant the most common start of all never armed it: pressing play at
+        // frame 0 leaves audio.currentTime and p.current both at 0, so the 0.15
+        // threshold cannot trip. Sound still begins well after play() on a cold
+        // buffer, and with nothing armed onPlaying returned at its !stampArmed
+        // guard — so that decode latency became a fixed offset for the whole
+        // take, since free-run never corrects itself afterwards. That is the
+        // "audio starts late from frame 0" report.
+        //
+        // Plain resumes stay safe: onPlaying only moves the clock when the two
+        // are more than 0.05s apart, and a resume is already well inside that,
+        // so it still does not flush the decoder or clip the first beat.
+        if (!wasPlaying) stampArmed = true
         if ((!wasPlaying && Math.abs(audio.currentTime - p.current) > 0.15) || (!audio.seeking && jumped)) {
           audio.currentTime = p.current
           stampArmed = true
