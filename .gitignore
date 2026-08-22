@@ -46,7 +46,6 @@ next-env.d.ts
 # Motions and models dropped at the root or into public/models to reproduce a
 # bug. public/animations and the default scene's model are ours and stay tracked.
 /*.vmd
-/public/models/伊格蕾塔皮肤/
 
 # Authoring aids for porting a .blend into shader graphs. Local by choice:
 # they read files that live on whoever is doing the port, and what they emit is
