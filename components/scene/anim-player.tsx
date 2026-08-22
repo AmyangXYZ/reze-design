@@ -111,6 +111,14 @@ export const AnimPlayer = memo(function AnimPlayer({
    *
    * 0 disables the write entirely — a closed fold has nothing to move, and the
    * cheapest write is the one that does not happen.
+   *
+   * PASS IT ONLY WHEN SOMETHING READS IT. Custom properties inherit, so each
+   * write invalidates style for this whole panel — and the root is the
+   * backdrop-blur pane, so on WebKit that is a blur recomposite too, which is
+   * the cost the bar's own 4Hz throttle exists to avoid. A caller whose `below`
+   * takes the frame through playheadDrawRef (a canvas, say) wants no axis at
+   * all: the editor passed one for a lanes view it no longer renders, and paid
+   * a full-subtree style recalc every frame for a variable nothing consumed.
    */
   axisDuration?: number
   /** Filled in with this transport's scrub, for a caller that draws its own

@@ -6406,7 +6406,14 @@ export default function Lab() {
                   ) : undefined
                 }
                 unfolded={timelineUnfolded}
-                axisDuration={animDuration}
+                // No axisDuration. It exists only to publish `--playhead` for a
+                // `below` that positions itself in CSS, and `below` here is the
+                // dopesheet, which takes the frame straight off the tick through
+                // playheadDrawRef instead. Passing it wrote a custom property on
+                // this panel's root sixty times a second with nothing reading it
+                // — and because custom properties inherit, each write invalidated
+                // style for the whole transport subtree, inside the backdrop-blur
+                // pane this file is otherwise careful never to dirty.
                 scrubRef={scrubRef}
                 playheadDrawRef={dopePlayheadRef}
                 below={
