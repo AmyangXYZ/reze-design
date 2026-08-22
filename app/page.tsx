@@ -369,7 +369,7 @@ function seedMorphs(scene: Scene): Record<string, { name: string; src: File | st
 const TRANSFORM_LABEL: Record<SceneSettings["view"]["transform"], string> = {
   standard: "Standard",
   filmic: "Filmic",
-  agx: "AgX", // not offered in the picker; a document could still carry it
+  agx: "AgX", // the ZZZ pack's transform, and offered in the picker for it
 }
 
 const seedMusic = (scene: Scene): { name: string; url: string } | null =>
@@ -1064,7 +1064,7 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       icon: Sparkles,
       label: l.cmd.look,
       altLabels: [alt.cmd.look],
-      // Both packs' names in both languages: someone reaching for this is
+      // Every pack's name in both languages: someone reaching for this is
       // thinking "wuwa", not "rendering style".
       keywords: [
         "wuwa",
@@ -1074,6 +1074,9 @@ function commandsFor(t: Dictionary): PaletteItem[] {
         "aether",
         "gazer",
         "深空之眼",
+        "zzz",
+        "zenless",
+        "绝区零",
         "style",
         "look",
         "preset",
@@ -2869,14 +2872,17 @@ export default function Lab() {
    * Switch the whole scene to a rendering style.
    *
    * Role for role, across every model: a body group takes the pack's body graph,
-   * a hair group its hair graph. A group whose look belongs to neither pack — a
+   * a hair group its hair graph. A group no pack has an opinion about — a
    * community graph, or the neutral default — is left alone, because the user
    * chose it and a style switch is not a reset.
    *
-   * The view transform comes with it. That is not a preference the pack is
-   * overreaching into: WuWa is authored under Standard and reads washed under
-   * Filmic, so applying the graphs without it delivers a look nobody tuned.
-   * World and sun stay untouched — those are the scene's art direction.
+   * The view transform and the world come with it, and neither is the pack
+   * overreaching. WuWa is authored under Standard and reads washed under Filmic;
+   * ZZZ is authored under AgX against a near-black world, and its ramp is
+   * quantised where that world puts the lighting closure — apply its graphs over
+   * AG's magenta and everything reads fully lit. Applying the graphs alone
+   * delivers a look nobody tuned. The SUN stays the user's: direction and
+   * strength are staging, and a style switch has no business moving the key light.
    */
   /** Which style the scene is wearing, for the shelf's tick. Null when it wears
    *  neither whole — a half-switched scene is genuinely neither. */
@@ -5877,9 +5883,11 @@ export default function Lab() {
                             of it: the transform maps the render to the display, the
                             grade then works on its result. It is a LOOK
                             decision, not a preference: Filmic rolls highlights off
-                            and desaturates doing it, Standard passes through what
-                            the shader computed, which is what NPR work expects and
-                            what the Wuthering Waves references render under. */}
+                            and desaturates doing it, AgX further and with a longer
+                            toe, Standard passes through what the shader computed.
+                            Which one is right is the reference's to say — Wuthering
+                            Waves is Standard, Zenless Zone Zero is AgX, and a graph
+                            authored under one carries compensation for it. */}
                         <div className="mb-1 flex min-w-0 items-center justify-between gap-2">
                           <span className="shrink-0 text-xs">{t.lab.ctl.transform}</span>
                           <Select
@@ -5892,14 +5900,17 @@ export default function Lab() {
                             <SelectContent>
                               {/* Blender's own names — translating them would make
                                   the preset they were authored against harder to find. */}
-                              {/* AgX is not offered. It is built for photographic
-                                  HDR — it rolls highlights off and desaturates
-                                  doing it, which is exactly the colour an anime
-                                  look is made of, and neither reference project
-                                  renders under it. The engine still supports it;
-                                  nothing here asks for it. */}
+                              {/* AgX was withheld here while no reference project
+                                  rendered under it: it is built for photographic
+                                  HDR and desaturates rolling highlights off, which
+                                  is the colour an anime look is made of. The ZZZ
+                                  .blend renders under it, and its graphs push
+                                  saturation to compensate — so the pack sets it,
+                                  and a value the picker cannot show is a blank
+                                  Select. Offered, last, and still not the default. */}
                               <SelectItem value="standard">Standard</SelectItem>
                               <SelectItem value="filmic">Filmic</SelectItem>
+                              <SelectItem value="agx">AgX</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>

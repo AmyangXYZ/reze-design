@@ -6111,5 +6111,1888 @@
     }
    }
   }
+ },
+ {
+  "id": "02500970-5172-5610-8bad-eba6f39f6b3b",
+  "kind": "graph",
+  "name": "ZZZ Body",
+  "author": "amyang-xyz",
+  "description": "Skin — a hard, high terminator with the lit half pushed warm and the shadow half drained of saturation rather than darkened. Pure node graph — no textures beyond the material's own, so it applies to any model. Zenless Zone Zero-like / 仿绝区零. Original author: 世界的歌.",
+  "tags": [
+   "zenless-zone-zero",
+   "zzz",
+   "npr",
+   "anime",
+   "body"
+  ],
+  "version": 1,
+  "payload": {
+   "graph": {
+    "version": 1,
+    "name": "ZZZ Body",
+    "tags": [
+     "body"
+    ],
+    "nodes": [
+     {
+      "id": "tex",
+      "type": "texture"
+     },
+     {
+      "id": "mat_diffuse",
+      "type": "material_diffuse"
+     },
+     {
+      "id": "base",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "str",
+      "type": "shader_to_rgb_diffuse"
+     },
+     {
+      "id": "band",
+      "type": "map_range/smoothstep",
+      "inputs": {
+       "from_min": 0.25,
+       "from_max": 0.377,
+       "to_min": 0.0,
+       "to_max": 1.0
+      }
+     },
+     {
+      "id": "mask",
+      "type": "invert",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lit_hs",
+      "type": "hue_sat",
+      "inputs": {
+       "hue": 0.5,
+       "saturation": 1.6,
+       "value": 1.2,
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lit",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 0.5,
+       "b": [
+        1.0,
+        0.7181,
+        0.7181
+       ]
+      }
+     },
+     {
+      "id": "sh_bc",
+      "type": "bright_contrast",
+      "inputs": {
+       "bright": 0.0,
+       "contrast": 0.0
+      }
+     },
+     {
+      "id": "sh_hs",
+      "type": "hue_sat",
+      "inputs": {
+       "hue": 0.5,
+       "saturation": 0.4,
+       "value": 1.2,
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "shadow",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 0.5,
+       "b": [
+        1.0,
+        0.7484,
+        0.7484
+       ]
+      }
+     },
+     {
+      "id": "shaded",
+      "type": "mix/multiply"
+     },
+     {
+      "id": "amb",
+      "type": "combine_color",
+      "inputs": {
+       "r": 0.9952,
+       "g": 0.8394,
+       "b": 1.0
+      }
+     },
+     {
+      "id": "out",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 0.5
+      }
+     }
+    ],
+    "links": [
+     {
+      "from": {
+       "node": "tex",
+       "socket": "color"
+      },
+      "to": {
+       "node": "base",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "mat_diffuse",
+       "socket": "color"
+      },
+      "to": {
+       "node": "base",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "str",
+       "socket": "value"
+      },
+      "to": {
+       "node": "band",
+       "socket": "value"
+      }
+     },
+     {
+      "from": {
+       "node": "band",
+       "socket": "value"
+      },
+      "to": {
+       "node": "mask",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "base",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit_hs",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "lit_hs",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "base",
+       "socket": "color"
+      },
+      "to": {
+       "node": "sh_bc",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "sh_bc",
+       "socket": "color"
+      },
+      "to": {
+       "node": "sh_hs",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "sh_hs",
+       "socket": "color"
+      },
+      "to": {
+       "node": "shadow",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lit",
+       "socket": "color"
+      },
+      "to": {
+       "node": "shaded",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "shadow",
+       "socket": "color"
+      },
+      "to": {
+       "node": "shaded",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "mask",
+       "socket": "color"
+      },
+      "to": {
+       "node": "shaded",
+       "socket": "fac"
+      }
+     },
+     {
+      "from": {
+       "node": "shaded",
+       "socket": "color"
+      },
+      "to": {
+       "node": "out",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "amb",
+       "socket": "color"
+      },
+      "to": {
+       "node": "out",
+       "socket": "b"
+      }
+     }
+    ],
+    "output": {
+     "node": "out",
+     "socket": "color"
+    }
+   }
+  }
+ },
+ {
+  "id": "6aa4ad1f-d46a-5a18-9e00-9766417b89db",
+  "kind": "graph",
+  "name": "ZZZ Face",
+  "author": "amyang-xyz",
+  "description": "The face carries more of its colour into shadow than the body does, and a rosier lit tint, so a cheek turning away reads as turning rather than as dirt. Pure node graph — no textures beyond the material's own, so it applies to any model. Zenless Zone Zero-like / 仿绝区零. Original author: 世界的歌.",
+  "tags": [
+   "zenless-zone-zero",
+   "zzz",
+   "npr",
+   "anime",
+   "face"
+  ],
+  "version": 1,
+  "payload": {
+   "graph": {
+    "version": 1,
+    "name": "ZZZ Face",
+    "tags": [
+     "face"
+    ],
+    "nodes": [
+     {
+      "id": "tex",
+      "type": "texture"
+     },
+     {
+      "id": "mat_diffuse",
+      "type": "material_diffuse"
+     },
+     {
+      "id": "base",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "str",
+      "type": "shader_to_rgb_diffuse"
+     },
+     {
+      "id": "band",
+      "type": "map_range/smoothstep",
+      "inputs": {
+       "from_min": 0.25,
+       "from_max": 0.377,
+       "to_min": 0.0,
+       "to_max": 1.0
+      }
+     },
+     {
+      "id": "mask",
+      "type": "invert",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lit_hs",
+      "type": "hue_sat",
+      "inputs": {
+       "hue": 0.5,
+       "saturation": 1.6,
+       "value": 1.2,
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lit",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 0.5,
+       "b": [
+        1.0,
+        0.6207,
+        0.7035
+       ]
+      }
+     },
+     {
+      "id": "sh_bc",
+      "type": "bright_contrast",
+      "inputs": {
+       "bright": 0.0,
+       "contrast": 0.0
+      }
+     },
+     {
+      "id": "sh_hs",
+      "type": "hue_sat",
+      "inputs": {
+       "hue": 0.5,
+       "saturation": 0.9,
+       "value": 1.2,
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "shadow",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 0.5,
+       "b": [
+        1.0,
+        0.7181,
+        0.7181
+       ]
+      }
+     },
+     {
+      "id": "shaded",
+      "type": "mix/multiply"
+     },
+     {
+      "id": "amb",
+      "type": "combine_color",
+      "inputs": {
+       "r": 0.9952,
+       "g": 0.8394,
+       "b": 1.0
+      }
+     },
+     {
+      "id": "out",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 0.5
+      }
+     }
+    ],
+    "links": [
+     {
+      "from": {
+       "node": "tex",
+       "socket": "color"
+      },
+      "to": {
+       "node": "base",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "mat_diffuse",
+       "socket": "color"
+      },
+      "to": {
+       "node": "base",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "str",
+       "socket": "value"
+      },
+      "to": {
+       "node": "band",
+       "socket": "value"
+      }
+     },
+     {
+      "from": {
+       "node": "band",
+       "socket": "value"
+      },
+      "to": {
+       "node": "mask",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "base",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit_hs",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "lit_hs",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "base",
+       "socket": "color"
+      },
+      "to": {
+       "node": "sh_bc",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "sh_bc",
+       "socket": "color"
+      },
+      "to": {
+       "node": "sh_hs",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "sh_hs",
+       "socket": "color"
+      },
+      "to": {
+       "node": "shadow",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lit",
+       "socket": "color"
+      },
+      "to": {
+       "node": "shaded",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "shadow",
+       "socket": "color"
+      },
+      "to": {
+       "node": "shaded",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "mask",
+       "socket": "color"
+      },
+      "to": {
+       "node": "shaded",
+       "socket": "fac"
+      }
+     },
+     {
+      "from": {
+       "node": "shaded",
+       "socket": "color"
+      },
+      "to": {
+       "node": "out",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "amb",
+       "socket": "color"
+      },
+      "to": {
+       "node": "out",
+       "socket": "b"
+      }
+     }
+    ],
+    "output": {
+     "node": "out",
+     "socket": "color"
+    }
+   }
+  }
+ },
+ {
+  "id": "f08d2d4b-3212-529b-8f7d-1768f0a91e62",
+  "kind": "graph",
+  "name": "ZZZ Hair",
+  "author": "amyang-xyz",
+  "description": "Hair keeps its texture untouched in light and drops to seven tenths value in shadow — no tint either side, so a dyed strand stays the colour it was painted — and takes the model's own sphere map on top, which is where the source puts its highlight. Pure node graph — no textures beyond the material's own, so it applies to any model. Zenless Zone Zero-like / 仿绝区零. Original author: 世界的歌.",
+  "tags": [
+   "zenless-zone-zero",
+   "zzz",
+   "npr",
+   "anime",
+   "hair"
+  ],
+  "version": 1,
+  "payload": {
+   "graph": {
+    "version": 1,
+    "name": "ZZZ Hair",
+    "tags": [
+     "hair"
+    ],
+    "nodes": [
+     {
+      "id": "tex",
+      "type": "texture"
+     },
+     {
+      "id": "mat_diffuse",
+      "type": "material_diffuse"
+     },
+     {
+      "id": "base",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "str",
+      "type": "shader_to_rgb_diffuse"
+     },
+     {
+      "id": "band",
+      "type": "map_range/smoothstep",
+      "inputs": {
+       "from_min": 0.25,
+       "from_max": 0.377,
+       "to_min": 0.0,
+       "to_max": 1.0
+      }
+     },
+     {
+      "id": "mask",
+      "type": "invert",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lit_hs",
+      "type": "hue_sat",
+      "inputs": {
+       "hue": 0.5,
+       "saturation": 1.0,
+       "value": 1.0,
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lit",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 0.5,
+       "b": [
+        1.0,
+        1.0,
+        1.0
+       ]
+      }
+     },
+     {
+      "id": "sh_bc",
+      "type": "bright_contrast",
+      "inputs": {
+       "bright": 0.0,
+       "contrast": 0.0
+      }
+     },
+     {
+      "id": "sh_hs",
+      "type": "hue_sat",
+      "inputs": {
+       "hue": 0.5,
+       "saturation": 1.0,
+       "value": 0.7,
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "shadow",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 0.5,
+       "b": [
+        1.0,
+        1.0,
+        1.0
+       ]
+      }
+     },
+     {
+      "id": "shaded",
+      "type": "mix/multiply"
+     },
+     {
+      "id": "amb",
+      "type": "combine_color",
+      "inputs": {
+       "r": 0.9952,
+       "g": 1.0,
+       "b": 1.0
+      }
+     },
+     {
+      "id": "out",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 0.5
+      }
+     },
+     {
+      "id": "spec",
+      "type": "sphere_map",
+      "inputs": {
+       "strength": 1.2
+      }
+     }
+    ],
+    "links": [
+     {
+      "from": {
+       "node": "tex",
+       "socket": "color"
+      },
+      "to": {
+       "node": "base",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "mat_diffuse",
+       "socket": "color"
+      },
+      "to": {
+       "node": "base",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "str",
+       "socket": "value"
+      },
+      "to": {
+       "node": "band",
+       "socket": "value"
+      }
+     },
+     {
+      "from": {
+       "node": "band",
+       "socket": "value"
+      },
+      "to": {
+       "node": "mask",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "base",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit_hs",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "lit_hs",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "base",
+       "socket": "color"
+      },
+      "to": {
+       "node": "sh_bc",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "sh_bc",
+       "socket": "color"
+      },
+      "to": {
+       "node": "sh_hs",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "sh_hs",
+       "socket": "color"
+      },
+      "to": {
+       "node": "shadow",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lit",
+       "socket": "color"
+      },
+      "to": {
+       "node": "shaded",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "shadow",
+       "socket": "color"
+      },
+      "to": {
+       "node": "shaded",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "mask",
+       "socket": "color"
+      },
+      "to": {
+       "node": "shaded",
+       "socket": "fac"
+      }
+     },
+     {
+      "from": {
+       "node": "shaded",
+       "socket": "color"
+      },
+      "to": {
+       "node": "out",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "amb",
+       "socket": "color"
+      },
+      "to": {
+       "node": "out",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "out",
+       "socket": "color"
+      },
+      "to": {
+       "node": "spec",
+       "socket": "base"
+      }
+     }
+    ],
+    "output": {
+     "node": "spec",
+     "socket": "color"
+    }
+   }
+  }
+ },
+ {
+  "id": "def97e1c-1855-5fe7-bb47-a008e9336d54",
+  "kind": "graph",
+  "name": "ZZZ Eye",
+  "author": "amyang-xyz",
+  "description": "The iris banded like the costume rather than lit like skin, which is what the source does — three tones, hard steps. Pure node graph — no textures beyond the material's own, so it applies to any model. Zenless Zone Zero-like / 仿绝区零. Original author: 世界的歌.",
+  "tags": [
+   "zenless-zone-zero",
+   "zzz",
+   "npr",
+   "anime",
+   "eye"
+  ],
+  "version": 1,
+  "payload": {
+   "graph": {
+    "version": 1,
+    "name": "ZZZ Eye",
+    "tags": [
+     "eye"
+    ],
+    "nodes": [
+     {
+      "id": "tex",
+      "type": "texture"
+     },
+     {
+      "id": "mat_diffuse",
+      "type": "material_diffuse"
+     },
+     {
+      "id": "base",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "str",
+      "type": "shader_to_rgb_diffuse"
+     },
+     {
+      "id": "step_lo",
+      "type": "ramp_constant_aa",
+      "inputs": {
+       "edge": 0.288,
+       "color0": [
+        0,
+        0,
+        0,
+        1
+       ],
+       "color1": [
+        0.3124,
+        0.3124,
+        0.3124,
+        1
+       ]
+      }
+     },
+     {
+      "id": "step_hi",
+      "type": "ramp_constant_aa",
+      "inputs": {
+       "edge": 0.377,
+       "color0": [
+        0,
+        0,
+        0,
+        1
+       ],
+       "color1": [
+        0.6876,
+        0.6876,
+        0.6876,
+        1
+       ]
+      }
+     },
+     {
+      "id": "band",
+      "type": "math/add"
+     },
+     {
+      "id": "mask",
+      "type": "invert",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lit_hs",
+      "type": "hue_sat",
+      "inputs": {
+       "hue": 0.5,
+       "saturation": 1.6,
+       "value": 1.2,
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lit",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 0.5,
+       "b": [
+        1.0,
+        1.0,
+        1.0
+       ]
+      }
+     },
+     {
+      "id": "sh_bc",
+      "type": "bright_contrast",
+      "inputs": {
+       "bright": 0.0,
+       "contrast": 0.0
+      }
+     },
+     {
+      "id": "sh_hs",
+      "type": "hue_sat",
+      "inputs": {
+       "hue": 0.5,
+       "saturation": 0.9,
+       "value": 1.0,
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "shadow",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 0.5,
+       "b": [
+        0.5545,
+        0.5545,
+        0.5545
+       ]
+      }
+     },
+     {
+      "id": "shaded",
+      "type": "mix/multiply"
+     },
+     {
+      "id": "amb",
+      "type": "combine_color",
+      "inputs": {
+       "r": 0.9952,
+       "g": 1.0,
+       "b": 1.0
+      }
+     },
+     {
+      "id": "out",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 0.5
+      }
+     }
+    ],
+    "links": [
+     {
+      "from": {
+       "node": "tex",
+       "socket": "color"
+      },
+      "to": {
+       "node": "base",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "mat_diffuse",
+       "socket": "color"
+      },
+      "to": {
+       "node": "base",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "str",
+       "socket": "value"
+      },
+      "to": {
+       "node": "step_lo",
+       "socket": "fac"
+      }
+     },
+     {
+      "from": {
+       "node": "str",
+       "socket": "value"
+      },
+      "to": {
+       "node": "step_hi",
+       "socket": "fac"
+      }
+     },
+     {
+      "from": {
+       "node": "step_lo",
+       "socket": "fac_out"
+      },
+      "to": {
+       "node": "band",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "step_hi",
+       "socket": "fac_out"
+      },
+      "to": {
+       "node": "band",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "band",
+       "socket": "value"
+      },
+      "to": {
+       "node": "mask",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "base",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit_hs",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "lit_hs",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "base",
+       "socket": "color"
+      },
+      "to": {
+       "node": "sh_bc",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "sh_bc",
+       "socket": "color"
+      },
+      "to": {
+       "node": "sh_hs",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "sh_hs",
+       "socket": "color"
+      },
+      "to": {
+       "node": "shadow",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lit",
+       "socket": "color"
+      },
+      "to": {
+       "node": "shaded",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "shadow",
+       "socket": "color"
+      },
+      "to": {
+       "node": "shaded",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "mask",
+       "socket": "color"
+      },
+      "to": {
+       "node": "shaded",
+       "socket": "fac"
+      }
+     },
+     {
+      "from": {
+       "node": "shaded",
+       "socket": "color"
+      },
+      "to": {
+       "node": "out",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "amb",
+       "socket": "color"
+      },
+      "to": {
+       "node": "out",
+       "socket": "b"
+      }
+     }
+    ],
+    "output": {
+     "node": "out",
+     "socket": "color"
+    }
+   }
+  }
+ },
+ {
+  "id": "9ad28c01-0454-5b89-8d6e-6c89bb5e646a",
+  "kind": "graph",
+  "name": "ZZZ Metal",
+  "author": "amyang-xyz",
+  "description": "Hardware and hair ornaments on the three-tone step, so an edge reads as a step rather than a gradient — the hardest banding in the pack. Pure node graph — no textures beyond the material's own, so it applies to any model. Zenless Zone Zero-like / 仿绝区零. Original author: 世界的歌.",
+  "tags": [
+   "zenless-zone-zero",
+   "zzz",
+   "npr",
+   "anime",
+   "metal"
+  ],
+  "version": 1,
+  "payload": {
+   "graph": {
+    "version": 1,
+    "name": "ZZZ Metal",
+    "tags": [
+     "metal"
+    ],
+    "nodes": [
+     {
+      "id": "tex",
+      "type": "texture"
+     },
+     {
+      "id": "mat_diffuse",
+      "type": "material_diffuse"
+     },
+     {
+      "id": "base",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "str",
+      "type": "shader_to_rgb_diffuse"
+     },
+     {
+      "id": "step_lo",
+      "type": "ramp_constant_aa",
+      "inputs": {
+       "edge": 0.288,
+       "color0": [
+        0,
+        0,
+        0,
+        1
+       ],
+       "color1": [
+        0.3124,
+        0.3124,
+        0.3124,
+        1
+       ]
+      }
+     },
+     {
+      "id": "step_hi",
+      "type": "ramp_constant_aa",
+      "inputs": {
+       "edge": 0.377,
+       "color0": [
+        0,
+        0,
+        0,
+        1
+       ],
+       "color1": [
+        0.6876,
+        0.6876,
+        0.6876,
+        1
+       ]
+      }
+     },
+     {
+      "id": "band",
+      "type": "math/add"
+     },
+     {
+      "id": "mask",
+      "type": "invert",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lit_hs",
+      "type": "hue_sat",
+      "inputs": {
+       "hue": 0.5,
+       "saturation": 1.6,
+       "value": 1.2,
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lit",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 0.5,
+       "b": [
+        1.0,
+        1.0,
+        1.0
+       ]
+      }
+     },
+     {
+      "id": "sh_bc",
+      "type": "bright_contrast",
+      "inputs": {
+       "bright": 0.0,
+       "contrast": 0.0
+      }
+     },
+     {
+      "id": "sh_hs",
+      "type": "hue_sat",
+      "inputs": {
+       "hue": 0.5,
+       "saturation": 0.9,
+       "value": 1.0,
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "shadow",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 0.5,
+       "b": [
+        0.4699,
+        0.4699,
+        0.4699
+       ]
+      }
+     },
+     {
+      "id": "shaded",
+      "type": "mix/multiply"
+     },
+     {
+      "id": "amb",
+      "type": "combine_color",
+      "inputs": {
+       "r": 0.9952,
+       "g": 1.0,
+       "b": 1.0
+      }
+     },
+     {
+      "id": "out",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 0.5
+      }
+     }
+    ],
+    "links": [
+     {
+      "from": {
+       "node": "tex",
+       "socket": "color"
+      },
+      "to": {
+       "node": "base",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "mat_diffuse",
+       "socket": "color"
+      },
+      "to": {
+       "node": "base",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "str",
+       "socket": "value"
+      },
+      "to": {
+       "node": "step_lo",
+       "socket": "fac"
+      }
+     },
+     {
+      "from": {
+       "node": "str",
+       "socket": "value"
+      },
+      "to": {
+       "node": "step_hi",
+       "socket": "fac"
+      }
+     },
+     {
+      "from": {
+       "node": "step_lo",
+       "socket": "fac_out"
+      },
+      "to": {
+       "node": "band",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "step_hi",
+       "socket": "fac_out"
+      },
+      "to": {
+       "node": "band",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "band",
+       "socket": "value"
+      },
+      "to": {
+       "node": "mask",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "base",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit_hs",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "lit_hs",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "base",
+       "socket": "color"
+      },
+      "to": {
+       "node": "sh_bc",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "sh_bc",
+       "socket": "color"
+      },
+      "to": {
+       "node": "sh_hs",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "sh_hs",
+       "socket": "color"
+      },
+      "to": {
+       "node": "shadow",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lit",
+       "socket": "color"
+      },
+      "to": {
+       "node": "shaded",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "shadow",
+       "socket": "color"
+      },
+      "to": {
+       "node": "shaded",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "mask",
+       "socket": "color"
+      },
+      "to": {
+       "node": "shaded",
+       "socket": "fac"
+      }
+     },
+     {
+      "from": {
+       "node": "shaded",
+       "socket": "color"
+      },
+      "to": {
+       "node": "out",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "amb",
+       "socket": "color"
+      },
+      "to": {
+       "node": "out",
+       "socket": "b"
+      }
+     }
+    ],
+    "output": {
+     "node": "out",
+     "socket": "color"
+    }
+   }
+  }
+ },
+ {
+  "id": "9842f6af-6d19-5f12-aa2d-aa700101ccac",
+  "kind": "graph",
+  "name": "ZZZ Cloth",
+  "author": "amyang-xyz",
+  "description": "Costume cloth on the three-tone step — a fold reads as two hard edges rather than a gradient — over a base lifted before the shadow tint so the weave survives it. Pure node graph — no textures beyond the material's own, so it applies to any model. Zenless Zone Zero-like / 仿绝区零. Original author: 世界的歌.",
+  "tags": [
+   "zenless-zone-zero",
+   "zzz",
+   "npr",
+   "anime",
+   "cloth_smooth"
+  ],
+  "version": 1,
+  "payload": {
+   "graph": {
+    "version": 1,
+    "name": "ZZZ Cloth",
+    "tags": [
+     "cloth_smooth"
+    ],
+    "nodes": [
+     {
+      "id": "tex",
+      "type": "texture"
+     },
+     {
+      "id": "mat_diffuse",
+      "type": "material_diffuse"
+     },
+     {
+      "id": "base",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "str",
+      "type": "shader_to_rgb_diffuse"
+     },
+     {
+      "id": "step_lo",
+      "type": "ramp_constant_aa",
+      "inputs": {
+       "edge": 0.288,
+       "color0": [
+        0,
+        0,
+        0,
+        1
+       ],
+       "color1": [
+        0.3124,
+        0.3124,
+        0.3124,
+        1
+       ]
+      }
+     },
+     {
+      "id": "step_hi",
+      "type": "ramp_constant_aa",
+      "inputs": {
+       "edge": 0.377,
+       "color0": [
+        0,
+        0,
+        0,
+        1
+       ],
+       "color1": [
+        0.6876,
+        0.6876,
+        0.6876,
+        1
+       ]
+      }
+     },
+     {
+      "id": "band",
+      "type": "math/add"
+     },
+     {
+      "id": "mask",
+      "type": "invert",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lit_hs",
+      "type": "hue_sat",
+      "inputs": {
+       "hue": 0.5,
+       "saturation": 1.6,
+       "value": 1.2,
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lit",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 0.5,
+       "b": [
+        1.0,
+        1.0,
+        1.0
+       ]
+      }
+     },
+     {
+      "id": "sh_bc",
+      "type": "bright_contrast",
+      "inputs": {
+       "bright": 0.2,
+       "contrast": 0.0
+      }
+     },
+     {
+      "id": "sh_hs",
+      "type": "hue_sat",
+      "inputs": {
+       "hue": 0.5,
+       "saturation": 0.8,
+       "value": 1.3,
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "shadow",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 0.5,
+       "b": [
+        0.4267,
+        0.4267,
+        0.4267
+       ]
+      }
+     },
+     {
+      "id": "shaded",
+      "type": "mix/multiply"
+     },
+     {
+      "id": "amb",
+      "type": "combine_color",
+      "inputs": {
+       "r": 0.9952,
+       "g": 0.8394,
+       "b": 1.0
+      }
+     },
+     {
+      "id": "out",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 0.5
+      }
+     }
+    ],
+    "links": [
+     {
+      "from": {
+       "node": "tex",
+       "socket": "color"
+      },
+      "to": {
+       "node": "base",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "mat_diffuse",
+       "socket": "color"
+      },
+      "to": {
+       "node": "base",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "str",
+       "socket": "value"
+      },
+      "to": {
+       "node": "step_lo",
+       "socket": "fac"
+      }
+     },
+     {
+      "from": {
+       "node": "str",
+       "socket": "value"
+      },
+      "to": {
+       "node": "step_hi",
+       "socket": "fac"
+      }
+     },
+     {
+      "from": {
+       "node": "step_lo",
+       "socket": "fac_out"
+      },
+      "to": {
+       "node": "band",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "step_hi",
+       "socket": "fac_out"
+      },
+      "to": {
+       "node": "band",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "band",
+       "socket": "value"
+      },
+      "to": {
+       "node": "mask",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "base",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit_hs",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "lit_hs",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "base",
+       "socket": "color"
+      },
+      "to": {
+       "node": "sh_bc",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "sh_bc",
+       "socket": "color"
+      },
+      "to": {
+       "node": "sh_hs",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "sh_hs",
+       "socket": "color"
+      },
+      "to": {
+       "node": "shadow",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "lit",
+       "socket": "color"
+      },
+      "to": {
+       "node": "shaded",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "shadow",
+       "socket": "color"
+      },
+      "to": {
+       "node": "shaded",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "mask",
+       "socket": "color"
+      },
+      "to": {
+       "node": "shaded",
+       "socket": "fac"
+      }
+     },
+     {
+      "from": {
+       "node": "shaded",
+       "socket": "color"
+      },
+      "to": {
+       "node": "out",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "amb",
+       "socket": "color"
+      },
+      "to": {
+       "node": "out",
+       "socket": "b"
+      }
+     }
+    ],
+    "output": {
+     "node": "out",
+     "socket": "color"
+    }
+   }
+  }
  }
 ]

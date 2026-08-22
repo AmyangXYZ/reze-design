@@ -132,24 +132,49 @@ export function sameGraphLook(a: ShaderGraph | undefined, b: ShaderGraph | undef
 // however well its own ramp was tuned. Each pack carries the world its look was
 // authored under. The sun stays the user's: direction and strength are staging,
 // and a style switch has no business moving the key light.
+//
+// ZZZ shows how far the world reaches. Its .blend sits under a near-black world
+// and quantises the lighting closure at 0.28, so ambient is most of what decides
+// where the terminator lands — apply those graphs over the magenta world AG wants
+// and every surface reads fully lit, ramp untouched. Its world is not a backdrop
+// preference; it is the other half of the ramp.
 
-export type LookPack = "ag" | "wuwa"
+export type LookPack = "ag" | "wuwa" | "zzz"
 
 /** Menu order — declared, not derived, because it is a curated shelf. */
-export const LOOK_PACK_ORDER: LookPack[] = ["ag", "wuwa"]
+export const LOOK_PACK_ORDER: LookPack[] = ["ag", "wuwa", "zzz"]
 
 export const LOOK_PACKS: Record<
   LookPack,
-  { tag: string; transform: "standard" | "filmic"; exposure: number; world: { color: string; strength: number } }
+  {
+    tag: string
+    transform: "standard" | "filmic" | "agx"
+    exposure: number
+    world: { color: string; strength: number }
+  }
 > = {
   ag: { tag: "aether-gazer", transform: "filmic", exposure: 0.6, world: { color: "#ed6aff", strength: 0.66 } },
   wuwa: { tag: "wuthering-waves", transform: "standard", exposure: 0, world: { color: "#fdf2f8", strength: 0.36 } },
+  // NOT AgX, though the .blend renders under one. The engine carries Blender's
+  // AgX_Base_sRGB cube, but the source's transform is AgX High Contrast, and the
+  // Look is most of what makes that image read: base AgX alone is the flattest,
+  // greyest transform here, and the pack under it came out dark and washed —
+  // which is the opposite of the thing being ported. Filmic is Medium High
+  // Contrast, so it has the S-curve base AgX is missing, and it is the closer of
+  // the two to what the .blend actually shows. AgX is offered in the Tone picker
+  // regardless; this pack is the reason it went back in, and it is worth trying
+  // if the High Contrast grade ever lands as a colour grade.
+  //
+  // The world is the darkest of the three, at 0.122 linear, and the ramps are
+  // quantised against exactly that — but it is not the .blend's own 0.0509. That
+  // world plus the app's 2.0 sun crushed everything the key did not face.
+  zzz: { tag: "zenless-zone-zero", transform: "filmic", exposure: 0.5, world: { color: "#626262", strength: 1 } },
 }
 
-// Roles a pack may not cover. WuWa has one cloth look where AG has three, so a
-// rough-cloth or stockings group lands on the cloth graph rather than being left
-// behind on the other pack's — the group keeps its own alpha mode either way,
-// which is what actually made stockings work.
+// Roles a pack may not cover. WuWa and ZZZ have one cloth look where AG has
+// three, so a rough-cloth or stockings group lands on the cloth graph rather than
+// being left behind on another pack's — the group keeps its own alpha mode either
+// way, which is what actually made stockings work.
 const ROLE_FALLBACK: Record<string, string> = {
   cloth_rough: "cloth_smooth",
   stockings: "cloth_smooth",

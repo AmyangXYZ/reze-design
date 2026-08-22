@@ -240,18 +240,20 @@ not a setting.
 ## 1.7 The look
 
 **The quickest way to change everything: press ⌘K and type a rendering style.**
-The two built-in sets — *Aether Gazer* and *Wuthering Waves* — are whole styles,
-and picking one restyles every group in the scene role for role: the body group
-takes that set's body look, the hair group its hair look. Groups the set has no
-opinion about are left alone, so a stage material, a look you built yourself and
-the neutral default all survive a switch.
+The three built-in sets — *Aether Gazer*, *Wuthering Waves* and *Zenless Zone
+Zero* — are whole styles, and picking one restyles every group in the scene role
+for role: the body group takes that set's body look, the hair group its hair look.
+Groups the set has no opinion about are left alone, so a stage material, a look
+you built yourself and the neutral default all survive a switch.
 
 Two scene settings travel with it, because they are part of the look rather than
-beside it: the **view transform** (WuWa is authored under Standard, AG under
-Filmic, and reading either under the other's is a different picture) and the
-**world light**, since every surface multiplies ambient and a world tuned for one
-set fights the other. Your sun is left alone — where the key light sits is
-staging, and a style switch has no business moving it.
+beside it: the **view transform** (WuWa is authored under Standard, AG and ZZZ
+under Filmic at different exposures, and reading any of them under another's is a
+different picture) and the **world light**, since every surface multiplies ambient
+and a world tuned for one set fights the other. ZZZ is the clearest case of the
+second: it is quantised against the darkest world of the three, so over AG's
+magenta every surface reads fully lit however untouched its ramp is. Your sun is left alone — where the key
+light sits is staging, and a style switch has no business moving it.
 
 The choice is remembered, so the next model you load arrives in the same style
 instead of the set it was auto-grouped into. **Restore default scene** clears it
@@ -1037,8 +1039,8 @@ node graph in the Blender idiom — nodes with typed sockets, connected by links
 compiled to WGSL and applied live.
 
 From the Materials tab, click a group's graph name, **Browse all…**, then **Edit
-graph** on any entry. The built-ins come as two sets plus a neutral base, and all
-of them are reference implementations to fork:
+graph** on any entry. The built-ins come as three sets plus a neutral base, and
+all of them are reference implementations to fork:
 
 - **AG** — *AG Body*, *AG Eye*, *AG Face*, *AG Hair*, *AG Metal*, *AG Rough
   Cloth*, *AG Smooth Cloth*, *AG Stockings*. Eight worked examples of specific
@@ -1048,11 +1050,20 @@ of them are reference implementations to fork:
   closure: a half-Lambert through a narrow soft threshold, a shadow that passes
   through a warm band on its way to lit, the model's own sphere-map highlight,
   and a rim. Start here for a hard-terminator anime look.
+- **ZZZ** — *ZZZ Body*, *ZZZ Cloth*, *ZZZ Eye*, *ZZZ Face*, *ZZZ Hair*, *ZZZ
+  Metal*. One recipe with six sets of numbers, which is how the source .blend is
+  built: the lighting closure quantised into a mask, and the texture split into a
+  lit branch and a shadow branch that are tinted separately and multiplied back
+  together through it. Body, face and hair take a smoothstep terminator; cloth,
+  eye and metal take a three-tone hard step. Hair adds `sphere_map` on top, which
+  is where the source keeps its highlight — so hair reads flat on a model whose
+  hair material carries no sphere map. Read this one for how few nodes a complete
+  look can be.
 The neutral base is not in the library: it is what an ungrouped material already
 renders and what a new group and a new graph both start from, so listing it as
 something to apply would have been a shelf copy of the blank page.
 
-Neither set carries an image of its own. A preset reads the material's own
+No set carries an image of its own. A preset reads the material's own
 texture and sphere map, so it applies to any model — which is the property to
 preserve if you publish one.
 
@@ -1338,9 +1349,12 @@ Two things still differ, and both change values rather than structure.
 **EEVEE Next lighting does not exist here** — no screen-traced GI, no virtual
 shadow maps, no probes — so a preset tuned against probe bounce reads flatter and
 wants re-tuning by eye. And **the view transform is yours to set**: the Tone
-controls in the Post row carry Standard and Filmic, and a `.blend` rendering under
-Standard will not match until you match it. Anime and NPR work is normally
-Standard; the colours the graph computes are the colours that land.
+controls in the Post row carry Standard, Filmic and AgX, and a `.blend` rendering
+under one will not match until you match it. Anime and NPR work is often
+Standard, where the colours the graph computes are the colours that land — but
+match the source rather than the convention. AgX is Blender's own
+`AgX_Base_sRGB` cube, so a `.blend` under base AgX transfers exactly; the Looks
+layered on top of it, High Contrast among them, have no equivalent here.
 
 **Two idioms transfer.** A material built on a diffuse closure — Shader to RGB
 into a ramp — maps onto `shader_to_rgb`/`shader_to_rgb_diffuse` directly. A
