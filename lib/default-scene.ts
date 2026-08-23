@@ -94,24 +94,31 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
     dof: DEFAULT_DOF,
     outline: DEFAULT_OUTLINE,
     view: DEFAULT_VIEW,
-    // Both are ADDITIVE-friendly and sit on different mounts — Shining Stars is
-    // a background field, Teleportation is particles and lights — so neither can
-    // paint over the other and the order here is free. It is not free in
-    // general: a full-cover backdrop has to come first or it erases what is
-    // under it.
+    // Three, on three different mounts — Shining Stars is a background field,
+    // Hand Ribbon is particles and trails, Teleportation is particles and the
+    // material dissolve — so none can paint over another and the order between
+    // them is free. It is not free in general: a full-cover backdrop has to come
+    // first or it erases what is under it.
     //
-    // TELEPORTATION IS THE DEMO NOW, in Hand Ribbon's place. It is the one
-    // effect that reaches all the way down: the material shell takes the model
-    // apart, the particle pass draws what leaves, three declared lights land it
-    // on the floor, and the whole of it is timed by the engine on the scene
-    // clock. A visitor who watches for five seconds has seen the engine do
-    // something no shader on its own can.
+    // TELEPORTATION IS WHAT THE DEMO IS FOR. It is the one effect that reaches
+    // all the way down: the material shell takes the model apart, the particle
+    // pass draws what leaves, three declared lights land the cloud on the floor,
+    // and the engine times the whole of it on the scene clock. A visitor who
+    // watches for five seconds has seen the engine do something no shader on its
+    // own can.
     //
-    // The two together would also fit, but only just: Teleportation declares
-    // eight anchors and Hand Ribbon two of the same eight, which is exactly the
-    // per-SCENE cap — and the ribbons would go on trailing from wrists that are
-    // not there while she is gone.
-    background: { color: "#4b004f", effects: ["Shining Stars", "Teleportation"] },
+    // THE SCENE SITS EXACTLY ON THE ANCHOR CAP, and that is worth knowing before
+    // adding a fourth: Teleportation declares eight bones and Hand Ribbon two of
+    // the same eight, which deduplicate to 8 of 8 per SCENE. One more anchored
+    // effect and the table starts refusing bones — it says so in the console,
+    // and the effect that loses one draws that limb wrong rather than failing.
+    // Lights are 5 of 16 and particles 7,320, which are not close to anything.
+    //
+    // The ribbons keep trailing through the second she is gone, from wrists the
+    // dissolve has taken. That is deliberate: her motion is still there in the
+    // clip, and a pair of neon bands carrying on where she was is the clearest
+    // possible statement that she is coming back.
+    background: { color: "#4b004f", effects: ["Shining Stars", "Hand Ribbon", "Teleportation"] },
     grade: { preset: "Neutral", intensity: 1 },
     ground: { color: "#c800de", size: 160, opacity: 0.42, shadow: true, grid: "#fafaf9", gridEnabled: true },
     physics: DEFAULT_PHYSICS,
