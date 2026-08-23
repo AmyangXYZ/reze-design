@@ -9,7 +9,6 @@
       "neutral",
       "clean"
     ],
-    "version": 1,
     "payload": {
       "spec": {
         "shadows": [
@@ -41,7 +40,6 @@
       "horror",
       "anime"
     ],
-    "version": 1,
     "payload": {
       "spec": {
         "shadows": [
@@ -75,7 +73,6 @@
       "neon",
       "saturated"
     ],
-    "version": 1,
     "payload": {
       "spec": {
         "shadows": [
@@ -110,7 +107,6 @@
       "holy",
       "divine"
     ],
-    "version": 1,
     "payload": {
       "spec": {
         "shadows": [
@@ -145,7 +141,6 @@
       "blue",
       "cyan"
     ],
-    "version": 1,
     "payload": {
       "spec": {
         "shadows": [
@@ -179,7 +174,6 @@
       "soft",
       "romantic"
     ],
-    "version": 1,
     "payload": {
       "spec": {
         "shadows": [

@@ -200,7 +200,6 @@ export async function GET(request: Request) {
       author: schema.libraryItems.author,
       description: schema.libraryItems.description,
       tags: schema.libraryItems.tags,
-      version: schema.libraryItems.version,
       payload: schema.libraryItems.payload,
       ownerId: schema.libraryItems.ownerId,
     })
@@ -239,7 +238,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid JSON" }, { status: 400 })
   }
 
-  const { id, kind, name, description, tags, payload, credits, changelog, bundleKey, bundleBytes, posterKey, forkedFromId, uses } =
+  // No `changelog`: it described what a new VERSION changed, and there are no
+  // versions to describe. A client still sending one is simply ignored.
+  const { id, kind, name, description, tags, payload, credits, bundleKey, bundleBytes, posterKey, forkedFromId, uses } =
     (body ?? {}) as Record<string, unknown>
   if (typeof kind !== "string" || !KINDS.includes(kind as LibraryKind)) {
     return NextResponse.json({ error: "unknown kind" }, { status: 400 })
@@ -286,14 +287,19 @@ export async function POST(request: Request) {
   // Short id, because the id IS the share URL. No version rows: nothing imports a
   // scene, so there is nothing for anyone to pin.
   if (kind === "scene") {
-    // Pins the client says this document makes. Filtered against real version rows
-    // below rather than trusted — a bad edge would inflate someone's usage count.
+    // Pins the client says this document makes. Filtered against real items below
+    // rather than trusted — a bad edge would inflate someone's usage count.
     const pins = Array.isArray(uses)
-      ? uses.filter(
-          (u): u is { id: string; version: number } =>
-            typeof u === "object" && u !== null && typeof (u as { id: unknown }).id === "string" &&
-            Number.isInteger((u as { version: unknown }).version),
-        )
+      ? [
+          ...new Set(
+            uses
+              .filter(
+                (u): u is { id: string } =>
+                  typeof u === "object" && u !== null && typeof (u as { id: unknown }).id === "string",
+              )
+              .map((u) => u.id),
+          ),
+        ]
       : []
 
     const [scene] = await db
@@ -317,30 +323,18 @@ export async function POST(request: Request) {
 
     if (pins.length > 0) {
       const real = await db
-        .select({ itemId: schema.libraryItemVersions.itemId, version: schema.libraryItemVersions.version })
-        .from(schema.libraryItemVersions)
-        .where(
-          inArray(
-            schema.libraryItemVersions.itemId,
-            pins.map((p) => p.id),
-          ),
-        )
-      const valid = pins.filter((p) => real.some((r) => r.itemId === p.id && r.version === p.version))
+        .select({ id: schema.libraryItems.id })
+        .from(schema.libraryItems)
+        .where(inArray(schema.libraryItems.id, pins))
+      const valid = real.map((r) => r.id)
       if (valid.length > 0) {
         await db.transaction(async (tx) => {
-          await tx
-            .insert(schema.sceneUses)
-            .values(valid.map((p) => ({ sceneId: scene.id, itemId: p.id, itemVersion: p.version })))
+          await tx.insert(schema.sceneUses).values(valid.map((id) => ({ sceneId: scene.id, itemId: id })))
           // Denormalised so a library card needs no join.
           await tx
             .update(schema.libraryItems)
             .set({ usageCount: sql`${schema.libraryItems.usageCount} + 1` })
-            .where(
-              inArray(
-                schema.libraryItems.id,
-                valid.map((p) => p.id),
-              ),
-            )
+            .where(inArray(schema.libraryItems.id, valid))
         })
       }
     }
@@ -359,8 +353,9 @@ export async function POST(request: Request) {
 
   // ── Presets ──────────────────────────────────────────────────────────────────
   // The client sends the draft's uuid, so a preset is the SAME entity before and
-  // after it goes public. Publishing over one you already own writes the next
-  // immutable version rather than a second item.
+  // after it goes public. Publishing over one you already own REPLACES it rather
+  // than making a second item — and every scene pinning it follows, which is the
+  // whole of what dropping versions changed.
   const itemId = typeof id === "string" && UUID.test(id) ? id : crypto.randomUUID()
 
   // One name per kind, for everybody. Not per author: the editor resolves a look
@@ -373,46 +368,38 @@ export async function POST(request: Request) {
   const clash = await nameClash(kind as LibraryKind, wanted, itemId)
   if (clash) return NextResponse.json({ error: "name-taken", taken: clash }, { status: 409 })
   const [existing] = await db
-    .select({ ownerId: schema.libraryItems.ownerId, version: schema.libraryItems.version })
+    .select({ ownerId: schema.libraryItems.ownerId })
     .from(schema.libraryItems)
     .where(eq(schema.libraryItems.id, itemId))
     .limit(1)
   if (existing && existing.ownerId !== session.user.id) {
     return NextResponse.json({ error: "not yours" }, { status: 403 })
   }
-  const version = existing ? existing.version + 1 : 1
 
   let row
   try {
-    row = await db.transaction(async (tx) => {
-      const [item] = existing
-        ? await tx
+    row = existing
+      ? (
+          await db
             .update(schema.libraryItems)
-            .set({ ...common, version, deletedAt: null, updatedAt: new Date() })
+            .set({ ...common, deletedAt: null, updatedAt: new Date() })
             .where(eq(schema.libraryItems.id, itemId))
             .returning()
-        : await tx
+        )[0]
+      : (
+          await db
             .insert(schema.libraryItems)
             .values({
               ...common,
               id: itemId,
               kind: kind as LibraryKind,
-              version,
               visibility: "public",
               // Derived from someone else's preset — their item is untouched, this
               // is yours, and the trail back to them is kept.
               forkedFromId: typeof forkedFromId === "string" ? forkedFromId : null,
             })
             .returning()
-      // Immutable: written once, never updated. This row is what a scene pins.
-      await tx.insert(schema.libraryItemVersions).values({
-        itemId,
-        version,
-        payload: stored as never,
-        changelog: text(changelog, MAX_DESCRIPTION) || null,
-      })
-      return item
-    })
+        )[0]
   } catch {
     // The unique (owner, kind, name) index — you already have one by that name.
     return NextResponse.json({ error: "name-taken" }, { status: 409 })

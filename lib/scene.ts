@@ -73,14 +73,18 @@ export type SceneAssets = {
 }
 
 /**
- * A pin to a published library item, at an exact immutable version.
+ * A pin to a published library item — the id, and nothing else.
  *
- * Versions never change once published, so a pinned scene renders the same
- * forever while its author keeps iterating — and one pin costs a few bytes where
- * a snapshot costs kilobytes. Resolution is two-tier: built-ins ship in the app
- * bundle and resolve with no network, everything else through /api/library/resolve.
+ * It used to carry a version, and resolved to that exact immutable payload. It
+ * resolves to whatever the item IS now. A pin costs a few bytes where a snapshot
+ * costs kilobytes, and resolution is two-tier: built-ins ship in the app bundle
+ * and resolve with no network, everything else through /api/library/resolve.
+ *
+ * Documents written before this still carry `{ id, version }`. They keep
+ * parsing — the version is simply ignored, which is exactly what it means to
+ * follow the item — so there is nothing to migrate in anyone's stored scene.
  */
-export type ItemRef = { id: string; version: number }
+export type ItemRef = { id: string }
 
 /** An effect stored BY VALUE: for a draft, which has no published version to pin. */
 export type EffectSnapshot = { name: string; wgsl: string }
@@ -177,9 +181,14 @@ export type StyleGroupDoc = {
   role?: "hair" | "eye" | "stockings"
 }
 
-/** Distinguishes the three `graph` forms without inspecting a ShaderGraph's shape. */
+/** Distinguishes the three `graph` forms without inspecting a ShaderGraph's shape.
+ *
+ *  `id` alone is the test. It used to require `version` as well, which was free
+ *  discrimination while pins carried one — but a ShaderGraph has no `id` and an
+ *  effect snapshot has `name`/`wgsl`, so the id is already the only thing a pin
+ *  has and nothing else does. Documents still carrying a version match too. */
 export const isItemRef = (v: unknown): v is ItemRef =>
-  typeof v === "object" && v !== null && "id" in v && "version" in v
+  typeof v === "object" && v !== null && "id" in v && typeof (v as { id: unknown }).id === "string"
 
 export type SceneModelDoc = {
   /** Path to the .pmx, or to a .zip containing it. */

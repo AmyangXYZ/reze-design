@@ -50,9 +50,6 @@ export type LibraryItem<K extends LibraryKind = LibraryKind, P = unknown> = {
   author: string
   description: string
   tags: string[]
-  /** Bumped on edit. Distinct from SCENE_FORMAT_VERSION, which versions the
-   *  document schema rather than this item's content. */
-  version: number
   owner: LibraryOwner
   payload: P
 }

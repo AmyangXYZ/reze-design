@@ -50,8 +50,8 @@ export function freeName(kind: DraftKind, wanted: string, draftId?: string): str
  * Local drafts are not consulted. Publishing PROMOTES the draft into the row it
  * is about to write, so it cannot collide with itself, and no two drafts of a
  * kind share a name anyway. `itemId` is the row being written — republishing
- * your own item under its own name writes that item's next version, and a row is
- * not a collision with itself.
+ * your own item under its own name replaces that row, and a row is not a
+ * collision with itself.
  *
  * The server applies the same rule (lib/db/names.ts) and is the one that counts;
  * this is so the answer arrives while the name is still being typed.

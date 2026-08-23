@@ -95,7 +95,7 @@ export function createDraft(
     description?: string
     tags?: string[]
     /** The PUBLISHED item this draft is a working copy of, when you own it.
-     *  Publishing then writes that item's next version instead of a new item. */
+     *  Publishing then replaces that item instead of creating a new one. */
     sourceId?: string
     /** Someone else's published item this was derived from — lineage, not identity. */
     forkedFromId?: string
@@ -114,7 +114,6 @@ export function createDraft(
     author: opts.author,
     description: opts.description ?? "",
     tags: opts.tags ?? [],
-    version: 1,
     owner: "local",
     payload: opts.payload,
   }

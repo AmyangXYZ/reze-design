@@ -30,7 +30,7 @@ const DELETE = process.argv.includes("--delete")
 const OWN = "amyang-xyz"
 
 const { rows: effects } = await pool.query(
-  `select id, name, author, visibility, version, like_count, created_at
+  `select id, name, author, visibility, like_count, created_at
      from library_items
     where kind = 'effect'
     order by created_at`,
@@ -67,7 +67,7 @@ for (const e of keep) {
 console.log(`\nUNUSED (${unused.length}) — ${DELETE ? "DELETING" : "would delete"}:`)
 for (const e of unused) {
   console.log(
-    `  ${e.name}  ·  ${e.author}  ·  ${e.visibility}  ·  v${e.version}  ·  ${e.like_count} like(s)  ·  ${e.id}`,
+    `  ${e.name}  ·  ${e.author}  ·  ${e.visibility}  ·  ${e.like_count} like(s)  ·  ${e.id}`,
   )
 }
 

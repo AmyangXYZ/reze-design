@@ -57,7 +57,7 @@ const check = (label, graph) => {
 }
 
 const { rows } = await pool.query(
-  `select id, kind, name, author, version, payload from library_items order by kind, name`,
+  `select id, kind, name, author, payload from library_items order by kind, name`,
 )
 const byKind = {}
 for (const r of rows) (byKind[r.kind] ??= []).push(r)

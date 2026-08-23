@@ -39,7 +39,7 @@ export async function siteStats(): Promise<SiteStats> {
  * This scanned each scene's JSON for `doc.backgroundEffect` and
  * `doc.settings.grade.preset`. Neither has existed for a while: a grade is
  * `settings.grade.from` and an effect is `settings.background.effect`, both
- * `{ id, version }` pins (see sceneRefs in lib/scene.ts). It also keyed by NAME
+ * `{ id }` pins (see sceneRefs in lib/scene.ts). It also keyed by NAME
  * while the admin page looked the result up by ID, and never counted shader
  * graphs at all — so every number on that page was either zero or an accident.
  *

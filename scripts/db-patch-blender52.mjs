@@ -18,8 +18,7 @@
 //      them — and they carry the pre-rename names, which is why the shipped
 //      "AG Body" and a community "Body" both appear. Scenes pinning them keep
 //      working: lib/resolve-refs.ts resolves a built-in id from the APP BUNDLE
-//      and only queries the database for pins the bundle does not carry. Checked
-//      per row against the bundled version rather than assumed.
+//      and only queries the database for pins the bundle does not carry.
 import { Pool, neonConfig } from "@neondatabase/serverless"
 import ws from "ws"
 import { readFileSync } from "node:fs"
@@ -78,7 +77,7 @@ const canon = (g) =>
 
 const builtinByLook = new Map(builtins.map((b) => [canon(migrate(b.payload.graph).graph), b]))
 
-const { rows } = await pool.query(`select id, kind, name, author, version, payload from library_items`)
+const { rows } = await pool.query(`select id, kind, name, author, payload from library_items`)
 const graphs = rows.filter((r) => r.kind === "graph")
 const scenes = rows.filter((r) => r.kind === "scene")
 
@@ -112,7 +111,6 @@ for (const row of graphs) {
 }
 
 // ── 2: scenes ──
-const unservable = []
 const sceneEdits = []
 for (const s of scenes) {
   const doc = structuredClone(s.payload.doc)
@@ -121,19 +119,14 @@ for (const s of scenes) {
   for (const m of doc.assets?.models ?? []) {
     for (const g of m.materials?.groups ?? []) {
       // A pin already carries the built-in's id, so there is nothing to repoint —
-      // it resolves from the bundle. Flag only a version the bundle cannot serve.
-      if (g.graph && typeof g.graph === "object" && "id" in g.graph && !("nodes" in g.graph)) {
-        const hit = builtinById.get(g.graph.id)
-        if (hit && hit.version !== g.graph.version) {
-          unservable.push(`scene "${s.name}" pins "${hit.name}" v${g.graph.version}, bundle ships v${hit.version}`)
-        }
-        continue
-      }
+      // it resolves from the bundle, and to whatever the bundle ships today. The
+      // version check that used to live here went with versions themselves.
+      if (g.graph && typeof g.graph === "object" && "id" in g.graph && !("nodes" in g.graph)) continue
       if (!g.graph || typeof g.graph !== "object" || !("nodes" in g.graph)) continue
       const { graph, changed: mig } = migrate(g.graph)
       const hit = builtinByLook.get(canon(graph))
       if (hit) {
-        g.graph = { id: hit.id, version: hit.version }
+        g.graph = { id: hit.id }
         changed = true
         notes.push(`${g.label ?? "?"} -> pin "${hit.name}"`)
       } else if (mig) {
@@ -154,11 +147,10 @@ for (const t of toDelete) console.log(`  "${t.row.name}" by ${t.row.author} == b
 console.log(`\nscenes to update: ${sceneEdits.length}`)
 for (const e of sceneEdits) console.log(`  "${e.row.name}": ${e.notes.join(", ")}`)
 
-if (unservable.length) {
-  console.log(`\nREFUSING to delete — a pinned version the bundle cannot serve:`)
-  for (const u of unservable) console.log("  " + u)
-}
-const deletable = unservable.length ? [] : toDelete
+// Every pin the bundle carries is servable by definition now: a pin is an id,
+// and the bundle either ships that id or it doesn't. The refusal that stood here
+// guarded against a pinned VERSION the bundle no longer had.
+const deletable = toDelete
 
 if (!WRITE) {
   console.log("\nNothing written. Re-run with --write to apply.")

@@ -18,19 +18,20 @@ type Payload = { graph?: ShaderGraph; wgsl?: string; spec?: unknown }
  *  nameless effect leaves the picker with nothing to show. */
 type Resolved = Payload & { name: string }
 
-const bundled = new Map<string, { version: number; resolved: Resolved }>()
+const bundled = new Map<string, Resolved>()
 for (const i of [...GRAPH_LIBRARY, ...EFFECTS, ...GRADE_PRESETS]) {
-  bundled.set(i.id, { version: i.version, resolved: { ...(i.payload as Payload), name: i.name } })
+  bundled.set(i.id, { ...(i.payload as Payload), name: i.name })
 }
 
-/** Pins this document has that the app bundle does not carry. */
+/** Pins this document has that the app bundle does not carry.
+ *
+ *  A built-in is now always a hit: the pin means "this item", the bundle ships
+ *  the item, and there is no version left for the two to disagree about. That
+ *  disagreement was the only reason a scene pinned to a built-in ever went to
+ *  the network — and it is what made a retuned built-in keep rendering its old
+ *  self in every scene already using it. */
 function missingRefs(doc: SceneDoc): ItemRef[] {
-  return sceneRefs(doc).filter((r) => {
-    const hit = bundled.get(r.id)
-    // A pinned version the bundle doesn't carry (retuned since) still has to be
-    // fetched — the pin means that exact version, not "whatever ships today".
-    return !hit || hit.version !== r.version
-  })
+  return sceneRefs(doc).filter((r) => !bundled.has(r.id))
 }
 
 /**
@@ -44,10 +45,7 @@ function missingRefs(doc: SceneDoc): ItemRef[] {
  */
 export function resolveSceneRefsSync(doc: SceneDoc): ((ref: ItemRef) => Resolved | undefined) | null {
   if (missingRefs(doc).length > 0) return null
-  return (ref) => {
-    const hit = bundled.get(ref.id)
-    return hit && hit.version === ref.version ? hit.resolved : undefined
-  }
+  return (ref) => bundled.get(ref.id)
 }
 
 /** A resolver for every pin in the document, built with one request at most. */
@@ -73,9 +71,5 @@ export async function resolveSceneRefs(doc: SceneDoc): Promise<(ref: ItemRef) =>
     }
   }
 
-  return (ref) => {
-    const hit = bundled.get(ref.id)
-    if (hit && hit.version === ref.version) return hit.resolved
-    return remote.get(`${ref.id}@${ref.version}`)
-  }
+  return (ref) => bundled.get(ref.id) ?? remote.get(ref.id)
 }

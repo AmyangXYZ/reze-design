@@ -6,9 +6,14 @@
 // against one.
 //
 // Identity is the uuid AUTHORED in content/*.json — stable across reseeds, so
-// likes, usage counts and the refs inside published scenes all survive one. Each
-// item also gets a version row, because a scene pins { id, version } and a
-// built-in must be pinnable like anything else.
+// likes, usage counts and the refs inside published scenes all survive one. A
+// scene pins { id }, so mirroring the current payload here is the whole of what
+// a built-in needs to be pinnable; there is nothing else to keep in step.
+//
+// This is also the ONLY publisher of built-ins now. db-seed-builtins.mjs existed
+// to cut a new version row when the repo's WGSL had moved on, and versions are
+// gone — running this after editing content/*.json is the entire operation. It
+// is idempotent, so running it when nothing changed writes nothing that matters.
 import { readFileSync } from "node:fs"
 import { Pool, neonConfig } from "@neondatabase/serverless"
 import ws from "ws"
@@ -33,44 +38,23 @@ if (adminEmail) {
 
 const UPSERT = `
   insert into library_items
-    (id, kind, name, author, description, tags, version, payload, owner_id, visibility)
-  values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'public')
+    (id, kind, name, author, description, tags, payload, owner_id, visibility)
+  values ($1, $2, $3, $4, $5, $6, $7, $8, 'public')
   on conflict (id) do update set
     name = excluded.name,
     author = excluded.author,
     description = excluded.description,
     tags = excluded.tags,
-    version = excluded.version,
     payload = excluded.payload,
     -- Keep an existing owner if this run has no admin account to attribute to.
     owner_id = coalesce(excluded.owner_id, library_items.owner_id),
     updated_at = now()
 `
 
-// Immutable once written: re-running the seed must not rewrite a version a
-// published scene is already pinned to. Retuning a built-in means bumping its
-// `version` in content/*.json, which writes a new row and leaves the old one.
-const UPSERT_VERSION = `
-  insert into library_item_versions (item_id, version, payload)
-  values ($1, $2, $3)
-  on conflict (item_id, version) do nothing
-`
-
 for (const i of items) {
   // The owner's HANDLE, not the name in the JSON: otherwise every re-seed undoes a
   // rename and built-ins go back to displaying a stale author.
-  await pool.query(UPSERT, [
-    i.id,
-    i.kind,
-    i.name,
-    ownerHandle ?? i.author,
-    i.description,
-    i.tags,
-    i.version,
-    i.payload,
-    ownerId,
-  ])
-  await pool.query(UPSERT_VERSION, [i.id, i.version, i.payload])
+  await pool.query(UPSERT, [i.id, i.kind, i.name, ownerHandle ?? i.author, i.description, i.tags, i.payload, ownerId])
 }
 
 const { rows: counts } = await pool.query(

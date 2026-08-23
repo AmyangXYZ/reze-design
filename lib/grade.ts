@@ -42,11 +42,11 @@ export type GradeSettings = {
   /** Display label. The reference only when it names a built-in. */
   preset: string
   intensity: number
-  /** The value itself, for a grade with no published version to pin. */
+  /** The value itself, for a grade that matches nothing published. */
   spec?: GradeSpec
   /** A pin to the published grade this came from. Rendering prefers `spec` when
    *  present; this is what records provenance and usage. */
-  from?: { id: string; version: number }
+  from?: { id: string }
 }
 
 // Presets live in content/grades.json — data, not code, in the same envelope a

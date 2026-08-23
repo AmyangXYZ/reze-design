@@ -27,7 +27,7 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL })
 const WRITE = process.argv.includes("--write")
 
 const { rows } = await pool.query(
-  `select id, name, author, version, payload from library_items where kind = 'scene' order by created_at`,
+  `select id, name, author, payload from library_items where kind = 'scene' order by created_at`,
 )
 
 const patched = []

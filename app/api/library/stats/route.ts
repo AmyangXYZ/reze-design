@@ -43,7 +43,7 @@ export async function GET(request: Request) {
     // scene_uses, extracted from each document at publish, rather than a scan
     // through the scene's JSON. The scan predated the table and had gone stale in
     // three ways: it read `settings.grade.preset` and `settings.background.effect`
-    // as NAMES, when both are `{ id, version }` pins now (see sceneRefs in
+    // as NAMES, when both are `{ id }` pins now (see sceneRefs in
     // lib/scene.ts); it counted no shader graphs at all, so every graph in the
     // library read as used by nobody; and it matched on a name that is no longer
     // unique. `scene_uses_item_idx` exists for exactly this query.

@@ -1498,16 +1498,14 @@ published scene reproduce exactly on someone else's machine.
 **Publishing mints a library item** under your name, visible to everyone. Two
 properties follow:
 
-- **Versions are immutable.** Publishing over your own item writes version *n+1*
-  rather than replacing version *n*. Every scene using the old version keeps using
-  it, byte for byte.
-- **Scenes pin an exact version.** A scene records `{ id, version }`. Retuning your
-  grade next month leaves untouched the look of a scene somebody published with it
-  last month.
+- **Publishing replaces.** Publishing over your own item overwrites it. There is
+  no version *n+1* to keep the old one alive beside it.
+- **Scenes follow the item.** A scene records `{ id }`, and resolves it to
+  whatever that item is when someone opens the scene. Retune your grade next
+  month and the scene somebody published with it last month retunes with you.
 
-So publishing is a commitment. Improve an item freely — that is what versions are
-for — and expect the versions already out there to keep serving the people using
-them.
+So publishing is a commitment, and a live one. Fixing a preset reaches every
+scene using it, which is the point — and so does breaking one.
 
 Unmodified built-ins travel differently: a scene records them as a bare reference,
 resolved from the application itself. This is why a scene using only built-in

@@ -1,7 +1,7 @@
 // Recognising published content by its VALUE.
 //
-// A scene pins `{ id, version }` when what it applies is exactly some published
-// item, and inlines the value when it isn't. Deciding that by comparison rather
+// A scene pins `{ id }` when what it applies is exactly some published item, and
+// inlines the value when it isn't. Deciding that by comparison rather
 // than by bookkeeping means an edited graph automatically stops matching — it
 // genuinely is no longer that item, so it must travel by value. No provenance
 // state to keep in sync, and no way for a stale tag to mispin someone else's work.
@@ -19,8 +19,7 @@ function candidates<T>(kind: LibraryKind, builtins: T[]): T[] {
   return [...builtins, ...(communityItems(kind) as T[])]
 }
 
-const pin = (item: { id: string; version: number } | undefined): ItemRef | undefined =>
-  item ? { id: item.id, version: item.version } : undefined
+const pin = (item: { id: string } | undefined): ItemRef | undefined => (item ? { id: item.id } : undefined)
 
 // Compared by LOOK, not bytes. Opening the editor on a group round-trips its
 // graph through ReactFlow, which stamps node layout onto it — so a byte compare

@@ -12,7 +12,6 @@
    "anime",
    "body"
   ],
-  "version": 1,
   "payload": {
    "role": "body",
    "graph": {
@@ -687,7 +686,6 @@
    "anime",
    "eye"
   ],
-  "version": 1,
   "payload": {
    "role": "eye",
    "graph": {
@@ -818,7 +816,6 @@
    "anime",
    "face"
   ],
-  "version": 1,
   "payload": {
    "role": "face",
    "graph": {
@@ -1580,7 +1577,6 @@
    "anime",
    "hair"
   ],
-  "version": 1,
   "payload": {
    "role": "hair",
    "graph": {
@@ -2054,7 +2050,6 @@
    "metal",
    "stage"
   ],
-  "version": 1,
   "payload": {
    "role": "metal",
    "graph": {
@@ -2461,7 +2456,6 @@
    "anime",
    "cloth_rough"
   ],
-  "version": 1,
   "payload": {
    "role": "cloth_rough",
    "graph": {
@@ -2892,7 +2886,6 @@
    "anime",
    "cloth_smooth"
   ],
-  "version": 1,
   "payload": {
    "role": "cloth_smooth",
    "graph": {
@@ -3251,7 +3244,6 @@
    "anime",
    "stockings"
   ],
-  "version": 1,
   "payload": {
    "role": "stockings",
    "graph": {
@@ -3545,7 +3537,6 @@
    "anime",
    "body"
   ],
-  "version": 1,
   "payload": {
    "graph": {
     "version": 1,
@@ -3975,7 +3966,6 @@
    "anime",
    "cloth_smooth"
   ],
-  "version": 1,
   "payload": {
    "graph": {
     "version": 1,
@@ -4405,7 +4395,6 @@
    "anime",
    "hair"
   ],
-  "version": 1,
   "payload": {
    "graph": {
     "version": 1,
@@ -4835,7 +4824,6 @@
    "anime",
    "face"
   ],
-  "version": 1,
   "payload": {
    "graph": {
     "version": 1,
@@ -5265,7 +5253,6 @@
    "anime",
    "metal"
   ],
-  "version": 1,
   "payload": {
    "graph": {
     "version": 1,
@@ -5695,7 +5682,6 @@
    "anime",
    "eye"
   ],
-  "version": 1,
   "payload": {
    "graph": {
     "version": 1,
@@ -6125,7 +6111,6 @@
    "anime",
    "body"
   ],
-  "version": 1,
   "payload": {
    "graph": {
     "version": 1,
@@ -6146,7 +6131,7 @@
       "id": "base",
       "type": "mix/multiply",
       "inputs": {
-       "fac": 1.0
+       "fac": 1
       }
      },
      {
@@ -6157,69 +6142,69 @@
       "id": "band",
       "type": "map_range/smoothstep",
       "inputs": {
-       "from_min": 0.25,
-       "from_max": 0.377,
-       "to_min": 0.0,
-       "to_max": 1.0
+       "to_max": 1.5,
+       "to_min": 0,
+       "from_max": 0.5,
+       "from_min": 0.25
       }
      },
      {
       "id": "mask",
       "type": "invert",
       "inputs": {
-       "fac": 1.0
+       "fac": 1
       }
      },
      {
       "id": "lit_hs",
       "type": "hue_sat",
       "inputs": {
+       "fac": 1,
        "hue": 0.5,
-       "saturation": 1.6,
        "value": 1.2,
-       "fac": 1.0
+       "saturation": 1.6
       }
      },
      {
       "id": "lit",
       "type": "mix/multiply",
       "inputs": {
-       "fac": 0.5,
        "b": [
-        1.0,
-        0.7181,
-        0.7181
-       ]
+        1,
+        0.6207,
+        0.7035
+       ],
+       "fac": 0
       }
      },
      {
       "id": "sh_bc",
       "type": "bright_contrast",
       "inputs": {
-       "bright": 0.0,
-       "contrast": 0.0
+       "bright": 0,
+       "contrast": 0
       }
      },
      {
       "id": "sh_hs",
       "type": "hue_sat",
       "inputs": {
+       "fac": 1,
        "hue": 0.5,
-       "saturation": 0.4,
        "value": 1.2,
-       "fac": 1.0
+       "saturation": 0
       }
      },
      {
       "id": "shadow",
       "type": "mix/multiply",
       "inputs": {
-       "fac": 0.5,
        "b": [
-        1.0,
-        0.7484,
-        0.7484
-       ]
+        1,
+        0.7181,
+        0.7181
+       ],
+       "fac": 0.4
       }
      },
      {
@@ -6230,9 +6215,9 @@
       "id": "amb",
       "type": "combine_color",
       "inputs": {
-       "r": 0.9952,
+       "b": 1,
        "g": 0.8394,
-       "b": 1.0
+       "r": 0.9952
       }
      },
      {
@@ -6405,7 +6390,6 @@
    "anime",
    "face"
   ],
-  "version": 1,
   "payload": {
    "graph": {
     "version": 1,
@@ -6426,7 +6410,7 @@
       "id": "base",
       "type": "mix/multiply",
       "inputs": {
-       "fac": 1.0
+       "fac": 1
       }
      },
      {
@@ -6437,69 +6421,69 @@
       "id": "band",
       "type": "map_range/smoothstep",
       "inputs": {
-       "from_min": 0.25,
-       "from_max": 0.377,
-       "to_min": 0.0,
-       "to_max": 1.0
+       "to_max": 1,
+       "to_min": 0,
+       "from_max": 0.32,
+       "from_min": 0.25
       }
      },
      {
       "id": "mask",
       "type": "invert",
       "inputs": {
-       "fac": 1.0
+       "fac": 1
       }
      },
      {
       "id": "lit_hs",
       "type": "hue_sat",
       "inputs": {
+       "fac": 1,
        "hue": 0.5,
-       "saturation": 1.6,
-       "value": 1.2,
-       "fac": 1.0
+       "value": 1.6,
+       "saturation": 1.6
       }
      },
      {
       "id": "lit",
       "type": "mix/multiply",
       "inputs": {
-       "fac": 0.5,
        "b": [
-        1.0,
+        1,
         0.6207,
         0.7035
-       ]
+       ],
+       "fac": 0.5
       }
      },
      {
       "id": "sh_bc",
       "type": "bright_contrast",
       "inputs": {
-       "bright": 0.0,
-       "contrast": 0.0
+       "bright": 0,
+       "contrast": 0
       }
      },
      {
       "id": "sh_hs",
       "type": "hue_sat",
       "inputs": {
+       "fac": 1,
        "hue": 0.5,
-       "saturation": 0.9,
        "value": 1.2,
-       "fac": 1.0
+       "saturation": 0.9
       }
      },
      {
       "id": "shadow",
       "type": "mix/multiply",
       "inputs": {
-       "fac": 0.5,
        "b": [
-        1.0,
+        1,
         0.7181,
         0.7181
-       ]
+       ],
+       "fac": 0.5
       }
      },
      {
@@ -6510,9 +6494,9 @@
       "id": "amb",
       "type": "combine_color",
       "inputs": {
-       "r": 0.9952,
+       "b": 1,
        "g": 0.8394,
-       "b": 1.0
+       "r": 0.9952
       }
      },
      {
@@ -6685,7 +6669,6 @@
    "anime",
    "hair"
   ],
-  "version": 1,
   "payload": {
    "graph": {
     "version": 1,
@@ -6982,7 +6965,6 @@
    "anime",
    "eye"
   ],
-  "version": 1,
   "payload": {
    "graph": {
     "version": 1,
@@ -7324,7 +7306,6 @@
    "anime",
    "metal"
   ],
-  "version": 1,
   "payload": {
    "graph": {
     "version": 1,
@@ -7666,7 +7647,6 @@
    "anime",
    "cloth_smooth"
   ],
-  "version": 1,
   "payload": {
    "graph": {
     "version": 1,

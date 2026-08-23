@@ -37,8 +37,8 @@ export function PublishButton({
   /** Read at submit time, so it captures the latest edits rather than a stale copy. */
   payload: () => unknown
   /** The item's identity. A draft keeps its uuid through publishing; a working
-   *  copy of something you already published carries THAT id, so this writes the
-   *  next version rather than a second item. */
+   *  copy of something you already published carries THAT id, so this replaces
+   *  that item rather than making a second one. */
   itemId?: string
   /** Someone else's item this was derived from — recorded as lineage. */
   forkedFromId?: string

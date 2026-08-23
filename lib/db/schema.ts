@@ -44,11 +44,8 @@ export const libraryItems = pgTable(
     author: text("author").notNull(),
     description: text("description").notNull().default(""),
     tags: text("tags").array().notNull().default([]),
-    /** LATEST version number. Every value ever published is kept in
-     *  library_item_versions; documents pin the exact one they used. */
-    version: integer("version").notNull().default(1),
-    /** The latest version's payload, denormalised so reading current content is
-     *  one row rather than a join. Versions are the source of truth. */
+    /** The content, and the whole of it: publishing over an item you own
+     *  replaces this in place, and every scene pinning the item follows. */
     payload: jsonb("payload").$type<LibraryPayload>().notNull(),
 
     // ── Server-only ──────────────────────────────────────────────────────────
@@ -105,29 +102,24 @@ export const libraryItems = pgTable(
   ],
 )
 
-/**
- * Every value a preset has ever been published at, immutable once written.
- *
- * This is what lets a scene pin `{ id, version }` and render the same forever
- * while its author keeps iterating — npm's lesson, and the reason deleting an
- * item is a soft delete: the versions outlive it so dependent scenes survive.
- *
- * Scenes get no rows here. Nothing imports a scene, so there is nothing to pin.
- */
-export const libraryItemVersions = pgTable(
-  "library_item_versions",
-  {
-    itemId: text("item_id")
-      .notNull()
-      .references(() => libraryItems.id, { onDelete: "cascade" }),
-    version: integer("version").notNull(),
-    payload: jsonb("payload").$type<LibraryPayload>().notNull(),
-    /** What changed, in the author's words. Optional — most edits are a tweak. */
-    changelog: text("changelog"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [primaryKey({ columns: [t.itemId, t.version] })],
-)
+// library_item_versions was here, and a pin used to carry `{ id, version }`.
+//
+// It bought immutability — a published scene rendering the same forever while
+// its author kept iterating — and nobody ever exercised it. Every item that
+// reached a second version was one of ours, and every pin left behind head was
+// a scene running an old copy of OUR effect that its author never chose: they
+// chose "Hand Ribbon", not the Hand Ribbon of last March. db-patch-scene-pins
+// existed to undo exactly that, by hand, against the promise this table made.
+//
+// What the number cost was real. It had to agree across the repo's
+// content/*.json, the item row and the version rows, and it drifted in every
+// direction it could — a re-seed rewinding the item's counter, a publish dying
+// on a primary key, pinned rows nobody could reach without another script.
+//
+// So a pin is `{ id }` and resolves to whatever the item currently is. The old
+// rows are left in the database, unread: they are the only remaining copy of
+// payloads nothing points at any more, and dropping the table is a separate,
+// deliberate act for later.
 
 /**
  * Which presets a published scene pins, extracted from its document at publish.
@@ -145,7 +137,6 @@ export const sceneUses = pgTable(
     itemId: text("item_id")
       .notNull()
       .references(() => libraryItems.id, { onDelete: "cascade" }),
-    itemVersion: integer("item_version").notNull(),
   },
   (t) => [
     primaryKey({ columns: [t.sceneId, t.itemId] }),

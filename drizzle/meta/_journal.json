@@ -78,6 +78,13 @@
       "when": 1785437443904,
       "tag": "0010_light_timeslip",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1787489286322,
+      "tag": "0011_mysterious_luckman",
+      "breakpoints": true
     }
   ]
 }
