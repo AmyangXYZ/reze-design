@@ -35,13 +35,19 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
       : [
       {
         model: "/models/托特-扉页之吻/苍鹭·托特「扉页之吻」白衣.pmx",
-        // The Classic set, the four files reze-studio boots on: a dance, the
-        // expressions that go with it, the shot that frames it, and the track
-        // they were all timed to. A first-time visitor should land on a scene
-        // that is doing all four things at once — a character dancing in
+        // The Classic set, cut for the demo: a dance, the expressions that go
+        // with it, and the track they were timed to. A first-time visitor should
+        // land on a scene doing all three at once — a character dancing in
         // silence, staring straight ahead, is a demo of a loader.
-        animation: "/animations/Classic.vmd",
-        morph: "/animations/Classic_morph.vmd",
+        //
+        // CUT AT FRAME 81, which is 2.7 seconds of standing still at the top of
+        // the take. That is a long time to hold somebody who has not yet decided
+        // to stay, and it is most of what they see before they decide. The pose
+        // at the cut is carried into a key at frame 0, so the dance opens
+        // mid-movement rather than snapping to it — see scripts/cut-vmd.mjs.
+        // The full-length Classic files are still in public/, untouched.
+        animation: "/animations/Demo.vmd",
+        morph: "/animations/Demo_morph.vmd",
         materials: {
           groups: [
             { label: "Body", materials: ["皮肤", "手"], graph: "AG Body" },
@@ -85,7 +91,9 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
     // gets the moment they drag the viewport, so what they see first is what
     // they keep.
     cameraAnimation: null,
-    audio: USE_DEFAULT_ASSETS ? "/audios/Classic.mp3" : null,
+    // Cut to match, by scripts/cut-mp3.py — frame-aligned rather than exact, and
+    // 9ms of a 33ms video frame is the closest an MP3 boundary can land.
+    audio: USE_DEFAULT_ASSETS ? "/audios/Demo.mp3" : null,
     midi: null,
     lyrics: null,
     backdrop: null,

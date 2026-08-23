@@ -999,6 +999,29 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       altLabels: [alt.cmd.outlineOn, l.cmd.outlineOff, alt.cmd.outlineOff],
       keywords: ["edge", "rim", "outline", "描边", "线稿", "轮廓"],
     },
+    // Re-seed the cloth and hair solver.
+    //
+    // Palette-only, and it earns that by being a REPAIR rather than a setting:
+    // there is nothing to show in a dock, no state to read back, and nobody goes
+    // looking for it until something is visibly wrong. What goes wrong is always
+    // the same thing — a pose arrived faster than a body could follow, so the
+    // solver read the jump as enormous velocity and a skirt is now inside a leg
+    // or a ponytail is orbiting. Seeks settle themselves (see clip-bridge, and
+    // the transport's own threshold), but a model swapped mid-motion, a physics
+    // setting pushed hard, or a tab left in the background can all leave the
+    // bodies somewhere the pose is not.
+    //
+    // Keyworded for the SYMPTOM as much as the name: whoever needs this is
+    // looking at exploding hair, and "hair" is what they will type.
+    {
+      id: "reset-physics",
+      repeatable: true,
+      section: "command",
+      icon: Atom,
+      label: l.cmd.resetPhysics,
+      altLabels: [alt.cmd.resetPhysics],
+      keywords: ["physics", "hair", "cloth", "skirt", "jiggle", "settle", "explode", "stuck", "物理", "头发", "裙子", "布料", "抖动", "重置"],
+    },
     // The editor's fold, and the three tracks it opens onto.
     //
     // Four rows rather than one, because "open the timeline" and "edit this
@@ -4346,6 +4369,11 @@ export default function Lab() {
         cmdRef.current.openGradeEditor({ id: "", name: t.gradeLibrary.newGrade, spec: NEW_GRADE_SPEC })
       else if (item.id === "grade-lib") openBrowse({ kind: "grade" })
       else if (item.id === "outline") patch("outline", { enabled: !outlineRef.current })
+      // Nothing to undo and nothing to store: the bodies are re-seeded onto the
+      // pose they are already in, and the next frame simulates forward from
+      // there. Running it when nothing is wrong costs one settle and changes
+      // nothing, which is what makes it safe to reach for on a hunch.
+      else if (item.id === "reset-physics") engineRef.current?.resetPhysics()
       else if (item.id === "timeline") setTimelineOpen((v) => !v)
       else if (item.id === "edit-motion") editClipRef.current(clipTargetRef.current, "motion")
       else if (item.id === "edit-morph") editClipRef.current(clipTargetRef.current, "morph")
@@ -4386,6 +4414,10 @@ export default function Lab() {
       openGallery,
       activeGroupId,
       openEffectEditor,
+      // A ref object, so it never changes and costs this memo nothing — listed
+      // because reset-physics reaches through it and the rule here is that
+      // everything read is named.
+      engineRef,
     ],
   )
 

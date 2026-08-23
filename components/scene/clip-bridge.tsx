@@ -261,6 +261,21 @@ export function ClipBridge({
   // would always agree. This asks the only question worth asking — is the scene
   // already where the playhead says it is — which also makes the flush on pause
   // a no-op instead of a redundant seek and physics reset.
+  //
+  // `to` THEN `end`, and the second half was missing. Scrub is a three-part
+  // interaction — begin, move, let go — and the physics settle lives in the
+  // letting go: `end` resets the bodies when the largest SINGLE step of that
+  // interaction was a teleport rather than motion. The transport's thumb calls
+  // all three; this called only the middle one, so a click at the far end of
+  // the ruler moved every bone a second and a half in one frame and left the
+  // solver to read that as enormous velocity. Hair and skirts detonate, exactly
+  // as they used to on the transport before it learned the same lesson.
+  //
+  // A discrete seek IS a whole interaction, which is what makes this the right
+  // shape rather than a workaround: each playhead change is measured on its own
+  // and settles on its own. Dragging the ruler is a stream of small steps, none
+  // of them past the threshold, so a slow scrub still resets nothing — the
+  // simulation tracks that perfectly well and re-seeding would fight it.
   useEffect(() => {
     if (!modelId) return
     const model = engineRef.current?.getModel(modelId)
@@ -268,6 +283,7 @@ export function ClipBridge({
     const at = model.getAnimationProgress().current * FPS
     if (Math.abs(currentFrame - at) < 0.75) return
     scrubRef.current?.to(framesToSeconds(currentFrame))
+    scrubRef.current?.end()
   }, [currentFrame, modelId, engineRef, scrubRef])
 
   // The handlers below are registered once and live for as long as editing
