@@ -95,11 +95,23 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
     outline: DEFAULT_OUTLINE,
     view: DEFAULT_VIEW,
     // Both are ADDITIVE-friendly and sit on different mounts — Shining Stars is
-    // a background field, Hand Ribbon is particles and trails — so neither can
+    // a background field, Teleportation is particles and lights — so neither can
     // paint over the other and the order here is free. It is not free in
     // general: a full-cover backdrop has to come first or it erases what is
     // under it.
-    background: { color: "#4b004f", effects: ["Shining Stars", "Hand Ribbon"] },
+    //
+    // TELEPORTATION IS THE DEMO NOW, in Hand Ribbon's place. It is the one
+    // effect that reaches all the way down: the material shell takes the model
+    // apart, the particle pass draws what leaves, three declared lights land it
+    // on the floor, and the whole of it is timed by the engine on the scene
+    // clock. A visitor who watches for five seconds has seen the engine do
+    // something no shader on its own can.
+    //
+    // The two together would also fit, but only just: Teleportation declares
+    // eight anchors and Hand Ribbon two of the same eight, which is exactly the
+    // per-SCENE cap — and the ribbons would go on trailing from wrists that are
+    // not there while she is gone.
+    background: { color: "#4b004f", effects: ["Shining Stars", "Teleportation"] },
     grade: { preset: "Neutral", intensity: 1 },
     ground: { color: "#c800de", size: 160, opacity: 0.42, shadow: true, grid: "#fafaf9", gridEnabled: true },
     physics: DEFAULT_PHYSICS,
