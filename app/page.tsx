@@ -124,6 +124,7 @@ import { useRenderFraming } from "@/hooks/use-render-framing"
 import { useSceneSync } from "@/hooks/use-scene-sync"
 import { useBrowseSurface } from "@/hooks/use-browse-surface"
 import { useStoredRect } from "@/hooks/use-stored-rect"
+import { useDockSlot } from "@/hooks/use-dock-slot"
 import { useZOrder } from "@/hooks/use-z-order"
 import { DEFAULT_SCENE, EMPTY_SCENE } from "@/lib/default-scene"
 import {
@@ -2785,12 +2786,10 @@ export default function Lab() {
     outlineRef.current = settings.outline.enabled
   })
   /** Open the materials inspector on a model — the cast row's own click, the
-   *  row's Materials button and the palette all come through here, so the
-   *  one-right-panel-at-a-time rule lives in exactly one place. */
+   *  row's Materials button and the palette all come through here. */
   /** The export panel, from anywhere. Capture and every export setting land
    *  here — the panel IS the surface for all of them. */
   const openExport = useCallback(() => {
-    setInspectedId(null)
     setExportOpen(true)
     setExportRaise((n) => n + 1)
   }, [])
@@ -2807,10 +2806,32 @@ export default function Lab() {
   const noteArrival = useCallback((id: string) => setUnstyled((prev) => (prev.includes(id) ? prev : [...prev, id])), [])
   const noteStyled = useCallback((id: string) => setUnstyled((prev) => prev.filter((x) => x !== id)), [])
 
+  /**
+   * Give up the right column, without handing the timeline to somebody else.
+   *
+   * `editingModelId` falls back to `inspectedId`, so dropping the inspector
+   * while the fold is open moves the dopesheet onto another character — which
+   * is the one thing a panel closing must not do, and it became reachable the
+   * moment selecting a bone started evicting this panel. Pinning what the fold
+   * is ALREADY editing makes the fallback moot; an explicit target set by a
+   * clip row's edit button is left exactly as it is.
+   */
+  const closeMaterials = useCallback(() => {
+    if (timelineUnfolded && editingModelId) {
+      setEditTarget((t) => t ?? { modelId: editingModelId, kind: editingKind })
+    }
+    setInspectedId(null)
+  }, [timelineUnfolded, editingModelId, editingKind])
+  const closeExport = useCallback(() => setExportOpen(false), [])
+  // One panel in the right column, and the column decides — see use-dock-slot.
+  // The pairwise clears that used to live in the two openers below are gone with
+  // it: three panels is where writing the rule per pair stops working.
+  useDockSlot("materials", inspectedId !== null, closeMaterials)
+  useDockSlot("export", exportOpen, closeExport)
+
   const openMaterials = useCallback(
     (id: string | null) => {
       if (!id) return
-      setExportOpen(false)
       // Summoned, so it comes forward — even when it was already open on this
       // model and nothing remounts.
       setInspectorRaise((n) => n + 1)

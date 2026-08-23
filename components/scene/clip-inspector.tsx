@@ -63,6 +63,7 @@ import {
 } from "@/context/clip-editor"
 import { CLIP_UNDO_SCOPE } from "@/components/scene/clip-history"
 import { useClipOps } from "@/hooks/use-clip-ops"
+import { useDockSlot } from "@/hooks/use-dock-slot"
 import { useT } from "@/lib/i18n"
 import { useZOrder } from "@/hooks/use-z-order"
 import { cn } from "@/lib/utils"
@@ -1305,6 +1306,20 @@ export function ClipInspector({ onClose }: { onClose: () => void }) {
 
 function ClipInspectorSurface({ onClose }: { onClose: () => void }) {
   const z = useZOrder(undefined, onClose)
+  const { setSelectedBone, setSelectedMorph, setCameraSelected } = useClipActions()
+  // The right column holds one panel, and this one arrives with a subject and
+  // leaves with it — so giving the column up means letting go of the subject,
+  // not folding the timeline the way the X does. Opening materials or export
+  // therefore deselects the bone and leaves the fold exactly where it was;
+  // picking a bone again brings this back and evicts them in turn.
+  //
+  // Open is unconditionally true because this component only exists while there
+  // IS a subject: <ClipInspector/> returns null above without one.
+  useDockSlot("clip", true, () => {
+    setSelectedBone(null)
+    setSelectedMorph(null)
+    setCameraSelected(false)
+  })
   return (
     <Surface
       placement="side"

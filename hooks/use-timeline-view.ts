@@ -9,13 +9,22 @@
 // panel's position is: reopening an editor that has forgotten where you were
 // working makes you find your place again every time.
 //
-// The PLAYHEAD used to be in here too, and it is the one thing that could not
-// be. Zoom and scroll change how the editor is drawn; the playhead moves the
-// scene — every cast member, the music with them. Restoring it meant opening
-// the fold teleported the scene to a frame from a previous session, which is
-// "never mutate what the user is looking at" broken by the surface whose whole
-// job is to show you what you are looking at. The scene's own position is the
-// truth on open, and clip-bridge adopts it.
+// The PLAYHEAD used to be in here too, and it is the one thing that cannot be.
+// Zoom and scroll change how the editor is DRAWN; the playhead moves the scene —
+// every cast member, the music with them. Restoring it meant opening the fold
+// put the editor at a frame from a previous session while the viewport stood
+// somewhere else, which is "never mutate what the user is looking at" broken by
+// the surface whose whole job is showing you what you are looking at.
+//
+// It was removed on that argument, put back on the argument that reopening an
+// editor at a different frame is not the same editor, and removed again — this
+// note is here so it is not a third time. Putting it back makes TWO writers on
+// open: clip-bridge adopts the scene's own position when the clip lands, this
+// restored last session's, and the winner was whichever landed second. It read
+// as the fold jumping to an arbitrary frame, and looked random precisely
+// because the number was right — it was where the last visit ended.
+//
+// The scene's own position is the truth on open, and clip-bridge adopts it.
 //
 // Global rather than per-scene, which is what reze-studio does. A per-clip key
 // would arguably be better — a zoom that suits a three-minute dance is wrong for
@@ -35,20 +44,6 @@ export type TimelineView = {
   scrollX: number
   /** Which channel the curve half was showing. */
   tab: string
-  /**
-   * The playhead, in clip frames.
-   *
-   * It was taken OUT of here once, on the argument that zoom and scroll change
-   * how the editor is drawn while a playhead moves the scene — restoring one
-   * therefore moves every cast member and the music on open. That argument is
-   * sound and the decision was still wrong: reopening an editor at a different
-   * frame is not the same editor, and reze-studio restores it. What made it feel
-   * broken before was not the restore, it was arriving TWICE — the store opened
-   * at 0, the scene was elsewhere, so the seek pulled the cast to 0 and the
-   * restore then pulled it back. clip-bridge adopts the scene's own position
-   * now, so this is one deliberate move instead of two.
-   */
-  frame?: number
   /**
    * How tall the fold was, in px.
    *
@@ -81,7 +76,10 @@ function read(): TimelineView | null {
     // Dropped rather than rejected: a height that is missing or nonsense costs
     // the DEFAULT height, not the whole stored view.
     if (typeof v.height !== "number" || !Number.isFinite(v.height) || v.height <= 0) delete v.height
-    if (typeof v.frame !== "number" || !Number.isFinite(v.frame) || v.frame < 0) delete v.frame
+    // A `frame` written by the build that stored one is dropped on the way in,
+    // rather than the whole view being rejected over a key nobody reads now.
+    // Everyone who used the timeline before this has one sitting in storage.
+    delete (v as { frame?: number }).frame
     return v as TimelineView
   } catch {
     return null

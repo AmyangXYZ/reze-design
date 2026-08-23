@@ -228,18 +228,24 @@ export function Dopesheet({
   // rotation to show, and a camera's tabs are its own.
 
   const { setPlaying, setCurrentFrame } = usePlayheadActions();
-  const currentFrame = usePlayheadSelector((s) => s.currentFrame);
 
-  // Last session's playhead, applied ONCE and only once a clip exists to apply
-  // it to — restoring it against an empty editor would clamp it to zero and
-  // lose it, and the clip arrives a frame or two after the fold does.
-  const restoredFrame = useRef<number | null>(restored?.frame ?? null);
-  useEffect(() => {
-    const f = restoredFrame.current;
-    if (f == null || !clip) return;
-    restoredFrame.current = null;
-    setCurrentFrame(Math.max(0, Math.min(clip.frameCount, f)));
-  }, [clip, setCurrentFrame]);
+  // THE PLAYHEAD IS NOT RESTORED, and this is the second time it has been taken
+  // out. Last session's frame used to be applied here once a clip existed.
+  //
+  // It read as the fold jumping on open, and the reason is that it was a SECOND
+  // writer. clip-bridge adopts the scene's own position when the clip lands, so
+  // both wrote the playhead on the first open and whichever landed later won —
+  // the restore, so the editor opened at a number from a previous session while
+  // the viewport stood somewhere else entirely. Not random, which is what made
+  // it look like one: it was always exactly the frame the last visit ended on.
+  //
+  // The scene's position is the only honest answer to "where is the playhead",
+  // because it is the one the user can SEE. Zoom, scroll, height and the open
+  // channel are still remembered: those change how the editor is drawn, and
+  // nothing else in the app disagrees with them.
+  //
+  // It also means this component no longer subscribes to a value that moves
+  // sixty times a second — the subscription existed only to write it down.
 
   // WHICH clip, not how many times one has loaded.
   //
@@ -312,21 +318,21 @@ export function Dopesheet({
     return g.filter((name) => keyed.includes(name));
   }, [clip, group]);
 
-  // Reads the playhead through a ref rather than taking it as a dep: a view
-  // change is a zoom or a scroll, and rebuilding this callback on every frame
-  // of a scrub would make the timeline's own onViewChange effect re-run with it.
-  // The whole stored view, assembled from the two halves that move
-  // independently: the timeline reports zoom and scroll, the drag handle below
-  // reports height, and either can be the one that changed. Refs, so a scrub
-  // does not rebuild the callback the timeline is holding.
+  // The whole stored view, assembled from the halves that move independently:
+  // the timeline reports zoom and scroll, the drag handle below reports height,
+  // the channel comes from the store, and any of them can be the one that
+  // changed. Refs, so a change does not rebuild the callback the timeline is
+  // holding — which would make its own onViewChange effect re-run with it.
+  //
+  // A scrub is NOT a view change any more. It used to be, which meant a drag
+  // across the ruler ran this on every frame of it just to write down a number
+  // nothing reads back.
   const viewRef = useRef({ pxPerFrame: 0, yZoom: 0, scrollX: 0 });
   const tabForSave = useRef(tab);
   const heightForSave = useRef(height);
-  const frameForSave = useRef(currentFrame);
   useEffect(() => {
     tabForSave.current = tab;
     heightForSave.current = height;
-    frameForSave.current = currentFrame;
   });
   const persist = useCallback(() => {
     if (viewRef.current.pxPerFrame <= 0) return;
@@ -334,15 +340,9 @@ export function Dopesheet({
       ...viewRef.current,
       tab: tabForSave.current,
       height: heightForSave.current,
-      frame: frameForSave.current,
     });
   }, [save]);
 
-  // Scrubbing is a change to the view like any other. The 400ms settle in
-  // use-timeline-view is what keeps a drag from being four hundred writes.
-  useEffect(() => {
-    persist();
-  }, [currentFrame, persist]);
   const onViewChange = useCallback(
     (v: { pxPerFrame: number; yZoom: number; scrollX: number }) => {
       viewRef.current = v;
