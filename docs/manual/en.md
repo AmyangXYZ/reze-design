@@ -1021,7 +1021,7 @@ avoid. Reading them is the fastest way into the idiom.
 | *Hand Ribbon* | A trail along a bone's recorded path, max-blended in its own layer |
 | *Footprints* | Reading a trail in **world** space: contacts inferred from the moment a foot stops descending, each with a light pillar integrated through the air above it |
 | *Vyke's Dragonbolt* | Arcs on the limbs — screen-space paths carrying real depth, so half of each ring passes behind the body; and a two-tier cull |
-| *Summoning Circle* | A figure on the ground plane by ray-plane intersection, depth-tested by hand, with line widths in measured pixels |
+| *Summoning Circle* | A figure on the plane through a declared bone by ray-plane intersection, depth-tested by hand, with line widths in measured pixels — one `@anchor` line moves it from under her feet to under her palm |
 | *Stage Lights* | Volumetric beams marched through their own cylinder, aimed by a damped follow |
 | *Waveform* | The audio interface driving a ported Shadertoy visualiser |
 | *Shining Stars* | Hash-grid fields |

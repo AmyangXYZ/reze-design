@@ -33,6 +33,24 @@ const { rows } = await pool.query(`select id, name, author, version, payload, ow
 const db = new Map(rows.map((r) => [r.id, r]))
 const ownerId = rows.find((r) => r.author === OWN)?.owner_id ?? null
 
+// The next version comes from the VERSION ROWS, not from library_items.version.
+//
+// Those two disagree, and the item's number is the one that lies. db-seed.mjs
+// upserts library_items.version from the `version` field in content/*.json,
+// while its version-row insert is `on conflict do nothing` — so re-seeding after
+// a publish here rewinds the item's counter to whatever the repo last said and
+// leaves the published rows exactly where they are. Eight effects sit like that
+// today. Adding one to the rewound number then aims the insert straight at a row
+// that already exists, and the publish dies on the primary key having written
+// nothing — which is how this was found.
+//
+// max(version) + 1 cannot collide, and it is the only number that means what a
+// version means: one past the highest anyone could already have pinned.
+const { rows: heads } = await pool.query(
+  `select item_id, max(version) as head from library_item_versions group by item_id`,
+)
+const head = new Map(heads.map((r) => [r.item_id, Number(r.head)]))
+
 const newVersions = []
 const creations = []
 for (const b of builtins) {
@@ -40,14 +58,18 @@ for (const b of builtins) {
   if (!r) {
     creations.push(b)
   } else if (r.payload?.wgsl !== b.payload.wgsl) {
-    newVersions.push({ item: r, next: r.version + 1, effect: b })
+    newVersions.push({ item: r, next: Math.max(head.get(b.id) ?? 0, r.version) + 1, effect: b })
   }
 }
 const retire = rows.filter((r) => RETIRED.includes(r.name) && r.author === OWN)
 
 console.log(`built-ins: ${builtins.length}   published: ${rows.length}   owner: ${ownerId ?? "(none found)"}\n`)
 console.log(`NEW VERSION (${newVersions.length}):`)
-for (const v of newVersions) console.log(`  ${v.item.name}  v${v.item.version} -> v${v.next}`)
+for (const v of newVersions) {
+  const h = head.get(v.effect.id) ?? v.item.version
+  const rewound = h !== v.item.version ? `  (the item row says v${v.item.version}, rewound by a re-seed)` : ""
+  console.log(`  ${v.item.name}  v${h} -> v${v.next}${rewound}`)
+}
 console.log(`\nCREATE, public (${creations.length}):`)
 for (const c of creations) console.log(`  ${c.name}  ·  ${c.description?.slice(0, 60) ?? ""}`)
 console.log(`\nRETIRE (${retire.length}):`)
@@ -90,4 +112,9 @@ if (retire.length) {
 }
 
 console.log(`\npublished ${newVersions.length} new version(s), created ${creations.length}, retired ${retire.length}`)
+// The repo has to carry the new number forward, or the next db-seed.mjs rewinds
+// the item row to the stale one and the drift above starts over.
+for (const v of newVersions) {
+  if (v.effect.version !== v.next) console.log(`  set "version": ${v.next} on ${v.effect.name} in content/effects.json`)
+}
 await pool.end()

@@ -845,7 +845,7 @@ fn gridStep(uv: vec2f, prev: vec4f, dt: f32) -> vec4f {
 | *Hand Ribbon* | 沿骨骼记录轨迹的飘带，在自己的图层里 MAX 混合 |
 | *Footprints* | 在**世界**空间读轨迹：从脚停止下降的那一刻推断出落地，每个落点上立起一根沿射线积分的光柱 |
 | *Vyke's Dragonbolt* | 缠在四肢上的电弧——屏幕空间的路径却带着真实深度，所以每个环有一半从身后绕过去；外加两级剔除 |
-| *Summoning Circle* | 用射线与地平面求交把图案画在地上，手写深度测试，线宽以实测像素为单位 |
+| *Summoning Circle* | 用射线与锁定骨骼所在的水平面求交把图案画下去，手写深度测试，线宽以实测像素为单位——改一行 `@anchor` 就从脚下移到掌下 |
 | *Stage Lights* | 在自己的圆柱里推进的体积光束，由带阻尼的跟随瞄准 |
 | *Waveform* | 音频接口驱动一个移植过来的 Shadertoy 可视化 |
 | *Shining Stars* | 哈希网格场 |

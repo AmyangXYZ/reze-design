@@ -407,7 +407,17 @@ function SubjectHeader({
   // arriving with the timeline.
   return (
     <div className="flex shrink-0 items-center gap-1.5 border-b border-line px-4 py-2">
-      <div className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground">{title}</div>
+      {/* select-all, not merely select-text. The name here is a rig string —
+          左手首, 上半身2 — and what you want it for is pasting it into an
+          effect's @anchor line or a search. Dragging over three CJK characters
+          in a 12px row to catch all of them and none of the whitespace is the
+          fiddliest possible way to copy one word, and truncation means the tail
+          may not even be on screen to drag to. One click takes the whole name,
+          hidden overflow included. `title` is the other half: the full string
+          on hover, since this row is the one place it is stated. */}
+      <div className="min-w-0 flex-1 cursor-text truncate text-xs font-semibold text-foreground select-all" title={title}>
+        {title}
+      </div>
       <PlayheadFrameLabel frameCount={frameCount} />
       <Button
         variant="ghost"
