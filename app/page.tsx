@@ -1785,6 +1785,11 @@ export default function Lab() {
    */
   const stageIds = useMemo(() => new Set(stages.map((s) => s.id)), [stages])
   const cast = useMemo(() => models.filter((m) => !stageIds.has(m.id)), [models, stageIds])
+  /** The same list as ids, memoised on its CONTENTS: useSceneSync takes it as a
+   *  dependency, and a fresh array every render would reinstall the effect layer
+   *  sixty times a second. */
+  const castKey = cast.map((m) => m.id).join("\u0000")
+  const castIdList = useMemo(() => (castKey ? castKey.split("\u0000") : []), [castKey])
   /**
    * Cast rows still ON THE WAY — one skeleton each.
    *
@@ -1872,33 +1877,29 @@ export default function Lab() {
       ? Math.round((exportProgress.frame / exportProgress.total) * 100)
       : null
 
-  // Pin the canvas to the framed aspect while composing/exporting (main's own
-  // effect): resize once, and only when the viewport genuinely cannot hold it.
-  useEffect(() => {
-    const engine = engineRef.current
-    if (!engine || !ready) return
-    if (framing.exporting) return // the export pins the full output resolution itself
-    if (framing.activeFrame && !framing.frameVp) return
-    if (
-      framing.activeFrame &&
-      framing.frameVp &&
-      framing.activeFrame.aspect > (framing.frameVp.w / framing.frameVp.h) * FRAME_ASPECT_TOL
-    ) {
-      const dpr = window.devicePixelRatio || 1
-      engine.setRenderSize(
-        Math.round(framing.frameVp.w * dpr),
-        Math.round((framing.frameVp.w * dpr) / framing.activeFrame.aspect),
-      )
-    } else {
-      engine.setRenderSize(null)
-    }
-  }, [framing.activeFrame, framing.frameVp, framing.exporting, ready, engineRef])
-  // Frame rect in CSS pixels (the canvas fills the window; object-contain centres).
+  /**
+   * The framed rectangle, in CSS pixels — and while it exists, it is WHERE THE
+   * CANVAS IS.
+   *
+   * It used to be a scrim: the canvas stayed full-bleed, four black bars dimmed
+   * the parts that would not be exported, and only a frame WIDER than the
+   * window resized the render. So picking 9:16 left you composing on a 16:9
+   * canvas with a tall box drawn on it — the shot inside that box was never
+   * actually rendered at 9:16, and everything that reads the frame's aspect
+   * (an overlay sizing itself against rzResolution, the depth of field, the
+   * bloom radius) was answering for the wrong shape.
+   *
+   * Now the canvas becomes the box. What you are looking at IS the export,
+   * at the export's aspect, and the area around it is simply the editor.
+   */
   const frameRect =
     framing.activeFrame && framing.frameVp
       ? (() => {
           const va = framing.frameVp.w / framing.frameVp.h
           const a = framing.activeFrame.aspect
+          // Within a hair of the window's own shape, take the whole window:
+          // shrinking the canvas by a percent to honour a rounding difference
+          // costs pixels and buys nothing anybody can see.
           if (a <= va * FRAME_ASPECT_TOL && a >= va / FRAME_ASPECT_TOL)
             return { x: 0, y: 0, w: framing.frameVp.w, h: framing.frameVp.h }
           const w = a < va ? framing.frameVp.h * a : framing.frameVp.w
@@ -1906,6 +1907,29 @@ export default function Lab() {
           return { x: (framing.frameVp.w - w) / 2, y: (framing.frameVp.h - h) / 2, w, h }
         })()
       : null
+  /** The rect as a style, for the two full-bleed layers that must follow it —
+   *  the canvas and the DOM backdrop behind it. A backdrop that kept filling
+   *  the window would spill out of the frame it is supposedly inside. */
+  const frameStyle = frameRect
+    ? { left: frameRect.x, top: frameRect.y, width: frameRect.w, height: frameRect.h }
+    : undefined
+  // The render surface follows the rect exactly, so the pixels being composed
+  // are the pixels being exported. Depended on by SIZE rather than by identity:
+  // this object is rebuilt every render, and the effect must not be.
+  const frameW = frameRect?.w ?? 0
+  const frameH = frameRect?.h ?? 0
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine || !ready) return
+    if (framing.exporting) return // the export pins the full output resolution itself
+    if (framing.activeFrame && !framing.frameVp) return
+    if (frameW > 0 && frameH > 0) {
+      const dpr = window.devicePixelRatio || 1
+      engine.setRenderSize(Math.round(frameW * dpr), Math.round(frameH * dpr))
+    } else {
+      engine.setRenderSize(null)
+    }
+  }, [frameW, frameH, framing.activeFrame, framing.frameVp, framing.exporting, ready, engineRef])
 
   // Music follows the model clock — the exact mirror main uses, shared. Silent
   // while an export runs; the export mixes its own audio.
@@ -2422,6 +2446,9 @@ export default function Lab() {
     hasBackdrop: !!bgImage && !bgImage.dome,
     skybox: bgImage?.dome ? bgImage.file : null,
     greenScreen: framing.liveGreenScreen,
+    // Who an effect that declares a dissolve is about — the cast in order, so
+    // the first of them is the engine's subject 0.
+    castIds: castIdList,
   })
 
   // Effects: the same selection model as grade, one library over.
@@ -4368,9 +4395,18 @@ export default function Lab() {
           thing you are making. */}
       {bgImage && !bgImage.dome && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={bgImage.url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+        <img
+          src={bgImage.url}
+          alt=""
+          className={cn("absolute object-cover", !frameRect && "inset-0 h-full w-full")}
+          style={frameStyle}
+        />
       )}
-      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none object-contain" />
+      <canvas
+        ref={canvasRef}
+        className={cn("absolute touch-none object-contain", !frameRect && "inset-0 h-full w-full")}
+        style={frameStyle}
+      />
 
       {/* The same pill the viewer shows, for the same load — opening a scene
           here runs the identical path, and the editor said nothing at all while
@@ -4385,16 +4421,10 @@ export default function Lab() {
 
       {frameRect && (
         <div className="pointer-events-none absolute inset-0 z-10">
-          <div className="absolute bg-black/45" style={{ left: 0, right: 0, top: 0, height: frameRect.y }} />
-          <div className="absolute bg-black/45" style={{ left: 0, right: 0, bottom: 0, height: frameRect.y }} />
-          <div
-            className="absolute bg-black/45"
-            style={{ left: 0, top: frameRect.y, width: frameRect.x, height: frameRect.h }}
-          />
-          <div
-            className="absolute bg-black/45"
-            style={{ right: 0, top: frameRect.y, width: frameRect.x, height: frameRect.h }}
-          />
+          {/* No scrim any more. It existed to dim the parts of a full-bleed
+              canvas that would not be exported, and there are no such parts:
+              the canvas IS the frame. What surrounds it is the editor's own
+              ground, which needs no dimming to read as not-the-shot. */}
           {/* Capture-tool convention: amber = framed (composing), red = recording. */}
           <div
             className={cn(

@@ -4,7 +4,7 @@
   "kind": "graph",
   "name": "AG Body",
   "author": "amyang-xyz",
-  "description": "Gentle skin shading — a soft diffuse ramp that keeps shadow terminators smooth and avoids muddy occlusion. Aether Gazer-like / 仿深空之眼. Original author: 小绿毛猫.",
+  "description": "Gentle skin — a soft diffuse ramp with smooth terminators. Aether Gazer / 仿深空之眼 · 小绿毛猫",
   "tags": [
    "aether-gazer",
    "ag",
@@ -678,7 +678,7 @@
   "kind": "graph",
   "name": "AG Eye",
   "author": "amyang-xyz",
-  "description": "Bright, saturated iris. Pairs with the Eye render class so eyes read cleanly through overlapping hair. Aether Gazer-like / 仿深空之眼. Original author: 小绿毛猫.",
+  "description": "Bright, saturated iris. Pairs with the Eye render class so it reads through hair. Aether Gazer / 仿深空之眼 · 小绿毛猫",
   "tags": [
    "aether-gazer",
    "ag",
@@ -808,7 +808,7 @@
   "kind": "graph",
   "name": "AG Face",
   "author": "amyang-xyz",
-  "description": "Face-specific ramp tuned to suppress harsh nose and brow shadows while keeping a clean cheek gradient. Aether Gazer-like / 仿深空之眼. Original author: 小绿毛猫.",
+  "description": "Face ramp tuned to keep harsh nose and brow shadows off the cheek. Aether Gazer / 仿深空之眼 · 小绿毛猫",
   "tags": [
    "aether-gazer",
    "ag",
@@ -1569,7 +1569,7 @@
   "kind": "graph",
   "name": "AG Hair",
   "author": "amyang-xyz",
-  "description": "Anisotropic hair with soft NPR shadow banding and a warm rim light. Tune the ramp for sharper or softer cel steps. Aether Gazer-like / 仿深空之眼. Original author: 小绿毛猫.",
+  "description": "Anisotropic hair with soft NPR banding and a warm rim. Aether Gazer / 仿深空之眼 · 小绿毛猫",
   "tags": [
    "aether-gazer",
    "ag",
@@ -2041,7 +2041,7 @@
   "kind": "graph",
   "name": "AG Metal",
   "author": "amyang-xyz",
-  "description": "Sharp anisotropic metal highlights with a darkened base for jewelry and hardware. Aether Gazer-like / 仿深空之眼. Original author: 小绿毛猫.",
+  "description": "Sharp anisotropic highlights over a dark base — jewellery and hardware. Aether Gazer / 仿深空之眼 · 小绿毛猫",
   "tags": [
    "aether-gazer",
    "ag",
@@ -2448,7 +2448,7 @@
   "kind": "graph",
   "name": "AG Rough Cloth",
   "author": "amyang-xyz",
-  "description": "Matte fabric: broad diffuse, minimal spec. Reach for cotton, wool, and other non-shiny cloth. Aether Gazer-like / 仿深空之眼. Original author: 小绿毛猫.",
+  "description": "Matte fabric: broad diffuse, almost no spec. Cotton and wool. Aether Gazer / 仿深空之眼 · 小绿毛猫",
   "tags": [
    "aether-gazer",
    "ag",
@@ -2878,7 +2878,7 @@
   "kind": "graph",
   "name": "AG Smooth Cloth",
   "author": "amyang-xyz",
-  "description": "Smooth fabric with a tight, clean specular sheen — good for satin, leather, and coated surfaces. Aether Gazer-like / 仿深空之眼. Original author: 小绿毛猫.",
+  "description": "A tight, clean sheen — satin, leather, coated surfaces. Aether Gazer / 仿深空之眼 · 小绿毛猫",
   "tags": [
    "aether-gazer",
    "ag",
@@ -3236,7 +3236,7 @@
   "kind": "graph",
   "name": "AG Stockings",
   "author": "amyang-xyz",
-  "description": "Semi-sheer weave using hashed alpha for a stable see-through look at grazing angles. Aether Gazer-like / 仿深空之眼. Original author: 小绿毛猫.",
+  "description": "Semi-sheer weave on hashed alpha, stable at grazing angles. Aether Gazer / 仿深空之眼 · 小绿毛猫",
   "tags": [
    "aether-gazer",
    "ag",
@@ -3529,7 +3529,7 @@
   "kind": "graph",
   "name": "WuWa Body",
   "author": "amyang-xyz",
-  "description": "Skin and body: a wide, soft terminator over a shadow that warms as it turns. Pure node graph — no textures beyond the material's own, so it applies to any model. Wuthering Waves-like / 仿鸣潮. Original author: 三一七片的谎言.",
+  "description": "Skin: a wide, soft terminator over a shadow that warms as it turns. Wuthering Waves / 仿鸣潮 · 三一七片的谎言",
   "tags": [
    "wuthering-waves",
    "wuwa",
@@ -3958,7 +3958,7 @@
   "kind": "graph",
   "name": "WuWa Cloth",
   "author": "amyang-xyz",
-  "description": "Costume cloth — a tighter terminator than skin, cooler shadow, more saturation. Pure node graph — no textures beyond the material's own, so it applies to any model. Wuthering Waves-like / 仿鸣潮. Original author: 三一七片的谎言.",
+  "description": "Costume cloth: a tighter terminator than skin, cooler shadow, more saturation. Wuthering Waves / 仿鸣潮 · 三一七片的谎言",
   "tags": [
    "wuthering-waves",
    "wuwa",
@@ -4387,7 +4387,7 @@
   "kind": "graph",
   "name": "WuWa Hair",
   "author": "amyang-xyz",
-  "description": "Hair: the hardest terminator of the set, and the model's own sphere map carried strong for the anisotropic streak. Pure node graph — no textures beyond the material's own, so it applies to any model. Wuthering Waves-like / 仿鸣潮. Original author: 三一七片的谎言.",
+  "description": "Hair: the hardest terminator of the set, sphere map carried strong for the streak. Wuthering Waves / 仿鸣潮 · 三一七片的谎言",
   "tags": [
    "wuthering-waves",
    "wuwa",
@@ -4816,7 +4816,7 @@
   "kind": "graph",
   "name": "WuWa Face",
   "author": "amyang-xyz",
-  "description": "Face: the widest, softest band, so brow and nose shadows stay clean without a face SDF. Pure node graph — no textures beyond the material's own, so it applies to any model. Wuthering Waves-like / 仿鸣潮. Original author: 三一七片的谎言.",
+  "description": "Face: the widest, softest band, so brow and nose stay clean without a face SDF. Wuthering Waves / 仿鸣潮 · 三一七片的谎言",
   "tags": [
    "wuthering-waves",
    "wuwa",
@@ -5245,7 +5245,7 @@
   "kind": "graph",
   "name": "WuWa Metal",
   "author": "amyang-xyz",
-  "description": "Jewellery and hardware — a near-hard step, heavy sphere highlight, strong rim. Pure node graph — no textures beyond the material's own, so it applies to any model. Wuthering Waves-like / 仿鸣潮. Original author: 三一七片的谎言.",
+  "description": "Jewellery and hardware: a near-hard step, heavy sphere highlight, strong rim. Wuthering Waves / 仿鸣潮 · 三一七片的谎言",
   "tags": [
    "wuthering-waves",
    "wuwa",
@@ -5674,7 +5674,7 @@
   "kind": "graph",
   "name": "WuWa Eye",
   "author": "amyang-xyz",
-  "description": "Bright iris with a lifted value, so eyes read through overlapping hair. Pure node graph — no textures beyond the material's own, so it applies to any model. Wuthering Waves-like / 仿鸣潮. Original author: 三一七片的谎言.",
+  "description": "Bright iris with a lifted value, so eyes read through overlapping hair. Wuthering Waves / 仿鸣潮 · 三一七片的谎言",
   "tags": [
    "wuthering-waves",
    "wuwa",
@@ -6103,7 +6103,7 @@
   "kind": "graph",
   "name": "ZZZ Body",
   "author": "amyang-xyz",
-  "description": "Skin — a hard, high terminator with the lit half pushed warm and the shadow half drained of saturation rather than darkened. Pure node graph — no textures beyond the material's own, so it applies to any model. Zenless Zone Zero-like / 仿绝区零. Original author: 世界的歌.",
+  "description": "Skin: a hard, high terminator — the lit half warm, the shadow drained rather than darkened. Zenless Zone Zero / 仿绝区零 · 世界的歌",
   "tags": [
    "zenless-zone-zero",
    "zzz",
@@ -6382,7 +6382,7 @@
   "kind": "graph",
   "name": "ZZZ Face",
   "author": "amyang-xyz",
-  "description": "The face carries more of its colour into shadow than the body does, and a rosier lit tint, so a cheek turning away reads as turning rather than as dirt. Pure node graph — no textures beyond the material's own, so it applies to any model. Zenless Zone Zero-like / 仿绝区零. Original author: 世界的歌.",
+  "description": "More colour carried into shadow than the body, and a rosier lit tint, so a turning cheek reads as turning. Zenless Zone Zero / 仿绝区零 · 世界的歌",
   "tags": [
    "zenless-zone-zero",
    "zzz",
@@ -6661,7 +6661,7 @@
   "kind": "graph",
   "name": "ZZZ Hair",
   "author": "amyang-xyz",
-  "description": "Hair keeps its texture untouched in light and drops to seven tenths value in shadow — no tint either side, so a dyed strand stays the colour it was painted — and takes the model's own sphere map on top, which is where the source puts its highlight. Pure node graph — no textures beyond the material's own, so it applies to any model. Zenless Zone Zero-like / 仿绝区零. Original author: 世界的歌.",
+  "description": "Texture untouched in light, seven tenths value in shadow, no tint either side. Zenless Zone Zero / 仿绝区零 · 世界的歌",
   "tags": [
    "zenless-zone-zero",
    "zzz",
@@ -6957,7 +6957,7 @@
   "kind": "graph",
   "name": "ZZZ Eye",
   "author": "amyang-xyz",
-  "description": "The iris banded like the costume rather than lit like skin, which is what the source does — three tones, hard steps. Pure node graph — no textures beyond the material's own, so it applies to any model. Zenless Zone Zero-like / 仿绝区零. Original author: 世界的歌.",
+  "description": "The iris banded like the costume rather than lit like skin — three tones, hard steps. Zenless Zone Zero / 仿绝区零 · 世界的歌",
   "tags": [
    "zenless-zone-zero",
    "zzz",
@@ -7298,7 +7298,7 @@
   "kind": "graph",
   "name": "ZZZ Metal",
   "author": "amyang-xyz",
-  "description": "Hardware and hair ornaments on the three-tone step, so an edge reads as a step rather than a gradient — the hardest banding in the pack. Pure node graph — no textures beyond the material's own, so it applies to any model. Zenless Zone Zero-like / 仿绝区零. Original author: 世界的歌.",
+  "description": "Hardware and ornaments on the three-tone step — the hardest banding in the pack. Zenless Zone Zero / 仿绝区零 · 世界的歌",
   "tags": [
    "zenless-zone-zero",
    "zzz",
@@ -7639,7 +7639,7 @@
   "kind": "graph",
   "name": "ZZZ Cloth",
   "author": "amyang-xyz",
-  "description": "Costume cloth on the three-tone step — a fold reads as two hard edges rather than a gradient — over a base lifted before the shadow tint so the weave survives it. Pure node graph — no textures beyond the material's own, so it applies to any model. Zenless Zone Zero-like / 仿绝区零. Original author: 世界的歌.",
+  "description": "Costume cloth on the three-tone step, over a base lifted so the weave survives the shadow tint. Zenless Zone Zero / 仿绝区零 · 世界的歌",
   "tags": [
    "zenless-zone-zero",
    "zzz",

@@ -29,10 +29,17 @@ fn bgResolution() -> vec2f { return u.res; }
 // written against a real scene read the same here.
 const PV_CAM = vec3f(0.0, 8.0, -26.0);
 fn bgCameraPos() -> vec3f { return PV_CAM; }
-fn pvForward() -> vec3f {
-  let yaw = u.time * 0.06;
-  return vec3f(sin(yaw), 0.0, cos(yaw));
-}
+/**
+ * FIXED. It used to yaw slowly, on the argument that a drifting view shows an
+ * effect is anchored in the WORLD rather than painted on the frame.
+ *
+ * What it actually did, once the cards had a stand-in body to draw against, was
+ * slide that body across the card — and a card is two centimetres across, so a
+ * figure crossing it reads as the SUBJECT walking rather than as the camera
+ * turning. The thing a card has to show is the effect; a moving stage says
+ * something the effect never said.
+ */
+fn pvForward() -> vec3f { return vec3f(0.0, 0.0, 1.0); }
 fn bgWorldPos(ray: vec3f, depth: f32) -> vec3f {
   let axis = max(dot(normalize(ray), pvForward()), 1e-4);
   return bgCameraPos() + normalize(ray) * (depth / axis);
@@ -71,6 +78,10 @@ struct RzSubject {
   root: vec3f,
   center: vec3f,
   bounds: vec4f,
+  /** How much of this character is still there. Cycled on the card rather than
+   *  held at 1: an effect that draws what LEAVES a dissolving body has nothing
+   *  to draw against a subject who never goes. */
+  dissolve: f32,
   valid: bool,
 }
 struct RzAnchor {
@@ -89,6 +100,17 @@ fn rzSubject(i: i32) -> RzSubject {
   s.root = vec3f(0.0, 0.0, 0.0);
   s.center = vec3f(0.0, PV_HIP, 0.0);
   s.bounds = vec4f(0.0, PV_HIP, 0.0, 14.0);
+  // One teleport every eight seconds — the cycle the built-in Teleportation
+  // declares, and the same four moments the engine samples from it.
+  // The built-in Teleportation's own cycle: 3.0 whole, 0.5 apart, 0.65 gone,
+  // 0.35 back. The same four durations the @dissolve directive takes, so a
+  // change there is a change of the same four numbers here.
+  let c = fract(u.time / 4.5) * 4.5;
+  var d = 1.0;
+  if (c >= 3.0 && c < 3.5) { d = 1.0 - (c - 3.0) / 0.5; }
+  else if (c >= 3.5 && c < 4.15) { d = 0.0; }
+  else if (c >= 4.15) { d = (c - 4.15) / 0.35; }
+  s.dissolve = clamp(d, 0.0, 1.0);
   return s;
 }
 fn rzSubjectHip(i: i32) -> vec3f { return rzSubject(i).center; }
@@ -128,6 +150,47 @@ fn rzTrail(subject: i32, slot: i32, i: i32) -> vec4f {
   let side = select(-2.6, 2.6, (slot % 2) == 1);
   return vec4f(side, max(0.0, sin(ph)) * 3.5, sin(ph * 0.5) * 7.0, age);
 }
+
+// ── A stand-in BODY, and the ids that name it ──
+//
+// The id attachment is how an effect masks itself to one character —
+// rzObjectAt says which object drew a pixel — and a card that does not define
+// it is a shader error, which is a blank card with nothing said anywhere. The
+// stand-in cast above gives an effect somewhere to BE; this gives it something
+// to COVER.
+//
+// A capsule in screen space, which is what a body's silhouette is: the figure
+// the cast describes, projected, so an effect masking by id eats a shape the
+// size and place of a real one.
+const PV_ID: u32 = 7u;
+fn pvBodyMask(uv: vec2f) -> f32 {
+  let asp = u.res.x / max(u.res.y, 1.0);
+  let foot = rzProject(vec3f(0.0, 1.5, 0.0));
+  let head = rzProject(vec3f(0.0, 17.5, 0.0));
+  // The radius measured where it is drawn, in uv.x, then carried into the
+  // aspect-corrected space below with everything else.
+  let r = abs(rzProject(vec3f(3.4, 9.0, 0.0)).x - rzProject(vec3f(0.0, 9.0, 0.0)).x) * asp;
+  let p = vec2f(uv.x * asp, uv.y);
+  let a = vec2f(foot.x * asp, foot.y);
+  let b = vec2f(head.x * asp, head.y);
+  let pa = p - a;
+  let ba = b - a;
+  let h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+  return select(0.0, 1.0, length(pa - ba * h) < max(r, 1e-4));
+}
+/** Which model this is — what rzObjectAt is compared against. */
+fn rzSubjectId(i: i32) -> u32 { return select(0u, PV_ID, i == 0); }
+/** TOP-LEFT uv, exactly as the engine's takes it: it indexes the attachment
+ *  with textureLoad, whose origin is the top-left texel, while every uv the
+ *  effect API hands out has its origin bottom-left. An effect turns y over for
+ *  the real one, so it must turn it over here — otherwise the card would show a
+ *  mask the scene does not. */
+fn rzObjectAt(uvTop: vec2f) -> u32 {
+  return select(0u, PV_ID, pvBodyMask(vec2f(uvTop.x, 1.0 - uvTop.y)) > 0.5);
+}
+/** One material on that body — enough for an effect that masks by material to
+ *  compile and to see a shape, which is what a card is for. */
+fn rzMaterialAt(uvTop: vec2f) -> u32 { return select(0u, 1u, rzObjectAt(uvTop) != 0u); }
 
 // ── Stand-in AUDIO ──
 //
@@ -249,13 +312,23 @@ USER_CODE
   if (dir.y < -1e-4) {
     hit = -PV_CAM.y / dir.y;
   }
-  let depth = clamp(hit * max(dot(dir, fwd), 1e-4), 0.05, 100000.0);
+  var depth = clamp(hit * max(dot(dir, fwd), 1e-4), 0.05, 100000.0);
 
   // A dark base, then a hint of floor receding — a foreground needs something to
   // be in front of, or its whole point is invisible.
   var col = vec3f(0.075, 0.06, 0.1);
   if (hit < 100000.0) {
     col = mix(vec3f(0.16, 0.15, 0.19), col, clamp(hit / 140.0, 0.0, 1.0));
+  }
+
+  // The body the ids name, DRAWN as well as masked. An effect that dissolves a
+  // character needs a character on the card to dissolve; without one it eats a
+  // silhouette nobody can see and the card shows its sparks floating in a room.
+  // Flat, and deliberately: this is a stand-in, and shading it would invite
+  // reading the card as a render.
+  if (pvBodyMask(uv) > 0.5) {
+    col = vec3f(0.20, 0.19, 0.24);
+    depth = max(rzProject(vec3f(0.0, 9.0, 0.0)).z, 0.05);
   }
 
   BACKGROUND_CALL

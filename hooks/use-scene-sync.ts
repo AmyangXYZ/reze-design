@@ -10,13 +10,74 @@
 // document and neither knows the difference.
 
 import { useEffect, useRef } from "react"
-import { Vec3, parseHDR, type Engine } from "reze-engine"
+import { Vec3, parseHDR, type DissolveCycle, type Engine } from "reze-engine"
 import { type AppliedEffect } from "@/lib/effects"
 import { resolveSpec, type GradeSpec } from "@/lib/grade"
 import { CAMERA_DEFAULT_FOV, type SceneCamera } from "@/lib/scene"
 import { azElToDirection, windVariation, hexToLinearVec3, hexToSrgbVec3, windDirection, type SceneSettings } from "@/lib/scene-settings"
 
 const GREEN = "#00ff00"
+
+/**
+ * The dissolve an effect declares, or null.
+ *
+ * `// @dissolve` says an effect takes the cast apart. FOUR CONSTANTS say when:
+ *
+ *   const DISSOLVE_APART = 0.5;   // seconds she takes to come apart
+ *   const DISSOLVE_GONE  = 0.65;  // ...and how long there is nothing of her
+ *   const DISSOLVE_BACK  = 0.35;  // ...to arrive again
+ *   const DISSOLVE_WHOLE = 3.0;   // ...and to stand there before it repeats
+ *
+ * The numbers ride in CONSTANTS rather than in the directive, and that is a
+ * usability decision rather than a technical one. They started as five moments
+ * on the directive line, which made every edit arithmetic — quicker vanishing
+ * meant moving three other numbers to keep the gaps. Four durations fixed the
+ * arithmetic and left them still sitting in a comment, dim and unremarkable,
+ * nowhere near the block of tunables an author actually edits. These are the
+ * numbers this effect gets retuned on most, so they belong where the retuning
+ * happens; the directive stays as the declaration, which is what a directive is
+ * for.
+ *
+ * Durations, not moments, and the cycle STARTS whole — so the wait is the gap
+ * you see between teleports rather than a tail nobody can find the start of.
+ *
+ * A missing constant is zero, not a failure: an effect asking for a dissolve
+ * with no numbers gets one that happens instantly and never repeats, which is
+ * visible and diagnosable, where refusing to install would lose the whole
+ * effect over a typo in one of four lines.
+ *
+ * The FIRST effect that declares one wins. A scene that layers two effects both
+ * taking the cast apart is asking for two answers to one question, and the
+ * document's own order is the only honest tie-break.
+ */
+const dissolveConst = (wgsl: string, name: string): number => {
+  const m = new RegExp(`^\\s*const\\s+${name}\\s*(?::\\s*f32\\s*)?=\\s*(-?[\\d.]+)`, "m").exec(wgsl)
+  const v = m ? Number(m[1]) : 0
+  return Number.isFinite(v) && v > 0 ? v : 0
+}
+
+function parseDissolveCycle(sources: string[]): DissolveCycle | null {
+  for (const wgsl of sources) {
+    const m = /^\s*\/\/\s*@dissolve\s*$/m.exec(wgsl)
+    if (!m) continue
+    const out = dissolveConst(wgsl, "DISSOLVE_APART")
+    const away = dissolveConst(wgsl, "DISSOLVE_GONE")
+    const back = dissolveConst(wgsl, "DISSOLVE_BACK")
+    const wait = dissolveConst(wgsl, "DISSOLVE_WHOLE")
+    // A cycle has to CONTAIN something. All four at zero is not a dissolve that
+    // never fires, it is a period of zero, and the engine would divide by it.
+    if (out + away + back + wait <= 0.01) {
+      console.warn("[effect] @dissolve needs a cycle longer than nothing:", m[0].trim())
+      continue
+    }
+    const breakAt = wait
+    const hiddenAt = breakAt + out
+    const backAt = hiddenAt + away
+    const doneAt = backAt + back
+    return { period: doneAt, breakAt, hiddenAt, backAt, doneAt }
+  }
+  return null
+}
 
 export function useSceneSync({
   engineRef,
@@ -39,6 +100,10 @@ export function useSceneSync({
   /** Chroma-key preview: green background, no ground surface, effect and skybox
    *  suspended — they render in-canvas and would cover the key. */
   greenScreen = false,
+  /** Cast member ids, in order — stages excluded, the same list the engine's
+   *  own subjects are drawn from. Only used to decide WHO an effect that
+   *  declares a dissolve is about; the first of them is subject 0. */
+  castIds = [],
 }: {
   engineRef: React.RefObject<Engine | null>
   ready: boolean
@@ -51,6 +116,7 @@ export function useSceneSync({
   hasBackdrop?: boolean
   skybox?: File | null
   greenScreen?: boolean
+  castIds?: string[]
 }) {
   // Per-section identity guard: setSun dirties the shadow map (an extra full pass
   // per frame), so an unguarded push re-rendered shadows on every bloom tick.
@@ -206,6 +272,23 @@ export function useSceneSync({
     }
     if (wgsl === lastWgsl.current) return
     lastWgsl.current = wgsl
+    // ── An effect that takes the cast apart ──
+    //
+    // "// @dissolve period breakAt hiddenAt backAt doneAt", in seconds. The
+    // effect declares the TIMING and the engine performs it: the material shell
+    // is what actually throws the model away, and no shader can reach that from
+    // a field or particle mount. Handing the numbers over here rather than
+    // ticking them per frame is what keeps one clock — the engine samples the
+    // cycle where it samples everything else time-driven, writes the value into
+    // every material AND into the cast, and the effect reads it back as
+    // rzSubject(i).dissolve. So the sparks cannot drift from the body.
+    //
+    // Subject 0 only, deliberately: the effect drawing the sparks spawns them
+    // off subject 0's skeleton, and dissolving a character nobody is drawing
+    // sparks for would be a model that vanishes with no explanation.
+    const cycle = parseDissolveCycle(sources)
+    const subject = castIds[0] ?? null
+    if (subject) engine.setModelDissolveCycle(subject, cycle)
     let stale = false
     void engine.setEffects(sources.length ? sources.map((s) => ({ wgsl: s })) : null).then((rs) => {
       if (stale) return
@@ -222,7 +305,7 @@ export function useSceneSync({
     return () => {
       stale = true
     }
-  }, [backgroundEffects, greenScreen, ready, engineRef])
+  }, [backgroundEffects, greenScreen, ready, engineRef, castIds])
 
   useEffect(() => {
     const engine = engineRef.current

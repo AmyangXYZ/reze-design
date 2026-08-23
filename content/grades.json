@@ -4,7 +4,7 @@
     "kind": "grade",
     "name": "Neutral",
     "author": "Amyang",
-    "description": "No grade at all — the render exactly as the engine tonemapped it. The baseline every other preset is a departure from.",
+    "description": "No grade at all — the render exactly as the engine tonemapped it.",
     "tags": [
       "neutral",
       "clean"
@@ -33,7 +33,7 @@
     "kind": "grade",
     "name": "Bloody",
     "author": "Amyang",
-    "description": "Horror-anime blood wash. Blacks go true black and the reds run the whole range from near-black to bright, so shading still reads — the colour comes from contrast and saturation rather than from crushing the channels.",
+    "description": "Horror-anime blood wash: blacks go true black, reds run the whole range.",
     "tags": [
       "red",
       "crimson",
@@ -67,7 +67,7 @@
     "kind": "grade",
     "name": "Cyberpunk",
     "author": "Amyang",
-    "description": "Teal shadows against magenta mids and highlights, saturation pushed past cinematic. Deliberately no amber — that reads as sunset, not neon.",
+    "description": "Teal shadows against magenta mids, saturation past cinematic. Deliberately no amber.",
     "tags": [
       "night",
       "neon",
@@ -100,7 +100,7 @@
     "kind": "grade",
     "name": "Divine",
     "author": "Amyang",
-    "description": "Holy light. Deep amber shadows climb through saturated gold to a radiance that blooms toward white — divine rather than the sepia a warm filter usually gives you.",
+    "description": "Holy light: deep amber shadows climbing through gold to a white radiance.",
     "tags": [
       "gold",
       "warm",
@@ -134,7 +134,7 @@
     "kind": "grade",
     "name": "Moonlit",
     "author": "Amyang",
-    "description": "Drowned in blue. Nothing crushes to black — shadows hold as deep navy while highlights stay bright enough to sparkle, and source hues wash out almost entirely so the blue is the subject rather than a tint over it.",
+    "description": "Drowned in blue — navy shadows that never crush, highlights bright enough to read.",
     "tags": [
       "night",
       "cool",
@@ -168,7 +168,7 @@
     "kind": "grade",
     "name": "Sakura",
     "author": "Amyang",
-    "description": "A gentle rose wash through shadows and mids with the highlights left clean. Soft contrast keeps it wistful instead of candied.",
+    "description": "A gentle rose wash through shadows and mids, highlights left clean.",
     "tags": [
       "pink",
       "soft",
