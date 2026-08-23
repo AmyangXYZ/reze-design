@@ -42,6 +42,46 @@ export function emptyStudioClip(): AnimationClip {
   return { boneTracks: new Map(), morphTracks: new Map(), frameCount: DEFAULT_STUDIO_CLIP_FRAMES }
 }
 
+/**
+ * The clip's length as the BODY MOTION defines it, with the expression file
+ * allowed to set it only when there is no body motion at all.
+ *
+ * An expression VMD dresses the motion clip rather than becoming one, and the
+ * engine grows the clip to cover whichever of the two runs longer — deliberately,
+ * so a face performance is never truncated to the dance. That is the right
+ * default for PLAYING a clip and the wrong one for measuring it: 表情モーション
+ * files routinely carry a trailing neutral key thousands of frames past the last
+ * step, and the whole editor is drawn against this number. The ruler then runs
+ * three times the length of the dance, the scrub thumb covers a third of the
+ * bar, and the rest is empty.
+ *
+ * So the motion is the authority on how long the take is. Its length is its last
+ * bone key, which is exactly what the engine would have computed had the file
+ * been loaded on its own.
+ *
+ * With no bone keys — an expression loaded before any motion, or instead of one
+ * — there is nothing to measure against and the morph's own length stands. Same
+ * for a single-pose VMD, whose last key is frame 0: trimming to that would leave
+ * a face performance with no timeline to play on.
+ *
+ * Returns 0 when the clip carries no body motion, which is also how a caller
+ * asks whether there is one — the timeline's axis uses it that way to decide
+ * whether a camera VMD may extend the ruler past the dance.
+ */
+export function motionFrameCount(clip: AnimationClip): number {
+  let motion = 0
+  for (const t of clip.boneTracks.values()) for (const k of t) motion = Math.max(motion, k.frame)
+  return motion
+}
+
+/** @see motionFrameCount — the clip with that length applied. Returns the clip
+ *  itself when there is nothing to trim, so callers can compare by identity. */
+export function clipTrimmedToMotion(clip: AnimationClip): AnimationClip {
+  const motion = motionFrameCount(clip)
+  if (motion <= 0 || clip.frameCount <= motion) return clip
+  return { ...clip, frameCount: motion }
+}
+
 /** Keep only tracks whose bones/morphs exist on the new model — used both for
  *  a mid-session PMX swap and for restoring a persisted draft onto whichever
  *  model booted (the two may have drifted out of sync). */

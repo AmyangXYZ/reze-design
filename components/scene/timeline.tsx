@@ -36,6 +36,7 @@ import {
   isCameraTab,
   boneDisplayLabel,
 } from "@/lib/animation"
+import { motionFrameCount } from "@/lib/clip"
 
 // ─── Timeline constants ─────────────────────────────────────────────────
 const DOPE_H = 26
@@ -1648,12 +1649,22 @@ export function Timeline({
   // Written, not read, by this component: the draw callback below publishes the
   // live frame into it for every consumer that must not subscribe. See there.
   const frameRef = usePlayheadFrameRef()
-  // The timeline spans whichever is longer. A camera VMD carries no bone or
-  // morph frames, so a camera-only load leaves `clip.frameCount` at its default
-  // while the shot itself runs for minutes — without this the ruler would end
-  // long before the track it is drawing.
+  // THE BODY MOTION SETS THE LENGTH, and only in its absence does anything else.
+  //
+  // A camera VMD carries no bone or morph frames, so a camera-only load leaves
+  // `clip.frameCount` at its default while the shot runs for minutes — the ruler
+  // would end long before the track it is drawing. That is what the fallback is
+  // for, and it used to be a plain max() over both, which made the longest FILE
+  // the axis: a shot that keeps rolling after the dance, or an expression file
+  // with a trailing key, and the ruler runs past the take with the scrub thumb
+  // shrunk to match.
+  //
+  // The clip's own frameCount is already the motion's (see clipTrimmedToMotion,
+  // applied where the expression file is laid on), so with a motion present this
+  // is simply that — including any growth from an edit, which is deliberate.
   const lastCameraFrame = cameraTrack.length > 0 ? cameraTrack[cameraTrack.length - 1].frame : 0
-  const fc = Math.max(clip?.frameCount ?? 0, lastCameraFrame)
+  const hasMotion = useMemo(() => (clip ? motionFrameCount(clip) > 0 : false), [clip])
+  const fc = hasMotion ? (clip?.frameCount ?? 0) : Math.max(clip?.frameCount ?? 0, lastCameraFrame)
   const [endDraft, setEndDraft] = useState<string | null>(null)
   const [frameDraft, setFrameDraft] = useState<string | null>(null)
   // Lazy-initialized from a restored draft's view, read once at first mount —

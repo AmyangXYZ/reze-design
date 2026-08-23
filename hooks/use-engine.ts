@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { EFFECTS } from "@/lib/effects"
 import { Engine, parseLRC, parseMidi, Quat, Vec3, type ApplyStyleGroupResult, type CompileOptions, type GizmoDragEvent, type Model, type RenderClass, type MidiNote, type StyleGroup } from "reze-engine"
+import { clipTrimmedToMotion } from "@/lib/clip"
 import { rasterizeLyrics } from "@/lib/lyrics-raster"
 import { SLOT_GRAPHS } from "@/lib/materials"
 import { graphLibraryName } from "@/lib/refs"
@@ -570,6 +571,30 @@ export type ViewportHandlers = {
   onGizmoDrag?: (event: GizmoDragEvent) => void
 }
 
+/**
+ * Put a clip's length back where the BODY MOTION left it.
+ *
+ * setMorphTracks grows a clip to cover whichever of the two files runs longer,
+ * so an expression VMD with a trailing key a thousand frames past the last step
+ * stretches everything measured from this number: the transport's scrub bar, the
+ * timeline's ruler, the loop point, the export end. The engine is right to keep
+ * the face playing — truncating morph PLAYBACK to the dance would drop the tail
+ * of a performance — and this app is the one that decides how long the take IS.
+ * See clipTrimmedToMotion for what it deliberately leaves alone.
+ *
+ * Written back through loadClip, the same door the editor's own commits use, so
+ * nothing here has to know a clip's internals. Module scope because it closes
+ * over nothing: the two loaders below are memoized on an empty dependency list,
+ * and a helper from the hook body would be a stale closure by construction even
+ * though this one could not tell the difference.
+ */
+function trimToMotion(model: Model, name: string): void {
+  const clip = model.getClip(name)
+  if (!clip) return
+  const trimmed = clipTrimmedToMotion(clip)
+  if (trimmed !== clip) model.loadClip(name, trimmed)
+}
+
 export function useEngine(
   /** The scene to boot into — read ONCE (constructor options + first loadModel + addGround) */
   initialScene: Scene,
@@ -949,6 +974,7 @@ export function useEngine(
       const target = playing ?? file.name
       try {
         await model.loadVmd(target, url, { tracks: "morphs" })
+        trimToMotion(model, target)
         // Only when the morph IS the clip. With a motion playing, showing
         // it again would restart the dance from frame 0.
         if (!playing) model.show(target)
@@ -972,6 +998,7 @@ export function useEngine(
       const target = playing ?? name
       try {
         await model.loadVmd(target, url, { tracks: "morphs" })
+        trimToMotion(model, target)
         if (!playing) model.show(target)
         return name
       } catch {
