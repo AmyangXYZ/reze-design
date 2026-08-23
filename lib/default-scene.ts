@@ -1,5 +1,6 @@
 // The bundled demo — the scene a first-time visitor lands on.
 
+import { FOLLOW_BONE } from "@/components/scene/scene-sidebar"
 import { builtinEffect } from "@/lib/effects"
 import { libraryGraph } from "@/lib/materials"
 import { parseSceneDoc, type Scene, type SceneDoc } from "@/lib/scene"
@@ -77,9 +78,13 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
         },
       },
     ],
-    // The camera overrides `settings.camera` below while it is enabled; those
-    // values stay as what the scene falls back to when it is turned off.
-    cameraAnimation: USE_DEFAULT_ASSETS ? "/animations/Classic_camera.vmd" : null,
+    // NO CAMERA MOTION. The demo shipped with a VMD shot, and a cut every few
+    // seconds is the wrong frame for a scene whose point is what the effects do
+    // to the cast — half of every effect landed off screen or mid-cut. The
+    // follow orbit below holds her instead, which is also the framing a visitor
+    // gets the moment they drag the viewport, so what they see first is what
+    // they keep.
+    cameraAnimation: null,
     audio: USE_DEFAULT_ASSETS ? "/audios/Classic.mp3" : null,
     midi: null,
     lyrics: null,
@@ -87,38 +92,37 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
     skybox: null,
   },
   settings: {
-    camera: { distance: 26.2, alpha: Math.PI, beta: Math.PI / 2.5, target: [0, 11.4, 0] },
+    // FOLLOW, so the orbit centre rides センター and a travelling motion cannot
+    // walk out of frame. `target` is then the OFFSET from that bone rather than
+    // a point in the world — the three sliders mean the same thing either way,
+    // which is why it reads as it did. Distance 33: far enough to hold the whole
+    // of her and the ribbons, now that the cast no longer sits wherever a shot
+    // put it.
+    camera: {
+      distance: 33,
+      alpha: Math.PI,
+      beta: Math.PI / 2.5,
+      target: [0, 2.0, 0],
+      follow: FOLLOW_BONE,
+    },
     world: { color: "#ed6aff", strength: 0.66 },
     sun: { color: "#ffffff", strength: 2.0, azimuth: 205, elevation: 21 },
     bloom: { enabled: true, threshold: 0.5, knee: 0.5, radius: 4.0, intensity: 0.05, color: "#ffc9c9" },
     dof: DEFAULT_DOF,
     outline: DEFAULT_OUTLINE,
     view: DEFAULT_VIEW,
-    // Three, on three different mounts — Shining Stars is a background field,
-    // Hand Ribbon is particles and trails, Teleportation is particles and the
-    // material dissolve — so none can paint over another and the order between
-    // them is free. It is not free in general: a full-cover backdrop has to come
-    // first or it erases what is under it.
+    // Both are ADDITIVE-friendly and sit on different mounts — Shining Stars is
+    // a background field, Hand Ribbon is particles and trails — so neither can
+    // paint over the other and the order here is free. It is not free in
+    // general: a full-cover backdrop has to come first or it erases what is
+    // under it.
     //
-    // TELEPORTATION IS WHAT THE DEMO IS FOR. It is the one effect that reaches
-    // all the way down: the material shell takes the model apart, the particle
-    // pass draws what leaves, three declared lights land the cloud on the floor,
-    // and the engine times the whole of it on the scene clock. A visitor who
-    // watches for five seconds has seen the engine do something no shader on its
-    // own can.
-    //
-    // THE SCENE SITS EXACTLY ON THE ANCHOR CAP, and that is worth knowing before
-    // adding a fourth: Teleportation declares eight bones and Hand Ribbon two of
-    // the same eight, which deduplicate to 8 of 8 per SCENE. One more anchored
-    // effect and the table starts refusing bones — it says so in the console,
-    // and the effect that loses one draws that limb wrong rather than failing.
-    // Lights are 5 of 16 and particles 7,320, which are not close to anything.
-    //
-    // The ribbons keep trailing through the second she is gone, from wrists the
-    // dissolve has taken. That is deliberate: her motion is still there in the
-    // clip, and a pair of neon bands carrying on where she was is the clearest
-    // possible statement that she is coming back.
-    background: { color: "#4b004f", effects: ["Shining Stars", "Hand Ribbon", "Teleportation"] },
+    // TELEPORTATION IS NOT IN THE DEMO, though it is the effect this build is
+    // for. It costs seven thousand particles, three lights and a material
+    // dissolve that runs in three passes, and the first paint of the site is the
+    // one frame that has to be quick on whatever machine arrives. It is one
+    // click away in the library, which is where somebody who wants it will be.
+    background: { color: "#4b004f", effects: ["Shining Stars", "Hand Ribbon"] },
     grade: { preset: "Neutral", intensity: 1 },
     ground: { color: "#c800de", size: 160, opacity: 0.42, shadow: true, grid: "#fafaf9", gridEnabled: true },
     physics: DEFAULT_PHYSICS,
