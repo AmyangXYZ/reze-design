@@ -166,7 +166,9 @@ import { useDrafts } from "@/hooks/use-drafts"
 import { useSession } from "@/lib/auth-client"
 import { freeName } from "@/lib/names"
 import { applyDefaults, EFFECTS, builtinEffect, NEW_EFFECT_TEMPLATE, type AppliedEffect } from "@/lib/effects"
-import { probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
+import { BACKDROP_VIDEO_RE, probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
+import { useMediaBackdrop } from "@/hooks/use-media-backdrop"
+import { isCompositingBackground } from "@/lib/export-background"
 import type { ExportProgress } from "@/lib/video-export"
 import { castColour } from "@/lib/model-colour"
 import { castPaletteKey, castSourceFor } from "@/lib/cast-source"
@@ -307,6 +309,11 @@ const CHECKERBOARD: React.CSSProperties = {
   backgroundSize: "24px 24px",
   backgroundPosition: "0 0, 12px 12px",
 }
+
+/** The flat backdrop takes stills and moving pictures; the 360 dome takes a
+ *  still equirect, including Radiance. */
+const BACKDROP_ACCEPT = "image/*,video/mp4,video/webm,video/quicktime"
+const DOME_ACCEPT = "image/*,.hdr"
 
 const FRAME_ASPECT_TOL = 1.03
 
@@ -1988,11 +1995,41 @@ export default function Lab() {
 
   // Music follows the model clock — the exact mirror main uses, shared. Silent
   // while an export runs; the export mixes its own audio.
+  const bgImageInput = useRef<HTMLInputElement | null>(null)
+  /** Set before the picker opens: does this upload fill the flat row or the 360 row? */
+  const bgImageIsDome = useRef(false)
+  const [bgImage, setBgImage] = useState<(BackdropMedia & { dome: boolean }) | null>(null)
+  const swapBgImage = useCallback(
+    (next: (BackdropMedia & { dome: boolean }) | null) =>
+      setBgImage((prev) => {
+        releaseBackdrop(prev)
+        return next
+      }),
+    [],
+  )
+  /** The moving backdrop — video, gif, webp, apng — drawn from the clip's clock
+   *  rather than played on one of its own. See useMediaBackdrop. */
+  const mediaBackdrop = useMediaBackdrop(bgImage && !bgImage.dome ? bgImage : null)
+  /**
+   * Is the backdrop part of the shot right now?
+   *
+   * A compositing handoff drops it — the export composites over green or over
+   * nothing — and the LIVE layers have to drop it with them or the viewport is
+   * showing something the file will not contain. Green screen hid it by
+   * accident, the canvas being opaque green; transparent has no such cover, so
+   * the backdrop simply showed through the frame it was excluded from.
+   */
+  const backdropInShot = !!bgImage && !bgImage.dome && !isCompositingBackground(framing.liveBackground)
+
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  /** The video backdrop, which plays natively — see useAudioClock. */
+  const bgVideoRef = useRef<HTMLVideoElement | null>(null)
   useAudioClock({
     engineRef,
     masterId,
     audioRef,
+    drawBackdrop: mediaBackdrop.draw,
+    videoRef: bgVideoRef,
     disabled: framing.exporting,
   })
 
@@ -2392,21 +2429,16 @@ export default function Lab() {
   // often enough that the user could not tell which mode they were in. Which
   // row you upload from is the answer — and the rows are mutually exclusive
   // because a scene has one background, not two.
-  const bgImageInput = useRef<HTMLInputElement | null>(null)
-  /** Set before the picker opens: does this upload fill the flat row or the 360 row? */
-  const bgImageIsDome = useRef(false)
-  const [bgImage, setBgImage] = useState<(BackdropMedia & { dome: boolean }) | null>(null)
-  const swapBgImage = useCallback(
-    (next: (BackdropMedia & { dome: boolean }) | null) =>
-      setBgImage((prev) => {
-        releaseBackdrop(prev)
-        return next
-      }),
-    [],
-  )
   const pickBgImage = (dome: boolean) => {
     bgImageIsDome.current = dome
-    bgImageInput.current?.click()
+    // Narrowed on the way to the picker, beside the flag it belongs to: a video
+    // fills the flat slot and an .hdr the 360 one, and offering either in the
+    // wrong picker only produces a file the next line has to refuse. Set
+    // imperatively for the same reason the flag is a ref — the click is now,
+    // and a re-render is not.
+    const input = bgImageInput.current
+    if (input) input.accept = dome ? DOME_ACCEPT : BACKDROP_ACCEPT
+    input?.click()
   }
   const onBgImagePicked = useCallback(
     async (file: File | undefined) => {
@@ -2418,13 +2450,20 @@ export default function Lab() {
           setUpload({ kind: "notice", message: "An .hdr is a 360\u00b0 world \u2014 use it as the 360 background." })
           return
         }
+        // The dome is sampled as an equirect still. A moving one is its own
+        // feature, and silently taking the first frame would be worse than
+        // saying so.
+        if (BACKDROP_VIDEO_RE.test(file.name) && bgImageIsDome.current) {
+          setUpload({ kind: "notice", message: t.upload.videoIsFlatOnly })
+          return
+        }
         const next = await probeBackdrop(file)
         swapBgImage({ ...next, dome: bgImageIsDome.current })
       } catch (e) {
         setUpload({ kind: "notice", message: e instanceof Error ? e.message : String(e) })
       }
     },
-    [swapBgImage],
+    [swapBgImage, t],
   )
 
   // ── The rest of the document ──
@@ -4467,11 +4506,40 @@ export default function Lab() {
           style={{ ...frameStyle, ...CHECKERBOARD }}
         />
       )}
-      {bgImage && !bgImage.dome && (
+      {backdropInShot && bgImage.kind === "image" && (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={bgImage.url}
           alt=""
+          className={cn("absolute object-cover", !frameRect && "inset-0 h-full w-full")}
+          style={frameStyle}
+        />
+      )}
+      {/* A gif/webp/apng, painted per frame by the clip's clock. */}
+      {backdropInShot && mediaBackdrop.moving && (
+        <canvas
+          ref={mediaBackdrop.canvasRef}
+          className={cn("absolute object-cover", !frameRect && "inset-0 h-full w-full")}
+          style={frameStyle}
+        />
+      )}
+      {/* A video, played natively — the compositor handles the frames, which is
+          what holds 4K60. muted is not a preference: a backdrop is picture, its
+          own soundtrack would play under the scene's music, and muted is also
+          what lets it start without a user gesture. playsInline keeps iOS from
+          taking it fullscreen.
+
+          Same slot, same object-cover and same frameStyle as the other two, so
+          changing the export aspect reframes all of them identically. */}
+      {backdropInShot && bgImage.kind === "video" && (
+        <video
+          key={bgImage.url}
+          ref={bgVideoRef}
+          src={bgImage.url}
+          muted
+          loop
+          playsInline
+          preload="auto"
           className={cn("absolute object-cover", !frameRect && "inset-0 h-full w-full")}
           style={frameStyle}
         />
@@ -4817,7 +4885,7 @@ export default function Lab() {
       <input
         ref={bgImageInput}
         type="file"
-        accept="image/*,.hdr"
+        accept={BACKDROP_ACCEPT}
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0]
@@ -5705,8 +5773,21 @@ export default function Lab() {
                             app guesses from the file. */}
                         {(
                           [
-                            { dome: false, label: t.lab.ctl.image, kind: t.lab.kinds.backgroundImage },
-                            { dome: true, label: t.lab.ctl.dome, kind: t.lab.kinds.background360 },
+                            {
+                              dome: false,
+                              label: t.lab.ctl.image,
+                              kind: t.lab.kinds.backgroundImage,
+                              upload: t.lab.uploadImage,
+                            },
+                            // Its own invite: the two slots take different
+                            // things, and one label for both had the 360 row
+                            // offering "media" for a slot that takes a still.
+                            {
+                              dome: true,
+                              label: t.lab.ctl.dome,
+                              kind: t.lab.kinds.background360,
+                              upload: t.lab.uploadSkybox,
+                            },
                           ] as const
                         ).map((row) => {
                           const filled = bgImage && bgImage.dome === row.dome ? bgImage : null
@@ -5740,7 +5821,7 @@ export default function Lab() {
                               ) : (
                                 <span className="ml-auto flex min-w-0 justify-end">
                                   <UploadInvite
-                                    label={t.lab.uploadImage}
+                                    label={row.upload}
                                     onClick={() => pickBgImage(row.dome)}
                                     aria={t.lab.aria.upload(row.kind)}
                                     className="text-right text-xs"

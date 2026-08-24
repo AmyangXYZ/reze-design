@@ -1,10 +1,18 @@
 "use client"
 
-// Mirror the animation clock onto an audio element — the model is the master.
+// Mirror the animation clock onto the scene's media elements — the model is the
+// master.
 //
 // Extracted verbatim from app/page.tsx so the 0.4.0 chrome plays music the same
 // way the shipped editor does. Every quirk in here is a lesson iOS Safari
 // taught once and must not teach twice; change nothing casually.
+//
+// A MOVING BACKDROP RIDES THE SAME TICK, by one of two routes. A gif or
+// animated webp is DRAWN (see use-media-backdrop): there is no element that can
+// be told what time it is, and an <img> animates on the browser's clock. A
+// VIDEO plays natively, because at 4K60 the copies a drawn frame costs are the
+// difference between smooth and not. The branch at the end of the tick is what
+// keeps the second one from moving the picture when nobody asked.
 
 import { useEffect, useRef, type RefObject } from "react"
 import type { Engine } from "reze-engine"
@@ -13,13 +21,24 @@ export function useAudioClock({
   engineRef,
   masterId,
   audioRef,
+  drawBackdrop,
+  videoRef,
   disabled = false,
 }: {
   engineRef: RefObject<Engine | null>
   /** The model whose clip is the clock — first of the animated set, or null. */
   masterId: string | null
   audioRef: RefObject<HTMLAudioElement | null>
-  /** True while exporting: the render pipeline owns time, the element stays silent. */
+  /** Paint a DRAWN backdrop (gif/webp/apng) at a scene time. Every frame it
+   *  shows is one this asked for, so it needs no play/pause branch of its own
+   *  and follows a scrub and an export alike. */
+  drawBackdrop?: (time: number) => void
+  /** A VIDEO backdrop, which plays natively — see the branch at the end of the
+   *  tick for why this one keeps an element. */
+  videoRef?: RefObject<HTMLVideoElement | null>
+  /** True while exporting: the render pipeline owns time, the element stays
+   *  silent — and the export decodes the backdrop from the file itself, so the
+   *  element has no part in what it produces. */
   disabled?: boolean
 }) {
   // Browsers block audio until the user interacts.
@@ -41,13 +60,31 @@ export function useAudioClock({
   useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
-    if (!masterId || disabled) {
+    if (!masterId) {
       audio.pause()
       return
     }
+    // AN EXPORT SILENCES THE SOUND AND KEEPS THE PICTURE.
+    //
+    // The tick used to return outright here, which is right for everything the
+    // export owns: it writes setAudioTime and setMidiTime itself, from its own
+    // exact frame times, and a second writer feeding it wall-clock progress
+    // would fight it every frame. Sound has nowhere to go either — the export
+    // is not playing the scene, it is stating what time it is.
+    //
+    // The backdrop is neither. Freezing it left the one thing on screen that
+    // was not following the render, so an export of a moving background looked
+    // broken while producing a correct file. It follows below, stepped rather
+    // than played.
+    if (disabled) audio.pause()
     let raf = 0
     let wasPlaying = false
+
     let lastModelTime = -1
+    let wasVideoPlaying = false
+    /** The wrapped time the video backdrop was last asked to show while the
+     *  transport was stopped. Null while it plays. */
+    let lastWant: number | null = null
     // The one correction free-run allows: when sound ACTUALLY starts (decode
     // can lag play() by hundreds of ms on a cold cache), stamp the clock once.
     // Fires per start, never during steady playback.
@@ -95,73 +132,126 @@ export function useAudioClock({
       raf = requestAnimationFrame(tick)
       const p = engineRef.current?.getModel(masterId)?.getAnimationProgress()
       if (!p) return
-      // The rzAudio* clock for effects — a 4-byte header write, every tick, so
-      // audio-reactive shaders follow scrubs and pauses exactly as sound does.
-      engineRef.current?.setAudioTime(p.current, p.playing)
-      // The score's clock, on the SAME tick and the same value. Notes and the
-      // music they were transcribed from have to advance together or the whole
-      // point is lost — and driving both from the model's animation progress is
-      // what makes a scrub, a pause and an offline export all agree.
-      engineRef.current?.setMidiTime(p.current, p.playing)
-      const playing = p.playing && userInteracted.current
-      // A frame advances the clock ≤ ~0.05s — anything bigger is a discrete jump.
+      // A frame advances the clock ≤ ~0.05s — anything bigger is a discrete
+      // jump. Read before either half below, because both want it.
       const jumped = lastModelTime >= 0 && Math.abs(p.current - lastModelTime) > 0.35
       lastModelTime = p.current
-      if (playing) {
-        // Free-running audio, like the reze.one demo: the clock is set at
-        // playback start and on explicit jumps (scrub, loop wrap) and is then
-        // LEFT ALONE — no drift lock, no rate bending. Continuous correction
-        // of any kind is what stuttered on mobile Safari; real clock drift
-        // over a dance is milliseconds and nobody hears it.
-        // Stamp only when the clocks genuinely disagree (scrubbed while
-        // stopped, loop wrap) — a resume with clocks already close plays on
-        // untouched, seek-free.
-        //
-        // Arm the onset correction on EVERY start, not only the starts that
-        // needed a stamp. Arming used to live inside the branch below, which
-        // meant the most common start of all never armed it: pressing play at
-        // frame 0 leaves audio.currentTime and p.current both at 0, so the 0.15
-        // threshold cannot trip. Sound still begins well after play() on a cold
-        // buffer, and with nothing armed onPlaying returned at its !stampArmed
-        // guard — so that decode latency became a fixed offset for the whole
-        // take, since free-run never corrects itself afterwards. That is the
-        // "audio starts late from frame 0" report.
-        //
-        // Plain resumes stay safe: onPlaying only moves the clock when the two
-        // are more than 0.05s apart, and a resume is already well inside that,
-        // so it still does not flush the decoder or clip the first beat.
-        if (!wasPlaying) stampArmed = true
-        if ((!wasPlaying && Math.abs(audio.currentTime - p.current) > 0.15) || (!audio.seeking && jumped)) {
-          audio.currentTime = p.current
-          stampArmed = true
+
+      // Everything the EXPORT owns while it runs — see the note above.
+      if (!disabled) {
+        // The rzAudio* clock for effects — a 4-byte header write, every tick, so
+        // audio-reactive shaders follow scrubs and pauses exactly as sound does.
+        engineRef.current?.setAudioTime(p.current, p.playing)
+        // The score's clock, on the SAME tick and the same value. Notes and the
+        // music they were transcribed from have to advance together or the whole
+        // point is lost — and driving both from the model's animation progress is
+        // what makes a scrub, a pause and an offline export all agree.
+        engineRef.current?.setMidiTime(p.current, p.playing)
+        const playing = p.playing && userInteracted.current
+        if (playing) {
+          // Free-running audio, like the reze.one demo: the clock is set at
+          // playback start and on explicit jumps (scrub, loop wrap) and is then
+          // LEFT ALONE — no drift lock, no rate bending. Continuous correction
+          // of any kind is what stuttered on mobile Safari; real clock drift
+          // over a dance is milliseconds and nobody hears it.
+          // Stamp only when the clocks genuinely disagree (scrubbed while
+          // stopped, loop wrap) — a resume with clocks already close plays on
+          // untouched, seek-free.
+          //
+          // Arm the onset correction on EVERY start, not only the starts that
+          // needed a stamp. Arming used to live inside the branch below, which
+          // meant the most common start of all never armed it: pressing play at
+          // frame 0 leaves audio.currentTime and p.current both at 0, so the 0.15
+          // threshold cannot trip. Sound still begins well after play() on a cold
+          // buffer, and with nothing armed onPlaying returned at its !stampArmed
+          // guard — so that decode latency became a fixed offset for the whole
+          // take, since free-run never corrects itself afterwards. That is the
+          // "audio starts late from frame 0" report.
+          //
+          // Plain resumes stay safe: onPlaying only moves the clock when the two
+          // are more than 0.05s apart, and a resume is already well inside that,
+          // so it still does not flush the decoder or clip the first beat.
+          if (!wasPlaying) stampArmed = true
+          if ((!wasPlaying && Math.abs(audio.currentTime - p.current) > 0.15) || (!audio.seeking && jumped)) {
+            audio.currentTime = p.current
+            stampArmed = true
+          }
+          // A track SHORTER than the clip ends part-way through and leaves the
+          // element paused. Seeking it back to 0 when the motion loops does not
+          // resume an ended element — only play() does — so the second pass ran in
+          // silence. Guarded on there being audio left, or an element sitting at
+          // its own duration would be asked to start again every frame.
+          //
+          // `audio.src` is the same guard `warm` uses: a scene with no track, or one
+          // whose track was just removed, otherwise fires a play() that can only
+          // reject, once per frame, for as long as the motion runs.
+          if (
+            audio.src &&
+            audio.paused &&
+            !playPending &&
+            (!Number.isFinite(audio.duration) || p.current < audio.duration - 0.05)
+          ) {
+            playPending = true
+            void audio
+              .play()
+              .catch(() => {})
+              .finally(() => {
+                playPending = false
+              })
+          }
+        } else if (!audio.paused) {
+          audio.pause()
         }
-        // A track SHORTER than the clip ends part-way through and leaves the
-        // element paused. Seeking it back to 0 when the motion loops does not
-        // resume an ended element — only play() does — so the second pass ran in
-        // silence. Guarded on there being audio left, or an element sitting at
-        // its own duration would be asked to start again every frame.
-        //
-        // `audio.src` is the same guard `warm` uses: a scene with no track, or one
-        // whose track was just removed, otherwise fires a play() that can only
-        // reject, once per frame, for as long as the motion runs.
-        if (
-          audio.src &&
-          audio.paused &&
-          !playPending &&
-          (!Number.isFinite(audio.duration) || p.current < audio.duration - 0.05)
-        ) {
-          playPending = true
-          void audio
-            .play()
-            .catch(() => {})
-            .finally(() => {
-              playPending = false
-            })
-        }
-      } else if (!audio.paused) {
-        audio.pause()
+        wasPlaying = playing
       }
-      wasPlaying = playing
+
+      // Unconditional, and outside everything the export owns above: the
+      // backdrop is the one thing on screen that should keep following while a
+      // render runs.
+      drawBackdrop?.(p.current)
+
+      // ── A video backdrop, which PLAYS ──
+      //
+      // The one moving kind that keeps an element. A decoded-and-drawn video
+      // costs a full-resolution copy per frame on the same thread as the 3D
+      // render, which 1080p60 survives and 4K60 does not; the element hands the
+      // frames to the compositor with no copy at all, and often on an overlay
+      // plane. Smooth at any resolution the machine can decode. Gifs keep the
+      // drawn path — they have no element that can be told what time it is.
+      //
+      // THE PICTURE NEVER MOVES ON ITS OWN. Pausing does not seek: an element
+      // free-running against the clip sits within a frame of it, and correcting
+      // that on the way into a pause is what changed the picture after the
+      // character had stopped. A stopped transport is not a reason to move
+      // anything — only the scene time actually CHANGING while stopped is, and
+      // that is a scrub, where a moving picture is the point.
+      //
+      // What it costs is that a paused preview can be one frame from what the
+      // export writes for that moment. Invisible, and the file is unaffected:
+      // the export decodes its own backdrop frames from the source.
+      const video = videoRef?.current ?? null
+      if (video && video.src && video.readyState >= 1) {
+        const span = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0
+        // Wrapped into the backdrop's own length, so a clip longer than the
+        // video seeks somewhere inside it rather than past its end.
+        const want = span ? ((p.current % span) + span) % span : p.current
+        const followsLive = p.playing && !disabled
+        if (followsLive) {
+          // Stamped at the start of playback and on a discrete jump; left alone
+          // in between, which is this file's rule for every media element.
+          // <video loop> does the wrapping itself while it runs.
+          if (!wasVideoPlaying || (!video.seeking && jumped)) video.currentTime = want
+          if (video.paused) void video.play().catch(() => {})
+          lastWant = null
+        } else {
+          if (!video.paused) video.pause()
+          // Only a CHANGE while stopped, never the stop itself.
+          if (lastWant !== null && Math.abs(want - lastWant) > 1e-4) video.currentTime = want
+          lastWant = want
+        }
+        wasVideoPlaying = followsLive
+      }
+
     }
     raf = requestAnimationFrame(tick)
     return () => {
@@ -171,5 +261,5 @@ export function useAudioClock({
       window.removeEventListener("keydown", warm)
     }
     // The refs are stable; listing them costs nothing and keeps the rule on.
-  }, [masterId, engineRef, disabled, audioRef])
+  }, [masterId, engineRef, disabled, audioRef, drawBackdrop, videoRef])
 }

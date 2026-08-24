@@ -13,7 +13,7 @@ import {
   Output,
 } from "mediabunny"
 import type { Engine } from "reze-engine"
-import { coverCrop, type BackdropMedia } from "./backdrop"
+import { coverCrop, openAnimatedImage, type BackdropMedia } from "./backdrop"
 import { GREEN, isCompositingBackground, type ExportBackground } from "./export-background"
 import { PngSequenceWriter } from "./png-sequence"
 
@@ -125,6 +125,219 @@ function drawWatermark(ctx: CanvasRenderingContext2D, w: number, h: number, font
   ctx.restore()
 }
 
+/**
+ * The backdrop, as one output-sized frame per rendered frame.
+ *
+ * Both kinds arrive already cover-fitted to the output, so the composite is a
+ * single 1:1 drawImage either way — a still is cropped once into a canvas
+ * instead of re-cropped 7200 times, and a video is decoded straight to size by
+ * the sink.
+ */
+type BackdropFrames = {
+  /** The frame for the next output index, in order. Null before the first. */
+  next(): Promise<CanvasImageSource | null>
+  close(): void
+}
+
+/**
+ * A moving backdrop, frame-locked to the render.
+ *
+ * NOT a <video> element. Seeking one per frame lands on the nearest keyframe
+ * and decodes forward, so an offline loop — which runs at whatever speed the
+ * render manages, nowhere near realtime — would drift and stutter. The demuxer
+ * is handed the loop's OWN timestamps instead, monotonically sorted, which is
+ * the case its pipeline documents as decoding each packet at most once. Frame
+ * n of the file lands under frame n of the animation by construction rather
+ * than by a clock the two have to agree on.
+ *
+ * The timestamps are scene time, so exporting a segment from 0:30 shows the
+ * backdrop at 0:30. Past its end it WRAPS, matching the <video loop> on screen.
+ *
+ * Wrapping is why the iterator is rebuilt per pass rather than fed one long
+ * list. A wrapped sequence is not monotonic — it drops back to zero at every
+ * loop — and monotonic is the precondition for the sink decoding each packet
+ * once. Handed the sawtooth directly it would seek backwards on every wrap and
+ * re-decode from the previous keyframe. One iterator per pass keeps every
+ * sequence it sees ascending, so the fast path holds all the way through.
+ */
+async function openVideoBackdrop(
+  media: BackdropMedia,
+  o: { width: number; height: number; startTime: number; fps: number; total: number; loop: boolean },
+): Promise<BackdropFrames> {
+  const { Input, BufferSource, CanvasSink, ALL_FORMATS } = await import("mediabunny")
+  // READ ONCE, UP FRONT, rather than letting the demuxer read the File lazily
+  // for the length of the export.
+  //
+  // A File from a picker is a reference to something on disk, and the browser
+  // is entitled to decide later that it can no longer read it — "The requested
+  // file could not be read, typically due to permission problems that have
+  // occurred after a reference to a file was acquired" is the exact failure.
+  // A muxed export reads for seconds and rarely loses that race; a PNG sequence
+  // runs for minutes, which is long enough for the reference to go stale
+  // half-way through and take a finished-looking export down with it.
+  //
+  // The cost is holding the backdrop in memory for the export. That is bounded
+  // and known, next to a render already holding hundreds of megabytes of GPU
+  // targets, and it buys a decode that cannot fail part-way for a reason that
+  // has nothing to do with the file's contents.
+  const bytes = await media.file.arrayBuffer()
+  const input = new Input({ source: new BufferSource(bytes), formats: ALL_FORMATS })
+  const track = await input.getPrimaryVideoTrack()
+  if (!track) throw new Error(`No video track in ${media.name}`)
+  const sink = new CanvasSink(track, { width: o.width, height: o.height, fit: "cover", poolSize: 2 })
+  const span = o.loop ? Math.max(await track.computeDuration(), 1 / 1000) : Infinity
+  /** Scene time -> time within the file, wrapping when the backdrop loops. */
+  const sourceTime = (i: number) => {
+    const t = o.startTime + i / o.fps
+    return span === Infinity ? t : t % span
+  }
+
+  /** Timestamps from `from` up to the wrap, which is where this pass ends. */
+  const passFrom = (from: number) => {
+    let prev = -Infinity
+    return (function* () {
+      for (let i = from; i < o.total; i++) {
+        const t = sourceTime(i)
+        if (t < prev) return // the wrap: the next pass starts here
+        prev = t
+        yield t
+      }
+    })()
+  }
+
+  let held: CanvasImageSource | null = null
+  let index = 0
+  let frames = sink.canvasesAtTimestamps(passFrom(0))
+
+  return {
+    async next() {
+      const { value, done } = await frames.next()
+      if (done) {
+        // This pass ended at a wrap. The next one opens at the same index and
+        // begins at the top of the file, ascending again.
+        void frames.return(undefined)
+        frames = sink.canvasesAtTimestamps(passFrom(index))
+        const again = await frames.next()
+        if (!again.done && again.value) held = again.value.canvas
+      } else if (value) {
+        held = value.canvas
+      }
+      index++
+      return held
+    },
+    close() {
+      void frames.return(undefined)
+      void input.dispose?.()
+    },
+  }
+}
+
+/**
+ * An animated image — gif, animated webp, APNG — decoded frame by frame.
+ *
+ * Its live layer is an <img>, which has always animated on its own; this path
+ * exists because drawImage takes frame one and nothing else, so an animated
+ * backdrop exported as a frozen picture. WebCodecs' ImageDecoder reads the
+ * rest, and these formats carry a per-frame delay rather than a frame rate, so
+ * scene time maps to a frame by walking cumulative durations instead of
+ * dividing by an fps the file does not have.
+ *
+ * They loop by nature and the <img> does too, so this always wraps.
+ */
+async function openAnimatedBackdrop(
+  media: BackdropMedia,
+  o: { width: number; height: number; startTime: number; fps: number },
+): Promise<BackdropFrames> {
+  // The shared opener: it waits on tracks.ready rather than completed, and
+  // falls back to the extension when a bundled File has no type. Null means
+  // nothing here can step it, and the still path draws it correctly.
+  const opened = await openAnimatedImage(media.file)
+  if (!opened) return openImageBackdrop(media, o)
+  const { dec, frames: count } = opened
+
+  // WHEN each frame ends, walked once. These formats carry a per-frame delay
+  // rather than a frame rate, so there is no arithmetic that skips this.
+  //
+  // The frames themselves are NOT kept. Fitting all of them to the output up
+  // front is the obvious move and is unaffordable: an output-sized canvas is
+  // 33 MB at 4K, so a hundred-frame gif would hold three gigabytes to save a
+  // decode. They are closed as they are counted, and the frame actually needed
+  // is decoded when the index changes — which for a ~10 fps gif against a 60
+  // fps export is once every six output frames, and never for the five in
+  // between.
+  const ends: number[] = []
+  let acc = 0
+  for (let i = 0; i < count; i++) {
+    const { image } = await dec.decode({ frameIndex: i })
+    // Microseconds. A frame with no stated delay runs at the 100 ms every
+    // decoder substitutes for one.
+    acc += (image.duration ?? 100_000) / 1e6
+    image.close()
+    ends.push(acc)
+  }
+  const span = Math.max(acc, 1 / 1000)
+
+  // One scratch canvas, reused: the composite draws whatever this returns 1:1,
+  // so the cover-fit happens here once per frame CHANGE rather than per output
+  // frame.
+  const scratch = document.createElement("canvas")
+  scratch.width = o.width
+  scratch.height = o.height
+  const sx = scratch.getContext("2d")!
+  sx.imageSmoothingQuality = "high"
+
+  let index = 0
+  let shown = -1
+  let closed = false
+  return {
+    async next() {
+      const t = (o.startTime + index / o.fps) % span
+      index++
+      let f = 0
+      while (f < ends.length - 1 && t >= ends[f]) f++
+      if (f !== shown && !closed) {
+        const { image } = await dec.decode({ frameIndex: f })
+        const crop = coverCrop(image.displayWidth, image.displayHeight, o.width, o.height)
+        sx.clearRect(0, 0, o.width, o.height)
+        sx.drawImage(image, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, o.width, o.height)
+        image.close()
+        shown = f
+      }
+      return shown >= 0 ? scratch : null
+    },
+    close() {
+      closed = true
+      dec.close()
+    },
+  }
+}
+
+/** The frame source this backdrop needs, by kind. */
+function openBackdrop(
+  media: BackdropMedia,
+  o: { width: number; height: number; startTime: number; fps: number; total: number },
+): Promise<BackdropFrames> {
+  if (media.kind === "video") return openVideoBackdrop(media, { ...o, loop: true })
+  if (media.kind === "animated") return openAnimatedBackdrop(media, o)
+  return openImageBackdrop(media, o)
+}
+
+/** A still, cover-cropped once into an output-sized canvas. */
+async function openImageBackdrop(
+  media: BackdropMedia,
+  o: { width: number; height: number },
+): Promise<BackdropFrames> {
+  const img = await loadImage(media.url)
+  const fitted = document.createElement("canvas")
+  fitted.width = o.width
+  fitted.height = o.height
+  const fctx = fitted.getContext("2d")!
+  fctx.imageSmoothingQuality = "high"
+  const c = coverCrop(img.naturalWidth, img.naturalHeight, o.width, o.height)
+  fctx.drawImage(img, c.sx, c.sy, c.sw, c.sh, 0, 0, o.width, o.height)
+  return { next: async () => fitted, close: () => {} }
+}
+
 /** Backdrop bitmap, decoded once. */
 function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -174,12 +387,28 @@ export async function captureStill(opts: {
   settings: Pick<ExportSettings, "width" | "height" | "watermark" | "background">
   backdrop: BackdropMedia | null
   backgroundColor: string
+  /** Scene time of the pose being captured — which backdrop frame a moving
+   *  backdrop is showing. Ignored for a still backdrop. */
+  atTime?: number
 }): Promise<Blob> {
   const { engine, canvas, settings, backdrop, backgroundColor } = opts
   const { width, height, background } = settings
 
   // Decoded before the engine is touched, so the render size is restored promptly.
-  const bgImage = backdrop && !isCompositingBackground(background) ? await loadImage(backdrop.url) : null
+  const wantsBackdrop = backdrop && !isCompositingBackground(background)
+  // The still shares the video path's frame lookup, so the frame under the pose
+  // is the frame the video export would put there.
+  const bgFrames = wantsBackdrop
+    ? await openBackdrop(backdrop, {
+        width,
+        height,
+        startTime: Math.max(0, opts.atTime ?? 0),
+        fps: 1,
+        total: 1,
+      })
+    : null
+  const bgFrame = bgFrames ? await bgFrames.next() : null
+  bgFrames?.close()
 
   const composite = document.createElement("canvas")
   composite.width = width
@@ -202,10 +431,7 @@ export async function captureStill(opts: {
     // dt = 0 redraws the current pose rather than advancing it.
     engine.renderFrame(0)
     paintBase(ctx, background, backgroundColor, width, height)
-    if (bgImage) {
-      const c = coverCrop(bgImage.naturalWidth, bgImage.naturalHeight, width, height)
-      ctx.drawImage(bgImage, c.sx, c.sy, c.sw, c.sh, 0, 0, width, height)
-    }
+    if (bgFrame) ctx.drawImage(bgFrame, 0, 0, width, height)
     ctx.drawImage(canvas, 0, 0, width, height)
     if (settings.watermark) drawWatermark(ctx, width, height, brandFontFamily())
   } finally {
@@ -393,8 +619,10 @@ export async function exportVideo(opts: {
     audioBuffer = await buildMusicAudio(musicUrl, startTime, duration)
 
   // ── Backdrop layer (skipped entirely for a compositing handoff) ──
-  let bgImage: HTMLImageElement | null = null
-  if (backdrop && !isCompositingBackground(background)) bgImage = await loadImage(backdrop.url)
+  const backdropFrames =
+    backdrop && !isCompositingBackground(background)
+      ? await openBackdrop(backdrop, { width, height, startTime, fps, total })
+      : null
 
   /**
    * Is there anything to composite?
@@ -408,7 +636,7 @@ export async function exportVideo(opts: {
    * modes that need the speed — green screen and transparent both arrive here
    * with no backdrop, and both force the watermark off.
    */
-  const needsComposite = bgImage !== null || settings.watermark
+  const needsComposite = backdropFrames !== null || settings.watermark
   const watermarkFont = needsComposite ? brandFontFamily() : ""
 
   // ── Engine: remember live state, switch to offline stepping ──
@@ -459,6 +687,24 @@ export async function exportVideo(opts: {
     for (let i = 0; i < total; i++) {
       if (opts.signal?.aborted) throw new DOMException("Export canceled", "AbortError")
       const t = i / fps
+
+      // THE BACKDROP IS FETCHED BEFORE THE RENDER, and this order is load-bearing.
+      //
+      // A WebGPU canvas is presented at the end of the task that drew it, and
+      // its contents are not guaranteed to survive into the next one. Reading
+      // it back therefore has to happen in the SAME task as renderFrame, with
+      // nothing awaited in between — and this await is a real one, since the
+      // sink decodes.
+      //
+      // With the await sitting between the two, the first frames of an export
+      // composited the backdrop over an already-presented, cleared canvas: a
+      // moving background with no cast in front of it. Only the first few,
+      // because that is when the decoder is opening its pipeline and the wait
+      // is long; once it is running ahead the promise settles in a microtask
+      // and the canvas survives, which is exactly what makes the bug look
+      // intermittent rather than structural.
+      const bgFrame = backdropFrames ? await backdropFrames.next() : null
+
       // dt=0 renders the t=0 pose itself; afterwards each call advances one frame.
       // Audio time is TRACK time: the export may start mid-song.
       engine.setAudioTime(startTime + t)
@@ -468,12 +714,12 @@ export async function exportVideo(opts: {
       engine.setMidiTime(startTime + t)
       engine.renderFrame(i === 0 ? 0 : 1 / fps)
 
+      // From here to the end of this iteration: no await before the canvas has
+      // been consumed.
       if (ctx) {
         paintBase(ctx, background, bgColor, width, height)
-        if (bgImage) {
-          const c = coverCrop(bgImage.naturalWidth, bgImage.naturalHeight, width, height)
-          ctx.drawImage(bgImage, c.sx, c.sy, c.sw, c.sh, 0, 0, width, height)
-        }
+        // Already cover-fitted to the output — see BackdropFrames.
+        if (bgFrame) ctx.drawImage(bgFrame, 0, 0, width, height)
         ctx.drawImage(canvas, 0, 0, width, height)
         if (settings.watermark) drawWatermark(ctx, width, height, watermarkFont)
       }
@@ -492,6 +738,7 @@ export async function exportVideo(opts: {
     await sink?.cancel()
     throw e
   } finally {
+    backdropFrames?.close()
     // Restore the live session at the exact prior size (the host re-asserts
     // pin-or-tracking afterwards), background/skybox (compositing mode
     engine.setRenderSize(prevW, prevH)

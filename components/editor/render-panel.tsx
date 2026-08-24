@@ -314,6 +314,9 @@ export const RenderPanel = memo(function RenderPanel({
         settings: { width, height, watermark: compositing ? false : watermark, background },
         backdrop,
         backgroundColor,
+        // The still is the pose on screen, so a moving backdrop has to be the
+        // frame under that pose rather than the one it opens on.
+        atTime: engine.getModel(modelName)?.getAnimationProgress().current ?? 0,
       })
       const filename = filenameFor("png")
       download(blob, filename)

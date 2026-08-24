@@ -370,6 +370,7 @@ const en = {
     pickModel: "Multiple models found — pick one",
     cantLoad: "Can't load that folder",
     noPmx: "No .pmx file found in that folder.",
+    videoIsFlatOnly: "A video fills the flat backdrop — the 360 background takes a still.",
     cantLoadCamera: (message: string) => `Couldn't load that camera: ${message}`,
   },
   // The 0.4.0 chrome. Row names, pane tabs, control labels and the command
@@ -410,7 +411,8 @@ const en = {
     uploadLyrics: "Upload lyrics",
     uploadStageFolder: "Upload stage PMX folder",
     uploadStagePmx: "Upload stage PMX",
-    uploadImage: "Upload image",
+    uploadImage: "Upload media",
+    uploadSkybox: "Upload HDR or image",
     on: "On",
     off: "Off",
     // The palette says what it actually holds: things you can DO (Actions and
@@ -553,7 +555,7 @@ const en = {
       music: "music",
       midi: "MIDI",
       lyrics: "lyrics",
-      backgroundImage: "background image",
+      backgroundImage: "background media",
       background360: "skybox",
     },
     ctl: {
@@ -589,8 +591,8 @@ const en = {
       target: (axis: string) => `Target ${axis}`,
       offset: (axis: string) => `Offset ${axis}`,
       dof: "Depth of field",
-      image: "Image",
-      dome: "360°",
+      image: "Media",
+      dome: "Skybox",
     },
     /** The delete confirmation shared by every clip row. */
     deleteClip: {
@@ -1095,6 +1097,7 @@ const zh: Dictionary = {
     pickModel: "找到多个模型 —— 请选择一个",
     cantLoad: "无法加载该文件夹",
     noPmx: "该文件夹中未找到 .pmx 文件。",
+    videoIsFlatOnly: "视频用于平面背景 — 360 背景只接受静态图。",
     cantLoadCamera: (message: string) => `无法加载该相机：${message}`,
   },
   lab: {
@@ -1130,7 +1133,8 @@ const zh: Dictionary = {
     uploadLyrics: "上传歌词",
     uploadStageFolder: "上传舞台 PMX 文件夹",
     uploadStagePmx: "上传舞台 PMX",
-    uploadImage: "上传图片",
+    uploadImage: "上传媒体",
+    uploadSkybox: "上传 HDR / 图片",
     on: "开",
     off: "关",
     palette: {
@@ -1250,7 +1254,7 @@ const zh: Dictionary = {
       music: "音乐",
       midi: "MIDI",
       lyrics: "歌词",
-      backgroundImage: "背景图片",
+      backgroundImage: "背景媒体",
       background360: "天空盒",
     },
     ctl: {
@@ -1284,8 +1288,8 @@ const zh: Dictionary = {
       target: (axis: string) => `目标 ${axis}`,
       offset: (axis: string) => `偏移 ${axis}`,
       dof: "景深",
-      image: "图片",
-      dome: "360°",
+      image: "媒体",
+      dome: "天空盒",
     },
     deleteClip: {
       title: (kind: string) => `删除${kind}？`,

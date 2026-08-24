@@ -36,6 +36,10 @@ let ctx = null
 
 self.onmessage = async (e) => {
   const { dir, bitmap, name } = e.data
+  // Which step failed matters more than that one did: an encode error is a
+  // frame problem, a getFileHandle/write error is a filesystem one, and the
+  // bare DOMException text says neither.
+  let step = "encode"
   try {
     if (!canvas || canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
       canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
@@ -46,13 +50,16 @@ self.onmessage = async (e) => {
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.drawImage(bitmap, 0, 0)
     const blob = await canvas.convertToBlob({ type: "image/png" })
+    step = "open"
     const handle = await dir.getFileHandle(name, { create: true })
+    step = "write"
     const writable = await handle.createWritable()
     await writable.write(blob)
     await writable.close()
     self.postMessage({ bytes: blob.size })
   } catch (err) {
-    self.postMessage({ error: (err && err.message) || String(err) })
+    const why = (err && err.message) || String(err)
+    self.postMessage({ error: step + " " + name + ": " + why })
   } finally {
     // ALWAYS. An ImageBitmap holds GPU memory until it is closed, and at 4K
     // that is 33 MB a frame; closing it only on the success path meant one
@@ -147,15 +154,31 @@ export class PngSequenceWriter {
    */
   async add(canvas: HTMLCanvasElement, index: number): Promise<void> {
     if (this.failure) throw this.failure
+
+    // SNAPSHOT FIRST, BEFORE WAITING FOR ANYTHING.
+    //
+    // createImageBitmap takes its copy of the canvas at CALL time and hands
+    // back a promise for the decode, so calling it here — synchronously, in the
+    // caller's own task, immediately after renderFrame — is what captures the
+    // frame that was just drawn.
+    //
+    // Waiting for a free worker first is what broke it. A WebGPU canvas is
+    // presented at the end of the task that drew it and is not guaranteed to
+    // survive into the next one, so an export whose pool was saturated awaited
+    // acquire(), lost the task, and then snapshotted a cleared surface. On a
+    // transparent export that is a fully empty frame, which every viewer shows
+    // as white — and only on the frames where the pool happened to be busy,
+    // which is why some were fine.
+    const pending = createImageBitmap(canvas)
     const worker = await this.acquire()
     // Everything between acquiring and handing off has to give the worker back.
-    // createImageBitmap is the one that can throw (a lost GPU context does it),
-    // and the worker it stranded was never released: the pool drained one frame
-    // at a time and then acquire() waited on a slot nothing would ever free,
-    // while finish() saw an empty queue and reported success on a short folder.
+    // A lost GPU context makes this reject, and the worker it stranded was
+    // never released: the pool drained one frame at a time and then acquire()
+    // waited on a slot nothing would ever free, while finish() saw an empty
+    // queue and reported success on a short folder.
     let bitmap: ImageBitmap
     try {
-      bitmap = await createImageBitmap(canvas)
+      bitmap = await pending
     } catch (e) {
       this.release(worker)
       throw e
