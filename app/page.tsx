@@ -294,6 +294,20 @@ const subscribeTimelineRoom = (onChange: () => void) => {
 const timelineRoomNow = () => !window.matchMedia(TIMELINE_ROOM_QUERY).matches
 
 /** A viewport a hair narrower than the target still counts as matching it. */
+/**
+ * The transparent-preview ground, in the two greys every compositor uses.
+ * Neutral on purpose: a tinted checker biases the colour judgement of whatever
+ * is keyed over it, which is what people open this mode to make.
+ */
+const CHECKERBOARD: React.CSSProperties = {
+  backgroundColor: "#2b2b2b",
+  backgroundImage:
+    "linear-gradient(45deg, #3a3a3a 25%, transparent 25%, transparent 75%, #3a3a3a 75%)," +
+    "linear-gradient(45deg, #3a3a3a 25%, transparent 25%, transparent 75%, #3a3a3a 75%)",
+  backgroundSize: "24px 24px",
+  backgroundPosition: "0 0, 12px 12px",
+}
+
 const FRAME_ASPECT_TOL = 1.03
 
 /** Palette recents, persisted — Suggestions should remember across sessions. */
@@ -679,7 +693,25 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       // a number printed here is one nobody updated. A hint that can be wrong is
       // worse than a row with nothing to add.
       altLabels: [alt.cmd.exportVideo],
-      keywords: [...SAVE, "mp4", "4k", "render", "encode"],
+      keywords: [
+        ...SAVE,
+        "mp4",
+        "webm",
+        "4k",
+        "render",
+        "encode",
+        // The transparent lane, by every name someone reaches for it under.
+        // None of these matched before it existed, so the feature was in the
+        // panel and nowhere in the palette.
+        "alpha",
+        "transparent",
+        "png",
+        "sequence",
+        "green screen",
+        "透明",
+        "序列",
+        "绿幕",
+      ],
     },
     // Not a goto — goto means a place in the dock. This LEAVES what you are
     // making to look at what other people made, which is why it never became a
@@ -2468,7 +2500,7 @@ export default function Lab() {
     backgroundEffects: bgEffects,
     hasBackdrop: !!bgImage && !bgImage.dome,
     skybox: bgImage?.dome ? bgImage.file : null,
-    greenScreen: framing.liveGreenScreen,
+    exportBackground: framing.liveBackground,
     // Who an effect that declares a dissolve is about — the cast in order, so
     // the first of them is the engine's subject 0.
     castIds: castIdList,
@@ -4425,6 +4457,16 @@ export default function Lab() {
     <main className="relative h-dvh w-screen overflow-hidden bg-black select-none">
       {/* Full bleed, always. Chrome floats over it; nothing ever shrinks the
           thing you are making. */}
+      {/* Transparent preview: the compositor's checkerboard, exactly under the
+          framed rect. Without it the empty alpha reads as a black background,
+          which is the one thing it is not — and the difference between "the
+          shot is dark" and "the shot is a hole" is the whole point of the mode. */}
+      {framing.liveBackground === "alpha" && (
+        <div
+          className={cn("absolute", !frameRect && "inset-0 h-full w-full")}
+          style={{ ...frameStyle, ...CHECKERBOARD }}
+        />
+      )}
       {bgImage && !bgImage.dome && (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -6343,8 +6385,8 @@ export default function Lab() {
               backdrop={bgImage && !bgImage.dome ? bgImage : null}
               backgroundColor={settings.background.color}
               musicUrl={musicClip?.url ?? null}
-              greenScreen={framing.greenScreen}
-              onGreenScreenChange={framing.setGreenScreen}
+              background={framing.background}
+              onBackgroundChange={framing.setBackground}
               onExportingChange={(v) => {
                 framing.setExporting(v)
                 // Closes the "render" gap for the rest of the session. Set when

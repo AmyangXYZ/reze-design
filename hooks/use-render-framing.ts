@@ -1,10 +1,10 @@
 "use client"
 
-// Export framing: the letterboxed preview rectangle, green-screen preview, and
-// whether an export is running.
+// Export framing: the letterboxed preview rectangle, the compositing preview,
+// and whether an export is running.
 //
 // These five pieces of state only make sense together — `activeFrame` and
-// `liveGreenScreen` were derived inline in the page from four of them, so
+// `liveBackground` were derived inline in the page from four of them, so
 // reading any one meant finding the other three first.
 //
 // `lastFrame` is here for a reason worth keeping visible: collapsing the docks
@@ -16,12 +16,14 @@
 
 import { useCallback, useEffect, useState } from "react"
 import type { FramePreview } from "@/components/editor/render-panel"
+import type { ExportBackground } from "@/lib/video-export"
 
 export function useRenderFraming() {
   /** An export is running; it drives the same model clock the live mirrors watch. */
   const [exporting, setExporting] = useState(false)
-  /** Chroma-key mode. A render-tab PREVIEW, not a scene mode — see liveGreenScreen. */
-  const [greenScreen, setGreenScreen] = useState(false)
+  /** What sits behind the cast on export. A render-tab PREVIEW, not a scene
+   *  mode — see liveBackground. */
+  const [background, setBackground] = useState<ExportBackground>("scene")
   /** Live framing while the render surface is open; null once it closes. */
   const [framePreview, setFramePreview] = useState<FramePreview | null>(null)
   /** The last framing seen, so an in-flight export survives the panel unmounting. */
@@ -33,7 +35,7 @@ export function useRenderFraming() {
   }, [])
 
   const activeFrame = framePreview ?? (exporting ? lastFrame : null)
-  const liveGreenScreen = greenScreen && activeFrame !== null
+  const liveBackground: ExportBackground = activeFrame === null ? "scene" : background
 
   // Seeded from the window rather than left null until an effect runs: the pair
   // (frame, viewport) decides the render size, and measuring one render later
@@ -53,12 +55,12 @@ export function useRenderFraming() {
   return {
     exporting,
     setExporting,
-    greenScreen,
-    setGreenScreen,
+    background,
+    setBackground,
     framePreview,
     handleFramePreview,
     activeFrame,
-    liveGreenScreen,
+    liveBackground,
     frameVp,
   }
 }

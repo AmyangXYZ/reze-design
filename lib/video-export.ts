@@ -1,5 +1,5 @@
-// Offline render-to-file — the video export, and the single still that shares its
-// composite stack.
+// Offline render-to-file — the video export, the PNG sequence that shares its
+// render loop, and the single still that shares its composite stack.
 
 import {
   AudioBufferSource,
@@ -9,12 +9,36 @@ import {
   getFirstEncodableAudioCodec,
   getFirstEncodableVideoCodec,
   Mp4OutputFormat,
+  WebMOutputFormat,
   Output,
 } from "mediabunny"
 import type { Engine } from "reze-engine"
 import { coverCrop, type BackdropMedia } from "./backdrop"
+import { PngSequenceWriter } from "./png-sequence"
 
 export type ExportAudioSource = "music" | "none"
+
+/**
+ * What sits behind the cast.
+ *
+ * `green` and `alpha` are both handoffs to a compositor, and the scene is torn
+ * down the same way for both (no skybox, no background effect, ground surface
+ * off) — they differ only in what fills the hole. `alpha` fills it with nothing,
+ * which is strictly more information: a key still has to be pulled from green,
+ * and it cannot recover the soft edge of hair that the alpha channel already
+ * carries exactly.
+ */
+export type ExportBackground = "scene" | "green" | "alpha"
+
+/**
+ * The file that lands.
+ *
+ * `mp4` carries no alpha at all — the reason the other two exist. `webm` (VP9
+ * with alpha side data) plays transparent in browsers and OBS; After Effects
+ * has never imported WebM, so `png` is the lane that actually reaches a
+ * compositor.
+ */
+export type ExportTarget = "mp4" | "webm" | "png"
 
 export type ExportSettings = {
   width: number
@@ -23,11 +47,23 @@ export type ExportSettings = {
   audioSource: ExportAudioSource
   /** Draw the Reze Design wordmark bottom-right. */
   watermark: boolean
-  /** Chroma-key mode: pure #00FF00 background replaces the scene background, backdrop */
-  greenScreen: boolean
+  background: ExportBackground
+  target: ExportTarget
 }
 
 const GREEN = "#00ff00"
+
+/** Compositing handoffs tear the scene down the same way; only the fill differs. */
+export const isCompositingBackground = (b: ExportBackground) => b !== "scene"
+
+export type ExportResult = {
+  /** Buffered output, when nothing was streamed straight to disk. */
+  blob: Blob | null
+  /** Bytes produced, where this side of the handoff can count them: a sequence
+   *  writer knows its own total, and a buffered muxer has the blob. Streamed
+   *  output is 0 — the caller holds the file handle and asks the file. */
+  bytes: number
+}
 
 export type ExportPhase = "audio" | "video"
 
@@ -45,6 +81,18 @@ export type ExportProgress = {
 const WARMUP_FRAMES = 30
 /** Yield to the event loop every N frames so the progress UI stays alive. */
 const YIELD_EVERY = 3
+
+/**
+ * Hand the frame back to the browser so the progress bar can paint.
+ *
+ * setTimeout(0) is not zero: nested timers are clamped to ~4 ms, which over a
+ * 7200-frame 4K export is ten seconds spent waiting on a clamp. scheduler.yield
+ * has no clamp and resumes ahead of ordinary tasks.
+ */
+const yieldToUI = (): Promise<void> => {
+  const s = (globalThis as { scheduler?: { yield?: () => Promise<void> } }).scheduler
+  return s?.yield ? s.yield() : new Promise<void>((r) => setTimeout(r, 0))
+}
 
 /** ~0.1 bit/pixel/frame — 1080p60 ≈ 12 Mbps, 4K60 ≈ 50 Mbps — clamped to sane bounds. */
 const videoBitrate = (w: number, h: number, fps: number) =>
@@ -102,27 +150,50 @@ function loadImage(url: string): Promise<HTMLImageElement> {
 }
 
 /**
+ * Paint the layer the cast lands on.
+ *
+ * Transparent mode CLEARS rather than fills: a 2D canvas keeps whatever it drew
+ * last, so skipping the fill would composite every frame onto the one before it
+ * and smear the whole shot into a single accumulating ghost.
+ */
+function paintBase(
+  ctx: CanvasRenderingContext2D,
+  background: ExportBackground,
+  color: string,
+  w: number,
+  h: number,
+) {
+  if (background === "alpha") {
+    ctx.clearRect(0, 0, w, h)
+    return
+  }
+  ctx.fillStyle = background === "green" ? GREEN : color
+  ctx.fillRect(0, 0, w, h)
+}
+
+/**
  * One frame of the same composite the video produces, as a PNG.
  *
  * Nothing seeks and nothing resets physics: the still is the pose that was on
  * screen when the button was pressed, rendered at the output size instead of the
  * viewport's. That makes it the obvious way to produce a publish thumbnail —
  * the framing you were just looking at, at the resolution you were going to
- * render at.
+ * render at. In transparent mode the PNG carries its alpha, so the same button
+ * is also how you get one plate out for a still comp.
  */
 export async function captureStill(opts: {
   engine: Engine
   /** The engine's (transparent) WebGPU canvas — composited over the backdrop. */
   canvas: HTMLCanvasElement
-  settings: Pick<ExportSettings, "width" | "height" | "watermark" | "greenScreen">
+  settings: Pick<ExportSettings, "width" | "height" | "watermark" | "background">
   backdrop: BackdropMedia | null
   backgroundColor: string
 }): Promise<Blob> {
   const { engine, canvas, settings, backdrop, backgroundColor } = opts
-  const { width, height } = settings
+  const { width, height, background } = settings
 
   // Decoded before the engine is touched, so the render size is restored promptly.
-  const bgImage = backdrop && !settings.greenScreen ? await loadImage(backdrop.url) : null
+  const bgImage = backdrop && !isCompositingBackground(background) ? await loadImage(backdrop.url) : null
 
   const composite = document.createElement("canvas")
   composite.width = width
@@ -144,14 +215,13 @@ export async function captureStill(opts: {
   try {
     // dt = 0 redraws the current pose rather than advancing it.
     engine.renderFrame(0)
-    ctx.fillStyle = settings.greenScreen ? GREEN : backgroundColor
-    ctx.fillRect(0, 0, width, height)
+    paintBase(ctx, background, backgroundColor, width, height)
     if (bgImage) {
       const c = coverCrop(bgImage.naturalWidth, bgImage.naturalHeight, width, height)
       ctx.drawImage(bgImage, c.sx, c.sy, c.sw, c.sh, 0, 0, width, height)
     }
     ctx.drawImage(canvas, 0, 0, width, height)
-    if (settings.watermark && !settings.greenScreen) drawWatermark(ctx, width, height, brandFontFamily())
+    if (settings.watermark) drawWatermark(ctx, width, height, brandFontFamily())
   } finally {
     engine.setRenderSize(prevW, prevH)
     engine.renderFrame(0)
@@ -182,6 +252,113 @@ async function buildMusicAudio(url: string, startTime: number, exportDuration: n
   }
 }
 
+/**
+ * Where composited frames go.
+ *
+ * The render loop is identical for a muxed video and for a folder of PNGs —
+ * same warmup, same clocks, same restore — so the difference is one object
+ * rather than a second copy of the loop.
+ */
+type FrameSink = {
+  /** One composited frame, in order. Awaits encoder or writer backpressure. */
+  add(index: number, time: number): Promise<void>
+  /** Bytes on disk so far, where the sink can know. */
+  bytes(): number | undefined
+  /** Returns a Blob only when the output was buffered in memory. */
+  finish(): Promise<Blob | null>
+  cancel(): Promise<void>
+}
+
+/** Muxed video — MP4 (opaque) or WebM (VP9 carrying alpha side data). */
+async function muxerSink(opts: {
+  composite: HTMLCanvasElement
+  settings: ExportSettings
+  fps: number
+  audioBuffer: AudioBuffer | null
+  fileStream?: FileSystemWritableFileStream
+}): Promise<FrameSink> {
+  const { composite, settings, fps, audioBuffer, fileStream } = opts
+  const { width, height, target } = settings
+  const webm = target === "webm"
+
+  const videoCodec = await getFirstEncodableVideoCodec(webm ? ["vp9", "vp8"] : ["avc", "hevc", "av1"], {
+    width,
+    height,
+  })
+  if (!videoCodec) throw new Error(`No supported video encoder for ${width}×${height}`)
+
+  const output = new Output({
+    format: webm ? new WebMOutputFormat() : new Mp4OutputFormat(),
+    // StreamTarget is FileSystemWritableFileStream-compatible
+    target: fileStream ? new StreamTarget(fileStream, { chunked: true }) : new BufferTarget(),
+  })
+  const videoSource = new CanvasSource(composite, {
+    codec: videoCodec,
+    bitrate: videoBitrate(width, height, fps),
+    // mediabunny splits colour and alpha on the CPU when the encoder cannot
+    // keep alpha itself, and emits the alpha as VP9 side data — which is what
+    // makes the track come out marked transparent.
+    alpha: settings.background === "alpha" ? "keep" : "discard",
+  })
+  output.addVideoTrack(videoSource, { frameRate: fps })
+
+  let audioSource: AudioBufferSource | null = null
+  if (audioBuffer) {
+    // WebM has no AAC. Asking for it anyway would have the muxer reject the
+    // track after the video had already been configured.
+    const audioCodec = await getFirstEncodableAudioCodec(webm ? ["opus"] : ["aac", "opus"], {
+      numberOfChannels: audioBuffer.numberOfChannels,
+      sampleRate: audioBuffer.sampleRate,
+    })
+    if (audioCodec) {
+      audioSource = new AudioBufferSource({ codec: audioCodec, bitrate: 192_000 })
+      output.addAudioTrack(audioSource)
+    }
+  }
+
+  await output.start()
+  if (audioSource && audioBuffer) {
+    await audioSource.add(audioBuffer)
+    audioSource.close()
+  }
+
+  return {
+    add: (_index, time) => videoSource.add(time, 1 / fps).then(() => undefined),
+    bytes: () => undefined,
+    async finish() {
+      videoSource.close()
+      await output.finalize()
+      if (fileStream) return null // streamed to disk — nothing to hand back
+      const buffer = (output.target as BufferTarget).buffer
+      if (!buffer) throw new Error("Muxer produced no output")
+      return new Blob([buffer], { type: webm ? "video/webm" : "video/mp4" })
+    },
+    async cancel() {
+      if (output.state === "started") await output.cancel().catch(() => {})
+    },
+  }
+}
+
+/** A folder of numbered PNGs, encoded and written by a worker pool. */
+function pngSink(opts: {
+  composite: HTMLCanvasElement
+  dir: FileSystemDirectoryHandle
+  total: number
+}): FrameSink {
+  const writer = new PngSequenceWriter(opts.dir, "frame_", opts.total)
+  return {
+    add: (index) => writer.add(opts.composite, index),
+    bytes: () => writer.bytes,
+    async finish() {
+      await writer.finish()
+      return null
+    },
+    async cancel() {
+      writer.terminate()
+    },
+  }
+}
+
 export async function exportVideo(opts: {
   engine: Engine
   /** The engine's (transparent) WebGPU canvas — composited over the backdrop. */
@@ -200,15 +377,17 @@ export async function exportVideo(opts: {
   backgroundColor: string
   /** Object/blob URL of the music track (used when audioSource === "music"). */
   musicUrl: string | null
-  /** File System Access API writable */
+  /** File System Access API writable — muxed targets. */
   fileStream?: FileSystemWritableFileStream
+  /** Destination folder — PNG sequence target. */
+  directory?: FileSystemDirectoryHandle
   onProgress?: (p: ExportProgress) => void
   signal?: AbortSignal
-}): Promise<Blob | null> {
+}): Promise<ExportResult> {
   const { engine, canvas, modelName, duration, settings, backdrop, backgroundColor, musicUrl } = opts
   const startTime = Math.max(0, opts.startTime ?? 0)
   const bgColor = backgroundColor
-  const { width, height, fps } = settings
+  const { width, height, fps, background, target } = settings
   const total = Math.max(1, Math.round(duration * fps))
   const model = engine.getModel(modelName)
   if (!model) throw new Error("No model loaded")
@@ -216,49 +395,35 @@ export async function exportVideo(opts: {
     .map((n) => engine.getModel(n))
     .filter((m): m is NonNullable<typeof m> => !!m)
   const cast = [model, ...extras]
+  if (target === "png" && !opts.directory) throw new Error("No destination folder")
 
-  const videoCodec = await getFirstEncodableVideoCodec(["avc", "hevc", "av1"], { width, height })
-  if (!videoCodec) throw new Error(`No supported video encoder for ${width}×${height}`)
-
-  // ── Composite stack ──
-  const composite = document.createElement("canvas")
-  composite.width = width
-  composite.height = height
-  const ctx = composite.getContext("2d")!
-  ctx.imageSmoothingQuality = "high"
-  const watermarkFont = brandFontFamily()
-
-  const output = new Output({
-    format: new Mp4OutputFormat(),
-    // StreamTarget is FileSystemWritableFileStream-compatible
-    target: opts.fileStream ? new StreamTarget(opts.fileStream, { chunked: true }) : new BufferTarget(),
-  })
-  const videoSource = new CanvasSource(composite, {
-    codec: videoCodec,
-    bitrate: videoBitrate(width, height, fps),
-  })
-  output.addVideoTrack(videoSource, { frameRate: fps })
-
-  // ── Audio track (assembled up-front; the muxer interleaves) ──
+  // ── Audio, decoded up-front (the muxer interleaves it) ──
   const progress = (p: ExportProgress) => opts.onProgress?.(p)
   progress({ phase: "audio", frame: 0, total, encodeFps: 0, etaSeconds: 0 })
   let audioBuffer: AudioBuffer | null = null
-  if (settings.audioSource === "music" && musicUrl) audioBuffer = await buildMusicAudio(musicUrl, startTime, duration)
-  let audioSource: AudioBufferSource | null = null
-  if (audioBuffer) {
-    const audioCodec = await getFirstEncodableAudioCodec(["aac", "opus"], {
-      numberOfChannels: audioBuffer.numberOfChannels,
-      sampleRate: audioBuffer.sampleRate,
-    })
-    if (audioCodec) {
-      audioSource = new AudioBufferSource({ codec: audioCodec, bitrate: 192_000 })
-      output.addAudioTrack(audioSource)
-    }
-  }
+  // A PNG sequence has no audio track to carry — the music comes out of the
+  // ordinary video export beside it.
+  if (target !== "png" && settings.audioSource === "music" && musicUrl)
+    audioBuffer = await buildMusicAudio(musicUrl, startTime, duration)
 
-  // ── Backdrop layer (skipped entirely in green-screen mode) ──
+  // ── Backdrop layer (skipped entirely for a compositing handoff) ──
   let bgImage: HTMLImageElement | null = null
-  if (backdrop && !settings.greenScreen) bgImage = await loadImage(backdrop.url)
+  if (backdrop && !isCompositingBackground(background)) bgImage = await loadImage(backdrop.url)
+
+  /**
+   * Is there anything to composite?
+   *
+   * The 2D canvas exists to put layers UNDER and OVER the render — a backdrop
+   * photo and the wordmark. With neither, every one of its operations is a
+   * repaint of something the engine already drew: it fills the same colour the
+   * engine's own background is set to, then copies a 4K frame onto it, and the
+   * encoder copies that 4K frame again. Encoding the engine canvas directly
+   * halves the per-frame copying, and it is the common case for exactly the
+   * modes that need the speed — green screen and transparent both arrive here
+   * with no backdrop, and both force the watermark off.
+   */
+  const needsComposite = bgImage !== null || settings.watermark
+  const watermarkFont = needsComposite ? brandFontFamily() : ""
 
   // ── Engine: remember live state, switch to offline stepping ──
   const prior = model.getAnimationProgress()
@@ -266,16 +431,29 @@ export async function exportVideo(opts: {
   // Same-size restore as captureStill — see the note there.
   const prevW = canvas.width
   const prevH = canvas.height
-  engine.setRenderSize(width, height)
-  // Green-screen state (background, ground surface, skybox suspension) is LIVE page state
-  const fillColor = settings.greenScreen ? GREEN : bgColor
+  let sink: FrameSink | null = null
 
   try {
-    await output.start()
-    if (audioSource && audioBuffer) {
-      await audioSource.add(audioBuffer)
-      audioSource.close()
+    // Before the sink: a source canvas has to be at output size when the
+    // encoder reads its dimensions off the first frame.
+    engine.setRenderSize(width, height)
+    // Compositing state (background, ground surface, skybox suspension) is LIVE page state
+
+    let ctx: CanvasRenderingContext2D | null = null
+    let source = canvas
+    if (needsComposite) {
+      const composite = document.createElement("canvas")
+      composite.width = width
+      composite.height = height
+      ctx = composite.getContext("2d")!
+      ctx.imageSmoothingQuality = "high"
+      source = composite
     }
+
+    sink =
+      target === "png"
+        ? pngSink({ composite: source, dir: opts.directory!, total })
+        : await muxerSink({ composite: source, settings, fps, audioBuffer, fileStream: opts.fileStream })
 
     // Seek to the segment start, physics reset + settle so the first frame isn't mid-fall hair
     for (const m of cast) {
@@ -304,35 +482,32 @@ export async function exportVideo(opts: {
       engine.setMidiTime(startTime + t)
       engine.renderFrame(i === 0 ? 0 : 1 / fps)
 
-      ctx.fillStyle = fillColor
-      ctx.fillRect(0, 0, width, height)
-      if (bgImage) {
-        const c = coverCrop(bgImage.naturalWidth, bgImage.naturalHeight, width, height)
-        ctx.drawImage(bgImage, c.sx, c.sy, c.sw, c.sh, 0, 0, width, height)
+      if (ctx) {
+        paintBase(ctx, background, bgColor, width, height)
+        if (bgImage) {
+          const c = coverCrop(bgImage.naturalWidth, bgImage.naturalHeight, width, height)
+          ctx.drawImage(bgImage, c.sx, c.sy, c.sw, c.sh, 0, 0, width, height)
+        }
+        ctx.drawImage(canvas, 0, 0, width, height)
+        if (settings.watermark) drawWatermark(ctx, width, height, watermarkFont)
       }
-      ctx.drawImage(canvas, 0, 0, width, height)
-      if (settings.watermark) drawWatermark(ctx, width, height, watermarkFont)
 
-      await videoSource.add(t, 1 / fps)
+      await sink.add(i, t)
 
       const elapsed = (performance.now() - started) / 1000
       const encodeFps = (i + 1) / Math.max(elapsed, 1e-3)
       progress({ phase: "video", frame: i + 1, total, encodeFps, etaSeconds: (total - i - 1) / encodeFps })
-      if (i % YIELD_EVERY === 0) await new Promise((r) => setTimeout(r, 0))
+      if (i % YIELD_EVERY === 0) await yieldToUI()
     }
-    videoSource.close()
 
-    await output.finalize()
-    if (opts.fileStream) return null // streamed to disk — nothing to hand back
-    const buffer = (output.target as BufferTarget).buffer
-    if (!buffer) throw new Error("Muxer produced no output")
-    return new Blob([buffer], { type: "video/mp4" })
+    const blob = await sink.finish()
+    return { blob, bytes: sink.bytes() ?? blob?.size ?? 0 }
   } catch (e) {
-    if (output.state === "started") await output.cancel().catch(() => {})
+    await sink?.cancel()
     throw e
   } finally {
     // Restore the live session at the exact prior size (the host re-asserts
-    // pin-or-tracking afterwards), background/skybox (green-screen mode
+    // pin-or-tracking afterwards), background/skybox (compositing mode
     engine.setRenderSize(prevW, prevH)
     for (const m of cast) {
       m.pause()

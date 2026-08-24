@@ -16,12 +16,45 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import type { BackdropMedia } from "@/lib/backdrop"
-import { captureStill, exportVideo, type ExportAudioSource, type ExportProgress } from "@/lib/video-export"
+import {
+  captureStill,
+  exportVideo,
+  isCompositingBackground,
+  type ExportAudioSource,
+  type ExportBackground,
+  type ExportProgress,
+  type ExportTarget,
+} from "@/lib/video-export"
+import { formatBytes } from "@/lib/png-sequence"
 import { downloadBlob } from "@/lib/scene-file"
 import { useT } from "@/lib/i18n"
 
 // Minimal config, iMovie-export style
 const VIDEO_FPS = 60
+
+/**
+ * What lands on disk, as one choice.
+ *
+ * Background and container are not independent — MP4 carries no alpha, so
+ * "transparent" and "MP4" is a combination that cannot be rendered, and a
+ * separate Format select would spend its life greying its own options out.
+ * Naming the pair states the deliverable instead: the label is the file you
+ * get, and every option in the list is one that works.
+ */
+type OutputMode = "scene" | "green" | "alpha-png" | "alpha-webm"
+const MODES: OutputMode[] = ["scene", "green", "alpha-png", "alpha-webm"]
+const MODE_BACKGROUND: Record<OutputMode, ExportBackground> = {
+  scene: "scene",
+  green: "green",
+  "alpha-png": "alpha",
+  "alpha-webm": "alpha",
+}
+const MODE_TARGET: Record<OutputMode, ExportTarget> = {
+  scene: "mp4",
+  green: "mp4",
+  "alpha-png": "png",
+  "alpha-webm": "webm",
+}
 type Aspect = "16:9" | "9:16" | "2.39:1" | "1:1" | "4:3"
 const ASPECTS: Aspect[] = ["16:9", "9:16", "2.39:1", "1:1", "4:3"]
 type Quality = "1080p" | "1440p" | "4k"
@@ -112,6 +145,13 @@ const parseClock = (text: string): number | null => {
 const rangeInputCls =
   "h-6 w-14 rounded-md border border-white/10 bg-white/5 px-1 text-center text-xs tabular-nums outline-none transition-colors hover:bg-white/10 focus:border-blue-400/50 placeholder:text-muted-foreground/50 disabled:opacity-50"
 
+/** The part of FileSystemFileHandle this panel uses. */
+type SaveHandle = {
+  name: string
+  createWritable(): Promise<FileSystemWritableFileStream>
+  getFile(): Promise<File>
+}
+
 /** Live framing state the page mirrors into the viewport while this tab is open */
 export type FramePreview = { aspect: number; watermark: boolean }
 
@@ -129,8 +169,8 @@ export const RenderPanel = memo(function RenderPanel({
   musicUrl,
   audioSource,
   onAudioSourceChange,
-  greenScreen,
-  onGreenScreenChange,
+  background,
+  onBackgroundChange,
   onExportingChange,
   onFramePreviewChange,
   onProgressChange,
@@ -159,9 +199,9 @@ export const RenderPanel = memo(function RenderPanel({
    *  backgrounds, which do not exist. */
   audioSource?: ExportAudioSource
   onAudioSourceChange?: (s: ExportAudioSource) => void
-  /** Lifted to the page: toggling it repaints the LIVE scene green too (WYSIWYG). */
-  greenScreen: boolean
-  onGreenScreenChange: (on: boolean) => void
+  /** Lifted to the page: choosing one repaints the LIVE scene to match (WYSIWYG). */
+  background: ExportBackground
+  onBackgroundChange: (b: ExportBackground) => void
   /** The page suspends live audio/video mirrors while an export runs (the export drives the same */
   onExportingChange: (exporting: boolean) => void
   /** Live framing (see FramePreview) — null when this tab closes. */
@@ -179,6 +219,22 @@ export const RenderPanel = memo(function RenderPanel({
   const [rangeStart, setRangeStart] = useState("")
   const [rangeEnd, setRangeEnd] = useState("")
   const [watermark, setWatermark] = useState(prefs.watermark)
+  // Session state, not a preference: the mode repaints the live canvas, and
+  // finding the viewport keyed green on a fresh load would read as a bug.
+  //
+  // Seeded from the page's value rather than from "scene", because collapsing
+  // the dock UNMOUNTS this panel while the page keeps the background it was
+  // told — remounting to a select that said "Scene" over a checkerboarded
+  // canvas would have the two disagreeing about what is on screen.
+  const [mode, setMode] = useState<OutputMode>(() =>
+    background === "green" ? "green" : background === "alpha" ? "alpha-png" : "scene",
+  )
+  const target = MODE_TARGET[mode]
+  const compositing = isCompositingBackground(background)
+  const changeMode = (m: OutputMode) => {
+    setMode(m)
+    onBackgroundChange(MODE_BACKGROUND[m])
+  }
   // Written on change, not on export: someone who sets up a frame and then walks
   // away should find it there next time, whether or not they rendered anything.
   useEffect(() => {
@@ -193,7 +249,16 @@ export const RenderPanel = memo(function RenderPanel({
   }
   // `file` names what actually landed, so the caption can point at it — a bare
   // "downloaded" leaves the user hunting through their downloads folder.
-  const [result, setResult] = useState<{ ok: boolean; message?: string; file?: string; still?: boolean } | null>(null)
+  const [result, setResult] = useState<{
+    ok: boolean
+    message?: string
+    file?: string
+    still?: boolean
+    /** A folder of frames rather than a file — the caption counts them. */
+    frames?: number
+    /** What landed, measured after the fact rather than projected during. */
+    size?: string
+  } | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   // Guards a second click without touching the button's appearance. A capture is
   // over in well under a second; a spinner that fast is noise.
@@ -211,12 +276,13 @@ export const RenderPanel = memo(function RenderPanel({
   // While this tab is open, the viewport frames the shot live
   useEffect(() => {
     if (!active) return
-    onFramePreviewChange({ aspect: width / height, watermark: watermark && !greenScreen })
+    onFramePreviewChange({ aspect: width / height, watermark: watermark && !compositing })
     return () => onFramePreviewChange(null)
-  }, [active, width, height, watermark, greenScreen, onFramePreviewChange])
+  }, [active, width, height, watermark, compositing, onFramePreviewChange])
 
-  // reze-design-<scene>-<resolution>-<date>.<ext>
-  const filenameFor = (ext: string) => {
+  // reze-design-<scene>-<resolution>-<date>[.ext] — the folder a PNG sequence
+  // lands in is the same name without one.
+  const baseName = () => {
     const scene =
       sceneName
         .toLowerCase()
@@ -226,8 +292,9 @@ export const RenderPanel = memo(function RenderPanel({
     const stamp = new Date()
     const two = (n: number) => String(n).padStart(2, "0")
     const when = `${stamp.getFullYear()}-${two(stamp.getMonth() + 1)}-${two(stamp.getDate())}-${two(stamp.getHours())}${two(stamp.getMinutes())}${two(stamp.getSeconds())}`
-    return `reze-design-${scene}-${width}x${height}-${when}.${ext}`
+    return `reze-design-${scene}-${width}x${height}-${when}`
   }
+  const filenameFor = (ext: string) => `${baseName()}.${ext}`
 
   /** lib/scene-file's, not a second copy — the two had already drifted, and the
    *  one that was wrong was the one nobody had exported from on Safari. */
@@ -245,7 +312,7 @@ export const RenderPanel = memo(function RenderPanel({
       const blob = await captureStill({
         engine,
         canvas,
-        settings: { width, height, watermark: greenScreen ? false : watermark, greenScreen },
+        settings: { width, height, watermark: compositing ? false : watermark, background },
         backdrop,
         backgroundColor,
       })
@@ -253,12 +320,12 @@ export const RenderPanel = memo(function RenderPanel({
       download(blob, filename)
       // Same completion line the video uses: the caption names the file that
       // just landed in the downloads folder.
-      setResult({ ok: true, file: filename, still: true })
+      setResult({ ok: true, file: filename, still: true, size: formatBytes(blob.size) })
       // captureStill restores the render size to viewport-tracking, which
       // silently unpins a framed-aspect canvas — the amber border then no
       // longer matches what renders. Re-emitting the preview as a FRESH object
       // makes the host's framing effect re-run and re-assert the pin.
-      if (active) onFramePreviewChange({ aspect: width / height, watermark: watermark && !greenScreen })
+      if (active) onFramePreviewChange({ aspect: width / height, watermark: watermark && !compositing })
     } catch (e) {
       setResult({ ok: false, message: e instanceof Error ? e.message : String(e) })
     } finally {
@@ -270,23 +337,56 @@ export const RenderPanel = memo(function RenderPanel({
     const engine = engineRef.current
     const canvas = canvasRef.current
     if (!engine || !canvas || !animName) return
-    const filename = filenameFor("mp4")
+    const base = baseName()
+    const ext = target === "webm" ? "webm" : "mp4"
+    const filename = `${base}.${ext}`
+    const totalFrames = Math.max(1, Math.round(segDuration * VIDEO_FPS))
 
     // File System Access path (Chromium desktop): ask WHERE first
     let fileStream: FileSystemWritableFileStream | undefined
+    let fileHandle: SaveHandle | undefined
+    let directory: FileSystemDirectoryHandle | undefined
     // What the user actually called it, which can differ from our suggestion.
     let pickedName: string | undefined
-    if ("showSaveFilePicker" in window) {
+    if (target === "png") {
+      // A sequence has no in-memory fallback: thousands of 4K PNGs have to go
+      // to disk as they are made, so a browser without the picker cannot do
+      // this at all — say so rather than starting a render that has nowhere to
+      // put its frames.
+      if (!("showDirectoryPicker" in window)) {
+        setResult({ ok: false, message: t.render.needsFolderPicker })
+        return
+      }
+      try {
+        const root = await (
+          window as unknown as {
+            showDirectoryPicker: (o: object) => Promise<FileSystemDirectoryHandle>
+          }
+        ).showDirectoryPicker({ mode: "readwrite", id: "reze-design-sequence" })
+        // Frames get a folder of their own inside whatever was picked: 7200
+        // files loose in someone's Desktop is its own kind of data loss.
+        directory = await root.getDirectoryHandle(base, { create: true })
+        pickedName = base
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") return
+        setResult({ ok: false, message: e instanceof Error ? e.message : String(e) })
+        return
+      }
+    } else if ("showSaveFilePicker" in window) {
       try {
         const handle = await (
           window as unknown as {
-            showSaveFilePicker: (o: object) => Promise<{ name: string; createWritable(): Promise<FileSystemWritableFileStream> }>
+            showSaveFilePicker: (o: object) => Promise<SaveHandle>
           }
         ).showSaveFilePicker({
           suggestedName: filename,
-          types: [{ description: "MP4 video", accept: { "video/mp4": [".mp4"] } }],
+          types:
+            target === "webm"
+              ? [{ description: "WebM video", accept: { "video/webm": [".webm"] } }]
+              : [{ description: "MP4 video", accept: { "video/mp4": [".mp4"] } }],
         })
         pickedName = handle.name
+        fileHandle = handle
         fileStream = await handle.createWritable()
       } catch (e) {
         // Canceling the picker cancels the export (nothing rendered yet).
@@ -303,7 +403,7 @@ export const RenderPanel = memo(function RenderPanel({
     const ac = new AbortController()
     abortRef.current = ac
     try {
-      const blob = await exportVideo({
+      const out = await exportVideo({
         engine,
         canvas,
         modelName,
@@ -315,25 +415,39 @@ export const RenderPanel = memo(function RenderPanel({
           height,
           fps: VIDEO_FPS,
           audioSource: audioSource ?? (musicUrl ? "music" : "none"),
-          watermark: greenScreen ? false : watermark,
-          greenScreen,
+          watermark: compositing ? false : watermark,
+          background,
+          target,
         },
         backdrop,
         backgroundColor,
         musicUrl,
         fileStream,
+        directory,
         onProgress: setProgress,
         signal: ac.signal,
       })
+      let bytes = out.bytes
       if (fileStream) {
         // Committing the writable materializes the picked file on disk.
         await fileStream.close().catch(() => {})
-      } else if (blob) {
-        download(blob, filename)
+        // Only true once the writable is closed, and truer than anything the
+        // muxer could report: it is what the filesystem actually holds.
+        bytes = await fileHandle
+          ?.getFile()
+          .then((f) => f.size)
+          .catch(() => bytes) ?? bytes
+      } else if (out.blob) {
+        download(out.blob, filename)
       }
       // With a picked file the user chose the name themselves; report the one
       // they picked, not the one we would have generated.
-      setResult({ ok: true, file: fileStream ? (pickedName ?? filename) : filename })
+      setResult({
+        ok: true,
+        file: directory ? (pickedName ?? base) : fileStream ? (pickedName ?? filename) : filename,
+        frames: directory ? totalFrames : undefined,
+        size: formatBytes(bytes),
+      })
     } catch (e) {
       // Discard the partial file — abort() drops everything written since createWritable
       await fileStream?.abort().catch(() => {})
@@ -420,11 +534,13 @@ export const RenderPanel = memo(function RenderPanel({
             </div>
           </Row>
           {onAudioSourceChange && (
+          // A PNG sequence has no track to carry audio in, so the row goes
+          // inert rather than offering a choice the file cannot keep.
           <Row label={t.render.audio}>
             <Select
-              value={audioSource}
+              value={target === "png" ? "none" : audioSource}
               onValueChange={(v) => onAudioSourceChange(v as ExportAudioSource)}
-              disabled={exporting}
+              disabled={exporting || target === "png"}
             >
               <SelectTrigger>
                 <SelectValue />
@@ -440,20 +556,31 @@ export const RenderPanel = memo(function RenderPanel({
             </Select>
           </Row>
           )}
-          {/* Chroma-key mode for external compositing (the classic MMD PV flow) — pure #00FF00 replaces */}
-          <Row label={t.render.greenScreen}>
-            <Switch checked={greenScreen} onCheckedChange={onGreenScreenChange} disabled={exporting} className="scale-75" />
-          </Row>
-          {/* Disabled (not hidden — layout stays put) in green mode */}
+          {/* Disabled (not hidden — layout stays put) for a compositing handoff */}
           <Row label={t.render.watermark}>
             <Switch
-              checked={greenScreen ? false : watermark}
+              checked={compositing ? false : watermark}
               onCheckedChange={setWatermark}
-              disabled={exporting || greenScreen}
+              disabled={exporting || compositing}
               className="scale-75"
             />
           </Row>
-          {upscaled && !greenScreen && <div className="mt-2 text-xs text-amber-400/90">{t.render.upscaleWarn}</div>}
+          {/* Background and container as one choice — see OutputMode. */}
+          <Row label={t.render.output}>
+            <Select value={mode} onValueChange={(v) => changeMode(v as OutputMode)} disabled={exporting}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {MODES.map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {t.render.modes[m]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Row>
+          {upscaled && !compositing && <div className="mt-2 text-xs text-amber-400/90">{t.render.upscaleWarn}</div>}
         </div>
 
         {/* No section title (the surface hosting this already says Export) and
@@ -513,7 +640,9 @@ export const RenderPanel = memo(function RenderPanel({
         ) : result ? (
           <div className={`mt-2 text-center text-xs ${result.ok ? "text-muted-foreground" : "text-red-400"}`}>
             {result.ok
-              ? (result.still ? t.render.stillDone : t.render.done)(result.file ?? "")
+              ? result.frames
+                ? t.render.seqDone(result.frames, result.file ?? "", result.size ?? "")
+                : (result.still ? t.render.stillDone : t.render.done)(result.file ?? "", result.size ?? "")
               : t.render.failed(result.message ?? "")}
           </div>
         ) : null}

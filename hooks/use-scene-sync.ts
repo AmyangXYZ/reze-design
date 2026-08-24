@@ -14,6 +14,7 @@ import { Vec3, parseHDR, type DissolveCycle, type Engine } from "reze-engine"
 import { type AppliedEffect } from "@/lib/effects"
 import { resolveSpec, type GradeSpec } from "@/lib/grade"
 import { CAMERA_DEFAULT_FOV, type SceneCamera } from "@/lib/scene"
+import { isCompositingBackground, type ExportBackground } from "@/lib/video-export"
 import { azElToDirection, windVariation, hexToLinearVec3, hexToSrgbVec3, windDirection, type SceneSettings } from "@/lib/scene-settings"
 
 const GREEN = "#00ff00"
@@ -97,9 +98,10 @@ export function useSceneSync({
   hasBackdrop = false,
   /** 360 skybox source, or null. Re-uploaded whenever the file changes. */
   skybox = null,
-  /** Chroma-key preview: green background, no ground surface, effect and skybox
-   *  suspended — they render in-canvas and would cover the key. */
-  greenScreen = false,
+  /** Compositing preview: no ground surface, effect and skybox suspended — they
+   *  render in-canvas and would cover the key or fill the alpha. "green" keys
+   *  the hole, "alpha" leaves it empty. */
+  exportBackground = "scene",
   /** Cast member ids, in order — stages excluded, the same list the engine's
    *  own subjects are drawn from. Only used to decide WHO an effect that
    *  declares a dissolve is about; the first of them is subject 0. */
@@ -115,12 +117,18 @@ export function useSceneSync({
   backgroundEffects: AppliedEffect[]
   hasBackdrop?: boolean
   skybox?: File | null
-  greenScreen?: boolean
+  exportBackground?: ExportBackground
   castIds?: string[]
 }) {
+  const compositing = isCompositingBackground(exportBackground)
   // Per-section identity guard: setSun dirties the shadow map (an extra full pass
   // per frame), so an unguarded push re-rendered shadows on every bloom tick.
-  const prev = useRef<{ settings: SceneSettings; gradeSpec: GradeSpec; backdrop: boolean; green: boolean } | null>(null)
+  const prev = useRef<{
+    settings: SceneSettings
+    gradeSpec: GradeSpec
+    backdrop: boolean
+    green: ExportBackground
+  } | null>(null)
   // addGround rebuilds GPU buffers and a bind group per call, so ground edits
   // coalesce to at most one rebuild per frame from the latest options.
   const groundOpts = useRef<Parameters<Engine["addGround"]>[0] | null>(null)
@@ -132,11 +140,17 @@ export function useSceneSync({
     if (!ready || !engine) return
     const { world, sun, bloom, dof, outline, background, ground, grade, physics, view } = settings
     const p = prev.current
-    const modeChanged = !p || p.backdrop !== hasBackdrop || p.green !== greenScreen
+    const modeChanged = !p || p.backdrop !== hasBackdrop || p.green !== exportBackground
 
     if (modeChanged || p.settings.background !== background) {
+      // Transparent joins the backdrop case: null IS the transparent canvas,
+      // and it is what puts a real alpha channel in front of the encoder.
       engine.setBackgroundColor(
-        greenScreen ? hexToSrgbVec3(GREEN) : hasBackdrop ? null : hexToSrgbVec3(background.color),
+        exportBackground === "green"
+          ? hexToSrgbVec3(GREEN)
+          : exportBackground === "alpha" || hasBackdrop
+            ? null
+            : hexToSrgbVec3(background.color),
       )
     }
     if (!p || p.settings.world !== world) {
@@ -203,9 +217,9 @@ export function useSceneSync({
       groundOpts.current = {
         diffuseColor: hexToLinearVec3(ground.color),
         gridLineColor: hexToLinearVec3(ground.grid),
-        opacity: greenScreen ? 0 : ground.opacity,
+        opacity: compositing ? 0 : ground.opacity,
         shadowStrength: ground.shadow ? 1 : 0,
-        gridLineOpacity: greenScreen || !ground.gridEnabled ? 0 : 0.4,
+        gridLineOpacity: compositing || !ground.gridEnabled ? 0 : 0.4,
         // Square plane; the radial fade scales with it (engine defaults are 10/80 at size 160).
         width: ground.size,
         height: ground.size,
@@ -219,8 +233,8 @@ export function useSceneSync({
         })
       }
     }
-    prev.current = { settings, gradeSpec, backdrop: hasBackdrop, green: greenScreen }
-  }, [settings, gradeSpec, ready, engineRef, hasBackdrop, greenScreen])
+    prev.current = { settings, gradeSpec, backdrop: hasBackdrop, green: exportBackground }
+  }, [settings, gradeSpec, ready, engineRef, hasBackdrop, exportBackground, compositing])
 
   // The lens, on its own effect and keyed on the VALUE: `camera` is a new object
   // every time a target slider moves, and the fov has no business being pushed
@@ -247,7 +261,7 @@ export function useSceneSync({
     // four effects because this file said so rather than because the scene did
     // — so nobody else could author one, and the same link would have changed
     // if the constant did.
-    const sources = (greenScreen ? [] : backgroundEffects).map((e) => e.wgsl)
+    const sources = (compositing ? [] : backgroundEffects).map((e) => e.wgsl)
     // One key for the whole list, so adding an effect recompiles and a
     // re-render with the same list does not.
     const wgsl = sources.length ? sources.join("\0") : null
@@ -305,12 +319,12 @@ export function useSceneSync({
     return () => {
       stale = true
     }
-  }, [backgroundEffects, greenScreen, ready, engineRef, castIds])
+  }, [backgroundEffects, compositing, ready, engineRef, castIds])
 
   useEffect(() => {
     const engine = engineRef.current
     if (!engine) return
-    if (greenScreen || !skybox) {
+    if (compositing || !skybox) {
       engine.setBackdropEquirect(null)
       return
     }
@@ -346,7 +360,7 @@ export function useSceneSync({
     return () => {
       stale = true
     }
-  }, [skybox, greenScreen, engineRef])
+  }, [skybox, compositing, engineRef])
 
   // The WGSL editor compiles straight to the engine for its live preview; telling
   // the sync pass what's already on screen keeps it from compiling it a second
