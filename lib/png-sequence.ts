@@ -27,13 +27,24 @@
  * only to write it there would put the I/O back on the thread we are clearing.
  */
 const WORKER_SOURCE = `
+// ONE canvas per worker, not one per frame. A 4K OffscreenCanvas with a 2D
+// context is a GPU-backed surface; allocating and dropping one per frame across
+// thousands of frames outruns GC, and the driver ends up holding a queue of
+// them. Reused, the pool holds exactly poolSize surfaces for the whole export.
+let canvas = null
+let ctx = null
+
 self.onmessage = async (e) => {
   const { dir, bitmap, name } = e.data
   try {
-    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
-    const ctx = canvas.getContext("2d")
+    if (!canvas || canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+      canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
+      ctx = canvas.getContext("2d")
+    }
+    // The frame before it, cleared: these are transparent plates, and drawing
+    // over stale pixels would composite every frame onto the last.
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.drawImage(bitmap, 0, 0)
-    bitmap.close()
     const blob = await canvas.convertToBlob({ type: "image/png" })
     const handle = await dir.getFileHandle(name, { create: true })
     const writable = await handle.createWritable()
@@ -42,6 +53,11 @@ self.onmessage = async (e) => {
     self.postMessage({ bytes: blob.size })
   } catch (err) {
     self.postMessage({ error: (err && err.message) || String(err) })
+  } finally {
+    // ALWAYS. An ImageBitmap holds GPU memory until it is closed, and at 4K
+    // that is 33 MB a frame; closing it only on the success path meant one
+    // failed write leaked a frame that nothing would ever collect.
+    bitmap.close()
   }
 }
 `
@@ -78,14 +94,21 @@ export class PngSequenceWriter {
   ) {
     this.digits = Math.max(4, String(Math.max(1, total)).length)
     this.url = URL.createObjectURL(new Blob([WORKER_SOURCE], { type: "text/javascript" }))
-    for (let i = 0; i < poolSize(); i++) {
-      const w = new Worker(this.url)
-      this.workers.push(w)
-      this.idle.push(w)
+    try {
+      for (let i = 0; i < poolSize(); i++) {
+        const w = new Worker(this.url)
+        this.workers.push(w)
+        this.idle.push(w)
+      }
+    } catch (e) {
+      // A pool that failed half-built still holds live workers and an object
+      // URL; without this the caller sees a throw and nothing owns either.
+      this.terminate()
+      throw e
     }
   }
 
-  /** Bytes committed to disk so far — the panel projects the total from this. */
+  /** Bytes committed to disk — read once at the end, for the finished caption. */
   get bytes(): number {
     return this.bytesWritten
   }
@@ -125,7 +148,18 @@ export class PngSequenceWriter {
   async add(canvas: HTMLCanvasElement, index: number): Promise<void> {
     if (this.failure) throw this.failure
     const worker = await this.acquire()
-    const bitmap = await createImageBitmap(canvas)
+    // Everything between acquiring and handing off has to give the worker back.
+    // createImageBitmap is the one that can throw (a lost GPU context does it),
+    // and the worker it stranded was never released: the pool drained one frame
+    // at a time and then acquire() waited on a slot nothing would ever free,
+    // while finish() saw an empty queue and reported success on a short folder.
+    let bitmap: ImageBitmap
+    try {
+      bitmap = await createImageBitmap(canvas)
+    } catch (e) {
+      this.release(worker)
+      throw e
+    }
     const name = `${this.prefix}${String(index + 1).padStart(this.digits, "0")}.png`
     // Not awaited — overlapping this encode with the next render is the point.
     const job = this.encode(worker, bitmap, name)
@@ -158,7 +192,7 @@ export class PngSequenceWriter {
   }
 }
 
-/** "9.2 GB" — the projection the panel shows while a sequence is being written. */
+/** "9.2 GB" — what the panel reports once an export has finished. */
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`
   const units = ["KB", "MB", "GB", "TB"]

@@ -14,10 +14,9 @@ import { Vec3, parseHDR, type DissolveCycle, type Engine } from "reze-engine"
 import { type AppliedEffect } from "@/lib/effects"
 import { resolveSpec, type GradeSpec } from "@/lib/grade"
 import { CAMERA_DEFAULT_FOV, type SceneCamera } from "@/lib/scene"
-import { isCompositingBackground, type ExportBackground } from "@/lib/video-export"
+import { GREEN, isCompositingBackground, type ExportBackground } from "@/lib/export-background"
 import { azElToDirection, windVariation, hexToLinearVec3, hexToSrgbVec3, windDirection, type SceneSettings } from "@/lib/scene-settings"
 
-const GREEN = "#00ff00"
 
 /**
  * The dissolve an effect declares, or null.
@@ -261,7 +260,20 @@ export function useSceneSync({
     // four effects because this file said so rather than because the scene did
     // — so nobody else could author one, and the same link would have changed
     // if the constant did.
-    const sources = (compositing ? [] : backgroundEffects).map((e) => e.wgsl)
+    //
+    // GREEN suspends them; ALPHA keeps them. An effect renders in-canvas, so
+    // over a key colour it is unrecoverable — you cannot pull a key back out
+    // from under sparks. Over a transparent base there is nothing to recover:
+    // the composite already folds an effect's own coverage into the canvas
+    // alpha (`outA = fgFx.a + outA * (1 - fgFx.a)`), so a foreground lands in
+    // the plate with the alpha it drew, and particles, trails and ribbons come
+    // through the scene pass covered by scene alpha like any other geometry.
+    // Which is the point: the glow around a dancer is what someone wants IN the
+    // plate, to composite over their own background.
+    //
+    // A full-screen opaque `fn background` still fills the hole. That is the
+    // author's call, and the checkerboard says so the moment it happens.
+    const sources = (exportBackground === "green" ? [] : backgroundEffects).map((e) => e.wgsl)
     // One key for the whole list, so adding an effect recompiles and a
     // re-render with the same list does not.
     const wgsl = sources.length ? sources.join("\0") : null
@@ -319,7 +331,7 @@ export function useSceneSync({
     return () => {
       stale = true
     }
-  }, [backgroundEffects, compositing, ready, engineRef, castIds])
+  }, [backgroundEffects, exportBackground, ready, engineRef, castIds])
 
   useEffect(() => {
     const engine = engineRef.current

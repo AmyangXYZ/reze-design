@@ -14,21 +14,12 @@ import {
 } from "mediabunny"
 import type { Engine } from "reze-engine"
 import { coverCrop, type BackdropMedia } from "./backdrop"
+import { GREEN, isCompositingBackground, type ExportBackground } from "./export-background"
 import { PngSequenceWriter } from "./png-sequence"
 
 export type ExportAudioSource = "music" | "none"
 
-/**
- * What sits behind the cast.
- *
- * `green` and `alpha` are both handoffs to a compositor, and the scene is torn
- * down the same way for both (no skybox, no background effect, ground surface
- * off) — they differ only in what fills the hole. `alpha` fills it with nothing,
- * which is strictly more information: a key still has to be pulled from green,
- * and it cannot recover the soft edge of hair that the alpha channel already
- * carries exactly.
- */
-export type ExportBackground = "scene" | "green" | "alpha"
+export type { ExportBackground }
 
 /**
  * The file that lands.
@@ -50,11 +41,6 @@ export type ExportSettings = {
   background: ExportBackground
   target: ExportTarget
 }
-
-const GREEN = "#00ff00"
-
-/** Compositing handoffs tear the scene down the same way; only the fill differs. */
-export const isCompositingBackground = (b: ExportBackground) => b !== "scene"
 
 export type ExportResult = {
   /** Buffered output, when nothing was streamed straight to disk. */

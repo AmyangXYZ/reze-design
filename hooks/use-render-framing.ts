@@ -16,7 +16,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import type { FramePreview } from "@/components/editor/render-panel"
-import type { ExportBackground } from "@/lib/video-export"
+import type { ExportBackground } from "@/lib/export-background"
 
 export function useRenderFraming() {
   /** An export is running; it drives the same model clock the live mirrors watch. */

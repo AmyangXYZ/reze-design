@@ -19,12 +19,11 @@ import type { BackdropMedia } from "@/lib/backdrop"
 import {
   captureStill,
   exportVideo,
-  isCompositingBackground,
   type ExportAudioSource,
-  type ExportBackground,
   type ExportProgress,
   type ExportTarget,
 } from "@/lib/video-export"
+import { isCompositingBackground, type ExportBackground } from "@/lib/export-background"
 import { formatBytes } from "@/lib/png-sequence"
 import { downloadBlob } from "@/lib/scene-file"
 import { useT } from "@/lib/i18n"
