@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { EFFECTS } from "@/lib/effects"
-import { Engine, parseLRC, parseMidi, Quat, Vec3, type ApplyStyleGroupResult, type CompileOptions, type GizmoDragEvent, type Model, type RenderClass, type MidiNote, type StyleGroup } from "reze-engine"
+import { Engine, parseLRC, parseMidi, Quat, Vec3, type ApplyStyleGroupResult, type CompileOptions, type GizmoDragEvent, type Model, type RenderClass, type MidiNote, type StyleGroup, type LyricLine } from "reze-engine"
 import { clipTrimmedToMotion } from "@/lib/clip"
 import { rasterizeLyrics } from "@/lib/lyrics-raster"
 import { SLOT_GRAPHS } from "@/lib/materials"
@@ -15,6 +15,8 @@ import { idbBundleId, modelKey, modelPmxUrl, type AssetRef, type Scene, type Sce
 import { unzipToFiles } from "@/lib/uploads"
 import { loadLocalBundle, sweepRetiredBundles } from "@/lib/asset-store"
 import { sceneFiles } from "@/lib/scene-files"
+import { BACKDROP_VIDEO_RE, openAnimatedImage } from "@/lib/backdrop"
+import { createMediaFollower, type MediaFollower } from "@/lib/media-clock"
 import { azElToDirection, hexToLinearVec3, hexToSrgbVec3 } from "@/lib/scene-settings"
 
 /**
@@ -326,10 +328,58 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
     onModel?.(info, modelGroups, entry.stage ? stageList[stageList.length - 1]! : null)
   }
 
+  // Cards, after the cast: they are scenery and a scene without them is still
+  // the scene, so a card that fails to resolve costs a picture rather than the
+  // load. Each comes back as the File it was packed as, which is also what
+  // sceneFiles wants for the next publish — so restoring and re-packing use the
+  // same bytes rather than two paths that could disagree.
+  const planeList: PlaneInfo[] = []
+  // Handed back rather than stored here: the decoders live in a ref the hook
+  // owns, and this function is outside it.
+  const restoredAnims: [string, PlaneAnimation][] = []
+  for (const p of scene.assets.planes ?? []) {
+    if (stale()) break
+    try {
+      const packed = bundle?.find((f) => f.name === p.asset.url) ?? null
+      const bytes = packed ? await packed.arrayBuffer() : await fetchAsset(p.asset.url)
+      if (!bytes) continue
+      const name = p.asset.name || p.asset.url.split("/").pop() || "plane"
+      const file = new File([bytes], name)
+      // THE SAME PREPARATION AN UPLOAD GETS. Handing these bytes straight to
+      // addPlane is what produced white cards: a .mp4 is not a picture, and the
+      // image decoder tried it as TGA.
+      const media = await preparePlaneMedia(file)
+      if (!media) continue
+      const id = await engine.addPlane({
+        image: media.firstFrame,
+        name,
+        width: p.width,
+        height: p.height,
+        transform: stageTransformToEngine(p.transform),
+        dynamic: media.video !== null,
+      })
+      sceneFiles.planes.set(id, file)
+      if (media.animation) restoredAnims.push([id, media.animation])
+      planeList.push({
+        id,
+        file: name,
+        width: p.width,
+        height: p.height,
+        transform: p.transform,
+        video: media.video,
+        animated: media.animation !== null,
+        frameWidth: media.frameWidth,
+        frameHeight: media.frameHeight,
+      })
+    } catch {
+      // One card short, not one scene short.
+    }
+  }
+
   // Again at the end, for the empty-scene case and because the first model may
   // have arrived before its follow bone existed.
   applyCamera(engine, scene.state.camera, engine.getModel(firstCastId(scene.assets.models)))
-  return { infos, groups, bundle, stageList }
+  return { infos, groups, bundle, stageList, planeList, restoredAnims }
 }
 
 /**
@@ -421,6 +471,136 @@ export type EngineModelInfo = {
  *  the sliders edit IS what gets serialised, so there is nothing to convert and
  *  no second definition to drift. Rotation is degrees, matching the slider. */
 export type StageTransform = SceneStageTransform
+
+/** A card in the scene: what it is made of, how big, and where it stands. */
+export type PlaneInfo = {
+  id: string
+  /** The upload's filename — what the chip calls it. */
+  file: string
+  /** World size. Height is the dial; width follows the picture's own shape. */
+  width: number
+  height: number
+  transform: StageTransform
+  /** A MOVING card. The element that plays it lives beside this and its frames
+   *  are pushed into the card's texture; null for a still or an animated image. */
+  video: HTMLVideoElement | null
+  /** An animated IMAGE (gif / webp / apng). No element can be told what time it
+   *  is, so its frames are decoded and drawn — see tickPlanes. The decoder and
+   *  its per-frame state live in a ref, not here: this is React state, and a
+   *  tick that mutated it would be writing through a value an effect depends
+   *  on. */
+  animated: boolean
+  /** The frame size the card's texture was allocated at. A push of any other
+   *  size is refused, so this is what the element must be. */
+  frameWidth: number
+  frameHeight: number
+}
+
+/**
+ * World units per pixel of the uploaded picture.
+ *
+ * A card arrives at ITS OWN size rather than a fixed height, so a 4K backdrop
+ * comes in as a wall and a small sprite comes in small — and two uploads keep
+ * the relative sizes they had in the folder they came from, which is the thing
+ * a fixed height threw away.
+ *
+ * The constant is the mapping, and 50 is chosen against the cast: a MMD
+ * character is about twenty units, so 1080p lands at 21.6 — a card standing
+ * beside her rather than a postage stamp or a wall filling the shot.
+ */
+const PLANE_PIXELS_PER_UNIT = 50
+
+/** A transparent sheet of exactly these texels, as PNG bytes. What a moving
+ *  card is allocated from: the size has to be the video's, and the content is
+ *  about to be overwritten sixty times a second. */
+/** A decoded animated image, and where its frames are drawn before being
+ *  pushed into a card. Frames are decoded on demand and only when the wanted
+ *  one CHANGES — at a gif's ten a second against sixty ticks, five in six ask
+ *  for what is already up. */
+type PlaneAnimation = {
+  dec: ImageDecoder
+  /** Cumulative end time of each frame: these formats carry per-frame delays,
+   *  not a frame rate, so time maps to an index by walking them. */
+  ends: number[]
+  span: number
+  canvas: OffscreenCanvas
+  shown: number
+  busy: boolean
+}
+
+/**
+ * What a card needs to exist, from the file it is made of.
+ *
+ * ONE function because there are two callers — an upload and a restore — and
+ * they were two copies. The restore copy handed a .mp4's own bytes to the image
+ * decoder, which tried them as TGA and produced a white card: a video is not a
+ * picture, and the texture has to start as a blank sheet at the video's size
+ * with frames written into it.
+ */
+async function preparePlaneMedia(file: File): Promise<{
+  video: HTMLVideoElement | null
+  animation: PlaneAnimation | null
+  frameWidth: number
+  frameHeight: number
+  firstFrame: ArrayBuffer
+} | null> {
+  if (BACKDROP_VIDEO_RE.test(file.name)) {
+    // The element IS the decoder: copyExternalImageToTexture takes one
+    // directly, so a moving card needs no demuxing at all.
+    const video = document.createElement("video")
+    video.src = URL.createObjectURL(file)
+    video.muted = true
+    video.loop = true
+    video.playsInline = true
+    await new Promise<void>((resolve, reject) => {
+      video.onloadedmetadata = () => resolve()
+      video.onerror = () => reject(new Error("cannot decode"))
+    })
+    const frameWidth = video.videoWidth
+    const frameHeight = video.videoHeight
+    void video.play().catch(() => {})
+    return { video, animation: null, frameWidth, frameHeight, firstFrame: await blankPng(frameWidth, frameHeight) }
+  }
+
+  const bitmap = await createImageBitmap(file)
+  const frameWidth = bitmap.width
+  const frameHeight = bitmap.height
+  bitmap.close()
+  const firstFrame = await file.arrayBuffer()
+
+  // A gif or animated webp is a still to the DOM and an animation to us:
+  // drawImage takes frame one and nothing else, so without this a moving
+  // picture becomes a frozen card.
+  const opened = await openAnimatedImage(file).catch(() => null)
+  let animation: PlaneAnimation | null = null
+  if (opened) {
+    const ends: number[] = []
+    let acc = 0
+    for (let i = 0; i < opened.frames; i++) {
+      const { image } = await opened.dec.decode({ frameIndex: i })
+      // Microseconds; a frame with no stated delay runs at the 100ms every
+      // decoder substitutes for one.
+      acc += (image.duration ?? 100_000) / 1e6
+      image.close()
+      ends.push(acc)
+    }
+    animation = {
+      dec: opened.dec,
+      ends,
+      span: Math.max(acc, 1 / 1000),
+      canvas: new OffscreenCanvas(frameWidth, frameHeight),
+      shown: -1,
+      busy: false,
+    }
+  }
+  return { video: null, animation, frameWidth, frameHeight, firstFrame }
+}
+
+async function blankPng(width: number, height: number): Promise<ArrayBuffer> {
+  const canvas = new OffscreenCanvas(Math.max(1, width), Math.max(1, height))
+  canvas.getContext("2d")
+  return (await canvas.convertToBlob({ type: "image/png" })).arrayBuffer()
+}
 
 export const DEFAULT_STAGE_TRANSFORM: StageTransform = {
   position: [0, 0, 0],
@@ -612,6 +792,8 @@ export function useEngine(
    *  and when a file is picked by hand, so the rows show either. */
   const [midiClip, setMidiClip] = useState<string | null>(null)
   const [lyricsClip, setLyricsClip] = useState<string | null>(null)
+  /** The song, and which slice of it the atlas currently holds. */
+  const lyricPage = useRef<{ lines: LyricLine[]; from: number; to: number; heightPx: number } | null>(null)
   // The asset bundle is unzipped. Everything that resolves out of it — clips,
   // audio, a background image — is available from here, which is well before
   // the models it shares the zip with have finished loading. State and not just
@@ -623,6 +805,16 @@ export function useEngine(
   // their materials reach the group/graph path; this list is what keeps them out
   // of the cast, the motion rows and the spawn-offset walk.
   const [stages, setStages] = useState<StageInfo[]>([])
+  /**
+   * Media planes: flat cards carrying a picture, placed in the scene.
+   *
+   * Their own list rather than rows in `stages`, because a stage IS the floor
+   * and a scene holds one of them, while planes are scenery and a scene holds
+   * as many as someone cares to arrange. They share the transform shape, which
+   * is the part that matters — placing a card is placing a stage by another
+   * name.
+   */
+  const [planes, setPlanes] = useState<PlaneInfo[]>([])
   // Style groups per model id — the host is the source of truth (0.19).
   const [groupsByModel, setGroupsByModel] = useState<Record<string, StyleGroup[]>>({})
   // Callbacks need the CURRENT model list without re-creating themselves per render (memoized
@@ -734,6 +926,8 @@ export function useEngine(
         const { infos, groups: groupsMap } = loaded
         setModels(infos)
         setStages(loaded.stageList)
+        for (const [id, anim] of loaded.restoredAnims) planeAnims.current.set(id, anim)
+        setPlanes(loaded.planeList)
         setGroupsByModel(groupsMap)
         // Bind pose until the user loads a VMD — material evaluation doesn't need motion.
         setReady(true)
@@ -772,6 +966,15 @@ export function useEngine(
   // Stage edits read the live list here and keep the engine call OUTSIDE the
   // state updater: React invokes updaters twice in StrictMode, which would
   // double-issue every engine write.
+  const planesRef = useRef<PlaneInfo[]>([])
+  /** One clock follower per moving card — the state is per element. */
+  const planeFollowers = useRef(new Map<string, MediaFollower>())
+  /** Decoders and per-frame state for animated-image cards. Mutable and
+   *  per-tick, which is exactly what React state must not be. */
+  const planeAnims = useRef(new Map<string, PlaneAnimation>())
+  useEffect(() => {
+    planesRef.current = planes
+  }, [planes])
   const stagesRef = useRef<StageInfo[]>([])
   useEffect(() => {
     stagesRef.current = stages
@@ -863,6 +1066,181 @@ export function useEngine(
     setStages((prev) => [...prev, { id, file: pmxBaseName(pmxFile.name), transform: DEFAULT_STAGE_TRANSFORM, morphs: {} }])
     return id
   }, [removeModelById])
+
+  /**
+   * Add a picture to the scene as a flat card.
+   *
+   * The image's own proportions set the width, so a card is never stretched:
+   * the height is the dial and the aspect follows the file. Placed at the world
+   * origin facing the front, which is where the camera starts — a card that
+   * arrives somewhere you have to go looking for reads as not having arrived.
+   */
+  const addPlaneFromFile = useCallback(async (file: File): Promise<string | null> => {
+    const engine = engineRef.current
+    if (!engine) return null
+    try {
+      const media = await preparePlaneMedia(file)
+      if (!media) return null
+      const { video, animation, frameWidth, frameHeight, firstFrame } = media
+
+      // Its own proportions AND its own size. Clamped only at the bottom, so a
+      // favicon-sized upload is still something you can find and grab.
+      const height = Math.max(1, frameHeight / PLANE_PIXELS_PER_UNIT)
+      const width = Math.max(1, frameWidth / PLANE_PIXELS_PER_UNIT)
+      const name = uniqueModelId(file.name)
+      // BESIDE the last card, not inside it — the same rule an added model
+      // follows. Cards are uploaded in batches and every one landing on the
+      // origin is a stack you have to take apart before you can see what you
+      // added. Along X because a card faces the camera: sliding sideways keeps
+      // all of them in shot, where stepping toward the lens would hide the ones
+      // behind.
+      //
+      // AND STANDING ON THE FLOOR, not straddling it. A card is centred on its
+      // own origin, so arriving at y=0 buries its lower half — and the ground
+      // then occludes that half, which is what a floor is for and reads as
+      // correct only while you can SEE the floor. Turned down to nothing for
+      // the shadow catcher it still writes depth, so the card came out cut off
+      // by something invisible. Half its height up is where a standing card
+      // goes anyway.
+      const transform: StageTransform = {
+        ...DEFAULT_STAGE_TRANSFORM,
+        position: [spawnOffsetX(planesRef.current.length), height / 2, 0],
+      }
+      const id = await engine.addPlane({
+        image: firstFrame,
+        name,
+        width,
+        height,
+        transform: stageTransformToEngine(transform),
+        // A moving card is rewritten every frame; the engine allocates it
+        // without a mip chain so that stays affordable.
+        dynamic: video !== null,
+      })
+      if (animation) planeAnims.current.set(id, animation)
+      // Retained for the same reason a model's files are: a publish re-packs
+      // the bytes the scene is wearing rather than asking for them again.
+      sceneFiles.planes.set(id, file)
+      setPlanes((prev) => [
+        ...prev,
+        {
+          id,
+          file: file.name,
+          width,
+          height,
+          transform,
+          video,
+          animated: animation !== null,
+          frameWidth,
+          frameHeight,
+        },
+      ])
+      return id
+    } catch {
+      return null
+    }
+  }, [])
+
+  /**
+   * Push every moving card's current frame into its texture.
+   *
+   * Called from the same tick as everything else. A still card costs nothing
+   * here — the list is walked and skipped — and a moving one costs one texture
+   * copy, which is what a video plane is.
+   */
+  const tickPlanes = useCallback((time: number, playing: boolean, exporting = false) => {
+    const engine = engineRef.current
+    if (!engine) return
+    if (exporting) {
+      // The export writes every card's texture itself, from the file, at its
+      // own frame times. Leaving the elements running would decode frames
+      // nothing reads and fight the writes that matter.
+      for (const p of planesRef.current) p.video?.pause()
+      return
+    }
+    for (const p of planesRef.current) {
+      if (p.video) {
+        // The clip's clock, under the shared policy — a card follows the
+        // animation exactly as the backdrop does.
+        let follow = planeFollowers.current.get(p.id)
+        if (!follow) {
+          follow = createMediaFollower()
+          planeFollowers.current.set(p.id, follow)
+        }
+        follow(p.video, time, playing)
+        if (p.video.readyState >= 2) engine.setPlaneFrame(p.id, p.video, p.frameWidth, p.frameHeight)
+        continue
+      }
+      if (!p.animated) continue
+      const a = planeAnims.current.get(p.id)
+      if (!a || a.busy) continue
+      const at = ((time % a.span) + a.span) % a.span
+      let want = 0
+      while (want < a.ends.length - 1 && at >= a.ends[want]) want++
+      if (want === a.shown) continue
+      a.busy = true
+      void a.dec
+        .decode({ frameIndex: want })
+        .then(({ image }) => {
+          const cx = a.canvas.getContext("2d")
+          if (cx) {
+            cx.clearRect(0, 0, a.canvas.width, a.canvas.height)
+            cx.drawImage(image, 0, 0)
+            engineRef.current?.setPlaneFrame(p.id, a.canvas, p.frameWidth, p.frameHeight)
+          }
+          image.close()
+          a.shown = want
+        })
+        .catch(() => {})
+        .finally(() => {
+          a.busy = false
+        })
+    }
+  }, [])
+
+  /** Place a card. Same shape as a stage's — see PlaneInfo. */
+  const setPlaneTransform = useCallback((id: string, patch: Partial<StageTransform>) => {
+    setPlanes((prev) =>
+      prev.map((p) => {
+        if (p.id !== id) return p
+        const next = { ...p.transform, ...patch }
+        engineRef.current?.setModelTransform(id, stageTransformToEngine(next))
+        return { ...p, transform: next }
+      }),
+    )
+  }, [])
+
+  /** Take every card out of the scene: the models, the decoders, the elements
+   *  and the retained bytes. What a reset needs, and what a new scene needs. */
+  const clearPlanes = useCallback(() => {
+    for (const p of planesRef.current) {
+      engineRef.current?.removeModel(p.id)
+      sceneFiles.planes.delete(p.id)
+      if (p.video) {
+        p.video.pause()
+        URL.revokeObjectURL(p.video.src)
+      }
+      planeAnims.current.get(p.id)?.dec.close()
+      planeAnims.current.delete(p.id)
+      planeFollowers.current.delete(p.id)
+    }
+    setPlanes([])
+  }, [])
+
+  const removePlane = useCallback((id: string) => {
+    sceneFiles.planes.delete(id)
+    engineRef.current?.removeModel(id)
+    setPlanes((prev) => {
+      const gone = prev.find((p) => p.id === id)
+      if (gone?.video) {
+        gone.video.pause()
+        URL.revokeObjectURL(gone.video.src)
+      }
+      planeAnims.current.get(id)?.dec.close()
+      planeAnims.current.delete(id)
+      planeFollowers.current.delete(id)
+      return prev.filter((p) => p.id !== id)
+    })
+  }, [])
 
   /** Place a stage. Position and rotation are absolute, scale is uniform. */
   const setStageTransform = useCallback((id: string, patch: Partial<StageTransform>) => {
@@ -1044,6 +1422,67 @@ export function useEngine(
     }
   }, [])
 
+  /**
+   * Rasterise the lyric sheet for a height it is about to be DRAWN at.
+   *
+   * The atlas is resolution-bound — a row stored at one size and sampled at
+   * another is what soft text is — and every install above sizes it for the
+   * viewport, which is the wrong size for a 4K render. The export calls this
+   * with its output height and again with the viewport's on the way out.
+   *
+   * Re-parsed from the bytes the scene already retains for publishing rather
+   * than from lines kept in a second place: one source, and no way for the two
+   * to disagree about what the song says.
+   */
+  const rasterLyricsAt = useCallback(async (heightPx: number, from = 0) => {
+    const engine = engineRef.current
+    const file = sceneFiles.lyrics
+    if (!engine || !file || heightPx <= 0) return
+    try {
+      const lines = parseLRC(new TextDecoder().decode(await file.arrayBuffer()))
+      if (lines.length === 0) return
+      const atlas = rasterizeLyrics(lines, heightPx, from)
+      engine.setLyrics(lines, atlas ?? undefined)
+      // Remembered so the page can be moved without re-reading the file, and so
+      // the tick below can tell in a comparison whether it needs to.
+      lyricPage.current = atlas ? { lines, from: atlas.from, to: atlas.to, heightPx } : null
+    } catch {
+      // The sheet on screen stays; a failed re-raster must not clear the words.
+    }
+  }, [])
+
+  /**
+   * Keep the resident page under the playhead.
+   *
+   * Called every frame and almost always does nothing: the check is two
+   * comparisons against the range already loaded. It only rasterises when the
+   * song walks off the page, which for a full-size sheet is every dozen-odd
+   * lines — a handful of times across a track.
+   *
+   * The page starts AT the line that ran off rather than centred on it, because
+   * a song runs forwards: paging from the current line gives the whole sheet to
+   * what is coming instead of spending half of it on verses already sung. A
+   * backward seek pages from there just the same.
+   */
+  const syncLyricsTo = useCallback((time: number) => {
+    const page = lyricPage.current
+    if (!page) return
+    const { lines } = page
+    // The live line, by the same rule the engine's accessor uses.
+    let i = -1
+    for (let k = 0; k < lines.length; k++) {
+      if (time >= lines[k].start && time < lines[k].end) {
+        i = k
+        break
+      }
+    }
+    if (i < 0 || (i >= page.from && i < page.to)) return
+    // Guard against a page that holds one line and cannot advance — re-asking
+    // for the same range every frame would rasterise every frame.
+    if (i === page.from) return
+    void rasterLyricsAt(page.heightPx, i)
+  }, [rasterLyricsAt])
+
   const clearMidi = useCallback(() => {
     engineRef.current?.setMidiNotes(null)
     sceneFiles.score = null
@@ -1153,6 +1592,11 @@ export function useEngine(
       sceneFiles.score = null
       sceneFiles.lyrics = null
       sceneFiles.camera = null
+      // Cards go with them, and they own more than bytes: a decoder, a playing
+      // element and an object URL each. Left standing, the outgoing scene's
+      // pictures would be found in the incoming one — and its videos would go
+      // on decoding for a scene nobody is looking at.
+      clearPlanes()
       engine.clearCameraVmd()
 
       const loaded = await loadSceneInto(engine, scene, stale, { onBytes: setBundleProgress })
@@ -1163,6 +1607,8 @@ export function useEngine(
       sceneRef.current = scene
       setModels(loaded.infos)
       setStages(loaded.stageList)
+      for (const [id, anim] of loaded.restoredAnims) planeAnims.current.set(id, anim)
+      setPlanes(loaded.planeList)
       setGroupsByModel(loaded.groups)
       applyCamera(engine, scene.state.camera, engine.getModel(firstCastId(scene.assets.models)))
       setError(null)
@@ -1174,7 +1620,7 @@ export function useEngine(
     } finally {
       if (!stale()) setReady(true)
     }
-  }, [])
+  }, [clearPlanes])
 
   /**
    * Push orbit framing to the engine. A loaded, enabled camera VMD drives the shot
@@ -1221,6 +1667,12 @@ export function useEngine(
     stages,
     addStageFromFiles,
     setStageTransform,
+    planes,
+    addPlaneFromFile,
+    tickPlanes,
+    setPlaneTransform,
+    removePlane,
+    clearPlanes,
     setStageMorph,
     resetStageMorphs,
     groupsByModel,
@@ -1245,6 +1697,8 @@ export function useEngine(
     installLyricsFile,
     midiClip,
     lyricsClip,
+    rasterLyricsAt,
+    syncLyricsTo,
     clearMidi,
     clearLyrics,
     centerModel,

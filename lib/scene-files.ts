@@ -24,6 +24,8 @@ export const sceneFiles = {
   score: null as File | null,
   lyrics: null as File | null,
   camera: null as File | null,
+  /** Media planes, keyed by model id — the picture each card is made of. */
+  planes: new Map<string, File>(),
 }
 
 /**

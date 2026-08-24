@@ -12,8 +12,13 @@ import { cn } from "@/lib/utils"
 
 /** The value column, shared by its readout and its editor so switching between
  *  them moves nothing. `p-0` is load-bearing: browsers pad an input by default,
- *  and `leading-4` pins the text to the same baseline the span sits on. */
-const VALUE_BOX = "block h-4 w-10 shrink-0 rounded border bg-transparent p-0 text-right text-[11px] leading-4 tabular-nums"
+ *  and `leading-4` pins the text to the same baseline the span sits on.
+ *
+ *  Exported because a typed number should look the same everywhere it appears —
+ *  the plane row's size boxes are the same control in a different arrangement,
+ *  and a second definition of it would drift on the first tweak. */
+export const VALUE_BOX =
+  "block h-4 w-10 shrink-0 rounded border bg-transparent p-0 text-right text-[11px] leading-4 tabular-nums"
 
 export function SliderRow({
   label,

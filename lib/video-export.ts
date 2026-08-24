@@ -13,7 +13,7 @@ import {
   Output,
 } from "mediabunny"
 import type { Engine } from "reze-engine"
-import { coverCrop, openAnimatedImage, type BackdropMedia } from "./backdrop"
+import { coverCrop, openAnimatedImage, type BackdropKind, type BackdropMedia } from "./backdrop"
 import { GREEN, isCompositingBackground, type ExportBackground } from "./export-background"
 import { PngSequenceWriter } from "./png-sequence"
 
@@ -30,6 +30,25 @@ export type { ExportBackground }
  * compositor.
  */
 export type ExportTarget = "mp4" | "webm" | "png"
+
+/**
+ * A moving card the export has to advance itself.
+ *
+ * The live scene steps these by seeking a <video>, which is right at wall-clock
+ * speed and hopeless offline: a seek costs tens of milliseconds and the export
+ * renders faster than that, so the card advanced about once a second while the
+ * scene ran on. The export decodes from the FILE at its own frame times, the
+ * same way it handles the backdrop, and writes the result into the card's
+ * texture before the frame is drawn.
+ */
+export type ExportPlane = {
+  id: string
+  file: File
+  kind: BackdropKind
+  /** The texture's own size — setPlaneFrame refuses anything else. */
+  frameWidth: number
+  frameHeight: number
+}
 
 export type ExportSettings = {
   width: number
@@ -593,6 +612,8 @@ export async function exportVideo(opts: {
   fileStream?: FileSystemWritableFileStream
   /** Destination folder — PNG sequence target. */
   directory?: FileSystemDirectoryHandle
+  /** Moving cards in the scene, advanced by this loop rather than by the clock. */
+  planes?: ExportPlane[]
   onProgress?: (p: ExportProgress) => void
   signal?: AbortSignal
 }): Promise<ExportResult> {
@@ -638,6 +659,28 @@ export async function exportVideo(opts: {
    */
   const needsComposite = backdropFrames !== null || settings.watermark
   const watermarkFont = needsComposite ? brandFontFamily() : ""
+
+  // Moving cards, opened at their OWN texture size — a card is a fixed
+  // rectangle of texels and setPlaneFrame refuses any other, so there is no
+  // fitting to do here.
+  const planeSources = await Promise.all(
+    (opts.planes ?? []).map(async (p) => ({
+      plane: p,
+      frames: await openBackdrop(
+        {
+          file: p.file,
+          url: "",
+          name: p.file.name,
+          width: p.frameWidth,
+          height: p.frameHeight,
+          kind: p.kind,
+          duration: null,
+          fps: null,
+        },
+        { width: p.frameWidth, height: p.frameHeight, startTime, fps, total },
+      ),
+    })),
+  )
 
   // ── Engine: remember live state, switch to offline stepping ──
   const prior = model.getAnimationProgress()
@@ -704,6 +747,18 @@ export async function exportVideo(opts: {
       // and the canvas survives, which is exactly what makes the bug look
       // intermittent rather than structural.
       const bgFrame = backdropFrames ? await backdropFrames.next() : null
+      // Cards, before the render for the same reason: the texture a card samples
+      // has to hold this frame's picture by the time the frame is drawn.
+      for (const s of planeSources) {
+        const frame = await s.frames.next()
+        // The narrowing is real, not a cast for the compiler's sake: a frame
+        // source yields canvases and decoded images, both of which WebGPU
+        // accepts — the union it is typed as also admits an SVG element, which
+        // it does not.
+        if (frame && !(frame instanceof SVGImageElement)) {
+          engine.setPlaneFrame(s.plane.id, frame, s.plane.frameWidth, s.plane.frameHeight)
+        }
+      }
 
       // dt=0 renders the t=0 pose itself; afterwards each call advances one frame.
       // Audio time is TRACK time: the export may start mid-song.
@@ -739,6 +794,7 @@ export async function exportVideo(opts: {
     throw e
   } finally {
     backdropFrames?.close()
+    for (const s of planeSources) s.frames.close()
     // Restore the live session at the exact prior size (the host re-asserts
     // pin-or-tracking afterwards), background/skybox (compositing mode
     engine.setRenderSize(prevW, prevH)

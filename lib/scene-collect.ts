@@ -10,7 +10,7 @@
 
 import type { BundleEntry } from "@/lib/bundle"
 import type { EngineModelInfo, StageInfo } from "@/hooks/use-engine"
-import type { AssetRef, ModelSource, SceneBackground, SceneModel } from "@/lib/scene"
+import type { AssetRef, ModelSource, SceneBackground, SceneModel, ScenePlane, SceneStageTransform } from "@/lib/scene"
 import { modelFilePaths, sceneFiles } from "@/lib/scene-files"
 
 /** One model's motion, however the page happens to store it. */
@@ -49,6 +49,8 @@ export type SceneSlotsInput = {
   lyrics: { name: string | null; booted: AssetRef | null }
   /** The background image, whichever slot it came from. */
   background: { kind: "backdrop" | "skybox"; name: string; file: File } | null
+  /** Media planes, each with the file it is made from. */
+  planes: { name: string; file: File; width: number; height: number; transform: SceneStageTransform }[]
 }
 
 export type SceneSlots = {
@@ -59,6 +61,7 @@ export type SceneSlots = {
   midi: AssetRef | null
   lyrics: AssetRef | null
   background: SceneBackground
+  planes: ScenePlane[]
   hidden: Record<string, string[]>
 }
 
@@ -201,5 +204,46 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
       .map((m) => [m.id, m.materials.filter((mat) => !mat.visible).map((mat) => mat.name)] as const)
       .filter(([, names]) => names.length),
   )
-  return { entries, models: liveModels, cameraAnimation, audio, midi, lyrics, background, hidden }
+  // Cards, packed like every other upload: the bytes go into the bundle and the
+  // document keeps a path to them. Their own prefix, so a card called the same
+  // thing as a backdrop cannot land on it.
+  const planes: ScenePlane[] = input.planes.map((p, i) => {
+    // INDEXED, because a card is identified by its place in the list and not by
+    // what it is called. Two cards made from the same file — the same clip used
+    // twice, which is an ordinary thing to want — packed to the same path and
+    // both copies went into the bundle, so a scene with two copies of one video
+    // weighed twice what it should and walked into the upload cap.
+    //
+    // The index is stable across a reload (the list is rebuilt in document
+    // order), so the path is stable too and a repack does not churn.
+    const path = `planes/${i}-${p.name}`
+    entries.push({ path, file: p.file })
+    // The display name travels beside the path: the path now carries an index
+    // that is bookkeeping, and a card called "0-blue.mp4" in the UI would be
+    // this leaking out — and re-packing THAT would prefix it again every load.
+    return { asset: { name: p.name, url: path }, width: p.width, height: p.height, transform: p.transform }
+  })
+
+  // NO TWO ENTRIES MAY SHARE A PATH.
+  //
+  // A bundle is a flat list of {path, file}, so a repeated path is not an
+  // overwrite — it is the same bytes stored twice, and nothing downstream ever
+  // says so. It cost a scene with two cards of one video double its weight and
+  // put it into the upload cap. Every slot that could repeat now guards itself;
+  // this is the backstop, and it keeps the FIRST because that is the one the
+  // document's paths were built against.
+  const seen = new Set<string>()
+  const unique = entries.filter((e) => {
+    if (seen.has(e.path)) return false
+    seen.add(e.path)
+    return true
+  })
+  if (unique.length !== entries.length) {
+    console.warn(
+      `[reze] ${entries.length - unique.length} duplicate bundle path(s) dropped — ` +
+        `two assets packed to the same name. The scene is fine; the packer is not.`,
+    )
+  }
+
+  return { entries: unique, models: liveModels, cameraAnimation, audio, midi, lyrics, background, planes, hidden }
 }

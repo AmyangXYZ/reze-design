@@ -20,6 +20,7 @@ import {
   captureStill,
   exportVideo,
   type ExportAudioSource,
+  type ExportPlane,
   type ExportProgress,
   type ExportTarget,
 } from "@/lib/video-export"
@@ -173,6 +174,8 @@ export const RenderPanel = memo(function RenderPanel({
   onExportingChange,
   onFramePreviewChange,
   onProgressChange,
+  rasterLyricsAt,
+  planes,
 }: {
   /** This tab is the visible one. */
   active: boolean
@@ -207,6 +210,13 @@ export const RenderPanel = memo(function RenderPanel({
   onFramePreviewChange: (preview: FramePreview | null) => void
   /** Mirrors the export progress out, for hosts that show it while the panel is hidden. */
   onProgressChange?: (p: ExportProgress | null) => void
+  /** Re-rasterise the lyric sheet for a height it is about to be drawn at. The
+   *  atlas is sized for the VIEWPORT while composing, which is the wrong size
+   *  for a 4K render — see useEngine. */
+  rasterLyricsAt?: (heightPx: number) => Promise<void>
+  /** Moving cards, which the export advances itself — the live clock steps them
+   *  by seeking, which is far too slow offline. */
+  planes?: ExportPlane[]
 }) {
   const t = useT()
   // Cinemascope by default — the whole reze-* series is named for the Chainsaw Man
@@ -308,6 +318,7 @@ export const RenderPanel = memo(function RenderPanel({
     capturingRef.current = true
     setResult(null)
     try {
+      await rasterLyricsAt?.(height)
       const blob = await captureStill({
         engine,
         canvas,
@@ -331,6 +342,8 @@ export const RenderPanel = memo(function RenderPanel({
     } catch (e) {
       setResult({ ok: false, message: e instanceof Error ? e.message : String(e) })
     } finally {
+      // Back to the viewport's size, which is what the live canvas draws at.
+      await rasterLyricsAt?.(canvas.height)
       capturingRef.current = false
     }
   }
@@ -405,6 +418,7 @@ export const RenderPanel = memo(function RenderPanel({
     const ac = new AbortController()
     abortRef.current = ac
     try {
+      await rasterLyricsAt?.(height)
       const out = await exportVideo({
         engine,
         canvas,
@@ -426,6 +440,7 @@ export const RenderPanel = memo(function RenderPanel({
         musicUrl,
         fileStream,
         directory,
+        planes,
         onProgress: setProgress,
         signal: ac.signal,
       })
@@ -462,6 +477,7 @@ export const RenderPanel = memo(function RenderPanel({
         setResult({ ok: false, message: friendly ? t.render.encoderUnsupported : raw })
       }
     } finally {
+      await rasterLyricsAt?.(canvas.height)
       setExporting(false)
       onExportingChange(false)
       abortRef.current = null

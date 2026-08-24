@@ -15,6 +15,7 @@
 // keeps the second one from moving the picture when nobody asked.
 
 import { useEffect, useRef, type RefObject } from "react"
+import { createMediaFollower } from "@/lib/media-clock"
 import type { Engine } from "reze-engine"
 
 export function useAudioClock({
@@ -23,6 +24,8 @@ export function useAudioClock({
   audioRef,
   drawBackdrop,
   videoRef,
+  syncLyricsTo,
+  tickPlanes,
   disabled = false,
 }: {
   engineRef: RefObject<Engine | null>
@@ -36,11 +39,20 @@ export function useAudioClock({
   /** A VIDEO backdrop, which plays natively — see the branch at the end of the
    *  tick for why this one keeps an element. */
   videoRef?: RefObject<HTMLVideoElement | null>
+  /** Keep the resident lyric page under the playhead. Cheap per frame: it
+   *  compares against the range already loaded and almost always returns. */
+  syncLyricsTo?: (time: number) => void
+  /** Push every moving card's current frame into its texture, and keep the
+   *  elements behind them on the clip's clock. */
+  tickPlanes?: (time: number, playing: boolean, exporting: boolean) => void
   /** True while exporting: the render pipeline owns time, the element stays
    *  silent — and the export decodes the backdrop from the file itself, so the
    *  element has no part in what it produces. */
   disabled?: boolean
 }) {
+  /** The backdrop's own clock state. See lib/media-clock for the policy. */
+  const followBackdrop = useRef(createMediaFollower())
+
   // Browsers block audio until the user interacts.
   const userInteracted = useRef(false)
   useEffect(() => {
@@ -81,10 +93,6 @@ export function useAudioClock({
     let wasPlaying = false
 
     let lastModelTime = -1
-    let wasVideoPlaying = false
-    /** The wrapped time the video backdrop was last asked to show while the
-     *  transport was stopped. Null while it plays. */
-    let lastWant: number | null = null
     // The one correction free-run allows: when sound ACTUALLY starts (decode
     // can lag play() by hundreds of ms on a cold cache), stamp the clock once.
     // Fires per start, never during steady playback.
@@ -209,6 +217,15 @@ export function useAudioClock({
       // backdrop is the one thing on screen that should keep following while a
       // render runs.
       drawBackdrop?.(p.current)
+      // Same reason and the same place: the words have to be resident before
+      // the frame that shows them, and an export steps this clock too.
+      syncLyricsTo?.(p.current)
+      // Cards. The EXPORT owns them while it runs: it decodes their frames from
+      // the file at its own frame times and writes them into the textures
+      // itself, so this must not also be stepping the elements. It used to, by
+      // seeking one per tick — which costs tens of milliseconds each and
+      // advanced a card about once a second while the render ran on.
+      tickPlanes?.(p.current, p.playing, disabled)
 
       // ── A video backdrop, which PLAYS ──
       //
@@ -230,27 +247,10 @@ export function useAudioClock({
       // export writes for that moment. Invisible, and the file is unaffected:
       // the export decodes its own backdrop frames from the source.
       const video = videoRef?.current ?? null
-      if (video && video.src && video.readyState >= 1) {
-        const span = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0
-        // Wrapped into the backdrop's own length, so a clip longer than the
-        // video seeks somewhere inside it rather than past its end.
-        const want = span ? ((p.current % span) + span) % span : p.current
-        const followsLive = p.playing && !disabled
-        if (followsLive) {
-          // Stamped at the start of playback and on a discrete jump; left alone
-          // in between, which is this file's rule for every media element.
-          // <video loop> does the wrapping itself while it runs.
-          if (!wasVideoPlaying || (!video.seeking && jumped)) video.currentTime = want
-          if (video.paused) void video.play().catch(() => {})
-          lastWant = null
-        } else {
-          if (!video.paused) video.pause()
-          // Only a CHANGE while stopped, never the stop itself.
-          if (lastWant !== null && Math.abs(want - lastWant) > 1e-4) video.currentTime = want
-          lastWant = want
-        }
-        wasVideoPlaying = followsLive
-      }
+      // An export owns the clock but not the picture: it decodes its own
+      // backdrop frames, and freezing this would leave the one thing on screen
+      // that is not following the render.
+      if (video) followBackdrop.current(video, p.current, p.playing && !disabled)
 
     }
     raf = requestAnimationFrame(tick)
@@ -261,5 +261,5 @@ export function useAudioClock({
       window.removeEventListener("keydown", warm)
     }
     // The refs are stable; listing them costs nothing and keeps the rule on.
-  }, [masterId, engineRef, disabled, audioRef, drawBackdrop, videoRef])
+  }, [masterId, engineRef, disabled, audioRef, drawBackdrop, videoRef, syncLyricsTo, tickPlanes])
 }

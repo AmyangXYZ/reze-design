@@ -25,6 +25,7 @@ import {
   useSyncExternalStore,
   type ComponentType,
   type ReactNode,
+  type SetStateAction,
 } from "react"
 import {
   Atom,
@@ -95,6 +96,7 @@ import {
   TARGET_DEFAULT,
 } from "@/components/scene/scene-sidebar"
 import { QuickPick } from "@/components/scene/quick-pick"
+import { VALUE_BOX } from "@/components/scene/scene-sidebar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { GradeLibrary } from "@/components/editor/grade-library"
 import { GradeEditorPanel, type GradeEditorSubject } from "@/components/editor/grade-editor"
@@ -315,6 +317,80 @@ const CHECKERBOARD: React.CSSProperties = {
 const BACKDROP_ACCEPT = "image/*,video/mp4,video/webm,video/quicktime"
 const DOME_ACCEPT = "image/*,.hdr"
 
+/** Give every row a uid, keeping the ones already minted. A duplicate is
+ *  re-minted rather than kept: two rows carrying the same uid is the very state
+ *  this exists to prevent, and it is what applying one effect twice produces. */
+function stampEffectUids(list: AppliedEffect[]): AppliedEffect[] {
+  const seen = new Set<string>()
+  return list.map((e) => {
+    if (e.uid && !seen.has(e.uid)) {
+      seen.add(e.uid)
+      return e
+    }
+    const uid = newSceneId()
+    seen.add(uid)
+    return { ...e, uid }
+  })
+}
+
+/**
+ * Two linked number boxes on one row — a size, in world units.
+ *
+ * Committed on blur and on Enter rather than per keystroke: "2" on the way to
+ * "20" is a card that jumps to a twentieth of its size and back while you type.
+ * Escape abandons the edit, which is what every other typed field here does.
+ */
+function SizeRow({
+  label,
+  width,
+  height,
+  onWidth,
+  onHeight,
+}: {
+  label: string
+  width: number
+  height: number
+  onWidth: (v: number) => void
+  onHeight: (v: number) => void
+}) {
+  const box = (value: number, commit: (v: number) => void, key: string) => (
+    <input
+      key={key}
+      // The live value while not editing; a draft is local to the input, so
+      // there is nothing to reconcile when the other box moves this one.
+      defaultValue={value.toFixed(1)}
+      // Re-keyed on the value it shows, so the OTHER box's edit refreshes this
+      // one — an uncontrolled input keeps its own text otherwise, and the pair
+      // would silently disagree about the size of the same card.
+      onBlur={(e) => {
+        const v = Number(e.currentTarget.value)
+        if (Number.isFinite(v) && v > 0) commit(v)
+        else e.currentTarget.value = value.toFixed(1)
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur()
+        if (e.key === "Escape") {
+          e.currentTarget.value = value.toFixed(1)
+          e.currentTarget.blur()
+        }
+      }}
+      className={cn(VALUE_BOX, "border-transparent text-muted-foreground outline-none focus:border-blue-400/50 focus:bg-white/5 focus:text-foreground")}
+    />
+  )
+  // Right-aligned like every other value in this dock: the labels run down the
+  // left and the numbers line up down the right.
+  return (
+    <div className="mt-2.5 flex items-center gap-2 first:mt-0">
+      <span className="w-16 shrink-0 truncate text-xs">{label}</span>
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        {box(width, onWidth, `w${width.toFixed(1)}`)}
+        <span className="text-[11px] text-muted-foreground">×</span>
+        {box(height, onHeight, `h${height.toFixed(1)}`)}
+      </div>
+    </div>
+  )
+}
+
 const FRAME_ASPECT_TOL = 1.03
 
 /** Palette recents, persisted — Suggestions should remember across sessions. */
@@ -417,6 +493,11 @@ function layersFor(t: Dictionary) {
     // global mount), so it is scene dressing like Grade, not part of the
     // backdrop.
     { id: "effect", name: t.lab.rows.effect, icon: Sparkles, presets: [] },
+    // Pictures standing IN the scene, as opposed to the one behind it. A card
+    // is occluded by what is in front of it and takes perspective when turned,
+    // which is the whole difference from a backdrop and the reason it is not a
+    // Background tab.
+    { id: "plane", name: t.lab.rows.plane, icon: Image, presets: [] },
     // Post, not Grade: the row is the whole after-the-render pass — the colour
     // grade and the glow the camera adds to bright pixels. Lighting (including a
     // future character rim) stays in Light; those change how surfaces respond,
@@ -1613,6 +1694,8 @@ export default function Lab() {
     installLyricsFile,
     midiClip,
     lyricsClip,
+    rasterLyricsAt,
+    syncLyricsTo,
     clearMidi,
     clearLyrics,
     error,
@@ -1624,6 +1707,12 @@ export default function Lab() {
     stages,
     addStageFromFiles,
     setStageTransform,
+    planes,
+    addPlaneFromFile,
+    tickPlanes,
+    setPlaneTransform,
+    removePlane,
+    clearPlanes,
     setCameraView,
     swapScene,
     applyGroups,
@@ -1993,8 +2082,56 @@ export default function Lab() {
     }
   }, [frameW, frameH, framing.activeFrame, framing.frameVp, framing.exporting, ready, engineRef])
 
+  /**
+   * Re-rasterise the lyric sheet whenever the canvas changes size.
+   *
+   * The atlas is resolution-bound — a row stored at one size and sampled at
+   * another is what soft text is — and it was built ONCE, when the lyrics
+   * loaded, from whatever the canvas measured at that moment. Two things went
+   * wrong with that. The canvas is often not sized yet during boot, so the
+   * fallback row height was used and never revisited; and the canvas grows
+   * afterwards anyway — opening a dock, framing a shot, moving the window to a
+   * retina display — while the sheet stayed as small as it was born.
+   *
+   * A ResizeObserver rather than the deps above, because the engine tracks the
+   * viewport itself when nothing is framed: the canvas backing store changes
+   * with no React render to hang an effect on.
+   */
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || !ready) return
+    let timer = 0
+    let last = 0
+    const settle = () => {
+      const h = canvas.height
+      // A drag resizes continuously and each rasterisation walks every line, so
+      // this waits for the size to stop moving. Ignoring a change smaller than
+      // a few per cent keeps a one-pixel dpr wobble from doing the work twice.
+      if (h <= 0 || Math.abs(h - last) < last * 0.05) return
+      last = h
+      void rasterLyricsAt(h)
+    }
+    const observer = new ResizeObserver(() => {
+      window.clearTimeout(timer)
+      // The export pins its own size and rasterises for it; re-doing that here
+      // would fight it mid-render.
+      timer = window.setTimeout(() => {
+        if (!framing.exporting) settle()
+      }, 250)
+    })
+    observer.observe(canvas)
+    settle()
+    return () => {
+      window.clearTimeout(timer)
+      observer.disconnect()
+    }
+  }, [ready, canvasRef, rasterLyricsAt, framing.exporting])
+
   // Music follows the model clock — the exact mirror main uses, shared. Silent
   // while an export runs; the export mixes its own audio.
+  const planeInput = useRef<HTMLInputElement | null>(null)
+  /** Which card's controls the section is showing. */
+  const [selectedPlane, setSelectedPlane] = useState<string | null>(null)
   const bgImageInput = useRef<HTMLInputElement | null>(null)
   /** Set before the picker opens: does this upload fill the flat row or the 360 row? */
   const bgImageIsDome = useRef(false)
@@ -2030,6 +2167,8 @@ export default function Lab() {
     audioRef,
     drawBackdrop: mediaBackdrop.draw,
     videoRef: bgVideoRef,
+    syncLyricsTo,
+    tickPlanes,
     disabled: framing.exporting,
   })
 
@@ -2234,7 +2373,22 @@ export default function Lab() {
   // The scene's effects, IN LAYER ORDER. The document has held a list for a
   // while and the viewer has rendered one; this was its first entry only, so a
   // four-effect scene opened here kept one and saved one back.
-  const [bgEffects, setBgEffects] = useState<AppliedEffect[]>(scene.state.backgroundEffects)
+  const [bgEffects, setBgEffectsState] = useState<AppliedEffect[]>(() => stampEffectUids(scene.state.backgroundEffects))
+  /**
+   * Every list that reaches state carries one uid per row.
+   *
+   * Stamped HERE rather than at each of the fourteen call sites that add an
+   * effect: the library door, the dock picker, the row's own swap, a document
+   * load and an undo all produce lists, and one of them forgetting is a
+   * duplicate key that only shows up when the same effect is applied twice.
+   * Wrapping the setter makes the invariant true by construction instead of by
+   * everyone remembering it.
+   */
+  const setBgEffects = useCallback((update: SetStateAction<AppliedEffect[]>) => {
+    setBgEffectsState((prev) =>
+      stampEffectUids(typeof update === "function" ? (update as (p: AppliedEffect[]) => AppliedEffect[])(prev) : update),
+    )
+  }, [])
 
   // ONE slot for the three libraries — see useBrowseSurface. They were three
   // independent booleans here, so opening one left the others up: a second
@@ -2623,6 +2777,29 @@ export default function Lab() {
     },
     [effectDrafts, communityEffects, bgEffects, replaceTarget],
   )
+  /**
+   * Swap the effect at one position for another, by name.
+   *
+   * Deliberately NOT pickEffect with replaceTarget set: that flag is state, and
+   * a handler that sets it and then calls pickEffect in the same tick reads the
+   * value from before the set — so the pick appended instead of replacing. The
+   * row knows its own index, which is the whole of what replacement needs.
+   */
+  const replaceEffectAt = useCallback(
+    (index: number, name: string) => {
+      const own = [...effectDrafts, ...communityEffects].find((e) => e.name === name)
+      const def = own ? null : EFFECTS.find((e) => e.name === name)
+      const next: AppliedEffect | null = own
+        ? { id: own.id, name: own.name, wgsl: own.payload.wgsl }
+        : def
+          ? applyDefaults(def)
+          : null
+      if (!next) return
+      setBgEffects((list) => list.map((e, k) => (k === index ? next : e)))
+    },
+    [effectDrafts, communityEffects],
+  )
+
   /** What the row, the picker and the palette all say at rest.
    *
    *  One effect is NAMED — that is the decision, and reciting a count instead
@@ -3912,6 +4089,10 @@ export default function Lab() {
     // One slot, two kinds: swapping a flat image for a 360 of the same name is
     // still a different scene, so the kind travels in the fingerprint.
     bgImage ? `${bgImage.dome ? "skybox" : "backdrop"}:${bgImage.name}` : "",
+    // Cards, by id AND name: two uploads of the same picture are two cards, and
+    // removing one has to move this or the bundle keeps the file it no longer
+    // wears. Ids are minted per upload, so the pair is unique per card.
+    planes.map((p) => `${p.id}:${p.file}`).join("|"),
     cameraClip ?? "",
     // Edited clips are the one asset whose BYTES change while its name does
     // not. Everything else in this list is a slot whose file arrives with a new
@@ -3973,6 +4154,12 @@ export default function Lab() {
         audio: { name: musicClip?.name ?? null, url: musicClip?.url ?? null },
         midi: { name: midiClip, booted: scene.assets.midi },
         lyrics: { name: lyricsClip, booted: scene.assets.lyrics },
+      planes: planes.flatMap((p) => {
+        const file = sceneFiles.planes.get(p.id)
+        // A card whose bytes are gone cannot be packed, and packing a path to
+        // nothing would produce a scene that loads with a hole in it.
+        return file ? [{ name: p.file, file, width: p.width, height: p.height, transform: p.transform }] : []
+      }),
         // ONE image slot here against main's two: which row it was uploaded from
         // is what makes it a dome.
         background: bgImage
@@ -3991,6 +4178,12 @@ export default function Lab() {
       midiClip,
       lyricsClip,
       bgImage,
+      // Every slot this reads has to be here. It is a useCallback, so one left
+      // out is not a stale value that catches up — it is the FIRST render's
+      // value, forever: cards were collected from the empty array this mounted
+      // with, so the bundle and the record both said a scene with cards had
+      // none. The same hazard the fingerprint below carries, one layer up.
+      planes,
     ],
   )
 
@@ -4039,6 +4232,11 @@ export default function Lab() {
             midi: slots.midi,
             lyrics: slots.lyrics,
             background: slots.background,
+            // The cards. Listing these fields by hand is exactly how the
+            // track's companions once went missing — packed into the bundle and
+            // then left out of the record naming them, so the bytes were there
+            // and nothing knew to look.
+            planes: slots.planes,
             bundle: bundleUrl,
           }),
         )
@@ -4223,6 +4421,10 @@ export default function Lab() {
     sceneFiles.score = null
     sceneFiles.lyrics = null
     sceneFiles.camera = null
+    // Cards, with the same reasoning and one addition: their models are LIVE in
+    // the engine, so dropping the retained bytes alone would leave the pictures
+    // standing in a scene that no longer names them.
+    clearPlanes()
     void clearLocalBundle()
     saveSceneAssets(scene.state.id, assetsDocOf(DEFAULT_SCENE.assets))
     void applyLabScene({ ...DEFAULT_SCENE, state: { ...DEFAULT_SCENE.state, id: scene.state.id } })
@@ -4273,6 +4475,7 @@ export default function Lab() {
         backgroundEffects: documentEffects,
         groups: groupsByModel,
         hidden: slots.hidden,
+        planes: slots.planes,
       },
       { graph: graphRef, effect: effectRef },
     )
@@ -4880,6 +5083,23 @@ export default function Lab() {
         preload="auto"
         playsInline
         className="hidden"
+      />
+
+      <input
+        ref={planeInput}
+        type="file"
+        // Everything a card can carry: a still, an animated image, or a video.
+        // Named rather than image/*,video/* so the picker cannot offer a codec
+        // that reaches the engine and fails there.
+        accept="image/png,image/jpeg,image/webp,image/gif,image/apng,video/mp4,video/webm,video/quicktime"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          e.target.value = ""
+          // Select what you just added: the chip row is about to grow and the
+          // controls under it should be the card you are looking for.
+          if (file) void addPlaneFromFile(file).then((id) => id && setSelectedPlane(id))
+        }}
       />
 
       <input
@@ -5899,7 +6119,7 @@ export default function Lab() {
                             const i = bgEffects.length - 1 - r
                             return (
                               <CastLine
-                                key={e.id}
+                                key={e.uid ?? e.id}
                                 reserve="pr-16"
                                 text={
                                   <span className="min-w-0 flex-1 truncate text-xs" title={e.name}>
@@ -5913,19 +6133,47 @@ export default function Lab() {
                                       label={t.lab.aria.editEffect(e.name)}
                                       onClick={() => openEffectEditor(e)}
                                     />
-                                    <CastAction
-                                      icon={RefreshCw}
-                                      label={t.lab.aria.replaceEffect(e.name)}
-                                      onClick={() => {
+                                    {/* Swapping is a CHOICE, so it offers the
+                                        choices: the same shortlist the add
+                                        control uses, in place, with the current
+                                        effect ticked. Sending this to the
+                                        library meant a full-screen surface, a
+                                        search field and a grid of cards to
+                                        answer "the other one" — and the library
+                                        is still one row down in the popover for
+                                        when the shortlist has not got it. */}
+                                    <QuickPick
+                                      value={e.name}
+                                      items={effectItems}
+                                      onPick={(name) => replaceEffectAt(i, name)}
+                                      onBrowse={() => {
                                         setReplaceTarget(i)
                                         openBrowse({ kind: "effect" })
                                       }}
+                                      placeholder={t.lab.ctl.none}
+                                      trigger={
+                                        <button
+                                          aria-label={t.lab.aria.replaceEffect(e.name)}
+                                          // stopPropagation for the same reason
+                                          // CastAction does it: the row selects
+                                          // on click, and swapping must not also
+                                          // inspect. Styled to match CastAction
+                                          // rather than reusing it — Radix needs
+                                          // a trigger that forwards a ref.
+                                          onClick={(ev) => ev.stopPropagation()}
+                                          className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-chip text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
+                                        >
+                                          <RefreshCw className="size-3.5" />
+                                        </button>
+                                      }
                                     />
                                     <CastAction
                                       icon={X}
                                       danger
                                       label={t.lab.aria.removeEffect(e.name)}
-                                      onClick={() => setBgEffects((list) => list.filter((x) => x.id !== e.id))}
+                                      // BY INSTANCE. Filtering on id took every
+                                      // copy of the effect with it.
+                                      onClick={() => setBgEffects((list) => list.filter((x) => x.uid !== e.uid))}
                                     />
                                   </>
                                 }
@@ -5933,6 +6181,165 @@ export default function Lab() {
                             )
                           })}
                         </div>
+                      )}
+                    </>
+                  ) : l.id === "plane" ? (
+                    <>
+                      {/* Make it work first: one upload, one card, sliders for
+                          where it stands. The controls are the stage row's own,
+                          because placing a card and placing a stage are the same
+                          act — what differs is that a scene holds one stage and
+                          as many cards as someone cares to arrange. */}
+                      {/* The dashed slab is an INVITATION, and it earns the
+                          width only while there is nothing else in the section.
+                          Once cards exist it is a permanent block for a rare
+                          action, so adding becomes a chip at the end of the row
+                          — beside the collection it adds to, and carried along
+                          by the same wrap when the row runs to two. */}
+                      {planes.length === 0 && (
+                        <Button
+                          variant="ghost"
+                          onClick={() => planeInput.current?.click()}
+                          className="h-8 w-full rounded-interior border border-dashed border-line-strong text-xs font-normal text-muted-foreground hover:border-blue-400/50 hover:bg-transparent hover:text-blue-400"
+                        >
+                          {t.lab.uploadPlane}
+                        </Button>
+                      )}
+                      {planes.length > 0 && (
+                        <>
+                          {/* One chip per card, because a scene holds several
+                              and stacking every card's sliders made the dock a
+                              scroll. The chip is the file it was made from,
+                              truncated — a name is what tells two cards apart,
+                              and the full one is in the title. */}
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {planes.map((plane) => {
+                              // `?? planes[0]` decides which card the controls
+                              // below show, so the chip has to agree: an
+                              // unselected row with a panel under it reads as
+                              // controls belonging to nothing.
+                              const shown = planes.some((p) => p.id === selectedPlane) ? selectedPlane : planes[0]?.id
+                              const on = plane.id === shown
+                              return (
+                                <span
+                                  key={plane.id}
+                                  className={cn(
+                                    "flex max-w-[10rem] items-center gap-1 rounded-chip py-1 pl-2 text-xs transition-colors",
+                                    on
+                                      ? "bg-blue-400/15 text-blue-400 ring-1 ring-blue-400/40"
+                                      : "text-muted-foreground ring-1 ring-line hover:text-foreground",
+                                    "pr-1",
+                                  )}
+                                >
+                                  <button
+                                    onClick={() => setSelectedPlane(plane.id)}
+                                    title={plane.file}
+                                    className="min-w-0 flex-1 cursor-pointer truncate text-left"
+                                  >
+                                    {plane.file}
+                                  </button>
+                                  {/* On every chip, not only the selected one:
+                                      removing a card you are not editing should
+                                      not require selecting it first. */}
+                                  <CastAction
+                                    icon={X}
+                                    danger
+                                    compact
+                                    label={t.lab.aria.remove(t.lab.kinds.plane)}
+                                    onClick={() => removePlane(plane.id)}
+                                  />
+                                </span>
+                              )
+                            })}
+                            {/* ml-1.5 on top of the row gap: the + is not one
+                                of the cards, and sitting at the same distance
+                                as they sit from each other read as one. Dashed
+                                like the empty-state invite it replaces. */}
+                            <button
+                              onClick={() => planeInput.current?.click()}
+                              aria-label={t.lab.uploadPlane}
+                              title={t.lab.uploadPlane}
+                              className="ml-1.5 flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-chip border border-dashed border-line-strong text-muted-foreground transition-colors hover:border-blue-400/60 hover:text-blue-400"
+                            >
+                              <Plus className="size-3.5" />
+                            </button>
+                          </div>
+                          {/* The selected card's own controls. `?? planes[0]`
+                              so the section is never a row of chips with
+                              nothing under them — the first upload is selected
+                              by being the only one. */}
+                          {(() => {
+                            const plane = planes.find((p) => p.id === selectedPlane) ?? planes[0]
+                            return (
+                              <div className="mt-3.5">
+                                {/* SIZE, in the world's own units — not a
+                                    scale. A multiplier is a ratio to something
+                                    you cannot see: 2× of what?
+
+                                    Two boxes, one row, and they are LINKED: the
+                                    card was built at its picture's proportions
+                                    and keeps them, so typing either dimension
+                                    sets the card and the other follows. Two
+                                    numbers rather than one because a size is
+                                    two numbers — showing only the height would
+                                    make you compute the width you were actually
+                                    aiming at. */}
+                                <SizeRow
+                                  label={t.lab.ctl.size}
+                                  width={plane.width * plane.transform.scale}
+                                  height={plane.height * plane.transform.scale}
+                                  onWidth={(v) => setPlaneTransform(plane.id, { scale: v / plane.width })}
+                                  onHeight={(v) => setPlaneTransform(plane.id, { scale: v / plane.height })}
+                                />
+                                {/* The same value the boxes above set, as a
+                                    thing you can drag. Typing is for a size you
+                                    already know; a slider is for finding one by
+                                    looking, and a card is judged by eye. */}
+                                <SliderRow
+                                  label={t.lab.ctl.scale}
+                                  value={plane.transform.scale}
+                                  min={0.05}
+                                  max={10}
+                                  step={0.05}
+                                  onChange={(v) => setPlaneTransform(plane.id, { scale: v })}
+                                  fmt={(v) => `${v.toFixed(2)}×`}
+                                />
+                                {(["X", "Y", "Z"] as const).map((axis, i) => (
+                                  <SliderRow
+                                    key={`p${axis}`}
+                                    label={t.lab.ctl.pos(axis)}
+                                    value={plane.transform.position[i]}
+                                    min={-50}
+                                    max={50}
+                                    step={0.5}
+                                    onChange={(v) => {
+                                      const position = [...plane.transform.position] as [number, number, number]
+                                      position[i] = v
+                                      setPlaneTransform(plane.id, { position })
+                                    }}
+                                    fmt={(v) => v.toFixed(1)}
+                                  />
+                                ))}
+                                {(["X", "Y", "Z"] as const).map((axis, i) => (
+                                  <SliderRow
+                                    key={`r${axis}`}
+                                    label={t.lab.ctl.rot(axis)}
+                                    value={plane.transform.rotation[i]}
+                                    min={-180}
+                                    max={180}
+                                    step={1}
+                                    onChange={(v) => {
+                                      const rotation = [...plane.transform.rotation] as [number, number, number]
+                                      rotation[i] = v
+                                      setPlaneTransform(plane.id, { rotation })
+                                    }}
+                                    fmt={(v) => `${v.toFixed(0)}°`}
+                                  />
+                                ))}
+                              </div>
+                            )
+                          })()}
+                        </>
                       )}
                     </>
                   ) : l.id === "light" ? (
@@ -6477,6 +6884,22 @@ export default function Lab() {
               }}
               onFramePreviewChange={framing.handleFramePreview}
               onProgressChange={setExportProgress}
+              rasterLyricsAt={rasterLyricsAt}
+              // Only the MOVING ones: a still card is already in its texture and
+              // has no frames to advance.
+              planes={planes.flatMap((p) => {
+                const file = sceneFiles.planes.get(p.id)
+                if (!file || (!p.video && !p.animated)) return []
+                return [
+                  {
+                    id: p.id,
+                    file,
+                    kind: p.video ? ("video" as const) : ("animated" as const),
+                    frameWidth: p.frameWidth,
+                    frameHeight: p.frameHeight,
+                  },
+                ]
+              })}
             />
           </div>
         </Surface>

@@ -56,6 +56,10 @@ export type SceneModel = {
 }
 
 export type SceneAssets = {
+  /** Media planes: pictures standing in the scene. Optional because every scene
+   *  written before them has none, and absent must mean none rather than a
+   *  load failure. */
+  planes?: ScenePlane[]
   /** [0] is the PRIMARY model. May be empty: a build without the demo assets
    *  (NEXT_PUBLIC_USE_DEFAULT_ASSETS=false) starts with no cast, and the last model can be
    *  removed. */
@@ -139,6 +143,21 @@ export type SceneState = {
   hidden: Record<string, string[]> | null
 }
 
+/** A card in the document: what it is made of, how big, and where it stands.
+ *
+ *  The asset is an IMAGE OR A VIDEO rather than a model folder, which is the one
+ *  thing that stops a plane being an ordinary SceneModel entry — everything else
+ *  about it (a transform, a place in the bundle) is what a model already has. */
+export type ScenePlane = {
+  asset: AssetRef
+  /** World size, stored rather than re-derived: it comes from the picture's own
+   *  proportions at upload, and a re-encoded or replaced file must not silently
+   *  restretch a card someone already placed. */
+  width: number
+  height: number
+  transform: SceneStageTransform
+}
+
 export type Scene = {
   version: number
   assets: SceneAssets
@@ -208,11 +227,25 @@ export type SceneModelDoc = {
 }
 
 /** Every file the scene points at — and nothing else. */
+export type ScenePlaneDoc = {
+  /** Bundle-relative path, or a URL, to the picture or video. */
+  media: string
+  /** What the card is CALLED. Separate from the path, which carries an index to
+   *  keep two cards made from one file apart — a name read back off that path
+   *  would show the bookkeeping and grow a prefix on every reload. */
+  name?: string
+  width: number
+  height: number
+  transform: SceneStageTransform
+}
+
 export type SceneAssetsDoc = {
   /** [0] is the primary model; may be empty. */
   models: SceneModelDoc[]
   /** Camera VMD — overrides `settings.camera` while enabled. */
   cameraAnimation?: string | null
+  /** Media planes, in the order they were added. Absent means none. */
+  planes?: ScenePlaneDoc[]
   audio?: string | null
   /**
    * The track's companions, NAMED rather than inferred.
@@ -419,6 +452,23 @@ export function parseAssetsDoc(a: SceneAssetsDoc): SceneAssets {
       : a.skybox
         ? { kind: "skybox", asset: assetFromPath(a.skybox) }
         : null,
+    // Absent parses to no cards, which is what every document written before
+    // them says and what one with none says too.
+    ...(a.planes?.length
+      ? {
+          planes: a.planes.map((p) => ({
+            // The stored name when there is one; the path's tail otherwise, for
+            // a document written before the two were separate.
+            asset: p.name ? { name: p.name, url: p.media } : assetFromPath(p.media),
+            // Guarded rather than trusted: a document is a file on someone
+            // else's disk, and a card with a zero or missing dimension is a
+            // divide-by-zero in the size control rather than a small card.
+            width: Number.isFinite(p.width) && p.width > 0 ? p.width : 1,
+            height: Number.isFinite(p.height) && p.height > 0 ? p.height : 1,
+            transform: p.transform ?? { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 },
+          })),
+        }
+      : {}),
     bundle: a.bundle ?? null,
   }
 }
@@ -440,9 +490,24 @@ export function assetsDocOf(a: SceneAssets): SceneAssetsDoc {
     lyrics: a.lyrics?.url ?? null,
     backdrop: a.background?.kind === "backdrop" ? a.background.asset.url : null,
     skybox: a.background?.kind === "skybox" ? a.background.asset.url : null,
+    // Written only when there are any: a scene with no cards should read the
+    // same as every scene written before they existed.
+    ...(a.planes?.length ? { planes: a.planes.map(planeDocOf) } : {}),
     bundle: a.bundle,
   }
 }
+
+/** A card, as the document stores it: the path to its picture and where it
+ *  stands. Size travels with it because it came from the picture's own
+ *  proportions, and re-deriving it on load would restretch a placed card
+ *  whenever the file behind it changed. */
+export const planeDocOf = (p: ScenePlane) => ({
+  media: p.asset.url,
+  name: p.asset.name,
+  width: p.width,
+  height: p.height,
+  transform: p.transform,
+})
 
 /**
  * Inflate the authored document into the runtime scene.
@@ -597,6 +662,7 @@ export function serializeSceneDoc(
     midi: AssetRef | null
     lyrics: AssetRef | null
     background: SceneBackground
+    planes: ScenePlane[]
     /** Public URL of the uploaded asset zip, or null for a bundle-free scene. */
     bundle: string | null
     name: string
@@ -639,6 +705,7 @@ export function serializeSceneDoc(
         midi: live.midi,
         lyrics: live.lyrics,
         background: live.background,
+        planes: live.planes,
         bundle: live.bundle,
       }),
       // The one thing that mapping cannot carry: material groups belong to the

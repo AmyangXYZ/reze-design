@@ -15,9 +15,19 @@ import { asBuiltins, type EffectItem } from "@/lib/library"
 
 /** What a scene stores when an effect is applied */
 export type AppliedEffect = {
+  /** WHICH LIBRARY ENTRY this is — shared by every copy of it in the scene.
+   *  What a tick in the picker and a pin in the document are about. */
   id: string
   name: string
   wgsl: string
+  /** WHICH COPY this is, minted per instance and never persisted.
+   *
+   *  The two were one field, and the same effect applied twice then collided on
+   *  it: React saw duplicate keys, and removing either row filtered BOTH out of
+   *  the list, because the filter could only ask "which effect" when it needed
+   *  to ask "which of them". Optional because a list arriving from a document
+   *  has none yet — the setter stamps them on the way into state. */
+  uid?: string
 }
 
 export const applyDefaults = (def: EffectItem): AppliedEffect => ({

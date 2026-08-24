@@ -270,8 +270,19 @@ function SceneStage({
   bundleFilesRef,
 }: ViewerProps & { scene: Scene; bundleFilesRef: RefObject<() => File[]> }) {
   const t = useT()
-  const { canvasRef, engineRef, ready, stageReady, bundleReady, bundleProgress, error, models, bundleFile, bundleFiles } =
-    useEngine(scene)
+  const {
+    canvasRef,
+    engineRef,
+    ready,
+    stageReady,
+    bundleReady,
+    bundleProgress,
+    error,
+    models,
+    bundleFile,
+    bundleFiles,
+    tickPlanes,
+  } = useEngine(scene)
   // Published upward so Fork can hand the unzipped assets to the editor. A ref,
   // not state: nothing renders differently for it, and the getter is stable.
   useEffect(() => {
@@ -554,6 +565,12 @@ function SceneStage({
           })
       }
       if (!p?.playing && !audio.paused) audio.pause()
+      // Moving cards. The editor drives these from its own clock; a published
+      // scene has to as well, or a video card sits on the blank sheet it was
+      // allocated from — which is transparent, so it does not read as a broken
+      // card but as no card at all. A still card needed nothing here, which is
+      // why only the moving ones were missing.
+      if (p) tickPlanes(p.current, p.playing)
       if (p) {
         // Free-running audio, like the reze.one demo: set the clock when
         // playback (re)starts or the animation clock jumps (loop wrap, seek),
@@ -581,7 +598,7 @@ function SceneStage({
       cancelAnimationFrame(raf)
       audio.removeEventListener("playing", onPlaying)
     }
-  }, [ready, engineRef, audioSrc, animated])
+  }, [ready, engineRef, audioSrc, animated, tickPlanes])
 
   return (
     // A fragment: the page above owns <main> and the chrome, so nothing here has
