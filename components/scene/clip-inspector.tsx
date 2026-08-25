@@ -582,7 +582,9 @@ function OperationsSection({
 
 // ─── Bone ─────────────────────────────────────────────────────────────────
 
-const ROT_RANGE = { min: -180, max: 180 }
+/** Rotation bounds live on the channels themselves — x is ±90, y and z are
+ *  ±180 (see Channel.range) — so a slider cannot ask for a value the keyframe
+ *  write will refuse and hand back with the sign flipped. */
 /**
  * How far a translation slider reaches, and how it grows.
  *
@@ -653,8 +655,8 @@ function LiveBoneSliders({
                 axis={["X", "Y", "Z"][i]}
                 color={ch.color}
                 value={rot[i]}
-                min={ROT_RANGE.min}
-                max={ROT_RANGE.max}
+                min={ch.range.min}
+                max={ch.range.max}
                 decimals={2}
                 disabled={!clip}
                 onChange={(v) => {

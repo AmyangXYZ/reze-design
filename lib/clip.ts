@@ -293,9 +293,18 @@ export function cloneAnimationClip(clip: AnimationClip): AnimationClip {
 export const SIMPLIFY_ROT_DEG = 0.5 // visible-but-tiny rotation drift
 export const SIMPLIFY_TRANS = 0.01 // MMD units (~3mm at character scale)
 
-// Evaluate a sorted bone track at integer frame `f`. VMD convention: the
-// interpolation stored on keyframe B shapes the segment A→B.
-function evalBoneTrackAt(track: BoneKeyframe[], f: number): { rotation: Quat; translation: Vec3 } {
+/**
+ * Evaluate a sorted bone track at frame `f`, exactly the way playback does.
+ *
+ * Exported because it is the ONE definition of "what pose is this track in at
+ * this frame" — the timeline's readout has to agree with the posed skeleton the
+ * properties dock reads, and the only way two numbers agree is by coming from
+ * one function. Fractional `f` is fine.
+ *
+ * VMD convention: the interpolation stored on keyframe B shapes the segment
+ * A→B.
+ */
+export function evalBoneTrackAt(track: BoneKeyframe[], f: number): { rotation: Quat; translation: Vec3 } {
   if (f <= track[0].frame) {
     const t0 = track[0].translation
     return { rotation: track[0].rotation.clone(), translation: new Vec3(t0.x, t0.y, t0.z) }

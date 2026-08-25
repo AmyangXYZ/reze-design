@@ -1,5 +1,6 @@
 import { Vec3, Quat } from "reze-engine"
 import type { AnimationClip, BoneKeyframe, CameraKeyframe, MorphKeyframe } from "reze-engine"
+import { evalBoneTrackAt } from "@/lib/clip"
 
 export { Vec3, Quat }
 export type { AnimationClip, BoneKeyframe, CameraKeyframe, MorphKeyframe }
@@ -311,7 +312,88 @@ export interface Channel {
   group: "rot" | "tra"
   get: (kf: BoneKeyframe) => number
   set: (kf: BoneKeyframe, v: number) => void
+  /**
+   * The values this channel can actually hold, which for rotation is NOT a
+   * matter of taste.
+   *
+   * A quaternion decomposed YXZ (MMD's order) gives x from `asin` — bounded to
+   * ±90 — and y and z from `atan2`, which is ±180 with a branch cut at the top.
+   * Ask for 181° and you get back −179°: not a clamp, a wrap, and the same
+   * rotation either way. Editors that let you drive straight through that
+   * boundary make the value teleport across the whole graph mid-drag, and on a
+   * rotation channel it flips which way the segment before it turns. Worse on
+   * x, where asin has nowhere to wrap to: it reflects to 180−x and shifts y and
+   * z by 180 each, so one axis pushed out of range silently rewrites the other
+   * two.
+   *
+   * So the boundary is made solid instead of invisible: `set` clamps to it and
+   * the sliders take their bounds from it. Every representable value is still
+   * reachable — there is simply nothing on the other side to reach.
+   */
+  range: { min: number; max: number }
+  /** This channel's component of a played-back pose.
+   *
+   *  Separate from `get` because `get` reads a KEYFRAME and this reads the
+   *  track BETWEEN keyframes, where rotation is a slerp and not three
+   *  independent euler curves. Anything showing a live value has to go through
+   *  here, or it will disagree with the model on screen. */
+  pick: (s: BonePoseSample) => number
 }
+
+/** A pose sampled off a track, in the units the channels display. */
+export type BonePoseSample = {
+  euler: { x: number; y: number; z: number }
+  translation: Vec3
+}
+
+/**
+ * What this track poses at `frame` — the same evaluation playback performs,
+ * decomposed to the euler the panels show.
+ *
+ * The reason this exists: rotation between two keyframes is a SLERP of
+ * quaternions, not a straight line through euler space. Draw the euler line
+ * instead and you get a curve that disagrees with the model — most visibly
+ * across a ±180 wrap, where the line sweeps the long way round through zero
+ * while the bone takes the short way. Every live rotation readout goes through
+ * this so there is exactly one answer to "where is the bone at frame N".
+ */
+export function sampleBoneTrackAt(track: readonly BoneKeyframe[], frame: number): BonePoseSample | null {
+  if (!track.length) return null
+  const p = evalBoneTrackAt(track as BoneKeyframe[], frame)
+  return { euler: quatToEuler(p.rotation), translation: p.translation }
+}
+
+/** A morph's weight at `frame`. Linear between keys, which is what VMD morph
+ *  tracks are — they carry no interpolation curve. Held flat outside the
+ *  track's own span. */
+export function sampleMorphTrackAt(track: readonly MorphKeyframe[], frame: number): number {
+  if (!track.length) return 0
+  const last = track.length - 1
+  if (frame <= track[0].frame) return track[0].weight
+  if (frame >= track[last].frame) return track[last].weight
+  let i = 1
+  while (i < last && track[i].frame <= frame) i++
+  const a = track[i - 1]
+  const b = track[i]
+  const span = b.frame - a.frame
+  const t = span > 0 ? (frame - a.frame) / span : 0
+  return a.weight + (b.weight - a.weight) * t
+}
+
+/** Rotation writes go through here so no call site can push a euler component
+ *  past the wrap and get a sign flip back. */
+function clampToRange(v: number, r: { min: number; max: number }): number {
+  return v < r.min ? r.min : v > r.max ? r.max : v
+}
+
+/** `asin` in the YXZ decomposition — x physically cannot come back wider. */
+const PITCH_RANGE = { min: -90, max: 90 }
+const YAW_RANGE = { min: -180, max: 180 }
+/** Advisory only — the slider's comfortable span, not a limit. `set` does not
+ *  clamp translation: a centre bone legitimately travels well past this (the
+ *  dock's sliders grow their own scale to follow it), and unlike a euler
+ *  component there is no wrap waiting on the other side. */
+const TRA_SLIDER_RANGE = { min: -25, max: 25 }
 
 export const ROT_CHANNELS: Channel[] = [
   {
@@ -320,9 +402,11 @@ export const ROT_CHANNELS: Channel[] = [
     color: "#e25555",
     group: "rot",
     get: (kf) => quatToEuler(kf.rotation).x,
+    pick: (s) => s.euler.x,
+    range: PITCH_RANGE,
     set: (kf, v) => {
       const e = quatToEuler(kf.rotation)
-      kf.rotation = eulerToQuat(v, e.y, e.z)
+      kf.rotation = eulerToQuat(clampToRange(v, PITCH_RANGE), e.y, e.z)
     },
   },
   {
@@ -331,9 +415,11 @@ export const ROT_CHANNELS: Channel[] = [
     color: "#44bb55",
     group: "rot",
     get: (kf) => quatToEuler(kf.rotation).y,
+    pick: (s) => s.euler.y,
+    range: YAW_RANGE,
     set: (kf, v) => {
       const e = quatToEuler(kf.rotation)
-      kf.rotation = eulerToQuat(e.x, v, e.z)
+      kf.rotation = eulerToQuat(e.x, clampToRange(v, YAW_RANGE), e.z)
     },
   },
   {
@@ -342,9 +428,11 @@ export const ROT_CHANNELS: Channel[] = [
     color: "#4477dd",
     group: "rot",
     get: (kf) => quatToEuler(kf.rotation).z,
+    pick: (s) => s.euler.z,
+    range: YAW_RANGE,
     set: (kf, v) => {
       const e = quatToEuler(kf.rotation)
-      kf.rotation = eulerToQuat(e.x, e.y, v)
+      kf.rotation = eulerToQuat(e.x, e.y, clampToRange(v, YAW_RANGE))
     },
   },
 ]
@@ -356,6 +444,8 @@ export const TRA_CHANNELS: Channel[] = [
     color: "#e2a055",
     group: "tra",
     get: (kf) => kf.translation.x,
+    pick: (s) => s.translation.x,
+    range: TRA_SLIDER_RANGE,
     set: (kf, v) => {
       kf.translation = new Vec3(v, kf.translation.y, kf.translation.z)
     },
@@ -366,6 +456,8 @@ export const TRA_CHANNELS: Channel[] = [
     color: "#55bba0",
     group: "tra",
     get: (kf) => kf.translation.y,
+    pick: (s) => s.translation.y,
+    range: TRA_SLIDER_RANGE,
     set: (kf, v) => {
       kf.translation = new Vec3(kf.translation.x, v, kf.translation.z)
     },
@@ -376,6 +468,8 @@ export const TRA_CHANNELS: Channel[] = [
     color: "#7755dd",
     group: "tra",
     get: (kf) => kf.translation.z,
+    pick: (s) => s.translation.z,
+    range: TRA_SLIDER_RANGE,
     set: (kf, v) => {
       kf.translation = new Vec3(kf.translation.x, kf.translation.y, v)
     },
