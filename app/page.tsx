@@ -541,6 +541,8 @@ type PaletteValues = {
   /** Applied names, already resolved — a value function must not have to look
    *  anything up. */
   effect: string | null
+  /** What the Planes row wears: the one card's name, or how many. */
+  planes: string | null
   gradeName: string
   backdrop: string | null
   dome: string | null
@@ -604,9 +606,10 @@ const DOCK_CONTROLS: {
   { id: "shadow", en: "Shadow", zh: "阴影", row: "stage", stageTab: "ground", value: (v) => sw(v.settings.ground.shadow, v.t) },
   { id: "grid", en: "Grid lines", zh: "网格", row: "stage", stageTab: "ground", value: (v) => sw(v.settings.ground.gridEnabled, v.t) },
   { id: "bg-color", en: "Background color", zh: "背景颜色", row: "stage", stageTab: "background", value: (v) => v.settings.background.color },
-  { id: "bg-image", en: "Background image", zh: "背景图片", row: "stage", stageTab: "background", keywords: ["backdrop", "photo"], value: (v) => v.backdrop ?? v.t.lab.ctl.none },
+  { id: "bg-image", en: "Background image", zh: "背景图片", row: "stage", stageTab: "background", keywords: ["backdrop", "photo", "video", "mp4", "webm", "gif", "webp", "背景视频"], value: (v) => v.backdrop ?? v.t.lab.ctl.none },
   { id: "bg-360", en: "Skybox", zh: "天空盒", row: "stage", stageTab: "background", keywords: ["360", "skybox", "panorama", "equirect", "全景"], value: (v) => v.dome ?? v.t.lab.ctl.none },
   { id: "effect", en: "Effect", zh: "特效", row: "effect", keywords: ["wgsl", "stars", "shader", "背景特效"], value: (v) => v.effect ?? v.t.lab.ctl.none },
+  { id: "plane", en: "Planes", zh: "平面", row: "plane", keywords: ["card", "layer", "image", "video", "mp4", "gif", "板ポリ", "图层"], value: (v) => v.planes ?? v.t.lab.ctl.none },
   { id: "grade-preset", en: "Grade preset", zh: "调色预设", row: "post", postTab: "grade", keywords: ["color", "look", "后期"], value: (v) => v.gradeName },
   { id: "grade-intensity", en: "Grade intensity", zh: "调色强度", row: "post", postTab: "grade", value: (v) => dec2(v.settings.grade.intensity) },
   { id: "view-transform", en: "View transform", zh: "视图变换", row: "post", postTab: "tone", keywords: ["tonemap", "tone map", "filmic", "agx", "standard", "color management", "色调映射", "色彩管理"], value: (v) => TRANSFORM_LABEL[v.settings.view.transform] },
@@ -630,11 +633,16 @@ const DOCK_CONTROLS: {
   { id: "wind-direction", en: "Wind direction", zh: "风向", row: "physics", value: (v) => deg(v.settings.physics.windAzimuth) },
 ]
 
+/** Icon and name for a palette entry's `row`. EVERY row a control entry names
+ *  has to be here — the lookup is unguarded, so one missing is not a blank
+ *  breadcrumb but a crash in the map above, and it happens at PRERENDER, which
+ *  is a failed build rather than a bad pixel. */
 function rowMetaFor(t: Dictionary): Record<string, { icon: ComponentType<{ className?: string }>; name: string }> {
   return {
     camera: { icon: Camera, name: t.lab.rows.camera },
     stage: { icon: Mountain, name: t.lab.rows.stage },
     effect: { icon: Sparkles, name: t.lab.rows.effect },
+    plane: { icon: Image, name: t.lab.rows.plane },
     post: { icon: Contrast, name: t.lab.rows.post },
     light: { icon: Lightbulb, name: t.lab.rows.light },
     physics: { icon: Atom, name: t.lab.rows.physics },
@@ -943,6 +951,17 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       label: l.cmd.background,
       altLabels: [alt.cmd.background],
       keywords: ["backdrop", "skybox", "360"],
+    },
+    {
+      id: "plane",
+      repeatable: true,
+      section: "goto",
+      icon: Image,
+      label: l.cmd.plane,
+      altLabels: [alt.cmd.plane],
+      // What people call one, in every vocabulary they arrive with: AE's layer,
+      // Nuke's card, MMD's 板ポリ, and the media that goes on it.
+      keywords: ["plane", "card", "layer", "image", "video", "mp4", "gif", "webp", "板ポリ", "平面", "图层", "视频"],
     },
     {
       id: "effect",
@@ -1743,6 +1762,9 @@ export default function Lab() {
   const [animByModel, setAnimByModel] = useState<Record<string, { name: string; src: File | string }>>(() =>
     seedAnims(scene),
   )
+  /** Models whose expressions live in their MOTION file rather than in one of
+   *  their own — see the morph row and ClipAutosave. */
+  const [morphsInMotion, setMorphsInMotion] = useState<Record<string, boolean>>({})
   const [morphByModel, setMorphByModel] = useState<Record<string, { name: string; src: File | string }>>(() =>
     seedMorphs(scene),
   )
@@ -1832,7 +1854,10 @@ export default function Lab() {
       <ClipRow
         icon={Smile}
         clip={morphByModel[m.id]?.name ?? null}
-        empty={t.lab.uploadMorph}
+        // Where they ARE, when they are not a file of their own. An upload
+        // invite here claims the scene has no expressions, which after editing
+        // some is the opposite of true.
+        empty={morphsInMotion[m.id] ? t.lab.morphInMotion(displayName(animByModel[m.id]?.name ?? "motion.vmd")) : t.lab.uploadMorph}
         kind={t.lab.kinds.morph}
         of={displayName(m.file)}
         onPick={() => pickMorph(m.id)}
@@ -2806,6 +2831,16 @@ export default function Lab() {
    *  would make you open the row to learn something the row could have said.
    *  Several are COUNTED, because the list below is where they are read and no
    *  one of them is the answer. */
+  /** What the Planes row says at rest.
+   *
+   *  NAMED when there is one, COUNTED when there are several — the effect row's
+   *  rule, for its reason: reciting a number when the answer could be the
+   *  filename makes you open the row to learn what is in it. Its own counter
+   *  string, because a row of pictures reading "4 effects" is the palette
+   *  describing the wrong feature. */
+  const planeSummary =
+    planes.length === 0 ? null : planes.length === 1 ? planes[0].file : t.lab.ctl.planesN(planes.length)
+
   const effectSummary =
     bgEffects.length === 0 ? null : bgEffects.length === 1 ? bgEffects[0].name : t.lab.ctl.effectsN(bgEffects.length)
 
@@ -3818,6 +3853,7 @@ export default function Lab() {
     camera,
     stage: stage ? { scale: stage.transform.scale, position: stage.transform.position } : null,
     effect: effectSummary,
+    planes: planeSummary,
     gradeName: gradeLabel(settings.grade.preset),
     backdrop: bgImage && !bgImage.dome ? bgImage.name : null,
     dome: bgImage?.dome ? bgImage.name : null,
@@ -4287,6 +4323,10 @@ export default function Lab() {
     rememberIntensity(next.state.settings.grade.preset, next.state.settings.grade.intensity)
     setAnimByModel(seedAnims(next))
     setMorphByModel(seedMorphs(next))
+    // The incoming document's own answer, which is "no" until it is edited: a
+    // note about the OUTGOING scene's motion carrying expressions would name a
+    // file this scene has never heard of.
+    setMorphsInMotion({})
     // The companions, cleared HERE rather than trusted to clear themselves. The
     // loaders empty them on entry and refill them, which is correct only when
     // the loaders actually run — and they are fired from swapScene, which can
@@ -5844,11 +5884,13 @@ export default function Lab() {
                         (cameraClip ?? (camera.follow ? t.lab.summary.follow : t.lab.summary.orbit))
                       : l.id === "stage"
                         ? stageSummary
-                        : l.id === "effect"
-                          ? (effectSummary ?? t.lab.ctl.none)
-                          : l.id === "post"
-                            ? gradeLabel(grade.preset)
-                            : undefined
+                        : l.id === "plane"
+                          ? (planeSummary ?? t.lab.ctl.none)
+                          : l.id === "effect"
+                            ? (effectSummary ?? t.lab.ctl.none)
+                            : l.id === "post"
+                              ? gradeLabel(grade.preset)
+                              : undefined
                   }
                   open={openRow === l.id}
                   onToggle={() => setOpenRow((r) => (r === l.id ? null : l.id))}
@@ -6973,6 +7015,14 @@ export default function Lab() {
               setAnimByModel((prev) => ({ ...prev, [id]: { name: prev[id]?.name ?? motion.name, src: motion } }))
               if (morphs) {
                 setMorphByModel((prev) => ({ ...prev, [id]: { name: prev[id]?.name ?? morphs.name, src: morphs } }))
+              } else {
+                // A null `morphs` means this scene keeps its expressions INSIDE
+                // the motion — the file was just written with both track kinds,
+                // which is what MMD exports. The edit saved; there is simply no
+                // second file to name. Recorded so the morph row can say that
+                // instead of offering an upload, which read as the edit having
+                // been lost.
+                setMorphsInMotion((prev) => (prev[id] ? prev : { ...prev, [id]: true }))
               }
               setClipEdits((n) => n + 1)
             }}
