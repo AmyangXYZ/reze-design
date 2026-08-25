@@ -5885,7 +5885,9 @@ export default function Lab() {
                       : l.id === "stage"
                         ? stageSummary
                         : l.id === "plane"
-                          ? (planeSummary ?? t.lab.ctl.none)
+                          ? // Nothing, not "None": an empty row already reads as
+                            // empty, and a word restating it is furniture.
+                            (planeSummary ?? undefined)
                           : l.id === "effect"
                             ? (effectSummary ?? t.lab.ctl.none)
                             : l.id === "post"
