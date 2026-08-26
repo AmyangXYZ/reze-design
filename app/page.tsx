@@ -629,6 +629,10 @@ type PaletteValues = {
   gradeName: string
   backdrop: string | null
   dome: string | null
+  /** The HDRI, by name. Its own field beside `dome` because it is its own slot
+   *  — a scene can wear both, and a palette row that showed one for the other
+   *  would report the wrong thing on every scene that does. */
+  hdri: string | null
   /** The rendering style the scene is wearing, or null when it wears neither
    *  set whole. */
   pack: LookPack | null
@@ -691,7 +695,11 @@ const DOCK_CONTROLS: {
   { id: "bg-color", en: "Background color", zh: "背景颜色", row: "stage", stageTab: "background", value: (v) => v.settings.background.color },
   { id: "bg-image", en: "Background image", zh: "背景图片", row: "stage", stageTab: "background", keywords: ["backdrop", "photo", "video", "mp4", "webm", "gif", "webp", "背景视频"], value: (v) => v.backdrop ?? v.t.lab.ctl.none },
   { id: "bg-360", en: "Skybox", zh: "天空盒", row: "stage", stageTab: "background", keywords: ["360", "skybox", "panorama", "equirect", "全景"], value: (v) => v.dome ?? v.t.lab.ctl.none },
-  { id: "effect", en: "Effect", zh: "特效", row: "effect", keywords: ["wgsl", "stars", "shader", "背景特效"], value: (v) => v.effect ?? v.t.lab.ctl.none },
+  // Searched for by what it DOES as much as by what it is: people look for
+  // "lighting" and "environment" when they want an HDRI, and for "hdr" when
+  // they have the file in hand.
+  { id: "bg-world", en: "World (HDRI)", zh: "世界（HDRI）", row: "stage", stageTab: "background", keywords: ["hdr", "hdri", "ibl", "environment", "lighting", "sky", "光照", "环境", "天空"], value: (v) => v.hdri ?? v.t.lab.ctl.none },
+  { id: "effect", en: "Effect", zh: "特效", row: "effect", keywords: ["wgsl", "stars", "shader", "influence", "opacity", "blend", "fade", "背景特效", "影响", "过渡"], value: (v) => v.effect ?? v.t.lab.ctl.none },
   { id: "plane", en: "Planes", zh: "平面", row: "plane", keywords: ["card", "layer", "image", "video", "mp4", "gif", "板ポリ", "图层"], value: (v) => v.planes ?? v.t.lab.ctl.none },
   { id: "grade-preset", en: "Grade preset", zh: "调色预设", row: "post", postTab: "grade", keywords: ["color", "look", "后期"], value: (v) => v.gradeName },
   { id: "grade-intensity", en: "Grade intensity", zh: "调色强度", row: "post", postTab: "grade", value: (v) => dec2(v.settings.grade.intensity) },
@@ -710,6 +718,9 @@ const DOCK_CONTROLS: {
   { id: "duration", en: "Export duration", zh: "导出时长", row: "export", keywords: ["length", "range", "seconds"] },
   { id: "green-screen", en: "Green screen", zh: "绿幕", row: "export", keywords: ["chroma", "key", "transparent", "抠像"] },
   { id: "watermark", en: "Watermark", zh: "水印", row: "export", keywords: ["logo", "brand"] },
+  // "after effects" and "composite" are what someone is thinking when they want
+  // this; "jsx" and "camera" are what they will type once they know it exists.
+  { id: "ae-script", en: "AE script", zh: "AE 脚本", row: "export", keywords: ["after effects", "jsx", "composite", "camera", "null", "3d", "合成", "摄像机", "空对象"] },
   { id: "gravity", en: "Gravity", zh: "重力", row: "physics", value: (v) => v.settings.physics.gravity.toFixed(0) },
   { id: "wind", en: "Wind", zh: "风", row: "physics", value: (v) => v.settings.physics.wind.toFixed(0) },
   { id: "wind-frequency", en: "Wind frequency", zh: "风频率", row: "physics", value: (v) => dec2(v.settings.physics.windFrequency) },
@@ -1262,7 +1273,7 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       // searching has to say which way it currently points.
       label: l.cmd.timelineShow,
       altLabels: [alt.cmd.timelineShow, l.cmd.timelineHide, alt.cmd.timelineHide],
-      keywords: ["timeline", "dopesheet", "keyframe", "keys", "curve", "时间轴", "关键帧", "曲线"],
+      keywords: ["timeline", "dopesheet", "keyframe", "keys", "curve", "schedule", "strip", "effect timing", "时间轴", "关键帧", "曲线", "排程", "片段"],
     },
     {
       id: "edit-motion",
@@ -4063,6 +4074,7 @@ export default function Lab() {
     gradeName: gradeLabel(settings.grade.preset),
     backdrop: bgImage && !bgImage.dome ? bgImage.name : null,
     dome: bgImage?.dome ? bgImage.name : null,
+    hdri: hdri?.name ?? null,
     pack: activePack,
   }
   const valuesRef = useRef(paletteValues)
