@@ -722,6 +722,7 @@ const DOCK_CONTROLS: {
   // this; "jsx" and "camera" are what they will type once they know it exists.
   { id: "ae-script", en: "AE composition script", zh: "AE 合成脚本", row: "export", keywords: ["after effects", "jsx", "composite", "camera", "null", "3d", "合成", "摄像机", "空对象"] },
   { id: "gravity", en: "Gravity", zh: "重力", row: "physics", value: (v) => v.settings.physics.gravity.toFixed(0) },
+  { id: "ground-collision", en: "Ground collision", zh: "地面碰撞", row: "physics", keywords: ["floor", "cloth", "hair", "skirt", "through", "stage", "flying", "地面", "碰撞", "穿模", "浮空"], value: (v) => sw(v.settings.physics.floor, v.t) },
   { id: "wind", en: "Wind", zh: "风", row: "physics", value: (v) => v.settings.physics.wind.toFixed(0) },
   { id: "wind-frequency", en: "Wind frequency", zh: "风频率", row: "physics", value: (v) => dec2(v.settings.physics.windFrequency) },
   { id: "wind-direction", en: "Wind direction", zh: "风向", row: "physics", value: (v) => deg(v.settings.physics.windAzimuth) },
@@ -6982,6 +6983,21 @@ export default function Lab() {
                         onChange={(v) => patch("physics", { gravity: v })}
                         fmt={(v) => v.toFixed(0)}
                       />
+                      {/* The floor cloth lands on sits at the CHARACTER's own
+                          feet, not on the drawn ground — so it travels with her,
+                          and a figure lifted onto a stage or into the air keeps
+                          a surface under her hair that nothing is standing on.
+                          Off is the fix, and it belongs beside gravity because
+                          it is the same kind of setting: what the air and the
+                          ground do to cloth. */}
+                      <div className="mt-2.5 flex items-center justify-between first:mt-0">
+                        <span className="text-xs">{t.lab.ctl.floor}</span>
+                        <Switch
+                          size="sm"
+                          checked={physics.floor}
+                          onCheckedChange={(v) => patch("physics", { floor: v })}
+                        />
+                      </div>
                       <SliderRow
                         label={t.lab.ctl.wind}
                         value={physics.wind}

@@ -72,6 +72,17 @@ export type SceneSettings = {
     windElevation: number
     /** How many times a second the wind swings, in Hz. */
     windFrequency: number
+    /**
+     * Whether cloth and hair land on a floor at the character's own feet.
+     *
+     * The engine's floor is MODEL SPACE — y = 0 is wherever the figure's origin
+     * is, not where the scene's ground is drawn. For a character standing on it
+     * that is exactly right, and a long skirt rests instead of passing through.
+     * Lift her onto a stage, hang her in the air, or carry her up with root
+     * motion and the floor goes with her, so everything that should fall past
+     * her feet piles up on nothing.
+     */
+    floor: boolean
   }
 }
 
@@ -101,6 +112,9 @@ export const DEFAULT_PHYSICS: SceneSettings["physics"] = {
   windAzimuth: 90,
   windElevation: 0,
   windFrequency: 0.2,
+  // ON, because every scene published before the switch existed was authored
+  // with the floor there — it is the only value that brings one back unchanged.
+  floor: true,
 }
 
 /** Frequency range, in Hz. Shared so the slider, the stored value and the

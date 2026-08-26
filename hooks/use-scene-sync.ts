@@ -240,6 +240,7 @@ export function useSceneSync({
             }
           : null,
       )
+      engine.setPhysicsFloor(physics.floor)
     }
     if (modeChanged || p.settings.ground !== ground) {
       groundOpts.current = {
