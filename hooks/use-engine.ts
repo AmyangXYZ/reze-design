@@ -972,6 +972,9 @@ export function useEngine(
   /** Decoders and per-frame state for animated-image cards. Mutable and
    *  per-tick, which is exactly what React state must not be. */
   const planeAnims = useRef(new Map<string, PlaneAnimation>())
+  /** The element time each video card last had copied, so an unchanged frame is
+   *  not copied again. */
+  const planeShown = useRef(new Map<string, number>())
   useEffect(() => {
     planesRef.current = planes
   }, [planes])
@@ -1112,9 +1115,8 @@ export function useEngine(
         width,
         height,
         transform: stageTransformToEngine(transform),
-        // A moving card is rewritten every frame; the engine allocates it
-        // without a mip chain so that stays affordable.
-        dynamic: video !== null,
+        // See the restore path: any rewritten texture, not only a video's.
+        dynamic: video !== null || animation !== null,
       })
       if (animation) planeAnims.current.set(id, animation)
       // Retained for the same reason a model's files are: a publish re-packs
@@ -1167,7 +1169,14 @@ export function useEngine(
           planeFollowers.current.set(p.id, follow)
         }
         follow(p.video, time, playing)
-        if (p.video.readyState >= 2) engine.setPlaneFrame(p.id, p.video, p.frameWidth, p.frameHeight)
+        // Only when the element has actually advanced. A 30fps clip on a 60Hz
+        // display shows each frame twice, so half of these copies were the same
+        // pixels again — and a copy of a 4K frame is not free.
+        const at = p.video.currentTime
+        if (p.video.readyState >= 2 && planeShown.current.get(p.id) !== at) {
+          planeShown.current.set(p.id, at)
+          engine.setPlaneFrame(p.id, p.video, p.frameWidth, p.frameHeight)
+        }
         continue
       }
       if (!p.animated) continue
@@ -1237,6 +1246,7 @@ export function useEngine(
       }
       planeAnims.current.get(id)?.dec.close()
       planeAnims.current.delete(id)
+      planeShown.current.delete(id)
       planeFollowers.current.delete(id)
       return prev.filter((p) => p.id !== id)
     })

@@ -7,34 +7,48 @@ import { parseSceneDoc, type Scene, type SceneDoc } from "@/lib/scene"
 import { DEFAULT_DOF, DEFAULT_OUTLINE, DEFAULT_PHYSICS, DEFAULT_VIEW } from "@/lib/scene-settings"
 
 /**
- * Whether this build ships the demo model, motion and music.
+ * Whether this build boots into the demo scene.
  *
- * A desktop or self-hosted build may want none of them — `public/models` is by far
- * the largest thing in the repo, and a packaged app has no reason to carry someone
- * else's character. `NEXT_PUBLIC_USE_DEFAULT_ASSETS=false` boots the editor into an empty
- * scene: the lighting, ground, colour grade and background effect are all defined
- * in code, so the starting scene still looks like something and the user brings
- * their own model to it.
+ * `NEXT_PUBLIC_USE_DEFAULT_SCENE=true` opts in, and the deployments at
+ * reze.design set it. Everything else — a clone, a fork, a packaged desktop
+ * build — boots `EMPTY_SCENE_DOC` instead.
  *
- * Read at build time (the NEXT_PUBLIC_ prefix inlines it), so a downstream packager
- * sets it in the environment rather than patching this file — which is the point.
+ * It picks between two whole scenes rather than emptying the cast out of one.
+ * The demo's magenta world, purple ground and two background effects are a
+ * stage set built around one character; leaving them standing with nobody in
+ * them is a stranger first impression than either scene on its own.
+ *
+ * Off by default because the demo's assets are not in this repository. They
+ * stream from `DEMO` below, one account's bucket behind an origin allowlist, so
+ * a clone that loaded them would be serving its pages off someone else's
+ * infrastructure, and a fork on any other origin would fail the CORS check.
+ *
+ * Read at build time (the NEXT_PUBLIC_ prefix inlines it), so a downstream
+ * packager sets it in the environment rather than patching this file.
  */
-// Absent means on: the demo is what the web build ships, and only a packager opting
-// out has any reason to set this. Parsed leniently so a `0` or an `off` still reads
-// as off rather than silently shipping assets the packager meant to drop.
-const NO = ["false", "0", "off", "no"]
-export const USE_DEFAULT_ASSETS = !NO.includes((process.env.NEXT_PUBLIC_USE_DEFAULT_ASSETS ?? "").trim().toLowerCase())
+// Parsed leniently, so a `1` or an `on` opts in as readily as a `true`.
+const YES = ["true", "1", "on", "yes"]
+export const USE_DEFAULT_SCENE = YES.includes((process.env.NEXT_PUBLIC_USE_DEFAULT_SCENE ?? "").trim().toLowerCase())
 
-export const DEFAULT_SCENE_DOC: SceneDoc = {
+/**
+ * Where the demo model, motion and music are served from.
+ *
+ * R2, whose egress is free, so the ~18MB a first-time visitor downloads costs
+ * nothing to serve and never touches the deployment's transfer budget. Keys are
+ * versioned by path, which is what lets them carry a one-year immutable cache
+ * header: rename, never overwrite in place.
+ *
+ * Upload with `scripts/r2-upload-demo.mjs` — see its header.
+ */
+const DEMO = "https://assets.reze.one/demo/reze-design"
+
+const DEMO_SCENE_DOC: SceneDoc = {
   version: 1,
   name: "My first scene",
   assets: {
-    // Empty, not a placeholder: every consumer already tolerates a cast of none.
-    models: !USE_DEFAULT_ASSETS
-      ? []
-      : [
+    models: [
       {
-        model: "/models/托特-扉页之吻/苍鹭·托特「扉页之吻」白衣.pmx",
+        model: `${DEMO}/models/托特-扉页之吻/苍鹭·托特「扉页之吻」白衣.pmx`,
         // The Classic set, cut for the demo: a dance, the expressions that go
         // with it, and the track they were timed to. A first-time visitor should
         // land on a scene doing all three at once — a character dancing in
@@ -46,8 +60,8 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
         // at the cut is carried into a key at frame 0, so the dance opens
         // mid-movement rather than snapping to it — see scripts/cut-vmd.mjs.
         // The full-length Classic files are still in public/, untouched.
-        animation: "/animations/Demo.vmd",
-        morph: "/animations/Demo_morph.vmd",
+        animation: `${DEMO}/animations/Demo.vmd`,
+        morph: `${DEMO}/animations/Demo_morph.vmd`,
         materials: {
           groups: [
             { label: "Body", materials: ["皮肤", "手"], graph: "AG Body" },
@@ -93,7 +107,7 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
     cameraAnimation: null,
     // Cut to match, by scripts/cut-mp3.py — frame-aligned rather than exact, and
     // 9ms of a 33ms video frame is the closest an MP3 boundary can land.
-    audio: USE_DEFAULT_ASSETS ? "/audios/Demo.mp3" : null,
+    audio: `${DEMO}/audios/Demo.mp3`,
     midi: null,
     lyrics: null,
     backdrop: null,
@@ -130,14 +144,12 @@ export const DEFAULT_SCENE_DOC: SceneDoc = {
     // dissolve that runs in three passes, and the first paint of the site is the
     // one frame that has to be quick on whatever machine arrives. It is one
     // click away in the library, which is where somebody who wants it will be.
-    background: { color: "#4b004f", effects: ["Shining Stars", "Hand Ribbon"] },
+    background: { color: "#4b004f", effects: [{ source: "Shining Stars" }, { source: "Hand Ribbon" }] },
     grade: { preset: "Neutral", intensity: 1 },
     ground: { color: "#c800de", size: 160, opacity: 0.42, shadow: true, grid: "#fafaf9", gridEnabled: true },
     physics: DEFAULT_PHYSICS,
   },
 }
-
-export const DEFAULT_SCENE: Scene = parseSceneDoc(DEFAULT_SCENE_DOC, builtinEffect, libraryGraph)
 
 /**
  * A blank scene — no model, no motion, no music, no background effect, no grade.
@@ -157,7 +169,7 @@ export const EMPTY_SCENE_DOC: SceneDoc = {
   name: "Untitled scene",
   assets: { models: [], cameraAnimation: null, audio: null, midi: null, lyrics: null, backdrop: null, skybox: null },
   settings: {
-    camera: DEFAULT_SCENE_DOC.settings.camera,
+    camera: DEMO_SCENE_DOC.settings.camera,
     world: { color: "#ffffff", strength: 0.35 },
     sun: { color: "#ffffff", strength: 2.0, azimuth: 205, elevation: 21 },
     bloom: { enabled: true, threshold: 0.8, knee: 0.5, radius: 4.0, intensity: 0.03, color: "#ffffff" },
@@ -172,3 +184,7 @@ export const EMPTY_SCENE_DOC: SceneDoc = {
 }
 
 export const EMPTY_SCENE: Scene = parseSceneDoc(EMPTY_SCENE_DOC, builtinEffect, libraryGraph)
+
+/** The scene this build opens on. */
+export const DEFAULT_SCENE_DOC: SceneDoc = USE_DEFAULT_SCENE ? DEMO_SCENE_DOC : EMPTY_SCENE_DOC
+export const DEFAULT_SCENE: Scene = parseSceneDoc(DEFAULT_SCENE_DOC, builtinEffect, libraryGraph)

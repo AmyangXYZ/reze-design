@@ -570,6 +570,10 @@ const en = {
       grid: "Grid lines",
       scale: "Scale",
       size: "Size",
+      // An effect's strip. Blender's words, because MMDers know Blender and a
+      // vocabulary they already have beats one invented here.
+      influence: "Influence",
+      blend: "Blend",
       pos: (axis: string) => `Pos ${axis}`,
       rot: (axis: string) => `Rot ${axis}`,
       preset: "Preset",
@@ -1277,6 +1281,8 @@ const zh: Dictionary = {
       grid: "网格",
       scale: "缩放",
       size: "尺寸",
+      influence: "影响",
+      blend: "过渡",
       pos: (axis: string) => `位置 ${axis}`,
       rot: (axis: string) => `旋转 ${axis}`,
       preset: "预设",

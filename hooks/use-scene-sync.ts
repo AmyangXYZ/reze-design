@@ -10,18 +10,35 @@
 // document and neither knows the difference.
 
 import { useEffect, useRef } from "react"
-import { Vec3, parseHDR, type DissolveCycle, type Engine } from "reze-engine"
+import { Vec3, parseDirectives, parseHDR, type DissolveCycle, type Engine } from "reze-engine"
 import { type AppliedEffect } from "@/lib/effects"
 import { resolveSpec, type GradeSpec } from "@/lib/grade"
 import { CAMERA_DEFAULT_FOV, type SceneCamera } from "@/lib/scene"
 import { GREEN, isCompositingBackground, type ExportBackground } from "@/lib/export-background"
 import { azElToDirection, windVariation, hexToLinearVec3, hexToSrgbVec3, windDirection, type SceneSettings } from "@/lib/scene-settings"
+import { windowToEngine } from "@/lib/effect-schedule"
+
+/**
+ * Every applied effect's timing onto its instance.
+ *
+ * BY INDEX, which is what makes it right: setEffects installs the list in
+ * order, so instance i is entry i, and the same effect applied twice gets two
+ * strips rather than one shared between them.
+ *
+ * Frames cross to the engine's seconds here and nowhere else.
+ */
+function applySchedules(engine: Engine, list: AppliedEffect[]): void {
+  list.forEach((e, i) => {
+    engine.setEffectInfluence(i, e.influence ?? 1)
+    engine.setEffectSchedule(i, windowToEngine(e.window))
+  })
+}
 
 
 /**
  * The dissolve an effect declares, or null.
  *
- * `// @dissolve` says an effect takes the cast apart. FOUR CONSTANTS say when:
+ * `#dissolve` says an effect takes the cast apart. FOUR CONSTANTS say when:
  *
  *   const DISSOLVE_APART = 0.5;   // seconds she takes to come apart
  *   const DISSOLVE_GONE  = 0.65;  // ...and how long there is nothing of her
@@ -58,8 +75,10 @@ const dissolveConst = (wgsl: string, name: string): number => {
 
 function parseDissolveCycle(sources: string[]): DissolveCycle | null {
   for (const wgsl of sources) {
-    const m = /^\s*\/\/\s*@dissolve\s*$/m.exec(wgsl)
-    if (!m) continue
+    // The engine's own parser, not a regex of this file's: two readers of one
+    // declaration is how they come to disagree about what it said, which is
+    // exactly what the `// @` era cost.
+    if (!parseDirectives(wgsl).directives.dissolve) continue
     const out = dissolveConst(wgsl, "DISSOLVE_APART")
     const away = dissolveConst(wgsl, "DISSOLVE_GONE")
     const back = dissolveConst(wgsl, "DISSOLVE_BACK")
@@ -67,7 +86,7 @@ function parseDissolveCycle(sources: string[]): DissolveCycle | null {
     // A cycle has to CONTAIN something. All four at zero is not a dissolve that
     // never fires, it is a period of zero, and the engine would divide by it.
     if (out + away + back + wait <= 0.01) {
-      console.warn("[effect] @dissolve needs a cycle longer than nothing:", m[0].trim())
+      console.warn("[effect] #dissolve needs a cycle longer than nothing — every DISSOLVE_ constant is zero")
       continue
     }
     const breakAt = wait
@@ -318,6 +337,11 @@ export function useSceneSync({
     let stale = false
     void engine.setEffects(sources.length ? sources.map((s) => ({ wgsl: s })) : null).then((rs) => {
       if (stale) return
+      // An install builds fresh instances, so whatever was scheduled is gone
+      // with the ones it was set on. Re-applied HERE as well as on change,
+      // because the two arrive in either order: editing a strip does not
+      // reinstall, and installing does not know a strip changed.
+      applySchedules(engine, backgroundEffects)
       rs.forEach((r, i) => {
         // Named, not numbered: every entry is one the scene asked for now, and
         // a name is what the person reading the console can go and look at.
@@ -332,6 +356,29 @@ export function useSceneSync({
       stale = true
     }
   }, [backgroundEffects, exportBackground, ready, engineRef, castIds])
+
+  /**
+   * Strips onto instances, whenever one is edited.
+   *
+   * Separate from the install above because editing WHEN an effect plays must
+   * not recompile it — the guard up there returns early when the sources have
+   * not changed, which is exactly right for a shader and exactly wrong for the
+   * timing beside it.
+   *
+   * Keyed on the timing alone, so dragging a strip does not re-run on every
+   * unrelated edit to the list, and re-running is harmless when it does: both
+   * calls are idempotent writes of a number.
+   */
+  const scheduleKey = JSON.stringify(backgroundEffects.map((e) => [e.influence ?? 1, e.window ?? null]))
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine || !ready) return
+    applySchedules(engine, backgroundEffects)
+    // `scheduleKey` IS the dependency — backgroundEffects is a fresh array on
+    // every render, and depending on it would write these every frame the
+    // editor re-renders for any reason at all.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scheduleKey, ready, engineRef])
 
   useEffect(() => {
     const engine = engineRef.current

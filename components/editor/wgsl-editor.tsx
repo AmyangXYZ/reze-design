@@ -3,6 +3,7 @@
 // WGSL editor — a free-floating, draggable, resizable panel (FloatingPanel, the graph
 
 import { memo, useCallback, useMemo, useRef, useState } from "react"
+import { DIRECTIVE_LINE, DIRECTIVE_NOTE } from "reze-engine"
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism"
 import { Code, RotateCcw } from "lucide-react"
@@ -45,8 +46,43 @@ export type WgslCompileResult = { ok: boolean; diagnostics: string[] }
  * Nothing else in WGSL spans lines: it has no multi-line strings.
  */
 const COMMENT_COLOR = (oneDark['comment'] as { color?: string } | undefined)?.color ?? "#7f848e"
+/** Directives are not WGSL, so Prism has nothing to say about them — and a line
+ *  of configuration painted as plain text reads as the comment it used to be.
+ *  The keyword colour says "this decides something". */
+const DIRECTIVE_COLOR = (oneDark['keyword'] as { color?: string } | undefined)?.color ?? "#c678dd"
 
 const HighlightedLine = memo(function HighlightedLine({ text, inBlock }: { text: string; inBlock: boolean }) {
+  // A DIRECTIVE, painted before Prism ever sees it — the same shortcut the
+  // block-comment branch below takes, and for the same reason: this is not WGSL
+  // and tokenising it as WGSL would be both wasted and wrong.
+  //
+  // Three parts, because the split is information the author needs: the tag,
+  // the ARGUMENTS the engine actually reads, and any note. Greying the note is
+  // what shows where the arguments stop — an author who sees their bone name
+  // greyed knows the engine is not going to read it.
+  //
+  // By the engine's own patterns, not a copy: a highlighter with its own idea
+  // of what counts paints lines as configuration that the engine then ignores,
+  // which is the exact confusion this syntax exists to end.
+  const directive = !inBlock ? DIRECTIVE_LINE.exec(text) : null
+  if (directive) {
+    const [, tag, rest] = directive
+    const lead = text.slice(0, text.indexOf("#"))
+    const cut = rest.search(DIRECTIVE_NOTE)
+    const args = cut >= 0 ? rest.slice(0, cut) : rest
+    const note = cut >= 0 ? rest.slice(cut) : ""
+    // The gap the tag's own trailing whitespace left, kept so nothing shifts.
+    const gap = text.slice(lead.length + 1 + tag.length, text.length - rest.length)
+    return (
+      <div style={{ ...CODE_STYLE, whiteSpace: "pre", width: "max-content", minWidth: "100%" }}>
+        {lead}
+        <span style={{ color: DIRECTIVE_COLOR, fontWeight: 600 }}>{`#${tag}`}</span>
+        {gap}
+        {args}
+        {note && <span style={{ color: COMMENT_COLOR }}>{note}</span>}
+      </div>
+    )
+  }
   if (inBlock) {
     const end = text.indexOf("*/")
     // Still inside it: the whole line is comment.

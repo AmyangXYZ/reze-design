@@ -3,6 +3,7 @@
 import type { ShaderGraph, StyleGroup } from "reze-engine"
 import pkg from "@/package.json"
 import type { AppliedEffect } from "@/lib/effects"
+import type { EffectWindow } from "@/lib/effect-schedule"
 import { DEFAULT_DOF, DEFAULT_OUTLINE, DEFAULT_PHYSICS, DEFAULT_VIEW, type SceneSettings } from "@/lib/scene-settings"
 import { storageKey } from "@/lib/storage"
 
@@ -60,9 +61,9 @@ export type SceneAssets = {
    *  written before them has none, and absent must mean none rather than a
    *  load failure. */
   planes?: ScenePlane[]
-  /** [0] is the PRIMARY model. May be empty: a build without the demo assets
-   *  (NEXT_PUBLIC_USE_DEFAULT_ASSETS=false) starts with no cast, and the last model can be
-   *  removed. */
+  /** [0] is the PRIMARY model. May be empty: a build that does not opt into the
+   *  demo scene (NEXT_PUBLIC_USE_DEFAULT_SCENE) starts with no cast, and the last
+   *  model can be removed. */
   models: SceneModel[]
   /** Camera VMD — drives target/rotation/distance/fov, overriding `state.camera`. */
   cameraAnimation: AssetRef | null
@@ -92,6 +93,32 @@ export type ItemRef = { id: string }
 
 /** An effect stored BY VALUE: for a draft, which has no published version to pin. */
 export type EffectSnapshot = { name: string; wgsl: string }
+
+/**
+ * One effect as the scene wears it: WHAT it is, and WHEN.
+ *
+ * The source used to be the whole entry. It could not stay that way once an
+ * effect could be scheduled or dialled down, because a pin is a reference to
+ * someone else's published effect — the timing belongs to THIS scene's use of
+ * it, not to the effect, and two scenes using one effect at different moments
+ * is the ordinary case.
+ *
+ * Documents written before this carry the bare source and read as having no
+ * effects. That is a handful of beta scenes re-applied by hand, against
+ * carrying a second document shape forever — the same call the single-effect
+ * field got when the list arrived.
+ */
+export type SceneEffect = {
+  /** A pin to a published effect, a snapshot while it is still a draft, or a
+   *  built-in's name for this repo's own documents. */
+  source: ItemRef | EffectSnapshot | string
+  /** The level it reaches, 0..1. Absent = fully on. */
+  influence?: number
+  /** Its strips, in FRAMES at 30fps — the space the timeline draws and a VMD is
+   *  keyed in. A LANE, so one effect can fire at several moments. Absent or
+   *  empty = alive for the whole scene. */
+  window?: EffectWindow[]
+}
 
 /** The engine's stock orbit angles — the backfill for documents written before
  *  angles were part of the schema (also what the DB patch stamped). */
@@ -287,7 +314,7 @@ export type SceneSettingsDoc = Omit<SceneSettings, "background"> & {
      * Order is meaning, not preference: a full-cover backdrop drawn last erases
      * everything under it, so the list is the composition.
      */
-    effects?: (ItemRef | EffectSnapshot | string)[] | null
+    effects?: SceneEffect[] | null
   }
 }
 
@@ -355,21 +382,36 @@ function effectsFromStored(stored: unknown, fallback: AppliedEffect[]): AppliedE
 
 /** The applied effect a document describes: a pin, a snapshot, or a built-in name. */
 function appliedEffect(
-  applied: NonNullable<SceneSettingsDoc["background"]["effects"]>[number] | null,
+  applied: SceneEffect | null,
   resolveEffect: (name: string) => AppliedEffect,
   resolveRef?: (ref: ItemRef) => LibraryPayloadLike | undefined,
 ): AppliedEffect | null {
   if (!applied) return null
-  if (typeof applied === "string") return resolveEffect(applied)
-  if (isItemRef(applied)) {
-    const hit = resolveRef?.(applied)
+  // A MALFORMED entry drops out rather than throwing. Documents written before
+  // an entry carried its timing hold the bare source here — a string or a pin
+  // where an object with `.source` is expected — and reaching into it for a
+  // name would take the whole scene down on load, in the viewer as well as the
+  // editor. Those scenes open with no effects, which is the same answer an
+  // unresolvable pin already gets; it is not a second document shape, because
+  // nothing below reads the old one.
+  if (typeof applied !== "object" || !("source" in applied)) return null
+  const src = applied.source
+  // The TIMING is this scene's, whatever the source turns out to be — carried
+  // onto whichever branch below resolves, rather than into each of them.
+  const when = {
+    ...(applied.influence === undefined ? {} : { influence: applied.influence }),
+    ...(applied.window === undefined ? {} : { window: applied.window }),
+  }
+  if (typeof src === "string") return { ...resolveEffect(src), ...when }
+  if (isItemRef(src)) {
+    const hit = resolveRef?.(src)
     // An unresolvable pin means no effect at all, rather than a wrong one. A
     // resolved one keeps its name: it is what the picker shows, and an effect
     // applied under an empty label left that control blank and unclickable.
-    return hit?.wgsl ? { id: applied.id, name: hit.name ?? "", wgsl: hit.wgsl } : null
+    return hit?.wgsl ? { id: src.id, name: hit.name ?? "", wgsl: hit.wgsl, ...when } : null
   }
   // A snapshot's runtime id is its name, the same aliasing built-ins use.
-  return { id: applied.name, name: applied.name, wgsl: applied.wgsl }
+  return { id: src.name, name: src.name, wgsl: src.wgsl, ...when }
 }
 
 /**
@@ -731,7 +773,16 @@ export function serializeSceneDoc(
         // The list, in layer order — the only shape written or read. The old
         // single `effect` field is gone from both ends; documents predating
         // the list open with no effects rather than with their one.
-        effects: live.backgroundEffects.map((e) => refs?.effect(e.wgsl) ?? { name: e.name, wgsl: e.wgsl }),
+        //
+        // The TIMING travels with the entry, and omits itself when it is the
+        // default: an unscheduled effect writes exactly what it wrote before
+        // strips existed, so a scene nobody has scheduled produces the same
+        // document and does not churn on save.
+        effects: live.backgroundEffects.map((e) => ({
+          source: refs?.effect(e.wgsl) ?? { name: e.name, wgsl: e.wgsl },
+          ...(e.influence === undefined || e.influence === 1 ? {} : { influence: e.influence }),
+          ...(e.window?.length ? { window: e.window } : {}),
+        })),
       },
     },
   }
@@ -749,7 +800,12 @@ export function sceneRefs(doc: SceneDoc): ItemRef[] {
   }
   // EVERY effect, not the first: each is its own pin, and a scene that used
   // four of them recorded none once this became a list.
-  for (const e of doc.settings.background.effects ?? []) add(e)
+  //
+  // The SOURCE, not the entry. An entry carries this scene's timing around the
+  // pin now, so `add(e)` reaches an object that is not an ItemRef and quietly
+  // records nothing — and `add` takes unknown, so nothing would have said so
+  // until a published scene stopped counting against the effects it uses.
+  for (const e of doc.settings.background.effects ?? []) add(e.source)
   add(doc.settings.grade.from)
   for (const m of doc.assets.models) for (const g of m.materials?.groups ?? []) add(g.graph)
   return [...found.values()]

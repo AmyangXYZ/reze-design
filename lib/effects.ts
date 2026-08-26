@@ -12,6 +12,7 @@
 
 import effects from "@/content/effects.json"
 import { asBuiltins, type EffectItem } from "@/lib/library"
+import type { EffectWindow } from "@/lib/effect-schedule"
 
 /** What a scene stores when an effect is applied */
 export type AppliedEffect = {
@@ -28,6 +29,12 @@ export type AppliedEffect = {
    *  to ask "which of them". Optional because a list arriving from a document
    *  has none yet — the setter stamps them on the way into state. */
   uid?: string
+  /** The level it reaches, 0..1. Absent = 1, fully on. */
+  influence?: number
+  /** WHEN it is alive, in frames — a LANE, so one effect can fire more than
+   *  once. Absent or empty = the whole scene, which is what an ambient effect
+   *  does. */
+  window?: EffectWindow[]
 }
 
 export const applyDefaults = (def: EffectItem): AppliedEffect => ({
