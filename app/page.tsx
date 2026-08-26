@@ -2406,7 +2406,14 @@ export default function Lab() {
       const lyrics = sceneFiles.lyrics
       if (!lyrics) return
       const lines = parseLRC(await lyrics.text())
-      const file = lipSyncVmdFile(lines, lyrics.name)
+      // THE EXPRESSION TRACK THIS MODEL ALREADY HAS, so the lip sync lands on
+      // top of it instead of replacing it. Artists ship blinks as their own
+      // morph .vmd, and generating a lip sync used to hand a clean file to the
+      // same slot — the blinks went, and nothing said so, because the slot
+      // still held a morph track and the mouth still moved.
+      const worn = morphByModel[id]?.src
+      const under = worn instanceof File ? await worn.arrayBuffer() : undefined
+      const file = lipSyncVmdFile(lines, lyrics.name, under)
       if (!file) return
       const name = await loadMorphFile(id, file)
       if (name) setMorphByModel((prev) => ({ ...prev, [id]: { name, src: file } }))
@@ -2417,7 +2424,11 @@ export default function Lab() {
       a.click()
       URL.revokeObjectURL(url)
     },
-    [loadMorphFile],
+    // `morphByModel` IS a dependency now: the merge reads the track this model
+    // is wearing, and a missing dep here is not a stale value that catches up —
+    // it is the FIRST render's, which is no track at all. The lip sync would
+    // have gone on quietly replacing exactly what it was written to preserve.
+    [loadMorphFile, morphByModel],
   )
   const musicInput = useRef<HTMLInputElement | null>(null)
   const setMusicFile = useCallback((file: File) => {

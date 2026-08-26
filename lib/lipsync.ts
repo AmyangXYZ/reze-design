@@ -25,7 +25,7 @@
 // and persists as a plain scene asset: a published scene never knows its lips
 // came from lyrics.
 
-import { FPS, VMDWriter, type AnimationClip, type LyricLine, type MorphKeyframe } from "reze-engine"
+import { FPS, VMDLoader, VMDWriter, type AnimationClip, type LyricLine, type MorphKeyframe } from "reze-engine"
 import { hanziViseme } from "./hanzi-visemes"
 
 /** One mouth event: a vowel to show, or a closure (bilabial / ん / coda-m). */
@@ -423,10 +423,54 @@ export function lipSyncMorphTracks(lines: LyricLine[]): {
 }
 
 /** The tracks as a real .vmd, named after the lyrics that produced it. */
-export function lipSyncVmdFile(lines: LyricLine[], lyricsName: string): File | null {
+/**
+ * Every morph this writes, and the only ones it may take over.
+ *
+ * The five vowels are the whole of a lip sync. An artist's expression VMD is
+ * blinks, brows, blush, a smile — none of them here, all of them worth keeping.
+ */
+const LIPSYNC_MORPHS = new Set(Object.values(MORPH_NAME))
+
+/**
+ * The lip sync as a VMD, OVER an expression track rather than instead of one.
+ *
+ * Artists ship expressions as their own morph .vmd — blinks especially, because
+ * a character who never blinks is the first thing anyone notices. Generating a
+ * lip sync used to write a clean file and hand it to the same slot, so the
+ * blinks were simply gone, and nothing said so: the slot still held a morph
+ * track and the mouth still moved.
+ *
+ * So the existing track is read back and merged. The five vowels are REPLACED —
+ * they are what a lip sync is for, and two sources driving one mouth is a mouth
+ * fighting itself. Every other morph is carried across untouched.
+ */
+export function lipSyncVmdFile(lines: LyricLine[], lyricsName: string, existing?: ArrayBuffer): File | null {
   const { tracks, frameCount } = lipSyncMorphTracks(lines)
   if (tracks.size === 0) return null
-  const clip: AnimationClip = { boneTracks: new Map(), morphTracks: tracks, frameCount }
+  let frames = frameCount
+  if (existing) {
+    try {
+      for (const kf of VMDLoader.loadFromBuffer(existing)) {
+        for (const mf of kf.morphFrames) {
+          // The mouth is the lip sync's. Anything else the artist keyed stays.
+          if (LIPSYNC_MORPHS.has(mf.morphName)) continue
+          const track = tracks.get(mf.morphName) ?? []
+          track.push({ morphName: mf.morphName, frame: mf.frame, weight: mf.weight })
+          tracks.set(mf.morphName, track)
+          frames = Math.max(frames, mf.frame + 1)
+        }
+      }
+      // A VMD's frames are not required to arrive in order and a merge
+      // certainly does not, so each track is sorted before it is written.
+      for (const track of tracks.values()) track.sort((a, b) => a.frame - b.frame)
+    } catch {
+      // Unreadable expression track: write the lip sync alone rather than
+      // nothing. Losing the blinks is bad; losing the mouth as well is worse,
+      // and the artist still has their own file.
+      console.warn("[lipsync] the existing morph track could not be read — writing the lip sync on its own")
+    }
+  }
+  const clip: AnimationClip = { boneTracks: new Map(), morphTracks: tracks, frameCount: frames }
   const bytes = new VMDWriter().write(clip)
   // The VMD model-name field: 20 bytes of Shift-JIS at offset 30, and where a
   // file says who made it — MMD shows it when the motion is loaded. ASCII is
