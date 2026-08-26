@@ -81,6 +81,16 @@ export function useSceneMedia({
   const skyboxInputRef = useRef<HTMLInputElement | null>(null)
   const [skybox, setSkybox] = useState<BackdropMedia | null>(null)
 
+  // ── The HDRI ──
+  // NOT one of the pair, and that is the point. Those two are both answers to
+  // "what is behind the scene" and only one can be; an HDRI answers "what is
+  // lighting it", which is a different question and can be true at the same
+  // time. They shared the skybox slot and were told apart by file extension, so
+  // a studio HDRI and a chosen sky were mutually exclusive for no reason but
+  // the plumbing.
+  const hdriInputRef = useRef<HTMLInputElement | null>(null)
+  const [hdri, setHdri] = useState<BackdropMedia | null>(null)
+
   /** Swap a slot's media, releasing whatever it held. */
   const swap = (set: typeof setBackdrop, next: BackdropMedia | null) =>
     set((prev) => {
@@ -108,14 +118,29 @@ export function useSceneMedia({
       if (!file) return
       try {
         const next = await probeBackdrop(file)
-        if (/\.hdr$/i.test(file.name)) {
-          const { parseHDR } = await import("reze-engine")
-          engineRef.current?.setBackdropEquirect(parseHDR(await file.arrayBuffer()))
-        } else {
-          engineRef.current?.setBackdropEquirect(await createImageBitmap(file))
-        }
+        engineRef.current?.setBackdropEquirect(await createImageBitmap(file))
         swap(setSkybox, next)
         swap(setBackdrop, null)
+      } catch (e) {
+        onNotice(e instanceof Error ? e.message : String(e))
+      }
+    },
+    [engineRef, onNotice],
+  )
+
+  /** The HDRI. Clears neither of the other two — it is not behind the scene,
+   *  it is the light in it. */
+  const onHdriPicked = useCallback(
+    async (file: File | undefined) => {
+      if (!file) return
+      try {
+        const next = await probeBackdrop(file)
+        // Radiance goes through the engine's parser: createImageBitmap cannot
+        // decode it, and flattening to 8 bits throws away the range that makes
+        // it an HDRI in the first place.
+        const { parseHDR } = await import("reze-engine")
+        engineRef.current?.setWorldEquirect(parseHDR(await file.arrayBuffer()))
+        swap(setHdri, next)
       } catch (e) {
         onNotice(e instanceof Error ? e.message : String(e))
       }
@@ -127,6 +152,10 @@ export function useSceneMedia({
   const removeSkybox = useCallback(() => {
     engineRef.current?.setBackdropEquirect(null)
     swap(setSkybox, null)
+  }, [engineRef])
+  const removeHdri = useCallback(() => {
+    engineRef.current?.setWorldEquirect(null)
+    swap(setHdri, null)
   }, [engineRef])
 
   // ── Music ──
@@ -187,6 +216,10 @@ export function useSceneMedia({
     removeBackdrop,
     skyboxInputRef,
     skybox,
+    hdri,
+    hdriInputRef,
+    onHdriPicked,
+    removeHdri,
     setSkybox,
     onSkyboxPicked,
     pickSkybox,

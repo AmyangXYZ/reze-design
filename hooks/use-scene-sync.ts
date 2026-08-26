@@ -114,8 +114,17 @@ export function useSceneSync({
   backgroundEffects,
   /** A DOM image sits behind the canvas, so the canvas must stay transparent. */
   hasBackdrop = false,
-  /** 360 skybox source, or null. Re-uploaded whenever the file changes. */
+  /** The 360 picture behind the scene, or null. Wallpaper — it lights nothing.
+   *  Re-uploaded whenever the file changes. */
   skybox = null,
+  /** The HDRI, or null. What LIGHTS the scene, and what you see when no skybox
+   *  is set. A separate slot because the two answer different questions and a
+   *  scene can want both.
+   *
+   *  `hdri`, not `world`: the scene's settings already own a `world` — the flat
+   *  colour and the strength dial, Blender's naming — and this is the IMAGE
+   *  that stands in for it. */
+  hdri = null,
   /** Compositing preview: no ground surface, effect and skybox suspended — they
    *  render in-canvas and would cover the key or fill the alpha. "green" keys
    *  the hole, "alpha" leaves it empty. */
@@ -135,6 +144,7 @@ export function useSceneSync({
   backgroundEffects: AppliedEffect[]
   hasBackdrop?: boolean
   skybox?: File | null
+  hdri?: File | null
   exportBackground?: ExportBackground
   castIds?: string[]
 }) {
@@ -388,38 +398,60 @@ export function useSceneSync({
       return
     }
     let stale = false
-    if (/\.hdr$/i.test(skybox.name)) {
-      // An HDRI world: scene-linear radiance through the engine's own parser —
-      // createImageBitmap cannot decode Radiance files, and flattening one to
-      // 8-bit would throw away exactly the range that makes it an HDRI.
-      void skybox
-        .arrayBuffer()
-        .then((buf) => {
-          if (stale) return
-          const img = parseHDR(buf)
-          engine.setBackdropEquirect(img)
-          // The install receipt: with this line and __reze.getWorldLighting(),
-          // "is the sky lighting her" is a console question, not a guess.
-          const wl = engine.getWorldLighting()
-          console.info(`[skybox] HDRI world installed (${img.width}x${img.height}) — lighting:`, wl)
-          // The trap that cost a debugging round: the sky's light rides the
-          // World strength dial (the Blender semantic), and a scene with the
-          // dial at zero installs a sky that lights nothing — silently, unless
-          // this says so.
-          if (wl.strength === 0) {
-            console.warn("[skybox] World strength is 0 — the sky lights nothing until it is raised (settings > World).")
-          }
-        })
-        .catch((e) => console.error("[skybox] .hdr failed to parse:", e))
-    } else {
-      void createImageBitmap(skybox).then((b) => {
-        if (!stale) engine.setBackdropEquirect(b)
-      })
-    }
+    void createImageBitmap(skybox).then((b) => {
+      if (!stale) engine.setBackdropEquirect(b)
+    })
     return () => {
       stale = true
     }
   }, [skybox, compositing, engineRef])
+
+  /**
+   * The HDRI world, on its own slot.
+   *
+   * Its own effect, and not a branch inside the skybox's: an HDRI is a
+   * measurement of light and a 360 picture is wallpaper, and they were told
+   * apart by FILE EXTENSION on one slot — so a scene could have one or the
+   * other and never both, and a picture changed the lighting on the strength of
+   * its filename.
+   *
+   * Suspended under compositing for the same reason the skybox is: an alpha
+   * plate is the cast against nothing, and a world that went on lighting them
+   * would put the room back into the plate.
+   */
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine) return
+    if (compositing || !hdri) {
+      engine.setWorldEquirect(null)
+      return
+    }
+    let stale = false
+    // Through the engine's own parser: createImageBitmap cannot decode Radiance
+    // files, and flattening one to 8 bits would throw away exactly the range
+    // that makes it an HDRI.
+    void hdri
+      .arrayBuffer()
+      .then((buf) => {
+        if (stale) return
+        const img = parseHDR(buf)
+        engine.setWorldEquirect(img)
+        // The install receipt: with this line and __reze.getWorldLighting(),
+        // "is the sky lighting her" is a console question, not a guess.
+        const wl = engine.getWorldLighting()
+        console.info(`[world] HDRI installed (${img.width}x${img.height}) — lighting:`, wl)
+        // The trap that cost a debugging round: the sky's light rides the World
+        // strength dial (the Blender semantic), and a scene with the dial at
+        // zero installs a sky that lights nothing — silently, unless this says so.
+        if (wl.strength === 0) {
+          console.warn("[world] World strength is 0 — the sky lights nothing until it is raised (settings > World).")
+        }
+      })
+      .catch((e) => console.error("[world] .hdr failed to parse:", e))
+    return () => {
+      stale = true
+    }
+  }, [hdri, compositing, engineRef])
 
   // The WGSL editor compiles straight to the engine for its live preview; telling
   // the sync pass what's already on screen keeps it from compiling it a second

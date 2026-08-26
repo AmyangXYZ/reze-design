@@ -73,6 +73,17 @@ export type SceneAssets = {
   midi: AssetRef | null
   lyrics: AssetRef | null
   background: SceneBackground
+  /**
+   * The HDRI world — what LIGHTS the scene.
+   *
+   * Its own slot, beside `background` rather than inside it. Backdrop and
+   * skybox are two answers to "what is behind the scene" and only one can be;
+   * this answers "what is lighting it", which can be true at the same time as
+   * either. They shared a slot and were told apart by file extension, so a
+   * studio HDRI and a chosen sky were mutually exclusive for no reason but the
+   * plumbing.
+   */
+  hdri: AssetRef | null
   /** Asset zip these models/clips live in, or null when every path is site-served. */
   bundle: string | null
 }
@@ -290,6 +301,12 @@ export type SceneAssetsDoc = {
    *  backdrop wins over a set skybox, matching the editor's replace behaviour. */
   backdrop?: string | null
   skybox?: string | null
+  /** The HDRI. NOT one of the pair above: those two are what you see, and this
+   *  is what lights. A scene can have one of them and this.
+   *
+   *  Named for the file rather than for the seat it fills, because `world` is
+   *  already taken — settings.world is the flat colour and the strength dial. */
+  hdri?: string | null
   /**
    * URL of the scene's asset zip. Paths above that don't start with "/" or a
    * scheme are relative to this bundle; site-served demo assets keep absolute
@@ -489,6 +506,10 @@ export function parseAssetsDoc(a: SceneAssetsDoc): SceneAssets {
     // naming them: "no lyrics" stops being a thing the reader has to infer.
     midi: a.midi ? assetFromPath(a.midi) : null,
     lyrics: a.lyrics ? assetFromPath(a.lyrics) : null,
+    // Absent parses to null, which is also what a scene with no HDRI writes —
+    // so "this scene lights itself with a flat world" is something the document
+    // says rather than something a reader infers.
+    hdri: a.hdri ? assetFromPath(a.hdri) : null,
     background: a.backdrop
       ? { kind: "backdrop", asset: assetFromPath(a.backdrop) }
       : a.skybox
@@ -530,6 +551,7 @@ export function assetsDocOf(a: SceneAssets): SceneAssetsDoc {
     audio: a.audio?.url ?? null,
     midi: a.midi?.url ?? null,
     lyrics: a.lyrics?.url ?? null,
+    hdri: a.hdri?.url ?? null,
     backdrop: a.background?.kind === "backdrop" ? a.background.asset.url : null,
     skybox: a.background?.kind === "skybox" ? a.background.asset.url : null,
     // Written only when there are any: a scene with no cards should read the
@@ -704,6 +726,7 @@ export function serializeSceneDoc(
     midi: AssetRef | null
     lyrics: AssetRef | null
     background: SceneBackground
+    hdri: AssetRef | null
     planes: ScenePlane[]
     /** Public URL of the uploaded asset zip, or null for a bundle-free scene. */
     bundle: string | null
@@ -747,6 +770,7 @@ export function serializeSceneDoc(
         midi: live.midi,
         lyrics: live.lyrics,
         background: live.background,
+        hdri: live.hdri,
         planes: live.planes,
         bundle: live.bundle,
       }),

@@ -100,28 +100,44 @@ fn foreground(ray: vec3f, uv: vec2f, time: f32, depth: f32) -> vec4f {
 
 // ── Declaring what you need ──
 //
-// Comments at the top of the file, each on its own line:
+// Lines starting with # at the top of the file, each on its own line. They are
+// DIRECTIVES, not comments: the engine reads them, strips them, and tells you
+// with a line number if it does not recognise one. Anything after a — or a //
+// on the same line is a note to yourself and is ignored.
 //
-//   // @anchor 頭              a bone, by name -> rzAnchor(subject, 0)
-//   // @anchor 左手首 trail    ...and keep its recent PATH -> rzTrail(...)
-//   // @particles 4096         pool size, if you write the particle mounts
-//   // @blend additive         particles add light instead of covering (fire)
-//   // @bloom                  particles reach the bloom pyramid
-//   // @fullres                field mounts run at full resolution
+//   #anchor 頭              a bone, by name -> rzAnchor(subject, 0)
+//   #anchor 左手首 trail    ...and keep its recent PATH -> rzTrail(...)
+//   #particles 4096         pool size, if you write the particle mounts
+//   #blend additive         particles add light instead of covering (fire)
+//   #bloom                  particles reach the bloom pyramid
+//   #lights 4               light slots, if you write fn lightEmit
+//   #grid 768               simulation resolution, if you write fn gridStep
+//   #layer additive         the FIELD adds light instead of covering it
+//   #halfres                field mounts run at half resolution
+//   #param float speed 1.0 0 4    a dial the app builds a slider for
+//   #duration 3.0           how long ONE firing lasts, in seconds
 //
-// @anchor slots are DECLARATION ORDER: the first is slot 0. Any bone the model
+// #anchor slots are DECLARATION ORDER: the first is slot 0. Any bone the model
 // has works, and .valid is false on a rig that spells it differently — check
 // it, or your hand effect draws at the world origin on half the library.
 //
-// @fullres costs four times the pixels and buys sub-pixel detail. Hairlines,
-// thin rings and scanlines need it. Anything soft — smoke, glow, billowing
-// noise — does not: an upsample carries that for free, which is the point of
-// the default.
+// #halfres is an OPT-OUT. Field mounts run at full resolution unless you say
+// otherwise, because the alternative — soft by default — fails silently: an
+// effect with an edge in it comes out blurred and nothing warns you, since
+// nothing was declared to warn about. Half costs a quarter of the pixels and is
+// the right call for anything soft: smoke, glow, billowing noise all upsample
+// invisibly.
 //
 // The trap: what decides this is not how soft the effect LOOKS, it is whether
 // its ALPHA has a hard edge anywhere. A foreground that compares against \`depth\`
 // has one along every silhouette in the scene, however soft the rest of it is,
 // and at half resolution that edge arrives as stair-steps up the character.
+//
+// #duration says this effect is a HIT — it has an arc, and that is how long one
+// firing of it takes. Declare it and dropping the effect on the timeline gives
+// you a strip already the right length, the way a clip arrives at the length of
+// its media. Declare nothing and the effect is AMBIENT: rain, stars, fog, a
+// condition the scene is in rather than something that happens at a moment.
 
 // ── Reading the scene ──
 //

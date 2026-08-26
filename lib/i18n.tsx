@@ -247,6 +247,7 @@ const en = {
     uploadBackdrop: "Upload image",
     skybox: "Skybox",
     uploadSkybox: "Upload 360° image",
+    uploadHdri: "Upload .hdr",
   },
   stage: {
     title: "Stage",
@@ -371,6 +372,7 @@ const en = {
     cantLoad: "Can't load that folder",
     noPmx: "No .pmx file found in that folder.",
     videoIsFlatOnly: "A video fills the flat backdrop — the 360 background takes a still.",
+    hdrIsWorld: "An .hdr lights the scene — use the World slot.",
     cantLoadCamera: (message: string) => `Couldn't load that camera: ${message}`,
   },
   // The 0.4.0 chrome. Row names, pane tabs, control labels and the command
@@ -414,7 +416,8 @@ const en = {
     uploadStagePmx: "Upload stage PMX",
     uploadImage: "Upload media",
     uploadPlane: "Upload media",
-    uploadSkybox: "Upload HDR or image",
+    uploadSkybox: "Upload 360° image",
+    uploadHdri: "Upload .hdr",
     on: "On",
     off: "Off",
     // The palette says what it actually holds: things you can DO (Actions and
@@ -561,6 +564,7 @@ const en = {
       backgroundImage: "background media",
       plane: "plane",
       background360: "skybox",
+      world: "world",
     },
     ctl: {
       outline: "Outline",
@@ -604,6 +608,9 @@ const en = {
       dof: "Depth of field",
       image: "Media",
       dome: "Skybox",
+      // The HDRI slot. Blender's word for the seat it fills — the thing that
+      // lights the scene, as opposed to the thing behind it.
+      world: "World",
     },
     /** The delete confirmation shared by every clip row. */
     deleteClip: {
@@ -989,6 +996,7 @@ const zh: Dictionary = {
     uploadBackdrop: "上传图片",
     skybox: "天空盒",
     uploadSkybox: "上传 360° 全景图",
+    uploadHdri: "上传 .hdr",
   },
   stage: {
     title: "舞台",
@@ -1110,6 +1118,7 @@ const zh: Dictionary = {
     cantLoad: "无法加载该文件夹",
     noPmx: "该文件夹中未找到 .pmx 文件。",
     videoIsFlatOnly: "视频用于平面背景 — 360 背景只接受静态图。",
+    hdrIsWorld: ".hdr 用于照亮场景 — 请使用「世界」槽位。",
     cantLoadCamera: (message: string) => `无法加载该相机：${message}`,
   },
   lab: {
@@ -1148,7 +1157,8 @@ const zh: Dictionary = {
     uploadStagePmx: "上传舞台 PMX",
     uploadImage: "上传媒体",
     uploadPlane: "上传媒体",
-    uploadSkybox: "上传 HDR / 图片",
+    uploadSkybox: "上传 360° 全景图",
+    uploadHdri: "上传 .hdr",
     on: "开",
     off: "关",
     palette: {
@@ -1272,6 +1282,7 @@ const zh: Dictionary = {
       backgroundImage: "背景媒体",
       plane: "平面",
       background360: "天空盒",
+      world: "世界",
     },
     ctl: {
       outline: "描边",
@@ -1311,6 +1322,7 @@ const zh: Dictionary = {
       dof: "景深",
       image: "媒体",
       dome: "天空盒",
+      world: "世界",
     },
     deleteClip: {
       title: (kind: string) => `删除${kind}？`,

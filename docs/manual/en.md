@@ -605,35 +605,60 @@ own sky are two effects applied one after another.
 
 ### Declaring what you need
 
-Comments at the top of the file, each on its own line. They are part of the
-contract, not documentation:
+Lines starting with `#` at the top of the file, each on its own line:
 
 ```wgsl
-// @anchor 頭              a bone by name        -> rzAnchor(subject, 0)
-// @anchor 左手首 trail    ...and keep its PATH  -> rzTrail(subject, 1, i)
-// @particles 4096         pool size, with the particle mounts
-// @blend additive         particles add light instead of covering it
-// @bloom                  particles reach the bloom pyramid
-// @fullres                field mounts run at full resolution
-// @layer additive         the FIELD adds light instead of covering
-// @lights 4               light slots, with fn lightEmit
-// @grid 768               simulation resolution, with fn gridStep
+#anchor 頭              a bone by name        -> rzAnchor(subject, 0)
+#anchor 左手首 trail    ...and keep its PATH  -> rzTrail(subject, 1, i)
+#particles 4096         pool size, with the particle mounts
+#blend additive         particles add light instead of covering it
+#bloom                  particles reach the bloom pyramid
+#halfres                field mounts run at half resolution
+#layer additive         the FIELD adds light instead of covering
+#lights 4               light slots, with fn lightEmit
+#grid 768               simulation resolution, with fn gridStep
+#param float speed 1.0 0 4    a dial the app builds a slider for
+#duration 3.0           how long ONE firing lasts, in seconds
 ```
 
-**`@layer additive` is the one most new effects need and most forget.** The
+These are **syntax, not comments**. The engine parses them, strips them before
+compiling, and tells you with a line number when it does not recognise one.
+Anything after a `—` or a `//` on the same line is a note to yourself and is
+ignored, so a directive can explain itself.
+
+They used to be `// @anchor`, which looked like prose and behaved like it: one
+of the readers was anchored to the end of the line, so `// @fullres — note`
+declared nothing at all, and three shipped effects rendered soft for months
+with nothing to say so. A wrong `#` line is an error you can read.
+
+**`#layer additive` is the one most new effects need and most forget.** The
 default composites alpha-over, which is right for anything with mass — smoke,
 fog, a painted sky. It is wrong for light, and visibly so the moment two glows
 cross: the later one occludes the earlier instead of adding to it, so a second
-bolt punches a hole through the first. Seven of the fifteen built-ins declare it.
-If what you are drawing is light rather than matter, so should you.
+bolt punches a hole through the first. Seven of the built-ins declare it. If
+what you are drawing is light rather than matter, so should you.
 
-`@anchor` slots are **declaration order** — the first is slot 0. Any bone the
+`#anchor` slots are **declaration order** — the first is slot 0. Any bone the
 model has works, and `.valid` is false on a rig that spells it differently. Check
 it, or the effect draws a hand flourish at the world origin on half the library.
 
-`@fullres` costs double and buys sub-pixel detail. Hairlines, thin rings and
-scanlines need it. Anything soft — smoke, glow, billowing noise — does not: a
-bilinear upsample carries that for free, which is the whole point of the default.
+`#halfres` is an **opt-out**. Field mounts run at full resolution unless you say
+otherwise. Half costs a quarter of the pixels and is right for anything soft —
+smoke, glow, billowing noise all upsample invisibly. What decides it is not how
+soft the effect looks but whether its **alpha** has a hard edge anywhere: a
+foreground comparing against `depth` has one along every silhouette in the
+scene, and at half resolution that edge arrives as stair-steps up the character.
+
+`#duration` says the effect is a **hit** — it has an arc, and this is how long
+one firing takes. Declare it and dropping the effect on the timeline gives you a
+strip already the right length, the way a clip arrives at the length of its
+media. Declare nothing and it is **ambient**: rain, stars, fog — a condition the
+scene is in rather than something that happens at a moment.
+
+`#param` exposes a dial. `#param float name default min max`, or `#param color
+name r g b`, and the app builds the control from the declaration — so what the
+panel offers and what the shader reads cannot come apart, and tweaking a value
+does not mean forking the effect.
 
 ### The contract
 
@@ -843,7 +868,7 @@ An effect can put light **into the shading**, not just pixels on the frame. Decl
 how many slots and fill them:
 
 ```wgsl
-// @lights 4
+#lights 4
 
 fn lightEmit(i: u32, time: f32) -> RzLight {
   var l: RzLight;
@@ -856,7 +881,7 @@ fn lightEmit(i: u32, time: f32) -> RzLight {
 ```
 
 Called once per slot per frame. The count and the function come as a pair — one
-without the other is a compile error, and `@lights` is capped by the engine.
+without the other is a compile error, and `#lights` is capped by the engine.
 
 `intensity = 0` retires the slot entirely, which is what makes a burst effect
 cheap: a firework between bursts is not a light at zero brightness sitting
@@ -873,7 +898,7 @@ Three functions, and the pool never touches the CPU: one compute dispatch steps
 every particle, one instanced draw puts them on screen.
 
 ```wgsl
-// @particles 4096
+#particles 4096
 fn particleInit(i: u32, seed: f32) -> Particle    // a fresh particle
 fn particleStep(p: Particle, dt: f32) -> Particle // one frame of motion
 fn particleShade(p: Particle, uv: vec2f) -> vec4f // its billboard, uv 0–1
@@ -893,7 +918,7 @@ the cast for free — one behind a shoulder is simply hidden, with no work from 
 Two functions, over the recorded path of every bone you declared with `trail`:
 
 ```wgsl
-// @anchor 右手首 trail
+#anchor 右手首 trail
 fn trailWidth(u: f32, age: f32) -> f32                                  // pixels
 fn trailShade(u: f32, v: f32, age: f32, weight: f32, slot: i32) -> vec4f
 ```
@@ -913,7 +938,7 @@ is the exception: a texture the effect owns, stepped once per frame, where each
 frame reads the last one.
 
 ```wgsl
-// @grid 768
+#grid 768
 
 fn gridStep(uv: vec2f, prev: vec4f, dt: f32) -> vec4f {
   if (rzGridFrame() == 0) { return vec4f(0.0); }   // frame 0 is your seed
@@ -1021,7 +1046,7 @@ avoid. Reading them is the fastest way into the idiom.
 | *Hand Ribbon* | A trail along a bone's recorded path, max-blended in its own layer |
 | *Footprints* | Reading a trail in **world** space: contacts inferred from the moment a foot stops descending, each with a light pillar integrated through the air above it |
 | *Vyke's Dragonbolt* | Arcs on the limbs — screen-space paths carrying real depth, so half of each ring passes behind the body; and a two-tier cull |
-| *Summoning Circle* | A figure on the plane through a declared bone by ray-plane intersection, depth-tested by hand, with line widths in measured pixels — one `@anchor` line moves it from under her feet to under her palm |
+| *Summoning Circle* | A figure on the plane through a declared bone by ray-plane intersection, depth-tested by hand, with line widths in measured pixels — one `#anchor` line moves it from under her feet to under her palm |
 | *Stage Lights* | Volumetric beams marched through their own cylinder, aimed by a damped follow |
 | *Waveform* | The audio interface driving a ported Shadertoy visualiser |
 | *Shining Stars* | Hash-grid fields |

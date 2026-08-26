@@ -49,6 +49,9 @@ export type SceneSlotsInput = {
   lyrics: { name: string | null; booted: AssetRef | null }
   /** The background image, whichever slot it came from. */
   background: { kind: "backdrop" | "skybox"; name: string; file: File } | null
+  /** The HDRI. Independent of `background` — that one is what you see and this
+   *  is what lights, and a scene can want both. */
+  hdri: { name: string; file: File } | null
   /** Media planes, each with the file it is made from. */
   planes: { name: string; file: File; width: number; height: number; transform: SceneStageTransform }[]
 }
@@ -61,6 +64,7 @@ export type SceneSlots = {
   midi: AssetRef | null
   lyrics: AssetRef | null
   background: SceneBackground
+  hdri: AssetRef | null
   planes: ScenePlane[]
   hidden: Record<string, string[]>
 }
@@ -199,6 +203,14 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
     entries.push({ path, file: input.background.file })
     background = { kind: input.background.kind, asset: { name: input.background.name, url: path } }
   }
+  // Its own prefix, so an HDRI named the same thing as a skybox cannot land on
+  // it — the two are separate slots and a scene may hold both.
+  let hdri: AssetRef | null = null
+  if (input.hdri) {
+    const path = packPath("hdri", input.hdri.name)
+    entries.push({ path, file: input.hdri.file })
+    hdri = { name: input.hdri.name, url: path }
+  }
   const hidden = Object.fromEntries(
     input.models
       .map((m) => [m.id, m.materials.filter((mat) => !mat.visible).map((mat) => mat.name)] as const)
@@ -245,5 +257,5 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
     )
   }
 
-  return { entries: unique, models: liveModels, cameraAnimation, audio, midi, lyrics, background, planes, hidden }
+  return { entries: unique, models: liveModels, cameraAnimation, audio, midi, lyrics, background, hdri, planes, hidden }
 }

@@ -318,7 +318,10 @@ const CHECKERBOARD: React.CSSProperties = {
 /** The flat backdrop takes stills and moving pictures; the 360 dome takes a
  *  still equirect, including Radiance. */
 const BACKDROP_ACCEPT = "image/*,video/mp4,video/webm,video/quicktime"
-const DOME_ACCEPT = "image/*,.hdr"
+const DOME_ACCEPT = "image/*"
+/** Radiance only. An .hdr is a measurement of light, and the slot that takes it
+ *  is the one that lights the scene — not the one that shows a picture. */
+const HDRI_ACCEPT = ".hdr"
 
 /** Give every row a uid, keeping the ones already minted. A duplicate is
  *  re-minted rather than kept: two rows carrying the same uid is the very state
@@ -2244,7 +2247,6 @@ export default function Lab() {
     // Re-running when the slot fills tears the observer down and back up, which
     // resets `last` to 0 and makes the next settle() unconditional — this time
     // with the file actually there.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, canvasRef, rasterLyricsAt, framing.exporting, lyricsClip])
 
   // Music follows the model clock — the exact mirror main uses, shared. Silent
@@ -2259,6 +2261,23 @@ export default function Lab() {
   const swapBgImage = useCallback(
     (next: (BackdropMedia & { dome: boolean }) | null) =>
       setBgImage((prev) => {
+        releaseBackdrop(prev)
+        return next
+      }),
+    [],
+  )
+  /**
+   * The HDRI — its own slot, beside the background rather than inside it.
+   *
+   * Backdrop and skybox are two answers to "what is behind the scene" and only
+   * one can be. This answers "what is lighting it", which is true at the same
+   * time as either — so it does not go through swapBgImage and setting it
+   * clears nothing.
+   */
+  const [hdri, setHdri] = useState<BackdropMedia | null>(null)
+  const swapHdri = useCallback(
+    (next: BackdropMedia | null) =>
+      setHdri((prev) => {
         releaseBackdrop(prev)
         return next
       }),
@@ -2727,14 +2746,30 @@ export default function Lab() {
     if (input) input.accept = dome ? DOME_ACCEPT : BACKDROP_ACCEPT
     input?.click()
   }
+  /** The HDRI. Its own input, because its accept list is one extension and
+   *  sharing the background's would offer .hdr in slots that cannot use it. */
+  const hdriInput = useRef<HTMLInputElement | null>(null)
+  const pickHdri = () => hdriInput.current?.click()
+  const onHdriPicked = useCallback(
+    async (file: File | undefined) => {
+      if (!file) return
+      try {
+        swapHdri(await probeBackdrop(file))
+      } catch (e) {
+        setUpload({ kind: "notice", message: e instanceof Error ? e.message : String(e) })
+      }
+    },
+    [swapHdri],
+  )
   const onBgImagePicked = useCallback(
     async (file: File | undefined) => {
       if (!file) return
       try {
-        // An HDRI is radiance, and only the in-canvas 360 dome can show it —
-        // the flat backdrop is a DOM <img>, which cannot decode it.
-        if (/\.hdr$/i.test(file.name) && !bgImageIsDome.current) {
-          setUpload({ kind: "notice", message: "An .hdr is a 360\u00b0 world \u2014 use it as the 360 background." })
+        // An .hdr belongs to the World slot, whichever of these two you dropped
+        // it on. It is radiance — what LIGHTS the scene — and neither of these
+        // rows lights anything.
+        if (/\.hdr$/i.test(file.name)) {
+          setUpload({ kind: "notice", message: t.upload.hdrIsWorld })
           return
         }
         // The dome is sampled as an equirect still. A moving one is its own
@@ -2786,8 +2821,54 @@ export default function Lab() {
         const packed = bundleFile(track.url)
         if (packed) setMusicFile(packed)
       }
+      // THE HDRI, BEFORE the background — that block ends in an early return,
+      // and anything restored after it would simply not be, for every scene
+      // that happens to have no background image.
+      const sky = scene.assets.hdri
+      if (sky) {
+        try {
+          const packed = bundleFile(sky.url)
+          let file = packed
+          if (!file && servedUrl(sky.url)) {
+            const blob = await (await fetch(sky.url)).blob()
+            file = new File([blob], sky.name, { type: blob.type })
+          }
+          if (file) {
+            const media = await probeBackdrop(file)
+            if (cancelled) releaseBackdrop(media)
+            else swapHdri(media)
+          }
+        } catch {
+          // A missing or undecodable HDRI degrades to a flat world, not a dead
+          // scene — the same bargain the background makes below.
+        }
+      }
       const bg = scene.assets.background
       if (!bg) return
+      // A LOCAL SCENE SAVED BEFORE THE SPLIT put its HDRI in the skybox slot,
+      // because that slot took either. Nothing central can patch those — they
+      // live in one browser — so they are moved on the way in, once: the next
+      // save writes it to `hdri` and this never fires for that scene again.
+      // Without it the sky simply disappears, since createImageBitmap cannot
+      // decode Radiance.
+      if (bg.kind === "skybox" && /\.hdr$/i.test(bg.asset.name)) {
+        try {
+          const packed = bundleFile(bg.asset.url)
+          let file = packed
+          if (!file && servedUrl(bg.asset.url)) {
+            const blob = await (await fetch(bg.asset.url)).blob()
+            file = new File([blob], bg.asset.name, { type: blob.type })
+          }
+          if (file) {
+            const media = await probeBackdrop(file)
+            if (cancelled) releaseBackdrop(media)
+            else swapHdri(media)
+          }
+        } catch {
+          // Same bargain as below: a slot that will not resolve is empty.
+        }
+        return
+      }
       try {
         const packed = bundleFile(bg.asset.url)
         let file = packed
@@ -2810,7 +2891,7 @@ export default function Lab() {
     return () => {
       cancelled = true
     }
-  }, [ready, scene, bundleFile, setMusicFile, swapBgImage])
+  }, [ready, scene, bundleFile, setMusicFile, swapBgImage, swapHdri])
 
   // noteAppliedWgsl is the WGSL editor's half of the bargain: the editor
   // compiles straight to the engine for its live preview, and telling the sync
@@ -2826,6 +2907,7 @@ export default function Lab() {
     backgroundEffects: bgEffects,
     hasBackdrop: !!bgImage && !bgImage.dome,
     skybox: bgImage?.dome ? bgImage.file : null,
+    hdri: hdri?.file ?? null,
     exportBackground: framing.liveBackground,
     // Who an effect that declares a dissolve is about — the cast in order, so
     // the first of them is the engine's subject 0.
@@ -4249,6 +4331,7 @@ export default function Lab() {
     // One slot, two kinds: swapping a flat image for a 360 of the same name is
     // still a different scene, so the kind travels in the fingerprint.
     bgImage ? `${bgImage.dome ? "skybox" : "backdrop"}:${bgImage.name}` : "",
+    hdri ? `hdri:${hdri.name}` : "",
     // Cards, by id AND name: two uploads of the same picture are two cards, and
     // removing one has to move this or the bundle keeps the file it no longer
     // wears. Ids are minted per upload, so the pair is unique per card.
@@ -4314,6 +4397,9 @@ export default function Lab() {
         audio: { name: musicClip?.name ?? null, url: musicClip?.url ?? null },
         midi: { name: midiClip, booted: scene.assets.midi },
         lyrics: { name: lyricsClip, booted: scene.assets.lyrics },
+        // The HDRI, from its own slot. It packs beside the background rather
+        // than instead of it — one lights, the other shows.
+        hdri: hdri?.file && hdri.name ? { name: hdri.name, file: hdri.file } : null,
       planes: planes.flatMap((p) => {
         const file = sceneFiles.planes.get(p.id)
         // A card whose bytes are gone cannot be packed, and packing a path to
@@ -4338,6 +4424,7 @@ export default function Lab() {
       midiClip,
       lyricsClip,
       bgImage,
+      hdri,
       // Every slot this reads has to be here. It is a useCallback, so one left
       // out is not a stale value that catches up — it is the FIRST render's
       // value, forever: cards were collected from the empty array this mounted
@@ -4392,6 +4479,7 @@ export default function Lab() {
             midi: slots.midi,
             lyrics: slots.lyrics,
             background: slots.background,
+            hdri: slots.hdri,
             // The cards. Listing these fields by hand is exactly how the
             // track's companions once went missing — packed into the bundle and
             // then left out of the record naming them, so the bytes were there
@@ -4622,6 +4710,7 @@ export default function Lab() {
         midi: slots.midi,
         lyrics: slots.lyrics,
         background: slots.background,
+        hdri: slots.hdri,
         bundle,
         name: sceneName,
         camera,
@@ -5275,6 +5364,18 @@ export default function Lab() {
           const file = e.target.files?.[0]
           e.target.value = ""
           void onBgImagePicked(file)
+        }}
+      />
+
+      <input
+        ref={hdriInput}
+        type="file"
+        accept={HDRI_ACCEPT}
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          e.target.value = ""
+          void onHdriPicked(file)
         }}
       />
 
@@ -6156,29 +6257,47 @@ export default function Lab() {
                             a compact inline action, not a hover reserve — one
                             always-relevant button does not earn 48px of blank
                             right margin that breaks the column.
-                            Two rows, one slot: filling either empties the other,
-                            so the kind is something you SAY, never something the
-                            app guesses from the file. */}
+                            Image and 360° are one slot in two rows: filling
+                            either empties the other, so the kind is something
+                            you SAY, never something the app guesses from the
+                            file.
+
+                            WORLD IS NOT ONE OF THEM. Those two answer "what is
+                            behind the scene" and only one can be; this answers
+                            "what is lighting it", which is true at the same
+                            time as either. They shared the 360 row and were
+                            told apart by file extension, so a studio HDRI and a
+                            chosen sky were mutually exclusive for no reason but
+                            the plumbing. */}
                         {(
                           [
                             {
-                              dome: false,
+                              slot: "flat",
                               label: t.lab.ctl.image,
                               kind: t.lab.kinds.backgroundImage,
                               upload: t.lab.uploadImage,
                             },
-                            // Its own invite: the two slots take different
-                            // things, and one label for both had the 360 row
+                            // Its own invite: the slots take different things,
+                            // and one label for all of them had the 360 row
                             // offering "media" for a slot that takes a still.
                             {
-                              dome: true,
+                              slot: "dome",
                               label: t.lab.ctl.dome,
                               kind: t.lab.kinds.background360,
                               upload: t.lab.uploadSkybox,
                             },
+                            {
+                              slot: "world",
+                              label: t.lab.ctl.world,
+                              kind: t.lab.kinds.world,
+                              upload: t.lab.uploadHdri,
+                            },
                           ] as const
                         ).map((row) => {
-                          const filled = bgImage && bgImage.dome === row.dome ? bgImage : null
+                          const isWorld = row.slot === "world"
+                          const filled = isWorld ? hdri : bgImage && bgImage.dome === (row.slot === "dome") ? bgImage : null
+                          const pick = () => (isWorld ? pickHdri() : pickBgImage(row.slot === "dome"))
+                          const clear = () => (isWorld ? swapHdri(null) : swapBgImage(null))
                           return (
                             <div key={row.label} className="mt-2.5 flex h-5 min-w-0 items-center gap-2">
                               <span className="shrink-0 text-xs">{row.label}</span>
@@ -6196,21 +6315,21 @@ export default function Lab() {
                                     icon={Upload}
                                     compact
                                     label={t.lab.aria.replace(row.kind)}
-                                    onClick={() => pickBgImage(row.dome)}
+                                    onClick={pick}
                                   />
                                   <CastAction
                                     icon={X}
                                     danger
                                     compact
                                     label={t.lab.aria.remove(row.kind)}
-                                    onClick={() => swapBgImage(null)}
+                                    onClick={clear}
                                   />
                                 </>
                               ) : (
                                 <span className="ml-auto flex min-w-0 justify-end">
                                   <UploadInvite
                                     label={row.upload}
-                                    onClick={() => pickBgImage(row.dome)}
+                                    onClick={pick}
                                     aria={t.lab.aria.upload(row.kind)}
                                     className="text-right text-xs"
                                   />

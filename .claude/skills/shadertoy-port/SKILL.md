@@ -135,7 +135,7 @@ pictures. Matching within ~10% is the bar.
   rings and oil-slick swirls once `x` reaches six figures — which world
   coordinates do immediately. Use a sine-free hash.
 - **Jitter amplitude.** A dither of a whole march step is right at the original's
-  resolution and slice count. At `@fullres`, feeding the shadow march too, it is
+  resolution and slice count. At full resolution, feeding the shadow march too, it is
   a speckle over the whole effect rather than a dither along its contours. Half a
   step still breaks the banding.
 - **The reference's boundary may be hidden by its own scenery.** Dry Ice's buffer
@@ -149,14 +149,18 @@ pictures. Matching within ~10% is the bar.
 Read `node_modules/reze-engine/src/shaders/passes/sim.ts` and `composite.ts` for
 the current truth. In brief:
 
-- `// @sim N` gives one `rgba16float` grid, ping-ponged, stepped once per frame
+- `#sim N` gives one `rgba16float` grid, ping-ponged, stepped once per frame
   by `fn simStep(uv, prev, dt) -> vec4f`. Four channels, that is all — a solve
   needing more passes has to fit in one, or be reformulated.
 - `rzSimFrame() == 0` is the only chance to seed. `dt` is clamped to 0.1.
-- `// @fullres` when the effect's ALPHA has a hard edge (reading scene depth
-  gives it one); otherwise the field pass runs at half res.
-- `// @anchor <bone>` per slot, `trail` only if you need the path — `rzAnchor`
+- Field mounts run at FULL resolution by default. `#halfres` opts out, and is
+  right for anything soft. Do not declare it when the effect's ALPHA has a hard
+  edge — reading scene depth gives it one along every silhouette.
+- `#anchor <bone>` per slot, `trail` only if you need the path — `rzAnchor`
   already gives pos/vel/fwd, which is what an emitter wants.
+- Directives are SYNTAX, not comments: `#tag args`, one per line at the top,
+  parsed and stripped by the engine, with a line-numbered error for anything it
+  does not recognise. Text after a `—` or `//` on the same line is a note.
 - `fn foreground(ray, uv, time, depth)` returns display-space sRGB + straight
   alpha; `depth` is the scene's, in metres along the view axis.
 - The whole effect file is spliced into *every* module it has a mount in, so

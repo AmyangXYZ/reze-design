@@ -480,32 +480,51 @@ Neutral 停两秒，这次调色是否值得保留便一目了然。其二，**�
 
 ### 声明你需要的东西
 
-文件顶部的注释，每行一条。它们是契约的一部分，不是说明文字：
+文件顶部以 `#` 开头的行，每行一条：
 
 ```wgsl
-// @anchor 頭              按名字要一根骨骼   -> rzAnchor(subject, 0)
-// @anchor 左手首 trail    ……并保留它的轨迹   -> rzTrail(subject, 1, i)
-// @particles 4096         粒子池大小，配合粒子挂载点
-// @blend additive         粒子叠加发光，而不是覆盖
-// @bloom                  粒子进入辉光金字塔
-// @fullres                场挂载点按全分辨率运行
-// @layer additive         场本身叠加发光，而不是覆盖
-// @lights 4               光源槽位数，配合 fn lightEmit
-// @grid 768               模拟网格分辨率，配合 fn gridStep
+#anchor 頭              按名字要一根骨骼   -> rzAnchor(subject, 0)
+#anchor 左手首 trail    ……并保留它的轨迹   -> rzTrail(subject, 1, i)
+#particles 4096         粒子池大小，配合粒子挂载点
+#blend additive         粒子叠加发光，而不是覆盖
+#bloom                  粒子进入辉光金字塔
+#halfres                场挂载点按半分辨率运行
+#layer additive         场本身叠加发光，而不是覆盖
+#lights 4               光源槽位数，配合 fn lightEmit
+#grid 768               模拟网格分辨率，配合 fn gridStep
+#param float speed 1.0 0 4    一个旋钮，界面会据此生成滑块
+#duration 3.0           一次触发持续多久，单位秒
 ```
 
-**`@layer additive` 是新特效最常需要、也最常漏掉的一条。** 默认按 alpha-over
+它们是**语法，不是注释**。引擎会解析它们、在编译前剥掉，遇到不认识的还会带行号
+报错。同一行里 `—` 或 `//` 之后的内容是写给你自己看的备注，会被忽略，所以一条声明
+可以自己解释自己。
+
+它们过去写作 `// @anchor`——长得像散文，行为也像：其中一个读取器锚定在行尾，于是
+`// @fullres — 备注` 什么也没声明，三个内置特效因此软了好几个月，而且没有任何提示。
+现在写错的 `#` 行会变成一条你能读懂的报错。
+
+**`#layer additive` 是新特效最常需要、也最常漏掉的一条。** 默认按 alpha-over
 合成，这对有实体的东西是对的——烟、雾、画出来的天空；对"光"就是错的，而且两道
 辉光一交叉就立刻看得出来：后画的那道会遮住先画的，于是第二道闪电在第一道上打了
-个洞。十五个内置特效里有七个声明了它。如果你画的是光而不是物质，你也应该声明。
+个洞。内置特效里有七个声明了它。如果你画的是光而不是物质，你也应该声明。
 
-`@anchor` 的槽位就是**声明顺序**——第一条是槽位 0。模型有的骨骼都能用，遇到写法
+`#anchor` 的槽位就是**声明顺序**——第一条是槽位 0。模型有的骨骼都能用，遇到写法
 不同的模型 `.valid` 会是 false。一定要判断，否则你的手部特效会在半数模型上画到
 世界原点去。
 
-`@fullres` 开销翻倍，换来亚像素级的细节。发丝般的细线、细环、扫描线需要它；烟、
-辉光、翻滚的噪声不需要——双线性上采样本来就能免费带出这些，这正是默认半分辨率的
-意义。
+`#halfres` 是**退出项**：场挂载点默认按全分辨率运行，除非你这么写。半分辨率只花
+四分之一的像素，适合一切柔和的东西——烟、辉光、翻滚的噪声，上采样都带得动。决定
+它的不是特效看起来有多柔，而是它的 **alpha** 上有没有硬边：一个拿 `depth` 做比较
+的前景，在场景里每一条轮廓线上都有硬边，半分辨率下那条边会以锯齿的形式爬上角色。
+
+`#duration` 表示这个特效是一次**命中**——它有自己的起落，而这是一次触发的长度。
+声明了它，把特效丢到时间轴上就会得到一条长度已经对了的片段，就像一段素材自带时长。
+不声明就是**环境**类：雨、星、雾——是场景所处的状态，而不是某一刻发生的事。
+
+`#param` 暴露一个旋钮：`#param float 名字 默认值 最小 最大`，或者
+`#param color 名字 r g b`，界面据此生成控件——所以面板给出的和着色器读到的不可能
+对不上，改一个值也不必再 fork 一份特效。
 
 ### 契约
 
@@ -691,7 +710,7 @@ fn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f {
 特效可以把光送进**着色**里，而不只是往画面上糊像素。声明槽位数，然后填满它们：
 
 ```wgsl
-// @lights 4
+#lights 4
 
 fn lightEmit(i: u32, time: f32) -> RzLight {
   var l: RzLight;
@@ -703,7 +722,7 @@ fn lightEmit(i: u32, time: f32) -> RzLight {
 }
 ```
 
-每帧对每个槽位调用一次。数量与函数成对出现——只写其中一个是编译错误，`@lights`
+每帧对每个槽位调用一次。数量与函数成对出现——只写其中一个是编译错误，`#lights`
 的上限由引擎决定。
 
 `intensity = 0` 会把这个槽位整个撤掉，这正是爆发类特效便宜的原因：烟花在两次绽放
@@ -719,7 +738,7 @@ fn lightEmit(i: u32, time: f32) -> RzLight {
 实例化绘制把它们画上屏幕。
 
 ```wgsl
-// @particles 4096
+#particles 4096
 fn particleInit(i: u32, seed: f32) -> Particle    // 一颗新粒子
 fn particleStep(p: Particle, dt: f32) -> Particle // 一帧的运动
 fn particleShade(p: Particle, uv: vec2f) -> vec4f // 它的公告板，uv 0–1
@@ -737,7 +756,7 @@ fn particleShade(p: Particle, uv: vec2f) -> vec4f // 它的公告板，uv 0–1
 两个函数，作用在每一根用 `trail` 声明过的骨骼的记录轨迹上：
 
 ```wgsl
-// @anchor 右手首 trail
+#anchor 右手首 trail
 fn trailWidth(u: f32, age: f32) -> f32                                  // 像素
 fn trailShade(u: f32, v: f32, age: f32, weight: f32, slot: i32) -> vec4f
 ```
@@ -754,7 +773,7 @@ fn trailShade(u: f32, v: f32, age: f32, weight: f32, slot: i32) -> vec4f
 特效自己所有的纹理，每帧步进一次，每一帧读上一帧。
 
 ```wgsl
-// @grid 768
+#grid 768
 
 fn gridStep(uv: vec2f, prev: vec4f, dt: f32) -> vec4f {
   if (rzGridFrame() == 0) { return vec4f(0.0); }   // 第 0 帧是你的初值
@@ -845,7 +864,7 @@ fn gridStep(uv: vec2f, prev: vec4f, dt: f32) -> vec4f {
 | *Hand Ribbon* | 沿骨骼记录轨迹的飘带，在自己的图层里 MAX 混合 |
 | *Footprints* | 在**世界**空间读轨迹：从脚停止下降的那一刻推断出落地，每个落点上立起一根沿射线积分的光柱 |
 | *Vyke's Dragonbolt* | 缠在四肢上的电弧——屏幕空间的路径却带着真实深度，所以每个环有一半从身后绕过去；外加两级剔除 |
-| *Summoning Circle* | 用射线与锁定骨骼所在的水平面求交把图案画下去，手写深度测试，线宽以实测像素为单位——改一行 `@anchor` 就从脚下移到掌下 |
+| *Summoning Circle* | 用射线与锁定骨骼所在的水平面求交把图案画下去，手写深度测试，线宽以实测像素为单位——改一行 `#anchor` 就从脚下移到掌下 |
 | *Stage Lights* | 在自己的圆柱里推进的体积光束，由带阻尼的跟随瞄准 |
 | *Waveform* | 音频接口驱动一个移植过来的 Shadertoy 可视化 |
 | *Shining Stars* | 哈希网格场 |
