@@ -22,12 +22,14 @@ import { aeScript, type CastSample, type ShotSample } from "./ae-script"
  * MMD units to AE pixels.
  *
  * A free parameter — scale the camera and everything it looks at by the same
- * number and the projection is unchanged, because the lens comes from the
- * comp's height rather than from the world. 10 puts a ~20-unit MMD figure at
- * 200px, which is a workable size to drop AE layers against and is what the
- * old converter's default lands near.
+ * number and the projection is unchanged, because the lens comes from the comp's
+ * height rather than from the world. It is 1 because that is what MMD2AE writes:
+ * its dialog offers a VMD file, a comp size, a pixel aspect and a rate, and
+ * nothing else, so an AE project built around it reads one MMD unit as one AE
+ * pixel. A rig at any other scale is correct and still will not line up beside
+ * the nulls a decade of those projects already contain.
  */
-const AE_SCALE = 10
+const AE_SCALE = 1
 
 export type ExportAudioSource = "music" | "none"
 
@@ -69,16 +71,6 @@ export type ExportSettings = {
   audioSource: ExportAudioSource
   /** Draw the Reze Design wordmark bottom-right. */
   watermark: boolean
-  /**
-   * Also write an After Effects script for this render.
-   *
-   * The shot and the cast, keyed frame for frame, in a comp built from this
-   * export's own width, height, rate and length. Read INSIDE the render loop
-   * rather than sampled from the camera clip afterwards — whatever actually
-   * drove the shot is what lands in the script, and there is no second opinion
-   * to disagree with the file.
-   */
-  aeScript: boolean
   background: ExportBackground
   target: ExportTarget
 }
@@ -86,15 +78,14 @@ export type ExportSettings = {
 export type ExportResult = {
   /** Buffered output, when nothing was streamed straight to disk. */
   blob: Blob | null
-  /** The After Effects script, when one was asked for. */
-  ae: string | null
   /** Bytes produced, where this side of the handoff can count them: a sequence
    *  writer knows its own total, and a buffered muxer has the blob. Streamed
    *  output is 0 — the caller holds the file handle and asks the file. */
   bytes: number
 }
 
-export type ExportPhase = "audio" | "video"
+/** "shot" walks the frames without encoding any — the AE-script pass. */
+export type ExportPhase = "audio" | "video" | "shot"
 
 export type ExportProgress = {
   phase: ExportPhase
@@ -108,8 +99,24 @@ export type ExportProgress = {
 
 /** Physics settle time at pose 0 before capture starts (frames at export fps). */
 const WARMUP_FRAMES = 30
+/** How big the frames of an AE-script pass are drawn. Nothing reads them — see
+ *  exportAeScript — so this is only large enough that a scene which reacts to
+ *  its own resolution is not asked something absurd. */
+const SHOT_LONG_SIDE = 256
 /** Yield to the event loop every N frames so the progress UI stays alive. */
 const YIELD_EVERY = 3
+/**
+ * How often a loop that awaits nothing else stops for the UI to catch up.
+ *
+ * scheduler.yield() resumes AHEAD of ordinary tasks — the property that makes it
+ * the right yield for throughput and the wrong one for painting, because React's
+ * own work is an ordinary task and a loop yielding that way starves it. The
+ * video loop never noticed: it awaits the encoder every frame, and that is a
+ * real task boundary. The AE-script loop awaits nothing at all, so it takes a
+ * boundary on the clock — ten times a second, which is more often than a
+ * progress bar can say anything new and costs a clamped timer each.
+ */
+const PAINT_EVERY_MS = 100
 
 /**
  * Hand the frame back to the browser so the progress bar can paint.
@@ -654,26 +661,6 @@ export async function exportVideo(opts: {
   const cast = [model, ...extras]
   if (target === "png" && !opts.directory) throw new Error("No destination folder")
 
-  // Where the shot is collected, or null when nobody asked for it. Allocated
-  // up front so the render loop's branch is a null check rather than a settings
-  // lookup per frame.
-  //
-  // 全ての親 is the bone a whole MMD figure hangs from — the same one camera
-  // follow targets by default — so a null on it is where the character IS,
-  // which is what a compositor wants to attach something to. The model's root
-  // transform is where you PUT her, and it does not move.
-  const shot: {
-    camera: ShotSample[]
-    cast: { id: string; name: string; bone: string; samples: CastSample[] }[]
-  } | null = settings.aeScript
-    ? {
-        camera: [],
-        cast: [modelName, ...(opts.extraModelNames ?? [])]
-          .filter((n) => engine.getModel(n))
-          .map((n) => ({ id: n, name: n, bone: "全ての親", samples: [] })),
-      }
-    : null
-
   // ── Audio, decoded up-front (the muxer interleaves it) ──
   const progress = (p: ExportProgress) => opts.onProgress?.(p)
   progress({ phase: "audio", frame: 0, total, encodeFps: 0, etaSeconds: 0 })
@@ -813,36 +800,6 @@ export async function exportVideo(opts: {
       engine.setMidiTime(startTime + t)
       engine.renderFrame(i === 0 ? 0 : 1 / fps)
 
-      // THE SHOT, AFTER THE FRAME IS BUILT AND BEFORE ANYTHING ELSE TOUCHES IT.
-      //
-      // Here, and not from the camera clip afterwards, because a clip is only
-      // one of the things that can move this camera: a follow, a framing
-      // override, an orbit the person left it on. Read in the loop, the script
-      // describes the video. Read from the VMD, it describes a video that would
-      // have been rendered if nothing else had a say — and the two part company
-      // silently, which is the worst way for a compositing tool to be wrong.
-      if (shot) {
-        const p = engine.getCameraPose()
-        shot.camera.push({
-          target: [p.target.x, p.target.y, p.target.z],
-          rotation: [p.rotation.x, p.rotation.y, p.rotation.z],
-          distance: p.distance,
-          fov: p.fov,
-        })
-        for (const m of shot.cast) {
-          const model = engine.getModel(m.id)
-          // Model space out of the bone, so the model's own placement composes
-          // on top — a character standing at the origin is the common case and
-          // exactly the one that would hide this if it were skipped.
-          const b = model?.getBoneWorldPosition(m.bone) ?? null
-          const at = model?.position
-          m.samples.push({
-            position: b && at ? [b.x + at.x, b.y + at.y, b.z + at.z] : [0, 0, 0],
-            rotation: [0, 0, 0],
-          })
-        }
-      }
-
       // From here to the end of this iteration: no await before the canvas has
       // been consumed.
       if (ctx) {
@@ -862,25 +819,7 @@ export async function exportVideo(opts: {
     }
 
     const blob = await sink.finish()
-    return {
-      blob,
-      bytes: sink.bytes() ?? blob?.size ?? 0,
-      // Built from the SAME numbers the video was: the comp's size, rate and
-      // length all come from this export rather than from anything the person
-      // has to keep in step.
-      ae: shot
-        ? aeScript({
-            width,
-            height,
-            fps,
-            frames: shot.camera.length,
-            startTime,
-            camera: shot.camera,
-            cast: shot.cast.map((m) => ({ name: m.name, samples: m.samples })),
-            scale: AE_SCALE,
-          })
-        : null,
-    }
+    return { blob, bytes: sink.bytes() ?? blob?.size ?? 0 }
   } catch (e) {
     await sink?.cancel()
     throw e
@@ -898,4 +837,137 @@ export async function exportVideo(opts: {
     if (prior.playing) for (const m of cast) m.play()
     engine.runRenderLoop()
   }
+}
+
+/**
+ * The 3D space of the shot, as an After Effects script — its own pass.
+ *
+ * NOT a by-product of the render, which is what it used to be. The two answer
+ * different questions and take wildly different amounts of time: adjusting a
+ * camera and looking at the comp again is a thing you do ten times in an hour,
+ * and paying for a 4K encode each time is the reason nobody did.
+ *
+ * The engine is still stepped ONE EXACT FRAME AT A TIME, and the pose is read
+ * out of the loop, because a camera clip is only one of the things that can move
+ * this camera — a follow, a framing override, an orbit left running. The frames
+ * are drawn at a fraction of the export's size: nothing here reads a pixel, and
+ * the pose does not depend on how many of them there are. The ASPECT is kept,
+ * for the parts of a scene that do.
+ *
+ * 全ての親 is the bone a whole MMD figure hangs from — the same one camera follow
+ * targets by default — so a null on it is where the character IS, which is what
+ * a compositor wants to attach something to. The model's root transform is where
+ * you PUT her, and it does not move.
+ */
+export async function exportAeScript(opts: {
+  engine: Engine
+  canvas: HTMLCanvasElement
+  modelName: string
+  extraModelNames?: string[]
+  /** Segment start on the clip's timeline, seconds. */
+  startTime?: number
+  /** Segment length in seconds. */
+  duration: number
+  /** The comp to build — exactly the video's, so the two cannot be a frame out. */
+  width: number
+  height: number
+  fps: number
+  onProgress?: (p: ExportProgress) => void
+  signal?: AbortSignal
+}): Promise<string> {
+  const { engine, canvas, modelName, duration, width, height, fps } = opts
+  const startTime = Math.max(0, opts.startTime ?? 0)
+  const total = Math.max(1, Math.round(duration * fps))
+  const model = engine.getModel(modelName)
+  if (!model) throw new Error("No model loaded")
+  const extras = (opts.extraModelNames ?? [])
+    .map((n) => engine.getModel(n))
+    .filter((m): m is NonNullable<typeof m> => !!m)
+  const cast = [model, ...extras]
+
+  const camera: ShotSample[] = []
+  const members = [modelName, ...(opts.extraModelNames ?? [])]
+    .filter((n) => engine.getModel(n))
+    .map((n) => ({ id: n, name: n, samples: [] as CastSample[] }))
+
+  const prior = model.getAnimationProgress()
+  engine.stopRenderLoop()
+  const prevW = canvas.width
+  const prevH = canvas.height
+  const shrink = Math.max(1, Math.max(width, height) / SHOT_LONG_SIDE)
+  try {
+    engine.setRenderSize(Math.max(2, Math.round(width / shrink)), Math.max(2, Math.round(height / shrink)))
+    for (const m of cast) {
+      m.pause()
+      m.seek(startTime)
+    }
+    engine.resetPhysics()
+    engine.setAudioTime(startTime)
+    engine.setMidiTime(startTime)
+    // No progress through the settle: with none reported the panel says it is
+    // preparing, which is what it is doing. A frame 0 with an ETA of zero would
+    // be a number, and the number would be wrong.
+    for (let i = 0; i < WARMUP_FRAMES; i++) engine.renderFrame(1 / fps)
+    for (const m of cast) m.play()
+
+    const started = performance.now()
+    let painted = 0
+    for (let i = 0; i < total; i++) {
+      if (opts.signal?.aborted) throw new DOMException("Export canceled", "AbortError")
+      const t = i / fps
+      engine.setAudioTime(startTime + t)
+      engine.setMidiTime(startTime + t)
+      engine.renderFrame(i === 0 ? 0 : 1 / fps)
+
+      const p = engine.getCameraPose()
+      camera.push({
+        target: [p.target.x, p.target.y, p.target.z],
+        rotation: [p.rotation.x, p.rotation.y, p.rotation.z],
+        distance: p.distance,
+        fov: p.fov,
+      })
+      for (const m of members) {
+        const sub = engine.getModel(m.id)
+        // Model space out of the bone, so the model's own placement composes on
+        // top — a character standing at the origin is the common case and
+        // exactly the one that would hide this if it were skipped.
+        const b = sub?.getBoneWorldPosition("全ての親") ?? null
+        const at = sub?.position
+        m.samples.push({
+          position: b && at ? [b.x + at.x, b.y + at.y, b.z + at.z] : [0, 0, 0],
+          rotation: [0, 0, 0],
+        })
+      }
+
+      const now = performance.now()
+      if (now - painted >= PAINT_EVERY_MS || i === total - 1) {
+        painted = now
+        const rate = (i + 1) / Math.max((now - started) / 1000, 1e-3)
+        opts.onProgress?.({ phase: "shot", frame: i + 1, total, encodeFps: rate, etaSeconds: (total - i - 1) / rate })
+        await new Promise<void>((r) => setTimeout(r, 0))
+      } else if (i % YIELD_EVERY === 0) {
+        await yieldToUI()
+      }
+    }
+  } finally {
+    engine.setRenderSize(prevW, prevH)
+    for (const m of cast) {
+      m.pause()
+      m.seek(prior.current)
+    }
+    engine.renderFrame(0)
+    if (prior.playing) for (const m of cast) m.play()
+    engine.runRenderLoop()
+  }
+
+  return aeScript({
+    width,
+    height,
+    fps,
+    frames: camera.length,
+    startTime,
+    camera,
+    cast: members.map((m) => ({ name: m.name, samples: m.samples })),
+    scale: AE_SCALE,
+  })
 }

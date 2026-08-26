@@ -4,7 +4,7 @@
 
 import { memo, useEffect, useRef, useState, type RefObject } from "react"
 import type { Engine } from "reze-engine"
-import { Camera, Clapperboard, Square } from "lucide-react"
+import { Camera, Clapperboard, Film, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Switch } from "@/components/ui/switch"
@@ -18,6 +18,7 @@ import {
 import type { BackdropMedia } from "@/lib/backdrop"
 import {
   captureStill,
+  exportAeScript,
   exportVideo,
   type ExportAudioSource,
   type ExportPlane,
@@ -76,8 +77,8 @@ const QUALITY_LABELS: Record<Quality, string> = { "1080p": "1080p", "1440p": "14
  * putting the panel into a state with no matching option.
  */
 const EXPORT_PREFS_KEY = "reze-design.export"
-type ExportPrefs = { aspect: Aspect; quality: Quality; watermark: boolean; aeScript: boolean }
-const EXPORT_DEFAULTS: ExportPrefs = { aspect: "2.39:1", quality: "4k", watermark: true, aeScript: false }
+type ExportPrefs = { aspect: Aspect; quality: Quality; watermark: boolean }
+const EXPORT_DEFAULTS: ExportPrefs = { aspect: "2.39:1", quality: "4k", watermark: true }
 
 function readExportPrefs(): ExportPrefs {
   if (typeof window === "undefined") return EXPORT_DEFAULTS
@@ -89,7 +90,6 @@ function readExportPrefs(): ExportPrefs {
       aspect: ASPECTS.includes(p.aspect as Aspect) ? (p.aspect as Aspect) : EXPORT_DEFAULTS.aspect,
       quality: QUALITIES.includes(p.quality as Quality) ? (p.quality as Quality) : EXPORT_DEFAULTS.quality,
       watermark: typeof p.watermark === "boolean" ? p.watermark : EXPORT_DEFAULTS.watermark,
-      aeScript: typeof p.aeScript === "boolean" ? p.aeScript : EXPORT_DEFAULTS.aeScript,
     }
   } catch {
     return EXPORT_DEFAULTS
@@ -229,10 +229,6 @@ export const RenderPanel = memo(function RenderPanel({
   const [rangeStart, setRangeStart] = useState("")
   const [rangeEnd, setRangeEnd] = useState("")
   const [watermark, setWatermark] = useState(prefs.watermark)
-  /** Also write the After Effects script beside the video. Off by default —
-   *  most renders are finished work, and a second file nobody asked for is
-   *  clutter in the folder they land in. */
-  const [aeScript, setAeScript] = useState(prefs.aeScript)
   // Session state, not a preference: the mode repaints the live canvas, and
   // finding the viewport keyed green on a fresh load would read as a bug.
   //
@@ -252,8 +248,8 @@ export const RenderPanel = memo(function RenderPanel({
   // Written on change, not on export: someone who sets up a frame and then walks
   // away should find it there next time, whether or not they rendered anything.
   useEffect(() => {
-    writeExportPrefs({ aspect, quality, watermark, aeScript })
-  }, [aspect, quality, watermark, aeScript])
+    writeExportPrefs({ aspect, quality, watermark })
+  }, [aspect, quality, watermark])
 
   const [exporting, setExporting] = useState(false)
   const [progress, setProgressState] = useState<ExportProgress | null>(null)
@@ -268,6 +264,8 @@ export const RenderPanel = memo(function RenderPanel({
     message?: string
     file?: string
     still?: boolean
+    /** The AE composition script rather than a picture. */
+    script?: boolean
     /** A folder of frames rather than a file — the caption counts them. */
     frames?: number
     /** What landed, measured after the fact rather than projected during. */
@@ -350,6 +348,55 @@ export const RenderPanel = memo(function RenderPanel({
       // Back to the viewport's size, which is what the live canvas draws at.
       await rasterLyricsAt?.(canvas.height)
       capturingRef.current = false
+    }
+  }
+
+  /**
+   * The shot's 3D space, as a .jsx After Effects runs to rebuild it.
+   *
+   * ITS OWN BUTTON, not a switch on the render. Adjusting the camera and
+   * looking at the comp again is a thing you do ten times in an hour, and it
+   * used to cost a full encode each time.
+   */
+  const aeScript = async () => {
+    const engine = engineRef.current
+    const canvas = canvasRef.current
+    if (!engine || !canvas || !animName || exporting) return
+    setExporting(true)
+    onExportingChange(true)
+    setResult(null)
+    setProgress(null)
+    const ac = new AbortController()
+    abortRef.current = ac
+    try {
+      const jsx = await exportAeScript({
+        engine,
+        canvas,
+        modelName,
+        extraModelNames,
+        startTime: segStart,
+        duration: segDuration,
+        // The comp is the VIDEO's, whether or not one was rendered — the lens is
+        // in pixels of comp height, so a script built to any other size is a
+        // shot at a different focal length.
+        width,
+        height,
+        fps: VIDEO_FPS,
+        onProgress: setProgress,
+        signal: ac.signal,
+      })
+      const filename = filenameFor("jsx")
+      const blob = new Blob([jsx], { type: "application/javascript" })
+      download(blob, filename)
+      setResult({ ok: true, file: filename, script: true, size: formatBytes(blob.size) })
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === "AbortError"))
+        setResult({ ok: false, message: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setExporting(false)
+      onExportingChange(false)
+      abortRef.current = null
+      setProgress(null)
     }
   }
 
@@ -437,7 +484,6 @@ export const RenderPanel = memo(function RenderPanel({
           fps: VIDEO_FPS,
           audioSource: audioSource ?? (musicUrl ? "music" : "none"),
           watermark: compositing ? false : watermark,
-          aeScript,
           background,
           target,
         },
@@ -462,17 +508,6 @@ export const RenderPanel = memo(function RenderPanel({
           .catch(() => bytes) ?? bytes
       } else if (out.blob) {
         download(out.blob, filename)
-      }
-      // The script, beside the video and named after it, so the pair stay
-      // together in whatever folder they land in. A plain download even when the
-      // video streamed to a picked file: the two are separate files and the
-      // picker only ever chose one of them.
-      if (out.ae) {
-        const stem = (directory ? (pickedName ?? base) : fileStream ? (pickedName ?? filename) : filename).replace(
-          /\.[^.]+$/,
-          "",
-        )
-        download(new Blob([out.ae], { type: "application/javascript" }), `${stem}.jsx`)
       }
       // With a picked file the user chose the name themselves; report the one
       // they picked, not the one we would have generated.
@@ -502,7 +537,8 @@ export const RenderPanel = memo(function RenderPanel({
     }
   }
 
-  const pct = progress && progress.phase === "video" ? Math.round((progress.frame / progress.total) * 100) : 0
+  // No phase test: the audio phase reports frame 0, so it already reads as 0%.
+  const pct = progress && progress.total > 0 ? Math.round((progress.frame / progress.total) * 100) : 0
 
   return (
     <ScrollArea className="min-h-0 flex-1">
@@ -600,17 +636,6 @@ export const RenderPanel = memo(function RenderPanel({
               className="scale-75"
             />
           </Row>
-          {/* The 3D space, for whoever finishes this in AE. It rides the same
-              render rather than being its own tool, so the comp it builds has
-              the video's own size, rate and length and cannot be a frame out. */}
-          <Row label={t.render.aeScript}>
-            <Switch
-              checked={aeScript}
-              onCheckedChange={setAeScript}
-              disabled={exporting}
-              className="scale-75"
-            />
-          </Row>
           {/* Background and container as one choice — see OutputMode. */}
           <Row label={t.render.output}>
             <Select value={mode} onValueChange={(v) => changeMode(v as OutputMode)} disabled={exporting}>
@@ -631,8 +656,24 @@ export const RenderPanel = memo(function RenderPanel({
 
         {/* No section title (the surface hosting this already says Export) and
             no caption lines — the settings above state exactly what the file
-            will be. Two actions, one row: still and video are peers. */}
-        <div className="mt-5 flex">
+            will be.
+
+            The script goes first and quiet: it hands off the 3D space, where the
+            two below make the picture and keep the bottom of the panel. Same
+            disabled rule as Render — it walks the same frames and needs the same
+            clip to walk. */}
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!canRender}
+          onClick={() => void aeScript()}
+          className="mt-5 h-8 w-full gap-1.5 border-line-strong bg-surface-raised text-xs font-medium text-foreground hover:bg-white/5 disabled:opacity-40"
+        >
+          <Film className="size-3.5" />
+          {t.render.aeScript}
+        </Button>
+        {/* Two actions, one row: still and video are peers. */}
+        <div className="mt-2 flex">
           {/* Same framing, one frame. Needs no animation, so it stays available on
               a still scene where Render has nothing to render. */}
           <Button
@@ -678,9 +719,11 @@ export const RenderPanel = memo(function RenderPanel({
               <div className="h-full rounded-full bg-blue-400 transition-[width]" style={{ width: `${pct}%` }} />
             </div>
             <div className="mt-1.5 text-center text-xs text-muted-foreground tabular-nums">
-              {progress?.phase === "video"
-                ? t.render.progressLine(progress.frame, progress.total, fmtEta(progress.etaSeconds))
-                : t.render.preparingAudio}
+              {!progress
+                ? t.render.preparing
+                : progress.phase === "audio"
+                  ? t.render.preparingAudio
+                  : t.render.progressLine(progress.frame, progress.total, fmtEta(progress.etaSeconds))}
             </div>
           </div>
         ) : result ? (
@@ -688,7 +731,10 @@ export const RenderPanel = memo(function RenderPanel({
             {result.ok
               ? result.frames
                 ? t.render.seqDone(result.frames, result.file ?? "", result.size ?? "")
-                : (result.still ? t.render.stillDone : t.render.done)(result.file ?? "", result.size ?? "")
+                : (result.script ? t.render.scriptDone : result.still ? t.render.stillDone : t.render.done)(
+                    result.file ?? "",
+                    result.size ?? "",
+                  )
               : t.render.failed(result.message ?? "")}
           </div>
         ) : null}

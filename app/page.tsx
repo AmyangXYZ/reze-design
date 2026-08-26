@@ -720,7 +720,7 @@ const DOCK_CONTROLS: {
   { id: "watermark", en: "Watermark", zh: "水印", row: "export", keywords: ["logo", "brand"] },
   // "after effects" and "composite" are what someone is thinking when they want
   // this; "jsx" and "camera" are what they will type once they know it exists.
-  { id: "ae-script", en: "AE script", zh: "AE 脚本", row: "export", keywords: ["after effects", "jsx", "composite", "camera", "null", "3d", "合成", "摄像机", "空对象"] },
+  { id: "ae-script", en: "AE composition script", zh: "AE 合成脚本", row: "export", keywords: ["after effects", "jsx", "composite", "camera", "null", "3d", "合成", "摄像机", "空对象"] },
   { id: "gravity", en: "Gravity", zh: "重力", row: "physics", value: (v) => v.settings.physics.gravity.toFixed(0) },
   { id: "wind", en: "Wind", zh: "风", row: "physics", value: (v) => v.settings.physics.wind.toFixed(0) },
   { id: "wind-frequency", en: "Wind frequency", zh: "风频率", row: "physics", value: (v) => dec2(v.settings.physics.windFrequency) },
@@ -2143,7 +2143,7 @@ export default function Lab() {
   const exportZ = useZOrder(exportRaise, exportOpen ? () => setExportOpen(false) : undefined)
   const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null)
   const exportPct =
-    exportProgress && exportProgress.phase === "video" && exportProgress.total > 0
+    exportProgress && exportProgress.total > 0
       ? Math.round((exportProgress.frame / exportProgress.total) * 100)
       : null
 
