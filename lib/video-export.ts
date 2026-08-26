@@ -16,6 +16,18 @@ import type { Engine } from "reze-engine"
 import { coverCrop, openAnimatedImage, type BackdropKind, type BackdropMedia } from "./backdrop"
 import { GREEN, isCompositingBackground, type ExportBackground } from "./export-background"
 import { PngSequenceWriter } from "./png-sequence"
+import { aeScript, type CastSample, type ShotSample } from "./ae-script"
+
+/**
+ * MMD units to AE pixels.
+ *
+ * A free parameter — scale the camera and everything it looks at by the same
+ * number and the projection is unchanged, because the lens comes from the
+ * comp's height rather than from the world. 10 puts a ~20-unit MMD figure at
+ * 200px, which is a workable size to drop AE layers against and is what the
+ * old converter's default lands near.
+ */
+const AE_SCALE = 10
 
 export type ExportAudioSource = "music" | "none"
 
@@ -57,6 +69,16 @@ export type ExportSettings = {
   audioSource: ExportAudioSource
   /** Draw the Reze Design wordmark bottom-right. */
   watermark: boolean
+  /**
+   * Also write an After Effects script for this render.
+   *
+   * The shot and the cast, keyed frame for frame, in a comp built from this
+   * export's own width, height, rate and length. Read INSIDE the render loop
+   * rather than sampled from the camera clip afterwards — whatever actually
+   * drove the shot is what lands in the script, and there is no second opinion
+   * to disagree with the file.
+   */
+  aeScript: boolean
   background: ExportBackground
   target: ExportTarget
 }
@@ -64,6 +86,8 @@ export type ExportSettings = {
 export type ExportResult = {
   /** Buffered output, when nothing was streamed straight to disk. */
   blob: Blob | null
+  /** The After Effects script, when one was asked for. */
+  ae: string | null
   /** Bytes produced, where this side of the handoff can count them: a sequence
    *  writer knows its own total, and a buffered muxer has the blob. Streamed
    *  output is 0 — the caller holds the file handle and asks the file. */
@@ -630,6 +654,26 @@ export async function exportVideo(opts: {
   const cast = [model, ...extras]
   if (target === "png" && !opts.directory) throw new Error("No destination folder")
 
+  // Where the shot is collected, or null when nobody asked for it. Allocated
+  // up front so the render loop's branch is a null check rather than a settings
+  // lookup per frame.
+  //
+  // 全ての親 is the bone a whole MMD figure hangs from — the same one camera
+  // follow targets by default — so a null on it is where the character IS,
+  // which is what a compositor wants to attach something to. The model's root
+  // transform is where you PUT her, and it does not move.
+  const shot: {
+    camera: ShotSample[]
+    cast: { id: string; name: string; bone: string; samples: CastSample[] }[]
+  } | null = settings.aeScript
+    ? {
+        camera: [],
+        cast: [modelName, ...(opts.extraModelNames ?? [])]
+          .filter((n) => engine.getModel(n))
+          .map((n) => ({ id: n, name: n, bone: "全ての親", samples: [] })),
+      }
+    : null
+
   // ── Audio, decoded up-front (the muxer interleaves it) ──
   const progress = (p: ExportProgress) => opts.onProgress?.(p)
   progress({ phase: "audio", frame: 0, total, encodeFps: 0, etaSeconds: 0 })
@@ -769,6 +813,36 @@ export async function exportVideo(opts: {
       engine.setMidiTime(startTime + t)
       engine.renderFrame(i === 0 ? 0 : 1 / fps)
 
+      // THE SHOT, AFTER THE FRAME IS BUILT AND BEFORE ANYTHING ELSE TOUCHES IT.
+      //
+      // Here, and not from the camera clip afterwards, because a clip is only
+      // one of the things that can move this camera: a follow, a framing
+      // override, an orbit the person left it on. Read in the loop, the script
+      // describes the video. Read from the VMD, it describes a video that would
+      // have been rendered if nothing else had a say — and the two part company
+      // silently, which is the worst way for a compositing tool to be wrong.
+      if (shot) {
+        const p = engine.getCameraPose()
+        shot.camera.push({
+          target: [p.target.x, p.target.y, p.target.z],
+          rotation: [p.rotation.x, p.rotation.y, p.rotation.z],
+          distance: p.distance,
+          fov: p.fov,
+        })
+        for (const m of shot.cast) {
+          const model = engine.getModel(m.id)
+          // Model space out of the bone, so the model's own placement composes
+          // on top — a character standing at the origin is the common case and
+          // exactly the one that would hide this if it were skipped.
+          const b = model?.getBoneWorldPosition(m.bone) ?? null
+          const at = model?.position
+          m.samples.push({
+            position: b && at ? [b.x + at.x, b.y + at.y, b.z + at.z] : [0, 0, 0],
+            rotation: [0, 0, 0],
+          })
+        }
+      }
+
       // From here to the end of this iteration: no await before the canvas has
       // been consumed.
       if (ctx) {
@@ -788,7 +862,25 @@ export async function exportVideo(opts: {
     }
 
     const blob = await sink.finish()
-    return { blob, bytes: sink.bytes() ?? blob?.size ?? 0 }
+    return {
+      blob,
+      bytes: sink.bytes() ?? blob?.size ?? 0,
+      // Built from the SAME numbers the video was: the comp's size, rate and
+      // length all come from this export rather than from anything the person
+      // has to keep in step.
+      ae: shot
+        ? aeScript({
+            width,
+            height,
+            fps,
+            frames: shot.camera.length,
+            startTime,
+            camera: shot.camera,
+            cast: shot.cast.map((m) => ({ name: m.name, samples: m.samples })),
+            scale: AE_SCALE,
+          })
+        : null,
+    }
   } catch (e) {
     await sink?.cancel()
     throw e

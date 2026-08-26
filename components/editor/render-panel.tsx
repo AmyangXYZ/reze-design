@@ -76,8 +76,8 @@ const QUALITY_LABELS: Record<Quality, string> = { "1080p": "1080p", "1440p": "14
  * putting the panel into a state with no matching option.
  */
 const EXPORT_PREFS_KEY = "reze-design.export"
-type ExportPrefs = { aspect: Aspect; quality: Quality; watermark: boolean }
-const EXPORT_DEFAULTS: ExportPrefs = { aspect: "2.39:1", quality: "4k", watermark: true }
+type ExportPrefs = { aspect: Aspect; quality: Quality; watermark: boolean; aeScript: boolean }
+const EXPORT_DEFAULTS: ExportPrefs = { aspect: "2.39:1", quality: "4k", watermark: true, aeScript: false }
 
 function readExportPrefs(): ExportPrefs {
   if (typeof window === "undefined") return EXPORT_DEFAULTS
@@ -89,6 +89,7 @@ function readExportPrefs(): ExportPrefs {
       aspect: ASPECTS.includes(p.aspect as Aspect) ? (p.aspect as Aspect) : EXPORT_DEFAULTS.aspect,
       quality: QUALITIES.includes(p.quality as Quality) ? (p.quality as Quality) : EXPORT_DEFAULTS.quality,
       watermark: typeof p.watermark === "boolean" ? p.watermark : EXPORT_DEFAULTS.watermark,
+      aeScript: typeof p.aeScript === "boolean" ? p.aeScript : EXPORT_DEFAULTS.aeScript,
     }
   } catch {
     return EXPORT_DEFAULTS
@@ -228,6 +229,10 @@ export const RenderPanel = memo(function RenderPanel({
   const [rangeStart, setRangeStart] = useState("")
   const [rangeEnd, setRangeEnd] = useState("")
   const [watermark, setWatermark] = useState(prefs.watermark)
+  /** Also write the After Effects script beside the video. Off by default —
+   *  most renders are finished work, and a second file nobody asked for is
+   *  clutter in the folder they land in. */
+  const [aeScript, setAeScript] = useState(prefs.aeScript)
   // Session state, not a preference: the mode repaints the live canvas, and
   // finding the viewport keyed green on a fresh load would read as a bug.
   //
@@ -247,8 +252,8 @@ export const RenderPanel = memo(function RenderPanel({
   // Written on change, not on export: someone who sets up a frame and then walks
   // away should find it there next time, whether or not they rendered anything.
   useEffect(() => {
-    writeExportPrefs({ aspect, quality, watermark })
-  }, [aspect, quality, watermark])
+    writeExportPrefs({ aspect, quality, watermark, aeScript })
+  }, [aspect, quality, watermark, aeScript])
 
   const [exporting, setExporting] = useState(false)
   const [progress, setProgressState] = useState<ExportProgress | null>(null)
@@ -432,6 +437,7 @@ export const RenderPanel = memo(function RenderPanel({
           fps: VIDEO_FPS,
           audioSource: audioSource ?? (musicUrl ? "music" : "none"),
           watermark: compositing ? false : watermark,
+          aeScript,
           background,
           target,
         },
@@ -456,6 +462,17 @@ export const RenderPanel = memo(function RenderPanel({
           .catch(() => bytes) ?? bytes
       } else if (out.blob) {
         download(out.blob, filename)
+      }
+      // The script, beside the video and named after it, so the pair stay
+      // together in whatever folder they land in. A plain download even when the
+      // video streamed to a picked file: the two are separate files and the
+      // picker only ever chose one of them.
+      if (out.ae) {
+        const stem = (directory ? (pickedName ?? base) : fileStream ? (pickedName ?? filename) : filename).replace(
+          /\.[^.]+$/,
+          "",
+        )
+        download(new Blob([out.ae], { type: "application/javascript" }), `${stem}.jsx`)
       }
       // With a picked file the user chose the name themselves; report the one
       // they picked, not the one we would have generated.
@@ -580,6 +597,17 @@ export const RenderPanel = memo(function RenderPanel({
               checked={compositing ? false : watermark}
               onCheckedChange={setWatermark}
               disabled={exporting || compositing}
+              className="scale-75"
+            />
+          </Row>
+          {/* The 3D space, for whoever finishes this in AE. It rides the same
+              render rather than being its own tool, so the comp it builds has
+              the video's own size, rate and length and cannot be a frame out. */}
+          <Row label={t.render.aeScript}>
+            <Switch
+              checked={aeScript}
+              onCheckedChange={setAeScript}
+              disabled={exporting}
               className="scale-75"
             />
           </Row>

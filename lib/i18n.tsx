@@ -271,6 +271,8 @@ const en = {
     capturePng: "Capture PNG",
     range: "Range",
     watermark: "Watermark",
+    /** The toggle that writes the AE script beside the video. */
+    aeScript: "AE script",
     quality: "Quality",
     modes: {
       scene: "Scene · MP4",
@@ -1020,6 +1022,7 @@ const zh: Dictionary = {
     capturePng: "截取 PNG",
     range: "区间",
     watermark: "水印",
+    aeScript: "AE 脚本",
     quality: "质量",
     modes: {
       scene: "场景 · MP4",
