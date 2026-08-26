@@ -128,7 +128,7 @@ import { useBrowseSurface } from "@/hooks/use-browse-surface"
 import { useStoredRect } from "@/hooks/use-stored-rect"
 import { useDockSlot } from "@/hooks/use-dock-slot"
 import { useZOrder } from "@/hooks/use-z-order"
-import { DEFAULT_SCENE, EMPTY_SCENE } from "@/lib/default-scene"
+import { DEFAULT_SCENE, DEMO_SCENE, EMPTY_SCENE } from "@/lib/default-scene"
 import {
   assetsDocOf,
   CAMERA_DEFAULT_FOV,
@@ -4573,7 +4573,7 @@ export default function Lab() {
     // with, so the style you have been working in carries.
     saveLookPref(DEFAULT_LOOK)
     // RESET IS THE DOCUMENT, not the document plus whatever this session
-    // accumulated. Every asset the default scene names is site-served, so a
+    // accumulated. Every asset the curated scene names is fetched, so a
     // retained upload or a local bundle can only be residue — and residue here
     // does not sit quietly: companions pair by NAME, so a .mid or .lrc left in
     // the bundle is re-adopted by the very next load and reads as a reset that
@@ -4590,8 +4590,8 @@ export default function Lab() {
     // standing in a scene that no longer names them.
     clearPlanes()
     void clearLocalBundle()
-    saveSceneAssets(scene.state.id, assetsDocOf(DEFAULT_SCENE.assets))
-    void applyLabScene({ ...DEFAULT_SCENE, state: { ...DEFAULT_SCENE.state, id: scene.state.id } })
+    saveSceneAssets(scene.state.id, assetsDocOf(DEMO_SCENE.assets))
+    void applyLabScene({ ...DEMO_SCENE, state: { ...DEMO_SCENE.state, id: scene.state.id } })
   }
 
   /** Blank: no assets, no effect, no grade, neutral settings — and a NEW identity, so the

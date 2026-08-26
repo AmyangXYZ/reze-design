@@ -185,6 +185,14 @@ export const EMPTY_SCENE_DOC: SceneDoc = {
 
 export const EMPTY_SCENE: Scene = parseSceneDoc(EMPTY_SCENE_DOC, builtinEffect, libraryGraph)
 
+/**
+ * The curated scene: one character, the dance, the track and the look built
+ * around them. What Reset restates, whether or not this build OPENS on it —
+ * "reset to default" names the scene that was designed, and a build that boots
+ * empty still has one.
+ */
+export const DEMO_SCENE: Scene = parseSceneDoc(DEMO_SCENE_DOC, builtinEffect, libraryGraph)
+
 /** The scene this build opens on. */
 export const DEFAULT_SCENE_DOC: SceneDoc = USE_DEFAULT_SCENE ? DEMO_SCENE_DOC : EMPTY_SCENE_DOC
 export const DEFAULT_SCENE: Scene = parseSceneDoc(DEFAULT_SCENE_DOC, builtinEffect, libraryGraph)
