@@ -54,3 +54,6 @@ tools/blender-port/
 
 # Worktrees this tool creates — checkouts, never content.
 .claude/worktrees/
+
+# Research artefacts — measurement outputs (motion×music fit etc.), never shipped.
+/analysis/

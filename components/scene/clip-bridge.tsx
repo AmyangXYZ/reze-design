@@ -300,14 +300,15 @@ export function ClipBridge({
   // Which bone the engine is drawing a gizmo on. Only while an editor is open:
   // a gizmo in a scene nobody is editing is a handle for an edit that has
   // nowhere to go.
+  const gizmoVisible = useClipSelector((s) => s.gizmoVisible)
   useEffect(() => {
     const engine = engineRef.current
     if (!engine) return
-    engine.setSelectedBone(editingModelId, editingModelId ? selectedBone : null)
+    engine.setSelectedBone(editingModelId, editingModelId && gizmoVisible ? selectedBone : null)
     return () => {
       engine.setSelectedBone(null, null)
     }
-  }, [engineRef, editingModelId, selectedBone])
+  }, [engineRef, editingModelId, selectedBone, gizmoVisible])
 
   // ─── THE VIEWPORT ───────────────────────────────────────────────────────
   //

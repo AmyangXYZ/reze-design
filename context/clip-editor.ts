@@ -89,6 +89,10 @@ export interface SelectedKeyframe {
   morph?: string
   frame: number
   channel?: string
+  /** Set when the entry names the camera track. A camera dope column is
+   *  otherwise indistinguishable from a bone column — both are a bare frame —
+   *  and delete/copy have to know which track a frame belongs to. */
+  camera?: boolean
   type: "dope" | "curve"
 }
 
@@ -190,6 +194,13 @@ export type ClipDocState = {
   selectedKeyframes: SelectedKeyframe[]
   cameraTrack: CameraKeyframe[]
   cameraSelected: boolean
+  /** Whether the engine draws the transform gizmo on the selected bone.
+   *  Decoupled from the selection, studio-style: once shown it follows the
+   *  selection from bone to bone instead of needing to be re-summoned. Off by
+   *  default — the gizmo stands between the camera and the model, and reading
+   *  a bone's curves is not a reason to put arrows over the character's face.
+   *  Persisted per browser: an editor preference, not a document fact. */
+  gizmoVisible: boolean
   /** Every bone the MODEL has, not only the ones the clip keys. The dopesheet's
    *  rows are the keyed ones — that is what a channel list means — but keying a
    *  bone for the first time has to be able to name one that has no track yet,
@@ -271,6 +282,7 @@ export type ClipDocActions = {
   commitCamera: Dispatch<SetStateAction<CameraKeyframe[]>>
   replaceCameraTrack: (next: CameraKeyframe[]) => void
   setCameraSelected: Dispatch<SetStateAction<boolean>>
+  setGizmoVisible: Dispatch<SetStateAction<boolean>>
   /** Filled from the engine when a model opens for editing. Not undoable and
    *  not part of the document — it describes the RIG, not the clip. */
   setRig: (boneNames: string[], morphNames: string[]) => void
@@ -286,6 +298,15 @@ type ClipDocStore = {
   actions: ClipDocActions
 }
 
+const GIZMO_PREF_KEY = "reze-design:gizmo-visible"
+const readGizmoPref = (): boolean => {
+  try {
+    return typeof window !== "undefined" && localStorage.getItem(GIZMO_PREF_KEY) === "1"
+  } catch {
+    return false
+  }
+}
+
 const EMPTY_DOC: ClipDocState = {
   clip: null,
   modelId: null,
@@ -295,6 +316,7 @@ const EMPTY_DOC: ClipDocState = {
   selectedKeyframes: [],
   cameraTrack: [],
   cameraSelected: false,
+  gizmoVisible: readGizmoPref(),
   boneNames: [],
   morphNames: [],
   // A key BONE_GROUPS actually has — "all" matched nothing, so the picker
@@ -359,6 +381,7 @@ function createClipDocStore(): ClipDocStore {
           loadRevision: state.loadRevision + 1,
           cameraTrack: state.cameraTrack,
           tab: state.tab,
+          gizmoVisible: state.gizmoVisible,
         })
         return
       }
@@ -400,6 +423,14 @@ function createClipDocStore(): ClipDocStore {
       set({ ...state, cameraTrack: sorted })
     },
     setCameraSelected: (payload) => update("cameraSelected", payload),
+    setGizmoVisible: (payload) => {
+      const next = resolve(payload, state.gizmoVisible)
+      if (next === state.gizmoVisible) return
+      try {
+        localStorage.setItem(GIZMO_PREF_KEY, next ? "1" : "0")
+      } catch {}
+      set({ ...state, gizmoVisible: next })
+    },
     setRig: (boneNames, morphNames) => {
       // Compared by content, not identity: this is refreshed from a per-frame
       // watcher, and a new array every frame would notify every subscriber

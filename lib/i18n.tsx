@@ -486,6 +486,15 @@ const en = {
       delete: "Delete",
       simplify: "Simplify",
       clear: "Clear",
+      sel: "Sel",
+      copy: "Copy",
+      cut: "Cut",
+      paste: "Paste",
+      gizmo: "Gizmo",
+      gizmoVisibleState: "Visible",
+      gizmoHiddenState: "Hidden",
+      gizmoShowHint: "Show the transform gizmo on the selected bone",
+      gizmoHideHint: "Hide the transform gizmo",
       /**
        * Every channel name that is a WORD, keyed by the English it replaces —
        * one lookup shared by the timeline's tabs, the interpolation tabs and the
@@ -1218,6 +1227,15 @@ const zh: Dictionary = {
       delete: "删除",
       simplify: "简化",
       clear: "清空",
+      sel: "选区",
+      copy: "复制",
+      cut: "剪切",
+      paste: "粘贴",
+      gizmo: "手柄",
+      gizmoVisibleState: "显示",
+      gizmoHiddenState: "隐藏",
+      gizmoShowHint: "在选中骨骼上显示变换手柄",
+      gizmoHideHint: "隐藏变换手柄",
       labels: {
         Weight: "权重",
         Rotation: "旋转",

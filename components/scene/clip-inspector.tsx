@@ -506,6 +506,39 @@ function InterpolationPanel({
   )
 }
 
+/** Studio's gizmo toggle, ported: pressed-state colouring, and the label names
+ *  the STATE rather than the action — a "Hide" that becomes "Show" reads as a
+ *  command and leaves you guessing which word describes right now. The setting
+ *  is global and persisted; once on, the gizmo follows the selection. */
+function GizmoRow() {
+  const t = useT()
+  const gizmoVisible = useClipSelector((st) => st.gizmoVisible)
+  const { setGizmoVisible } = useClipActions()
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="w-9 shrink-0 text-[10px] tracking-wider text-muted-foreground uppercase">
+        {t.lab.timeline.gizmo}
+      </span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="xs"
+        aria-pressed={gizmoVisible}
+        onClick={() => setGizmoVisible((v) => !v)}
+        title={gizmoVisible ? t.lab.timeline.gizmoHideHint : t.lab.timeline.gizmoShowHint}
+        className={cn(
+          "h-5 flex-1 rounded-chip border px-1 text-[11px]",
+          gizmoVisible
+            ? "border-blue-400/30 bg-blue-400/[0.12] text-blue-400 hover:bg-blue-400/20 hover:text-blue-400"
+            : "border-line-strong bg-surface-raised text-muted-foreground hover:text-foreground",
+        )}
+      >
+        {gizmoVisible ? t.lab.timeline.gizmoVisibleState : t.lab.timeline.gizmoHiddenState}
+      </Button>
+    </div>
+  )
+}
+
 /** Insert / Delete over Simplify / Clear. Always rendered, going inert rather
  *  than vanishing: a block that changes shape as the selection moves is one you
  *  have to find again every time. */
@@ -514,26 +547,50 @@ function OperationsSection({
   onDelete,
   onSimplify,
   onClear,
+  onCopy,
+  onCut,
+  onPaste,
   canInsert,
   canDelete,
   canSimplify,
   canClear,
+  canCopy,
+  canPaste,
   simplifyTitle,
+  withGizmo,
 }: {
   onInsert: () => void
   onDelete: () => void
   onSimplify?: () => void
   onClear: () => void
+  onCopy: () => void
+  onCut: () => void
+  onPaste: () => void
   canInsert: boolean
   canDelete: boolean
   canSimplify: boolean
   canClear: boolean
+  canCopy: boolean
+  canPaste: boolean
   simplifyTitle?: string
+  /** Rendered only where a bone is the subject — the gizmo is a bone tool. */
+  withGizmo?: boolean
 }) {
   const t = useT()
   // Chip height. Four buttons at button height read as the loudest thing in a
   // panel whose subject is the numbers above them.
-  const row = "h-5 flex-1 rounded-chip px-1 text-[11px]"
+  //
+  // `secondary` was the generic shadcn gray, untuned to this editor's own
+  // dark chrome — every other surface in this dock (including Gizmo's own
+  // toggle below) is built from bg-surface-raised/border-line-strong, the
+  // tokens the editor actually themes. Ghost + those tokens is what makes an
+  // operations chip look like it belongs to this panel, not a default.
+  const row =
+    "h-5 flex-1 rounded-chip border border-line-strong bg-surface-raised px-1 text-[11px] text-muted-foreground hover:text-foreground"
+  // Delete / Cut / Clear remove something — the one accent AGENTS.md reserves
+  // for exactly that, so a destructive chip reads as different in kind from
+  // Insert/Copy/Paste/Simplify, not just a different label in the same gray.
+  const destructiveRow = cn(row, "text-red-400 hover:bg-red-400/10 hover:text-red-400")
   return (
     <Group title={t.lab.timeline.operations}>
       <div className="space-y-1.5">
@@ -541,11 +598,25 @@ function OperationsSection({
           <span className="w-9 shrink-0 text-[10px] tracking-wider text-muted-foreground uppercase">
             {t.lab.timeline.key}
           </span>
-          <Button type="button" variant="secondary" size="xs" className={row} disabled={!canInsert} onClick={onInsert}>
+          <Button type="button" variant="ghost" size="xs" className={row} disabled={!canInsert} onClick={onInsert}>
             {t.lab.timeline.insert}
           </Button>
-          <Button type="button" variant="secondary" size="xs" className={row} disabled={!canDelete} onClick={onDelete}>
+          <Button type="button" variant="ghost" size="xs" className={destructiveRow} disabled={!canDelete} onClick={onDelete}>
             {t.lab.timeline.delete}
+          </Button>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-9 shrink-0 text-[10px] tracking-wider text-muted-foreground uppercase">
+            {t.lab.timeline.sel}
+          </span>
+          <Button type="button" variant="ghost" size="xs" className={row} disabled={!canCopy} onClick={onCopy}>
+            {t.lab.timeline.copy}
+          </Button>
+          <Button type="button" variant="ghost" size="xs" className={destructiveRow} disabled={!canCopy} onClick={onCut}>
+            {t.lab.timeline.cut}
+          </Button>
+          <Button type="button" variant="ghost" size="xs" className={row} disabled={!canPaste} onClick={onPaste}>
+            {t.lab.timeline.paste}
           </Button>
         </div>
         <div className="flex items-center gap-1.5">
@@ -554,7 +625,7 @@ function OperationsSection({
           </span>
           <Button
             type="button"
-            variant="secondary"
+            variant="ghost"
             size="xs"
             className={row}
             disabled={!canSimplify}
@@ -565,9 +636,9 @@ function OperationsSection({
           </Button>
           <Button
             type="button"
-            variant="secondary"
+            variant="ghost"
             size="xs"
-            className={row}
+            className={destructiveRow}
             disabled={!canClear}
             onClick={onClear}
             title={t.lab.timeline.clearHint}
@@ -575,6 +646,7 @@ function OperationsSection({
             {t.lab.timeline.clear}
           </Button>
         </div>
+        {withGizmo && <GizmoRow />}
       </div>
     </Group>
   )
@@ -1059,6 +1131,11 @@ const CameraSection = memo(function CameraSection({ onClose }: { onClose: () => 
           onInsert={insertKey}
           onDelete={deleteKey}
           onClear={ops.clearCameraTrack}
+          onCopy={ops.copySelectedKeyframes}
+          onCut={ops.cutSelectedKeyframes}
+          onPaste={ops.pasteAtPlayhead}
+          canCopy={ops.canCopy}
+          canPaste={ops.canPaste}
           canInsert={!keyAtPlayhead}
           canDelete={!!keyAtPlayhead}
           // Permanently inert, and kept anyway: Simplify fits a curve through
@@ -1212,6 +1289,11 @@ function InspectorBody({ onClose }: { onClose: () => void }) {
           <OperationsSection
             onInsert={ops.insertKeyframeAtPlayhead}
             onDelete={ops.deleteSelectedKeyframes}
+            onCopy={ops.copySelectedKeyframes}
+            onCut={ops.cutSelectedKeyframes}
+            onPaste={ops.pasteAtPlayhead}
+            canCopy={ops.canCopy}
+            canPaste={ops.canPaste}
             onSimplify={ops.simplifySelectedBoneTrack}
             onClear={ops.clearSelectedTrack}
             canInsert={ops.canInsert}
@@ -1245,12 +1327,18 @@ function InspectorBody({ onClose }: { onClose: () => void }) {
           <OperationsSection
             onInsert={ops.insertKeyframeAtPlayhead}
             onDelete={ops.deleteSelectedKeyframes}
+            onCopy={ops.copySelectedKeyframes}
+            onCut={ops.cutSelectedKeyframes}
+            onPaste={ops.pasteAtPlayhead}
+            canCopy={ops.canCopy}
+            canPaste={ops.canPaste}
             onSimplify={ops.simplifySelectedBoneTrack}
             onClear={ops.clearSelectedTrack}
             canInsert={ops.canInsert}
             canDelete={ops.canDelete}
             canSimplify={ops.canSimplify}
             canClear={ops.canClear}
+            withGizmo
           />
         </div>
       </>

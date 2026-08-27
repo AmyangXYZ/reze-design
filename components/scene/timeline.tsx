@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useT } from "@/lib/i18n"
 import { useClipActions, useClipEngine, useClipSelector, usePlayhead, usePlayheadFrameRef, type SelectedKeyframe } from "@/context/clip-editor"
+import { useClipOps } from "@/hooks/use-clip-ops"
 import type { AnimationClip, BoneKeyframe, CameraKeyframe, MorphKeyframe } from "reze-engine"
 import { bezierInterpolate, Quat } from "reze-engine"
 import { EffectStrips } from "@/components/scene/effect-strips"
@@ -101,7 +102,6 @@ const C = {
   axis: "rgba(255,255,255,0.10)",
   axisZero: "rgba(255,255,255,0.18)",
   playhead: "#d83838",
-  playheadGlow: "rgba(216,56,56,0.18)",
   diamondSel: "#5aa0f0",
   keyDotSel: "#9ca3af",
   dopeBg: "rgba(0,0,0,0)",
@@ -448,7 +448,51 @@ function ZoomRuler({
 }
 
 // ─── Canvas ──────────────────────────────────────────────────────────────
+/** One dope column captured for a batch drag: its original frame, the
+ *  selection entries standing on it, and refs to every keyframe in it. */
+export interface DopeColumn {
+  frame: number
+  selEntries: SelectedKeyframe[]
+  boneRefs: Array<{ bone: string; kf: BoneKeyframe }>
+  morphRefs: Array<{ morph: string; kf: MorphKeyframe }>
+  cameraRefs: CameraKeyframe[]
+}
+
+/** One selected curve key captured for a batch drag. Frame and value are the
+ *  ORIGINALS; every move applies its total delta from these, so repeated calls
+ *  during one drag stay idempotent. The setters close over the keyframe and
+ *  its channel accessor, so the parent needs no channel tables. */
+export interface CurveDragItem {
+  selEntry: SelectedKeyframe
+  kind: "bone" | "morph" | "camera"
+  /** Bone or morph name — what the parent re-sorts after a frame move. */
+  name?: string
+  origFrame: number
+  origValue: number
+  setFrame: (f: number) => void
+  setValue: (v: number) => void
+}
+
+/** The RECTANGLE the user actually dragged to make the current selection —
+ *  not a fit recomputed from whatever survives in it, which drifts (or
+ *  shrinks to a single point) the moment an edit removes one of the keys it
+ *  bounded. Set only by a marquee finishing non-empty; cleared by anything
+ *  that changes the selection any other way (a click, a shift-click add,
+ *  deselecting) so it can never show a box for a selection nobody dragged
+ *  one around. Dope and curve selections are mutually exclusive (see
+ *  onSelectKeyframe/onMarqueeSelect/onMarqueeSelectCurve — extending across
+ *  a dope/curve switch drops the other kind rather than mixing them), so
+ *  there is only ever ONE of these live at a time — one shared ref, not one
+ *  per area. Frame/value space, not canvas px, so it stays correct through
+ *  pan, scroll and zoom without re-deriving it. */
+type StickyBox =
+  | { kind: "dope"; minF: number; maxF: number }
+  | { kind: "curve"; minF: number; maxF: number; minV: number; maxV: number }
+
 interface TimelineCanvasProps {
+  /** Whether the timeline panel is actually unfolded on screen — gates the
+   *  keyframe-jump arrows, which fire globally rather than on canvas focus. */
+  open: boolean
   clip: AnimationClip
   pxPerFrame: number
   yZoom: number
@@ -481,6 +525,18 @@ interface TimelineCanvasProps {
     cameraRefs: CameraKeyframe[],
     toFrame: number,
   ) => void
+  /** Batch time-shift: every selected dope column, moved by the same delta.
+   *  `frame` on each column is its ORIGINAL frame — the delta is always applied
+   *  from there, so repeated calls during one drag stay idempotent. */
+  onMoveDopeColumns: (columns: DopeColumn[], df: number, grabFrame: number) => void
+  /** Marquee result: the dope frames inside the box. Replaces the selection,
+   *  or merges into it when additive (shift held). */
+  onMarqueeSelect: (frames: number[], additive: boolean) => void
+  /** Curve-area marquee result: the handles inside the box. */
+  onMarqueeSelectCurve: (entries: SelectedKeyframe[], additive: boolean) => void
+  /** Batch curve drag: every selected handle, moved by the same time and value
+   *  deltas from its captured originals. */
+  onMoveCurveSelection: (items: CurveDragItem[], df: number, dv: number, grabFrame: number) => void
   onMoveCurveKeyframe: (bone: string, kfRef: BoneKeyframe, channel: string, toFrame: number, dv: number) => void
   onMoveMorphKeyframe: (morph: string, kfRef: MorphKeyframe, toFrame: number, dw: number) => void
   onMoveCameraKeyframe: (kfRef: CameraKeyframe, channelKey: string, toFrame: number, dv: number) => void
@@ -498,6 +554,7 @@ interface TimelineCanvasProps {
 }
 
 function TimelineCanvas({
+  open,
   clip,
   pxPerFrame,
   yZoom,
@@ -513,9 +570,13 @@ function TimelineCanvas({
   selectedKeyframes,
   tab,
   onSetCurrentFrame,
-  onSelectKeyframe,
-  onClearSelection,
+  onSelectKeyframe: onSelectKeyframeProp,
+  onClearSelection: onClearSelectionProp,
   onMoveDopeKeyframe,
+  onMoveDopeColumns,
+  onMarqueeSelect,
+  onMarqueeSelectCurve,
+  onMoveCurveSelection,
   onMoveCurveKeyframe,
   onMoveMorphKeyframe,
   onMoveCameraKeyframe,
@@ -524,7 +585,22 @@ function TimelineCanvas({
   dragRedrawRef,
 }: TimelineCanvasProps) {
   const dict = useT()
+  const ops = useClipOps()
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const stickyBoxRef = useRef<StickyBox | null>(null)
+  // Any OTHER way the selection changes invalidates the box — a single click,
+  // a shift-click add, deselecting. Only a marquee finishing sets a new one.
+  const onSelectKeyframe = useCallback(
+    (kf: SelectedKeyframe, multi: boolean) => {
+      stickyBoxRef.current = null
+      onSelectKeyframeProp(kf, multi)
+    },
+    [onSelectKeyframeProp],
+  )
+  const onClearSelection = useCallback(() => {
+    stickyBoxRef.current = null
+    onClearSelectionProp()
+  }, [onClearSelectionProp])
   /** Latest frame for the draw closure to read — keeps `currentFrame` out of
    *  the `draw` useCallback deps so playback ticks don't re-run layout effects. */
   const frameRef = useRef(currentFrame)
@@ -573,6 +649,26 @@ function TimelineCanvas({
   const dragVersionRef = useRef(0)
   const drag = useRef<{
     type: string
+    columns?: DopeColumn[]
+    curveItems?: CurveDragItem[]
+    grabFrame?: number
+    grabEntry?: SelectedKeyframe
+    /** Set when a "*-multi" drag started on empty space inside the selection's
+     *  box rather than on an actual member — a no-op click there must leave
+     *  the selection alone, not collapse it onto a frame with no keyframe. */
+    viaBoxGrab?: boolean
+    /** Snapshot of the sticky box at drag start, so a "*-multi" move (however
+     *  it was grabbed) can shift it by the same delta as the keyframes. */
+    origStickyBox?: StickyBox
+    lastDf?: number
+    lastDv?: number
+    additive?: boolean
+    marqueeStart?: number
+    marqueeStartMx?: number
+    marqueeStartMy?: number
+    lastSig?: string
+    lastCurveBox?: Extract<StickyBox, { kind: "curve" }>
+    lastCurveCount?: number
     bone?: string
     channel?: string
     startX?: number
@@ -585,6 +681,12 @@ function TimelineCanvas({
     dopeCameraRefs?: CameraKeyframe[]
     dopeFrame?: number
   } | null>(null)
+
+  /** Live marquee while a box-select drag runs: a full-height frame band over
+   *  the dope strip, or a free rectangle (canvas px) over the curve area. */
+  const marqueeRef = useRef<{ kind: "band"; a: number; b: number } | { kind: "rect"; x0: number; y0: number; x1: number; y1: number } | null>(null)
+  /** The component's own draw, reachable from handlers declared before it. */
+  const drawRef2 = useRef<(() => void) | null>(null)
 
   const getDopeFrames = useCallback(() => {
     const frames = new Map<number, number>()
@@ -852,12 +954,15 @@ function TimelineCanvas({
               (sk) => sk.channel === ch.key && sk.frame === kf.frame,
             )
             ctx.beginPath()
-            ctx.arc(x, toY(ch.get(kf)), isSel ? DOT_R + 1.5 : DOT_R, 0, Math.PI * 2)
-            ctx.fillStyle = isSel ? C.keyDotSel : ch.color
+            ctx.arc(x, toY(ch.get(kf)), isSel ? DOT_R + 1 : DOT_R, 0, Math.PI * 2)
+            ctx.fillStyle = ch.color
             ctx.fill()
             if (isSel) {
-              ctx.strokeStyle = ch.color
-              ctx.lineWidth = 2
+              // Selection is a RING, not a recolour — the channel keeps its
+              // identity, and a thin white border at the keyframes' own scale
+              // stays in the strip's quiet register.
+              ctx.strokeStyle = "rgba(255,255,255,0.75)"
+              ctx.lineWidth = 1.25
               ctx.stroke()
             }
           }
@@ -894,12 +999,12 @@ function TimelineCanvas({
               (s) => s.morph === selectedMorph && s.frame === kf.frame,
             )
             ctx.beginPath()
-            ctx.arc(x, toY(kf.weight), isSel ? DOT_R + 1.5 : DOT_R, 0, Math.PI * 2)
-            ctx.fillStyle = isSel ? C.keyDotSel : MORPH_COLOR
+            ctx.arc(x, toY(kf.weight), isSel ? DOT_R + 1 : DOT_R, 0, Math.PI * 2)
+            ctx.fillStyle = MORPH_COLOR
             ctx.fill()
             if (isSel) {
-              ctx.strokeStyle = MORPH_COLOR
-              ctx.lineWidth = 2
+              ctx.strokeStyle = "rgba(255,255,255,0.75)"
+              ctx.lineWidth = 1.25
               ctx.stroke()
             }
           }
@@ -1048,12 +1153,12 @@ function TimelineCanvas({
               (s) => s.bone === selectedBone && s.frame === kf.frame && s.channel === ch.key,
             )
             ctx.beginPath()
-            ctx.arc(x, toY(val), isSel ? DOT_R + 1.5 : DOT_R, 0, Math.PI * 2)
-            ctx.fillStyle = isSel ? C.keyDotSel : ch.color
+            ctx.arc(x, toY(val), isSel ? DOT_R + 1 : DOT_R, 0, Math.PI * 2)
+            ctx.fillStyle = ch.color
             ctx.fill()
             if (isSel) {
-              ctx.strokeStyle = ch.color
-              ctx.lineWidth = 2
+              ctx.strokeStyle = "rgba(255,255,255,0.75)"
+              ctx.lineWidth = 1.25
               ctx.stroke()
             }
           }
@@ -1073,6 +1178,20 @@ function TimelineCanvas({
       ctx.textAlign = "center"
       ctx.textBaseline = "middle"
       ctx.fillText(dict.lab.timeline.pickBone, (w + LABEL_W) / 2, (curveTop + curveBot) / 2)
+    }
+
+    // Persistent selection box — the RECTANGLE the user actually dragged to
+    // make this selection, not a recomputed fit around the surviving points.
+    // A grab anywhere inside it moves the whole batch.
+    if (stickyBoxRef.current?.kind === "curve") {
+      const sb = stickyBoxRef.current
+      const bx0 = toX(sb.minF)
+      const bx1 = toX(sb.maxF)
+      const by0 = toY(sb.maxV)
+      const by1 = toY(sb.minV)
+      ctx.strokeStyle = "rgba(90,160,240,0.4)"
+      ctx.lineWidth = 1
+      ctx.strokeRect(bx0 + 0.5, by0 + 0.5, bx1 - bx0 - 1, by1 - by0 - 1)
     }
     ctx.restore()
 
@@ -1123,20 +1242,28 @@ function TimelineCanvas({
       ctx.save()
       ctx.translate(x, dopeMid)
       ctx.rotate(Math.PI / 4)
-      // One size, always. Growing a diamond because the frame carries several
-      // keys made the whole strip lumpy the moment nothing was selected —
-      // which is how the editor first opens — and it says the same thing the
-      // alpha above already says. Density belongs in one channel, and the one
-      // that does not change the shape of a row is the right one.
-      const sz = DIAMOND
+      // Density never grows a diamond — several keys on one frame made the
+      // whole strip lumpy the moment nothing was selected, and it repeats what
+      // the alpha already says. Selection grows it a single pixel and draws a
+      // thin white border: marked, at the strip's own scale.
+      const sz = isSel ? DIAMOND + 1 : DIAMOND
       ctx.fillStyle = isSel ? C.diamondSel : `rgba(170,170,195,${intensity})`
       ctx.fillRect(-sz / 2, -sz / 2, sz, sz)
       if (isSel) {
-        ctx.strokeStyle = "rgba(156,163,175,0.35)"
+        ctx.strokeStyle = "rgba(255,255,255,0.75)"
         ctx.lineWidth = 1
         ctx.strokeRect(-sz / 2 - 1, -sz / 2 - 1, sz + 2, sz + 2)
       }
       ctx.restore()
+    }
+    if (stickyBoxRef.current?.kind === "dope") {
+      const bx0 = toX(stickyBoxRef.current.minF)
+      const bx1 = toX(stickyBoxRef.current.maxF)
+      // Bounded to the dope row's own height — spanning to h would reach
+      // through the music lane below it.
+      ctx.strokeStyle = "rgba(90,160,240,0.4)"
+      ctx.lineWidth = 1
+      ctx.strokeRect(bx0 + 0.5, dopeY + 1.5, bx1 - bx0 - 1, audioY - dopeY - 2)
     }
     ctx.restore()
 
@@ -1291,16 +1418,10 @@ function TimelineCanvas({
       // ── Playhead ──
       const px = toX(frame)
       if (px >= LABEL_W && px <= w) {
-        const g = ctx.createLinearGradient(px - 14, 0, px + 14, 0)
-        g.addColorStop(0, "transparent")
-        g.addColorStop(0.5, C.playheadGlow)
-        g.addColorStop(1, "transparent")
-        ctx.fillStyle = g
-        ctx.fillRect(px - 14, RULER_H, 28, h - RULER_H)
         // Dashed, so the line reads as a MARKER over the content rather than as
         // another curve drawn on it — at one pixel wide in a band full of
         // one-pixel curves, solid red was just the reddest of them. The head
-        // and the glow stay solid: those are the parts you aim at.
+        // stays solid: that is the part you aim at.
         ctx.strokeStyle = C.playhead
         ctx.lineWidth = 1
         ctx.setLineDash([4, 3])
@@ -1317,10 +1438,30 @@ function TimelineCanvas({
         ctx.closePath()
         ctx.fill()
       }
+
+      // ── Marquee (live box-select) ──
+      const mq = marqueeRef.current
+      if (mq) {
+        const x0 = Math.max(LABEL_W, mq.kind === "band" ? toX(mq.a) : mq.x0)
+        const x1 = Math.min(w, mq.kind === "band" ? toX(mq.b) : mq.x1)
+        // A dope-band marquee spans only the dope row's own height — not the
+        // curve chart above it or the music lane below, which RULER_H..h
+        // wrongly swept through.
+        const y0 = mq.kind === "band" ? dopeY : Math.max(RULER_H, mq.y0)
+        const y1 = mq.kind === "band" ? audioY : Math.min(h, mq.y1)
+        if (x1 > x0 && y1 > y0) {
+          ctx.fillStyle = "rgba(90,160,240,0.08)"
+          ctx.fillRect(x0, y0, x1 - x0, y1 - y0)
+          ctx.strokeStyle = "rgba(90,160,240,0.55)"
+          ctx.lineWidth = 1
+          ctx.strokeRect(x0 + 0.5, y0 + 0.5, x1 - x0 - 1, y1 - y0 - 1)
+        }
+      }
     }
     // dict.lab.timeline, because the canvas PAINTS its own empty states — a
     // language change has to repaint them, and nothing else here would.
   }, [clip, pxPerFrame, yZoom, scrollX, selectedBone, selectedMorph, cameraTrack, frameCount, audioPeaks, audioDuration, visibleBones, selectedKeyframes, tab, getDopeFrames, dict.lab.timeline])
+  drawRef2.current = draw
 
   // Layout-phase paint: `useEffect`+nested rAF ran after browser paint → playhead lagged 1–2 frames behind transport.
   // `currentFrame` is in deps (not in `draw`'s deps) so scrubbing + throttled
@@ -1422,7 +1563,7 @@ function TimelineCanvas({
             return { zone: "dope" as const, frame }
         }
         const f = Math.round((mx - ox) / pxPerFrame)
-        return { zone: "ruler" as const, frame: Math.max(0, Math.min(frameCount, f)) }
+        return { zone: "dope-empty" as const, frame: Math.max(0, Math.min(frameCount, f)) }
       }
 
       if (isCameraTab(tab)) {
@@ -1461,7 +1602,7 @@ function TimelineCanvas({
       }
 
       const f = Math.round((mx - ox) / pxPerFrame)
-      return { zone: "ruler" as const, frame: Math.max(0, Math.min(frameCount, f)) }
+      return { zone: "curve-empty" as const, frame: Math.max(0, Math.min(frameCount, f)) }
     },
     [clip, pxPerFrame, yZoom, scrollX, selectedBone, selectedMorph, cameraTrack, frameCount, audioPeaks, tab, getDopeFrames],
   )
@@ -1475,6 +1616,167 @@ function TimelineCanvas({
       if (e.button !== 0) return
       const hit = hitTest(e)
       if (!hit) return
+      const el0 = canvasRef.current
+      if (!el0) return
+
+      // Capture references to all keyframes (across bones/morphs) sharing one
+      // dope frame. Hoisted above the zone branches: both grabbing a selected
+      // diamond directly and grabbing empty space inside the selection's box
+      // need it.
+      const captureColumn = (frame: number) => {
+        const boneRefs: Array<{ bone: string; kf: BoneKeyframe }> = []
+        const morphRefs: Array<{ morph: string; kf: MorphKeyframe }> = []
+        const cameraRefs: CameraKeyframe[] = []
+        if (isCameraTab(tab)) {
+          const kf = cameraTrack.find((k) => k.frame === frame)
+          if (kf) cameraRefs.push(kf)
+        } else if (tab === "morph" && selectedMorph) {
+          const track = clip.morphTracks.get(selectedMorph)
+          const kf = track?.find((k) => k.frame === frame)
+          if (kf) morphRefs.push({ morph: selectedMorph, kf })
+        } else {
+          const bones = selectedBone ? [selectedBone] : visibleBones
+          for (const name of bones) {
+            const track = clip.boneTracks.get(name)
+            const kf = track?.find((k) => k.frame === frame)
+            if (kf) boneRefs.push({ bone: name, kf })
+          }
+        }
+        return { boneRefs, morphRefs, cameraRefs }
+      }
+
+      // Same for a set of curve-handle selection entries: resolve each to its
+      // live keyframe and a get/set pair on its own channel.
+      const captureCurveItems = (selCurve: SelectedKeyframe[]): CurveDragItem[] => {
+        const items: CurveDragItem[] = []
+        for (const sEntry of selCurve) {
+          if (sEntry.camera && sEntry.channel) {
+            const ch = cameraChannelsForTab(tab).find((c) => c.key === sEntry.channel)
+            const kf = cameraTrack.find((k) => k.frame === sEntry.frame)
+            if (!ch || !kf) continue
+            items.push({
+              selEntry: sEntry, kind: "camera", origFrame: kf.frame, origValue: ch.get(kf),
+              setFrame: (f) => { kf.frame = f }, setValue: (v) => ch.set(kf, v),
+            })
+          } else if (sEntry.morph) {
+            const kf = clip.morphTracks.get(sEntry.morph)?.find((k) => k.frame === sEntry.frame)
+            if (!kf) continue
+            items.push({
+              selEntry: sEntry, kind: "morph", name: sEntry.morph, origFrame: kf.frame, origValue: kf.weight,
+              setFrame: (f) => { kf.frame = f }, setValue: (v) => { kf.weight = Math.max(0, Math.min(1, v)) },
+            })
+          } else if (sEntry.bone && sEntry.channel) {
+            const ch = getChannelsForTab(tab).find((c) => c.key === sEntry.channel)
+            const kf = clip.boneTracks.get(sEntry.bone)?.find((k) => k.frame === sEntry.frame)
+            if (!ch || !kf) continue
+            items.push({
+              selEntry: sEntry, kind: "bone", name: sEntry.bone, origFrame: kf.frame, origValue: ch.get(kf),
+              setFrame: (f) => { kf.frame = f }, setValue: (v) => ch.set(kf, v),
+            })
+          }
+        }
+        return items
+      }
+
+      // A grab on a curve handle that is already part of a multi-handle
+      // selection drags the whole selection — in time AND in value. The usual
+      // click-selects is deferred to mouseup, same as the dope strip.
+      const curveIdentity: SelectedKeyframe | null =
+        hit.zone === "curve"
+          ? { bone: hit.bone, frame: hit.frame, channel: hit.channel, type: "curve" }
+          : hit.zone === "morph-curve"
+            ? { morph: hit.morph, frame: hit.frame, type: "curve" }
+            : hit.zone === "camera-curve"
+              ? { frame: hit.frame, channel: hit.channel, camera: true, type: "curve" }
+              : null
+      if (curveIdentity && !e.shiftKey) {
+        const selCurve = selectedKeyframes.filter((k) => k.type === "curve")
+        const matches = (a: SelectedKeyframe, b: SelectedKeyframe) =>
+          a.frame === b.frame && a.channel === b.channel && a.bone === b.bone && a.morph === b.morph && !a.camera === !b.camera
+        if (selCurve.length >= 2 && selCurve.some((k) => matches(k, curveIdentity))) {
+          const items = captureCurveItems(selCurve)
+          if (items.length >= 2) {
+            drag.current = {
+              type: "curve-multi",
+              startX: e.clientX,
+              startY: e.clientY,
+              curveItems: items,
+              grabFrame: hit.frame,
+              grabEntry: curveIdentity,
+              origStickyBox: stickyBoxRef.current ?? undefined,
+            }
+            return
+          }
+        }
+      }
+
+      // PowerPoint-style: a drag that starts anywhere inside the box the user
+      // actually dragged to make this selection moves the whole thing, the
+      // same as grabbing one of its members — the box is a handle for the
+      // selection, not just a picture of it. No box (this selection was not
+      // made by marqueeing) means no such affordance: clicking empty space
+      // just starts a fresh marquee, as it always did. Skipped with shift,
+      // which is always the ADD gesture here, never move.
+      const sb = stickyBoxRef.current
+      if (!e.shiftKey && sb) {
+        const pad = 4
+        if (hit.zone === "dope-empty" && sb.kind === "dope") {
+          const padF = pad / pxPerFrame
+          if (hit.frame >= sb.minF - padF && hit.frame <= sb.maxF + padF) {
+            const selDope = selectedKeyframes.filter((k) => k.type === "dope")
+            drag.current = {
+              type: "dope-multi",
+              startX: e.clientX,
+              grabFrame: hit.frame,
+              lastDf: 0,
+              viaBoxGrab: true,
+              origStickyBox: sb,
+              columns: selDope.map((entry) => ({ frame: entry.frame, selEntries: [entry], ...captureColumn(entry.frame) })),
+            }
+            return
+          }
+        } else if (hit.zone === "curve-empty" && sb.kind === "curve") {
+          const rectB = el0.getBoundingClientRect()
+          const mxB = e.clientX - rectB.left
+          const myB = e.clientY - rectB.top
+          const hB = el0.clientHeight
+          const dopeYB = hB - DOPE_H - AUDIO_H
+          const curveHB = dopeYB - 1 - RULER_H
+          const axB = getAxisConfig(tab)
+          const axCenterB = (axB.min + axB.max) / 2
+          const axHalfB = (axB.max - axB.min) / 2 / Math.max(0.0001, yZoom)
+          const vMinB = axCenterB - axHalfB
+          const vMaxB = axCenterB + axHalfB
+          const toYB = (v: number) => RULER_H + (1 - (v - vMinB) / (vMaxB - vMinB)) * curveHB
+          const toXB = (f: number) => LABEL_W - scrollX + f * pxPerFrame
+          const bx0 = toXB(sb.minF) - pad
+          const bx1 = toXB(sb.maxF) + pad
+          const by0 = toYB(sb.maxV) - pad
+          const by1 = toYB(sb.minV) + pad
+          if (mxB >= bx0 && mxB <= bx1 && myB >= by0 && myB <= by1) {
+            const selCurve = selectedKeyframes.filter((k) => k.type === "curve")
+            const items = captureCurveItems(selCurve)
+            if (items.length > 0) {
+              drag.current = {
+                type: "curve-multi",
+                startX: e.clientX,
+                startY: e.clientY,
+                curveItems: items,
+                grabFrame: hit.frame,
+                origStickyBox: sb,
+              }
+              return
+            }
+          }
+        }
+      }
+      // A fresh, non-additive marquee starting outside the sticky box (or
+      // with none present) replaces whatever it bounded — clear immediately
+      // rather than leaving a stale box on screen through the whole drag.
+      if (!e.shiftKey && (hit.zone === "dope-empty" || hit.zone === "curve-empty")) {
+        stickyBoxRef.current = null
+      }
+
       if (hit.zone === "ruler") {
         // Clicking empty space DESELECTS.
         //
@@ -1493,38 +1795,60 @@ function TimelineCanvas({
         onSetCurrentFrame(hit.frame)
         drag.current = { type: "scrub" }
       } else if (hit.zone === "dope") {
-        onSelectKeyframe({ frame: hit.frame, type: "dope" }, e.shiftKey)
-        // Capture references to all keyframes (across bones/morphs) sharing this frame
-        const dopeBoneRefs: Array<{ bone: string; kf: BoneKeyframe }> = []
-        const dopeMorphRefs: Array<{ morph: string; kf: MorphKeyframe }> = []
-        const dopeCameraRefs: CameraKeyframe[] = []
-        if (isCameraTab(tab)) {
-          const kf = cameraTrack.find((k) => k.frame === hit.frame)
-          if (kf) dopeCameraRefs.push(kf)
-        } else if (tab === "morph" && selectedMorph) {
-          const track = clip.morphTracks.get(selectedMorph)
-          const kf = track?.find((k) => k.frame === hit.frame)
-          if (kf) dopeMorphRefs.push({ morph: selectedMorph, kf })
+        const camFlag = isCameraTab(tab) ? { camera: true as const } : {}
+        const selDope = selectedKeyframes.filter((k) => k.type === "dope")
+        // Grabbing a diamond that is already part of a multi-frame selection
+        // drags the WHOLE selection. The usual click-selects is deferred to
+        // mouseup — collapsing the selection on mousedown would make it
+        // impossible to ever drag more than one column.
+        if (!e.shiftKey && selDope.length >= 2 && selDope.some((k) => k.frame === hit.frame)) {
+          drag.current = {
+            type: "dope-multi",
+            startX: e.clientX,
+            grabFrame: hit.frame,
+            lastDf: 0,
+            origStickyBox: stickyBoxRef.current ?? undefined,
+            columns: selDope.map((entry) => ({ frame: entry.frame, selEntries: [entry], ...captureColumn(entry.frame) })),
+          }
         } else {
-          const bones = selectedBone ? [selectedBone] : visibleBones
-          for (const name of bones) {
-            const track = clip.boneTracks.get(name)
-            const kf = track?.find((k) => k.frame === hit.frame)
-            if (kf) dopeBoneRefs.push({ bone: name, kf })
+          onSelectKeyframe({ frame: hit.frame, type: "dope", ...camFlag }, e.shiftKey)
+          const refs = captureColumn(hit.frame)
+          drag.current = {
+            type: "dope",
+            startX: e.clientX,
+            dopeBoneRefs: refs.boneRefs,
+            dopeMorphRefs: refs.morphRefs,
+            dopeCameraRefs: refs.cameraRefs,
+            dopeFrame: hit.frame,
           }
         }
+      } else if (hit.zone === "dope-empty") {
+        // Drag = marquee over the dope strip; a motionless click keeps the old
+        // meaning (seek, and drop the selection unless shift holds it).
         drag.current = {
-          type: "dope",
+          type: "marquee-pending",
           startX: e.clientX,
-          dopeBoneRefs,
-          dopeMorphRefs,
-          dopeCameraRefs,
-          dopeFrame: hit.frame,
+          grabFrame: hit.frame,
+          marqueeStart: hit.frame,
+          additive: e.shiftKey,
+        }
+      } else if (hit.zone === "curve-empty") {
+        // Same gesture over the curve area, but the box is two-dimensional:
+        // it catches handles by frame AND value.
+        const rect2 = canvasRef.current?.getBoundingClientRect()
+        drag.current = {
+          type: "marquee-pending-curve",
+          startX: e.clientX,
+          startY: e.clientY,
+          grabFrame: hit.frame,
+          marqueeStartMx: rect2 ? e.clientX - rect2.left : 0,
+          marqueeStartMy: rect2 ? e.clientY - rect2.top : 0,
+          additive: e.shiftKey,
         }
       } else if (hit.zone === "camera-curve") {
         const kfRef = cameraTrack.find((k) => k.frame === hit.frame)
         if (!kfRef) return
-        onSelectKeyframe({ frame: hit.frame, channel: hit.channel, type: "curve" }, e.shiftKey)
+        onSelectKeyframe({ frame: hit.frame, channel: hit.channel, camera: true, type: "curve" }, e.shiftKey)
         drag.current = {
           type: "camera-curve",
           channel: hit.channel,
@@ -1565,7 +1889,22 @@ function TimelineCanvas({
         }
       }
     },
-    [hitTest, onSetCurrentFrame, onSelectKeyframe, onClearSelection, clip, tab, selectedBone, selectedMorph, cameraTrack, visibleBones],
+    [
+      hitTest,
+      onSetCurrentFrame,
+      onSelectKeyframe,
+      onClearSelection,
+      clip,
+      tab,
+      selectedBone,
+      selectedMorph,
+      cameraTrack,
+      visibleBones,
+      selectedKeyframes,
+      pxPerFrame,
+      scrollX,
+      yZoom,
+    ],
   )
 
   const onMouseMove = useCallback(
@@ -1574,6 +1913,7 @@ function TimelineCanvas({
       if (!el) return
       const rect = el.getBoundingClientRect()
       const mx = e.clientX - rect.left
+      const my = e.clientY - rect.top
       const ox = LABEL_W - scrollX
 
       if (drag.current?.type === "scrub") {
@@ -1595,6 +1935,144 @@ function TimelineCanvas({
           drag.current.dopeFrame = Math.max(0, newFrame)
           drag.current.startX = e.clientX
         }
+        return
+      }
+      if (drag.current?.type === "dope-multi") {
+        const d = drag.current
+        const dx = e.clientX - (d.startX ?? 0)
+        // Clamped so the LEFTMOST column stops at 0 and the spacing between
+        // columns survives — clamping each column on its own would squash them
+        // together against the start of the clip.
+        const minFrame = Math.min(...(d.columns ?? []).map((c) => c.frame))
+        const df = Math.max(Math.round(dx / pxPerFrame), -minFrame)
+        if (df !== d.lastDf) {
+          d.lastDf = df
+          if (d.origStickyBox?.kind === "dope") {
+            stickyBoxRef.current = { kind: "dope", minF: d.origStickyBox.minF + df, maxF: d.origStickyBox.maxF + df }
+          }
+          onMoveDopeColumns(d.columns ?? [], df, d.grabFrame ?? 0)
+        }
+        return
+      }
+      if (drag.current?.type === "curve-multi") {
+        const d = drag.current
+        const items = d.curveItems ?? []
+        const dx = e.clientX - (d.startX ?? 0)
+        const dy = e.clientY - (d.startY ?? 0)
+        const h = el.clientHeight
+        const curveH = h - DOPE_H - (audioPeaks ? AUDIO_H : 0) - 1 - RULER_H
+        const ax = getAxisConfig(tab)
+        const dv = -(dy / curveH) * ((ax.max - ax.min) / Math.max(0.0001, yZoom))
+        const minFrame = Math.min(...items.map((i) => i.origFrame))
+        const df = Math.max(Math.round(dx / pxPerFrame), -minFrame)
+        if (df !== d.lastDf || dv !== d.lastDv) {
+          d.lastDf = df
+          d.lastDv = dv
+          if (d.origStickyBox?.kind === "curve") {
+            stickyBoxRef.current = {
+              kind: "curve",
+              minF: d.origStickyBox.minF + df,
+              maxF: d.origStickyBox.maxF + df,
+              minV: d.origStickyBox.minV + dv,
+              maxV: d.origStickyBox.maxV + dv,
+            }
+          }
+          onMoveCurveSelection(items, df, dv, d.grabFrame ?? 0)
+        }
+        return
+      }
+      if (drag.current?.type === "marquee-pending") {
+        if (Math.abs(e.clientX - (drag.current.startX ?? 0)) > 3) drag.current.type = "marquee"
+        else return
+      }
+      if (drag.current?.type === "marquee-pending-curve") {
+        const dx0 = e.clientX - (drag.current.startX ?? 0)
+        const dy0 = e.clientY - (drag.current.startY ?? 0)
+        if (Math.hypot(dx0, dy0) > 3) drag.current.type = "marquee-curve"
+        else return
+      }
+      if (drag.current?.type === "marquee-curve") {
+        const d = drag.current
+        const x0 = Math.min(d.marqueeStartMx ?? mx, mx)
+        const x1 = Math.max(d.marqueeStartMx ?? mx, mx)
+        const y0 = Math.min(d.marqueeStartMy ?? my, my)
+        const y1 = Math.max(d.marqueeStartMy ?? my, my)
+        marqueeRef.current = { kind: "rect", x0, y0, x1, y1 }
+
+        // Same projection the dots were drawn with — a box that selects what
+        // it visibly contains, nothing else.
+        const h = el.clientHeight
+        const dopeY = h - DOPE_H - AUDIO_H
+        const curveH = dopeY - 1 - RULER_H
+        const ax = getAxisConfig(tab)
+        const axCenter = (ax.min + ax.max) / 2
+        const axHalf = (ax.max - ax.min) / 2 / Math.max(0.0001, yZoom)
+        const vMin = axCenter - axHalf
+        const vMax = axCenter + axHalf
+        const toY = (v: number) => RULER_H + (1 - (v - vMin) / (vMax - vMin)) * curveH
+        const toX = (f: number) => ox + f * pxPerFrame
+        const inRect = (x: number, y: number) => x >= x0 && x <= x1 && y >= y0 && y <= y1
+
+        const entries: SelectedKeyframe[] = []
+        if (isCameraTab(tab)) {
+          for (const ch of cameraChannelsForTab(tab)) {
+            for (const kf of cameraTrack) {
+              if (inRect(toX(kf.frame), toY(ch.get(kf))))
+                entries.push({ frame: kf.frame, channel: ch.key, camera: true, type: "curve" })
+            }
+          }
+        } else if (tab === "morph" && selectedMorph) {
+          const track = clip.morphTracks.get(selectedMorph)
+          if (track) {
+            for (const kf of track) {
+              if (inRect(toX(kf.frame), toY(kf.weight))) entries.push({ morph: selectedMorph, frame: kf.frame, type: "curve" })
+            }
+          }
+        } else if (selectedBone) {
+          const track = clip.boneTracks.get(selectedBone)
+          if (track) {
+            for (const ch of getChannelsForTab(tab)) {
+              for (const kf of track) {
+                if (inRect(toX(kf.frame), toY(ch.get(kf))))
+                  entries.push({ bone: selectedBone, frame: kf.frame, channel: ch.key, type: "curve" })
+              }
+            }
+          }
+        }
+        const sig = entries.map((k) => `${k.bone ?? ""}|${k.morph ?? ""}|${k.camera ? 1 : 0}|${k.channel ?? ""}|${k.frame}`).join(",")
+        // Frame/value corners of the DRAWN box, so endDrag can set the sticky
+        // box from the gesture itself rather than refitting to what landed in
+        // it — a box with nothing near an edge inside it still ends up the
+        // size it was dragged.
+        const valueFromY = (y: number) => vMin + (1 - (y - RULER_H) / curveH) * (vMax - vMin)
+        d.lastCurveBox = {
+          kind: "curve",
+          minF: (x0 - ox) / pxPerFrame,
+          maxF: (x1 - ox) / pxPerFrame,
+          minV: valueFromY(y1),
+          maxV: valueFromY(y0),
+        }
+        d.lastCurveCount = entries.length
+        if (sig !== d.lastSig) {
+          d.lastSig = sig
+          onMarqueeSelectCurve(entries, d.additive ?? false)
+        }
+        drawRef2.current?.()
+        return
+      }
+      if (drag.current?.type === "marquee") {
+        const d = drag.current
+        const f = Math.max(0, Math.min(frameCount, Math.round((mx - ox) / pxPerFrame)))
+        const a = Math.min(d.marqueeStart ?? 0, f)
+        const b = Math.max(d.marqueeStart ?? 0, f)
+        marqueeRef.current = { kind: "band", a, b }
+        if (d.lastDf !== a * 100000 + b) {
+          d.lastDf = a * 100000 + b // change detector, nothing more
+          const frames: number[] = []
+          for (const [frame] of getDopeFrames()) if (frame >= a && frame <= b) frames.push(frame)
+          onMarqueeSelect(frames, d.additive ?? false)
+        }
+        drawRef2.current?.()
         return
       }
       if (drag.current?.type === "camera-curve") {
@@ -1649,34 +2127,200 @@ function TimelineCanvas({
       }
 
       const hit = hitTest(e)
-      el.style.cursor =
-        hit?.zone === "dope"
+      // Hovering empty space that's inside the box the current selection was
+      // dragged into is the "move the whole batch" affordance, not the
+      // "start a new marquee here" one — the cursor has to tell them apart
+      // before the click does.
+      const sb2 = stickyBoxRef.current
+      let overStickyBox = false
+      if (sb2 && hit?.zone === "dope-empty" && sb2.kind === "dope") {
+        const padF = 4 / pxPerFrame
+        overStickyBox = hit.frame >= sb2.minF - padF && hit.frame <= sb2.maxF + padF
+      } else if (sb2 && hit?.zone === "curve-empty" && sb2.kind === "curve") {
+        const curveH2 = el.clientHeight - DOPE_H - (audioPeaks ? AUDIO_H : 0) - 1 - RULER_H
+        const ax2 = getAxisConfig(tab)
+        const axCenter2 = (ax2.min + ax2.max) / 2
+        const axHalf2 = (ax2.max - ax2.min) / 2 / Math.max(0.0001, yZoom)
+        const vMin2 = axCenter2 - axHalf2
+        const vMax2 = axCenter2 + axHalf2
+        const toY2 = (v: number) => RULER_H + (1 - (v - vMin2) / (vMax2 - vMin2)) * curveH2
+        const toX2 = (f: number) => ox + f * pxPerFrame
+        const pad = 4
+        overStickyBox =
+          mx >= toX2(sb2.minF) - pad &&
+          mx <= toX2(sb2.maxF) + pad &&
+          my >= toY2(sb2.maxV) - pad &&
+          my <= toY2(sb2.minV) + pad
+      }
+      el.style.cursor = overStickyBox
+        ? "move"
+        : hit?.zone === "dope"
           ? "ew-resize"
           : hit?.zone === "curve" || hit?.zone === "morph-curve" || hit?.zone === "camera-curve"
             ? "grab"
             : hit?.zone === "ruler"
               ? "col-resize"
-              : "default"
+              : hit?.zone === "dope-empty" || hit?.zone === "curve-empty"
+                ? "crosshair"
+                : "default"
     },
-    [hitTest, pxPerFrame, yZoom, scrollX, clip, frameCount, audioPeaks, tab, onSetCurrentFrame, onMoveDopeKeyframe, onMoveCurveKeyframe, onMoveMorphKeyframe, onMoveCameraKeyframe],
+    [hitTest, pxPerFrame, yZoom, scrollX, frameCount, audioPeaks, tab, clip, cameraTrack, selectedBone, selectedMorph, onSetCurrentFrame, onMoveDopeKeyframe, onMoveDopeColumns, onMarqueeSelect, onMarqueeSelectCurve, onMoveCurveSelection, getDopeFrames, onMoveCurveKeyframe, onMoveMorphKeyframe, onMoveCameraKeyframe],
   )
 
   const endDrag = useCallback(() => {
     const d = drag.current
     drag.current = null
-    if (d && (d.type === "dope" || d.type === "curve" || d.type === "morph-curve" || d.type === "camera-curve")) {
+    if (!d) return
+    if (d.type === "dope" || d.type === "dope-multi" || d.type === "curve-multi" || d.type === "curve" || d.type === "morph-curve" || d.type === "camera-curve") {
+      // A multi grab that never moved is a plain click: collapse to the
+      // clicked key, the select that mousedown deferred.
+      if (d.type === "dope-multi" && !d.lastDf && !d.viaBoxGrab) {
+        onSelectKeyframe(
+          { frame: d.grabFrame ?? 0, type: "dope", ...(isCameraTab(tab) ? { camera: true as const } : {}) },
+          false,
+        )
+      }
+      if (d.type === "curve-multi" && d.lastDf === undefined && d.lastDv === undefined && d.grabEntry) {
+        onSelectKeyframe(d.grabEntry, false)
+      }
       onEndKeyframeDrag()
+      return
     }
-  }, [onEndKeyframeDrag])
+    if (d.type === "marquee") {
+      // The sticky box is the rectangle just dragged — not a fit around
+      // whatever landed in it. Union with the existing box when additive and
+      // of the same kind; replace otherwise; drop it if the drag caught
+      // nothing (a non-additive drag that selected nothing IS the new,
+      // empty selection — nothing left to show a box around).
+      const mq = marqueeRef.current
+      if (mq && mq.kind === "band") {
+        const count = [...getDopeFrames().keys()].filter((f) => f >= mq.a && f <= mq.b).length
+        const prev = stickyBoxRef.current
+        if (count > 0) {
+          stickyBoxRef.current =
+            d.additive && prev?.kind === "dope"
+              ? { kind: "dope", minF: Math.min(prev.minF, mq.a), maxF: Math.max(prev.maxF, mq.b) }
+              : { kind: "dope", minF: mq.a, maxF: mq.b }
+        } else if (!d.additive) {
+          stickyBoxRef.current = null
+        }
+      }
+      marqueeRef.current = null
+      // The sticky box just written lives on a ref the static-cache check
+      // never compares against — nothing else here would notice it changed.
+      // Force the offscreen layer to repaint so the box shows immediately,
+      // not only after the first drag that happens to touch dragVersionRef.
+      dragVersionRef.current++
+      drawRef2.current?.()
+      return
+    }
+    if (d.type === "marquee-curve") {
+      const box = d.lastCurveBox
+      const count = d.lastCurveCount ?? 0
+      const prev = stickyBoxRef.current
+      if (box && count > 0) {
+        stickyBoxRef.current =
+          d.additive && prev?.kind === "curve"
+            ? {
+                kind: "curve",
+                minF: Math.min(prev.minF, box.minF),
+                maxF: Math.max(prev.maxF, box.maxF),
+                minV: Math.min(prev.minV, box.minV),
+                maxV: Math.max(prev.maxV, box.maxV),
+              }
+            : box
+      } else if (!d.additive) {
+        stickyBoxRef.current = null
+      }
+      marqueeRef.current = null
+      dragVersionRef.current++
+      drawRef2.current?.()
+      return
+    }
+    if (d.type === "marquee-pending" || d.type === "marquee-pending-curve") {
+      if (!d.additive) onClearSelection()
+      onSetCurrentFrame(d.grabFrame ?? 0)
+    }
+  }, [onEndKeyframeDrag, onSelectKeyframe, onClearSelection, onSetCurrentFrame, tab, getDopeFrames])
+
+  const onKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault()
+        ops.deleteSelectedKeyframes()
+      } else if (mod && e.key.toLowerCase() === "c") {
+        e.preventDefault()
+        ops.copySelectedKeyframes()
+      } else if (mod && e.key.toLowerCase() === "v") {
+        e.preventDefault()
+        ops.pasteAtPlayhead()
+      } else if (mod && e.key.toLowerCase() === "x") {
+        e.preventDefault()
+        ops.cutSelectedKeyframes()
+      }
+    },
+    [ops],
+  )
+
+  // Keyframe-jump arrows: a WINDOW listener, not the canvas's own onKeyDown —
+  // people expect Left/Right to walk keyframes the moment something is picked,
+  // without first clicking into the timeline to give the canvas focus. Gated
+  // on the panel actually being open and a subject actually being selected, so
+  // the arrows don't hijack navigation elsewhere in the editor. The scrub
+  // slider keeps its own separate ArrowLeft/Right (plain frame-nudge) on its
+  // own focus — the two widgets never compete because a listener here only
+  // fires while THIS one isn't focused... except it always fires when open,
+  // by design; the slider is reached by Tab, an explicit enough gesture that
+  // stepping frames there instead of jumping keys is exactly what it should do.
+  const cameraSelected = useClipSelector((s) => s.cameraSelected)
+  useEffect(() => {
+    if (!open) return
+    if (!selectedBone && !selectedMorph && !cameraSelected) return
+    const onGlobalKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return
+      const t = e.target as HTMLElement | null
+      if (t && (["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName) || t.isContentEditable)) return
+      // The scrub slider (role="slider", its own tabIndex) owns the arrows
+      // while it holds focus — reaching it by Tab is deliberate enough that
+      // frame-nudge there should win over keyframe-jump.
+      if (t?.getAttribute("role") === "slider") return
+      e.preventDefault()
+      const frames = [...getDopeFrames().keys()].sort((a, b) => a - b)
+      const cur = Math.round(frameRef.current)
+      if (frames.length === 0) {
+        onSetCurrentFrame(e.key === "ArrowLeft" ? Math.max(0, cur - 1) : Math.min(frameCount, cur + 1))
+        return
+      }
+      if (e.key === "ArrowLeft") {
+        const prev = [...frames].reverse().find((f) => f < cur)
+        onSetCurrentFrame(prev ?? frames[0])
+      } else {
+        const next = frames.find((f) => f > cur)
+        onSetCurrentFrame(next ?? frames[frames.length - 1])
+      }
+    }
+    window.addEventListener("keydown", onGlobalKey)
+    return () => window.removeEventListener("keydown", onGlobalKey)
+  }, [open, selectedBone, selectedMorph, cameraSelected, getDopeFrames, onSetCurrentFrame, frameCount])
 
   return (
     <canvas
       ref={canvasRef}
-      style={{ width: "100%", height: "100%", display: "block" }}
-      onMouseDown={onMouseDown}
+      // Focusable so a click here can claim keyboard focus for Delete,
+      // copy/cut/paste and the keyframe-jump arrows — a canvas draws nothing
+      // that is a native tab stop otherwise.
+      tabIndex={0}
+      style={{ width: "100%", height: "100%", display: "block", outline: "none" }}
+      onMouseDown={(e) => {
+        e.currentTarget.focus()
+        onMouseDown(e)
+      }}
       onMouseMove={onMouseMove}
       onMouseUp={endDrag}
       onMouseLeave={endDrag}
+      onKeyDown={onKeyDown}
     />
   )
 }
@@ -1758,6 +2402,17 @@ export function Timeline({
       : "bone"
   const visibleTabs = tabsForSelection(selectionKind)
   const { currentFrame, setCurrentFrame, playing, setPlaying } = usePlayhead()
+  /** A fresh selection puts the playhead where it starts — the pose that
+   *  frame shows is what you're about to act on, so seeing it shouldn't take
+   *  a second step. No-ops on an empty selection (nothing to jump to). */
+  const jumpToSelectionStart = useCallback(
+    (frames: number[]) => {
+      if (frames.length === 0) return
+      setPlaying(false)
+      setCurrentFrame(Math.min(...frames))
+    },
+    [setPlaying, setCurrentFrame],
+  )
   // Written, not read, by this component: the draw callback below publishes the
   // live frame into it for every consumer that must not subscribe. See there.
   const frameRef = usePlayheadFrameRef()
@@ -2076,17 +2731,23 @@ export function Timeline({
 
   const onSelectKeyframe = useCallback(
     (kf: SelectedKeyframe, multi: boolean) => {
-      setSelectedKeyframes((prev) => {
-        if (multi) {
-          const exists = prev.some(
-            (s) => s.frame === kf.frame && s.type === kf.type && s.channel === kf.channel && s.bone === kf.bone,
-          )
-          return exists ? prev.filter((s) => !(s.frame === kf.frame && s.type === kf.type)) : [...prev, kf]
-        }
-        return [kf]
-      })
+      // One selection domain at a time: extending across a dope/curve switch
+      // drops the other kind's picks rather than mixing them — a batch op
+      // (delete/copy/move) has to mean one unambiguous thing.
+      let next: SelectedKeyframe[]
+      if (multi) {
+        const sameKind = selectedKeyframes.filter((s) => s.type === kf.type)
+        const exists = sameKind.some(
+          (s) => s.frame === kf.frame && s.channel === kf.channel && s.bone === kf.bone,
+        )
+        next = exists ? sameKind.filter((s) => s.frame !== kf.frame) : [...sameKind, kf]
+      } else {
+        next = [kf]
+      }
+      setSelectedKeyframes(next)
+      jumpToSelectionStart(next.map((s) => s.frame))
     },
-    [setSelectedKeyframes],
+    [selectedKeyframes, setSelectedKeyframes, jumpToSelectionStart],
   )
 
   // ─── Imperative drag path ───────────────────────────────────────────
@@ -2154,6 +2815,100 @@ export function Timeline({
       followDrag(clamped, cameraRefs.length > 0 ? "camera" : "clip")
     },
     [clip, selectedKeyframes, followDrag],
+  )
+
+  const onMoveDopeColumns = useCallback(
+    (columns: DopeColumn[], df: number, grabFrame: number) => {
+      if (!clip || columns.length === 0) return
+      const touchedBones = new Set<string>()
+      const touchedMorphs = new Set<string>()
+      let isCamera = false
+      for (const col of columns) {
+        const target = Math.max(0, col.frame + df)
+        for (const { bone, kf } of col.boneRefs) {
+          kf.frame = target
+          touchedBones.add(bone)
+        }
+        for (const { morph, kf } of col.morphRefs) {
+          kf.frame = target
+          touchedMorphs.add(morph)
+        }
+        for (const kf of col.cameraRefs) kf.frame = target
+        if (col.cameraRefs.length > 0) isCamera = true
+        for (const e of col.selEntries) (e as { frame: number }).frame = target
+      }
+      // One sort per touched track, not per column — a wide selection touches
+      // the same track many times over.
+      for (const b of touchedBones) clip.boneTracks.get(b)?.sort((a, z) => a.frame - z.frame)
+      for (const m of touchedMorphs) clip.morphTracks.get(m)?.sort((a, z) => a.frame - z.frame)
+      dragTouchedRef.current = true
+      dragRedrawRef.current?.()
+      followDrag(Math.max(0, grabFrame + df), isCamera ? "camera" : "clip")
+    },
+    [clip, followDrag],
+  )
+
+  const onMarqueeSelect = useCallback(
+    (frames: number[], additive: boolean) => {
+      const camFlag = isCameraTab(tab) ? { camera: true as const } : {}
+      const fresh = frames.map((frame) => ({ type: "dope" as const, frame, ...camFlag }))
+      let next: SelectedKeyframe[]
+      if (!additive) {
+        next = fresh
+      } else {
+        // Union with the existing DOPE selection only — a curve selection
+        // left over from before this drag does not get dragged along.
+        const sameKind = selectedKeyframes.filter((k) => k.type === "dope")
+        const have = new Set(sameKind.map((k) => k.frame))
+        next = [...sameKind, ...fresh.filter((f) => !have.has(f.frame))]
+      }
+      setSelectedKeyframes(next)
+      jumpToSelectionStart(next.map((k) => k.frame))
+    },
+    [tab, selectedKeyframes, setSelectedKeyframes, jumpToSelectionStart],
+  )
+
+  const onMoveCurveSelection = useCallback(
+    (items: CurveDragItem[], df: number, dv: number, grabFrame: number) => {
+      if (items.length === 0) return
+      const touchedBones = new Set<string>()
+      const touchedMorphs = new Set<string>()
+      let isCamera = false
+      for (const it of items) {
+        const target = Math.max(0, it.origFrame + df)
+        it.setFrame(target)
+        it.setValue(it.origValue + dv)
+        ;(it.selEntry as { frame: number }).frame = target
+        if (it.kind === "bone" && it.name) touchedBones.add(it.name)
+        else if (it.kind === "morph" && it.name) touchedMorphs.add(it.name)
+        else if (it.kind === "camera") isCamera = true
+      }
+      for (const b of touchedBones) clip?.boneTracks.get(b)?.sort((a, z) => a.frame - z.frame)
+      for (const m of touchedMorphs) clip?.morphTracks.get(m)?.sort((a, z) => a.frame - z.frame)
+      dragTouchedRef.current = true
+      dragRedrawRef.current?.()
+      followDrag(Math.max(0, grabFrame + df), isCamera ? "camera" : "clip")
+    },
+    [clip, followDrag],
+  )
+
+  const onMarqueeSelectCurve = useCallback(
+    (entries: SelectedKeyframe[], additive: boolean) => {
+      let next: SelectedKeyframe[]
+      if (!additive) {
+        next = entries
+      } else {
+        // Union with the existing CURVE selection only — a dope selection
+        // left over from before this drag does not get dragged along.
+        const sameKind = selectedKeyframes.filter((k) => k.type === "curve")
+        const key = (k: SelectedKeyframe) => `${k.bone ?? ""}|${k.morph ?? ""}|${k.camera ? 1 : 0}|${k.channel ?? ""}|${k.frame}`
+        const have = new Set(sameKind.map(key))
+        next = [...sameKind, ...entries.filter((k) => !have.has(key(k)))]
+      }
+      setSelectedKeyframes(next)
+      jumpToSelectionStart(next.map((k) => k.frame))
+    },
+    [selectedKeyframes, setSelectedKeyframes, jumpToSelectionStart],
   )
 
   const onMoveCurveKeyframe = useCallback(
@@ -2497,6 +3252,7 @@ export function Timeline({
       <div ref={timelineAreaRef} style={{ flex: 1, minHeight: 0 }}>
         {clip ? (
           <TimelineCanvas
+            open={open}
             clip={clip}
             pxPerFrame={pxPerFrame}
             yZoom={yZoom}
@@ -2518,6 +3274,10 @@ export function Timeline({
             onSelectKeyframe={onSelectKeyframe}
             onClearSelection={clearSelection}
             onMoveDopeKeyframe={onMoveDopeKeyframe}
+            onMoveDopeColumns={onMoveDopeColumns}
+            onMarqueeSelect={onMarqueeSelect}
+            onMarqueeSelectCurve={onMarqueeSelectCurve}
+            onMoveCurveSelection={onMoveCurveSelection}
             onMoveCurveKeyframe={onMoveCurveKeyframe}
             onMoveMorphKeyframe={onMoveMorphKeyframe}
             onMoveCameraKeyframe={onMoveCameraKeyframe}
