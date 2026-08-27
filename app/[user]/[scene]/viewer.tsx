@@ -5,6 +5,8 @@
 // why publishing bundles them in the first place.
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react"
+import { BACKDROP_VIDEO_RE } from "@/lib/backdrop"
+import { createMediaFollower } from "@/lib/media-clock"
 import { primeAudioAnalysis } from "@/lib/audio-analysis"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
@@ -310,6 +312,16 @@ function SceneStage({
     [background, bundleFile],
   )
   const backdropUrl = useMemo(() => (backdropFile ? URL.createObjectURL(backdropFile) : null), [backdropFile])
+  // A video backdrop is a DIFFERENT ELEMENT, not a different src: an <img>
+  // pointed at a video blob renders nothing at all, which is exactly how a
+  // published scene with a moving background came back blank behind the cast.
+  // The bundle's Files carry no mime (new File([bytes], name)), so the kind is
+  // read off the path — the same regex the editor's picker admits videos by.
+  const backdropIsVideo = !!background && background.kind === "backdrop" && BACKDROP_VIDEO_RE.test(background.asset.url)
+  const bgVideoRef = useRef<HTMLVideoElement | null>(null)
+  /** The one shared follow policy — lib/media-clock. Free-run while playing,
+   *  stamp on start and jump, never seek on pause. */
+  const followBackdrop = useRef(createMediaFollower())
   useEffect(() => {
     if (!backdropUrl) return
     return () => URL.revokeObjectURL(backdropUrl)
@@ -571,6 +583,11 @@ function SceneStage({
       // card but as no card at all. A still card needed nothing here, which is
       // why only the moving ones were missing.
       if (p) tickPlanes(p.current, p.playing)
+      // The video backdrop, on the same clock as everything else. Muted, so
+      // playing it needs no gesture blessing — the audio element's ritual above
+      // is about sound, and this element has none.
+      const bgVideo = bgVideoRef.current
+      if (p && bgVideo) followBackdrop.current(bgVideo, p.current, p.playing)
       if (p) {
         // Free-running audio, like the reze.one demo: set the clock when
         // playback (re)starts or the animation clock jumps (loop wrap, seek),
@@ -605,9 +622,26 @@ function SceneStage({
     // to wait for anything here.
     <>
       {/* Backdrop layer: page bg colour → image (cover) → transparent canvas. */}
-      {backdropUrl && (
+      {backdropUrl && !backdropIsVideo && (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={backdropUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+      )}
+      {/* Played natively, as the editor does — the compositor handles the
+          frames, which is what holds 4K60. muted is not a preference: a
+          backdrop is picture, and muted is also what lets it start without a
+          gesture. loop matches the follower's wrap: a clip longer than the
+          video seeks INSIDE it, never past its end. */}
+      {backdropUrl && backdropIsVideo && (
+        <video
+          key={backdropUrl}
+          ref={bgVideoRef}
+          src={backdropUrl}
+          muted
+          loop
+          playsInline
+          preload="auto"
+          className="absolute inset-0 h-full w-full object-cover"
+        />
       )}
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none object-contain" />
 
