@@ -1245,14 +1245,16 @@ function TimelineCanvas({
       // Density never grows a diamond — several keys on one frame made the
       // whole strip lumpy the moment nothing was selected, and it repeats what
       // the alpha already says. Selection grows it a single pixel and draws a
-      // thin white border: marked, at the strip's own scale.
+      // thin white border on the SAME square just filled — an expanded outer
+      // ring here read visibly chunkier than the curve dots' matching stroke,
+      // which straddles the circle it just filled rather than growing past it.
       const sz = isSel ? DIAMOND + 1 : DIAMOND
       ctx.fillStyle = isSel ? C.diamondSel : `rgba(170,170,195,${intensity})`
       ctx.fillRect(-sz / 2, -sz / 2, sz, sz)
       if (isSel) {
         ctx.strokeStyle = "rgba(255,255,255,0.75)"
         ctx.lineWidth = 1
-        ctx.strokeRect(-sz / 2 - 1, -sz / 2 - 1, sz + 2, sz + 2)
+        ctx.strokeRect(-sz / 2, -sz / 2, sz, sz)
       }
       ctx.restore()
     }
