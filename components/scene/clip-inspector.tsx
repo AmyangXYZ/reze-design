@@ -527,7 +527,7 @@ function GizmoRow() {
         onClick={() => setGizmoVisible((v) => !v)}
         title={gizmoVisible ? t.lab.timeline.gizmoHideHint : t.lab.timeline.gizmoShowHint}
         className={cn(
-          "h-5 flex-1 rounded-chip border px-1 text-[11px]",
+          "h-5 flex-1 rounded-chip border px-1 text-[10px]",
           gizmoVisible
             ? "border-blue-400/30 bg-blue-400/[0.12] text-blue-400 hover:bg-blue-400/20 hover:text-blue-400"
             : "border-line-strong bg-surface-raised text-muted-foreground hover:text-foreground",
@@ -586,7 +586,7 @@ function OperationsSection({
   // tokens the editor actually themes. Ghost + those tokens is what makes an
   // operations chip look like it belongs to this panel, not a default.
   const row =
-    "h-5 flex-1 rounded-chip border border-line-strong bg-surface-raised px-1 text-[11px] text-muted-foreground hover:text-foreground"
+    "h-5 flex-1 rounded-chip border border-line-strong bg-surface-raised px-1 text-[10px] text-muted-foreground hover:text-foreground"
   // Delete / Cut / Clear remove something — the one accent AGENTS.md reserves
   // for exactly that, so a destructive chip reads as different in kind from
   // Insert/Copy/Paste/Simplify, not just a different label in the same gray.
