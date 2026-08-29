@@ -168,6 +168,7 @@ export const RenderPanel = memo(function RenderPanel({
   backdrop,
   backgroundColor,
   musicUrl,
+  musicVolume,
   audioSource,
   onAudioSourceChange,
   background,
@@ -195,6 +196,8 @@ export const RenderPanel = memo(function RenderPanel({
   /** Page background hex — the bottom layer of the export composite. */
   backgroundColor: string
   musicUrl: string | null
+  /** The scene's music level — the file is written at the level the preview played. */
+  musicVolume?: number
   /** Lifted to the page: also routes live audio (music element / backdrop video). */
   /** Optional as a pair: a host that omits them hides the audio row, and the
    *  export derives the source itself — music when a track is loaded, silence
@@ -490,6 +493,7 @@ export const RenderPanel = memo(function RenderPanel({
         backdrop,
         backgroundColor,
         musicUrl,
+        musicVolume,
         fileStream,
         directory,
         planes,

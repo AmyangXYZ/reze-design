@@ -63,6 +63,9 @@ import {
   Share2,
   Sun,
   Video,
+  Volume1,
+  Volume2,
+  VolumeX,
   Workflow,
   Upload,
   Sparkles,
@@ -110,6 +113,7 @@ import { LoadingPill, useLoadingLabel } from "@/components/editor/loading-pill"
 import { VERSION_LABEL } from "@/lib/version"
 import { ChoiceList } from "@/components/ui/choice-list"
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
+import { Slider } from "@/components/ui/slider"
 import { ColorField } from "@/components/color-picker"
 import { useAudioClock } from "@/hooks/use-audio-clock"
 import { primeAudioAnalysis } from "@/lib/audio-analysis"
@@ -1373,10 +1377,16 @@ function CastLine({
    *  three (raise, lower, remove) has to say so, or the third button lands on
    *  the name it is meant to sit clear of. */
   reserve = "pr-12",
+  revealed,
 }: {
   text: ReactNode
   actions: ReactNode
   reserve?: string
+  /** Hold the actions up regardless of hover. For a button that opens something
+   *  ANCHORED to it: the popover takes the pointer and the focus, so hover and
+   *  focus-within both go false and the control the panel is hanging off fades
+   *  out from under it. */
+  revealed?: boolean
 }) {
   return (
     // -mx-1 px-1: the highlight breathes past the text without moving it.
@@ -1387,7 +1397,12 @@ function CastLine({
           tried on top and deleted: with a real reserve there is nothing left
           for them to fix.) */}
       <span className={cn("flex min-w-0 flex-1 items-center", reserve)}>{text}</span>
-      <span className="absolute inset-y-0 right-0.5 flex items-center gap-0.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100 focus-within:opacity-100">
+      <span
+        className={cn(
+          "absolute inset-y-0 right-0.5 flex items-center gap-0.5 transition-opacity duration-200 group-hover:opacity-100 focus-within:opacity-100",
+          revealed ? "opacity-100" : "opacity-0",
+        )}
+      >
         {actions}
       </span>
     </span>
@@ -1559,6 +1574,8 @@ function ClipRow({
   onRemove,
   onEdit,
   onDownload,
+  volume,
+  onVolume,
 }: {
   icon: ComponentType<{ className?: string }>
   /** Loaded clip name, or null. */
@@ -1578,90 +1595,156 @@ function ClipRow({
   /** Save this slot's file. Absent on rows whose bytes the app does not hold as
    *  a file it can hand over. */
   onDownload?: () => void
+  /** Playback level, 0–1. Given as a pair with onVolume; a row without both has
+   *  nothing to sound. */
+  volume?: number
+  onVolume?: (v: number) => void
 }) {
   const t = useT()
   // Deleting a clip asks first. Not window.confirm — see ConfirmDialog.
   const [confirming, setConfirming] = useState(false)
+  // The level's popover hangs off a button that hover alone would hide the
+  // moment the pointer reaches the slider — see CastLine's `revealed`.
+  const [volumeOpen, setVolumeOpen] = useState(false)
+  // Four fit the wide reserve; three fit the narrow one. Counted rather than
+  // inferred from which optional props are present, so a row that gains a
+  // control cannot silently outgrow the space its name is kept clear of.
+  const actionCount = 2 + (onEdit ? 1 : 0) + (onDownload ? 1 : 0) + (onVolume ? 1 : 0)
+  const Speaker = (volume ?? 1) <= 0 ? VolumeX : (volume ?? 1) < 0.5 ? Volume1 : Volume2
   return (
-    // Bare size-4 icon at gap-2.5, exactly as LayerRow sets its own icon and
-    // name — a clip row and a Scene row are siblings in the same column, and
-    // an invisible centring box around the icon read as a wider gap.
-    <div className="flex items-center gap-2.5 px-4 py-1">
-      <Icon className="size-4 shrink-0 text-muted-foreground" />
-      <span className="flex min-w-0 flex-1 flex-col">
-        {/* One differentiator, the underline: a filled name is muted plain
-            text, an empty slot is the same mute WITH an underline — the CTA
-            mark — and is itself the button. White-filled was tried and put two
-            white lines in every cast row, flattening name-over-value. */}
-        <CastLine
-          // Three buttons, not the default two — otherwise a long filename runs
-          // under the last one instead of ending clear of the button zone.
-          // Reserved so a long filename ends clear of the buttons rather than
-          // running under them. Four controls where there are four.
-          reserve={onEdit && onDownload ? "pr-[6rem]" : "pr-[4.5rem]"}
-          text={
-            clip ? (
-              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={clipLabel(clip)}>
-                {clipLabel(clip)}
-              </span>
-            ) : (
-              <UploadInvite label={empty} onClick={onPick} aria={t.lab.aria.upload(kind, of)} />
-            )
-          }
-          actions={
-            <>
-              {/* Upload, edit, delete — the order the row is used in. Putting a
-                  file here is what an empty row is FOR, editing needs one, and
-                  deleting ends it. Fixed in every state so the control under
-                  the cursor does not move as a scene fills in. */}
-              <CastAction
-                icon={Upload}
-                // A step up from size-3: the Upload mark sits inside its own
-                // padding, so at the size the row's other glyphs use it reads
-                // as the smallest thing in a row where it is the primary act.
-                iconClass="size-3.5"
-                label={clip ? t.lab.aria.replace(kind, of) : t.lab.aria.upload(kind, of)}
-                onClick={onPick}
-              />
-              {/* No iconClass — the same PenLine at the same size as the one on
-                  an effect row. Editing a clip and editing an effect are the
-                  same act on two kinds of thing, and they were drawn a size
-                  apart. */}
-              {onEdit && <CastAction icon={PenLine} label={t.lab.aria.edit(kind, of)} onClick={onEdit} />}
-              {/* Between edit and delete, which is the order of consequence:
-                  put a file in, change it, take a copy, end it. Taking a copy
-                  belongs beside the edit it preserves rather than beside the
-                  delete it protects against. */}
-              {onDownload && (
-                <CastAction
-                  icon={Download}
-                  iconClass="size-3.5"
-                  disabled={!clip}
-                  label={t.lab.aria.download(kind, of)}
-                  onClick={onDownload}
-                />
-              )}
-              <CastAction
-                icon={X}
-                danger
-                disabled={!clip}
-                label={t.lab.aria.delete(kind, of)}
-                onClick={() => setConfirming(true)}
-              />
-            </>
-          }
-        />
-      </span>
-      <ConfirmDialog
-        open={confirming}
-        onOpenChange={setConfirming}
-        title={t.lab.deleteClip.title(kind)}
-        body={t.lab.deleteClip.body}
-        confirmLabel={t.lab.deleteClip.confirm}
-        cancelLabel={t.lab.deleteClip.cancel}
-        onConfirm={onRemove}
-      />
-    </div>
+    // The ROW is the anchor, not the speaker inside it: the level opens as a
+    // second line of this row — its width, its padding, its leading-icon slot —
+    // rather than as a panel floating off one button.
+    <Popover open={volumeOpen} onOpenChange={setVolumeOpen}>
+      <PopoverAnchor asChild>
+        {/* Bare size-4 icon at gap-2.5, exactly as LayerRow sets its own icon and
+            name — a clip row and a Scene row are siblings in the same column, and
+            an invisible centring box around the icon read as a wider gap. */}
+        <div className="flex items-center gap-2.5 px-4 py-1">
+          <Icon className="size-4 shrink-0 text-muted-foreground" />
+          <span className="flex min-w-0 flex-1 flex-col">
+            {/* One differentiator, the underline: a filled name is muted plain
+                text, an empty slot is the same mute WITH an underline — the CTA
+                mark — and is itself the button. White-filled was tried and put two
+                white lines in every cast row, flattening name-over-value. */}
+            <CastLine
+              // Three buttons, not the default two — otherwise a long filename runs
+              // under the last one instead of ending clear of the button zone.
+              // Reserved so a long filename ends clear of the buttons rather than
+              // running under them. Four controls where there are four.
+              reserve={actionCount >= 4 ? "pr-[6rem]" : "pr-[4.5rem]"}
+              revealed={volumeOpen}
+              text={
+                clip ? (
+                  <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={clipLabel(clip)}>
+                    {clipLabel(clip)}
+                  </span>
+                ) : (
+                  <UploadInvite label={empty} onClick={onPick} aria={t.lab.aria.upload(kind, of)} />
+                )
+              }
+              actions={
+                <>
+                  {/* Upload, edit, delete — the order the row is used in. Putting a
+                      file here is what an empty row is FOR, editing needs one, and
+                      deleting ends it. Fixed in every state so the control under
+                      the cursor does not move as a scene fills in. */}
+                  <CastAction
+                    icon={Upload}
+                    // A step up from size-3: the Upload mark sits inside its own
+                    // padding, so at the size the row's other glyphs use it reads
+                    // as the smallest thing in a row where it is the primary act.
+                    iconClass="size-3.5"
+                    label={clip ? t.lab.aria.replace(kind, of) : t.lab.aria.upload(kind, of)}
+                    onClick={onPick}
+                  />
+                  {/* No iconClass — the same PenLine at the same size as the one on
+                      an effect row. Editing a clip and editing an effect are the
+                      same act on two kinds of thing, and they were drawn a size
+                      apart. */}
+                  {onEdit && <CastAction icon={PenLine} label={t.lab.aria.edit(kind, of)} onClick={onEdit} />}
+                  {/* Beside the edit, because that is what it is: the one thing
+                      about a track this app can change without touching the file.
+                      The glyph carries the level — crossed at silence, one arc
+                      under half — so the row says it without being opened. */}
+                  {onVolume && (
+                    <CastAction
+                      icon={Speaker}
+                      label={t.lab.aria.volume(kind)}
+                      disabled={!clip}
+                      onClick={() => setVolumeOpen((o) => !o)}
+                    />
+                  )}
+                  {/* Between edit and delete, which is the order of consequence:
+                      put a file in, change it, take a copy, end it. Taking a copy
+                      belongs beside the edit it preserves rather than beside the
+                      delete it protects against. */}
+                  {onDownload && (
+                    <CastAction
+                      icon={Download}
+                      iconClass="size-3.5"
+                      disabled={!clip}
+                      label={t.lab.aria.download(kind, of)}
+                      onClick={onDownload}
+                    />
+                  )}
+                  <CastAction
+                    icon={X}
+                    danger
+                    disabled={!clip}
+                    label={t.lab.aria.delete(kind, of)}
+                    onClick={() => setConfirming(true)}
+                  />
+                </>
+              }
+            />
+          </span>
+          <ConfirmDialog
+            open={confirming}
+            onOpenChange={setConfirming}
+            title={t.lab.deleteClip.title(kind)}
+            body={t.lab.deleteClip.body}
+            confirmLabel={t.lab.deleteClip.confirm}
+            cancelLabel={t.lab.deleteClip.cancel}
+            onConfirm={onRemove}
+          />
+        </div>
+      </PopoverAnchor>
+      {onVolume && (
+        <PopoverContent
+          // Under the speaker that opened it, at the right edge of the row the
+          // anchor spans. Deliberately SHORT of the row: a track and a number is
+          // the whole control, and a panel as wide as the dock implies there is
+          // more of it below.
+          align="end"
+          side="bottom"
+          sideOffset={2}
+          className="flex w-40 items-center gap-1.5 rounded-full border-line-strong bg-surface-raised px-2 py-1 shadow-float"
+          // Focus stays on the speaker rather than being grabbed by the slider,
+          // which would open the panel with a ring already on it. Closing keeps
+          // the primitive's own handling — it returns focus for a keyboard user
+          // and withholds it from a pointer, which is what last-input is for.
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          {/* No label and no icon: the speaker directly above states both, and
+              at this width every pixel one took would come off the track. */}
+          <Slider
+            aria-label={t.lab.aria.volume(kind)}
+            className="min-w-0 flex-1 [&_[data-slot=slider-thumb]]:size-2.5 [&_[data-slot=slider-thumb]]:hover:ring-2 [&_[data-slot=slider-track]]:h-1"
+            value={[volume ?? 1]}
+            min={0}
+            max={1}
+            step={0.01}
+            onValueChange={([v]) => onVolume(v)}
+          />
+          {/* Narrower than the standard value box: right-aligned in w-10, "100%"
+              leaves a gap the eye reads as part of the space beside the track. */}
+          <span className={cn(VALUE_BOX, "w-8 border-transparent text-muted-foreground")}>
+            {Math.round((volume ?? 1) * 100)}%
+          </span>
+        </PopoverContent>
+      )}
+    </Popover>
   )
 }
 
@@ -2465,10 +2548,10 @@ export default function Lab() {
   // that path sets src, which reloads on its own.
   useEffect(() => {
     if (musicClip) return
-    const audio = audioRef.current
-    if (!audio) return
-    audio.pause()
-    audio.load()
+    const el = audioRef.current
+    if (!el) return
+    el.pause()
+    el.load()
   }, [musicClip])
 
   const scrubRef = useRef<Scrub | null>(null)
@@ -2531,7 +2614,15 @@ export default function Lab() {
       setSettings((s2) => ({ ...s2, [key]: { ...s2[key], ...part } })),
     [],
   )
-  const { sun, world, bloom, dof, grade, ground, physics, view } = settings
+  const { sun, world, bloom, dof, grade, ground, physics, view, audio } = settings
+  // The scene's music level onto the element. `volume` is a property with no
+  // content attribute behind it, so React cannot carry it in the JSX — written
+  // here, and on every track change too: a new src keeps the element's level,
+  // but a row that swaps the element outright would start at 1.
+  useEffect(() => {
+    const el = audioRef.current
+    if (el) el.volume = Math.max(0, Math.min(1, audio.volume))
+  }, [audio.volume, musicClip])
   // The scene's effects, IN LAYER ORDER. The document has held a list for a
   // while and the viewer has rendered one; this was its first entry only, so a
   // four-effect scene opened here kept one and saved one back.
@@ -6095,6 +6186,8 @@ export default function Lab() {
                 kind={t.lab.kinds.music}
                 onPick={() => musicInput.current?.click()}
                 onRemove={removeMusic}
+                volume={audio.volume}
+                onVolume={(v) => patch("audio", { volume: v })}
               />
               {midiClip && (
                 <ClipRow
@@ -7273,6 +7366,7 @@ export default function Lab() {
               backdrop={bgImage && !bgImage.dome ? bgImage : null}
               backgroundColor={settings.background.color}
               musicUrl={musicClip?.url ?? null}
+              musicVolume={audio.volume}
               background={framing.background}
               onBackgroundChange={framing.setBackground}
               onExportingChange={(v) => {

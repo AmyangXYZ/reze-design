@@ -496,18 +496,31 @@ export async function captureStill(opts: {
 }
 
 /** Decode the music track and slice [startTime, startTime + exportDuration] out */
-async function buildMusicAudio(url: string, startTime: number, exportDuration: number): Promise<AudioBuffer | null> {
+async function buildMusicAudio(
+  url: string,
+  startTime: number,
+  exportDuration: number,
+  volume: number,
+): Promise<AudioBuffer | null> {
   const data = await (await fetch(url)).arrayBuffer()
   const ac = new AudioContext()
   try {
     const decoded = await ac.decodeAudioData(data)
-    if (startTime <= 0 && decoded.duration <= exportDuration + 0.05) return decoded
+    // The decoded buffer travels untouched only when the export wants all of it
+    // at the level it was mixed at. A scene the author turned the music down in
+    // takes the copy below, so the file sounds like the preview did.
+    const gain = Math.max(0, Math.min(1, volume))
+    if (startTime <= 0 && decoded.duration <= exportDuration + 0.05 && gain === 1) return decoded
     const rate = decoded.sampleRate
     const from = Math.min(Math.floor(startTime * rate), decoded.length)
     const length = Math.max(1, Math.min(Math.ceil(exportDuration * rate), decoded.length - from))
     const out = new AudioBuffer({ length, numberOfChannels: decoded.numberOfChannels, sampleRate: rate })
-    for (let c = 0; c < decoded.numberOfChannels; c++)
-      out.getChannelData(c).set(decoded.getChannelData(c).subarray(from, from + length))
+    for (let c = 0; c < decoded.numberOfChannels; c++) {
+      const src = decoded.getChannelData(c).subarray(from, from + length)
+      const dst = out.getChannelData(c)
+      dst.set(src)
+      if (gain !== 1) for (let i = 0; i < dst.length; i++) dst[i] *= gain
+    }
     return out
   } finally {
     void ac.close()
@@ -639,6 +652,9 @@ export async function exportVideo(opts: {
   backgroundColor: string
   /** Object/blob URL of the music track (used when audioSource === "music"). */
   musicUrl: string | null
+  /** The scene's music level, amplitude 0–1. The file gets the level the
+   *  preview played at. */
+  musicVolume?: number
   /** File System Access API writable — muxed targets. */
   fileStream?: FileSystemWritableFileStream
   /** Destination folder — PNG sequence target. */
@@ -668,7 +684,7 @@ export async function exportVideo(opts: {
   // A PNG sequence has no audio track to carry — the music comes out of the
   // ordinary video export beside it.
   if (target !== "png" && settings.audioSource === "music" && musicUrl)
-    audioBuffer = await buildMusicAudio(musicUrl, startTime, duration)
+    audioBuffer = await buildMusicAudio(musicUrl, startTime, duration, opts.musicVolume ?? 1)
 
   // ── Backdrop layer (skipped entirely for a compositing handoff) ──
   const backdropFrames =

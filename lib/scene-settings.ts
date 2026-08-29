@@ -42,6 +42,15 @@ export type SceneSettings = {
   view: { transform: "standard" | "filmic" | "agx"; exposure: number }
   /** Post-tonemap color grade. */
   grade: GradeSettings
+  /**
+   * How loud the track plays, as amplitude 0–1.
+   *
+   * A document setting rather than a viewer preference: it is the level the
+   * author mixed the scene at, so the preview, the published viewer and the
+   * exported file all read this one number. A viewer turning their own speakers
+   * down is a different act, and their system already has that control.
+   */
+  audio: { volume: number }
   ground: {
     color: string
     /** Side length of the (square) ground plane in world units — the model is ~18 units tall. */
@@ -102,6 +111,11 @@ export const DEFAULT_OUTLINE: SceneSettings["outline"] = { enabled: false }
  * re-grade itself because the control it never touched became visible.
  */
 export const DEFAULT_VIEW: SceneSettings["view"] = { transform: "filmic", exposure: 0.6 }
+
+/** What a document without an audio block gets. Full level: every scene written
+ *  before the control existed played its track at the element's own default, and
+ *  that is the only value that brings one back sounding as it did. */
+export const DEFAULT_AUDIO: SceneSettings["audio"] = { volume: 1 }
 
 /** What a document without a physics block gets. Documents published before
  *  the section existed are read through this rather than migrated — the same

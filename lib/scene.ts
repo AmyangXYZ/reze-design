@@ -4,7 +4,14 @@ import type { ShaderGraph, StyleGroup } from "reze-engine"
 import pkg from "@/package.json"
 import type { AppliedEffect } from "@/lib/effects"
 import type { EffectWindow } from "@/lib/effect-schedule"
-import { DEFAULT_DOF, DEFAULT_OUTLINE, DEFAULT_PHYSICS, DEFAULT_VIEW, type SceneSettings } from "@/lib/scene-settings"
+import {
+  DEFAULT_AUDIO,
+  DEFAULT_DOF,
+  DEFAULT_OUTLINE,
+  DEFAULT_PHYSICS,
+  DEFAULT_VIEW,
+  type SceneSettings,
+} from "@/lib/scene-settings"
 import { storageKey } from "@/lib/storage"
 
 export const SCENE_FORMAT_VERSION = 1
@@ -663,6 +670,9 @@ export function parseSceneDoc(
         // Likewise for the view transform: absent means the scene was authored
         // under the engine's Filmic default, which is what DEFAULT_VIEW restates.
         view: { ...DEFAULT_VIEW, ...settings.view },
+        // And for the music level: absent means the track was authored playing
+        // at full, which is what DEFAULT_AUDIO restates.
+        audio: { ...DEFAULT_AUDIO, ...settings.audio },
         background: { color: background.color },
       },
       backgroundEffects: appliedEffects(background, resolveEffect, resolveRef),
@@ -1061,6 +1071,7 @@ function restored(base: Scene): Scene {
         dof: { ...base.state.settings.dof, ...settingsBase.dof },
         outline: { ...base.state.settings.outline, ...settingsBase.outline },
         view: { ...base.state.settings.view, ...settingsBase.view },
+        audio: { ...base.state.settings.audio, ...settingsBase.audio },
         background: { ...base.state.settings.background, ...settingsBase.background },
         grade: { ...base.state.settings.grade, ...settingsBase.grade },
         ground: { ...base.state.settings.ground, ...settingsBase.ground },

@@ -429,6 +429,13 @@ function SceneStage({
   }, [audioSrc])
 
   const audioElRef = useRef<HTMLAudioElement>(null)
+  // The level the scene was mixed at. A property with no content attribute
+  // behind it, so it is written rather than passed in the JSX below.
+  const musicVolume = scene.state.settings.audio.volume
+  useEffect(() => {
+    const el = audioElRef.current
+    if (el) el.volume = Math.max(0, Math.min(1, musicVolume))
+  }, [musicVolume, audioSrc])
   // Whether the animation clock currently wants sound. Written by the tick
   // below, read by the gesture handler above it — a ref rather than state
   // because the handler is registered once, at mount, and must see the CURRENT

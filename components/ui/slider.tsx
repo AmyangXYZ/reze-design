@@ -81,6 +81,12 @@ function Slider({
         <SliderPrimitive.Thumb
           data-slot="slider-thumb"
           key={index}
+          // The THUMB is the element with role="slider", so its name has to
+          // arrive here — on the Root it names a plain span and no reader ever
+          // hears it. Radix takes an enclosing <Label> as the other route; a
+          // slider whose label is a bare <span>, which is every one of ours,
+          // has only this.
+          aria-label={props["aria-label"]}
           className="block size-4 shrink-0 rounded-full border border-primary bg-white shadow-sm ring-ring/50 transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50"
           style={accent ? { backgroundColor: accent, borderColor: accent } : undefined}
         />

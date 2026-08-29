@@ -4,7 +4,7 @@ import { FOLLOW_BONE } from "@/components/scene/scene-sidebar"
 import { builtinEffect } from "@/lib/effects"
 import { libraryGraph } from "@/lib/materials"
 import { parseSceneDoc, type Scene, type SceneDoc } from "@/lib/scene"
-import { DEFAULT_DOF, DEFAULT_OUTLINE, DEFAULT_PHYSICS, DEFAULT_VIEW } from "@/lib/scene-settings"
+import { DEFAULT_AUDIO, DEFAULT_DOF, DEFAULT_OUTLINE, DEFAULT_PHYSICS, DEFAULT_VIEW } from "@/lib/scene-settings"
 
 /**
  * Whether this build boots into the demo scene.
@@ -133,6 +133,7 @@ const DEMO_SCENE_DOC: SceneDoc = {
     dof: DEFAULT_DOF,
     outline: DEFAULT_OUTLINE,
     view: DEFAULT_VIEW,
+    audio: DEFAULT_AUDIO,
     // Both are ADDITIVE-friendly and sit on different mounts — Shining Stars is
     // a background field, Hand Ribbon is particles and trails — so neither can
     // paint over the other and the order here is free. It is not free in
@@ -176,6 +177,7 @@ export const EMPTY_SCENE_DOC: SceneDoc = {
     dof: DEFAULT_DOF,
     outline: DEFAULT_OUTLINE,
     view: DEFAULT_VIEW,
+    audio: DEFAULT_AUDIO,
     background: { color: "#1c1c1e", effects: [] },
     grade: { preset: "Neutral", intensity: 1 },
     ground: { color: "#3a3a3d", size: 160, opacity: 0.42, shadow: true, grid: "#fafaf9", gridEnabled: true },
