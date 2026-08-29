@@ -16,6 +16,22 @@ export function hslToHex(h: number, s: number, l: number): string {
   return `#${f(0)}${f(8)}${f(4)}`
 }
 
+/** `#rrggbb` back to [hue°, saturation, lightness]. Null when the text is not a hex. */
+export function hexToHsl(hex: string): [number, number, number] | null {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim())
+  if (!m) return null
+  const n = parseInt(m[1], 16)
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => c / 255)
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const l = (max + min) / 2
+  const d = max - min
+  if (d < 1e-6) return [0, 0, l]
+  const s = d / (1 - Math.abs(2 * l - 1))
+  const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4
+  return [((h * 60) % 360 + 360) % 360, Math.min(1, s), l]
+}
+
 
 /** A tonal range as [hue°, saturation, lightness?]. */
 export type Range = readonly [number, number] | readonly [number, number, number]

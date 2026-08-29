@@ -3,7 +3,8 @@
 // Color-grading wheel — the instrument every grading tool uses (Resolve's Lift/Gamma/Gain
 
 import { useCallback, useRef } from "react"
-import { hslToHex, type Range } from "@/lib/grade"
+import { HexField } from "@/components/color-picker"
+import { hexToHsl, hslToHex, type Range } from "@/lib/grade"
 
 // Muted ring: the wheel is a map, not a subject.
 const RING = [0, 60, 120, 180, 240, 300, 360].map((h) => `hsl(${h} 45% 50%)`).join(", ")
@@ -11,6 +12,11 @@ const WHEEL_BG = [
   "radial-gradient(circle closest-side, rgba(128,128,128,1) 0%, rgba(128,128,128,0) 100%)",
   `conic-gradient(from 90deg, ${RING})`,
 ].join(", ")
+
+// Lightness travels a rail rather than the full 0..1: the ends are crush and blowout,
+// where a range stops grading and starts flattening. A typed hex lands on the rail too.
+const L_MIN = 0.24
+const L_MAX = 0.76
 
 // Hue 0 at 3 o'clock increasing clockwise, matching `from 90deg` above
 const toXY = (h: number, r: number) => ({
@@ -98,8 +104,8 @@ export function ColorWheel({
       <input
         type="range"
         aria-label={`${label} lightness`}
-        min={0.24}
-        max={0.76}
+        min={L_MIN}
+        max={L_MAX}
         step={0.01}
         value={lightness}
         onChange={(e) => onChange([hue, sat, Number(e.target.value)])}
@@ -107,10 +113,18 @@ export function ColorWheel({
       />
 
       {resolved && (
-        // A proper swatch CELL, the same shape as the colour picker's
+        // A proper swatch CELL, the same shape as the colour picker's — and the hex under
+        // it is the field, so a colour from a reference frame or a palette goes in directly.
         <div className="flex flex-col items-center gap-1">
           <div className="h-6 w-16 rounded-md ring-1 ring-white/10" style={{ backgroundColor: resolved }} />
-          <div className="truncate font-mono text-[10px] text-muted-foreground">{resolved}</div>
+          <HexField
+            value={resolved}
+            onChange={(hex) => {
+              const hsl = hexToHsl(hex)
+              if (hsl) onChange([hsl[0], hsl[1], Math.min(L_MAX, Math.max(L_MIN, hsl[2]))])
+            }}
+            className="h-5 w-16 px-1 text-center text-[10px]"
+          />
         </div>
       )}
     </div>

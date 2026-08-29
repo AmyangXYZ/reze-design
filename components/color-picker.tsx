@@ -12,7 +12,16 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 // Cells stretch to fill the dialog width (label column + 11 equal columns).
 const GRID = "grid grid-cols-[3.75rem_repeat(11,minmax(0,1fr))] gap-x-3"
 
-function HexField({ value, onChange }: { value: string; onChange: (hex: string) => void }) {
+/** Hex text field — typing a complete `#rrggbb` commits it live. */
+export function HexField({
+  value,
+  onChange,
+  className,
+}: {
+  value: string
+  onChange: (hex: string) => void
+  className?: string
+}) {
   // Controlled text so the preview refreshes live while typing
   const [text, setText] = useState(value)
   const last = useRef(value)
@@ -25,7 +34,10 @@ function HexField({ value, onChange }: { value: string; onChange: (hex: string) 
     <input
       value={text}
       spellCheck={false}
-      className="h-7 w-28 rounded-md border border-white/10 bg-black/30 px-2 font-mono text-xs outline-none focus:border-blue-400/50"
+      className={cn(
+        "h-7 w-28 rounded-md border border-white/10 bg-black/30 px-2 font-mono text-xs outline-none focus:border-blue-400/50",
+        className,
+      )}
       onFocus={() => (focused.current = true)}
       onBlur={() => {
         focused.current = false
