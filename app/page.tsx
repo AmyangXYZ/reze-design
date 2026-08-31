@@ -5071,7 +5071,20 @@ export default function Lab() {
       // first load. A compositing handoff keeps the neutral: green and alpha are
       // read THROUGH, and tinting what shows around the framed rect would bias the
       // judgement the mode exists to support.
-      style={{ backgroundColor: isCompositingBackground(framing.liveBackground) ? "#000" : settings.background.color }}
+      //
+      // Gated on `mounted` for the reason the audio element's src is: the scene
+      // comes from storage the server cannot read, so the first client pass has
+      // to emit what the server did or hydration reports a mismatch and gives up
+      // on the attribute. Before mount that is DEFAULT_SCENE's colour, which is
+      // exactly what <body> carries — the two agree, and the restored scene's own
+      // colour lands a tick later.
+      style={{
+        backgroundColor: !mounted
+          ? DEFAULT_SCENE.state.settings.background.color
+          : isCompositingBackground(framing.liveBackground)
+            ? "#000"
+            : settings.background.color,
+      }}
     >
       {/* Full bleed, always. Chrome floats over it; nothing ever shrinks the
           thing you are making. */}
