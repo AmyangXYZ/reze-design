@@ -41,6 +41,8 @@ export const USE_DEFAULT_SCENE = YES.includes((process.env.NEXT_PUBLIC_USE_DEFAU
  * Upload with `scripts/r2-upload-demo.mjs` — see its header.
  */
 const DEMO = "https://assets.reze.one/demo/reze-design"
+// The cast, shared by every site rather than copied into each one's folder.
+const MODEL = "https://assets.reze.one/demo/reze"
 
 const DEMO_SCENE_DOC: SceneDoc = {
   version: 1,
@@ -48,7 +50,7 @@ const DEMO_SCENE_DOC: SceneDoc = {
   assets: {
     models: [
       {
-        model: `${DEMO}/models/托特-扉页之吻/苍鹭·托特「扉页之吻」白衣.pmx`,
+        model: `${MODEL}/reze.pmx`,
         // The Classic set, cut for the demo: a dance, the expressions that go
         // with it, and the track they were timed to. A first-time visitor should
         // land on a scene doing all three at once — a character dancing in
@@ -64,35 +66,24 @@ const DEMO_SCENE_DOC: SceneDoc = {
         morph: `${DEMO}/animations/Demo_morph.vmd`,
         materials: {
           groups: [
-            { label: "Body", materials: ["皮肤", "手"], graph: "AG Body" },
+            { label: "Body", materials: ["skin"], graph: "AG Body" },
             {
               label: "Smooth Cloth",
-              materials: [
-                "裤子",
-                "衣服",
-                "衣饰",
-                "裙带",
-                "裙带1",
-                "胸口布",
-                "胸口布1",
-                "头巾白",
-                "衣花白",
-                "衣花白1",
-                "衣服白",
-                "手套",
-                "袖子",
-                "鞋子白",
-                "鞋子带白",
-                "头巾小白",
-                "裙子白",
-                "裙子白1",
-              ],
+              materials: ["shirt", "shorts", "ribbon", "choker", "bozi", "cloth01", "cloth01.001"],
               graph: "AG Smooth Cloth",
             },
-            { label: "Metal", materials: ["指甲"], graph: "AG Metal" },
+            { label: "Rough Cloth", materials: ["Rubber", "Leather"], graph: "AG Rough Cloth" },
+            { label: "Stockings", materials: ["socks"], graph: "AG Stockings" },
             { label: "Hair", materials: ["头发"], graph: "AG Hair", role: "hair" },
-            { label: "Face", materials: ["脸", "牙齿", "舌头", "口腔"], graph: "AG Face" },
-            { label: "Eye", materials: ["眼白", "眉毛", "眼睛", "眼睛1"], graph: "AG Eye", role: "eye" },
+            { label: "Face", materials: ["face01", "唇", "齿", "口腔", "舌"], graph: "AG Face" },
+            {
+              label: "Eye",
+              // The brows and lashes ride with the eyes, as they did on the last
+              // model: they are drawn as eye features rather than as skin.
+              materials: ["目白", "瞳1", "瞳2", "eyebrow", "eyelash", "eyelash_crease"],
+              graph: "AG Eye",
+              role: "eye",
+            },
           ],
           hidden: [],
         },
@@ -131,7 +122,7 @@ const DEMO_SCENE_DOC: SceneDoc = {
     sun: { color: "#ffffff", strength: 2.0, azimuth: 205, elevation: 21 },
     bloom: { enabled: true, threshold: 0.5, knee: 0.5, radius: 4.0, intensity: 0.05, color: "#ffc9c9" },
     dof: DEFAULT_DOF,
-    outline: DEFAULT_OUTLINE,
+    outline: { enabled: true },
     view: DEFAULT_VIEW,
     audio: DEFAULT_AUDIO,
     // Both are ADDITIVE-friendly and sit on different mounts — Shining Stars is
@@ -145,7 +136,7 @@ const DEMO_SCENE_DOC: SceneDoc = {
     // dissolve that runs in three passes, and the first paint of the site is the
     // one frame that has to be quick on whatever machine arrives. It is one
     // click away in the library, which is where somebody who wants it will be.
-    background: { color: "#4b004f", effects: [{ source: "Shining Stars" }, { source: "Hand Ribbon" }] },
+    background: { color: "#f6cfff", effects: [{ source: "Shining Stars" }, { source: "Hand Ribbon" }] },
     grade: { preset: "Neutral", intensity: 1 },
     ground: { color: "#c800de", size: 160, opacity: 0.42, shadow: true, grid: "#fafaf9", gridEnabled: true },
     physics: DEFAULT_PHYSICS,

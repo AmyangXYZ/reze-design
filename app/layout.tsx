@@ -61,7 +61,13 @@ export default function RootLayout({
       translate="no"
       className={`dark notranslate ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col text-foreground">
+      <body
+        className="min-h-full flex flex-col text-foreground"
+        // The colour this build boots into — the demo's, or the empty scene's,
+        // whichever DEFAULT_SCENE resolves to. Painted before a line of React
+        // exists, so the first frame is already the right colour.
+        style={{ backgroundColor: DEFAULT_SCENE.state.settings.background.color }}
+      >
         {/* A small delay lets hover-revealed triggers finish laying out before the tooltip opens */}
         <NoNativeContextMenu />
         <NoStickyFocus />

@@ -136,7 +136,6 @@
   }
   body {
     @apply bg-background text-foreground;
-    background-color: #0d1116;
   }
   /* Tailwind v4's preflight leaves buttons at cursor:default — every enabled
      button in this app is clickable and should say so. */

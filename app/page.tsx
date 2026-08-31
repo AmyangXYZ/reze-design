@@ -5064,7 +5064,15 @@ export default function Lab() {
   )
 
   return (
-    <main className="relative h-dvh w-screen overflow-hidden bg-black select-none">
+    <main
+      className="relative h-dvh w-screen overflow-hidden select-none"
+      // The scene's own colour, so the ground under the canvas is the colour the
+      // canvas is about to paint — no flash from a chrome default to the scene on
+      // first load. A compositing handoff keeps the neutral: green and alpha are
+      // read THROUGH, and tinting what shows around the framed rect would bias the
+      // judgement the mode exists to support.
+      style={{ backgroundColor: isCompositingBackground(framing.liveBackground) ? "#000" : settings.background.color }}
+    >
       {/* Full bleed, always. Chrome floats over it; nothing ever shrinks the
           thing you are making. */}
       {/* Transparent preview: the compositor's checkerboard, exactly under the
