@@ -125,18 +125,22 @@ const DEMO_SCENE_DOC: SceneDoc = {
     outline: { enabled: true },
     view: DEFAULT_VIEW,
     audio: DEFAULT_AUDIO,
-    // Both are ADDITIVE-friendly and sit on different mounts — Shining Stars is
-    // a background field, Hand Ribbon is particles and trails — so neither can
-    // paint over the other and the order here is free. It is not free in
+    // Both are ADDITIVE-friendly and both are particles in the scene pass —
+    // Floating Stars around the cast, Hand Ribbon off her wrists — so they sum
+    // wherever they overlap and the order here is free. It is not free in
     // general: a full-cover backdrop has to come first or it erases what is
     // under it.
+    //
+    // Shining Stars is the SKY and stays in the library rather than the demo: it
+    // is a background field, so it is read through whatever the scene's own
+    // background colour leaves it, and on a light ground that is nothing.
     //
     // TELEPORTATION IS NOT IN THE DEMO, though it is the effect this build is
     // for. It costs seven thousand particles, three lights and a material
     // dissolve that runs in three passes, and the first paint of the site is the
     // one frame that has to be quick on whatever machine arrives. It is one
     // click away in the library, which is where somebody who wants it will be.
-    background: { color: "#f6cfff", effects: [{ source: "Shining Stars" }, { source: "Hand Ribbon" }] },
+    background: { color: "#f6cfff", effects: [{ source: "Floating Stars" }, { source: "Hand Ribbon" }] },
     grade: { preset: "Neutral", intensity: 1 },
     ground: { color: "#c800de", size: 160, opacity: 0.42, shadow: true, grid: "#fafaf9", gridEnabled: true },
     physics: DEFAULT_PHYSICS,
