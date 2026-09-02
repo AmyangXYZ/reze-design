@@ -676,6 +676,11 @@ export function parseSceneDoc(
         // And for the music level: absent means the track was authored playing
         // at full, which is what DEFAULT_AUDIO restates.
         audio: { ...DEFAULT_AUDIO, ...settings.audio },
+        // `enabled` joined the ground block in 0.6.10. Every document written
+        // before it HAS a ground and says nothing about the matter, so absent
+        // means on — read as false it would take the floor out from under every
+        // published scene at once.
+        ground: { ...settings.ground, enabled: settings.ground.enabled ?? true },
         background: { color: background.color },
       },
       backgroundEffects: appliedEffects(background, resolveEffect, resolveRef),
