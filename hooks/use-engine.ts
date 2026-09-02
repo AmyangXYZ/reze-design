@@ -149,6 +149,7 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
   // ground — while models stream in and pop into place. On a slow route
   // (models are the megabytes) this is the difference between a scene loading
   // and a blank screen loading.
+  engine.setGroundVisible(s.ground.enabled)
   engine.addGround({
     diffuseColor: hexToLinearVec3(s.ground.color),
     gridLineColor: hexToLinearVec3(s.ground.grid),

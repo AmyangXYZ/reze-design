@@ -55,6 +55,14 @@ export type SceneSettings = {
     color: string
     /** Side length of the (square) ground plane in world units — the model is ~18 units tall. */
     size: number
+    /** Draw the ground at all.
+     *
+     *  NOT the same as opacity 0, which is why it exists. A transparent ground
+     *  is still a shadow catcher: it writes depth and takes shadow, so it keeps
+     *  occluding, and anything reading scene depth still finds a 160-unit square
+     *  where the floor is. Water over it draws that square's edge. This removes
+     *  the plane. */
+    enabled: boolean
     /** Whole-ground opacity 0–1 (1 = solid; shadow persists — shadow catcher). */
     opacity: number
     /** Ground receives the model's shadow. */

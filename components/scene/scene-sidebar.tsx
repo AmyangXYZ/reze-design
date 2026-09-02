@@ -26,6 +26,8 @@ export function SliderRow({
   min,
   max,
   step,
+  inputMin = -Infinity,
+  inputMax = Infinity,
   onChange,
   fmt,
   disabled,
@@ -36,6 +38,12 @@ export function SliderRow({
   min: number
   max: number
   step: number
+  /** What a TYPED value may reach. The slider's own min/max is the range you
+   *  drag through — the range worth having under the thumb — and a stage that
+   *  needs to sit 300 units out should not be limited to the range that makes
+   *  the track useful. Unbounded unless a caller names a limit. */
+  inputMin?: number
+  inputMax?: number
   onChange: (v: number) => void
   fmt?: (v: number) => string
   disabled?: boolean
@@ -55,10 +63,11 @@ export function SliderRow({
     setEditing(false)
     const parsed = Number(raw)
     if (!Number.isFinite(parsed)) return
-    // Clamped and stepped, so a typed value cannot reach somewhere the slider
-    // could not — the two controls must always agree about what is legal.
+    // Stepped, then held to the TYPED range rather than the track's. Typing is
+    // how you reach a number the track does not cover; clamping it back to the
+    // track made the field a slower way to use the slider.
     const stepped = Math.round(parsed / step) * step
-    const clamped = Math.min(max, Math.max(min, stepped))
+    const clamped = Math.min(inputMax, Math.max(inputMin, stepped))
     if (clamped !== value) onChange(Number(clamped.toFixed(6)))
   }
 
@@ -76,7 +85,10 @@ export function SliderRow({
       <span className={cn("shrink-0 truncate", dense ? "w-10 text-[11px]" : "w-16 text-xs")}>{label}</span>
       <Slider
         className="min-w-0 flex-1 [&_[data-slot=slider-thumb]]:size-2.5 [&_[data-slot=slider-thumb]]:hover:ring-2 [&_[data-slot=slider-track]]:h-1"
-        value={[value]}
+        // Parked at the end of the track while the value is past it. Radix
+        // clamps an out-of-range value anyway; doing it here keeps the thumb
+        // from reporting the clamp back as an edit.
+        value={[Math.min(max, Math.max(min, value))]}
         min={min}
         max={max}
         step={step}

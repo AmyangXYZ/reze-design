@@ -536,7 +536,11 @@ function seedAnims(scene: Scene): Record<string, { name: string; src: File | str
     // same style-group path, but it is not cast and never dances — and a stage
     // that holds a clip becomes the MASTER when it was uploaded first, which
     // hands the audio clock and the export a track that is not the dance.
-    if (entry.animation && !entry.stage) seed[entry.model.id] = { name: entry.animation.name, src: entry.animation.url }
+    if (entry.animation && !entry.stage)
+      seed[entry.model.id] = {
+        name: entry.animation.name,
+        src: entry.animation.url,
+      }
   return seed
 }
 
@@ -560,7 +564,10 @@ const TRANSFORM_LABEL: Record<SceneSettings["view"]["transform"], string> = {
 
 const seedMusic = (scene: Scene): { name: string; url: string } | null =>
   scene.assets.audio
-    ? { name: scene.assets.audio.name, url: servedUrl(scene.assets.audio.url) ? scene.assets.audio.url : "" }
+    ? {
+        name: scene.assets.audio.name,
+        url: servedUrl(scene.assets.audio.url) ? scene.assets.audio.url : "",
+      }
     : null
 
 /** The dictionary the UI is NOT showing. Every palette row carries its labels
@@ -696,6 +703,7 @@ const DOCK_CONTROLS: {
   { id: "ground-color", en: "Ground color", zh: "地面颜色", row: "stage", stageTab: "ground", value: (v) => v.settings.ground.color },
   { id: "ground-opacity", en: "Ground opacity", zh: "地面不透明度", row: "stage", stageTab: "ground", value: (v) => dec2(v.settings.ground.opacity) },
   { id: "shadow", en: "Shadow", zh: "阴影", row: "stage", stageTab: "ground", value: (v) => sw(v.settings.ground.shadow, v.t) },
+  { id: "showGround", en: "Show ground", zh: "显示地面", row: "stage", stageTab: "ground", value: (v) => sw(v.settings.ground.enabled, v.t) },
   { id: "grid", en: "Grid lines", zh: "网格", row: "stage", stageTab: "ground", value: (v) => sw(v.settings.ground.gridEnabled, v.t) },
   { id: "bg-color", en: "Background color", zh: "背景颜色", row: "stage", stageTab: "background", value: (v) => v.settings.background.color },
   { id: "bg-image", en: "Background image", zh: "背景图片", row: "stage", stageTab: "background", keywords: ["backdrop", "photo", "video", "mp4", "webm", "gif", "webp", "背景视频"], value: (v) => v.backdrop ?? v.t.lab.ctl.none },
@@ -1886,7 +1894,12 @@ function AttachMenu({
   disabled,
 }: {
   label: string
-  items: { key: string; label: string; onPick: () => void; disabled?: boolean }[]
+  items: {
+    key: string
+    label: string
+    onPick: () => void
+    disabled?: boolean
+  }[]
   /** Nothing here can act before the engine exists — every installer behind
    *  these rows needs it. Gated with the same flag Cast's + uses, so the three
    *  become live together instead of one of them offering an action that
@@ -2041,7 +2054,12 @@ export default function Lab() {
   // user practically never sees — and now that a published bundle is cached
   // immutably, even opening someone else's scene reads it back from disk rather
   // than the network. `null` collapses the pill to the general wait.
-  const loadingLabel = useLoadingLabel({ scene, bundleProgress: null, bundleReady, loaded: models.length })
+  const loadingLabel = useLoadingLabel({
+    scene,
+    bundleProgress: null,
+    bundleReady,
+    loaded: models.length,
+  })
 
   // Motion names by model id. One clip per character is already the document's
   // shape (lib/scene.ts: "the model plus ITS motion clip"), so this holds the
@@ -2059,9 +2077,6 @@ export default function Lab() {
   const [animByModel, setAnimByModel] = useState<Record<string, { name: string; src: File | string }>>(() =>
     seedAnims(scene),
   )
-  /** Models whose expressions live in their MOTION file rather than in one of
-   *  their own — see the morph row and ClipAutosave. */
-  const [morphsInMotion, setMorphsInMotion] = useState<Record<string, boolean>>({})
   const [morphByModel, setMorphByModel] = useState<Record<string, { name: string; src: File | string }>>(() =>
     seedMorphs(scene),
   )
@@ -2104,6 +2119,29 @@ export default function Lab() {
     if (!anim) return
     void (typeof anim.src === "string" ? loadVmdUrl(id, anim.name, anim.src) : loadVmdFile(id, anim.src))
   }
+  /**
+   * Delete a cast member, and everything that was bound to them.
+   *
+   * A model id is minted from the .pmx name, so uploading the same folder again
+   * lands on the SAME id and inherits whatever the deleted model left behind: a
+   * motion row naming a file the new model has never loaded, a morph the same,
+   * and a document that packs both. Nothing plays, because the clip lived on the
+   * model instance the engine has already destroyed.
+   *
+   * The clips were about that model. They go with it.
+   */
+  const removeCastMember = (id: string) => {
+    removeModelById(id)
+    const drop = <T,>(prev: Record<string, T>) => {
+      const next = { ...prev }
+      delete next[id]
+      return next
+    }
+    setAnimByModel(drop)
+    setMorphByModel(drop)
+    setPalettes(drop)
+  }
+
   /**
    * Hand a slot's file to the user.
    *
@@ -2151,10 +2189,7 @@ export default function Lab() {
       <ClipRow
         icon={Smile}
         clip={morphByModel[m.id]?.name ?? null}
-        // Where they ARE, when they are not a file of their own. An upload
-        // invite here claims the scene has no expressions, which after editing
-        // some is the opposite of true.
-        empty={morphsInMotion[m.id] ? t.lab.morphInMotion(displayName(animByModel[m.id]?.name ?? "motion.vmd")) : t.lab.uploadMorph}
+        empty={t.lab.uploadMorph}
         kind={t.lab.kinds.morph}
         of={displayName(m.file)}
         onPick={() => pickMorph(m.id)}
@@ -2202,12 +2237,17 @@ export default function Lab() {
           // currently hold, which the next boot retries and usually resolves. A
           // dangling name is visible and fixable; a deleted one is neither.
           console.warn(`[scene] motion failed to load for ${entry.model.id}, keeping its claim:`, clip.name)
-          engineRef.current?.setModelTransform(entry.model.id, { visible: true })
+          engineRef.current?.setModelTransform(entry.model.id, {
+            visible: true,
+          })
           continue
         }
         // Success upgrades the seed's src to what actually loaded — a bundled
         // File outlives the idb url it came from.
-        setAnimByModel((prev) => ({ ...prev, [entry.model.id]: { name: clip.name, src: packed ?? clip.url } }))
+        setAnimByModel((prev) => ({
+          ...prev,
+          [entry.model.id]: { name: clip.name, src: packed ?? clip.url },
+        }))
         // Measure the timeline strip BEFORE revealing the model.
         //
         // Walking a dance for the lane graph is tens of milliseconds of main
@@ -2239,7 +2279,10 @@ export default function Lab() {
           console.warn(`[scene] morph failed to load for ${entry.model.id}, keeping its claim:`, expr.name)
           continue
         }
-        setMorphByModel((prev) => ({ ...prev, [entry.model.id]: { name: expr.name, src: packed ?? expr.url } }))
+        setMorphByModel((prev) => ({
+          ...prev,
+          [entry.model.id]: { name: expr.name, src: packed ?? expr.url },
+        }))
       }
     })()
     return () => {
@@ -2308,7 +2351,10 @@ export default function Lab() {
   // arrives whenever the VMD finishes parsing, so a one-shot read races it).
   // Keyed by owner instead of reset-on-change: a stale value simply stops
   // matching, so the effect never needs a synchronous zeroing write.
-  const [duration, setDuration] = useState<{ owner: string | null; value: number }>({ owner: null, value: 0 })
+  const [duration, setDuration] = useState<{
+    owner: string | null
+    value: number
+  }>({ owner: null, value: 0 })
   const masterClipName = masterId ? (animByModel[masterId]?.name ?? null) : null
   const durationOwner = masterId && masterClipName ? masterId + "\0" + masterClipName : null
   const animDuration = duration.owner !== null && duration.owner === durationOwner ? duration.value : 0
@@ -2377,14 +2423,24 @@ export default function Lab() {
             return { x: 0, y: 0, w: framing.frameVp.w, h: framing.frameVp.h }
           const w = a < va ? framing.frameVp.h * a : framing.frameVp.w
           const h = a < va ? framing.frameVp.h : framing.frameVp.w / a
-          return { x: (framing.frameVp.w - w) / 2, y: (framing.frameVp.h - h) / 2, w, h }
+          return {
+            x: (framing.frameVp.w - w) / 2,
+            y: (framing.frameVp.h - h) / 2,
+            w,
+            h,
+          }
         })()
       : null
   /** The rect as a style, for the two full-bleed layers that must follow it —
    *  the canvas and the DOM backdrop behind it. A backdrop that kept filling
    *  the window would spill out of the frame it is supposedly inside. */
   const frameStyle = frameRect
-    ? { left: frameRect.x, top: frameRect.y, width: frameRect.w, height: frameRect.h }
+    ? {
+        left: frameRect.x,
+        top: frameRect.y,
+        width: frameRect.w,
+        height: frameRect.h,
+      }
     : undefined
   // The render surface follows the rect exactly, so the pixels being composed
   // are the pixels being exported. Depended on by SIZE rather than by identity:
@@ -2595,7 +2651,10 @@ export default function Lab() {
   // pulls the file out, so the row fills in first and the audio element follows.
   // Uploads become object URLs, revoked on the way out so replaced tracks do not
   // pin their bytes for the session.
-  const [musicClip, setMusicClip] = useState<{ name: string; url: string } | null>(() => seedMusic(scene))
+  const [musicClip, setMusicClip] = useState<{
+    name: string
+    url: string
+  } | null>(() => seedMusic(scene))
   /**
    * Lip sync, from the lyrics the scene already carries — a rule table over the
    * .lrc, never a model (see lib/lipsync.ts). One-shot by design: the output is
@@ -2871,7 +2930,12 @@ export default function Lab() {
   // not memoized, so memoizing buys nothing.
   const openGradeEditor = (subject: GradeEditorSubject) => {
     ensureGradePanelRect()
-    setGradeEditor((prev) => ({ sessionId: (prev?.sessionId ?? 0) + 1, subject, opened: subject, savePrompt: false }))
+    setGradeEditor((prev) => ({
+      sessionId: (prev?.sessionId ?? 0) + 1,
+      subject,
+      opened: subject,
+      savePrompt: false,
+    }))
   }
   /**
    * Edit the grade the scene is WEARING — the quick list's own door, and the
@@ -2989,7 +3053,10 @@ export default function Lab() {
       try {
         swapHdri(await probeBackdrop(file))
       } catch (e) {
-        setUpload({ kind: "notice", message: e instanceof Error ? e.message : String(e) })
+        setUpload({
+          kind: "notice",
+          message: e instanceof Error ? e.message : String(e),
+        })
       }
     },
     [swapHdri],
@@ -3015,7 +3082,10 @@ export default function Lab() {
         const next = await probeBackdrop(file)
         swapBgImage({ ...next, dome: bgImageIsDome.current })
       } catch (e) {
-        setUpload({ kind: "notice", message: e instanceof Error ? e.message : String(e) })
+        setUpload({
+          kind: "notice",
+          message: e instanceof Error ? e.message : String(e),
+        })
       }
     },
     [swapBgImage, t],
@@ -3290,6 +3360,27 @@ export default function Lab() {
     const at = list.findIndex((x) => x.id === e.id)
     return at >= 0 ? list.map((x, i) => (i === at ? e : x)) : [...list, e]
   }
+  /**
+   * The same, for a copy that takes its ORIGINAL'S place.
+   *
+   * Editing a built-in or a community effect and saving mints a new id, so
+   * mergeEffect cannot recognise the row the copy came from and appends beside
+   * it: the scene then wears the original AND the edit of it, drawn twice, and
+   * the untouched one is on top half the time. Nobody edits an effect in order
+   * to end up with both.
+   *
+   * Position is kept, not just membership. Effects composite in list order, so
+   * appending the copy would also move it to the front of the stack — a silent
+   * reorder on top of a silent duplicate.
+   *
+   * Falls back to a plain merge when the original is not applied: editing
+   * something from the library that the scene is not wearing has nothing to
+   * supersede, and the copy is simply added.
+   */
+  const supersedeEffect = (list: AppliedEffect[], oldId: string, e: AppliedEffect): AppliedEffect[] => {
+    const at = list.findIndex((x) => x.id === oldId)
+    return at >= 0 ? list.map((x, i) => (i === at ? e : x)) : mergeEffect(list, e)
+  }
 
   // ── The WGSL effect editor ──
   //
@@ -3339,7 +3430,12 @@ export default function Lab() {
       effectSessionRef.current += 1
       // Opening AUTO-APPLIES the subject, which is what makes the canvas behind
       // the panel the preview rather than a separate thing to keep in sync.
-      setEffectEditor({ sessionId: effectSessionRef.current, subject, prior: bgEffects, savePrompt: null })
+      setEffectEditor({
+        sessionId: effectSessionRef.current,
+        subject,
+        prior: bgEffects,
+        savePrompt: null,
+      })
       ensureEffectPanelRect()
       void commitEffectCode(subject, subject.wgsl)
     },
@@ -3396,7 +3492,9 @@ export default function Lab() {
     // Discard UNDOES the as-you-go writes, not just stops them.
     if (isDraft("effect", effectEditor.subject.id)) {
       cancelDraftWrites("effect", effectEditor.subject.id)
-      updateDraft("effect", effectEditor.subject.id, { payload: { wgsl: effectEditor.subject.wgsl } })
+      updateDraft("effect", effectEditor.subject.id, {
+        payload: { wgsl: effectEditor.subject.wgsl },
+      })
     }
     setBgEffects(effectEditor.prior)
     setEffectEditor(null)
@@ -3423,7 +3521,12 @@ export default function Lab() {
         author: authorName,
         ...draftOriginOf(communityEffects, subject.id),
       }).id
-    setBgEffects(mergeEffect(effectEditor.prior, { id: id!, name, wgsl: code }))
+    // Saved back onto itself when it was already a draft; a copy of a built-in
+    // or a community effect REPLACES the one it was copied from.
+    const applied = { id: id!, name, wgsl: code }
+    setBgEffects(
+      keep ? mergeEffect(effectEditor.prior, applied) : supersedeEffect(effectEditor.prior, subject.id, applied),
+    )
     setEffectEditor(null)
     return null
   }
@@ -3509,7 +3612,10 @@ export default function Lab() {
    * same track, which is the behaviour a stored zoom and playhead already
    * imply.
    */
-  const [editTarget, setEditTarget] = useState<{ modelId: string; kind: ClipEditKind } | null>(null)
+  const [editTarget, setEditTarget] = useState<{
+    modelId: string
+    kind: ClipEditKind
+  } | null>(null)
   // A plain function: the React Compiler memoizes this file, and a hand-written
   // useCallback here is one it reports it cannot preserve — which makes it skip
   // optimising the component around it. Same reason castClipRows is plain.
@@ -3633,7 +3739,13 @@ export default function Lab() {
     for (let n = 2; labels.has(label); n++) label = t.lab.newGroupN(n)
     inspectGroupsApply([
       ...inspectedGroups,
-      { id, label, materials: [], graph: structuredClone(DEFAULT_GRAPH), renderClass: "auto" },
+      {
+        id,
+        label,
+        materials: [],
+        graph: structuredClone(DEFAULT_GRAPH),
+        renderClass: "auto",
+      },
     ])
     return id
   }, [inspectedGroups, inspectGroupsApply, t])
@@ -3652,7 +3764,10 @@ export default function Lab() {
   )
   const inspectMoveMaterial = useCallback(
     (material: string, targetId: string | null) => {
-      const next = inspectedGroups.map((g) => ({ ...g, materials: g.materials.filter((m) => m !== material) }))
+      const next = inspectedGroups.map((g) => ({
+        ...g,
+        materials: g.materials.filter((m) => m !== material),
+      }))
       if (targetId) {
         const target = next.find((g) => g.id === targetId)
         if (target) target.materials = [...target.materials, material]
@@ -3698,7 +3813,11 @@ export default function Lab() {
         if (next.some((g, i) => g !== list[i])) void applyGroups(modelId, next)
       }
       const { transform, exposure, world } = LOOK_PACKS[pack]
-      setSettings((prev) => ({ ...prev, view: { transform, exposure }, world: { ...prev.world, ...world } }))
+      setSettings((prev) => ({
+        ...prev,
+        view: { transform, exposure },
+        world: { ...prev.world, ...world },
+      }))
       // Remembered for the NEXT model, not for this scene — the scene already
       // carries what it is wearing.
       saveLookPref(pack)
@@ -3713,7 +3832,10 @@ export default function Lab() {
       ) as GraphItem | undefined
       const group = inspectedGroups.find((g) => g.id === groupId)
       if (!entry || !group) return
-      const updated: StyleGroup = { ...group, graph: { ...entry.payload.graph, name: entry.name } }
+      const updated: StyleGroup = {
+        ...group,
+        graph: { ...entry.payload.graph, name: entry.name },
+      }
       // Grouped materials recompile through upsert; an EMPTY group has nothing
       // to compile and just records the choice — main's own split.
       if (updated.materials.length) void upsertGroup(inspectedId, updated)
@@ -3767,7 +3889,11 @@ export default function Lab() {
   // What the group's graph was when the session opened, and WHOSE group it is.
   // The model travels with it because the inspector can move to another
   // character mid-session, and a discard has to reach the group it started on.
-  const groupGraphBaseline = useRef<{ modelId: string; groupId: string; graph: ShaderGraph } | null>(null)
+  const groupGraphBaseline = useRef<{
+    modelId: string
+    groupId: string
+    graph: ShaderGraph
+  } | null>(null)
   const [groupGraphPrompt, setGroupGraphPrompt] = useState(false)
   // Remounts the editor when the library swaps the bound group's graph underneath it.
   const [libVersion, setLibVersion] = useState(0)
@@ -3796,7 +3922,11 @@ export default function Lab() {
     (id: string) => {
       const g = inspectedGroups.find((x) => x.id === id)
       if (!inspectedId || !g) return
-      groupGraphBaseline.current = { modelId: inspectedId, groupId: id, graph: structuredClone(g.graph) }
+      groupGraphBaseline.current = {
+        modelId: inspectedId,
+        groupId: id,
+        graph: structuredClone(g.graph),
+      }
       setActiveGroupId(id)
       setGraphLibEdit(null)
       setGraphSession((v) => v + 1)
@@ -3908,7 +4038,11 @@ export default function Lab() {
   }
   const discardGroupGraph = () => {
     const hit = baselineGroup()
-    if (hit) void upsertGroup(hit.base.modelId, { ...hit.group, graph: hit.base.graph })
+    if (hit)
+      void upsertGroup(hit.base.modelId, {
+        ...hit.group,
+        graph: hit.base.graph,
+      })
     groupGraphBaseline.current = null
     setGroupGraphPrompt(false)
     setDrawerOpen(false)
@@ -3918,7 +4052,13 @@ export default function Lab() {
    *  compile PURELY: compileGraph needs no engine and no group. */
   const openGraphLibEdit = (id: string, name: string, graph: ShaderGraph) => {
     graphLibLatest.current = null
-    setGraphLibEdit((prev) => ({ sessionId: (prev?.sessionId ?? 0) + 1, id, name, opened: graph, savePrompt: false }))
+    setGraphLibEdit((prev) => ({
+      sessionId: (prev?.sessionId ?? 0) + 1,
+      id,
+      name,
+      opened: graph,
+      savePrompt: false,
+    }))
     setGraphSession((v) => v + 1) // raiseKey: the editor must surface above the library
     setDrawerOpen(true)
   }
@@ -3929,7 +4069,9 @@ export default function Lab() {
     // and a crash or a stray reload costs nothing. Only drafts: a built-in or
     // someone else's published work has no local home to write to yet.
     if (graphLibEdit && isDraft("graph", graphLibEdit.id))
-      updateDraftSoon("graph", graphLibEdit.id, { payload: { graph: { ...graph, name: graphLibEdit.name } } })
+      updateDraftSoon("graph", graphLibEdit.id, {
+        payload: { graph: { ...graph, name: graphLibEdit.name } },
+      })
     return Promise.resolve({ ok: r.ok, diagnostics: r.diagnostics })
   }
   const requestCloseGraphDrawer = () => {
@@ -3978,7 +4120,9 @@ export default function Lab() {
     // Discard has to undo save-as-you-go, not just stop it — see discardGradeEdit.
     if (graphLibEdit && isDraft("graph", graphLibEdit.id)) {
       cancelDraftWrites("graph", graphLibEdit.id)
-      updateDraft("graph", graphLibEdit.id, { payload: { graph: { ...graphLibEdit.opened, name: graphLibEdit.name } } })
+      updateDraft("graph", graphLibEdit.id, {
+        payload: { graph: { ...graphLibEdit.opened, name: graphLibEdit.name } },
+      })
     }
     setGraphLibEdit(null)
     setDrawerOpen(false)
@@ -4058,6 +4202,8 @@ export default function Lab() {
    * gets no groups and no notice, which is the same thing the engine's own
    * refusal to auto-group scenery says.
    */
+  /** False when the model has no materials YET — the caller must not record the
+   *  stage as classified, or the one render that was too early becomes final. */
   const autoStyleStage = useCallback(
     (id: string) => {
       const names =
@@ -4065,8 +4211,10 @@ export default function Lab() {
           ?.getModel(id)
           ?.getMaterials()
           .map((m) => m.name) ?? []
+      if (names.length === 0) return false
       const next = stageStyleGroups(names, groupsByModel[id] ?? [])
       if (next) void applyGroups(id, next)
+      return true
     },
     [engineRef, groupsByModel, applyGroups],
   )
@@ -4087,11 +4235,25 @@ export default function Lab() {
   const styled = useRef(new Set<string>())
   useEffect(() => {
     if (!ready) return
+    // Forget stages that are gone. Ids are minted from the FILE NAME and a
+    // stage upload removes the previous stage first, so re-uploading mints the
+    // same id again — and a set that only ever grew then skipped it as already
+    // classified. That is the "auto style only works after a page refresh"
+    // report: the refresh was clearing this set, nothing more.
+    const live = new Set(stages.map((s) => s.id))
+    for (const id of [...styled.current]) if (!live.has(id)) styled.current.delete(id)
     for (const stage of stages) {
       if (styled.current.has(stage.id)) continue
-      styled.current.add(stage.id)
-      if ((groupsByModel[stage.id] ?? []).some((g) => g.materials.length > 0)) continue
-      autoStyleStage(stage.id)
+      // Recorded only once the answer is REAL. Marking on the first sight of a
+      // stage meant a render that arrived before the engine had its materials
+      // classified nothing and then never tried again — an upload landing on
+      // that render silently got no looks at all, which is precisely the case
+      // this runs for.
+      if ((groupsByModel[stage.id] ?? []).some((g) => g.materials.length > 0)) {
+        styled.current.add(stage.id)
+        continue
+      }
+      if (autoStyleStage(stage.id)) styled.current.add(stage.id)
     }
   }, [ready, stages, groupsByModel, autoStyleStage])
 
@@ -4450,10 +4612,16 @@ export default function Lab() {
           // and it says it in the LABEL — "Turn on outline" beats a row that names
           // a switch and leaves you to guess.
           if (c.id === "outline")
-            return { ...c, label: valuesShown.settings.outline.enabled ? t.lab.cmd.outlineOff : t.lab.cmd.outlineOn }
+            return {
+              ...c,
+              label: valuesShown.settings.outline.enabled ? t.lab.cmd.outlineOff : t.lab.cmd.outlineOn,
+            }
           // Same rule as outline: say what pressing it WILL do.
           if (c.id === "timeline")
-            return { ...c, label: timelineUnfolded ? t.lab.cmd.timelineHide : t.lab.cmd.timelineShow }
+            return {
+              ...c,
+              label: timelineUnfolded ? t.lab.cmd.timelineHide : t.lab.cmd.timelineShow,
+            }
           if (c.id === "language") return { ...c, hint: LOCALE_LABELS[valuesShown.locale] }
           // Same as language: the row says what it is SET TO, so the palette
           // answers "which style am I on" without opening anything.
@@ -4634,16 +4802,30 @@ export default function Lab() {
         // The HDRI, from its own slot. It packs beside the background rather
         // than instead of it — one lights, the other shows.
         hdri: hdri?.file && hdri.name ? { name: hdri.name, file: hdri.file } : null,
-      planes: planes.flatMap((p) => {
-        const file = sceneFiles.planes.get(p.id)
-        // A card whose bytes are gone cannot be packed, and packing a path to
-        // nothing would produce a scene that loads with a hole in it.
-        return file ? [{ name: p.file, file, width: p.width, height: p.height, transform: p.transform }] : []
-      }),
+        planes: planes.flatMap((p) => {
+          const file = sceneFiles.planes.get(p.id)
+          // A card whose bytes are gone cannot be packed, and packing a path to
+          // nothing would produce a scene that loads with a hole in it.
+          return file
+            ? [
+                {
+                  name: p.file,
+                  file,
+                  width: p.width,
+                  height: p.height,
+                  transform: p.transform,
+                },
+              ]
+            : []
+        }),
         // ONE image slot here against main's two: which row it was uploaded from
         // is what makes it a dome.
         background: bgImage
-          ? { kind: bgImage.dome ? "skybox" : "backdrop", name: bgImage.name, file: bgImage.file }
+          ? {
+              kind: bgImage.dome ? "skybox" : "backdrop",
+              name: bgImage.name,
+              file: bgImage.file,
+            }
           : null,
       }),
     [
@@ -4769,10 +4951,6 @@ export default function Lab() {
     rememberIntensity(next.state.settings.grade.preset, next.state.settings.grade.intensity)
     setAnimByModel(seedAnims(next))
     setMorphByModel(seedMorphs(next))
-    // The incoming document's own answer, which is "no" until it is edited: a
-    // note about the OUTGOING scene's motion carrying expressions would name a
-    // file this scene has never heard of.
-    setMorphsInMotion({})
     // The companions, cleared HERE rather than trusted to clear themselves. The
     // loaders empty them on entry and refill them, which is correct only when
     // the loaders actually run — and they are fired from swapScene, which can
@@ -4822,7 +5000,13 @@ export default function Lab() {
     // the record at the IndexedDB copy moments later.
     const transient = !!next.assets.bundle && next.assets.bundle.startsWith("blob:")
     saveSceneState(next.state)
-    saveSceneAssets(next.state.id, assetsDocOf({ ...next.assets, bundle: transient ? null : next.assets.bundle }))
+    saveSceneAssets(
+      next.state.id,
+      assetsDocOf({
+        ...next.assets,
+        bundle: transient ? null : next.assets.bundle,
+      }),
+    )
     if (!next.assets.bundle) void clearLocalBundle()
   }
 
@@ -4847,7 +5031,9 @@ export default function Lab() {
       try {
         const res = await fetch(`/api/library/${handoff.scene}`)
         if (!res.ok) throw new Error(String(res.status))
-        const { item } = (await res.json()) as { item: { name: string; payload: { doc: SceneDoc } } }
+        const { item } = (await res.json()) as {
+          item: { name: string; payload: { doc: SceneDoc } }
+        }
         const resolve = await resolveSceneRefs(item.payload.doc)
         const scene = parseSceneDoc(item.payload.doc, builtinEffect, libraryGraph, resolve)
         // The viewer parked its unzipped assets on the way here. Opening them
@@ -4913,12 +5099,19 @@ export default function Lab() {
     clearPlanes()
     void clearLocalBundle()
     saveSceneAssets(scene.state.id, assetsDocOf(DEMO_SCENE.assets))
-    void applyLabScene({ ...DEMO_SCENE, state: { ...DEMO_SCENE.state, id: scene.state.id } })
+    void applyLabScene({
+      ...DEMO_SCENE,
+      state: { ...DEMO_SCENE.state, id: scene.state.id },
+    })
   }
 
   /** Blank: no assets, no effect, no grade, neutral settings — and a NEW identity, so the
    *  uploads just cleared can never be re-adopted by it. */
-  const newScene = () => void applyLabScene({ ...EMPTY_SCENE, state: { ...EMPTY_SCENE.state, id: newSceneId() } })
+  const newScene = () =>
+    void applyLabScene({
+      ...EMPTY_SCENE,
+      state: { ...EMPTY_SCENE.state, id: newSceneId() },
+    })
 
   /**
    * The whole scene as one file: the publish pipeline aimed at disk. The same collector
@@ -4955,7 +5148,11 @@ export default function Lab() {
           grade: (() => {
             const ref = gradeRef(appliedGradeSpec)
             return ref
-              ? { preset: settings.grade.preset, intensity: settings.grade.intensity, from: ref }
+              ? {
+                  preset: settings.grade.preset,
+                  intensity: settings.grade.intensity,
+                  from: ref,
+                }
               : { ...settings.grade, spec: appliedGradeSpec }
           })(),
         },
@@ -4971,7 +5168,10 @@ export default function Lab() {
    *  collects, with the doc deferred until the bundle has a URL. */
   const collectScenePublish = (): ScenePublishSource => {
     const slots = collectLabSlots()
-    return { entries: slots.entries, makeDoc: (bundle) => makeSceneDoc(slots, bundle) }
+    return {
+      entries: slots.entries,
+      makeDoc: (bundle) => makeSceneDoc(slots, bundle),
+    }
   }
 
   const exportScene = async () => {
@@ -4981,7 +5181,12 @@ export default function Lab() {
     const doc = makeSceneDoc(slots, null)
     const zip = await buildZip([
       ...slots.entries,
-      { path: "scene.json", file: new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" }) },
+      {
+        path: "scene.json",
+        file: new Blob([JSON.stringify(doc, null, 2)], {
+          type: "application/json",
+        }),
+      },
     ])
     downloadBlob(zip, sceneZipFileName(sceneName))
   }
@@ -5030,9 +5235,19 @@ export default function Lab() {
   // in a ref and are read at call time instead: the same trick use-z-order
   // plays with its Escape closers, and for the same reason — the callback is
   // long-lived, the functions are not.
-  const cmdRef = useRef({ newScene, resetSceneDefaults, exportScene, openGradeEditor })
+  const cmdRef = useRef({
+    newScene,
+    resetSceneDefaults,
+    exportScene,
+    openGradeEditor,
+  })
   useEffect(() => {
-    cmdRef.current = { newScene, resetSceneDefaults, exportScene, openGradeEditor }
+    cmdRef.current = {
+      newScene,
+      resetSceneDefaults,
+      exportScene,
+      openGradeEditor,
+    }
   })
 
   const runCommand = useCallback(
@@ -5124,10 +5339,18 @@ export default function Lab() {
       else if (item.id === "graph-new") openGraphLibEdit("", t.library.newGraph, structuredClone(DEFAULT_GRAPH))
       else if (item.id === "graph-lib") openGraphLibrary(activeGroupId)
       else if (item.id === "wgsl-new")
-        openEffectEditor({ id: "", name: t.effectLibrary.newEffect, wgsl: NEW_EFFECT_TEMPLATE })
+        openEffectEditor({
+          id: "",
+          name: t.effectLibrary.newEffect,
+          wgsl: NEW_EFFECT_TEMPLATE,
+        })
       else if (item.id === "effect-lib") openBrowse({ kind: "effect" })
       else if (item.id === "grade-new")
-        cmdRef.current.openGradeEditor({ id: "", name: t.gradeLibrary.newGrade, spec: NEW_GRADE_SPEC })
+        cmdRef.current.openGradeEditor({
+          id: "",
+          name: t.gradeLibrary.newGrade,
+          spec: NEW_GRADE_SPEC,
+        })
       else if (item.id === "grade-lib") openBrowse({ kind: "grade" })
       else if (item.id === "outline") patch("outline", { enabled: !outlineRef.current })
       // Nothing to undo and nothing to store: the bodies are re-seeded onto the
@@ -5148,7 +5371,13 @@ export default function Lab() {
         const c = DOCK_CONTROLS.find((x) => `ctl-${x.id}` === item.id)
         if (!c) return
         if (c.row === "export") openExport()
-        else gotoSection(c.row, { stage: c.stageTab, light: c.lightTab, camera: c.cameraTab, post: c.postTab })
+        else
+          gotoSection(c.row, {
+            stage: c.stageTab,
+            light: c.lightTab,
+            camera: c.cameraTab,
+            post: c.postTab,
+          })
       }
       item.run?.()
     },
@@ -5284,7 +5513,12 @@ export default function Lab() {
               "absolute rounded-sm border",
               framing.exporting ? "border-red-500/90" : "border-amber-400/80",
             )}
-            style={{ left: frameRect.x, top: frameRect.y, width: frameRect.w, height: frameRect.h }}
+            style={{
+              left: frameRect.x,
+              top: frameRect.y,
+              width: frameRect.w,
+              height: frameRect.h,
+            }}
           />
           {/* The watermark, WHERE the export will put it — same layout maths as
               drawWatermark in lib/video-export.ts (size h·0.028, pad h·0.024)
@@ -5680,7 +5914,11 @@ export default function Lab() {
           e.target.value = ""
           if (!file || !id) return
           void loadMorphFile(id, file).then((name) => {
-            if (name) setMorphByModel((prev) => ({ ...prev, [id]: { name, src: file } }))
+            if (name)
+              setMorphByModel((prev) => ({
+                ...prev,
+                [id]: { name, src: file },
+              }))
           })
         }}
       />
@@ -5740,11 +5978,18 @@ export default function Lab() {
               // Unreadable: let loadVmdFile run and report the failure it finds.
             }
             if (usable === 0) {
-              setUpload({ kind: "notice", message: cameraFrames > 0 ? t.lab.cameraVmd : t.lab.emptyVmd })
+              setUpload({
+                kind: "notice",
+                message: cameraFrames > 0 ? t.lab.cameraVmd : t.lab.emptyVmd,
+              })
               return
             }
             void loadVmdFile(id, file).then((name) => {
-              if (name) setAnimByModel((prev) => ({ ...prev, [id]: { name, src: file } }))
+              if (name)
+                setAnimByModel((prev) => ({
+                  ...prev,
+                  [id]: { name, src: file },
+                }))
             })
           })
         }}
@@ -6151,7 +6396,7 @@ export default function Lab() {
                   position={m.position}
                   onPosition={(position) => setCastPosition(m.id, position)}
                   onReplace={() => pickModel({ mode: "replace", id: m.id })}
-                  onRemove={() => removeModelById(m.id)}
+                  onRemove={() => removeCastMember(m.id)}
                 />
               ))}
               {/* AFTER the rows, because that is where the missing ones are:
@@ -6280,10 +6525,22 @@ export default function Lab() {
                   items={[
                     ...(midiClip
                       ? []
-                      : [{ key: "midi", label: t.lab.uploadMidi, onPick: () => midiInput.current?.click() }]),
+                      : [
+                          {
+                            key: "midi",
+                            label: t.lab.uploadMidi,
+                            onPick: () => midiInput.current?.click(),
+                          },
+                        ]),
                     ...(lyricsClip
                       ? []
-                      : [{ key: "lyrics", label: t.lab.uploadLyrics, onPick: () => lyricsInput.current?.click() }]),
+                      : [
+                          {
+                            key: "lyrics",
+                            label: t.lab.uploadLyrics,
+                            onPick: () => lyricsInput.current?.click(),
+                          },
+                        ]),
                   ]}
                 />
               }
@@ -6395,6 +6652,10 @@ export default function Lab() {
                               min={0.05}
                               max={10}
                               step={0.05}
+                              // A game rip can land at any scale, so the field
+                              // takes any factor. Zero is the one number kept
+                              // out: it collapses the transform matrix.
+                              inputMin={0.001}
                               onChange={(v) => setStageTransform(stage.id, { scale: v })}
                               fmt={(v) => `${v.toFixed(2)}×`}
                             />
@@ -6428,43 +6689,62 @@ export default function Lab() {
                       <TabsContent value="ground">
                         {stage && <p className="mb-2 text-xs">{t.lab.stageOverridesGround}</p>}
                         <fieldset disabled={!!stage} className={cn(stage && "pointer-events-none opacity-40")}>
-                          <ColorRow
-                            label={t.lab.ctl.color}
-                            value={ground.color}
-                            onChange={(hex) => patch("ground", { color: hex })}
-                          />
-                          <SliderRow
-                            label={t.lab.ctl.opacity}
-                            value={ground.opacity}
-                            min={0}
-                            max={1}
-                            step={0.01}
-                            onChange={(v) => patch("ground", { opacity: v })}
-                            fmt={(v) => v.toFixed(2)}
-                          />
-                          {/* Shadow persists below opacity (shadow catcher) — this
-                              turns it off entirely. */}
-                          <div className="mt-2.5 flex items-center justify-between">
-                            <span className="text-xs">{t.lab.ctl.shadow}</span>
+                          {/* The plane itself, above everything that dresses it.
+                              Separate from Opacity because opacity cannot say
+                              this: a ground at 0 is still a shadow catcher, so
+                              it still writes depth and still occludes — an
+                              effect reading scene depth finds a 160-unit square
+                              where the floor is. */}
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs">{t.lab.ctl.showGround}</span>
                             <Switch
                               size="sm"
-                              checked={ground.shadow}
-                              onCheckedChange={(v) => patch("ground", { shadow: v })}
+                              checked={ground.enabled}
+                              onCheckedChange={(v) => patch("ground", { enabled: v })}
                             />
                           </div>
-                          <div className="mt-2.5 flex items-center justify-between">
-                            <span className="text-xs">{t.lab.ctl.grid}</span>
-                            <div className="flex items-center gap-2">
-                              {ground.gridEnabled && (
-                                <ColorField value={ground.grid} onChange={(hex) => patch("ground", { grid: hex })} />
-                              )}
+                          <fieldset
+                            disabled={!ground.enabled}
+                            className={cn("mt-2.5", !ground.enabled && "pointer-events-none opacity-40")}
+                          >
+                            <ColorRow
+                              label={t.lab.ctl.color}
+                              value={ground.color}
+                              onChange={(hex) => patch("ground", { color: hex })}
+                            />
+                            <SliderRow
+                              label={t.lab.ctl.opacity}
+                              value={ground.opacity}
+                              min={0}
+                              max={1}
+                              step={0.01}
+                              onChange={(v) => patch("ground", { opacity: v })}
+                              fmt={(v) => v.toFixed(2)}
+                            />
+                            {/* Shadow persists below opacity (shadow catcher) — this
+                              turns it off entirely. */}
+                            <div className="mt-2.5 flex items-center justify-between">
+                              <span className="text-xs">{t.lab.ctl.shadow}</span>
                               <Switch
                                 size="sm"
-                                checked={ground.gridEnabled}
-                                onCheckedChange={(v) => patch("ground", { gridEnabled: v })}
+                                checked={ground.shadow}
+                                onCheckedChange={(v) => patch("ground", { shadow: v })}
                               />
                             </div>
-                          </div>
+                            <div className="mt-2.5 flex items-center justify-between">
+                              <span className="text-xs">{t.lab.ctl.grid}</span>
+                              <div className="flex items-center gap-2">
+                                {ground.gridEnabled && (
+                                  <ColorField value={ground.grid} onChange={(hex) => patch("ground", { grid: hex })} />
+                                )}
+                                <Switch
+                                  size="sm"
+                                  checked={ground.gridEnabled}
+                                  onCheckedChange={(v) => patch("ground", { gridEnabled: v })}
+                                />
+                              </div>
+                            </div>
+                          </fieldset>
                         </fieldset>
                       </TabsContent>
                       {/* Background is stage dressing too — that is the filing
@@ -6875,8 +7155,16 @@ export default function Lab() {
                                   label={t.lab.ctl.size}
                                   width={plane.width * plane.transform.scale}
                                   height={plane.height * plane.transform.scale}
-                                  onWidth={(v) => setPlaneTransform(plane.id, { scale: v / plane.width })}
-                                  onHeight={(v) => setPlaneTransform(plane.id, { scale: v / plane.height })}
+                                  onWidth={(v) =>
+                                    setPlaneTransform(plane.id, {
+                                      scale: v / plane.width,
+                                    })
+                                  }
+                                  onHeight={(v) =>
+                                    setPlaneTransform(plane.id, {
+                                      scale: v / plane.height,
+                                    })
+                                  }
                                 />
                                 {/* The same value the boxes above set, as a
                                     thing you can drag. Typing is for a size you
@@ -7092,7 +7380,11 @@ export default function Lab() {
                           <span className="shrink-0 text-xs">{t.lab.ctl.transform}</span>
                           <Select
                             value={view.transform}
-                            onValueChange={(v) => patch("view", { transform: v as SceneSettings["view"]["transform"] })}
+                            onValueChange={(v) =>
+                              patch("view", {
+                                transform: v as SceneSettings["view"]["transform"],
+                              })
+                            }
                           >
                             <SelectTrigger>
                               <SelectValue />
@@ -7220,7 +7512,11 @@ export default function Lab() {
                         max={1}
                         step={0.01}
                         disabled={physics.wind === 0}
-                        onChange={(v) => patch("physics", { windFrequency: windFreqFromSlider(v) })}
+                        onChange={(v) =>
+                          patch("physics", {
+                            windFrequency: windFreqFromSlider(v),
+                          })
+                        }
                         fmt={(v) => windFreqFromSlider(v).toFixed(2)}
                       />
                       <SliderRow
@@ -7288,7 +7584,12 @@ export default function Lab() {
                             min={10}
                             max={120}
                             step={1}
-                            onChange={(v) => changeCamera({ ...camera, fov: (v * Math.PI) / 180 })}
+                            onChange={(v) =>
+                              changeCamera({
+                                ...camera,
+                                fov: (v * Math.PI) / 180,
+                              })
+                            }
                             fmt={(v) => `${Math.round(v)}°`}
                           />
                           <SliderRow
@@ -7316,7 +7617,12 @@ export default function Lab() {
                             min={-180}
                             max={180}
                             step={1}
-                            onChange={(v) => changeCamera({ ...camera, alpha: (v * Math.PI) / 180 })}
+                            onChange={(v) =>
+                              changeCamera({
+                                ...camera,
+                                alpha: (v * Math.PI) / 180,
+                              })
+                            }
                             fmt={(v) => `${v}°`}
                           />
                           <SliderRow
@@ -7325,7 +7631,12 @@ export default function Lab() {
                             min={-85}
                             max={85}
                             step={1}
-                            onChange={(v) => changeCamera({ ...camera, beta: ((90 - v) * Math.PI) / 180 })}
+                            onChange={(v) =>
+                              changeCamera({
+                                ...camera,
+                                beta: ((90 - v) * Math.PI) / 180,
+                              })
+                            }
                             fmt={(v) => `${v}°`}
                           />
                           {(["X", "Y", "Z"] as const).map((axis, i) => (
@@ -7411,7 +7722,11 @@ export default function Lab() {
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <MaterialsPanel
               dense
-              modelTabs={models.map((m) => ({ id: m.id, file: m.file, active: m.id === inspected.id }))}
+              modelTabs={models.map((m) => ({
+                id: m.id,
+                file: m.file,
+                active: m.id === inspected.id,
+              }))}
               // Through openMaterials, not setInspectedId: switching model here
               // is the same act as opening the panel on another one, and the
               // node editor's binding has to be released either way.
@@ -7564,26 +7879,28 @@ export default function Lab() {
               without knowing an editor exists. */}
           <ClipAutosave
             cameraName={cameraClip}
-            // The scene decides whether morphs are their own file. One that
-            // already carries an expression VMD keeps carrying one; one whose
-            // morphs live inside its motion keeps them there. Writing both
-            // would play every expression twice.
+            // The scene names the slots it already has. A model with no
+            // expression file gets one from the autosave the moment an edit
+            // leaves a morph key behind — the row below is what names it after
+            // that.
             slotNames={(id) => ({
               motion: animByModel[id]?.name ?? "motion.vmd",
               morph: morphByModel[id]?.name ?? null,
             })}
             onSaveMotion={(id, motion, morphs) => {
-              setAnimByModel((prev) => ({ ...prev, [id]: { name: prev[id]?.name ?? motion.name, src: motion } }))
+              setAnimByModel((prev) => ({
+                ...prev,
+                [id]: { name: prev[id]?.name ?? motion.name, src: motion },
+              }))
+              // A file arrives whenever the clip holds a morph key — the
+              // scene's own expression file, or the one this edit just created.
+              // Null means the clip has no expressions at all, and the row goes
+              // on offering an upload.
               if (morphs) {
-                setMorphByModel((prev) => ({ ...prev, [id]: { name: prev[id]?.name ?? morphs.name, src: morphs } }))
-              } else {
-                // A null `morphs` means this scene keeps its expressions INSIDE
-                // the motion — the file was just written with both track kinds,
-                // which is what MMD exports. The edit saved; there is simply no
-                // second file to name. Recorded so the morph row can say that
-                // instead of offering an upload, which read as the edit having
-                // been lost.
-                setMorphsInMotion((prev) => (prev[id] ? prev : { ...prev, [id]: true }))
+                setMorphByModel((prev) => ({
+                  ...prev,
+                  [id]: { name: prev[id]?.name ?? morphs.name, src: morphs },
+                }))
               }
               setClipEdits((n) => n + 1)
             }}

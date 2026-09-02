@@ -131,13 +131,16 @@ const DEMO_SCENE_DOC: SceneDoc = {
     outline: { enabled: true },
     view: DEFAULT_VIEW,
     audio: DEFAULT_AUDIO,
-    // Three of the four are ADDITIVE — Floating Stars around the cast, Hand
-    // Sparks off her wrists, the Lyrics line over everything — so they sum
-    // wherever they overlap and their order is free. Sticker Outline is not:
-    // it reads rzCastDistance and cuts a border, so it goes LAST, over the
-    // particles it is meant to enclose. Order is free in general only until
-    // something covers; a full-cover backdrop has to come first or it erases
-    // what is under it.
+    // All three are ADDITIVE — Floating Stars around the cast, Hand Sparks off
+    // her wrists, the Lyrics line over everything — so they sum wherever they
+    // overlap and their order is free. It is not free in general: a full-cover
+    // backdrop has to come first or it erases what is under it, and Water is
+    // one, which is why the library entry says to put it first.
+    //
+    // STICKER OUTLINE IS NOT HERE, though it was. It runs a jump flood over the
+    // whole frame to build rzCastDistance, and the first paint of the site is
+    // the one frame that has to be quick on whatever machine arrives. It is one
+    // click away in the library.
     //
     // Shining Stars is the SKY and stays in the library rather than the demo: it
     // is a background field, so it is read through whatever the scene's own
@@ -158,11 +161,10 @@ const DEMO_SCENE_DOC: SceneDoc = {
         { source: "Floating Stars" },
         { source: "Hand Sparks" },
         { source: "Lyrics" },
-        { source: "Sticker Outline" },
       ],
     },
     grade: { preset: "Neutral", intensity: 1 },
-    ground: { color: "#c800de", size: 160, opacity: 0.48, shadow: true, grid: "#fafaf9", gridEnabled: true },
+    ground: { enabled: true, color: "#c800de", size: 160, opacity: 0.48, shadow: true, grid: "#fafaf9", gridEnabled: true },
     physics: DEFAULT_PHYSICS,
   },
 }
@@ -195,7 +197,7 @@ export const EMPTY_SCENE_DOC: SceneDoc = {
     audio: DEFAULT_AUDIO,
     background: { color: "#1c1c1e", effects: [] },
     grade: { preset: "Neutral", intensity: 1 },
-    ground: { color: "#3a3a3d", size: 160, opacity: 0.42, shadow: true, grid: "#fafaf9", gridEnabled: true },
+    ground: { enabled: true, color: "#3a3a3d", size: 160, opacity: 0.42, shadow: true, grid: "#fafaf9", gridEnabled: true },
     physics: DEFAULT_PHYSICS,
   },
 }

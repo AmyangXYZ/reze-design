@@ -410,7 +410,6 @@ const en = {
     // One phrase per intake, shared by the empty slot and the palette command.
     addModel: "Add model",
     uploadAnimation: "Upload animation",
-    morphInMotion: (motion: string) => `In ${motion}`,
     uploadMorph: "Upload morph",
     lipSyncFromLyrics: "Lip sync from lyrics",
     uploadCameraMotion: "Upload camera motion",
@@ -583,6 +582,9 @@ const en = {
     ctl: {
       outline: "Outline",
       color: "Color",
+      /** The plane itself, on or off. Not the same control as Opacity: a
+       *  transparent ground still catches shadow and still writes depth. */
+      showGround: "Show ground",
       opacity: "Opacity",
       shadow: "Shadow",
       grid: "Grid lines",
@@ -1167,7 +1169,6 @@ const zh: Dictionary = {
     engineNotReady: "引擎未就绪",
     addModel: "添加模型",
     uploadAnimation: "上传动作",
-    morphInMotion: (motion: string) => `在 ${motion} 中`,
     uploadMorph: "上传表情",
     lipSyncFromLyrics: "由歌词生成口型",
     uploadCameraMotion: "上传镜头动作",
@@ -1317,6 +1318,7 @@ const zh: Dictionary = {
     ctl: {
       outline: "描边",
       color: "颜色",
+      showGround: "显示地面",
       opacity: "不透明度",
       shadow: "阴影",
       grid: "网格",

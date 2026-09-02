@@ -30,6 +30,8 @@ export const AxisSliderRow = memo(function AxisSliderRow({
   min,
   max,
   decimals,
+  inputMin = -Infinity,
+  inputMax = Infinity,
   origin = 0,
   disabled,
   onChange,
@@ -41,6 +43,11 @@ export const AxisSliderRow = memo(function AxisSliderRow({
   min: number
   max: number
   decimals: number
+  /** What a TYPED value may reach. min/max is the range you drag through; the
+   *  field is how you reach a number worth having but not worth a third of the
+   *  track. Unbounded unless a caller names a limit. */
+  inputMin?: number
+  inputMax?: number
   /** Where the fill grows from. Zero for a signed channel; pass `min` for one
    *  that only counts up, like a morph weight. */
   origin?: number
@@ -120,7 +127,9 @@ export const AxisSliderRow = memo(function AxisSliderRow({
         // hover affordance the control has, and dropping it was an accident of
         // shrinking the thumb rather than a decision.
         className="min-w-0 flex-1 [&_[data-slot=slider-thumb]]:size-2.5 [&_[data-slot=slider-thumb]]:hover:ring-2 [&_[data-slot=slider-track]]:h-1"
-        value={[shown]}
+        // Parked at the end of the track while the value is past it, so a typed
+        // number the track cannot reach does not get reported back as an edit.
+        value={[clamp(shown, min, max)]}
         min={min}
         max={max}
         step={step}
@@ -167,7 +176,7 @@ export const AxisSliderRow = memo(function AxisSliderRow({
           const x = parseFloat(s.replace(/,/g, "."))
           if (Number.isFinite(x)) {
             setDragging(true)
-            const next = clamp(x, min, max)
+            const next = clamp(x, inputMin, inputMax)
             setLocalValue(next)
             onChange(next)
           }

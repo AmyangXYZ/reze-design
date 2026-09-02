@@ -243,6 +243,10 @@ export function useSceneSync({
       engine.setPhysicsFloor(physics.floor)
     }
     if (modeChanged || p.settings.ground !== ground) {
+      // Before the options, and outside the rAF coalescing below: this is a
+      // flag, not a buffer rebuild, and it is what a scene with no floor is
+      // waiting on.
+      engine.setGroundVisible(ground.enabled)
       groundOpts.current = {
         diffuseColor: hexToLinearVec3(ground.color),
         gridLineColor: hexToLinearVec3(ground.grid),
