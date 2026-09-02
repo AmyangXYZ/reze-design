@@ -156,7 +156,17 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
       model: { id: m.id, file: m.file, source: source! },
       animation,
       ...(morph ? { morph } : {}),
-      ...(stage ? { stage: true, transform: stage.transform } : {}),
+      // A cast member carries a placement too, and it is the same field: where
+      // this model's root stands. Rotation and scale ride along at their
+      // defaults because the shape is one shape — the dock places a character
+      // by position alone. Written only where someone CHOSE it: the app's own
+      // spawn offset is a guess about an arrangement, and a document that
+      // recorded the guess would freeze it into every scene ever opened.
+      ...(stage
+        ? { stage: true, transform: stage.transform }
+        : m.position && !m.spawnGuess
+          ? { transform: { position: m.position, rotation: [0, 0, 0] as [number, number, number], scale: 1 } }
+          : {}),
       ...(stage && Object.keys(stage.morphs).length ? { morphs: stage.morphs } : {}),
     }
   })

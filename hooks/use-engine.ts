@@ -47,10 +47,12 @@ function infoFor(
   file: string,
   model: import("reze-engine").Model,
   hidden?: string[],
+  placement?: { at: [number, number, number]; guess?: boolean },
 ): EngineModelInfo {
   return {
     id,
     file,
+    ...(placement ? { position: placement.at, ...(placement.guess ? { spawnGuess: true } : {}) } : {}),
     stats: {
       vertices: Math.round(model.getVertices().length / 8),
       bones: model.getSkeleton().bones.length,
@@ -271,6 +273,9 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
       model = await engine.loadModel(entry.model.id, pmxUrl)
     }
     if (stale()) return null
+    // A cast member's placement, filled in by the branch below and carried into
+    // its row. A stage leaves it undefined: its placement is stageList's.
+    let castPlacement: { at: [number, number, number]; guess?: boolean } | undefined
     // Hidden until styled: the first visible frame wears the scene's shader
     // graphs, not a flash of the default PBSDF look.
     if (entry.stage) {
@@ -282,13 +287,16 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
       // visible frame rather than applied after the scene appears.
       for (const [morph, weight] of Object.entries(morphs)) model.setMorphWeight(morph, weight)
     } else {
-      // Stages are placed by the document; only cast members get the offset that
-      // keeps a newly added model from landing inside the first one.
-      const offset = spawnOffsetX(infos.length - stageList.length)
-      engine.setModelTransform(entry.model.id, {
-        visible: false,
-        ...(offset !== 0 ? { position: new Vec3(offset, 0, 0) } : {}),
-      })
+      // WHERE THE DOCUMENT SAYS, and the spawn offset only where it says nothing.
+      // The offset exists to keep a newly added model from landing inside the
+      // first one, which is a guess about an arrangement — once someone has
+      // placed the cast themselves, their placement is the answer, and a scene
+      // written before the field existed still opens the way it always did.
+      castPlacement = entry.transform
+        ? { at: entry.transform.position }
+        : { at: [spawnOffsetX(infos.length - stageList.length), 0, 0], guess: true }
+      const at = castPlacement.at
+      engine.setModelTransform(entry.model.id, { visible: false, position: new Vec3(at[0], at[1], at[2]) })
     }
     // Styling: a document carrying groups for this model (a restored or imported scene)
     const docGroups = scene.state.groups?.[entry.model.id]
@@ -308,7 +316,7 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
     if (stale()) return null
     const hidden = scene.state.hidden?.[entry.model.id] ?? []
     for (const name of hidden) engine.toggleMaterialVisible(entry.model.id, name)
-    const info = infoFor(entry.model.id, entry.model.file, model, hidden)
+    const info = infoFor(entry.model.id, entry.model.file, model, hidden, castPlacement)
     const modelGroups = withSpecialGroups(
       docGroups ?? (await restyled(engine, entry.model.id, engine.getStyleGroups(entry.model.id))),
     )
@@ -465,6 +473,30 @@ export type EngineModelInfo = {
   file: string
   stats: { vertices: number; bones: number; materials: number }
   materials: MaterialRow[]
+  /**
+   * Where this CAST member's root stands, in world units.
+   *
+   * The thing a scene made of two models wearing one motion is actually about:
+   * without it they dance inside each other, and the automatic spawn offset can
+   * only guess. Authored here and written to the document, so a published link
+   * shows the arrangement rather than the guess.
+   *
+   * Absent on a stage, whose placement is its own (StageInfo.transform) and
+   * which this list must not keep a second, drifting copy of.
+   */
+  position?: [number, number, number]
+  /**
+   * The position above is the app's SPAWN GUESS rather than a placement anyone
+   * chose — see spawnOffsetX, which stands a new model beside the first instead
+   * of inside it.
+   *
+   * A guess is dropped the moment a motion arrives, because the motion carries
+   * its own placement, and it is never written to the document. So a scene
+   * nobody has placed by hand loads exactly as it did before any of this
+   * existed, and one that HAS been placed keeps what its author set — including
+   * through the next motion they attach.
+   */
+  spawnGuess?: boolean
 }
 
 /** A stage's placement — the document's own type, not a parallel one. The value
@@ -1017,9 +1049,11 @@ export function useEngine(
     // boot path already works this way — loadSceneInto leaves animated models
     // hidden so the first visible frame wears the motion's first pose — and a
     // model added by hand deserves the same courtesy.
-    engine.setModelTransform(id, { visible: false })
-    const offset = spawnOffsetX(modelsRef.current.length)
-    if (offset !== 0) engine.setModelTransform(id, { position: new Vec3(offset, 0, 0) })
+    // Where it stands, from the first frame: the offset that keeps it from
+    // landing inside the model already there. Recorded rather than applied and
+    // forgotten — it is the starting value of something the user can now set.
+    const position: [number, number, number] = [spawnOffsetX(modelsRef.current.length), 0, 0]
+    engine.setModelTransform(id, { visible: false, position: new Vec3(position[0], position[1], position[2]) })
     let groups: StyleGroup[]
     try {
       await engine.autoStyleGroups(id)
@@ -1031,7 +1065,7 @@ export function useEngine(
     }
     // One commit with the reveal above it — the mesh, its shading and its row
     // land on the same frame.
-    setModels((prev) => [...prev, infoFor(id, pmxBaseName(pmxFile.name), model)])
+    setModels((prev) => [...prev, infoFor(id, pmxBaseName(pmxFile.name), model, undefined, { at: position, guess: true })])
     setGroupsByModel((prev) => ({ ...prev, [id]: groups }))
     return id
   }, [])
@@ -1261,6 +1295,20 @@ export function useEngine(
     setStages((prev) => prev.map((s) => (s.id === id ? { ...s, transform: next } : s)))
   }, [])
 
+  /**
+   * Place a cast member — where their root stands.
+   *
+   * The stage setter's shape, on the other kind of model. It writes the engine
+   * and the row together: the row is what the collector reads, so a position
+   * that only reached the engine would look right until the scene was saved.
+   */
+  const setCastPosition = useCallback((id: string, position: [number, number, number]) => {
+    engineRef.current?.setModelTransform(id, { position: new Vec3(position[0], position[1], position[2]) })
+    // Chosen, so it is no longer a guess: it survives the next motion, and it is
+    // written to the document.
+    setModels((prev) => prev.map((m) => (m.id === id ? { ...m, position, spawnGuess: false } : m)))
+  }, [])
+
   /** Flip one of a stage's switches. */
   const setStageMorph = useCallback((id: string, morph: string, weight: number) => {
     engineRef.current?.getModel(id)?.setMorphWeight(morph, weight)
@@ -1289,10 +1337,21 @@ export function useEngine(
       const model = await engine.loadModel(id, { files, pmxFile })
       if (id !== targetId) engine.removeModel(targetId)
       if (transform) engine.setModelTransform(id, { position: transform.position })
+      const at: [number, number, number] | undefined = transform
+        ? [transform.position.x, transform.position.y, transform.position.z]
+        : undefined
       // Uploaded models have no curated map — auto-group from name hints alone.
       await engine.autoStyleGroups(id)
       const groups = withSpecialGroups(await restyled(engine, id, engine.getStyleGroups(id)))
-      setModels((prev) => prev.map((m) => (m.id === targetId ? infoFor(id, pmxBaseName(pmxFile.name), model) : m)))
+      setModels((prev) =>
+        prev.map((m) =>
+          m.id === targetId
+            ? // The slot's placement survives the upload, and so does whether
+              // anyone chose it: replacing the model does not place it.
+              infoFor(id, pmxBaseName(pmxFile.name), model, undefined, at ? { at, guess: m.spawnGuess } : undefined)
+            : m,
+        ),
+      )
       setGroupsByModel((prev) => {
         const next = { ...prev }
         delete next[targetId]
@@ -1305,17 +1364,27 @@ export function useEngine(
   )
 
   /**
-   * Drop a model's spawn offset.
+   * Drop a model's spawn GUESS.
    *
    * `spawnOffsetX` exists so a newly added model does not land inside the first one —
    * a framing aid for a model standing in its rest pose. A motion carries its own
    * placement, so once the user loads one the offset is the app second-guessing the
-   * file. Nothing is lost: the transform is never persisted (SceneModelDoc has no
-   * position), so the offset is runtime-only and the origin is where the model was
-   * always going to be.
+   * file.
+   *
+   * A placement someone CHOSE is left alone. It is the same act — where this model
+   * stands — and the app's guess about it cannot outrank the answer: a scene with
+   * two characters standing where their author put them would otherwise pile them
+   * both on the origin the moment either was given a new motion, and again on every
+   * reload, since the document's clips load through here.
+   *
+   * The row is written with the engine. It is what the gear's sliders read and what
+   * the collector packs, so a centring that only reached the engine would leave both
+   * of them stating a position the model is not standing at.
    */
   const centerModel = useCallback((modelId: string) => {
+    if (!modelsRef.current.find((m) => m.id === modelId)?.spawnGuess) return
     engineRef.current?.setModelTransform(modelId, { position: new Vec3(0, 0, 0) })
+    setModels((prev) => prev.map((m) => (m.id === modelId ? { ...m, position: [0, 0, 0] } : m)))
   }, [])
 
   /** Load a local .vmd onto ONE model (object URL), posed at frame 0 but PAUSED */
@@ -1677,6 +1746,7 @@ export function useEngine(
     stages,
     addStageFromFiles,
     setStageTransform,
+    setCastPosition,
     planes,
     addPlaneFromFile,
     tickPlanes,

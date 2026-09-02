@@ -29,6 +29,7 @@ export function SliderRow({
   onChange,
   fmt,
   disabled,
+  dense,
 }: {
   label: string
   value: number
@@ -38,6 +39,10 @@ export function SliderRow({
   onChange: (v: number) => void
   fmt?: (v: number) => string
   disabled?: boolean
+  /** Tighter row spacing, for a popover rather than the dock's own column: a
+   *  panel hanging off a row is read as one control, and the dock's breathing
+   *  room reads as three. */
+  dense?: boolean
 }) {
   // Double-click the value to type one. The slider stays the primary control —
   // it is what you reach for while judging a look — and typing is there for the
@@ -59,9 +64,16 @@ export function SliderRow({
 
   // Single line: label · slider · value.
   return (
-    <div className={cn("mt-2.5 flex items-center gap-2 first:mt-0", disabled && "pointer-events-none opacity-40")}>
-      {/* w-16 fits the longest label ("Saturation") */}
-      <span className="w-16 shrink-0 truncate text-xs">{label}</span>
+    <div
+      className={cn(
+        "flex items-center first:mt-0",
+        dense ? "mt-1.5 gap-1.5" : "mt-2.5 gap-2",
+        disabled && "pointer-events-none opacity-40",
+      )}
+    >
+      {/* w-16 fits the longest label ("Saturation"); dense rows carry an axis
+          and a word, and w-10 is what "Pos X" needs. */}
+      <span className={cn("shrink-0 truncate", dense ? "w-10 text-[11px]" : "w-16 text-xs")}>{label}</span>
       <Slider
         className="min-w-0 flex-1 [&_[data-slot=slider-thumb]]:size-2.5 [&_[data-slot=slider-thumb]]:hover:ring-2 [&_[data-slot=slider-track]]:h-1"
         value={[value]}
@@ -97,6 +109,7 @@ export function SliderRow({
         className={cn(
           VALUE_BOX,
           "outline-none",
+          dense && "w-8 text-[10px]",
           editing
             ? "border-blue-400/50 bg-white/5 text-foreground"
             : "cursor-text border-transparent text-muted-foreground select-none",

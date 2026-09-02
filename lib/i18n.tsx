@@ -645,6 +645,7 @@ const en = {
       volume: (kind: string) => `${kind} volume`,
       replaceModel: (name: string) => `Upload model folder to replace ${name}`,
       deleteModel: (name: string) => `Delete ${name}`,
+      modelOptions: (name: string) => `Options for ${name}`,
       // Layers, not list positions: "up" is toward the viewer, which is what the
       // order MEANS. A screen reader hears these with no list around them.
       editEffect: (name: string) => `Edit ${name}`,
@@ -1371,6 +1372,7 @@ const zh: Dictionary = {
       volume: (kind: string) => `${kind}音量`,
       replaceModel: (name: string) => `上传模型文件夹以替换 ${name}`,
       deleteModel: (name: string) => `删除 ${name}`,
+      modelOptions: (name: string) => `${name} 的选项`,
       editEffect: (name: string) => `编辑 ${name}`,
       replaceEffect: (name: string) => `替换 ${name}`,
       removeEffect: (name: string) => `从场景中移除 ${name}`,

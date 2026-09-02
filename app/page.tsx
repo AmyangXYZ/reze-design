@@ -59,6 +59,7 @@ import {
   Palette,
   PenLine,
   RotateCcw,
+  Settings,
   Download,
   Share2,
   Sun,
@@ -1748,6 +1749,123 @@ function ClipRow({
   )
 }
 
+/**
+ * One cast member: the slot they occupy, their palette, their name — and the
+ * gear that opens where they stand.
+ *
+ * A component rather than markup inside the cast's map because the panel is
+ * per-row state, and the ROW is its anchor: it opens as a second line of this
+ * row, the clip level's gesture on the other kind of thing in the dock.
+ *
+ * Where they stand is what a scene of two models wearing one motion is about.
+ * The automatic spawn offset can only guess an arrangement, and until now the
+ * guess was the only answer available — and it was not written down, so a
+ * published scene showed it rather than what its author had in mind.
+ */
+function CastMemberRow({
+  slot,
+  name,
+  palette,
+  inspected,
+  position,
+  onPosition,
+  onReplace,
+  onRemove,
+}: {
+  /** 1-based, as the row prints it. */
+  slot: number
+  /** The .pmx name, already display-trimmed. */
+  name: string
+  /** Null until the model's colours have been read — the row holds its shape
+   *  with a skeleton meanwhile. */
+  palette: CastPaletteId | null
+  /** This model is the one the material panel is editing. */
+  inspected: boolean
+  /** Where their root stands. Absent on a scene written before it was authored,
+   *  which is the spawn offset the loader placed them at. */
+  position?: [number, number, number]
+  onPosition: (position: [number, number, number]) => void
+  onReplace: () => void
+  onRemove: () => void
+}) {
+  const t = useT()
+  // Hover alone would hide the gear the moment the pointer reached the sliders —
+  // see CastLine's `revealed`.
+  const [optionsOpen, setOptionsOpen] = useState(false)
+  const at = position ?? [0, 0, 0]
+  return (
+    <Popover open={optionsOpen} onOpenChange={setOptionsOpen}>
+      <PopoverAnchor asChild>
+        <div
+          // Not a button: materials open from the palette alone, so a whole-row
+          // click target would promise an edit surface the row does not own. The
+          // tint still marks which model the open panel is editing.
+          className={cn("flex h-8 items-center gap-2.5 px-4 transition-colors", inspected && "bg-white/[0.06]")}
+        >
+          <span className="shrink-0 font-mono text-xs text-muted-foreground">{slot}</span>
+          {palette ? <CastSwatch palette={palette} /> : <Skeleton className="size-5 shrink-0 rounded-interior" />}
+          <span className="flex min-w-0 flex-1 flex-col">
+            <CastLine
+              // Three buttons now, so the name ends clear of them rather than
+              // running under the gear — the width a clip row reserves for three.
+              reserve="pr-[4.5rem]"
+              revealed={optionsOpen}
+              text={
+                <span className="min-w-0 flex-1 truncate text-xs" title={name}>
+                  {name}
+                </span>
+              }
+              actions={
+                <>
+                  {/* Replace, adjust, delete — a clip row's order: the file
+                      first, what can be changed about it next, ending it last. */}
+                  <CastAction icon={Upload} label={t.lab.aria.replaceModel(name)} onClick={onReplace} />
+                  <CastAction
+                    icon={Settings}
+                    label={t.lab.aria.modelOptions(name)}
+                    onClick={() => setOptionsOpen((o) => !o)}
+                  />
+                  <CastAction icon={X} danger label={t.lab.aria.deleteModel(name)} onClick={onRemove} />
+                </>
+              }
+            />
+          </span>
+        </div>
+      </PopoverAnchor>
+      <PopoverContent
+        // Under the gear, at the right edge of the row it hangs off. Wide enough
+        // for the dock's own slider row and no wider: these are the same three
+        // controls a stage is placed with, so they are the same control.
+        align="end"
+        side="bottom"
+        sideOffset={2}
+        className="w-56 rounded-surface border-line-strong bg-surface-raised p-2 shadow-float"
+        // Focus stays on the gear rather than being taken by the first slider,
+        // which would open the panel with a ring already on it.
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        {(["X", "Y", "Z"] as const).map((axis, i) => (
+          <SliderRow
+            key={axis}
+            label={t.lab.ctl.pos(axis)}
+            value={at[i]}
+            min={-50}
+            max={50}
+            step={0.5}
+            dense
+            onChange={(v) => {
+              const next = [...at] as [number, number, number]
+              next[i] = v
+              onPosition(next)
+            }}
+            fmt={(v) => v.toFixed(1)}
+          />
+        ))}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 // The row's true geometry, kept in step by hand: py-1.5, two h-5 lines, the
 // motion line's leading icon slot. A skeleton that is not the shape of what
 // replaces it is just a differently-timed layout shift — measure the real row
@@ -1904,6 +2022,7 @@ export default function Lab() {
     stages,
     addStageFromFiles,
     setStageTransform,
+    setCastPosition,
     planes,
     addPlaneFromFile,
     tickPlanes,
@@ -6023,48 +6142,17 @@ export default function Lab() {
                 // list, motion rows would bind to their models by row order
                 // alone, which is the kind of invisible convention that breaks
                 // at three models.
-                <div
+                <CastMemberRow
                   key={m.id}
-                  // Not a button: materials open from the palette alone, so a
-                  // whole-row click target would promise an edit surface the
-                  // row does not own. The tint still marks which model the
-                  // open panel is editing.
-                  className={cn(
-                    "flex h-8 items-center gap-2.5 px-4 transition-colors",
-                    inspectedId === m.id && "bg-white/[0.06]",
-                  )}
-                >
-                  <span className="shrink-0 font-mono text-xs text-muted-foreground">{slot + 1}</span>
-                  {palettes[m.id] ? (
-                    <CastSwatch palette={palettes[m.id]} />
-                  ) : (
-                    <Skeleton className="size-5 shrink-0 rounded-interior" />
-                  )}
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <CastLine
-                      text={
-                        <span className="min-w-0 flex-1 truncate text-xs" title={displayName(m.file)}>
-                          {displayName(m.file)}
-                        </span>
-                      }
-                      actions={
-                        <>
-                          <CastAction
-                            icon={Upload}
-                            label={t.lab.aria.replaceModel(displayName(m.file))}
-                            onClick={() => pickModel({ mode: "replace", id: m.id })}
-                          />
-                          <CastAction
-                            icon={X}
-                            danger
-                            label={t.lab.aria.deleteModel(displayName(m.file))}
-                            onClick={() => removeModelById(m.id)}
-                          />
-                        </>
-                      }
-                    />
-                  </span>
-                </div>
+                  slot={slot + 1}
+                  name={displayName(m.file)}
+                  palette={palettes[m.id] ?? null}
+                  inspected={inspectedId === m.id}
+                  position={m.position}
+                  onPosition={(position) => setCastPosition(m.id, position)}
+                  onReplace={() => pickModel({ mode: "replace", id: m.id })}
+                  onRemove={() => removeModelById(m.id)}
+                />
               ))}
               {/* AFTER the rows, because that is where the missing ones are:
                   models arrive in document order, so what is outstanding is

@@ -263,7 +263,10 @@ export type SceneModelDoc = {
   /** Environment model. Absent = a cast member, which is the old shape — so
    *  every scene written before stages existed still parses as it always did. */
   stage?: boolean
-  /** Stage placement (position / rotation in degrees / uniform scale). */
+  /** Where this model stands: position, rotation in degrees, uniform scale. A
+   *  stage is placed by all three; a cast member by position alone — the offset
+   *  that keeps two models wearing one motion out of each other. Absent means
+   *  the loader places them, which for a cast member is the spawn offset. */
   transform?: SceneStageTransform
   /** Authored stage switch weights by morph name. */
   morphs?: Record<string, number>
