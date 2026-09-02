@@ -33,14 +33,19 @@ export const USE_DEFAULT_SCENE = YES.includes((process.env.NEXT_PUBLIC_USE_DEFAU
 /**
  * Where the demo model, motion and music are served from.
  *
- * R2, whose egress is free, so the ~18MB a first-time visitor downloads costs
+ * R2, whose egress is free, so what a first-time visitor downloads costs
  * nothing to serve and never touches the deployment's transfer budget. Keys are
  * versioned by path, which is what lets them carry a one-year immutable cache
  * header: rename, never overwrite in place.
  *
+ * Hence `demo-cat` rather than a second upload to `reze-design`. That header is
+ * a promise for a year, and an overwritten key is served from the edge long
+ * after the bucket has forgotten it — a new path is the only reliable way to
+ * change what a returning visitor sees.
+ *
  * Upload with `scripts/r2-upload-demo.mjs` — see its header.
  */
-const DEMO = "https://assets.reze.one/demo/reze-design"
+const DEMO = "https://assets.reze.one/demo/demo-cat"
 // The cast, shared by every site rather than copied into each one's folder.
 const MODEL = "https://assets.reze.one/demo/reze"
 
@@ -51,17 +56,14 @@ const DEMO_SCENE_DOC: SceneDoc = {
     models: [
       {
         model: `${MODEL}/reze.pmx`,
-        // The Classic set, cut for the demo: a dance, the expressions that go
-        // with it, and the track they were timed to. A first-time visitor should
-        // land on a scene doing all three at once — a character dancing in
-        // silence, staring straight ahead, is a demo of a loader.
+        // 人は猫 — a dance, the expressions that go with it, and the track they
+        // were timed to. A first-time visitor should land on a scene doing all
+        // three at once: a character dancing in silence, staring straight ahead,
+        // is a demo of a loader.
         //
-        // CUT AT FRAME 81, which is 2.7 seconds of standing still at the top of
-        // the take. That is a long time to hold somebody who has not yet decided
-        // to stay, and it is most of what they see before they decide. The pose
-        // at the cut is carried into a key at frame 0, so the dance opens
-        // mid-movement rather than snapping to it — see scripts/cut-vmd.mjs.
-        // The full-length Classic files are still in public/, untouched.
+        // 29 seconds, and it opens on the downbeat — no standing around at the
+        // top of the take, which is the part a visitor watches before deciding
+        // whether to stay.
         animation: `${DEMO}/animations/Demo.vmd`,
         morph: `${DEMO}/animations/Demo_morph.vmd`,
         materials: {
@@ -96,11 +98,14 @@ const DEMO_SCENE_DOC: SceneDoc = {
     // gets the moment they drag the viewport, so what they see first is what
     // they keep.
     cameraAnimation: null,
-    // Cut to match, by scripts/cut-mp3.py — frame-aligned rather than exact, and
-    // 9ms of a 33ms video frame is the closest an MP3 boundary can land.
+    // MP3, not the WAV the scene was authored against: 29 seconds of 1536kbps
+    // PCM is 5.6MB, and the same track at 192k is 0.7MB. Nobody can hear the
+    // difference over a dance loop, and everybody waits for the download.
     audio: `${DEMO}/audios/Demo.mp3`,
     midi: null,
-    lyrics: null,
+    // The track is sung, so the demo shows the lyric line doing its work rather
+    // than describing it — this is the one scene most visitors will ever see.
+    lyrics: `${DEMO}/audios/Demo.lrc`,
     backdrop: null,
     skybox: null,
   },
@@ -115,8 +120,9 @@ const DEMO_SCENE_DOC: SceneDoc = {
       distance: 33,
       alpha: Math.PI,
       beta: Math.PI / 2.5,
-      target: [0, 2.0, 0],
+      target: [0, 3.0, 0],
       follow: FOLLOW_BONE,
+      fov: Math.PI / 4,
     },
     world: { color: "#ed6aff", strength: 0.66 },
     sun: { color: "#ffffff", strength: 2.0, azimuth: 205, elevation: 21 },
@@ -125,11 +131,13 @@ const DEMO_SCENE_DOC: SceneDoc = {
     outline: { enabled: true },
     view: DEFAULT_VIEW,
     audio: DEFAULT_AUDIO,
-    // Both are ADDITIVE-friendly and both are particles in the scene pass —
-    // Floating Stars around the cast, Hand Ribbon off her wrists — so they sum
-    // wherever they overlap and the order here is free. It is not free in
-    // general: a full-cover backdrop has to come first or it erases what is
-    // under it.
+    // Three of the four are ADDITIVE — Floating Stars around the cast, Hand
+    // Sparks off her wrists, the Lyrics line over everything — so they sum
+    // wherever they overlap and their order is free. Sticker Outline is not:
+    // it reads rzCastDistance and cuts a border, so it goes LAST, over the
+    // particles it is meant to enclose. Order is free in general only until
+    // something covers; a full-cover backdrop has to come first or it erases
+    // what is under it.
     //
     // Shining Stars is the SKY and stays in the library rather than the demo: it
     // is a background field, so it is read through whatever the scene's own
@@ -140,9 +148,21 @@ const DEMO_SCENE_DOC: SceneDoc = {
     // dissolve that runs in three passes, and the first paint of the site is the
     // one frame that has to be quick on whatever machine arrives. It is one
     // click away in the library, which is where somebody who wants it will be.
-    background: { color: "#f6cfff", effects: [{ source: "Floating Stars" }, { source: "Hand Ribbon" }] },
+    // Named, not pinned by id. The scene this came from carried a hand-edited
+    // "Sticker Outline 2" inline, which would ship a draft nobody maintains and
+    // freeze it against the library entry it was forked from; the demo is the
+    // one place a shipped effect should be the shipped effect.
+    background: {
+      color: "#f6cfff",
+      effects: [
+        { source: "Floating Stars" },
+        { source: "Hand Sparks" },
+        { source: "Lyrics" },
+        { source: "Sticker Outline" },
+      ],
+    },
     grade: { preset: "Neutral", intensity: 1 },
-    ground: { color: "#c800de", size: 160, opacity: 0.42, shadow: true, grid: "#fafaf9", gridEnabled: true },
+    ground: { color: "#c800de", size: 160, opacity: 0.48, shadow: true, grid: "#fafaf9", gridEnabled: true },
     physics: DEFAULT_PHYSICS,
   },
 }
