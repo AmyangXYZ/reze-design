@@ -15,11 +15,11 @@
 // the editor authored, for the same reason it wears the face.
 //
 // Three files, because the document has three slots: the motion, the expression
-// VMD laid over it, and the camera. Whether the first two are one file or two is
-// NOT this component's decision — it follows the scene. A scene whose morphs
-// live inside its motion keeps them there; one that carries a separate
-// expression file keeps that, or the morphs would be written twice and play
-// twice.
+// VMD laid over it, and the camera. The scene names the first two whenever it
+// has them, and each kind of track is written to exactly one file — morphs in
+// both would play every expression twice. A scene with no expression slot gets
+// one the moment an edit leaves a morph key in the clip, so what someone keyed
+// is a file they can see, download and delete.
 
 import { useEffect, useRef } from "react"
 import { VMDWriter } from "reze-engine"
@@ -34,10 +34,26 @@ const SETTLE_MS = 250
 export type ClipSlotNames = {
   /** What to call the motion file. */
   motion: string
-  /** What to call the expression file, or null when this scene keeps its morphs
-   *  inside the motion — in which case the motion file carries them. */
+  /** What to call the expression file, or null when the scene has no expression
+   *  slot yet. An edit that keys a morph opens one under DEFAULT_MORPH_NAME. */
   morph: string | null
 }
+
+/**
+ * What an expression file is called when the edit is what created it.
+ *
+ * A scene arrives with a morph slot or it does not, and one that does not used
+ * to keep every expression inside its motion — MMD's own shape, and the reason
+ * this component followed the scene rather than deciding. What that produced
+ * for someone who KEYED a face here was a morph row naming the motion file and
+ * no way to remove the work: expressions with no slot of their own are not a
+ * clip anyone can point at.
+ *
+ * So an edit that leaves morph keys behind writes them their own file. The
+ * scene still names it whenever it has a name; only a scene with no expression
+ * slot at all lands here.
+ */
+const DEFAULT_MORPH_NAME = "morphs.vmd"
 
 export function ClipAutosave({
   slotNames,
@@ -87,13 +103,17 @@ export function ClipAutosave({
         // encode happens after the settle, so no drag is mid-flight through it.
         if (clip && modelId) {
           const names = slotNames(modelId)
-          // "all" when the scene has no separate expression slot — one file
-          // holding bone and morph tracks, which is what MMD itself exports.
-          const motion = new File([writer.write(clip, { tracks: names.morph ? "motion" : "all" })], names.motion, {
+          // The scene's own name for the expression file, or one for the file
+          // this edit is creating. A clip with no morph key at all still writes
+          // a single motion: there is nothing to put in a second file, and an
+          // empty one would appear in the dock as expressions that drive
+          // nothing.
+          const morphName = names.morph ?? (clip.morphTracks.size > 0 ? DEFAULT_MORPH_NAME : null)
+          const motion = new File([writer.write(clip, { tracks: morphName ? "motion" : "all" })], names.motion, {
             type: "application/octet-stream",
           })
-          const morphs = names.morph
-            ? new File([writer.write(clip, { tracks: "morphs" })], names.morph, {
+          const morphs = morphName
+            ? new File([writer.write(clip, { tracks: "morphs" })], morphName, {
                 type: "application/octet-stream",
               })
             : null
