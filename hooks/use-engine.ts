@@ -988,6 +988,15 @@ export function useEngine(
       disposed = true
       engineRef.current?.dispose?.()
       engineRef.current = null
+      // AND THE FLAGS THIS ENGINE SET. They are state, so Fast Refresh keeps
+      // them across an edit while this cleanup throws the engine away — and
+      // `ready` staying true through a teardown is invisible and total: the
+      // reveal in app/page.tsx is keyed on it, loadSceneInto deliberately leaves
+      // animated models HIDDEN for that reveal to un-hide, and with the flag
+      // unchanged the effect never re-runs. The scene reloads, styles, and shows
+      // nothing, with no error anywhere because nothing failed.
+      setReady(false)
+      setStageReady(false)
     }
   }, [])
 
