@@ -57,3 +57,6 @@ tools/blender-port/
 
 # Research artefacts — measurement outputs (motion×music fit etc.), never shipped.
 /analysis/
+
+# Someone else's music, clipped locally to time a scene against.
+/lrc-clip/
