@@ -1776,7 +1776,9 @@ function CastMemberRow({
   palette,
   inspected,
   position,
+  scale,
   onPosition,
+  onScale,
   onReplace,
   onRemove,
 }: {
@@ -1792,7 +1794,10 @@ function CastMemberRow({
   /** Where their root stands. Absent on a scene written before it was authored,
    *  which is the spawn offset the loader placed them at. */
   position?: [number, number, number]
+  /** Uniform, 1 at rest. Absent on a scene written before it was authored. */
+  scale?: number
   onPosition: (position: [number, number, number]) => void
+  onScale: (scale: number) => void
   onReplace: () => void
   onRemove: () => void
 }) {
@@ -1852,6 +1857,26 @@ function CastMemberRow({
         // which would open the panel with a ring already on it.
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
+        {/* Size before place: how big they are is the question you answer first,
+            and it changes what the three below are worth. Uniform, because a
+            character scaled unevenly is broken rather than styled. The track is
+            a comfortable range to drag; the field takes what you type, floored
+            just above zero where the transform collapses. */}
+        <SliderRow
+          label={t.lab.ctl.scale}
+          value={scale ?? 1}
+          // The stage's own scale row, to the number: same track, same step,
+          // same floor, same times sign. A character and a stage are scaled by
+          // the same question, and two controls that read alike must behave
+          // alike or the one you learned second teaches you nothing.
+          min={0.05}
+          max={10}
+          step={0.05}
+          inputMin={0.001}
+          dense
+          onChange={onScale}
+          fmt={(v) => `${v.toFixed(2)}×`}
+        />
         {(["X", "Y", "Z"] as const).map((axis, i) => (
           <SliderRow
             key={axis}
@@ -2036,6 +2061,7 @@ export default function Lab() {
     addStageFromFiles,
     setStageTransform,
     setCastPosition,
+    setCastScale,
     planes,
     addPlaneFromFile,
     tickPlanes,
@@ -6394,7 +6420,9 @@ export default function Lab() {
                   palette={palettes[m.id] ?? null}
                   inspected={inspectedId === m.id}
                   position={m.position}
+                  scale={m.scale}
                   onPosition={(position) => setCastPosition(m.id, position)}
+                  onScale={(v) => setCastScale(m.id, v)}
                   onReplace={() => pickModel({ mode: "replace", id: m.id })}
                   onRemove={() => removeCastMember(m.id)}
                 />
@@ -7176,6 +7204,10 @@ export default function Lab() {
                                   min={0.05}
                                   max={10}
                                   step={0.05}
+                                  // As the stage and the cast: the field takes
+                                  // any factor, and keeps out the one number
+                                  // that collapses the transform matrix.
+                                  inputMin={0.001}
                                   onChange={(v) => setPlaneTransform(plane.id, { scale: v })}
                                   fmt={(v) => `${v.toFixed(2)}×`}
                                 />

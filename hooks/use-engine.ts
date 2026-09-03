@@ -47,12 +47,18 @@ function infoFor(
   file: string,
   model: import("reze-engine").Model,
   hidden?: string[],
-  placement?: { at: [number, number, number]; guess?: boolean },
+  placement?: { at: [number, number, number]; scale?: number; guess?: boolean },
 ): EngineModelInfo {
   return {
     id,
     file,
-    ...(placement ? { position: placement.at, ...(placement.guess ? { spawnGuess: true } : {}) } : {}),
+    ...(placement
+      ? {
+          position: placement.at,
+          ...(placement.scale !== undefined ? { scale: placement.scale } : {}),
+          ...(placement.guess ? { spawnGuess: true } : {}),
+        }
+      : {}),
     stats: {
       vertices: Math.round(model.getVertices().length / 8),
       bones: model.getSkeleton().bones.length,
@@ -276,7 +282,7 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
     if (stale()) return null
     // A cast member's placement, filled in by the branch below and carried into
     // its row. A stage leaves it undefined: its placement is stageList's.
-    let castPlacement: { at: [number, number, number]; guess?: boolean } | undefined
+    let castPlacement: { at: [number, number, number]; scale?: number; guess?: boolean } | undefined
     // Hidden until styled: the first visible frame wears the scene's shader
     // graphs, not a flash of the default PBSDF look.
     if (entry.stage) {
@@ -294,10 +300,14 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
       // placed the cast themselves, their placement is the answer, and a scene
       // written before the field existed still opens the way it always did.
       castPlacement = entry.transform
-        ? { at: entry.transform.position }
+        ? { at: entry.transform.position, scale: entry.transform.scale }
         : { at: [spawnOffsetX(infos.length - stageList.length), 0, 0], guess: true }
       const at = castPlacement.at
-      engine.setModelTransform(entry.model.id, { visible: false, position: new Vec3(at[0], at[1], at[2]) })
+      engine.setModelTransform(entry.model.id, {
+        visible: false,
+        position: new Vec3(at[0], at[1], at[2]),
+        ...(castPlacement.scale !== undefined ? { scale: castPlacement.scale } : {}),
+      })
     }
     // Styling: a document carrying groups for this model (a restored or imported scene)
     const docGroups = scene.state.groups?.[entry.model.id]
@@ -486,6 +496,10 @@ export type EngineModelInfo = {
    * which this list must not keep a second, drifting copy of.
    */
   position?: [number, number, number]
+  /** Uniform, 1 at rest. Its own field rather than a component of position:
+   *  the engine takes one number, and a character is scaled evenly or not at
+   *  all — a squashed figure is a broken figure, not a look. */
+  scale?: number
   /**
    * The position above is the app's SPAWN GUESS rather than a placement anyone
    * chose — see spawnOffsetX, which stands a new model beside the first instead
@@ -1310,6 +1324,14 @@ export function useEngine(
     setModels((prev) => prev.map((m) => (m.id === id ? { ...m, position, spawnGuess: false } : m)))
   }, [])
 
+  /** How big they stand, uniformly. Chosen the moment it is touched, exactly as
+   *  a position is — a scaled model whose placement was still a guess would
+   *  reload at a different size, which is the one thing a slider must not do. */
+  const setCastScale = useCallback((id: string, scale: number) => {
+    engineRef.current?.setModelTransform(id, { scale })
+    setModels((prev) => prev.map((m) => (m.id === id ? { ...m, scale, spawnGuess: false } : m)))
+  }, [])
+
   /** Flip one of a stage's switches. */
   const setStageMorph = useCallback((id: string, morph: string, weight: number) => {
     engineRef.current?.getModel(id)?.setMorphWeight(morph, weight)
@@ -1748,6 +1770,7 @@ export function useEngine(
     addStageFromFiles,
     setStageTransform,
     setCastPosition,
+    setCastScale,
     planes,
     addPlaneFromFile,
     tickPlanes,

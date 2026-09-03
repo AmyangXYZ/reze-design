@@ -164,8 +164,14 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
       // recorded the guess would freeze it into every scene ever opened.
       ...(stage
         ? { stage: true, transform: stage.transform }
-        : m.position && !m.spawnGuess
-          ? { transform: { position: m.position, rotation: [0, 0, 0] as [number, number, number], scale: 1 } }
+        : (m.position && !m.spawnGuess) || (m.scale !== undefined && m.scale !== 1)
+          ? {
+              transform: {
+                position: m.position ?? ([0, 0, 0] as [number, number, number]),
+                rotation: [0, 0, 0] as [number, number, number],
+                scale: m.scale ?? 1,
+              },
+            }
           : {}),
       ...(stage && Object.keys(stage.morphs).length ? { morphs: stage.morphs } : {}),
     }
