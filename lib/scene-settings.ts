@@ -6,7 +6,22 @@ import type { GradeSettings } from "@/lib/grade"
 export type SceneSettings = {
   world: { color: string; strength: number }
   /** Sun direction as azimuth/elevation degrees — friendlier than a raw vector. */
-  sun: { color: string; strength: number; azimuth: number; elevation: number }
+  sun: {
+    color: string
+    strength: number
+    azimuth: number
+    elevation: number
+    /**
+     * How soft the edge of the shadow it casts is, 0–1. Optional; absent on
+     * every document written before the dial existed, and 0 is the sharp edge
+     * those scenes were authored looking at.
+     *
+     * A property of the LIGHT even though the engine takes it on the floor
+     * that receives it: a point source throws a hard edge and an overcast sky
+     * throws none, and that is a fact about the sun, not about the ground.
+     */
+    softness?: number
+  }
   bloom: {
     enabled: boolean
     threshold: number
@@ -40,6 +55,15 @@ export type SceneSettings = {
    * against one and viewed under the other is a different look.
    */
   view: { transform: "standard" | "filmic" | "agx"; exposure: number }
+  /**
+   * Sensor grain over the rendered scene, 0–1.
+   *
+   * Stored as an amount only. WHETHER IT MOVES is not a preference — it is a
+   * fact about the footage the scene stands in: a still photograph's grain is
+   * frozen, and CG noise crawling over a frozen picture makes the rendering look
+   * more alive than the thing it is standing in. So the sync derives it.
+   */
+  grain: { amount: number }
   /** Post-tonemap color grade. */
   grade: GradeSettings
   /**
@@ -108,6 +132,10 @@ export type SceneSettings = {
  *  is the honest default for both — a scene that never asked for blur or outlines
  *  must come back looking exactly as it did. */
 export const DEFAULT_DOF: SceneSettings["dof"] = { enabled: false, aperture: 1 }
+/** What a document without a grain block gets. None: a scene written before the
+ *  dial existed was authored looking at a clean render, and that is the only
+ *  value that brings one back as it was. */
+export const DEFAULT_GRAIN: SceneSettings["grain"] = { amount: 0 }
 export const DEFAULT_OUTLINE: SceneSettings["outline"] = { enabled: false }
 
 /**

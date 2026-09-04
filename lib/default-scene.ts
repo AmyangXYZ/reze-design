@@ -4,7 +4,14 @@ import { FOLLOW_BONE } from "@/components/scene/scene-sidebar"
 import { builtinEffect } from "@/lib/effects"
 import { libraryGraph } from "@/lib/materials"
 import { parseSceneDoc, type Scene, type SceneDoc } from "@/lib/scene"
-import { DEFAULT_AUDIO, DEFAULT_DOF, DEFAULT_OUTLINE, DEFAULT_PHYSICS, DEFAULT_VIEW } from "@/lib/scene-settings"
+import {
+  DEFAULT_AUDIO,
+  DEFAULT_DOF,
+  DEFAULT_GRAIN,
+  DEFAULT_OUTLINE,
+  DEFAULT_PHYSICS,
+  DEFAULT_VIEW,
+} from "@/lib/scene-settings"
 
 /**
  * Whether this build boots into the demo scene.
@@ -129,6 +136,7 @@ const DEMO_SCENE_DOC: SceneDoc = {
     bloom: { enabled: true, threshold: 0.5, knee: 0.5, radius: 4.0, intensity: 0.05, color: "#ffc9c9" },
     dof: DEFAULT_DOF,
     outline: { enabled: true },
+    grain: DEFAULT_GRAIN,
     view: DEFAULT_VIEW,
     audio: DEFAULT_AUDIO,
     // All three are ADDITIVE — Floating Stars around the cast, Hand Sparks off
@@ -193,6 +201,7 @@ export const EMPTY_SCENE_DOC: SceneDoc = {
     bloom: { enabled: true, threshold: 0.8, knee: 0.5, radius: 4.0, intensity: 0.03, color: "#ffffff" },
     dof: DEFAULT_DOF,
     outline: DEFAULT_OUTLINE,
+    grain: DEFAULT_GRAIN,
     view: DEFAULT_VIEW,
     audio: DEFAULT_AUDIO,
     background: { color: "#1c1c1e", effects: [] },

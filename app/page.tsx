@@ -72,6 +72,8 @@ import {
   Sparkles,
   WandSparkles,
   X,
+  Move,
+  Wand2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -320,8 +322,18 @@ const CHECKERBOARD: React.CSSProperties = {
   backgroundPosition: "0 0, 12px 12px",
 }
 
-/** The flat backdrop takes stills and moving pictures; the 360 dome takes a
- *  still equirect, including Radiance. */
+/**
+ * Which seat the scene's one piece of background media is in.
+ *
+ * `flat` hangs behind the scene, `dome` wraps around it, `plate` is footage the
+ * scene stands IN. Flat and plate take the same files and are told apart by
+ * which row you uploaded from — the difference is a claim about the picture,
+ * and no extension carries it.
+ */
+type BgSlot = "flat" | "dome" | "plate"
+
+/** The flat backdrop and the plate take stills and moving pictures; the 360
+ *  dome takes a still equirect, including Radiance. */
 const BACKDROP_ACCEPT = "image/*,video/mp4,video/webm,video/quicktime"
 const DOME_ACCEPT = "image/*"
 /** Radiance only. An .hdr is a measurement of light, and the slot that takes it
@@ -640,6 +652,10 @@ type PaletteValues = {
   planes: string | null
   gradeName: string
   backdrop: string | null
+  /** The footage the scene is standing in, by name. Its own field beside
+   *  `backdrop`: the two are the same kind of file in different seats, and a
+   *  row that showed one for the other would report a plate as wallpaper. */
+  plate: string | null
   dome: string | null
   /** The HDRI, by name. Its own field beside `dome` because it is its own slot
    *  — a scene can wear both, and a palette row that showed one for the other
@@ -680,7 +696,7 @@ const DOCK_CONTROLS: {
   en: string
   zh: string
   row: string
-  stageTab?: "stage" | "ground" | "background"
+  stageTab?: "stage" | "ground" | "background" | "composite"
   lightTab?: "world" | "sun"
   cameraTab?: "lens" | "focus"
   postTab?: "grade" | "tone" | "bloom" | "outline"
@@ -705,6 +721,14 @@ const DOCK_CONTROLS: {
   { id: "shadow", en: "Shadow", zh: "阴影", row: "stage", stageTab: "ground", value: (v) => sw(v.settings.ground.shadow, v.t) },
   { id: "showGround", en: "Show ground", zh: "显示地面", row: "stage", stageTab: "ground", value: (v) => sw(v.settings.ground.enabled, v.t) },
   { id: "grid", en: "Grid lines", zh: "网格", row: "stage", stageTab: "ground", value: (v) => sw(v.settings.ground.gridEnabled, v.t) },
+  // The composite set. Every one of them has a row of its own by what it acts
+  // on — the lens is the camera's, the shadow's edge is the light's — so the
+  // shared keyword is what gathers them: one search for "composite" or "实景"
+  // returns the whole task, each row still labelled with where it lives.
+  { id: "plate", en: "Footage", zh: "实景素材", row: "stage", stageTab: "composite", keywords: ["composite", "plate", "footage", "live action", "video", "photo", "实景", "合成", "素材"], value: (v) => v.plate ?? v.t.lab.ctl.none },
+  { id: "camera-roll", en: "Camera roll", zh: "相机倾斜", row: "stage", stageTab: "composite", keywords: ["composite", "tilt", "dutch", "level", "实景", "合成", "倾斜"], value: (v) => deg(rad2deg(v.camera.roll ?? 0)) },
+  { id: "grain", en: "Grain", zh: "颗粒", row: "stage", stageTab: "composite", keywords: ["composite", "noise", "film", "sensor", "实景", "合成", "噪点", "颗粒"], value: (v) => dec2(v.settings.grain.amount) },
+  { id: "shadow-softness", en: "Shadow softness", zh: "阴影柔和度", row: "stage", stageTab: "composite", keywords: ["composite", "soft", "penumbra", "overcast", "实景", "合成", "柔和"], value: (v) => dec2(v.settings.sun.softness ?? 0) },
   { id: "bg-color", en: "Background color", zh: "背景颜色", row: "stage", stageTab: "background", value: (v) => v.settings.background.color },
   { id: "bg-image", en: "Background image", zh: "背景图片", row: "stage", stageTab: "background", keywords: ["backdrop", "photo", "video", "mp4", "webm", "gif", "webp", "背景视频"], value: (v) => v.backdrop ?? v.t.lab.ctl.none },
   { id: "bg-360", en: "Skybox", zh: "天空盒", row: "stage", stageTab: "background", keywords: ["360", "skybox", "panorama", "equirect", "全景"], value: (v) => v.dome ?? v.t.lab.ctl.none },
@@ -2396,9 +2420,86 @@ export default function Lab() {
     return () => clearInterval(timer)
   }, [durationOwner, masterId, engineRef])
 
+  // ONE settings object, applied by the SAME hook main and the viewer use.
+  // The per-section local applies this replaces were honest scaffolding while
+  // ownership was unaudited; the audit found the lab never applied the
+  // background effect at all, so adopting use-scene-sync both consolidates the
+  // apply layer and turns the document's effect on for the first time here.
+  const [settings, setSettings] = useState<SceneSettings>(() => scene.state.settings)
+  /**
+   * The scene's ONE piece of background media, and which seat it is in.
+   *
+   * One state rather than three, which is what makes the three slots mutually
+   * exclusive for free: filling any of them replaces whatever was there, and no
+   * code path exists in which two are set at once.
+   *
+   * `plate` and `flat` take the same files and differ only in the claim — a
+   * backdrop hangs behind the scene, a plate is footage the scene stands in. So
+   * the seat is something the author SAYS by choosing a row, never something
+   * guessed from the file.
+   *
+   * Declared here rather than beside the rest of the background state because
+   * the framing below reads it: a plate's own shape is the shot's shape.
+   */
+  const [bgImage, setBgImage] = useState<(BackdropMedia & { slot: BgSlot }) | null>(null)
   // Export framing: letterbox preview, green screen, exporting — the shared
   // hook, because an export in flight must survive whatever the chrome does.
-  const framing = useRenderFraming()
+  //
+  // A plate hands it an aspect: standing the scene in footage makes the
+  // footage's shape the shot's shape, with or without the render surface open.
+  //
+  // A still is as good a plate as a clip and is the easier case — locked off by
+  // construction, nothing to step, nothing to drift.
+  const plate = bgImage?.slot === "plate" ? bgImage : null
+  /**
+   * Placing her by pointing at the floor in the footage.
+   *
+   * A MODE rather than a modifier, because the canvas already means "orbit" to a
+   * drag and the two cannot both have it. Explicit, visible while it is on, and
+   * discoverable — a shift-drag nobody is told about is not a feature.
+   *
+   * While it is on the orbit is locked, so the camera cannot drift out of the
+   * match the read just made.
+   */
+  const [placingOn, setPlacingOn] = useState(false)
+  /** DERIVED, not synced back: the mode means nothing without footage to point
+   *  at, and an effect that reset the flag would be a render's worth of the
+   *  canvas quietly meaning something it no longer does. */
+  const placing = placingOn && !!plate
+  /** Put the primary cast member where the pointer meets the floor.
+   *
+   *  The PRIMARY member by rule, never by whatever happens to be selected: a
+   *  command with an ambiguous subject is one that does something different
+   *  depending on state nobody was looking at. */
+  const placeAtPointer = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
+      const engine = engineRef.current
+      if (!engine) return
+      const r = e.currentTarget.getBoundingClientRect()
+      const at = engine.groundPointAt(e.clientX - r.left, e.clientY - r.top)
+      // Null is a click above the horizon — the floor is not there to be pointed
+      // at, and moving her to a made-up spot would be worse than doing nothing.
+      if (!at) return
+      const id = castIdList[0]
+      if (id) setCastPosition(id, [at.x, 0, at.z])
+    },
+    [engineRef, castIdList, setCastPosition],
+  )
+
+  /** What the last read of the footage found, for the line under the button. */
+  const [solveNote, setSolveNote] = useState<string | null>(null)
+  const [solving, setSolving] = useState(false)
+  useEffect(() => {
+    // The orbit and the placement drag cannot both own the pointer, and of the
+    // two the orbit is the one that must not move: the camera has just been
+    // matched to the footage, and a stray drag would take it back out of match.
+    const engine = engineRef.current
+    if (!engine || !ready) return
+    engine.setCameraInputLocked(placing)
+    return () => engine.setCameraInputLocked(false)
+  }, [placing, ready, engineRef])
+  const plateAspect = plate && plate.height > 0 ? plate.width / plate.height : null
+  const framing = useRenderFraming(plateAspect)
   const [exportOpen, setExportOpen] = useState(false)
   /**
    * Bumped every time a right panel is SUMMONED, which is what raises it.
@@ -2551,11 +2652,11 @@ export default function Lab() {
   /** Which card's controls the section is showing. */
   const [selectedPlane, setSelectedPlane] = useState<string | null>(null)
   const bgImageInput = useRef<HTMLInputElement | null>(null)
-  /** Set before the picker opens: does this upload fill the flat row or the 360 row? */
-  const bgImageIsDome = useRef(false)
-  const [bgImage, setBgImage] = useState<(BackdropMedia & { dome: boolean }) | null>(null)
+  /** Set before the picker opens: which of the three rows this upload fills.
+   *  A ref because the click is now and a re-render is not. */
+  const bgImageSlot = useRef<BgSlot>("flat")
   const swapBgImage = useCallback(
-    (next: (BackdropMedia & { dome: boolean }) | null) =>
+    (next: (BackdropMedia & { slot: BgSlot }) | null) =>
       setBgImage((prev) => {
         releaseBackdrop(prev)
         return next
@@ -2581,7 +2682,7 @@ export default function Lab() {
   )
   /** The moving backdrop — video, gif, webp, apng — drawn from the clip's clock
    *  rather than played on one of its own. See useMediaBackdrop. */
-  const mediaBackdrop = useMediaBackdrop(bgImage && !bgImage.dome ? bgImage : null)
+  const mediaBackdrop = useMediaBackdrop(bgImage && bgImage.slot !== "dome" ? bgImage : null)
   /**
    * Is the backdrop part of the shot right now?
    *
@@ -2591,7 +2692,7 @@ export default function Lab() {
    * accident, the canvas being opaque green; transparent has no such cover, so
    * the backdrop simply showed through the frame it was excluded from.
    */
-  const backdropInShot = !!bgImage && !bgImage.dome && !isCompositingBackground(framing.liveBackground)
+  const backdropInShot = !!bgImage && bgImage.slot !== "dome" && !isCompositingBackground(framing.liveBackground)
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
   /** The video backdrop, which plays natively — see useAudioClock. */
@@ -2668,6 +2769,45 @@ export default function Lab() {
     },
     [setCameraView],
   )
+
+  /**
+   * Take the engine's live orbit back into the document.
+   *
+   * THE TWO CAMERAS COULD DISAGREE, and the document won. Dragging on the canvas
+   * moves the engine's camera and nothing else — the stored one never heard
+   * about it — so the next write of any camera field re-applied the STALE
+   * angles and snapped the shot back to wherever the document last thought it
+   * was. Every symptom of that lands on the composite: the read's match is
+   * undone by touching a slider, and a figure placed against the live camera
+   * ends up offset the moment the stale one is re-applied.
+   *
+   * Called at the end of a gesture rather than every frame: the values only
+   * change while a pointer is down, and the equality guard means a gesture that
+   * moved nothing costs no render.
+   */
+  const syncCameraFromEngine = useCallback(() => {
+    const engine = engineRef.current
+    if (!engine || !ready) return
+    const o = engine.getCameraOrbit()
+    setCamera((c) => {
+      // While following, the stored `target` is an OFFSET from a bone and the
+      // engine's is the resolved world point. Reading that back would freeze the
+      // follow into a fixed spot, which is a different scene.
+      const target: [number, number, number] = c.follow ? c.target : [o.target.x, o.target.y, o.target.z]
+      if (
+        c.alpha === o.alpha &&
+        c.beta === o.beta &&
+        c.distance === o.distance &&
+        c.target[0] === target[0] &&
+        c.target[1] === target[1] &&
+        c.target[2] === target[2]
+      ) {
+        return c
+      }
+      return { ...c, alpha: o.alpha, beta: o.beta, distance: o.distance, target }
+    })
+  }, [engineRef, ready])
+
   // The file lands in sceneFiles.audio — the same slot the shipped editor reads —
   // so the upload is real and the next persist packs its bytes.
   // Seeded from the scene document, exactly as main does — the default scene
@@ -2797,7 +2937,7 @@ export default function Lab() {
   // Controlled (not key-remounted): go-to deep-links need to land on a pane —
   // "Background" opens this row on its background tab. Where you left each one
   // is UI state, so it comes back from the same store the stack's own shape does.
-  const [stageTab, setStageTab] = useState<"stage" | "ground" | "background">("ground")
+  const [stageTab, setStageTab] = useState<"stage" | "ground" | "background" | "composite">("ground")
   const [cameraTab, setCameraTab] = useState<"lens" | "focus">("lens")
   const [postTab, setPostTab] = useState<"grade" | "tone" | "bloom" | "outline">("grade")
   const [lightTab, setLightTab] = useState<"world" | "sun">("world")
@@ -2807,12 +2947,6 @@ export default function Lab() {
   // the canvas. Edits make the same calls use-scene-sync would; the first run
   // is skipped because construction already applied these exact values (and a
   // redundant setSun dirties the shadow map for a full extra pass).
-  // ONE settings object, applied by the SAME hook main and the viewer use.
-  // The per-section local applies this replaces were honest scaffolding while
-  // ownership was unaudited; the audit found the lab never applied the
-  // background effect at all, so adopting use-scene-sync both consolidates the
-  // apply layer and turns the document's effect on for the first time here.
-  const [settings, setSettings] = useState<SceneSettings>(() => scene.state.settings)
   const patch = useCallback(
     <K extends keyof SceneSettings>(key: K, part: Partial<SceneSettings[K]>) =>
       setSettings((s2) => ({ ...s2, [key]: { ...s2[key], ...part } })),
@@ -3058,17 +3192,126 @@ export default function Lab() {
   // often enough that the user could not tell which mode they were in. Which
   // row you upload from is the answer — and the rows are mutually exclusive
   // because a scene has one background, not two.
-  const pickBgImage = (dome: boolean) => {
-    bgImageIsDome.current = dome
+  const pickBgImage = (slot: BgSlot) => {
+    bgImageSlot.current = slot
     // Narrowed on the way to the picker, beside the flag it belongs to: a video
     // fills the flat slot and an .hdr the 360 one, and offering either in the
     // wrong picker only produces a file the next line has to refuse. Set
     // imperatively for the same reason the flag is a ref — the click is now,
     // and a re-render is not.
     const input = bgImageInput.current
-    if (input) input.accept = dome ? DOME_ACCEPT : BACKDROP_ACCEPT
+    // A plate takes exactly what a backdrop takes — same files, different claim.
+    if (input) input.accept = slot === "dome" ? DOME_ACCEPT : BACKDROP_ACCEPT
     input?.click()
   }
+  /**
+   * Read the camera out of the footage.
+   *
+   * Applies ONLY what the picture actually determined. A shot square-on to a wall
+   * is in one-point perspective and does not determine its own focal length at
+   * all — only one horizontal direction converges — so on plates like that this
+   * sets the lean and leaves the lens where the author had it. Moving a slider to
+   * a number the image never supported would be worse than leaving it alone.
+   *
+   * The solver is loaded on demand: it is a few hundred lines of geometry that
+   * only matters the moment somebody presses this, and it has no business in the
+   * first load of the editor.
+   */
+  const solvePlate = useCallback(async () => {
+    if (!plate) return
+    setSolving(true)
+    try {
+      const [{ calibratePlate }, { estimatePlateLight }] = await Promise.all([
+        import("@/lib/plate-calibrate"),
+        import("@/lib/plate-light"),
+      ])
+      // A video reads from the element, which is sitting on the frame the author
+      // is looking at; a still reads from its own bytes.
+      const vid = bgVideoRef.current
+      const src =
+        plate.kind === "video" && vid && vid.videoWidth > 0 ? vid : await createImageBitmap(plate.file)
+      const cw = "videoWidth" in src ? src.videoWidth : src.width
+      const ch = "videoHeight" in src ? src.videoHeight : src.height
+      const cvs = document.createElement("canvas")
+      cvs.width = cw
+      cvs.height = ch
+      const ctx = cvs.getContext("2d", { willReadFrequently: true })
+      if (!ctx) return
+      ctx.drawImage(src, 0, 0)
+      if ("close" in src) src.close()
+      // The lens the scene already wears, as a prior — in half-diagonals, which
+      // is the solver's unit and is the same ratio at any resolution.
+      const fov = camera.fov ?? CAMERA_DEFAULT_FOV
+      const prior = ch / 2 / Math.tan(fov / 2) / (Math.hypot(cw, ch) / 2)
+      const img = ctx.getImageData(0, 0, cw, ch)
+      const r = calibratePlate(img, prior)
+
+      // ── The light, from the plate itself ──────────────────────────────────
+      //
+      // Geometry is only half of why a figure looks pasted on. The other half is
+      // that she is lit by a different room — a scene opened on the stock world
+      // wears a magenta ambient, and no camera match makes a magenta character
+      // belong in a brown wood-panelled hall.
+      //
+      // The elevation is deliberately NOT set: nothing in a picture says how high
+      // its lights hang, and moving that slider to a guess would be worse than
+      // leaving it where the author had it. The azimuth IS a guess and is marked
+      // as one in the note.
+      const lit = estimatePlateLight(img, (camera.alpha * 180) / Math.PI)
+      patch("world", { color: lit.ambient })
+      patch("sun", { color: lit.key, azimuth: lit.azimuth, softness: lit.softness })
+      if (!r.solved.roll && !r.solved.fov && !r.solved.pitch) {
+        setSolveNote(t.lab.ctl.solveNone)
+        return
+      }
+      // A camera matched to a real one does not chase a bone — the plate does
+      // not move when she does — and while following, `target` is an offset from
+      // that bone rather than a point in the world, which would make the height
+      // below meaningless.
+      const next = { ...camera, follow: null }
+      const found: string[] = []
+      if (r.solved.roll) {
+        // NEGATED. The engine tips the up vector toward screen-right for a
+        // positive roll; the solver reports the lean of the world's verticals,
+        // which runs the other way. Derived from the two conventions rather than
+        // observed, so it is the one number here worth checking by eye.
+        next.roll = -r.roll
+        found.push(`${t.lab.ctl.roll} ${((-r.roll * 180) / Math.PI).toFixed(1)}°`)
+      }
+      if (r.solved.fov) {
+        next.fov = r.fov
+        found.push(`${t.lab.ctl.fov} ${Math.round((r.fov * 180) / Math.PI)}°`)
+      }
+      if (r.solved.pitch) {
+        // Their elevation is measured from the horizon and beta from overhead;
+        // a camera looking DOWN is one above the subject.
+        next.beta = Math.PI / 2 - r.pitch
+        found.push(`${t.lab.ctl.elevation} ${Math.round((r.pitch * 180) / Math.PI)}°`)
+      }
+      // HEIGHT IS NOT SOLVED AND CANNOT BE. A single frame is scale-free, so
+      // nothing in the picture says how high the camera stood — and that is the
+      // number that decides whether her feet land on the floor rather than
+      // hanging over it. A scene opened on stock orbit angles has its eye about
+      // three units up, a quarter of a metre, which puts the floor somewhere
+      // nobody shot from. Seeded to chest height so the first press lands in the
+      // right neighbourhood, and only when the current value is implausible, so
+      // a height the author has already set is never overwritten.
+      const eyeY = next.target[1] + next.distance * Math.cos(next.beta)
+      if (eyeY < 6) {
+        // ~1.4 m, at the scale a character stands 18 units tall.
+        next.target[1] = 16 - next.distance * Math.cos(next.beta)
+        found.push(`${t.lab.ctl.camHeight} 16`)
+      }
+      changeCamera(next)
+      found.push(`${t.lab.ctl.softness} ${lit.softness.toFixed(2)}`)
+      setSolveNote(`${found.join(" · ")} — ${Math.round(r.confidence * 100)}%`)
+    } catch (e) {
+      setSolveNote(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSolving(false)
+    }
+  }, [plate, camera, changeCamera, patch, t])
+
   /** The HDRI. Its own input, because its accept list is one extension and
    *  sharing the background's would offer .hdr in slots that cannot use it. */
   const hdriInput = useRef<HTMLInputElement | null>(null)
@@ -3101,12 +3344,12 @@ export default function Lab() {
         // The dome is sampled as an equirect still. A moving one is its own
         // feature, and silently taking the first frame would be worse than
         // saying so.
-        if (BACKDROP_VIDEO_RE.test(file.name) && bgImageIsDome.current) {
+        if (BACKDROP_VIDEO_RE.test(file.name) && bgImageSlot.current === "dome") {
           setUpload({ kind: "notice", message: t.upload.videoIsFlatOnly })
           return
         }
         const next = await probeBackdrop(file)
-        swapBgImage({ ...next, dome: bgImageIsDome.current })
+        swapBgImage({ ...next, slot: bgImageSlot.current })
       } catch (e) {
         setUpload({
           kind: "notice",
@@ -3212,7 +3455,7 @@ export default function Lab() {
           releaseBackdrop(media)
           return
         }
-        swapBgImage({ ...media, dome: bg.kind === "skybox" })
+        swapBgImage({ ...media, slot: bg.kind === "skybox" ? "dome" : bg.kind === "plate" ? "plate" : "flat" })
       } catch {
         // a missing or undecodable image degrades to no background, not a dead scene
       }
@@ -3234,8 +3477,10 @@ export default function Lab() {
     cameraVmd: cameraClip !== null,
     gradeSpec: appliedGradeSpec,
     backgroundEffects: bgEffects,
-    hasBackdrop: !!bgImage && !bgImage.dome,
-    skybox: bgImage?.dome ? bgImage.file : null,
+    hasBackdrop: !!bgImage && bgImage.slot !== "dome",
+    plate: bgImage?.slot === "plate",
+    plateStill: plate?.kind === "image",
+    skybox: bgImage?.slot === "dome" ? bgImage.file : null,
     hdri: hdri?.file ?? null,
     exportBackground: framing.liveBackground,
     // Who an effect that declares a dissolve is about — the cast in order, so
@@ -4482,8 +4727,9 @@ export default function Lab() {
     effect: effectSummary,
     planes: planeSummary,
     gradeName: gradeLabel(settings.grade.preset),
-    backdrop: bgImage && !bgImage.dome ? bgImage.name : null,
-    dome: bgImage?.dome ? bgImage.name : null,
+    backdrop: bgImage?.slot === "flat" ? bgImage.name : null,
+    plate: bgImage?.slot === "plate" ? bgImage.name : null,
+    dome: bgImage?.slot === "dome" ? bgImage.name : null,
     hdri: hdri?.name ?? null,
     pack: activePack,
   }
@@ -4563,7 +4809,7 @@ export default function Lab() {
     (
       target: string,
       tabs?: {
-        stage?: "stage" | "ground" | "background"
+        stage?: "stage" | "ground" | "background" | "composite"
         light?: "world" | "sun"
         camera?: "lens" | "focus"
         post?: "grade" | "tone" | "bloom" | "outline"
@@ -4758,7 +5004,7 @@ export default function Lab() {
     lyricsClip ?? "",
     // One slot, two kinds: swapping a flat image for a 360 of the same name is
     // still a different scene, so the kind travels in the fingerprint.
-    bgImage ? `${bgImage.dome ? "skybox" : "backdrop"}:${bgImage.name}` : "",
+    bgImage ? `${bgImage.slot}:${bgImage.name}` : "",
     hdri ? `hdri:${hdri.name}` : "",
     // Cards, by id AND name: two uploads of the same picture are two cards, and
     // removing one has to move this or the bundle keeps the file it no longer
@@ -4848,7 +5094,7 @@ export default function Lab() {
         // is what makes it a dome.
         background: bgImage
           ? {
-              kind: bgImage.dome ? "skybox" : "backdrop",
+              kind: bgImage.slot === "dome" ? "skybox" : bgImage.slot === "plate" ? "plate" : "backdrop",
               name: bgImage.name,
               file: bgImage.file,
             }
@@ -5510,10 +5756,38 @@ export default function Lab() {
           style={frameStyle}
         />
       )}
+      {/* PLACING HER BY POINTING AT THE FLOOR.
+          A pointer on the canvas becomes a ray, and where that ray meets the
+          ground plane is where she stands. The camera has already been matched
+          to the footage, so that plane IS the floor in the picture — and because
+          the projection is a perspective one, dragging her further into the room
+          makes her smaller by exactly the right amount. Position and size stop
+          being two numbers to tune against each other.
+
+          Capture is taken on the way down so a drag that leaves the canvas keeps
+          delivering, which is exactly what happens when you push her to the back
+          of a room. */}
       <canvas
         ref={canvasRef}
-        className={cn("absolute touch-none object-contain", !frameRect && "inset-0 h-full w-full")}
+        className={cn(
+          "absolute touch-none object-contain",
+          !frameRect && "inset-0 h-full w-full",
+          placing && "cursor-crosshair",
+        )}
         style={frameStyle}
+        onPointerDown={
+          placing
+            ? (e) => {
+                e.currentTarget.setPointerCapture(e.pointerId)
+                placeAtPointer(e)
+              }
+            : undefined
+        }
+        onPointerMove={placing ? (e) => e.buttons === 1 && placeAtPointer(e) : undefined}
+        // The end of a gesture, and the only moments the orbit can have moved.
+        onPointerUp={syncCameraFromEngine}
+        onPointerLeave={syncCameraFromEngine}
+        onWheel={syncCameraFromEngine}
       />
 
       {/* The same pill the viewer shows, for the same load — opening a scene
@@ -6652,6 +6926,9 @@ export default function Lab() {
                         <TabsTrigger value="background" className="flex-1">
                           {t.lab.tabs.background}
                         </TabsTrigger>
+                        <TabsTrigger value="composite" className="flex-1">
+                          {t.lab.tabs.composite}
+                        </TabsTrigger>
                       </TabsList>
                       <TabsContent value="stage">
                         {stage ? (
@@ -6740,15 +7017,23 @@ export default function Lab() {
                               value={ground.color}
                               onChange={(hex) => patch("ground", { color: hex })}
                             />
-                            <SliderRow
-                              label={t.lab.ctl.opacity}
-                              value={ground.opacity}
-                              min={0}
-                              max={1}
-                              step={0.01}
-                              onChange={(v) => patch("ground", { opacity: v })}
-                              fmt={(v) => v.toFixed(2)}
-                            />
+                            {/* Footage holds this at 0 — the invisible floor IS
+                                the shadow catcher. Said out loud rather than
+                                left to be discovered: a slider that silently
+                                does nothing is indistinguishable from one that
+                                is broken, and this one moved with no effect. */}
+                            {plate && <p className="mt-2.5 text-xs text-amber-400">{t.lab.ctl.opacityHeld}</p>}
+                            <fieldset disabled={!!plate} className={cn(plate && "pointer-events-none opacity-40")}>
+                              <SliderRow
+                                label={t.lab.ctl.opacity}
+                                value={plate ? 0 : ground.opacity}
+                                min={0}
+                                max={1}
+                                step={0.01}
+                                onChange={(v) => patch("ground", { opacity: v })}
+                                fmt={(v) => v.toFixed(2)}
+                              />
+                            </fieldset>
                             {/* Shadow persists below opacity (shadow catcher) — this
                               turns it off entirely. */}
                             <div className="mt-2.5 flex items-center justify-between">
@@ -6791,10 +7076,13 @@ export default function Lab() {
                             a compact inline action, not a hover reserve — one
                             always-relevant button does not earn 48px of blank
                             right margin that breaks the column.
-                            Image and 360° are one slot in two rows: filling
-                            either empties the other, so the kind is something
-                            you SAY, never something the app guesses from the
-                            file.
+                            Image, 360° and the Footage tab's row are ONE slot
+                            in three rows: filling any of them empties the other
+                            two, so the seat is something you SAY, never
+                            something the app guesses from the file. Footage
+                            takes exactly the files this row does — what makes
+                            it a plate is the claim that the scene stands in it,
+                            and no extension carries that.
 
                             WORLD IS NOT ONE OF THEM. Those two answer "what is
                             behind the scene" and only one can be; this answers
@@ -6829,8 +7117,8 @@ export default function Lab() {
                           ] as const
                         ).map((row) => {
                           const isWorld = row.slot === "world"
-                          const filled = isWorld ? hdri : bgImage && bgImage.dome === (row.slot === "dome") ? bgImage : null
-                          const pick = () => (isWorld ? pickHdri() : pickBgImage(row.slot === "dome"))
+                          const filled = isWorld ? hdri : bgImage?.slot === row.slot ? bgImage : null
+                          const pick = () => (row.slot === "world" ? pickHdri() : pickBgImage(row.slot))
                           const clear = () => (isWorld ? swapHdri(null) : swapBgImage(null))
                           return (
                             <div key={row.label} className="mt-2.5 flex h-5 min-w-0 items-center gap-2">
@@ -6872,6 +7160,243 @@ export default function Lab() {
                             </div>
                           )
                         })}
+                      </TabsContent>
+                      {/* Standing the scene IN the backdrop. The Background tab
+                          holds the picture; this pane is the scene agreeing
+                          with it — the same four numbers a match-move solves,
+                          reachable while you watch the canvas.
+
+                          The lens, the tilt and the roll ARE the camera's, and
+                          the shadow's edge IS the light's. Shown here, stored
+                          there: these write the same state the Camera row and
+                          the Light row do, so there is one value with two
+                          doors rather than two values that can disagree. */}
+                      <TabsContent value="composite">
+                        {/* The slot IS the mode. A plate and a backdrop take the
+                            same files and differ only in the claim, so a second
+                            switch beside this row could only ever disagree with
+                            which row the file is in. Filling it empties the
+                            other two: a scene has one background, not three. */}
+                        <div className="flex h-5 min-w-0 items-center gap-2">
+                          <span className="shrink-0 text-xs">{t.lab.ctl.plate}</span>
+                          {plate ? (
+                            <>
+                              <span className="ml-auto max-w-[7.5rem] min-w-0 truncate text-right text-xs text-muted-foreground">
+                                {plate.name}
+                              </span>
+                              <CastAction
+                                icon={Upload}
+                                compact
+                                label={t.lab.aria.replace(t.lab.kinds.plate)}
+                                onClick={() => pickBgImage("plate")}
+                              />
+                              <CastAction
+                                icon={X}
+                                danger
+                                compact
+                                label={t.lab.aria.remove(t.lab.kinds.plate)}
+                                onClick={() => swapBgImage(null)}
+                              />
+                            </>
+                          ) : (
+                            <span className="ml-auto flex min-w-0 justify-end">
+                              <UploadInvite
+                                label={t.lab.uploadPlate}
+                                onClick={() => pickBgImage("plate")}
+                                aria={t.lab.aria.upload(t.lab.kinds.plate)}
+                                className="text-right text-xs"
+                              />
+                            </span>
+                          )}
+                        </div>
+                        {/* The catcher IS the ground plane at zero opacity, so
+                            the control that removes the plane removes the
+                            shadow — silently, and two tabs from here. */}
+                        {plate && !ground.enabled && (
+                          <p className="mt-2.5 text-xs text-amber-400">{t.lab.ctl.plateNeedsGround}</p>
+                        )}
+                        <fieldset
+                          disabled={!plate}
+                          className={cn("mt-2.5", !plate && "pointer-events-none opacity-40")}
+                        >
+                          {/* The one ACTION in the pane, and it sits above
+                              everything it fills in. The rows below stay the
+                              authority: it reports what it found rather than
+                              silently moving eight controls, because a number
+                              you did not choose is one you have to be able to
+                              disbelieve. */}
+                          <button
+                            onClick={solvePlate}
+                            disabled={solving}
+                            className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground ring-1 ring-line-strong transition-colors hover:text-blue-400 hover:ring-blue-400/50 disabled:cursor-default disabled:opacity-50"
+                          >
+                            <Wand2 className="size-3.5 shrink-0" />
+                            <span className="truncate">{solving ? t.lab.ctl.solving : t.lab.ctl.solve}</span>
+                          </button>
+                          {solveNote && <p className="mt-1.5 text-xs text-muted-foreground">{solveNote}</p>}
+                          {/* The second action, and the one that finishes the
+                              job: the read puts the floor in the right place,
+                              this puts her on it. Blue while it is on, because
+                              the canvas means something different for as long as
+                              it is — and a mode you cannot see is a mode you
+                              will be surprised by. */}
+                          <button
+                            onClick={() => setPlacingOn((v) => !v)}
+                            className={cn(
+                              "mt-1.5 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium ring-1 transition-colors",
+                              placing
+                                ? "text-blue-400 ring-blue-400/50"
+                                : "text-muted-foreground ring-line-strong hover:text-blue-400 hover:ring-blue-400/50",
+                            )}
+                          >
+                            <Move className="size-3.5 shrink-0" />
+                            <span className="truncate">
+                              {placing ? t.lab.ctl.placing : t.lab.ctl.placeOnFloor}
+                            </span>
+                          </button>
+
+                          {/* THREE GROUPS, each under a heading and a rule.
+                              Eight sliders in one column is a list, not a pane —
+                              and scope has to be shown by a rule or a heading
+                              rather than by position, which is exactly what a
+                              flat list leaves to chance. They are filed by what
+                              they ACT ON, which is also the order you use them
+                              in: put her in the room, light her, then match the
+                              sensor. */}
+                          <p className="mt-3 border-t border-line pt-2 text-xs text-muted-foreground">
+                            {t.lab.ctl.gCamera}
+                          </p>
+                          {/* THE NUMBER THE PICTURE CANNOT GIVE UP. A single
+                              photograph is scale-free: no algorithm recovers
+                              metres from pixels without a known length in frame,
+                              so the read above fixes which way the floor TILTS
+                              and says nothing about where it IS. Held as a height
+                              above the floor because that is the thing anyone can
+                              estimate — you know roughly how high you held the
+                              phone. A character stands about 18 units, so 1.4 m
+                              is about 16. The orbit's own numbers are solved back
+                              out of it. */}
+                          <SliderRow
+                            label={t.lab.ctl.camHeight}
+                            value={camera.target[1] + camera.distance * Math.cos(camera.beta)}
+                            min={0}
+                            max={60}
+                            step={0.5}
+                            onChange={(v) =>
+                              changeCamera({
+                                ...camera,
+                                // A camera matched to a real one does not chase a
+                                // bone: the plate does not move when she does.
+                                // Following also makes `target` an OFFSET rather
+                                // than a world point, which would make this mean
+                                // nothing.
+                                follow: null,
+                                target: [
+                                  camera.target[0],
+                                  v - camera.distance * Math.cos(camera.beta),
+                                  camera.target[2],
+                                ],
+                              })
+                            }
+                            fmt={(v) => `${v.toFixed(1)}`}
+                          />
+                          {/* Degrees on the slider, radians in the document — the
+                              same boundary conversion the Camera row makes, on
+                              the same value. */}
+                          <SliderRow
+                            label={t.lab.ctl.fov}
+                            value={Math.round(((camera.fov ?? CAMERA_DEFAULT_FOV) * 180) / Math.PI)}
+                            min={10}
+                            max={120}
+                            step={1}
+                            onChange={(v) => changeCamera({ ...camera, fov: (v * Math.PI) / 180 })}
+                            fmt={(v) => `${Math.round(v)}°`}
+                          />
+                          {/* Beta is polar, measured from straight overhead, so
+                              this reads 0 at the horizon and + from above —
+                              matched to the Camera row rather than restated. */}
+                          <SliderRow
+                            label={t.lab.ctl.elevation}
+                            value={Math.round(90 - (camera.beta * 180) / Math.PI)}
+                            min={-85}
+                            max={85}
+                            step={1}
+                            onChange={(v) => changeCamera({ ...camera, beta: ((90 - v) * Math.PI) / 180 })}
+                            fmt={(v) => `${v}°`}
+                          />
+                          {/* The one channel the orbit cannot hold. */}
+                          <SliderRow
+                            label={t.lab.ctl.roll}
+                            value={((camera.roll ?? 0) * 180) / Math.PI}
+                            min={-45}
+                            max={45}
+                            step={0.5}
+                            onChange={(v) => changeCamera({ ...camera, roll: (v * Math.PI) / 180 })}
+                            fmt={(v) => `${v.toFixed(1)}°`}
+                          />
+
+                          <p className="mt-3 border-t border-line pt-2 text-xs text-muted-foreground">
+                            {t.lab.ctl.gLight}
+                          </p>
+                          {/* After her feet are on the floor, a shadow falling the
+                              wrong way is the loudest thing left. Turn this until
+                              hers lies along the shadows already in the picture —
+                              the read guesses it from which side of the frame is
+                              brighter, which is right more often than a stock
+                              value and is still a guess. Same state the Light row
+                              owns: one value, two doors. */}
+                          <SliderRow
+                            label={t.lab.ctl.azimuth}
+                            value={settings.sun.azimuth}
+                            min={0}
+                            max={360}
+                            step={1}
+                            onChange={(v) => patch("sun", { azimuth: v })}
+                            fmt={(v) => `${Math.round(v)}°`}
+                          />
+                          {/* Not set by the read, on purpose: nothing in a picture
+                              of a room says how high its lights hang. */}
+                          <SliderRow
+                            label={t.lab.ctl.elevation}
+                            value={settings.sun.elevation}
+                            min={0}
+                            max={90}
+                            step={1}
+                            onChange={(v) => patch("sun", { elevation: v })}
+                            fmt={(v) => `${Math.round(v)}°`}
+                          />
+                          {/* A hard edge under an overcast sky is the loudest
+                              thing wrong in a composite, and no other control in
+                              the app could say otherwise. */}
+                          <SliderRow
+                            label={t.lab.ctl.softness}
+                            value={settings.sun.softness ?? 0}
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            onChange={(v) => patch("sun", { softness: v })}
+                            fmt={(v) => v.toFixed(2)}
+                          />
+
+                          <p className="mt-3 border-t border-line pt-2 text-xs text-muted-foreground">
+                            {t.lab.ctl.gFilm}
+                          </p>
+                          {/* Grain, on the RENDER only — the footage arrived from
+                              a real sensor with grain of its own, and a second
+                              helping would grade the photograph rather than match
+                              it. Freezes by itself for a still plate: noise
+                              crawling over a frozen picture makes the rendering
+                              look more alive than the room it stands in. */}
+                          <SliderRow
+                            label={t.lab.ctl.grain}
+                            value={settings.grain.amount}
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            onChange={(v) => patch("grain", { amount: v })}
+                            fmt={(v) => v.toFixed(2)}
+                          />
+                        </fieldset>
                       </TabsContent>
                     </Tabs>
                   ) : l.id === "effect" ? (
@@ -7819,7 +8344,7 @@ export default function Lab() {
               sceneName={sceneName}
               animName={masterClipName}
               animDuration={animDuration}
-              backdrop={bgImage && !bgImage.dome ? bgImage : null}
+              backdrop={bgImage && bgImage.slot !== "dome" ? bgImage : null}
               backgroundColor={settings.background.color}
               musicUrl={musicClip?.url ?? null}
               musicVolume={audio.volume}

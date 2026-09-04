@@ -7,6 +7,7 @@ import type { EffectWindow } from "@/lib/effect-schedule"
 import {
   DEFAULT_AUDIO,
   DEFAULT_DOF,
+  DEFAULT_GRAIN,
   DEFAULT_OUTLINE,
   DEFAULT_PHYSICS,
   DEFAULT_VIEW,
@@ -34,8 +35,17 @@ export type ModelRef = {
   source: ModelSource
 }
 
-/** The background's BASE layer */
-export type SceneBackground = { kind: "backdrop" | "skybox"; asset: AssetRef } | null
+/**
+ * The background's BASE layer, and which of the three things it is.
+ *
+ * All three answer "what is behind the scene" and only one can be, which is why
+ * they are one field rather than three. A `plate` is footage the scene STANDS
+ * IN — the same file a backdrop would hold, saying that the camera, the floor
+ * and the light are supposed to agree with it. What separates them is the
+ * claim, never the file, so it is something the author states and never
+ * something a reader infers from an extension.
+ */
+export type SceneBackground = { kind: "backdrop" | "skybox" | "plate"; asset: AssetRef } | null
 
 /** Placement for an environment model. Characters spawn on a deterministic
  *  offset; a stage has to be put somewhere, so it carries its own transform.
@@ -162,6 +172,19 @@ export type SceneCamera = {
   /** Where the camera looks — or, when `follow` is set, the offset from the bone
    *  it is following. The three sliders mean the same thing either way. */
   target: [number, number, number]
+  /**
+   * Camera roll in RADIANS, positive clockwise in frame. Optional, and absent
+   * on every document written before a camera could tilt.
+   *
+   * The orbit cannot express it — alpha and beta are a yaw and a pitch about an
+   * upright axis, which is a shot with no roll by construction. A scene that
+   * sets this is driven through the engine's pose input instead, so the value
+   * here is what decides WHICH of the two modes aims the camera.
+   *
+   * It exists because a real camera is not always level: a plate shot on a
+   * phone leans, and a scene standing in that plate has to lean with it.
+   */
+  roll?: number
   /** Bone the orbit centre rides on, so a travelling motion stays in frame.
    *  Absent or null = a fixed point in the world, which is what every scene
    *  written before this does. */
@@ -307,10 +330,15 @@ export type SceneAssetsDoc = {
    */
   midi?: string | null
   lyrics?: string | null
-  /** Two slots, as in the Assets panel. Mutually exclusive at runtime — a set
-   *  backdrop wins over a set skybox, matching the editor's replace behaviour. */
+  /** Three slots, as in the Assets panel. Mutually exclusive at runtime — the
+   *  editor holds one piece of media and a slot name, so filling any of them
+   *  replaces whichever was there. Read in this order.
+   *
+   *  `plate` is the same kind of file as `backdrop`; what it says is that the
+   *  scene stands in it rather than in front of it. */
   backdrop?: string | null
   skybox?: string | null
+  plate?: string | null
   /** The HDRI. NOT one of the pair above: those two are what you see, and this
    *  is what lights. A scene can have one of them and this.
    *
@@ -524,7 +552,9 @@ export function parseAssetsDoc(a: SceneAssetsDoc): SceneAssets {
       ? { kind: "backdrop", asset: assetFromPath(a.backdrop) }
       : a.skybox
         ? { kind: "skybox", asset: assetFromPath(a.skybox) }
-        : null,
+        : a.plate
+          ? { kind: "plate", asset: assetFromPath(a.plate) }
+          : null,
     // Absent parses to no cards, which is what every document written before
     // them says and what one with none says too.
     ...(a.planes?.length
@@ -564,6 +594,7 @@ export function assetsDocOf(a: SceneAssets): SceneAssetsDoc {
     hdri: a.hdri?.url ?? null,
     backdrop: a.background?.kind === "backdrop" ? a.background.asset.url : null,
     skybox: a.background?.kind === "skybox" ? a.background.asset.url : null,
+    plate: a.background?.kind === "plate" ? a.background.asset.url : null,
     // Written only when there are any: a scene with no cards should read the
     // same as every scene written before they existed.
     ...(a.planes?.length ? { planes: a.planes.map(planeDocOf) } : {}),
@@ -670,6 +701,7 @@ export function parseSceneDoc(
         // leaves the defaults — no blur, no outlines, exactly how it looked.
         dof: { ...DEFAULT_DOF, ...settings.dof },
         outline: { ...DEFAULT_OUTLINE, ...settings.outline },
+        grain: { ...DEFAULT_GRAIN, ...settings.grain },
         // Likewise for the view transform: absent means the scene was authored
         // under the engine's Filmic default, which is what DEFAULT_VIEW restates.
         view: { ...DEFAULT_VIEW, ...settings.view },
@@ -1080,6 +1112,7 @@ function restored(base: Scene): Scene {
         outline: { ...base.state.settings.outline, ...settingsBase.outline },
         view: { ...base.state.settings.view, ...settingsBase.view },
         audio: { ...base.state.settings.audio, ...settingsBase.audio },
+        grain: { ...base.state.settings.grain, ...settingsBase.grain },
         background: { ...base.state.settings.background, ...settingsBase.background },
         grade: { ...base.state.settings.grade, ...settingsBase.grade },
         ground: { ...base.state.settings.ground, ...settingsBase.ground },

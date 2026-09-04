@@ -90,6 +90,16 @@ function infoFor(
  * rather than a point in the world. A camera VMD still overrides both.
  */
 function applyCamera(engine: Engine, camera: SceneCamera, model: Model | null): void {
+  // Roll is a property OF the orbit, not a replacement for it.
+  //
+  // The first cut pushed a whole pose instead, converting alpha/beta/distance
+  // into the five channels an MMD camera carries. That reads correctly only for
+  // a camera with no `follow`: under follow, `target` is an OFFSET FROM A BONE
+  // rather than a world point, so a pose built from it aimed at a spot near the
+  // origin and the shot swung to the far side of the scene the moment roll left
+  // zero. Tilting the up vector leaves the eye and the look-at exactly where the
+  // orbit put them, so following, dragging and zooming all survive it.
+  engine.setCameraRoll(camera.roll ?? 0)
   if (camera.follow && model) {
     // Short exponential lag (Cinemachine-style aim damping): eases the frame
     // without letting the subject swim off-center — target-follow wants to be
@@ -156,11 +166,17 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
   // (models are the megabytes) this is the difference between a scene loading
   // and a blank screen loading.
   engine.setGroundVisible(s.ground.enabled)
+  // A scene standing in footage opens with its floor already a catcher. The
+  // sync layer would arrive at the same options a beat later, so this is not
+  // what makes the mode work — it is what stops a published composite opening
+  // on one frame of a solid floor painted over the picture.
+  const plate = scene.assets.background?.kind === "plate"
   engine.addGround({
     diffuseColor: hexToLinearVec3(s.ground.color),
     gridLineColor: hexToLinearVec3(s.ground.grid),
-    opacity: s.ground.opacity,
+    opacity: plate ? 0 : s.ground.opacity,
     shadowStrength: s.ground.shadow ? 1 : 0,
+    shadowSoftness: s.sun.softness ?? 0,
     gridLineOpacity: s.ground.gridEnabled ? 0.4 : 0,
     width: s.ground.size,
     height: s.ground.size,

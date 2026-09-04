@@ -303,8 +303,13 @@ function SceneStage({
   // owes them nothing, so it appears with the stage rather than after the last
   // character has loaded.
   const background = bundleReady ? scene.assets.background : null
+  /** Footage the scene stands in, rather than wallpaper behind it. Everything
+   *  about getting the picture on screen is identical — same file, same layer,
+   *  same element — so only the two things the claim changes read this: the
+   *  ground drops to a shadow catcher, and the plate's shape frames the shot. */
+  const isPlate = background?.kind === "plate"
   const backdropFile = useMemo(
-    () => (background?.kind === "backdrop" ? bundleFile(background.asset.url) : null),
+    () => (background?.kind === "backdrop" || background?.kind === "plate" ? bundleFile(background.asset.url) : null),
     [background, bundleFile],
   )
   const skyboxFile = useMemo(
@@ -317,8 +322,36 @@ function SceneStage({
   // published scene with a moving background came back blank behind the cast.
   // The bundle's Files carry no mime (new File([bytes], name)), so the kind is
   // read off the path — the same regex the editor's picker admits videos by.
-  const backdropIsVideo = !!background && background.kind === "backdrop" && BACKDROP_VIDEO_RE.test(background.asset.url)
+  const backdropIsVideo =
+    !!background &&
+    (background.kind === "backdrop" || background.kind === "plate") &&
+    BACKDROP_VIDEO_RE.test(background.asset.url)
   const bgVideoRef = useRef<HTMLVideoElement | null>(null)
+  /**
+   * A PLATE FRAMES THE SHOT, so every visitor sees the alignment the author made.
+   *
+   * A backdrop is wallpaper and cover-cropping it to the window is right — it
+   * has nothing to agree with. A plate does: the author lined the cast up
+   * against a floor in the picture, and cropping that picture to whatever shape
+   * the visitor's window happens to be moves the floor out from under her. The
+   * one thing a published composite must not do is depend on the window.
+   *
+   * Measured off the element rather than stored in the document: the file
+   * already knows its own shape, and a second copy of it in the doc could only
+   * ever disagree with the picture it describes.
+   */
+  const [plateAspect, setPlateAspect] = useState<number | null>(null)
+  /** `inset-0` + `margin:auto` + a max on both axes letterboxes without any
+   *  measuring — the box takes the largest size of that shape which fits, and
+   *  centres in what is left. Inline rather than an arbitrary Tailwind value:
+   *  v4 mangles a shorthand holding min()/calc(). */
+  const plateBox =
+    isPlate && plateAspect
+      ? { aspectRatio: String(plateAspect), maxWidth: "100%", maxHeight: "100%", margin: "auto" }
+      : undefined
+  /** The layers follow the box together or not at all — a canvas at the window's
+   *  shape over a letterboxed plate is the same misalignment, mirrored. */
+  const layerClass = plateBox ? "absolute inset-0" : "absolute inset-0 h-full w-full"
   /** The one shared follow policy — lib/media-clock. Free-run while playing,
    *  stamp on start and jump, never seek on pause. */
   const followBackdrop = useRef(createMediaFollower())
@@ -336,6 +369,7 @@ function SceneStage({
     gradeSpec: specOf(scene.state.settings.grade),
     backgroundEffects: scene.state.backgroundEffects,
     hasBackdrop: !!backdropFile,
+    plate: isPlate,
     skybox: skyboxFile,
   })
 
@@ -631,7 +665,17 @@ function SceneStage({
       {/* Backdrop layer: page bg colour → image (cover) → transparent canvas. */}
       {backdropUrl && !backdropIsVideo && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={backdropUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+        <img
+          src={backdropUrl}
+          alt=""
+          className={cn(layerClass, "object-cover")}
+          style={plateBox}
+          onLoad={(e) =>
+            isPlate &&
+            e.currentTarget.naturalHeight > 0 &&
+            setPlateAspect(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight)
+          }
+        />
       )}
       {/* Played natively, as the editor does — the compositor handles the
           frames, which is what holds 4K60. muted is not a preference: a
@@ -647,10 +691,16 @@ function SceneStage({
           loop
           playsInline
           preload="auto"
-          className="absolute inset-0 h-full w-full object-cover"
+          className={cn(layerClass, "object-cover")}
+          style={plateBox}
+          onLoadedMetadata={(e) =>
+            isPlate &&
+            e.currentTarget.videoHeight > 0 &&
+            setPlateAspect(e.currentTarget.videoWidth / e.currentTarget.videoHeight)
+          }
         />
       )}
-      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none object-contain" />
+      <canvas ref={canvasRef} className={cn(layerClass, "touch-none object-contain")} style={plateBox} />
 
       {!ready && !error && <LoadingPill label={loadingLabel} />}
       {error && (

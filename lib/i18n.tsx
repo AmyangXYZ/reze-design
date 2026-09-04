@@ -247,6 +247,7 @@ const en = {
     uploadBackdrop: "Upload image",
     skybox: "Skybox",
     uploadSkybox: "Upload 360° image",
+    uploadPlate: "Upload footage",
     uploadHdri: "Upload .hdr",
   },
   stage: {
@@ -421,6 +422,7 @@ const en = {
     uploadImage: "Upload media",
     uploadPlane: "Upload media",
     uploadSkybox: "Upload 360° image",
+    uploadPlate: "Upload footage",
     uploadHdri: "Upload .hdr",
     on: "On",
     off: "Off",
@@ -451,7 +453,15 @@ const en = {
     tabs: {
       stage: "Stage",
       ground: "Ground",
-      background: "Background",
+      /** Backdrop, not Background: the flat picture behind the scene is what
+       *  this tab holds now that footage has a seat of its own, and four tabs
+       *  share one strip. */
+      background: "Backdrop",
+      /** A plain noun for what you put in the pane, like the three beside it.
+       *  "Composite" names the act and is a word a hobbyist may not have;
+       *  "Plate" is the trade's word for the same thing and is worse for the
+       *  same reason. Both are also wider, and four tabs share one strip. */
+      composite: "Footage",
       world: "World",
       sun: "Sun",
       grade: "Grade",
@@ -576,6 +586,7 @@ const en = {
       lyrics: "lyrics",
       backgroundImage: "background media",
       plane: "plane",
+      plate: "footage",
       background360: "skybox",
       world: "world",
     },
@@ -587,7 +598,38 @@ const en = {
       showGround: "Show ground",
       opacity: "Opacity",
       shadow: "Shadow",
+      /** How soft the sun's shadow edge is. A property of the light, filed with
+       *  the light, even though the floor is what receives it. */
+      softness: "Shadow softness",
       grid: "Grid lines",
+      /** The footage the scene stands in. A noun for the slot, like the three
+       *  rows in Backdrop — what makes it a plate is which row it is in. */
+      plate: "Footage",
+      /** The catcher IS the ground plane at zero opacity, so the one control
+       *  that removes the plane also removes the shadow — silently, two tabs
+       *  away from where you would look for it. */
+      plateNeedsGround: "Her shadow needs the ground plane — turn it on in Ground.",
+      /** Said out loud: a slider that silently does nothing is
+       *  indistinguishable from one that is broken. */
+      opacityHeld: "Held at 0 by the footage — the invisible floor is the shadow catcher.",
+      /** The auto-calibration. Named for what it reads, not for what it does. */
+      solve: "Read camera from footage",
+      solving: "Reading…",
+      solveNone: "No straight edges to read a camera from.",
+      /** The one number a single photo cannot give up. */
+      camHeight: "Camera height",
+      /** A property of the sensor, and the loudest tell after the shadow. */
+      grain: "Grain",
+      /** Group headings in the Footage pane. Scope shown by a heading and a
+       *  rule, never by position alone. */
+      gCamera: "Camera",
+      gLight: "Light",
+      gFilm: "Film",
+      /** The placement mode. Named for the gesture, not the mode. */
+      placeOnFloor: "Place her on the floor",
+      placing: "Click the floor in your footage",
+      /** Camera tilt off level, degrees. The orbit cannot express it. */
+      roll: "Roll",
       scale: "Scale",
       size: "Size",
       // An effect's strip. Blender's words, because MMDers know Blender and a
@@ -1016,6 +1058,7 @@ const zh: Dictionary = {
     uploadBackdrop: "上传图片",
     skybox: "天空盒",
     uploadSkybox: "上传 360° 全景图",
+    uploadPlate: "上传实景素材",
     uploadHdri: "上传 .hdr",
   },
   stage: {
@@ -1180,6 +1223,7 @@ const zh: Dictionary = {
     uploadImage: "上传媒体",
     uploadPlane: "上传媒体",
     uploadSkybox: "上传 360° 全景图",
+    uploadPlate: "上传实景素材",
     uploadHdri: "上传 .hdr",
     on: "开",
     off: "关",
@@ -1207,6 +1251,7 @@ const zh: Dictionary = {
       stage: "舞台",
       ground: "地面",
       background: "背景",
+      composite: "实景",
       world: "环境光",
       sun: "太阳",
       grade: "调色",
@@ -1312,6 +1357,7 @@ const zh: Dictionary = {
       lyrics: "歌词",
       backgroundImage: "背景媒体",
       plane: "平面",
+      plate: "实景素材",
       background360: "天空盒",
       world: "世界",
     },
@@ -1321,7 +1367,22 @@ const zh: Dictionary = {
       showGround: "显示地面",
       opacity: "不透明度",
       shadow: "阴影",
+      softness: "阴影柔和度",
       grid: "网格",
+      plate: "实景素材",
+      plateNeedsGround: "影子需要地面——请在「地面」中打开。",
+      opacityHeld: "实景素材将其固定为 0——隐形地面就是影子接收器。",
+      solve: "从素材读取相机",
+      solving: "读取中…",
+      solveNone: "画面中没有可用的直线边缘。",
+      camHeight: "相机高度",
+      grain: "颗粒",
+      gCamera: "相机",
+      gLight: "灯光",
+      gFilm: "胶片",
+      placeOnFloor: "放到地面上",
+      placing: "点击素材中的地面",
+      roll: "倾斜",
       scale: "缩放",
       size: "尺寸",
       influence: "影响",

@@ -14,11 +14,11 @@
 // by a layout — a layout with no dock still needs the frame to survive whatever
 // its own collapse does.
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import type { FramePreview } from "@/components/editor/render-panel"
 import type { ExportBackground } from "@/lib/export-background"
 
-export function useRenderFraming() {
+export function useRenderFraming(plateAspect: number | null = null) {
   /** An export is running; it drives the same model clock the live mirrors watch. */
   const [exporting, setExporting] = useState(false)
   /** What sits behind the cast on export. A render-tab PREVIEW, not a scene
@@ -34,8 +34,29 @@ export function useRenderFraming() {
     if (p) setLastFrame(p)
   }, [])
 
-  const activeFrame = framePreview ?? (exporting ? lastFrame : null)
-  const liveBackground: ExportBackground = activeFrame === null ? "scene" : background
+  /**
+   * A plate frames the shot even with the render surface closed.
+   *
+   * Standing the scene in footage means the shot IS the footage: its aspect is
+   * not a render setting the author picks, it is a fact about the file. Left to
+   * the viewport the plate would be cover-cropped to whatever shape the window
+   * happens to be, so the picture the author lines her up against would change
+   * with a window drag and disagree with the export — which is the one place
+   * the alignment has to hold.
+   *
+   * An open render surface still wins: an author who has deliberately chosen an
+   * output shape is answering a question this cannot.
+   */
+  const plateFrame = useMemo(
+    () => (plateAspect ? { aspect: plateAspect, watermark: false } : null),
+    [plateAspect],
+  )
+  const renderFrame = framePreview ?? (exporting ? lastFrame : null)
+  const activeFrame = renderFrame ?? plateFrame
+  // The render surface's frame, not the plate's: the compositing preview is a
+  // render-tab control, and a plate must not switch it on for a scene whose
+  // author last left that tab on green and closed it.
+  const liveBackground: ExportBackground = renderFrame === null ? "scene" : background
 
   // Seeded from the window rather than left null until an effect runs: the pair
   // (frame, viewport) decides the render size, and measuring one render later

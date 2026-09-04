@@ -48,7 +48,7 @@ export type SceneSlotsInput = {
   midi: { name: string | null; booted: AssetRef | null }
   lyrics: { name: string | null; booted: AssetRef | null }
   /** The background image, whichever slot it came from. */
-  background: { kind: "backdrop" | "skybox"; name: string; file: File } | null
+  background: { kind: "backdrop" | "skybox" | "plate"; name: string; file: File } | null
   /** The HDRI. Independent of `background` — that one is what you see and this
    *  is what lights, and a scene can want both. */
   hdri: { name: string; file: File } | null

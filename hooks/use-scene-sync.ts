@@ -129,6 +129,14 @@ export function useSceneSync({
    *  render in-canvas and would cover the key or fill the alpha. "green" keys
    *  the hole, "alpha" leaves it empty. */
   exportBackground = "scene",
+  /** The backdrop is a PLATE: footage the scene stands in rather than wallpaper
+   *  behind it. Passed rather than read off the settings because it is not a
+   *  preference — it is which seat the scene's one piece of background media is
+   *  sitting in, and the document says that where it names the asset. */
+  plate = false,
+  /** The plate is a single photograph, so its grain does not move — and neither
+   *  should the grain laid over the render that stands in it. */
+  plateStill = false,
   /** Cast member ids, in order — stages excluded, the same list the engine's
    *  own subjects are drawn from. Only used to decide WHO an effect that
    *  declares a dissolve is about; the first of them is subject 0. */
@@ -146,6 +154,8 @@ export function useSceneSync({
   skybox?: File | null
   hdri?: File | null
   exportBackground?: ExportBackground
+  plate?: boolean
+  plateStill?: boolean
   castIds?: string[]
 }) {
   const compositing = isCompositingBackground(exportBackground)
@@ -156,6 +166,8 @@ export function useSceneSync({
     gradeSpec: GradeSpec
     backdrop: boolean
     green: ExportBackground
+    plate: boolean
+    plateStill: boolean
   } | null>(null)
   // addGround rebuilds GPU buffers and a bind group per call, so ground edits
   // coalesce to at most one rebuild per frame from the latest options.
@@ -166,9 +178,9 @@ export function useSceneSync({
   useEffect(() => {
     const engine = engineRef.current
     if (!ready || !engine) return
-    const { world, sun, bloom, dof, outline, background, ground, grade, physics, view } = settings
+    const { world, sun, bloom, dof, outline, background, ground, grade, physics, view, grain } = settings
     const p = prev.current
-    const modeChanged = !p || p.backdrop !== hasBackdrop || p.green !== exportBackground
+    const modeChanged = !p || p.backdrop !== hasBackdrop || p.green !== exportBackground || p.plate !== plate
 
     if (modeChanged || p.settings.background !== background) {
       // Transparent joins the backdrop case: null IS the transparent canvas,
@@ -212,6 +224,9 @@ export function useSceneSync({
     if (!p || p.settings.outline !== outline) {
       engine.setOutlineEnabled(outline.enabled)
     }
+    if (modeChanged || p.settings.grain !== grain || p.plateStill !== plateStill) {
+      engine.setFilmGrain(grain.amount, !plateStill)
+    }
     // Before the grade, which is what the engine applies it to.
     if (!p || p.settings.view !== view) {
       engine.setViewTransformOptions({ transform: view.transform, exposure: view.exposure })
@@ -242,7 +257,10 @@ export function useSceneSync({
       )
       engine.setPhysicsFloor(physics.floor)
     }
-    if (modeChanged || p.settings.ground !== ground) {
+    // The sun and the plate mode both reach into the ground's options — the
+    // shadow's edge is the light's, and a floor drawn solid over footage is not
+    // a floor the scene is standing on — so this block answers to all three.
+    if (modeChanged || p.settings.ground !== ground || p.settings.sun !== sun) {
       // Before the options, and outside the rAF coalescing below: this is a
       // flag, not a buffer rebuild, and it is what a scene with no floor is
       // waiting on.
@@ -250,8 +268,14 @@ export function useSceneSync({
       groundOpts.current = {
         diffuseColor: hexToLinearVec3(ground.color),
         gridLineColor: hexToLinearVec3(ground.grid),
-        opacity: compositing ? 0 : ground.opacity,
+        // A plate joins the compositing modes here for the same reason they are
+        // in it: the floor in the picture is the floor, and a surface painted
+        // over it is one floor too many. The shadow survives at opacity 0 —
+        // that IS the shadow catcher, and it is the whole trick.
+        opacity: compositing || plate ? 0 : ground.opacity,
         shadowStrength: ground.shadow ? 1 : 0,
+        // A property of the light, applied where the light lands.
+        shadowSoftness: sun.softness ?? 0,
         gridLineOpacity: compositing || !ground.gridEnabled ? 0 : 0.4,
         // Square plane; the radial fade scales with it (engine defaults are 10/80 at size 160).
         width: ground.size,
@@ -266,8 +290,8 @@ export function useSceneSync({
         })
       }
     }
-    prev.current = { settings, gradeSpec, backdrop: hasBackdrop, green: exportBackground }
-  }, [settings, gradeSpec, ready, engineRef, hasBackdrop, exportBackground, compositing])
+    prev.current = { settings, gradeSpec, backdrop: hasBackdrop, green: exportBackground, plate, plateStill }
+  }, [settings, gradeSpec, ready, engineRef, hasBackdrop, exportBackground, compositing, plate, plateStill])
 
   // The lens, on its own effect and keyed on the VALUE: `camera` is a new object
   // every time a target slider moves, and the fov has no business being pushed
