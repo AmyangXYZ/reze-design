@@ -10,8 +10,15 @@
 // document and neither knows the difference.
 
 import { useEffect, useRef } from "react"
-import { Vec3, parseDirectives, parseHDR, type DissolveCycle, type Engine } from "reze-engine"
-import { type AppliedEffect } from "@/lib/effects"
+import {
+  Vec3,
+  parseDirectives,
+  parseHDR,
+  type DissolveCycle,
+  type EffectParamDecl,
+  type Engine,
+} from "reze-engine"
+import { effectParams, type AppliedEffect } from "@/lib/effects"
 import { resolveSpec, type GradeSpec } from "@/lib/grade"
 import { CAMERA_DEFAULT_FOV, type SceneCamera } from "@/lib/scene"
 import { GREEN, isCompositingBackground, type ExportBackground } from "@/lib/export-background"
@@ -141,6 +148,10 @@ export function useSceneSync({
    *  own subjects are drawn from. Only used to decide WHO an effect that
    *  declares a dissolve is about; the first of them is subject 0. */
   castIds = [],
+  /** What each applied effect exposes, keyed by uid, handed back after every
+   *  install. The engine parsed the directives to build the uniform; reading
+   *  them off the result is how the controls and the shader cannot disagree. */
+  onParamDecls,
 }: {
   engineRef: React.RefObject<Engine | null>
   ready: boolean
@@ -157,11 +168,26 @@ export function useSceneSync({
   plate?: boolean
   plateStill?: boolean
   castIds?: string[]
+  onParamDecls?: (byUid: Record<string, EffectParamDecl[]>) => void
 }) {
   const compositing = isCompositingBackground(exportBackground)
   // Per-section identity guard: setSun dirties the shadow map (an extra full pass
   // per frame), so an unguarded push re-rendered shadows on every bloom tick.
   const prev = useRef<{
+    /** WHICH ENGINE these were pushed to, and the reason this field exists.
+     *
+     * Every guard below asks "did this value change" and skips when it did not,
+     * on the understanding that the engine was constructed with it. That holds
+     * while one engine lives as long as this hook — and breaks the moment a NEW
+     * engine appears without the hook remounting, which is what a hot reload of
+     * use-engine does, and what a recovered device would do. The refs survive,
+     * the settings compare equal, nothing is pushed, and the fresh engine keeps
+     * its own defaults: outlines OFF while the document says on, until you
+     * toggle something and it finally gets told.
+     *
+     * Comparing the engine turns that into a first run, which pushes everything.
+     */
+    engine: Engine
     settings: SceneSettings
     gradeSpec: GradeSpec
     backdrop: boolean
@@ -179,7 +205,8 @@ export function useSceneSync({
     const engine = engineRef.current
     if (!ready || !engine) return
     const { world, sun, bloom, dof, outline, background, ground, grade, physics, view, grain } = settings
-    const p = prev.current
+    // A different engine is a first run, whatever the settings say.
+    const p = prev.current?.engine === engine ? prev.current : null
     const modeChanged = !p || p.backdrop !== hasBackdrop || p.green !== exportBackground || p.plate !== plate
 
     if (modeChanged || p.settings.background !== background) {
@@ -290,7 +317,7 @@ export function useSceneSync({
         })
       }
     }
-    prev.current = { settings, gradeSpec, backdrop: hasBackdrop, green: exportBackground, plate, plateStill }
+    prev.current = { engine, settings, gradeSpec, backdrop: hasBackdrop, green: exportBackground, plate, plateStill }
   }, [settings, gradeSpec, ready, engineRef, hasBackdrop, exportBackground, compositing, plate, plateStill])
 
   // The lens, on its own effect and keyed on the VALUE: `camera` is a new object
@@ -310,6 +337,10 @@ export function useSceneSync({
 
   // Recompile only when the shader itself (or its suspension) actually changes.
   const lastWgsl = useRef<string | null>(null)
+  /** The engine `lastWgsl` describes. Same trap as `prev` above: a fresh engine
+   *  has no effects installed, and a key left over from the previous one made
+   *  the install skip itself. */
+  const lastWgslEngine = useRef<Engine | null>(null)
   useEffect(() => {
     const engine = engineRef.current
     if (!engine) return
@@ -354,8 +385,9 @@ export function useSceneSync({
       }
       return
     }
-    if (wgsl === lastWgsl.current) return
+    if (wgsl === lastWgsl.current && lastWgslEngine.current === engine) return
     lastWgsl.current = wgsl
+    lastWgslEngine.current = engine
     // ── An effect that takes the cast apart ──
     //
     // "// @dissolve period breakAt hiddenAt backAt doneAt", in seconds. The
@@ -374,13 +406,30 @@ export function useSceneSync({
     const subject = castIds[0] ?? null
     if (subject) engine.setModelDissolveCycle(subject, cycle)
     let stale = false
-    void engine.setEffects(sources.length ? sources.map((s) => ({ wgsl: s })) : null).then((rs) => {
+    // Params ride the install so an effect's first frame is already at the
+    // scene's settings — seeding after the fact would show the author's default
+    // for a frame, which on a colour reads as a flash.
+    const applied = exportBackground === "green" ? [] : backgroundEffects
+    void engine
+      .setEffects(
+        sources.length ? sources.map((s, i) => ({ wgsl: s, params: effectParams(s, applied[i]?.params) })) : null,
+      )
+      .then((rs) => {
       if (stale) return
       // An install builds fresh instances, so whatever was scheduled is gone
       // with the ones it was set on. Re-applied HERE as well as on change,
       // because the two arrive in either order: editing a strip does not
       // reinstall, and installing does not know a strip changed.
       applySchedules(engine, backgroundEffects)
+      // WHAT EACH EFFECT EXPOSES, read off the install rather than re-parsed.
+      // The engine already read the directives to build the uniform, so parsing
+      // the same lines again here would be a second answer free to disagree with
+      // the one the shader is actually running.
+      onParamDecls?.(
+        Object.fromEntries(
+          rs.map((r, i) => [applied[i]?.uid ?? String(i), r.params]).filter(([uid]) => uid !== undefined),
+        ) as Record<string, EffectParamDecl[]>,
+      )
       rs.forEach((r, i) => {
         // Named, not numbered: every entry is one the scene asked for now, and
         // a name is what the person reading the console can go and look at.
@@ -394,7 +443,35 @@ export function useSceneSync({
     return () => {
       stale = true
     }
-  }, [backgroundEffects, exportBackground, ready, engineRef, castIds])
+  }, [backgroundEffects, exportBackground, ready, engineRef, castIds, onParamDecls])
+
+  /**
+   * A dial moved, without reinstalling.
+   *
+   * The install is a shader compile; a slider drag is sixty of them a second.
+   * `setEffectParam` writes the uniform, which is what makes dragging a width
+   * feel like dragging a width rather than like recompiling a shader.
+   *
+   * ONLY WHEN THE SHADER LIST IS THE ONE INSTALLED, and that guard is the whole
+   * subtlety. This is keyed by INDEX into the effects the engine currently
+   * holds, while the install above is async — so on a load, a scene swap, or any
+   * change to WHICH effects are applied, this ran first and addressed index i of
+   * the list still on screen. Best case a no-op; worst case it wrote one
+   * effect's dial into the effect that happened to be sitting at that index.
+   *
+   * Nothing is lost by skipping: the install seeds every value itself, so the
+   * effects that are arriving come up already set.
+   */
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine) return
+    const applied = exportBackground === "green" ? [] : backgroundEffects
+    const key = applied.length ? applied.map((e) => e.wgsl).join("\0") : null
+    if (key !== lastWgsl.current || lastWgslEngine.current !== engine) return
+    applied.forEach((e, i) => {
+      for (const [name, value] of Object.entries(e.params ?? {})) engine.setEffectParam(i, name, value)
+    })
+  }, [backgroundEffects, exportBackground, engineRef])
 
   /**
    * Strips onto instances, whenever one is edited.

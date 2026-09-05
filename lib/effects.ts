@@ -11,6 +11,7 @@
 // an AI), and one shape for every library kind beats one convenient one.
 
 import effects from "@/content/effects.json"
+import { parseDirectives, type EffectParamValue } from "reze-engine"
 import { asBuiltins, type EffectItem } from "@/lib/library"
 import type { EffectWindow } from "@/lib/effect-schedule"
 
@@ -31,10 +32,62 @@ export type AppliedEffect = {
   uid?: string
   /** The level it reaches, 0..1. Absent = 1, fully on. */
   influence?: number
+  /**
+   * The dials this COPY is set to, by the name in its `#param` line.
+   *
+   * Only what differs from the shader's own default is stored — an absent name
+   * means "whatever the author wrote", so retuning a built-in moves every scene
+   * that never touched that dial, and a scene records only what its author
+   * actually decided.
+   *
+   * Per instance, beside influence and window, because two copies of one effect
+   * at different settings is the ordinary case and the whole reason this exists
+   * instead of forking the shader.
+   */
+  params?: Record<string, EffectParamValue>
   /** WHEN it is alive, in frames — a LANE, so one effect can fire more than
    *  once. Absent or empty = the whole scene, which is what an ambient effect
    *  does. */
   window?: EffectWindow[]
+}
+
+/**
+ * Every dial an effect declares, at the value this scene has it.
+ *
+ * THE ENGINE DOES NOT DEFAULT THESE. It parses the `#param` lines to hand the
+ * declarations back, but it builds the uniform struct from the values it is
+ * GIVEN — so passing only what a scene overrode produces a struct missing every
+ * name the shader still reads, and the compile fails. The defaults have to be
+ * merged in by whoever calls it, which is here.
+ *
+ * That split is deliberate on the engine's side for colours: a `#param color`
+ * declares `#rrggbb`, and turning six hex digits into the triple a shader
+ * samples is a host decision. Plain byte scaling, no gamma — the same numbers
+ * the built-ins already write by hand as `vec3f(0.82, 0.90, 1.0)`.
+ */
+export function effectParams(
+  wgsl: string,
+  overrides: Record<string, EffectParamValue> | undefined,
+): Record<string, EffectParamValue> | undefined {
+  const decls = parseDirectives(wgsl).directives.params
+  if (decls.length === 0) return undefined
+  const out: Record<string, EffectParamValue> = {}
+  for (const d of decls) {
+    const set = overrides?.[d.name]
+    if (set !== undefined) {
+      out[d.name] = set
+      continue
+    }
+    if (d.kind === "color" && typeof d.value === "string") {
+      const n = parseInt(d.value.slice(1), 16)
+      out[d.name] = { x: ((n >> 16) & 255) / 255, y: ((n >> 8) & 255) / 255, z: (n & 255) / 255 }
+    } else if (Array.isArray(d.value)) {
+      out[d.name] = { x: d.value[0], y: d.value[1], z: d.value[2] }
+    } else if (typeof d.value === "number") {
+      out[d.name] = d.value
+    }
+  }
+  return out
 }
 
 export const applyDefaults = (def: EffectItem): AppliedEffect => ({

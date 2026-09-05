@@ -73,8 +73,8 @@ export function QuickPick({
   }, [open])
   // Derived once: the rows and the number beside the heading come from the same
   // list, which is the only way they cannot disagree.
-  const builtins = items.filter((i) => (i.section ?? "builtin") === "builtin")
-  const community = items.filter((i) => i.section === "community")
+  // Published is published, whoever made it — the split the library dropped.
+  const published = items.filter((i) => i.section !== "local")
   const local = items.filter((i) => i.section === "local")
   const row = (i: QuickPickItem) => (
     <button
@@ -159,35 +159,31 @@ export function QuickPick({
             headers, two rules and the footer are paid for. Bigger caps and a
             full popover would spill past its own rounded corner. The shelves
             stay shrinkable for the viewport too short even for that. */}
-        <div className="flex min-h-0 flex-col">
-          <div className="shrink-0 px-2 pt-1.5 pb-1 text-xs font-medium text-muted-foreground">
-            {t.rail.builtin}
-            <ShelfCount n={builtins.length} />
-          </div>
-          <ScrollArea bars className="max-h-[8.75rem]">{builtins.map(row)}</ScrollArea>
-        </div>
-        <div
-          className="mt-1 flex min-h-0 flex-col border-t border-white/10 pt-1"
-        >
-          <div className="shrink-0 px-2 pt-0.5 pb-1 text-xs font-medium text-muted-foreground">
-            {t.rail.community}
-            <ShelfCount n={community.length} />
-          </div>
-          {community.length ? (
-            <ScrollArea bars className="max-h-[5.25rem]">{community.map(row)}</ScrollArea>
-          ) : (
-            <div className="px-2 pb-1 text-xs text-muted-foreground">{t.rail.communityEmpty}</div>
-          )}
-        </div>
+        {/* ONE list, and drafts pinned above it.
+            The three shelves came out of the library — a built-in is a preset
+            the admin account published, so splitting by provenance sorted by who
+            rather than by what — and a quick pick that still splits them is the
+            same list disagreeing with itself two clicks apart. Your own
+            unpublished work stays separate because it is not the same KIND of
+            thing: it exists only on this device. */}
         {local.length > 0 && (
-          <div className="mt-1 flex min-h-0 flex-col border-t border-white/10 pt-1">
-            <div className="shrink-0 px-2 pt-0.5 pb-1 text-xs font-medium text-muted-foreground">
+          <div className="flex min-h-0 flex-col">
+            <div className="shrink-0 px-2 pt-1.5 pb-1 text-xs font-medium text-muted-foreground">
               {t.rail.local}
               <ShelfCount n={local.length} />
             </div>
             <ScrollArea bars className="max-h-[3.5rem]">{local.map(row)}</ScrollArea>
           </div>
         )}
+        <div className={cn("flex min-h-0 flex-col", local.length > 0 && "mt-1 border-t border-white/10 pt-1")}>
+          <ScrollArea bars className="max-h-[14rem]">
+            {published.length ? (
+              published.map(row)
+            ) : (
+              <div className="px-2 py-1 text-xs text-muted-foreground">{t.rail.communityEmpty}</div>
+            )}
+          </ScrollArea>
+        </div>
 
         {(onEdit || onBrowse) && (
         <div className="mt-1 shrink-0 border-t border-white/10 pt-1">

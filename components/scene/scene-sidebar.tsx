@@ -32,6 +32,7 @@ export function SliderRow({
   fmt,
   disabled,
   dense,
+  labelClass,
 }: {
   label: string
   value: number
@@ -51,6 +52,9 @@ export function SliderRow({
    *  panel hanging off a row is read as one control, and the dock's breathing
    *  room reads as three. */
   dense?: boolean
+  /** Override the label column. The dock's labels are words it chose; an
+   *  effect's are WGSL identifiers its author chose, and they are longer. */
+  labelClass?: string
 }) {
   // Double-click the value to type one. The slider stays the primary control —
   // it is what you reach for while judging a look — and typing is there for the
@@ -82,7 +86,9 @@ export function SliderRow({
     >
       {/* w-16 fits the longest label ("Saturation"); dense rows carry an axis
           and a word, and w-10 is what "Pos X" needs. */}
-      <span className={cn("shrink-0 truncate", dense ? "w-10 text-[11px]" : "w-16 text-xs")}>{label}</span>
+      <span className={cn("shrink-0 truncate", dense ? "text-[11px]" : "text-xs", labelClass ?? (dense ? "w-10" : "w-16"))}>
+        {label}
+      </span>
       <Slider
         className="min-w-0 flex-1 [&_[data-slot=slider-thumb]]:size-2.5 [&_[data-slot=slider-thumb]]:hover:ring-2 [&_[data-slot=slider-track]]:h-1"
         // Parked at the end of the track while the value is past it. Radix
@@ -161,10 +167,24 @@ export function Section({
   )
 }
 
-export function ColorRow({ label, value, onChange }: { label: string; value: string; onChange: (hex: string) => void }) {
+export function ColorRow({
+  label,
+  value,
+  onChange,
+  dense,
+  labelClass,
+}: {
+  label: string
+  value: string
+  onChange: (hex: string) => void
+  /** The tighter rhythm and type size SliderRow's dense rows use, so a colour
+   *  and a number sitting in one panel read as one list rather than two. */
+  dense?: boolean
+  labelClass?: string
+}) {
   return (
-    <div className="mt-2.5 flex items-center justify-between first:mt-0">
-      <span className="text-xs">{label}</span>
+    <div className={cn("flex items-center justify-between first:mt-0", dense ? "mt-1.5 gap-1.5" : "mt-2.5")}>
+      <span className={cn("shrink-0 truncate", dense ? "text-[11px]" : "text-xs", labelClass)}>{label}</span>
       <ColorField value={value} onChange={onChange} />
     </div>
   )

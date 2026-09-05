@@ -103,6 +103,7 @@ import {
   SliderRow,
   TARGET_DEFAULT,
 } from "@/components/scene/scene-sidebar"
+import { EffectParams } from "@/components/scene/effect-params"
 import { QuickPick } from "@/components/scene/quick-pick"
 import { VALUE_BOX } from "@/components/scene/scene-sidebar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -176,7 +177,7 @@ import { communityItems, useCommunity } from "@/hooks/use-community"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useSession } from "@/lib/auth-client"
 import { freeName } from "@/lib/names"
-import { applyDefaults, EFFECTS, builtinEffect, NEW_EFFECT_TEMPLATE, type AppliedEffect } from "@/lib/effects"
+import { applyDefaults, effectParams, EFFECTS, builtinEffect, NEW_EFFECT_TEMPLATE, type AppliedEffect } from "@/lib/effects"
 import { stripFor } from "@/lib/effect-schedule"
 import { secondsToFrames } from "@/lib/clip"
 import { BACKDROP_VIDEO_RE, probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
@@ -210,6 +211,8 @@ import {
   type CompileOptions,
   VMDLoader,
   type Diagnostic,
+  type EffectParamDecl,
+  type EffectParamValue,
   type MaterialPreset,
   type ShaderGraph,
   type StyleGroup,
@@ -3043,10 +3046,41 @@ export default function Lab() {
   /** Which of that effect's strips is selected, or null when none is. A blend
    *  belongs to ONE firing, so the panel has to know which. */
   const [selectedStrip, setSelectedStrip] = useState<number | null>(null)
-  /** Patch one applied effect's timing, by uid. */
+  /** Patch one applied effect's timing or dials, by uid. */
   const patchEffect = useCallback(
-    (uid: string, patch: Partial<Pick<AppliedEffect, "influence" | "window">>) => {
+    (uid: string, patch: Partial<Pick<AppliedEffect, "influence" | "window" | "params">>) => {
       setBgEffects((list) => list.map((e) => (e.uid === uid ? { ...e, ...patch } : e)))
+    },
+    [setBgEffects],
+  )
+
+  /**
+   * What each applied effect exposes, keyed by uid, as of the last install.
+   *
+   * Read off the engine's result rather than parsed here: the engine already
+   * read the `#param` lines to build the uniform the shader samples, and a
+   * second reading of the same lines is a control free to drift from the shader
+   * it is pointed at.
+   */
+  const [effectParamDecls, setEffectParamDecls] = useState<Record<string, EffectParamDecl[]>>({})
+  /** Which applied effect has its dials open, by uid. One at a time: the popover
+   *  hangs off a row, and two open would sit on top of each other. */
+  const [paramsOpen, setParamsOpen] = useState<string | null>(null)
+
+  /** Move one dial. Setting it back to the shader's own default DROPS the key,
+   *  so a scene records only what its author actually decided — which is what
+   *  lets a retuned built-in still reach every scene that left it alone. */
+  const setEffectParam = useCallback(
+    (uid: string, name: string, value: EffectParamValue | undefined) => {
+      setBgEffects((list) =>
+        list.map((e) => {
+          if (e.uid !== uid) return e
+          const next = { ...(e.params ?? {}) }
+          if (value === undefined) delete next[name]
+          else next[name] = value
+          return { ...e, params: Object.keys(next).length ? next : undefined }
+        }),
+      )
     },
     [setBgEffects],
   )
@@ -3543,6 +3577,7 @@ export default function Lab() {
     // Who an effect that declares a dissolve is about — the cast in order, so
     // the first of them is the engine's subject 0.
     castIds: castIdList,
+    onParamDecls: setEffectParamDecls,
   })
 
   // Effects: the same selection model as grade, one library over.
@@ -3754,17 +3789,38 @@ export default function Lab() {
     ensure: ensureEffectPanelRect,
   } = useStoredRect(WGSL_PANEL_KEY, defaultPanelRect)
   /** Compile + apply in one step — the scene mirrors the buffer. */
+  /**
+   * Compile the editor's shader and put it on the canvas IN PLACE.
+   *
+   * The session used to narrow the scene to its subject alone — setEffect,
+   * singular — on the argument that the canvas behind the panel should be that
+   * shader and nothing competing with it. In practice an effect is authored
+   * against the scene it belongs to: a rim light over a stage that is lit, rain
+   * in front of the fog it sits in. Editing one to find the other five gone
+   * previews the wrong picture.
+   *
+   * So the whole list installs, with the subject swapped into its own place —
+   * appended when the scene is not already wearing it, which is what opening
+   * the editor on a library card does. `base` is passed rather than read: this
+   * runs from the opener, in the same tick as the state that would carry it.
+   */
   const commitEffectCode = useCallback(
-    async (subject: AppliedEffect, wgsl: string) => {
+    async (base: AppliedEffect[], subject: AppliedEffect, wgsl: string) => {
       const engine = engineRef.current
       if (!engine) return { ok: false, diagnostics: [t.lab.engineNotReady] }
-      // setEffect, singular: a session previews its subject ALONE, so the
-      // canvas behind the panel is that shader and nothing else competing with
-      // it. The rest of the scene's layers come back from `prior` on close.
-      const r = await engine.setEffect(wgsl)
+      const next = mergeEffect(base, { ...subject, wgsl })
+      const rs = await engine.setEffects(next.map((e) => ({ wgsl: e.wgsl, params: effectParams(e.wgsl, e.params) })))
+      const at = next.findIndex((e) => e.id === subject.id)
+      // The subject's own result. Another layer failing is not this edit's
+      // error to report, and reporting it would blame the panel you are typing
+      // in for a shader you are not.
+      const r = rs[at] ?? rs[0] ?? { ok: false, diagnostics: [t.lab.compileFailed] }
       if (r.ok) {
-        noteAppliedWgsl(wgsl)
-        setBgEffects([{ ...subject, wgsl }])
+        // The sync pass keys on the WHOLE list, so what it must not recompile is
+        // the whole list — handing it one shader left it reinstalling every
+        // keystroke against a key that never matched.
+        noteAppliedWgsl(next.map((e) => e.wgsl).join("\0"))
+        setBgEffects(next)
         // Same rule as grades: your own draft saves as you go.
         if (isDraft("effect", subject.id)) updateDraftSoon("effect", subject.id, { payload: { wgsl } })
       }
@@ -3787,7 +3843,7 @@ export default function Lab() {
         savePrompt: null,
       })
       ensureEffectPanelRect()
-      void commitEffectCode(subject, subject.wgsl)
+      void commitEffectCode(bgEffects, subject, subject.wgsl)
     },
     [bgEffects, ensureEffectPanelRect, commitEffectCode],
   )
@@ -6543,7 +6599,7 @@ export default function Lab() {
           onRectChange={updateEffectPanelRect}
           title={effectEditor.subject.name}
           initial={effectEditor.subject.wgsl}
-          onCompile={(wgsl) => commitEffectCode(effectEditor.subject, wgsl)}
+          onCompile={(wgsl) => commitEffectCode(effectEditor.prior, effectEditor.subject, wgsl)}
           onClose={(code) => void requestCloseEffectEditor(code)}
         />
       )}
@@ -7566,10 +7622,19 @@ export default function Lab() {
                         <div className="mt-2 flex flex-col">
                           {[...bgEffects].reverse().map((e, r) => {
                             const i = bgEffects.length - 1 - r
+                            const uid = e.uid ?? ""
+                            const decls = effectParamDecls[uid] ?? []
                             return (
-                              <CastLine
+                              <Popover
                                 key={e.uid ?? e.id}
-                                reserve="pr-16"
+                                open={paramsOpen === uid}
+                                onOpenChange={(o) => setParamsOpen(o ? uid : null)}
+                              >
+                                <PopoverAnchor asChild>
+                                  <div>
+                              <CastLine
+                                reserve="pr-[5.5rem]"
+                                revealed={paramsOpen === uid}
                                 text={
                                   // Clicking the NAME opens this effect's strip
                                   // below the list — the same arrangement the
@@ -7581,11 +7646,11 @@ export default function Lab() {
                                     onClick={() => setSelectedEffect((cur) => (cur === e.uid ? null : (e.uid ?? null)))}
                                     title={e.name}
                                     className={cn(
-                                      "min-w-0 flex-1 cursor-pointer truncate text-left text-xs transition-colors",
+                                      "flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-xs transition-colors",
                                       selectedEffect === e.uid ? "text-blue-400" : "hover:text-foreground",
                                     )}
                                   >
-                                    {e.name}
+                                    <span className="min-w-0 truncate">{e.name}</span>
                                   </button>
                                 }
                                 actions={
@@ -7594,6 +7659,17 @@ export default function Lab() {
                                       icon={PenLine}
                                       label={t.lab.aria.editEffect(e.name)}
                                       onClick={() => openEffectEditor(e)}
+                                    />
+                                    {/* On EVERY row, disabled where there is
+                                        nothing to turn: a control that appears
+                                        only on some rows moves the other three
+                                        under the cursor as you read down the
+                                        list. */}
+                                    <CastAction
+                                      icon={Settings}
+                                      disabled={decls.length === 0}
+                                      label={t.lab.aria.effectOptions(e.name)}
+                                      onClick={() => setParamsOpen((o) => (o === uid ? null : uid))}
                                     />
                                     {/* Swapping is a CHOICE, so it offers the
                                         choices: the same shortlist the add
@@ -7640,6 +7716,29 @@ export default function Lab() {
                                   </>
                                 }
                               />
+                                  </div>
+                                </PopoverAnchor>
+                                {/* Under the gear that opened it, at the row's
+                                    right edge — the model row's own idiom, and
+                                    the reason the dials do not push the list
+                                    around when they appear. */}
+                                <PopoverContent
+                                  align="end"
+                                  side="bottom"
+                                  sideOffset={2}
+                                  // The model row's own panel, to the pixel: same width, same
+                                  // radius, same padding. Two gears on two rows opening two
+                                  // sizes of panel is two idioms.
+                                  className="w-56 rounded-surface border-line-strong bg-surface-raised p-2 shadow-float"
+                                  onOpenAutoFocus={(ev) => ev.preventDefault()}
+                                >
+                                  <EffectParams
+                                    decls={decls}
+                                    values={e.params}
+                                    onChange={(name, value) => setEffectParam(uid, name, value)}
+                                  />
+                                </PopoverContent>
+                              </Popover>
                             )
                           })}
                         </div>

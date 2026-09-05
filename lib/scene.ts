@@ -1,6 +1,6 @@
 // The scene document — one JSON bundle describing everything a scene is.
 
-import type { ShaderGraph, StyleGroup } from "reze-engine"
+import type { EffectParamValue, ShaderGraph, StyleGroup } from "reze-engine"
 import pkg from "@/package.json"
 import type { AppliedEffect } from "@/lib/effects"
 import type { EffectWindow } from "@/lib/effect-schedule"
@@ -154,6 +154,15 @@ export type SceneEffect = {
   source: ItemRef | EffectSnapshot | string
   /** The level it reaches, 0..1. Absent = fully on. */
   influence?: number
+  /** This copy's dials, by `#param` name. Sparse: only what the author moved
+   *  off the shader's default, so a retuned built-in reaches scenes that never
+   *  touched it.
+   *
+   *  The ENGINE's value type, not a parallel one. It is structural `{x,y,z}`
+   *  rather than a class or a tuple precisely so a value parsed out of a shared
+   *  scene document passes straight into `setEffectParam` with nothing in
+   *  between to convert it — and nothing in between to disagree. */
+  params?: Record<string, EffectParamValue>
   /** Its strips, in FRAMES at 30fps — the space the timeline draws and a VMD is
    *  keyed in. A LANE, so one effect can fire at several moments. Absent or
    *  empty = alive for the whole scene. */
@@ -473,6 +482,10 @@ function appliedEffect(
   const when = {
     ...(applied.influence === undefined ? {} : { influence: applied.influence }),
     ...(applied.window === undefined ? {} : { window: applied.window }),
+    // The dials come back with the timing: both describe THIS scene's use of
+    // the effect rather than the effect, which is the whole reason neither
+    // lives on the source.
+    ...(applied.params === undefined ? {} : { params: applied.params }),
   }
   if (typeof src === "string") return { ...resolveEffect(src), ...when }
   if (isItemRef(src)) {
@@ -875,6 +888,10 @@ export function serializeSceneDoc(
           source: refs?.effect(e.wgsl) ?? { name: e.name, wgsl: e.wgsl },
           ...(e.influence === undefined || e.influence === 1 ? {} : { influence: e.influence }),
           ...(e.window?.length ? { window: e.window } : {}),
+          // Sparse, and omitted when empty: a scene that moved no dials writes
+          // exactly what it wrote before params existed, so nothing churns on
+          // save and a retuned built-in still reaches it.
+          ...(e.params && Object.keys(e.params).length ? { params: e.params } : {}),
         })),
       },
     },
