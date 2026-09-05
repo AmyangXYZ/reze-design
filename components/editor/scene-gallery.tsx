@@ -7,22 +7,29 @@
 // Opening one IS a navigation, though — a scene is a whole document, and the
 // address bar should say which one you are looking at.
 
-import { Fragment, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { GalleryThumbnails, Loader2, Search, X } from "lucide-react"
+import { GalleryThumbnails, Loader2, X } from "lucide-react"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { LIBRARY_SHELL, LibraryLike, LibraryStats, LibraryTags, RailRow, RailSection, RailTags } from "@/components/editor/library-rail"
+import { LIBRARY_SHELL, LibraryLike, LibraryTags } from "@/components/editor/library-rail"
+import {
+  LibraryRailFilters,
+  LibraryResults,
+  LibraryToolbar,
+  useLibraryBrowse,
+  type BrowseFacet,
+  type CardMeta,
+  publishedOn,
+} from "@/components/editor/library-shell"
 import { useLibraryStats } from "@/hooks/use-library-stats"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
 import { useSession } from "@/lib/auth-client"
-import type { LibraryFacet } from "@/lib/library"
+
 import { useZOrder } from "@/hooks/use-z-order"
 import { useT } from "@/lib/i18n"
-import { cn } from "@/lib/utils"
 
 export type GalleryScene = {
   id: string
@@ -35,6 +42,9 @@ export type GalleryScene = {
   viewCount: number
   poster: string | null
   createdAt: string
+  /** Only ever your own rows carry one; everyone else's read as public. The card
+   *  badges it, and the lists below decide what they may hold by it. */
+  visibility?: "public" | "private"
 }
 
 /**
@@ -46,8 +56,12 @@ export type GalleryScene = {
  * the fourth library and now reads like the other three: the rail says WHICH
  * scenes, and `all` is ordered the way the gallery has always opened.
  */
-const VIEWS = ["all", "yours", "liked"] as const
-type View = (typeof VIEWS)[number]
+type View = "all" | "yours" | "liked"
+
+/** A published scene as the shared grid sees it. No payload: the grid never
+ *  reads one, and inventing a field so a scene could pretend to be a preset is
+ *  how one shell becomes two again. */
+export type GalleryRow = GalleryScene & { kind: "scene"; owner: "user"; mine: boolean }
 type Page = { scenes: GalleryScene[]; nextCursor: number | null }
 
 const isFacet = (v: View) => v === "yours" || v === "liked"
@@ -196,6 +210,10 @@ export function noteScenePublished(scene: GalleryScene): void {
   for (const [v, page] of pages) {
     // "liked" is what you liked, and publishing isn't liking.
     if (v === "liked") continue
+    // "all" is the public gallery. A private scene belongs only under "yours",
+    // and putting it in both is how a scene nobody else can open still appears
+    // in the list of what everybody can.
+    if (v === "all" && scene.visibility === "private") continue
     pages.set(v, { ...page, scenes: [scene, ...page.scenes.filter((s) => s.id !== scene.id)] })
   }
   // Its tags moved the cloud.
@@ -229,7 +247,7 @@ export function SceneGallery({
   onOpenChange,
 }: {
   open: boolean
-  initialFacet?: LibraryFacet
+  initialFacet?: BrowseFacet
   onOpenChange: (open: boolean) => void
 }) {
   return (
@@ -243,7 +261,7 @@ function GalleryContent({
   initialFacet,
   onOpenChange,
 }: {
-  initialFacet?: LibraryFacet
+  initialFacet?: BrowseFacet
   onOpenChange: (open: boolean) => void
 }) {
   const t = useT()
@@ -261,15 +279,12 @@ function GalleryContent({
    *  heart reading 0 beside a scene with likes is worse than a beat of lag. */
   const likesOf = (s: GalleryScene) => (known(s.id) ? statFor(s.id).likeCount : s.likeCount)
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, () => onOpenChange(false))
-  const [view, setView] = useState<View>(() =>
-    initialFacet === "yours" || initialFacet === "liked" ? initialFacet : "all",
-  )
-  const [tag, setTag] = useState<string | null>(null)
-  const [query, setQuery] = useState("")
+  const opensOn: View = initialFacet === "yours" || initialFacet === "liked" ? initialFacet : "all"
+  const [view, setView] = useState<View>(opensOn)
   // Seeded from the view this opened ON, not from the default one: an entrance
   // that means "show me mine" would otherwise paint the whole gallery first.
   const [scenes, setScenes] = useState<GalleryScene[]>(
-    () => pages.get(view)?.scenes ?? cachedFallback(view, session?.user.username),
+    () => pages.get(opensOn)?.scenes ?? cachedFallback(opensOn, session?.user.username),
   )
   const [cursor, setCursor] = useState<number | null>(() => pages.get(view)?.nextCursor ?? null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -277,6 +292,16 @@ function GalleryContent({
   const [counts, setCounts] = useState<FacetCounts | null>(() => facetCounts)
   // Only when there is genuinely nothing to show. Rows sieved out of another
   // list are worth more than a spinner over an empty grid.
+  /** Your own private scenes, which no public list can return.
+   *
+   *  The gallery's default query is deliberately session-free — reading who you
+   *  are before asking for rows costs a round trip on the one list that is
+   *  identical for everyone. So "all" stays public, and YOUR private scenes are
+   *  merged in from the "yours" page the client already prefetches. They are
+   *  yours to see wherever you are looking, including when filtering by maker. */
+  const [minePrivate, setMinePrivate] = useState<GalleryScene[]>([])
+  /** Bumped whenever the module cache is patched, so the merge above re-derives. */
+  const [cacheV, setCacheV] = useState(0)
   const [loading, setLoading] = useState(() => !pages.has(view) && scenes.length === 0)
   const [failed, setFailed] = useState(false)
 
@@ -289,7 +314,6 @@ function GalleryContent({
         if (stale) return
         setScenes(page.scenes)
         setCursor(page.nextCursor)
-        setSelectedId((prev) => prev ?? page.scenes[0]?.id ?? null)
         setLoading(false)
       })
       .catch(() => {
@@ -308,6 +332,7 @@ function GalleryContent({
     const relay = () => {
       const page = pages.get(view)
       if (page) setScenes(page.scenes)
+      setCacheV((n) => n + 1)
     }
     listeners.add(relay)
     return () => {
@@ -347,12 +372,77 @@ function GalleryContent({
   // mean shipping your liked ids down with every page — and it would still only
   // cover the scenes currently in the window. Two small queries buy the real
   // answer, and by the time either shelf is clicked it is usually already here.
+  //
+  // It also feeds `minePrivate` below, which is the whole reason a private scene
+  // of yours can appear anywhere but "yours".
   useEffect(() => {
     if (!session?.user.username) return
+    let stale = false
     for (const v of ["yours", "liked"] as const) {
-      if (!pages.has(v)) void loadPage(v).catch(() => {})
+      const p = pages.has(v) ? Promise.resolve(pages.get(v)!) : loadPage(v)
+      void p
+        .then((page) => {
+          if (stale || v !== "yours") return
+          setMinePrivate(page.scenes.filter((x) => x.visibility === "private"))
+        })
+        .catch(() => {})
     }
-  }, [session?.user.username])
+    return () => {
+      stale = true
+    }
+  }, [session?.user.username, cacheV])
+
+  // Ownership without an extra round trip: `author` is the handle, denormalised
+  // on the row, so comparing it to yours is enough.
+  const handle = session?.user.username
+  const mine = useCallback((author: string) => !!handle && author === handle, [handle])
+
+  /** The page, as rows the shared grid understands. A scene has no payload and
+   *  the grid never asks for one. */
+  const items = useMemo<GalleryRow[]>(() => {
+    const seen = new Set(scenes.map((s) => s.id))
+    const merged =
+      view === "all" ? [...scenes, ...minePrivate.filter((s) => !seen.has(s.id))] : scenes
+    return merged.map((s) => ({ ...s, kind: "scene" as const, owner: "user" as const, mine: mine(s.author) }))
+  }, [scenes, minePrivate, view, mine],
+  )
+  const byId = useMemo(() => new Map(items.map((s) => [s.id, s])), [items])
+  const numbers = useCallback(
+    (id: string) => {
+      const row = byId.get(id)
+      return {
+        likes: known(id) ? statFor(id).likeCount : (row?.likeCount ?? 0),
+        uses: row?.viewCount ?? 0,
+        liked: statFor(id).liked,
+      }
+    },
+    [byId, known, statFor],
+  )
+
+  // Switching facet paints whatever is already held and lets the fetch land
+  // underneath — in the handler rather than an effect, so nothing sets state
+  // during a render pass.
+  const onFacetChange = useCallback(
+    (next: BrowseFacet) => {
+      const v = next as View
+      const cached = pages.get(v)
+      const seed = cached?.scenes ?? cachedFallback(v, session?.user.username)
+      setScenes(seed)
+      setCursor(cached?.nextCursor ?? null)
+      setLoading(!cached && seed.length === 0)
+      setFailed(false)
+      setView(v)
+    },
+    [session?.user.username],
+  )
+
+  const browse = useLibraryBrowse<GalleryRow>(items, numbers, {
+    initialFacet: opensOn,
+    // Counts and tags span the whole gallery; this client holds one page of it.
+    counts: counts ?? undefined,
+    tagCounts: tags,
+    onFacetChange,
+  })
 
   const loadMore = () => {
     if (!cursor) return
@@ -377,16 +467,9 @@ function GalleryContent({
       })
   }
 
-  const q = query.trim().toLowerCase()
-  const rows = scenes.filter(
-    (s) =>
-      (!tag || s.tags.includes(tag)) &&
-      (!q ||
-        s.name.toLowerCase().includes(q) ||
-        s.author.toLowerCase().includes(q) ||
-        s.tags.some((x) => x.includes(q))),
-  )
-  const selected = rows.find((s) => s.id === selectedId) ?? rows[0] ?? null
+  const rows = browse.rows
+  // No fallback to the first row: nothing is selected until something is clicked.
+  const selected = rows.find((s) => s.id === selectedId) ?? null
 
   const sceneHref = (s: GalleryScene) => `/${s.author}/${s.id}`
 
@@ -398,9 +481,6 @@ function GalleryContent({
     router.push(sceneHref(s))
   }
 
-  // Ownership without an extra round trip: `author` is the handle, denormalised on
-  // the row and kept in step by renames, so comparing it to yours is enough.
-  const isMine = (s: GalleryScene) => !!session?.user.username && s.author === session.user.username
 
   const commitRename = (s: GalleryScene, raw: string) => {
     setRenamingId(null)
@@ -428,8 +508,49 @@ function GalleryContent({
     })
   }
 
-  const stamp = (iso: string) =>
-    new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+  const meta = (s: GalleryRow): CardMeta => ({
+    preview: s.poster ? (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={s.poster} alt="" loading="lazy" className="h-full w-full object-cover" />
+    ) : (
+      <div className="flex h-full items-center justify-center bg-zinc-900 text-[10px] text-muted-foreground">
+        {t.gallery.noPoster}
+      </div>
+    ),
+    nameNode:
+      renamingId === s.id ? (
+        <Input
+          autoFocus
+          defaultValue={s.name}
+          className="h-5 min-w-0 flex-1 border-line-strong bg-white/5 px-1 text-[13px] md:text-[13px]"
+          onClick={(e) => e.stopPropagation()}
+          onBlur={(e) => commitRename(s, e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur()
+            if (e.key === "Escape") setRenamingId(null)
+          }}
+        />
+      ) : undefined,
+  })
+
+  /** Only your own scenes get a menu: open, rename, delete. */
+  const wrap = (s: GalleryRow, node: React.ReactNode) =>
+    s.mine ? (
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div>{node}</div>
+        </ContextMenuTrigger>
+        <ContextMenuContent className="w-40">
+          <ContextMenuItem onSelect={() => openScene(s)}>{t.gallery.open}</ContextMenuItem>
+          <ContextMenuItem onSelect={() => setRenamingId(s.id)}>{t.graph.rename}</ContextMenuItem>
+          <ContextMenuItem variant="danger" onSelect={() => remove(s)}>
+            {t.library.deletePublished}
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+    ) : (
+      node
+    )
 
   return (
     <DialogContent
@@ -445,154 +566,56 @@ function GalleryContent({
       className={LIBRARY_SHELL}
     >
       <DialogHeader className="flex-row items-center gap-2 space-y-0 border-b border-white/10 px-3 py-2">
-        <DialogTitle className="flex shrink-0 items-center gap-2 text-sm font-medium">
+        <DialogTitle className="flex shrink-0 items-center gap-2 text-[13px] font-medium">
           <GalleryThumbnails className="size-4 text-blue-400" />
           {t.gallery.title}
         </DialogTitle>
-        <div className="relative ml-auto w-64 max-w-[45%]">
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t.library.searchPlaceholder}
-            className="h-7 border-white/10 bg-white/5 pl-8 text-xs"
-          />
-        </div>
+        <LibraryToolbar browse={browse} usedLabel={t.rail.views} />
         <DialogClose className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
-          <X className="size-4" />
+          <X className="size-3.5" />
           <span className="sr-only">{t.library.close}</span>
         </DialogClose>
       </DialogHeader>
 
       <div className="flex min-h-0 flex-1">
-        {/* Rail: which scenes. The same three shelves, in the same words and with
-            the same counts, as every other library. */}
-        <div className="hidden w-50 shrink-0 flex-col border-r border-white/10 p-2 md:flex">
-          <RailSection title={t.rail.browse}>
-            <div className="flex flex-col gap-0.5">
-              {VIEWS.map((v) => (
-                <RailRow
-                  key={v}
-                  label={t.rail[v]}
-                  count={counts?.[v]}
-                  active={view === v}
-                  onClick={() => {
-                    if (v === view) return
-                    // Cached view swaps instantly; an unseen one falls back to
-                    // whatever can be sieved out of the lists already held, and
-                    // only shows the spinner when that comes up empty — never the
-                    // previous view's scenes under a new label.
-                    const cached = pages.get(v)
-                    const rows = cached?.scenes ?? cachedFallback(v, session?.user.username)
-                    setScenes(rows)
-                    setCursor(cached?.nextCursor ?? null)
-                    setLoading(!cached && rows.length === 0)
-                    setFailed(false)
-                    setView(v)
-                  }}
-                />
-              ))}
-            </div>
-          </RailSection>
-          <RailTags counts={tags} tag={tag} onTagChange={setTag} />
-        </div>
+        <LibraryRailFilters browse={browse} />
 
+        {/* ONE ranked list, the same grid the presets use. Scenes were the last
+            library with their own cards, their own sort and their own rail. */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <ScrollArea className="min-h-0 flex-1">
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(8rem,1fr))] content-start gap-2.5 p-3">
-              {rows.map((s) => {
-                const card = (
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault()
-                      setSelectedId(s.id)
-                    }
-                  }}
-                  onClick={() => {
-                    setSelectedId(s.id)
-                    // Warms the RSC payload so opening is a paint, not a fetch.
-                    router.prefetch(sceneHref(s))
-                  }}
-                  onDoubleClick={() => openScene(s)}
-                  className={cn(
-                    "cursor-pointer overflow-hidden rounded-md border text-left transition-colors",
-                    s.id === selected?.id
-                      ? "border-blue-400 ring-1 ring-blue-400"
-                      : "border-white/10 hover:border-white/25",
-                  )}
-                >
-                  <div className="aspect-[16/10] border-b border-white/5 bg-zinc-900">
-                    {s.poster ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={s.poster} alt="" loading="lazy" className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-[11px] text-muted-foreground/40">
-                        {t.gallery.noPoster}
-                      </div>
-                    )}
+          <LibraryResults
+            browse={browse}
+            selectedId={selected?.id ?? null}
+            onSelect={(s) => {
+              setSelectedId(s.id)
+              // Warms the RSC payload so opening is a paint, not a fetch.
+              router.prefetch(sceneHref(s))
+            }}
+            onActivate={openScene}
+            meta={meta}
+            numbers={numbers}
+            wrap={wrap}
+            usedLabel={t.rail.views}
+            empty={failed ? t.gallery.failed : loading ? t.gallery.loading : t.gallery.empty}
+            footer={
+              <>
+                {loading && rows.length > 0 && (
+                  <div className="flex items-center justify-center gap-2 py-6 text-[11px] text-muted-foreground">
+                    <Loader2 className="size-3.5 animate-spin" />
+                    {t.gallery.loading}
                   </div>
-                  <div className="px-2 py-1.5">
-                    <div className="flex items-center gap-1.5">
-                      {renamingId === s.id ? (
-                        <Input
-                          autoFocus
-                          defaultValue={s.name}
-                          className="h-5 min-w-0 flex-1 border-white/10 bg-white/5 px-1 text-xs md:text-xs"
-                          onClick={(e) => e.stopPropagation()}
-                          onBlur={(e) => commitRename(s, e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur()
-                            if (e.key === "Escape") setRenamingId(null)
-                          }}
-                        />
-                      ) : (
-                        <span className="min-w-0 flex-1 truncate text-xs font-medium">{s.name}</span>
-                      )}
-                      <LibraryStats likeCount={likesOf(s)} liked={statFor(s.id).liked} />
-                    </div>
-                  </div>
-                </div>
-                )
-                if (!isMine(s)) return <Fragment key={s.id}>{card}</Fragment>
-                return (
-                  <ContextMenu key={s.id}>
-                    <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
-                    <ContextMenuContent className="w-40">
-                      <ContextMenuItem onSelect={() => openScene(s)}>{t.gallery.open}</ContextMenuItem>
-                      <ContextMenuItem onSelect={() => setRenamingId(s.id)}>{t.graph.rename}</ContextMenuItem>
-                      <ContextMenuItem variant="danger" onSelect={() => remove(s)}>
-                        {t.library.deletePublished}
-                      </ContextMenuItem>
-                    </ContextMenuContent>
-                  </ContextMenu>
-                )
-              })}
-
-              {loading && (
-                <div className="col-span-full flex items-center justify-center gap-2 py-12 text-xs text-muted-foreground">
-                  <Loader2 className="size-4 animate-spin" />
-                  {t.gallery.loading}
-                </div>
-              )}
-              {!loading && failed && (
-                <div className="col-span-full py-12 text-center text-xs text-red-400">{t.gallery.failed}</div>
-              )}
-              {!loading && !failed && rows.length === 0 && (
-                <div className="col-span-full py-16 text-center text-xs text-muted-foreground">{t.gallery.empty}</div>
-              )}
-              {!loading && cursor && (
-                <button
-                  onClick={loadMore}
-                  className="col-span-full cursor-pointer py-3 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  {t.gallery.more}
-                </button>
-              )}
-            </div>
-          </ScrollArea>
+                )}
+                {!loading && cursor && (
+                  <button
+                    onClick={loadMore}
+                    className="w-full cursor-pointer py-3 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    {t.gallery.more}
+                  </button>
+                )}
+              </>
+            }
+          />
         </div>
 
         <div className="flex w-[17rem] shrink-0 flex-col overflow-y-auto border-l border-white/10 sm:w-[20rem]">
@@ -617,7 +640,7 @@ function GalleryContent({
               <div className="min-h-0 p-3">
                 <div className="truncate text-sm font-semibold select-text">{selected.name}</div>
                 <div className="mt-0.5 font-mono text-[13px] text-muted-foreground/70">
-                  <span className="select-text">{selected.author}</span> · {stamp(selected.createdAt)}
+                  <span className="select-text">{selected.author}</span> · {publishedOn(selected.createdAt)}
                 </div>
                 {selected.description && (
                   <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground select-text">{selected.description}</p>
@@ -667,7 +690,7 @@ function GalleryContent({
             </>
           ) : (
             <div className="flex flex-1 items-center justify-center p-4 text-center text-xs text-muted-foreground">
-              {t.gallery.empty}
+              {rows.length === 0 ? t.gallery.empty : t.gallery.selectScene}
             </div>
           )}
         </div>

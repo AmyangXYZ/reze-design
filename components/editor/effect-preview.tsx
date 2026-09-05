@@ -351,8 +351,21 @@ const FOREGROUND_CALL = /* wgsl */ `
     col = clamp(c.rgb, vec3f(0.0), vec3f(1.0)) * a + col * (1.0 - a);
   }`
 
+/**
+ * DIRECTIVES ARE NOT WGSL, and the engine strips them before it compiles.
+ *
+ * This did not, so every effect declaring one — `#layer`, `#anchor`, `#lights`,
+ * `#grid`, `#halfres`, `#particles` — spliced a `#` line straight into the
+ * shader source and failed to compile. Twelve of the thirty built-ins declare
+ * one, so twelve cards sat on their fallback gradient with nothing to say why.
+ * A blank card looks like a slow card, which is why this went unnoticed.
+ *
+ * Line-based, exactly as the engine reads them: a directive owns its whole line.
+ */
+const stripDirectives = (wgsl: string) => wgsl.replace(/^[ \t]*#[^\n]*$/gm, "")
+
 function previewShader(wgsl: string): string {
-  return PREVIEW_HEAD.replace("USER_CODE", wgsl)
+  return PREVIEW_HEAD.replace("USER_CODE", stripDirectives(wgsl))
     .replace("BACKGROUND_CALL", definesBackground(wgsl) ? BACKGROUND_CALL : "")
     .replace("FOREGROUND_CALL", definesForeground(wgsl) ? FOREGROUND_CALL : "")
 }
@@ -385,9 +398,12 @@ const pipelineCache = new Map<string, GPURenderPipeline | "failed" | "pending">(
 function rememberPipeline(wgsl: string, value: GPURenderPipeline | "failed" | "pending") {
   pipelineCache.set(wgsl, value)
   while (pipelineCache.size > PIPELINE_CACHE_MAX) {
-    const oldest = pipelineCache.keys().next().value
-    if (oldest === undefined || oldest === wgsl) break
-    pipelineCache.delete(oldest)
+    // Skip past anything still compiling as well as the entry just written:
+    // evicting a "pending" marker only means compiling that shader a second
+    // time, with the card showing its fallback until the duplicate lands.
+    const evictable = [...pipelineCache.keys()].find((k) => k !== wgsl && pipelineCache.get(k) !== "pending")
+    if (evictable === undefined) break
+    pipelineCache.delete(evictable)
   }
 }
 let rafId = 0
@@ -452,33 +468,51 @@ function frame(now: number) {
   const d = device
   if (!d || previews.size === 0) return
   const dpr = Math.min(window.devicePixelRatio || 1, 1.5)
+  // EVERY canvas gets its own try. One shared loop draws all of them, and an
+  // exception anywhere in it — a lost context, a canvas whose configure was
+  // refused, a shader module that throws on malformed source — used to abandon
+  // the rest of the pass. Map iteration order is stable, so the SAME previews
+  // after the bad one were skipped on every subsequent frame too: a grid where
+  // some cards are permanently black and nothing says why. That is the bug this
+  // catch exists for, and it got worse when the libraries stopped splitting
+  // cards across three shelves and started showing thirty at once.
+  //
+  // A canvas that throws is dropped rather than retried in place. The observer
+  // re-registers it when it next scrolls into view, so it gets another chance
+  // without holding the others hostage in the meantime.
+  const broken: HTMLCanvasElement[] = []
   for (const e of previews.values()) {
     if (!e.canvas.isConnected) continue
-    const r = e.canvas.getBoundingClientRect()
-    if (r.width < 1) continue
-    const w = Math.max(1, Math.round(r.width * dpr))
-    const h = Math.max(1, Math.round(r.height * dpr))
-    if (e.canvas.width !== w || e.canvas.height !== h) {
-      e.canvas.width = w
-      e.canvas.height = h
+    try {
+      const r = e.canvas.getBoundingClientRect()
+      if (r.width < 1) continue
+      const w = Math.max(1, Math.round(r.width * dpr))
+      const h = Math.max(1, Math.round(r.height * dpr))
+      if (e.canvas.width !== w || e.canvas.height !== h) {
+        e.canvas.width = w
+        e.canvas.height = h
+      }
+      const pipeline = pipelineFor(d, e.wgsl)
+      if (!pipeline) continue
+      // One uniform buffer shared across canvases: write per pass.
+      uniforms[0] = now / 1000
+      uniforms[2] = w
+      uniforms[3] = h
+      d.queue.writeBuffer(uniformBuffer!, 0, uniforms)
+      const pass = d.createCommandEncoder()
+      const rp = pass.beginRenderPass({
+        colorAttachments: [{ view: e.ctx.getCurrentTexture().createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }],
+      })
+      rp.setPipeline(pipeline)
+      rp.setBindGroup(0, bindGroup!)
+      rp.draw(3)
+      rp.end()
+      d.queue.submit([pass.finish()])
+    } catch {
+      broken.push(e.canvas)
     }
-    const pipeline = pipelineFor(d, e.wgsl)
-    if (!pipeline) continue
-    // One uniform buffer shared across canvases: write per pass.
-    uniforms[0] = now / 1000
-    uniforms[2] = w
-    uniforms[3] = h
-    d.queue.writeBuffer(uniformBuffer!, 0, uniforms)
-    const pass = d.createCommandEncoder()
-    const rp = pass.beginRenderPass({
-      colorAttachments: [{ view: e.ctx.getCurrentTexture().createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }],
-    })
-    rp.setPipeline(pipeline)
-    rp.setBindGroup(0, bindGroup!)
-    rp.draw(3)
-    rp.end()
-    d.queue.submit([pass.finish()])
   }
+  for (const c of broken) previews.delete(c)
 }
 
 function register(canvas: HTMLCanvasElement, wgsl: string) {

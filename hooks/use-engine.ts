@@ -1069,8 +1069,24 @@ export function useEngine(
     }
   }, [])
 
+  /**
+   * Hovering a material row shows WHERE that material is, twice over.
+   *
+   * The tint alone answers "which of these is it" only where the material faces
+   * the camera; a strip of trim behind an arm reads as nothing at all. The
+   * wireframe draws the same faces as topology, so a material that is mostly
+   * hidden still shows its shape — the same overlay reze-build puts under a
+   * picked material, here on hover.
+   *
+   * Depth is still written by the full mesh, so the wireframe sits ON the body
+   * rather than floating through it: the question is where these faces are, and
+   * an answer that ignores the torso in front of them is not one.
+   */
   const highlight = useCallback((modelId: string, material: string | null) => {
-    engineRef.current?.setSelectedMaterial(material ? modelId : null, material)
+    const engine = engineRef.current
+    if (!engine) return
+    engine.setSelectedMaterial(material ? modelId : null, material)
+    engine.setVertexOverlay(material ? modelId : null, { material })
   }, [])
 
   const toggleVisible = useCallback((modelId: string, name: string) => {

@@ -7,9 +7,10 @@
 import { useState } from "react"
 import { Check, Share2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { TagsInput } from "@/components/editor/tags-input"
+import { VisibilityPicker, type Visibility } from "@/components/editor/library-shell"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { usePublish } from "@/hooks/use-publish"
 import { publishClash } from "@/lib/names"
@@ -28,6 +29,7 @@ export function PublishButton({
   itemId,
   forkedFromId,
   className,
+  currentVisibility,
   onPublished,
 }: {
   kind: Exclude<LibraryKind, "scene">
@@ -42,6 +44,9 @@ export function PublishButton({
   itemId?: string
   /** Someone else's item this was derived from — recorded as lineage. */
   forkedFromId?: string
+  /** What this item's visibility already is, when republishing over one you own.
+   *  Gates the choice: nothing reachable can go back to private. */
+  currentVisibility?: Visibility
   className?: string
   /** Fires with the created row — the library uses it to promote a draft. */
   onPublished?: (item: LibraryItem) => void
@@ -52,6 +57,8 @@ export function PublishButton({
   const [name, setName] = useState(defaultName)
   const [description, setDescription] = useState(defaultDescription)
   const [tags, setTags] = useState<string[]>(defaultTags)
+  // Publishing is a public act by default; the other two are deliberate choices.
+  const [visibility, setVisibility] = useState<Visibility>("public")
 
   // Every draft is publishable; a taken name is what blocks it. Checked here as
   // well as on the server — the server is the one that counts, but a round trip
@@ -66,6 +73,7 @@ export function PublishButton({
       forkedFromId,
       description: description.trim(),
       tags,
+      visibility,
     })
     // A name conflict keeps the dialog open for a rename; other failures show
     // inline too. Only success closes.
@@ -89,8 +97,12 @@ export function PublishButton({
   if (!signedIn) {
     return (
       <Tooltip>
+        {/* block, not the default inline: a tooltip needs a wrapper around a
+            disabled button, and an inline one sits outside the column's vertical
+            rhythm — so signed-out viewers saw a different gap here than
+            everybody else. */}
         <TooltipTrigger asChild>
-          <span>{trigger}</span>
+          <span className="block">{trigger}</span>
         </TooltipTrigger>
         <TooltipContent>{t.gradeLibrary.publishSignIn}</TooltipContent>
       </Tooltip>
@@ -103,12 +115,12 @@ export function PublishButton({
       <DialogContent
         onOpenAutoFocus={(e) => e.preventDefault()}
         onCloseAutoFocus={(e) => e.preventDefault()}
+        aria-describedby={undefined}
         className="w-[26rem] border-white/10 bg-zinc-950/95 p-5 sm:max-w-[26rem]"
       >
         <DialogTitle className="text-sm font-medium">{t.library.publishPreset}</DialogTitle>
-        <DialogDescription className="text-xs text-muted-foreground">{t.library.publishBlurb}</DialogDescription>
         <form
-          className="mt-1 space-y-3"
+          className="mt-4 flex flex-col gap-3.5"
           onSubmit={(e) => {
             e.preventDefault()
             void submit()
@@ -146,16 +158,16 @@ export function PublishButton({
             <span className="text-xs text-muted-foreground">{t.library.publishTags}</span>
             <TagsInput value={tags} onChange={setTags} max={MAX_TAGS} placeholder={t.library.publishTagsHint} />
           </label>
+          <VisibilityPicker value={visibility} onChange={setVisibility} current={currentVisibility} />
           {failed && <div className="text-[11px] text-red-400">{t.gradeLibrary.publishFailed}</div>}
           {nameTaken && <div className="text-[11px] text-red-400">{t.library.nameTaken}</div>}
           <Button
             type="submit"
             disabled={publishing || !!clash || !name.trim() || !description.trim() || tags.length === 0}
-            className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-300"
+            className="mt-1.5 h-9 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-300"
           >
             {publishing ? t.account.working : t.gradeLibrary.publish}
           </Button>
-          <p className="text-center text-[11px] text-muted-foreground/70">{t.library.publishNote}</p>
         </form>
       </DialogContent>
     </Dialog>

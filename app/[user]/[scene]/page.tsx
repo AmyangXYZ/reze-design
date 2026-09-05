@@ -1,5 +1,7 @@
 import { notFound, permanentRedirect } from "next/navigation"
+import { headers } from "next/headers"
 import { after } from "next/server"
+import { auth } from "@/lib/auth"
 import { eq, sql } from "drizzle-orm"
 import { db, hasDatabase, schema } from "@/lib/db"
 import { user } from "@/lib/db/auth-schema"
@@ -26,6 +28,7 @@ async function load(id: string) {
       payload: schema.libraryItems.payload,
       likeCount: schema.libraryItems.likeCount,
       visibility: schema.libraryItems.visibility,
+      ownerId: schema.libraryItems.ownerId,
       kind: schema.libraryItems.kind,
       handle: user.username,
     })
@@ -33,7 +36,13 @@ async function load(id: string) {
     .leftJoin(user, eq(schema.libraryItems.ownerId, user.id))
     .where(eq(schema.libraryItems.id, id))
     .limit(1)
-  if (!row || row.kind !== "scene" || row.visibility !== "public") return null
+  if (!row || row.kind !== "scene") return null
+  // Private is the author's alone. A stranger holding the link gets the same
+  // not-found a nonexistent id gets — never a 403, which would confirm it.
+  if (row.visibility === "private") {
+    const session = await auth.api.getSession({ headers: await headers() })
+    if (!session || row.ownerId !== session.user.id) return null
+  }
 
   return row
 }

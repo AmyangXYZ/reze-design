@@ -3,7 +3,7 @@
   "id": "910e60fa-f0c1-4295-adeb-0235ab6d4b7f",
   "kind": "effect",
   "name": "Rain",
-  "author": "Amyang",
+  "author": "amyang-xyz",
   "description": "Real drops in the scene rather than a flat curtain — velocity-aligned streaks, depth-tested against the cast.",
   "tags": [
    "nature",
@@ -19,7 +19,7 @@
   "id": "f3ccfc5e-400c-4236-8d25-b3eff3e145aa",
   "kind": "effect",
   "name": "REZE DESIGN",
-  "author": "Amyang",
+  "author": "amyang-xyz",
   "description": "A flickering neon sign spelling REZE DESIGN, transparent between the tubes.",
   "tags": [
    "abstract",
@@ -35,7 +35,7 @@
   "id": "18d0714b-7666-439b-b95d-c31638c0af7a",
   "kind": "effect",
   "name": "Signature",
-  "author": "Amyang",
+  "author": "amyang-xyz",
   "description": "The maker's mark: the REZE DESIGN neon with 黯灭小羊 on a second row.",
   "tags": [
    "abstract",
@@ -51,7 +51,7 @@
   "id": "9fe740dd-57a9-4c14-9fb5-4c1bddf5522f",
   "kind": "effect",
   "name": "Shining Stars",
-  "author": "Amyang",
+  "author": "amyang-xyz",
   "description": "A twinkling starfield that pans with the camera — sharp white cores, coloured haloes and diffraction spikes, transparent between the stars.",
   "tags": [
    "sky",
@@ -66,7 +66,7 @@
   "id": "ec99440e-71b9-40b8-956d-5a56315d8805",
   "kind": "effect",
   "name": "Floating Stars",
-  "author": "Amyang",
+  "author": "amyang-xyz",
   "description": "Motes of light drifting around the cast — HDR cores that bloom, depth-tested against the figure, gathered in toward her.",
   "tags": [
    "particles",
@@ -83,7 +83,7 @@
   "id": "cb130b7b-2f0a-4544-8246-bcb870c6c83d",
   "kind": "effect",
   "name": "Fireworks",
-  "author": "Amyang",
+  "author": "amyang-xyz",
   "description": "Eight shells on a rotation — each climbs, bursts, falls away, and crackles again. Ported from Gatomoi.",
   "tags": [
    "nature",
@@ -135,7 +135,7 @@
   "id": "5ecf93f3-66a2-428d-970a-f42105b7e2a1",
   "kind": "effect",
   "name": "Divine Teleportation",
-  "author": "Amyang",
+  "author": "amyang-xyz",
   "description": "She comes apart into gold and it rises — Teleportation's departure at an ascension's pace, shed from the whole body.",
   "tags": [
    "character",
@@ -284,7 +284,7 @@
   "id": "1665fd14-ec55-4b07-af79-458309acf7d5",
   "kind": "effect",
   "name": "Note Fall",
-  "author": "Amyang",
+  "author": "amyang-xyz",
   "description": "The track's MIDI as glowing bars falling onto a keyboard, lighting the keys they land on.",
   "tags": [
    "music",
@@ -300,7 +300,7 @@
   "id": "bb01274d-1706-455b-bb5f-831c51b02131",
   "kind": "effect",
   "name": "Lyrics",
-  "author": "Amyang",
+  "author": "amyang-xyz",
   "description": "Karaoke subtitles from an .lrc beside the track — white glyphs wiping to colour as they are sung.",
   "tags": [
    "text",
@@ -315,7 +315,7 @@
   "id": "subtitles",
   "kind": "effect",
   "name": "Subtitles",
-  "author": "Amyang",
+  "author": "amyang-xyz",
   "description": "Film captions from a bilingual .lrc — the line over its translation in one size of type, white glyphs in a thin rim, the sung part wiping to colour down both rows.",
   "tags": [
    "text",
@@ -330,7 +330,7 @@
   "id": "now-playing",
   "kind": "effect",
   "name": "Now Playing",
-  "author": "Amyang",
+  "author": "amyang-xyz",
   "description": "The track's words as a turning column with a now-playing card — a wall the cast dances in front of.",
   "tags": [
    "text",
@@ -345,7 +345,7 @@
   "id": "3699f926-c415-4c73-a33c-aa4c6fa7abb7",
   "kind": "effect",
   "name": "Sticker Outline",
-  "author": "Amyang",
+  "author": "amyang-xyz",
   "description": "A die-cut white border around the cast — the template for rzCastDistance: swap the last line for an aura, a shield or a drop shadow.",
   "tags": [
    "character",
@@ -361,7 +361,7 @@
   "id": "59f7acff-3314-4dc3-a500-4440f8767eda",
   "kind": "effect",
   "name": "Holy Light",
-  "author": "Amyang",
+  "author": "amyang-xyz",
   "description": "Light leaving her outline and nothing touching her — a warm rim just off the edge, shafts radiating from her middle, falling to gold.",
   "tags": [
    "character",
@@ -378,7 +378,7 @@
   "id": "48f87d08-3d02-45f5-a1e3-47ba76748f92",
   "kind": "effect",
   "name": "Bloody Ash",
-  "author": "Amyang",
+  "author": "amyang-xyz",
   "description": "Holy Light bled — the same silhouette glow with two colours changed, running hot red at her edge and cooling to deep blood.",
   "tags": [
    "character",
@@ -395,7 +395,7 @@
   "id": "e08cf42a-502f-4d8c-bc77-ee0fdd66b2e8",
   "kind": "effect",
   "name": "Ember Drift",
-  "author": "Amyang",
+  "author": "amyang-xyz",
   "description": "Embers climbing through the stage — ragged flakes cooling white to blood as they rise, gathered into streams by a slow draught. Sprite after a Shadertoy by Jan Mroz (CC BY 3.0).",
   "tags": [
    "atmosphere",
@@ -413,7 +413,7 @@
   "id": "bf098d60-5183-42ef-9b53-6f9fec556d12",
   "kind": "effect",
   "name": "Fuse Sparks",
-  "author": "Amyang",
+  "author": "amyang-xyz",
   "description": "A fuse catching at a bone — a small fan of hairline sparks thrown along the bone's own axis, running white to orange to out.",
   "tags": [
    "character",
@@ -431,7 +431,7 @@
   "id": "f3c3ec80-fc51-4990-befd-a0870812285a",
   "kind": "effect",
   "name": "Hand Sparks",
-  "author": "Amyang",
+  "author": "amyang-xyz",
   "description": "Both wrists throwing sparks — blue-hot as they leave her, cooling through white and orange to red, and lighting her by how fast the hand is actually travelling.",
   "tags": [
    "character",

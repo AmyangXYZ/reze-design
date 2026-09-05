@@ -2985,7 +2985,11 @@ export default function Lab() {
   const [openRow, setOpenRow] = useState<string | null>(null)
 
   const stage = stages[0] ?? null
-  const stageSummary = stage ? displayName(stage.file) : t.lab.tabs.ground
+  const stageSummary = stage
+    ? displayName(stage.file)
+    : bgImage?.slot === "plate"
+      ? t.lab.tabs.composite
+      : t.lab.tabs.ground
   // Controlled (not key-remounted): go-to deep-links need to land on a pane —
   // "Background" opens this row on its background tab. Where you left each one
   // is UI state, so it comes back from the same store the stack's own shape does.
@@ -6447,7 +6451,12 @@ export default function Lab() {
           // clearing it any earlier would select the original again.
           setFreshGraphDraft(null)
         }}
-        canApply={libGroup !== null}
+        // The library picks its own target, so it opens from anywhere — the
+        // group row, the command palette, the stack — without a group having
+        // been chosen first.
+        groups={inspectedGroups.map((g) => ({ id: g.id, label: groupLabel(g) }))}
+        targetId={libGroup?.id ?? null}
+        onTargetChange={(id) => openBrowse({ kind: "graph", groupId: id }, libraryFacet)}
         targetLabel={libGroup ? groupLabel(libGroup) : null}
         currentGraphName={libGroup?.graph.name ?? null}
         usedNames={usedLookNames}
@@ -7114,11 +7123,9 @@ export default function Lab() {
                               onChange={(hex) => patch("ground", { color: hex })}
                             />
                             {/* Footage holds this at 0 — the invisible floor IS
-                                the shadow catcher. Said out loud rather than
-                                left to be discovered: a slider that silently
-                                does nothing is indistinguishable from one that
-                                is broken, and this one moved with no effect. */}
-                            {plate && <p className="mt-2.5 text-xs text-amber-400">{t.lab.ctl.opacityHeld}</p>}
+                                the shadow catcher. Disabled and left at that: a
+                                control that is plainly unavailable does not also
+                                need a paragraph about why. */}
                             <fieldset disabled={!!plate} className={cn(plate && "pointer-events-none opacity-40")}>
                               <SliderRow
                                 label={t.lab.ctl.opacity}

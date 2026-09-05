@@ -27,9 +27,19 @@ import { user } from "./auth-schema"
 
 export type LibraryPayload = GradePayload | GraphPayload | EffectPayload | ScenePayload
 
-/** `unlisted` is link-only: reachable by anyone holding the URL, absent from the
- *  gallery. That is what a "share this scene" link produces. */
-export type Visibility = "private" | "unlisted" | "public"
+/**
+ * Two states, and the second one is one-way.
+ *
+ * `private` is yours alone: absent from every listing, and a 404 to anyone else
+ * who guesses the id. `public` is the library and the gallery.
+ *
+ * Public NEVER returns to private. Once an item is reachable, other people's
+ * scenes can pin it, and retracting it would break work that is not yours to
+ * break — so opening something up is a decision, and deleting is the only way
+ * back. A link-only middle state was considered and rejected as a third thing
+ * to explain for a case neither surface actually has.
+ */
+export type Visibility = "private" | "public"
 
 export const libraryItems = pgTable(
   "library_items",

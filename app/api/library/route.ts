@@ -5,11 +5,13 @@
 // stable id and a name under which others will see it.
 
 import { NextResponse } from "next/server"
-import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm"
+import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm"
 import { auth } from "@/lib/auth"
 import { hasDatabase, db, schema } from "@/lib/db"
+import { user } from "@/lib/db/auth-schema"
 import { nameClash } from "@/lib/db/names"
 import { normalizeName, withGraphName, type LibraryKind } from "@/lib/library"
+import type { Visibility } from "@/lib/db/schema"
 
 const KINDS: LibraryKind[] = ["grade", "graph", "effect", "scene"]
 const MAX_NAME = 60
@@ -18,6 +20,20 @@ const MAX_TAGS = 5
 const MAX_TAG_LENGTH = 16
 const MAX_CREDITS = 4000
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * Visibility is a ONE-WAY DOOR, and this is the whole rule.
+ *
+ * private → public, never back. Once other people can reach an item their scenes
+ * can pin it, and retracting it would break work that is not yours to break.
+ * Deleting is the only way out of public, and it is deliberate.
+ *
+ * The consequence worth stating plainly: `private` therefore means NEVER SEEN,
+ * which is what lets the read paths hide those rows completely.
+ */
+const VISIBILITIES: Visibility[] = ["public", "private"]
+const asVisibility = (v: unknown): Visibility | null =>
+  typeof v === "string" && (VISIBILITIES as string[]).includes(v) ? (v as Visibility) : null
 
 // Base58: no 0/O/I/l ambiguity — these ids live in shareable URLs.
 //
@@ -105,13 +121,17 @@ export async function GET(request: Request) {
       )
       const viewer = await auth.api.getSession({ headers: request.headers })
       const n = sql<number>`count(*)::int`
+      const mineAnyVisibility = and(
+        eq(schema.libraryItems.kind, "scene"),
+        isNull(schema.libraryItems.deletedAt),
+      )
       const [all, yours, liked] = await Promise.all([
         db.select({ n }).from(schema.libraryItems).where(published),
         viewer
           ? db
               .select({ n })
               .from(schema.libraryItems)
-              .where(and(published, eq(schema.libraryItems.ownerId, viewer.user.id)))
+              .where(and(mineAnyVisibility, eq(schema.libraryItems.ownerId, viewer.user.id)))
           : Promise.resolve([{ n: 0 }]),
         viewer
           ? db
@@ -157,6 +177,7 @@ export async function GET(request: Request) {
         viewCount: schema.libraryItems.viewCount,
         posterKey: schema.libraryItems.posterKey,
         createdAt: schema.libraryItems.createdAt,
+        visibility: schema.libraryItems.visibility,
       })
       .from(schema.libraryItems)
     const scenes = await (facet === "liked" && viewer
@@ -169,7 +190,10 @@ export async function GET(request: Request) {
       .where(
         and(
           eq(schema.libraryItems.kind, "scene"),
-          eq(schema.libraryItems.visibility, "public"),
+          // "Yours" is the one shelf that shows your private scenes:
+          // they are yours to see, and hiding them there is how a private scene
+          // becomes a scene you cannot find. Every other list is public only.
+          facet === "yours" && viewer ? undefined : eq(schema.libraryItems.visibility, "public"),
           isNull(schema.libraryItems.deletedAt),
           facet === "yours" && viewer ? eq(schema.libraryItems.ownerId, viewer.user.id) : undefined,
           before ? lt(schema.libraryItems.createdAt, new Date(before)) : undefined,
@@ -202,16 +226,29 @@ export async function GET(request: Request) {
       tags: schema.libraryItems.tags,
       payload: schema.libraryItems.payload,
       ownerId: schema.libraryItems.ownerId,
+      createdAt: schema.libraryItems.createdAt,
+      visibility: schema.libraryItems.visibility,
+      // The author's avatar, so a library can show WHO made something rather
+      // than a string. Joined here because `author` is denormalised onto the row
+      // and an image is the one thing about a person that is not.
+      authorImage: user.image,
     })
     .from(schema.libraryItems)
-    .where(eq(schema.libraryItems.visibility, "public"))
-    // Newest first. Libraries show built-ins sorted by name — a fixed set you
-    // learn the shape of — and community by date, where recency is the only
-    // signal anyone has about work they have not seen. The rows carry no
-    // timestamp, so this ordering IS the date sort the client renders.
+    .leftJoin(user, eq(schema.libraryItems.ownerId, user.id))
+    // Public to everyone, plus everything you own — your private presets belong
+    // in YOUR library, badged, or "private" would mean "lost".
+    .where(
+      session
+        ? or(eq(schema.libraryItems.visibility, "public"), eq(schema.libraryItems.ownerId, session.user.id))
+        : eq(schema.libraryItems.visibility, "public"),
+    )
+    // Newest first, which is also the order a client with no sort of its own
+    // renders. The date travels with the row now: the library ranks by it, so
+    // the ordering here is a sensible default rather than the only signal.
     .orderBy(desc(schema.libraryItems.createdAt))
-  const items = rows.map(({ ownerId, ...r }) => ({
+  const items = rows.map(({ ownerId, createdAt, ...r }) => ({
     ...r,
+    createdAt: createdAt.toISOString(),
     owner: "user" as const,
     mine: !!session && ownerId === session.user.id,
   }))
@@ -240,8 +277,11 @@ export async function POST(request: Request) {
 
   // No `changelog`: it described what a new VERSION changed, and there are no
   // versions to describe. A client still sending one is simply ignored.
-  const { id, kind, name, description, tags, payload, credits, bundleKey, bundleBytes, posterKey, forkedFromId, uses } =
+  const { id, kind, name, description, tags, payload, credits, bundleKey, bundleBytes, posterKey, forkedFromId, uses, visibility } =
     (body ?? {}) as Record<string, unknown>
+  // Public unless asked otherwise: publishing is a public act, and the dialog
+  // says so. A client sending nothing gets what it always got.
+  const wantVisibility = asVisibility(visibility) ?? "public"
   if (typeof kind !== "string" || !KINDS.includes(kind as LibraryKind)) {
     return NextResponse.json({ error: "unknown kind" }, { status: 400 })
   }
@@ -315,9 +355,7 @@ export async function POST(request: Request) {
         // Recorded automatically when the session began from someone else's scene
         // — there is no fork button, publishing IS the fork.
         forkedFromId: typeof forkedFromId === "string" ? forkedFromId : null,
-        // Published means visible. Private is the column default so an accidental
-        // insert stays invisible, but this route is an explicit act.
-        visibility: "public",
+        visibility: wantVisibility,
       })
       .returning()
 
@@ -365,15 +403,23 @@ export async function POST(request: Request) {
   //
   // Case and spacing folded, because a library where "neon hair" and "Neon Hair"
   // are different things is a library nobody can search.
-  const clash = await nameClash(kind as LibraryKind, wanted, itemId)
-  if (clash) return NextResponse.json({ error: "name-taken", taken: clash }, { status: 409 })
   const [existing] = await db
-    .select({ ownerId: schema.libraryItems.ownerId })
+    .select({ ownerId: schema.libraryItems.ownerId, visibility: schema.libraryItems.visibility })
     .from(schema.libraryItems)
     .where(eq(schema.libraryItems.id, itemId))
     .limit(1)
   if (existing && existing.ownerId !== session.user.id) {
     return NextResponse.json({ error: "not yours" }, { status: 403 })
+  }
+  // A private item reserves no name: a stranger must not be able to learn one
+  // exists by publishing under it and reading the conflict. The check runs when
+  // the item becomes reachable instead, which is here.
+  if (wantVisibility !== "private") {
+    const clash = await nameClash(kind as LibraryKind, wanted, itemId)
+    if (clash) return NextResponse.json({ error: "name-taken", taken: clash }, { status: 409 })
+  }
+  if (existing && existing.visibility !== "private" && wantVisibility === "private") {
+    return NextResponse.json({ error: "cannot-unpublish" }, { status: 409 })
   }
 
   let row
@@ -382,7 +428,7 @@ export async function POST(request: Request) {
       ? (
           await db
             .update(schema.libraryItems)
-            .set({ ...common, deletedAt: null, updatedAt: new Date() })
+            .set({ ...common, visibility: wantVisibility, deletedAt: null, updatedAt: new Date() })
             .where(eq(schema.libraryItems.id, itemId))
             .returning()
         )[0]
@@ -393,7 +439,7 @@ export async function POST(request: Request) {
               ...common,
               id: itemId,
               kind: kind as LibraryKind,
-              visibility: "public",
+              visibility: wantVisibility,
               // Derived from someone else's preset — their item is untouched, this
               // is yours, and the trail back to them is kept.
               forkedFromId: typeof forkedFromId === "string" ? forkedFromId : null,

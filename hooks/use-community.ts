@@ -22,7 +22,9 @@ import { GRADE_PRESETS } from "@/lib/grade"
 import { GRAPH_LIBRARY } from "@/lib/materials"
 import type { LibraryItem, LibraryKind } from "@/lib/library"
 
-export type CommunityItem = LibraryItem & { mine: boolean }
+/** `authorImage` is the account's avatar; `createdAt` and `visibility` ride on
+ *  the envelope itself. */
+export type CommunityItem = LibraryItem & { mine: boolean; authorImage?: string | null }
 
 const BUILTIN_IDS: Partial<Record<LibraryKind, Set<string>>> = {
   grade: new Set(GRADE_PRESETS.map((i) => i.id)),
@@ -41,6 +43,10 @@ const listeners = new Set<() => void>()
 // The seed mirrors builtins with the ADMIN ACCOUNT's live handle as author —
 // the repo JSON can't know it, so display resolves through this map.
 const builtinAuthors = new Map<string, string>()
+// Avatars by AUTHOR NAME rather than by item id. Every row the server sends
+// carries one, built-in mirrors included, so a rail that groups by maker can
+// show the person without each library threading an image through its own list.
+const authorImages = new Map<string, string>()
 // Bundled items the signed-in user owns. Built-ins are simply presets authored by
 // the admin account, so for THAT account they belong under "Yours" like anything
 // else they published — the bundle just can't know who is asking.
@@ -55,6 +61,7 @@ function load(force = false): Promise<CommunityItem[]> {
       mineIds = new Set(rows.filter((i) => i.mine).map((i) => i.id))
       for (const i of rows) {
         if (BUILTIN_IDS[i.kind]?.has(i.id)) builtinAuthors.set(i.id, i.author)
+        if (i.authorImage) authorImages.set(i.author, i.authorImage)
       }
       cache = rows.filter((i) => !BUILTIN_IDS[i.kind]?.has(i.id))
       settled = true
@@ -82,6 +89,13 @@ export function builtinAuthor(id: string, fallback: string): string {
   return builtinAuthors.get(id) ?? fallback
 }
 
+/** The avatar for an author, once the library has been fetched. Null is the
+ *  ordinary answer: an account that signed up without one, or a clone with no
+ *  database, and the caller falls back to initials. */
+export function authorImage(name: string): string | null {
+  return authorImages.get(name) ?? null
+}
+
 /** The cached rows for a kind, without subscribing — for callbacks that must not
  *  re-create themselves every time the cache changes. */
 export function communityItems(kind: LibraryKind): CommunityItem[] {
@@ -91,6 +105,12 @@ export function communityItems(kind: LibraryKind): CommunityItem[] {
 /** Reflect a rename the server accepted. */
 export function renameCommunityItem(id: string, name: string) {
   cache = (cache ?? []).map((i) => (i.id === id ? { ...i, name } : i))
+  for (const l of listeners) l()
+}
+
+/** Reflect a visibility change the server accepted. */
+export function setCommunityVisibility(id: string, visibility: "public" | "private") {
+  cache = (cache ?? []).map((i) => (i.id === id ? { ...i, visibility } : i))
   for (const l of listeners) l()
 }
 

@@ -8,9 +8,10 @@ import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { Check, Copy, ExternalLink, GalleryThumbnails, Globe, ImagePlus, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { TagsInput } from "@/components/editor/tags-input"
+import { VisibilityPicker, type Visibility } from "@/components/editor/library-shell"
 import { noteScenePublished, type GalleryScene } from "@/components/editor/scene-gallery"
 import { buildZip, type BundleEntry } from "@/lib/bundle"
 import type { LibraryItem } from "@/lib/library"
@@ -153,6 +154,9 @@ function ShareSceneForm({
   const [description, setDescription] = useState(draft.description)
   const [tags, setTags] = useState<string[]>(draft.tags)
   const [credits, setCredits] = useState(draft.credits)
+  // Publishing a scene is a public act by default; the picker is where you say
+  // otherwise, and private here means the link works for nobody but you.
+  const [visibility, setVisibility] = useState<Visibility>("public")
   // Chosen by the author, not grabbed from the canvas: the frame that happens to
   // be showing at publish is rarely the one they would pick to represent the work.
   const [poster, setPoster] = useState<File | null>(null)
@@ -259,6 +263,7 @@ function ShareSceneForm({
           // N scenes" is a join rather than a scan through documents.
           uses: sceneRefs(doc),
           tags,
+          visibility,
         }),
       })
       if (res.status === 409) {
@@ -315,13 +320,13 @@ function ShareSceneForm({
       showCloseButton={!busy}
       onEscapeKeyDown={(e) => busy && e.preventDefault()}
       onInteractOutside={(e) => busy && e.preventDefault()}
+      aria-describedby={undefined}
       className="grid w-[34rem] gap-0 border-white/10 bg-zinc-950/95 p-5 sm:max-w-[34rem]"
     >
         <DialogTitle className="flex items-center gap-2 text-sm font-medium">
           <Globe className="size-4 text-blue-400" />
           {t.share.title}
         </DialogTitle>
-        <DialogDescription className="mt-0.5 text-xs leading-snug text-muted-foreground/80">{t.share.blurb}</DialogDescription>
 
         {/* Shown before the form rather than on submit: discovering a block after
             writing a description, choosing tags and picking a thumbnail is the
@@ -385,7 +390,7 @@ function ShareSceneForm({
           </div>
         ) : (
           <form
-            className="mt-3 space-y-2.5"
+            className="mt-4 flex flex-col gap-3.5"
             onSubmit={(e) => {
               e.preventDefault()
               void publish()
@@ -488,6 +493,7 @@ function ShareSceneForm({
                 className="mt-1 w-full resize-none rounded-md border border-white/10 bg-white/5 px-2.5 py-2 text-xs leading-relaxed outline-none placeholder:text-muted-foreground/50 focus:border-blue-400/50"
               />
             </label>
+            <VisibilityPicker value={visibility} onChange={setVisibility} />
             {error && (
               <div className="rounded-md bg-red-500/10 px-2.5 py-2 text-[11px] leading-relaxed break-words text-red-400">
                 {error}
@@ -505,7 +511,7 @@ function ShareSceneForm({
                 !credits.trim() ||
                 !poster
               }
-              className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-50"
+              className="mt-1.5 h-9 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-50"
             >
               {busy ? (
                 <>

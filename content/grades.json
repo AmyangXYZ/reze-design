@@ -3,7 +3,7 @@
     "id": "94e03201-a5ae-46f0-a8ca-01d6ef1b02bf",
     "kind": "grade",
     "name": "Neutral",
-    "author": "Amyang",
+    "author": "amyang-xyz",
     "description": "No grade at all — the render exactly as the engine tonemapped it.",
     "tags": [
       "neutral",
@@ -32,7 +32,7 @@
     "id": "f583720f-61c4-45e8-bc08-aec3fa80be7a",
     "kind": "grade",
     "name": "Bloody",
-    "author": "Amyang",
+    "author": "amyang-xyz",
     "description": "Horror-anime blood wash: blacks go true black, reds run the whole range.",
     "tags": [
       "red",
@@ -66,7 +66,7 @@
     "id": "4cf503e4-1b59-4dc6-a8ec-8a14fa8f8935",
     "kind": "grade",
     "name": "Cyberpunk",
-    "author": "Amyang",
+    "author": "amyang-xyz",
     "description": "Teal shadows against magenta mids, saturation past cinematic. Deliberately no amber.",
     "tags": [
       "night",
@@ -99,7 +99,7 @@
     "id": "babcc543-9ce5-4a94-9727-2ee688e1ef64",
     "kind": "grade",
     "name": "Divine",
-    "author": "Amyang",
+    "author": "amyang-xyz",
     "description": "Holy light: deep amber shadows climbing through gold to a white radiance.",
     "tags": [
       "gold",
@@ -133,7 +133,7 @@
     "id": "79ea1a89-bfee-4c42-87d9-0b7715c47188",
     "kind": "grade",
     "name": "Moonlit",
-    "author": "Amyang",
+    "author": "amyang-xyz",
     "description": "Drowned in blue — navy shadows that never crush, highlights bright enough to read.",
     "tags": [
       "night",
@@ -167,7 +167,7 @@
     "id": "c1c76b96-5461-47a9-b58c-bd04d0a09e0a",
     "kind": "grade",
     "name": "Sakura",
-    "author": "Amyang",
+    "author": "amyang-xyz",
     "description": "A gentle rose wash through shadows and mids, highlights left clean.",
     "tags": [
       "pink",

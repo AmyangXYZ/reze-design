@@ -10,6 +10,7 @@
 
 import { NextResponse } from "next/server"
 import { inArray } from "drizzle-orm"
+import { auth } from "@/lib/auth"
 import { hasDatabase, db, schema } from "@/lib/db"
 
 const MAX_REFS = 64
@@ -41,18 +42,34 @@ export async function POST(request: Request) {
   // Soft-deleted items are deliberately included. An item leaves the library
   // when its author retires it; a scene already using it keeps rendering, which
   // is the reason deletion is soft in the first place.
+  //
+  // PRIVATE does not. Private means never seen, and that only holds if this
+  // route refuses to hand the payload to anyone but its owner — a pin is a bare
+  // id, so without the check any id is a read. A private item simply has no key
+  // in the answer, which is what a deleted one looks like.
   const rows = await db
     .select({
       id: schema.libraryItems.id,
       payload: schema.libraryItems.payload,
       name: schema.libraryItems.name,
       author: schema.libraryItems.author,
+      visibility: schema.libraryItems.visibility,
+      ownerId: schema.libraryItems.ownerId,
     })
     .from(schema.libraryItems)
     .where(inArray(schema.libraryItems.id, ids))
 
+  // Read only when something private is actually in the answer — the common case
+  // is a scene wearing public presets, and that must not wait on a session.
+  const viewer = rows.some((r) => r.visibility === "private")
+    ? await auth.api.getSession({ headers: request.headers })
+    : null
+
   const payloads: Record<string, { payload: unknown; name: string; author: string }> = {}
-  for (const r of rows) payloads[r.id] = { payload: r.payload, name: r.name, author: r.author }
+  for (const r of rows) {
+    if (r.visibility === "private" && (!viewer || r.ownerId !== viewer.user.id)) continue
+    payloads[r.id] = { payload: r.payload, name: r.name, author: r.author }
+  }
   return NextResponse.json({ payloads })
 }
 

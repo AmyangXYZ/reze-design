@@ -19,6 +19,7 @@
 import type { MaterialPreset, ShaderGraph } from "reze-engine"
 import type { GradeSpec } from "@/lib/grade"
 import type { SceneDoc } from "@/lib/scene"
+import builtinDates from "@/content/builtin-dates.json"
 
 // A published SCENE is a library item too — same envelope, same table, same
 // permissions, and the gallery is just a facet query. Scenes ship no built-ins,
@@ -51,6 +52,15 @@ export type LibraryItem<K extends LibraryKind = LibraryKind, P = unknown> = {
   description: string
   tags: string[]
   owner: LibraryOwner
+  /** Server-supplied, and only for rows YOU own — everyone else's arrive without
+   *  it and read as public. It used to never leave the server; it does now,
+   *  because a library that cannot badge your own private work is a library
+   *  where private means lost. */
+  visibility?: "public" | "private"
+  /** When it was published, as an ISO string. The library ranks and sorts by it,
+   *  and both the list and the detail panel show it. Built-ins carry none: they
+   *  ship in the bundle and are older than any row. */
+  createdAt?: string
   payload: P
 }
 
@@ -115,15 +125,12 @@ export function withGraphName<T>(payload: T, name: string): T {
 /** Rail facets are about PROVENANCE, not taxonomy: a short list that never grows,
  *  where tags are many and overlapping and belong in search instead. `community`
  *  and `liked` arrive with the server. */
-export type LibraryFacet = "all" | "builtin" | "yours" | "liked"
+export type LibraryFacet = "all" | "yours" | "liked"
 
-export const LIBRARY_FACETS: LibraryFacet[] = ["all", "builtin", "yours", "liked"]
+export const LIBRARY_FACETS: LibraryFacet[] = ["all", "yours", "liked"]
 
 export function matchesFacet(item: LibraryItem & MaybeMine, facet: LibraryFacet, liked?: boolean): boolean {
   if (facet === "all") return true
-  // Named for what it does. It always filtered to built-ins; calling that
-  // "Featured" promised a curation nobody was doing.
-  if (facet === "builtin") return item.owner === "builtin"
   // Liked depends on who is asking, so it is passed in rather than read off the item.
   if (facet === "liked") return liked === true
   // "Yours" means yours — drafts AND your published rows, not everyone's
@@ -144,6 +151,8 @@ export function matchesQuery(item: LibraryItem, query: string, displayName = ite
 }
 
 /** Stamp repo content as builtin at load — the JSON files stay lean. */
+const BUILTIN_DATES = builtinDates as Record<string, string | undefined>
+
 export function asBuiltins<T extends LibraryItem>(items: Omit<T, "owner">[]): T[] {
   if (process.env.NODE_ENV !== "production") {
     for (const key of ["id", "name"] as const) {
@@ -151,7 +160,11 @@ export function asBuiltins<T extends LibraryItem>(items: Omit<T, "owner">[]): T[
       if (dupes.length) throw new Error(`duplicate builtin ${key}: ${dupes.join(", ")}`)
     }
   }
-  return items.map((i) => ({ ...i, owner: "builtin" }) as T)
+  // A built-in has no row, so it has no createdAt of its own — and the library
+  // ranks and sorts by that. The repo knows the answer: the date is the last
+  // commit that changed the item, recovered by scripts/builtin-dates.mjs and
+  // checked in beside the content it describes.
+  return items.map((i) => ({ ...i, owner: "builtin", createdAt: BUILTIN_DATES[i.id] }) as T)
 }
 
 /**

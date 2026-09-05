@@ -381,6 +381,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                           placeholder={g.graph.name}
                         />
                       </span>
+
                 </div>
 
                 {/* ── Children (indent guide) ── */}
