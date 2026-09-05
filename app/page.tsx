@@ -7951,7 +7951,7 @@ export default function Lab() {
                                           setPropAttach(prop.id, v === NO_PARENT ? null : { model: v, bone: defaultBoneFor(v) })
                                         }
                                       >
-                                        <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem]">
+                                        <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] text-[11px] data-[size=sm]:h-4">
                                           <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -7974,7 +7974,7 @@ export default function Lab() {
                                         disabled={!att}
                                         onValueChange={(v) => att && setPropAttach(prop.id, { model: att.model, bone: v })}
                                       >
-                                        <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem]">
+                                        <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] text-[11px] data-[size=sm]:h-4">
                                           <SelectValue placeholder={t.lab.ctl.none} />
                                         </SelectTrigger>
                                         <SelectContent>
