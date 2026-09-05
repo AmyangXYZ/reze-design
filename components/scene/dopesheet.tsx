@@ -31,8 +31,6 @@ import { BONE_GROUPS } from "@/lib/animation";
 import { cn } from "@/lib/utils";
 import { useTimelineView } from "@/hooks/use-timeline-view";
 import { useT } from "@/lib/i18n";
-import type { AppliedEffect } from "@/lib/effects";
-import type { EffectWindow } from "@/lib/effect-schedule";
 
 /** The transport's fold curve, mirrored from page.tsx's FOLD. Keep the two in
  *  step: the panel's width and this height are one motion, and two curves that
@@ -103,13 +101,6 @@ export function Dopesheet({
   onTogglePlay,
   /** Named group to narrow the gutter to, or null for every keyed bone. */
   group = null,
-  /** The scene's effects and their strips — passed straight through to the
-   *  Timeline, which is where the axis they are drawn against lives. */
-  effects,
-  selectedEffect,
-  selectedStrip,
-  onSelectStrip,
-  onLane,
 }: {
   playheadDrawRef: RefObject<((frame: number) => void) | null>;
   audioPeaks: readonly number[] | null;
@@ -120,11 +111,6 @@ export function Dopesheet({
   enginePlaying: boolean;
   onTogglePlay: () => void;
   group?: string | null;
-  effects?: AppliedEffect[];
-  selectedEffect?: string | null;
-  selectedStrip?: number | null;
-  onSelectStrip?: (uid: string, i: number) => void;
-  onLane?: (uid: string, lane: EffectWindow[]) => void;
 }) {
   const clip = useClipSelector((s) => s.clip);
   const selectedMorph = useClipSelector((s) => s.selectedMorph);
@@ -482,11 +468,6 @@ export function Dopesheet({
                 audioPeaks={audioPeaks}
                 audioDuration={audioDuration}
                 trailing={trailing}
-                effects={effects}
-                selectedEffect={selectedEffect}
-                selectedStrip={selectedStrip}
-                onSelectStrip={onSelectStrip}
-                onLane={onLane}
                 initialView={
                   restored
                     ? {

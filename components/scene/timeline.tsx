@@ -25,9 +25,6 @@ import { useClipActions, useClipEngine, useClipSelector, usePlayhead, usePlayhea
 import { useClipOps } from "@/hooks/use-clip-ops"
 import type { AnimationClip, BoneKeyframe, CameraKeyframe, MorphKeyframe } from "reze-engine"
 import { bezierInterpolate, Quat } from "reze-engine"
-import { EffectStrips } from "@/components/scene/effect-strips"
-import type { AppliedEffect } from "@/lib/effects"
-import type { EffectWindow } from "@/lib/effect-schedule"
 import {
   type Channel,
   quatToEuler,
@@ -2355,20 +2352,6 @@ interface TimelineProps {
    *  they ride the toolbar that is already there rather than keeping a row of
    *  their own alive above it just to hold three buttons. */
   trailing?: ReactNode
-  /**
-   * The scene's effects, for the strips band above the canvas.
-   *
-   * They arrive HERE, at the bottom of the tree, because this is where the axis
-   * lives: `pxPerFrame` and `scrollX` are this component's own state, so a band
-   * rendered alongside the canvas shares its mapping to the pixel and moves
-   * with every zoom and scroll. A band positioned anywhere else is a second
-   * axis, and the seam shows the first time anyone zooms.
-   */
-  effects?: AppliedEffect[]
-  selectedEffect?: string | null
-  selectedStrip?: number | null
-  onSelectStrip?: (uid: string, i: number) => void
-  onLane?: (uid: string, lane: EffectWindow[]) => void
 }
 
 export function Timeline({
@@ -2383,11 +2366,6 @@ export function Timeline({
   initialView,
   onViewChange,
   trailing,
-  effects,
-  selectedEffect = null,
-  selectedStrip = null,
-  onSelectStrip,
-  onLane,
 }: TimelineProps) {
   const dict = useT()
   const clip = useClipSelector((s) => s.clip)
@@ -3232,24 +3210,6 @@ export function Timeline({
         <ZoomRuler min={Y_ZOOM_MIN} max={Y_ZOOM_MAX} value={yZoom} onChange={setYZoom} />
         {trailing && <div className="ml-1.5 flex shrink-0 items-center gap-0.5 pl-1.5">{trailing}</div>}
       </div>
-      {/* THE SEQUENCE LEVEL, over the channel level. A row is an effect and a
-          bar on it is one FIRING; the canvas below is what a clip is made of,
-          frame by frame. Both read left to right on the same axis, which is the
-          whole reason this sits here rather than beside the transport. */}
-      {effects && effects.length > 0 && onSelectStrip && onLane && (
-        <EffectStrips
-          effects={effects}
-          pxPerFrame={pxPerFrame}
-          scrollX={scrollX}
-          labelWidth={LABEL_W}
-          frameCount={fc}
-          playhead={currentFrame}
-          selectedEffect={selectedEffect}
-          selectedStrip={selectedStrip}
-          onSelectStrip={onSelectStrip}
-          onLane={onLane}
-        />
-      )}
       {/* Canvas */}
       <div ref={timelineAreaRef} style={{ flex: 1, minHeight: 0 }}>
         {clip ? (

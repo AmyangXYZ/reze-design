@@ -178,8 +178,6 @@ import { useDrafts } from "@/hooks/use-drafts"
 import { useSession } from "@/lib/auth-client"
 import { freeName } from "@/lib/names"
 import { applyDefaults, effectParams, EFFECTS, builtinEffect, NEW_EFFECT_TEMPLATE, type AppliedEffect } from "@/lib/effects"
-import { stripFor } from "@/lib/effect-schedule"
-import { secondsToFrames } from "@/lib/clip"
 import { BACKDROP_VIDEO_RE, probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
 import { useMediaBackdrop } from "@/hooks/use-media-backdrop"
 import { isCompositingBackground } from "@/lib/export-background"
@@ -217,7 +215,6 @@ import {
   type ShaderGraph,
   type StyleGroup,
   parseLRC,
-  parseDirectives,
 } from "reze-engine"
 import { lipSyncVmdFile } from "@/lib/lipsync"
 import { WIND_MAX, windFreqFromSlider, windSliderFromFreq, type SceneSettings } from "@/lib/scene-settings"
@@ -414,83 +411,6 @@ function SizeRow({
         {box(width, onWidth, `w${width.toFixed(1)}`)}
         <span className="text-[11px] text-muted-foreground">×</span>
         {box(height, onHeight, `h${height.toFixed(1)}`)}
-      </div>
-    </div>
-  )
-}
-
-/**
- * Two frame numbers on one line — an effect's range, and its two blends.
- *
- * SizeRow's clothes exactly, because they are the same kind of statement: a
- * label on the left, a pair of boxes on the right, lined up with every other
- * value in the dock. What differs is that a box here may be EMPTY, and empty
- * means something — an effect with no end runs to the end of the scene, which
- * is a real answer and not a missing one.
- *
- * FRAMES, at MMD's 30fps. The same numbers the timeline shows and a VMD is
- * keyed in; the crossing to the engine's seconds happens once, in
- * lib/effect-schedule, and never where a person can see it.
- */
-function SpanRow({
-  label,
-  a,
-  b,
-  sep,
-  onA,
-  onB,
-}: {
-  label: string
-  a: number
-  b: number | undefined
-  /** What sits between the boxes: an arrow reads as a span, a slash as a pair. */
-  sep: string
-  onA: (v: number) => void
-  onB: (v: number | undefined) => void
-}) {
-  const box = (
-    value: number | undefined,
-    commit: (v: number | undefined) => void,
-    allowEmpty: boolean,
-    key: string,
-  ) => (
-    <input
-      key={key}
-      inputMode="numeric"
-      // Uncontrolled while editing, re-keyed on the value it shows — the same
-      // arrangement SizeRow uses, and for the same reason: a draft belongs to
-      // the box, so the other one moving does not fight what is being typed.
-      defaultValue={value === undefined ? "" : String(Math.round(value))}
-      onBlur={(e) => {
-        const raw = e.currentTarget.value.trim()
-        if (raw === "" && allowEmpty) return commit(undefined)
-        const v = Number(raw)
-        // Negative frames are before the scene starts, which is not a place an
-        // effect can be scheduled to; a non-number is a typo. Both put the box
-        // back rather than committing a number nobody meant.
-        if (Number.isFinite(v) && v >= 0) commit(Math.round(v))
-        else e.currentTarget.value = value === undefined ? "" : String(Math.round(value))
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") e.currentTarget.blur()
-        if (e.key === "Escape") {
-          e.currentTarget.value = value === undefined ? "" : String(Math.round(value))
-          e.currentTarget.blur()
-        }
-      }}
-      className={cn(
-        VALUE_BOX,
-        "border-transparent text-muted-foreground outline-none focus:border-blue-400/50 focus:bg-white/5 focus:text-foreground",
-      )}
-    />
-  )
-  return (
-    <div className="mt-2.5 flex items-center gap-2 first:mt-0">
-      <span className="w-16 shrink-0 truncate text-xs">{label}</span>
-      <div className="ml-auto flex shrink-0 items-center gap-1">
-        {box(a, (v) => onA(v ?? 0), false, `a${a}`)}
-        <span className="text-[11px] text-muted-foreground">{sep}</span>
-        {box(b, onB, true, `b${b ?? "none"}`)}
       </div>
     </div>
   )
@@ -3043,9 +2963,6 @@ export default function Lab() {
   /** Which effect's strip is open below the list. BY UID, like everything else
    *  addressing one COPY of an effect rather than the effect. */
   const [selectedEffect, setSelectedEffect] = useState<string | null>(null)
-  /** Which of that effect's strips is selected, or null when none is. A blend
-   *  belongs to ONE firing, so the panel has to know which. */
-  const [selectedStrip, setSelectedStrip] = useState<number | null>(null)
   /** Patch one applied effect's timing or dials, by uid. */
   const patchEffect = useCallback(
     (uid: string, patch: Partial<Pick<AppliedEffect, "influence" | "window" | "params">>) => {
@@ -3638,23 +3555,8 @@ export default function Lab() {
       // there. Where it belongs is the list's business, and the Background row
       // is where that gets said.
       //
-      // AND PLACED, in the same act. An effect that declared a `#duration` is a
-      // HIT — it has an arc, and its length is a fact about it — so it arrives
-      // as a strip at the playhead, already the right size, exactly as a clip
-      // dragged into any timeline arrives at the length of its media. One that
-      // declared nothing is AMBIENT and gets no strip: stars are a condition
-      // the scene is in, not something that happens at a moment.
-      //
-      // This is what makes adding an effect the same gesture as registering it.
-      // There is no second step to discover, because no timeline has one.
-      const placed = (e: AppliedEffect): AppliedEffect => {
-        const at = engineRef.current?.getModel(masterId ?? "")?.getAnimationProgress().current ?? 0
-        const strip = stripFor(parseDirectives(e.wgsl).directives.duration, secondsToFrames(at))
-        return strip ? { ...e, window: [strip] } : e
-      }
-      const add = (raw: AppliedEffect) =>
+      const add = (e: AppliedEffect) =>
         setBgEffects((list) => {
-          const e = placed(raw)
           if (replaceTarget === null) return [...list, e]
           const next = [...list]
           next[replaceTarget] = e
@@ -7752,13 +7654,6 @@ export default function Lab() {
                         const fx = bgEffects.find((e) => e.uid === selectedEffect)
                         if (!fx?.uid) return null
                         const uid = fx.uid
-                        const lane = fx.window ?? []
-                        // The SELECTED firing's blend. A lane can hold several,
-                        // and they do not have to enter the same way — a hit
-                        // that cuts in on the beat and eases out is one strip,
-                        // the same effect landing softly later is another.
-                        const i = selectedStrip
-                        const w = i !== null ? lane[i] : undefined
                         return (
                           <div className="mt-3.5 border-t border-line pt-3">
                             {/* HOW MUCH, always — an effect can be dialled
@@ -7775,32 +7670,6 @@ export default function Lab() {
                               onChange={(v) => patchEffect(uid, { influence: v })}
                               fmt={(v) => `${Math.round(v * 100)}%`}
                             />
-                            {/* WHERE it plays is not here — it is the bar on
-                                this effect's row in the timeline, which is the
-                                axis the music is on and the only place putting
-                                it on a beat is a thing you can do. What stays
-                                is what the strip is LIKE, which is the division
-                                Blender draws: you drag an NLA strip in the
-                                editor and set its blend in the sidebar, never
-                                on the strip itself. */}
-                            {w !== undefined && i !== null && (
-                              <SpanRow
-                                label={t.lab.ctl.blend}
-                                a={w.blendIn ?? 0}
-                                b={w.blendOut}
-                                sep="/"
-                                onA={(v) =>
-                                  patchEffect(uid, {
-                                    window: lane.map((x, j) => (j === i ? { ...x, blendIn: v } : x)),
-                                  })
-                                }
-                                onB={(v) =>
-                                  patchEffect(uid, {
-                                    window: lane.map((x, j) => (j === i ? { ...x, blendOut: v } : x)),
-                                  })
-                                }
-                              />
-                            )}
                           </div>
                         )
                       })()}
@@ -8976,14 +8845,6 @@ export default function Lab() {
                       trailing={chrome}
                       enginePlaying={playing}
                       onTogglePlay={togglePlay}
-                      effects={bgEffects}
-                      selectedEffect={selectedEffect}
-                      selectedStrip={selectedStrip}
-                      onSelectStrip={(uid, i) => {
-                        setSelectedEffect(uid)
-                        setSelectedStrip(i)
-                      }}
-                      onLane={(uid, lane) => patchEffect(uid, { window: lane })}
                     />
                   )
                 }
