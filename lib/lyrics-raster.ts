@@ -23,7 +23,18 @@
 
 import { LYRIC_ATLAS_MAX_H, LYRIC_ATLAS_MAX_W, type LyricLine, type LyricRect } from "reze-engine"
 
-const FONT_STACK = '"Hiragino Maru Gothic ProN", "Yu Gothic", "Meiryo", sans-serif'
+const FONT_JA = '"Hiragino Maru Gothic ProN", "Yu Gothic", "Meiryo", sans-serif'
+const FONT_ZH = '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif'
+/** The face a line is set in, by script: kana marks Japanese, ideographs
+ *  without kana are Chinese, and everything else takes the Japanese stack for
+ *  its Latin. A Japanese face carries only the kanji Japanese uses, so a Chinese
+ *  line set in it falls back glyph by glyph and mixes two designs of the same
+ *  character in one word — the bilingual .lrc's translation row, every time. */
+function fontStackFor(text: string): string {
+  if (/[\u3040-\u30ff]/.test(text)) return FONT_JA
+  if (/[\u4e00-\u9fff]/.test(text)) return FONT_ZH
+  return FONT_JA
+}
 /**
  * A row's height, aimed above the size the line is drawn at.
  *
@@ -89,7 +100,7 @@ function planAtlas(
   lines: LyricLine[],
   rowH: number,
   ctx: CanvasRenderingContext2D,
-  font: (px: number) => string,
+  font: (px: number, text: string) => string,
 ): { height: number; atlasW: number; rowH: number; pad: number; placements: Placement[] } {
   const pad = Math.max(4, Math.round(rowH * PAD_FRAC))
   const size = Math.max(8, rowH - 2 * pad)
@@ -100,13 +111,13 @@ function planAtlas(
   let widest = 0
   const placements: Placement[] = []
   for (const line of lines) {
-    ctx.font = font(size)
+    ctx.font = font(size, line.text)
     let px = size
     let w = ctx.measureText(line.text).width
     // A line wider than the atlas condenses its own type rather than clipping.
     if (w > maxTextW) {
       px = Math.max(10, Math.floor((size * maxTextW) / w))
-      ctx.font = font(px)
+      ctx.font = font(px, line.text)
       w = ctx.measureText(line.text).width
     }
     const boxW = Math.min(LYRIC_ATLAS_MAX_W, Math.ceil(w) + 2 * pad)
@@ -122,6 +133,24 @@ function planAtlas(
     widest = Math.max(widest, x)
   }
   return { height: y + rowH, atlasW: Math.max(64, Math.min(LYRIC_ATLAS_MAX_W, widest)), rowH, pad, placements }
+}
+
+/**
+ * Lines sharing one stamp — an original and its translation, the bilingual
+ * .lrc idiom — are ONE MOMENT, and a page never splits them: the first line
+ * of a stack starts the page, and a page that would end inside one ends
+ * before it instead. A translation left off the page until the next one is
+ * a subtitle drawn with half its words.
+ */
+function stackFirst(lines: LyricLine[], i: number): number {
+  while (i > 0 && lines[i - 1].start === lines[i].start) i--
+  return i
+}
+
+/** The page's exclusive end, pulled back off a stack it would cut through. */
+function stackCut(lines: LyricLine[], start: number, end: number): number {
+  while (end > start + 1 && end < lines.length && lines[end].start === lines[end - 1].start) end--
+  return end
 }
 
 /**
@@ -142,11 +171,11 @@ function planAtlas(
  */
 export function rasterizeLyrics(lines: LyricLine[], canvasHeightPx = 0, from = 0): LyricAtlas | null {
   if (lines.length === 0) return null
-  const start = Math.max(0, Math.min(from, lines.length - 1))
+  const start = stackFirst(lines, Math.max(0, Math.min(from, lines.length - 1)))
 
   const scratch = document.createElement("canvas").getContext("2d")
   if (!scratch) return null
-  const font = (px: number) => `700 ${px}px ${FONT_STACK}`
+  const font = (px: number, text: string) => `700 ${px}px ${fontStackFor(text)}`
 
   const rowH = Math.max(
     ROW_H_MIN,
@@ -164,7 +193,7 @@ export function rasterizeLyrics(lines: LyricLine[], canvasHeightPx = 0, from = 0
     count = next >= count ? count - 1 : next
     plan = planAtlas(lines.slice(start, start + count), rowH, scratch, font)
   }
-  const end = Math.min(lines.length, start + count)
+  const end = stackCut(lines, start, Math.min(lines.length, start + count))
   const page = lines.slice(start, end)
 
   const canvas = document.createElement("canvas")
@@ -188,7 +217,7 @@ export function rasterizeLyrics(lines: LyricLine[], canvasHeightPx = 0, from = 0
   for (let i = 0; i < page.length; i++) {
     const at = plan.placements[i]
     if (at.y + plan.rowH > canvas.height) break
-    ctx.font = font(at.px)
+    ctx.font = font(at.px, page[i].text)
     ctx.fillText(page[i].text, at.x + plan.pad, at.y + plan.rowH / 2)
     // The rect carries the padding, so uv 0..1 has margin all around the ink.
     rects[start + i] = [

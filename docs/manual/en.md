@@ -1072,6 +1072,7 @@ avoid. Reading them is the fastest way into the idiom.
 | *Note Fall* | The MIDI interface as geometry — height above the strike line IS time ahead of now, so a bar's length is its own duration |
 | *Dry Ice* | A persistent simulation grid: velocity and density advected on the floor between frames, then marched as a volume |
 | *Lyrics* | The lyric interface over a host-rasterised text atlas, sampled across a pixel rather than at a point |
+| *Subtitles* | Lines that share a stamp — a bilingual `.lrc`'s original and translation — found as consecutive lines with the live line's start, and stacked as one caption |
 | *Signature* | Stroke-median hanzi as segment distance fields, beside the same neon the wordmark is drawn with |
 
 ## 2.4 Material shader graphs
