@@ -2054,6 +2054,18 @@ const displayName = (file: string) => clipLabel(file).replace(/\.pmx$/i, "")
  *  the hands first — MMD binds a mic or a fan to 手首 — then head, neck, torso,
  *  centre, and the feet. A rig's remaining bones follow these in the picker. */
 const ATTACH_BONES = ["右手首", "左手首", "頭", "首", "上半身2", "上半身", "センター", "右足首", "左足首"]
+/** The bones a shot is usually pinned to: the centre first — it is what the
+ *  follow toggle seeds — then the head and the torso, then the hands. */
+const FOLLOW_BONES = ["センター", "頭", "首", "上半身2", "上半身", "全ての親", "右手首", "左手首"]
+/** `lead`'s bones that `names` has, in `lead`'s order, then the rest of `names`
+ *  in the rig's own order. A picker over a rig reads better led by the few
+ *  bones anyone reaches for than by 全ての親, 操作中心 and the IK bones. */
+const leadWith = (names: readonly string[], lead: readonly string[]): string[] => {
+  const have = new Set(names)
+  const first = lead.filter((b) => have.has(b))
+  const firstSet = new Set(first)
+  return [...first, ...names.filter((n) => !firstSet.has(n))]
+}
 /** The parent picker's "none". Radix Select refuses an empty string as a value. */
 const NO_PARENT = "__none"
 
@@ -3670,13 +3682,13 @@ export default function Lab() {
   const propParentId = shownProp?.attach?.model ?? null
   /** The bones the shown prop can hang from: the usual ones first, then the
    *  rest of the parent's rig in its own order. */
-  const propBones = useMemo(() => {
-    const names = models.find((m) => m.id === propParentId)?.bones ?? []
-    const have = new Set(names)
-    const first = ATTACH_BONES.filter((b) => have.has(b))
-    const firstSet = new Set(first)
-    return [...first, ...names.filter((n) => !firstSet.has(n))]
-  }, [propParentId, models])
+  const propBones = useMemo(
+    () => leadWith(models.find((m) => m.id === propParentId)?.bones ?? [], ATTACH_BONES),
+    [propParentId, models],
+  )
+  /** The bones the camera can ride: the first cast member's, the one follow
+   *  binds to (see firstCastId). */
+  const followBones = useMemo(() => leadWith(cast[0]?.bones ?? [], FOLLOW_BONES), [cast])
   /** Where a prop lands when first hung from `parentId`: the right hand when
    *  the rig has one. */
   const defaultBoneFor = (parentId: string): string => {
@@ -4574,9 +4586,13 @@ export default function Lab() {
     // same id again — and a set that only ever grew then skipped it as already
     // classified. That is the "auto style only works after a page refresh"
     // report: the refresh was clearing this set, nothing more.
-    const live = new Set(stages.map((s) => s.id))
+    // Props take the same table: a mic is metal and a fan is cloth or wood,
+    // which is what the stage table knows, and the character hints the engine
+    // refuses to run on scenery would be just as wrong on a sword.
+    const scenery = [...stages, ...props]
+    const live = new Set(scenery.map((s) => s.id))
     for (const id of [...styled.current]) if (!live.has(id)) styled.current.delete(id)
-    for (const stage of stages) {
+    for (const stage of scenery) {
       if (styled.current.has(stage.id)) continue
       // Recorded only once the answer is REAL. Marking on the first sight of a
       // stage meant a render that arrived before the engine had its materials
@@ -4589,7 +4605,7 @@ export default function Lab() {
       }
       if (autoStyleStage(stage.id)) styled.current.add(stage.id)
     }
-  }, [ready, stages, groupsByModel, autoStyleStage])
+  }, [ready, stages, props, groupsByModel, autoStyleStage])
 
   const loadPicked = async (files: File[], pmx: File, target: ModelTarget) => {
     setUpload(null)
@@ -8395,6 +8411,30 @@ export default function Lab() {
                                 })
                               }
                             />
+                          </div>
+                          {/* The bone the orbit rides. Always here and inert
+                              until follow is on, so turning it on does not grow
+                              the pane. Changing the bone keeps the offset: it
+                              is the user's framing, and a re-seed here would
+                              throw it away for a bone a few units off. */}
+                          <div className="mt-2.5 flex items-center gap-2">
+                            <span className="w-16 shrink-0 truncate text-xs">{t.lab.ctl.bone}</span>
+                            <Select
+                              value={camera.follow ?? ""}
+                              disabled={!camera.follow}
+                              onValueChange={(v) => camera.follow && changeCamera({ ...camera, follow: v })}
+                            >
+                              <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] text-[11px] data-[size=sm]:h-4">
+                                <SelectValue placeholder={t.lab.ctl.none} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {followBones.map((b) => (
+                                  <SelectItem key={b} value={b}>
+                                    {b}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </div>
                           {/* Degrees on the slider, radians in the document —
                               the same boundary conversion azimuth and elevation
