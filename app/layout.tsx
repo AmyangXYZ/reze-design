@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Toaster } from "@/components/ui/sonner";
 import { NoNativeContextMenu } from "@/components/no-native-context-menu";
 import { NoStickyFocus } from "@/components/no-sticky-focus";
 import { CrashLogCapture } from "@/components/crash-log-capture";
@@ -76,6 +77,10 @@ export default function RootLayout({
         {/* I18nProvider is client-side; it keeps <html lang> in sync post-mount. */}
         <I18nProvider>
           <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
+          {/* Outcomes of things that ran against the network — see the libraries
+              and the publish dialog. Mounted beside the tree rather than inside
+              it so a toast survives the surface that raised it closing. */}
+          <Toaster />
         </I18nProvider>
         <Analytics/>
       </body>

@@ -26,6 +26,8 @@ import {
 } from "@/components/editor/library-shell"
 import { useLibraryStats } from "@/hooks/use-library-stats"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { useReport } from "@/hooks/use-report"
 import { useSession } from "@/lib/auth-client"
 
 import { useZOrder } from "@/hooks/use-z-order"
@@ -268,6 +270,11 @@ function GalleryContent({
   const router = useRouter()
   const { data: session } = useSession()
   const [renamingId, setRenamingId] = useState<string | null>(null)
+  const report = useReport()
+  /** The scene a delete is being confirmed for. Held whole rather than by id:
+   *  the dialog names it, and looking the name up again after the list has
+   *  moved is how a confirm ends up asking about the wrong row. */
+  const [confirming, setConfirming] = useState<GalleryScene | null>(null)
   // A scene is a library item like any other, so its likes come from the same
   // snapshot the three preset libraries read. A list row carries no like state of
   // its own — deriving one used to mean shipping your liked ids down with every
@@ -490,8 +497,8 @@ function GalleryContent({
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name }),
-    }).then((res) => {
-      if (!res.ok) return
+    }).then(async (res) => {
+      if (!(await report(Promise.resolve(res), t.library.renamed))) return
       setScenes((prev) => prev.map((x) => (x.id === s.id ? { ...x, name } : x)))
       // The short id is the link, so a rename never breaks one — only the label
       // the cached lists are still holding.
@@ -499,10 +506,14 @@ function GalleryContent({
     })
   }
 
-  const remove = (s: GalleryScene) => {
-    if (!confirm(t.gallery.deleteConfirm)) return
-    void fetch(`/api/library/${s.id}`, { method: "DELETE" }).then((res) => {
-      if (!res.ok) return
+  const remove = (s: GalleryScene) => setConfirming(s)
+
+  const confirmRemove = () => {
+    const s = confirming
+    setConfirming(null)
+    if (!s) return
+    void report(fetch(`/api/library/${s.id}`, { method: "DELETE" }), t.library.deleted).then((ok) => {
+      if (!ok) return
       setScenes((prev) => prev.filter((x) => x.id !== s.id))
       noteSceneRemoved(s.id)
     })
@@ -695,6 +706,17 @@ function GalleryContent({
           )}
         </div>
       </div>
+      <ConfirmDialog
+        open={confirming !== null}
+        onOpenChange={(o) => !o && setConfirming(null)}
+        title={t.gallery.deleteTitle}
+        // Named, not "this scene": the gallery is a grid and the row that opened
+        // this is behind the dialog.
+        body={confirming ? `${confirming.name} — ${t.gallery.deleteConfirm}` : undefined}
+        confirmLabel={t.library.deleteConfirmLabel}
+        cancelLabel={t.library.cancel}
+        onConfirm={confirmRemove}
+      />
     </DialogContent>
   )
 }

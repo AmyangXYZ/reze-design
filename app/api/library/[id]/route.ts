@@ -4,13 +4,14 @@
 // admin page is only a convenience — the API is the boundary.
 
 import { NextResponse } from "next/server"
-import { eq } from "drizzle-orm"
+import { eq, inArray } from "drizzle-orm"
 import { auth } from "@/lib/auth"
 import { requireAdmin } from "@/lib/admin"
 import { hasDatabase, db, schema } from "@/lib/db"
 import { nameClash } from "@/lib/db/names"
-import { normalizeName, withGraphName } from "@/lib/library"
+import { normalizeName, withGraphName, type ScenePayload } from "@/lib/library"
 import type { Visibility } from "@/lib/db/schema"
+import { sceneRefs } from "@/lib/scene"
 
 const VISIBILITIES: Visibility[] = ["public", "private"]
 /** The item id if this request may act on it, otherwise null. */
@@ -120,6 +121,29 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
   }
   if (wantVisibility === "private" && row.visibility !== "private") {
     return NextResponse.json({ error: "cannot-unpublish" }, { status: 409 })
+  }
+
+  // GOING PUBLIC RE-RUNS THE PIN CHECK.
+  //
+  // The publish dialog already refuses a public scene that points at a private
+  // effect, because the resolve route serves a private item to its owner and to
+  // nobody else — everyone else opens the scene with that look silently absent.
+  // But a scene published PRIVATELY may legitimately pin private items, and
+  // flipping it to public here would walk straight past the dialog that said so.
+  // The client cannot be the only place this holds: the rule belongs where the
+  // transition happens.
+  if (wantVisibility === "public" && row.visibility === "private" && row.kind === "scene") {
+    const refs = sceneRefs((row.payload as ScenePayload).doc)
+    if (refs.length) {
+      const pinned = await db
+        .select({ name: schema.libraryItems.name, visibility: schema.libraryItems.visibility })
+        .from(schema.libraryItems)
+        .where(inArray(schema.libraryItems.id, refs.map((r) => r.id)))
+      const stillPrivate = pinned.filter((i) => i.visibility === "private").map((i) => i.name)
+      if (stillPrivate.length) {
+        return NextResponse.json({ error: "private-uses", uses: stillPrivate }, { status: 409 })
+      }
+    }
   }
 
   const renaming = name !== undefined

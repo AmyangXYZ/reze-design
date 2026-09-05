@@ -64,7 +64,7 @@ function SignInForm() {
             // Come back to the scene the user was looking at, not the app root.
             void signIn.social({ provider: id, callbackURL: window.location.href })
           }}
-          className="h-10 w-full gap-2.5 border-white/10 bg-white/5 text-xs font-medium hover:bg-white/10"
+          className="h-10 w-full gap-2.5 border-line-strong bg-white/5 text-xs font-medium hover:bg-white/10"
         >
           <Mark className="size-4" />
           {pending === id ? t.account.working : t.account.continueWith(label)}
@@ -92,7 +92,7 @@ function fetchMe(): Promise<MeStats | null> {
 }
 
 /** What you've published and how it landed — the reason to have an account. */
-function Portfolio({ onOpenLibrary }: { onOpenLibrary?: (kind: "grade" | "effect" | "graph" | "scene") => void }) {
+function Portfolio({ onOpenLibrary }: { onOpenLibrary?: (kind: LibraryDoor, facet: "yours" | "liked") => void }) {
   const t = useT()
   const [stats, setStats] = useState<MeStats | null>(cached)
   useEffect(() => {
@@ -110,10 +110,10 @@ function Portfolio({ onOpenLibrary }: { onOpenLibrary?: (kind: "grade" | "effect
   const n = (v: number | undefined) => (stats ? v : "—")
   // Every count is a way in: a number you can't act on is trivia.
   const cells = [
-    { key: "scene" as const, icon: GalleryThumbnails, label: t.account.scenesPublished, onClick: () => onOpenLibrary?.("scene") },
-    { key: "effect" as const, icon: Sparkles, label: t.account.effects, onClick: () => onOpenLibrary?.("effect") },
-    { key: "grade" as const, icon: Palette, label: t.account.grades, onClick: () => onOpenLibrary?.("grade") },
-    { key: "graph" as const, icon: Workflow, label: t.account.graphs, onClick: () => onOpenLibrary?.("graph") },
+    { key: "scene" as const, icon: GalleryThumbnails, label: t.account.scenesPublished, onClick: () => onOpenLibrary?.("scene", "yours") },
+    { key: "effect" as const, icon: Sparkles, label: t.account.effects, onClick: () => onOpenLibrary?.("effect", "yours") },
+    { key: "grade" as const, icon: Palette, label: t.account.grades, onClick: () => onOpenLibrary?.("grade", "yours") },
+    { key: "graph" as const, icon: Workflow, label: t.account.graphs, onClick: () => onOpenLibrary?.("graph", "yours") },
   ]
 
   return (
@@ -121,7 +121,7 @@ function Portfolio({ onOpenLibrary }: { onOpenLibrary?: (kind: "grade" | "effect
     // an account menu is a list of places you can go, and each row is one — label
     // left, count right, the whole row a target. Likes sit with them because it is
     // the same kind of fact, not a footnote in a different size.
-    <div className="border-t border-white/10 py-1">
+    <div className="border-t border-line py-1">
       {/* Each row is a door out of this menu, so each row closes it. Left open,
           the panel stayed floating over the library it had just summoned —
           pointing at the thing you asked for while covering it. */}
@@ -138,7 +138,24 @@ function Portfolio({ onOpenLibrary }: { onOpenLibrary?: (kind: "grade" | "effect
           </button>
         </PopoverClose>
       ))}
-      <div className="flex items-center gap-2.5 px-4 py-2">
+      {/* Every library has a Liked shelf and nothing in the product opened one.
+          Scenes, because that is where likes mostly land and the gallery is the
+          surface that can page them. */}
+      <PopoverClose asChild>
+        <button
+          type="button"
+          onClick={() => onOpenLibrary?.("scene", "liked")}
+          className="flex w-full cursor-pointer items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-white/5"
+        >
+          <Heart className="size-4 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{t.account.youLiked}</span>
+        </button>
+      </PopoverClose>
+      {/* LIKES EARNED IS A FACT, NOT A DOOR. It totals across all four kinds, so
+          there is no one shelf it could open — and a row that looks like the
+          four above it but does nothing is worse than a row that plainly reads
+          as a number. Its own block, under a rule, is what says so. */}
+      <div className="flex items-center gap-2.5 border-t border-line px-4 py-2">
         <Heart className="size-4 shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{t.account.likesEarned}</span>
         <span className="shrink-0 font-mono text-[13px] text-foreground">{n(stats?.likes)}</span>
@@ -165,7 +182,7 @@ export function HandleDialog() {
   const unclaimed = !!session?.user.username && !session.user.usernameChangedAt
   return (
     <Dialog open={unclaimed && !dismissed} onOpenChange={(o) => !o && setDismissed(true)}>
-      <DialogContent className="w-[24rem] gap-0 border-white/10 bg-zinc-950/95 p-5 sm:max-w-[24rem]">
+      <DialogContent className="w-[24rem] gap-0 border-line-strong bg-surface-raised p-5 sm:max-w-[24rem]">
         <DialogTitle className="text-sm font-medium">{t.account.handleTitle}</DialogTitle>
         <DialogDescription className="mt-1 text-xs leading-snug text-muted-foreground">
           {t.account.handleHint}
@@ -221,7 +238,7 @@ function HandleField({ current }: { current: string }) {
   const message = state === "saved" ? t.account.handleSaved : state !== "idle" && state !== "saving" ? state : null
 
   return (
-    <div className="mt-3 border-t border-white/10 pt-3 text-left">
+    <div className="mt-3 border-t border-line pt-3 text-left">
       <form
         className="flex items-center gap-1.5"
         onSubmit={(e) => {
@@ -237,7 +254,7 @@ function HandleField({ current }: { current: string }) {
           }}
           maxLength={24}
           spellCheck={false}
-          className="h-7 border-white/10 bg-white/5 font-mono text-xs"
+          className="h-7 border-line-strong bg-white/5 font-mono text-xs"
         />
         <Button
           type="submit"
@@ -255,12 +272,15 @@ function HandleField({ current }: { current: string }) {
   )
 }
 
+/** The four shelves the account can send you to. */
+export type LibraryDoor = "grade" | "effect" | "graph" | "scene"
+
 export function AccountButton({
   asHeader = false,
   onOpenLibrary,
 }: {
   asHeader?: boolean
-  onOpenLibrary?: (kind: "grade" | "effect" | "graph" | "scene") => void
+  onOpenLibrary?: (kind: LibraryDoor, facet: "yours" | "liked") => void
 }) {
   const t = useT()
   const { data: session } = useSession()
@@ -294,7 +314,7 @@ export function AccountButton({
         <DialogContent
           // Focus returns to the trigger on close otherwise, leaving it ringed.
           onCloseAutoFocus={(e) => e.preventDefault()}
-          className="w-[21rem] gap-0 border-white/10 bg-zinc-950/95 p-6 sm:max-w-[21rem]"
+          className="w-[21rem] gap-0 border-line-strong bg-surface-raised p-6 sm:max-w-[21rem]"
         >
           <div className="mb-5 text-center">
             <WandSparkles className="mx-auto size-6 text-blue-400" />
@@ -318,7 +338,10 @@ export function AccountButton({
         sideOffset={8}
         // Opening the menu is not a request to rename yourself.
         onOpenAutoFocus={(e) => e.preventDefault()}
-        className="w-60 rounded-xl border-white/10 bg-zinc-950/90 p-0 shadow-float backdrop-blur-xs"
+        // No backdrop-blur: this floats over the 3D canvas, which is animating
+        // exactly while the menu is open. Same reason, same tokens as the
+        // dock's own popovers. See AGENTS.md.
+        className="w-60 rounded-surface border-line-strong bg-surface-raised p-0 shadow-float"
       >
         <div className="flex items-center gap-2.5 px-3 py-3">
           {session.user.image ? (

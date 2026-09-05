@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { TagsInput } from "@/components/editor/tags-input"
 import { VisibilityPicker, type Visibility } from "@/components/editor/library-shell"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { toast } from "sonner"
 import { usePublish } from "@/hooks/use-publish"
 import { publishClash } from "@/lib/names"
 import { normalizeName, type LibraryItem, type LibraryKind } from "@/lib/library"
@@ -80,6 +81,9 @@ export function PublishButton({
     if (!item) return
     onPublished?.(item)
     setOpen(false)
+    // The dialog closing is the only other sign it worked, and a surface that
+    // disappears is indistinguishable from one that was dismissed.
+    toast.success(`${t.gradeLibrary.publishDone} · ${item.name}`)
   }
 
   const trigger = (

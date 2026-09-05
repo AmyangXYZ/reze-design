@@ -39,17 +39,44 @@ export function graphLibraryName(graph: ShaderGraph): string | undefined {
   return graphMatch(graph)?.name
 }
 
+function effectMatch(wgsl: string): EffectItem | undefined {
+  return candidates<EffectItem>("effect", EFFECTS).find((i) => i.payload.wgsl === wgsl)
+}
+
 export function effectRef(wgsl: string): ItemRef | undefined {
-  return pin(candidates<EffectItem>("effect", EFFECTS).find((i) => i.payload.wgsl === wgsl))
+  return pin(effectMatch(wgsl))
+}
+
+function gradeMatch(spec: GradeSpec): GradeItem | undefined {
+  const json = JSON.stringify(spec)
+  return candidates<GradeItem>("grade", GRADE_PRESETS).find((i) => JSON.stringify(i.payload.spec) === json)
 }
 
 export function gradeRef(spec: GradeSpec): ItemRef | undefined {
-  const json = JSON.stringify(spec)
-  return pin(candidates<GradeItem>("grade", GRADE_PRESETS).find((i) => JSON.stringify(i.payload.spec) === json))
+  return pin(gradeMatch(spec))
 }
 
-/** What a scene uses that exists in no library — built-in or published. */
-export type UnpublishedUse = { kind: LibraryKind; name: string }
+/** What a scene uses that the people who can open it would not be able to
+ *  resolve. `missing` is in no library at all; `private` IS published, just not
+ *  where a public scene's audience can reach it. */
+export type UnpublishedUse = { kind: LibraryKind; name: string; reason: "missing" | "private" }
+
+/**
+ * Could everyone who can open this scene resolve this pin?
+ *
+ * A private item is served to its owner and to nobody else, so a PUBLIC scene
+ * pinning one renders complete for its author and quietly short for everyone
+ * else — the resolve route omits the key, and an unresolvable pin drops the
+ * effect rather than substituting a wrong one. That is the failure this
+ * prevents: silent, invisible to the person who caused it, and visible only to
+ * people who cannot report it.
+ *
+ * A PRIVATE scene has one reader, its owner, who owns every private item it
+ * could pin. Public items are reachable by definition, and built-ins carry no
+ * visibility because they ship in the bundle.
+ */
+const reachable = (item: { visibility?: "public" | "private" }, scene: "public" | "private"): boolean =>
+  scene === "private" || item.visibility !== "private"
 
 /**
  * Everything in a scene that would have to travel by value because it matches
@@ -61,22 +88,36 @@ export type UnpublishedUse = { kind: LibraryKind; name: string }
  * look nobody can find, credit, or reuse. Requiring it to be published first is
  * what keeps the library a complete account of what people are actually using.
  */
-export function unpublishedUses(scene: {
-  gradeSpec: GradeSpec
-  gradeName: string
-  /** EVERY applied effect. A scene layers several, and checking only the first
-   *  would let the other three publish as pins to drafts that exist on one
-   *  device. */
-  effects: { name: string; wgsl: string }[]
-  groups: Record<string, { graph?: ShaderGraph }[]>
-}): UnpublishedUse[] {
+export function unpublishedUses(
+  scene: {
+    gradeSpec: GradeSpec
+    gradeName: string
+    /** EVERY applied effect. A scene layers several, and checking only the first
+     *  would let the other three publish as pins to drafts that exist on one
+     *  device. */
+    effects: { name: string; wgsl: string }[]
+    groups: Record<string, { graph?: ShaderGraph }[]>
+  },
+  /** What this scene is about to be published AS. A public scene has a stricter
+   *  bar than a private one, so this cannot be computed once and reused across
+   *  a change of the picker. */
+  visibility: "public" | "private",
+): UnpublishedUse[] {
   const out: UnpublishedUse[] = []
-  if (!gradeRef(scene.gradeSpec)) out.push({ kind: "grade", name: scene.gradeName })
-  for (const e of scene.effects) if (!effectRef(e.wgsl)) out.push({ kind: "effect", name: e.name })
+  const grade = gradeMatch(scene.gradeSpec)
+  if (!grade) out.push({ kind: "grade", name: scene.gradeName, reason: "missing" })
+  else if (!reachable(grade, visibility)) out.push({ kind: "grade", name: scene.gradeName, reason: "private" })
+  for (const e of scene.effects) {
+    const hit = effectMatch(e.wgsl)
+    if (!hit) out.push({ kind: "effect", name: e.name, reason: "missing" })
+    else if (!reachable(hit, visibility)) out.push({ kind: "effect", name: e.name, reason: "private" })
+  }
   const seen = new Set<string>()
   for (const list of Object.values(scene.groups)) {
     for (const g of list) {
-      if (!g.graph || graphRef(g.graph)) continue
+      if (!g.graph) continue
+      const hit = graphMatch(g.graph)
+      if (hit && reachable(hit, visibility)) continue
       // The engine's neutral base is not a draft. It is what every new group
       // starts on and what an ungrouped material already renders, so it travels
       // by value and reproduces anywhere — it is simply not IN the library, and
@@ -86,7 +127,7 @@ export function unpublishedUses(scene: {
       // One entry per look, however many groups wear it.
       if (seen.has(g.graph.name)) continue
       seen.add(g.graph.name)
-      out.push({ kind: "graph", name: g.graph.name })
+      out.push({ kind: "graph", name: g.graph.name, reason: hit ? "private" : "missing" })
     }
   }
   return out

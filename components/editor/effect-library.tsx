@@ -36,6 +36,8 @@ import {
 } from "@/components/editor/library-shell"
 import { conflictingName, normalizeName, type EffectItem } from "@/lib/library"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { useReport } from "@/hooks/use-report"
 import { draftOrigin } from "@/lib/drafts"
 import {
   addCommunityItem,
@@ -136,6 +138,11 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   const [renamingId, setRenamingId] = useState<string | null>(null)
   // A typed name that is already in use — see the graph library's commitRename.
   const [renameError, setRenameError] = useState<string | null>(null)
+  const report = useReport()
+  // Which row a delete is being confirmed for. A draft and a published row ask
+  // different questions — one is local, the other is other people's scenes — so
+  // the kind travels with the id rather than being re-derived when it opens.
+  const [confirming, setConfirming] = useState<{ id: string; draft: boolean } | null>(null)
   const commitRename = (item: EffectItem, raw: string) => {
     const wanted = normalizeName(raw)
     if (!wanted || wanted === item.name) {
@@ -162,7 +169,12 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ name }),
-      }).then((res) => res.ok && renameCommunityItem(item.id, name))
+      }).then(async (res) => {
+        // Awaited so the row keeps its old name until the server agrees to the
+        // new one — a rename shown before it is accepted is a rename that
+        // reverts under the reader a moment later.
+        if (await report(Promise.resolve(res), t.library.renamed)) renameCommunityItem(item.id, name)
+      })
     }
     onRenamed?.(item.name, name)
   }
@@ -228,7 +240,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
               variant="danger"
               disabled={inUse(e)}
               onSelect={() => {
-                if (confirm(t.library.deleteDraftConfirm)) removeDraft(e.id)
+                setConfirming({ id: e.id, draft: true })
               }}
             >
               {inUse(e) ? t.library.deleteInUse : t.library.deleteDraft}
@@ -242,7 +254,9 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                   method: "PATCH",
                   headers: { "content-type": "application/json" },
                   body: JSON.stringify({ visibility: next }),
-                }).then((res) => res.ok && setCommunityVisibility(e.id, next))
+                }).then(async (res) => {
+                  if (await report(Promise.resolve(res), t.library.madePublic)) setCommunityVisibility(e.id, next)
+                })
               }}
             />
           )}
@@ -250,12 +264,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
             // Your own published rows: moderation is deletion.
             <ContextMenuItem
               variant="danger"
-              onSelect={() => {
-                if (!confirm(t.library.deletePublishedConfirm)) return
-                void fetch(`/api/library/${e.id}`, { method: "DELETE" }).then((res) => {
-                  if (res.ok) removeCommunityItem(e.id)
-                })
-              }}
+              onSelect={() => setConfirming({ id: e.id, draft: false })}
             >
               {t.library.deletePublished}
             </ContextMenuItem>
@@ -422,6 +431,25 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
           </div>
         </div>
 
+        <ConfirmDialog
+          open={confirming !== null}
+          onOpenChange={(o) => !o && setConfirming(null)}
+          title={confirming?.draft ? t.library.deleteDraft : t.library.deletePublished}
+          body={confirming?.draft ? t.library.deleteDraftConfirm : t.library.deletePublishedConfirm}
+          confirmLabel={t.library.deleteConfirmLabel}
+          cancelLabel={t.library.cancel}
+          onConfirm={() => {
+            const target = confirming
+            setConfirming(null)
+            if (!target) return
+            // A draft lives on this device only, so there is nothing to report
+            // and nothing that can refuse.
+            if (target.draft) return removeDraft(target.id)
+            void report(fetch(`/api/library/${target.id}`, { method: "DELETE" }), t.library.deleted).then(
+              (ok) => ok && removeCommunityItem(target.id),
+            )
+          }}
+        />
       </DialogContent>
   )
 }

@@ -59,6 +59,9 @@ const en = {
     grades: "grades",
     graphs: "graphs",
     likesEarned: "likes",
+    // Distinct from `likesEarned`: that is what others gave YOUR work, this is
+    // what you gave theirs. Two different sets, so two different rows.
+    youLiked: "liked by you",
     handleFixed: "Your name is set and can't be changed.",
   },
   gallery: {
@@ -75,7 +78,8 @@ const en = {
     failed: "Couldn't load the gallery.",
     noPoster: "no image",
     selectScene: "Select a scene",
-    deleteConfirm: "Delete this scene? Its link stops working.",
+    deleteTitle: "Delete scene",
+    deleteConfirm: "Its link stops working, for everyone who has it.",
     manual: "How it works",
   },
   share: {
@@ -104,6 +108,9 @@ const en = {
     unpublishedBlurb:
       "A scene can only be published from looks the library holds, so anyone who sees it can find, credit and reuse what it uses.",
     unpublishedKind: { graph: "Shader", grade: "Grade", effect: "Effect" },
+    privateUseTitle: "These are private, and this scene is public",
+    privateUseBlurb:
+      "A private item is served only to you, so everyone else would open this scene with it silently missing. Make them public, or publish this scene as private.",
   },
   editor: {
     /** The general wait, before there is anything specific to say about it. */
@@ -352,6 +359,17 @@ const en = {
     nameTakenBy: (name: string) => `“${name}” already exists. Pick another name.`,
     deletePublished: "Delete published",
     deletePublishedConfirm: "Remove this from the public library? Scenes using it fall back to defaults.",
+    // What the server said, when it refused. See lib/api-error.ts.
+    errNameTaken: "That name is already taken",
+    errCannotUnpublish: "Published items cannot be made private again",
+    errPrivateUses: "This scene uses private items",
+    errUnknown: "That didn't work",
+    deleteConfirmLabel: "Delete",
+    cancel: "Cancel",
+    errOffline: "Could not reach the server",
+    renamed: "Renamed",
+    madePublic: "Now public",
+    deleted: "Deleted",
     saveChanges: "Save changes?",
     saveChangesBlurb: "Keep this in your library under a name, or discard the edits.",
     save: "Save",
@@ -914,7 +932,8 @@ const zh: Dictionary = {
     effects: "特效",
     grades: "调色",
     graphs: "着色器",
-    likesEarned: "赞",
+    likesEarned: "获赞",
+    youLiked: "我赞过的",
     handleFixed: "用户名已设置，无法更改。",
   },
   gallery: {
@@ -928,7 +947,8 @@ const zh: Dictionary = {
     failed: "画廊加载失败。",
     noPoster: "无封面",
     selectScene: "选择一个场景",
-    deleteConfirm: "删除该场景？其链接将失效。",
+    deleteTitle: "删除场景",
+    deleteConfirm: "它的链接将对所有人失效。",
     manual: "使用说明",
   },
   share: {
@@ -954,6 +974,8 @@ const zh: Dictionary = {
     unpublishedTitle: "请先把这些发布到库里",
     unpublishedBlurb: "场景只能由库中已有的内容组成，这样看到它的人才能找到、署名并复用其中用到的东西。",
     unpublishedKind: { graph: "着色器", grade: "调色", effect: "特效" },
+    privateUseTitle: "这些是私有的，但场景是公开的",
+    privateUseBlurb: "私有内容只对你可见，别人打开这个场景时它会悄悄消失。请把它们改为公开，或把场景发布为私有。",
   },
   editor: {
     loadingScene: "正在加载场景…",
@@ -1189,6 +1211,16 @@ const zh: Dictionary = {
     nameTakenBy: (name: string) => `“${name}”已存在，请换一个名称。`,
     deletePublished: "删除已发布",
     deletePublishedConfirm: "从公共库中移除？使用它的场景将回退到默认效果。",
+    errNameTaken: "这个名字已被占用",
+    errCannotUnpublish: "已发布的内容不能再改回私有",
+    errPrivateUses: "这个场景用到了私有内容",
+    errUnknown: "操作失败",
+    deleteConfirmLabel: "删除",
+    cancel: "取消",
+    errOffline: "无法连接服务器",
+    renamed: "已重命名",
+    madePublic: "已设为公开",
+    deleted: "已删除",
     saveChanges: "保存更改？",
     saveChangesBlurb: "以某个名称保存到你的库，或放弃这些修改。",
     save: "保存",

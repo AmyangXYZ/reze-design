@@ -4,7 +4,7 @@
 // R2 (Vercel never sees the bytes), then publish the document. The user fills a
 // name and blurb — never re-uploads what the scene is already showing.
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { Check, Copy, ExternalLink, GalleryThumbnails, Globe, ImagePlus, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -106,7 +106,7 @@ export function ShareSceneDialog(props: {
   onRename: (name: string) => void
   forkedFromId?: string
   collect: () => ScenePublishSource
-  unpublished: () => UnpublishedUse[]
+  unpublished: (visibility: Visibility) => UnpublishedUse[]
   /** Closes this dialog and opens the gallery — offered once the scene is up. */
   onGallery: () => void
 }) {
@@ -138,9 +138,10 @@ function ShareSceneForm({
   /** The scene this session was forked from, if any. Lineage, recorded quietly. */
   forkedFromId?: string
   collect: () => ScenePublishSource
-  /** Looks this scene uses that exist in no library. Publishing is blocked while
-   *  this is non-empty — see lib/refs.ts for why. */
-  unpublished: () => UnpublishedUse[]
+  /** Looks this scene's readers could not resolve, under the visibility it is
+   *  about to be published with. Publishing is blocked while this is non-empty
+   *  — see lib/refs.ts for why. */
+  unpublished: (visibility: Visibility) => UnpublishedUse[]
   onGallery: () => void
 }) {
   const t = useT()
@@ -148,15 +149,17 @@ function ShareSceneForm({
   // Lazily from storage: nothing is rendered until the dialog opens, so reading
   // client-only state here can't disagree with the server's markup.
   const [draft] = useState(() => readDraft(sceneId))
-  // Looks this scene wears that no library has. Read once — the scene is frozen
-  // behind this dialog — and it blocks publishing outright: see lib/refs.ts.
-  const [blocking] = useState(() => unpublished())
+  // Recomputed when the picker moves, NOT read once: a look that is fine for a
+  // private scene can be exactly what a public one may not point at, so the
+  // answer belongs to the visibility currently chosen. The scene itself is
+  // frozen behind this dialog, so nothing else can move underneath it.
   const [description, setDescription] = useState(draft.description)
   const [tags, setTags] = useState<string[]>(draft.tags)
   const [credits, setCredits] = useState(draft.credits)
   // Publishing a scene is a public act by default; the picker is where you say
   // otherwise, and private here means the link works for nobody but you.
   const [visibility, setVisibility] = useState<Visibility>("public")
+  const blocking = useMemo(() => unpublished(visibility), [unpublished, visibility])
   // Chosen by the author, not grabbed from the canvas: the frame that happens to
   // be showing at publish is rarely the one they would pick to represent the work.
   const [poster, setPoster] = useState<File | null>(null)
@@ -331,19 +334,32 @@ function ShareSceneForm({
         {/* Shown before the form rather than on submit: discovering a block after
             writing a description, choosing tags and picking a thumbnail is the
             worst moment to learn about it. */}
-        {blocking.length > 0 && step !== "done" && (
-          <div className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 p-2.5">
-            <p className="text-xs font-medium text-amber-300">{t.share.unpublishedTitle}</p>
-            <p className="mt-0.5 text-[11px] leading-snug text-amber-200/70">{t.share.unpublishedBlurb}</p>
-            <ul className="mt-1.5 space-y-0.5">
-              {blocking.map((u) => (
-                <li key={`${u.kind}:${u.name}`} className="font-mono text-[11px] text-amber-200/90">
-                  {t.share.unpublishedKind[u.kind as "graph" | "grade" | "effect"]} · {u.name}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        {/* TWO blocks, because the two have different fixes: one asks you to
+            publish something, the other to change what you already published
+            — or to publish this scene privately instead. One list saying
+            "publish these first" would be wrong advice for half of it. */}
+        {step !== "done" &&
+          (["missing", "private"] as const).map((reason) => {
+            const rows = blocking.filter((u) => u.reason === reason)
+            if (rows.length === 0) return null
+            return (
+              <div key={reason} className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 p-2.5">
+                <p className="text-xs font-medium text-amber-300">
+                  {reason === "missing" ? t.share.unpublishedTitle : t.share.privateUseTitle}
+                </p>
+                <p className="mt-0.5 text-[11px] leading-snug text-amber-200/70">
+                  {reason === "missing" ? t.share.unpublishedBlurb : t.share.privateUseBlurb}
+                </p>
+                <ul className="mt-1.5 space-y-0.5">
+                  {rows.map((u) => (
+                    <li key={`${u.kind}:${u.name}`} className="font-mono text-[11px] text-amber-200/90">
+                      {t.share.unpublishedKind[u.kind as "graph" | "grade" | "effect"]} · {u.name}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )
+          })}
 
         {step === "done" && shareUrl ? (
           <div className="mt-1 min-w-0 space-y-3">

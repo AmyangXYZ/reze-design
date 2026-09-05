@@ -82,7 +82,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { AccountButton, HandleDialog } from "@/components/editor/account-panel"
+import { AccountButton, HandleDialog, type LibraryDoor } from "@/components/editor/account-panel"
 import { SceneGallery, prefetchGallery } from "@/components/editor/scene-gallery"
 import { prefetchLibraryStats } from "@/hooks/use-library-stats"
 import { AnimPlayer, type Scrub } from "@/components/scene/anim-player"
@@ -2746,42 +2746,18 @@ export default function Lab() {
   )
 
   /**
-   * Take the engine's live orbit back into the document.
+   * ORBITING THE CANVAS DOES NOT CHANGE THE SCENE.
    *
-   * THE TWO CAMERAS COULD DISAGREE, and the document won. Dragging on the canvas
-   * moves the engine's camera and nothing else — the stored one never heard
-   * about it — so the next write of any camera field re-applied the STALE
-   * angles and snapped the shot back to wherever the document last thought it
-   * was. Every symptom of that lands on the composite: the read's match is
-   * undone by touching a slider, and a figure placed against the live camera
-   * ends up offset the moment the stale one is re-applied.
+   * Dragging is how you look around while you work, and looking around is not
+   * an edit. The document holds the angles the SLIDERS were set to, and nothing
+   * else writes them — so a scene reopens on the shot its author chose rather
+   * than on wherever the last person happened to leave the mouse, and a stray
+   * drag never marks the document dirty.
    *
-   * Called at the end of a gesture rather than every frame: the values only
-   * change while a pointer is down, and the equality guard means a gesture that
-   * moved nothing costs no render.
+   * The consequence is deliberate: move a slider after orbiting and the camera
+   * returns to the stored shot. That is the document being the truth, and the
+   * orbit being a way of looking at it.
    */
-  const syncCameraFromEngine = useCallback(() => {
-    const engine = engineRef.current
-    if (!engine || !ready) return
-    const o = engine.getCameraOrbit()
-    setCamera((c) => {
-      // While following, the stored `target` is an OFFSET from a bone and the
-      // engine's is the resolved world point. Reading that back would freeze the
-      // follow into a fixed spot, which is a different scene.
-      const target: [number, number, number] = c.follow ? c.target : [o.target.x, o.target.y, o.target.z]
-      if (
-        c.alpha === o.alpha &&
-        c.beta === o.beta &&
-        c.distance === o.distance &&
-        c.target[0] === target[0] &&
-        c.target[1] === target[1] &&
-        c.target[2] === target[2]
-      ) {
-        return c
-      }
-      return { ...c, alpha: o.alpha, beta: o.beta, distance: o.distance, target }
-    })
-  }, [engineRef, ready])
 
   // The file lands in sceneFiles.audio — the same slot the shipped editor reads —
   // so the upload is real and the next persist packs its bytes.
@@ -4269,12 +4245,13 @@ export default function Lab() {
    *  through: each variant of the union is a different shape (a graph library
    *  knows what group it applies to), and one of them is not a library at all. */
   const openForAccount = useCallback(
-    (kind: "grade" | "effect" | "graph" | "scene") => {
-      // "yours" for all four, including the gallery: the count you clicked was a
-      // count of YOUR scenes, so the shelf it opens has to be the same set.
-      if (kind === "scene") openGallery("yours")
-      else if (kind === "graph") openBrowse({ kind: "graph", groupId: null }, "yours")
-      else openBrowse(kind === "grade" ? { kind: "grade" } : { kind: "effect" }, "yours")
+    (kind: LibraryDoor, facet: "yours" | "liked") => {
+      // The shelf matches the row that was clicked: a count of YOUR effects
+      // opens Yours, and the Liked row opens Liked. Passing the facet through
+      // rather than assuming "yours" is what lets one handler serve both.
+      if (kind === "scene") openGallery(facet)
+      else if (kind === "graph") openBrowse({ kind: "graph", groupId: null }, facet)
+      else openBrowse(kind === "grade" ? { kind: "grade" } : { kind: "effect" }, facet)
     },
     [openBrowse, openGallery],
   )
@@ -5842,10 +5819,6 @@ export default function Lab() {
             : undefined
         }
         onPointerMove={placing ? (e) => e.buttons === 1 && placeAtPointer(e) : undefined}
-        // The end of a gesture, and the only moments the orbit can have moved.
-        onPointerUp={syncCameraFromEngine}
-        onPointerLeave={syncCameraFromEngine}
-        onWheel={syncCameraFromEngine}
       />
 
       {/* The same pill the viewer shows, for the same load — opening a scene
@@ -6584,16 +6557,20 @@ export default function Lab() {
             openGallery()
           }}
           collect={collectScenePublish}
-          // Looks worn by this scene that exist in no library: publishing is
-          // blocked while any remain, since a published scene cannot point at a
-          // draft that only exists on this device.
-          unpublished={() =>
-            unpublishedUses({
-              gradeSpec: appliedGradeSpec,
-              gradeName: settings.grade.preset,
-              effects: bgEffects,
-              groups: groupsByModel,
-            })
+          // Looks worn by this scene that the scene's readers could not resolve:
+          // a draft that only exists on this device, or — for a PUBLIC scene — an
+          // item published privately, which its audience cannot fetch. Takes the
+          // visibility being published under, because the bar differs.
+          unpublished={(visibility) =>
+            unpublishedUses(
+              {
+                gradeSpec: appliedGradeSpec,
+                gradeName: settings.grade.preset,
+                effects: bgEffects,
+                groups: groupsByModel,
+              },
+              visibility,
+            )
           }
         />
       )}
