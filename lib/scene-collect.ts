@@ -9,7 +9,7 @@
 // and everything below this line is the single shared answer.
 
 import type { BundleEntry } from "@/lib/bundle"
-import type { EngineModelInfo, StageInfo } from "@/hooks/use-engine"
+import type { EngineModelInfo, PropInfo, StageInfo } from "@/hooks/use-engine"
 import type { AssetRef, ModelSource, SceneBackground, SceneModel, ScenePlane, SceneStageTransform } from "@/lib/scene"
 import { modelFilePaths, sceneFiles } from "@/lib/scene-files"
 
@@ -24,6 +24,8 @@ export type SceneSlotsInput = {
   models: EngineModelInfo[]
   /** Which of them are scenery — they carry placement and switches. */
   stages: StageInfo[]
+  /** Which of them are props — placement, switches, and what they hang from. */
+  props?: PropInfo[]
   /** The BOOT document's models: where a slot that was never re-uploaded in this
    *  session gets its source from. */
   booted: SceneModel[]
@@ -152,6 +154,7 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
     // Without the flag they reload as ordinary cast: physics, IK, a spawn
     // offset, and no ground suppression.
     const stage = input.stages.find((s) => s.id === m.id)
+    const prop = input.props?.find((p) => p.id === m.id)
     return {
       model: { id: m.id, file: m.file, source: source! },
       animation,
@@ -164,7 +167,9 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
       // recorded the guess would freeze it into every scene ever opened.
       ...(stage
         ? { stage: true, transform: stage.transform }
-        : (m.position && !m.spawnGuess) || (m.scale !== undefined && m.scale !== 1)
+        : prop
+          ? { prop: true, transform: prop.transform, ...(prop.attach ? { attach: prop.attach } : {}) }
+          : (m.position && !m.spawnGuess) || (m.scale !== undefined && m.scale !== 1)
           ? {
               transform: {
                 position: m.position ?? ([0, 0, 0] as [number, number, number]),
@@ -174,6 +179,7 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
             }
           : {}),
       ...(stage && Object.keys(stage.morphs).length ? { morphs: stage.morphs } : {}),
+      ...(prop && Object.keys(prop.morphs).length ? { morphs: prop.morphs } : {}),
     }
   })
   let cameraAnimation: AssetRef | null = null

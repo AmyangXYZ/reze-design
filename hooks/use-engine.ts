@@ -11,7 +11,7 @@ import { SLOT_GRAPHS } from "@/lib/materials"
 import { graphLibraryName } from "@/lib/refs"
 import { graphRole, packGraph } from "@/lib/materials"
 import { loadLookPref } from "@/lib/look-pref"
-import { idbBundleId, modelKey, modelPmxUrl, type AssetRef, type Scene, type SceneCamera, type SceneStageTransform } from "@/lib/scene"
+import { idbBundleId, modelKey, modelPmxUrl, type AssetRef, type Scene, type SceneAttach, type SceneCamera, type SceneStageTransform } from "@/lib/scene"
 import { unzipToFiles } from "@/lib/uploads"
 import { loadLocalBundle, sweepRetiredBundles } from "@/lib/asset-store"
 import { sceneFiles } from "@/lib/scene-files"
@@ -64,6 +64,7 @@ function infoFor(
       bones: model.getSkeleton().bones.length,
       materials: model.getMaterials().length,
     },
+    bones: model.getSkeleton().bones.map((b) => b.name),
     materials: model
       .getMaterials()
       .map((m) => ({ name: m.name, diffuse: m.diffuse, visible: !hidden?.includes(m.name) })),
@@ -123,8 +124,8 @@ function applyCamera(engine: Engine, camera: SceneCamera, model: Model | null): 
  * framing sat still through a motion that travelled. It only happened to some
  * scenes because it is purely a question of what order the author uploaded in.
  */
-function firstCastId(entries: readonly { model: { id: string }; stage?: boolean }[]): string {
-  return entries.find((e) => !e.stage)?.model.id ?? ""
+function firstCastId(entries: readonly { model: { id: string }; stage?: boolean; prop?: boolean }[]): string {
+  return entries.find((e) => !e.stage && !e.prop)?.model.id ?? ""
 }
 
 /** Progress hooks. Each fires the moment its subject is usable, so a host can
@@ -134,7 +135,7 @@ function firstCastId(entries: readonly { model: { id: string }; stage?: boolean 
 type LoadProgress = {
   onStage?: () => void
   onBundle?: (files: File[] | null) => void
-  onModel?: (info: EngineModelInfo, groups: StyleGroup[], stage: StageInfo | null) => void
+  onModel?: (info: EngineModelInfo, groups: StyleGroup[], stage: StageInfo | null, prop: PropInfo | null) => void
   /** Bundle download, while it is downloading. Null once the bytes are in. */
   onBytes?: (p: BundleProgress | null) => void
 }
@@ -158,6 +159,7 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
   // Stages are in `infos` too — their materials use the same group path. This
   // is the list that tells the UI which of them are scenery.
   const stageList: StageInfo[] = []
+  const propList: PropInfo[] = []
 
   // ── Stage first, models after ──
   // Ground, framing and (via onStage) the render loop go up BEFORE any model
@@ -289,7 +291,9 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
       // suppression. The document's `stage` flag is the only thing that knows.
       model = entry.stage
         ? await engine.loadStage(entry.model.id, { files, pmxFile })
-        : await engine.loadModel(entry.model.id, { files, pmxFile })
+        : entry.prop
+          ? await engine.loadProp(entry.model.id, { files, pmxFile })
+          : await engine.loadModel(entry.model.id, { files, pmxFile })
     } else {
       const pmxUrl = modelPmxUrl(entry.model)
       if (!pmxUrl) throw new Error(`Zip-sourced models aren't loadable from a URL yet: ${entry.model.file}`)
@@ -309,6 +313,14 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
       // Switches are authored state, so they are restored before the first
       // visible frame rather than applied after the scene appears.
       for (const [morph, weight] of Object.entries(morphs)) model.setMorphWeight(morph, weight)
+    } else if (entry.prop) {
+      // Placed on its own for now. What it hangs from lands after the LAST
+      // model, since the parent may be further down the list.
+      const tr = entry.transform ?? DEFAULT_STAGE_TRANSFORM
+      const morphs = entry.morphs ?? {}
+      propList.push({ id: entry.model.id, file: entry.model.file, transform: tr, morphs, attach: entry.attach ?? null })
+      engine.setModelTransform(entry.model.id, { visible: false, ...stageTransformToEngine(tr) })
+      for (const [morph, weight] of Object.entries(morphs)) model.setMorphWeight(morph, weight)
     } else {
       // WHERE THE DOCUMENT SAYS, and the spawn offset only where it says nothing.
       // The offset exists to keep a newly added model from landing inside the
@@ -317,7 +329,7 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
       // written before the field existed still opens the way it always did.
       castPlacement = entry.transform
         ? { at: entry.transform.position, scale: entry.transform.scale }
-        : { at: [spawnOffsetX(infos.length - stageList.length), 0, 0], guess: true }
+        : { at: [spawnOffsetX(infos.length - stageList.length - propList.length), 0, 0], guess: true }
       const at = castPlacement.at
       engine.setModelTransform(entry.model.id, {
         visible: false,
@@ -333,7 +345,7 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
         `load ${entry.model.file}`,
         await engine.applyStyleGroups(entry.model.id, docGroups.filter((g) => g.materials.length > 0)),
       )
-    } else if (!entry.stage) {
+    } else if (!entry.stage && !entry.prop) {
       // Never auto-group a stage: resolvePreset matches material names by
       // substring against character hints, and the hair/eye presets carry a
       // renderClass — a chance hit would put a wall in the hair pass or have it
@@ -354,14 +366,25 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
     // riding. Applied as soon as it exists rather than
     // after the last: with three characters, waiting meant two of them stood in
     // an unframed shot until the third finished, and the camera then jumped.
-    if (!entry.stage && infos.length - stageList.length === 1) applyCamera(engine, scene.state.camera, model)
+    if (!entry.stage && !entry.prop && infos.length - stageList.length - propList.length === 1) {
+      applyCamera(engine, scene.state.camera, model)
+    }
     // Reveal this one NOW. Models with an animation stay hidden a moment longer:
     // their clip loader reveals them after show(), so the first visible frame
     // wears the motion's first pose instead of flashing bind pose. (If the clip
     // fails, the loader still reveals.)
     if (!entry.animation) engine.setModelTransform(entry.model.id, { visible: true })
-    onModel?.(info, modelGroups, entry.stage ? stageList[stageList.length - 1]! : null)
+    onModel?.(
+      info,
+      modelGroups,
+      entry.stage ? stageList[stageList.length - 1]! : null,
+      entry.prop ? propList[propList.length - 1]! : null,
+    )
   }
+
+  // Every model is in, so every parent a prop names exists — or never will,
+  // and the prop stands where its transform put it.
+  for (const p of propList) if (p.attach) placeProp(engine, p)
 
   // Cards, after the cast: they are scenery and a scene without them is still
   // the scene, so a card that fails to resolve costs a picture rather than the
@@ -414,7 +437,7 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
   // Again at the end, for the empty-scene case and because the first model may
   // have arrived before its follow bone existed.
   applyCamera(engine, scene.state.camera, engine.getModel(firstCastId(scene.assets.models)))
-  return { infos, groups, bundle, stageList, planeList, restoredAnims }
+  return { infos, groups, bundle, stageList, propList, planeList, restoredAnims }
 }
 
 /**
@@ -528,6 +551,10 @@ export type EngineModelInfo = {
    * through the next motion they attach.
    */
   spawnGuess?: boolean
+  /** Every bone's name, in rig order — what a prop's bone picker lists. Kept
+   *  here rather than read off the live model in render, which the row cannot
+   *  do without reaching into a ref. */
+  bones: string[]
 }
 
 /** A stage's placement — the document's own type, not a parallel one. The value
@@ -683,6 +710,9 @@ export type StageInfo = {
   morphs: Record<string, number>
 }
 
+/** A prop: a stage's shape plus what it hangs from. Null stands on its own. */
+export type PropInfo = StageInfo & { attach: SceneAttach | null }
+
 /** The document's degrees-and-tuples form → what setModelTransform wants. One
  *  converter, so the boot path and the sliders cannot drift apart. */
 function stageTransformToEngine(t: StageTransform) {
@@ -692,6 +722,24 @@ function stageTransformToEngine(t: StageTransform) {
     rotation: Quat.fromEuler(rad(t.rotation[0]), rad(t.rotation[1]), rad(t.rotation[2])),
     scale: t.scale,
   }
+}
+
+/**
+ * Put a prop where its row says: on a bone, with the row's position and
+ * rotation as the offset in that bone's space — or standing on its own.
+ *
+ * One function for the boot path and the sliders, like the converter above.
+ * Detaching goes through the engine FIRST: while a model is attached the
+ * engine holds its own position and rotation at identity and ignores them.
+ */
+function placeProp(engine: Engine, p: PropInfo): void {
+  const t = stageTransformToEngine(p.transform)
+  if (p.attach && engine.setModelParent(p.id, p.attach.model, p.attach.bone, { position: t.position, rotation: t.rotation })) {
+    engine.setModelTransform(p.id, { scale: t.scale })
+    return
+  }
+  engine.setModelParent(p.id, null)
+  engine.setModelTransform(p.id, t)
 }
 
 // Added models stand beside the first, not inside
@@ -868,6 +916,9 @@ export function useEngine(
   // their materials reach the group/graph path; this list is what keeps them out
   // of the cast, the motion rows and the spawn-offset walk.
   const [stages, setStages] = useState<StageInfo[]>([])
+  /** Props: PMX objects the cast holds or wears. Their own list for the reason
+   *  planes have one — a scene holds one stage and any number of these. */
+  const [props, setProps] = useState<PropInfo[]>([])
   /**
    * Media planes: flat cards carrying a picture, placed in the scene.
    *
@@ -973,10 +1024,11 @@ export function useEngine(
           },
           // Each model joins the lists as it lands, so a host can name it, show
           // its row and give it its motion while the rest are still loading.
-          onModel: (info, groups, stage) => {
+          onModel: (info, groups, stage, prop) => {
             setModels((prev) => [...prev, info])
             setGroupsByModel((prev) => ({ ...prev, [info.id]: groups }))
             if (stage) setStages((prev) => [...prev, stage])
+            if (prop) setProps((prev) => [...prev, prop])
           },
         })
         if (!loaded) return
@@ -989,6 +1041,7 @@ export function useEngine(
         const { infos, groups: groupsMap } = loaded
         setModels(infos)
         setStages(loaded.stageList)
+        setProps(loaded.propList)
         for (const [id, anim] of loaded.restoredAnims) planeAnims.current.set(id, anim)
         setPlanes(loaded.planeList)
         setGroupsByModel(groupsMap)
@@ -1054,6 +1107,10 @@ export function useEngine(
   useEffect(() => {
     stagesRef.current = stages
   }, [stages])
+  const propsRef = useRef<PropInfo[]>([])
+  useEffect(() => {
+    propsRef.current = props
+  }, [props])
 
   /** Remove a model from the scene entirely (the page keeps ≥1 by policy).
    *  Declared above the adders because replacing a stage builds on it. */
@@ -1064,6 +1121,13 @@ export function useEngine(
     // Removing the last stage un-suppresses the ground inside the engine, so
     // nothing here has to put it back.
     setStages((prev) => prev.filter((s) => s.id !== modelId))
+    // A removed parent's props stand on their own now; the engine has already
+    // let them go, and the row says so.
+    setProps((prev) =>
+      prev
+        .filter((p) => p.id !== modelId)
+        .map((p) => (p.attach?.model === modelId ? { ...p, attach: null } : p)),
+    )
     setGroupsByModel((prev) => {
       const next = { ...prev }
       delete next[modelId]
@@ -1143,6 +1207,24 @@ export function useEngine(
     setStages((prev) => [...prev, { id, file: pmxBaseName(pmxFile.name), transform: DEFAULT_STAGE_TRANSFORM, morphs: {} }])
     return id
   }, [removeModelById])
+
+  /**
+   * ADD a prop: a PMX the cast holds or wears. The stage's path with the
+   * stage's reasons — the same group → graph door, ungrouped by default — and
+   * without its one-per-scene rule: a scene holds as many props as hands.
+   */
+  const addPropFromFiles = useCallback(async (files: File[] | FileList, pmxFile: File): Promise<string> => {
+    const engine = engineRef.current
+    if (!engine) throw new Error("engine not ready")
+    const id = uniqueModelId(pmxFile.name)
+    sceneFiles.models.set(id, { pmx: pmxFile, files: Array.from(files) })
+    const model = await engine.loadProp(id, { files, pmxFile })
+    const groups = withSpecialGroups(engine.getStyleGroups(id))
+    setModels((prev) => [...prev, infoFor(id, pmxBaseName(pmxFile.name), model)])
+    setGroupsByModel((prev) => ({ ...prev, [id]: groups }))
+    setProps((prev) => [...prev, { id, file: pmxBaseName(pmxFile.name), transform: DEFAULT_STAGE_TRANSFORM, morphs: {}, attach: null }])
+    return id
+  }, [])
 
   /**
    * Add a picture to the scene as a flat card.
@@ -1324,6 +1406,37 @@ export function useEngine(
       planeFollowers.current.delete(id)
       return prev.filter((p) => p.id !== id)
     })
+  }, [])
+
+  /** Place a prop. Absolute while it stands alone; offsets in the bone's space
+   *  while it hangs from one. */
+  const setPropTransform = useCallback((id: string, patch: Partial<StageTransform>) => {
+    const current = propsRef.current.find((p) => p.id === id)
+    if (!current) return
+    const next = { ...current, transform: { ...current.transform, ...patch } }
+    if (engineRef.current) placeProp(engineRef.current, next)
+    setProps((prev) => prev.map((p) => (p.id === id ? next : p)))
+  }, [])
+
+  /**
+   * Hang a prop from a bone, or set it down.
+   *
+   * Either way the position and rotation start over at zero: they change
+   * meaning with the toggle — world placement one way, bone offset the other
+   * — and numbers carried across would strand a world position as an offset
+   * (camera follow learned this the hard way). Scale keeps its meaning and
+   * its value.
+   */
+  const setPropAttach = useCallback((id: string, attach: SceneAttach | null) => {
+    const current = propsRef.current.find((p) => p.id === id)
+    if (!current) return
+    const next: PropInfo = {
+      ...current,
+      attach,
+      transform: { ...current.transform, position: [0, 0, 0], rotation: [0, 0, 0] },
+    }
+    if (engineRef.current) placeProp(engineRef.current, next)
+    setProps((prev) => prev.map((p) => (p.id === id ? next : p)))
   }, [])
 
   /** Place a stage. Position and rotation are absolute, scale is uniform. */
@@ -1734,6 +1847,7 @@ export function useEngine(
       sceneRef.current = scene
       setModels(loaded.infos)
       setStages(loaded.stageList)
+      setProps(loaded.propList)
       for (const [id, anim] of loaded.restoredAnims) planeAnims.current.set(id, anim)
       setPlanes(loaded.planeList)
       setGroupsByModel(loaded.groups)
@@ -1794,6 +1908,10 @@ export function useEngine(
     stages,
     addStageFromFiles,
     setStageTransform,
+    props,
+    addPropFromFiles,
+    setPropTransform,
+    setPropAttach,
     setCastPosition,
     setCastScale,
     planes,

@@ -57,6 +57,12 @@ export type SceneStageTransform = {
   scale: number
 }
 
+/** Where a model hangs: a bone of another model in the scene — MMD's 外部親.
+ *  `model` is the parent's engine key. While set, the model's transform
+ *  position and rotation are OFFSETS in that bone's space; scale stays its
+ *  own. A bone the parent lacks rides the parent's root. */
+export type SceneAttach = { model: string; bone: string }
+
 /** One character in the scene: the model plus ITS motion clip. */
 export type SceneModel = {
   model: ModelRef
@@ -67,6 +73,12 @@ export type SceneModel = {
   /** Environment geometry — no motion slot, placed by `transform`, and it
    *  suppresses the ground. */
   stage?: boolean
+  /** A prop — an object a character holds or wears. Placed by `transform`
+   *  like a stage, but it keeps physics and outlines and leaves the ground
+   *  alone. */
+  prop?: boolean
+  /** Hung from a bone of another model. See SceneAttach. */
+  attach?: SceneAttach | null
   transform?: SceneStageTransform
   /** Authored morph weights by morph name. A stage's morphs are switches the
    *  user set, not animation, so they are document state — see stage-morphs.tsx. */
@@ -286,6 +298,11 @@ export type SceneModelDoc = {
   /** Environment model. Absent = a cast member, which is the old shape — so
    *  every scene written before stages existed still parses as it always did. */
   stage?: boolean
+  /** A prop. Placed by all three like a stage; see SceneModel.prop. */
+  prop?: boolean
+  /** Hung from a bone of another model. Its transform's position and rotation
+   *  are then offsets in that bone's space. */
+  attach?: SceneAttach | null
   /** Where this model stands: position, rotation in degrees, uniform scale. A
    *  stage is placed by all three; a cast member by position alone — the offset
    *  that keeps two models wearing one motion out of each other. Absent means
@@ -511,9 +528,11 @@ const roleOf = (g: StyleGroup): StyleGroupDoc["role"] =>
  * writer, and the publish writer — and a field added to only two of them
  * silently stops round-tripping on the third.
  */
-function stageFieldsOf(m: Pick<SceneModel, "stage" | "transform" | "morphs">) {
+function stageFieldsOf(m: Pick<SceneModel, "stage" | "prop" | "attach" | "transform" | "morphs">) {
   return {
     ...(m.stage ? { stage: true as const } : {}),
+    ...(m.prop ? { prop: true as const } : {}),
+    ...(m.attach ? { attach: { model: m.attach.model, bone: m.attach.bone } } : {}),
     ...(m.transform ? { transform: m.transform } : {}),
     // An empty map is the same as no switches — don't write `"morphs": {}`.
     ...(m.morphs && Object.keys(m.morphs).length > 0 ? { morphs: m.morphs } : {}),

@@ -74,6 +74,8 @@ import {
   X,
   Move,
   Wand2,
+  Hand,
+  Shapes,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -600,11 +602,13 @@ function layersFor(t: Dictionary) {
     // global mount), so it is scene dressing like Grade, not part of the
     // backdrop.
     { id: "effect", name: t.lab.rows.effect, icon: Sparkles, presets: [] },
-    // Pictures standing IN the scene, as opposed to the one behind it. A card
-    // is occluded by what is in front of it and takes perspective when turned,
-    // which is the whole difference from a backdrop and the reason it is not a
-    // Background tab.
-    { id: "plane", name: t.lab.rows.plane, icon: Image, presets: [] },
+    // Things standing IN the scene that are neither cast nor environment: a
+    // card carrying a picture, a prop the cast holds. A card is occluded by
+    // what is in front of it and takes perspective when turned, which is the
+    // whole difference from a backdrop and the reason it is not a Background
+    // tab; a prop is PMX geometry that hangs off a bone. Two tabs of one row,
+    // the Environment row's own pattern.
+    { id: "object", name: t.lab.rows.object, icon: Shapes, presets: [] },
     // Post, not Grade: the row is the whole after-the-render pass — the colour
     // grade and the glow the camera adds to bright pixels. Lighting (including a
     // future character rim) stays in Light; those change how surfaces respond,
@@ -650,6 +654,8 @@ type PaletteValues = {
   effect: string | null
   /** What the Planes row wears: the one card's name, or how many. */
   planes: string | null
+  /** What the Props tab wears: the one prop's name, or how many. */
+  props: string | null
   gradeName: string
   backdrop: string | null
   /** The footage the scene is standing in, by name. Its own field beside
@@ -700,6 +706,7 @@ const DOCK_CONTROLS: {
   lightTab?: "world" | "sun"
   cameraTab?: "lens" | "focus"
   postTab?: "grade" | "tone" | "bloom" | "outline"
+  objectTab?: "plane" | "prop"
   keywords?: string[]
   /** What this control is set to, for the right end of its palette row. Omitted
    *  where there is nothing honest to print — the export panel owns its own
@@ -737,7 +744,8 @@ const DOCK_CONTROLS: {
   // they have the file in hand.
   { id: "bg-world", en: "World (HDRI)", zh: "世界（HDRI）", row: "stage", stageTab: "background", keywords: ["hdr", "hdri", "ibl", "environment", "lighting", "sky", "光照", "环境", "天空"], value: (v) => v.hdri ?? v.t.lab.ctl.none },
   { id: "effect", en: "Effect", zh: "特效", row: "effect", keywords: ["wgsl", "stars", "shader", "influence", "opacity", "blend", "fade", "背景特效", "影响", "过渡"], value: (v) => v.effect ?? v.t.lab.ctl.none },
-  { id: "plane", en: "Planes", zh: "平面", row: "plane", keywords: ["card", "layer", "image", "video", "mp4", "gif", "板ポリ", "图层"], value: (v) => v.planes ?? v.t.lab.ctl.none },
+  { id: "plane", en: "Planes", zh: "平面", row: "object", objectTab: "plane", keywords: ["card", "layer", "image", "video", "mp4", "gif", "板ポリ", "图层"], value: (v) => v.planes ?? v.t.lab.ctl.none },
+  { id: "prop", en: "Props", zh: "道具", row: "object", objectTab: "prop", keywords: ["prop", "accessory", "hold", "hand", "attach", "bind", "bone", "道具", "アクセサリ", "外部親", "手持", "绑定"], value: (v) => v.props ?? v.t.lab.ctl.none },
   { id: "grade-preset", en: "Grade preset", zh: "调色预设", row: "post", postTab: "grade", keywords: ["color", "look", "后期"], value: (v) => v.gradeName },
   { id: "grade-intensity", en: "Grade intensity", zh: "调色强度", row: "post", postTab: "grade", value: (v) => dec2(v.settings.grade.intensity) },
   { id: "view-transform", en: "View transform", zh: "视图变换", row: "post", postTab: "tone", keywords: ["tonemap", "tone map", "filmic", "agx", "standard", "color management", "色调映射", "色彩管理"], value: (v) => TRANSFORM_LABEL[v.settings.view.transform] },
@@ -774,7 +782,7 @@ function rowMetaFor(t: Dictionary): Record<string, { icon: ComponentType<{ class
     camera: { icon: Camera, name: t.lab.rows.camera },
     stage: { icon: Mountain, name: t.lab.rows.stage },
     effect: { icon: Sparkles, name: t.lab.rows.effect },
-    plane: { icon: Image, name: t.lab.rows.plane },
+    object: { icon: Shapes, name: t.lab.rows.object },
     post: { icon: Contrast, name: t.lab.rows.post },
     light: { icon: Lightbulb, name: t.lab.rows.light },
     physics: { icon: Atom, name: t.lab.rows.physics },
@@ -789,6 +797,8 @@ function tabNameFor(t: Dictionary): Record<string, string> {
     background: t.lab.tabs.background,
     world: t.lab.tabs.world,
     sun: t.lab.tabs.sun,
+    plane: t.lab.tabs.plane,
+    prop: t.lab.tabs.prop,
   }
 }
 
@@ -805,7 +815,7 @@ function controlItemsFor(t: Dictionary): PaletteItem[] {
     section: "setting" as const,
     icon: rowMeta[c.row].icon,
     label: zhUi ? c.zh : c.en,
-    hint: rowMeta[c.row].name + ((c.stageTab ?? c.lightTab) ? ` · ${tabName[(c.stageTab ?? c.lightTab)!]}` : ""),
+    hint: rowMeta[c.row].name + ((c.stageTab ?? c.lightTab ?? c.objectTab) ? ` · ${tabName[(c.stageTab ?? c.lightTab ?? c.objectTab)!]}` : ""),
     altLabels: [zhUi ? c.en : c.zh],
     keywords: c.keywords,
   }))
@@ -1049,6 +1059,15 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       keywords: [...LOAD, "environment", "floor", "舞台"],
     },
     {
+      id: "upload-prop",
+      nextLikely: ["prop"],
+      section: "command",
+      icon: Hand,
+      label: l.uploadPropPmx,
+      altLabels: [alt.uploadPropPmx],
+      keywords: [...LOAD, "prop", "accessory", "hold", "道具", "アクセサリ"],
+    },
+    {
       id: "camera",
       repeatable: true,
       nextLikely: ["light"],
@@ -1094,6 +1113,15 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       // What people call one, in every vocabulary they arrive with: AE's layer,
       // Nuke's card, MMD's 板ポリ, and the media that goes on it.
       keywords: ["plane", "card", "layer", "image", "video", "mp4", "gif", "webp", "板ポリ", "平面", "图层", "视频"],
+    },
+    {
+      id: "prop",
+      repeatable: true,
+      section: "goto",
+      icon: Hand,
+      label: l.cmd.prop,
+      altLabels: [alt.cmd.prop],
+      keywords: ["prop", "accessory", "hold", "hand", "attach", "bind", "道具", "アクセサリ", "外部親", "手持", "绑定"],
     },
     {
       id: "effect",
@@ -2022,6 +2050,13 @@ function CastRowSkeleton({ slot }: { slot: number }) {
  *  rather than by `models/<id>/`. */
 const displayName = (file: string) => clipLabel(file).replace(/\.pmx$/i, "")
 
+/** The bones a prop is usually hung from, in the order people reach for them:
+ *  the hands first — MMD binds a mic or a fan to 手首 — then head, neck, torso,
+ *  centre, and the feet. A rig's remaining bones follow these in the picker. */
+const ATTACH_BONES = ["右手首", "左手首", "頭", "首", "上半身2", "上半身", "センター", "右足首", "左足首"]
+/** The parent picker's "none". Radix Select refuses an empty string as a value. */
+const NO_PARENT = "__none"
+
 export default function Lab() {
   const t = useT()
   // The dock's tables in the reader's language. Rebuilt only when the locale
@@ -2084,6 +2119,10 @@ export default function Lab() {
     stages,
     addStageFromFiles,
     setStageTransform,
+    props,
+    addPropFromFiles,
+    setPropTransform,
+    setPropAttach,
     setCastPosition,
     setCastScale,
     planes,
@@ -2349,7 +2388,7 @@ export default function Lab() {
    * here would give it two homes and two delete buttons. The shipped editor
    * filters by exactly this set.
    */
-  const stageIds = useMemo(() => new Set(stages.map((s) => s.id)), [stages])
+  const stageIds = useMemo(() => new Set([...stages.map((s) => s.id), ...props.map((p) => p.id)]), [stages, props])
   const cast = useMemo(() => models.filter((m) => !stageIds.has(m.id)), [models, stageIds])
   /** The same list as ids, memoised on its CONTENTS: useSceneSync takes it as a
    *  dependency, and a fresh array every render would reinstall the effect layer
@@ -2651,6 +2690,7 @@ export default function Lab() {
   const planeInput = useRef<HTMLInputElement | null>(null)
   /** Which card's controls the section is showing. */
   const [selectedPlane, setSelectedPlane] = useState<string | null>(null)
+  const [selectedProp, setSelectedProp] = useState<string | null>(null)
   const bgImageInput = useRef<HTMLInputElement | null>(null)
   /** Set before the picker opens: which of the three rows this upload fills.
    *  A ref because the click is now and a re-render is not. */
@@ -2941,6 +2981,7 @@ export default function Lab() {
   const [cameraTab, setCameraTab] = useState<"lens" | "focus">("lens")
   const [postTab, setPostTab] = useState<"grade" | "tone" | "bloom" | "outline">("grade")
   const [lightTab, setLightTab] = useState<"world" | "sun">("world")
+  const [objectTab, setObjectTab] = useState<"plane" | "prop">("plane")
 
   // Sun, world and glow — seeded from the document, which is ALSO what the
   // Engine constructor was handed, so the sliders open already agreeing with
@@ -3620,6 +3661,28 @@ export default function Lab() {
    *  describing the wrong feature. */
   const planeSummary =
     planes.length === 0 ? null : planes.length === 1 ? planes[0].file : t.lab.ctl.planesN(planes.length)
+  const propSummary =
+    props.length === 0 ? null : props.length === 1 ? displayName(props[0].file) : t.lab.ctl.propsN(props.length)
+
+  /** The prop the Props tab's controls show: the selected one, else the first,
+   *  so the tab is never chips over nothing. */
+  const shownProp = props.find((p) => p.id === selectedProp) ?? props[0] ?? null
+  const propParentId = shownProp?.attach?.model ?? null
+  /** The bones the shown prop can hang from: the usual ones first, then the
+   *  rest of the parent's rig in its own order. */
+  const propBones = useMemo(() => {
+    const names = models.find((m) => m.id === propParentId)?.bones ?? []
+    const have = new Set(names)
+    const first = ATTACH_BONES.filter((b) => have.has(b))
+    const firstSet = new Set(first)
+    return [...first, ...names.filter((n) => !firstSet.has(n))]
+  }, [propParentId, models])
+  /** Where a prop lands when first hung from `parentId`: the right hand when
+   *  the rig has one. */
+  const defaultBoneFor = (parentId: string): string => {
+    const names = models.find((m) => m.id === parentId)?.bones ?? []
+    return ATTACH_BONES.find((b) => names.includes(b)) ?? names[0] ?? "全ての親"
+  }
 
   const effectSummary =
     bgEffects.length === 0 ? null : bgEffects.length === 1 ? bgEffects[0].name : t.lab.ctl.effectsN(bgEffects.length)
@@ -4443,7 +4506,7 @@ export default function Lab() {
   // "Replace" is an upload too — same picker, same parsing, only the target
   // differs: a new slot, or an existing one that keeps its position and clip.
   // One path, so the two can never drift.
-  type ModelTarget = { mode: "add" } | { mode: "replace"; id: string } | { mode: "stage" }
+  type ModelTarget = { mode: "add" } | { mode: "replace"; id: string } | { mode: "stage" } | { mode: "prop" }
   const modelTarget = useRef<ModelTarget>({ mode: "add" })
   // Folder only. A zip needs a SECOND input, because an input carrying
   // `webkitdirectory` can only pick a directory — and offering both made add and
@@ -4534,6 +4597,12 @@ export default function Lab() {
       if (target.mode === "stage") {
         noteArrival(await addStageFromFiles(files, pmx))
         setStageTab("stage")
+      } else if (target.mode === "prop") {
+        // Not noteArrival: that queues a "give it a look" step, and a prop
+        // wears the neutral graph by design.
+        const id = await addPropFromFiles(files, pmx)
+        setSelectedProp(id)
+        setObjectTab("prop")
       } else if (target.mode === "replace") {
         const newId = await replaceModelFromFiles(target.id, files, pmx)
         adoptReplacedModel(target.id, newId)
@@ -4726,6 +4795,7 @@ export default function Lab() {
     stage: stage ? { scale: stage.transform.scale, position: stage.transform.position } : null,
     effect: effectSummary,
     planes: planeSummary,
+    props: propSummary,
     gradeName: gradeLabel(settings.grade.preset),
     backdrop: bgImage?.slot === "flat" ? bgImage.name : null,
     plate: bgImage?.slot === "plate" ? bgImage.name : null,
@@ -4813,6 +4883,7 @@ export default function Lab() {
         light?: "world" | "sun"
         camera?: "lens" | "focus"
         post?: "grade" | "tone" | "bloom" | "outline"
+        object?: "plane" | "prop"
       },
     ) => {
       // Not setDockExpanded: a goto opens the dock to show you somewhere, which
@@ -4827,6 +4898,7 @@ export default function Lab() {
       if (tabs?.light) setLightTab(tabs.light)
       if (tabs?.camera) setCameraTab(tabs.camera)
       if (tabs?.post) setPostTab(tabs.post)
+      if (tabs?.object) setObjectTab(tabs.object)
       const domId = isRow ? `layer-${target}` : target
       requestAnimationFrame(() =>
         document.getElementById(domId)?.scrollIntoView({ block: "nearest", behavior: "smooth" }),
@@ -5043,6 +5115,7 @@ export default function Lab() {
       collectSlots({
         models,
         stages,
+        props,
         booted: scene.assets.models,
         bundleFiles: bundleFiles(),
         // This route keeps a motion as {name, src} where src is the File or the
@@ -5103,6 +5176,7 @@ export default function Lab() {
     [
       models,
       stages,
+      props,
       scene,
       bundleFiles,
       animByModel,
@@ -5569,6 +5643,9 @@ export default function Lab() {
       else if (item.id === "upload-stage") {
         modelTarget.current = { mode: "stage" }
         folderInput.current?.click()
+      } else if (item.id === "upload-prop") {
+        modelTarget.current = { mode: "prop" }
+        folderInput.current?.click()
       }
       // The primary model, always — not "whichever is inspected". A motion has
       // to land somewhere and the palette cannot ask; a rule you can state in
@@ -5596,6 +5673,8 @@ export default function Lab() {
       else if (item.id === "world") gotoSection("light", { light: "world" })
       else if (item.id === "sun") gotoSection("light", { light: "sun" })
       else if (item.id === "physics") gotoSection("physics")
+      else if (item.id === "plane") gotoSection("object", { object: "plane" })
+      else if (item.id === "prop") gotoSection("object", { object: "prop" })
       // Whichever model is already inspected, else the primary — the panel is
       // per-model and picking one for you beats opening on nothing.
       // `inspected?.id`, NOT inspectedId: a replaced model leaves the raw id
@@ -5649,6 +5728,7 @@ export default function Lab() {
             light: c.lightTab,
             camera: c.cameraTab,
             post: c.postTab,
+            object: c.objectTab,
           })
       }
       item.run?.()
@@ -6894,10 +6974,10 @@ export default function Lab() {
                         (cameraClip ?? (camera.follow ? t.lab.summary.follow : t.lab.summary.orbit))
                       : l.id === "stage"
                         ? stageSummary
-                        : l.id === "plane"
+                        : l.id === "object"
                           ? // Nothing, not "None": an empty row already reads as
                             // empty, and a word restating it is furniture.
-                            (planeSummary ?? undefined)
+                            ([planeSummary, propSummary].filter(Boolean).join(" · ") || undefined)
                           : l.id === "effect"
                             ? (effectSummary ?? undefined)
                             : l.id === "post"
@@ -7603,8 +7683,20 @@ export default function Lab() {
                         )
                       })()}
                     </>
-                  ) : l.id === "plane" ? (
+                  ) : l.id === "object" ? (
                     <>
+                      <Tabs value={objectTab} onValueChange={(v) => setObjectTab(v as typeof objectTab)}>
+                        <TabsList className="-mt-1 mb-2 w-full">
+                          <TabsTrigger value="plane" className="flex-1">
+                            {t.lab.tabs.plane}
+                          </TabsTrigger>
+                          <TabsTrigger value="prop" className="flex-1">
+                            {t.lab.tabs.prop}
+                          </TabsTrigger>
+                        </TabsList>
+                      </Tabs>
+                      {objectTab === "plane" && (
+                        <>
                       {/* Make it work first: one upload, one card, sliders for
                           where it stands. The controls are the stage row's own,
                           because placing a card and placing a stage are the same
@@ -7771,6 +7863,180 @@ export default function Lab() {
                               </div>
                             )
                           })()}
+                        </>
+                      )}
+                        </>
+                      )}
+                      {objectTab === "prop" && (
+                        <>
+                          {/* The card tab's shape — an invitation while empty,
+                              chips once there are any, the selected one's
+                              controls under them — because adding a prop and
+                              adding a card are the same act on a different
+                              kind of thing. */}
+                          {props.length === 0 && (
+                            <Button
+                              variant="ghost"
+                              onClick={() => {
+                                modelTarget.current = { mode: "prop" }
+                                folderInput.current?.click()
+                              }}
+                              className="h-8 w-full rounded-interior border border-dashed border-line-strong text-xs font-normal text-muted-foreground hover:border-blue-400/50 hover:bg-transparent hover:text-blue-400"
+                            >
+                              {t.lab.uploadProp}
+                            </Button>
+                          )}
+                          {shownProp && (
+                            <>
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                {props.map((prop) => {
+                                  const on = prop.id === shownProp.id
+                                  return (
+                                    <span
+                                      key={prop.id}
+                                      className={cn(
+                                        "flex max-w-[10rem] items-center gap-1 rounded-chip py-1 pl-2 text-xs transition-colors",
+                                        on
+                                          ? "bg-blue-400/15 text-blue-400 ring-1 ring-blue-400/40"
+                                          : "text-muted-foreground ring-1 ring-line hover:text-foreground",
+                                        "pr-1",
+                                      )}
+                                    >
+                                      <button
+                                        onClick={() => setSelectedProp(prop.id)}
+                                        title={prop.file}
+                                        className="min-w-0 flex-1 cursor-pointer truncate text-left"
+                                      >
+                                        {displayName(prop.file)}
+                                      </button>
+                                      <CastAction
+                                        icon={X}
+                                        danger
+                                        compact
+                                        label={t.lab.aria.remove(t.lab.kinds.prop)}
+                                        onClick={() => removeModelById(prop.id)}
+                                      />
+                                    </span>
+                                  )
+                                })}
+                                <button
+                                  onClick={() => {
+                                    modelTarget.current = { mode: "prop" }
+                                    folderInput.current?.click()
+                                  }}
+                                  aria-label={t.lab.uploadProp}
+                                  title={t.lab.uploadProp}
+                                  className="ml-1.5 flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-chip border border-dashed border-line-strong text-muted-foreground transition-colors hover:border-blue-400/60 hover:text-blue-400"
+                                >
+                                  <Plus className="size-3.5" />
+                                </button>
+                              </div>
+                              {(() => {
+                                const prop = shownProp
+                                const att = prop.attach
+                                return (
+                                  <div className="mt-3.5">
+                                    {/* WHAT IT HANGS FROM comes before where it
+                                        sits, because it decides what the sliders
+                                        below mean: world placement on its own,
+                                        offsets in the bone's space once bound.
+                                        The rows are laid out as SliderRow lays
+                                        out its own, so the column reads as one
+                                        list. */}
+                                    <div className="mt-2.5 flex items-center gap-2 first:mt-0">
+                                      <span className="w-16 shrink-0 truncate text-xs">{t.lab.ctl.attachTo}</span>
+                                      <Select
+                                        value={att?.model ?? NO_PARENT}
+                                        onValueChange={(v) =>
+                                          setPropAttach(prop.id, v === NO_PARENT ? null : { model: v, bone: defaultBoneFor(v) })
+                                        }
+                                      >
+                                        <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem]">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value={NO_PARENT}>{t.lab.ctl.none}</SelectItem>
+                                          {cast.map((m) => (
+                                            <SelectItem key={m.id} value={m.id}>
+                                              {displayName(m.file)}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                    {/* Always present, so the column does not
+                                        grow a row when a parent is picked; it
+                                        is simply inert until there is one. */}
+                                    <div className="mt-2.5 flex items-center gap-2 first:mt-0">
+                                      <span className="w-16 shrink-0 truncate text-xs">{t.lab.ctl.bone}</span>
+                                      <Select
+                                        value={att?.bone ?? ""}
+                                        disabled={!att}
+                                        onValueChange={(v) => att && setPropAttach(prop.id, { model: att.model, bone: v })}
+                                      >
+                                        <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem]">
+                                          <SelectValue placeholder={t.lab.ctl.none} />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {propBones.map((b) => (
+                                            <SelectItem key={b} value={b}>
+                                              {b}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                    <SliderRow
+                                      label={t.lab.ctl.scale}
+                                      value={prop.transform.scale}
+                                      min={0.05}
+                                      max={10}
+                                      step={0.05}
+                                      inputMin={0.001}
+                                      onChange={(v) => setPropTransform(prop.id, { scale: v })}
+                                      fmt={(v) => `${v.toFixed(2)}×`}
+                                    />
+                                    {/* A finer track once bound: an offset from a
+                                        wrist is a few units at most, and a 100-unit
+                                        track puts the whole useful range in one
+                                        pixel. */}
+                                    {(["X", "Y", "Z"] as const).map((axis, i) => (
+                                      <SliderRow
+                                        key={`pp${axis}`}
+                                        label={t.lab.ctl.pos(axis)}
+                                        value={prop.transform.position[i]}
+                                        min={att ? -10 : -50}
+                                        max={att ? 10 : 50}
+                                        step={att ? 0.1 : 0.5}
+                                        onChange={(v) => {
+                                          const position = [...prop.transform.position] as [number, number, number]
+                                          position[i] = v
+                                          setPropTransform(prop.id, { position })
+                                        }}
+                                        fmt={(v) => v.toFixed(1)}
+                                      />
+                                    ))}
+                                    {(["X", "Y", "Z"] as const).map((axis, i) => (
+                                      <SliderRow
+                                        key={`pr${axis}`}
+                                        label={t.lab.ctl.rot(axis)}
+                                        value={prop.transform.rotation[i]}
+                                        min={-180}
+                                        max={180}
+                                        step={1}
+                                        onChange={(v) => {
+                                          const rotation = [...prop.transform.rotation] as [number, number, number]
+                                          rotation[i] = v
+                                          setPropTransform(prop.id, { rotation })
+                                        }}
+                                        fmt={(v) => `${v.toFixed(0)}°`}
+                                      />
+                                    ))}
+                                  </div>
+                                )
+                              })()}
+                            </>
+                          )}
                         </>
                       )}
                     </>

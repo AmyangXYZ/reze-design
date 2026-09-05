@@ -237,6 +237,23 @@ are part of the image and will not move when you change the sun, and they will
 not match the live shadow your character casts. That is a property of the stage,
 not a setting.
 
+**Props.** A microphone, a fan, an umbrella, a sword — a PMX object the
+character holds or wears is a **prop**, and it lives in **Scene → Objects →
+Props**, beside the cards. Upload one the way you upload a stage (⌘K, *Upload
+prop PMX*, or the tab's own button); it arrives standing at the origin with its
+own scale, position and rotation. **Attach to** hangs it from a bone of a cast
+member — MMD's 外部親 — and the bone picker leads with the ones people reach for:
+both wrists, the head, the neck, the torso, the centre, the ankles, then the rest
+of the rig. Once hung, the position and rotation sliders are **offsets in that
+bone's space**, the caption names the bone, and they start over at zero. A mic
+first shows up lying along the forearm — a prop's length runs up its own Y while
+a wrist bone's axis runs down the arm — and one rotation puts it in her hand.
+Scale keeps its meaning throughout. A prop keeps its physics and its outline (the
+charm on a phone strap swings, and swings the right way when she tilts her hand),
+but it is never a cast member: silhouette effects still outline her, not the mic,
+and it leaves the floor alone where a stage would replace it. All of it is scene
+state, so it autosaves and publishes.
+
 ## 1.7 The look
 
 **The quickest way to change everything: press ⌘K and type a rendering style.**
