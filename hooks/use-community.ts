@@ -52,11 +52,25 @@ const authorImages = new Map<string, string>()
 // else they published — the bundle just can't know who is asking.
 let mineIds = new Set<string>()
 
+// Which request is the current one. A FORCED load always starts a fresh fetch,
+// and that is the whole reason this exists: signing in fires one while the
+// anonymous fetch is very likely still in the air, and joining that in-flight
+// request would answer the authenticated question with the public answer — no
+// private rows, and nothing to trigger another attempt until a library opened.
+// Only the newest response is allowed to write the cache, so the two cannot
+// land out of order and leave the older one winning.
+let generation = 0
+
 function load(force = false): Promise<CommunityItem[]> {
   if (cache && !force) return Promise.resolve(cache)
-  inflight ??= fetch("/api/library")
+  if (inflight && !force) return inflight
+  const gen = ++generation
+  const run = fetch("/api/library")
     .then((r) => r.json())
     .then((d: { items?: CommunityItem[] }) => {
+      // Superseded while this was in flight — a newer answer is authoritative,
+      // and writing this one over it would put the public list back.
+      if (gen !== generation) return cache ?? []
       const rows = d.items ?? []
       mineIds = new Set(rows.filter((i) => i.mine).map((i) => i.id))
       for (const i of rows) {
@@ -71,10 +85,27 @@ function load(force = false): Promise<CommunityItem[]> {
     })
     .catch(() => {
       // Offline still browses builtins and drafts; community just stays empty.
-      inflight = null
+      if (gen === generation) inflight = null
       return cache ?? []
     })
-  return inflight
+  inflight = run
+  return run
+}
+
+/**
+ * Warm the cache before anything asks for it.
+ *
+ * The libraries used to fetch on OPEN, so the first one opened in a session
+ * rendered from an empty cache: built-ins and drafts painted, then the
+ * published rows — your private ones among them — arrived a round trip to
+ * Singapore later and the ranking visibly re-sorted under the pointer.
+ *
+ * Called once at startup and again when a session appears, because WHICH rows
+ * come back depends on who is asking: the list is public-only until the server
+ * knows you, and your private items are exactly what the second call adds.
+ */
+export function preloadCommunity(force = false): void {
+  void load(force)
 }
 
 /** Does the signed-in user own this bundled item? Matched by uuid, which the

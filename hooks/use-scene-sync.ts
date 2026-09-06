@@ -469,7 +469,14 @@ export function useSceneSync({
     const key = applied.length ? applied.map((e) => e.wgsl).join("\0") : null
     if (key !== lastWgsl.current || lastWgslEngine.current !== engine) return
     applied.forEach((e, i) => {
-      for (const [name, value] of Object.entries(e.params ?? {})) engine.setEffectParam(i, name, value)
+      // The FULL set, defaults included — not just what this scene overrode.
+      // Clearing an override (the reset button, or a dial put back) removes the
+      // key, and a loop over the overrides alone would then write nothing at
+      // all: the uniform would keep the value that was just taken away, and the
+      // effect would not return to its declared default until it reinstalled.
+      for (const [name, value] of Object.entries(effectParams(e.wgsl, e.params) ?? {})) {
+        engine.setEffectParam(i, name, value)
+      }
     })
   }, [backgroundEffects, exportBackground, engineRef])
 

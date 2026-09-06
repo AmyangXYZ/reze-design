@@ -173,7 +173,7 @@ import {
   type GraphItem,
   type LibraryFacet,
 } from "@/lib/library"
-import { communityItems, useCommunity } from "@/hooks/use-community"
+import { communityItems, preloadCommunity, useCommunity } from "@/hooks/use-community"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useSession } from "@/lib/auth-client"
 import { freeName } from "@/lib/names"
@@ -2978,6 +2978,17 @@ export default function Lab() {
     [setBgEffects],
   )
 
+  /** Every dial back to what the shader declared. One write rather than one per
+   *  param: the whole point of the reset is that the scene stores NOTHING for
+   *  this effect afterwards, and deleting keys one at a time would leave the
+   *  document briefly holding a half-reset effect. */
+  const resetEffectParams = useCallback(
+    (uid: string) => {
+      setBgEffects((list) => list.map((e) => (e.uid === uid ? { ...e, params: undefined } : e)))
+    },
+    [setBgEffects],
+  )
+
   // ONE slot for the three libraries — see useBrowseSurface. They were three
   // independent booleans here, so opening one left the others up: a second
   // library over the first, the same size and position, and the swap read as a
@@ -3005,6 +3016,15 @@ export default function Lab() {
   // account becomes the answer.
   const { data: authSession } = useSession()
   const authorName = authSession?.user.username ?? t.effectLibrary.you
+  // Fetch the published rows BEFORE a library is opened, not when one is. Keyed
+  // on the account so it runs twice on a cold signed-in load — once anonymous,
+  // once as you — because the private rows only exist in the second answer, and
+  // waiting for the session to settle would leave a signed-out reader waiting
+  // on an auth round trip for a list that never needed one.
+  const sessionUserId = authSession?.user.id ?? null
+  useEffect(() => {
+    preloadCommunity(true)
+  }, [sessionUserId])
   // The grade editor is a floating SCRATCHPAD, the shipped editor's own:
   // `subject` is the working copy — live on the render, written nowhere. Only
   // the save-on-close dialog creates or updates a draft, so closing clean, or
@@ -4805,7 +4825,9 @@ export default function Lab() {
   useEffect(() => {
     const warm = () => {
       prefetchLibraryStats()
-      prefetchGallery()
+      // Keyed on the account below: signing in is what makes the personal
+      // shelves answerable, so the warm has to run again once it happens.
+      prefetchGallery(sessionUserId !== null)
     }
     const idle =
       typeof requestIdleCallback === "function"
@@ -4815,7 +4837,7 @@ export default function Lab() {
       if (typeof cancelIdleCallback === "function") cancelIdleCallback(idle as number)
       else clearTimeout(idle as number)
     }
-  }, [])
+  }, [sessionUserId])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -7615,6 +7637,7 @@ export default function Lab() {
                                     decls={decls}
                                     values={e.params}
                                     onChange={(name, value) => setEffectParam(uid, name, value)}
+                                    onReset={() => resetEffectParams(uid)}
                                   />
                                 </PopoverContent>
                               </Popover>

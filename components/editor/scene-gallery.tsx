@@ -201,10 +201,18 @@ function loadFacetCounts(): Promise<FacetCounts> {
 
 /** Warm the default view and the tag cloud while the page is idle, so opening the
  *  gallery is a render rather than a wait. */
-export function prefetchGallery(): void {
+export function prefetchGallery(signedIn = false): void {
   if (!pages.has("all")) void loadPage("all").catch(() => {})
   if (!tagCounts) void loadTags().catch(() => {})
   if (!facetCounts) void loadFacetCounts().catch(() => {})
+  // The two personal shelves, and the reason this takes an argument at all.
+  // `GalleryContent` mounts on OPEN, so the "yours" page — the only source of
+  // your private scenes, in every view including "all" — used to start fetching
+  // when the dialog appeared: the grid painted public rows and yours dropped in
+  // a round trip later, re-sorting the shelf under the pointer. Signed-in only,
+  // because asking without a session returns an empty list every time.
+  if (!signedIn) return
+  for (const v of ["yours", "liked"] as const) if (!pages.has(v)) void loadPage(v).catch(() => {})
 }
 
 /** Your scene, in the lists it belongs to, without waiting for a round trip. */
@@ -306,7 +314,12 @@ function GalleryContent({
    *  identical for everyone. So "all" stays public, and YOUR private scenes are
    *  merged in from the "yours" page the client already prefetches. They are
    *  yours to see wherever you are looking, including when filtering by maker. */
-  const [minePrivate, setMinePrivate] = useState<GalleryScene[]>([])
+  const [minePrivate, setMinePrivate] = useState<GalleryScene[]>(
+    // Seeded from the warmed page rather than starting empty: the effect below
+    // still runs, but resolving a cached page takes a microtask, and a shelf
+    // that gains rows one tick after it paints is a shelf that visibly re-sorts.
+    () => pages.get("yours")?.scenes.filter((x) => x.visibility === "private") ?? [],
+  )
   /** Bumped whenever the module cache is patched, so the merge above re-derives. */
   const [cacheV, setCacheV] = useState(0)
   const [loading, setLoading] = useState(() => !pages.has(view) && scenes.length === 0)

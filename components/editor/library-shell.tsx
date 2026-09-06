@@ -183,6 +183,51 @@ function subscribeDensity(l: () => void) {
   }
 }
 
+// HOW THE LIST IS ORDERED, shared and remembered — density's argument exactly.
+//
+// Trending or New is a reading preference, not a fact about effects: someone who
+// browses by what is new wants that in all four libraries, and having each
+// dialog start on Trending again is the app forgetting what it was just told.
+// Stored as `key:dir` so a reversed column survives too.
+const SORT_KEY = storageKey("library-sort")
+
+function readSort(): { key: SortKey; dir: 1 | -1 } {
+  const fallback = { key: "hot" as SortKey, dir: -1 as const }
+  if (typeof window === "undefined") return fallback
+  try {
+    const [key, dir] = (window.localStorage.getItem(SORT_KEY) ?? "").split(":")
+    // Validated, never trusted: this is a string a person can edit, and an
+    // unknown key would fall through the sort switch and order by nothing.
+    if (!key || !(key in SORT_DIR)) return fallback
+    return { key: key as SortKey, dir: dir === "1" ? 1 : -1 }
+  } catch {
+    return fallback
+  }
+}
+
+let sortValue = readSort()
+const sortListeners = new Set<() => void>()
+
+function writeSort(key: SortKey, dir: 1 | -1) {
+  sortValue = { key, dir }
+  try {
+    window.localStorage.setItem(SORT_KEY, `${key}:${dir}`)
+  } catch {
+    // Unwritable storage still reorders the list; it just will not be remembered.
+  }
+  for (const l of sortListeners) l()
+}
+
+function subscribeSort(l: () => void) {
+  sortListeners.add(l)
+  return () => {
+    sortListeners.delete(l)
+  }
+}
+
+/** Stable across renders so useSyncExternalStore does not loop on a new object. */
+const SORT_SERVER = { key: "hot" as SortKey, dir: -1 as 1 | -1 }
+
 // ── Browse state ─────────────────────────────────────────────────────────────
 
 /**
@@ -219,24 +264,20 @@ export function useLibraryBrowse<T extends BrowseItem>(
   )
   const [tag, setTag] = useState<string | null>(null)
   const [maker, setMaker] = useState<string | null>(null)
-  const [sort, setSortKey] = useState<SortKey>("hot")
-  const [dir, setDir] = useState<1 | -1>(-1)
+  const { key: sort, dir } = useSyncExternalStore(subscribeSort, () => sortValue, () => SORT_SERVER)
   const density = useSyncExternalStore(subscribeDensity, () => densityValue, () => "grid" as Density)
   const setDensity = writeDensity
 
   /** One click sorts by a column; a second reverses it. */
-  const setSort = useCallback(
-    (key: SortKey) => {
-      if (sort === key) setDir((d) => (d === 1 ? -1 : 1))
-      else { setSortKey(key); setDir(SORT_DIR[key]) }
-    },
-    [sort],
-  )
+  const setSort = useCallback((key: SortKey) => {
+    const cur = sortValue
+    if (cur.key === key) writeSort(key, cur.dir === 1 ? -1 : 1)
+    else writeSort(key, SORT_DIR[key])
+  }, [])
 
   /** Choosing from the dropdown always starts a column in its natural direction. */
   const chooseSort = useCallback((key: SortKey) => {
-    setSortKey(key)
-    setDir(SORT_DIR[key])
+    writeSort(key, SORT_DIR[key])
   }, [])
 
   const matchesFacet = useCallback(

@@ -19,8 +19,11 @@
 // free to disagree with the shader it is pointed at.
 
 import { useMemo } from "react"
+import { RotateCcw } from "lucide-react"
 import type { EffectParamDecl, EffectParamValue } from "reze-engine"
 import { ColorRow, SliderRow } from "@/components/scene/scene-sidebar"
+import { Button } from "@/components/ui/button"
+import { useT } from "@/lib/i18n"
 
 /** `#param color` writes `#rrggbb`; the engine wants the linear-ish 0..1 triple
  *  it declared. sRGB→linear is the engine's own conversion at install, so the
@@ -45,13 +48,22 @@ export function EffectParams({
   decls,
   values,
   onChange,
+  onReset,
 }: {
   decls: EffectParamDecl[]
   /** Only what this scene moved. Anything absent shows the shader's own default,
    *  which is what lets a retuned built-in reach scenes that never touched it. */
   values: Record<string, EffectParamValue> | undefined
   onChange: (name: string, value: EffectParamValue | undefined) => void
+  /** Drop every override at once, back to what the shader declared. Dropping
+   *  them rather than writing the defaults in is the point: a scene that stores
+   *  no value keeps following the effect if its author retunes it. */
+  onReset?: () => void
 }) {
+  const t = useT()
+  // Whether this scene has moved anything. Drives the button's disabled state,
+  // which is also how the panel says "these are the author's numbers".
+  const touched = values !== undefined && Object.keys(values).length > 0
   const rows = useMemo(
     () =>
       decls.map((d) => {
@@ -64,6 +76,27 @@ export function EffectParams({
 
   return (
     <>
+      {onReset && (
+        // A header line: what the panel is on the left, its one action on the
+        // right — the reading order every other header in the chrome uses, and
+        // the same side the rows below put their own controls on. Above the
+        // dials because the panel is as tall as the effect has knobs, so a
+        // footer would land at a different height for every effect, under the
+        // pointer that just opened it.
+        <div className="mb-1 flex items-center justify-between gap-2 pl-0.5">
+          <span className="truncate text-[11px] text-muted-foreground">{t.lab.ctl.params}</span>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!touched}
+            onClick={onReset}
+            className="-mr-1 h-6 gap-1 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+          >
+            <RotateCcw className="size-3" />
+            {t.lab.ctl.resetParams}
+          </Button>
+        </div>
+      )}
       {rows.map(({ d, set }) => {
         if (d.kind === "color") {
           const fallback = typeof d.value === "string" ? d.value : "#ffffff"

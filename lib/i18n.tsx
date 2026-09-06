@@ -634,6 +634,11 @@ const en = {
       world: "world",
     },
     ctl: {
+      /** Puts an effect's dials back to what its shader declared. Disabled when
+       *  none has been moved, so the button also says whether this scene has
+       *  retuned the effect at all. */
+      resetParams: "Reset",
+      params: "Parameters",
       outline: "Outline",
       color: "Color",
       /** The plane itself, on or off. Not the same control as Opacity: a
@@ -1449,6 +1454,8 @@ const zh: Dictionary = {
       world: "世界",
     },
     ctl: {
+      resetParams: "重置",
+      params: "参数",
       outline: "描边",
       color: "颜色",
       showGround: "显示地面",
