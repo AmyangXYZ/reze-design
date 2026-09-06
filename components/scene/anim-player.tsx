@@ -351,6 +351,39 @@ export const AnimPlayer = memo(function AnimPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engineRef, namesKey])
 
+  /**
+   * A clip that arrives while the cast is already dancing joins the dance.
+   *
+   * play() is only ever called over the models that were loaded AT THAT MOMENT
+   * — the transport plays `cast()`, and a model whose VMD is still in flight is
+   * not in it yet. It then lands via show(), which poses frame 0 and leaves it
+   * PAUSED, and nothing asks again. The second character in a duet stood still
+   * for the whole song, and only when its clip happened to lose the race, which
+   * is why it looked intermittent.
+   *
+   * Seeked to where the others are rather than played from zero: joining a
+   * dance means joining it here, not starting it again.
+   *
+   * Its physics is not re-seeded. The jump is this model's alone, and
+   * resetPhysics is global — settling one late arrival's cloth by snapping
+   * everyone else's mid-song trades a small wrong for a bigger one.
+   */
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine || modelNames.length === 0) return
+    const lead = engine.getModel(modelNames[0])
+    const at = lead?.getAnimationProgress()
+    if (!at?.playing) return
+    for (const name of modelNames.slice(1)) {
+      const model = engine.getModel(name)
+      if (!model) continue
+      const p = model.getAnimationProgress()
+      if (p.playing || p.duration <= 0) continue
+      model.seek(at.current)
+      model.play()
+    }
+  }, [namesKey, modelNames, engineRef])
+
   const toggle = () => {
     const m = master()
     if (!m) return
