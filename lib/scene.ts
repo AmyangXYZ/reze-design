@@ -180,8 +180,9 @@ export const CAMERA_DEFAULT_FOV = Math.PI / 4
 /** Orbit framing: how far the camera sits, from which angle, at what it looks. */
 export type SceneCamera = {
   distance: number
-  /** Orbit azimuth in radians — captured from the live camera at save time, so
-   *  a scene opens on the exact authored angle. */
+  /** Orbit azimuth in radians. Written by the SLIDER, never by dragging the
+   *  canvas: looking around is not an edit, so a scene opens on the angle its
+   *  author chose rather than wherever the last person left the mouse. */
   alpha: number
   /** Orbit inclination in radians (0 = top-down pole). */
   beta: number

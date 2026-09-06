@@ -4701,8 +4701,36 @@ export default function Lab() {
       // should be looking at what replaced it — and leaving the old id behind
       // would strand the panel on a model that no longer exists.
       setInspectedId((prev) => (prev === oldId ? newId : prev))
+
+      // THE SHOT FOLLOWS THE SLOT, NOT THE FILE.
+      //
+      // `follow` binds to the FIRST cast member, and the engine holds that as a
+      // Model object — so replacing model 1 leaves the camera riding an object
+      // that has left the scene. Nothing re-applied it either: the camera
+      // reaches the engine on scene load and from changeCamera, and a replace
+      // is neither.
+      //
+      // The bone may not survive the swap. `follow` is a NAME, and a model that
+      // is not an MMD rig has no センター to ride, so a substitute is taken in
+      // the order the picker offers them — and when the new model has none of
+      // them the shot stops following, rather than binding to a bone that is
+      // not there.
+      //
+      // Bones come from the ENGINE rather than from `cast`: this runs in the
+      // handler that performed the swap, and the models state has not
+      // re-rendered yet.
+      if (camera.follow && cast[0]?.id === oldId) {
+        const bones = engineRef.current?.getModel(newId)?.getSkeleton().bones.map((b) => b.name) ?? []
+        if (bones.includes(camera.follow)) {
+          // Same bone on a new model: the document is unchanged, so this must
+          // NOT go through changeCamera — it only needs the engine to rebind.
+          setCameraView(camera)
+        } else {
+          changeCamera({ ...camera, follow: FOLLOW_BONES.find((b) => bones.includes(b)) ?? null })
+        }
+      }
     },
-    [loadVmdFile, loadVmdUrl, bundleFile],
+    [loadVmdFile, loadVmdUrl, bundleFile, engineRef, setCameraView, changeCamera, camera, cast],
   )
   useEffect(() => {
     for (const m of models) {

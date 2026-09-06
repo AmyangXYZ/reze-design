@@ -195,7 +195,12 @@ export const EMPTY_SCENE_DOC: SceneDoc = {
   name: "Untitled scene",
   assets: { models: [], cameraAnimation: null, audio: null, midi: null, lyrics: null, backdrop: null, skybox: null },
   settings: {
-    camera: DEMO_SCENE_DOC.settings.camera,
+    // The demo's framing, WITHOUT its follow. An empty scene has no cast, so a
+    // camera bound to センター is bound to a bone on a model that is not there —
+    // and the first thing anyone does here is add a model, which would then be
+    // silently ridden by a shot they never asked for. Follow is something you
+    // turn on once there is someone to follow.
+    camera: { ...DEMO_SCENE_DOC.settings.camera, follow: null },
     world: { color: "#ffffff", strength: 0.35 },
     sun: { color: "#ffffff", strength: 2.0, azimuth: 205, elevation: 21 },
     bloom: { enabled: true, threshold: 0.8, knee: 0.5, radius: 4.0, intensity: 0.03, color: "#ffffff" },
