@@ -1883,23 +1883,33 @@ export function useEngine(
    * Push orbit framing to the engine. A loaded, enabled camera VMD drives the shot
    * instead, so this shows up only once that is off.
    */
-  /**
-   * @param modelId Which model the follow should bind to, when the caller
-   *   already knows. A REPLACE has to pass it: `modelsRef` is fed from state and
-   *   still holds the outgoing model at the moment the swap completes, so
-   *   resolving the lead here would look up a model the engine has removed —
-   *   `applyCamera` would then take its no-model branch, drop the follow, and
-   *   read `target` as a world point when under follow it is an OFFSET from a
-   *   bone. The shot ends up pointing at the origin.
-   */
-  const setCameraView = useCallback((c: SceneCamera, modelId?: string) => {
+  const setCameraView = useCallback((c: SceneCamera) => {
     const engine = engineRef.current
     if (!engine) return
     // Same rule as the load path — `models` carries stages too, so index 0 is
     // not necessarily a character.
     const stageIds = new Set(stagesRef.current.map((s) => s.id))
-    const lead = modelId ?? modelsRef.current.find((m) => !stageIds.has(m.id))?.id ?? ""
-    applyCamera(engine, c, engine.getModel(lead))
+    applyCamera(engine, c, engine.getModel(modelsRef.current.find((m) => !stageIds.has(m.id))?.id ?? ""))
+  }, [])
+
+  /**
+   * Point an existing follow at a different model, and change NOTHING else.
+   *
+   * For a replace. The shot is the one you were looking through — whatever you
+   * had orbited to — and only the thing it was riding has been swapped
+   * underneath it. Re-applying the whole camera would put alpha, beta, distance
+   * and fov back to what the DOCUMENT holds, which since orbiting stopped being
+   * an edit is not where the camera is: the view would jump on every replace.
+   *
+   * By id rather than by looking up the lead, because `modelsRef` is fed from
+   * state and still describes the model that just left.
+   */
+  const rebindCameraFollow = useCallback((modelId: string, c: SceneCamera) => {
+    const engine = engineRef.current
+    if (!engine || !c.follow) return
+    const model = engine.getModel(modelId)
+    if (!model) return
+    engine.setCameraFollow(model, c.follow, new Vec3(...c.target), 0.15)
   }, [])
 
   /** Instant adjust-tier: write one exposed param on a group's graph (no recompile). */
@@ -1956,6 +1966,7 @@ export function useEngine(
     bundleFiles,
     swapScene,
     setCameraView,
+    rebindCameraFollow,
     setGroupParam,
     highlight,
     toggleVisible,

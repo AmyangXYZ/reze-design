@@ -2067,6 +2067,7 @@ export default function Lab() {
     removePlane,
     clearPlanes,
     setCameraView,
+    rebindCameraFollow,
     swapScene,
     applyGroups,
     upsertGroup,
@@ -4727,15 +4728,15 @@ export default function Lab() {
         // Only a CHANGED bone is a document edit; the same bone on a new model
         // is not something the scene should record.
         if (next !== camera) setCamera(next)
-        // BY ID, because `cast` and modelsRef both still describe the model that
-        // just left — resolving the lead from either would bind the shot to a
-        // model the engine has removed, and applyCamera's no-model branch reads
-        // `target` as a world point when it is an offset from a bone. That is
-        // the camera swinging to the origin on every replace.
-        setCameraView(next, newId)
+        // ONLY the binding. The shot itself — angle, distance, lens — is
+        // whatever you had orbited to, and a replace has no business moving it:
+        // re-applying the whole camera would snap those back to the document's,
+        // which since orbiting stopped being an edit is not where you are
+        // looking from.
+        rebindCameraFollow(newId, next)
       }
     },
-    [loadVmdFile, loadVmdUrl, bundleFile, engineRef, setCameraView, camera, cast],
+    [loadVmdFile, loadVmdUrl, bundleFile, engineRef, rebindCameraFollow, camera, cast],
   )
   useEffect(() => {
     for (const m of models) {
