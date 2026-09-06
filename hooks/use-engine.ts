@@ -1883,13 +1883,23 @@ export function useEngine(
    * Push orbit framing to the engine. A loaded, enabled camera VMD drives the shot
    * instead, so this shows up only once that is off.
    */
-  const setCameraView = useCallback((c: SceneCamera) => {
+  /**
+   * @param modelId Which model the follow should bind to, when the caller
+   *   already knows. A REPLACE has to pass it: `modelsRef` is fed from state and
+   *   still holds the outgoing model at the moment the swap completes, so
+   *   resolving the lead here would look up a model the engine has removed —
+   *   `applyCamera` would then take its no-model branch, drop the follow, and
+   *   read `target` as a world point when under follow it is an OFFSET from a
+   *   bone. The shot ends up pointing at the origin.
+   */
+  const setCameraView = useCallback((c: SceneCamera, modelId?: string) => {
     const engine = engineRef.current
     if (!engine) return
     // Same rule as the load path — `models` carries stages too, so index 0 is
     // not necessarily a character.
     const stageIds = new Set(stagesRef.current.map((s) => s.id))
-    applyCamera(engine, c, engine.getModel(modelsRef.current.find((m) => !stageIds.has(m.id))?.id ?? ""))
+    const lead = modelId ?? modelsRef.current.find((m) => !stageIds.has(m.id))?.id ?? ""
+    applyCamera(engine, c, engine.getModel(lead))
   }, [])
 
   /** Instant adjust-tier: write one exposed param on a group's graph (no recompile). */

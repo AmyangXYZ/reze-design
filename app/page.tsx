@@ -4721,16 +4721,21 @@ export default function Lab() {
       // re-rendered yet.
       if (camera.follow && cast[0]?.id === oldId) {
         const bones = engineRef.current?.getModel(newId)?.getSkeleton().bones.map((b) => b.name) ?? []
-        if (bones.includes(camera.follow)) {
-          // Same bone on a new model: the document is unchanged, so this must
-          // NOT go through changeCamera — it only needs the engine to rebind.
-          setCameraView(camera)
-        } else {
-          changeCamera({ ...camera, follow: FOLLOW_BONES.find((b) => bones.includes(b)) ?? null })
-        }
+        const next = bones.includes(camera.follow)
+          ? camera
+          : { ...camera, follow: FOLLOW_BONES.find((b) => bones.includes(b)) ?? null }
+        // Only a CHANGED bone is a document edit; the same bone on a new model
+        // is not something the scene should record.
+        if (next !== camera) setCamera(next)
+        // BY ID, because `cast` and modelsRef both still describe the model that
+        // just left — resolving the lead from either would bind the shot to a
+        // model the engine has removed, and applyCamera's no-model branch reads
+        // `target` as a world point when it is an offset from a bone. That is
+        // the camera swinging to the origin on every replace.
+        setCameraView(next, newId)
       }
     },
-    [loadVmdFile, loadVmdUrl, bundleFile, engineRef, setCameraView, changeCamera, camera, cast],
+    [loadVmdFile, loadVmdUrl, bundleFile, engineRef, setCameraView, camera, cast],
   )
   useEffect(() => {
     for (const m of models) {
