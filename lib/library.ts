@@ -37,6 +37,17 @@ export type GraphPayload = {
   role?: MaterialPreset
 }
 export type EffectPayload = { wgsl: string }
+/**
+ * The biggest asset bundle a scene may publish.
+ *
+ * Shared because it is enforced TWICE and the two must agree: the client checks
+ * it before uploading, so an over-size scene fails immediately with a sentence
+ * instead of after minutes of upload, and the route checks it again because a
+ * client-side limit is a courtesy, not a control. Two copies drifting means one
+ * of those two is wrong, and the wrong one is whichever the user meets.
+ */
+export const MAX_BUNDLE_BYTES = 256 * 1024 * 1024
+
 export type ScenePayload = { doc: SceneDoc }
 
 export type LibraryItem<K extends LibraryKind = LibraryKind, P = unknown> = {

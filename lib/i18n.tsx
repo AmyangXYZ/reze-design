@@ -102,7 +102,7 @@ const en = {
     failedPacking: "Couldn't pack the scene's assets",
     failedUpload: "Upload failed",
     failedPublish: "Publish failed",
-    bundleTooBig: (mb: number) => `Assets are ${mb}MB — the limit is 200MB. Remove a model or use smaller textures.`,
+    bundleTooBig: (mb: number, limit: number) => `Assets are ${mb}MB — the limit is ${limit}MB. Remove a model or use smaller textures.`,
     signIn: "Sign in to publish scenes",
     unpublishedTitle: "Publish these to the library first",
     unpublishedBlurb:
@@ -974,7 +974,7 @@ const zh: Dictionary = {
     failedPacking: "打包场景资源失败",
     failedUpload: "上传失败",
     failedPublish: "发布失败",
-    bundleTooBig: (mb: number) => `资源共 ${mb}MB，上限为 200MB。请减少模型或使用更小的贴图。`,
+    bundleTooBig: (mb: number, limit: number) => `资源共 ${mb}MB，上限为 ${limit}MB。请减少模型或使用更小的贴图。`,
     signIn: "登录后可发布场景",
     unpublishedTitle: "请先把这些发布到库里",
     unpublishedBlurb: "场景只能由库中已有的内容组成，这样看到它的人才能找到、署名并复用其中用到的东西。",

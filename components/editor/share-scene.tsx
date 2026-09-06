@@ -14,7 +14,7 @@ import { TagsInput } from "@/components/editor/tags-input"
 import { VisibilityPicker, type Visibility } from "@/components/editor/library-shell"
 import { noteScenePublished, type GalleryScene } from "@/components/editor/scene-gallery"
 import { buildZip, type BundleEntry } from "@/lib/bundle"
-import type { LibraryItem } from "@/lib/library"
+import { MAX_BUNDLE_BYTES, type LibraryItem } from "@/lib/library"
 import { sceneRefs, type SceneDoc } from "@/lib/scene"
 import { useSession } from "@/lib/auth-client"
 import type { UnpublishedUse } from "@/lib/refs"
@@ -23,7 +23,6 @@ import { useT } from "@/lib/i18n"
 const MAX_TAGS = 5
 // Generous: an untouched Retina screenshot is routinely past 10MB.
 const MAX_POSTER_BYTES = 20 * 1024 * 1024
-const MAX_BUNDLE_BYTES = 200 * 1024 * 1024
 
 // The written parts of a publish, kept until the scene is actually published.
 //
@@ -210,7 +209,7 @@ function ShareSceneForm({
         const zip = await buildZip(entries)
         if (zip.size > MAX_BUNDLE_BYTES) {
           setStep("idle")
-          setError(t.share.bundleTooBig(Math.round(zip.size / 1048576)))
+          setError(t.share.bundleTooBig(Math.round(zip.size / 1048576), Math.round(MAX_BUNDLE_BYTES / 1048576)))
           return
         }
         stage = "uploading"

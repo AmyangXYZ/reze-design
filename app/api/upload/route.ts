@@ -11,6 +11,7 @@ import { NextResponse } from "next/server"
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 import { auth } from "@/lib/auth"
+import { MAX_BUNDLE_BYTES } from "@/lib/library"
 import { hasDatabase } from "@/lib/db"
 
 // A published object is immutable — every publish mints a new scene row and a
@@ -25,7 +26,6 @@ import { hasDatabase } from "@/lib/db"
 // unexplained "network error", which is all XHR reports for a refused preflight.
 // The header is applied out of band instead; see scripts/r2-backfill-cache.mjs.
 
-const MAX_BUNDLE_BYTES = 200 * 1024 * 1024
 const MAX_POSTER_BYTES = 20 * 1024 * 1024
 const POSTER_TYPES = ["image/png", "image/jpeg", "image/webp"]
 
