@@ -1561,7 +1561,19 @@ export function useEngine(
   const centerModel = useCallback((modelId: string) => {
     if (!modelsRef.current.find((m) => m.id === modelId)?.spawnGuess) return
     engineRef.current?.setModelTransform(modelId, { position: new Vec3(0, 0, 0) })
-    setModels((prev) => prev.map((m) => (m.id === modelId ? { ...m, position: [0, 0, 0] } : m)))
+    // spawnGuess ENDS HERE, and that is the point of clearing it.
+    //
+    // The flag means "nobody chose this, so do not write it down" — the
+    // collector skips a guessed placement so the app's arrangement offset is
+    // not frozen into every scene. But centring is a decision: the clip owns
+    // this model's root from now on, and origin is where it has to stand for
+    // the motion to land where it was authored.
+    //
+    // Left set, the origin was never written, and only the EDITOR knew about
+    // it: loading a scene re-applies spawnOffsetX to any cast member with no
+    // transform, so a second model that had been centred here stood nine units
+    // to the side in the viewer. The document has to say where the model is.
+    setModels((prev) => prev.map((m) => (m.id === modelId ? { ...m, position: [0, 0, 0], spawnGuess: false } : m)))
   }, [])
 
   /** Load a local .vmd onto ONE model (object URL), posed at frame 0 but PAUSED */
