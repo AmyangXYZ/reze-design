@@ -139,10 +139,10 @@ export function sameGraphLook(a: ShaderGraph | undefined, b: ShaderGraph | undef
 // and every surface reads fully lit, ramp untouched. Its world is not a backdrop
 // preference; it is the other half of the ramp.
 
-export type LookPack = "ag" | "wuwa" | "zzz"
+export type LookPack = "ag" | "wuwa" | "zzz" | "hsr"
 
 /** Menu order — declared, not derived, because it is a curated shelf. */
-export const LOOK_PACK_ORDER: LookPack[] = ["ag", "wuwa", "zzz"]
+export const LOOK_PACK_ORDER: LookPack[] = ["ag", "wuwa", "zzz", "hsr"]
 
 export const LOOK_PACKS: Record<
   LookPack,
@@ -169,6 +169,18 @@ export const LOOK_PACKS: Record<
   // quantised against exactly that — but it is not the .blend's own 0.0509. That
   // world plus the app's 2.0 sun crushed everything the key did not face.
   zzz: { tag: "zenless-zone-zero", transform: "filmic", exposure: 0.5, world: { color: "#626262", strength: 1 } },
+  // Filmic because the source IS Filmic — view transform Filmic, look High
+  // Contrast, exposure 0, read straight off the .blend. That makes this the one
+  // pack whose transform needed no argument.
+  //
+  // The world does not come from the .blend, for the reason ZZZ already found
+  // the hard way: this file's Background is 0.050876, the very same near-black,
+  // and every surface here multiplies ambient. Left at that value the app's
+  // brighter sun crushes everything the key does not reach. Started from ZZZ's
+  // proven grey and lifted slightly — HSR's own presentation is airier, and its
+  // ramps barely darken, so ambient decides less about the terminator here than
+  // it does there and can afford to carry more of the fill.
+  hsr: { tag: "honkai-star-rail", transform: "filmic", exposure: 0.35, world: { color: "#6a6a6a", strength: 1 } },
 }
 
 // Roles a pack may not cover. WuWa and ZZZ have one cloth look where AG has

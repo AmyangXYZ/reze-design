@@ -25,7 +25,7 @@ const en = {
     style: "Rendering style",
     // One locale's name each. The palette's KEYWORDS carry both languages, so
     // searching either still finds it — the row itself does not have to.
-    styles: { ag: "Aether Gazer", wuwa: "Wuthering Waves", zzz: "Zenless Zone Zero" },
+    styles: { ag: "Aether Gazer", wuwa: "Wuthering Waves", zzz: "Zenless Zone Zero", hsr: "Honkai: Star Rail" },
   },
   // Export / import / reset all act on the same slice: the scene's look, not its files.
   sceneFile: {
@@ -905,7 +905,7 @@ const zh: Dictionary = {
     renameScene: "双击重命名",
     language: "语言",
     style: "渲染风格",
-    styles: { ag: "深空之眼", wuwa: "鸣潮", zzz: "绝区零" },
+    styles: { ag: "深空之眼", wuwa: "鸣潮", zzz: "绝区零", hsr: "崩坏：星穹铁道" },
   },
   sceneFile: {
     label: "场景",
