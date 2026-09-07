@@ -304,7 +304,25 @@ export function lipSyncMorphTracks(lines: LyricLine[]): {
   // the tell is not a gap between lines — it is a first line whose WINDOW
   // vastly outlives its content: after its morae are sung at the slowest
   // plausible pace, seconds of window remain before the lyrics begin.
-  const sung = lines.filter((line, i) => {
+  // ONE LINE PER STAMP — the mouth sings the original, not its translation.
+  //
+  // A bilingual .lrc puts both on the same timestamp, and parseLRC returns them
+  // as consecutive lines sharing one window: that is the idiom the subtitle
+  // effect reads to stack a caption. Handed straight to this, both texts strike
+  // morae over the same seconds, and the vowels of a translation nobody is
+  // singing land on top of the ones somebody is. A Korean verse with an English
+  // line under it drove nearly twice the keyframes it should.
+  //
+  // The LEAD is the first at its stamp, which is the same line the caption
+  // shows on top, so the lips agree with what is being read.
+  const lead: LyricLine[] = []
+  for (const line of lines) {
+    const prev = lead[lead.length - 1]
+    if (prev && Math.abs(prev.start - line.start) < 0.001) continue
+    lead.push(line)
+  }
+
+  const sung = lead.filter((line, i) => {
     if (i !== 0 || line.start >= 2) return true
     const content = morasOfLine(line.text).length * MAX_MORA
     return line.end - line.start - content < 3
