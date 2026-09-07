@@ -67,11 +67,12 @@ export function SliderRow({
     setEditing(false)
     const parsed = Number(raw)
     if (!Number.isFinite(parsed)) return
-    // Stepped, then held to the TYPED range rather than the track's. Typing is
+    // Held to the TYPED range rather than the track's, and NOT stepped. The
+    // step is the drag's granularity; a typed number is the number — snapping
+    // 1 to the nearest hundredth of a 0..3 range handed back 0.99. Typing is
     // how you reach a number the track does not cover; clamping it back to the
     // track made the field a slower way to use the slider.
-    const stepped = Math.round(parsed / step) * step
-    const clamped = Math.min(inputMax, Math.max(inputMin, stepped))
+    const clamped = Math.min(inputMax, Math.max(inputMin, parsed))
     if (clamped !== value) onChange(Number(clamped.toFixed(6)))
   }
 
