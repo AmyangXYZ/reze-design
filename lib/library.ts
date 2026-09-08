@@ -46,7 +46,7 @@ export type EffectPayload = { wgsl: string }
  * client-side limit is a courtesy, not a control. Two copies drifting means one
  * of those two is wrong, and the wrong one is whichever the user meets.
  */
-export const MAX_BUNDLE_BYTES = 256 * 1024 * 1024
+export const MAX_BUNDLE_BYTES = 512 * 1024 * 1024
 
 export type ScenePayload = { doc: SceneDoc }
 
