@@ -2447,6 +2447,22 @@ export default function Lab() {
   // A still is as good a plate as a clip and is the easier case — locked off by
   // construction, nothing to step, nothing to drift.
   const plate = bgImage?.slot === "plate" ? bgImage : null
+  // What footage changed, to give back when it goes: the camera Match the
+  // plate wrote (roll, lens, pitch), and where Place her on the floor moved
+  // the primary cast member. Each is kept the first time it changes under a
+  // given plate, and both are restored when that plate is taken away. Scoped
+  // to the plate object, and forgotten on a scene swap, so a fresh scene never
+  // inherits either.
+  const beforePlate = useRef<{
+    plate: object
+    camera?: SceneCamera
+    cast?: { id: string; position: [number, number, number] }
+  } | null>(null)
+  const plateSnapshot = useCallback((): NonNullable<typeof beforePlate.current> | null => {
+    if (!plate) return null
+    if (!beforePlate.current || beforePlate.current.plate !== plate) beforePlate.current = { plate }
+    return beforePlate.current
+  }, [plate])
   /**
    * Placing her by pointing at the floor in the footage.
    *
@@ -2477,9 +2493,15 @@ export default function Lab() {
       // at, and moving her to a made-up spot would be worse than doing nothing.
       if (!at) return
       const id = castIdList[0]
-      if (id) setCastPosition(id, [at.x, 0, at.z])
+      if (!id) return
+      const snap = plateSnapshot()
+      if (snap && !snap.cast) {
+        const m = models.find((x) => x.id === id)
+        snap.cast = { id, position: m?.position ? [...m.position] as [number, number, number] : [0, 0, 0] }
+      }
+      setCastPosition(id, [at.x, 0, at.z])
     },
-    [engineRef, castIdList, setCastPosition],
+    [engineRef, castIdList, setCastPosition, models, plateSnapshot],
   )
 
   /** What the last read of the footage found, for the line under the button. */
@@ -2767,20 +2789,17 @@ export default function Lab() {
     [setCameraView],
   )
 
-  // Footage solved a camera (solvePlate): the roll, the lens and the pitch are
-  // the plate's. Taking the footage away gives the camera back — the one from
-  // before the solve. Scoped to the plate object it was solved for, and
-  // forgotten on a scene swap, so a fresh scene never inherits it.
-  const cameraBeforePlate = useRef<{ plate: object; camera: SceneCamera } | null>(null)
+  // The footage is gone: give back what it changed — see beforePlate.
   const lastPlate = useRef<object | null>(null)
   useEffect(() => {
-    const before = cameraBeforePlate.current
+    const before = beforePlate.current
     if (plate === null && before && lastPlate.current === before.plate) {
-      cameraBeforePlate.current = null
-      changeCamera(before.camera)
+      beforePlate.current = null
+      if (before.camera) changeCamera(before.camera)
+      if (before.cast) setCastPosition(before.cast.id, before.cast.position)
     }
     lastPlate.current = plate
-  }, [plate, changeCamera])
+  }, [plate, changeCamera, setCastPosition])
 
   /**
    * ORBITING THE CANVAS DOES NOT CHANGE THE SCENE.
@@ -3310,7 +3329,8 @@ export default function Lab() {
       // that bone rather than a point in the world, which would make the height
       // below meaningless.
       // The camera as it stood, for when the footage goes — once per plate.
-      if (!cameraBeforePlate.current || cameraBeforePlate.current.plate !== plate) cameraBeforePlate.current = { plate, camera }
+      const snap = plateSnapshot()
+      if (snap && !snap.camera) snap.camera = camera
       const next = { ...camera, follow: null }
       const found: string[] = []
       if (r.solved.roll) {
@@ -3353,7 +3373,7 @@ export default function Lab() {
     } finally {
       setSolving(false)
     }
-  }, [plate, camera, changeCamera, patch, t])
+  }, [plate, camera, changeCamera, patch, t, plateSnapshot])
 
   /** The HDRI. Its own input, because its accept list is one extension and
    *  sharing the background's would offer .hdr in slots that cannot use it. */
@@ -5328,7 +5348,7 @@ export default function Lab() {
    * thrown all of that away and flashed the DOM on the way.
    */
   const applyLabScene = async (next: Scene) => {
-    cameraBeforePlate.current = null
+    beforePlate.current = null
     // STARTED, not awaited yet. swapScene turns `ready` off synchronously, before its
     // first await, so every re-seed below lands in the SAME commit as ready:false —
     // which is what keeps the two document loaders from ever running against a
