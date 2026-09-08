@@ -308,7 +308,7 @@ const en = {
     shareStatsNote:
       "Helps us improve rendering. Nothing you made leaves your machine — this reports only which settings and presets a finished video used.",
     shareStatsLink: "What's collected",
-    shareStatsSeeLink: "What people render",
+    shareStatsSeeLink: "Usage statistics",
     quality: "Quality",
     modes: {
       scene: "Scene · MP4",
@@ -334,7 +334,7 @@ const en = {
     upscaleWarn: "Backdrop is lower-resolution than the output and will be upscaled.",
   },
   analysis: {
-    title: "What people render",
+    title: "Usage statistics",
     intro: "From finished videos people chose to share, and from the scenes published on Reze Design.",
     exports: "Exports",
     scenesTile: "Scenes",
@@ -1194,7 +1194,7 @@ const zh: Dictionary = {
     shareStats: "分享导出统计",
     shareStatsNote: "帮我们改进渲染效果。你做的东西不会离开本地电脑——只上传这次导出用了哪些设置与预设。",
     shareStatsLink: "收集了什么",
-    shareStatsSeeLink: "大家都在渲染什么",
+    shareStatsSeeLink: "使用统计",
     quality: "质量",
     modes: {
       scene: "场景 · MP4",
@@ -1219,7 +1219,7 @@ const zh: Dictionary = {
     upscaleWarn: "背景分辨率低于输出分辨率，将被放大。",
   },
   analysis: {
-    title: "大家都在渲染什么",
+    title: "使用统计",
     intro: "来自大家自愿分享的成片，以及发布在 Reze Design 的场景。",
     exports: "成片",
     scenesTile: "场景",
