@@ -31,12 +31,11 @@ const SERIES = { exports: "#3b82f6", scenes: "#ef4444" } as const
  *  as a plain bar rather than a stack of one. */
 type Stack = { key: string; label: string; a: number; b: number }
 
-function Tile({ label, value, note }: { label: string; value: string; note: string }) {
+function Tile({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-interior border border-line bg-surface-raised p-3">
       <div className="text-[11px] tracking-wide text-muted-foreground uppercase">{label}</div>
       <div className="mt-1 font-mono text-xl text-foreground tabular-nums">{value}</div>
-      <div className="mt-0.5 text-[11px] text-muted-foreground">{note}</div>
     </div>
   )
 }
@@ -228,14 +227,10 @@ export function AnalysisView({ data }: { data: ExportAnalysis }) {
         <Legend exports={t.analysis.exports} scenes={t.analysis.scenesTile} />
 
         <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Tile label={t.analysis.exports} value={data.exportTotal.toLocaleString()} note={t.analysis.exportsNote} />
-          <Tile label={t.analysis.scenesTile} value={data.sceneTotal.toLocaleString()} note={t.analysis.scenesNote} />
-          <Tile label={t.analysis.models} value={models.length.toLocaleString()} note={t.analysis.modelsNote} />
-          <Tile
-            label={t.analysis.presets}
-            value={data.items.length.toLocaleString()}
-            note={t.analysis.presetsNote}
-          />
+          <Tile label={t.analysis.exports} value={data.exportTotal.toLocaleString()} />
+          <Tile label={t.analysis.scenesTile} value={data.sceneTotal.toLocaleString()} />
+          <Tile label={t.analysis.models} value={models.length.toLocaleString()} />
+          <Tile label={t.analysis.presets} value={data.items.length.toLocaleString()} />
         </section>
 
         <div className="mt-4">
@@ -276,7 +271,6 @@ export function AnalysisView({ data }: { data: ExportAnalysis }) {
             scenes={t.analysis.scenes}
           />
         </div>
-        <p className="mt-2 text-[11px] text-muted-foreground">{t.analysis.renderOnly}</p>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-3">
           {RANKED_KINDS.map((kind) => (
