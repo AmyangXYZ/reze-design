@@ -1,3 +1,4 @@
+import type { SceneSettings } from "@/lib/scene-settings"
 import { NODE_REGISTRY, type MaterialPreset, type ShaderGraph } from "reze-engine"
 import graphs from "@/content/graphs.json"
 import stageGraphs from "@/content/stage-graphs.json"
@@ -151,15 +152,40 @@ export const LOOK_PACKS: Record<
     transform: "standard" | "filmic" | "agx"
     exposure: number
     world: { color: string; strength: number }
+    /**
+     * How the pack wants the scene LIT, where its ramps need a particular key
+     * to read at all. Merged over what the scene has, section by section.
+     *
+     * Named for what it may hold rather than for where it lands. This was once
+     * `scene`, and a field called that accumulated depth of field, outline,
+     * grain, grade, backdrop and ground until choosing a rendering style
+     * restaged the shot. Light and its bleed are the whole of it; everything
+     * else in a scene is the author's.
+     */
+    light?: {
+      sun?: Partial<SceneSettings["sun"]>
+      bloom?: Partial<SceneSettings["bloom"]>
+    }
   }
 > = {
   ag: { tag: "aether-gazer", transform: "filmic", exposure: 0.6, world: { color: "#ed6aff", strength: 0.66 } },
   wuwa: { tag: "wuthering-waves", transform: "standard", exposure: 0, world: { color: "#fdf2f8", strength: 0.36 } },
-  // The transform, exposure and world as set by hand in a scene (2026-09-08):
-  // the standard transform at 0.2 over a warm pink world at 0.62. It replaced
-  // the port's own numbers — Filmic at 0.5 over a 0.122-linear grey world —
-  // which read dark and washed against the ramps.
-  zzz: { tag: "zenless-zone-zero", transform: "standard", exposure: 0.2, world: { color: "#ffc9c9", strength: 0.62 } },
+  // As set by hand in a scene (2026-09-08): the standard transform at 0.2 over
+  // a warm pink world at 0.62, lit by a 2.0 sun from behind and a little above,
+  // with a low wide bloom. It replaced the port's own numbers — Filmic at 0.5
+  // over a 0.122-linear grey world — which read dark and washed against the
+  // ramps. The key is part of that answer: these ramps quantise against the
+  // light that hits them, so the world alone does not get there.
+  zzz: {
+    tag: "zenless-zone-zero",
+    transform: "standard",
+    exposure: 0.2,
+    world: { color: "#ffc9c9", strength: 0.62 },
+    light: {
+      sun: { color: "#ffffff", strength: 2, azimuth: 184, elevation: 22 },
+      bloom: { enabled: true, threshold: 1.03, knee: 0.5, radius: 6.4, intensity: 0.14, color: "#ffffff" },
+    },
+  },
   // Filmic because the source IS Filmic — view transform Filmic, look High
   // Contrast, exposure 0, read straight off the .blend. That makes this the one
   // pack whose transform needed no argument.

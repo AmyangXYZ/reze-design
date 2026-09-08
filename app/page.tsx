@@ -4182,15 +4182,17 @@ export default function Lab() {
         })
         if (next.some((g, i) => g !== list[i])) void applyGroups(modelId, next)
       }
-      // A pack is the graphs, the tone transform and the world it wants them
-      // read under. Everything else in the scene — the light, the post, the
-      // background, the ground — is the author's, and switching rendering style
-      // is not an occasion to restage somebody's shot.
-      const { transform, exposure, world } = LOOK_PACKS[pack]
+      // A pack is the graphs, the tone transform, the world, and the key its
+      // ramps need to read. Everything else — the post, the background, the
+      // ground — is the author's, and switching rendering style is not an
+      // occasion to restage somebody's shot.
+      const { transform, exposure, world, light } = LOOK_PACKS[pack]
       setSettings((prev) => ({
         ...prev,
         view: { transform, exposure },
         world: { ...prev.world, ...world },
+        ...(light?.sun ? { sun: { ...prev.sun, ...light.sun } } : {}),
+        ...(light?.bloom ? { bloom: { ...prev.bloom, ...light.bloom } } : {}),
       }))
       // Remembered for the NEXT model, not for this scene — the scene already
       // carries what it is wearing.
