@@ -379,15 +379,23 @@ export function useSceneSync({
       // demo hit this, because the demo has an effect of its own: the early
       // return meant a costly foreground kept running for the whole swap and the
       // reset appeared to hang.
-      if (lastWgsl.current !== null) {
+      if (lastWgsl.current !== null && lastWgslEngine.current === engine) {
         lastWgsl.current = null
-        void engineRef.current?.setEffects(null)
+        void engine.setEffects(null)
       }
       return
     }
-    if (wgsl === lastWgsl.current && lastWgslEngine.current === engine) return
+    // A NEW ENGINE STARTS EMPTY. Whatever the last one wore is not on this one,
+    // so there is nothing to take off it — and asking anyway, which is what a
+    // null install is, reached every fresh engine before init() had finished
+    // whenever the scene had no effect of its own: a failure logged against an
+    // effect that did not exist.
+    if (lastWgslEngine.current !== engine) {
+      lastWgsl.current = null
+      lastWgslEngine.current = engine
+    }
+    if (wgsl === lastWgsl.current) return
     lastWgsl.current = wgsl
-    lastWgslEngine.current = engine
     // ── An effect that takes the cast apart ──
     //
     // "// @dissolve period breakAt hiddenAt backAt doneAt", in seconds. The

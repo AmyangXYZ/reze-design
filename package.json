@@ -1,6 +1,6 @@
 {
   "name": "reze-design",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "scripts": {
@@ -35,7 +35,7 @@
     "react-dom": "19.2.4",
     "react-resizable-panels": "^4.12.2",
     "react-syntax-highlighter": "^16.1.1",
-    "reze-engine": "^0.55.10",
+    "reze-engine": "^0.55.11",
     "server-only": "^0.0.1",
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.6.0",

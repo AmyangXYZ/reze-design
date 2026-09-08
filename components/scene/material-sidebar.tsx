@@ -227,6 +227,11 @@ export const MaterialsPanel = memo(function MaterialsPanel({
           onClick={(e) => {
             e.stopPropagation()
             onToggleVisible(m.name)
+            // Hiding is the end of looking for it: the wireframe that showed
+            // where it was goes with it, and comes back if it is shown again
+            // under the same pointer. Another hidden row still lights up on
+            // hover — that is how you find one to bring back.
+            onHover(m.visible ? null : m.name)
           }}
         >
           {m.visible ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
