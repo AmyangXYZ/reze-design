@@ -188,11 +188,15 @@ photographic backdrop.
 
 ## 1.5 What sits behind the character
 
-Back to front: the **background colour**, then either a **backdrop** (a flat image
-behind the scene) or a **skybox** (a 360° equirectangular panorama projected as a
-dome, which follows the camera so that orbiting looks out into an environment),
-and then a **scene effect** — a shader that can paint on either side of the
-character. Stars and auroras go behind; rain, petals, sparks and fog go in front,
+Back to front: the **background colour**, then one of three things — a
+**backdrop** (a flat image behind the scene), a **skybox** (a 360° equirectangular
+panorama projected as a dome, which follows the camera so that orbiting looks out
+into an environment), or a **plate** (footage the character stands *in*, rather
+than in front of). A plate is a claim as much as a file: it says the camera, the
+floor and the light are meant to agree with the shot, so it restores the camera
+and the floor placement it was set up with, and it can lean, because a plate shot
+on a phone leans and a scene standing in one has to lean with it. Then a **scene
+effect** — a shader that can paint on either side of the character. Stars and auroras go behind; rain, petals, sparks and fog go in front,
 and the ones in front know how far away the character is, so a raindrop passing
 behind a shoulder is hidden by it.
 
@@ -257,20 +261,25 @@ state, so it autosaves and publishes.
 ## 1.7 The look
 
 **The quickest way to change everything: press ⌘K and type a rendering style.**
-The three built-in sets — *Aether Gazer*, *Wuthering Waves* and *Zenless Zone
-Zero* — are whole styles, and picking one restyles every group in the scene role
-for role: the body group takes that set's body look, the hair group its hair look.
-Groups the set has no opinion about are left alone, so a stage material, a look
-you built yourself and the neutral default all survive a switch.
+The four built-in sets — *Aether Gazer*, *Wuthering Waves*, *Zenless Zone Zero*
+and *Honkai: Star Rail* — are whole styles, and picking one restyles every group
+in the scene role for role: the body group takes that set's body look, the hair
+group its hair look. Groups the set has no opinion about are left alone, so a
+stage material, a look you built yourself and the neutral default all survive a
+switch.
 
-Two scene settings travel with it, because they are part of the look rather than
-beside it: the **view transform** (WuWa is authored under Standard, AG and ZZZ
-under Filmic at different exposures, and reading any of them under another's is a
-different picture) and the **world light**, since every surface multiplies ambient
-and a world tuned for one set fights the other. ZZZ is the clearest case of the
-second: it is quantised against the darkest world of the three, so over AG's
-magenta every surface reads fully lit however untouched its ramp is. Your sun is left alone — where the key
-light sits is staging, and a style switch has no business moving it.
+What travels with a set is what its ramps need in order to read, and nothing
+else. The **view transform** and its exposure — WuWa and ZZZ are authored under
+Standard, AG and HSR under Filmic, and reading any of them under another's is a
+different picture. The **world light**, since every surface multiplies ambient
+and a world tuned for one set fights the other. And, where a set needs one, its
+**key light**: ZZZ quantises against the light that actually reaches it, so it
+brings a sun of its own — 2.0 from behind and a little above — and a low wide
+bloom with it.
+
+Your background colour, your outline, your grade and your ground are left where
+you put them. Those are staging, and switching rendering style is not an occasion
+to restage your shot.
 
 The choice is remembered, so the next model you load arrives in the same style
 instead of the set it was auto-grouped into. **Restore default scene** clears it
@@ -374,6 +383,16 @@ way to produce the thumbnail a published scene requires. Capture thumbnails at
 
 **Green screen** replaces the background with pure `#00FF00` for compositing
 elsewhere, the classic MMD PV route.
+
+**Share export stats** is a switch below the render buttons, off until you turn it
+on. With it on, a finished video reports the resolution and aspect it was rendered
+at, the filenames of the models in it, and which effects, shader graphs and grade
+it used. Nothing identifies you — the rows carry no account, signed in or not —
+and your motion, your music, your scene and the video itself never leave your
+machine. What it adds up to is public at
+[reze.design/analysis](https://reze.design/analysis), and
+[reze.design/privacy](https://reze.design/privacy) is the full list of what is
+sent and what never is.
 
 **Exporting the scene itself** lives in the scene menu — click the logo at the top
 of the left rail (or on the floating pill when the panels are collapsed). **Export

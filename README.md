@@ -2,6 +2,8 @@
 
 **The authentic MMD experience, reforged in WebGPU and TypeScript.** Design, render and share MMD scenes in the browser: everything the 2008 desktop made possible — models, motions, camera work, MME effects — in a tab. Nothing to install, and a permanent link anyone can open.
 
+Download a model, a motion and a song the way you always have. Everything from there to the finished video happens in the tab: 33 scene effects and four rendering styles to pick from, the scene lit and graded live at full rate, and a 4K 60 fps export at 4× MSAA at the end of it.
+
 **→ [reze.design](https://reze.design)**
 
 Every part of it is next-generation. WGSL scene effects compiled in real-time as you type. Blender-style node graphs for materials. Motion, morph and camera editing on a real timeline. Lyrics, MIDI and one-click lip sync. 4K 60 fps export at 4× MSAA. Next.js and TypeScript end to end, on a rendering engine of its own — [reze-engine](https://github.com/AmyangXYZ/reze-engine), built for MMD, zero third-party dependencies.
@@ -24,16 +26,20 @@ One piece of the **Reze MMD family**, covering the whole MMD workflow on the web
 
 - **MMD models and motions** — PMX and VMD played the way MMD plays them: skeletal animation, IK, morphs, and rigid-body physics for hair and cloth. Several characters at once, and a stage PMX for the environment.
 - **Material shader graphs** — style a model in a Blender-style node editor, compiled to WGSL as you work: toon ramps, rim and fresnel, with the scene's own light available to the graph.
-- **Scene effects** — live-coded WGSL behind the model or in front of it, holding the scene's depth so rain and petals pass behind the character; several can run at once, composited in the order you apply them. An effect runs a hundred thousand GPU particles or a ribbon along a bone, emits real lights that illuminate the cast, and reads where the bones are, where the song is, and the notes and lyric line due on screen. Effects sit on the timeline: an effect can fire at a moment, fade in and out, and fire again.
+- **Rendering styles** — four built-in sets, *Aether Gazer*, *Wuthering Waves*, *Zenless Zone Zero* and *Honkai: Star Rail*, ported as node graphs. Pick one and it restyles every group role for role, bringing the view transform, world light and key light its ramps need to read — and leaving your background, outline, grade and ground where you put them.
+- **Scene effects** — live-coded WGSL behind the model or in front of it, holding the scene's depth so rain and petals pass behind the character; several can run at once, composited in the order you apply them. An effect runs a hundred thousand GPU particles or a ribbon along a bone, emits real lights that illuminate the cast, and reads where the bones are, where the song is, and the notes and lyric line due on screen. Every effect declares its own dials, so the panel builds sliders for it and you tune it without opening the shader.
 - **Animation timeline and curve editor** — grab a bone in the viewport, drag it, and the pose is keyed; bend the VMD's own bezier until the move lands exactly when you want it. Fix a motion you downloaded, animate the face, cut the camera — and it all saves as VMD any MMD tool can read.
 - **Colour grading** — ASC CDL underneath, colour wheels on top: warm the shadows, cool the highlights, and see it on your own scene instead of a swatch.
 - **Scene lighting** — place the sun, set the world light, tune the bloom. Drop in an HDR world and it lights the character; put a 360 image behind her and it does not. Two slots, so a studio HDRI can light a scene that shows a different sky.
-- **Video export** — 60 fps mp4 up to 4K, cinemascope to vertical, with a green-screen mode. Rendered frame by frame rather than screen-captured, so nothing drops and the music lands on the same frame every time.
+- **Stand her in real footage** — a plate is video the character stands *in* rather than in front of: it restores the camera and floor placement it was set up with, and it can lean, because footage shot on a phone leans and the scene has to lean with it.
+- **Props and cards** — a microphone, a fan, a sword riding a bone the way MMD's 外部親 does, and picture and video planes standing in the scene beside the cast.
+- **Video export** — 60 fps mp4 up to 4K at 4× MSAA, cinemascope to vertical, with green-screen and alpha modes. Rendered frame by frame rather than screen-captured, so nothing drops and the music lands on the same frame every time.
+- **Usage statistics, if you offer them** — one switch under the render buttons, off until you turn it on, reporting what a finished video was made of and nothing about who made it. What it adds up to is public at [reze.design/analysis](https://reze.design/analysis); [reze.design/privacy](https://reze.design/privacy) lists what is sent and what never leaves your machine.
 - **Publishing** — a permanent URL that plays the scene itself, not a video of it: anyone can open the link, orbit the camera while it runs, and take the whole thing into their own editor as a copy.
 - **Community content** — someone else's grade, shader graph or effect is one click from your scene, and yours is one click from theirs. Scenes too.
 - **Command palette** — ⌘K for every action and every setting, and what it is set to.
 - **Nothing lost** — everything is saved as you work: the scene, the uploads, every draft, written to local storage and IndexedDB. Close the tab, reload, come back tomorrow — it is all still there, and none of it reaches a server unless you publish.
-- **Lip sync from the lyrics** — one click turns a `.lrc` into a mouth-morph VMD, syllable by syllable onto the five MMD mouth shapes, in kana, hangul, hanzi, romaji, pinyin or English.
+- **Lip sync from the lyrics** — one click turns a `.lrc` into a mouth-morph VMD, syllable by syllable onto the five MMD mouth shapes, in kana, hangul, hanzi, romaji, pinyin or English. A bilingual `.lrc` sings the line, not its translation, and can draw both as one subtitle.
 
 Authoring in depth — [shader graphs](./docs/manual/en.md#24-material-shader-graphs) ·
 [scene effects](./docs/manual/en.md#23-scene-effects-in-wgsl) ·
