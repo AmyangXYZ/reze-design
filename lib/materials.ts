@@ -1,4 +1,3 @@
-import type { SceneSettings } from "@/lib/scene-settings"
 import { NODE_REGISTRY, type MaterialPreset, type ShaderGraph } from "reze-engine"
 import graphs from "@/content/graphs.json"
 import stageGraphs from "@/content/stage-graphs.json"
@@ -152,45 +151,15 @@ export const LOOK_PACKS: Record<
     transform: "standard" | "filmic" | "agx"
     exposure: number
     world: { color: string; strength: number }
-    /** The rest of the look's scene — light and post — where a pack carries
-     *  one. Each section merges over what the scene has; the model, the
-     *  camera and physics are never a pack's to set. */
-    scene?: {
-      sun?: Partial<SceneSettings["sun"]>
-      bloom?: Partial<SceneSettings["bloom"]>
-      dof?: Partial<SceneSettings["dof"]>
-      outline?: Partial<SceneSettings["outline"]>
-      grain?: Partial<SceneSettings["grain"]>
-      grade?: { preset: string; intensity: number }
-      background?: { color: string }
-      ground?: Partial<Pick<SceneSettings["ground"], "color" | "opacity" | "grid" | "gridEnabled" | "shadow">>
-    }
   }
 > = {
   ag: { tag: "aether-gazer", transform: "filmic", exposure: 0.6, world: { color: "#ed6aff", strength: 0.66 } },
   wuwa: { tag: "wuthering-waves", transform: "standard", exposure: 0, world: { color: "#fdf2f8", strength: 0.36 } },
-  // The look as set by hand in a scene (2026-09-08), light and post included,
-  // and taken whole: a warm pink world at 0.62 under a 2.0 sun from behind and
-  // a little above, the standard transform at exposure 0.2, a low wide bloom,
-  // an amber backdrop over a pale floor. It replaced the port's own numbers —
-  // Filmic at 0.5 over a 0.122-linear grey world — which read dark and washed
-  // against the ramps.
-  zzz: {
-    tag: "zenless-zone-zero",
-    transform: "standard",
-    exposure: 0.2,
-    world: { color: "#ffc9c9", strength: 0.62 },
-    scene: {
-      sun: { color: "#ffffff", strength: 2, azimuth: 184, elevation: 22 },
-      bloom: { enabled: true, threshold: 1.03, knee: 0.5, radius: 6.4, intensity: 0.14, color: "#ffffff" },
-      dof: { enabled: false },
-      outline: { enabled: false },
-      grain: { amount: 0 },
-      grade: { preset: "Neutral", intensity: 1 },
-      background: { color: "#ffb900" },
-      ground: { color: "#fef2f2", opacity: 0.41, grid: "#fafaf9", gridEnabled: true, shadow: true },
-    },
-  },
+  // The transform, exposure and world as set by hand in a scene (2026-09-08):
+  // the standard transform at 0.2 over a warm pink world at 0.62. It replaced
+  // the port's own numbers — Filmic at 0.5 over a 0.122-linear grey world —
+  // which read dark and washed against the ramps.
+  zzz: { tag: "zenless-zone-zero", transform: "standard", exposure: 0.2, world: { color: "#ffc9c9", strength: 0.62 } },
   // Filmic because the source IS Filmic — view transform Filmic, look High
   // Contrast, exposure 0, read straight off the .blend. That makes this the one
   // pack whose transform needed no argument.
