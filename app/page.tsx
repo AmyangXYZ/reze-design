@@ -8758,6 +8758,9 @@ export default function Lab() {
               onFramePreviewChange={framing.handleFramePreview}
               onProgressChange={setExportProgress}
               rasterLyricsAt={rasterLyricsAt}
+              // The same document Publish builds, read only to describe a
+              // finished export and only when the user opted in.
+              makeDoc={(bundle) => makeSceneDoc(collectLabSlots(), bundle)}
               // Only the MOVING ones: a still card is already in its texture and
               // has no frames to advance.
               planes={planes.flatMap((p) => {

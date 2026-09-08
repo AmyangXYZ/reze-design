@@ -302,6 +302,12 @@ const en = {
     watermark: "Watermark",
     /** The toggle that writes the AE script beside the video. */
     aeScript: "AE composition script",
+    /** Opt-in, off until asked for — see lib/export-consent. The note names what
+     *  is sent, because "help us improve" is what people feel misled by later. */
+    shareStats: "Share export stats",
+    shareStatsNote:
+      "Helps us improve rendering. Nothing you made leaves your machine — this reports only which settings and presets a finished video used.",
+    shareStatsLink: "What's collected",
     quality: "Quality",
     modes: {
       scene: "Scene · MP4",
@@ -332,6 +338,7 @@ const en = {
     close: "Close",
     current: "current",
     usedInScenes: (n: number) => `Used in ${n} ${n === 1 ? "scene" : "scenes"}`,
+    usedInExports: (n: number) => `${n} ${n === 1 ? "export" : "exports"}`,
     signInToLike: "Sign in to like",
     deleteDraft: "Delete draft",
     deleteDraftConfirm: "Delete this draft? It only exists on this device.",
@@ -1165,6 +1172,9 @@ const zh: Dictionary = {
     range: "区间",
     watermark: "水印",
     aeScript: "AE 合成脚本",
+    shareStats: "分享导出统计",
+    shareStatsNote: "帮我们改进渲染效果。你做的东西不会离开这台电脑——只上报一次导出用了哪些设置与预设。",
+    shareStatsLink: "收集了什么",
     quality: "质量",
     modes: {
       scene: "场景 · MP4",
@@ -1194,6 +1204,7 @@ const zh: Dictionary = {
     close: "关闭",
     current: "使用中",
     usedInScenes: (n: number) => `${n} 个场景在用`,
+    usedInExports: (n: number) => `${n} 次导出`,
     signInToLike: "登录后可点赞",
     deleteDraft: "删除草稿",
     deleteDraftConfirm: "删除这个草稿？它只存在于本设备。",

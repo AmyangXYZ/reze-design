@@ -13,9 +13,9 @@
 
 import { useCallback, useEffect, useState } from "react"
 
-export type ItemStats = { likeCount: number; liked: boolean; scenes: number }
+export type ItemStats = { likeCount: number; liked: boolean; scenes: number; exports: number }
 
-const EMPTY: ItemStats = { likeCount: 0, liked: false, scenes: 0 }
+const EMPTY: ItemStats = { likeCount: 0, liked: false, scenes: 0, exports: 0 }
 
 type Snapshot = { stats: Record<string, ItemStats>; signedIn: boolean }
 let cache: Snapshot | null = null
@@ -50,7 +50,7 @@ export function prefetchLibraryStats(): void {
  *  without an entry there is nothing to like, and the count reads as dead. */
 export function noteItemPublished(id: string): void {
   const snap = (cache ??= { stats: {}, signedIn: true })
-  snap.stats[id] = { likeCount: 0, liked: false, scenes: 0 }
+  snap.stats[id] = { likeCount: 0, liked: false, scenes: 0, exports: 0 }
   for (const l of listeners) l()
 }
 

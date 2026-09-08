@@ -12,11 +12,13 @@
 
 import { sql } from "drizzle-orm"
 import {
+  date,
   index,
   integer,
   jsonb,
   pgTable,
   primaryKey,
+  real,
   text,
   timestamp,
   uniqueIndex,
@@ -70,6 +72,12 @@ export const libraryItems = pgTable(
     viewCount: integer("view_count").notNull().default(0),
     /** Published scenes using this preset, denormalised from scene_uses. */
     usageCount: integer("usage_count").notNull().default(0),
+    /** Finished video exports that used this preset, from the browsers that opted
+     *  in — see export_stats. The number usage_count was standing in for: most
+     *  work leaves as a file and is never published here, so counting publishes
+     *  counted the minority. Soft by construction (the report is anonymous and
+     *  unauthenticated), so read it as a signal and never as a ranking. */
+    exportCount: integer("export_count").notNull().default(0),
 
     // ── Scenes only ──────────────────────────────────────────────────────────
     /** 借物表 — free text, required at publish. A scene redistributes other
@@ -190,5 +198,52 @@ export const likes = pgTable(
     primaryKey({ columns: [t.userId, t.itemId] }),
     // "What has this person liked" — their own list, newest first.
     index("likes_user_idx").on(t.userId, t.createdAt),
+  ],
+)
+
+/**
+ * What finished videos were made of, from the browsers that opted in.
+ *
+ * There is no user column and there is no clock — a date, and what the scene was
+ * built from. That is not an oversight to be corrected later: it is the whole
+ * reason this table can exist. With no identity and no time of day, a row cannot
+ * be walked back to a person or to an afternoon, so there is nothing here to
+ * disclose, to export on request, or to lose. Adding either column would change
+ * what this is, and would need asking again — see lib/export-consent.
+ *
+ * `models` holds .pmx filenames, which is the point of the table: knowing which
+ * games' models people actually bring is what decides which presets get tuned
+ * next. Motion and music are absent by design — those describe the video someone
+ * is making rather than the tools they made it with.
+ *
+ * Raw rows are the liability and the rollup is the goal, so expire them; the
+ * counters on library_items survive on their own.
+ */
+export const exportStats = pgTable(
+  "export_stats",
+  {
+    id: text("id").primaryKey(),
+    /** Date only. Enough for "is 4K adoption rising", not enough for a timeline. */
+    day: date("day").notNull().defaultNow(),
+    /** Which platform the file is cut for: 9:16 is vertical, 2.39:1 cinematic. */
+    aspect: text("aspect").notNull(),
+    quality: text("quality").notNull(),
+    width: integer("width").notNull(),
+    height: integer("height").notNull(),
+    /** Rendering style the browser was set to. */
+    look: text("look").notNull(),
+    /** .pmx filenames, primary first. */
+    models: text("models").array().notNull().default([]),
+    /** `[{ id, params? }]` — pinned ids or built-in names, with the dials moved
+     *  off default. Params are ours; a draft's are omitted. */
+    effects: jsonb("effects").$type<{ id: string; params?: Record<string, unknown> }[]>().notNull().default([]),
+    graphs: text("graphs").array().notNull().default([]),
+    gradeId: text("grade_id"),
+    gradeIntensity: real("grade_intensity"),
+  },
+  (t) => [
+    // Every question this table answers is "over some period" — and it is what
+    // the retention sweep deletes by.
+    index("export_stats_day_idx").on(t.day),
   ],
 )

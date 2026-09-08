@@ -2,7 +2,7 @@
 
 // Right dock · Render tab — where a finished scene becomes an exported video.
 
-import { memo, useEffect, useRef, useState, type RefObject } from "react"
+import { memo, useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react"
 import type { Engine } from "reze-engine"
 import { Camera, Clapperboard, Film, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -28,6 +28,15 @@ import {
 import { isCompositingBackground, type ExportBackground } from "@/lib/export-background"
 import { formatBytes } from "@/lib/png-sequence"
 import { downloadBlob } from "@/lib/scene-file"
+import {
+  exportStatsAllowed,
+  exportStatsServerSnapshot,
+  setExportStatsAllowed,
+  subscribeExportStats,
+} from "@/lib/export-consent"
+import { reportExport, sceneExportStats } from "@/lib/export-stats"
+import { loadLookPref } from "@/lib/look-pref"
+import type { SceneDoc } from "@/lib/scene"
 import { useT } from "@/lib/i18n"
 
 // Minimal config, iMovie-export style
@@ -178,6 +187,7 @@ export const RenderPanel = memo(function RenderPanel({
   onProgressChange,
   rasterLyricsAt,
   planes,
+  makeDoc,
 }: {
   /** This tab is the visible one. */
   active: boolean
@@ -221,6 +231,10 @@ export const RenderPanel = memo(function RenderPanel({
   /** Moving cards, which the export advances itself — the live clock steps them
    *  by seeking, which is far too slow offline. */
   planes?: ExportPlane[]
+  /** The scene as a document — the same builder Publish uses. Read only to
+   *  describe a finished export, and only when the user has opted in; a host
+   *  that omits it hides the stats row entirely. */
+  makeDoc?: (bundle: string | null) => SceneDoc
 }) {
   const t = useT()
   // Cinemascope by default — the whole reze-* series is named for the Chainsaw Man
@@ -232,6 +246,12 @@ export const RenderPanel = memo(function RenderPanel({
   const [rangeStart, setRangeStart] = useState("")
   const [rangeEnd, setRangeEnd] = useState("")
   const [watermark, setWatermark] = useState(prefs.watermark)
+  // Read through the store rather than seeded into state like the prefs above:
+  // those render the same on both sides because they have real defaults, while a
+  // stored yes here would have the server paint the switch off and the client
+  // paint it on. The server snapshot is off, always, so the only value React ever
+  // renders unasked is the safe one.
+  const shareStats = useSyncExternalStore(subscribeExportStats, exportStatsAllowed, exportStatsServerSnapshot)
   // Session state, not a preference: the mode repaints the live canvas, and
   // finding the viewport keyed green on a fresh load would read as a bug.
   //
@@ -521,6 +541,20 @@ export const RenderPanel = memo(function RenderPanel({
         frames: directory ? totalFrames : undefined,
         size: formatBytes(bytes),
       })
+      // The video exists — which is the only moment this is true, and the reason
+      // it is reported here rather than where the render starts. A cancelled or
+      // failed export made nothing, and nothing is what it should say about the
+      // presets it was going to use. Never awaited: see reportExport.
+      if (shareStats && makeDoc) {
+        reportExport({
+          aspect,
+          quality,
+          width,
+          height,
+          look: loadLookPref(),
+          ...sceneExportStats(makeDoc(null)),
+        })
+      }
     } catch (e) {
       // Discard the partial file — abort() drops everything written since createWritable
       await fileStream?.abort().catch(() => {})
@@ -717,6 +751,35 @@ export const RenderPanel = memo(function RenderPanel({
             </Button>
           )}
         </div>
+        {/* Below the actions, apart from the settings above it: those change the
+            file, this changes what we are told about it. A host with no document
+            builder cannot describe an export, so it does not ask. */}
+        {makeDoc && (
+          <div className="mt-5 border-t border-line pt-3">
+            <Row label={t.render.shareStats}>
+              <Switch
+                checked={shareStats}
+                onCheckedChange={setExportStatsAllowed}
+                disabled={exporting}
+                className="scale-75"
+              />
+            </Row>
+            {/* Amber, like the credits note in the publish dialog: the same kind of
+                line, the one thing beside a control that has to actually be read
+                before the control is touched. */}
+            <p className="mt-0.5 text-[11px] leading-snug text-amber-200/90">
+              {t.render.shareStatsNote}{" "}
+              <a
+                href="/privacy"
+                target="_blank"
+                rel="noreferrer"
+                className="underline underline-offset-2 hover:text-amber-100"
+              >
+                {t.render.shareStatsLink}
+              </a>
+            </p>
+          </div>
+        )}
         {exporting ? (
           <div className="mt-4">
             <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">

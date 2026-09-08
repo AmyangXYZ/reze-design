@@ -328,12 +328,15 @@ export function LibraryItemStats({
   liked,
   canLike,
   scenes,
+  exports,
   onToggle,
 }: {
   likeCount: number
   liked: boolean
   canLike: boolean
   scenes: number
+  /** Finished video exports that used this, from browsers that opted in. */
+  exports: number
   onToggle?: () => void
 }) {
   const t = useT()
@@ -349,8 +352,13 @@ export function LibraryItemStats({
     // padding, so the count lands on the same right margin as the description above
     // it and the hover fill bleeds out to the pane's edge instead of stopping short.
     <div className="mt-3 -mr-2.5 flex items-center gap-2">
+      {/* Two counts, never summed. A publish is one scene that stays and can be
+          opened; an export is one video someone made, and the same person tuning
+          one scene makes several. Adding them would hide the comparison this is
+          for — an item with few scenes and many exports is used constantly and
+          shared elsewhere, which is the thing worth seeing. */}
       <span className="min-w-0 flex-1 text-[11px] leading-tight text-muted-foreground">
-        {t.library.usedInScenes(scenes)}
+        {t.library.usedInScenes(scenes)} · {t.library.usedInExports(exports)}
       </span>
       <LibraryLike likeCount={likeCount} liked={liked} canLike={canLike} onToggle={onToggle} />
     </div>

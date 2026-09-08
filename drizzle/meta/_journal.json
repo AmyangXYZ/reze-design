@@ -85,6 +85,13 @@
       "when": 1787489286322,
       "tag": "0011_mysterious_luckman",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1788881570461,
+      "tag": "0012_special_daredevil",
+      "breakpoints": true
     }
   ]
 }

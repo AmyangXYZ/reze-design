@@ -18,7 +18,7 @@ import { alias } from "drizzle-orm/pg-core"
 import { auth } from "@/lib/auth"
 import { hasDatabase, db, schema } from "@/lib/db"
 
-export type ItemStats = { likeCount: number; liked: boolean; scenes: number }
+export type ItemStats = { likeCount: number; liked: boolean; scenes: number; exports: number }
 
 export async function GET(request: Request) {
   // No database configured: an honest empty answer, not a 500 the client has to
@@ -35,6 +35,10 @@ export async function GET(request: Request) {
       .select({
         id: schema.libraryItems.id,
         likeCount: schema.libraryItems.likeCount,
+        // Counted, not joined: export_stats has no scene id to group by — see the
+        // table. The counter on the item IS the aggregate, which is also what
+        // lets the raw rows expire without taking the number with them.
+        exportCount: schema.libraryItems.exportCount,
       })
       .from(schema.libraryItems),
     session
@@ -63,7 +67,7 @@ export async function GET(request: Request) {
 
   const stats: Record<string, ItemStats> = {}
   for (const i of items) {
-    stats[i.id] = { likeCount: i.likeCount, liked: liked.has(i.id), scenes: scenesUsing.get(i.id) ?? 0 }
+    stats[i.id] = { likeCount: i.likeCount, liked: liked.has(i.id), scenes: scenesUsing.get(i.id) ?? 0, exports: i.exportCount }
   }
   return NextResponse.json({ stats, signedIn: !!session })
 }

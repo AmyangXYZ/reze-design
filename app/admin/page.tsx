@@ -59,6 +59,7 @@ export default async function AdminPage() {
     visibility: i.visibility,
     createdAt: i.createdAt.toISOString(),
     usedInScenes: usage.get(i.id) ?? 0,
+    exportedIn: i.exportCount,
   }))
 
   const users: UserRow[] = rawUsers.map((u) => {

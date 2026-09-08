@@ -21,6 +21,7 @@ export type ItemRow = {
   visibility: string
   createdAt: string
   usedInScenes: number
+  exportedIn: number
 }
 
 export type UserRow = {
@@ -119,6 +120,16 @@ export function ItemTables({ items }: { items: ItemRow[] }) {
             header: "In scenes",
             sort: (r: ItemRow) => r.usedInScenes,
             cell: (r: ItemRow) => <span className="font-mono">{r.usedInScenes}</span>,
+          },
+          // Its own column, never folded into the one beside it: publishes are
+          // counted from rows that exist, exports are reported anonymously by
+          // whoever opted in. Two different degrees of certainty do not belong
+          // in one number, and the gap between them is the interesting part.
+          {
+            key: "exports",
+            header: "In exports",
+            sort: (r: ItemRow) => r.exportedIn,
+            cell: (r: ItemRow) => <span className="font-mono">{r.exportedIn}</span>,
           },
         ]),
     {
