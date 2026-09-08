@@ -2453,14 +2453,16 @@ export default function Lab() {
   // given plate, and both are restored when that plate is taken away. Scoped
   // to the plate object, and forgotten on a scene swap, so a fresh scene never
   // inherits either.
+  // Keyed by the footage's FILE: the backdrop object is rebuilt whenever its
+  // slot is re-applied, and a key on the object let the restore miss.
   const beforePlate = useRef<{
-    plate: object
+    plate: File
     camera?: SceneCamera
     cast?: { id: string; position: [number, number, number] }
   } | null>(null)
   const plateSnapshot = useCallback((): NonNullable<typeof beforePlate.current> | null => {
     if (!plate) return null
-    if (!beforePlate.current || beforePlate.current.plate !== plate) beforePlate.current = { plate }
+    if (!beforePlate.current || beforePlate.current.plate !== plate.file) beforePlate.current = { plate: plate.file }
     return beforePlate.current
   }, [plate])
   /**
@@ -2789,16 +2791,15 @@ export default function Lab() {
     [setCameraView],
   )
 
-  // The footage is gone: give back what it changed — see beforePlate.
-  const lastPlate = useRef<object | null>(null)
+  // The footage is gone, or is other footage now: give back what the old one
+  // changed — see beforePlate.
   useEffect(() => {
     const before = beforePlate.current
-    if (plate === null && before && lastPlate.current === before.plate) {
+    if (before && plate?.file !== before.plate) {
       beforePlate.current = null
       if (before.camera) changeCamera(before.camera)
       if (before.cast) setCastPosition(before.cast.id, before.cast.position)
     }
-    lastPlate.current = plate
   }, [plate, changeCamera, setCastPosition])
 
   /**
@@ -3331,7 +3332,13 @@ export default function Lab() {
       // The camera as it stood, for when the footage goes — once per plate.
       const snap = plateSnapshot()
       if (snap && !snap.camera) snap.camera = camera
-      const next = { ...camera, follow: null }
+      // A followed camera's target triple is an OFFSET from the bone. Dropping
+      // the follow for the plate, the target has to become the world point the
+      // orbit actually centres on, or the shot swings to a spot near the origin.
+      const orbit = engineRef.current?.getCameraOrbit()
+      const worldTarget: [number, number, number] =
+        camera.follow && orbit ? [orbit.target.x, orbit.target.y, orbit.target.z] : [...camera.target]
+      const next = { ...camera, follow: null, target: worldTarget }
       const found: string[] = []
       if (r.solved.roll) {
         // NEGATED. The engine tips the up vector toward screen-right for a
@@ -3373,7 +3380,7 @@ export default function Lab() {
     } finally {
       setSolving(false)
     }
-  }, [plate, camera, changeCamera, patch, t, plateSnapshot])
+  }, [plate, camera, changeCamera, patch, t, plateSnapshot, engineRef])
 
   /** The HDRI. Its own input, because its accept list is one extension and
    *  sharing the background's would offer .hdr in slots that cannot use it. */
