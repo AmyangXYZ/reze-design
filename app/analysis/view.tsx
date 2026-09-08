@@ -99,6 +99,10 @@ const modelName = (file: string) => file.replace(/\.(pmx|pmd|zip)$/i, "")
  * one readable. `share` prints each row against the total, which only means
  * something where a row IS a share of the whole: an export has one aspect ratio,
  * but it has a whole cast, so the models list shows counts alone.
+ *
+ * Both halves of a count are named. "12 · 5" needs the legend to decode and gets
+ * decoded wrong at a glance; "12 videos · 5 scenes" is the same width in the
+ * places it matters and needs nothing.
  */
 function Ranks({
   title,
@@ -107,6 +111,8 @@ function Ranks({
   rank = false,
   columns = false,
   share,
+  videos,
+  scenes,
 }: {
   title: string
   rows: Stack[]
@@ -114,6 +120,8 @@ function Ranks({
   rank?: boolean
   columns?: boolean
   share?: number
+  videos: (n: number) => string
+  scenes: (n: number) => string
 }) {
   const ordered = [...rows].sort((x, y) => y.a + y.b - (x.a + x.b))
   const top = ordered[0] ? ordered[0].a + ordered[0].b : 0
@@ -127,19 +135,35 @@ function Ranks({
             <li key={r.key} className="mb-2 break-inside-avoid last:mb-0">
               <div className="flex items-baseline gap-2.5">
                 {rank && (
-                  <span className="w-5 shrink-0 text-right font-mono text-[11px] text-muted-foreground tabular-nums">
+                  // Left-aligned, so the first digit sits on the same margin as
+                  // the panel's title. Right-aligning tidied the numerals against
+                  // each other and put every one of them out of line with the
+                  // heading directly above.
+                  <span className="w-5 shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums">
                     {i + 1}
                   </span>
                 )}
                 <span className="min-w-0 flex-1 truncate text-xs text-foreground">{r.label}</span>
                 <span className="shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums">
-                  {share ? `${Math.round((r.a / share) * 100)}% · ${r.a}` : r.b > 0 ? `${r.a} · ${r.b}` : r.a}
+                  {share
+                    ? `${Math.round((r.a / share) * 100)}%`
+                    : [r.a > 0 && videos(r.a), r.b > 0 && scenes(r.b)].filter(Boolean).join(" · ")}
                 </span>
               </div>
-              {/* Indented past the rank so the bars line up as one column to
-                  compare down, rather than starting under the numbers. */}
-              <div className={rank ? "pl-[30px]" : ""}>
-                <StackBar a={r.a} b={r.b} top={top} />
+              {/* The total rides the bar it measures, on its own line: what a row
+                  is made of belongs beside the name, what it comes to belongs
+                  beside the length. Indented past the rank so every bar starts on
+                  one column and can be compared down. */}
+              <div className={`flex items-center gap-2.5 ${rank ? "pl-[30px]" : ""}`}>
+                <div className="min-w-0 flex-1">
+                  <StackBar a={r.a} b={r.b} top={top} />
+                </div>
+                {/* Same size as the row's other numbers, heavier: this is the
+                    figure the bar beside it draws, and weight picks it out of a
+                    column without changing the rhythm of the list. */}
+                <span className="shrink-0 font-mono text-[11px] font-semibold text-foreground tabular-nums">
+                  {share ? videos(r.a) : r.a + r.b}
+                </span>
               </div>
             </li>
           ))}
@@ -215,18 +239,42 @@ export function AnalysisView({ data }: { data: ExportAnalysis }) {
         </section>
 
         <div className="mt-4">
-          <Ranks title={t.analysis.models} rows={models} empty={t.analysis.empty} rank columns />
+          <Ranks
+            title={t.analysis.models}
+            rows={models}
+            empty={t.analysis.empty}
+            rank
+            columns
+            videos={t.analysis.videos}
+            scenes={t.analysis.scenes}
+          />
         </div>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-3">
-          <Ranks title={t.analysis.aspect} rows={solo(data.aspect)} empty={t.analysis.empty} share={data.exportTotal} />
+          <Ranks
+            title={t.analysis.aspect}
+            rows={solo(data.aspect)}
+            empty={t.analysis.empty}
+            share={data.exportTotal}
+            videos={t.analysis.videos}
+            scenes={t.analysis.scenes}
+          />
           <Ranks
             title={t.analysis.resolution}
             rows={solo(data.quality)}
             empty={t.analysis.empty}
             share={data.exportTotal}
+            videos={t.analysis.videos}
+            scenes={t.analysis.scenes}
           />
-          <Ranks title={t.analysis.style} rows={solo(data.look)} empty={t.analysis.empty} share={data.exportTotal} />
+          <Ranks
+            title={t.analysis.style}
+            rows={solo(data.look)}
+            empty={t.analysis.empty}
+            share={data.exportTotal}
+            videos={t.analysis.videos}
+            scenes={t.analysis.scenes}
+          />
         </div>
         <p className="mt-2 text-[11px] text-muted-foreground">{t.analysis.renderOnly}</p>
 
@@ -237,6 +285,9 @@ export function AnalysisView({ data }: { data: ExportAnalysis }) {
               title={t.analysis.kinds[kind]}
               rows={data.items.filter((i) => i.kind === kind).map(itemStack)}
               empty={t.analysis.emptyItems}
+              rank
+              videos={t.analysis.videos}
+              scenes={t.analysis.scenes}
             />
           ))}
         </div>

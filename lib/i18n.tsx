@@ -353,6 +353,7 @@ const en = {
     showLess: "Show fewer",
     emptyItems: "Nothing has reached a finished video yet.",
     scenes: (n: number) => `${n} ${n === 1 ? "scene" : "scenes"}`,
+    videos: (n: number) => `${n} ${n === 1 ? "video" : "videos"}`,
     kinds: { graph: "Shader graphs", effect: "Effects", grade: "Colour grades" },
   },
   library: {
@@ -1242,6 +1243,7 @@ const zh: Dictionary = {
     showLess: "收起",
     emptyItems: "还没有进入成片。",
     scenes: (n: number) => `${n} 个场景`,
+    videos: (n: number) => `${n} 成片`,
     kinds: { graph: "着色器节点图", effect: "特效", grade: "调色" },
   },
   library: {
