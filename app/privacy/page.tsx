@@ -15,7 +15,7 @@ const COLLECTED = [
   ["Resolution and aspect ratio", "3840×1608, 2.39:1 — the shape of the file you rendered."],
   [
     "Model filenames",
-    "The .pmx names in the scene. Which games' models people bring is what decides which presets get tuned next.",
+    "The .pmx names in the scene. Which games' models people bring is what decides which presets get tuned next, and the names are listed publicly on the analysis page.",
   ],
   [
     "Effects, and the dials you moved",

@@ -11,7 +11,7 @@
 
 import type { Metadata } from "next"
 import { hasDatabase } from "@/lib/db"
-import { EMPTY_ANALYSIS, exportAnalysis, MIN_MODEL_COUNT } from "@/lib/db/export-analysis"
+import { EMPTY_ANALYSIS, exportAnalysis } from "@/lib/db/export-analysis"
 import { AnalysisView } from "./view"
 
 export const metadata: Metadata = {
@@ -36,5 +36,5 @@ export const dynamic = "force-dynamic"
 
 export default async function AnalysisPage() {
   const data = hasDatabase ? await exportAnalysis() : EMPTY_ANALYSIS
-  return <AnalysisView data={data} minModelCount={MIN_MODEL_COUNT} />
+  return <AnalysisView data={data} />
 }
