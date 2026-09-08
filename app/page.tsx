@@ -4182,11 +4182,22 @@ export default function Lab() {
         })
         if (next.some((g, i) => g !== list[i])) void applyGroups(modelId, next)
       }
-      const { transform, exposure, world } = LOOK_PACKS[pack]
+      const { transform, exposure, world, scene } = LOOK_PACKS[pack]
       setSettings((prev) => ({
         ...prev,
         view: { transform, exposure },
         world: { ...prev.world, ...world },
+        // A pack that carries its scene sets light and post too, section by
+        // section over what the scene has.
+        ...(scene?.sun ? { sun: { ...prev.sun, ...scene.sun } } : {}),
+        ...(scene?.bloom ? { bloom: { ...prev.bloom, ...scene.bloom } } : {}),
+        ...(scene?.dof ? { dof: { ...prev.dof, ...scene.dof } } : {}),
+        ...(scene?.outline ? { outline: { ...prev.outline, ...scene.outline } } : {}),
+        ...(scene?.grain ? { grain: { ...prev.grain, ...scene.grain } } : {}),
+        // The pack's preset is a built-in, so a pin to a published grade goes.
+        ...(scene?.grade ? { grade: { preset: scene.grade.preset, intensity: scene.grade.intensity } } : {}),
+        ...(scene?.background ? { background: { ...prev.background, color: scene.background.color } } : {}),
+        ...(scene?.ground ? { ground: { ...prev.ground, ...scene.ground } } : {}),
       }))
       // Remembered for the NEXT model, not for this scene — the scene already
       // carries what it is wearing.
