@@ -9,7 +9,7 @@ import {
   DEFAULT_DOF,
   DEFAULT_GRAIN,
   DEFAULT_OUTLINE,
-  DEFAULT_PHYSICS,
+  DEFAULT_EYES, DEFAULT_PHYSICS,
   DEFAULT_VIEW,
   type SceneSettings,
 } from "@/lib/scene-settings"
@@ -385,7 +385,9 @@ export type SceneAssetsDoc = {
  * effect sits inside `background` exactly where the UI puts it, at the same level
  * as the grade rather than floating outside the settings.
  */
-export type SceneSettingsDoc = Omit<SceneSettings, "background"> & {
+export type SceneSettingsDoc = Omit<SceneSettings, "background" | "eyes"> & {
+  /** Absent in documents from before the toggle existed; read as off. */
+  eyes?: SceneSettings["eyes"]
   camera: SceneCamera
   background: SceneSettings["background"] & {
     /**
@@ -729,6 +731,7 @@ export function parseSceneDoc(
       settings: {
         ...settings,
         physics: { ...DEFAULT_PHYSICS, ...settings.physics },
+        eyes: { ...DEFAULT_EYES, ...settings.eyes },
         // Same merge, same reason: a document written before the 0.4.0 chrome
         // carries neither block, and spreading an absent one is a no-op that
         // leaves the defaults — no blur, no outlines, exactly how it looked.
@@ -1154,6 +1157,7 @@ function restored(base: Scene): Scene {
         grade: { ...base.state.settings.grade, ...settingsBase.grade },
         ground: { ...base.state.settings.ground, ...settingsBase.ground },
         physics: { ...base.state.settings.physics, ...settingsBase.physics },
+        eyes: { ...base.state.settings.eyes, ...settingsBase.eyes },
       },
       groups: groupsUsable ? usableGroups : base.state.groups,
       // Same per-model gate as groups

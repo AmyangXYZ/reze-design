@@ -9,7 +9,7 @@ import {
   DEFAULT_DOF,
   DEFAULT_GRAIN,
   DEFAULT_OUTLINE,
-  DEFAULT_PHYSICS,
+  DEFAULT_EYES, DEFAULT_PHYSICS,
   DEFAULT_VIEW,
 } from "@/lib/scene-settings"
 
@@ -174,6 +174,7 @@ const DEMO_SCENE_DOC: SceneDoc = {
     grade: { preset: "Neutral", intensity: 1 },
     ground: { enabled: true, color: "#c800de", size: 160, opacity: 0.48, shadow: true, grid: "#fafaf9", gridEnabled: true },
     physics: DEFAULT_PHYSICS,
+    eyes: DEFAULT_EYES,
   },
 }
 
@@ -213,6 +214,7 @@ export const EMPTY_SCENE_DOC: SceneDoc = {
     grade: { preset: "Neutral", intensity: 1 },
     ground: { enabled: true, color: "#3a3a3d", size: 160, opacity: 0.42, shadow: true, grid: "#fafaf9", gridEnabled: true },
     physics: DEFAULT_PHYSICS,
+    eyes: DEFAULT_EYES,
   },
 }
 

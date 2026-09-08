@@ -6,7 +6,7 @@ import { memo, useEffect, useRef, useState, type ReactNode, type RefObject } fro
 import { cn } from "@/lib/utils"
 import { FPS } from "@/lib/clip"
 import type { Engine, Model } from "reze-engine"
-import { Orbit, Pause, Play, Repeat, RepeatOff, Video } from "lucide-react"
+import { Eye, EyeOff, Orbit, Pause, Play, Repeat, RepeatOff, Video } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useT } from "@/lib/i18n"
@@ -66,6 +66,8 @@ export const AnimPlayer = memo(function AnimPlayer({
   engineRef,
   modelNames,
   hasCamera,
+  eyes,
+  onEyes,
   onFollowingChange,
   trailing,
   below,
@@ -79,6 +81,10 @@ export const AnimPlayer = memo(function AnimPlayer({
   modelNames: string[]
   /** A camera VMD is loaded — show the Follow/Free toggle. */
   hasCamera: boolean
+  /** Eyes on the camera — the scene's setting and its switch. Beside Loop:
+   *  it is a property of the playback you are watching, like following is. */
+  eyes?: boolean
+  onEyes?: (on: boolean) => void
   /** Extra controls at the right end of the row, after Loop. */
   trailing?: ReactNode
   /**
@@ -511,6 +517,21 @@ export const AnimPlayer = memo(function AnimPlayer({
         </TooltipTrigger>
         <TooltipContent side="top">{loop ? t.transport.loopOn : t.transport.loopOff}</TooltipContent>
       </Tooltip>
+      {onEyes && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(btn, eyes ? "text-blue-400" : "text-muted-foreground hover:text-foreground")}
+              onClick={() => onEyes(!eyes)}
+            >
+              {eyes ? <Eye className={ico} strokeWidth={2.4} /> : <EyeOff className={ico} />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">{eyes ? t.transport.eyesOn : t.transport.eyesOff}</TooltipContent>
+        </Tooltip>
+      )}
       {trailing}
     </>
   )

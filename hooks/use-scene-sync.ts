@@ -453,6 +453,16 @@ export function useSceneSync({
     }
   }, [backgroundEffects, exportBackground, ready, engineRef, castIds, onParamDecls])
 
+  // ── Eyes on the camera ──
+  //
+  // Per cast model, and again as models land: the list is what changes when
+  // one arrives, and a setting pushed before it existed reached nothing.
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine || !ready) return
+    for (const id of castIds) engine.setEyeTracking(id, settings.eyes.enabled ? {} : null)
+  }, [engineRef, ready, castIds, settings.eyes])
+
   /**
    * A dial moved, without reinstalling.
    *

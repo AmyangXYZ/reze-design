@@ -76,6 +76,7 @@ import {
   Wand2,
   Hand,
   Shapes,
+  Eye,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -1220,6 +1221,16 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       label: l.cmd.outlineOn,
       altLabels: [alt.cmd.outlineOn, l.cmd.outlineOff, alt.cmd.outlineOff],
       keywords: ["edge", "rim", "outline", "描边", "线稿", "轮廓"],
+    },
+    // Eyes on the camera — the transport's eye button, reachable by name.
+    {
+      id: "eyes",
+      repeatable: true,
+      section: "command",
+      icon: Eye,
+      label: l.cmd.eyesOn,
+      altLabels: [alt.cmd.eyesOn, l.cmd.eyesOff, alt.cmd.eyesOff],
+      keywords: ["eyes", "gaze", "look at camera", "eye contact", "eyeline", "眼神", "视线", "目线", "看镜头", "眼睛"],
     },
     // Re-seed the cloth and hair solver.
     //
@@ -4981,6 +4992,11 @@ export default function Lab() {
               ...c,
               label: valuesShown.settings.outline.enabled ? t.lab.cmd.outlineOff : t.lab.cmd.outlineOn,
             }
+          if (c.id === "eyes")
+            return {
+              ...c,
+              label: valuesShown.settings.eyes.enabled ? t.lab.cmd.eyesOff : t.lab.cmd.eyesOn,
+            }
           // Same rule as outline: say what pressing it WILL do.
           if (c.id === "timeline")
             return {
@@ -5725,6 +5741,7 @@ export default function Lab() {
         })
       else if (item.id === "grade-lib") openBrowse({ kind: "grade" })
       else if (item.id === "outline") patch("outline", { enabled: !outlineRef.current })
+      else if (item.id === "eyes") setSettings((s2) => ({ ...s2, eyes: { enabled: !s2.eyes.enabled } }))
       // Nothing to undo and nothing to store: the bodies are re-seeded onto the
       // pose they are already in, and the next frame simulates forward from
       // there. Running it when nothing is wrong costs one settle and changes
@@ -8837,6 +8854,8 @@ export default function Lab() {
                 engineRef={engineRef}
                 modelNames={modelNames}
                 hasCamera={cameraClip !== null}
+                eyes={settings.eyes.enabled}
+                onEyes={(on) => patch("eyes", { enabled: on })}
                 // No tooltip. A chevron pointing at where the thing will go is the
                 // whole explanation, and a tip that only repeats the arrow delays a
                 // control people press repeatedly. aria-label still carries it for

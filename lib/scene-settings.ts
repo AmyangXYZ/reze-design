@@ -125,6 +125,15 @@ export type SceneSettings = {
      */
     floor: boolean
   }
+  /**
+   * Eyes on the camera. Live in the engine (Engine.setEyeTracking): 左目 and
+   * 右目 are solved every frame toward wherever the camera is, orbit or
+   * motion alike, and given back to the motion when off. A toggle: the
+   * engine owns how far they turn.
+   */
+  eyes: {
+    enabled: boolean
+  }
 }
 
 /** Same story as DEFAULT_PHYSICS, one section over: both blocks arrived with the
@@ -166,6 +175,10 @@ export const DEFAULT_PHYSICS: SceneSettings["physics"] = {
   // with the floor there — it is the only value that brings one back unchanged.
   floor: true,
 }
+
+/** What a document without an eyes block gets: off, since every scene before
+ *  the toggle existed was authored with the eyes the motion gave them. */
+export const DEFAULT_EYES: SceneSettings["eyes"] = { enabled: false }
 
 /** Frequency range, in Hz. Shared so the slider, the stored value and the
  *  variation derived from them cannot drift apart. */
