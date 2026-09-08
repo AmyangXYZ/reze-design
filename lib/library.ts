@@ -40,13 +40,17 @@ export type EffectPayload = { wgsl: string }
 /**
  * The biggest asset bundle a scene may publish.
  *
+ * R2 would take 4.995 GiB in one PUT; 2 GiB is ours. The browser uploads the
+ * zip in a single presigned request that cannot resume, so the ceiling worth
+ * setting is the one a publish can actually finish over a home connection.
+ *
  * Shared because it is enforced TWICE and the two must agree: the client checks
  * it before uploading, so an over-size scene fails immediately with a sentence
  * instead of after minutes of upload, and the route checks it again because a
  * client-side limit is a courtesy, not a control. Two copies drifting means one
  * of those two is wrong, and the wrong one is whichever the user meets.
  */
-export const MAX_BUNDLE_BYTES = 512 * 1024 * 1024
+export const MAX_BUNDLE_BYTES = 2 * 1024 ** 3
 
 export type ScenePayload = { doc: SceneDoc }
 

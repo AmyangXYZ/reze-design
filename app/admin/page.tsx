@@ -85,7 +85,9 @@ export default async function AdminPage() {
   ]
 
   return (
-    <main className="w-full px-12 py-10 text-sm">
+    // The root body carries the editor's scene colour; this page paints its
+    // own. flex-1 so the black reaches the bottom of a short page.
+    <main className="w-full flex-1 bg-black px-12 py-10 text-sm">
       <h1 className="text-lg font-semibold">Admin</h1>
       <p className="mt-1 text-xs text-muted-foreground">
         Signed in as {session.user.email}. Everything here is enforced server-side.

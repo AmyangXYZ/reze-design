@@ -15,6 +15,7 @@ import { VisibilityPicker, type Visibility } from "@/components/editor/library-s
 import { noteScenePublished, type GalleryScene } from "@/components/editor/scene-gallery"
 import { buildZip, type BundleEntry } from "@/lib/bundle"
 import { MAX_BUNDLE_BYTES, type LibraryItem } from "@/lib/library"
+import { formatBytes } from "@/lib/png-sequence"
 import { sceneRefs, type SceneDoc } from "@/lib/scene"
 import { useSession } from "@/lib/auth-client"
 import type { UnpublishedUse } from "@/lib/refs"
@@ -209,7 +210,7 @@ function ShareSceneForm({
         const zip = await buildZip(entries)
         if (zip.size > MAX_BUNDLE_BYTES) {
           setStep("idle")
-          setError(t.share.bundleTooBig(Math.round(zip.size / 1048576), Math.round(MAX_BUNDLE_BYTES / 1048576)))
+          setError(t.share.bundleTooBig(formatBytes(zip.size), formatBytes(MAX_BUNDLE_BYTES)))
           return
         }
         stage = "uploading"
