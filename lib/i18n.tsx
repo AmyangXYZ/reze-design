@@ -308,6 +308,7 @@ const en = {
     shareStatsNote:
       "Helps us improve rendering. Nothing you made leaves your machine — this reports only which settings and presets a finished video used.",
     shareStatsLink: "What's collected",
+    shareStatsSeeLink: "What people render",
     quality: "Quality",
     modes: {
       scene: "Scene · MP4",
@@ -331,6 +332,27 @@ const en = {
     failed: (message: string) => `Export failed: ${message}`,
     encoderUnsupported: "This browser can't encode video at these settings — try Chrome.",
     upscaleWarn: "Backdrop is lower-resolution than the output and will be upscaled.",
+  },
+  analysis: {
+    title: "What people render",
+    intro:
+      "From people who turned on Share export stats. A sample of finished videos, not a census — nothing identifies whose export a row came from.",
+    exports: "Exports",
+    exportsNote: "videos finished",
+    models: "Models",
+    modelsNote: "distinct, named or not",
+    presets: "Presets",
+    presetsNote: "reached a finished video",
+    aspect: "Aspect ratio",
+    resolution: "Resolution",
+    style: "Rendering style",
+    otherModels: "Other models",
+    empty: "No exports shared yet.",
+    emptyItems: "Nothing has reached a finished video yet.",
+    modelNote: (n: number) =>
+      `A model is named once it has appeared in ${n} exports. Below that it counts toward the total and nothing else — at one or two appearances a name describes a person rather than a habit. Model shares are of all exports and can total more than 100%: a scene with three characters is counted for each of them.`,
+    scenes: (n: number) => `${n} ${n === 1 ? "scene" : "scenes"}`,
+    kinds: { graph: "Shader graphs", effect: "Effects", grade: "Colour grades" },
   },
   library: {
     title: "Shader graph library",
@@ -1173,8 +1195,9 @@ const zh: Dictionary = {
     watermark: "水印",
     aeScript: "AE 合成脚本",
     shareStats: "分享导出统计",
-    shareStatsNote: "帮我们改进渲染效果。你做的东西不会离开这台电脑——只上报一次导出用了哪些设置与预设。",
+    shareStatsNote: "帮我们改进渲染效果。你做的东西不会离开本地电脑——只上传这次导出用了哪些设置与预设。",
     shareStatsLink: "收集了什么",
+    shareStatsSeeLink: "大家都在渲染什么",
     quality: "质量",
     modes: {
       scene: "场景 · MP4",
@@ -1197,6 +1220,26 @@ const zh: Dictionary = {
     failed: (message: string) => `导出失败：${message}`,
     encoderUnsupported: "当前浏览器无法按此参数编码视频，请改用 Chrome。",
     upscaleWarn: "背景分辨率低于输出分辨率，将被放大。",
+  },
+  analysis: {
+    title: "大家都在渲染什么",
+    intro: "来自打开了「分享导出统计」的人。是已完成视频的样本，而非全量——任何一行都看不出是谁导出的。",
+    exports: "导出",
+    exportsNote: "个已完成视频",
+    models: "模型",
+    modelsNote: "去重，含未具名的",
+    presets: "预设",
+    presetsNote: "进入了成片",
+    aspect: "画面比例",
+    resolution: "分辨率",
+    style: "渲染风格",
+    otherModels: "其他模型",
+    empty: "还没有分享的导出。",
+    emptyItems: "还没有进入成片。",
+    modelNote: (n: number) =>
+      `一个模型出现在 ${n} 次导出后才会具名。低于这个数只计入总数——出现一两次的名字描述的是某个人，而不是一种习惯。模型占比以全部导出为分母，合计可能超过 100%：三个角色的场景会各计一次。`,
+    scenes: (n: number) => `${n} 个场景`,
+    kinds: { graph: "着色器节点图", effect: "特效", grade: "调色" },
   },
   library: {
     title: "着色器图库",

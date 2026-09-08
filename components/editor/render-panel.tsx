@@ -4,6 +4,7 @@
 
 import { memo, useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react"
 import type { Engine } from "reze-engine"
+import { toast } from "sonner"
 import { Camera, Clapperboard, Film, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -535,12 +536,22 @@ export const RenderPanel = memo(function RenderPanel({
       }
       // With a picked file the user chose the name themselves; report the one
       // they picked, not the one we would have generated.
+      const savedAs = directory ? (pickedName ?? base) : fileStream ? (pickedName ?? filename) : filename
+      const savedSize = formatBytes(bytes)
       setResult({
         ok: true,
-        file: directory ? (pickedName ?? base) : fileStream ? (pickedName ?? filename) : filename,
+        file: savedAs,
         frames: directory ? totalFrames : undefined,
-        size: formatBytes(bytes),
+        size: savedSize,
       })
+      // A render takes minutes, so by the time it lands the panel is usually not
+      // what anybody is looking at — the dock may be collapsed and the tab in the
+      // background. The line above stays as the record; this is what carries the
+      // news to wherever the user actually is. Same wording either way: a folder
+      // of frames and a single file are both "the export finished".
+      toast.success(
+        directory ? t.render.seqDone(totalFrames, savedAs, savedSize) : t.render.done(savedAs, savedSize),
+      )
       // The video exists — which is the only moment this is true, and the reason
       // it is reported here rather than where the render starts. A cancelled or
       // failed export made nothing, and nothing is what it should say about the
@@ -751,35 +762,6 @@ export const RenderPanel = memo(function RenderPanel({
             </Button>
           )}
         </div>
-        {/* Below the actions, apart from the settings above it: those change the
-            file, this changes what we are told about it. A host with no document
-            builder cannot describe an export, so it does not ask. */}
-        {makeDoc && (
-          <div className="mt-5 border-t border-line pt-3">
-            <Row label={t.render.shareStats}>
-              <Switch
-                checked={shareStats}
-                onCheckedChange={setExportStatsAllowed}
-                disabled={exporting}
-                className="scale-75"
-              />
-            </Row>
-            {/* Amber, like the credits note in the publish dialog: the same kind of
-                line, the one thing beside a control that has to actually be read
-                before the control is touched. */}
-            <p className="mt-0.5 text-[11px] leading-snug text-amber-200/90">
-              {t.render.shareStatsNote}{" "}
-              <a
-                href="/privacy"
-                target="_blank"
-                rel="noreferrer"
-                className="underline underline-offset-2 hover:text-amber-100"
-              >
-                {t.render.shareStatsLink}
-              </a>
-            </p>
-          </div>
-        )}
         {exporting ? (
           <div className="mt-4">
             <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
@@ -805,6 +787,38 @@ export const RenderPanel = memo(function RenderPanel({
               : t.render.failed(result.message ?? "")}
           </div>
         ) : null}
+        {/* Last, under the outcome of the thing it describes. The buttons and
+            what they report belong together — a result line pushed below a
+            standing preference reads as being about the preference. The rule
+            above it is what says this is a different kind of row: the settings
+            change the file, this changes what we are told about it. */}
+        {makeDoc && (
+          <div className="mt-3 border-t border-line pt-3">
+            <Row label={t.render.shareStats}>
+              <Switch
+                checked={shareStats}
+                onCheckedChange={setExportStatsAllowed}
+                disabled={exporting}
+                className="scale-75"
+              />
+            </Row>
+            {/* Amber, like the credits note in the publish dialog: the same kind of
+                line, the one thing beside a control that has to actually be read
+                before the control is touched. */}
+            <p className="mt-0.5 text-[11px] leading-snug text-amber-200/90">
+              {t.render.shareStatsNote}{" "}
+              {/* Both halves of the answer: what is collected, and what it has
+                  added up to. The second is why anyone would say yes. */}
+              <a href="/privacy" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-amber-100">
+                {t.render.shareStatsLink}
+              </a>
+              {" · "}
+              <a href="/analysis" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-amber-100">
+                {t.render.shareStatsSeeLink}
+              </a>
+            </p>
+          </div>
+        )}
       </div>
     </ScrollArea>
   )
