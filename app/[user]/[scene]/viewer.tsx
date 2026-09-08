@@ -284,6 +284,8 @@ function SceneStage({
     bundleFile,
     bundleFiles,
     tickPlanes,
+    stages,
+    props,
   } = useEngine(scene)
   // Published upward so Fork can hand the unzipped assets to the editor. A ref,
   // not state: nothing renders differently for it, and the getter is stable.
@@ -360,9 +362,15 @@ function SceneStage({
     return () => URL.revokeObjectURL(backdropUrl)
   }, [backdropUrl])
 
+  // The cast — everything that is not a stage or a prop — for the settings
+  // that apply per character: the same list the editor hands over.
+  const stageIds = useMemo(() => new Set([...stages.map((s) => s.id), ...props.map((p) => p.id)]), [stages, props])
+  const castKey = models.filter((m) => !stageIds.has(m.id)).map((m) => m.id).join("\u0000")
+  const castIds = useMemo(() => (castKey ? castKey.split("\u0000") : []), [castKey])
   useSceneSync({
     engineRef,
     ready: stageReady,
+    castIds,
     settings: scene.state.settings,
     camera: scene.state.camera,
     cameraVmd: !!scene.assets.cameraAnimation,

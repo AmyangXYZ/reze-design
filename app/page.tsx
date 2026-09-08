@@ -2767,6 +2767,21 @@ export default function Lab() {
     [setCameraView],
   )
 
+  // Footage solved a camera (solvePlate): the roll, the lens and the pitch are
+  // the plate's. Taking the footage away gives the camera back — the one from
+  // before the solve. Scoped to the plate object it was solved for, and
+  // forgotten on a scene swap, so a fresh scene never inherits it.
+  const cameraBeforePlate = useRef<{ plate: object; camera: SceneCamera } | null>(null)
+  const lastPlate = useRef<object | null>(null)
+  useEffect(() => {
+    const before = cameraBeforePlate.current
+    if (plate === null && before && lastPlate.current === before.plate) {
+      cameraBeforePlate.current = null
+      changeCamera(before.camera)
+    }
+    lastPlate.current = plate
+  }, [plate, changeCamera])
+
   /**
    * ORBITING THE CANVAS DOES NOT CHANGE THE SCENE.
    *
@@ -3294,6 +3309,8 @@ export default function Lab() {
       // not move when she does — and while following, `target` is an offset from
       // that bone rather than a point in the world, which would make the height
       // below meaningless.
+      // The camera as it stood, for when the footage goes — once per plate.
+      if (!cameraBeforePlate.current || cameraBeforePlate.current.plate !== plate) cameraBeforePlate.current = { plate, camera }
       const next = { ...camera, follow: null }
       const found: string[] = []
       if (r.solved.roll) {
@@ -5311,6 +5328,7 @@ export default function Lab() {
    * thrown all of that away and flashed the DOM on the way.
    */
   const applyLabScene = async (next: Scene) => {
+    cameraBeforePlate.current = null
     // STARTED, not awaited yet. swapScene turns `ready` off synchronously, before its
     // first await, so every re-seed below lands in the SAME commit as ready:false —
     // which is what keeps the two document loaders from ever running against a
