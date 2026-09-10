@@ -1773,8 +1773,12 @@ function CastMemberRow({
   inspected,
   position,
   scale,
+  rotation,
+  spawnGuess,
   onPosition,
   onScale,
+  onRotation,
+  onReset,
   onReplace,
   onRemove,
 }: {
@@ -1792,8 +1796,16 @@ function CastMemberRow({
   position?: [number, number, number]
   /** Uniform, 1 at rest. Absent on a scene written before it was authored. */
   scale?: number
+  /** Degrees per axis about the root — which way they face. */
+  rotation?: [number, number, number]
+  /** The position above is the app's own spawn offset, not a placement anyone
+   *  chose — so the panel has not been "touched" by it. */
+  spawnGuess?: boolean
   onPosition: (position: [number, number, number]) => void
   onScale: (scale: number) => void
+  onRotation: (rotation: [number, number, number]) => void
+  /** Back to where the model rests: origin, unturned, life size. */
+  onReset: () => void
   onReplace: () => void
   onRemove: () => void
 }) {
@@ -1802,6 +1814,15 @@ function CastMemberRow({
   // see CastLine's `revealed`.
   const [optionsOpen, setOptionsOpen] = useState(false)
   const at = position ?? [0, 0, 0]
+  const turn = rotation ?? [0, 0, 0]
+  // Whether this scene has moved the model — the same question the effect
+  // panel's Reset asks, and the same way of saying it. A spawn offset is the
+  // app's guess rather than anyone's decision, so it does not count as touched;
+  // see spawnGuess.
+  const touched =
+    (scale !== undefined && scale !== 1) ||
+    turn.some((v) => v !== 0) ||
+    (!spawnGuess && at.some((v) => v !== 0))
   return (
     <Popover open={optionsOpen} onOpenChange={setOptionsOpen}>
       <PopoverAnchor asChild>
@@ -1853,6 +1874,23 @@ function CastMemberRow({
         // which would open the panel with a ring already on it.
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
+        {/* A header line: what the panel is on the left, its one action on the
+            right. The effect params panel's own header, to the class — two
+            popovers that read alike must behave alike, or the one you learn
+            second teaches you nothing. */}
+        <div className="mb-1 flex items-center justify-between gap-2 pl-0.5">
+          <span className="truncate text-[11px] text-muted-foreground">{t.lab.ctl.transform}</span>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!touched}
+            onClick={onReset}
+            className="-mr-1 h-6 gap-1 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+          >
+            <RotateCcw className="size-3" />
+            {t.lab.ctl.resetParams}
+          </Button>
+        </div>
         {/* Size before place: how big they are is the question you answer first,
             and it changes what the three below are worth. Uniform, because a
             character scaled unevenly is broken rather than styled. The track is
@@ -1888,6 +1926,26 @@ function CastMemberRow({
               onPosition(next)
             }}
             fmt={(v) => v.toFixed(1)}
+          />
+        ))}
+        {/* Which way they FACE, after where they stand — the order a plane and
+            a prop already use, and the order the question is asked in. Degrees,
+            because that is what a rotation is to the person dragging it. */}
+        {(["X", "Y", "Z"] as const).map((axis, i) => (
+          <SliderRow
+            key={`r${axis}`}
+            label={t.lab.ctl.rot(axis)}
+            value={turn[i]}
+            min={-180}
+            max={180}
+            step={1}
+            dense
+            onChange={(v) => {
+              const next = [...turn] as [number, number, number]
+              next[i] = v
+              onRotation(next)
+            }}
+            fmt={(v) => `${v.toFixed(0)}°`}
           />
         ))}
       </PopoverContent>
@@ -2080,6 +2138,7 @@ export default function Lab() {
     setPropTransform,
     setPropAttach,
     setCastPosition,
+    setCastRotation,
     setCastScale,
     planes,
     addPlaneFromFile,
@@ -6869,8 +6928,16 @@ export default function Lab() {
                   inspected={inspectedId === m.id}
                   position={m.position}
                   scale={m.scale}
+                  rotation={m.rotation}
+                  spawnGuess={m.spawnGuess}
                   onPosition={(position) => setCastPosition(m.id, position)}
                   onScale={(v) => setCastScale(m.id, v)}
+                  onRotation={(rotation) => setCastRotation(m.id, rotation)}
+                  onReset={() => {
+                    setCastScale(m.id, 1)
+                    setCastRotation(m.id, [0, 0, 0])
+                    setCastPosition(m.id, [0, 0, 0])
+                  }}
                   onReplace={() => pickModel({ mode: "replace", id: m.id })}
                   onRemove={() => removeCastMember(m.id)}
                 />

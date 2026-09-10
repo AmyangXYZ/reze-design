@@ -114,6 +114,10 @@ export const NEW_EFFECT_TEMPLATE = `// An effect is ONE WGSL file, and WHICH FUN
 //   fn particleInit / particleStep / particleShade a GPU particle pool
 //   fn trailWidth / trailShade                     ribbons along bones you ask for
 //
+// Two mounts have no function at all, because what they ask for is not a shader:
+// #lights declares lamps the scene shades with, and #mirror declares a plane the
+// scene is reflected in. Both are passes, and a pass is the engine's to run.
+//
 // Define background AND foreground and they are one effect: a storm is a dark
 // sky and the rain in front of it, in one file. Particles and trails each stand
 // alone — an effect declares field mounts (background/foreground) or particles,
@@ -164,6 +168,7 @@ fn foreground(ray: vec3f, uv: vec2f, time: f32, depth: f32) -> vec4f {
 //   #blend additive         particles add light instead of covering (fire)
 //   #bloom                  particles reach the bloom pyramid
 //   #lights 4               light slots, if you write fn lightEmit
+//   #mirror                 a real planar reflection on a plane you place
 //   #grid 768               simulation resolution, if you write fn gridStep
 //   #layer additive         the FIELD adds light instead of covering it
 //   #halfres                field mounts run at half resolution

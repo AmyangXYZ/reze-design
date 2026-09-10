@@ -47,7 +47,7 @@ function infoFor(
   file: string,
   model: import("reze-engine").Model,
   hidden?: string[],
-  placement?: { at: [number, number, number]; scale?: number; guess?: boolean },
+  placement?: { at: [number, number, number]; scale?: number; rot?: [number, number, number]; guess?: boolean },
 ): EngineModelInfo {
   return {
     id,
@@ -56,6 +56,7 @@ function infoFor(
       ? {
           position: placement.at,
           ...(placement.scale !== undefined ? { scale: placement.scale } : {}),
+          ...(placement.rot ? { rotation: placement.rot } : {}),
           ...(placement.guess ? { spawnGuess: true } : {}),
         }
       : {}),
@@ -302,7 +303,9 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
     if (stale()) return null
     // A cast member's placement, filled in by the branch below and carried into
     // its row. A stage leaves it undefined: its placement is stageList's.
-    let castPlacement: { at: [number, number, number]; scale?: number; guess?: boolean } | undefined
+    let castPlacement:
+      | { at: [number, number, number]; scale?: number; rot?: [number, number, number]; guess?: boolean }
+      | undefined
     // Hidden until styled: the first visible frame wears the scene's shader
     // graphs, not a flash of the default PBSDF look.
     if (entry.stage) {
@@ -328,13 +331,15 @@ async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean,
       // placed the cast themselves, their placement is the answer, and a scene
       // written before the field existed still opens the way it always did.
       castPlacement = entry.transform
-        ? { at: entry.transform.position, scale: entry.transform.scale }
+        ? { at: entry.transform.position, scale: entry.transform.scale, rot: entry.transform.rotation }
         : { at: [spawnOffsetX(infos.length - stageList.length - propList.length), 0, 0], guess: true }
       const at = castPlacement.at
+      const rot = castPlacement.rot
       engine.setModelTransform(entry.model.id, {
         visible: false,
         position: new Vec3(at[0], at[1], at[2]),
         ...(castPlacement.scale !== undefined ? { scale: castPlacement.scale } : {}),
+        ...(rot ? { rotation: castRotationToEngine(rot) } : {}),
       })
     }
     // Styling: a document carrying groups for this model (a restored or imported scene)
@@ -539,6 +544,10 @@ export type EngineModelInfo = {
    *  the engine takes one number, and a character is scaled evenly or not at
    *  all — a squashed figure is a broken figure, not a look. */
   scale?: number
+  /** Degrees per axis about the model's ROOT — which way they face. The unit
+   *  the slider shows, so nothing converts between the row and the panel; the
+   *  engine's quaternion is made at the edge, as it is for a stage. */
+  rotation?: [number, number, number]
   /**
    * The position above is the app's SPAWN GUESS rather than a placement anyone
    * chose — see spawnOffsetX, which stands a new model beside the first instead
@@ -712,6 +721,14 @@ export type StageInfo = {
 
 /** A prop: a stage's shape plus what it hangs from. Null stands on its own. */
 export type PropInfo = StageInfo & { attach: SceneAttach | null }
+
+/** Degrees per axis → the engine's quaternion, in MMD's own euler order.
+ *  Shared by the loader and the slider so the two cannot disagree about what a
+ *  number in the document means. */
+function castRotationToEngine(rotation: [number, number, number]): Quat {
+  const rad = (d: number) => (d * Math.PI) / 180
+  return Quat.fromEuler(rad(rotation[0]), rad(rotation[1]), rad(rotation[2]))
+}
 
 /** The document's degrees-and-tuples form → what setModelTransform wants. One
  *  converter, so the boot path and the sliders cannot drift apart. */
@@ -1486,6 +1503,24 @@ export function useEngine(
     setModels((prev) => prev.map((m) => (m.id === id ? { ...m, scale, spawnGuess: false } : m)))
   }, [])
 
+  /** Which way a cast member faces — their ROOT, in degrees per axis.
+   *
+   *  A motion drives the bones under this, so it survives one: the root is the
+   *  placement, and turning a dancer to face the mirror must not be undone by
+   *  the next clip. Same shape as the two setters above.
+   */
+  const setCastRotation = useCallback((id: string, rotation: [number, number, number]) => {
+    engineRef.current?.setModelTransform(id, { rotation: castRotationToEngine(rotation) })
+    // spawnGuess is deliberately LEFT ALONE, unlike the two setters above.
+    //
+    // It means "nobody has chosen where this model stands", and centerModel
+    // reads it to move a model to the origin when a clip arrives. Turning
+    // someone to face a mirror says nothing about where they stand, so clearing
+    // it here made a rotated model refuse to centre — the rotation appeared to
+    // drag the position with it.
+    setModels((prev) => prev.map((m) => (m.id === id ? { ...m, rotation } : m)))
+  }, [])
+
   /** Flip one of a stage's switches. */
   const setStageMorph = useCallback((id: string, morph: string, weight: number) => {
     engineRef.current?.getModel(id)?.setMorphWeight(morph, weight)
@@ -1962,6 +1997,7 @@ export function useEngine(
     setPropAttach,
     setCastPosition,
     setCastScale,
+    setCastRotation,
     planes,
     addPlaneFromFile,
     tickPlanes,
