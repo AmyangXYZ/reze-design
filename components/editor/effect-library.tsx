@@ -39,6 +39,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } 
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useReport } from "@/hooks/use-report"
 import { draftOrigin } from "@/lib/drafts"
+import { useCommunity } from "@/hooks/use-community"
 import {
   addCommunityItem,
   builtinAuthor,
@@ -46,8 +47,7 @@ import {
   removeCommunityItem,
   setCommunityVisibility,
   renameCommunityItem,
-  useCommunity,
-} from "@/hooks/use-community"
+} from "@/lib/community-store"
 import { useDrafts } from "@/hooks/use-drafts"
 import { noteItemPublished, useLibraryStats } from "@/hooks/use-library-stats"
 import { useZOrder } from "@/hooks/use-z-order"

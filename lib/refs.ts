@@ -10,7 +10,7 @@ import { DEFAULT_GRAPH, type ShaderGraph } from "reze-engine"
 import { EFFECTS } from "@/lib/effects"
 import { GRADE_PRESETS, type GradeSpec } from "@/lib/grade"
 import { GRAPH_LIBRARY, sameGraphLook } from "@/lib/materials"
-import { communityItems } from "@/hooks/use-community"
+import { communityItems } from "@/lib/community-store"
 import type { EffectItem, GradeItem, GraphItem, LibraryKind } from "@/lib/library"
 import type { ItemRef } from "@/lib/scene"
 

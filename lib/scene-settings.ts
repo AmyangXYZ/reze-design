@@ -262,3 +262,17 @@ export function azElToDirection(azimuth: number, elevation: number): Vec3 {
 
 
 // Color presets now live in one shared picker (components/color-picker.tsx), sourced
+
+// ─── Camera follow ────────────────────────────────────────────────────────
+// Scene vocabulary: the document, the demo scene and the sidebar that edits
+// them all read these.
+
+/** The bone the camera follows. センター is the body's root in every standard MMD
+ *  rig, so it tracks travel without inheriting the bob of a spine or a head. */
+export const FOLLOW_BONE = "センター"
+
+/** Defaults for the two meanings of the target triple: an OFFSET from the
+ *  followed bone while `follow` is set (センター already sits at hip height, so
+ *  a small lift), and an ABSOLUTE point otherwise — the default framing. */
+export const FOLLOW_OFFSET_DEFAULT: [number, number, number] = [0, 3, 0]
+export const TARGET_DEFAULT: [number, number, number] = [0, 11.4, 0]

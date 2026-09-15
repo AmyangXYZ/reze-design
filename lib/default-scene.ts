@@ -1,6 +1,6 @@
 // The bundled demo — the scene a first-time visitor lands on.
 
-import { FOLLOW_BONE } from "@/components/scene/scene-sidebar"
+import { FOLLOW_BONE } from "@/lib/scene-settings"
 import { builtinEffect } from "@/lib/effects"
 import { libraryGraph } from "@/lib/materials"
 import { parseSceneDoc, type Scene, type SceneDoc } from "@/lib/scene"

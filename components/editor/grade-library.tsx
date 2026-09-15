@@ -28,6 +28,7 @@ import {
 } from "@/components/editor/library-shell"
 import { conflictingName, nameKey, normalizeName, type GradeItem } from "@/lib/library"
 import { draftOrigin } from "@/lib/drafts"
+import { useCommunity } from "@/hooks/use-community"
 import {
   addCommunityItem,
   builtinAuthor,
@@ -35,8 +36,7 @@ import {
   removeCommunityItem,
   setCommunityVisibility,
   renameCommunityItem,
-  useCommunity,
-} from "@/hooks/use-community"
+} from "@/lib/community-store"
 import { useDrafts } from "@/hooks/use-drafts"
 import { noteItemPublished, useLibraryStats } from "@/hooks/use-library-stats"
 import { useZOrder } from "@/hooks/use-z-order"

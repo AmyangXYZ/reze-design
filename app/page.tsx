@@ -99,10 +99,7 @@ import { Surface } from "@/components/editor/surface"
 import { LayerRow, StackGroup } from "@/components/editor/layer-row"
 import {
   ColorRow,
-  FOLLOW_BONE,
-  FOLLOW_OFFSET_DEFAULT,
   SliderRow,
-  TARGET_DEFAULT,
 } from "@/components/scene/scene-sidebar"
 import { EffectParams } from "@/components/scene/effect-params"
 import { QuickPick } from "@/components/scene/quick-pick"
@@ -176,7 +173,8 @@ import {
   type GraphItem,
   type LibraryFacet,
 } from "@/lib/library"
-import { communityItems, preloadCommunity, useCommunity } from "@/hooks/use-community"
+import { useCommunity } from "@/hooks/use-community"
+import { communityItems, preloadCommunity } from "@/lib/community-store"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useSession } from "@/lib/auth-client"
 import { freeName } from "@/lib/names"
@@ -220,7 +218,7 @@ import {
   parseLRC,
 } from "reze-engine"
 import { lipSyncVmdFile } from "@/lib/lipsync"
-import { WIND_MAX, windFreqFromSlider, windSliderFromFreq, type SceneSettings } from "@/lib/scene-settings"
+import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, TARGET_DEFAULT, WIND_MAX, windFreqFromSlider, windSliderFromFreq, type SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 import { storageKey } from "@/lib/storage"
 

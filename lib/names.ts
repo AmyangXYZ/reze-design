@@ -10,7 +10,7 @@
 import { EFFECTS } from "@/lib/effects"
 import { GRADE_PRESETS } from "@/lib/grade"
 import { GRAPH_LIBRARY } from "@/lib/materials"
-import { communityItems } from "@/hooks/use-community"
+import { communityItems } from "@/lib/community-store"
 import { loadDrafts, nextDraftName, type DraftKind } from "@/lib/drafts"
 import { conflictingName, type LibraryItem } from "@/lib/library"
 

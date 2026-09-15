@@ -20,7 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import type { LibraryFacet, LibraryKind, LibraryOwner } from "@/lib/library"
 import { RailRow, RailSection, RailTags, tagSwatch } from "@/components/editor/library-rail"
-import { authorImage } from "@/hooks/use-community"
+import { authorImage } from "@/lib/community-store"
 import { ContextMenuItem, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger } from "@/components/ui/context-menu"
 import { storageKey } from "@/lib/storage"
 import { useT } from "@/lib/i18n"
