@@ -8,30 +8,43 @@
 // bone for the first time has to be able to name one with no track yet, and the
 // dopesheet by definition cannot list it.
 //
-// So it is a picker, not a browser, and it only exists while the editor is open
-// on a track that HAS things to pick between. The camera has exactly one track,
-// so it gets no column at all — a list of one is a label.
+// So it is a picker, not a browser. Every tab has the column, the camera's one
+// track and the Effects tab's rows included, so the chart beside it keeps one
+// width and one zoom floor whichever tab is showing.
 
 import { memo } from "react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { BoneList } from "@/components/scene/bone-list"
 import { MorphList } from "@/components/scene/morph-list"
+import { AUDIO_H, DOPE_H, RULER_H, TOOLBAR_H } from "@/components/scene/timeline"
 import { useClipActions, useClipSelector, type ClipEditKind } from "@/context/clip-editor"
+import type { AppliedEffect } from "@/lib/effects"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
+
+const TRACK_COLUMN = "flex w-[7rem] shrink-0 flex-col overflow-hidden border-r border-line-strong"
 
 export const TrackPicker = memo(function TrackPicker({
   kind,
   objects = [],
   objectId = null,
   onObject,
+  effects = null,
+  selectedEffect = null,
+  onSelectEffect,
+  onLaneScroll,
 }: {
   kind: ClipEditKind
   /** The Objects tab's subjects: every prop in the scene. */
   objects?: { id: string; label: string }[]
   objectId?: string | null
   onObject?: (id: string) => void
+  /** The Effects tab's rows: the scene's effects, and which one is selected. */
+  effects?: AppliedEffect[] | null
+  selectedEffect?: string | null
+  onSelectEffect?: (uid: string | null) => void
+  onLaneScroll?: (top: number) => void
 }) {
   const clip = useClipSelector((s) => s.clip)
   const boneNames = useClipSelector((s) => s.boneNames)
@@ -42,7 +55,16 @@ export const TrackPicker = memo(function TrackPicker({
   const revealRequest = useClipSelector((s) => s.revealBone)
   const { setSelectedBone, setSelectedMorph, setBoneGroup } = useClipActions()
 
-  if (kind === "camera" || kind === "effect") return null
+  if (kind === "camera") return <CameraTrackList />
+  if (kind === "effect")
+    return (
+      <EffectTrackList
+        effects={effects}
+        selectedEffect={selectedEffect}
+        onSelectEffect={onSelectEffect}
+        onLaneScroll={onLaneScroll}
+      />
+    )
   if (kind === "object") return <ObjectTrackList objects={objects} objectId={objectId} onObject={onObject} />
 
   return (
@@ -60,7 +82,7 @@ export const TrackPicker = memo(function TrackPicker({
     // right: this is a dense index of a hundred-odd rig names that you scan
     // rather than read, in a column narrow enough that xs truncates most of
     // them. Everywhere else, two tiers.
-    <div className="flex w-[7rem] shrink-0 flex-col overflow-hidden border-r border-line-strong">
+    <div className={TRACK_COLUMN}>
       {kind === "morph" ? (
         <MorphList
           morphNames={morphNames}
@@ -109,7 +131,7 @@ function ObjectTrackList({
   const parentSelected = useClipSelector((s) => s.parentSelected)
   const { setSelectedBone, setParentSelected } = useClipActions()
   return (
-    <div className="flex w-[7rem] shrink-0 flex-col overflow-hidden border-r border-line-strong">
+    <div className={TRACK_COLUMN}>
       <div className="shrink-0 border-b border-line p-1">
         <Select value={objectId ?? undefined} onValueChange={(id) => onObject?.(id)} disabled={objects.length === 0}>
           <SelectTrigger size="sm" className="w-full min-w-0 text-[11px] data-[size=sm]:h-5">
@@ -153,18 +175,78 @@ function ObjectTrackList({
   )
 }
 
+/** The Camera tab's column: its one track, always the one showing. */
+function CameraTrackList() {
+  const t = useT()
+  const keys = useClipSelector((s) => s.cameraTrack.length)
+  const { setCameraSelected } = useClipActions()
+  return (
+    <div className={TRACK_COLUMN}>
+      <TrackRow label={t.lab.timeline.camera} active count={keys} onClick={() => setCameraSelected(true)} />
+    </div>
+  )
+}
+
+/**
+ * The Effects tab's column: one row per applied effect, topmost first as the
+ * dock lists them, each as tall as its lane. The rows start at the top; the
+ * spacer after them is the height the lanes' band gives up to the toolbar,
+ * the ruler, the dope strip and the music lane, so the list and the lanes
+ * scroll the same distance.
+ */
+function EffectTrackList({
+  effects,
+  selectedEffect,
+  onSelectEffect,
+  onLaneScroll,
+}: {
+  effects: AppliedEffect[] | null
+  selectedEffect: string | null
+  onSelectEffect?: (uid: string | null) => void
+  onLaneScroll?: (top: number) => void
+}) {
+  const t = useT()
+  const rows = effects ? [...effects].reverse() : []
+  return (
+    <div className={TRACK_COLUMN}>
+      {rows.length === 0 ? (
+        <div className="min-h-0 flex-1 px-2 text-[10px] leading-5 text-muted-foreground">{t.lab.timeline.noEffects}</div>
+      ) : (
+        <div
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:none]"
+          onScroll={(e) => onLaneScroll?.(e.currentTarget.scrollTop)}
+        >
+          {rows.map((e) => (
+            <TrackRow
+              key={e.uid ?? e.id}
+              label={e.name}
+              active={selectedEffect != null && selectedEffect === e.uid}
+              count={e.window?.length ?? 0}
+              onClick={() => onSelectEffect?.(selectedEffect === e.uid ? null : (e.uid ?? null))}
+              className="h-6"
+            />
+          ))}
+          <div style={{ height: TOOLBAR_H + RULER_H + DOPE_H + AUDIO_H + 1 }} />
+        </div>
+      )}
+    </div>
+  )
+}
+
 function TrackRow({
   label,
   active,
   count = 0,
   mono = false,
   onClick,
+  className,
 }: {
   label: string
   active: boolean
   count?: number
   mono?: boolean
   onClick: () => void
+  className?: string
 }) {
   return (
     <Button
@@ -177,6 +259,7 @@ function TrackRow({
         active
           ? "bg-blue-400/[0.08] text-blue-400 hover:bg-blue-400/12 hover:text-blue-400 dark:hover:bg-blue-400/12"
           : "text-muted-foreground hover:bg-white/[0.03] hover:text-foreground",
+        className,
       )}
     >
       <span className="min-w-0 flex-1 truncate">{label}</span>

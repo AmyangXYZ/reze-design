@@ -45,13 +45,22 @@ import {
   boneDisplayLabel,
 } from "@/lib/animation"
 import { motionFrameCount } from "@/lib/clip"
+import {
+  EffectLanes,
+  EffectLanesMenu,
+  type EffectLanesApi,
+  type EffectLanesData,
+} from "@/components/scene/effect-lanes"
 
 // ─── Timeline constants ─────────────────────────────────────────────────
-const DOPE_H = 26
+export const DOPE_H = 26
 /** The music lane, under the dopesheet. Present only when a track is loaded —
  *  an empty strip would cost the curves height for nothing. */
-const AUDIO_H = 26
-const RULER_H = 17
+export const AUDIO_H = 26
+export const RULER_H = 17
+/** The toolbar above the canvas, its `h-[26px]`: a column beside the editor
+ *  lines its rows up with the bands below by it. */
+export const TOOLBAR_H = 26
 // Wide enough for the longest lane name in the gutter ("Music" at 10px, right
 // aligned with 6px of padding). Every x-position in this canvas is derived from
 // it — the scroll origin, the curve clip, the zoom-to-fit maths — so widening
@@ -2340,6 +2349,10 @@ function TimelineCanvas({
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      // On the Effects tab these keys belong to the lanes, which listen on the
+      // box around this canvas; pasting keyframes there would edit a clip the
+      // tab is not showing.
+      if (blank) return
       const mod = e.metaKey || e.ctrlKey
       if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault()
@@ -2355,7 +2368,7 @@ function TimelineCanvas({
         ops.cutSelectedKeyframes()
       }
     },
-    [ops],
+    [ops, blank],
   )
 
   // Keyframe-jump arrows: a WINDOW listener, not the canvas's own onKeyDown —
@@ -2454,6 +2467,9 @@ interface TimelineProps {
    *  they ride the toolbar that is already there rather than keeping a row of
    *  their own alive above it just to hold three buttons. */
   trailing?: ReactNode
+  /** The Effects tab's rows and how to change them, drawn over the curve band
+   *  on this component's own axis while the tab shows. */
+  effectLanes?: EffectLanesData | null
 }
 
 export function Timeline({
@@ -2471,6 +2487,7 @@ export function Timeline({
   initialView,
   onViewChange,
   trailing,
+  effectLanes = null,
 }: TimelineProps) {
   const dict = useT()
   const clip = useClipSelector((s) => s.clip)
@@ -2545,6 +2562,7 @@ export function Timeline({
   const scrollXRef = useRef(0)
   scrollXRef.current = scrollX
   const timelineAreaRef = useRef<HTMLDivElement>(null)
+  const lanesApi = useRef<EffectLanesApi | null>(null)
   const [trackWidth, setTrackWidth] = useState(0)
 
   const minPxPerFrame = useMemo(() => minPxPerFrameForViewport(trackWidth, fc), [trackWidth, fc])
@@ -3310,15 +3328,17 @@ export function Timeline({
           )
         })}
         <div className="min-w-0 flex-1" />
-        <AxisGlyph icon={MoveHorizontal} label={dict.lab.timeline.axisTime} className="px-1" />
+        <AxisGlyph icon={MoveHorizontal} label={dict.lab.timeline.axisTime} className="pl-1 pr-2" />
         <ZoomRuler min={minPxPerFrame} max={MAX_PX} value={pxPerFrame} onChange={zoomTo} />
-        <AxisGlyph icon={MoveVertical} label={dict.lab.timeline.axisValue} className="pl-2 pr-1" />
+        <AxisGlyph icon={MoveVertical} label={dict.lab.timeline.axisValue} className="pl-2 pr-2" />
         <ZoomRuler min={Y_ZOOM_MIN} max={Y_ZOOM_MAX} value={yZoom} onChange={setYZoom} />
         {trailing && <div className="ml-1.5 flex shrink-0 items-center gap-0.5 pl-1.5">{trailing}</div>}
       </div>
       {/* Canvas */}
-      <div ref={timelineAreaRef} style={{ flex: 1, minHeight: 0 }}>
+      <EffectLanesMenu apiRef={lanesApi} enabled={blank && effectLanes !== null && clip !== null}>
+      <div ref={timelineAreaRef} style={{ flex: 1, minHeight: 0, position: "relative" }}>
         {clip ? (
+          <>
           <TimelineCanvas
             open={open}
             clip={clip}
@@ -3355,6 +3375,25 @@ export function Timeline({
             playheadDrawRef={innerDrawRef}
             dragRedrawRef={dragRedrawRef}
           />
+          {effectLanes && (
+            <EffectLanes
+              {...effectLanes}
+              visible={blank}
+              apiRef={lanesApi}
+              pxPerFrame={pxPerFrame}
+              scrollX={scrollX}
+              frameCount={fc}
+              playhead={currentFrame}
+              onSeek={(f) => {
+                setPlaying(false)
+                setCurrentFrame(f)
+              }}
+              top={RULER_H}
+              bottom={DOPE_H + AUDIO_H + 1}
+              labelWidth={LABEL_W}
+            />
+          )}
+          </>
         ) : (
           <div
             style={{
@@ -3371,6 +3410,7 @@ export function Timeline({
           </div>
         )}
       </div>
+      </EffectLanesMenu>
     </div>
   )
 }

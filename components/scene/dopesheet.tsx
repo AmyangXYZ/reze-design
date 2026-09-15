@@ -20,6 +20,7 @@ import { CLIP_UNDO_SCOPE } from "@/components/scene/clip-history"
 import { Timeline, defaultTabForSelection, tabsForSelection, type ParentHold, type SelectionKind } from "@/components/scene/timeline"
 import { TrackPicker } from "@/components/scene/track-picker";
 import { EditorRail } from "@/components/scene/editor-rail";
+import type { EffectLanesData } from "@/components/scene/effect-lanes";
 import {
   useClipActions,
   useClipSelector,
@@ -113,6 +114,8 @@ export function Dopesheet({
   /** How long the scene runs, in frames: the ruler's floor on the Objects tab,
    *  where a prop's own clip is often shorter than the scene. */
   spanFrames = 0,
+  /** The scene's effects for the Effects tab: its list and its lanes. */
+  effectLanes = null,
 }: {
   playheadDrawRef: RefObject<((frame: number) => void) | null>;
   audioPeaks: readonly number[] | null;
@@ -129,6 +132,7 @@ export function Dopesheet({
   onObject?: (id: string) => void;
   parentHolds?: ParentHold[] | null;
   spanFrames?: number;
+  effectLanes?: Omit<EffectLanesData, "scrollTop"> | null;
 }) {
   const clip = useClipSelector((s) => s.clip);
   const selectedMorph = useClipSelector((s) => s.selectedMorph);
@@ -154,6 +158,8 @@ export function Dopesheet({
   // Clamped on the way in: a height stored on a large monitor must not open
   // taller than the window it is reopened on.
   const [height, setHeight] = useState(() => (restored?.height ? clampH(restored.height) : DEFAULT_H));
+  // The Effects list and its lanes scroll as one: the list is the scrollbar.
+  const [laneScroll, setLaneScroll] = useState(0);
   // SHARED chrome now, so it lives in the store rather than here.
   //
   // It was local state, which was right while the timeline was the only thing
@@ -479,7 +485,16 @@ export function Dopesheet({
               read its curve on the right. */}
           <div className="flex h-full w-full">
             <EditorRail kind={kind} onKind={onKind} />
-            <TrackPicker kind={kind} objects={objects} objectId={objectId} onObject={onObject} />
+            <TrackPicker
+              kind={kind}
+              objects={objects}
+              objectId={objectId}
+              onObject={onObject}
+              effects={effectLanes?.effects ?? null}
+              selectedEffect={effectLanes?.selectedEffect ?? null}
+              onSelectEffect={effectLanes?.onSelectEffect}
+              onLaneScroll={setLaneScroll}
+            />
             <div className="min-w-0 flex-1">
               <Timeline
                 visibleBones={visibleBones}
@@ -509,6 +524,7 @@ export function Dopesheet({
                     : undefined
                 }
                 onViewChange={onViewChange}
+                effectLanes={effectLanes ? { ...effectLanes, scrollTop: laneScroll } : null}
               />
             </div>
           </div>

@@ -354,6 +354,15 @@ curve through a dense track and drops the keys it does not need, which is what
 makes a captured or retargeted motion editable by hand. **Clear** empties the
 track.
 
+**Effects.** The Effects tab lists the scene's effects, one lane each. A block
+on a lane is one stretch of time the effect plays, and the effect's own clock
+starts at the block's left edge. Drag a block to move it, drag an edge to trim
+it, and copy and paste it — ⌘C and ⌘V, or the right-click menu — to fire the
+same effect again; a paste lands at the playhead, or the first free spot after
+it. An effect you have not scheduled plays for the whole scene and shows as one
+block from the first frame. Blocks on a lane never overlap, and deleting the
+last one removes the effect.
+
 ⌘Z and ⇧⌘Z undo and redo, per clip. Everything is written back as a standard VMD
 in the scene's own slot, so an edit survives a reload, travels with a publish, and
 downloads from the row it belongs to.
@@ -686,10 +695,8 @@ foreground comparing against `depth` has one along every silhouette in the
 scene, and at half resolution that edge arrives as stair-steps up the character.
 
 `#duration` says the effect is a **hit** — it has an arc, and this is how long
-one firing takes. Declare it and dropping the effect on the timeline gives you a
-strip already the right length, the way a clip arrives at the length of its
-media. Declare nothing and it is **ambient**: rain, stars, fog — a condition the
-scene is in rather than something that happens at a moment.
+one firing takes. Declare nothing and it is **ambient**: rain, stars, fog — a
+condition the scene is in rather than something that happens at a moment.
 
 `#param` exposes a dial. `#param float name default min max`, or `#param color
 name r g b`, and the app builds the control from the declaration — so what the

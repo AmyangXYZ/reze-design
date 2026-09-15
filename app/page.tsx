@@ -9114,6 +9114,18 @@ export default function Lab() {
                       trailing={chrome}
                       enginePlaying={playing}
                       onTogglePlay={togglePlay}
+                      // While an effect's code is open the list is narrowed to
+                      // that one effect, which is not the scene's list to edit.
+                      effectLanes={
+                        effectEditor
+                          ? null
+                          : {
+                              effects: bgEffects,
+                              onEffects: setBgEffects,
+                              selectedEffect,
+                              onSelectEffect: setSelectedEffect,
+                            }
+                      }
                     />
                   )
                 }
