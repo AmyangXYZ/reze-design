@@ -54,7 +54,6 @@ type ViewerProps = {
 export function SceneViewer(props: ViewerProps) {
   const t = useT()
   const router = useRouter()
-  const [expanded, setExpanded] = useState(false)
   const like = useLike(props.sceneId, props.likeCount)
   // Synchronously when every pin is bundled — the common case. Then the canvas
   // is in the first render and the engine starts on mount, instead of after a
@@ -161,36 +160,26 @@ export function SceneViewer(props: ViewerProps) {
           </button>
           <LikeButton like={like} compact />
         </div>
-        <button
-          onClick={() => setExpanded((v) => !v)}
-          className={cn(
-            "w-full px-2.5 py-2 text-left transition-colors md:px-3 md:py-2.5",
-            (props.description || props.credits) && "cursor-pointer hover:bg-white/5",
-          )}
-        >
+        {/* Everything, always: crediting only counts if people can read it without
+            knowing to ask. Long text scrolls inside the panel. */}
+        <div className="max-h-[50dvh] w-full overflow-y-auto px-2.5 py-2 md:max-h-[calc(100dvh-7rem)] md:px-3 md:py-2.5">
           <div className="truncate text-sm font-semibold tracking-tight text-white">{props.title}</div>
-          <div className="truncate font-mono text-xs text-white/55">@{props.author}</div>
+          <Link
+            href={`/${props.author}`}
+            className="block w-fit max-w-full truncate font-mono text-xs text-white/55 transition-colors hover:text-white hover:underline"
+          >
+            @{props.author}
+          </Link>
           {props.description && (
-            <p className={cn("mt-1 text-xs leading-snug text-white/75", !expanded && "line-clamp-2")}>
-              {props.description}
-            </p>
+            <p className="mt-1 whitespace-pre-wrap text-xs leading-snug text-white/75">{props.description}</p>
           )}
-          {/* Always present, truncated until asked for: crediting only counts if
-              people can see it without knowing to look. */}
           {props.credits && (
             <div className="mt-2 border-t border-white/10 pt-2">
               <div className="text-[10px] font-medium tracking-[0.14em] text-white/40 uppercase">{t.share.credits}</div>
-              <p
-                className={cn(
-                  "mt-1 whitespace-pre-wrap text-xs leading-snug text-white/70",
-                  expanded ? "max-h-48 overflow-y-auto" : "line-clamp-2",
-                )}
-              >
-                {props.credits}
-              </p>
+              <p className="mt-1 whitespace-pre-wrap text-xs leading-snug text-white/70">{props.credits}</p>
             </div>
           )}
-        </button>
+        </div>
       </div>
 
       {/* Mobile keeps TikTok's standalone rail, thumb-reachable and clear of the

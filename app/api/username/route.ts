@@ -8,6 +8,7 @@ import { auth } from "@/lib/auth"
 import { hasDatabase, db } from "@/lib/db"
 import { user } from "@/lib/db/auth-schema"
 import { libraryItems } from "@/lib/db/schema"
+import { refreshMakerPages } from "@/lib/public-pages"
 import { isTaken, normalize, validate } from "@/lib/username"
 
 export async function POST(request: Request) {
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
   if (typeof username !== "string") return NextResponse.json({ error: "invalid" }, { status: 400 })
 
   const [me] = await db
-    .select({ chosenAt: user.usernameChangedAt })
+    .select({ chosenAt: user.usernameChangedAt, handle: user.username })
     .from(user)
     .where(eq(user.id, session.user.id))
     .limit(1)
@@ -55,5 +56,6 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "taken" }, { status: 409 })
   }
+  refreshMakerPages(me?.handle, wanted)
   return NextResponse.json({ username: wanted })
 }

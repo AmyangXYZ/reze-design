@@ -38,6 +38,10 @@ export const auth = betterAuth({
     // Safe here because both providers verify email ownership themselves.
     accountLinking: { enabled: true, trustedProviders: ["google", "github"] },
   },
+  // The signed-in session rides in a signed cookie for five minutes, so the
+  // session check every page makes reads the cookie instead of the database. A
+  // ban or a revoked session reaches an open tab when that cookie expires.
+  session: { cookieCache: { enabled: true, maxAge: 300 } },
   user: {
     additionalFields: {
       banned: { type: "boolean", required: false, input: false },

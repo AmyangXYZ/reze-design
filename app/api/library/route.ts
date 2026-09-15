@@ -10,6 +10,7 @@ import { auth } from "@/lib/auth"
 import { hasDatabase, db, schema } from "@/lib/db"
 import { user } from "@/lib/db/auth-schema"
 import { nameClash } from "@/lib/db/names"
+import { refreshMakerPages } from "@/lib/public-pages"
 import { normalizeName, withGraphName, type LibraryKind } from "@/lib/library"
 import type { Visibility } from "@/lib/db/schema"
 
@@ -376,6 +377,7 @@ export async function POST(request: Request) {
         })
       }
     }
+    if (wantVisibility === "public") refreshMakerPages(author)
     // Shaped like a gallery card so the client can drop it straight into the
     // list it just joined, instead of re-reading the whole page to learn one row.
     return NextResponse.json(
@@ -451,5 +453,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "name-taken" }, { status: 409 })
   }
 
+  if (wantVisibility === "public") refreshMakerPages(author)
   return NextResponse.json({ item: row }, { status: 201 })
 }

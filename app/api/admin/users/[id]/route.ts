@@ -7,6 +7,7 @@ import { requireAdmin } from "@/lib/admin"
 import { hasDatabase, db } from "@/lib/db"
 import { user } from "@/lib/db/auth-schema"
 import { libraryItems } from "@/lib/db/schema"
+import { handleOf, refreshMakerPages } from "@/lib/public-pages"
 import { isTaken, normalize, validate } from "@/lib/username"
 
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -33,6 +34,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     const shapeError = validate(wanted)
     if (shapeError) return NextResponse.json({ error: shapeError }, { status: 400 })
     if (await isTaken(wanted, id)) return NextResponse.json({ error: "taken" }, { status: 409 })
+    const before = await handleOf(id)
     try {
       await db.transaction(async (tx) => {
         await tx.update(user).set({ username: wanted, usernameChangedAt: new Date() }).where(eq(user.id, id))
@@ -41,6 +43,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     } catch {
       return NextResponse.json({ error: "taken" }, { status: 409 })
     }
+    refreshMakerPages(before, wanted)
     return NextResponse.json({ id, username: wanted })
   }
 
@@ -56,6 +59,8 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
       banReason: banned && typeof reason === "string" ? reason.slice(0, 200) : null,
     })
     .where(eq(user.id, id))
+  // A banned maker's page goes with them.
+  refreshMakerPages(await handleOf(id))
   return NextResponse.json({ id, banned })
 }
 
@@ -71,6 +76,8 @@ export async function DELETE(request: Request, ctx: { params: Promise<{ id: stri
   // Sessions and provider links cascade. Published items survive with a null
   // owner: deleting an account should not silently break scenes that reference
   // its content. Delete those explicitly first if that is what you want.
+  const handle = await handleOf(id)
   await db.delete(user).where(eq(user.id, id))
+  refreshMakerPages(handle)
   return NextResponse.json({ deleted: id })
 }

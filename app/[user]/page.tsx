@@ -10,10 +10,17 @@ import { Profile } from "./profile"
 
 // A maker's page at reze.design/<handle>: what they have published, for anyone
 // holding the link. Public rows only and no session read, so the page is the
-// same for every visitor and can be cached — five minutes stale is fine for a
-// showcase, and a cached page leaves the database asleep.
+// same for every visitor and is cached. Publishing, renaming, pinning and
+// deleting refresh it at once (lib/public-pages); the hour only ages the view and
+// like counts, and a cached page leaves the database asleep.
 
-export const revalidate = 300
+export const revalidate = 3600
+
+/** Empty, so each handle renders on its first visit and is cached from then on.
+ *  A dynamic segment without it renders on every request and never caches. */
+export async function generateStaticParams() {
+  return []
+}
 
 const posterUrl = (key: string | null) => (key ? `${process.env.R2_PUBLIC_BASE_URL}/${key}` : null)
 
