@@ -17,8 +17,9 @@ import {
   type RefObject,
 } from "react";
 import { CLIP_UNDO_SCOPE } from "@/components/scene/clip-history"
-import { Timeline, defaultTabForSelection, tabsForSelection } from "@/components/scene/timeline"
+import { Timeline, defaultTabForSelection, tabsForSelection, type ParentHold, type SelectionKind } from "@/components/scene/timeline"
 import { TrackPicker } from "@/components/scene/track-picker";
+import { EditorRail } from "@/components/scene/editor-rail";
 import {
   useClipActions,
   useClipSelector,
@@ -101,6 +102,17 @@ export function Dopesheet({
   onTogglePlay,
   /** Named group to narrow the gutter to, or null for every keyed bone. */
   group = null,
+  /** The rail: which kind of track, and how to change it. */
+  onKind,
+  /** The Objects tab's subjects, the one being edited, and how to pick another. */
+  objects = [],
+  objectId = null,
+  onObject,
+  /** The edited prop's holds, for the Parent row's band. */
+  parentHolds = null,
+  /** How long the scene runs, in frames: the ruler's floor on the Objects tab,
+   *  where a prop's own clip is often shorter than the scene. */
+  spanFrames = 0,
 }: {
   playheadDrawRef: RefObject<((frame: number) => void) | null>;
   audioPeaks: readonly number[] | null;
@@ -111,10 +123,17 @@ export function Dopesheet({
   enginePlaying: boolean;
   onTogglePlay: () => void;
   group?: string | null;
+  onKind: (kind: ClipEditKind) => void;
+  objects?: { id: string; label: string }[];
+  objectId?: string | null;
+  onObject?: (id: string) => void;
+  parentHolds?: ParentHold[] | null;
+  spanFrames?: number;
 }) {
   const clip = useClipSelector((s) => s.clip);
   const selectedMorph = useClipSelector((s) => s.selectedMorph);
   const cameraSelected = useClipSelector((s) => s.cameraSelected);
+  const parentSelected = useClipSelector((s) => s.parentSelected);
   const morphNames = useClipSelector((s) => s.morphNames);
   // Read by the open-on-morph effect without making it a dependency — it must
   // run when the editor opens, not every time a keyframe moves.
@@ -151,7 +170,7 @@ export function Dopesheet({
   // the only thing that knew about it — the scene never heard. These two
   // effects are that missing wire, and they are two rather than one because the
   // two directions are not symmetric.
-  const { setSelectedBone, setSelectedMorph, setCameraSelected, setTab } =
+  const { setSelectedBone, setSelectedMorph, setCameraSelected, setParentSelected, setTab } =
     useClipActions();
   // Last session's tab, applied once. It cannot be a lazy initialiser any more
   // now that the value outlives this component — and it must not re-apply, or
@@ -170,7 +189,9 @@ export function Dopesheet({
   useEffect(() => {
     if (!open) return;
     setCameraSelected(kind === "camera");
-    if (kind === "camera") {
+    // The Objects tab opens on its Parent row, the track the tab exists for.
+    setParentSelected(kind === "object");
+    if (kind === "camera" || kind === "effect" || kind === "object") {
       setSelectedBone(null);
       setSelectedMorph(null);
     } else if (kind === "morph") {
@@ -188,7 +209,7 @@ export function Dopesheet({
     } else {
       setSelectedMorph(null);
     }
-  }, [open, kind, setCameraSelected, setSelectedBone, setSelectedMorph]);
+  }, [open, kind, setCameraSelected, setParentSelected, setSelectedBone, setSelectedMorph]);
 
   // The tab must BELONG to the selection.
   //
@@ -207,13 +228,19 @@ export function Dopesheet({
   // to nothing that was selected, showing a tab strip that did not contain the
   // tab it was drawing. "Charts from nowhere", and the strip agreed with the
   // selection while the canvas did not.
-  const selectionKind: "bone" | "morph" | "camera" = cameraSelected
-    ? "camera"
-    : selectedMorph
-      ? "morph"
-      : "bone";
+  const selectionKind: SelectionKind =
+    kind === "effect"
+      ? "none"
+      : parentSelected
+        ? "parent"
+        : cameraSelected
+          ? "camera"
+          : selectedMorph
+            ? "morph"
+            : "bone";
   useEffect(() => {
-    if (tabsForSelection(selectionKind).some((t) => t.key === tab)) return;
+    const tabs = tabsForSelection(selectionKind);
+    if (tabs.length === 0 || tabs.some((t) => t.key === tab)) return;
     setTab(defaultTabForSelection(selectionKind));
   }, [selectionKind, tab, setTab]);
 
@@ -280,7 +307,7 @@ export function Dopesheet({
   // playhead stays where it was, and a ruler that ends at frame 300 with the
   // playhead at 900 draws it off-canvas — the editor looking broken when it is
   // only pointed somewhere that no longer exists.
-  const frameCount = clip?.frameCount ?? 0;
+  const frameCount = Math.max(clip?.frameCount ?? 0, kind === "object" ? spanFrames : 0);
   useEffect(() => {
     if (frameCount <= 0) return;
     setCurrentFrame((f) => Math.min(f, frameCount));
@@ -308,7 +335,7 @@ export function Dopesheet({
   // viewport's job (double-click picks one) — a permanent list of two hundred
   // names to find the one you already clicked is the panel this replaces.
   const visibleBones = useMemo(() => {
-    if (!clip) return [];
+    if (!clip || kind === "effect" || parentSelected) return [];
     const keyed = [...clip.boneTracks.keys()];
     const g = group ? BONE_GROUPS[group] : null;
     // Group order, not clip order: BONE_GROUPS is authored head-down, and a
@@ -316,7 +343,7 @@ export function Dopesheet({
     // reads as unsorted even though it isn't.
     if (!g) return keyed;
     return g.filter((name) => keyed.includes(name));
-  }, [clip, group]);
+  }, [clip, group, kind, parentSelected]);
 
   // The whole stored view, assembled from the halves that move independently:
   // the timeline reports zoom and scroll, the drag handle below reports height,
@@ -451,10 +478,14 @@ export function Dopesheet({
               clip and reading across is how you work — pick a bone on the left,
               read its curve on the right. */}
           <div className="flex h-full w-full">
-            <TrackPicker kind={kind} />
+            <EditorRail kind={kind} onKind={onKind} />
+            <TrackPicker kind={kind} objects={objects} objectId={objectId} onObject={onObject} />
             <div className="min-w-0 flex-1">
               <Timeline
                 visibleBones={visibleBones}
+                blank={kind === "effect"}
+                parentHolds={kind === "object" ? parentHolds : null}
+                spanFrames={kind === "object" ? spanFrames : 0}
                 // Baselined, so the FIRST clip to arrive does not count as a
                 // swap. The timeline resets its zoom and scroll whenever this
                 // changes, and the first change is the clip loading into an

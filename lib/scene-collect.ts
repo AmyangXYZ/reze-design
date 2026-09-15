@@ -167,7 +167,12 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
       ...(stage
         ? { stage: true, transform: stage.transform }
         : prop
-          ? { prop: true, transform: prop.transform, ...(prop.attach ? { attach: prop.attach } : {}) }
+          ? {
+              prop: true,
+              transform: prop.transform,
+              ...(prop.attach ? { attach: prop.attach } : {}),
+              ...(prop.parentKeys.length > 0 ? { parentKeys: prop.parentKeys } : {}),
+            }
           : (m.position && !m.spawnGuess) ||
               (m.scale !== undefined && m.scale !== 1) ||
               (m.rotation !== undefined && m.rotation.some((r) => r !== 0))

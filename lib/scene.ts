@@ -63,6 +63,22 @@ export type SceneStageTransform = {
  *  own. A bone the parent lacks rides the parent's root. */
 export type SceneAttach = { model: string; bone: string }
 
+/** A switch on a prop's parent track, keyed on the timeline: from `frame` until
+ *  the next key the prop rides `model`'s `bone` with `position` and `rotation`
+ *  (degrees) as the offset in that bone's space, or stands on its own there
+ *  when `model` is null. The hold before the first switch is `attach` and
+ *  `transform`, so every key is after frame 0. */
+export type SceneParentKey = {
+  frame: number
+  model: string | null
+  bone?: string
+  position: [number, number, number]
+  rotation: [number, number, number]
+  /** Arrived at gradually from the previous key's placement — a flight's keys,
+   *  and a catch landing in a moving hand. */
+  tween?: boolean
+}
+
 /** One character in the scene: the model plus ITS motion clip. */
 export type SceneModel = {
   model: ModelRef
@@ -79,6 +95,8 @@ export type SceneModel = {
   prop?: boolean
   /** Hung from a bone of another model. See SceneAttach. */
   attach?: SceneAttach | null
+  /** A prop's parent switches after its start hold. See SceneParentKey. */
+  parentKeys?: SceneParentKey[]
   transform?: SceneStageTransform
   /** Authored morph weights by morph name. A stage's morphs are switches the
    *  user set, not animation, so they are document state — see stage-morphs.tsx. */
@@ -313,6 +331,8 @@ export type SceneModelDoc = {
   /** Hung from a bone of another model. Its transform's position and rotation
    *  are then offsets in that bone's space. */
   attach?: SceneAttach | null
+  /** Parent switches after the start hold, by frame. See SceneParentKey. */
+  parentKeys?: SceneParentKey[]
   /** Where this model stands: position, rotation in degrees, uniform scale. A
    *  stage is placed by all three; a cast member by position alone — the offset
    *  that keeps two models wearing one motion out of each other. Absent means
@@ -544,11 +564,12 @@ const roleOf = (g: StyleGroup): StyleGroupDoc["role"] =>
  * writer, and the publish writer — and a field added to only two of them
  * silently stops round-tripping on the third.
  */
-function stageFieldsOf(m: Pick<SceneModel, "stage" | "prop" | "attach" | "transform" | "morphs">) {
+function stageFieldsOf(m: Pick<SceneModel, "stage" | "prop" | "attach" | "parentKeys" | "transform" | "morphs">) {
   return {
     ...(m.stage ? { stage: true as const } : {}),
     ...(m.prop ? { prop: true as const } : {}),
     ...(m.attach ? { attach: { model: m.attach.model, bone: m.attach.bone } } : {}),
+    ...(m.parentKeys && m.parentKeys.length > 0 ? { parentKeys: m.parentKeys } : {}),
     ...(m.transform ? { transform: m.transform } : {}),
     // An empty map is the same as no switches — don't write `"morphs": {}`.
     ...(m.morphs && Object.keys(m.morphs).length > 0 ? { morphs: m.morphs } : {}),

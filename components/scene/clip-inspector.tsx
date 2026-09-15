@@ -26,9 +26,9 @@
 //      the playhead is ON. Parked between two keys it goes inert rather than
 //      quietly easing the earlier one.
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react"
 import { X } from "lucide-react"
-import type { AnimationClip, BoneInterpolation, BoneKeyframe, CameraKeyframe } from "reze-engine"
+import type { AnimationClip, BoneInterpolation, BoneKeyframe, CameraKeyframe, Engine } from "reze-engine"
 import { CameraAnimation, Vec3 } from "reze-engine"
 import { Button } from "@/components/ui/button"
 import { Surface } from "@/components/editor/surface"
@@ -67,6 +67,11 @@ import { useDockSlot } from "@/hooks/use-dock-slot"
 import { useT } from "@/lib/i18n"
 import { useZOrder } from "@/hooks/use-z-order"
 import { cn } from "@/lib/utils"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { FPS } from "@/lib/clip"
+import { holdIndexAt, holdsOf, keepPlaceKey, planThrow, type ThrowStyle, type ThrowTarget } from "@/lib/prop-throw"
+import type { SceneAttach, SceneParentKey } from "@/lib/scene"
+import type { PropInfo } from "@/lib/scene-host"
 
 // ─── Tab syncing ──────────────────────────────────────────────────────────
 //
@@ -1154,11 +1159,12 @@ const CameraSection = memo(function CameraSection({ onClose }: { onClose: () => 
 
 // ─── The dock ─────────────────────────────────────────────────────────────
 
-function InspectorBody({ onClose }: { onClose: () => void }) {
+function InspectorBody({ onClose, object }: { onClose: () => void; object: ObjectEditing | null }) {
   const clip = useClipSelector((s) => s.clip)
   const selectedBone = useClipSelector((s) => s.selectedBone)
   const selectedMorph = useClipSelector((s) => s.selectedMorph)
   const cameraSelected = useClipSelector((s) => s.cameraSelected)
+  const parentSelected = useClipSelector((s) => s.parentSelected)
   const { commit, setTab } = useClipActions()
   const t = useT()
   const engine = useClipEngine()
@@ -1276,6 +1282,7 @@ function InspectorBody({ onClose }: { onClose: () => void }) {
     [selectedMorph, clip, commit, engine, frameRef, setTab],
   )
 
+  if (parentSelected && object) return <ParentSection onClose={onClose} object={object} />
   if (cameraSelected) return <CameraSection onClose={onClose} />
 
   if (selectedMorph) {
@@ -1378,7 +1385,7 @@ function LiveMorphSlider({
   )
 }
 
-export function ClipInspector({ onClose }: { onClose: () => void }) {
+export function ClipInspector({ onClose, object = null }: { onClose: () => void; object?: ObjectEditing | null }) {
   // Nothing selected, nothing to inspect, no panel.
   //
   // The alternative was a panel holding one line telling you to go and select
@@ -1389,14 +1396,15 @@ export function ClipInspector({ onClose }: { onClose: () => void }) {
   // Split in two so the guard runs BEFORE useZOrder: registering a z-order
   // entry and an Escape closer for a surface that renders nothing would put an
   // invisible panel at the top of the stack and let it swallow the key.
-  const hasSubject = useClipSelector((s) => s.cameraSelected || s.selectedBone != null || s.selectedMorph != null)
-  if (!hasSubject) return null
-  return <ClipInspectorSurface onClose={onClose} />
+  const trackSubject = useClipSelector((s) => s.cameraSelected || s.selectedBone != null || s.selectedMorph != null)
+  const parentSubject = useClipSelector((s) => s.parentSelected)
+  if (!trackSubject && !(parentSubject && object)) return null
+  return <ClipInspectorSurface onClose={onClose} object={object} />
 }
 
-function ClipInspectorSurface({ onClose }: { onClose: () => void }) {
+function ClipInspectorSurface({ onClose, object }: { onClose: () => void; object: ObjectEditing | null }) {
   const z = useZOrder(undefined, onClose)
-  const { setSelectedBone, setSelectedMorph, setCameraSelected } = useClipActions()
+  const { setSelectedBone, setSelectedMorph, setCameraSelected, setParentSelected } = useClipActions()
   // The right column holds one panel, and this one arrives with a subject and
   // leaves with it — so giving the column up means letting go of the subject,
   // not folding the timeline the way the X does. Opening materials or export
@@ -1409,6 +1417,7 @@ function ClipInspectorSurface({ onClose }: { onClose: () => void }) {
     setSelectedBone(null)
     setSelectedMorph(null)
     setCameraSelected(false)
+    setParentSelected(false)
   })
   return (
     <Surface
@@ -1431,7 +1440,295 @@ function ClipInspectorSurface({ onClose }: { onClose: () => void }) {
       onPointerDownCapture={z.onPointerDownCapture}
       onFocusCapture={z.onFocusCapture}
     >
-      <InspectorBody onClose={onClose} />
+      <InspectorBody onClose={onClose} object={object} />
     </Surface>
+  )
+}
+
+/** What the Parent row's properties need from the page: the prop, the cast it
+ *  can ride (bones listed with the usual holds first), and the two writers. */
+export type ObjectEditing = {
+  prop: PropInfo
+  cast: { id: string; name: string; bones: string[] }[]
+  engineRef: RefObject<Engine | null>
+  setParentKeys: (id: string, keys: SceneParentKey[]) => void
+  setStart: (
+    id: string,
+    attach: SceneAttach | null,
+    position: [number, number, number],
+    rotation: [number, number, number],
+  ) => void
+}
+
+const NO_PARENT = "__none"
+const TO_POSITION = "__position"
+const THROW_ORDER: ThrowStyle[] = ["pass", "toss", "lob"]
+const ROW = "mt-2.5 flex items-center gap-2 first:mt-0"
+const ROW_LABEL = "w-16 shrink-0 truncate text-xs"
+const ROW_SELECT = "ml-auto max-w-[9.5rem] text-[11px] data-[size=sm]:h-5"
+const withAxis = (v: [number, number, number], axis: number, x: number): [number, number, number] =>
+  [axis === 0 ? x : v[0], axis === 1 ? x : v[1], axis === 2 ? x : v[2]]
+
+/**
+ * The Parent row's properties: what the prop rides at the playhead, its offset
+ * there, and a throw.
+ *
+ * A parent change here is a switch AT the playhead that keeps the prop where it
+ * is — the offset is solved from the pose on screen. At frame 0 it rewrites the
+ * start hold, which the Props tab shows as well.
+ *
+ * A throw starts at the playhead: find the frame the prop leaves the hand, pick
+ * where it goes — a bone on a cast member, or a point — and a curve.
+ */
+function ParentSection({ onClose, object }: { onClose: () => void; object: ObjectEditing }) {
+  const t = useT()
+  const { prop, cast, engineRef, setParentKeys, setStart } = object
+  const frame = usePlayheadSelector((s) => Math.max(0, Math.round(s.currentFrame)))
+  const clip = useClipSelector((s) => s.clip)
+  const { commit } = useClipActions()
+  const holdIndex = holdIndexAt(prop, frame)
+  const hold = holdsOf(prop)[holdIndex]
+  const keyed = frame > 0 && prop.parentKeys.some((k) => k.frame === frame)
+  const ownKeys = clip ? [...clip.boneTracks.values(), ...clip.morphTracks.values()].some((track) => track.length > 0) : false
+  const bonesOf = (id: string | null) => cast.find((m) => m.id === id)?.bones ?? []
+
+  const [style, setStyle] = useState<ThrowStyle>("toss")
+  const [pickedTo, setPickedTo] = useState<string | null>(null)
+  const [pickedBone, setPickedBone] = useState<string | null>(null)
+  const [destination, setDestination] = useState<[number, number, number]>([0, 0, 0])
+  const toPosition = pickedTo === TO_POSITION
+  // The catcher: whoever was picked, else the first cast member not holding it.
+  const to = toPosition ? null : (cast.find((m) => m.id === pickedTo)?.id ?? cast.find((m) => m.id !== hold.model)?.id ?? null)
+  const toBones = bonesOf(to)
+  const toBone =
+    pickedBone && toBones.includes(pickedBone) ? pickedBone : (toBones.find((b) => b === "左手首") ?? toBones[0] ?? null)
+
+  const switchTo = (model: string | null, bone: string | null) => {
+    const engine = engineRef.current
+    if (!engine) return
+    const key = keepPlaceKey(engine, prop, frame, model && bone ? { model, bone } : null)
+    if (!key) return
+    if (frame === 0) {
+      setStart(prop.id, key.model && key.bone ? { model: key.model, bone: key.bone } : null, key.position, key.rotation)
+      return
+    }
+    setParentKeys(prop.id, [...prop.parentKeys.filter((k) => k.frame !== frame), key])
+  }
+
+  /** The offset of the hold at the playhead on the bone it rides. The start hold
+   *  is the Props tab's; later holds are keys. */
+  const setOffset = (position: [number, number, number], rotation: [number, number, number]) => {
+    if (holdIndex === 0) {
+      setStart(prop.id, prop.attach, position, rotation)
+      return
+    }
+    setParentKeys(
+      prop.id,
+      prop.parentKeys.map((k, i) => (i === holdIndex - 1 ? { ...k, position, rotation } : k)),
+    )
+  }
+
+  /** Start over: the prop back in its start hold, with no keys of its own. An
+   *  empty clip leaves bones where the last one posed them, so they are reset. */
+  const clearAll = () => {
+    setParentKeys(prop.id, [])
+    if (clip) commit({ ...clip, boneTracks: new Map(), morphTracks: new Map() })
+    engineRef.current?.getModel(prop.id)?.resetAllBones()
+  }
+
+  const throwIt = () => {
+    const engine = engineRef.current
+    if (!engine) return
+    const target: ThrowTarget | null = toPosition ? { position: destination } : to && toBone ? { model: to, bone: toBone } : null
+    if (!target) return
+    const keys = planThrow({
+      engine,
+      prop,
+      release: frame,
+      to: target,
+      style,
+      poseAt: (f) => {
+        for (const m of cast) {
+          const model = engine.getModel(m.id)
+          if (!model) continue
+          model.seek(f / FPS)
+          model.update(0)
+        }
+      },
+    })
+    if (keys) setParentKeys(prop.id, keys)
+  }
+
+  return (
+    <>
+      <SubjectHeader onClose={onClose} title={prop.file} frameCount={clip?.frameCount ?? null} />
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3">
+        <Group title={t.lab.timeline.parent}>
+          <div className={ROW}>
+            <span className={ROW_LABEL}>{t.lab.ctl.attachTo}</span>
+            <Select
+              value={hold.model ?? NO_PARENT}
+              onValueChange={(v) => {
+                if (v === NO_PARENT) return switchTo(null, null)
+                const bones = bonesOf(v)
+                switchTo(v, hold.bone && bones.includes(hold.bone) ? hold.bone : (bones[0] ?? null))
+              }}
+            >
+              <SelectTrigger size="sm" className={ROW_SELECT}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_PARENT}>{t.lab.ctl.none}</SelectItem>
+                {cast.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className={ROW}>
+            <span className={ROW_LABEL}>{t.lab.ctl.bone}</span>
+            <Select value={hold.bone ?? ""} disabled={!hold.model} onValueChange={(v) => hold.model && switchTo(hold.model, v)}>
+              <SelectTrigger size="sm" className={ROW_SELECT}>
+                <SelectValue placeholder={t.lab.ctl.none} />
+              </SelectTrigger>
+              <SelectContent>
+                {bonesOf(hold.model).map((b) => (
+                  <SelectItem key={b} value={b}>
+                    {b}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className={cn(ROW, "justify-end gap-1")}>
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              disabled={!keyed}
+              className="hover:text-red-400"
+              onClick={() => setParentKeys(prop.id, prop.parentKeys.filter((k) => k.frame !== frame))}
+            >
+              {t.lab.timeline.delete}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              disabled={prop.parentKeys.length === 0 && !ownKeys}
+              className="hover:text-red-400"
+              onClick={clearAll}
+            >
+              {t.lab.timeline.clear}
+            </Button>
+          </div>
+        </Group>
+        {hold.model && (
+          <Group title={t.lab.timeline.offset}>
+            {TRA_CHANNELS.map((ch, i) => (
+              <AxisSliderRow
+                key={ch.key}
+                axis={["X", "Y", "Z"][i]}
+                color={ch.color}
+                value={hold.position[i]}
+                min={-10}
+                max={10}
+                decimals={2}
+                onChange={(v) => setOffset(withAxis(hold.position, i, v), hold.rotation)}
+                onCommit={(v) => setOffset(withAxis(hold.position, i, v), hold.rotation)}
+              />
+            ))}
+            {ROT_CHANNELS.map((ch, i) => (
+              <AxisSliderRow
+                key={ch.key}
+                axis={["X", "Y", "Z"][i]}
+                color={ch.color}
+                value={hold.rotation[i]}
+                min={-180}
+                max={180}
+                decimals={1}
+                onChange={(v) => setOffset(hold.position, withAxis(hold.rotation, i, v))}
+                onCommit={(v) => setOffset(hold.position, withAxis(hold.rotation, i, v))}
+              />
+            ))}
+          </Group>
+        )}
+        <Group title={t.lab.timeline.throwTitle}>
+          <div className={ROW}>
+            <span className={ROW_LABEL}>{t.lab.timeline.throwTo}</span>
+            <Select value={toPosition ? TO_POSITION : (to ?? undefined)} onValueChange={setPickedTo}>
+              <SelectTrigger size="sm" className={ROW_SELECT}>
+                <SelectValue placeholder={t.lab.ctl.none} />
+              </SelectTrigger>
+              <SelectContent>
+                {cast.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.name}
+                  </SelectItem>
+                ))}
+                <SelectItem value={TO_POSITION}>{t.lab.timeline.throwPosition}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {toPosition ? (
+            TRA_CHANNELS.map((ch, i) => (
+              <AxisSliderRow
+                key={ch.key}
+                axis={["X", "Y", "Z"][i]}
+                color={ch.color}
+                value={destination[i]}
+                min={-50}
+                max={50}
+                decimals={1}
+                onChange={(v) => setDestination((d) => withAxis(d, i, v))}
+                onCommit={(v) => setDestination((d) => withAxis(d, i, v))}
+              />
+            ))
+          ) : (
+            <div className={ROW}>
+              <span className={ROW_LABEL}>{t.lab.ctl.bone}</span>
+              <Select value={toBone ?? undefined} onValueChange={setPickedBone} disabled={!to}>
+                <SelectTrigger size="sm" className={ROW_SELECT}>
+                  <SelectValue placeholder={t.lab.ctl.none} />
+                </SelectTrigger>
+                <SelectContent>
+                  {toBones.map((b) => (
+                    <SelectItem key={b} value={b}>
+                      {b}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <div className={cn(ROW, "gap-1")}>
+            {THROW_ORDER.map((s) => (
+              <Button
+                key={s}
+                type="button"
+                variant="outline"
+                size="xs"
+                onClick={() => setStyle(s)}
+                className={cn(TAB, style === s ? CHIP_ON : CHIP_OFF)}
+              >
+                {t.lab.timeline.throwStyles[s]}
+              </Button>
+            ))}
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              className="ml-auto"
+              disabled={!toPosition && (!to || !toBone)}
+              onClick={throwIt}
+            >
+              {t.lab.timeline.throwIt}
+            </Button>
+          </div>
+        </Group>
+      </div>
+    </>
   )
 }

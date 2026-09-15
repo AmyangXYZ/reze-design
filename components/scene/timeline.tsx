@@ -15,10 +15,14 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  MoveHorizontal,
+  MoveVertical,
   Pause,
   Play,
+  type LucideIcon,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { useT } from "@/lib/i18n"
 import { useClipActions, useClipEngine, useClipSelector, usePlayhead, usePlayheadFrameRef, type SelectedKeyframe } from "@/context/clip-editor"
@@ -237,6 +241,8 @@ const BONE_TABS: TabDef[] = [
 // MORPH_COLOR; this is only the chip.
 const MORPH_TABS: TabDef[] = [{ key: "morph", label: "Weight", color: null, sep: false }]
 
+const PARENT_TABS: TabDef[] = [{ key: "parent", label: "Parent", color: null, sep: false }]
+
 const CAM_TABS: TabDef[] = CAMERA_TABS.map((t) => ({ key: t.key, label: t.label, color: t.color, sep: t.sep }))
 
 /**
@@ -248,7 +254,16 @@ const CAM_TABS: TabDef[] = CAMERA_TABS.map((t) => ({ key: t.key, label: t.label,
  * this one". Swapping the set means every tab on screen is one you can press,
  * and the count itself tells you what kind of thing you are editing.
  */
-export function tabsForSelection(kind: "bone" | "morph" | "camera"): TabDef[] {
+/** What the editor has selected, as the channel tabs see it. `parent` is the
+ *  Objects tab's hold track; `none` is a tab with no track. */
+export type SelectionKind = "bone" | "morph" | "camera" | "parent" | "none"
+
+/** One hold on a prop's parent track, as the Parent row's band draws it. */
+export type ParentHold = { frame: number; label: string; attached: boolean }
+
+export function tabsForSelection(kind: SelectionKind): TabDef[] {
+  if (kind === "none") return []
+  if (kind === "parent") return PARENT_TABS
   if (kind === "camera") return CAM_TABS
   if (kind === "morph") return MORPH_TABS
   return BONE_TABS
@@ -256,7 +271,8 @@ export function tabsForSelection(kind: "bone" | "morph" | "camera"): TabDef[] {
 
 /** The tab to fall back to when the selection changes out from under the
  *  current one. */
-export function defaultTabForSelection(kind: "bone" | "morph" | "camera"): string {
+export function defaultTabForSelection(kind: SelectionKind): string {
+  if (kind === "parent") return "parent"
   if (kind === "camera") return CAMERA_DEFAULT_TAB
   if (kind === "morph") return "morph"
   return "allRot"
@@ -353,6 +369,22 @@ function TransportFrameSlider({
 }
 
 export type { SelectedKeyframe } from "@/context/clip-editor"
+
+/** Which axis a zoom ruler scales, as a glyph with its name on hover. The
+ *  toolbar shares its row with the rail and the track column, and two words
+ *  cost the width the channel tabs need. */
+function AxisGlyph({ icon: Icon, label, className }: { icon: LucideIcon; label: string; className?: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span aria-label={label} className={cn("flex shrink-0 items-center text-muted-foreground", className)}>
+          <Icon className="size-3" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  )
+}
 
 function ZoomRuler({
   min,
@@ -497,6 +529,10 @@ interface TimelineCanvasProps {
   currentFrame: number
   selectedBone: string | null
   selectedMorph: string | null
+  /** A tab with no track: ruler, grid and music only. See TimelineProps. */
+  blank: boolean
+  /** The Parent row's holds, or null while another track is showing. */
+  parentHolds: ParentHold[] | null
   /** The camera shot. Drawn instead of bone/morph curves while a camera tab is
    *  active; empty means no shot loaded. */
   cameraTrack: readonly CameraKeyframe[]
@@ -559,6 +595,8 @@ function TimelineCanvas({
   currentFrame,
   selectedBone,
   selectedMorph,
+  blank,
+  parentHolds,
   cameraTrack,
   frameCount,
   audioPeaks,
@@ -620,6 +658,8 @@ function TimelineCanvas({
     audioPeaks: readonly number[] | null
     visibleBones: readonly string[] | null
     selectedKeyframes: readonly SelectedKeyframe[] | null
+    blank: boolean
+    parentHolds: readonly ParentHold[] | null
     tab: string
     dragVersion: number
   }>({
@@ -636,6 +676,8 @@ function TimelineCanvas({
     audioPeaks: null,
     visibleBones: null,
     selectedKeyframes: null,
+    blank: false,
+    parentHolds: null,
     tab: "",
     dragVersion: 0,
   })
@@ -687,6 +729,10 @@ function TimelineCanvas({
 
   const getDopeFrames = useCallback(() => {
     const frames = new Map<number, number>()
+    if (blank) return frames
+    // The Parent row's switches are ticks in the band above. A diamond in this
+    // strip is a key you drag, and a switch is solved for its own frame.
+    if (parentHolds) return frames
     if (isCameraTab(tab)) {
       // One diamond per camera keyframe. Every channel keys together in a
       // camera VMD — a keyframe carries the whole pose — so the dopesheet is
@@ -705,7 +751,7 @@ function TimelineCanvas({
       }
     }
     return frames
-  }, [clip, visibleBones, selectedBone, selectedMorph, cameraTrack, tab])
+  }, [clip, visibleBones, selectedBone, selectedMorph, cameraTrack, tab, blank, parentHolds])
 
   const draw = useCallback(() => {
     const el = canvasRef.current
@@ -749,6 +795,8 @@ function TimelineCanvas({
       cache.visibleBones !== visibleBones ||
       cache.selectedKeyframes !== selectedKeyframes ||
       cache.tab !== tab ||
+      cache.blank !== blank ||
+      cache.parentHolds !== parentHolds ||
       cache.dragVersion !== dragVersionRef.current
 
     const ox = LABEL_W - scrollX
@@ -907,7 +955,50 @@ function TimelineCanvas({
     ctx.clip()
     const isCamTab = isCameraTab(tab)
     const isMorphTab = tab === "morph"
-    if (isCamTab) {
+    if (blank) {
+      // A tab with no track yet: the grid and the music lane are the whole picture.
+    } else if (parentHolds) {
+      // ── Parent holds ── A state line: one segment per hold, solid while the
+      // prop rides a bone and dashed while it is free, with a tick and the hold's
+      // name at each switch. The band reads; a switch is set from the dock at the
+      // playhead, because its offset is solved for that frame.
+      const midY = Math.round((curveTop + curveBot) / 2) + 0.5
+      ctx.font = `10px ${FONT}`
+      ctx.textAlign = "left"
+      ctx.textBaseline = "bottom"
+      for (let i = 0; i < parentHolds.length; i++) {
+        const hold = parentHolds[i]
+        const next = parentHolds[i + 1]
+        const x0 = toX(hold.frame)
+        const left = Math.max(LABEL_W, x0)
+        const right = Math.min(w, next ? toX(next.frame) : w)
+        if (right <= left) continue
+        ctx.strokeStyle = hold.attached ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.35)"
+        ctx.lineWidth = hold.attached ? 2 : 1.5
+        ctx.setLineDash(hold.attached ? [] : [4, 4])
+        ctx.beginPath()
+        ctx.moveTo(left, midY)
+        ctx.lineTo(right, midY)
+        ctx.stroke()
+        ctx.setLineDash([])
+        if (x0 >= LABEL_W && x0 <= w) {
+          const tx = Math.round(x0) + 0.5
+          ctx.strokeStyle = "rgba(255,255,255,0.45)"
+          ctx.lineWidth = 1
+          ctx.beginPath()
+          ctx.moveTo(tx, midY - 7)
+          ctx.lineTo(tx, midY + 7)
+          ctx.stroke()
+        }
+        ctx.save()
+        ctx.beginPath()
+        ctx.rect(left + 4, curveTop, Math.max(0, right - left - 8), midY - curveTop)
+        ctx.clip()
+        ctx.fillStyle = hold.attached ? "rgba(255,255,255,0.85)" : C.label
+        ctx.fillText(hold.label, left + 4, midY - 5)
+        ctx.restore()
+      }
+    } else if (isCamTab) {
       // ── Camera curves ──
       // One line per channel under this tab: a single curve for target/
       // distance/fov, three for "Rotation" (MMD eases all three euler
@@ -1356,6 +1447,8 @@ function TimelineCanvas({
       cache.visibleBones = visibleBones
       cache.selectedKeyframes = selectedKeyframes
       cache.tab = tab
+      cache.blank = blank
+      cache.parentHolds = parentHolds
       cache.dragVersion = dragVersionRef.current
     }
 
@@ -1459,7 +1552,7 @@ function TimelineCanvas({
     }
     // dict.lab.timeline, because the canvas PAINTS its own empty states — a
     // language change has to repaint them, and nothing else here would.
-  }, [clip, pxPerFrame, yZoom, scrollX, selectedBone, selectedMorph, cameraTrack, frameCount, audioPeaks, audioDuration, visibleBones, selectedKeyframes, tab, getDopeFrames, dict.lab.timeline])
+  }, [clip, pxPerFrame, yZoom, scrollX, selectedBone, selectedMorph, cameraTrack, frameCount, audioPeaks, audioDuration, visibleBones, selectedKeyframes, tab, blank, parentHolds, getDopeFrames, dict.lab.timeline])
   drawRef2.current = draw
 
   // Layout-phase paint: `useEffect`+nested rAF ran after browser paint → playhead lagged 1–2 frames behind transport.
@@ -1544,8 +1637,11 @@ function TimelineCanvas({
       const toY = (v: number) => RULER_H + (1 - (v - vMin) / (vMax - vMin)) * curveH
       const toX = (f: number) => ox + f * pxPerFrame
 
-      if (my < RULER_H) {
-        const f = Math.round((mx - ox) / pxPerFrame)
+      // A tab whose band holds no keys scrubs wherever it is pressed; a press
+      // beside a switch lands on it, which is how the dock reaches that switch.
+      if (my < RULER_H || blank || parentHolds) {
+        let f = Math.round((mx - ox) / pxPerFrame)
+        if (parentHolds) for (const hold of parentHolds) if (hold.frame > 0 && Math.abs(toX(hold.frame) - mx) < 6) f = hold.frame
         return { zone: "ruler" as const, frame: Math.max(0, Math.min(frameCount, f)) }
       }
 
@@ -1603,7 +1699,7 @@ function TimelineCanvas({
       const f = Math.round((mx - ox) / pxPerFrame)
       return { zone: "curve-empty" as const, frame: Math.max(0, Math.min(frameCount, f)) }
     },
-    [clip, pxPerFrame, yZoom, scrollX, selectedBone, selectedMorph, cameraTrack, frameCount, audioPeaks, tab, getDopeFrames],
+    [blank, parentHolds, clip, pxPerFrame, yZoom, scrollX, selectedBone, selectedMorph, cameraTrack, frameCount, audioPeaks, tab, getDopeFrames],
   )
 
   const onMouseDown = useCallback(
@@ -2327,6 +2423,12 @@ function TimelineCanvas({
 // ─── Timeline (public component) ─────────────────────────────────────────
 interface TimelineProps {
   visibleBones: string[]
+  /** A tab with no track yet: the canvas draws the ruler and the music lane only. */
+  blank?: boolean
+  /** The Parent row's holds, drawn in the curve band while its tab is showing. */
+  parentHolds?: ParentHold[] | null
+  /** A floor for the ruler's length, in frames. */
+  spanFrames?: number
   /** Bumped on new clip load / reset — triggers local view state reset. */
   clipVersion: number
   /** Lifted channel tab state — synced from keyframe selection and slider interactions. */
@@ -2356,6 +2458,9 @@ interface TimelineProps {
 
 export function Timeline({
   visibleBones,
+  blank = false,
+  parentHolds = null,
+  spanFrames = 0,
   clipVersion,
   tab,
   setTab,
@@ -2374,12 +2479,17 @@ export function Timeline({
   const selectedKeyframes = useClipSelector((s) => s.selectedKeyframes)
   const cameraTrack = useClipSelector((s) => s.cameraTrack)
   const cameraSelected = useClipSelector((s) => s.cameraSelected)
+  const parentSelected = useClipSelector((s) => s.parentSelected)
   const { commit, commitCamera, setSelectedKeyframes } = useClipActions()
-  const selectionKind: "bone" | "morph" | "camera" = cameraSelected
-    ? "camera"
-    : selectedMorph
-      ? "morph"
-      : "bone"
+  const selectionKind: SelectionKind = blank
+    ? "none"
+    : parentSelected
+      ? "parent"
+      : cameraSelected
+        ? "camera"
+        : selectedMorph
+          ? "morph"
+          : "bone"
   const visibleTabs = tabsForSelection(selectionKind)
   const { currentFrame, setCurrentFrame, playing, setPlaying } = usePlayhead()
   /** A fresh selection puts the playhead where it starts — the pose that
@@ -2411,7 +2521,7 @@ export function Timeline({
   // is simply that — including any growth from an edit, which is deliberate.
   const lastCameraFrame = cameraTrack.length > 0 ? cameraTrack[cameraTrack.length - 1].frame : 0
   const hasMotion = useMemo(() => (clip ? motionFrameCount(clip) > 0 : false), [clip])
-  const fc = hasMotion ? (clip?.frameCount ?? 0) : Math.max(clip?.frameCount ?? 0, lastCameraFrame)
+  const fc = Math.max(spanFrames, hasMotion ? (clip?.frameCount ?? 0) : Math.max(clip?.frameCount ?? 0, lastCameraFrame))
   const [endDraft, setEndDraft] = useState<string | null>(null)
   const [frameDraft, setFrameDraft] = useState<string | null>(null)
   // Lazy-initialized from a restored draft's view, read once at first mount —
@@ -3089,7 +3199,7 @@ export function Timeline({
             setCurrentFrame(f)
           }}
         />
-        <div className="mx-0.5 flex min-w-0 items-center gap-0.5 whitespace-nowrap rounded-chip border border-line bg-white/[0.06] px-1 py-px font-mono text-[9px] tabular-nums text-muted-foreground">
+        <div className="mx-0.5 flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-chip border border-line bg-white/[0.06] px-1 py-px font-mono text-[9px] tabular-nums text-muted-foreground">
           <span>F</span>
           <input
             type="text"
@@ -3200,13 +3310,9 @@ export function Timeline({
           )
         })}
         <div className="min-w-0 flex-1" />
-        <span className="shrink-0 px-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-          {dict.lab.timeline.axisTime}
-        </span>
+        <AxisGlyph icon={MoveHorizontal} label={dict.lab.timeline.axisTime} className="px-1" />
         <ZoomRuler min={minPxPerFrame} max={MAX_PX} value={pxPerFrame} onChange={zoomTo} />
-        <span className="shrink-0 px-1 pl-2 text-[10px] uppercase tracking-wide text-muted-foreground">
-          {dict.lab.timeline.axisValue}
-        </span>
+        <AxisGlyph icon={MoveVertical} label={dict.lab.timeline.axisValue} className="pl-2 pr-1" />
         <ZoomRuler min={Y_ZOOM_MIN} max={Y_ZOOM_MAX} value={yZoom} onChange={setYZoom} />
         {trailing && <div className="ml-1.5 flex shrink-0 items-center gap-0.5 pl-1.5">{trailing}</div>}
       </div>
@@ -3228,6 +3334,8 @@ export function Timeline({
             audioDuration={audioDuration}
             visibleBones={visibleBones}
             selectedKeyframes={selectedKeyframes}
+            blank={blank}
+            parentHolds={selectionKind === "parent" ? parentHolds : null}
             tab={tab}
             onSetCurrentFrame={(f) => {
               setPlaying(false)

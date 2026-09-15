@@ -130,6 +130,8 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { ClipAutosave } from "@/components/scene/clip-autosave"
 import { ClipHistory } from "@/components/scene/clip-history"
 import { ClipInspector } from "@/components/scene/clip-inspector"
+import { holdsOf } from "@/lib/prop-throw"
+import { FPS } from "@/lib/clip"
 import { ClipEditor, type ClipEditKind } from "@/context/clip-editor"
 import { primeClipDensity, useAudioPeaks } from "@/hooks/use-lane-graphs"
 import { useEngine, type EngineModelInfo } from "@/hooks/use-engine"
@@ -2137,6 +2139,8 @@ export default function Lab() {
     addPropFromFiles,
     setPropTransform,
     setPropAttach,
+    setPropParentKeys,
+    setPropStart,
     setCastPosition,
     setCastRotation,
     setCastScale,
@@ -2441,8 +2445,13 @@ export default function Lab() {
    * was only ever whether something clip-less happened to sort first.
    */
   const modelNames = useMemo(
-    () => models.filter((m) => !stageIds.has(m.id) && animByModel[m.id]).map((m) => m.id),
-    [models, stageIds, animByModel],
+    () => [
+      ...models.filter((m) => !stageIds.has(m.id) && animByModel[m.id]).map((m) => m.id),
+      // Props with a clip of their own play on the same transport, after the
+      // cast, so the first name is still a performer's clock.
+      ...props.filter((p) => animByModel[p.id]).map((p) => p.id),
+    ],
+    [models, stageIds, animByModel, props],
   )
   // First model carrying a clip — the clock for audio AND the export.
   //
@@ -4070,8 +4079,43 @@ export default function Lab() {
   })
   // The inspected cast member is the fallback, so opening the fold from the
   // chevron alone still edits something sensible.
-  const editingModelId = timelineUnfolded ? (editTarget?.modelId ?? inspectedId ?? cast[0]?.id ?? null) : null
   const editingKind: ClipEditKind = editTarget?.kind ?? "motion"
+  // The Objects tab edits a prop and only a prop: with none named it takes the
+  // first prop, never a cast member's clip.
+  const editingModelId = !timelineUnfolded
+    ? null
+    : editingKind === "object"
+      ? (props.find((p) => p.id === editTarget?.modelId)?.id ?? props[0]?.id ?? null)
+      : (cast.find((m) => m.id === editTarget?.modelId)?.id ?? inspectedId ?? cast[0]?.id ?? null)
+  const editingProp = editingKind === "object" ? (props.find((p) => p.id === editingModelId) ?? null) : null
+  /** The Parent row's band: each hold, named by what the prop rides. */
+  const parentHolds = useMemo(
+    () =>
+      editingProp
+        ? holdsOf(editingProp)
+            // A flight is one free hold, however many keys trace it.
+            .filter((k, i, all) => !(i > 0 && k.tween && k.model === null && all[i - 1].model === null))
+            .map((k) => ({
+            frame: k.frame,
+            attached: k.model !== null,
+            label: k.model
+              ? `${displayName(models.find((m) => m.id === k.model)?.file ?? k.model)} · ${k.bone ?? ""}`
+              : t.lab.timeline.free,
+          }))
+        : null,
+    [editingProp, models, t],
+  )
+  /** The rail. Each side of it goes back to the subject it last had: a cast
+   *  member for motion, morph, camera and effects, a prop for objects. */
+  const lastSubject = useRef<{ cast: string | null; object: string | null }>({ cast: null, object: null })
+  const switchEditKind = (kind: ClipEditKind) => {
+    if (editingModelId) lastSubject.current[editingKind === "object" ? "object" : "cast"] = editingModelId
+    const modelId =
+      kind === "object"
+        ? (props.find((p) => p.id === lastSubject.current.object)?.id ?? props[0]?.id ?? "")
+        : (cast.find((m) => m.id === lastSubject.current.cast)?.id ?? cast[0]?.id ?? "")
+    setEditTarget({ modelId, kind })
+  }
   const inspected = models.find((m) => m.id === inspectedId) ?? null
   // Which group the node editor is bound to. Per MODEL, which is why moving the
   // inspector to another character clears it: group ids are per model ("hair"
@@ -8889,6 +8933,8 @@ export default function Lab() {
             scrubRef={scrubRef}
             viewportRef={viewportRef}
             editingModelId={editingModelId}
+            propClipName={editingProp ? (animByModel[editingProp.id]?.name ?? "motion.vmd") : null}
+            propFrames={Math.round(animDuration * FPS)}
           />
           {/* ⌘Z over keyframe edits. Headless, and scoped by DOM: the timeline
               and the properties dock tag their roots, so the keystroke reaches
@@ -9026,6 +9072,12 @@ export default function Lab() {
                       audioDuration={animDuration}
                       open={timelineUnfolded}
                       kind={editingKind}
+                      onKind={switchEditKind}
+                      objects={props.map((p) => ({ id: p.id, label: displayName(p.file) }))}
+                      objectId={editingProp?.id ?? null}
+                      onObject={(id) => setEditTarget({ modelId: id, kind: "object" })}
+                      parentHolds={parentHolds}
+                      spanFrames={Math.round(animDuration * FPS)}
                       trailing={chrome}
                       enginePlaying={playing}
                       onTogglePlay={togglePlay}
@@ -9045,7 +9097,22 @@ export default function Lab() {
               costs no space to make room for, either: the open timeline is
               already capped at `100vw - 35rem` so it stops clear of both
               columns, and this lands in the one on the right. */}
-          {timelineUnfolded && <ClipInspector onClose={() => setTimelineOpen(false)} />}
+          {timelineUnfolded && (
+            <ClipInspector
+              onClose={() => setTimelineOpen(false)}
+              object={
+                editingProp
+                  ? {
+                      prop: editingProp,
+                      cast: cast.map((m) => ({ id: m.id, name: displayName(m.file), bones: leadWith(m.bones, ATTACH_BONES) })),
+                      engineRef,
+                      setParentKeys: setPropParentKeys,
+                      setStart: setPropStart,
+                    }
+                  : null
+              }
+            />
+          )}
         </ClipEditor>
       )}
     </main>

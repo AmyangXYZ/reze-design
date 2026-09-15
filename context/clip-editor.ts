@@ -49,7 +49,7 @@ export { FPS, framesToSeconds, secondsToFrames } from "@/lib/clip"
 /** Which of a cast member's three tracks the editor is pointed at. Motion and
  *  morphs belong to the character; the camera belongs to the scene but is edited
  *  on the same clock, so it rides the same target. */
-export type ClipEditKind = "motion" | "morph" | "camera"
+export type ClipEditKind = "motion" | "morph" | "camera" | "effect" | "object"
 
 /**
  * The engine, as much of it as an editor surface is allowed to touch.
@@ -194,6 +194,9 @@ export type ClipDocState = {
   selectedKeyframes: SelectedKeyframe[]
   cameraTrack: CameraKeyframe[]
   cameraSelected: boolean
+  /** The Objects tab's Parent row: the prop's hold track rather than one of
+   *  its bones. See lib/prop-throw. */
+  parentSelected: boolean
   /** Whether the engine draws the transform gizmo on the selected bone.
    *  Decoupled from the selection, studio-style: once shown it follows the
    *  selection from bone to bone instead of needing to be re-summoned. Off by
@@ -282,6 +285,7 @@ export type ClipDocActions = {
   commitCamera: Dispatch<SetStateAction<CameraKeyframe[]>>
   replaceCameraTrack: (next: CameraKeyframe[]) => void
   setCameraSelected: Dispatch<SetStateAction<boolean>>
+  setParentSelected: Dispatch<SetStateAction<boolean>>
   setGizmoVisible: Dispatch<SetStateAction<boolean>>
   /** Filled from the engine when a model opens for editing. Not undoable and
    *  not part of the document — it describes the RIG, not the clip. */
@@ -316,6 +320,7 @@ const EMPTY_DOC: ClipDocState = {
   selectedKeyframes: [],
   cameraTrack: [],
   cameraSelected: false,
+  parentSelected: false,
   gizmoVisible: readGizmoPref(),
   boneNames: [],
   morphNames: [],
@@ -423,6 +428,7 @@ function createClipDocStore(): ClipDocStore {
       set({ ...state, cameraTrack: sorted })
     },
     setCameraSelected: (payload) => update("cameraSelected", payload),
+    setParentSelected: (payload) => update("parentSelected", payload),
     setGizmoVisible: (payload) => {
       const next = resolve(payload, state.gizmoVisible)
       if (next === state.gizmoVisible) return

@@ -81,11 +81,19 @@ export function ClipBridge({
   /** Whose clip to edit, or null to edit nothing. One at a time — see the
    *  `modelId` note on ClipDocState. */
   editingModelId,
+  /** Set while the edited model is a prop: the name its clip goes under. A prop
+   *  with no clip gets an empty one to key into. */
+  propClipName = null,
+  /** The scene's length in frames. A prop's clip is lengthened to it, so a key
+   *  can land anywhere on the ruler. */
+  propFrames = 0,
 }: {
   engineRef: RefObject<Engine | null>
   scrubRef: RefObject<Scrub | null>
   viewportRef: RefObject<ViewportHandlers>
   editingModelId: string | null
+  propClipName?: string | null
+  propFrames?: number
 }) {
   const { replaceClip, setRig, replaceCameraTrack, commit, setSelectedBone, setSelectedKeyframes, revealBone } =
     useClipActions()
@@ -167,13 +175,24 @@ export function ClipBridge({
       if (stamp === loaded.current) return
       loaded.current = stamp
       if (!source || !active) {
+        // A prop starts with no clip of its own. The Objects tab keys into one,
+        // so it gets an empty clip, which the next check adopts.
+        if (propClipName) {
+          model.loadClip(propClipName, { boneTracks: new Map(), morphTracks: new Map(), frameCount: propFrames })
+          model.play(propClipName)
+          model.pause()
+          model.seek(framesToSeconds(frameRef.current))
+          return
+        }
         replaceClip(null, null, null)
         return
       }
       // Cloned, not referenced. Keyframe drags mutate in place (that is what
       // keeps a drag off React entirely), and mutating the engine's array would
       // edit the playing animation a frame at a time with no way back.
-      replaceClip(cloneAnimationClip(source), editingModelId, active)
+      const adoptedClip = cloneAnimationClip(source)
+      if (propClipName && adoptedClip.frameCount < propFrames) adoptedClip.frameCount = propFrames
+      replaceClip(adoptedClip, editingModelId, active)
       // ADOPT the scene's position rather than imposing ours.
       //
       // The store opens at frame 0 and the scene is wherever the transport left
@@ -214,7 +233,7 @@ export function ClipBridge({
     }
     raf = requestAnimationFrame(check)
     return () => cancelAnimationFrame(raf)
-  }, [editingModelId, engineRef, replaceClip, setRig, replaceCameraTrack, setCurrentFrame])
+  }, [editingModelId, engineRef, replaceClip, setRig, replaceCameraTrack, setCurrentFrame, propClipName, propFrames])
 
   // ─── COMMIT ─────────────────────────────────────────────────────────────
   // Watches `editRevision`, which only a real edit bumps — NOT `revision`,
@@ -234,6 +253,10 @@ export function ClipBridge({
     const model = engineRef.current?.getModel(modelId)
     if (!model) return
     model.loadClip(clipName, clip)
+    // The edited model's own clock, to the playhead. Scrub moves the transport's
+    // models, and a prop joins those only once its clip has been saved — until
+    // then this is the only seek it gets, and a clip paused at 0 resumes from 0.
+    model.seek(framesToSeconds(currentFrame))
     // Ours, not an arrival — see stampOf.
     loaded.current = stampOf(clipName, clip)
     // The camera half of the same commit. commitCamera and commit share one
