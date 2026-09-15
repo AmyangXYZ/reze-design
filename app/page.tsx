@@ -2188,8 +2188,10 @@ export default function Lab() {
     seedMorphs(scene),
   )
   const animRef = useRef(animByModel)
+  const morphRef = useRef(morphByModel)
   useEffect(() => {
     animRef.current = animByModel
+    morphRef.current = morphByModel
   })
   const vmdInput = useRef<HTMLInputElement | null>(null)
   const morphInput = useRef<HTMLInputElement | null>(null)
@@ -4821,13 +4823,16 @@ export default function Lab() {
    *
    * The motion transplants too, the way main's slots keep theirs: clips are per
    * engine instance, so the retained SOURCE re-applies to the new one, and the
-   * entry is retracted only if that load genuinely fails.
+   * entry is retracted only if that load genuinely fails. The morph file laid
+   * over that motion transplants with it, and goes back on once the motion has
+   * landed.
    */
   const adoptReplacedModel = useCallback(
     (oldId: string, newId: string) => {
       castStarted.current.delete(oldId)
       castStarted.current.delete(newId)
       const clip = animRef.current[oldId]
+      const expr = morphRef.current[oldId]
       setAnimByModel((prev) => {
         if (!(oldId in prev) || oldId === newId) return prev
         const next = { ...prev }
@@ -4835,6 +4840,30 @@ export default function Lab() {
         if (clip) next[newId] = clip
         return next
       })
+      setMorphByModel((prev) => {
+        if (!(oldId in prev) || oldId === newId) return prev
+        const next = { ...prev }
+        delete next[oldId]
+        if (expr) next[newId] = expr
+        return next
+      })
+      // The morph dresses the motion's clip, so it goes on AFTER the motion: a
+      // motion that lands later rebuilds the clip and drops the merge — the
+      // boot loader's order, for the same reason. Bundle first, like the clip.
+      // A failed load keeps its claim, as at boot: the collector writes the
+      // document from this state.
+      const wearMorph = () => {
+        if (!expr) return
+        const packed = typeof expr.src === "string" ? bundleFile(expr.src) : null
+        const src = packed ?? expr.src
+        void (typeof src === "string" ? loadMorphUrl(newId, expr.name, src) : loadMorphFile(newId, src)).then(
+          (loaded) => {
+            if (loaded && packed)
+              setMorphByModel((prev) => (prev[newId] ? { ...prev, [newId]: { name: expr.name, src: packed } } : prev))
+          },
+        )
+      }
+      if (!clip) wearMorph()
       if (clip) {
         // Resolved through the bundle first, exactly as the boot loader does — a
         // clip that came from the scene's own bundle is named by its path INSIDE
@@ -4852,13 +4881,14 @@ export default function Lab() {
             // it again from a seed that has since been overwritten.
             if (packed)
               setAnimByModel((prev) => (prev[newId] ? { ...prev, [newId]: { name: clip.name, src: packed } } : prev))
-            return
+          } else {
+            setAnimByModel((prev) => {
+              const next = { ...prev }
+              delete next[newId]
+              return next
+            })
           }
-          setAnimByModel((prev) => {
-            const next = { ...prev }
-            delete next[newId]
-            return next
-          })
+          wearMorph()
         })
       }
       setPalettes((prev) => {
@@ -4908,7 +4938,7 @@ export default function Lab() {
         rebindCameraFollow(newId, next)
       }
     },
-    [loadVmdFile, loadVmdUrl, bundleFile, engineRef, rebindCameraFollow, camera, cast],
+    [loadVmdFile, loadVmdUrl, loadMorphFile, loadMorphUrl, bundleFile, engineRef, rebindCameraFollow, camera, cast],
   )
   useEffect(() => {
     for (const m of models) {
