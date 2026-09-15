@@ -20,7 +20,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import type { LibraryFacet, LibraryKind, LibraryOwner } from "@/lib/library"
 import { RailRow, RailSection, RailTags, tagSwatch } from "@/components/editor/library-rail"
-import { authorImage } from "@/lib/community-store"
+import { authorImage, builtinAuthor } from "@/lib/community-store"
+import Link from "next/link"
 import { ContextMenuItem, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger } from "@/components/ui/context-menu"
 import { storageKey } from "@/lib/storage"
 import { useT } from "@/lib/i18n"
@@ -377,6 +378,31 @@ export function AuthorAvatar({ name, className }: { name: string; className?: st
     >
       {initials(name)}
     </span>
+  )
+}
+
+/**
+ * A maker's name, with their page one click away — in a new tab, so the library
+ * and the scene behind it stay where they are. A draft's author has no page, so a
+ * draft's name stays text. The link keeps its clicks and keys to itself: it sits
+ * in cards that select on click and on Enter.
+ */
+export function AuthorLink({ name, draft = false, className }: { name: string; draft?: boolean; className?: string }) {
+  if (draft) return <span className={className}>{name}</span>
+  const keep = (e: React.SyntheticEvent) => e.stopPropagation()
+  return (
+    <Link
+      href={`/${name}`}
+      target="_blank"
+      rel="noopener"
+      prefetch={false}
+      onClick={keep}
+      onDoubleClick={keep}
+      onKeyDown={keep}
+      className={cn("underline-offset-2 transition-colors hover:text-foreground hover:underline", className)}
+    >
+      {name}
+    </Link>
   )
 }
 
@@ -749,8 +775,8 @@ export function LibraryResults<T extends BrowseItem>({
                 <div className="h-[19px] w-[30px] overflow-hidden rounded-[4px] border border-line-strong">{card.preview}</div>
                 <span className="min-w-0 truncate text-xs">{card.nameNode ?? label(item)}</span>
                 <span className={cn("flex min-w-0 items-center gap-1.5 font-mono text-[11px] transition-colors", cell)}>
-                  <AuthorAvatar name={item.author} className="size-3.5" />
-                  <span className="truncate">{item.author}</span>
+                  <AuthorAvatar name={builtinAuthor(id(item), item.author)} className="size-3.5" />
+                  <AuthorLink name={builtinAuthor(id(item), item.author)} draft={st === "draft"} className="truncate" />
                 </span>
                 <span className={cn("flex items-center gap-1 truncate font-mono text-[11px] transition-colors", cell)}>
                   <Icon className="size-2.5 shrink-0" />
@@ -812,8 +838,8 @@ export function LibraryResults<T extends BrowseItem>({
                   {m.nameNode ?? label(item)}
                 </div>
                 <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
-                  <AuthorAvatar name={item.author} className="size-3.5" />
-                  <span className="min-w-0 truncate">{item.author}</span>
+                  <AuthorAvatar name={builtinAuthor(id(item), item.author)} className="size-3.5" />
+                  <AuthorLink name={builtinAuthor(id(item), item.author)} draft={st === "draft"} className="min-w-0 truncate" />
                   <span className="ml-auto flex shrink-0 items-center gap-0.5 tabular-nums">
                     <Heart className="size-3" />
                     {numbers(id(item)).likes}

@@ -6220,8 +6220,11 @@ export default function Lab() {
               </kbd>
             </Button>
 
+            {/* The account menu hangs from this whole pill, right edges aligned. */}
+            <AccountButton onOpenLibrary={openForAccount}>
+              {(account) => (
             <div className={cn(PILL, "pointer-events-auto flex h-10 shrink-0 items-center gap-2 px-1.5")}>
-              <AccountButton onOpenLibrary={openForAccount} />
+              {account}
               <Button
                 size="sm"
                 onClick={() => setShareOpen(true)}
@@ -6235,6 +6238,8 @@ export default function Lab() {
                 {t.lab.share}
               </Button>
             </div>
+              )}
+            </AccountButton>
           </div>
         </div>
       )}

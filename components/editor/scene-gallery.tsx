@@ -23,6 +23,7 @@ import {
   type BrowseFacet,
   type CardMeta,
   publishedOn,
+  AuthorLink,
 } from "@/components/editor/library-shell"
 import { useLibraryStats } from "@/hooks/use-library-stats"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
@@ -664,7 +665,7 @@ function GalleryContent({
               <div className="min-h-0 p-3">
                 <div className="truncate text-sm font-semibold select-text">{selected.name}</div>
                 <div className="mt-0.5 font-mono text-[13px] text-muted-foreground/70">
-                  <span className="select-text">{selected.author}</span> · {publishedOn(selected.createdAt)}
+                  <AuthorLink name={selected.author} className="select-text" /> · {publishedOn(selected.createdAt)}
                 </div>
                 {selected.description && (
                   <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground select-text">{selected.description}</p>

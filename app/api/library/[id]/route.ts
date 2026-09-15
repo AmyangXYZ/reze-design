@@ -4,10 +4,12 @@
 // admin page is only a convenience — the API is the boundary.
 
 import { NextResponse } from "next/server"
-import { eq, inArray } from "drizzle-orm"
+import { revalidatePath } from "next/cache"
+import { and, eq, inArray, ne } from "drizzle-orm"
 import { auth } from "@/lib/auth"
 import { requireAdmin } from "@/lib/admin"
 import { hasDatabase, db, schema } from "@/lib/db"
+import { user } from "@/lib/db/auth-schema"
 import { nameClash } from "@/lib/db/names"
 import { normalizeName, withGraphName, type ScenePayload } from "@/lib/library"
 import type { Visibility } from "@/lib/db/schema"
@@ -26,6 +28,14 @@ async function authorize(request: Request, id: string) {
     .limit(1)
   if (!row || row.ownerId !== session.user.id) return null
   return { id, admin: false as const }
+}
+
+/** The author's page is cached for everyone; a change to what it shows refreshes
+ *  it now rather than when the cache runs out. */
+async function refreshProfile(ownerId: string | null) {
+  if (!ownerId) return
+  const [owner] = await db.select({ handle: user.username }).from(user).where(eq(user.id, ownerId)).limit(1)
+  if (owner?.handle) revalidatePath(`/${owner.handle}`)
 }
 
 /** A single PUBLIC item — how the viewer page resolves a share link. */
@@ -92,9 +102,10 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
   const ok = await authorize(request, id)
   if (!ok) return NextResponse.json({ error: "not found" }, { status: 404 })
 
-  const { name, visibility } = ((await request.json().catch(() => ({}))) ?? {}) as {
+  const { name, visibility, featured } = ((await request.json().catch(() => ({}))) ?? {}) as {
     name?: unknown
     visibility?: unknown
+    featured?: unknown
   }
   const [row] = await db
     .select({
@@ -102,11 +113,31 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
       payload: schema.libraryItems.payload,
       name: schema.libraryItems.name,
       visibility: schema.libraryItems.visibility,
+      ownerId: schema.libraryItems.ownerId,
     })
     .from(schema.libraryItems)
     .where(eq(schema.libraryItems.id, id))
     .limit(1)
   if (!row) return NextResponse.json({ error: "not found" }, { status: 404 })
+
+  // ── Pinned ─────────────────────────────────────────────────────────────────
+  // A scene pinned to the top of its author's page, where it becomes the banner.
+  // One per author, so pinning one unpins the rest.
+  if (typeof featured === "boolean") {
+    if (row.kind !== "scene") return NextResponse.json({ error: "only scenes pin" }, { status: 400 })
+    if (featured && row.ownerId) {
+      await db
+        .update(schema.libraryItems)
+        .set({ featuredAt: null })
+        .where(and(eq(schema.libraryItems.ownerId, row.ownerId), ne(schema.libraryItems.id, id)))
+    }
+    await db
+      .update(schema.libraryItems)
+      .set({ featuredAt: featured ? new Date() : null })
+      .where(eq(schema.libraryItems.id, id))
+    await refreshProfile(row.ownerId)
+    return NextResponse.json({ id, featured })
+  }
 
   // ── Visibility ─────────────────────────────────────────────────────────────
   // One rule: nothing ever returns to private. Once an item is public, other
@@ -175,6 +206,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     // The unique (owner, kind, name) index — the database's own last word.
     return NextResponse.json({ error: "name-taken" }, { status: 409 })
   }
+  await refreshProfile(row.ownerId)
   return NextResponse.json({ id, name: wanted, visibility: wantVisibility ?? row.visibility })
 }
 
@@ -186,6 +218,12 @@ export async function DELETE(request: Request, ctx: { params: Promise<{ id: stri
   const ok = await authorize(request, id)
   // 404 rather than 403: a stranger probing ids learns nothing about what exists.
   if (!ok) return NextResponse.json({ error: "not found" }, { status: 404 })
+  const [owned] = await db
+    .select({ ownerId: schema.libraryItems.ownerId })
+    .from(schema.libraryItems)
+    .where(eq(schema.libraryItems.id, id))
+    .limit(1)
   await db.delete(schema.libraryItems).where(eq(schema.libraryItems.id, id))
+  await refreshProfile(owned?.ownerId ?? null)
   return NextResponse.json({ deleted: id })
 }

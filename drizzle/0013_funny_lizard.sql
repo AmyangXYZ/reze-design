@@ -1,0 +1,1 @@
+ALTER TABLE "library_items" ADD COLUMN "featured_at" timestamp with time zone;

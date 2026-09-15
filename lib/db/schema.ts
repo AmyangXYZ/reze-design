@@ -94,6 +94,9 @@ export const libraryItems = pgTable(
     /** Gallery still, captured from the author's canvas at publish. Null when the
      *  capture failed — the card falls back to a placeholder rather than blocking. */
     posterKey: text("poster_key"),
+    /** Pinned to the top of its author's page, where it becomes the banner. One
+     *  per author: pinning a scene unpins their others. Null is not pinned. */
+    featuredAt: timestamp("featured_at", { withTimezone: true }),
 
     /** Soft delete: the item leaves the library but its versions stay, so scenes
      *  already pinned to one keep rendering. Hard delete is moderation only. */

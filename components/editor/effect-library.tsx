@@ -33,6 +33,8 @@ import {
   AuthorAvatar,
   VisibilityMenu,
   publishedOn,
+  AuthorLink,
+  itemState,
 } from "@/components/editor/library-shell"
 import { conflictingName, normalizeName, type EffectItem } from "@/lib/library"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
@@ -360,7 +362,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                   <div className="truncate text-sm font-semibold select-text">{selected.name}</div>
                   <div className="mt-1 flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
                     <AuthorAvatar name={builtinAuthor(selected.id, selected.author)} className="size-3.5" />
-                    <span className="truncate select-text">{builtinAuthor(selected.id, selected.author)}</span>
+                    <AuthorLink name={builtinAuthor(selected.id, selected.author)} draft={itemState(selected) === "draft"} className="truncate select-text" />
                     {/* When it went public, the same fact the gallery's panel shows. */}
                     {publishedOn(selected.createdAt) && <span className="shrink-0">· {publishedOn(selected.createdAt)}</span>}
                   </div>

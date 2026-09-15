@@ -92,6 +92,13 @@
       "when": 1788881570461,
       "tag": "0012_special_daredevil",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1789486485699,
+      "tag": "0013_funny_lizard",
+      "breakpoints": true
     }
   ]
 }

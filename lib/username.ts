@@ -16,6 +16,7 @@ const SHAPE = /^[a-z0-9][a-z0-9_-]{1,22}[a-z0-9]$/
 const RESERVED = new Set([
   "api", "gallery", "library", "admin", "settings", "login", "logout", "signin", "signout",
   "new", "about", "help", "docs", "static", "assets", "public", "me", "you", "user", "scene",
+  "analysis", "privacy",
 ])
 
 export function normalize(raw: string): string {

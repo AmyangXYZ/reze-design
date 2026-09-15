@@ -367,11 +367,16 @@ function SceneStage({
   const stageIds = useMemo(() => new Set([...stages.map((s) => s.id), ...props.map((p) => p.id)]), [stages, props])
   const castKey = models.filter((m) => !stageIds.has(m.id)).map((m) => m.id).join("\u0000")
   const castIds = useMemo(() => (castKey ? castKey.split("\u0000") : []), [castKey])
+  // Eyes on the camera start where the author left them and are the visitor's to
+  // switch — a property of watching, like following the camera. Never saved. Every
+  // other section keeps its identity, so the sync re-applies only the eyes.
+  const [eyes, setEyes] = useState(scene.state.settings.eyes.enabled)
+  const settings = useMemo(() => ({ ...scene.state.settings, eyes: { enabled: eyes } }), [scene.state.settings, eyes])
   useSceneSync({
     engineRef,
     ready: stageReady,
     castIds,
-    settings: scene.state.settings,
+    settings,
     camera: scene.state.camera,
     cameraVmd: !!scene.assets.cameraAnimation,
     gradeSpec: specOf(scene.state.settings.grade),
@@ -724,7 +729,13 @@ function SceneStage({
         // gutter the bottom uses, and the transport shrinks into it.
         <div className="pointer-events-none absolute inset-x-3 bottom-3 flex justify-center">
           <div className="pointer-events-auto max-w-full">
-            <AnimPlayer engineRef={engineRef} modelNames={animated} hasCamera={!!scene.assets.cameraAnimation} />
+            <AnimPlayer
+              engineRef={engineRef}
+              modelNames={animated}
+              hasCamera={!!scene.assets.cameraAnimation}
+              eyes={eyes}
+              onEyes={setEyes}
+            />
           </div>
         </div>
       )}

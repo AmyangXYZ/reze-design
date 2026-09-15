@@ -6,12 +6,13 @@
 // owe users neither an email-verification flow nor a password reset — and store
 // no password hashes at all.
 
-import { useEffect, useState } from "react"
-import { CircleUserRound, GalleryThumbnails, Heart, LogOut, Palette, Sparkles, WandSparkles, Workflow } from "lucide-react"
+import { useEffect, useState, type ReactNode } from "react"
+import { ArrowUpRight, CircleUserRound, GalleryThumbnails, Heart, House, LogOut, Palette, Sparkles, WandSparkles, Workflow } from "lucide-react"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Popover, PopoverAnchor, PopoverClose, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { GithubMark, GoogleMark } from "@/components/icons"
 import { authClient, signIn, signOut, useSession } from "@/lib/auth-client"
 import { useT } from "@/lib/i18n"
@@ -92,7 +93,13 @@ function fetchMe(): Promise<MeStats | null> {
 }
 
 /** What you've published and how it landed — the reason to have an account. */
-function Portfolio({ onOpenLibrary }: { onOpenLibrary?: (kind: LibraryDoor, facet: "yours" | "liked") => void }) {
+function Portfolio({
+  handle,
+  onOpenLibrary,
+}: {
+  handle: string | null
+  onOpenLibrary?: (kind: LibraryDoor, facet: "yours" | "liked") => void
+}) {
   const t = useT()
   const [stats, setStats] = useState<MeStats | null>(cached)
   useEffect(() => {
@@ -125,6 +132,22 @@ function Portfolio({ onOpenLibrary }: { onOpenLibrary?: (kind: LibraryDoor, face
       {/* Each row is a door out of this menu, so each row closes it. Left open,
           the panel stayed floating over the library it had just summoned —
           pointing at the thing you asked for while covering it. */}
+      {/* Your page — what you hand people. A new tab, so the scene being worked
+          on stays open behind it. */}
+      {handle && (
+        <PopoverClose asChild>
+          <Link
+            href={`/${handle}`}
+            target="_blank"
+            rel="noopener"
+            className="flex w-full items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-white/5"
+          >
+            <House className="size-4 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{t.account.profile}</span>
+            <ArrowUpRight className="size-3.5 shrink-0 text-muted-foreground" />
+          </Link>
+        </PopoverClose>
+      )}
       {cells.map((c) => (
         <PopoverClose key={c.key} asChild>
           <button
@@ -278,9 +301,17 @@ export type LibraryDoor = "grade" | "effect" | "graph" | "scene"
 export function AccountButton({
   asHeader = false,
   onOpenLibrary,
+  children,
 }: {
   asHeader?: boolean
   onOpenLibrary?: (kind: LibraryDoor, facet: "yours" | "liked") => void
+  /**
+   * The row the button sits in, built around the trigger it is handed. Given,
+   * the menu hangs from that whole row with right edges aligned — the way the
+   * right dock hangs from the top-right cluster — rather than centred under a
+   * 28px avatar, which pushed it past the row's edge.
+   */
+  children?: (trigger: ReactNode) => ReactNode
 }) {
   const t = useT()
   const { data: session } = useSession()
@@ -310,7 +341,7 @@ export function AccountButton({
   if (!session) {
     return (
       <Dialog>
-        <DialogTrigger asChild>{trigger}</DialogTrigger>
+        {children ? children(<DialogTrigger asChild>{trigger}</DialogTrigger>) : <DialogTrigger asChild>{trigger}</DialogTrigger>}
         <DialogContent
           // Focus returns to the trigger on close otherwise, leaving it ringed.
           onCloseAutoFocus={(e) => e.preventDefault()}
@@ -331,10 +362,14 @@ export function AccountButton({
 
   return (
     <Popover>
-      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      {children ? (
+        <PopoverAnchor asChild>{children(<PopoverTrigger asChild>{trigger}</PopoverTrigger>)}</PopoverAnchor>
+      ) : (
+        <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      )}
       <PopoverContent
         side="bottom"
-        align="center"
+        align={children ? "end" : "center"}
         sideOffset={8}
         // Opening the menu is not a request to rename yourself.
         onOpenAutoFocus={(e) => e.preventDefault()}
@@ -360,7 +395,7 @@ export function AccountButton({
             <HandleField current={session.user.username} />
           </div>
         )}
-        <Portfolio onOpenLibrary={onOpenLibrary} />
+        <Portfolio handle={session.user.username ?? null} onOpenLibrary={onOpenLibrary} />
         <div className="p-2">
           <Button
             size="sm"
