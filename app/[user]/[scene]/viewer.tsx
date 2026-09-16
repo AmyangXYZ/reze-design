@@ -4,7 +4,7 @@
 // editing. Assets come out of the scene's zip (models, motions, audio) — which is
 // why publishing bundles them in the first place.
 
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react"
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react"
 import { BACKDROP_VIDEO_RE } from "@/lib/backdrop"
 import { createMediaFollower } from "@/lib/media-clock"
 import { primeAudioAnalysis } from "@/lib/audio-analysis"
@@ -23,7 +23,7 @@ import { setForkTarget } from "@/lib/fork"
 import { LoadingPill, useLoadingLabel } from "@/components/editor/loading-pill"
 import { resolveSceneRefs, resolveSceneRefsSync } from "@/lib/resolve-refs"
 import { useSession } from "@/lib/auth-client"
-import { useT } from "@/lib/i18n"
+import { useI18n, useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 type ViewerProps = {
@@ -36,6 +36,8 @@ type ViewerProps = {
    *  it should be readable here rather than only enforced there. */
   credits: string
   likeCount: number
+  /** When it was published, ISO. Printed under the author. */
+  publishedAt: string
 }
 
 /**
@@ -51,6 +53,23 @@ type ViewerProps = {
  * return a loading pill on black — the whole page waited on the last asset to
  * show text the server had all along.
  */
+/** True once the page runs in a browser; false while it renders on the server.
+ *  What a server cannot know — the visitor's clock and timezone — waits for it. */
+const noSubscription = () => () => {}
+
+/** When this was published: the plain date from the server, then the visitor's
+ *  own full date and time once there is a browser to ask. Same shape the maker
+ *  page uses; a `<time>` so the machine-readable value is the ISO either way. */
+function PublishedAt({ iso }: { iso: string }) {
+  const { locale } = useI18n()
+  const inBrowser = useSyncExternalStore(noSubscription, () => true, () => false)
+  return (
+    <time dateTime={iso} className="mt-0.5 block font-mono text-[11px] text-white/40 tabular-nums">
+      {inBrowser ? new Date(iso).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" }) : iso.slice(0, 10)}
+    </time>
+  )
+}
+
 export function SceneViewer(props: ViewerProps) {
   const t = useT()
   const router = useRouter()
@@ -170,6 +189,7 @@ export function SceneViewer(props: ViewerProps) {
           >
             @{props.author}
           </Link>
+          <PublishedAt iso={props.publishedAt} />
           {props.description && (
             <p className="mt-1 whitespace-pre-wrap text-xs leading-snug text-white/75">{props.description}</p>
           )}

@@ -27,6 +27,7 @@ async function load(id: string) {
       credits: schema.libraryItems.credits,
       payload: schema.libraryItems.payload,
       likeCount: schema.libraryItems.likeCount,
+      createdAt: schema.libraryItems.createdAt,
       visibility: schema.libraryItems.visibility,
       ownerId: schema.libraryItems.ownerId,
       kind: schema.libraryItems.kind,
@@ -95,6 +96,7 @@ export default async function ScenePage({ params }: { params: Promise<{ user: st
       description={row.description}
       credits={row.credits}
       likeCount={row.likeCount}
+      publishedAt={row.createdAt.toISOString()}
     />
   )
 }
