@@ -103,7 +103,7 @@ import {
 } from "@/components/scene/scene-sidebar"
 import { EffectParams } from "@/components/scene/effect-params"
 import { QuickPick } from "@/components/scene/quick-pick"
-import { VALUE_BOX } from "@/components/scene/scene-sidebar"
+import { RangeRow, VALUE_BOX } from "@/components/scene/scene-sidebar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { GradeLibrary } from "@/components/editor/grade-library"
 import { GradeEditorPanel, type GradeEditorSubject } from "@/components/editor/grade-editor"
@@ -218,7 +218,7 @@ import {
   parseLRC,
 } from "reze-engine"
 import { lipSyncVmdFile } from "@/lib/lipsync"
-import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, TARGET_DEFAULT, WIND_MAX, windFreqFromSlider, windSliderFromFreq, type SceneSettings } from "@/lib/scene-settings"
+import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, windFreqFromSlider, windSliderFromFreq, type SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 import { storageKey } from "@/lib/storage"
 
@@ -3607,7 +3607,7 @@ export default function Lab() {
   // compiles straight to the engine for its live preview, and telling the sync
   // pass what is already on screen keeps it from compiling the same shader a
   // second time when the applied effect lands in state.
-  const { noteAppliedWgsl } = useSceneSync({
+  const { noteAppliedWgsl, adoptInstall } = useSceneSync({
     engineRef,
     ready,
     settings,
@@ -3850,15 +3850,16 @@ export default function Lab() {
       if (r.ok) {
         // The sync pass keys on the WHOLE list, so what it must not recompile is
         // the whole list — handing it one shader left it reinstalling every
-        // keystroke against a key that never matched.
-        noteAppliedWgsl(next.map((e) => e.wgsl).join("\0"))
+        // keystroke against a key that never matched. It also puts the strips
+        // back: these are fresh instances, and a fresh one plays unscheduled.
+        adoptInstall(next, rs)
         setBgEffects(next)
         // Same rule as grades: your own draft saves as you go.
         if (isDraft("effect", subject.id)) updateDraftSoon("effect", subject.id, { payload: { wgsl } })
       }
       return r
     },
-    [engineRef, noteAppliedWgsl, t],
+    [engineRef, adoptInstall, t],
   )
   // Memoized (unlike the grade editor's opener) because the command palette runs
   // it: a plain function in runCommand's dependency array is something the
@@ -7350,6 +7351,27 @@ export default function Lab() {
                                 fmt={(v) => v.toFixed(2)}
                               />
                             </fieldset>
+                            <SliderRow
+                              label={t.lab.ctl.size}
+                              value={ground.size}
+                              min={40}
+                              max={800}
+                              step={10}
+                              inputMin={10}
+                              onChange={(v) => patch("ground", { size: v })}
+                            />
+                            {/* Where the plane fades out, as a share of its
+                                half-width, so it keeps its proportion as the
+                                size changes. */}
+                            <RangeRow
+                              label={t.lab.ctl.fade}
+                              value={[(ground.fade ?? GROUND_FADE).start, (ground.fade ?? GROUND_FADE).end]}
+                              min={0}
+                              max={1}
+                              step={0.01}
+                              onChange={([start, end]) => patch("ground", { fade: { start, end } })}
+                              fmt={(v) => `${Math.round(v * 100)}%`}
+                            />
                             {/* Shadow persists below opacity (shadow catcher) — this
                               turns it off entirely. */}
                             <div className="mt-2.5 flex items-center justify-between">

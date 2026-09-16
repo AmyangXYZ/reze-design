@@ -138,6 +138,53 @@ export function SliderRow({
   )
 }
 
+/**
+ * A span on one track: label · two-thumb slider · "a–b". SliderRow's
+ * clothes, for a value that is a range rather than a point — the thumbs
+ * cannot cross, and both ends read at once.
+ */
+export function RangeRow({
+  label,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+  fmt,
+  disabled,
+}: {
+  label: string
+  value: [number, number]
+  min: number
+  max: number
+  step: number
+  onChange: (v: [number, number]) => void
+  fmt?: (v: number) => string
+  disabled?: boolean
+}) {
+  const clamp = (v: number) => Math.min(max, Math.max(min, v))
+  const show = (v: number) => (fmt ? fmt(v) : String(v))
+  return (
+    <div className={cn("mt-2.5 flex items-center gap-2 first:mt-0", disabled && "pointer-events-none opacity-40")}>
+      <span className="w-16 shrink-0 truncate text-xs">{label}</span>
+      <Slider
+        aria-label={label}
+        className="min-w-0 flex-1 [&_[data-slot=slider-thumb]]:size-2.5 [&_[data-slot=slider-thumb]]:hover:ring-2 [&_[data-slot=slider-track]]:h-1"
+        value={[clamp(value[0]), clamp(value[1])]}
+        min={min}
+        max={max}
+        step={step}
+        minStepsBetweenThumbs={1}
+        disabled={disabled}
+        onValueChange={([a, b]) => onChange([a, b])}
+      />
+      <span className={cn(VALUE_BOX, "w-16 border-transparent text-muted-foreground select-none")}>
+        {show(value[0])}–{show(value[1])}
+      </span>
+    </div>
+  )
+}
+
 export function Section({
   title,
   action,

@@ -12,9 +12,7 @@
 import { useEffect, useRef } from "react"
 import {
   Vec3,
-  parseDirectives,
   parseHDR,
-  type DissolveCycle,
   type EffectParamDecl,
   type Engine,
 } from "reze-engine"
@@ -22,88 +20,39 @@ import { effectParams, type AppliedEffect } from "@/lib/effects"
 import { resolveSpec, type GradeSpec } from "@/lib/grade"
 import { CAMERA_DEFAULT_FOV, type SceneCamera } from "@/lib/scene"
 import { GREEN, isCompositingBackground, type ExportBackground } from "@/lib/export-background"
-import { azElToDirection, windVariation, hexToLinearVec3, hexToSrgbVec3, windDirection, type SceneSettings } from "@/lib/scene-settings"
+import { azElToDirection, groundExtent, windVariation, hexToLinearVec3, hexToSrgbVec3, windDirection, type SceneSettings } from "@/lib/scene-settings"
 import { windowToEngine } from "@/lib/effect-schedule"
+
+/**
+ * Which engine instance each entry of the list became.
+ *
+ * An entry that fails to compile installs nothing, and every entry after it
+ * then sits one lower in the engine than in the document. Addressing instance i
+ * as entry i put one effect's strips — and its dials — onto its neighbour, for
+ * as long as the broken one stayed in the scene.
+ */
+function installedIndex(results: { ok: boolean }[]): (number | null)[] {
+  let k = 0
+  return results.map((r) => (r.ok ? k++ : null))
+}
 
 /**
  * Every applied effect's timing onto its instance.
  *
- * BY INDEX, which is what makes it right: setEffects installs the list in
- * order, so instance i is entry i, and the same effect applied twice gets two
- * strips rather than one shared between them.
+ * The same effect applied twice gets two strips rather than one shared between
+ * them: an instance is a copy, and its timing belongs to that copy.
  *
  * Frames cross to the engine's seconds here and nowhere else.
  */
-function applySchedules(engine: Engine, list: AppliedEffect[]): void {
+function applySchedules(engine: Engine, list: AppliedEffect[], index: (number | null)[] | null): void {
   list.forEach((e, i) => {
-    engine.setEffectInfluence(i, e.influence ?? 1)
-    engine.setEffectSchedule(i, windowToEngine(e.window))
+    const k = index ? index[i] : i
+    if (k == null) return
+    engine.setEffectInfluence(k, e.influence ?? 1)
+    engine.setEffectSchedule(k, windowToEngine(e.window))
   })
 }
 
-
-/**
- * The dissolve an effect declares, or null.
- *
- * `#dissolve` says an effect takes the cast apart. FOUR CONSTANTS say when:
- *
- *   const DISSOLVE_APART = 0.5;   // seconds she takes to come apart
- *   const DISSOLVE_GONE  = 0.65;  // ...and how long there is nothing of her
- *   const DISSOLVE_BACK  = 0.35;  // ...to arrive again
- *   const DISSOLVE_WHOLE = 3.0;   // ...and to stand there before it repeats
- *
- * The numbers ride in CONSTANTS rather than in the directive, and that is a
- * usability decision rather than a technical one. They started as five moments
- * on the directive line, which made every edit arithmetic — quicker vanishing
- * meant moving three other numbers to keep the gaps. Four durations fixed the
- * arithmetic and left them still sitting in a comment, dim and unremarkable,
- * nowhere near the block of tunables an author actually edits. These are the
- * numbers this effect gets retuned on most, so they belong where the retuning
- * happens; the directive stays as the declaration, which is what a directive is
- * for.
- *
- * Durations, not moments, and the cycle STARTS whole — so the wait is the gap
- * you see between teleports rather than a tail nobody can find the start of.
- *
- * A missing constant is zero, not a failure: an effect asking for a dissolve
- * with no numbers gets one that happens instantly and never repeats, which is
- * visible and diagnosable, where refusing to install would lose the whole
- * effect over a typo in one of four lines.
- *
- * The FIRST effect that declares one wins. A scene that layers two effects both
- * taking the cast apart is asking for two answers to one question, and the
- * document's own order is the only honest tie-break.
- */
-const dissolveConst = (wgsl: string, name: string): number => {
-  const m = new RegExp(`^\\s*const\\s+${name}\\s*(?::\\s*f32\\s*)?=\\s*(-?[\\d.]+)`, "m").exec(wgsl)
-  const v = m ? Number(m[1]) : 0
-  return Number.isFinite(v) && v > 0 ? v : 0
-}
-
-function parseDissolveCycle(sources: string[]): DissolveCycle | null {
-  for (const wgsl of sources) {
-    // The engine's own parser, not a regex of this file's: two readers of one
-    // declaration is how they come to disagree about what it said, which is
-    // exactly what the `// @` era cost.
-    if (!parseDirectives(wgsl).directives.dissolve) continue
-    const out = dissolveConst(wgsl, "DISSOLVE_APART")
-    const away = dissolveConst(wgsl, "DISSOLVE_GONE")
-    const back = dissolveConst(wgsl, "DISSOLVE_BACK")
-    const wait = dissolveConst(wgsl, "DISSOLVE_WHOLE")
-    // A cycle has to CONTAIN something. All four at zero is not a dissolve that
-    // never fires, it is a period of zero, and the engine would divide by it.
-    if (out + away + back + wait <= 0.01) {
-      console.warn("[effect] #dissolve needs a cycle longer than nothing — every DISSOLVE_ constant is zero")
-      continue
-    }
-    const breakAt = wait
-    const hiddenAt = breakAt + out
-    const backAt = hiddenAt + away
-    const doneAt = backAt + back
-    return { period: doneAt, breakAt, hiddenAt, backAt, doneAt }
-  }
-  return null
-}
 
 export function useSceneSync({
   engineRef,
@@ -304,11 +253,8 @@ export function useSceneSync({
         // A property of the light, applied where the light lands.
         shadowSoftness: sun.softness ?? 0,
         gridLineOpacity: compositing || !ground.gridEnabled ? 0 : 0.4,
-        // Square plane; the radial fade scales with it (engine defaults are 10/80 at size 160).
-        width: ground.size,
-        height: ground.size,
-        fadeStart: ground.size * (10 / 160),
-        fadeEnd: ground.size * (80 / 160),
+        // Square plane, its radial fade in proportion to it.
+        ...groundExtent(ground),
       }
       if (!groundRaf.current) {
         groundRaf.current = requestAnimationFrame(() => {
@@ -341,6 +287,9 @@ export function useSceneSync({
    *  has no effects installed, and a key left over from the previous one made
    *  the install skip itself. */
   const lastWgslEngine = useRef<Engine | null>(null)
+  /** What the last install made of the list — see installedIndex. Null is
+   *  one instance per entry, in order, which is every install that compiled. */
+  const engineIndex = useRef<(number | null)[] | null>(null)
   useEffect(() => {
     const engine = engineRef.current
     if (!engine) return
@@ -396,23 +345,6 @@ export function useSceneSync({
     }
     if (wgsl === lastWgsl.current) return
     lastWgsl.current = wgsl
-    // ── An effect that takes the cast apart ──
-    //
-    // "// @dissolve period breakAt hiddenAt backAt doneAt", in seconds. The
-    // effect declares the TIMING and the engine performs it: the material shell
-    // is what actually throws the model away, and no shader can reach that from
-    // a field or particle mount. Handing the numbers over here rather than
-    // ticking them per frame is what keeps one clock — the engine samples the
-    // cycle where it samples everything else time-driven, writes the value into
-    // every material AND into the cast, and the effect reads it back as
-    // rzSubject(i).dissolve. So the sparks cannot drift from the body.
-    //
-    // Subject 0 only, deliberately: the effect drawing the sparks spawns them
-    // off subject 0's skeleton, and dissolving a character nobody is drawing
-    // sparks for would be a model that vanishes with no explanation.
-    const cycle = parseDissolveCycle(sources)
-    const subject = castIds[0] ?? null
-    if (subject) engine.setModelDissolveCycle(subject, cycle)
     let stale = false
     // Params ride the install so an effect's first frame is already at the
     // scene's settings — seeding after the fact would show the author's default
@@ -428,7 +360,8 @@ export function useSceneSync({
       // with the ones it was set on. Re-applied HERE as well as on change,
       // because the two arrive in either order: editing a strip does not
       // reinstall, and installing does not know a strip changed.
-      applySchedules(engine, backgroundEffects)
+      engineIndex.current = installedIndex(rs)
+      applySchedules(engine, backgroundEffects, engineIndex.current)
       // WHAT EACH EFFECT EXPOSES, read off the install rather than re-parsed.
       // The engine already read the directives to build the uniform, so parsing
       // the same lines again here would be a second answer free to disagree with
@@ -451,7 +384,7 @@ export function useSceneSync({
     return () => {
       stale = true
     }
-  }, [backgroundEffects, exportBackground, ready, engineRef, castIds, onParamDecls])
+  }, [backgroundEffects, exportBackground, ready, engineRef, onParamDecls])
 
   // ── Eyes on the camera ──
   //
@@ -487,13 +420,17 @@ export function useSceneSync({
     const key = applied.length ? applied.map((e) => e.wgsl).join("\0") : null
     if (key !== lastWgsl.current || lastWgslEngine.current !== engine) return
     applied.forEach((e, i) => {
+      // An entry that failed to compile installed nothing, so it has no dials to
+      // write and the entries after it are not where the document puts them.
+      const k = engineIndex.current ? engineIndex.current[i] : i
+      if (k == null) return
       // The FULL set, defaults included — not just what this scene overrode.
       // Clearing an override (the reset button, or a dial put back) removes the
       // key, and a loop over the overrides alone would then write nothing at
       // all: the uniform would keep the value that was just taken away, and the
       // effect would not return to its declared default until it reinstalled.
       for (const [name, value] of Object.entries(effectParams(e.wgsl, e.params) ?? {})) {
-        engine.setEffectParam(i, name, value)
+        engine.setEffectParam(k, name, value)
       }
     })
   }, [backgroundEffects, exportBackground, engineRef])
@@ -514,7 +451,7 @@ export function useSceneSync({
   useEffect(() => {
     const engine = engineRef.current
     if (!engine || !ready) return
-    applySchedules(engine, backgroundEffects)
+    applySchedules(engine, backgroundEffects, engineIndex.current)
     // `scheduleKey` IS the dependency — backgroundEffects is a fresh array on
     // every render, and depending on it would write these every frame the
     // editor re-renders for any reason at all.
@@ -590,6 +527,20 @@ export function useSceneSync({
   return {
     noteAppliedWgsl: (wgsl: string) => {
       lastWgsl.current = wgsl
+      engineIndex.current = null
+    },
+    /**
+     * The editor installed a whole list itself: take it as what is on screen,
+     * and put the timing back on the instances it just built. An install makes
+     * fresh instances, and a fresh instance is unscheduled — so without this a
+     * recompile in the shader editor left every strip on the timeline pointing
+     * at nothing, and the effects played through the whole scene.
+     */
+    adoptInstall: (list: AppliedEffect[], results: { ok: boolean }[]) => {
+      lastWgsl.current = list.map((e) => e.wgsl).join("\0")
+      engineIndex.current = installedIndex(results)
+      const engine = engineRef.current
+      if (engine) applySchedules(engine, list, engineIndex.current)
     },
   }
 }

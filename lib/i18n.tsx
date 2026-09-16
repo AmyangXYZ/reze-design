@@ -706,6 +706,7 @@ const en = {
        *  the light, even though the floor is what receives it. */
       softness: "Shadow softness",
       grid: "Grid lines",
+      fade: "Fade",
       /** The footage the scene stands in. A noun for the slot, like the three
        *  rows in Backdrop — what makes it a plate is which row it is in. */
       plate: "Footage",
@@ -1574,6 +1575,7 @@ const zh: Dictionary = {
       shadow: "阴影",
       softness: "阴影柔和度",
       grid: "网格",
+      fade: "渐隐",
       plate: "实景素材",
       plateNeedsGround: "影子需要地面——请在「地面」中打开。",
       solve: "从素材读取相机",

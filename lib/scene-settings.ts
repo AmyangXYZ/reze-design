@@ -79,6 +79,14 @@ export type SceneSettings = {
     color: string
     /** Side length of the (square) ground plane in world units — the model is ~18 units tall. */
     size: number
+    /**
+     * Where the plane fades out, as fractions of its half-width: fully drawn
+     * inside `start`, gone by `end`. Fractions, so resizing the plane keeps the
+     * fade in proportion, and 1 is the plane's edge, so the fade cannot run past
+     * it. Optional; absent on documents written before the dial existed, which
+     * fade as GROUND_FADE.
+     */
+    fade?: { start: number; end: number }
     /** Draw the ground at all.
      *
      *  NOT the same as opacity 0, which is why it exists. A transparent ground
@@ -276,3 +284,14 @@ export const FOLLOW_BONE = "センター"
  *  a small lift), and an ABSOLUTE point otherwise — the default framing. */
 export const FOLLOW_OFFSET_DEFAULT: [number, number, number] = [0, 3, 0]
 export const TARGET_DEFAULT: [number, number, number] = [0, 11.4, 0]
+
+/** The fade a ground stored without one was authored looking at: fully drawn an
+ *  eighth of the way out, gone at the plane's edge. */
+export const GROUND_FADE = { start: 0.125, end: 1 }
+
+/** The ground plane's side and its radial fade in world units, as addGround takes them. */
+export function groundExtent(ground: SceneSettings["ground"]) {
+  const half = ground.size / 2
+  const fade = ground.fade ?? GROUND_FADE
+  return { width: ground.size, height: ground.size, fadeStart: half * fade.start, fadeEnd: half * fade.end }
+}

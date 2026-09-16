@@ -18,7 +18,7 @@ import { unzipToFiles } from "@/lib/uploads"
 import { loadLocalBundle } from "@/lib/asset-store"
 import { sceneFiles } from "@/lib/scene-files"
 import { BACKDROP_VIDEO_RE, openAnimatedImage } from "@/lib/backdrop"
-import { hexToLinearVec3 } from "@/lib/scene-settings"
+import { groundExtent, hexToLinearVec3 } from "@/lib/scene-settings"
 
 /**
  * Surface what the engine said about a style-group apply.
@@ -182,10 +182,7 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
     shadowStrength: s.ground.shadow ? 1 : 0,
     shadowSoftness: s.sun.softness ?? 0,
     gridLineOpacity: s.ground.gridEnabled ? 0.4 : 0,
-    width: s.ground.size,
-    height: s.ground.size,
-    fadeStart: s.ground.size * (10 / 160),
-    fadeEnd: s.ground.size * (80 / 160),
+    ...groundExtent(s.ground),
   })
   applyCamera(engine, scene.state.camera, null)
   onStage?.()
