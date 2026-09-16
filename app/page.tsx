@@ -7340,7 +7340,14 @@ export default function Lab() {
                                 the shadow catcher. Disabled and left at that: a
                                 control that is plainly unavailable does not also
                                 need a paragraph about why. */}
-                            <fieldset disabled={!!plate} className={cn(plate && "pointer-events-none opacity-40")}>
+                            {/* The wrapper carries the row gap: its SliderRow is a first
+                                child and would otherwise zero its own margin, leaving
+                                Opacity tight against Colour while every other row in the
+                                section sits 2.5 apart. */}
+                            <fieldset
+                              disabled={!!plate}
+                              className={cn("mt-2.5", plate && "pointer-events-none opacity-40")}
+                            >
                               <SliderRow
                                 label={t.lab.ctl.opacity}
                                 value={plate ? 0 : ground.opacity}
@@ -7359,6 +7366,18 @@ export default function Lab() {
                               step={10}
                               inputMin={10}
                               onChange={(v) => patch("ground", { size: v })}
+                            />
+                            {/* Where the floor sits. A camera motion authored for a
+                                taller or shorter character fits by moving her and the
+                                floor together; her cloth still lands at her own feet. */}
+                            <SliderRow
+                              label={t.lab.ctl.height}
+                              value={ground.y ?? 0}
+                              min={-20}
+                              max={20}
+                              step={0.1}
+                              onChange={(v) => patch("ground", { y: v })}
+                              fmt={(v) => v.toFixed(1)}
                             />
                             {/* Where the plane fades out, as a share of its
                                 half-width, so it keeps its proportion as the

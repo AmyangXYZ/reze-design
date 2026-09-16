@@ -80,6 +80,17 @@ export type SceneSettings = {
     /** Side length of the (square) ground plane in world units — the model is ~18 units tall. */
     size: number
     /**
+     * Where the floor sits on Y, in world units. Optional; absent means 0, which
+     * is MMD's own floor and what every document before this dial had.
+     *
+     * A FRAMING offset: a camera motion authored for a taller or shorter
+     * character fits by moving the model and the floor together, rather than by
+     * retiming the shot. Cloth and hair still land at the figure's own feet —
+     * the physics floor is model space (see physics.floor), so a floor moved far
+     * from her feet is a floor she does not stand on.
+     */
+    y?: number
+    /**
      * Where the plane fades out, as fractions of its half-width: fully drawn
      * inside `start`, gone by `end`. Fractions, so resizing the plane keeps the
      * fade in proportion, and 1 is the plane's edge, so the fade cannot run past
@@ -293,5 +304,11 @@ export const GROUND_FADE = { start: 0.125, end: 1 }
 export function groundExtent(ground: SceneSettings["ground"]) {
   const half = ground.size / 2
   const fade = ground.fade ?? GROUND_FADE
-  return { width: ground.size, height: ground.size, fadeStart: half * fade.start, fadeEnd: half * fade.end }
+  return {
+    width: ground.size,
+    height: ground.size,
+    y: ground.y ?? 0,
+    fadeStart: half * fade.start,
+    fadeEnd: half * fade.end,
+  }
 }
