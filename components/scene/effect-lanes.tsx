@@ -35,28 +35,46 @@ import {
 } from "@/components/ui/context-menu"
 import { useUndoScope } from "@/hooks/use-undo-scope"
 import { useT } from "@/lib/i18n"
-import type { AppliedEffect } from "@/lib/effects"
 import type { EffectWindow } from "@/lib/effect-schedule"
+import { FX_FRAMES, type FadeCurve } from "@/lib/visibility"
 import { cn } from "@/lib/utils"
 
 /** One row, the Effects list's `h-6`, so the list and the lanes scroll as one. */
 export const LANE_H = 24
 /** How close to an end grabs the end rather than the block, in pixels. */
 const EDGE = 6
-/** Snapping reach in pixels, so it pulls the same at every zoom. */
-const SNAP_PX = 6
+/** Snapping reach in pixels, so it pulls the same at every zoom. Generous
+ *  enough that butting one clip against the next is the easy outcome rather
+ *  than a thing you fight the pointer for. */
+const SNAP_PX = 10
 /** Travel before a press becomes a drag, so a click selects without an edit. */
 const DRAG_PX = 3
 const HISTORY_LIMIT = 64
 const UNDO_SCOPE = "effect-lanes"
 
-/** What the Effects tab hands the timeline. */
-export type EffectLanesData = {
-  effects: AppliedEffect[]
-  onEffects: (next: AppliedEffect[]) => void
+/**
+ * A row this band can draw: something named, with windows on it.
+ *
+ * An applied effect is one. So is a cast member, whose windows are the stretches
+ * it is on stage for — the same gesture, the same drawing, the same clipboard,
+ * because "when is this thing present" is one question however the scene answers
+ * it. The band knows nothing else about either.
+ */
+/** A window as this band edits it. `curve` is carried but never interpreted
+ *  here — the band moves clips, and what a ramp's shape means belongs to
+ *  whoever evaluates it. Typed as the evaluator's own union rather than a loose
+ *  string, so a row handed back still narrows to what the document holds. */
+export type LaneWindow = EffectWindow & { curve?: FadeCurve }
+
+export type LaneRow = { id: string; uid?: string; name: string; window?: LaneWindow[] }
+
+/** What a lane-bearing tab hands the timeline. */
+export type EffectLanesData<T extends LaneRow = LaneRow> = {
+  effects: T[]
+  onEffects: (next: T[]) => void
   selectedEffect: string | null
   onSelectEffect: (uid: string | null) => void
-  /** The Effects list's scroll, which the lanes follow. */
+  /** The row list's scroll, which the lanes follow. */
   scrollTop: number
 }
 
@@ -69,6 +87,11 @@ export type EffectLanesApi = {
   copy: () => void
   paste: () => void
   remove: () => void
+  /** Which ramp the picked clips already carry, or null for none. */
+  ramped: () => string | null
+  /** Put a ramp of this shape on both edges of the picked clips, or take it
+   *  off. Passing the shape they already have takes it off. */
+  ramp: (curve: "ease" | "steps" | null) => void
 }
 
 type Span = { start: number; end: number }
@@ -77,12 +100,12 @@ type Grab = "move" | "in" | "out"
 const keyOf = (uid: string, index: number) => `${uid}#${index}`
 
 /** The blocks a row draws. No window is the whole scene: one block, open at the end. */
-const blocksOf = (e: AppliedEffect): EffectWindow[] => (e.window?.length ? e.window : [{ start: 0 }])
+const blocksOf = (e: LaneRow): LaneWindow[] => (e.window?.length ? e.window : [{ start: 0 }])
 /** Where a block stops. An open end runs to the end of the scene. */
 const endOf = (w: EffectWindow, frameCount: number) => w.end ?? Math.max(frameCount, w.start + 1)
 const spanOf = (w: EffectWindow, frameCount: number): Span => ({ start: w.start, end: endOf(w, frameCount) })
 const sortWindows = (lane: EffectWindow[]) => [...lane].sort((a, b) => a.start - b.start)
-const uidsOf = (effects: AppliedEffect[]) => effects.map((e) => e.uid ?? "").join("|")
+const uidsOf = (effects: readonly LaneRow[]) => effects.map((e) => e.uid ?? "").join("|")
 
 /**
  * Where a block of `length` asked for at `wanted` lands without covering a
@@ -130,7 +153,7 @@ function snap(frame: number, targets: number[], reach: number): { frame: number;
 type Copied = { uid: string; rel: number; length: number; blendIn?: number; blendOut?: number }
 let clipboard: Copied[] = []
 
-type Step = { before: AppliedEffect[]; after: AppliedEffect[] }
+type Step<T extends LaneRow> = { before: T[]; after: T[] }
 
 /**
  * One side of a step, laid over the list as it stands now.
@@ -138,8 +161,8 @@ type Step = { before: AppliedEffect[]; after: AppliedEffect[] }
  * Only what the lanes change moves: each row's windows, and rows the step
  * removed or brought. A dial turned in the dock since then stays turned.
  */
-function reapply(current: AppliedEffect[], target: AppliedEffect[], leaving: AppliedEffect[]): AppliedEffect[] {
-  const has = (list: AppliedEffect[], uid: string) => list.some((e) => e.uid === uid)
+function reapply<T extends LaneRow>(current: T[], target: T[], leaving: T[]): T[] {
+  const has = (list: T[], uid: string) => list.some((e) => e.uid === uid)
   const next = current.filter((e) => !(e.uid && has(leaving, e.uid) && !has(target, e.uid)))
   target.forEach((t, i) => {
     if (!t.uid) return
@@ -150,7 +173,7 @@ function reapply(current: AppliedEffect[], target: AppliedEffect[], leaving: App
   return next
 }
 
-export function EffectLanes({
+export function EffectLanes<T extends LaneRow>({
   visible,
   effects,
   onEffects,
@@ -166,7 +189,7 @@ export function EffectLanes({
   top,
   bottom,
   labelWidth,
-}: EffectLanesData & {
+}: EffectLanesData<T> & {
   /** Whether the Effects tab is showing. Mounted either way, so the history
    *  and the selection outlive a trip to another tab. */
   visible: boolean
@@ -208,8 +231,8 @@ export function EffectLanes({
   // ── History ─────────────────────────────────────────────────────────────
   // A step belongs to the rows it was taken on: an effect added or removed
   // anywhere else starts it over.
-  const past = useRef<Step[]>([])
-  const future = useRef<Step[]>([])
+  const past = useRef<Step<T>[]>([])
+  const future = useRef<Step<T>[]>([])
   const known = useRef(uidsOf(effects))
   const ids = uidsOf(effects)
   useEffect(() => {
@@ -219,14 +242,14 @@ export function EffectLanes({
     future.current = []
   }, [ids])
   const apply = useCallback(
-    (next: AppliedEffect[]) => {
+    (next: T[]) => {
       known.current = uidsOf(next)
       onEffects(next)
     },
     [onEffects],
   )
   const commit = useCallback(
-    (next: AppliedEffect[]) => {
+    (next: T[]) => {
       past.current.push({ before: effectsRef.current, after: next })
       if (past.current.length > HISTORY_LIMIT) past.current.shift()
       future.current = []
@@ -252,7 +275,12 @@ export function EffectLanes({
 
   // ── Gestures ────────────────────────────────────────────────────────────
   const targetsExcept = (except: string): number[] => {
-    const out = [0, frameCount, Math.round(playhead)]
+    // CLIP EDGES FIRST. `snap` keeps the first of equally-near targets, and the
+    // scene's landmarks used to be at the head of this list — so a clip edge and
+    // the playhead the same distance away resolved to the playhead, and the join
+    // you were aiming for lost to a tie. Butting one clip against the next is
+    // the gesture this whole band is for; it wins.
+    const out: number[] = []
     for (const e of effects) {
       if (!e.uid) continue
       const uid = e.uid
@@ -260,6 +288,7 @@ export function EffectLanes({
         if (keyOf(uid, i) !== except) out.push(w.start, endOf(w, frameCount))
       })
     }
+    out.push(0, frameCount, Math.round(playhead))
     return out
   }
 
@@ -362,7 +391,7 @@ export function EffectLanes({
 
   // ── Keys ────────────────────────────────────────────────────────────────
   const picked = () => {
-    const out: { uid: string; index: number; w: EffectWindow }[] = []
+    const out: { uid: string; index: number; w: LaneWindow }[] = []
     for (const effect of effectsRef.current) {
       if (!effect.uid) continue
       const uid = effect.uid
@@ -442,6 +471,40 @@ export function EffectLanes({
     )
   }
 
+  /**
+   * Put a ramp on both edges of the picked clips, or take it off.
+   *
+   * The only editor these two numbers have, which is why it lives in the menu
+   * rather than in a panel: on a model's lane they ARE the dissolve — she
+   * assembles over the first frames of a clip and comes apart over the last —
+   * and on an effect's they are the fade it already drew but nothing could set.
+   *
+   * Half the clip at most, so a short clip ramps for as long as it can rather
+   * than refusing. An open end never ramps out: there is no moment to measure
+   * back from.
+   */
+  const rampSelected = (curve: "ease" | "steps" | null) => {
+    const items = picked()
+    if (!items.length) return
+    const byRow = new Map<string, Set<number>>()
+    for (const b of items) byRow.set(b.uid, (byRow.get(b.uid) ?? new Set<number>()).add(b.index))
+    commit(
+      effectsRef.current.map((row) => {
+        const hit = row.uid ? byRow.get(row.uid) : undefined
+        if (!hit) return row
+        const lane = blocksOf(row).map((w, i) => {
+          if (!hit.has(i)) return w
+          // Stripped back to a hard cut: the ramp AND its shape go, so the clip
+          // reads in the document exactly as one that was never ramped.
+          if (!curve) return { start: w.start, ...(w.end === undefined ? {} : { end: w.end }) }
+          const len = Math.max(1, Math.min(FX_FRAMES, Math.floor((endOf(w, frameCount) - w.start) / 2)))
+          return { ...w, blendIn: len, ...(w.end === undefined ? {} : { blendOut: len }), curve }
+        })
+        return { ...row, window: lane }
+      }),
+    )
+  }
+
   const onKeys = (e: KeyboardEvent) => {
     const el = e.target as HTMLElement | null
     if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el?.isContentEditable) return
@@ -480,6 +543,14 @@ export function EffectLanes({
         },
         paste,
         remove: removeSelected,
+        ramped: () => {
+          const items = picked()
+          if (!items.length || !items.every((b) => (b.w.blendIn ?? 0) > 0)) return null
+          // A clip ramped before there was a choice carries no shape; that is
+          // the smooth one, which is what it has always played as.
+          return items[0].w.curve ?? "ease"
+        },
+        ramp: rampSelected,
       }
   })
 
@@ -542,9 +613,14 @@ export function EffectLanes({
                     title={`${effect.name} · ${live.start}–${live.end}`}
                     className={cn(
                       "pointer-events-auto absolute inset-y-[3px] flex touch-none cursor-grab items-center overflow-hidden rounded-chip border px-1.5 active:cursor-grabbing",
+                      // Selection has to survive a band of neighbours that are
+                      // already blue, so it changes what the EDGE is made of
+                      // rather than how blue the fill is: white outline, deeper
+                      // body. One pixel of it — the fill carries the weight, and
+                      // a thicker rule would eat a short clip.
                       isSelected
-                        ? "border-blue-400 bg-blue-400/35"
-                        : "border-blue-400/50 bg-blue-400/20 hover:bg-blue-400/30",
+                        ? "border-white/75 bg-blue-400/60"
+                        : "border-blue-400/40 bg-blue-400/15 hover:bg-blue-400/25",
                     )}
                     style={{ left: live.start * pxPerFrame - scrollX, width: Math.max(3, length * pxPerFrame) }}
                   >
@@ -599,11 +675,19 @@ export function EffectLanesMenu({
   children: ReactElement
 }) {
   const t = useT()
-  const [can, setCan] = useState({ clip: false, paste: false })
+  const [can, setCan] = useState<{ clip: boolean; paste: boolean; ramped: string | null }>({
+    clip: false,
+    paste: false,
+    ramped: null,
+  })
   return (
     <ContextMenu
       onOpenChange={(open) => {
-        if (open) setCan(apiRef.current?.menu() ?? { clip: false, paste: false })
+        if (open)
+          setCan({
+            ...(apiRef.current?.menu() ?? { clip: false, paste: false }),
+            ramped: apiRef.current?.ramped() ?? null,
+          })
       }}
     >
       <ContextMenuTrigger asChild disabled={!enabled}>
@@ -618,6 +702,19 @@ export function EffectLanesMenu({
         </ContextMenuItem>
         <ContextMenuItem disabled={!can.paste} onSelect={() => apiRef.current?.paste()}>
           {t.lab.timeline.paste}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        {/* Each names a SHAPE, and choosing the one a clip already has takes it
+            off — so the pair is two looks and an off switch rather than three
+            states nobody can predict. */}
+        <ContextMenuItem disabled={!can.clip} onSelect={() => apiRef.current?.ramp(can.ramped === "ease" ? null : "ease")}>
+          {can.ramped === "ease" ? `✓ ${t.lab.timeline.fxDissolve}` : t.lab.timeline.fxDissolve}
+        </ContextMenuItem>
+        <ContextMenuItem
+          disabled={!can.clip}
+          onSelect={() => apiRef.current?.ramp(can.ramped === "steps" ? null : "steps")}
+        >
+          {can.ramped === "steps" ? `✓ ${t.lab.timeline.fxSteps}` : t.lab.timeline.fxSteps}
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem variant="danger" disabled={!can.clip} onSelect={() => apiRef.current?.remove()}>

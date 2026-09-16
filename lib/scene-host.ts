@@ -19,6 +19,7 @@ import { loadLocalBundle } from "@/lib/asset-store"
 import { sceneFiles } from "@/lib/scene-files"
 import { BACKDROP_VIDEO_RE, openAnimatedImage } from "@/lib/backdrop"
 import { groundExtent, hexToLinearVec3 } from "@/lib/scene-settings"
+import { visibilityAt, visibleAt, type VisibilityWindow } from "@/lib/visibility"
 
 /**
  * Surface what the engine said about a style-group apply.
@@ -49,10 +50,12 @@ export function infoFor(
   model: import("reze-engine").Model,
   hidden?: string[],
   placement?: { at: [number, number, number]; scale?: number; rot?: [number, number, number]; guess?: boolean },
+  visibility?: VisibilityWindow[],
 ): EngineModelInfo {
   return {
     id,
     file,
+    ...(visibility?.length ? { visibility } : {}),
     ...(placement
       ? {
           position: placement.at,
@@ -365,7 +368,7 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
     if (stale()) return null
     const hidden = scene.state.hidden?.[entry.model.id] ?? []
     for (const name of hidden) engine.toggleMaterialVisible(entry.model.id, name)
-    const info = infoFor(entry.model.id, entry.model.file, model, hidden, castPlacement)
+    const info = infoFor(entry.model.id, entry.model.file, model, hidden, castPlacement, entry.visibility)
     const modelGroups = withSpecialGroups(
       docGroups ?? (await restyled(engine, entry.model.id, engine.getStyleGroups(entry.model.id))),
     )
@@ -379,11 +382,33 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
     if (!entry.stage && !entry.prop && infos.length - stageList.length - propList.length === 1) {
       applyCamera(engine, scene.state.camera, model)
     }
+    // A scheduled model keeps simulating its cloth while it is off stage, so the
+    // frame it appears on is a frame its skirt is already moving on. Set before
+    // the reveal, because the hiding starts here.
+    //
+    // Its dissolve is seeded here too, for the same reason the reveal below asks
+    // the track instead of simply showing her: a switch at frame 0 that
+    // dissolves her IN wants nothing of her on screen yet, and a model revealed
+    // whole for the one frame before the first tick is exactly the pop this
+    // feature exists to avoid. Both live here because every reveal path — with a
+    // motion, without one, and the one taken when a motion fails to load — comes
+    // through this block first.
+    if (entry.visibility?.length) {
+      engine.setModelPhysicsWhileHidden(entry.model.id, true)
+      engine.setModelDissolve(entry.model.id, visibilityAt(entry.visibility, 0).dissolve)
+    }
     // Reveal this one NOW. Models with an animation stay hidden a moment longer:
     // their clip loader reveals them after show(), so the first visible frame
     // wears the motion's first pose instead of flashing bind pose. (If the clip
     // fails, the loader still reveals.)
-    if (!entry.animation) engine.setModelTransform(entry.model.id, { visible: true })
+    //
+    // What the track says at frame 0, which for an unscheduled model is shown.
+    // Asked here rather than left to the playback tick to correct: a costume
+    // that opens the scene off stage would otherwise be on screen for the frame
+    // between the reveal and the first tick, which is a flash of two characters
+    // standing in each other.
+    if (!entry.animation)
+      engine.setModelTransform(entry.model.id, { visible: visibleAt(entry.visibility, 0) })
     onModel?.(
       info,
       modelGroups,
@@ -568,6 +593,16 @@ export type EngineModelInfo = {
    *  here rather than read off the live model in render, which the row cannot
    *  do without reaching into a ref. */
   bones: string[]
+  /**
+   * The stretches this model is on stage for — its lane on the timeline.
+   *
+   * Absent means throughout, so a cast that nobody has scheduled behaves exactly
+   * as it did before lanes existed. Carried on the row rather than in a map
+   * beside it for the reason StageInfo.morphs gives: it is per-model document
+   * state with the same lifecycle as the placement, and a second container keyed
+   * by the same id goes stale on a document swap.
+   */
+  visibility?: VisibilityWindow[]
 }
 
 /** A stage's placement — the document's own type, not a parallel one. The value

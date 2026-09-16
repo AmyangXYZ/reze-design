@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { BoneList } from "@/components/scene/bone-list"
 import { MorphList } from "@/components/scene/morph-list"
 import { AUDIO_H, DOPE_H, RULER_H, TOOLBAR_H } from "@/components/scene/timeline"
+import type { LaneRow } from "@/components/scene/effect-lanes"
 import { useClipActions, useClipSelector, type ClipEditKind } from "@/context/clip-editor"
 import type { AppliedEffect } from "@/lib/effects"
 import { useT } from "@/lib/i18n"
@@ -34,8 +35,15 @@ export const TrackPicker = memo(function TrackPicker({
   selectedEffect = null,
   onSelectEffect,
   onLaneScroll,
+  models = null,
+  selectedModel = null,
+  onSelectModel,
 }: {
   kind: ClipEditKind
+  /** The Visibility tab's rows: the cast, and which one is selected. */
+  models?: LaneRow[] | null
+  selectedModel?: string | null
+  onSelectModel?: (uid: string | null) => void
   /** The Objects tab's subjects: every prop in the scene. */
   objects?: { id: string; label: string }[]
   objectId?: string | null
@@ -55,6 +63,15 @@ export const TrackPicker = memo(function TrackPicker({
   const revealRequest = useClipSelector((s) => s.revealBone)
   const { setSelectedBone, setSelectedMorph, setBoneGroup } = useClipActions()
 
+  if (kind === "visibility")
+    return (
+      <VisibilityTrackList
+        models={models}
+        selected={selectedModel}
+        onSelect={onSelectModel}
+        onLaneScroll={onLaneScroll}
+      />
+    )
   if (kind === "camera") return <CameraTrackList />
   if (kind === "effect")
     return (
@@ -169,6 +186,51 @@ function ObjectTrackList({
               }}
             />
           ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The Visibility tab's column: one row per cast member, topmost first as the
+ * lanes draw them, each as tall as its lane. The count is how many stretches
+ * that model is on stage for — none means throughout, which is the default and
+ * what an unscheduled scene shows.
+ */
+function VisibilityTrackList({
+  models,
+  selected,
+  onSelect,
+  onLaneScroll,
+}: {
+  models: LaneRow[] | null
+  selected: string | null
+  onSelect?: (uid: string | null) => void
+  onLaneScroll?: (top: number) => void
+}) {
+  const t = useT()
+  const rows = models ? [...models].reverse() : []
+  return (
+    <div className={TRACK_COLUMN}>
+      {rows.length === 0 ? (
+        <div className="min-h-0 flex-1 px-2 text-[10px] leading-5 text-muted-foreground">{t.lab.ctl.none}</div>
+      ) : (
+        <div
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:none]"
+          onScroll={(e) => onLaneScroll?.(e.currentTarget.scrollTop)}
+        >
+          {rows.map((m) => (
+            <TrackRow
+              key={m.uid ?? m.id}
+              label={m.name}
+              active={selected != null && selected === m.uid}
+              count={m.window?.length ?? 0}
+              onClick={() => onSelect?.(selected === m.uid ? null : (m.uid ?? null))}
+              className="h-6"
+            />
+          ))}
+          <div style={{ height: TOOLBAR_H + RULER_H + DOPE_H + AUDIO_H + 1 }} />
         </div>
       )}
     </div>

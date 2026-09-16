@@ -43,6 +43,7 @@ import type {
   StageTransform,
   ViewportHandlers,
 } from "@/lib/scene-host"
+import { normalizeVisibility, type VisibilityWindow } from "@/lib/visibility"
 
 // Re-exported, because these are this module's public surface as far as the
 // rest of the app is concerned and moving the pipeline out from under it is
@@ -717,6 +718,27 @@ export function useEngine(
     setModels((prev) => prev.map((m) => (m.id === id ? { ...m, rotation } : m)))
   }, [])
 
+  /**
+   * The stretches a cast member is on stage for — its lane on the timeline.
+   *
+   * Normalised on the way in, so the lane, the evaluator and the document all
+   * read one list: ascending, and nothing with no length in it.
+   *
+   * Carrying a lane also turns on cloth simulation while hidden. That is the
+   * whole reason a costume swap reads as a cut rather than as a glitch: a dress
+   * simulated from rest at the moment it is revealed snaps into place in front
+   * of the audience. A model whose lane is emptied goes back to costing nothing
+   * while invisible — and back to WHOLE, because "on stage throughout" is not
+   * something a model can be half dissolved for. Deleting the last clip while
+   * she was mid-departure would otherwise leave her burned away for good.
+   */
+  const setCastVisibility = useCallback((id: string, windows: VisibilityWindow[]) => {
+    const visibility = normalizeVisibility(windows)
+    engineRef.current?.setModelPhysicsWhileHidden(id, visibility.length > 0)
+    if (visibility.length === 0) engineRef.current?.setModelDissolve(id, 1)
+    setModels((prev) => prev.map((m) => (m.id === id ? { ...m, visibility } : m)))
+  }, [])
+
   /** Flip one of a stage's switches. */
   const setStageMorph = useCallback((id: string, morph: string, weight: number) => {
     engineRef.current?.getModel(id)?.setMorphWeight(morph, weight)
@@ -1196,6 +1218,7 @@ export function useEngine(
     setCastPosition,
     setCastScale,
     setCastRotation,
+    setCastVisibility,
     planes,
     addPlaneFromFile,
     tickPlanes,

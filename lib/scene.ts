@@ -4,6 +4,7 @@ import type { EffectParamValue, ShaderGraph, StyleGroup } from "reze-engine"
 import pkg from "@/package.json"
 import type { AppliedEffect } from "@/lib/effects"
 import type { EffectWindow } from "@/lib/effect-schedule"
+import type { VisibilityWindow } from "@/lib/visibility"
 import {
   DEFAULT_AUDIO,
   DEFAULT_DOF,
@@ -101,6 +102,9 @@ export type SceneModel = {
   /** Authored morph weights by morph name. A stage's morphs are switches the
    *  user set, not animation, so they are document state — see stage-morphs.tsx. */
   morphs?: Record<string, number>
+  /** The stretches this model is on stage for. Absent means throughout, which
+   *  is the answer every scene written before this gave. See lib/visibility. */
+  visibility?: VisibilityWindow[]
 }
 
 export type SceneAssets = {
@@ -340,6 +344,8 @@ export type SceneModelDoc = {
   transform?: SceneStageTransform
   /** Authored stage switch weights by morph name. */
   morphs?: Record<string, number>
+  /** The stretches this model is on stage for. Absent = on stage throughout. */
+  visibility?: VisibilityWindow[]
   /** This model's Materials-tab state. Absent = auto-group at load. */
   materials?: SceneModelMaterialsDoc
 }
@@ -564,7 +570,9 @@ const roleOf = (g: StyleGroup): StyleGroupDoc["role"] =>
  * writer, and the publish writer — and a field added to only two of them
  * silently stops round-tripping on the third.
  */
-function stageFieldsOf(m: Pick<SceneModel, "stage" | "prop" | "attach" | "parentKeys" | "transform" | "morphs">) {
+function stageFieldsOf(
+  m: Pick<SceneModel, "stage" | "prop" | "attach" | "parentKeys" | "transform" | "morphs" | "visibility">,
+) {
   return {
     ...(m.stage ? { stage: true as const } : {}),
     ...(m.prop ? { prop: true as const } : {}),
@@ -573,7 +581,24 @@ function stageFieldsOf(m: Pick<SceneModel, "stage" | "prop" | "attach" | "parent
     ...(m.transform ? { transform: m.transform } : {}),
     // An empty map is the same as no switches — don't write `"morphs": {}`.
     ...(m.morphs && Object.keys(m.morphs).length > 0 ? { morphs: m.morphs } : {}),
+    // An empty lane is the same as no lane: on stage throughout.
+    ...visibilityFieldOf(m.visibility),
   }
+}
+
+/**
+ * The stretches a document actually describes.
+ *
+ * A window with no numeric `start` is not a window — it is something else
+ * written under this name, and one of them is enough to poison the whole editor:
+ * the lane multiplies `start` by the zoom, the NaN reaches the frame count, and
+ * because `NaN <= 0` is false it slips every guard that clamps the zoom and the
+ * scroll. Dropped at the door, where a malformed document belongs, rather than
+ * defended against at each of the dozen places that later do arithmetic on it.
+ */
+function visibilityFieldOf(windows: VisibilityWindow[] | undefined): { visibility?: VisibilityWindow[] } {
+  const clean = (windows ?? []).filter((w) => w && Number.isFinite(w.start))
+  return clean.length > 0 ? { visibility: clean } : {}
 }
 
 export function parseAssetsDoc(a: SceneAssetsDoc): SceneAssets {

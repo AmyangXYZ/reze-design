@@ -46,10 +46,10 @@ import { clipAfterKeyframeEdit } from "@/lib/clip"
 
 export { FPS, framesToSeconds, secondsToFrames } from "@/lib/clip"
 
-/** Which of a cast member's three tracks the editor is pointed at. Motion and
- *  morphs belong to the character; the camera belongs to the scene but is edited
- *  on the same clock, so it rides the same target. */
-export type ClipEditKind = "motion" | "morph" | "camera" | "effect" | "object"
+/** Which track the editor is pointed at. Motion, morphs and visibility belong to
+ *  the character; the camera belongs to the scene but is edited on the same
+ *  clock, so it rides the same target. */
+export type ClipEditKind = "motion" | "morph" | "visibility" | "camera" | "effect" | "object"
 
 /**
  * The engine, as much of it as an editor surface is allowed to touch.

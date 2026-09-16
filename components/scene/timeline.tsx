@@ -45,11 +45,13 @@ import {
   boneDisplayLabel,
 } from "@/lib/animation"
 import { motionFrameCount } from "@/lib/clip"
+import type { AppliedEffect } from "@/lib/effects"
 import {
   EffectLanes,
   EffectLanesMenu,
   type EffectLanesApi,
   type EffectLanesData,
+  type LaneRow,
 } from "@/components/scene/effect-lanes"
 
 // ─── Timeline constants ─────────────────────────────────────────────────
@@ -892,6 +894,19 @@ function TimelineCanvas({
 
     ctx.font = `9px ${FONT}`
     const isRotAxis = channels[0]?.group === "rot"
+    // A LANE VIEW HAS NO VALUE AXIS.
+    //
+    // `blank` means the band is given over to clips — effects, or the cast's
+    // time on stage — and a clip has a start and an end, not a value. The grid
+    // and its numbers come from `tab`, which still holds whichever curve was
+    // last edited, so the lanes were drawn over a rotation axis reading -180°
+    // to 180°: a scale measuring nothing on screen.
+    //
+    // The left strip, the ruler and the dope row above still draw. Only the
+    // horizontal rules and their labels go.
+    if (blank) {
+      // nothing to measure
+    } else {
     // Snap tick iteration to multiples of subStep within the current view range,
     // further clamped to tickMin/tickMax — morph's plotted range pads past
     // [0, 1] for click-target room, but there's nothing to tick past the data.
@@ -941,7 +956,10 @@ function TimelineCanvas({
     ctx.moveTo(LABEL_W + 0.5, curveTop)
     ctx.lineTo(LABEL_W + 0.5, curveBot)
     ctx.stroke()
+    }
 
+    // Outside the branch: the canvas defaults everything below draws with, so a
+    // lane view has to set them too.
     ctx.textAlign = "left"
     ctx.textBaseline = "alphabetic"
 
@@ -2469,7 +2487,12 @@ interface TimelineProps {
   trailing?: ReactNode
   /** The Effects tab's rows and how to change them, drawn over the curve band
    *  on this component's own axis while the tab shows. */
-  effectLanes?: EffectLanesData | null
+  effectLanes?: EffectLanesData<AppliedEffect> | null
+  /** The Visibility tab's rows: the cast, and the stretches each is on stage
+   *  for. The same band, drawn the same way — a separate prop rather than a
+   *  shared one because the two hand back different row types, and one callback
+   *  cannot be both. Only one is ever non-null. */
+  visibilityLanes?: EffectLanesData<LaneRow> | null
 }
 
 export function Timeline({
@@ -2488,6 +2511,7 @@ export function Timeline({
   onViewChange,
   trailing,
   effectLanes = null,
+  visibilityLanes = null,
 }: TimelineProps) {
   const dict = useT()
   const clip = useClipSelector((s) => s.clip)
@@ -2616,9 +2640,31 @@ export function Timeline({
     return () => ro.disconnect()
   }, [])
 
+  /**
+   * Nothing was restored, so the editor opens showing the WHOLE range.
+   *
+   * `pxPerFrame` starts at a flat 4, which is a zoom with no relation to how
+   * long the scene is: on anything but a short clip the editor opened on a
+   * sliver of it, and finding a clip meant scrolling before you could reach it.
+   * `minPxPerFrame` is the fit — the ratchet below is what stops you zooming out
+   * PAST the whole range — so opening at exactly that is opening on all of it.
+   *
+   * A LATCH, not a rule, and that is the whole subtlety. The width this fits to
+   * drops when the fold collapses (the transport shrinks to fit-content), so a
+   * standing "always fit" would rezoom the editor every time it was folded —
+   * the one thing a fold must not do, as the measurement guards above say. It
+   * fires once, on the first width worth fitting to, and never again.
+   */
+  const fitOnce = useRef(initialView === undefined)
   useEffect(() => {
+    if (fitOnce.current && fc > 0 && trackWidth > LABEL_W + 1) {
+      fitOnce.current = false
+      setPxPerFrame(minPxPerFrame)
+      setScrollX(0)
+      return
+    }
     setPxPerFrame((p) => Math.min(MAX_PX, Math.max(minPxPerFrame, p)))
-  }, [minPxPerFrame])
+  }, [minPxPerFrame, trackWidth, fc])
 
   // Reset local view state when a DIFFERENT clip is loaded, or the editor reset.
   //
@@ -3335,7 +3381,10 @@ export function Timeline({
         {trailing && <div className="ml-1.5 flex shrink-0 items-center gap-0.5 pl-1.5">{trailing}</div>}
       </div>
       {/* Canvas */}
-      <EffectLanesMenu apiRef={lanesApi} enabled={blank && effectLanes !== null && clip !== null}>
+      <EffectLanesMenu
+        apiRef={lanesApi}
+        enabled={blank && (effectLanes !== null || visibilityLanes !== null) && clip !== null}
+      >
       <div ref={timelineAreaRef} style={{ flex: 1, minHeight: 0, position: "relative" }}>
         {clip ? (
           <>
@@ -3378,6 +3427,24 @@ export function Timeline({
           {effectLanes && (
             <EffectLanes
               {...effectLanes}
+              visible={blank}
+              apiRef={lanesApi}
+              pxPerFrame={pxPerFrame}
+              scrollX={scrollX}
+              frameCount={fc}
+              playhead={currentFrame}
+              onSeek={(f) => {
+                setPlaying(false)
+                setCurrentFrame(f)
+              }}
+              top={RULER_H}
+              bottom={DOPE_H + AUDIO_H + 1}
+              labelWidth={LABEL_W}
+            />
+          )}
+          {visibilityLanes && (
+            <EffectLanes
+              {...visibilityLanes}
               visible={blank}
               apiRef={lanesApi}
               pxPerFrame={pxPerFrame}

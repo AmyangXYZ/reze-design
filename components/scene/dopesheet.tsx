@@ -20,7 +20,8 @@ import { CLIP_UNDO_SCOPE } from "@/components/scene/clip-history"
 import { Timeline, defaultTabForSelection, tabsForSelection, type ParentHold, type SelectionKind } from "@/components/scene/timeline"
 import { TrackPicker } from "@/components/scene/track-picker";
 import { EditorRail } from "@/components/scene/editor-rail";
-import type { EffectLanesData } from "@/components/scene/effect-lanes";
+import type { EffectLanesData, LaneRow } from "@/components/scene/effect-lanes";
+import type { AppliedEffect } from "@/lib/effects";
 import {
   useClipActions,
   useClipSelector,
@@ -111,6 +112,8 @@ export function Dopesheet({
   onObject,
   /** The edited prop's holds, for the Parent row's band. */
   parentHolds = null,
+  /** The Visibility tab's lanes: the cast, and when each is on stage. */
+  visibilityLanes = null,
   /** How long the scene runs, in frames: the ruler's floor on the Objects tab,
    *  where a prop's own clip is often shorter than the scene. */
   spanFrames = 0,
@@ -131,8 +134,9 @@ export function Dopesheet({
   objectId?: string | null;
   onObject?: (id: string) => void;
   parentHolds?: ParentHold[] | null;
+  visibilityLanes?: Omit<EffectLanesData<LaneRow>, "scrollTop"> | null;
   spanFrames?: number;
-  effectLanes?: Omit<EffectLanesData, "scrollTop"> | null;
+  effectLanes?: Omit<EffectLanesData<AppliedEffect>, "scrollTop"> | null;
 }) {
   const clip = useClipSelector((s) => s.clip);
   const selectedMorph = useClipSelector((s) => s.selectedMorph);
@@ -195,9 +199,11 @@ export function Dopesheet({
   useEffect(() => {
     if (!open) return;
     setCameraSelected(kind === "camera");
-    // The Objects tab opens on its Parent row, the track the tab exists for.
+    // The Objects tab opens on its Parent row, the track the tab exists for —
+    // and the Visibility tab on its own band, which is the same kind of track:
+    // a state that holds until the next switch rather than a curve.
     setParentSelected(kind === "object");
-    if (kind === "camera" || kind === "effect" || kind === "object") {
+    if (kind === "camera" || kind === "effect" || kind === "object" || kind === "visibility") {
       setSelectedBone(null);
       setSelectedMorph(null);
     } else if (kind === "morph") {
@@ -494,13 +500,20 @@ export function Dopesheet({
               selectedEffect={effectLanes?.selectedEffect ?? null}
               onSelectEffect={effectLanes?.onSelectEffect}
               onLaneScroll={setLaneScroll}
+              models={visibilityLanes?.effects ?? null}
+              selectedModel={visibilityLanes?.selectedEffect ?? null}
+              onSelectModel={visibilityLanes?.onSelectEffect}
             />
             <div className="min-w-0 flex-1">
               <Timeline
                 visibleBones={visibleBones}
-                blank={kind === "effect"}
+                blank={kind === "effect" || kind === "visibility"}
                 parentHolds={kind === "object" ? parentHolds : null}
-                spanFrames={kind === "object" ? spanFrames : 0}
+                // The cast's lanes run on the SCENE's clock rather than the
+                // edited clip's: a model can leave the stage after its own
+                // motion has finished, exactly as a prop can be thrown after
+                // its own ends.
+                spanFrames={kind === "object" || kind === "visibility" ? spanFrames : 0}
                 // Baselined, so the FIRST clip to arrive does not count as a
                 // swap. The timeline resets its zoom and scroll whenever this
                 // changes, and the first change is the clip loading into an
@@ -525,6 +538,7 @@ export function Dopesheet({
                 }
                 onViewChange={onViewChange}
                 effectLanes={effectLanes ? { ...effectLanes, scrollTop: laneScroll } : null}
+                visibilityLanes={visibilityLanes ? { ...visibilityLanes, scrollTop: laneScroll } : null}
               />
             </div>
           </div>

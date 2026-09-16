@@ -18,6 +18,7 @@ import { useSceneSync } from "@/hooks/use-scene-sync"
 import { specOf } from "@/lib/grade"
 import { libraryGraph } from "@/lib/materials"
 import { newSceneId, parseSceneDoc, type Scene, type SceneDoc } from "@/lib/scene"
+import type { VisibilityWindow } from "@/lib/visibility"
 import { saveLocalBundle } from "@/lib/asset-store"
 import { setForkTarget } from "@/lib/fork"
 import { LoadingPill, useLoadingLabel } from "@/components/editor/loading-pill"
@@ -379,6 +380,22 @@ function SceneStage({
   // Eyes on the camera start where the author left them and are the visitor's to
   // switch — a property of watching, like following the camera. Never saved. Every
   // other section keeps its identity, so the sync re-applies only the eyes.
+  /**
+   * Who is on stage when, by model id.
+   *
+   * A published scene has to EVALUATE these, not merely load them. The boot
+   * seeds each model at frame 0, and without this the scene then stood still at
+   * that answer for its whole length — the clips were in the document and
+   * inert, so a costume change composed in the editor never happened for anyone
+   * following the link. The rows carry the windows because infoFor puts them
+   * there at load, and AnimPlayer's tick is the same evaluator the editor and
+   * the export already run.
+   */
+  const visibilityTracks = useMemo(() => {
+    const out: Record<string, VisibilityWindow[]> = {}
+    for (const m of models) if (m.visibility?.length) out[m.id] = m.visibility
+    return out
+  }, [models])
   const [eyes, setEyes] = useState(scene.state.settings.eyes.enabled)
   const settings = useMemo(() => ({ ...scene.state.settings, eyes: { enabled: eyes } }), [scene.state.settings, eyes])
   useSceneSync({
@@ -741,6 +758,7 @@ function SceneStage({
             <AnimPlayer
               engineRef={engineRef}
               modelNames={animated}
+              visibility={visibilityTracks}
               hasCamera={!!scene.assets.cameraAnimation}
               eyes={eyes}
               onEyes={setEyes}

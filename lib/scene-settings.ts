@@ -296,9 +296,21 @@ export const FOLLOW_BONE = "センター"
 export const FOLLOW_OFFSET_DEFAULT: [number, number, number] = [0, 3, 0]
 export const TARGET_DEFAULT: [number, number, number] = [0, 11.4, 0]
 
-/** The fade a ground stored without one was authored looking at: fully drawn an
- *  eighth of the way out, gone at the plane's edge. */
-export const GROUND_FADE = { start: 0.125, end: 1 }
+/**
+ * Where the ground begins fading out and where it reaches nothing, as fractions
+ * of its half-width — so the rim stays soft at any size.
+ *
+ * `start` is generous for two reasons a smaller number hides. The ground shader
+ * multiplies its SHADOW CATCHER by this same fade and skips the taps once it
+ * reaches zero, so floor that is dimming is floor that cannot show a shadow.
+ * And because these are fractions rather than distances, a fade that begins too
+ * early cannot be escaped by enlarging the plane: the band grows with it and
+ * whatever stands out there sits in the same place within it.
+ *
+ * On the default 160-unit plane this is 48 units at full strength and a 32-unit
+ * rim.
+ */
+export const GROUND_FADE = { start: 0.6, end: 1 }
 
 /** The ground plane's side and its radial fade in world units, as addGround takes them. */
 export function groundExtent(ground: SceneSettings["ground"]) {

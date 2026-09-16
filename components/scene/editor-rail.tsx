@@ -7,7 +7,7 @@
 // than a header row: the editor's height is fixed and every band in it was laid
 // out against that number, while its width has room to spare.
 
-import { Camera, Footprints, Shapes, Smile, Sparkles, type LucideIcon } from "lucide-react"
+import { Camera, Eye, Footprints, Shapes, Smile, Sparkles, type LucideIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { ClipEditKind } from "@/context/clip-editor"
@@ -21,6 +21,10 @@ export function EditorRail({ kind, onKind }: { kind: ClipEditKind; onKind: (kind
     { kind: "morph", icon: Smile, label: t.lab.lanes.morph },
     { kind: "camera", icon: Camera, label: t.lab.lanes.camera },
     { kind: "effect", icon: Sparkles, label: t.lab.rows.effect },
+    // Beside Effects: these two are the clip lanes, edited with the same
+    // gestures on the same band, and a costume change is composed against the
+    // effects it plays with.
+    { kind: "visibility", icon: Eye, label: t.lab.lanes.visibility },
     { kind: "object", icon: Shapes, label: t.lab.rows.object },
   ]
   return (

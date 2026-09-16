@@ -592,6 +592,8 @@ const en = {
       gizmo: "Gizmo",
       parent: "Parent",
       free: "Free",
+      fxDissolve: "Dissolve edges",
+      fxSteps: "Stepped edges",
       throwTitle: "Throw",
       throwTo: "To",
       throwIt: "Throw",
@@ -815,7 +817,7 @@ const en = {
       deleteStage: (name: string) => `Delete stage ${name}`,
     },
     // A lane names the KIND of thing it holds, never the thing itself.
-    lanes: { motion: "Motion", morph: "Morph", camera: "Camera", music: "Music" },
+    lanes: { motion: "Motion", morph: "Morph", visibility: "Visibility", camera: "Camera", music: "Music" },
     drop: { motion: "Drop a motion", camera: "Drop a camera motion", music: "Drop music" },
     cmd: {
       graphNew: "New shader graph",
@@ -1479,6 +1481,8 @@ const zh: Dictionary = {
       gizmo: "手柄",
       parent: "父级",
       free: "自由",
+      fxDissolve: "边缘消散",
+      fxSteps: "阶梯消散",
       throwTitle: "抛掷",
       throwTo: "抛给",
       throwIt: "抛出",
@@ -1660,7 +1664,7 @@ const zh: Dictionary = {
       replaceStage: (name: string) => `上传舞台 PMX 文件夹以替换 ${name}`,
       deleteStage: (name: string) => `删除舞台 ${name}`,
     },
-    lanes: { motion: "动作", morph: "表情", camera: "相机", music: "音乐" },
+    lanes: { motion: "动作", morph: "表情", visibility: "显隐", camera: "相机", music: "音乐" },
     drop: { motion: "拖入动作", camera: "拖入镜头动作", music: "拖入音乐" },
     cmd: {
       graphNew: "新建着色器图",

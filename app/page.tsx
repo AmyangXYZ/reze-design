@@ -128,6 +128,7 @@ import { ClipAutosave } from "@/components/scene/clip-autosave"
 import { ClipHistory } from "@/components/scene/clip-history"
 import { ClipInspector } from "@/components/scene/clip-inspector"
 import { holdsOf } from "@/lib/prop-throw"
+import { visibleAt, type VisibilityWindow } from "@/lib/visibility"
 import { FPS } from "@/lib/clip"
 import { ClipEditor, type ClipEditKind } from "@/context/clip-editor"
 import { primeClipDensity, useAudioPeaks } from "@/hooks/use-lane-graphs"
@@ -2142,6 +2143,7 @@ export default function Lab() {
     setPropAttach,
     setPropParentKeys,
     setPropStart,
+    setCastVisibility,
     setCastPosition,
     setCastRotation,
     setCastScale,
@@ -2350,7 +2352,7 @@ export default function Lab() {
           // dangling name is visible and fixable; a deleted one is neither.
           console.warn(`[scene] motion failed to load for ${entry.model.id}, keeping its claim:`, clip.name)
           engineRef.current?.setModelTransform(entry.model.id, {
-            visible: true,
+            visible: visibleAt(entry.visibility, 0),
           })
           continue
         }
@@ -2371,7 +2373,9 @@ export default function Lab() {
         // stall is invisible and expected.
         primeClipDensity(engineRef.current, entry.model.id, clip.name)
         // Reveal even if the clip failed — a bind-pose model beats no model.
-        engineRef.current?.setModelTransform(entry.model.id, { visible: true })
+        // At frame 0 of its own track: a costume that opens the scene off stage
+        // must never be on screen for the frame before the first tick.
+        engineRef.current?.setModelTransform(entry.model.id, { visible: visibleAt(entry.visibility, 0) })
       }
       // Morphs AFTER every motion, in their own pass: loading one merges
       // into the motion's clip, and a motion arriving later rebuilds that clip
@@ -4092,6 +4096,50 @@ export default function Lab() {
       ? (props.find((p) => p.id === editTarget?.modelId)?.id ?? props[0]?.id ?? null)
       : (cast.find((m) => m.id === editTarget?.modelId)?.id ?? inspectedId ?? cast[0]?.id ?? null)
   const editingProp = editingKind === "object" ? (props.find((p) => p.id === editingModelId) ?? null) : null
+  /**
+   * Every scheduled model's lane, by id.
+   *
+   * What the transport evaluates each frame and what the export is handed, so
+   * the file and the preview answer "who is on stage" from one list. Models with
+   * no lane are left out entirely: an unscheduled scene never touches
+   * visibility, which is what keeps this free for everyone who is not using it.
+   */
+  const visibilityTracks = useMemo(() => {
+    const out: Record<string, VisibilityWindow[]> = {}
+    for (const m of models) if (m.visibility?.length) out[m.id] = m.visibility
+    return out
+  }, [models])
+  /** Which model's lane is picked, for the row highlight. */
+  const [selectedVisibility, setSelectedVisibility] = useState<string | null>(null)
+  /** The cast as lane rows. A model with no windows draws one clip spanning the
+   *  scene, which is exactly what "on stage throughout" looks like. */
+  const visibilityRows = useMemo(
+    () =>
+      cast.map((m) => ({
+        id: m.id,
+        uid: m.id,
+        name: displayName(m.file),
+        ...(m.visibility?.length ? { window: m.visibility } : {}),
+      })),
+    [cast],
+  )
+  /**
+   * The lanes, written back.
+   *
+   * A row the band dropped is a model whose last clip was deleted, and that
+   * means on stage throughout — so it is written as no windows rather than left
+   * alone. Only the models that actually moved are touched: the band hands back
+   * the whole cast on every edit, and writing all of them would churn a row per
+   * model per drag.
+   */
+  const onVisibilityRows = (next: { id: string; uid?: string; window?: VisibilityWindow[] }[]) => {
+    const byId = new Map(next.map((r) => [r.uid ?? r.id, r.window ?? []]))
+    for (const m of cast) {
+      const want = byId.get(m.id) ?? []
+      const have = m.visibility ?? []
+      if (JSON.stringify(want) !== JSON.stringify(have)) setCastVisibility(m.id, want)
+    }
+  }
   /** The Parent row's band: each hold, named by what the prop rides. */
   const parentHolds = useMemo(
     () =>
@@ -8922,6 +8970,7 @@ export default function Lab() {
               canvasRef={canvasRef}
               modelName={masterId ?? models[0]?.id ?? ""}
               extraModelNames={models.filter((m) => animByModel[m.id] && m.id !== masterId).map((m) => m.id)}
+              visibility={visibilityTracks}
               sceneName={sceneName}
               animName={masterClipName}
               animDuration={animDuration}
@@ -9097,6 +9146,7 @@ export default function Lab() {
               <AnimPlayer
                 engineRef={engineRef}
                 modelNames={modelNames}
+                visibility={visibilityTracks}
                 hasCamera={cameraClip !== null}
                 eyes={settings.eyes.enabled}
                 onEyes={(on) => patch("eyes", { enabled: on })}
@@ -9154,6 +9204,16 @@ export default function Lab() {
                       objectId={editingProp?.id ?? null}
                       onObject={(id) => setEditTarget({ modelId: id, kind: "object" })}
                       parentHolds={parentHolds}
+                      visibilityLanes={
+                        editingKind === "visibility"
+                          ? {
+                              effects: visibilityRows,
+                              onEffects: onVisibilityRows,
+                              selectedEffect: selectedVisibility,
+                              onSelectEffect: setSelectedVisibility,
+                            }
+                          : null
+                      }
                       spanFrames={Math.round(animDuration * FPS)}
                       trailing={chrome}
                       enginePlaying={playing}
@@ -9161,7 +9221,11 @@ export default function Lab() {
                       // While an effect's code is open the list is narrowed to
                       // that one effect, which is not the scene's list to edit.
                       effectLanes={
-                        effectEditor
+                        // Its own tab only. Both lane sets draw on a `blank`
+                        // band, and the Visibility tab is blank too — handed
+                        // both, the timeline stacked the effect clips on top of
+                        // the model clips.
+                        effectEditor || editingKind !== "effect"
                           ? null
                           : {
                               effects: bgEffects,

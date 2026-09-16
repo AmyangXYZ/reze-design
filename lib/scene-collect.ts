@@ -186,6 +186,11 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
           : {}),
       ...(stage && Object.keys(stage.morphs).length ? { morphs: stage.morphs } : {}),
       ...(prop && Object.keys(prop.morphs).length ? { morphs: prop.morphs } : {}),
+      // When this one is on stage. Written from the live row rather than from
+      // the stage/prop branches above, because a visibility track is the one
+      // piece of timing that belongs to ANY model — a costume is a cast member,
+      // and a prop can be made to appear on cue just as well.
+      ...(m.visibility?.length ? { visibility: m.visibility } : {}),
     }
   })
   let cameraAnimation: AssetRef | null = null

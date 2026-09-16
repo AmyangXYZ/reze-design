@@ -27,6 +27,7 @@ import {
   type ExportTarget,
 } from "@/lib/video-export"
 import { isCompositingBackground, type ExportBackground } from "@/lib/export-background"
+import type { VisibilityWindow } from "@/lib/visibility"
 import { formatBytes } from "@/lib/png-sequence"
 import { downloadBlob } from "@/lib/scene-file"
 import {
@@ -172,6 +173,7 @@ export const RenderPanel = memo(function RenderPanel({
   canvasRef,
   modelName,
   extraModelNames,
+  visibility,
   sceneName,
   animName,
   animDuration,
@@ -198,6 +200,8 @@ export const RenderPanel = memo(function RenderPanel({
   modelName: string
   /** Other animated models, driven in sync (multi-model scenes). */
   extraModelNames: string[]
+  /** Who is on stage when, by model id — the scene's visibility lanes. */
+  visibility?: Record<string, VisibilityWindow[]>
   /** The scene's display name — drives the exported filename. */
   sceneName: string
   animName: string | null
@@ -500,6 +504,7 @@ export const RenderPanel = memo(function RenderPanel({
         canvas,
         modelName,
         extraModelNames,
+        visibility,
         startTime: segStart,
         duration: segDuration,
         settings: {

@@ -5,6 +5,7 @@
 import { memo, useEffect, useRef, useState, type ReactNode, type RefObject } from "react"
 import { cn } from "@/lib/utils"
 import { FPS } from "@/lib/clip"
+import { applyVisibility, type VisibilityWindow } from "@/lib/visibility"
 import type { Engine, Model } from "reze-engine"
 import { Eye, EyeOff, Orbit, Pause, Play, Repeat, RepeatOff, Video } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -65,6 +66,7 @@ export type TransportSlot = {
 export const AnimPlayer = memo(function AnimPlayer({
   engineRef,
   modelNames,
+  visibility,
   hasCamera,
   eyes,
   onEyes,
@@ -79,6 +81,18 @@ export const AnimPlayer = memo(function AnimPlayer({
   engineRef: RefObject<Engine | null>
   /** Models WITH a loaded clip, master (longest clip) first. */
   modelNames: string[]
+  /**
+   * Who is on stage when, by model id — the scene's visibility lanes.
+   *
+   * Applied from this component's tick because this is the scene's clock: one
+   * rAF already reads the frame for the bar, the lanes and the dopesheet, and
+   * whoever is on stage is another thing that is true of that instant. A second
+   * loop asking the same question could answer it a frame differently.
+   *
+   * Models not named here are left alone, so a scene with no schedule never
+   * touches visibility at all.
+   */
+  visibility?: Record<string, VisibilityWindow[]>
   /** A camera VMD is loaded — show the Follow/Free toggle. */
   hasCamera: boolean
   /** Eyes on the camera — the scene's setting and its switch. Beside Loop:
@@ -209,8 +223,12 @@ export const AnimPlayer = memo(function AnimPlayer({
   // Stable key for effect deps
   const namesKey = modelNames.join("\0")
   const namesRef = useRef(modelNames)
+  // Read by the tick without rebuilding it: retiming a switch must not restart
+  // the loop that is drawing the playhead.
+  const visibilityRef = useRef(visibility)
   useEffect(() => {
     namesRef.current = modelNames
+    visibilityRef.current = visibility
   })
   const cast = (): Model[] =>
     namesRef.current.map((n) => engineRef.current?.getModel(n)).filter((m): m is Model => !!m)
@@ -329,6 +347,13 @@ export const AnimPlayer = memo(function AnimPlayer({
         return
       }
       const p = m.getAnimationProgress()
+      // Who is on stage at this instant. The export answers the same question
+      // with the same function, which is what stops a rendered file disagreeing
+      // with the playback it was rendered from — and it runs whether or not the
+      // scene is playing, so scrubbing shows the swap too.
+      const engine = engineRef.current
+      const tracks = visibilityRef.current
+      if (engine && tracks) applyVisibility(engine, tracks, p.current * FPS)
       // Only STRUCTURAL changes touch React; the advancing clock goes straight
       // to the DOM above, so playback re-renders nothing.
       if (p.duration !== last.duration || p.playing !== last.playing || p.paused !== last.paused) {
