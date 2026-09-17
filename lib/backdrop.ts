@@ -1,6 +1,8 @@
 // Backdrop media (an image or a video behind the 3D scene) + the shared
 // cover-fit math.
 
+import { tgaToPng } from "@/lib/tga"
+
 /** Video files the backdrop slot accepts. Named, not `video/*`: the picker
  *  should not offer a codec the browser cannot decode into a frame. */
 export const BACKDROP_VIDEO_RE = /\.(mp4|webm|mov|m4v)$/i
@@ -52,6 +54,9 @@ export function coverCrop(
 
 /** Load + inspect an image upload into BackdropMedia. Throws on undecodable files. */
 export async function probeBackdrop(file: File): Promise<BackdropMedia> {
+  // A TGA arrives as the PNG it becomes, so the slot, the bundle and a reload
+  // all hold a file the browser decodes.
+  if (/\.tga$/i.test(file.name)) file = await tgaToPng(file)
   if (BACKDROP_VIDEO_RE.test(file.name)) return probeVideoBackdrop(file)
   if (BACKDROP_ANIMATED_RE.test(file.name)) return probeAnimatedBackdrop(file)
   if (/\.hdr$/i.test(file.name)) {

@@ -217,7 +217,13 @@ import {
   type ShaderGraph,
   type StyleGroup,
   parseLRC,
+  UNLIT_GRAPH,
 } from "reze-engine"
+import { accessoryFiles, convertXUploads, isFromX, xUnlitMaterials } from "@/lib/x-file"
+import { readRayMmd, type RayStage } from "@/lib/ray-mmd"
+import { setMaterialMaps } from "@/lib/material-maps"
+import { findSkies, skyThumbnail, type SkyCandidate } from "@/lib/stage-skies"
+import { toast } from "sonner"
 import { lipSyncVmdFile } from "@/lib/lipsync"
 import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, windFreqFromSlider, windSliderFromFreq, type SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
@@ -339,7 +345,7 @@ type BgSlot = "flat" | "dome" | "plate"
 /** The flat backdrop and the plate take stills and moving pictures; the 360
  *  dome takes a still equirect, including Radiance. */
 const BACKDROP_ACCEPT = "image/*,video/mp4,video/webm,video/quicktime"
-const DOME_ACCEPT = "image/*"
+const DOME_ACCEPT = "image/*,.tga"
 /** Radiance only. An .hdr is a measurement of light, and the slot that takes it
  *  is the one that lights the scene — not the one that shows a picture. */
 const HDRI_ACCEPT = ".hdr"
@@ -2136,6 +2142,7 @@ export default function Lab() {
     stopAnimation,
     stages,
     addStageFromFiles,
+    addStagePartFromFiles,
     setStageTransform,
     props,
     addPropFromFiles,
@@ -3016,11 +3023,17 @@ export default function Lab() {
   const [openRow, setOpenRow] = useState<string | null>(null)
 
   const stage = stages[0] ?? null
-  const stageSummary = stage
-    ? displayName(stage.file)
+  // What the environment IS, in the order it reads: a stage, footage, a
+  // backdrop, or the ground. The row's summary names it and opening the row
+  // lands on its tab, so the two never disagree.
+  const envTab: "stage" | "ground" | "background" | "composite" = stage
+    ? "stage"
     : bgImage?.slot === "plate"
-      ? t.lab.tabs.composite
-      : t.lab.tabs.ground
+      ? "composite"
+      : bgImage
+        ? "background"
+        : "ground"
+  const stageSummary = stage ? displayName(stage.file) : t.lab.tabs[envTab]
   // Controlled (not key-remounted): go-to deep-links need to land on a pane —
   // "Background" opens this row on its background tab. Where you left each one
   // is UI state, so it comes back from the same store the stack's own shape does.
@@ -3318,9 +3331,46 @@ export default function Lab() {
   }
   type UploadState =
     | { kind: "pick"; files: File[]; paths: string[]; target: ModelTarget }
+    | { kind: "sky"; skies: SkyCandidate[] }
     | { kind: "notice"; message: string }
     | null
   const [upload, setUpload] = useState<UploadState>(null)
+
+  // Thumbnails for the sky picker, made when it opens and released when it
+  // closes. Tiles hold their place while theirs is on its way.
+  // What the dialog shows: the last state it OPENED with. Closing clears
+  // `upload`, and a dialog rendering from that fades out wearing the fallback
+  // "couldn't load" title instead of its own.
+  const [shownUpload, setShownUpload] = useState<UploadState>(null)
+  if (upload !== null && upload !== shownUpload) setShownUpload(upload)
+
+  const skyList = upload?.kind === "sky" ? upload.skies : null
+  const [skyThumbs, setSkyThumbs] = useState<{ list: SkyCandidate[] | null; urls: Record<string, string> }>({
+    list: null,
+    urls: {},
+  })
+  useEffect(() => {
+    if (!skyList) return
+    let cancelled = false
+    const urls: string[] = []
+    let next = 0
+    const work = async () => {
+      while (!cancelled && next < skyList.length) {
+        const sky = skyList[next++]
+        const url = await skyThumbnail(sky.file, 320).catch(() => null)
+        if (!url) continue
+        urls.push(url)
+        if (cancelled) URL.revokeObjectURL(url)
+        // The first thumbnail of a new list replaces the last list's outright.
+        else setSkyThumbs((prev) => ({ list: skyList, urls: { ...(prev.list === skyList ? prev.urls : {}), [sky.path]: url } }))
+      }
+    }
+    void Promise.all([work(), work(), work(), work()])
+    return () => {
+      cancelled = true
+      for (const url of urls) URL.revokeObjectURL(url)
+    }
+  }, [skyList])
 
   // ONE background-image slot, filled from TWO rows. Detecting the kind from
   // the aspect ratio (2:1 ⇒ equirect) was tried and pulled: panoramas ship at
@@ -4793,16 +4843,119 @@ export default function Lab() {
     }
   }, [ready, stages, props, groupsByModel, autoStyleStage])
 
+  /**
+   * Scenery converted from a .x arrives looking the way MMD drew it: what MMD
+   * showed at full brightness goes Unlit, and everything else goes through the
+   * stage table. Both land in one set, so this is complete whether or not the
+   * automatic pass above got there first.
+   */
+  const styleAccessory = useCallback(
+    (id: string, pmx: File) => {
+      const unlit = xUnlitMaterials(pmx)
+      if (!unlit?.length) return
+      const names =
+        engineRef.current
+          ?.getModel(id)
+          ?.getMaterials()
+          .map((m) => m.name) ?? []
+      const group: StyleGroup = {
+        id: "stage-unlit",
+        label: "Unlit",
+        materials: unlit,
+        graph: structuredClone(UNLIT_GRAPH),
+        renderClass: "auto",
+      }
+      styled.current.add(id)
+      void applyGroups(id, stageStyleGroups(names, [group]) ?? [group])
+    },
+    [engineRef, applyGroups],
+  )
+
+  /**
+   * Scenery that arrived with ray-mmd presets wears them: their looks and maps,
+   * and the materials its .emd hid stay hidden. The stage table styles whatever
+   * the presets left alone, in the same set.
+   */
+  const applyRayMmd = useCallback(
+    (id: string, ray: RayStage) => {
+      setMaterialMaps(id, ray.maps)
+      for (const name of ray.hidden) toggleVisible(id, name)
+      const names =
+        engineRef.current
+          ?.getModel(id)
+          ?.getMaterials()
+          .map((m) => m.name) ?? []
+      styled.current.add(id)
+      void applyGroups(id, stageStyleGroups(names, ray.groups) ?? ray.groups)
+    },
+    [engineRef, applyGroups, toggleVisible],
+  )
+
+  /** Load scenery, converting its ray-mmd presets first when it has them. */
+  const loadScenery = async (files: File[], pmx: File, add: (files: File[], pmx: File) => Promise<string>) => {
+    const toastId = `ray-mmd:${relFilePath(pmx)}`
+    try {
+      const ray = await readRayMmd(files, pmx, (done, total) => {
+        if (total > 0) toast.loading(t.lab.rayConverting(done, total), { id: toastId })
+      })
+      const id = await add(ray?.files ?? files, pmx)
+      if (!ray) {
+        styleAccessory(id, pmx)
+        return id
+      }
+      applyRayMmd(id, ray)
+      if (ray.warnings.length) console.warn(`ray-mmd: ${pmx.name}`, ray.warnings)
+      toast.success(t.lab.rayApplied(ray.groups.length), {
+        id: toastId,
+        description: ray.warnings.length ? t.lab.raySkipped(ray.warnings.length) : undefined,
+      })
+      return id
+    } catch (e) {
+      toast.dismiss(toastId)
+      throw e
+    }
+  }
+
+  /** A sky from the stage's folder, into the 360 slot the way an upload goes. */
+  const chooseSky = async (sky: SkyCandidate) => {
+    setUpload(null)
+    try {
+      swapBgImage({ ...(await probeBackdrop(sky.file)), slot: "dome" })
+    } catch (e) {
+      setUpload({ kind: "notice", message: e instanceof Error ? e.message : String(e) })
+    }
+  }
+
   const loadPicked = async (files: File[], pmx: File, target: ModelTarget) => {
     setUpload(null)
     try {
       if (target.mode === "stage") {
-        noteArrival(await addStageFromFiles(files, pmx))
+        // The .x accessories in the folder are the same set as its .pmx — the
+        // effect layer, the sky — and come in with it as parts.
+        const parts = isFromX(pmx) ? [] : files.filter(isFromX)
+        const id = await loadScenery(
+          files.filter((f) => !parts.includes(f)),
+          pmx,
+          addStageFromFiles,
+        )
+        for (const part of parts) {
+          const partId = await addStagePartFromFiles(accessoryFiles(files, part), part)
+          styleAccessory(partId, part)
+        }
+        noteArrival(id)
         setStageTab("stage")
+        // A stage folder that brought skies offers them; which one is yours.
+        const own = new Set(
+          (engineRef.current?.getModel(id)?.getTextures() ?? []).map((tex) =>
+            tex.path.replace(/\\/g, "/").split("/").pop()!.toLowerCase(),
+          ),
+        )
+        const skies = await findSkies(files, own)
+        if (skies.length) setUpload({ kind: "sky", skies })
       } else if (target.mode === "prop") {
         // Not noteArrival: that queues a "give it a look" step, and a prop
         // wears the neutral graph by design.
-        const id = await addPropFromFiles(files, pmx)
+        const id = await loadScenery(files, pmx, addPropFromFiles)
         setSelectedProp(id)
         setObjectTab("prop")
       } else if (target.mode === "replace") {
@@ -4827,6 +4980,8 @@ export default function Lab() {
       // Folder contents arrive as many files; a zip as one. Either way this
       // flattens to the same list.
       files = await expandUploadFiles(list)
+      // An MMD .x accessory is scenery, so scenery uploads read it as a PMX.
+      if (target.mode === "stage" || target.mode === "prop") files = await convertXUploads(files)
     } catch (e) {
       setUpload({
         kind: "notice",
@@ -4834,7 +4989,11 @@ export default function Lab() {
       })
       return
     }
-    const pmx = files.filter((f) => f.name.toLowerCase().endsWith(".pmx"))
+    // A converted .x is not a model the folder offered — it loads beside the
+    // stage — so the choice is between the folder's own .pmx files, when it has any.
+    const models = files.filter((f) => f.name.toLowerCase().endsWith(".pmx"))
+    const own = models.filter((f) => !isFromX(f))
+    const pmx = own.length ? own : models
     if (pmx.length === 0) {
       setUpload({
         kind: "notice",
@@ -6334,32 +6493,61 @@ export default function Lab() {
           // otherwise, which rings the first row and arms Enter on it — an
           // answer the dialog just finished asking you for.
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="max-w-sm rounded-xl border-line-strong bg-surface-raised backdrop-blur-xs"
+          className={cn(
+            "rounded-xl border-line-strong bg-surface-raised backdrop-blur-xs",
+            shownUpload?.kind === "sky" ? "sm:max-w-2xl" : "max-w-sm",
+          )}
         >
           <DialogHeader>
-            <DialogTitle className="text-sm">{upload?.kind === "pick" ? t.lab.whichModel : t.lab.cantLoad}</DialogTitle>
+            <DialogTitle className="text-sm">
+              {shownUpload?.kind === "pick"
+                ? t.lab.whichModel
+                : shownUpload?.kind === "sky"
+                  ? t.lab.whichSky
+                  : t.lab.cantLoad}
+            </DialogTitle>
           </DialogHeader>
-          {upload?.kind === "pick" ? (
+          {shownUpload?.kind === "sky" ? (
+            <ChoiceList className="grid max-h-[60vh] grid-cols-3 gap-2 space-y-0 overflow-y-auto overscroll-contain">
+              {shownUpload.skies.map((sky) => (
+                <Button
+                  key={sky.path}
+                  variant="ghost"
+                  onClick={() => void chooseSky(sky)}
+                  title={sky.path}
+                  className="h-auto min-w-0 flex-col items-stretch gap-1 rounded-interior p-1 text-xs font-normal text-muted-foreground hover:text-foreground"
+                >
+                  <span className="block aspect-[2/1] overflow-hidden rounded-chip border border-line bg-surface">
+                    {skyThumbs.list === shownUpload.skies && skyThumbs.urls[sky.path] && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={skyThumbs.urls[sky.path]} alt="" className="size-full object-cover" />
+                    )}
+                  </span>
+                  <span className="truncate text-left">{sky.name}</span>
+                </Button>
+              ))}
+            </ChoiceList>
+          ) : shownUpload?.kind === "pick" ? (
             <ChoiceList className="max-h-64 overflow-y-auto overscroll-contain">
-              {upload.paths.map((path) => (
+              {shownUpload.paths.map((path) => (
                 <button
                   key={path}
                   className="block w-full cursor-pointer truncate rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-white/5 hover:text-foreground"
                   onClick={() => {
-                    const pmx = upload.files.find((f) => relFilePath(f) === path)
-                    if (pmx) void loadPicked(upload.files, pmx, upload.target)
+                    const pmx = shownUpload.files.find((f) => relFilePath(f) === path)
+                    if (pmx) void loadPicked(shownUpload.files, pmx, shownUpload.target)
                   }}
                   // The path is still the identity and still the tooltip: two
                   // .pmx in one archive can share a filename, and a picker that
                   // shows the same word twice is worse than a long one.
                   title={path}
                 >
-                  {pmxLabel(path, upload.paths)}
+                  {pmxLabel(path, shownUpload.paths)}
                 </button>
               ))}
             </ChoiceList>
           ) : (
-            <p className="text-xs text-muted-foreground">{upload?.kind === "notice" ? upload.message : null}</p>
+            <p className="text-xs text-muted-foreground">{shownUpload?.kind === "notice" ? shownUpload.message : null}</p>
           )}
         </DialogContent>
       </Dialog>
@@ -7275,7 +7463,10 @@ export default function Lab() {
                               : undefined
                   }
                   open={openRow === l.id}
-                  onToggle={() => setOpenRow((r) => (r === l.id ? null : l.id))}
+                  onToggle={() => {
+                    if (l.id === "stage" && openRow !== l.id) setStageTab(envTab)
+                    setOpenRow((r) => (r === l.id ? null : l.id))
+                  }}
                 >
                   {l.id === "stage" ? (
                     // Tabs NAVIGATE between the two floors — they never act.
@@ -7316,11 +7507,31 @@ export default function Lab() {
                                     icon={X}
                                     danger
                                     label={t.lab.aria.deleteStage(displayName(stage.file))}
-                                    onClick={() => removeModelById(stage.id)}
+                                    onClick={() => {
+                                      for (const s of stages) removeModelById(s.id)
+                                    }}
                                   />
                                 </>
                               }
                             />
+                            {stages.slice(1).map((part) => (
+                              <CastLine
+                                key={part.id}
+                                text={
+                                  <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                                    {displayName(part.file)}
+                                  </span>
+                                }
+                                actions={
+                                  <CastAction
+                                    icon={X}
+                                    danger
+                                    label={t.lab.aria.deleteStage(displayName(part.file))}
+                                    onClick={() => removeModelById(part.id)}
+                                  />
+                                }
+                              />
+                            ))}
                             <SliderRow
                               label={t.lab.ctl.scale}
                               value={stage.transform.scale}

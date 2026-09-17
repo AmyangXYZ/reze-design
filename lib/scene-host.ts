@@ -17,6 +17,7 @@ import { idbBundleId, modelPmxUrl, type AssetRef, type Scene, type SceneAttach, 
 import { unzipToFiles } from "@/lib/uploads"
 import { loadLocalBundle } from "@/lib/asset-store"
 import { sceneFiles } from "@/lib/scene-files"
+import { clearMaterialMaps, loadMaterialMaps, withMaterialMaps } from "@/lib/material-maps"
 import { BACKDROP_VIDEO_RE, openAnimatedImage } from "@/lib/backdrop"
 import { groundExtent, hexToLinearVec3 } from "@/lib/scene-settings"
 import { visibilityAt, visibleAt, type VisibilityWindow } from "@/lib/visibility"
@@ -296,7 +297,9 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
         : entry.prop
           ? await engine.loadProp(entry.model.id, { files, pmxFile })
           : await engine.loadModel(entry.model.id, { files, pmxFile })
+      await loadMaterialMaps(entry.model.id, files, pmxFile.name, (f) => f.name)
     } else {
+      clearMaterialMaps(entry.model.id)
       const pmxUrl = modelPmxUrl(entry.model)
       if (!pmxUrl) throw new Error(`Zip-sourced models aren't loadable from a URL yet: ${entry.model.file}`)
       model = await engine.loadModel(entry.model.id, pmxUrl)
@@ -356,7 +359,13 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
       // Empty groups are UI-only drop targets — withheld from the engine.
       reportGroups(
         `load ${entry.model.file}`,
-        await engine.applyStyleGroups(entry.model.id, docGroups.filter((g) => g.materials.length > 0)),
+        await engine.applyStyleGroups(
+          entry.model.id,
+          withMaterialMaps(
+            entry.model.id,
+            docGroups.filter((g) => g.materials.length > 0),
+          ),
+        ),
       )
     } else if (!entry.stage) {
       // Never auto-group a stage: resolvePreset matches material names by
@@ -517,7 +526,13 @@ export async function restyled(engine: Engine, modelId: string, list: StyleGroup
   if (next.every((g, i) => g === list[i])) return list
   reportGroups(
     "restyle",
-    await engine.applyStyleGroups(modelId, next.filter((g) => g.materials.length > 0)),
+    await engine.applyStyleGroups(
+      modelId,
+      withMaterialMaps(
+        modelId,
+        next.filter((g) => g.materials.length > 0),
+      ),
+    ),
   )
   return next
 }

@@ -9,6 +9,7 @@ import { rasterizeLyrics } from "@/lib/lyrics-raster"
 import { modelKey, type Scene, type SceneAttach, type SceneCamera, type SceneParentKey } from "@/lib/scene"
 import { sweepRetiredBundles } from "@/lib/asset-store"
 import { sceneFiles } from "@/lib/scene-files"
+import { clearMaterialMaps, withMaterialMaps } from "@/lib/material-maps"
 import { createMediaFollower, type MediaFollower } from "@/lib/media-clock"
 import { azElToDirection, hexToLinearVec3, hexToSrgbVec3 } from "@/lib/scene-settings"
 import {
@@ -307,6 +308,7 @@ export function useEngine(
    *  Declared above the adders because replacing a stage builds on it. */
   const removeModelById = useCallback((modelId: string) => {
     sceneFiles.models.delete(modelId)
+    clearMaterialMaps(modelId)
     engineRef.current?.removeModel(modelId)
     setModels((prev) => prev.filter((m) => m.id !== modelId))
     // Removing the last stage un-suppresses the ground inside the engine, so
@@ -381,15 +383,21 @@ export function useEngine(
    * stages are worth supporting). `stages` is the separate list that keeps it
    * out of the cast: no motion slot, no spawn offset, placed by transform.
    */
-  const addStageFromFiles = useCallback(async (files: File[] | FileList, pmxFile: File): Promise<string> => {
+  /**
+   * Load a stage model. `part` adds it to the stage already there — an
+   * accessory its folder ships beside the .pmx, a sky dome or an effect layer —
+   * instead of replacing it.
+   */
+  const loadStageModel = async (files: File[] | FileList, pmxFile: File, part: boolean): Promise<string> => {
     const engine = engineRef.current
     if (!engine) throw new Error("engine not ready")
     // A scene holds ONE stage, so uploading another replaces it. Two stages mean
     // two floors at y=0 with identical depth — they z-fight across the whole
     // floor, flashing as the camera turns, and no amount of depth precision can
     // separate surfaces that are exactly coplanar. There is also no sense in
-    // which a scene is standing in two places at once.
-    for (const prev of stagesRef.current) removeModelById(prev.id)
+    // which a scene is standing in two places at once. The parts that came in
+    // its folder are the same stage, and arrive in its place.
+    if (!part) for (const prev of stagesRef.current) removeModelById(prev.id)
     const id = uniqueModelId(pmxFile.name)
     sceneFiles.models.set(id, { pmx: pmxFile, files: Array.from(files) })
     const model = await engine.loadStage(id, { files, pmxFile })
@@ -403,9 +411,22 @@ export function useEngine(
     const groups = withSpecialGroups(engine.getStyleGroups(id))
     setModels((prev) => [...prev, infoFor(id, pmxBaseName(pmxFile.name), model)])
     setGroupsByModel((prev) => ({ ...prev, [id]: groups }))
-    setStages((prev) => [...prev, { id, file: pmxBaseName(pmxFile.name), transform: DEFAULT_STAGE_TRANSFORM, morphs: {} }])
+    // A part starts where the stage stands, and moves with it from then on.
+    const transform = part ? (stagesRef.current[0]?.transform ?? DEFAULT_STAGE_TRANSFORM) : DEFAULT_STAGE_TRANSFORM
+    if (part) engine.setModelTransform(id, stageTransformToEngine(transform))
+    setStages((prev) => [...prev, { id, file: pmxBaseName(pmxFile.name), transform, morphs: {} }])
     return id
-  }, [removeModelById])
+  }
+  const addStageFromFiles = useCallback(
+    (files: File[] | FileList, pmxFile: File) => loadStageModel(files, pmxFile, false),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [removeModelById],
+  )
+  const addStagePartFromFiles = useCallback(
+    (files: File[] | FileList, pmxFile: File) => loadStageModel(files, pmxFile, true),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [removeModelById],
+  )
 
   /**
    * ADD a prop: a PMX the cast holds or wears. Styled the way a cast member is —
@@ -670,12 +691,13 @@ export function useEngine(
   )
 
   /** Place a stage. Position and rotation are absolute, scale is uniform. */
+  /** Place the stage. Its parts are the same set, so they move with it. */
   const setStageTransform = useCallback((id: string, patch: Partial<StageTransform>) => {
     const current = stagesRef.current.find((s) => s.id === id)
     if (!current) return
     const next = { ...current.transform, ...patch }
-    engineRef.current?.setModelTransform(id, stageTransformToEngine(next))
-    setStages((prev) => prev.map((s) => (s.id === id ? { ...s, transform: next } : s)))
+    for (const s of stagesRef.current) engineRef.current?.setModelTransform(s.id, stageTransformToEngine(next))
+    setStages((prev) => prev.map((s) => ({ ...s, transform: next })))
   }, [])
 
   /**
@@ -1051,7 +1073,7 @@ export function useEngine(
       })
       const engine = engineRef.current
       if (!engine) return { ok: false, diagnostics: [], slotMap: [] }
-      return engine.upsertStyleGroup(modelId, group, opts)
+      return engine.upsertStyleGroup(modelId, withMaterialMaps(modelId, [group])[0], opts)
     },
     [],
   )
@@ -1063,7 +1085,10 @@ export function useEngine(
       "applyGroups",
       await engineRef.current?.applyStyleGroups(
         modelId,
-        next.filter((g) => g.materials.length > 0),
+        withMaterialMaps(
+          modelId,
+          next.filter((g) => g.materials.length > 0),
+        ),
       ),
     )
   }, [])
@@ -1075,7 +1100,10 @@ export function useEngine(
     const engine = engineRef.current
     if (!engine) return
     if (groups?.length)
-      reportGroups("reset", await engine.applyStyleGroups(modelId, groups.filter((g) => g.materials.length > 0)))
+      reportGroups(
+        "reset",
+        await engine.applyStyleGroups(modelId, withMaterialMaps(modelId, groups.filter((g) => g.materials.length > 0))),
+      )
     else await engine.autoStyleGroups(modelId)
     for (const m of modelsRef.current.find((x) => x.id === modelId)?.materials ?? []) {
       if (!m.visible) engine.toggleMaterialVisible(modelId, m.name)
@@ -1208,6 +1236,7 @@ export function useEngine(
     models,
     stages,
     addStageFromFiles,
+    addStagePartFromFiles,
     setStageTransform,
     props,
     addPropFromFiles,
