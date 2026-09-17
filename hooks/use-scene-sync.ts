@@ -355,32 +355,43 @@ export function useSceneSync({
         sources.length ? sources.map((s, i) => ({ wgsl: s, params: effectParams(s, applied[i]?.params) })) : null,
       )
       .then((rs) => {
-      if (stale) return
-      // An install builds fresh instances, so whatever was scheduled is gone
-      // with the ones it was set on. Re-applied HERE as well as on change,
-      // because the two arrive in either order: editing a strip does not
-      // reinstall, and installing does not know a strip changed.
-      engineIndex.current = installedIndex(rs)
-      applySchedules(engine, backgroundEffects, engineIndex.current)
-      // WHAT EACH EFFECT EXPOSES, read off the install rather than re-parsed.
-      // The engine already read the directives to build the uniform, so parsing
-      // the same lines again here would be a second answer free to disagree with
-      // the one the shader is actually running.
-      onParamDecls?.(
-        Object.fromEntries(
-          rs.map((r, i) => [applied[i]?.uid ?? String(i), r.params]).filter(([uid]) => uid !== undefined),
-        ) as Record<string, EffectParamDecl[]>,
-      )
-      rs.forEach((r, i) => {
-        // Named, not numbered: every entry is one the scene asked for now, and
-        // a name is what the person reading the console can go and look at.
-        // Diagnostics also arrive on a SUCCESSFUL install — a directive that
-        // parsed but will never fire — so ok is what decides the level.
-        const name = backgroundEffects[i]?.name ?? `effect ${i + 1}`
-        if (!r.ok) console.error(`[effect] "${name}" failed to install:`, r.diagnostics)
-        else if (r.diagnostics.length) console.warn(`[effect] "${name}":`, r.diagnostics.join(" "))
+        if (stale) return
+        // An install builds fresh instances, so whatever was scheduled is gone
+        // with the ones it was set on. Re-applied HERE as well as on change,
+        // because the two arrive in either order: editing a strip does not
+        // reinstall, and installing does not know a strip changed.
+        engineIndex.current = installedIndex(rs)
+        applySchedules(engine, backgroundEffects, engineIndex.current)
+        // WHAT EACH EFFECT EXPOSES, read off the install rather than re-parsed.
+        // The engine already read the directives to build the uniform, so parsing
+        // the same lines again here would be a second answer free to disagree with
+        // the one the shader is actually running.
+        onParamDecls?.(
+          Object.fromEntries(
+            rs.map((r, i) => [applied[i]?.uid ?? String(i), r.params]).filter(([uid]) => uid !== undefined),
+          ) as Record<string, EffectParamDecl[]>,
+        )
+        rs.forEach((r, i) => {
+          // Named, not numbered: every entry is one the scene asked for now, and
+          // a name is what the person reading the console can go and look at.
+          // Diagnostics also arrive on a SUCCESSFUL install — a directive that
+          // parsed but will never fire — so ok is what decides the level.
+          const name = backgroundEffects[i]?.name ?? `effect ${i + 1}`
+          if (!r.ok) console.error(`[effect] "${name}" failed to install:`, r.diagnostics)
+          else if (r.diagnostics.length) console.warn(`[effect] "${name}":`, r.diagnostics.join(" "))
+        })
       })
-    })
+      .catch((err: unknown) => {
+        // AN INSTALL THAT THREW LEFT THE OLD LIST RUNNING. The engine swaps its
+        // instances only once every effect has compiled, so a throw — a device
+        // error during pipeline creation, a lost device — keeps the previous
+        // effects on screen while this key says the new list is installed. The
+        // next edit then removes an effect from a list the engine never took,
+        // and the one taken off the list keeps rendering with no way to reach
+        // it. Forgetting the key is what makes the next render try again.
+        if (!stale) lastWgsl.current = null
+        console.error("[effect] install failed:", err)
+      })
     return () => {
       stale = true
     }
