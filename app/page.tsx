@@ -2125,6 +2125,7 @@ export default function Lab() {
     loadVmdFile,
     loadVmdUrl,
     loadMorphFile,
+    removeMorphTrack,
     loadMorphUrl,
     installMidiFile,
     installLyricsFile,
@@ -2234,11 +2235,7 @@ export default function Lab() {
       delete next[id]
       return next
     })
-    // Putting the motion's OWN morphs back means rebuilding its clip: the
-    // morph overwrote them, and nothing else remembers what they were.
-    const anim = animRef.current[id]
-    if (!anim) return
-    void (typeof anim.src === "string" ? loadVmdUrl(id, anim.name, anim.src) : loadVmdFile(id, anim.src))
+    void removeMorphTrack(id, animRef.current[id]?.src ?? null)
   }
   /**
    * Delete a cast member, and everything that was bound to them.
@@ -5489,7 +5486,15 @@ export default function Lab() {
   // repacking tens of megabytes of PMX every time a slider settles is what a
   // stage drag used to cost.
   const assetFingerprint = [
-    models.map((m) => m.id).join("|"),
+    // Each model with the upload its files came from. The id alone is blind to
+    // uploading the same file name again — the stage keeps its id on purpose —
+    // and the bundle would go on serving the files it replaced.
+    models
+      .map((m) => {
+        const pmx = sceneFiles.models.get(m.id)?.pmx
+        return pmx ? `${m.id}=${relFilePath(pmx)}:${pmx.size}:${pmx.lastModified}` : m.id
+      })
+      .join("|"),
     Object.entries(animByModel)
       .map(([k, v]) => `${k}:${v.name}`)
       .join("|"),
@@ -7462,6 +7467,7 @@ export default function Lab() {
                               ? gradeLabel(grade.preset)
                               : undefined
                   }
+                  swatch={l.id === "light" ? world.color : undefined}
                   open={openRow === l.id}
                   onToggle={() => {
                     if (l.id === "stage" && openRow !== l.id) setStageTab(envTab)

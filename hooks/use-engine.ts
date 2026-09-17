@@ -116,6 +116,10 @@ export function useEngine(
   useEffect(() => {
     modelsRef.current = models
   }, [models])
+  const groupsRef = useRef<Record<string, StyleGroup[]>>({})
+  useEffect(() => {
+    groupsRef.current = groupsByModel
+  }, [groupsByModel])
 
   useEffect(() => {
     let disposed = false
@@ -336,8 +340,13 @@ export function useEngine(
     })
   }, [])
 
-  const uniqueModelId = (pmxName: string, except?: string): string =>
-    modelKey(pmxName, modelsRef.current.filter((m) => m.id !== except).map((m) => m.id))
+  const uniqueModelId = (pmxName: string, except?: string | string[]): string => {
+    const freed = new Set(typeof except === "string" ? [except] : (except ?? []))
+    return modelKey(
+      pmxName,
+      modelsRef.current.filter((m) => !freed.has(m.id)).map((m) => m.id),
+    )
+  }
 
   /** ADD a model to the scene (folder pick / zip expansion / drop). */
   const addModelFromFiles = useCallback(async (files: File[] | FileList, pmxFile: File): Promise<string> => {
@@ -397,8 +406,23 @@ export function useEngine(
     // separate surfaces that are exactly coplanar. There is also no sense in
     // which a scene is standing in two places at once. The parts that came in
     // its folder are the same stage, and arrive in its place.
-    if (!part) for (const prev of stagesRef.current) removeModelById(prev.id)
-    const id = uniqueModelId(pmxFile.name)
+    const replaced = part ? [] : stagesRef.current
+    // Minted with the outgoing stages already gone. The list they are still in
+    // updates a render later, and minting against it gave the same file a "-2"
+    // here and its plain name on the next load — which is where the scene's work
+    // on that name lives.
+    const id = uniqueModelId(pmxFile.name, replaced.map((s) => s.id))
+    // The same file again is the same stage, so it keeps what the scene did to
+    // it: its looks, hidden materials, placement and switches. A reload restores
+    // all of that by the name, and an upload that dropped it would show one
+    // stage now and another after a refresh.
+    const same = replaced.find((s) => s.id === id)
+    const kept = same && {
+      stage: same,
+      groups: groupsRef.current[id] ?? [],
+      hidden: (modelsRef.current.find((m) => m.id === id)?.materials ?? []).filter((m) => !m.visible).map((m) => m.name),
+    }
+    for (const prev of replaced) removeModelById(prev.id)
     sceneFiles.models.set(id, { pmx: pmxFile, files: Array.from(files) })
     const model = await engine.loadStage(id, { files, pmxFile })
     // Deliberately NOT auto-grouped. resolvePreset matches material names by
@@ -408,13 +432,26 @@ export function useEngine(
     // drawn in the hair pass or made to write the eye stencil. Ungrouped is the
     // right default here: the neutral base graph, with the user free to group
     // the stage by hand exactly as they would a character.
-    const groups = withSpecialGroups(engine.getStyleGroups(id))
-    setModels((prev) => [...prev, infoFor(id, pmxBaseName(pmxFile.name), model)])
+    let groups = withSpecialGroups(engine.getStyleGroups(id))
+    const names = new Set(model.getMaterials().map((m) => m.name))
+    if (kept && kept.groups.some((g) => g.materials.length > 0)) {
+      groups = kept.groups.map((g) => ({ ...g, materials: g.materials.filter((n) => names.has(n)) }))
+      reportGroups(
+        "keep stage looks",
+        await engine.applyStyleGroups(id, withMaterialMaps(id, groups.filter((g) => g.materials.length > 0))),
+      )
+    }
+    const hidden = (kept?.hidden ?? []).filter((n) => names.has(n))
+    for (const name of hidden) engine.toggleMaterialVisible(id, name)
+    for (const [morph, weight] of Object.entries(kept?.stage.morphs ?? {})) model.setMorphWeight(morph, weight)
+    setModels((prev) => [...prev, infoFor(id, pmxBaseName(pmxFile.name), model, hidden)])
     setGroupsByModel((prev) => ({ ...prev, [id]: groups }))
     // A part starts where the stage stands, and moves with it from then on.
-    const transform = part ? (stagesRef.current[0]?.transform ?? DEFAULT_STAGE_TRANSFORM) : DEFAULT_STAGE_TRANSFORM
-    if (part) engine.setModelTransform(id, stageTransformToEngine(transform))
-    setStages((prev) => [...prev, { id, file: pmxBaseName(pmxFile.name), transform, morphs: {} }])
+    const transform = part
+      ? (stagesRef.current[0]?.transform ?? DEFAULT_STAGE_TRANSFORM)
+      : (kept?.stage.transform ?? DEFAULT_STAGE_TRANSFORM)
+    if (part || kept) engine.setModelTransform(id, stageTransformToEngine(transform))
+    setStages((prev) => [...prev, { id, file: pmxBaseName(pmxFile.name), transform, morphs: kept?.stage.morphs ?? {} }])
     return id
   }
   const addStageFromFiles = useCallback(
@@ -910,6 +947,37 @@ export function useEngine(
     [],
   )
 
+  /**
+   * Take an morph track off, giving the motion its own morphs back.
+   *
+   * Into the clip that is PLAYING, by the name the model reports — the same rule
+   * as loadMorphFile. Reloading the motion under its display name built a second
+   * clip beside a bundle-keyed one, so nothing was retired and the removed
+   * track's face stayed on. Loaded in place, the engine zeroes whatever the
+   * removed track drove and the motion does not, and the dance keeps its frame.
+   * With no motion, the morph track was the clip: it goes, and the face rests.
+   */
+  const removeMorphTrack = useCallback(async (modelId: string, motion: File | string | null) => {
+    const model = engineRef.current?.getModel(modelId)
+    if (!model) return
+    const playing = model.getAnimationProgress().animationName
+    if (!motion || !playing) {
+      model.clearAnimation()
+      model.resetAllBones()
+      model.resetAllMorphs()
+      engineRef.current?.resetPhysics()
+      return
+    }
+    const url = typeof motion === "string" ? motion : URL.createObjectURL(motion)
+    try {
+      await model.loadVmd(playing, url, { tracks: "morphs" })
+    } catch (e) {
+      console.warn("[clips] motion morphs failed to restore:", e)
+    } finally {
+      if (typeof motion !== "string") URL.revokeObjectURL(url)
+    }
+  }, [])
+
   /** The same, for an morph already published or packed in the bundle. */
   const loadMorphUrl = useCallback(
     async (modelId: string, name: string, url: string): Promise<string | null> => {
@@ -1274,6 +1342,7 @@ export function useEngine(
     loadVmdFile,
     loadVmdUrl,
     loadMorphFile,
+    removeMorphTrack,
     loadMorphUrl,
     installMidiFile,
     installLyricsFile,

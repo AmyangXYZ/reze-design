@@ -31,6 +31,7 @@ export function LayerRow({
   domId,
   /** What this layer is SET TO. Omitted when the row has nothing to report. */
   summary,
+  swatch,
   open,
   onToggle,
   children,
@@ -40,6 +41,9 @@ export function LayerRow({
   /** Addressable for go-to: the palette scrolls a row into view by this id. */
   domId?: string
   summary?: string | null
+  /** A row whose value IS a colour shows it: the ColorField's swatch and hex,
+   *  for reading only — the field inside the row is where it changes. */
+  swatch?: string
   open: boolean
   onToggle: () => void
   children: ReactNode
@@ -58,16 +62,23 @@ export function LayerRow({
         <span className="shrink-0 text-xs text-foreground font-medium">{name}</span>
         {/* Hidden rather than unmounted while open: the row must not reflow when
             the body appears, and the summary is about to be redundant anyway. */}
-        <span
-          className={cn(
-            // No transition: the body swaps instantly when rows switch, and a
-            // summary that FADES back in reads as the value arriving late.
-            "ml-auto max-w-[8.25rem] truncate text-xs text-muted-foreground",
-            open && "opacity-0",
-          )}
-        >
-          {summary}
-        </span>
+        {swatch ? (
+          <span className={cn("ml-auto flex items-center gap-1.5", open && "opacity-0")}>
+            <span className="size-4 shrink-0 rounded-md ring-1 ring-white/15" style={{ background: swatch }} />
+            <span className="font-mono text-xs text-muted-foreground">{swatch.toLowerCase()}</span>
+          </span>
+        ) : (
+          <span
+            className={cn(
+              // No transition: the body swaps instantly when rows switch, and a
+              // summary that FADES back in reads as the value arriving late.
+              "ml-auto max-w-[8.25rem] truncate text-xs text-muted-foreground",
+              open && "opacity-0",
+            )}
+          >
+            {summary}
+          </span>
+        )}
       </button>
       {/* Symmetric padding, and pt has to MATCH pb rather than being the tighter
           value that felt right in isolation. An open header carries a tint, so
