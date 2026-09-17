@@ -41,14 +41,17 @@ export const STAGE_MATERIAL_RULES: { graph: string; keywords: string[] }[] = [
   { graph: "Glass", keywords: ["ガラス", "硝子", "レンズ", "窓", "玻璃", "窗", "镜片", "glass", "window", "lens", "pane"] },
   { graph: "Tile", keywords: ["タイル", "陶器", "瓷砖", "地砖", "陶瓷", "tile", "ceramic"] },
   { graph: "Brick", keywords: ["レンガ", "煉瓦", "砖墙", "砖头", "砖", "brick"] },
-  { graph: "Concrete", keywords: ["コンクリート", "セメント", "混凝土", "水泥", "concrete", "cement"] },
+  { graph: "Concrete", keywords: ["コンクリート", "セメント", "混凝土", "水泥", "shuini", "concrete", "cement"] },
   { graph: "Stone", keywords: ["大理石", "石材", "花岗岩", "石头", "岩", "石", "stone", "marble", "granite", "rock"] },
   { graph: "Wood", keywords: ["木材", "木目", "木板", "木頭", "木头", "板", "木", "wood", "plank", "timber"] },
   { graph: "Fabric", keywords: ["カーテン", "生地", "布料", "窗帘", "织物", "幕", "布", "fabric", "cloth", "textile", "curtain"] },
   { graph: "Leather", keywords: ["レザー", "皮革", "皮带", "革", "皮", "leather"] },
   { graph: "Rubber", keywords: ["タイヤ", "ゴム", "橡胶", "轮胎", "rubber", "tire", "tyre"] },
   { graph: "Paper", keywords: ["ポスター", "紙", "纸张", "海报", "书本", "纸", "paper", "poster", "book"] },
-  { graph: "Water", keywords: ["水面", "池塘", "水", "湖", "河", "海", "water", "pool", "river", "ocean"] },
+  // PINYIN, which is how a Unity rip from a Chinese game names its materials —
+  // X333's pool is X333_shui. It is tested after 水泥/shuini, so cement stays
+  // cement.
+  { graph: "Water", keywords: ["水面", "池塘", "水", "湖", "河", "海", "shui", "water", "pool", "river", "ocean"] },
   // OUR Metal, not a stage-set copy of it: measured against the fork's, the
   // principled node is the same material (metallic 1, specular 1, roughness .30
   // vs .32) and the only real difference is how far the NPR overlay is mixed in

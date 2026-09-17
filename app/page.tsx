@@ -4848,19 +4848,30 @@ export default function Lab() {
    */
   const styleAccessory = useCallback(
     (id: string, pmx: File) => {
-      const unlit = xUnlitMaterials(pmx)
-      if (!unlit?.length) return
-      const names =
-        engineRef.current
-          ?.getModel(id)
-          ?.getMaterials()
-          .map((m) => m.name) ?? []
+      const materials = engineRef.current?.getModel(id)?.getMaterials() ?? []
+      const names = materials.map((m) => m.name)
+      // A HAND-AUTHORED PMX SAYS IT TOO. The .x rule reads the conversion's own
+      // record; a stage written as a PMX states the same thing in its material
+      // table, and a painted light shaft or a dome gradient shaded like a wall
+      // goes grey. Ambient at 1 is MMD's way of saying "draw the texture as
+      // painted" — whatever the light does, the sum saturates. Tested near 1
+      // rather than at the 0.5 every exporter writes by default, which would
+      // take most of a stage with it.
+      const fullBright = materials.filter((m) => m.ambient.every((v) => v >= 0.95)).map((m) => m.name)
+      const unlit = [...new Set([...(xUnlitMaterials(pmx) ?? []), ...fullBright])]
+      if (!unlit.length) return
       const group: StyleGroup = {
         id: "stage-unlit",
         label: "Unlit",
         materials: unlit,
         graph: structuredClone(UNLIT_GRAPH),
         renderClass: "auto",
+        // HASHED, the same as a media plane. A full-bright material is almost
+        // always a painted sheet — a light shaft, a dust plane, a glow card —
+        // and what makes it a shaft rather than a rectangle is the texture's
+        // alpha. The default mode ignores that channel, so the sheet arrives as
+        // a solid white quad hanging in the scene.
+        alphaMode: "hashed",
       }
       styled.current.add(id)
       void applyGroups(id, stageStyleGroups(names, [group]) ?? [group])
