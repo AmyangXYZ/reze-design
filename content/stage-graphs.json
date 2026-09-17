@@ -3366,7 +3366,7 @@
   "kind": "graph",
   "name": "Water",
   "author": "frost",
-  "description": "Strong specular at very low roughness — an approximation for ponds and glasses.",
+  "description": "Drifting ripples under a grazing sky reflection — after the Ripplet water of a Unity stage.",
   "tags": [
    "stage",
    "water"
@@ -3382,57 +3382,531 @@
     ],
     "nodes": [
      {
-      "id": "tex",
-      "type": "texture"
+      "id": "geo",
+      "type": "geometry"
+     },
+     {
+      "id": "t",
+      "type": "time"
+     },
+     {
+      "id": "dx0",
+      "type": "math/multiply",
+      "inputs": {
+       "b": 6.0
+      }
+     },
+     {
+      "id": "dz0",
+      "type": "math/multiply",
+      "inputs": {
+       "b": 4.0
+      }
+     },
+     {
+      "id": "drift0",
+      "type": "combine_xyz"
+     },
+     {
+      "id": "uv0",
+      "type": "vector_math/add"
+     },
+     {
+      "id": "n0",
+      "type": "tex_noise",
+      "inputs": {
+       "scale": 0.05,
+       "detail": 2.0,
+       "roughness": 0.5,
+       "distortion": 0.0
+      }
+     },
+     {
+      "id": "w0",
+      "type": "math/multiply",
+      "inputs": {
+       "b": 0.5
+      }
+     },
+     {
+      "id": "dx1",
+      "type": "math/multiply",
+      "inputs": {
+       "b": -2.6
+      }
+     },
+     {
+      "id": "dz1",
+      "type": "math/multiply",
+      "inputs": {
+       "b": 1.4
+      }
+     },
+     {
+      "id": "drift1",
+      "type": "combine_xyz"
+     },
+     {
+      "id": "uv1",
+      "type": "vector_math/add"
+     },
+     {
+      "id": "n1",
+      "type": "tex_noise",
+      "inputs": {
+       "scale": 0.15,
+       "detail": 2.0,
+       "roughness": 0.5,
+       "distortion": 0.0
+      }
+     },
+     {
+      "id": "w1",
+      "type": "math/multiply",
+      "inputs": {
+       "b": 0.3
+      }
+     },
+     {
+      "id": "dx2",
+      "type": "math/multiply",
+      "inputs": {
+       "b": 1.4
+      }
+     },
+     {
+      "id": "dz2",
+      "type": "math/multiply",
+      "inputs": {
+       "b": -1.0
+      }
+     },
+     {
+      "id": "drift2",
+      "type": "combine_xyz"
+     },
+     {
+      "id": "uv2",
+      "type": "vector_math/add"
+     },
+     {
+      "id": "n2",
+      "type": "tex_noise",
+      "inputs": {
+       "scale": 0.4,
+       "detail": 2.0,
+       "roughness": 0.5,
+       "distortion": 0.0
+      }
+     },
+     {
+      "id": "w2",
+      "type": "math/multiply",
+      "inputs": {
+       "b": 0.2
+      }
+     },
+     {
+      "id": "h01",
+      "type": "math/add"
+     },
+     {
+      "id": "h",
+      "type": "math/add"
+     },
+     {
+      "id": "ripples",
+      "type": "bump",
+      "inputs": {
+       "strength": 0.6
+      }
+     },
+     {
+      "id": "fresnel",
+      "type": "layer_weight/fresnel",
+      "inputs": {
+       "blend": 0.22
+      }
+     },
+     {
+      "id": "sky",
+      "type": "emission",
+      "inputs": {
+       "color": [
+        0.0393,
+        0.0997,
+        0.1077
+       ]
+      }
+     },
+     {
+      "id": "out",
+      "type": "mix/add",
+      "inputs": {
+       "fac": 1.0
+      }
      },
      {
       "id": "mat",
       "type": "material_diffuse"
      },
      {
-      "id": "base",
-      "type": "mix/multiply",
-      "inputs": {
-       "fac": 1
-      }
-     },
-     {
       "id": "principled",
       "type": "principled",
       "inputs": {
-       "metallic": 0,
-       "roughness": 0.03,
+       "metallic": 0.0,
+       "roughness": 0.06,
        "spec_clamp": 10,
-       "sheen_tint": 0,
-       "specular_ior_level": 1,
-       "sheen_weight": 0
+       "specular_ior_level": 0.25,
+       "sheen_weight": 0,
+       "sheen_tint": 0
       }
      }
     ],
     "links": [
      {
       "from": {
-       "node": "tex",
-       "socket": "color"
+       "node": "t",
+       "socket": "value"
       },
       "to": {
-       "node": "base",
+       "node": "dx0",
        "socket": "a"
       }
      },
      {
       "from": {
-       "node": "mat",
-       "socket": "color"
+       "node": "t",
+       "socket": "value"
       },
       "to": {
-       "node": "base",
+       "node": "dz0",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "dx0",
+       "socket": "value"
+      },
+      "to": {
+       "node": "drift0",
+       "socket": "x"
+      }
+     },
+     {
+      "from": {
+       "node": "dz0",
+       "socket": "value"
+      },
+      "to": {
+       "node": "drift0",
+       "socket": "z"
+      }
+     },
+     {
+      "from": {
+       "node": "geo",
+       "socket": "world_pos"
+      },
+      "to": {
+       "node": "uv0",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "drift0",
+       "socket": "vector"
+      },
+      "to": {
+       "node": "uv0",
        "socket": "b"
       }
      },
      {
       "from": {
-       "node": "base",
+       "node": "uv0",
+       "socket": "vector"
+      },
+      "to": {
+       "node": "n0",
+       "socket": "vector"
+      }
+     },
+     {
+      "from": {
+       "node": "n0",
+       "socket": "value"
+      },
+      "to": {
+       "node": "w0",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "t",
+       "socket": "value"
+      },
+      "to": {
+       "node": "dx1",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "t",
+       "socket": "value"
+      },
+      "to": {
+       "node": "dz1",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "dx1",
+       "socket": "value"
+      },
+      "to": {
+       "node": "drift1",
+       "socket": "x"
+      }
+     },
+     {
+      "from": {
+       "node": "dz1",
+       "socket": "value"
+      },
+      "to": {
+       "node": "drift1",
+       "socket": "z"
+      }
+     },
+     {
+      "from": {
+       "node": "geo",
+       "socket": "world_pos"
+      },
+      "to": {
+       "node": "uv1",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "drift1",
+       "socket": "vector"
+      },
+      "to": {
+       "node": "uv1",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "uv1",
+       "socket": "vector"
+      },
+      "to": {
+       "node": "n1",
+       "socket": "vector"
+      }
+     },
+     {
+      "from": {
+       "node": "n1",
+       "socket": "value"
+      },
+      "to": {
+       "node": "w1",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "t",
+       "socket": "value"
+      },
+      "to": {
+       "node": "dx2",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "t",
+       "socket": "value"
+      },
+      "to": {
+       "node": "dz2",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "dx2",
+       "socket": "value"
+      },
+      "to": {
+       "node": "drift2",
+       "socket": "x"
+      }
+     },
+     {
+      "from": {
+       "node": "dz2",
+       "socket": "value"
+      },
+      "to": {
+       "node": "drift2",
+       "socket": "z"
+      }
+     },
+     {
+      "from": {
+       "node": "geo",
+       "socket": "world_pos"
+      },
+      "to": {
+       "node": "uv2",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "drift2",
+       "socket": "vector"
+      },
+      "to": {
+       "node": "uv2",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "uv2",
+       "socket": "vector"
+      },
+      "to": {
+       "node": "n2",
+       "socket": "vector"
+      }
+     },
+     {
+      "from": {
+       "node": "n2",
+       "socket": "value"
+      },
+      "to": {
+       "node": "w2",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "w0",
+       "socket": "value"
+      },
+      "to": {
+       "node": "h01",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "w1",
+       "socket": "value"
+      },
+      "to": {
+       "node": "h01",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "h01",
+       "socket": "value"
+      },
+      "to": {
+       "node": "h",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "w2",
+       "socket": "value"
+      },
+      "to": {
+       "node": "h",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "h",
+       "socket": "value"
+      },
+      "to": {
+       "node": "ripples",
+       "socket": "height"
+      }
+     },
+     {
+      "from": {
+       "node": "ripples",
+       "socket": "vector"
+      },
+      "to": {
+       "node": "principled",
+       "socket": "normal"
+      }
+     },
+     {
+      "from": {
+       "node": "fresnel",
+       "socket": "value"
+      },
+      "to": {
+       "node": "sky",
+       "socket": "strength"
+      }
+     },
+     {
+      "from": {
+       "node": "principled",
+       "socket": "color"
+      },
+      "to": {
+       "node": "out",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "sky",
+       "socket": "color"
+      },
+      "to": {
+       "node": "out",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "geo",
+       "socket": "normal"
+      },
+      "to": {
+       "node": "ripples",
+       "socket": "normal"
+      }
+     },
+     {
+      "from": {
+       "node": "mat",
        "socket": "color"
       },
       "to": {
@@ -3442,7 +3916,7 @@
      }
     ],
     "output": {
-     "node": "principled",
+     "node": "out",
      "socket": "color"
     }
    }
