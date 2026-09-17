@@ -93,6 +93,80 @@ export function emdFit(emd: Emd, materialNames: string[]): number {
   return score
 }
 
+// ── The other assignment: a hand-written table ──
+//
+// Not every pack ships an .emd. A Chinese stage convention writes the same
+// thing as a text table — a section per model, then `12------1`, material 12
+// wears 1.fx — because the author assigned the presets by index in MME and
+// typed out what they did. Read into the same shape, it goes through the .emd
+// path untouched.
+
+/** One model's block in a material table. */
+export type MaterialTableSection = { name: string; objects: Emd["objects"] }
+
+const ENTRY = /^\s*(\d+)\s*[-–—]{2,}\s*(.+?)\s*$/
+
+/** The spec an entry names: the first of the author's variants, without the
+ *  note they put beside it. "无" (none) is an assignment to nothing. */
+function tableSpec(raw: string): string {
+  const first = raw.split("/")[0]
+  const name = first.replace(/[（(][^）)]*[）)]/g, "").trim()
+  return name === "无" || name.toLowerCase() === "none" ? "" : name
+}
+
+export function parseMaterialTable(text: string): MaterialTableSection[] {
+  const sections: MaterialTableSection[] = []
+  let pending = ""
+  let current: MaterialTableSection | null = null
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim()
+    if (!line) continue
+    const m = ENTRY.exec(line)
+    if (!m) {
+      // A heading, and only the last one before the entries is this block's.
+      pending = line
+      current = null
+      continue
+    }
+    if (!current) {
+      current = { name: pending, objects: new Map() }
+      sections.push(current)
+    }
+    const spec = tableSpec(m[2])
+    current.objects.set(Number(m[1]), { fx: spec ? spec + ".fx" : "", show: true })
+  }
+  return sections.filter((s) => s.objects.size > 0)
+}
+
+/** Punctuation and spacing carry no meaning across a heading and a file name:
+ *  "A（议会外广场）" and "A-议会外广场.pmx" are the same block. */
+const bare = (s: string) => s.replace(/[（(）)\-_\s.·]+/g, "").toLowerCase()
+
+/**
+ * How well a table section describes a model: -1 when it numbers a material
+ * the model does not have.
+ *
+ * A section names no material, so nothing can be matched the way an .emd's
+ * preset names are. What it has instead is its heading and its LENGTH — a
+ * block written for a 22-material model ends at 21 — and both are strong.
+ */
+export function tableFit(section: MaterialTableSection, materialNames: string[], modelName: string): number {
+  if (section.objects.size < 3) return -1
+  let last = -1
+  for (const i of section.objects.keys()) {
+    if (i >= materialNames.length) return -1
+    last = Math.max(last, i)
+  }
+  const heading = bare(section.name)
+  const model = bare(modelName)
+  const named = heading.length > 0 && (model.startsWith(heading) || heading.startsWith(model))
+  const ends = last === materialNames.length - 1
+  // One or the other has to hold. Numbers alone are not an assignment — a
+  // readme listing steps fits every model with enough materials.
+  if (!named && !ends) return -1
+  return (named ? 100 : 0) + (ends ? 50 : 0) + section.objects.size
+}
+
 // ── Material .fx ──
 
 type Preset = { defines: Map<string, string>; consts: Map<string, number[]> }
@@ -536,15 +610,30 @@ export async function readRayMmd(
   onProgress?: (done: number, total: number) => void,
 ): Promise<RayStage | null> {
   const emdFiles = files.filter((f) => /\.emd$/i.test(f.name))
-  if (emdFiles.length === 0) return null
+  const tableFiles = files.filter((f) => /\.txt$/i.test(f.name))
+  if (emdFiles.length === 0 && tableFiles.length === 0) return null
 
   const mesh = parsePmxMesh(await pmx.arrayBuffer())
   const names = mesh.materials.map((m) => m.name)
+  const stem = stemOf(normalize(relFilePath(pmx)))
   let best: { emd: Emd; path: string; fit: number } | null = null
   for (const f of emdFiles) {
     const emd = parseEmd(decodeText(await f.arrayBuffer()))
     const fit = emdFit(emd, names)
     if (fit > 0 && fit > (best?.fit ?? 0)) best = { emd, path: normalize(relFilePath(f)), fit }
+  }
+  // A table only where no .emd spoke for this model: the .emd is the format
+  // MME itself writes, and a readme that happens to hold numbered lines is not
+  // an assignment. Sections are scored against THIS .pmx, so a pack with one
+  // table for five sub-stages gives each its own block.
+  if (!best) {
+    for (const f of tableFiles) {
+      const path = normalize(relFilePath(f))
+      for (const section of parseMaterialTable(decodeText(await f.arrayBuffer()))) {
+        const fit = tableFit(section, names, stem)
+        if (fit > 0 && fit > (best?.fit ?? 0)) best = { emd: { fallback: null, objects: section.objects }, path, fit }
+      }
+    }
   }
   if (!best) return null
 

@@ -7,7 +7,7 @@
 // becomes does not, and every graph here goes through the engine's compiler.
 
 import { compileGraph } from "reze-engine"
-import { emdFit, parseEmd, parsePreset, planRayMmd, rayGraph, readRayMaterial } from "@/lib/ray-mmd"
+import { emdFit, parseEmd, parseMaterialTable, parsePreset, planRayMmd, rayGraph, readRayMaterial, tableFit } from "@/lib/ray-mmd"
 
 let failures = 0
 const eq = (got: unknown, want: unknown, what: string) => {
@@ -111,6 +111,36 @@ eq(plan.warnings, [], "no conflicts: both 'wall' entries wear the same preset")
 const clash = planRayMmd(["a", "a"], parseEmd("[Effect]\nObj[0] = wall.fx\nObj[1] = floor.fx\n"), "set/Toon/1.emd", presets)
 eq(clash.groups.map((g) => g.materials), [["a"]], "a name claimed twice keeps its first preset")
 eq(clash.warnings.length, 1, "and says so")
+
+// A pack with no .emd: the author's own table, a block per model.
+const TABLE = `偷懒就不想把材质名一起标注，看序号好了，
+参照格式：数字（mme栏材质序号）------数字（fx材质序号）
+
+A（议会外广场）
+0-------0
+1-------1
+2-------2（静）/2-副本（动态自发光，有bug慎用）
+3-------无
+
+全部
+0-------0
+1-------1
+2-------2
+3-------28
+4-------22
+`
+
+const sections = parseMaterialTable(TABLE)
+eq(sections.map((s) => [s.name, s.objects.size]), [["A（议会外广场）", 4], ["全部", 5]], "a block per heading")
+eq(sections[0].objects.get(2)?.fx, "2.fx", "the first variant, without the author's note")
+eq(sections[0].objects.get(3)?.fx, "", "无 assigns nothing")
+
+const four = ["a", "b", "c", "d"]
+eq(tableFit(sections[0], four, "A-议会外广场") > tableFit(sections[1], four, "A-议会外广场"), true, "the named block wins")
+eq(tableFit(sections[1], four, "A-议会外广场"), -1, "a block numbering past the model is refused")
+eq(tableFit(sections[1], ["a", "b", "c", "d", "e"], "全部场景") > 100, true, "全部 covers 全部场景")
+eq(tableFit(parseMaterialTable("1------1\n2------2\n")[0], four, "anything"), -1, "numbers alone are not an assignment")
+eq(tableFit(sections[0], ["a", "b", "c", "d", "e", "f"], "other"), -1, "an unnamed block that does not end at the last material")
 
 // Every graph compiles, whichever sources end up in slots.
 const compiles = (label: string, graph: ReturnType<typeof rayGraph>) => {
