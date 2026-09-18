@@ -4866,12 +4866,12 @@ export default function Lab() {
         materials: unlit,
         graph: structuredClone(UNLIT_GRAPH),
         renderClass: "auto",
-        // HASHED, the same as a media plane. A full-bright material is almost
-        // always a painted sheet — a light shaft, a dust plane, a glow card —
-        // and what makes it a shaft rather than a rectangle is the texture's
-        // alpha. The default mode ignores that channel, so the sheet arrives as
-        // a solid white quad hanging in the scene.
-        alphaMode: "hashed",
+        // The default alpha mode, which blends on the texture's own alpha. That
+        // is what a painted sheet is made of, and the engine has already put it
+        // in the transparent phase by reading that channel off its geometry.
+        // Hashed alpha — what a media plane takes — discards texels below a
+        // per-pixel threshold and writes alpha 1, so a panel painted at a flat
+        // 74% loses a random quarter of itself and reads as television static.
       }
       styled.current.add(id)
       void applyGroups(id, stageStyleGroups(names, [group]) ?? [group])
