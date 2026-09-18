@@ -183,6 +183,7 @@ export const NODE_CATALOG: CatalogGroup[] = [
       { type: "shader_to_rgb", label: "Shader to RGB" },
       { type: "shader_to_rgb_diffuse", label: "Shader to RGB · Diffuse" },
       { type: "fresnel", label: "Fresnel" },
+      { type: "environment", label: "Environment" },
       { type: "layer_weight/fresnel", label: "Layer Weight · Fresnel" },
       { type: "layer_weight/facing", label: "Layer Weight · Facing" },
     ],

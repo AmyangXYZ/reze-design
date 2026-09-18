@@ -21,10 +21,37 @@ export type LogEntry = { at: number; level: "warn" | "error"; text: string }
 
 const ring: LogEntry[] = []
 
+const listeners = new Set<() => void>()
+let serial = 0
+
 function push(level: LogEntry["level"], text: string): void {
   if (!text) return
   ring.push({ at: Date.now(), level, text: text.length > MAX_ENTRY ? `${text.slice(0, MAX_ENTRY)}…` : text })
   if (ring.length > CAPACITY) ring.splice(0, ring.length - CAPACITY)
+  serial++
+  for (const fn of listeners) fn()
+}
+
+/**
+ * Watch the ring — for anything that wants to SHOW what was logged rather than
+ * report it after the fact.
+ *
+ * A WebGPU validation error never breaks a render: the pass that failed draws
+ * nothing and the next frame comes anyway, so the crash screen never appears
+ * and the message lives in a console the person reporting it may not have open.
+ * Paired with `logSerial` this drives a useSyncExternalStore, which is the only
+ * way to read a mutable buffer from React without tearing.
+ */
+export function subscribeLogs(fn: () => void): () => void {
+  listeners.add(fn)
+  return () => {
+    listeners.delete(fn)
+  }
+}
+
+/** A value that changes whenever the ring does, and never otherwise. */
+export function logSerial(): number {
+  return serial
 }
 
 /** Console arguments as one line, without ever throwing on a circular object. */

@@ -19,6 +19,45 @@ export const GRAPH_LIBRARY = asBuiltins<GraphItem>([
   ...(stageGraphs as unknown as Omit<GraphItem, "owner">[]),
 ])
 
+// Dev-time drift guard for the LOOKS, the sibling of node-catalog's guard for
+// the palette. A link naming a socket the node does not have compiles to
+// nothing: the engine refuses the whole group, the material falls back to the
+// default look, and the only sign is one console line per group — thirty of
+// them for a stage, all saying the same thing, at the moment the person is
+// looking at the stage rather than at the console.
+//
+// Sockets are what drift: `normal_map` outputs `normal`, and a link written
+// against `vector` — the name every OTHER vector node uses — is wrong in a way
+// no type checks, since a graph is data.
+if (process.env.NODE_ENV !== "production") {
+  const problems: string[] = []
+  for (const item of GRAPH_LIBRARY) {
+    const graph = item.payload?.graph
+    if (!graph) continue
+    const types = new Map(graph.nodes.map((n) => [n.id, n.type]))
+    const socket = (id: string | undefined, name: string, side: "outputs" | "inputs") => {
+      const type = id === undefined ? undefined : types.get(id)
+      if (type === undefined) return `${item.name}: link references node "${id}", which it does not have`
+      const spec = NODE_REGISTRY[type]
+      if (!spec) return `${item.name}: node "${id}" has type "${type}", which the registry does not know`
+      if (!(name in spec[side])) {
+        const had = Object.keys(spec[side]).join(", ")
+        return `${item.name}: ${side === "outputs" ? "output" : "input"} "${name}" on "${id}" (${type}) — it has [${had}]`
+      }
+      return null
+    }
+    for (const l of graph.links ?? []) {
+      const from = socket(l.from.node, l.from.socket, "outputs")
+      const to = socket(l.to.node, l.to.socket, "inputs")
+      if (from) problems.push(from)
+      if (to) problems.push(to)
+    }
+    const out = socket(graph.output?.node, graph.output?.socket ?? "", "outputs")
+    if (out) problems.push(out)
+  }
+  if (problems.length) throw new Error(`built-in looks do not match NODE_REGISTRY:\n  ${problems.join("\n  ")}`)
+}
+
 /** Role → graph, for the slots that ship with a default look. */
 export const SLOT_GRAPHS = Object.fromEntries(
   GRAPH_LIBRARY.filter((g) => g.payload.role).map((g) => [g.payload.role, g.payload.graph]),

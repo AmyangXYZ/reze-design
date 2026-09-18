@@ -223,6 +223,7 @@ import { accessoryFiles, convertXUploads, isFromX, xUnlitMaterials } from "@/lib
 import { readRayMmd, type RayStage } from "@/lib/ray-mmd"
 import { setMaterialMaps } from "@/lib/material-maps"
 import { findSkies, skyThumbnail, type SkyCandidate } from "@/lib/stage-skies"
+import { GpuErrorNotice } from "@/components/gpu-error-notice"
 import { toast } from "sonner"
 import { lipSyncVmdFile } from "@/lib/lipsync"
 import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, windFreqFromSlider, windSliderFromFreq, type SceneSettings } from "@/lib/scene-settings"
@@ -2081,6 +2082,8 @@ const leadWith = (names: readonly string[], lead: readonly string[]): string[] =
 /** The parent picker's "none". Radix Select refuses an empty string as a value. */
 const NO_PARENT = "__none"
 
+/** The settings keys that hold a block of dials, which is what `patch` merges
+ *  into. A scalar setting is set outright. */
 export default function Lab() {
   const t = useT()
   // The dock's tables in the reader's language. Rebuilt only when the locale
@@ -9496,6 +9499,10 @@ export default function Lab() {
           )}
         </ClipEditor>
       )}
+      {/* What the GPU refused, if anything — selectable and copyable, over the
+          canvas rather than in place of it, because a validation error leaves
+          the scene running. */}
+      <GpuErrorNotice />
     </main>
   )
 }

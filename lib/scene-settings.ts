@@ -4,6 +4,7 @@ import { Vec3 } from "reze-engine"
 import type { GradeSettings } from "@/lib/grade"
 
 export type SceneSettings = {
+  /** The sky's own light: one colour, filling everything the sun misses. */
   world: { color: string; strength: number }
   /** Sun direction as azimuth/elevation degrees — friendlier than a raw vector. */
   sun: {

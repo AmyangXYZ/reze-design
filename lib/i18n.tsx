@@ -557,6 +557,8 @@ const en = {
       composite: "Footage",
       world: "World",
       sun: "Sun",
+      /** The scene's positional lights. Plural and plain: a stage import brings
+       *  a room's worth of them, and "Lights" would read as the row's own name. */
       grade: "Grade",
       tone: "Tone",
       bloom: "Bloom",
