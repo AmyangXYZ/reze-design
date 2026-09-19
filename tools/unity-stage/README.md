@@ -23,11 +23,21 @@ Upload the `--out` folder to the app as a stage.
 | `X333.pmx` | geometry at MMD scale, one material per Unity material |
 | `tex/` | the albedo each material samples |
 | `X333.hdr` | the scene's reflection probe as an equirect |
-| `X333.maps.json` + `maps/` | water only — the ripple normal map its shader scrolls |
+| `maps/` | the relief map each material samples — the ripple map water scrolls among them |
 
-The `.hdr` is **written, never installed**: drop it on the World (HDRI) slot when
-you want the room's fill and reflections. Water reflects it, so without it the
-ripples have nothing to mirror.
+The `.hdr` goes onto the World (HDRI) slot the moment the stage loads, filled or
+not — a stage is a place and the light in it belongs to it. It is the scene's own
+ambient gradient with the reflection probe ridden on top as structure, so it
+delivers the fill the scene declared while a mirror still sees the shape of the
+room. Water reflects it. The World row is where a different sky is argued for.
+
+**No sidecar.** A material's relief map is found by name: `tex/T_D.png` pairs
+with `maps/T_N.png`, the set's own convention, so the folder states the pairing
+where a person can read it. A material that samples no albedo — water, whose
+colour its look computes — is named for itself. The converter writes each map
+under that name rather than the source's own, because the game does not always
+agree with itself: five materials across these stages sample a normal named for
+a different texture than their albedo.
 
 ## What is deliberately left behind
 
@@ -35,11 +45,6 @@ ripples have nothing to mirror.
 its renderer and its subject. Carried across they fight defaults calibrated for a
 character standing in frame — and they are rarely what you want anyway: X305's
 four lamps stand *inside a piano* and reach 0.7 m.
-
-**The PBR maps.** A look per material sampling normal, metal, roughness and AO
-plus an environment reflection cost a garden stage its frame rate, and the albedo
-alone reads as the same garden. Water's ripple map is the one exception, because
-those ripples *are* that texture.
 
 **LOD1 and below**, baked-only lights, and renderers with no readable mesh.
 

@@ -9,10 +9,8 @@
 #
 #   X305.pmx           geometry, one material per Unity material, names kept
 #   tex/               the albedo each material samples
-#   X305.hdr           the scene's reflection probe as an equirect, for the
-#                      World (HDRI) slot — written, never installed
-#   X305.maps.json     water only: the ripple normal map its shader scrolls,
-#                      plus maps/ — omitted when the scene has no water
+#   maps/              the relief map each material samples, named for that
+#                      material's albedo: tex/T_D.png pairs with maps/T_N.png
 #
 # THE LIGHTING RIG IS NOT IMPORTED. A game scene's sun, ambient, exposure and
 # lamps were authored for its own renderer and its own subject — X305's four
@@ -146,8 +144,8 @@ def write_pmx(path, name, vertices, faces, materials, textures):
     for m in materials:
         out += pmx_text(m["name"]) + pmx_text(m["name"])
         out += struct.pack("<4f", *m["diffuse"])
-        out += struct.pack("<3f", 0.0, 0.0, 0.0)  # specular
-        out += struct.pack("<f", 5.0)  # shininess
+        out += struct.pack("<3f", *m.get("specular", (0.0, 0.5, 1.0)))
+        out += struct.pack("<f", m.get("shininess", 5.0))
         # AMBIENT IS WHERE A PMX SAYS "DRAW THIS AS PAINTED". MMD's convention
         # is ambient 1: whatever the light adds, the sum saturates, so the
         # texture arrives at its own brightness. The app reads it back off the
@@ -191,6 +189,7 @@ def write_pmx(path, name, vertices, faces, materials, textures):
 # Which texture slot a shader keeps its colour in. `_MainTex` is the old
 # built-in name and the effect shaders still use it.
 ALBEDO_SLOTS = ("_AlbedoTex", "_MainTex", "_Tex", "_Texture")
+PROPERTY_SLOTS = ("_PropertyTex",)
 # The one map that travels, and only for water.
 #
 # The PBR maps were dropped on purpose: a look per material sampling normal,
@@ -202,6 +201,7 @@ ALBEDO_SLOTS = ("_AlbedoTex", "_MainTex", "_Tex", "_Texture")
 # into scan lines wherever a pixel outgrows the pattern. A sampled map has the
 # right shapes and mipmaps, which answers both at once.
 RIPPLE_SLOTS = ("_RippleTex",)
+NORMAL_SLOTS = ("_NormalTex", "_BumpMap", "_NormalMap")
 
 
 def slot(material, names):
@@ -257,7 +257,50 @@ def material_tint(material, shader):
     return (1.0, 1.0, 1.0), 1.0
 
 
-def surface_alpha(material, tint_alpha):
+# The effect-decal family: a wet patch, a scorch, a light pool. Painted rather
+# than lit, premultiplied, ZWrite off, and its coverage comes from its own
+# textures — see EFFECT_DECAL_NOTE at the call below.
+EFFECT_SHADERS = ("Effect_Common",)
+
+
+def is_effect_decal(shader):
+    return bool(shader) and shader.rsplit("/", 1)[-1] in EFFECT_SHADERS
+
+
+_DECAL_COVER = {}
+
+
+def decal_has_coverage(material, png_root, proj):
+    """Whether this decal's own albedo alpha says where it is.
+
+    Its shader builds coverage from four maps through dissolve and mask
+    keywords, and no single exported texture can carry that. But some of these
+    albedos DO hold the shape — X323's spill is 66% clear with droplets in
+    between, which is the fine granularity the original has — while others are
+    solid to the edge and have their coverage entirely in maps we do not ship.
+    Measured rather than assumed, because the same shader gives both: the solid
+    one drew as an amber slab across the floor, and its neighbour is a puddle.
+    """
+    bound = slot(material, ALBEDO_SLOTS)
+    src = png_for(png_root, proj.path(bound["guid"]) or "") if bound else None
+    if not (src and os.path.exists(src)):
+        return False
+    if src not in _DECAL_COVER:
+        from PIL import Image  # noqa: PLC0415
+
+        with Image.open(src) as im:
+            if im.mode != "RGBA":
+                _DECAL_COVER[src] = False
+            else:
+                px = im.convert("RGBA").resize((64, 64)).load()
+                v = [px[x, y][3] for x in range(64) for y in range(64)]
+                # A fifth of it has to be genuinely clear for the alpha to be a
+                # shape rather than a rectangle with soft corners.
+                _DECAL_COVER[src] = sum(1 for a in v if a < 8) / len(v) > 0.05
+    return _DECAL_COVER[src]
+
+
+def surface_alpha(material, tint_alpha, shader=None, decal_coverage=False):
     """How opaque the material is.
 
     An alpha means opacity only where the material is actually blended: Unity's
@@ -266,6 +309,33 @@ def surface_alpha(material, tint_alpha):
     OneMinusSrcAlpha, is the blend that gives the number meaning.
     """
     floats = material["floats"]
+    # THE DECAL FAMILY STATES ITS MODE, and its shader source says what the
+    # number means: `_DstBlend ("混合模式(1:Add 10:Blend)")`, applied as
+    #
+    #   o.sv_target.xyz = coverage * colour          // premultiplied
+    #   o.sv_target.w   = coverage * (_DstBlend - 1) / 9
+    #
+    # so 1 writes alpha 0 — pure add under its One/OneMinusSrcAlpha pass — and
+    # 10 writes the coverage. Neither number is `_Color`'s alpha, which the
+    # fragment only ever uses as a colour.
+    #
+    # NEITHER MODE IS REPRODUCIBLE HERE, so the family is left out rather than
+    # approximated. Add needs a blend this renderer has no material path for,
+    # and Blend needs the coverage — which that shader builds from FOUR textures
+    # (`_MainTex`, `_MainPlusTex`, `_MaskTex`, `_NoiseTex`) through dissolve and
+    # mask keywords, with a soft-particle depth fade on top. One exported
+    # texture cannot carry it, and the textures disagree about what a single
+    # constant should be: X323's six decals range from an alpha channel that is
+    # 255 everywhere to one whose maximum is 45. Pick 1.0 and the first becomes
+    # an opaque slab z-fighting the floor; pick the colour's alpha and the rest
+    # are a haze that is not what the shader draws either.
+    #
+    # With a usable one the material gets out of the way at 1.0 and the texture
+    # draws the puddle. Without, alpha 0 — discarded per fragment, costing
+    # nothing, and leaving the material in the table for anyone who wants to
+    # give it a look by hand.
+    if is_effect_decal(shader):
+        return 1.0 if decal_coverage else 0.0
     blended = int(floats.get("_DstBlend", floats.get("_BlendDst", 0.0))) == 10
     keywords = material["keywords"]
     if "CUTOFF" in keywords:
@@ -300,6 +370,45 @@ def surface_alpha(material, tint_alpha):
     return 1.0
 
 
+# ── What a surface is made of, as three numbers ──────────────────────────────
+
+_PROPERTY_MEAN = {}
+
+
+def property_triple(material, png_root, proj):
+    """(metal, roughness, occlusion) for this material, averaged over its own map.
+
+    Their `_PropertyTex` carries the three in R, G and B, remapped per material
+    by `_PropertyMin`/`_PropertyMax` — X323's kitchen counter reads metal 1.00,
+    its floor roughness 0.21, where this app draws every stage material at a
+    flat 0.5 and no metal at all. A counter comes out plastic and a polished
+    floor comes out matte.
+
+    Averaged rather than sampled, because the map itself is not exported: one
+    triple per material rides in the PMX and one shared look reads it, so a
+    whole stage keeps ONE pipeline. The variation this cannot carry is the
+    within-material kind — that floor ranges 0 to 0.72 across its texture — and
+    the mean is still the difference between polished and matte.
+    """
+    lo = material["colors"].get("_PropertyMin")
+    hi = material["colors"].get("_PropertyMax")
+    bound = slot(material, PROPERTY_SLOTS)
+    if not (lo and hi and bound):
+        return None
+    src = png_for(png_root, proj.path(bound["guid"]) or "")
+    if not (src and os.path.exists(src)):
+        return None
+    if src not in _PROPERTY_MEAN:
+        from PIL import Image  # noqa: PLC0415
+
+        with Image.open(src) as im:
+            px = im.convert("RGB").resize((64, 64), Image.LANCZOS).load()
+            n = 64 * 64
+            _PROPERTY_MEAN[src] = [sum(px[x, y][i] for x in range(64) for y in range(64)) / (n * 255.0) for i in range(3)]
+    mean = _PROPERTY_MEAN[src]
+    return tuple(min(1.0, max(0.0, lo[i] + (hi[i] - lo[i]) * mean[i])) for i in range(3))
+
+
 # A sky's own properties, which is how one is recognised when its shader
 # reference cannot be trusted. AssetRipper remaps a material whose shader was
 # not exported onto whatever it can find — X305's sky dome comes through
@@ -332,43 +441,61 @@ def png_for(png_root, asset_path):
     return candidate if os.path.exists(candidate) else None
 
 
-def copy_image(src, dst, cap):
+def copy_image(src, dst, cap, drop_alpha=False):
     """Copy an image, shrinking it to `cap` on its longest edge.
 
     A game ships 2048² albedos because a phone streams them in and out; a stage
     the app has to UPLOAD carries all of them at once, and X305's full set is
     390 MB against 30 at 1024. The engine samples group maps without a mip
     chain, so a larger map buys shimmer as much as detail.
+
+    `drop_alpha` FLATTENS THE CHANNEL, and an opaque material needs it flattened.
+    An albedo's alpha is only transparency when the shader reads it as such;
+    under an OPAQUE render mode it is spare storage, and these stages use it —
+    X323's floor is 47% mid-alpha and its bar's books are 100%. Carried through,
+    MMD semantics multiply it into the surface: the floor lands in the alpha
+    bucket, its grout lines go see-through, and being blended it draws in author
+    order and fights everything it overlaps. One channel, three symptoms.
     """
-    if not cap:
+    from PIL import Image  # noqa: PLC0415
+
+    if not cap and not drop_alpha:
         shutil.copyfile(src, dst)
         return
-    from PIL import Image  # noqa: PLC0415 — only needed when capping
-
     with Image.open(src) as im:
-        if max(im.size) <= cap:
+        if cap and max(im.size) > cap:
+            k = cap / max(im.size)
+            im = im.resize((max(1, int(im.width * k)), max(1, int(im.height * k))), Image.LANCZOS)
+        if drop_alpha and im.mode in ("RGBA", "LA", "PA"):
+            im = im.convert("RGB")
+        elif not cap:
             shutil.copyfile(src, dst)
             return
-        k = cap / max(im.size)
-        im.resize((max(1, int(im.width * k)), max(1, int(im.height * k))), Image.LANCZOS).save(dst)
+        im.save(dst)
 
 
 # ── The scene's own sky, as something to light and reflect with ─────────────
 
 
-def cube_strip_to_equirect(strip_path, out_path, width=1024, target=None):
-    """A Unity reflection probe (six faces stacked in one image) as a Radiance
-    equirect, which is what the World (HDRI) slot takes.
+def cube_strip_to_equirect(strip_path, out_path, width=1024, ambient=None):
+    """A Unity reflection probe as the world this engine can light with.
 
-    THE FLOOR'S POLISH LIVES HERE. A game stage's glossy surfaces reflect the
-    scene's baked probe, not a sky gradient — marble mirroring the planters is
-    what separates the reference frame from ours — and the probe is exactly the
-    picture to reflect. It lights better than a three-colour gradient too,
-    because it is the room rather than a guess about the room.
+    THE AMBIENT IS THE COLOUR; THE PROBE IS ONLY THE DETAIL.
+
+    Unity runs two things at once: a trilight AMBIENT — one colour overhead, one
+    at the horizon, one below — lighting every surface diffusely, and a
+    reflection PROBE its speculars mirror. This engine has one world doing both
+    jobs, so installing the probe alone does not add the room: it REPLACES the
+    scene's ambient with a dark room average, and the set goes dark and blue.
+
+    So the gradient is what this image IS, per direction, exactly Unity's own
+    interpolation — and the probe rides on top as relative structure with its
+    own level divided out. Diffuse then matches the ambient the scene declares,
+    warm ground and all, while a mirror still sees the shape of the room.
 
     The strip is +X, -X, +Y, -Y, +Z, -Z top to bottom, Unity's own order. LDR,
     because the export decoded a BC6H cube to 8 bits: the range is gone and the
-    direction is not, which is the half that matters for a reflection.
+    direction is not, which is the half that matters here.
     """
     from PIL import Image  # noqa: PLC0415
 
@@ -379,42 +506,24 @@ def cube_strip_to_equirect(strip_path, out_path, width=1024, target=None):
             raise ValueError(f"{strip_path}: {rgb.size} is not six square faces")
         faces = [rgb.crop((0, i * face, face, (i + 1) * face)).load() for i in range(6)]
 
-    # NORMALISED TO THE SCENE'S OWN AMBIENT, per channel.
-    #
-    # The probe arrives as an 8-bit decode of an HDR cube: its direction is
-    # intact and its LEVEL is not — a mean luma of 0.06, and blue, because most
-    # of a garden probe is sky. Installed as a world at that level it owns the
-    # ambient and the whole scene goes dark and blue, which is neither the
-    # probe's fault nor the ambient's: one carries structure, the other level.
-    #
-    # So the pixels are scaled until the probe's average IS the ambient the
-    # scene declares. Reflections keep the room; the fill keeps the artist's
-    # colour. The ambient is taken at face value — see write_pmx's note on the
-    # single pi, which belongs to the sun and to nothing else.
-    gain = [1.0, 1.0, 1.0]
-    if target:
-        total = [0.0, 0.0, 0.0]
-        n = 0
-        for fp in faces:
-            for fy in range(0, face, 4):
-                for fx in range(0, face, 4):
-                    c = fp[fx, fy]
-                    for i in range(3):
-                        v = c[i] / 255.0
-                        total[i] += v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
-                    n += 1
-        for i in range(3):
-            mean = total[i] / max(n, 1)
-            gain[i] = (target[i] / mean) if mean > 1e-5 else 1.0
-
     height = width // 2
-    out = bytearray()
-    out += b"#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n"
-    out += f"-Y {height} +X {width}\n".encode()
+    target = None
+    if ambient:
+        target = [(ambient["sky"][i] + ambient["equator"][i]) * 0.5 * ambient["intensity"] for i in range(3)]
+
+    # MEASURED OVER SOLID ANGLE, the only average that means anything here: a
+    # texel's contribution to irradiance is its solid angle, and an equirect's
+    # poles are stretched across pixels covering almost nothing. Measured flat,
+    # X323's probe came out +13% BLUE against its own target, because the bright
+    # parts of a room are its windows and they are the cool ones.
+    rows = []
+    total = [0.0, 0.0, 0.0]
+    weight = 0.0
     for y in range(height):
         theta = math.pi * (y + 0.5) / height
         sy = math.cos(theta)
         r = math.sin(theta)
+        row = []
         for x in range(width):
             # The composite's own convention: u = 0.5 + atan2(x, z)/2pi.
             phi = ((x + 0.5) / width - 0.5) * 2.0 * math.pi
@@ -430,11 +539,66 @@ def cube_strip_to_equirect(strip_path, out_path, width=1024, target=None):
             fx = min(face - 1, max(0, int((u / m * 0.5 + 0.5) * face)))
             fy = min(face - 1, max(0, int((v / m * 0.5 + 0.5) * face)))
             c = faces[idx][fx, fy]
-            # sRGB to linear, then RGBE. A probe is radiance once it is light.
             lin = [
-                ((c[i] / 255.0) / 12.92 if c[i] / 255.0 <= 0.04045 else (((c[i] / 255.0) + 0.055) / 1.055) ** 2.4) * gain[i]
+                ((c[i] / 255.0) / 12.92 if c[i] / 255.0 <= 0.04045 else (((c[i] / 255.0) + 0.055) / 1.055) ** 2.4)
                 for i in range(3)
             ]
+            row.append(lin)
+            for i in range(3):
+                total[i] += lin[i] * r
+            weight += r
+        rows.append(row)
+
+    # THE PROBE'S OWN LEVEL, DIVIDED OUT — this is what makes it structure
+    # rather than colour. Multiplied in raw, a dark ceiling stays dark however
+    # bright the gradient says the sky is, which is the whole failure this bake
+    # exists to undo: measured that way, X323's sky band came out 0.17 where its
+    # ambient asks for 1.00.
+    #
+    # STRUCTURE is then a ratio around 1, and only PART of it is taken: at full
+    # weight a black patch of probe still zeroes the gradient under it, and an
+    # 8-bit cube decode has plenty of those. Half keeps the room legible in a
+    # mirror while the diffuse stays the colour the scene declared.
+    probe_mean = [max(total[i] / max(weight, 1e-9), 1e-6) for i in range(3)]
+    STRUCTURE = 0.5
+
+    lit = []
+    total = [0.0, 0.0, 0.0]
+    weight = 0.0
+    for y, row in enumerate(rows):
+        theta = math.pi * (y + 0.5) / height
+        sy = math.cos(theta)
+        r = math.sin(theta)
+        if ambient:
+            t = abs(sy)
+            far = ambient["sky"] if sy >= 0.0 else ambient["ground"]
+            grad = [(ambient["equator"][i] + (far[i] - ambient["equator"][i]) * t) * ambient["intensity"] for i in range(3)]
+        out_row = []
+        for lin0 in row:
+            if ambient:
+                lin0 = [
+                    grad[i] * max(0.0, 1.0 + STRUCTURE * (lin0[i] / probe_mean[i] - 1.0))
+                    for i in range(3)
+                ]
+            out_row.append(lin0)
+            for i in range(3):
+                total[i] += lin0[i] * r
+            weight += r
+        lit.append(out_row)
+    rows = lit
+
+    gain = [1.0, 1.0, 1.0]
+    if target and weight > 0.0:
+        for i in range(3):
+            mean = total[i] / weight
+            gain[i] = (target[i] / mean) if mean > 1e-5 else 1.0
+
+    out = bytearray()
+    out += b"#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n"
+    out += f"-Y {height} +X {width}\n".encode()
+    for row in rows:
+        for lin0 in row:
+            lin = [lin0[i] * gain[i] for i in range(3)]
             peak = max(lin)
             if peak < 1e-8:
                 out += bytes([0, 0, 0, 0])
@@ -450,7 +614,7 @@ def cube_strip_to_equirect(strip_path, out_path, width=1024, target=None):
 # ── The whole pass ──────────────────────────────────────────────────────────
 
 
-def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=1024, verbose=True):
+def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0, normal_cap=0, verbose=True):
     proj = Project(project_root)
     scene = Scene(os.path.join(project_root, scene_path))
     os.makedirs(os.path.join(out_dir, "tex"), exist_ok=True)
@@ -523,7 +687,51 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=1
 
     # One PMX vertex list, with each material's faces contiguous after it.
     vertices, faces, pmx_materials, textures, texture_index = [], [], [], [], {}
-    maps_doc = {"version": 1, "materials": {}}
+    relief_written = set()
+    decals = []
+
+    # A DOME IS KNOWN BY ITS SIZE, not by its name or its properties.
+    #
+    # is_sky reads the property set because AssetRipper remaps a material whose
+    # shader was not exported, and X305's dome came through claiming to be
+    # Standard while carrying _SkyColorBackground. X323's carries nothing: it is
+    # a plain Standard material called X318_sky, and no property test will ever
+    # catch it. What IS true of every sky is that it encloses the scene — this
+    # one reaches 14,081 units where the whole rest of the stage fits inside
+    # 305 — so that is what gets measured.
+    #
+    # Left lit and casting, such a dome puts its far wall between the sun and
+    # the floor: the stage renders fully shadowed, and a character standing on
+    # it throws a shadow nobody can see because there is no lit floor to darken.
+    # WHICH ALBEDOS STILL NEED THEIR ALPHA. Decided per TEXTURE rather than per
+    # material, because one sheet can dress a cutout leaf and an opaque plank:
+    # a texture keeps its channel if ANY material asks transparency of it, and
+    # loses it only when every user renders opaque.
+    needs_alpha = set()
+    for key, bucket in per_material.items():
+        m = materials_by_guid.get(bucket["guid"])
+        if not m:
+            continue
+        sh = proj.shader_name(m["shader_guid"])
+        tint, ta = material_tint(m, sh)
+        transparent = (
+            surface_alpha(m, ta, sh, decal_has_coverage(m, png_root, proj)) < 1.0
+            or "CUTOFF" in m["keywords"]
+            or is_sky(m)
+            or is_effect_decal(sh)
+        )
+        a = slot(m, ALBEDO_SLOTS)
+        if transparent and a:
+            needs_alpha.add(a["guid"])
+
+    reach = {}
+    for key, bucket in per_material.items():
+        reach[key] = max((max(abs(c) for c in v[0]) for v in bucket["vertices"]), default=0.0)
+    domes = set()
+    for key, r in reach.items():
+        others = max((v for k, v in reach.items() if k != key), default=0.0)
+        if r > 3.0 * others and others > 0.0:
+            domes.add(key)
 
     for key in used_order:
         bucket = per_material[key]
@@ -534,29 +742,77 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=1
 
         shader = proj.shader_name(mat["shader_guid"]) if mat else None
         tint, tint_alpha = material_tint(mat, shader) if mat else ((1.0, 1.0, 1.0), 1.0)
-        alpha = surface_alpha(mat, tint_alpha) if mat else 1.0
+        alpha = surface_alpha(mat, tint_alpha, shader, decal_has_coverage(mat, png_root, proj) if mat else False) if mat else 1.0
+        if is_effect_decal(shader) and alpha == 0.0:
+            decals.append(key)
         albedo = slot(mat, ALBEDO_SLOTS) if mat else None
         index = -1
+        albedo_rel = None
         if albedo:
             src = png_for(png_root, proj.path(albedo["guid"]) or "")
             if src:
                 rel = "tex/" + os.path.basename(src)
+                albedo_rel = rel
                 if rel not in texture_index:
-                    copy_image(src, os.path.join(out_dir, rel), albedo_cap)
+                    copy_image(src, os.path.join(out_dir, rel), albedo_cap, albedo["guid"] not in needs_alpha)
                     texture_index[rel] = len(textures)
                     textures.append(rel)
                 index = texture_index[rel]
-        # The ripple normal map, into map slot 0, for the water look to scroll.
-        ripple = slot(mat, RIPPLE_SLOTS) if mat else None
-        if ripple:
-            src = png_for(png_root, proj.path(ripple["guid"]) or "")
+        # SLOT 0 IS THE SURFACE'S OWN RELIEF. Water scrolls a ripple map there;
+        # everything else puts its normal map in the same place, because both
+        # are read by the same socket and a material has only one of them.
+        #
+        # Shipped per material and bound per draw call, so one look covers a
+        # whole set and each prop still gets its own grain — the wood on the
+        # panelling, the tread on the plate, the ribbing on a stool rim. Without
+        # them every surface takes light as though it were polished flat, which
+        # is most of what separates this from the frame it was ripped out of.
+        relief = slot(mat, RIPPLE_SLOTS) if mat else None
+        if not relief and mat:
+            relief = slot(mat, NORMAL_SLOTS)
+        # THE STRENGTH RIDES IN SHININESS, and zero is the important value.
+        #
+        # Unity states a `_NormalScale` per material and most of them are 1, but
+        # not all — four here sit between 0.285 and 0.5, and applying every map
+        # at full strength is not what the original does.
+        #
+        # Zero when no map was shipped, because an empty slot samples WHITE and
+        # white read as a tangent normal is (1,1,1): a 45 degree tilt on every
+        # surface that has no relief at all. Nine materials in this stage. At
+        # strength 0 the look's mix returns the geometric normal exactly, which
+        # is what "no map" has to mean.
+        relief_scale = 0.0
+        if relief and mat:
+            relief_scale = float(mat["floats"].get("_NormalScale", mat["floats"].get("_BumpScale", 1.0)))
+        if relief:
+            src = png_for(png_root, proj.path(relief["guid"]) or "")
             if src:
-                rel = "maps/" + os.path.basename(src)
+                # NAMED SO THE FOLDER STATES THE PAIRING. The app finds a
+                # material's relief map by rule — its albedo's file name with the
+                # trailing `_D` swapped for `_N`, under maps/ — so no sidecar has
+                # to be written, read or kept in step, and a person opening the
+                # folder can see which map belongs to which surface.
+                #
+                # Written under THAT name rather than the source's own, because
+                # the game does not always agree with itself: five of this set's
+                # materials sample a normal named for a different texture than
+                # their albedo. Naming is the converter's job precisely so the
+                # rule can be a rule.
+                #
+                # A material with no albedo — water, whose colour its look
+                # computes — is named for itself instead, sanitised the same way
+                # on both sides.
+                stem = (
+                    re.sub(r"_D$", "", os.path.splitext(os.path.basename(albedo_rel))[0])
+                    if albedo_rel
+                    else re.sub(r"[^A-Za-z0-9_.-]", "_", key)
+                )
+                rel = f"maps/{stem}_N.png"
                 target = os.path.join(out_dir, rel)
                 if not os.path.exists(target):
                     os.makedirs(os.path.dirname(target), exist_ok=True)
-                    copy_image(src, target, 0)
-                maps_doc["materials"][key] = [{"path": rel, "srgb": False}]
+                    copy_image(src, target, normal_cap)
+                relief_written.add(rel)
         # THE FLAG BITS, and the shadow ones are not optional.
         #
         # 0x01 no cull — Unity's _Cull 0, a two-sided material.
@@ -577,12 +833,13 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=1
         # away follows the view. Unity gets away with `_Cull 2` because its
         # winding agrees with its normals there; ours is flipped globally to
         # match PMX, and a dome is where that assumption breaks.
-        two_sided = mat and (int(mat["floats"].get("_Cull", 2.0)) == 0 or is_sky(mat))
+        sky = key in domes or (mat and is_sky(mat))
+        two_sided = mat and (int(mat["floats"].get("_Cull", 2.0)) == 0 or sky)
         # AND THE SKY CASTS NOTHING. It encloses the scene, so a shadow map
         # asked to cover it covers two thousand units instead of the garden —
         # every real shadow in the frame loses the resolution to a dome that
         # should not be in the pass at all.
-        shadow_bits = 0x00 if (mat and is_sky(mat)) else (0x02 | 0x04 | 0x08)
+        shadow_bits = 0x00 if sky else (0x02 | 0x04 | 0x08)
         # A PREMULTIPLIED SHEET IS PAINTED LIGHT, not a surface. Glass, a light
         # shaft, a decal: the shader writes its colour and lets the background
         # through, and lighting it adds sun and ambient on top of light that is
@@ -595,11 +852,20 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=1
         # unlit, X333's pool cover joined the Unlit group and no look could ever
         # claim it: a flat pale slab lying across the water.
         lit_family = bool(shader) and shader.rsplit("/", 1)[-1] in ("Glass", "Ripplet")
-        unlit = bool(mat) and not lit_family and (is_sky(mat) or "TRANSPARENT_PREMULT" in mat["keywords"])
+        unlit = bool(mat) and not lit_family and (
+            sky or "TRANSPARENT_PREMULT" in mat["keywords"] or is_effect_decal(shader)
+        )
+        # (metal, roughness, occlusion) into the PMX's SPECULAR field. The
+        # format carries one and MMD's own renderer barely uses it; the engine
+        # already ships it to the GPU for "graph nodes that want them". Absent
+        # on a material with no property map, where the neutral default stands.
+        triple = property_triple(mat, png_root, proj) if mat else None
         pmx_materials.append(
             {
                 "name": key,
                 "diffuse": (tint[0], tint[1], tint[2], alpha),
+                "specular": triple or (0.0, 0.5, 1.0),
+                "shininess": round(relief_scale, 4),
                 "flag": (0x01 if two_sided else 0x00) | shadow_bits,
                 "unlit": unlit,
                 "texture": index,
@@ -610,28 +876,23 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=1
 
 
     write_pmx(os.path.join(out_dir, f"{name}.pmx"), name, vertices, faces, pmx_materials, textures)
-    if maps_doc["materials"]:
-        with open(os.path.join(out_dir, f"{name}.maps.json"), "w", encoding="utf-8") as fh:
-            json.dump(maps_doc, fh, indent=1, ensure_ascii=False)
 
-    # AND THE PROBE, beside it. It is a separate file for a separate decision:
-    # the geometry is the stage and this is how the stage is lit, and the World
-    # (HDRI) slot already takes a dropped .hdr. Written rather than installed,
-    # because a scene lit by a game's own probe is a look, not a fact about the
-    # model — and the same folder may be wanted under a sunset.
+    # AND THE WORLD, beside it — the scene's ambient gradient with its
+    # reflection probe baked in as structure. A separate file because the
+    # geometry is the stage and this is how the stage is lit; the app installs
+    # it when nothing else is in the World slot, and leaves it alone when
+    # something is.
     look = scene.scene_setting()
     probe = png_for(png_root, proj.path(look["reflectionGuid"]) or "") if look and look.get("reflectionGuid") else None
     sky_written = False
     if probe:
         ambient = scene.ambient()
-        # Sky and horizon averaged: roughly what a probe sees over a sphere.
-        target = (
-            [(ambient["sky"][i] + ambient["equator"][i]) * 0.5 * ambient["intensity"] for i in range(3)]
-            if ambient and ambient["mode"] == 1
-            else None
-        )
         try:
-            cube_strip_to_equirect(probe, os.path.join(out_dir, f"{name}.hdr"), target=target)
+            cube_strip_to_equirect(
+                probe,
+                os.path.join(out_dir, f"{name}.hdr"),
+                ambient=ambient if ambient and ambient["mode"] == 1 else None,
+            )
             sky_written = True
         except Exception as e:  # noqa: BLE001 — a probe in another layout is data, not a crash
             print(f"[unity] REFLECTION PROBE NOT CONVERTED: {e}")
@@ -641,10 +902,14 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=1
             f"[unity] {len(vertices):,} vertices, {len(faces):,} triangles, {len(pmx_materials)} materials, "
             f"{len(textures)} textures -> {out_dir}/{name}.pmx"
         )
-        if maps_doc["materials"]:
-            print(f"[unity] ripple maps for {len(maps_doc['materials'])} water materials -> {out_dir}/{name}.maps.json")
+        if domes:
+            print(f"[unity] sky dome: {', '.join(sorted(domes))} — unlit, two-sided, casts nothing")
+        if decals:
+            print(f"[unity] {len(decals)} effect decals left out (coverage lives in maps we do not ship): {', '.join(sorted(decals))}")
         if sky_written:
-            print(f"[unity] reflection probe -> {out_dir}/{name}.hdr (drop it on World (HDRI))")
+            print(f"[unity] world -> {out_dir}/{name}.hdr (its ambient gradient, with the probe as structure)")
+        if relief_written:
+            print(f"[unity] {len(relief_written)} relief maps -> {out_dir}/maps/ (named <albedo>_N, no sidecar)")
         if dropped_lods:
             print(f"[unity] {dropped_lods} LOD fallback renderers dropped (level 0 kept)")
         if skipped:
@@ -661,11 +926,12 @@ def main():
     p.add_argument("--name", required=True)
     p.add_argument("--png", default=None, help="the decoded PNG tree; defaults to _png_textures beside the project")
     p.add_argument("--scale", type=float, default=SCALE, help="PMX units per Unity unit (8 for AG, 12.5 if a unit is a metre)")
-    p.add_argument("--albedo", type=int, default=1024, help="longest edge for albedo maps, 0 to keep")
+    p.add_argument("--albedo", type=int, default=0, help="longest edge for albedo maps, 0 keeps the source")
+    p.add_argument("--normal", type=int, default=0, help="longest edge for normal maps, 0 keeps the source")
     a = p.parse_args()
     SCALE = a.scale
     png = a.png or os.path.join(os.path.dirname(os.path.abspath(a.project)), "_png_textures")
-    convert(a.project, a.scene, a.out, a.name, png, a.albedo)
+    convert(a.project, a.scene, a.out, a.name, png, a.albedo, a.normal)
 
 
 if __name__ == "__main__":

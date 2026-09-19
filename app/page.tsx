@@ -204,7 +204,7 @@ import {
   SLOT_GRAPHS,
   type LookPack,
 } from "@/lib/materials"
-import { stageStyleGroups } from "@/lib/stage-style"
+import { shaderLookFor, stageLookFor, stageStyleGroups, SURFACE_LOOKS } from "@/lib/stage-style"
 import {
   compileGraph,
   DEFAULT_GRAPH,
@@ -2780,6 +2780,9 @@ export default function Lab() {
    * clears nothing.
    */
   const [hdri, setHdri] = useState<BackdropMedia | null>(null)
+  /** The stage whose own sky is currently installed, if any — so that stage
+   *  leaving takes it back, and a sky chosen by hand is never touched. */
+  const stageHdri = useRef<string | null>(null)
   const swapHdri = useCallback(
     (next: BackdropMedia | null) =>
       setHdri((prev) => {
@@ -4846,6 +4849,8 @@ export default function Lab() {
    * stage arrives with empty eye/hair seeds it will never use.
    */
   const styled = useRef(new Set<string>())
+  /** The last `[draw]` line printed, so the effect below speaks on change only. */
+  const lastDrawStats = useRef("")
   useEffect(() => {
     if (!ready) return
     // Forget stages that are gone. Ids are minted from the FILE NAME and a
@@ -4859,6 +4864,10 @@ export default function Lab() {
     const scenery = [...stages, ...props]
     const live = new Set(scenery.map((s) => s.id))
     for (const id of [...styled.current]) if (!live.has(id)) styled.current.delete(id)
+    // Same forgetting for the sky claim. Whoever removed the stage takes its sky
+    // back; this only drops the NAME, so that a stage which left by some other
+    // door cannot make the next deletion confiscate a sky someone chose by hand.
+    if (stageHdri.current && !live.has(stageHdri.current)) stageHdri.current = null
     for (const stage of scenery) {
       if (styled.current.has(stage.id)) continue
       // Recorded only once the answer is REAL. Marking on the first sight of a
@@ -4872,7 +4881,29 @@ export default function Lab() {
       }
       if (autoStyleStage(stage.id)) styled.current.add(stage.id)
     }
-  }, [ready, stages, props, groupsByModel, autoStyleStage])
+    // WHAT THE ENGINE ACTUALLY HOLDS, once the looks have landed.
+    //
+    // This effect re-runs when the groups change, so by the time the line below
+    // settles it is describing the finished state — which is the only state
+    // worth comparing between an upload and a reload of the same document. Two
+    // entries for one stage means a replace left a model behind and every
+    // transparent surface is drawing twice; a high `ungrouped` means groups
+    // compiled and claimed nothing, leaving those materials on the default
+    // graph. Both read as "brighter", and neither is visible from the host's
+    // own lists.
+    //
+    // Printed only when it changes, so it is a record of what happened rather
+    // than a line per render.
+    const stats = engineRef.current?.getDrawStats() ?? []
+    const bg = engineRef.current?.getBackgroundState()
+    const line =
+      stats.map((s) => `${s.model} ${s.materials}m ${s.opaque}o/${s.transparent}t ${s.grouped}g/${s.ungrouped}u`).join(" · ") +
+      (bg ? ` | bg mode ${bg.mode} x${bg.level.toFixed(2)}${bg.backdrop ? " backdrop" : ""}${bg.world ? " world" : ""}` : "")
+    if (line !== lastDrawStats.current) {
+      lastDrawStats.current = line
+      console.info(`[draw] ${line}`)
+    }
+  }, [ready, stages, props, groupsByModel, autoStyleStage, engineRef])
 
   /**
    * Scenery converted from a .x arrives looking the way MMD drew it: what MMD
@@ -4891,9 +4922,23 @@ export default function Lab() {
       // painted" — whatever the light does, the sum saturates. Tested near 1
       // rather than at the 0.5 every exporter writes by default, which would
       // take most of a stage with it.
-      const fullBright = materials.filter((m) => m.ambient.every((v) => v >= 0.95)).map((m) => m.name)
+      const fullBright = materials
+        .filter((m) => m.ambient.every((v) => v >= 0.95))
+        // A window is premultiplied like a light shaft and is not one: it
+        // reflects and it fades edge-on, and the Glass look says so. Anything
+        // the table calls a real surface leaves this group and takes its look.
+        .filter((m) => !SURFACE_LOOKS.has(shaderLookFor(m.memo ?? "") ?? stageLookFor(m.name) ?? ""))
+        .map((m) => m.name)
       const unlit = [...new Set([...(xUnlitMaterials(pmx) ?? []), ...fullBright])]
-      if (!unlit.length) return
+      styled.current.add(id)
+      if (!unlit.length) {
+        // No painted sheet in this one, but the keyword and shader tables still
+        // have something to say. This used to return, leaving the stage to the
+        // auto-style effect — which is the thing that must not run now.
+        const table = stageStyleGroups(names, [], memosOf(materials))
+        if (table) void applyGroups(id, table)
+        return
+      }
       const group: StyleGroup = {
         id: "stage-unlit",
         label: "Unlit",
@@ -4938,11 +4983,57 @@ export default function Lab() {
         if (total > 0) toast.loading(t.lab.rayConverting(done, total), { id: toastId })
       })
       const id = await add(ray?.files ?? files, pmx)
-      // The maps sidecar, before any look is applied: applyGroups hands a group
+      // CLAIMED BEFORE ANYTHING CAN RACE FOR IT. The stage appears in `stages`
+      // the moment it loads, and the auto-style effect fires on that render —
+      // which is BEFORE the await below has put the maps in place. It would
+      // then install the water look with no ripple map, and whichever apply
+      // landed last decided the water: bad on upload, right after a refresh,
+      // because a refresh comes through scene-host where the maps load first.
+      // This path styles it explicitly a few lines down.
+      styled.current.add(id)
+      // The material maps, before any look is applied: applyGroups hands a group
       // its materials' maps as it goes to the engine, so they have to be
       // resident first. A stage without one clears whatever the last model
       // under this id left behind, which is the same call doing that job.
-      await loadMaterialMaps(id, files, relFilePath(pmx), relFilePath)
+      await loadMaterialMaps(id, files, relFilePath(pmx), relFilePath, engineRef.current?.getModel(id))
+      // THE STAGE'S OWN WORLD, into the World slot — when nothing is there yet.
+      //
+      // Not just the reflection probe: the converter bakes the scene's ambient
+      // gradient into it, sky over equator over ground, and rides the probe on
+      // top at half strength as structure. So the diffuse this delivers is the
+      // ambient the scene declared — warm above, warm and dark below — while a
+      // mirror still sees the shape of the room. The raw probe alone did the
+      // opposite: it REPLACED the ambient with a dark room average, and every
+      // stage went dark and blue.
+      //
+      // AND IT LEAVES THE STRENGTH SLIDER ALONE. The engine multiplies an
+      // installed sky by the world strength, so the demo's 0.66 does dim this
+      // to two thirds — but writing 1 into the document to compensate changes a
+      // dial the person can see, and only in the live session: an upload then
+      // showed a brighter scene than a refresh of the same document. Whatever
+      // the scene says is what it gets, and the World row is where that is
+      // argued with.
+      //
+      // WHENEVER ONE ARRIVES, filled slot or not. A stage is a place, and the
+      // light in it belongs to it: loading another one and keeping the last
+      // one's sky leaves a garden lit by a bar. The World row still holds
+      // whatever is dropped on it afterwards, which is where a deliberate
+      // choice goes.
+      {
+        const probe = files.find((f) => relFilePath(f) === relFilePath(pmx).replace(/\.pmx$/i, "") + ".hdr")
+        if (probe) {
+          try {
+            swapHdri(await probeBackdrop(probe))
+            // Noted, so removing the stage takes its sky with it. The World slot
+            // also SHOWS what is in it, so a deleted stage was leaving its own
+            // 1024x512 equirect standing as the backdrop — a blurry block of
+            // the room that is nobody's choice and reads as a broken texture.
+            stageHdri.current = id
+          } catch (e) {
+            console.warn(`[stage] the world it brought could not be read:`, e)
+          }
+        }
+      }
       if (!ray) {
         styleAccessory(id, pmx)
         return id
@@ -4970,8 +5061,26 @@ export default function Lab() {
     }
   }
 
+  /**
+   * How many uploads are in flight.
+   *
+   * THE AUTOSAVE MUST NOT SEE THE MIDDLE OF ONE. Replacing a stage removes the
+   * old one before adding the new — the standard remove-then-add that keeps the
+   * id — so for a moment the scene owns almost nothing. The debounced save fires
+   * at 150ms, which lands squarely inside that moment, and rewrites the local
+   * bundle to the two files it can see: the stage's textures leave IndexedDB,
+   * and every material that reads one gets the 1x1 white fallback. A white
+   * opaque pane is the brightest surface in a scene, which is what "the upload
+   * comes up bright and a reload is fine" was — the reload reads the 47-file
+   * bundle written a moment later.
+   *
+   * State rather than a ref, so that dropping back to zero re-runs the save.
+   */
+  const [uploading, setUploading] = useState(0)
+
   const loadPicked = async (files: File[], pmx: File, target: ModelTarget) => {
     setUpload(null)
+    setUploading((n) => n + 1)
     try {
       if (target.mode === "stage") {
         // The .x accessories in the folder are the same set as its .pmx — the
@@ -4986,6 +5095,14 @@ export default function Lab() {
           const partId = await addStagePartFromFiles(accessoryFiles(files, part), part)
           styleAccessory(partId, part)
         }
+        // AND OUR FLOOR COMES OFF. A stage brings its own — a terrain, a plaza,
+        // a tiled bar — and ours is then a second floor at y=0 fighting it for
+        // the same pixels. The demo's disc is magenta with a white grid, so it
+        // does not read as a subtle mistake: it draws a glowing lattice across
+        // the set and z-fights whatever the stage put there. Switched off here
+        // rather than hidden, so the Ground row still says what happened and
+        // anyone who wants a catcher under a floorless stage can turn it back.
+        setSettings((s2) => (s2.ground.enabled ? { ...s2, ground: { ...s2.ground, enabled: false } } : s2))
         noteArrival(id)
         setStageTab("stage")
         // A stage folder that brought skies offers them; which one is yours.
@@ -5013,6 +5130,8 @@ export default function Lab() {
         kind: "notice",
         message: e instanceof Error ? e.message : String(e),
       })
+    } finally {
+      setUploading((n) => n - 1)
     }
   }
 
@@ -5688,8 +5807,9 @@ export default function Lab() {
   // never a broken one.
   useEffect(() => {
     // Same reason as the state save above: the fork's placeholder owns no assets
-    // and must not record that it does.
-    if (!ready || forkPending) return
+    // and must not record that it does. An upload in flight is the same claim
+    // about a different moment — see `uploading`.
+    if (!ready || forkPending || uploading) return
     const timer = setTimeout(() => {
       const id = scene.state.id
       const slots = collectLabSlots()
@@ -5738,7 +5858,7 @@ export default function Lab() {
     // moves, `stages` included, so moving a stage or flipping a switch still
     // reaches the DOC — the bundle write above is gated separately on
     // assetFingerprint.
-  }, [ready, forkPending, scene, collectLabSlots, assetFingerprint])
+  }, [ready, forkPending, uploading, scene, collectLabSlots, assetFingerprint])
 
   // ── Scene file operations ──
   //
@@ -5795,6 +5915,14 @@ export default function Lab() {
     // Empty until the extras loader resolves the new document's image out of its
     // bundle — the old one's would otherwise sit behind an unrelated scene.
     swapBgImage(null)
+    // The sky goes with it, and for a sharper reason than the backdrop: an HDRI
+    // is light. Left installed it does not merely sit behind the new scene, it
+    // lights the new scene — a reset to the demo came up bright and blue with
+    // the room from the stage you had just discarded, and only a reload put it
+    // right. The claim goes too, or the next stage to leave would take back a
+    // sky it never installed.
+    swapHdri(null)
+    stageHdri.current = null
     // Both halves of the cast-colour bookkeeping. Clearing only the palettes would
     // leave the started-set claiming every id was already extracted, and a new cast
     // would shimmer forever; clearing only the set would leave a reused id (the same
@@ -7561,7 +7689,13 @@ export default function Lab() {
                                     danger
                                     label={t.lab.aria.deleteStage(displayName(stage.file))}
                                     onClick={() => {
-                                      for (const s of stages) removeModelById(s.id)
+                                      for (const s of stages) {
+                                        if (stageHdri.current === s.id) {
+                                          stageHdri.current = null
+                                          swapHdri(null)
+                                        }
+                                        removeModelById(s.id)
+                                      }
                                     }}
                                   />
                                 </>

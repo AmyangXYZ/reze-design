@@ -1411,7 +1411,7 @@
   "kind": "graph",
   "name": "Glass",
   "author": "frost",
-  "description": "Clear, hard specular for panes, lenses and covers — see-through head on and reflective at a grazing angle, the way the pane it was ported from behaves.",
+  "description": "Clear, hard specular for panes and covers — as see-through as its material says head on, and a mirror at a grazing angle.",
   "tags": [
    "stage",
    "glass"
@@ -1442,6 +1442,14 @@
       }
      },
      {
+      "id": "base_a",
+      "type": "material_alpha"
+     },
+     {
+      "id": "tex_a",
+      "type": "math/multiply"
+     },
+     {
       "id": "principled",
       "type": "principled",
       "inputs": {
@@ -1468,8 +1476,22 @@
       }
      },
      {
+      "id": "fres",
+      "type": "layer_weight/fresnel",
+      "inputs": {
+       "blend": 0.3
+      }
+     },
+     {
       "id": "facing_rgb",
       "type": "combine_color"
+     },
+     {
+      "id": "sheen",
+      "type": "math/multiply",
+      "inputs": {
+       "b": 0.6
+      }
      },
      {
       "id": "mirror",
@@ -1487,9 +1509,11 @@
      },
      {
       "id": "opacity",
-      "type": "math/multiply",
+      "type": "map_range/linear",
       "inputs": {
-       "b": 0.267
+       "from_min": 0.0,
+       "from_max": 1.0,
+       "to_max": 1.0
       }
      }
     ],
@@ -1526,7 +1550,37 @@
      },
      {
       "from": {
+       "node": "principled",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "mirror",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
        "node": "facing",
+       "socket": "value"
+      },
+      "to": {
+       "node": "sheen",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "sheen",
        "socket": "value"
       },
       "to": {
@@ -1536,7 +1590,7 @@
      },
      {
       "from": {
-       "node": "facing",
+       "node": "sheen",
        "socket": "value"
       },
       "to": {
@@ -1546,7 +1600,7 @@
      },
      {
       "from": {
-       "node": "facing",
+       "node": "sheen",
        "socket": "value"
       },
       "to": {
@@ -1576,32 +1630,42 @@
      },
      {
       "from": {
-       "node": "principled",
-       "socket": "color"
+       "node": "base_a",
+       "socket": "value"
       },
       "to": {
-       "node": "lit",
+       "node": "tex_a",
        "socket": "a"
       }
      },
      {
       "from": {
-       "node": "mirror",
-       "socket": "color"
+       "node": "tex",
+       "socket": "alpha"
       },
       "to": {
-       "node": "lit",
+       "node": "tex_a",
        "socket": "b"
       }
      },
      {
       "from": {
-       "node": "facing",
+       "node": "tex_a",
        "socket": "value"
       },
       "to": {
        "node": "opacity",
-       "socket": "a"
+       "socket": "to_min"
+      }
+     },
+     {
+      "from": {
+       "node": "fres",
+       "socket": "value"
+      },
+      "to": {
+       "node": "opacity",
+       "socket": "value"
       }
      }
     ],
@@ -1615,14 +1679,14 @@
     },
     "params": [
      {
-      "id": "fresnel",
-      "label": "Fresnel",
+      "id": "sheen",
+      "label": "Reflection",
       "kind": "float",
-      "default": 0.267,
+      "default": 0.6,
       "min": 0.0,
-      "max": 1.0,
+      "max": 2.0,
       "target": {
-       "node": "opacity",
+       "node": "sheen",
        "socket": "b"
       }
      }
@@ -5579,6 +5643,254 @@
      "node": "principled",
      "socket": "color"
     }
+   }
+  }
+ },
+ {
+  "id": "b6381f0c-85e2-4a4f-badb-e160d99b0033",
+  "kind": "graph",
+  "name": "Stage Surface",
+  "author": "frost",
+  "description": "Metal, roughness and occlusion taken from the material itself — what a converted stage packs into its PMX specular. One look for a whole set, varying per material.",
+  "tags": [
+   "stage",
+   "pbr"
+  ],
+  "version": 1,
+  "payload": {
+   "graph": {
+    "version": 1,
+    "name": "Stage Surface",
+    "tags": [
+     "stage",
+     "pbr"
+    ],
+    "nodes": [
+     {
+      "id": "tex",
+      "type": "texture",
+      "inputs": {}
+     },
+     {
+      "id": "mat",
+      "type": "material_diffuse",
+      "inputs": {}
+     },
+     {
+      "id": "base",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "props",
+      "type": "material_specular",
+      "inputs": {}
+     },
+     {
+      "id": "ch",
+      "type": "separate_color",
+      "inputs": {}
+     },
+     {
+      "id": "ao_rgb",
+      "type": "combine_color",
+      "inputs": {}
+     },
+     {
+      "id": "albedo",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "relief",
+      "type": "tex_image/0",
+      "inputs": {}
+     },
+     {
+      "id": "relief_scale",
+      "type": "material_shininess",
+      "inputs": {}
+     },
+     {
+      "id": "normal",
+      "type": "normal_map",
+      "inputs": {}
+     },
+     {
+      "id": "principled",
+      "type": "principled",
+      "inputs": {
+       "specular_ior_level": 0.5,
+       "spec_clamp": 10.0,
+       "sheen_weight": 0.0,
+       "sheen_tint": 0.0
+      }
+     }
+    ],
+    "links": [
+     {
+      "from": {
+       "node": "tex",
+       "socket": "color"
+      },
+      "to": {
+       "node": "base",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "mat",
+       "socket": "color"
+      },
+      "to": {
+       "node": "base",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "props",
+       "socket": "color"
+      },
+      "to": {
+       "node": "ch",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "ch",
+       "socket": "b"
+      },
+      "to": {
+       "node": "ao_rgb",
+       "socket": "r"
+      }
+     },
+     {
+      "from": {
+       "node": "ch",
+       "socket": "b"
+      },
+      "to": {
+       "node": "ao_rgb",
+       "socket": "g"
+      }
+     },
+     {
+      "from": {
+       "node": "ch",
+       "socket": "b"
+      },
+      "to": {
+       "node": "ao_rgb",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "base",
+       "socket": "color"
+      },
+      "to": {
+       "node": "albedo",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "ao_rgb",
+       "socket": "color"
+      },
+      "to": {
+       "node": "albedo",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "albedo",
+       "socket": "color"
+      },
+      "to": {
+       "node": "principled",
+       "socket": "base_color"
+      }
+     },
+     {
+      "from": {
+       "node": "ch",
+       "socket": "r"
+      },
+      "to": {
+       "node": "principled",
+       "socket": "metallic"
+      }
+     },
+     {
+      "from": {
+       "node": "ch",
+       "socket": "g"
+      },
+      "to": {
+       "node": "principled",
+       "socket": "roughness"
+      }
+     },
+     {
+      "from": {
+       "node": "relief",
+       "socket": "color"
+      },
+      "to": {
+       "node": "normal",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "relief_scale",
+       "socket": "value"
+      },
+      "to": {
+       "node": "normal",
+       "socket": "strength"
+      }
+     },
+     {
+      "from": {
+       "node": "normal",
+       "socket": "normal"
+      },
+      "to": {
+       "node": "principled",
+       "socket": "normal"
+      }
+     }
+    ],
+    "output": {
+     "node": "principled",
+     "socket": "color"
+    },
+    "params": [
+     {
+      "id": "specular",
+      "label": "Specular",
+      "target": {
+       "node": "principled",
+       "socket": "specular_ior_level"
+      },
+      "kind": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.5
+     }
+    ]
    }
   }
  }

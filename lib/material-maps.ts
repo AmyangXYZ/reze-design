@@ -1,33 +1,24 @@
 // Extra image maps that belong to a model's materials — normal, mask, emissive.
 //
-// A PMX material carries one texture. Stages converted from ray-mmd carry more,
-// and those maps are ASSET data in the same sense the PMX texture is: they go
-// where the model goes. So they live in the model's own files — PNGs plus a
-// sidecar beside the .pmx naming them per material — and the bundle, publish
-// and reload carry them with no help from the scene document.
+// A PMX material carries one texture. Stages carry more, and those maps are
+// ASSET data in the same sense the PMX texture is: they go where the model goes,
+// so they live in the model's own files and the bundle, publish and reload carry
+// them with no help from the scene document.
+//
+// A folder says which map belongs to which material by NAMING — `<T>_D.png`
+// beside `<T>_N.png`, the set's own convention, readable by anyone who opens the
+// folder and needing nothing kept in step with it.
 //
 // The engine takes maps per style group (`tex_image/0..3`). A group is handed
 // the maps of the first material in it that has any, at the moment it goes to
 // the engine; app state never holds the decoded images, so documents stay plain
 // data.
 
-import type { GroupImage, StyleGroup } from "reze-engine"
-
-/** One slot of a material's maps, as the sidecar stores it. `path` is relative
- *  to the .pmx's folder. */
-export type MaterialMapRef = { path: string; srgb: boolean } | null
-
-export type MaterialMapsDoc = {
-  version: 1
-  materials: Record<string, MaterialMapRef[]>
-}
+import type { GroupImage, Model, StyleGroup } from "reze-engine"
 
 export type MaterialImages = (GroupImage | null)[]
 
 const live = new Map<string, Map<string, MaterialImages>>()
-
-/** The sidecar that sits beside a model: `stage.pmx` → `stage.maps.json`. */
-export const sidecarPath = (pmxPath: string) => pmxPath.replace(/\.pmx$/i, "") + ".maps.json"
 
 export function setMaterialMaps(modelId: string, byMaterial: Map<string, MaterialImages>) {
   live.set(modelId, byMaterial)
@@ -46,34 +37,92 @@ export function withMaterialMaps(modelId: string, groups: StyleGroup[]): StyleGr
   if (!maps) return groups
   return groups.map((g) => {
     if (g.images?.length || !readsMaps(g)) return g
-    const images = g.materials.map((m) => maps.get(m)).find((x) => x !== undefined)
-    return images ? { ...g, images } : g
+    // PER MATERIAL, not per group. A look that carries its own ramp sets
+    // `images` itself and is left alone above; everything reaching here is a
+    // group whose members each brought maps, and a converted stage puts
+    // twenty-seven props with twenty-seven different normal maps in ONE group
+    // on purpose — a group each is a pipeline each. The engine binds these per
+    // draw call, so they share the pipeline and differ only in what the bind
+    // group points at.
+    const byMaterial = Object.fromEntries(
+      g.materials.flatMap((m) => {
+        const images = maps.get(m)
+        return images ? [[m, images] as const] : []
+      }),
+    )
+    if (!Object.keys(byMaterial).length) return g
+    // NO SUBSTITUTE FOR A MISSING MAP. This used to hand the first material's
+    // maps to every member that brought none, on the reasoning that a plausible
+    // map beats white. It is not plausible — it is another surface's grain on
+    // this one, which is a stool wearing the floor's wood. A material that
+    // shipped no map says so in its own relief strength, which the converter
+    // writes as zero, and zero returns the geometric normal exactly.
+    return { ...g, imagesByMaterial: byMaterial }
   })
 }
 
+/** One slot of a material's maps. `path` is relative to the .pmx's folder. */
+type MapRef = { path: string; srgb: boolean } | null
+
+/** A name a file system and a zip both take, applied identically by whatever
+ *  writes the maps — see `namedMaps`. */
+const fileSafe = (name: string) => name.replace(/[^A-Za-z0-9_.-]/g, "_")
+
 /**
- * Read a model's sidecar out of its files and decode the maps it names.
+ * The maps a model states by NAMING.
+ *
+ * A game's own texture set already says this: the albedo is `<T>_D.png` and its
+ * normal is `<T>_N.png`, and a converter that keeps those names has recorded the
+ * pairing in the folder where a person can see it. So the rule is:
+ *
+ *   a material's relief map is `maps/<base>_N.png`, where `<base>` is its
+ *   albedo's file name without the extension and without a trailing `_D` — or
+ *   the material's own name, for a material that samples no albedo.
+ *
+ * ONE SLOT, LINEAR — the whole of what a name can carry, and all a stage needs.
+ * A ray-mmd import wants more than that (four slots in the order its graph
+ * samples them, each with its own colour space), so it hands its maps straight
+ * to the engine on the group's own `images` and they last as long as the
+ * session: re-import the folder after a reload.
+ */
+function namedMaps(model: Model, byPath: Map<string, File>, dir: string): Record<string, MapRef[]> {
+  const textures = model.getTextures()
+  const out: Record<string, MapRef[]> = {}
+  for (const m of model.getMaterials()) {
+    const albedo = textures[m.diffuseTextureIndex]?.path
+    const base = albedo
+      ? (albedo.split(/[\\/]/).pop() ?? "").replace(/\.[^.]+$/, "").replace(/_D$/, "")
+      : fileSafe(m.name)
+    if (!base) continue
+    const rel = `maps/${base}_N.png`
+    if (byPath.has(dir + rel)) out[m.name] = [{ path: rel, srgb: false }]
+  }
+  return out
+}
+
+/**
+ * Read a model's maps out of its files and decode them.
  *
  * `files` are named by path (a bundle) or carry webkitRelativePath (an upload);
- * `pmxPath` is the .pmx's path in the same form. A model without a sidecar
- * clears whatever an earlier model under this id left behind.
+ * `pmxPath` is the .pmx's path in the same form. Which map belongs to which
+ * material is read off the folder by `namedMaps`, so the loaded model is needed
+ * too — it is what says which albedo each material samples. A model whose folder
+ * names none clears whatever an earlier model under this id left behind.
  */
-export async function loadMaterialMaps(modelId: string, files: File[], pmxPath: string, pathOf: (f: File) => string) {
+export async function loadMaterialMaps(
+  modelId: string,
+  files: File[],
+  pmxPath: string,
+  pathOf: (f: File) => string,
+  model?: Model | null,
+) {
   const byPath = new Map(files.map((f) => [pathOf(f), f]))
-  const sidecar = byPath.get(sidecarPath(pmxPath))
-  if (!sidecar) {
-    clearMaterialMaps(modelId)
-    return
-  }
-  let doc: MaterialMapsDoc
-  try {
-    doc = JSON.parse(await sidecar.text()) as MaterialMapsDoc
-  } catch (e) {
-    console.warn(`Unreadable material maps for ${pmxPath}:`, e)
-    clearMaterialMaps(modelId)
-    return
-  }
   const dir = pmxPath.slice(0, pmxPath.lastIndexOf("/") + 1)
+  const materials = model ? namedMaps(model, byPath, dir) : {}
+  if (!Object.keys(materials).length) {
+    clearMaterialMaps(modelId)
+    return
+  }
   const decoded = new Map<string, Promise<ImageBitmap | null>>()
   const decode = (path: string) => {
     let pending = decoded.get(path)
@@ -88,7 +137,7 @@ export async function loadMaterialMaps(modelId: string, files: File[], pmxPath: 
   }
   const byMaterial = new Map<string, MaterialImages>()
   await Promise.all(
-    Object.entries(doc.materials).map(async ([name, refs]) => {
+    Object.entries(materials).map(async ([name, refs]) => {
       const images = await Promise.all(
         refs.map(async (ref) => {
           if (!ref) return null

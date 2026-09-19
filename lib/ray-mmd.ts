@@ -10,12 +10,14 @@
 // The conversion reproduces ray-mmd's material model on our Principled node:
 // albedo, a tangent-space normal map, smoothness and metalness read from their
 // channels, and emission as albedo × a mask. The maps are downscaled into PNGs
-// beside the .pmx and named per material in a sidecar (lib/material-maps.ts).
+// beside the .pmx, and the groups they belong to hold them for this session —
+// they are handed to the engine on `images`, which is where a per-preset set of
+// maps belongs. They do not survive a reload: re-import the folder.
 // ray-mmd's own glass and water presets become the Glass and Water looks.
 
 import type { GraphLink, GraphNode, ShaderGraph, SocketValue, StyleGroup } from "reze-engine"
 import { libraryGraph } from "@/lib/materials"
-import { sidecarPath, type MaterialImages, type MaterialMapsDoc } from "@/lib/material-maps"
+import { type MaterialImages } from "@/lib/material-maps"
 import { parsePmxMesh } from "@/lib/pmx-mesh"
 import { relFilePath } from "@/lib/scene-files"
 import { decodeTga } from "@/lib/tga"
@@ -507,8 +509,8 @@ export function planRayMmd(
 // ── Upload ──
 
 export type RayStage = {
-  /** The upload as it should be kept: the .pmx, the textures it names, the
-   *  generated maps and their sidecar. */
+  /** The upload as it should be kept: the .pmx, the textures it names and the
+   *  generated maps. */
   files: File[]
   groups: StyleGroup[]
   hidden: string[]
@@ -719,7 +721,6 @@ export async function readRayMmd(
   // Graphs, one per preset, each with the slots its maps landed in.
   const groups: StyleGroup[] = []
   const maps = new Map<string, MaterialImages>()
-  const sidecar: MaterialMapsDoc = { version: 1, materials: {} }
   const used = new Set<string>()
   const ids = new Set<string>()
   for (const g of plan.groups) {
@@ -765,11 +766,7 @@ export async function readRayMmd(
     for (const p of slots) used.add(p)
 
     const images: MaterialImages = slots.map((p) => ({ source: prepared.get(p)!.bitmap, srgb: needs.get(p)!.srgb }))
-    const refs = slots.map((p) => ({ path: prepared.get(p)!.relPath, srgb: needs.get(p)!.srgb }))
-    for (const name of g.materials) {
-      maps.set(name, images)
-      sidecar.materials[name] = refs
-    }
+    for (const name of g.materials) maps.set(name, images)
   }
 
   // Keep what the model reads: the .pmx, its textures, and what was made here.
@@ -783,10 +780,8 @@ export async function readRayMmd(
     if (used.has(path)) generated.push(p.file)
     else p.bitmap.close()
   }
-  const sidecarFile = new File([JSON.stringify(sidecar)], sidecarPath(pmxPath), { type: "application/json" })
-
   return {
-    files: [...kept, ...generated, sidecarFile],
+    files: [...kept, ...generated],
     groups,
     hidden: plan.hidden,
     maps,

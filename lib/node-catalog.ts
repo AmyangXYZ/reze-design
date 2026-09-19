@@ -12,6 +12,13 @@ export const NODE_CATALOG: CatalogGroup[] = [
       { type: "texture", label: "Image Texture" },
       { type: "geometry", label: "Geometry" },
       { type: "material_diffuse", label: "Material Diffuse" },
+      // The PMX specular and shininess, which MMD's own renderer barely uses. A
+      // stage converted out of a game engine packs its material's metal,
+      // roughness and occlusion into the first — so one look can vary per
+      // material without a pipeline each.
+      { type: "material_alpha", label: "Material Alpha" },
+      { type: "material_specular", label: "Material Specular" },
+      { type: "material_shininess", label: "Material Shininess" },
       { type: "sphere_map", label: "Sphere Map" },
       { type: "light", label: "Light" },
       { type: "time", label: "Time" },

@@ -518,7 +518,16 @@ export function useSceneSync({
         // The install receipt: with this line and __reze.getWorldLighting(),
         // "is the sky lighting her" is a console question, not a guess.
         const wl = engine.getWorldLighting()
-        console.info(`[world] HDRI installed (${img.width}x${img.height}) — lighting:`, wl)
+        // EVERYTHING THAT DECIDES BRIGHTNESS, on one line. The report this
+        // answers is always the same shape — "it comes up bright on upload and
+        // right after a reload" — and the two paths differ only in the ORDER
+        // the sky, the dial and the document arrive in. One line from each
+        // settles which of the three moved, instead of another round of guesses.
+        console.info(
+          `[world] HDRI installed (${img.width}x${img.height}) — ` +
+            `ambient ${wl.source} x${wl.strength.toFixed(2)} up ${wl.up.map((v) => v.toFixed(3)).join()} ` +
+            `down ${wl.down.map((v) => v.toFixed(3)).join()} · sun x${engine.getSun().strength.toFixed(2)}`,
+        )
         // The trap that cost a debugging round: the sky's light rides the World
         // strength dial (the Blender semantic), and a scene with the dial at
         // zero installs a sky that lights nothing — silently, unless this says so.

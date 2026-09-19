@@ -38,7 +38,7 @@ import { libraryGraph } from "@/lib/materials"
 export const STAGE_MATERIAL_RULES: { graph: string; keywords: string[]; alphaMode?: AlphaMode }[] = [
   { graph: "Emissive", keywords: ["発光", "電球", "ネオン", "蛍光", "ライト", "灯泡", "发光", "霓虹", "灯", "neon", "emissive", "emission", "bulb", "lamp", "light"] },
   { graph: "Gold", keywords: ["金色", "真鍮", "ゴールド", "黄金", "黄铜", "青铜", "gold", "golden", "brass", "bronze"] },
-  { graph: "Glass", keywords: ["ガラス", "硝子", "レンズ", "窓", "玻璃", "窗", "镜片", "glass", "window", "lens", "pane"] },
+  { graph: "Glass", keywords: ["ガラス", "硝子", "レンズ", "窓", "玻璃", "窗", "镜片", "boli", "glass", "window", "lens", "pane"] },
   { graph: "Tile", keywords: ["タイル", "陶器", "瓷砖", "地砖", "陶瓷", "tile", "ceramic"] },
   { graph: "Brick", keywords: ["レンガ", "煉瓦", "砖墙", "砖头", "砖", "brick"] },
   { graph: "Concrete", keywords: ["コンクリート", "セメント", "混凝土", "水泥", "shuini", "concrete", "cement"] },
@@ -96,6 +96,25 @@ export const SHADER_LOOKS: Record<string, string> = {
   SceneBillboard: "Foliage",
 }
 
+/**
+ * Looks that mean a REAL SURFACE, not painted light.
+ *
+ * A converted stage marks its premultiplied materials full-bright, because most
+ * of them are a light shaft or a decal — colour finished elsewhere, to be drawn
+ * as painted. A window is premultiplied for the same reason and is nothing like
+ * it: it reflects, it has a fresnel, and it gets darker edge-on. Left in the
+ * unlit group it renders as a flat tinted pane.
+ *
+ * So a material this table recognises as one of these is taken out of that
+ * group and given the look instead. The game offers no shader to tell them
+ * apart — one Standard covers both — and the name is what the artists used.
+ */
+export const SURFACE_LOOKS = new Set(["Glass", "Water"])
+
+/** The catch-all for a converted stage's unnamed props — reads the metal,
+ *  roughness and occlusion the converter packed into each PMX material. */
+export const STAGE_SURFACE = "Stage Surface"
+
 /** The look a material's own source shader means, or null. */
 export function shaderLookFor(memo: string): string | null {
   const tail = memo.slice(memo.lastIndexOf("/") + 1).trim()
@@ -137,6 +156,23 @@ export function stageStyleGroups(
     if (!look) continue
     byLook.set(look, [...(byLook.get(look) ?? []), material])
   }
+  // EVERYTHING ELSE, IN ONE GROUP — but only where the model can back it up.
+  //
+  // A converted stage is mostly props: Props_object_337, Props_sofa_006,
+  // X323_chair_001. No keyword classifies those and their shader is the same
+  // Standard every wall uses, so three quarters of an interior fell through to
+  // the neutral default and a fabric sofa, a polished floor and a steel counter
+  // all rendered at roughness 0.5 with no metal. Their real values ride in the
+  // PMX specular the converter packed, and Stage Surface reads them — so one
+  // group covers a whole set and still varies per material.
+  //
+  // Gated on the MEMO, which only a converted stage has. A hand-authored PMX's
+  // specular is whatever its exporter wrote, usually black, and black here
+  // would read as metal 0 roughness 0: a mirror where a cotton curtain was.
+  const unclaimed = materials.filter((m) => !grouped.has(m) && !stageLookFor(m) && !shaderLookFor(memos[m] ?? ""))
+  const surfaced = unclaimed.filter((m) => (memos[m] ?? "").length > 0)
+  if (surfaced.length) byLook.set(STAGE_SURFACE, surfaced)
+
   if (byLook.size === 0) return null
 
   const next = [...base]

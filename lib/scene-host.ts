@@ -9,7 +9,7 @@
 import { Engine, parseLRC, parseMidi, Quat, Vec3, type GizmoDragEvent, type Model, type ModelParentKey, type RenderClass, type StyleGroup } from "reze-engine"
 import { FPS, clipTrimmedToMotion } from "@/lib/clip"
 import { rasterizeLyrics } from "@/lib/lyrics-raster"
-import { SLOT_GRAPHS } from "@/lib/materials"
+import { SLOT_GRAPHS, libraryGraph } from "@/lib/materials"
 import { graphLibraryName } from "@/lib/refs"
 import { graphRole, packGraph } from "@/lib/materials"
 import { loadLookPref } from "@/lib/look-pref"
@@ -30,8 +30,36 @@ import { visibilityAt, visibleAt, type VisibilityWindow } from "@/lib/visibility
  * never been applied — the engine drops an uncompilable group rather than render
  * it wrongly, which is right, and silent, which left us guessing.
  */
-export function reportGroups(where: string, result: { ok: boolean; groups?: { groupId: string; ok: boolean; diagnostics: unknown[] }[] } | undefined) {
-  if (!result || result.ok) return
+export function reportGroups(
+  where: string,
+  result:
+    | {
+        ok: boolean
+        groups?: { groupId: string; ok: boolean; diagnostics: unknown[] }[]
+        unknownMaterials?: string[]
+        conflicts?: string[]
+      }
+    | undefined,
+) {
+  if (!result) return
+  // COMPILING IS NOT COVERING, and `ok` only answers the first. A group whose
+  // graph is perfect and whose material names match nothing on the model is
+  // applied successfully and claims no draw call — those materials keep the
+  // default graph and the stage renders like a stage with no looks on it. That
+  // reads as "bright", it is invisible in the console, and it is exactly what
+  // differs between applying names gathered from a live model and names read
+  // back from a document. Said out loud, both paths become comparable.
+  if (result.unknownMaterials?.length)
+    console.warn(
+      `[style] ${where}: ${result.unknownMaterials.length} material(s) named by a group are not on this model —`,
+      result.unknownMaterials.join(", "),
+    )
+  if (result.conflicts?.length)
+    console.warn(
+      `[style] ${where}: ${result.conflicts.length} material(s) claimed by more than one group —`,
+      result.conflicts.join(", "),
+    )
+  if (result.ok) return
   for (const g of result.groups ?? []) {
     if (g.ok) continue
     // SEVERITY DECIDES THE CHANNEL. A group also comes back not-ok when a newer
@@ -305,7 +333,7 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
         : entry.prop
           ? await engine.loadProp(entry.model.id, { files, pmxFile })
           : await engine.loadModel(entry.model.id, { files, pmxFile })
-      await loadMaterialMaps(entry.model.id, files, pmxFile.name, (f) => f.name)
+      await loadMaterialMaps(entry.model.id, files, pmxFile.name, (f) => f.name, model)
     } else {
       clearMaterialMaps(entry.model.id)
       const pmxUrl = modelPmxUrl(entry.model)
@@ -364,6 +392,24 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
     // Styling: a document carrying groups for this model (a restored or imported scene)
     const docGroups = scene.state.groups?.[entry.model.id]
     if (docGroups) {
+      // A GROUP'S GRAPH IS A SNAPSHOT, and a snapshot goes stale silently.
+      //
+      // The document stores the whole graph inline, so a scene keeps the look
+      // it was styled with and a later retune of that built-in never reaches
+      // it. That is deliberate — nobody wants yesterday's scene repainted by
+      // today's edit — and it is invisible, which is the part that costs: a
+      // stage came up one way on upload (today's graph, straight from the
+      // library) and another after a reload (the snapshot), with every count,
+      // group and light identical, and the only way to tell was to notice the
+      // pixels. Said here, the drift is a line instead of a day.
+      for (const g of docGroups) {
+        const live = libraryGraph(g.graph.name)
+        if (live && JSON.stringify(live) !== JSON.stringify(g.graph))
+          console.info(
+            `[style] ${entry.model.file}: "${g.graph.name}" is the copy this scene was styled with, ` +
+              `and the built-in has changed since. Re-pick the look to take the new one.`,
+          )
+      }
       // Empty groups are UI-only drop targets — withheld from the engine.
       reportGroups(
         `load ${entry.model.file}`,
