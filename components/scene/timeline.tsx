@@ -3318,7 +3318,18 @@ export function Timeline({
           />
         </div>
         <div className="mx-0.5 h-3.5 w-px shrink-0 bg-line" />
-        {/* Channel tabs */}
+        {/* Channel tabs.
+            THE STRIP IS WHAT GIVES WAY, and something had to: this row is
+            flex-nowrap inside overflow-hidden with every child shrink-0, so
+            whatever does not fit is clipped off the END — which is where the
+            transport's own chrome rides, the collapse toggle among it. A bone
+            selection shows eight tabs where a morph shows one, so it was the
+            bone editor, and only the bone editor, that lost the button for
+            closing itself.
+            Scrolls rather than clips, so tz stays reachable, and with no
+            visible bar — an 8px track inside a 26px toolbar is most of the
+            toolbar. */}
+        <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-0 overflow-x-auto">
         {visibleTabs.map((t) => {
           if (t.sep)
             return <div key={t.key} className="mx-px h-3.5 w-px shrink-0 bg-line" />
@@ -3373,7 +3384,7 @@ export function Timeline({
             </Button>
           )
         })}
-        <div className="min-w-0 flex-1" />
+        </div>
         <AxisGlyph icon={MoveHorizontal} label={dict.lab.timeline.axisTime} className="pl-1 pr-2" />
         <ZoomRuler min={minPxPerFrame} max={MAX_PX} value={pxPerFrame} onChange={zoomTo} />
         <AxisGlyph icon={MoveVertical} label={dict.lab.timeline.axisValue} className="pl-2 pr-2" />
