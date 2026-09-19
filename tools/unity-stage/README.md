@@ -21,9 +21,17 @@ Upload the `--out` folder to the app as a stage.
 | | |
 |---|---|
 | `X333.pmx` | geometry at MMD scale, one material per Unity material |
-| `tex/` | the albedo each material samples |
-| `X333.hdr` | the scene's reflection probe as an equirect |
+| `tex/` | the albedo each material samples, at the game's own resolution |
+| `X333.hdr` | the scene's ambient gradient as an equirect, with the reflection probe ridden on top as structure |
 | `maps/` | the relief map each material samples — the ripple map water scrolls among them |
+
+**Textures are copied, not resized.** A 2048 albedo arrives as a 2048 albedo, and
+the same for normal maps. Downscaling was the default for a while and it cost the
+thing the whole conversion is for — the frame this came out of is sharp, and a
+stage that is nearly it reads as a worse stage rather than a cheaper one. Alpha
+is dropped per TEXTURE rather than per material, so one material needing it keeps
+it for every material that shares the file. `--albedo N` and `--normal N` cap the
+longest edge when a stage really is too heavy; 0, the default, keeps the source.
 
 The `.hdr` goes onto the World (HDRI) slot the moment the stage loads, filled or
 not — a stage is a place and the light in it belongs to it. It is the scene's own
