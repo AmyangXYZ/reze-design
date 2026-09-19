@@ -64,6 +64,10 @@ export const NODE_CATALOG: CatalogGroup[] = [
     items: [
       { type: "mapping", label: "Mapping" },
       { type: "bump", label: "Bump" },
+      // Its strength is a slope rather than a screen effect: detail that belongs
+      // to the surface instead of to the frame, which is what water needs and
+      // what skin does not.
+      { type: "bump/world", label: "Bump · World" },
       { type: "normal_map", label: "Normal Map" },
       { type: "separate_xyz", label: "Separate XYZ" },
       { type: "combine_xyz", label: "Combine XYZ" },

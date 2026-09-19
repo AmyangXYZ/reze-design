@@ -33,10 +33,18 @@ import { visibilityAt, visibleAt, type VisibilityWindow } from "@/lib/visibility
 export function reportGroups(where: string, result: { ok: boolean; groups?: { groupId: string; ok: boolean; diagnostics: unknown[] }[] } | undefined) {
   if (!result || result.ok) return
   for (const g of result.groups ?? []) {
-    if (!g.ok)
-      // Stringified: a diagnostic is an object, and the console collapses those
-      // to {…} in a stack-heavy log — which hid the actual message for rounds.
-      console.error(`[style] ${where}: group "${g.groupId}" failed —`, JSON.stringify(g.diagnostics, null, 1))
+    if (g.ok) continue
+    // SEVERITY DECIDES THE CHANNEL. A group also comes back not-ok when a newer
+    // apply overtook it — "superseded by a newer edit", severity warning — which
+    // is the ordinary outcome of two applies racing and not a thing anyone can
+    // act on: the newer set is the one on screen. Shouting it as an error sent
+    // people hunting a broken graph that had compiled perfectly well.
+    const failed = (g.diagnostics as { severity?: string }[]).some((d) => d?.severity === "error")
+    // Stringified: a diagnostic is an object, and the console collapses those
+    // to {…} in a stack-heavy log — which hid the actual message for rounds.
+    const detail = JSON.stringify(g.diagnostics, null, 1)
+    if (failed) console.error(`[style] ${where}: group "${g.groupId}" failed —`, detail)
+    else console.info(`[style] ${where}: group "${g.groupId}" not applied —`, detail)
   }
 }
 

@@ -1411,7 +1411,7 @@
   "kind": "graph",
   "name": "Glass",
   "author": "frost",
-  "description": "Clear, hard specular for panes, lenses and covers.",
+  "description": "Clear, hard specular for panes, lenses and covers — see-through head on and reflective at a grazing angle, the way the pane it was ported from behaves.",
   "tags": [
    "stage",
    "glass"
@@ -1438,19 +1438,58 @@
       "id": "base",
       "type": "mix/multiply",
       "inputs": {
-       "fac": 1
+       "fac": 1.0
       }
      },
      {
       "id": "principled",
       "type": "principled",
       "inputs": {
-       "metallic": 0,
+       "metallic": 0.0,
        "roughness": 0.06,
-       "spec_clamp": 10,
-       "sheen_tint": 0,
+       "spec_clamp": 10.0,
        "specular_ior_level": 0.95,
-       "sheen_weight": 0
+       "sheen_weight": 0.0,
+       "sheen_tint": 0.0
+      }
+     },
+     {
+      "id": "sky",
+      "type": "environment",
+      "inputs": {
+       "roughness": 0.04
+      }
+     },
+     {
+      "id": "facing",
+      "type": "layer_weight/facing",
+      "inputs": {
+       "blend": 0.5
+      }
+     },
+     {
+      "id": "facing_rgb",
+      "type": "combine_color"
+     },
+     {
+      "id": "mirror",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lit",
+      "type": "mix/add",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "opacity",
+      "type": "math/multiply",
+      "inputs": {
+       "b": 0.267
       }
      }
     ],
@@ -1484,12 +1523,110 @@
        "node": "principled",
        "socket": "base_color"
       }
+     },
+     {
+      "from": {
+       "node": "facing",
+       "socket": "value"
+      },
+      "to": {
+       "node": "facing_rgb",
+       "socket": "r"
+      }
+     },
+     {
+      "from": {
+       "node": "facing",
+       "socket": "value"
+      },
+      "to": {
+       "node": "facing_rgb",
+       "socket": "g"
+      }
+     },
+     {
+      "from": {
+       "node": "facing",
+       "socket": "value"
+      },
+      "to": {
+       "node": "facing_rgb",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "sky",
+       "socket": "color"
+      },
+      "to": {
+       "node": "mirror",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "facing_rgb",
+       "socket": "color"
+      },
+      "to": {
+       "node": "mirror",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "principled",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "mirror",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "facing",
+       "socket": "value"
+      },
+      "to": {
+       "node": "opacity",
+       "socket": "a"
+      }
      }
     ],
     "output": {
-     "node": "principled",
+     "node": "lit",
      "socket": "color"
-    }
+    },
+    "opacity": {
+     "node": "opacity",
+     "socket": "value"
+    },
+    "params": [
+     {
+      "id": "fresnel",
+      "label": "Fresnel",
+      "kind": "float",
+      "default": 0.267,
+      "min": 0.0,
+      "max": 1.0,
+      "target": {
+       "node": "opacity",
+       "socket": "b"
+      }
+     }
+    ]
    }
   }
  },
@@ -3366,7 +3503,7 @@
   "kind": "graph",
   "name": "Water",
   "author": "frost",
-  "description": "Drifting ripples under a grazing sky reflection — after the Ripplet water of a Unity stage.",
+  "description": "Their own ripple map, tiled in world units and scrolled twice — after the Ripplet water of a Unity stage, whose reflection is the scene's own cubemap.",
   "tags": [
    "stage",
    "water"
@@ -3390,56 +3527,73 @@
       "type": "time"
      },
      {
-      "id": "dx0",
-      "type": "math/multiply",
+      "id": "light",
+      "type": "light"
+     },
+     {
+      "id": "dens",
+      "type": "value",
       "inputs": {
-       "b": 6.0
+       "value": 0.075
       }
      },
      {
-      "id": "dz0",
+      "id": "dens2",
       "type": "math/multiply",
       "inputs": {
-       "b": 4.0
+       "b": 0.833
       }
      },
      {
-      "id": "drift0",
+      "id": "spd",
+      "type": "value",
+      "inputs": {
+       "value": 0.064
+      }
+     },
+     {
+      "id": "spd2",
+      "type": "math/multiply",
+      "inputs": {
+       "b": 1.2
+      }
+     },
+     {
+      "id": "ts1",
+      "type": "math/multiply"
+     },
+     {
+      "id": "ts2",
+      "type": "math/multiply"
+     },
+     {
+      "id": "sep1",
+      "type": "separate_xyz"
+     },
+     {
+      "id": "sx1",
+      "type": "math/multiply"
+     },
+     {
+      "id": "sz1",
+      "type": "math/multiply"
+     },
+     {
+      "id": "uv1",
       "type": "combine_xyz"
      },
      {
-      "id": "uv0",
-      "type": "vector_math/add"
-     },
-     {
-      "id": "n0",
-      "type": "tex_noise",
+      "id": "u1x",
+      "type": "math/multiply",
       "inputs": {
-       "scale": 0.05,
-       "detail": 2.0,
-       "roughness": 0.5,
-       "distortion": 0.0
+       "b": 0.7071
       }
      },
      {
-      "id": "w0",
+      "id": "u1z",
       "type": "math/multiply",
       "inputs": {
-       "b": 0.5
-      }
-     },
-     {
-      "id": "dx1",
-      "type": "math/multiply",
-      "inputs": {
-       "b": -2.6
-      }
-     },
-     {
-      "id": "dz1",
-      "type": "math/multiply",
-      "inputs": {
-       "b": 1.4
+       "b": 0.7071
       }
      },
      {
@@ -3447,38 +3601,41 @@
       "type": "combine_xyz"
      },
      {
-      "id": "uv1",
+      "id": "pos1",
       "type": "vector_math/add"
      },
      {
-      "id": "n1",
-      "type": "tex_noise",
+      "id": "tex1",
+      "type": "tex_image/0"
+     },
+     {
+      "id": "sep2",
+      "type": "separate_xyz"
+     },
+     {
+      "id": "sx2",
+      "type": "math/multiply"
+     },
+     {
+      "id": "sz2",
+      "type": "math/multiply"
+     },
+     {
+      "id": "uv2",
+      "type": "combine_xyz"
+     },
+     {
+      "id": "u2x",
+      "type": "math/multiply",
       "inputs": {
-       "scale": 0.15,
-       "detail": 2.0,
-       "roughness": 0.5,
-       "distortion": 0.0
+       "b": -0.9231
       }
      },
      {
-      "id": "w1",
+      "id": "u2z",
       "type": "math/multiply",
       "inputs": {
-       "b": 0.3
-      }
-     },
-     {
-      "id": "dx2",
-      "type": "math/multiply",
-      "inputs": {
-       "b": 1.4
-      }
-     },
-     {
-      "id": "dz2",
-      "type": "math/multiply",
-      "inputs": {
-       "b": -1.0
+       "b": 0.3846
       }
      },
      {
@@ -3486,39 +3643,108 @@
       "type": "combine_xyz"
      },
      {
-      "id": "uv2",
+      "id": "pos2",
       "type": "vector_math/add"
      },
      {
-      "id": "n2",
-      "type": "tex_noise",
+      "id": "tex2",
+      "type": "tex_image/0"
+     },
+     {
+      "id": "mix2",
+      "type": "mix/blend",
       "inputs": {
-       "scale": 0.4,
-       "detail": 2.0,
-       "roughness": 0.5,
-       "distortion": 0.0
+       "fac": 0.5
       }
      },
      {
-      "id": "w2",
-      "type": "math/multiply",
+      "id": "tsn",
+      "type": "separate_xyz"
+     },
+     {
+      "id": "nx",
+      "type": "map_range/linear",
       "inputs": {
-       "b": 0.2
+       "from_min": 0.0,
+       "from_max": 1.0,
+       "to_min": -0.6,
+       "to_max": 0.6
       }
      },
      {
-      "id": "h01",
-      "type": "math/add"
+      "id": "nz",
+      "type": "map_range/linear",
+      "inputs": {
+       "from_min": 0.0,
+       "from_max": 1.0,
+       "to_min": -0.6,
+       "to_max": 0.6
+      }
      },
      {
-      "id": "h",
-      "type": "math/add"
+      "id": "nvec",
+      "type": "combine_xyz",
+      "inputs": {
+       "y": 1.0
+      }
      },
      {
       "id": "ripples",
-      "type": "bump",
+      "type": "vector_math/normalize"
+     },
+     {
+      "id": "incident",
+      "type": "vector_math/multiply",
       "inputs": {
-       "strength": 0.6
+       "b": [
+        -1.0,
+        -1.0,
+        -1.0
+       ]
+      }
+     },
+     {
+      "id": "bounce",
+      "type": "vector_math/reflect"
+     },
+     {
+      "id": "sundot",
+      "type": "vector_math/dot"
+     },
+     {
+      "id": "sunpos",
+      "type": "math/maximum",
+      "inputs": {
+       "b": 0.0
+      }
+     },
+     {
+      "id": "spec",
+      "type": "math/power",
+      "inputs": {
+       "b": 48.0
+      }
+     },
+     {
+      "id": "specsh",
+      "type": "math/multiply"
+     },
+     {
+      "id": "specg",
+      "type": "math/multiply",
+      "inputs": {
+       "b": 0.9
+      }
+     },
+     {
+      "id": "sunlit",
+      "type": "combine_color"
+     },
+     {
+      "id": "crest",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
       }
      },
      {
@@ -3529,8 +3755,19 @@
       }
      },
      {
+      "id": "fres_rgb",
+      "type": "combine_color"
+     },
+     {
       "id": "sky",
-      "type": "emission",
+      "type": "environment",
+      "inputs": {
+       "roughness": 0.02
+      }
+     },
+     {
+      "id": "tint",
+      "type": "rgb",
       "inputs": {
        "color": [
         0.0393,
@@ -3540,11 +3777,47 @@
       }
      },
      {
-      "id": "out",
-      "type": "mix/add",
+      "id": "refl",
+      "type": "mix/multiply",
       "inputs": {
        "fac": 1.0
       }
+     },
+     {
+      "id": "weigh",
+      "type": "mix/multiply",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "refl_lum",
+      "type": "separate_color"
+     },
+     {
+      "id": "glint",
+      "type": "math/multiply",
+      "inputs": {
+       "b": 3.0
+      }
+     },
+     {
+      "id": "opacity",
+      "type": "map_range/linear",
+      "inputs": {
+       "from_min": 0.0,
+       "from_max": 1.0,
+       "to_min": 0.07,
+       "to_max": 1.0
+      }
+     },
+     {
+      "id": "op_sum",
+      "type": "math/add"
+     },
+     {
+      "id": "op_sum2",
+      "type": "math/add"
      },
      {
       "id": "mat",
@@ -3555,303 +3828,127 @@
       "type": "principled",
       "inputs": {
        "metallic": 0.0,
-       "roughness": 0.06,
-       "spec_clamp": 10,
        "specular_ior_level": 0.25,
-       "sheen_weight": 0,
-       "sheen_tint": 0
+       "roughness": 0.06,
+       "spec_clamp": 10.0,
+       "sheen_weight": 0.0,
+       "sheen_tint": 0.0
+      }
+     },
+     {
+      "id": "out",
+      "type": "mix/add",
+      "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "lit2",
+      "type": "mix/add",
+      "inputs": {
+       "fac": 1.0
       }
      }
     ],
     "links": [
      {
       "from": {
-       "node": "t",
-       "socket": "value"
+       "node": "tex1",
+       "socket": "color"
       },
       "to": {
-       "node": "dx0",
+       "node": "mix2",
        "socket": "a"
       }
      },
      {
       "from": {
-       "node": "t",
-       "socket": "value"
+       "node": "tex2",
+       "socket": "color"
       },
       "to": {
-       "node": "dz0",
-       "socket": "a"
+       "node": "mix2",
+       "socket": "b"
       }
      },
      {
       "from": {
-       "node": "dx0",
+       "node": "mix2",
+       "socket": "color"
+      },
+      "to": {
+       "node": "tsn",
+       "socket": "vector"
+      }
+     },
+     {
+      "from": {
+       "node": "tsn",
+       "socket": "x"
+      },
+      "to": {
+       "node": "nx",
+       "socket": "value"
+      }
+     },
+     {
+      "from": {
+       "node": "tsn",
+       "socket": "y"
+      },
+      "to": {
+       "node": "nz",
+       "socket": "value"
+      }
+     },
+     {
+      "from": {
+       "node": "nx",
        "socket": "value"
       },
       "to": {
-       "node": "drift0",
+       "node": "nvec",
        "socket": "x"
       }
      },
      {
       "from": {
-       "node": "dz0",
+       "node": "nz",
        "socket": "value"
       },
       "to": {
-       "node": "drift0",
+       "node": "nvec",
        "socket": "z"
       }
      },
      {
       "from": {
-       "node": "geo",
-       "socket": "world_pos"
-      },
-      "to": {
-       "node": "uv0",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
-       "node": "drift0",
+       "node": "nvec",
        "socket": "vector"
-      },
-      "to": {
-       "node": "uv0",
-       "socket": "b"
-      }
-     },
-     {
-      "from": {
-       "node": "uv0",
-       "socket": "vector"
-      },
-      "to": {
-       "node": "n0",
-       "socket": "vector"
-      }
-     },
-     {
-      "from": {
-       "node": "n0",
-       "socket": "value"
-      },
-      "to": {
-       "node": "w0",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
-       "node": "t",
-       "socket": "value"
-      },
-      "to": {
-       "node": "dx1",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
-       "node": "t",
-       "socket": "value"
-      },
-      "to": {
-       "node": "dz1",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
-       "node": "dx1",
-       "socket": "value"
-      },
-      "to": {
-       "node": "drift1",
-       "socket": "x"
-      }
-     },
-     {
-      "from": {
-       "node": "dz1",
-       "socket": "value"
-      },
-      "to": {
-       "node": "drift1",
-       "socket": "z"
-      }
-     },
-     {
-      "from": {
-       "node": "geo",
-       "socket": "world_pos"
-      },
-      "to": {
-       "node": "uv1",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
-       "node": "drift1",
-       "socket": "vector"
-      },
-      "to": {
-       "node": "uv1",
-       "socket": "b"
-      }
-     },
-     {
-      "from": {
-       "node": "uv1",
-       "socket": "vector"
-      },
-      "to": {
-       "node": "n1",
-       "socket": "vector"
-      }
-     },
-     {
-      "from": {
-       "node": "n1",
-       "socket": "value"
-      },
-      "to": {
-       "node": "w1",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
-       "node": "t",
-       "socket": "value"
-      },
-      "to": {
-       "node": "dx2",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
-       "node": "t",
-       "socket": "value"
-      },
-      "to": {
-       "node": "dz2",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
-       "node": "dx2",
-       "socket": "value"
-      },
-      "to": {
-       "node": "drift2",
-       "socket": "x"
-      }
-     },
-     {
-      "from": {
-       "node": "dz2",
-       "socket": "value"
-      },
-      "to": {
-       "node": "drift2",
-       "socket": "z"
-      }
-     },
-     {
-      "from": {
-       "node": "geo",
-       "socket": "world_pos"
-      },
-      "to": {
-       "node": "uv2",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
-       "node": "drift2",
-       "socket": "vector"
-      },
-      "to": {
-       "node": "uv2",
-       "socket": "b"
-      }
-     },
-     {
-      "from": {
-       "node": "uv2",
-       "socket": "vector"
-      },
-      "to": {
-       "node": "n2",
-       "socket": "vector"
-      }
-     },
-     {
-      "from": {
-       "node": "n2",
-       "socket": "value"
-      },
-      "to": {
-       "node": "w2",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
-       "node": "w0",
-       "socket": "value"
-      },
-      "to": {
-       "node": "h01",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
-       "node": "w1",
-       "socket": "value"
-      },
-      "to": {
-       "node": "h01",
-       "socket": "b"
-      }
-     },
-     {
-      "from": {
-       "node": "h01",
-       "socket": "value"
-      },
-      "to": {
-       "node": "h",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
-       "node": "w2",
-       "socket": "value"
-      },
-      "to": {
-       "node": "h",
-       "socket": "b"
-      }
-     },
-     {
-      "from": {
-       "node": "h",
-       "socket": "value"
       },
       "to": {
        "node": "ripples",
-       "socket": "height"
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "geo",
+       "socket": "view"
+      },
+      "to": {
+       "node": "incident",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "incident",
+       "socket": "vector"
+      },
+      "to": {
+       "node": "bounce",
+       "socket": "a"
       }
      },
      {
@@ -3860,7 +3957,27 @@
        "socket": "vector"
       },
       "to": {
-       "node": "principled",
+       "node": "bounce",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "bounce",
+       "socket": "vector"
+      },
+      "to": {
+       "node": "sky",
+       "socket": "vector"
+      }
+     },
+     {
+      "from": {
+       "node": "ripples",
+       "socket": "vector"
+      },
+      "to": {
+       "node": "fresnel",
        "socket": "normal"
       }
      },
@@ -3870,38 +3987,118 @@
        "socket": "value"
       },
       "to": {
-       "node": "sky",
-       "socket": "strength"
+       "node": "fres_rgb",
+       "socket": "r"
       }
      },
      {
       "from": {
-       "node": "principled",
-       "socket": "color"
+       "node": "fresnel",
+       "socket": "value"
       },
       "to": {
-       "node": "out",
-       "socket": "a"
+       "node": "fres_rgb",
+       "socket": "g"
       }
      },
      {
       "from": {
-       "node": "sky",
-       "socket": "color"
+       "node": "fresnel",
+       "socket": "value"
       },
       "to": {
-       "node": "out",
+       "node": "fres_rgb",
        "socket": "b"
       }
      },
      {
       "from": {
-       "node": "geo",
-       "socket": "normal"
+       "node": "sky",
+       "socket": "color"
       },
       "to": {
-       "node": "ripples",
-       "socket": "normal"
+       "node": "refl",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "tint",
+       "socket": "color"
+      },
+      "to": {
+       "node": "refl",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "refl",
+       "socket": "color"
+      },
+      "to": {
+       "node": "weigh",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "fres_rgb",
+       "socket": "color"
+      },
+      "to": {
+       "node": "weigh",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "weigh",
+       "socket": "color"
+      },
+      "to": {
+       "node": "refl_lum",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "refl_lum",
+       "socket": "g"
+      },
+      "to": {
+       "node": "glint",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "fresnel",
+       "socket": "value"
+      },
+      "to": {
+       "node": "opacity",
+       "socket": "value"
+      }
+     },
+     {
+      "from": {
+       "node": "opacity",
+       "socket": "value"
+      },
+      "to": {
+       "node": "op_sum",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "glint",
+       "socket": "value"
+      },
+      "to": {
+       "node": "op_sum",
+       "socket": "b"
       }
      },
      {
@@ -3913,12 +4110,632 @@
        "node": "principled",
        "socket": "base_color"
       }
+     },
+     {
+      "from": {
+       "node": "ripples",
+       "socket": "vector"
+      },
+      "to": {
+       "node": "principled",
+       "socket": "normal"
+      }
+     },
+     {
+      "from": {
+       "node": "principled",
+       "socket": "color"
+      },
+      "to": {
+       "node": "out",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "weigh",
+       "socket": "color"
+      },
+      "to": {
+       "node": "out",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "dens",
+       "socket": "value"
+      },
+      "to": {
+       "node": "dens2",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "spd",
+       "socket": "value"
+      },
+      "to": {
+       "node": "spd2",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "t",
+       "socket": "value"
+      },
+      "to": {
+       "node": "ts1",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "spd",
+       "socket": "value"
+      },
+      "to": {
+       "node": "ts1",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "t",
+       "socket": "value"
+      },
+      "to": {
+       "node": "ts2",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "spd2",
+       "socket": "value"
+      },
+      "to": {
+       "node": "ts2",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "geo",
+       "socket": "world_pos"
+      },
+      "to": {
+       "node": "sep1",
+       "socket": "vector"
+      }
+     },
+     {
+      "from": {
+       "node": "sep1",
+       "socket": "x"
+      },
+      "to": {
+       "node": "sx1",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "dens",
+       "socket": "value"
+      },
+      "to": {
+       "node": "sx1",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "sep1",
+       "socket": "z"
+      },
+      "to": {
+       "node": "sz1",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "dens",
+       "socket": "value"
+      },
+      "to": {
+       "node": "sz1",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "ts1",
+       "socket": "value"
+      },
+      "to": {
+       "node": "u1x",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "ts1",
+       "socket": "value"
+      },
+      "to": {
+       "node": "u1z",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "sx1",
+       "socket": "value"
+      },
+      "to": {
+       "node": "uv1",
+       "socket": "x"
+      }
+     },
+     {
+      "from": {
+       "node": "sz1",
+       "socket": "value"
+      },
+      "to": {
+       "node": "uv1",
+       "socket": "y"
+      }
+     },
+     {
+      "from": {
+       "node": "geo",
+       "socket": "world_pos"
+      },
+      "to": {
+       "node": "sep2",
+       "socket": "vector"
+      }
+     },
+     {
+      "from": {
+       "node": "sep2",
+       "socket": "x"
+      },
+      "to": {
+       "node": "sx2",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "dens2",
+       "socket": "value"
+      },
+      "to": {
+       "node": "sx2",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "sep2",
+       "socket": "z"
+      },
+      "to": {
+       "node": "sz2",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "dens2",
+       "socket": "value"
+      },
+      "to": {
+       "node": "sz2",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "ts2",
+       "socket": "value"
+      },
+      "to": {
+       "node": "u2x",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "ts2",
+       "socket": "value"
+      },
+      "to": {
+       "node": "u2z",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "sx2",
+       "socket": "value"
+      },
+      "to": {
+       "node": "uv2",
+       "socket": "x"
+      }
+     },
+     {
+      "from": {
+       "node": "sz2",
+       "socket": "value"
+      },
+      "to": {
+       "node": "uv2",
+       "socket": "y"
+      }
+     },
+     {
+      "from": {
+       "node": "u1x",
+       "socket": "value"
+      },
+      "to": {
+       "node": "drift1",
+       "socket": "x"
+      }
+     },
+     {
+      "from": {
+       "node": "u1z",
+       "socket": "value"
+      },
+      "to": {
+       "node": "drift1",
+       "socket": "z"
+      }
+     },
+     {
+      "from": {
+       "node": "uv1",
+       "socket": "vector"
+      },
+      "to": {
+       "node": "pos1",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "drift1",
+       "socket": "vector"
+      },
+      "to": {
+       "node": "pos1",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "pos1",
+       "socket": "vector"
+      },
+      "to": {
+       "node": "tex1",
+       "socket": "uv"
+      }
+     },
+     {
+      "from": {
+       "node": "u2x",
+       "socket": "value"
+      },
+      "to": {
+       "node": "drift2",
+       "socket": "x"
+      }
+     },
+     {
+      "from": {
+       "node": "u2z",
+       "socket": "value"
+      },
+      "to": {
+       "node": "drift2",
+       "socket": "z"
+      }
+     },
+     {
+      "from": {
+       "node": "uv2",
+       "socket": "vector"
+      },
+      "to": {
+       "node": "pos2",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "drift2",
+       "socket": "vector"
+      },
+      "to": {
+       "node": "pos2",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "pos2",
+       "socket": "vector"
+      },
+      "to": {
+       "node": "tex2",
+       "socket": "uv"
+      }
+     },
+     {
+      "from": {
+       "node": "bounce",
+       "socket": "vector"
+      },
+      "to": {
+       "node": "sundot",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "light",
+       "socket": "direction"
+      },
+      "to": {
+       "node": "sundot",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "sundot",
+       "socket": "value"
+      },
+      "to": {
+       "node": "sunpos",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "sunpos",
+       "socket": "value"
+      },
+      "to": {
+       "node": "spec",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "spec",
+       "socket": "value"
+      },
+      "to": {
+       "node": "specsh",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "light",
+       "socket": "shadow"
+      },
+      "to": {
+       "node": "specsh",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "specsh",
+       "socket": "value"
+      },
+      "to": {
+       "node": "specg",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "op_sum",
+       "socket": "value"
+      },
+      "to": {
+       "node": "op_sum2",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "specg",
+       "socket": "value"
+      },
+      "to": {
+       "node": "op_sum2",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "specg",
+       "socket": "value"
+      },
+      "to": {
+       "node": "sunlit",
+       "socket": "r"
+      }
+     },
+     {
+      "from": {
+       "node": "specg",
+       "socket": "value"
+      },
+      "to": {
+       "node": "sunlit",
+       "socket": "g"
+      }
+     },
+     {
+      "from": {
+       "node": "specg",
+       "socket": "value"
+      },
+      "to": {
+       "node": "sunlit",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "sunlit",
+       "socket": "color"
+      },
+      "to": {
+       "node": "crest",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "light",
+       "socket": "color"
+      },
+      "to": {
+       "node": "crest",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "out",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit2",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "crest",
+       "socket": "color"
+      },
+      "to": {
+       "node": "lit2",
+       "socket": "b"
+      }
      }
     ],
     "output": {
-     "node": "out",
+     "node": "lit2",
      "socket": "color"
-    }
+    },
+    "opacity": {
+     "node": "op_sum2",
+     "socket": "value"
+    },
+    "params": [
+     {
+      "id": "size",
+      "label": "Ripple size",
+      "kind": "float",
+      "default": 0.075,
+      "min": 0.01,
+      "max": 0.4,
+      "target": {
+       "node": "dens",
+       "socket": "value"
+      }
+     },
+     {
+      "id": "speed",
+      "label": "Speed",
+      "kind": "float",
+      "default": 0.064,
+      "min": 0.0,
+      "max": 0.4,
+      "target": {
+       "node": "spd",
+       "socket": "value"
+      }
+     },
+     {
+      "id": "chop",
+      "label": "Chop",
+      "kind": "float",
+      "default": 0.6,
+      "min": 0.0,
+      "max": 2.0,
+      "target": {
+       "node": "nx",
+       "socket": "to_max"
+      }
+     },
+     {
+      "id": "clarity",
+      "label": "Looking down",
+      "kind": "float",
+      "default": 0.07,
+      "min": 0.0,
+      "max": 1.0,
+      "target": {
+       "node": "opacity",
+       "socket": "to_min"
+      }
+     },
+     {
+      "id": "glint",
+      "label": "Glint",
+      "kind": "float",
+      "default": 3.0,
+      "min": 0.0,
+      "max": 12.0,
+      "target": {
+       "node": "glint",
+       "socket": "b"
+      }
+     },
+     {
+      "id": "glitter",
+      "label": "Glitter",
+      "kind": "float",
+      "default": 0.9,
+      "min": 0.0,
+      "max": 3.0,
+      "target": {
+       "node": "specg",
+       "socket": "b"
+      }
+     },
+     {
+      "id": "tight",
+      "label": "Glitter tightness",
+      "kind": "float",
+      "default": 48.0,
+      "min": 4.0,
+      "max": 256.0,
+      "target": {
+       "node": "spec",
+       "socket": "b"
+      }
+     }
+    ]
    }
   }
  },

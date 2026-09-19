@@ -507,6 +507,10 @@ const en = {
     uploadPropPmx: "Upload prop PMX",
     rayConverting: (done: number, total: number) => `Converting ray-mmd maps ${done}/${total}`,
     rayApplied: (n: number) => `Applied ${n} ray-mmd materials`,
+    /** A track the browser took and then could not play. Said plainly, because
+     *  the symptom is silence and silence looks like a bug in this app. */
+    audioDecodeFailed: "The browser could not decode this track. Some WAVs — 24-bit and a few float layouts — are refused; re-saving as 16-bit WAV or MP3 fixes it.",
+    audioFormatUnsupported: "This audio format is not supported here. MP3, M4A, OGG and 16-bit WAV all play.",
     raySkipped: (n: number) => `${n} settings skipped, listed in the console`,
     uploadImage: "Upload media",
     uploadPlane: "Upload media",
@@ -1423,6 +1427,8 @@ const zh: Dictionary = {
     uploadPropPmx: "上传道具 PMX",
     rayConverting: (done: number, total: number) => `正在转换 ray-mmd 贴图 ${done}/${total}`,
     rayApplied: (n: number) => `已应用 ${n} 个 ray-mmd 材质`,
+    audioDecodeFailed: "浏览器无法解码这段音频。部分 WAV（24 位以及一些浮点格式）会被拒绝，另存为 16 位 WAV 或 MP3 即可。",
+    audioFormatUnsupported: "此处不支持该音频格式。MP3、M4A、OGG 和 16 位 WAV 都可以播放。",
     raySkipped: (n: number) => `跳过了 ${n} 项设置，详见控制台`,
     uploadImage: "上传媒体",
     uploadPlane: "上传媒体",

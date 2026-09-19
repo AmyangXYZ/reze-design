@@ -221,7 +221,7 @@ import {
 } from "reze-engine"
 import { accessoryFiles, convertXUploads, isFromX, xUnlitMaterials } from "@/lib/x-file"
 import { readRayMmd, type RayStage } from "@/lib/ray-mmd"
-import { setMaterialMaps } from "@/lib/material-maps"
+import { loadMaterialMaps, setMaterialMaps } from "@/lib/material-maps"
 import { findSkies, skyThumbnail, type SkyCandidate } from "@/lib/stage-skies"
 import { GpuErrorNotice } from "@/components/gpu-error-notice"
 import { toast } from "sonner"
@@ -2084,6 +2084,11 @@ const NO_PARENT = "__none"
 
 /** The settings keys that hold a block of dials, which is what `patch` merges
  *  into. A scalar setting is set outright. */
+/** Each material's PMX memo, keyed by name — what a converted stage says its
+ *  materials were. Empty for a hand-authored model, which claims nothing. */
+const memosOf = (materials: { name: string; memo?: string }[]): Record<string, string> =>
+  Object.fromEntries(materials.filter((m) => m.memo).map((m) => [m.name, m.memo!]))
+
 export default function Lab() {
   const t = useT()
   // The dock's tables in the reader's language. Rebuilt only when the locale
@@ -2949,26 +2954,55 @@ export default function Lab() {
     [loadMorphFile, morphByModel],
   )
   const musicInput = useRef<HTMLInputElement | null>(null)
+  // THE OLD URL IS REVOKED BY THE EFFECT BELOW, not in here.
+  //
+  // A state updater must be pure: React is free to call it more than once and to
+  // throw a result away. Revoking inside one meant a re-invocation could be
+  // handed the CLIP IT JUST CREATED as `prev` and revoke the blob the element
+  // was at that moment playing — which reads as a track that uploaded fine and
+  // made no sound, and comes back on reload because reloading mints a new URL.
   const setMusicFile = useCallback((file: File) => {
     sceneFiles.audio = file
     // The companions belonged to the track being replaced — a new song's notes
     // and words are not this one's, so the slots empty with it.
     sceneFiles.score = null
     sceneFiles.lyrics = null
-    setMusicClip((prev) => {
-      dropMusicUrl(prev)
-      return { name: file.name, url: URL.createObjectURL(file) }
-    })
+    setMusicClip({ name: file.name, url: URL.createObjectURL(file) })
   }, [])
   const removeMusic = () => {
     sceneFiles.audio = null
     sceneFiles.score = null
     sceneFiles.lyrics = null
-    setMusicClip((prev) => {
-      dropMusicUrl(prev)
-      return null
-    })
+    setMusicClip(null)
   }
+  // One owner for every blob URL this row mints: the cleanup runs with the URL
+  // that is being replaced, after React has committed the one replacing it, so
+  // the element never points at a revoked blob.
+  useEffect(() => {
+    const clip = musicClip
+    return () => dropMusicUrl(clip)
+  }, [musicClip])
+  // A TRACK THAT CANNOT DECODE SAYS SO. The element fails silently — the clock
+  // keeps running, the motion plays, and the only symptom is no sound, which is
+  // indistinguishable from a muted tab or a bug in this app. Chrome refuses WAVs
+  // it dislikes (24-bit and some float layouts among them) exactly this way.
+  useEffect(() => {
+    const el = audioRef.current
+    if (!el || !musicClip) return
+    const onError = () => {
+      const code = el.error?.code
+      const why =
+        code === MediaError.MEDIA_ERR_DECODE
+          ? t.lab.audioDecodeFailed
+          : code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
+            ? t.lab.audioFormatUnsupported
+            : (el.error?.message ?? "")
+      toast.error(musicClip.name, { description: why, duration: 12000 })
+      console.error(`[audio] ${musicClip.name} failed to load: code ${code ?? "?"} ${el.error?.message ?? ""}`)
+    }
+    el.addEventListener("error", onError)
+    return () => el.removeEventListener("error", onError)
+  }, [musicClip, t])
   // Taking the track away has to be TOLD to the element. React drops the `src`
   // attribute, and dropping it is not the same as setting it: the media load
   // algorithm runs when src is set or changed, so a removed attribute leaves the
@@ -4788,13 +4822,10 @@ export default function Lab() {
    *  stage as classified, or the one render that was too early becomes final. */
   const autoStyleStage = useCallback(
     (id: string) => {
-      const names =
-        engineRef.current
-          ?.getModel(id)
-          ?.getMaterials()
-          .map((m) => m.name) ?? []
+      const loaded = engineRef.current?.getModel(id)?.getMaterials() ?? []
+      const names = loaded.map((m) => m.name)
       if (names.length === 0) return false
-      const next = stageStyleGroups(names, groupsByModel[id] ?? [])
+      const next = stageStyleGroups(names, groupsByModel[id] ?? [], memosOf(loaded))
       if (next) void applyGroups(id, next)
       return true
     },
@@ -4877,7 +4908,7 @@ export default function Lab() {
         // 74% loses a random quarter of itself and reads as television static.
       }
       styled.current.add(id)
-      void applyGroups(id, stageStyleGroups(names, [group]) ?? [group])
+      void applyGroups(id, stageStyleGroups(names, [group], memosOf(materials)) ?? [group])
     },
     [engineRef, applyGroups],
   )
@@ -4891,13 +4922,10 @@ export default function Lab() {
     (id: string, ray: RayStage) => {
       setMaterialMaps(id, ray.maps)
       for (const name of ray.hidden) toggleVisible(id, name)
-      const names =
-        engineRef.current
-          ?.getModel(id)
-          ?.getMaterials()
-          .map((m) => m.name) ?? []
+      const loaded = engineRef.current?.getModel(id)?.getMaterials() ?? []
+      const names = loaded.map((m) => m.name)
       styled.current.add(id)
-      void applyGroups(id, stageStyleGroups(names, ray.groups) ?? ray.groups)
+      void applyGroups(id, stageStyleGroups(names, ray.groups, memosOf(loaded)) ?? ray.groups)
     },
     [engineRef, applyGroups, toggleVisible],
   )
@@ -4910,6 +4938,11 @@ export default function Lab() {
         if (total > 0) toast.loading(t.lab.rayConverting(done, total), { id: toastId })
       })
       const id = await add(ray?.files ?? files, pmx)
+      // The maps sidecar, before any look is applied: applyGroups hands a group
+      // its materials' maps as it goes to the engine, so they have to be
+      // resident first. A stage without one clears whatever the last model
+      // under this id left behind, which is the same call doing that job.
+      await loadMaterialMaps(id, files, relFilePath(pmx), relFilePath)
       if (!ray) {
         styleAccessory(id, pmx)
         return id

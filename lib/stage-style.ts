@@ -76,6 +76,32 @@ export const STAGE_MATERIAL_RULES: { graph: string; keywords: string[]; alphaMod
   { graph: "Plastic", keywords: ["プラスチック", "ビニール", "塑料", "塑胶", "pvc", "plastic", "toy"] },
 ]
 
+/**
+ * Source shader → look, for a stage that says what its materials WERE.
+ *
+ * The keyword table below guesses from a name, which is all a hand-authored PMX
+ * offers. A stage converted out of a game engine knows better: the converter
+ * writes the material's source shader into the PMX memo, a free-text field MMD
+ * shows and nothing else reads. `Terrain_X333_005` is a pane of glass whose
+ * name says "terrain"; no keyword will ever catch it, and its own shader says
+ * `SimPipeline/PBR/Glass`.
+ *
+ * Matched on the tail after the last slash, so a family ports without listing
+ * every variant, and checked BEFORE the keywords — a statement beats a guess.
+ */
+export const SHADER_LOOKS: Record<string, string> = {
+  Ripplet: "Water",
+  Glass: "Glass",
+  Plant: "Foliage",
+  SceneBillboard: "Foliage",
+}
+
+/** The look a material's own source shader means, or null. */
+export function shaderLookFor(memo: string): string | null {
+  const tail = memo.slice(memo.lastIndexOf("/") + 1).trim()
+  return SHADER_LOOKS[tail] ?? null
+}
+
 /** The look a stage material name means, or null when nothing does. */
 export function stageLookFor(material: string): string | null {
   const name = fold(material)
@@ -94,7 +120,12 @@ export function stageLookFor(material: string): string | null {
  * Returns null when nothing changed, so a caller can skip a recompile it does
  * not need.
  */
-export function stageStyleGroups(materials: string[], existing: StyleGroup[]): StyleGroup[] | null {
+export function stageStyleGroups(
+  materials: string[],
+  existing: StyleGroup[],
+  /** Each material's PMX memo, when the model carries one. */
+  memos: Record<string, string> = {},
+): StyleGroup[] | null {
   // Never touch the pinned character groups even if a stage somehow has them:
   // they carry render classes, and this table knows nothing about those.
   const base = existing.filter((g) => g.renderClass !== "eye" && g.renderClass !== "hair")
@@ -102,7 +133,7 @@ export function stageStyleGroups(materials: string[], existing: StyleGroup[]): S
   const byLook = new Map<string, string[]>()
   for (const material of materials) {
     if (grouped.has(material)) continue
-    const look = stageLookFor(material)
+    const look = shaderLookFor(memos[material] ?? "") ?? stageLookFor(material)
     if (!look) continue
     byLook.set(look, [...(byLook.get(look) ?? []), material])
   }
