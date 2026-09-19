@@ -11,7 +11,7 @@
 // It is app-side on purpose — a keyword table is taste, it will be edited often,
 // and it must never be able to reach the engine's render classes.
 
-import type { StyleGroup } from "reze-engine"
+import type { AlphaMode, StyleGroup } from "reze-engine"
 import { fold } from "@/lib/command-search"
 import { libraryGraph } from "@/lib/materials"
 
@@ -35,7 +35,7 @@ import { libraryGraph } from "@/lib/materials"
  * made of, and guessing concrete for every floor would repaint the largest
  * surface of every stage on the way in.
  */
-export const STAGE_MATERIAL_RULES: { graph: string; keywords: string[] }[] = [
+export const STAGE_MATERIAL_RULES: { graph: string; keywords: string[]; alphaMode?: AlphaMode }[] = [
   { graph: "Emissive", keywords: ["発光", "電球", "ネオン", "蛍光", "ライト", "灯泡", "发光", "霓虹", "灯", "neon", "emissive", "emission", "bulb", "lamp", "light"] },
   { graph: "Gold", keywords: ["金色", "真鍮", "ゴールド", "黄金", "黄铜", "青铜", "gold", "golden", "brass", "bronze"] },
   { graph: "Glass", keywords: ["ガラス", "硝子", "レンズ", "窓", "玻璃", "窗", "镜片", "glass", "window", "lens", "pane"] },
@@ -43,6 +43,20 @@ export const STAGE_MATERIAL_RULES: { graph: string; keywords: string[] }[] = [
   { graph: "Brick", keywords: ["レンガ", "煉瓦", "砖墙", "砖头", "砖", "brick"] },
   { graph: "Concrete", keywords: ["コンクリート", "セメント", "混凝土", "水泥", "shuini", "concrete", "cement"] },
   { graph: "Stone", keywords: ["大理石", "石材", "花岗岩", "石头", "岩", "石", "stone", "marble", "granite", "rock"] },
+  // FOLIAGE IS ALPHA-TESTED, which is the whole reason it has a rule. A leaf
+  // card's antialiased edges put it in the alpha-blend bucket, where the cards
+  // are drawn in author order and stop occluding each other — soft haloed
+  // leaves and haze wherever the canopy overlaps itself. `hashed` is
+  // alpha-to-coverage in the opaque phase: crisp edges, depth written, which
+  // is what the games these stages come from do with exactly these materials.
+  //
+  // Ahead of Wood, so a tree is a tree before it is timber, and ahead of
+  // Fabric, so a leaf is never cloth.
+  {
+    graph: "Foliage",
+    alphaMode: "hashed",
+    keywords: ["植物", "樹木", "葉", "芝", "草", "花", "树", "叶", "灌木", "plant", "tree", "shrub", "bush", "leaf", "leaves", "foliage", "grass", "flower", "ivy", "vegetation"],
+  },
   { graph: "Wood", keywords: ["木材", "木目", "木板", "木頭", "木头", "板", "木", "wood", "plank", "timber"] },
   { graph: "Fabric", keywords: ["カーテン", "生地", "布料", "窗帘", "织物", "幕", "布", "fabric", "cloth", "textile", "curtain"] },
   { graph: "Leather", keywords: ["レザー", "皮革", "皮带", "革", "皮", "leather"] },
@@ -113,7 +127,15 @@ export function stageStyleGroups(materials: string[], existing: StyleGroup[]): S
     let id = `stage-${look.toLowerCase()}`
     for (let n = 2; taken.has(id); n++) id = `stage-${look.toLowerCase()}-${n}`
     taken.add(id)
-    next.push({ id, label: look, materials: names, graph: structuredClone(graph), renderClass: "auto" })
+    const alphaMode = STAGE_MATERIAL_RULES.find((r) => r.graph === look)?.alphaMode
+    next.push({
+      id,
+      label: look,
+      materials: names,
+      graph: structuredClone(graph),
+      renderClass: "auto",
+      ...(alphaMode ? { alphaMode } : {}),
+    })
     changed = true
   }
   return changed ? next : null

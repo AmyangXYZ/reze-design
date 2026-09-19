@@ -4683,7 +4683,7 @@
   "kind": "graph",
   "name": "Foliage",
   "author": "amyang-xyz",
-  "description": "Leaves, grass and hedges — rough, unpolished, and no metal anywhere in it. Reads the same maps Mapped PBR does, so a converted stage's foliage keeps its normals.",
+  "description": "Leaves, grass and hedges — rough, unpolished, and no metal anywhere in it. Alpha-tested, so a leaf card keeps a crisp edge and occludes the canopy behind it.",
   "tags": [
    "stage",
    "plant"
@@ -4695,7 +4695,7 @@
     "name": "Foliage",
     "tags": [
      "stage",
-     "plant"
+     "foliage"
     ],
     "nodes": [
      {
@@ -4710,104 +4710,19 @@
       "id": "base",
       "type": "mix/multiply",
       "inputs": {
-       "fac": 1
-      }
-     },
-     {
-      "id": "normal_map",
-      "type": "tex_image/0"
-     },
-     {
-      "id": "normal",
-      "type": "normal_map",
-      "inputs": {
-       "strength": 1
-      }
-     },
-     {
-      "id": "property_map",
-      "type": "tex_image/1"
-     },
-     {
-      "id": "channels",
-      "type": "separate_color"
-     },
-     {
-      "id": "metal",
-      "type": "map_range/linear",
-      "inputs": {
-       "from_min": 0,
-       "from_max": 1,
-       "to_min": 0,
-       "to_max": 0
-      }
-     },
-     {
-      "id": "rough",
-      "type": "map_range/linear",
-      "inputs": {
-       "from_min": 0,
-       "from_max": 1,
-       "to_min": 0.85,
-       "to_max": 0.85
-      }
-     },
-     {
-      "id": "occlusion",
-      "type": "map_range/linear",
-      "inputs": {
-       "from_min": 0,
-       "from_max": 1,
-       "to_min": 1,
-       "to_max": 1
-      }
-     },
-     {
-      "id": "occlusion_color",
-      "type": "combine_color"
-     },
-     {
-      "id": "albedo",
-      "type": "mix/multiply",
-      "inputs": {
-       "fac": 1
+       "fac": 1.0
       }
      },
      {
       "id": "principled",
       "type": "principled",
       "inputs": {
-       "metallic": 0,
-       "roughness": 0.85,
-       "specular_ior_level": 0.5,
-       "spec_clamp": 10,
-       "sheen_weight": 0,
-       "sheen_tint": 0
-      }
-     },
-     {
-      "id": "sky",
-      "type": "environment"
-     },
-     {
-      "id": "facing",
-      "type": "layer_weight/fresnel",
-      "inputs": {
-       "blend": 0.5
-      }
-     },
-     {
-      "id": "reflect",
-      "type": "math/multiply",
-      "inputs": {
-       "b": 0.0
-      }
-     },
-     {
-      "id": "lit",
-      "type": "mix/add",
-      "inputs": {
-       "fac": 1
+       "metallic": 0.0,
+       "specular_ior_level": 0.2,
+       "roughness": 0.8,
+       "spec_clamp": 10.0,
+       "sheen_weight": 0.0,
+       "sheen_tint": 0.0
       }
      }
     ],
@@ -4834,197 +4749,17 @@
      },
      {
       "from": {
-       "node": "normal_map",
-       "socket": "color"
-      },
-      "to": {
-       "node": "normal",
-       "socket": "color"
-      }
-     },
-     {
-      "from": {
-       "node": "property_map",
-       "socket": "color"
-      },
-      "to": {
-       "node": "channels",
-       "socket": "color"
-      }
-     },
-     {
-      "from": {
-       "node": "channels",
-       "socket": "r"
-      },
-      "to": {
-       "node": "metal",
-       "socket": "value"
-      }
-     },
-     {
-      "from": {
-       "node": "channels",
-       "socket": "g"
-      },
-      "to": {
-       "node": "rough",
-       "socket": "value"
-      }
-     },
-     {
-      "from": {
-       "node": "channels",
-       "socket": "b"
-      },
-      "to": {
-       "node": "occlusion",
-       "socket": "value"
-      }
-     },
-     {
-      "from": {
-       "node": "occlusion",
-       "socket": "value"
-      },
-      "to": {
-       "node": "occlusion_color",
-       "socket": "r"
-      }
-     },
-     {
-      "from": {
-       "node": "occlusion",
-       "socket": "value"
-      },
-      "to": {
-       "node": "occlusion_color",
-       "socket": "g"
-      }
-     },
-     {
-      "from": {
-       "node": "occlusion",
-       "socket": "value"
-      },
-      "to": {
-       "node": "occlusion_color",
-       "socket": "b"
-      }
-     },
-     {
-      "from": {
        "node": "base",
-       "socket": "color"
-      },
-      "to": {
-       "node": "albedo",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
-       "node": "occlusion_color",
-       "socket": "color"
-      },
-      "to": {
-       "node": "albedo",
-       "socket": "b"
-      }
-     },
-     {
-      "from": {
-       "node": "albedo",
        "socket": "color"
       },
       "to": {
        "node": "principled",
        "socket": "base_color"
       }
-     },
-     {
-      "from": {
-       "node": "metal",
-       "socket": "value"
-      },
-      "to": {
-       "node": "principled",
-       "socket": "metallic"
-      }
-     },
-     {
-      "from": {
-       "node": "rough",
-       "socket": "value"
-      },
-      "to": {
-       "node": "principled",
-       "socket": "roughness"
-      }
-     },
-     {
-      "from": {
-       "node": "normal",
-       "socket": "normal"
-      },
-      "to": {
-       "node": "principled",
-       "socket": "normal"
-      }
-     },
-     {
-      "from": {
-       "node": "rough",
-       "socket": "value"
-      },
-      "to": {
-       "node": "sky",
-       "socket": "roughness"
-      }
-     },
-     {
-      "from": {
-       "node": "facing",
-       "socket": "value"
-      },
-      "to": {
-       "node": "reflect",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
-       "node": "principled",
-       "socket": "color"
-      },
-      "to": {
-       "node": "lit",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
-       "node": "sky",
-       "socket": "color"
-      },
-      "to": {
-       "node": "lit",
-       "socket": "b"
-      }
-     },
-     {
-      "from": {
-       "node": "reflect",
-       "socket": "value"
-      },
-      "to": {
-       "node": "lit",
-       "socket": "fac"
-      }
      }
     ],
     "output": {
-     "node": "lit",
+     "node": "principled",
      "socket": "color"
     }
    }
