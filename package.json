@@ -14,7 +14,8 @@
     "db:check": "node --env-file=.env.local scripts/db-check.mjs",
     "r2:check": "node --env-file=.env.local scripts/r2-check.mjs",
     "db:users": "node --env-file=.env.local scripts/db-users.mjs",
-    "db:seed": "node --env-file=.env.local scripts/db-seed.mjs"
+    "db:seed": "node --env-file=.env.local scripts/db-seed.mjs",
+    "db:swap-scene": "node --env-file=.env.local scripts/db-swap-scene-content.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1097.0",
