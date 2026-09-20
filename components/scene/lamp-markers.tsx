@@ -96,9 +96,16 @@ export function LampMarkers({
             //
             // At rest the glyph stands alone, and its shadow is what separates
             // it from the scene behind it.
+            // The dark: twin of every background is written out, because the
+            // ghost variant carries `dark:hover:bg-accent/50` and that is a
+            // DIFFERENT merge key from `hover:bg-*` — a plain hover override
+            // leaves it standing, and in dark mode it is the one that wins. It
+            // put a solid grey disc behind a glyph asking for five per cent.
             className={cn(
               "pointer-events-auto absolute top-0 left-0 rounded-full transition-colors",
-              openId === l.id ? "bg-black/40" : "hover:bg-black/20",
+              openId === l.id
+                ? "bg-black/10 hover:bg-black/10 dark:hover:bg-black/10"
+                : "hover:bg-black/5 dark:hover:bg-black/5",
             )}
             // THE COLOUR GOES ON THE GLYPH, not on the button. A ring's colour
             // falls back to currentColor, so tinting the button tinted its
