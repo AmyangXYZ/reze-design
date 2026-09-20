@@ -143,6 +143,11 @@ struct RzSubject {
    *  held at 1: an effect that draws what LEAVES a dissolving body has nothing
    *  to draw against a subject who never goes. */
   dissolve: f32,
+  /** Where she LOOKS — the engine has carried this since eye tracking landed,
+   *  and the card had not: an effect that aims along the look compiled against
+   *  the real cast and failed here, which reads as the EFFECT being broken. */
+  gaze: vec3f,
+  looking: bool,
   valid: bool,
 }
 struct RzAnchor {
@@ -172,6 +177,12 @@ fn rzSubject(i: i32) -> RzSubject {
   else if (c >= 3.5 && c < 4.15) { d = 0.0; }
   else if (c >= 4.15) { d = (c - 4.15) / 0.35; }
   s.dissolve = clamp(d, 0.0, 1.0);
+  // AT THE CAMERA, which sits on -Z, with a slow turn across it. A gaze held
+  // rigid would let an effect that fires along it look correct while being
+  // wired to a constant; swinging it means the card shows the aim following
+  // the head, which is the whole reason an effect reads the gaze at all.
+  s.gaze = normalize(vec3f(sin(u.time * 0.35) * 0.35, -0.05, -1.0));
+  s.looking = true;
   return s;
 }
 fn rzSubjectHip(i: i32) -> vec3f { return rzSubject(i).center; }

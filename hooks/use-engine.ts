@@ -62,6 +62,25 @@ export type {
   ViewportHandlers,
 } from "@/lib/scene-host"
 
+/**
+ * Add or replace by id.
+ *
+ * THESE LISTS ARE RENDERED BY ID, so two entries sharing one is never a state
+ * worth holding: React keys them together and warns, and whichever it keeps has
+ * the other's row. Appending assumed the list was empty when a scene loads,
+ * which is true on a cold boot and false on a hot reload — the module re-runs,
+ * the loader runs again, and the lists it is adding to survived it, so the demo
+ * cast arrives a second time.
+ *
+ * Fixed here rather than by hunting what ran twice, because the invariant holds
+ * regardless of the cause: an id names one model, so a list of models holds it
+ * once.
+ */
+function withId<T extends { id: string }>(list: T[], item: T): T[] {
+  const at = list.findIndex((x) => x.id === item.id)
+  return at < 0 ? [...list, item] : list.map((x, n) => (n === at ? item : x))
+}
+
 export function useEngine(
   /** The scene to boot into — read ONCE (constructor options + first loadModel + addGround) */
   initialScene: Scene,
@@ -205,10 +224,10 @@ export function useEngine(
           // Each model joins the lists as it lands, so a host can name it, show
           // its row and give it its motion while the rest are still loading.
           onModel: (info, groups, stage, prop) => {
-            setModels((prev) => [...prev, info])
+            setModels((prev) => withId(prev, info))
             setGroupsByModel((prev) => ({ ...prev, [info.id]: groups }))
-            if (stage) setStages((prev) => [...prev, stage])
-            if (prop) setProps((prev) => [...prev, prop])
+            if (stage) setStages((prev) => withId(prev, stage))
+            if (prop) setProps((prev) => withId(prev, prop))
           },
         })
         if (!loaded) return
@@ -379,7 +398,7 @@ export function useEngine(
     }
     // One commit with the reveal above it — the mesh, its shading and its row
     // land on the same frame.
-    setModels((prev) => [...prev, infoFor(id, pmxBaseName(pmxFile.name), model, undefined, { at: position, guess: true })])
+    setModels((prev) => withId(prev, infoFor(id, pmxBaseName(pmxFile.name), model, undefined, { at: position, guess: true })))
     setGroupsByModel((prev) => ({ ...prev, [id]: groups }))
     return id
   }, [])
@@ -444,14 +463,14 @@ export function useEngine(
     const hidden = (kept?.hidden ?? []).filter((n) => names.has(n))
     for (const name of hidden) engine.toggleMaterialVisible(id, name)
     for (const [morph, weight] of Object.entries(kept?.stage.morphs ?? {})) model.setMorphWeight(morph, weight)
-    setModels((prev) => [...prev, infoFor(id, pmxBaseName(pmxFile.name), model, hidden)])
+    setModels((prev) => withId(prev, infoFor(id, pmxBaseName(pmxFile.name), model, hidden)))
     setGroupsByModel((prev) => ({ ...prev, [id]: groups }))
     // A part starts where the stage stands, and moves with it from then on.
     const transform = part
       ? (stagesRef.current[0]?.transform ?? DEFAULT_STAGE_TRANSFORM)
       : (kept?.stage.transform ?? DEFAULT_STAGE_TRANSFORM)
     if (part || kept) engine.setModelTransform(id, stageTransformToEngine(transform))
-    setStages((prev) => [...prev, { id, file: pmxBaseName(pmxFile.name), transform, morphs: kept?.stage.morphs ?? {} }])
+    setStages((prev) => withId(prev, { id, file: pmxBaseName(pmxFile.name), transform, morphs: kept?.stage.morphs ?? {} }))
     return id
   }
   const addStageFromFiles = useCallback(
@@ -485,9 +504,9 @@ export function useEngine(
     } finally {
       engine.setModelTransform(id, { visible: true })
     }
-    setModels((prev) => [...prev, infoFor(id, pmxBaseName(pmxFile.name), model)])
+    setModels((prev) => withId(prev, infoFor(id, pmxBaseName(pmxFile.name), model)))
     setGroupsByModel((prev) => ({ ...prev, [id]: groups }))
-    setProps((prev) => [...prev, { id, file: pmxBaseName(pmxFile.name), transform: DEFAULT_STAGE_TRANSFORM, morphs: {}, attach: null, parentKeys: [] }])
+    setProps((prev) => withId(prev, { id, file: pmxBaseName(pmxFile.name), transform: DEFAULT_STAGE_TRANSFORM, morphs: {}, attach: null, parentKeys: [] }))
     return id
   }, [])
 
