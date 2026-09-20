@@ -563,6 +563,7 @@ const en = {
       sun: "Sun",
       /** The scene's positional lights. Plural and plain: a stage import brings
        *  a room's worth of them, and "Lights" would read as the row's own name. */
+      lamps: "Lamps",
       grade: "Grade",
       tone: "Tone",
       bloom: "Bloom",
@@ -701,6 +702,16 @@ const en = {
       background360: "skybox",
       world: "world",
     },
+    lamp: {
+      add: "Add lamp",
+      /** Named on arrival so the list is readable before anything is placed.
+       *  Numbered by how many exist, which is what a person counting them would
+       *  say, and free to collide — a lamp is addressed by id. */
+      name: (n: number) => `Lamp ${n}`,
+      /** The switch. A lamp turned off leaves the engine entirely rather than
+       *  dimming to zero, so this is off, not dark. */
+      on: "On",
+    },
     ctl: {
       /** Puts an effect's dials back to what its shader declared. Disabled when
        *  none has been moved, so the button also says whether this scene has
@@ -779,6 +790,8 @@ const en = {
       exposure: "Exposure",
       threshold: "Threshold",
       radius: "Radius",
+      /** What a lamp reaches. "Radius" is the engine's word and the falloff is
+       *  exactly zero at it, so the number is a promise rather than a feel. */
       gravity: "Gravity",
       floor: "Ground collision",
       volume: "Volume",
@@ -1471,6 +1484,7 @@ const zh: Dictionary = {
       composite: "实景",
       world: "环境光",
       sun: "太阳",
+      lamps: "灯",
       grade: "调色",
       tone: "色调",
       bloom: "泛光",
@@ -1589,6 +1603,11 @@ const zh: Dictionary = {
       plate: "实景素材",
       background360: "天空盒",
       world: "世界",
+    },
+    lamp: {
+      add: "添加灯",
+      name: (n: number) => `灯 ${n}`,
+      on: "开",
     },
     ctl: {
       resetParams: "重置",

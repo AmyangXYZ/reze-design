@@ -145,6 +145,7 @@ import {
   CAMERA_DEFAULT_FOV,
   hydrateScene,
   idbBundleOf,
+  newLightId,
   newSceneId,
   parseSceneDoc,
   saveSceneAssets,
@@ -153,6 +154,7 @@ import {
   type Scene,
   type SceneCamera,
   type SceneDoc,
+  type SceneLight,
   type SceneState,
 } from "@/lib/scene"
 import { collectSceneSlots as collectSlots, type CollectedAnim, type SceneSlots } from "@/lib/scene-collect"
@@ -221,11 +223,13 @@ import {
   type Diagnostic,
   type EffectParamValue,
   type MaterialPreset,
+  type OverlayPrimitive,
   type ShaderGraph,
   type StyleGroup,
   parseLRC,
   UNLIT_GRAPH,
 } from "reze-engine"
+import { LampMarkers } from "@/components/scene/lamp-markers"
 import { accessoryFiles, convertXUploads, isFromX, xUnlitMaterials } from "@/lib/x-file"
 import { readRayMmd, type RayStage } from "@/lib/ray-mmd"
 import { loadMaterialMaps, setMaterialMaps } from "@/lib/material-maps"
@@ -233,7 +237,7 @@ import { findSkies, skyThumbnail, type SkyCandidate } from "@/lib/stage-skies"
 import { GpuErrorNotice } from "@/components/gpu-error-notice"
 import { toast } from "sonner"
 import { lipSyncVmdFile } from "@/lib/lipsync"
-import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, windFreqFromSlider, windSliderFromFreq, type SceneSettings } from "@/lib/scene-settings"
+import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, hexToLinearVec3, windFreqFromSlider, windSliderFromFreq, type SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 import { storageKey } from "@/lib/storage"
 
@@ -536,11 +540,25 @@ function layersFor(t: Dictionary) {
     // "Environment", not "Stage": the row holds Stage | Ground | Background, and
     // a container named after one of its tabs read as filing confusion.
     { id: "stage", name: t.lab.rows.stage, icon: Mountain, presets: [] },
+    // THE ORDER IS THE ORDER YOU WORK IN. Light follows the place it falls on,
+    // because a scene is lit before it is dressed and long before it is graded —
+    // and with lamps in it this row is now where most of an imported stage's
+    // evening is spent.
+    //
+    // A lamp, not the sun: Sun is the SUN — one of the three things this row
+    // holds, and a row wearing the icon of its own tab claims to be that tab.
+    { id: "light", name: t.lab.rows.light, icon: Lightbulb, presets: [] },
     // Its own row, not a Background line: an effect can sit in front of the
     // scene as well as behind it (the layer flag is coming with the engine's
     // global mount), so it is scene dressing like Grade, not part of the
     // backdrop.
     { id: "effect", name: t.lab.rows.effect, icon: Sparkles, presets: [] },
+    // Post, not Grade: the row is the whole after-the-render pass — the colour
+    // grade and the glow the camera adds to bright pixels. Lighting (including a
+    // future character rim) stays in Light; those change how surfaces respond,
+    // not what happens to the finished frame.
+    { id: "post", name: t.lab.rows.post, icon: Contrast, presets: [] },
+    { id: "physics", name: t.lab.rows.physics, icon: Atom, presets: [] },
     // Things standing IN the scene that are neither cast nor environment: a
     // card carrying a picture, a prop the cast holds. A card is occluded by
     // what is in front of it and takes perspective when turned, which is the
@@ -548,15 +566,6 @@ function layersFor(t: Dictionary) {
     // tab; a prop is PMX geometry that hangs off a bone. Two tabs of one row,
     // the Environment row's own pattern.
     { id: "object", name: t.lab.rows.object, icon: Shapes, presets: [] },
-    // Post, not Grade: the row is the whole after-the-render pass — the colour
-    // grade and the glow the camera adds to bright pixels. Lighting (including a
-    // future character rim) stays in Light; those change how surfaces respond,
-    // not what happens to the finished frame.
-    { id: "post", name: t.lab.rows.post, icon: Contrast, presets: [] },
-    // A lamp, not the sun: Sun is the SUN — one of the two things this row
-    // holds, and a row wearing the icon of its own tab claims to be that tab.
-    { id: "light", name: t.lab.rows.light, icon: Lightbulb, presets: [] },
-    { id: "physics", name: t.lab.rows.physics, icon: Atom, presets: [] },
   ] as const
 }
 
@@ -739,6 +748,7 @@ function tabNameFor(t: Dictionary): Record<string, string> {
     background: t.lab.tabs.background,
     world: t.lab.tabs.world,
     sun: t.lab.tabs.sun,
+    lamps: t.lab.tabs.lamps,
     plane: t.lab.tabs.plane,
     prop: t.lab.tabs.prop,
   }
@@ -3094,7 +3104,7 @@ export default function Lab() {
   const [stageTab, setStageTab] = useState<"stage" | "ground" | "background" | "composite">("ground")
   const [cameraTab, setCameraTab] = useState<"lens" | "focus">("lens")
   const [postTab, setPostTab] = useState<"grade" | "tone" | "bloom" | "outline">("grade")
-  const [lightTab, setLightTab] = useState<"world" | "sun">("world")
+  const [lightTab, setLightTab] = useState<"world" | "sun" | "lamps">("world")
   const [objectTab, setObjectTab] = useState<"plane" | "prop">("plane")
 
   // Sun, world and glow — seeded from the document, which is ALSO what the
@@ -3135,6 +3145,23 @@ export default function Lab() {
       stampEffectUids(typeof update === "function" ? (update as (p: AppliedEffect[]) => AppliedEffect[])(prev) : update),
     )
   }, [])
+  /**
+   * The lamps this scene places.
+   *
+   * Beside the effects list rather than inside `settings`, because that is what
+   * they are: settings is a record of dials, and a lamp is a thing standing
+   * somewhere with a name and an identity. The sun and the world stay dials.
+   */
+  const [lights, setLightsState] = useState<SceneLight[]>(() => scene.state.lights)
+  /** Which lamp's panel is open, by id. Also what the viewport rings: the lamp
+   *  you are editing is the one whose reach is worth drawing. */
+  const [lampOpen, setLampOpen] = useState<string | null>(null)
+  /** Patch one lamp, by id. */
+  const patchLight = useCallback(
+    (id: string, part: Partial<SceneLight>) =>
+      setLightsState((list) => list.map((l) => (l.id === id ? { ...l, ...part } : l))),
+    [],
+  )
   /** Which effect's strip is open below the list. BY UID, like everything else
    *  addressing one COPY of an effect rather than the effect. */
   const [selectedEffect, setSelectedEffect] = useState<string | null>(null)
@@ -3729,6 +3756,7 @@ export default function Lab() {
     cameraVmd: cameraClip !== null,
     gradeSpec: appliedGradeSpec,
     backgroundEffects: bgEffects,
+    lights,
     hasBackdrop: !!bgImage && bgImage.slot !== "dome",
     plate: bgImage?.slot === "plate",
     plateStill: plate?.kind === "image",
@@ -3740,6 +3768,62 @@ export default function Lab() {
     castIds: castIdList,
     onEffectSurface: setEffectSurface,
   })
+
+  /** Whether the lamps are what you are working on — what both the markers and
+   *  the overlay layer appear with. One expression, so the two cannot disagree
+   *  about when a lamp is being edited. */
+  const editingLamps = ready && !framing.exporting && openRow === "light" && lightTab === "lamps"
+
+  /**
+   * A marker per lamp, so a light is something you can see and not only a row.
+   *
+   * IN THE EDITOR ONLY. The sync hook is what a viewer runs too, and a published
+   * scene must show the light rather than the fixture — so this lives here, with
+   * the docks and the gizmos, rather than beside setLights.
+   *
+   * The one whose panel is OPEN also draws its radius, which is the number
+   * hardest to hold in your head: the falloff reaches exactly zero there, so the
+   * sphere is where the lamp stops, not where it starts to fade.
+   */
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!ready || !engine) return
+    // GONE WHEN THE TAB IS, and cleared rather than left standing. The DOM
+    // markers unmount with the tab because they are JSX; this layer lives in the
+    // engine, so leaving the tab left its drop lines drawn over every other
+    // task — a set of vertical dashes with nothing on screen to explain them.
+    if (!editingLamps) {
+      engine.setOverlay("lights", [])
+      return
+    }
+    const marks: OverlayPrimitive[] = []
+    for (const l of lights) {
+      const c = hexToLinearVec3(l.color)
+      const a = l.on === false ? 0.3 : 1
+      // THE DROP LINE, which is the one that makes three sliders usable. A lamp
+      // floating in an empty viewport has no depth at all — you cannot tell a
+      // near lamp low down from a far one up high. A dashed line to the floor
+      // underneath it says where it actually stands, the way every DCC does.
+      // Dashed rather than solid so it reads as a helper and not as geometry.
+      if (l.position[1] > 0.01)
+        marks.push({
+          shape: "dashedLine",
+          position: [l.position[0], 0, l.position[2]],
+          scale: [1, l.position[1], 1],
+          color: [c.x, c.y, c.z, a * 0.5],
+        })
+      // The reach, for the lamp being edited. Only that one: thirty of these at
+      // once is a fog, and the number is only in question while you are moving it.
+      if (l.id === lampOpen)
+        marks.push({
+          shape: "sphere",
+          position: l.position,
+          scale: [l.radius, l.radius, l.radius],
+          color: [c.x, c.y, c.z, 0.25],
+        })
+    }
+    engine.setOverlay("lights", marks)
+  }, [lights, lampOpen, ready, engineRef, editingLamps])
 
   // Effects: the same selection model as grade, one library over.
   const { drafts: effectDrafts } = useDrafts<EffectItem>("effect")
@@ -5645,6 +5729,7 @@ export default function Lab() {
       camera,
       settings,
       backgroundEffects: documentEffects,
+      lights,
       groups: groupsByModel,
       // DERIVED from the live model list rather than tracked separately.
       // Empty lists are WRITTEN, not filtered: saveSceneState's retain() merges
@@ -5669,7 +5754,7 @@ export default function Lab() {
       clearTimeout(timer)
       if (idle && typeof cancelIdleCallback === "function") cancelIdleCallback(idle)
     }
-  }, [ready, forkPending, scene, sceneName, camera, settings, bgEffects, groupsByModel, models])
+  }, [ready, forkPending, scene, sceneName, camera, settings, bgEffects, lights, groupsByModel, models])
 
   // What changes the BYTES: the set of files the scene points at. Placement and
   // switches are not on this list — they change the doc, never the bundle, and
@@ -5916,6 +6001,8 @@ export default function Lab() {
     // and it does it once the new cast is in and can be followed.
     setCamera(next.state.camera)
     setBgEffects(next.state.backgroundEffects)
+    setLightsState(next.state.lights)
+    setLampOpen(null)
     // The per-preset intensity memory is keyed by NAME and outlives documents, so a
     // swapped scene has to restate its own strength — otherwise the first switch away
     // and back would overwrite what this document says with whatever the last scene
@@ -6121,6 +6208,7 @@ export default function Lab() {
         bundle,
         name: sceneName,
         camera,
+        lights,
         // A published grade pins; anything else carries its spec. `preset` is the
         // label either way.
         settings: {
@@ -6500,6 +6588,20 @@ export default function Lab() {
         }
         onPointerMove={placing ? (e) => e.buttons === 1 && placeAtPointer(e) : undefined}
       />
+
+      {/* THE LAMPS, while lamps are what you are working on. They are chrome for
+          a task, not scene content — so they appear with the tab that edits them
+          and never while an export is running, where a marker would land in the
+          file. */}
+      {editingLamps && lights.length > 0 && (
+        <LampMarkers
+          lights={lights}
+          openId={lampOpen}
+          onPick={(id) => setLampOpen((cur) => (cur === id ? null : id))}
+          engineRef={engineRef}
+          style={frameStyle}
+        />
+      )}
 
       {/* The same pill the viewer shows, for the same load — opening a scene
           here runs the identical path, and the editor said nothing at all while
@@ -8829,6 +8931,9 @@ export default function Lab() {
                           <TabsTrigger value="sun" className="flex-1">
                             {t.lab.tabs.sun}
                           </TabsTrigger>
+                          <TabsTrigger value="lamps" className="flex-1">
+                            {t.lab.tabs.lamps}
+                          </TabsTrigger>
                         </TabsList>
                         <TabsContent value="world">
                           <ColorRow
@@ -8879,6 +8984,186 @@ export default function Lab() {
                             onChange={(v) => patch("sun", { elevation: v })}
                             fmt={(v) => `${v.toFixed(0)}°`}
                           />
+                        </TabsContent>
+                        <TabsContent value="lamps">
+                          {/* A LAMP'S DIALS ARE A PANEL, not a strip under the
+                              row — the Effects list's gear, to the pixel. A
+                              stage brings a room's worth of these, and dials
+                              that push the list down move the next lamp out
+                              from under the cursor while you are reading the
+                              list. Add stays last, so the one control that is
+                              always there is always in the same place. */}
+                          <div className="flex flex-col">
+                            {lights.map((l) => {
+                              const open = lampOpen === l.id
+                              const off = l.on === false
+                              return (
+                                <Popover
+                                  key={l.id}
+                                  open={open}
+                                  onOpenChange={(o) => setLampOpen(o ? l.id : null)}
+                                >
+                                  <PopoverAnchor asChild>
+                                    <div>
+                                      <CastLine
+                                        revealed={open}
+                                        text={
+                                          <button
+                                            onClick={() => setLampOpen((cur) => (cur === l.id ? null : l.id))}
+                                            title={l.name}
+                                            className={cn(
+                                              "flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-xs transition-colors",
+                                              open ? "text-blue-400" : "hover:text-foreground",
+                                              // An off lamp still reads as a
+                                              // lamp, and still opens: a switch
+                                              // you cannot find the way back
+                                              // from is a delete.
+                                              off && !open && "text-muted-foreground",
+                                            )}
+                                          >
+                                            {/* Its own colour, which is what
+                                                tells two lamps apart before
+                                                either is opened. */}
+                                            <span
+                                              aria-hidden
+                                              className="size-2 shrink-0 rounded-full"
+                                              style={{ background: l.color, opacity: off ? 0.3 : 1 }}
+                                            />
+                                            <span className="min-w-0 truncate">{l.name}</span>
+                                          </button>
+                                        }
+                                        actions={
+                                          <>
+                                            <CastAction
+                                              icon={Settings}
+                                              label={t.lab.aria.edit(t.lab.tabs.lamps, l.name)}
+                                              onClick={() => setLampOpen((cur) => (cur === l.id ? null : l.id))}
+                                            />
+                                            <CastAction
+                                              icon={X}
+                                              danger
+                                              label={t.lab.aria.delete(t.lab.tabs.lamps, l.name)}
+                                              onClick={() => {
+                                                setLightsState((list) => list.filter((x) => x.id !== l.id))
+                                                setLampOpen((cur) => (cur === l.id ? null : cur))
+                                              }}
+                                            />
+                                          </>
+                                        }
+                                      />
+                                    </div>
+                                  </PopoverAnchor>
+                                  <PopoverContent
+                                    align="end"
+                                    side="bottom"
+                                    sideOffset={2}
+                                    // The effect row's own panel, to the pixel.
+                                    className="w-56 rounded-surface border-line-strong bg-surface-raised p-2 shadow-float"
+                                    onOpenAutoFocus={(ev) => ev.preventDefault()}
+                                  >
+                                    {/* The effect panel's own metrics: dense
+                                        rows and a 4.75rem label column. Two
+                                        gears on two rows opening two rhythms is
+                                        two idioms. */}
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[11px]">{t.lab.lamp.on}</span>
+                                      <Switch
+                                        size="sm"
+                                        checked={!off}
+                                        onCheckedChange={(v) => patchLight(l.id, { on: v })}
+                                      />
+                                    </div>
+                                    <fieldset
+                                      disabled={off}
+                                      className={cn("mt-1.5", off && "pointer-events-none opacity-40")}
+                                    >
+                                      <ColorRow
+                                        label={t.lab.ctl.color}
+                                        value={l.color}
+                                        onChange={(hex) => patchLight(l.id, { color: hex })}
+                                        dense
+                                        labelClass="w-[4.75rem]"
+                                      />
+                                      <SliderRow
+                                        label={t.lab.ctl.intensity}
+                                        value={l.intensity}
+                                        min={0}
+                                        max={10}
+                                        step={0.05}
+                                        onChange={(v) => patchLight(l.id, { intensity: v })}
+                                        fmt={(v) => v.toFixed(2)}
+                                        dense
+                                        labelClass="w-[4.75rem]"
+                                      />
+                                      {/* The falloff is exactly zero AT the
+                                          radius, so this is where the light
+                                          stops rather than where it fades. */}
+                                      <SliderRow
+                                        label={t.lab.ctl.radius}
+                                        value={l.radius}
+                                        min={1}
+                                        max={200}
+                                        step={0.5}
+                                        inputMax={10000}
+                                        onChange={(v) => patchLight(l.id, { radius: v })}
+                                        fmt={(v) => v.toFixed(1)}
+                                        dense
+                                        labelClass="w-[4.75rem]"
+                                      />
+                                      {(["X", "Y", "Z"] as const).map((axis, i) => (
+                                        <SliderRow
+                                          key={axis}
+                                          label={axis}
+                                          value={l.position[i]}
+                                          min={-100}
+                                          max={100}
+                                          step={0.1}
+                                          inputMin={-10000}
+                                          inputMax={10000}
+                                          onChange={(v) => {
+                                            const next: [number, number, number] = [...l.position]
+                                            next[i] = v
+                                            patchLight(l.id, { position: next })
+                                          }}
+                                          fmt={(v) => v.toFixed(1)}
+                                          dense
+                                          labelClass="w-[4.75rem]"
+                                        />
+                                      ))}
+                                    </fieldset>
+                                  </PopoverContent>
+                                </Popover>
+                              )
+                            })}
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            className="mt-2.5 w-full"
+                            onClick={() => {
+                              // PLACED WHERE YOU ARE LOOKING, at the orbit
+                              // centre — a lamp that arrives at the world origin
+                              // arrives somewhere you then have to go and find,
+                              // and on a stage the origin is usually inside the
+                              // floor.
+                              const id = newLightId()
+                              setLightsState((list) => [
+                                ...list,
+                                {
+                                  id,
+                                  name: t.lab.lamp.name(list.length + 1),
+                                  position: [camera.target[0], camera.target[1], camera.target[2]],
+                                  color: "#ffd9a0",
+                                  intensity: 1,
+                                  radius: 20,
+                                },
+                              ])
+                              setLampOpen(id)
+                            }}
+                          >
+                            <Plus />
+                            {t.lab.lamp.add}
+                          </Button>
                         </TabsContent>
                       </Tabs>
                     </>

@@ -17,7 +17,7 @@ import {
 } from "reze-engine"
 import { effectParams, type AppliedEffect, type EffectSurface } from "@/lib/effects"
 import { resolveSpec, type GradeSpec } from "@/lib/grade"
-import { CAMERA_DEFAULT_FOV, type SceneCamera } from "@/lib/scene"
+import { CAMERA_DEFAULT_FOV, type SceneCamera, type SceneLight } from "@/lib/scene"
 import { GREEN, isCompositingBackground, type ExportBackground } from "@/lib/export-background"
 import { azElToDirection, groundExtent, windVariation, hexToLinearVec3, hexToSrgbVec3, windDirection, type SceneSettings } from "@/lib/scene-settings"
 import { windowToEngine } from "@/lib/effect-schedule"
@@ -69,6 +69,9 @@ export function useSceneSync({
   cameraVmd = false,
   gradeSpec,
   backgroundEffects,
+  /** The lamps the document places. The sun and the world are dials in
+   *  `settings`; these are things standing somewhere, so they arrive as a list. */
+  lights = [],
   /** A DOM image sits behind the canvas, so the canvas must stay transparent. */
   hasBackdrop = false,
   /** The 360 picture behind the scene, or null. Wallpaper — it lights nothing.
@@ -107,6 +110,7 @@ export function useSceneSync({
   engineRef: React.RefObject<Engine | null>
   ready: boolean
   settings: SceneSettings
+  lights?: SceneLight[]
   camera?: SceneCamera
   cameraVmd?: boolean
   /** Resolved by the caller: the scene stores a NAME, and drafts live client-side. */
@@ -500,6 +504,37 @@ export function useSceneSync({
       stale = true
     }
   }, [skybox, compositing, engineRef])
+
+  /**
+   * The scene's lamps.
+   *
+   * Its own effect, and cheap to re-run: setLights rewrites one storage buffer,
+   * with none of setSun's shadow-map consequence, so there is nothing to guard
+   * against beyond React handing us the same array twice.
+   *
+   * A lamp switched OFF is dropped rather than dimmed to zero. Zero intensity
+   * still costs the per-fragment distance test for every pixel it covers, and a
+   * switch that quietly keeps paying is a switch that lies.
+   */
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!ready || !engine) return
+    const on = lights.filter((l) => l.on !== false)
+    engine.setLights(
+      on.map((l) => {
+        const c = hexToLinearVec3(l.color)
+        return {
+          position: { x: l.position[0], y: l.position[1], z: l.position[2] },
+          color: { x: c.x, y: c.y, z: c.z },
+          intensity: l.intensity,
+          radius: l.radius,
+          ...(l.aim ? { aim: { x: l.aim[0], y: l.aim[1], z: l.aim[2] } } : {}),
+          ...(l.angle !== undefined ? { angle: l.angle } : {}),
+          ...(l.innerAngle !== undefined ? { innerAngle: l.innerAngle } : {}),
+        }
+      }),
+    )
+  }, [lights, ready, engineRef])
 
   /**
    * The HDRI world, on its own slot.

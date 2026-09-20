@@ -239,6 +239,38 @@ export type SceneCamera = {
   follow?: string | null
 }
 
+/**
+ * A lamp the scene places, as the Lights tab edits it and setLights takes it.
+ *
+ * NOT the sun, and deliberately a separate kind rather than element zero of one
+ * list. The sun builds the shadow cascades, drives every toon terminator
+ * (`shader_to_rgb_lit` reads its N·L and its shadow) and feeds the specular
+ * lobe, and it has no position at all. A lamp here is diffuse only, casts
+ * nothing, and falls off inside `radius`. One list holding both would be a list
+ * whose first element obeys different physics from the rest.
+ *
+ * `aim` is what makes it a spot: with one it reaches only inside `angle`, full
+ * inside `innerAngle`, both the whole cone in degrees the way a fixture states
+ * them. Without one it is a point lamp.
+ *
+ * The colour is a hex string like the world's and the sun's, converted to
+ * linear where those are — a document holds what the picker shows.
+ */
+export type SceneLight = {
+  /** Machine-minted; the name is the human key. */
+  id: string
+  name: string
+  position: [number, number, number]
+  color: string
+  intensity: number
+  radius: number
+  aim?: [number, number, number]
+  angle?: number
+  innerAngle?: number
+  /** Absent means on — a lamp written before the switch existed is lit. */
+  on?: boolean
+}
+
 export type SceneState = {
   /** The scene's identity, and the ONLY place it lives — `SceneItem.id` when
    *  published, this while it is still local. Never inside SceneDoc: the payload
@@ -257,6 +289,9 @@ export type SceneState = {
   groups: Record<string, StyleGroup[]> | null
   /** Materials the user has hidden, per model id. */
   hidden: Record<string, string[]> | null
+  /** The lamps this scene places. Empty is a scene lit by world and sun alone,
+   *  which is every scene written before lamps existed. */
+  lights: SceneLight[]
 }
 
 /** A card in the document: what it is made of, how big, and where it stands.
@@ -430,6 +465,8 @@ export type SceneSettingsDoc = Omit<SceneSettings, "background" | "eyes"> & {
      */
     effects?: SceneEffect[] | null
   }
+  /** The scene's lamps. Absent is none, which every document predating them is. */
+  lights?: SceneLight[] | null
 }
 
 /** One model's Materials-tab state: the COMPLETE group list, exactly as shown.
@@ -807,8 +844,33 @@ export function parseSceneDoc(
       backgroundEffects: appliedEffects(background, resolveEffect, resolveRef),
       groups: materials.length ? Object.fromEntries(materials.map(([id, m]) => [id, resolveGroups(m.groups)])) : null,
       hidden: hidden.length ? Object.fromEntries(hidden.map(([id, m]) => [id, m.hidden!])) : null,
+      lights: lightsFromDoc(settings.lights),
     },
   }
+}
+
+/**
+ * The lamps a document actually describes.
+ *
+ * A position with a NaN in it is not a lamp — it is something else written
+ * under this name, and one is enough to poison a frame: the shader's distance
+ * test compares against it, `NaN >= r` is false, so the cull never fires and
+ * the lamp is evaluated for every pixel on screen. Dropped at the door, where a
+ * malformed document belongs, rather than defended against per frame.
+ */
+function lightsFromDoc(lights: SceneLight[] | null | undefined): SceneLight[] {
+  const xyz = (v: unknown): v is [number, number, number] =>
+    Array.isArray(v) && v.length === 3 && v.every((n) => typeof n === "number" && Number.isFinite(n))
+  return (lights ?? []).filter(
+    (l): l is SceneLight =>
+      !!l &&
+      typeof l.id === "string" &&
+      xyz(l.position) &&
+      typeof l.color === "string" &&
+      Number.isFinite(l.intensity) &&
+      Number.isFinite(l.radius) &&
+      l.radius > 0,
+  )
 }
 
 /** Join a folder URL and a filename. No encoding — see AssetRef.url. */
@@ -875,6 +937,7 @@ export function serializeSceneDoc(
     backgroundEffects: AppliedEffect[]
     groups: Record<string, StyleGroup[]>
     hidden: Record<string, string[]>
+    lights: SceneLight[]
   },
   /** Recognises published content by value, so it can be pinned instead of copied. */
   refs?: {
@@ -954,6 +1017,9 @@ export function serializeSceneDoc(
           ...(e.models?.length ? { models: e.models } : {}),
         })),
       },
+      // Omitted when there are none, so a scene lit by world and sun alone
+      // writes exactly what it wrote before lamps existed and does not churn.
+      ...(live.lights.length ? { lights: live.lights } : {}),
     },
   }
 }
@@ -984,6 +1050,13 @@ export function sceneRefs(doc: SceneDoc): ItemRef[] {
 // ── Local persistence: the `state` half only. ──────────────────────────────────
 
 /** Minted client-side: waiting for the server would leave local scenes anonymous. */
+/** A lamp's id. Machine-minted like every id here — the NAME is the human key,
+ *  and two lamps may share one. */
+export function newLightId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID()
+  return `lmp_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
+}
+
 export function newSceneId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID()
   return `scn_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
@@ -1200,6 +1273,10 @@ function restored(base: Scene): Scene {
       // backgroundEffect; read it as a list of one, same migration as the
       // document takes.
       backgroundEffects: effectsFromStored(stored, base.state.backgroundEffects),
+      // Through the same reader the document takes, for the same reason: a blob
+      // in one browser's localStorage is exactly as able to be malformed as a
+      // document, and more likely to be old.
+      lights: stored?.lights ? lightsFromDoc(stored.lights) : base.state.lights,
       settings: {
         world: { ...base.state.settings.world, ...settingsBase.world },
         sun: { ...base.state.settings.sun, ...settingsBase.sun },
