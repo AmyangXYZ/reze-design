@@ -13,10 +13,9 @@ import { useEffect, useRef } from "react"
 import {
   Vec3,
   parseHDR,
-  type EffectParamDecl,
   type Engine,
 } from "reze-engine"
-import { effectParams, type AppliedEffect } from "@/lib/effects"
+import { effectParams, type AppliedEffect, type EffectSurface } from "@/lib/effects"
 import { resolveSpec, type GradeSpec } from "@/lib/grade"
 import { CAMERA_DEFAULT_FOV, type SceneCamera } from "@/lib/scene"
 import { GREEN, isCompositingBackground, type ExportBackground } from "@/lib/export-background"
@@ -37,10 +36,11 @@ function installedIndex(results: { ok: boolean }[]): (number | null)[] {
 }
 
 /**
- * Every applied effect's timing onto its instance.
+ * Every applied effect's timing — and who it is on — onto its instance.
  *
  * The same effect applied twice gets two strips rather than one shared between
- * them: an instance is a copy, and its timing belongs to that copy.
+ * them: an instance is a copy, and its timing belongs to that copy. So does the
+ * cast it plays to, which is the whole point of aiming one copy at one dancer.
  *
  * Frames cross to the engine's seconds here and nowhere else.
  */
@@ -50,6 +50,7 @@ function applySchedules(engine: Engine, list: AppliedEffect[], index: (number | 
     if (k == null) return
     engine.setEffectInfluence(k, e.influence ?? 1)
     engine.setEffectSchedule(k, windowToEngine(e.window))
+    engine.setEffectSubjects(k, e.models ?? null)
   })
 }
 
@@ -97,10 +98,11 @@ export function useSceneSync({
    *  own subjects are drawn from. Only used to decide WHO an effect that
    *  declares a dissolve is about; the first of them is subject 0. */
   castIds = [],
-  /** What each applied effect exposes, keyed by uid, handed back after every
-   *  install. The engine parsed the directives to build the uniform; reading
-   *  them off the result is how the controls and the shader cannot disagree. */
-  onParamDecls,
+  /** What each applied effect exposes — its dials, and whether it reads the cast
+   *  at all — keyed by uid, handed back after every install. The engine parsed
+   *  the directives to build the uniform; reading them off the result is how the
+   *  controls and the shader cannot disagree. */
+  onEffectSurface,
 }: {
   engineRef: React.RefObject<Engine | null>
   ready: boolean
@@ -117,7 +119,7 @@ export function useSceneSync({
   plate?: boolean
   plateStill?: boolean
   castIds?: string[]
-  onParamDecls?: (byUid: Record<string, EffectParamDecl[]>) => void
+  onEffectSurface?: (byUid: Record<string, EffectSurface>) => void
 }) {
   const compositing = isCompositingBackground(exportBackground)
   // Per-section identity guard: setSun dirties the shadow map (an extra full pass
@@ -352,7 +354,16 @@ export function useSceneSync({
     const applied = exportBackground === "green" ? [] : backgroundEffects
     void engine
       .setEffects(
-        sources.length ? sources.map((s, i) => ({ wgsl: s, params: effectParams(s, applied[i]?.params) })) : null,
+        sources.length
+          ? sources.map((s, i) => ({
+              wgsl: s,
+              params: effectParams(s, applied[i]?.params),
+              // WHO it is on rides the install for the reason the dials do: an
+              // effect aimed at one dancer must not spend its first frame on all
+              // of them, which on a ribbon or a sigil reads as a flash.
+              subjects: applied[i]?.models ?? null,
+            }))
+          : null,
       )
       .then((rs) => {
         if (stale) return
@@ -366,10 +377,12 @@ export function useSceneSync({
         // The engine already read the directives to build the uniform, so parsing
         // the same lines again here would be a second answer free to disagree with
         // the one the shader is actually running.
-        onParamDecls?.(
+        onEffectSurface?.(
           Object.fromEntries(
-            rs.map((r, i) => [applied[i]?.uid ?? String(i), r.params]).filter(([uid]) => uid !== undefined),
-          ) as Record<string, EffectParamDecl[]>,
+            rs
+              .map((r, i) => [applied[i]?.uid ?? String(i), { params: r.params, readsCast: r.readsCast }] as const)
+              .filter(([uid]) => uid !== undefined),
+          ) as Record<string, EffectSurface>,
         )
         rs.forEach((r, i) => {
           // Named, not numbered: every entry is one the scene asked for now, and
@@ -395,7 +408,7 @@ export function useSceneSync({
     return () => {
       stale = true
     }
-  }, [backgroundEffects, exportBackground, ready, engineRef, onParamDecls])
+  }, [backgroundEffects, exportBackground, ready, engineRef, onEffectSurface])
 
   // ── Eyes on the camera ──
   //
@@ -447,18 +460,21 @@ export function useSceneSync({
   }, [backgroundEffects, exportBackground, engineRef])
 
   /**
-   * Strips onto instances, whenever one is edited.
+   * Strips and targets onto instances, whenever one is edited.
    *
-   * Separate from the install above because editing WHEN an effect plays must
-   * not recompile it — the guard up there returns early when the sources have
-   * not changed, which is exactly right for a shader and exactly wrong for the
-   * timing beside it.
+   * Separate from the install above because editing WHEN an effect plays — or WHO
+   * it plays on — must not recompile it. The guard up there returns early when
+   * the sources have not changed, which is exactly right for a shader and exactly
+   * wrong for the settings beside it: the engine's mask is a uniform, so aiming
+   * an effect somewhere else costs a write and not a pipeline.
    *
    * Keyed on the timing alone, so dragging a strip does not re-run on every
    * unrelated edit to the list, and re-running is harmless when it does: both
    * calls are idempotent writes of a number.
    */
-  const scheduleKey = JSON.stringify(backgroundEffects.map((e) => [e.influence ?? 1, e.window ?? null]))
+  const scheduleKey = JSON.stringify(
+    backgroundEffects.map((e) => [e.influence ?? 1, e.window ?? null, e.models ?? null]),
+  )
   useEffect(() => {
     const engine = engineRef.current
     if (!engine || !ready) return

@@ -586,12 +586,22 @@ fn foreground(ray: vec3f, uv: vec2f, time: f32, depth: f32) -> vec4f
 | `rzResolution()` | 画布像素尺寸，用于宽高比校正 |
 | `rzCameraPos()` | 相机在世界空间中的位置 |
 | `rzCameraRight()` · `rzCameraUp()` · `rzCameraForward()` | 相机的三个轴 |
-| `rzSubjectCount()` | 场景里有几个角色，最多四个 |
+| `rzSubjectCount()` | **这个特效作用在**几个角色身上，最多四个 |
 | `rzSubject(i)` | `{ root, center, bounds, valid }` |
 | `rzAnchor(subject, slot)` | 你声明的某根骨骼的 `{ pos, vel, fwd, valid }` |
 | `rzTrailCount(subject, slot)` · `rzTrail(subject, slot, i)` | 那根骨骼最近的**轨迹**——`xyz` 是它当时在哪，`w` 是那是多少秒以前 |
 | `rzWorldPos(ray, depth)` | 把这个像素的深度变成一个**位置** |
 | `rzProject(p)` | 相机眼中的一个世界点——`xy` 是它落在的 uv，`z` 是它沿视轴的距离 |
+
+**一个特效作用在哪些角色身上，由场景决定，不由着色器决定。** 特效默认作用于全部
+角色，直到有人把范围收窄：在「特效」里点开它旁边的齿轮，勾上要作用的模型。此后
+`rzSubjectCount()` 只数这些模型，`rzSubject(0)`、`rzAnchor(0, …)`、`rzTrail(0, …)`
+就是其中的第一个——所以一个按全部角色写的丝带，不改一行就能只跟着一个人；一个写死
+`rzSubject(0)` 的特效，跟的是被指定的那个模型，而不是最先加载的那个。你写循环，场景
+来指人。
+
+这份名单只对真正读取角色数据的特效出现。雨落在整个场景上，故障滤镜在镜头上——在它们
+身上摆一个控件，就是摆一个什么都不做的控件。
 
 其中三条值得再读一遍。
 

@@ -11,7 +11,7 @@
 // an AI), and one shape for every library kind beats one convenient one.
 
 import effects from "@/content/effects.json"
-import { parseDirectives, type EffectParamValue } from "reze-engine"
+import { parseDirectives, type EffectParamDecl, type EffectParamValue } from "reze-engine"
 import { asBuiltins, type EffectItem } from "@/lib/library"
 import type { EffectWindow } from "@/lib/effect-schedule"
 
@@ -49,6 +49,39 @@ export type AppliedEffect = {
    *  once. Absent or empty = the whole scene, which is what an ambient effect
    *  does. */
   window?: EffectWindow[]
+  /**
+   * WHICH MODELS this copy is on, by model id. Absent = all of them, including
+   * any added later.
+   *
+   * Beside window and params for the same reason: two copies of one effect on two
+   * dancers is the ordinary case, and the answer belongs to the copy.
+   *
+   * Ids, the key `groups` and `hidden` are already keyed by — minted from the
+   * .pmx filename, so it survives a reload and a publish. An id the scene no
+   * longer holds is ignored rather than cleaned up on read: a model still loading
+   * and a model deleted look identical here, and only one of them should lose its
+   * effects.
+   *
+   * Only meaningful for an effect that reads the cast (a subject, a bone, a
+   * ribbon, the silhouette). Rain falls on the scene; the engine reports which is
+   * which at install as `readsCast`.
+   */
+  models?: string[]
+}
+
+/**
+ * What one applied effect EXPOSES, read off its install.
+ *
+ * Both halves come from the engine having already read the source to build the
+ * module, and that is the point: a panel built from a second parse of the same
+ * directives is a control free to disagree with the shader it is pointed at.
+ */
+export type EffectSurface = {
+  /** Its dials, by `#param` name, or empty. */
+  params: EffectParamDecl[]
+  /** Does it read the cast — a subject, a bone, a ribbon, the silhouette? What
+   *  decides whether "which models" is a question about this effect at all. */
+  readsCast: boolean
 }
 
 /**

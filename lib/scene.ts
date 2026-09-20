@@ -189,6 +189,10 @@ export type SceneEffect = {
    *  keyed in. A LANE, so one effect can fire at several moments. Absent or
    *  empty = alive for the whole scene. */
   window?: EffectWindow[]
+  /** Which models it is on, by `ModelRef.id` — the key `groups` and `hidden` use.
+   *  Absent = all of them, which is what every scene written before an effect
+   *  could be aimed says and what an unaimed one still writes. */
+  models?: string[]
 }
 
 /** The engine's stock orbit angles — the backfill for documents written before
@@ -515,6 +519,9 @@ function appliedEffect(
     // the effect rather than the effect, which is the whole reason neither
     // lives on the source.
     ...(applied.params === undefined ? {} : { params: applied.params }),
+    // And so does WHO it is on: two scenes can pin one effect and aim it at
+    // different dancers, which is the same argument as the dials.
+    ...(applied.models === undefined ? {} : { models: applied.models }),
   }
   if (typeof src === "string") return { ...resolveEffect(src), ...when }
   if (isItemRef(src)) {
@@ -942,6 +949,9 @@ export function serializeSceneDoc(
           // exactly what it wrote before params existed, so nothing churns on
           // save and a retuned built-in still reaches it.
           ...(e.params && Object.keys(e.params).length ? { params: e.params } : {}),
+          // Omitted when it is on everybody, so an effect nobody has aimed
+          // writes exactly what it wrote before aiming existed.
+          ...(e.models?.length ? { models: e.models } : {}),
         })),
       },
     },

@@ -737,12 +737,24 @@ from something that reacts to the performance.
 | `rzResolution()` | Canvas size in pixels, for aspect correction |
 | `rzCameraPos()` | Where the camera is, in world space |
 | `rzCameraRight()` · `rzCameraUp()` · `rzCameraForward()` | Its axes |
-| `rzSubjectCount()` | How many characters are in the scene, up to four |
+| `rzSubjectCount()` | How many characters **this effect is on**, up to four |
 | `rzSubject(i)` | `{ root, center, bounds, valid }` |
 | `rzAnchor(subject, slot)` | `{ pos, vel, fwd, valid }` for a bone you declared |
 | `rzTrailCount(subject, slot)` · `rzTrail(subject, slot, i)` | That bone's recent **path** — `xyz` where it was, `w` how many seconds ago |
 | `rzWorldPos(ray, depth)` | This pixel's depth turned into a **place** |
 | `rzProject(p)` | A world point as the camera sees it — `xy` the uv it lands on, `z` its distance along the view axis |
+
+**Which characters an effect is on is the scene's call, not the shader's.** An
+effect applies to the whole cast until someone narrows it: open the gear beside it
+in Effects and tick the models it is for. `rzSubjectCount()` then counts only
+those, and `rzSubject(0)`, `rzAnchor(0, …)` and `rzTrail(0, …)` are the first of
+them — so a ribbon written against the whole cast follows one dancer with no
+change to the file, and one written for `rzSubject(0)` follows the model it was
+aimed at rather than whoever loaded first. Write the loop; the scene aims it.
+
+The list is offered only for an effect that actually reads the cast. Rain falls on
+the scene and a glitch is on the lens, and a control on those would be a control
+that does nothing.
 
 Three of these repay a second reading.
 

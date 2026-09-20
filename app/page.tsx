@@ -179,7 +179,15 @@ import { communityItems, preloadCommunity } from "@/lib/community-store"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useSession } from "@/lib/auth-client"
 import { freeName } from "@/lib/names"
-import { applyDefaults, effectParams, EFFECTS, builtinEffect, NEW_EFFECT_TEMPLATE, type AppliedEffect } from "@/lib/effects"
+import {
+  applyDefaults,
+  effectParams,
+  EFFECTS,
+  builtinEffect,
+  NEW_EFFECT_TEMPLATE,
+  type AppliedEffect,
+  type EffectSurface,
+} from "@/lib/effects"
 import { BACKDROP_VIDEO_RE, probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
 import { useMediaBackdrop } from "@/hooks/use-media-backdrop"
 import { isCompositingBackground } from "@/lib/export-background"
@@ -211,7 +219,6 @@ import {
   type CompileOptions,
   VMDLoader,
   type Diagnostic,
-  type EffectParamDecl,
   type EffectParamValue,
   type MaterialPreset,
   type ShaderGraph,
@@ -2266,6 +2273,16 @@ export default function Lab() {
     setAnimByModel(drop)
     setMorphByModel(drop)
     setPalettes(drop)
+    // An effect aimed at them is aimed at nobody now, and an effect on nobody
+    // draws nothing with no sign of why. Dropping the name gives back the
+    // default — everyone — rather than leaving a dark effect on the list.
+    setBgEffects((list) =>
+      list.map((e) => {
+        if (!e.models?.includes(id)) return e
+        const models = e.models.filter((m) => m !== id)
+        return { ...e, models: models.length ? models : undefined }
+      }),
+    )
   }
 
   /**
@@ -3121,23 +3138,26 @@ export default function Lab() {
   /** Which effect's strip is open below the list. BY UID, like everything else
    *  addressing one COPY of an effect rather than the effect. */
   const [selectedEffect, setSelectedEffect] = useState<string | null>(null)
-  /** Patch one applied effect's timing or dials, by uid. */
+  /** Patch one applied effect's timing, dials or targets, by uid. */
   const patchEffect = useCallback(
-    (uid: string, patch: Partial<Pick<AppliedEffect, "influence" | "window" | "params">>) => {
+    (uid: string, patch: Partial<Pick<AppliedEffect, "influence" | "window" | "params" | "models">>) => {
       setBgEffects((list) => list.map((e) => (e.uid === uid ? { ...e, ...patch } : e)))
     },
     [setBgEffects],
   )
 
   /**
-   * What each applied effect exposes, keyed by uid, as of the last install.
+   * What each applied effect exposes, keyed by uid, as of the last install: its
+   * dials, and whether it reads the cast at all.
    *
    * Read off the engine's result rather than parsed here: the engine already
    * read the `#param` lines to build the uniform the shader samples, and a
    * second reading of the same lines is a control free to drift from the shader
-   * it is pointed at.
+   * it is pointed at. The cast half is the same bargain — the engine knows which
+   * accessors an effect calls, and an effect that calls none is one where "which
+   * models" is not a question.
    */
-  const [effectParamDecls, setEffectParamDecls] = useState<Record<string, EffectParamDecl[]>>({})
+  const [effectSurface, setEffectSurface] = useState<Record<string, EffectSurface>>({})
   /** Which applied effect has its dials open, by uid. One at a time: the popover
    *  hangs off a row, and two open would sit on top of each other. */
   const [paramsOpen, setParamsOpen] = useState<string | null>(null)
@@ -3718,7 +3738,7 @@ export default function Lab() {
     // Who an effect that declares a dissolve is about — the cast in order, so
     // the first of them is the engine's subject 0.
     castIds: castIdList,
-    onParamDecls: setEffectParamDecls,
+    onEffectSurface: setEffectSurface,
   })
 
   // Effects: the same selection model as grade, one library over.
@@ -4198,6 +4218,10 @@ export default function Lab() {
   }, [models])
   /** Which model's lane is picked, for the row highlight. */
   const [selectedVisibility, setSelectedVisibility] = useState<string | null>(null)
+  /** The cast as an effect can be aimed at it: the id the document stores and the
+   *  name the panel shows. Memoised on the cast's contents rather than rebuilt per
+   *  render — it is a prop on a popover that is open while someone reads it. */
+  const castTargets = useMemo(() => cast.map((m) => ({ id: m.id, name: displayName(m.file) })), [cast])
   /** The cast as lane rows. A model with no windows draws one clip spanning the
    *  scene, which is exactly what "on stage throughout" looks like. */
   const visibilityRows = useMemo(
@@ -8270,7 +8294,13 @@ export default function Lab() {
                           {[...bgEffects].reverse().map((e, r) => {
                             const i = bgEffects.length - 1 - r
                             const uid = e.uid ?? ""
-                            const decls = effectParamDecls[uid] ?? []
+                            const surface = effectSurface[uid]
+                            const decls = surface?.params ?? []
+                            // WHAT THE GEAR OPENS: an effect's dials, and who it
+                            // plays to. Either alone is enough to have a panel —
+                            // Sticker Outline declares no dial and is exactly the
+                            // effect someone wants on one dancer.
+                            const aimable = (surface?.readsCast ?? false) && cast.length > 1
                             return (
                               <Popover
                                 key={e.uid ?? e.id}
@@ -8314,7 +8344,7 @@ export default function Lab() {
                                         list. */}
                                     <CastAction
                                       icon={Settings}
-                                      disabled={decls.length === 0}
+                                      disabled={decls.length === 0 && !aimable}
                                       label={t.lab.aria.effectOptions(e.name)}
                                       onClick={() => setParamsOpen((o) => (o === uid ? null : uid))}
                                     />
@@ -8384,6 +8414,12 @@ export default function Lab() {
                                     values={e.params}
                                     onChange={(name, value) => setEffectParam(uid, name, value)}
                                     onReset={() => resetEffectParams(uid)}
+                                    // The cast, and only for an effect that reads
+                                    // it: the panel decides nothing itself, so a
+                                    // rain effect is handed nothing to aim.
+                                    cast={aimable ? castTargets : []}
+                                    models={e.models}
+                                    onModels={(models) => patchEffect(uid, { models })}
                                   />
                                 </PopoverContent>
                               </Popover>

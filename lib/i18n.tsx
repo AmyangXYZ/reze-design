@@ -752,6 +752,10 @@ const en = {
       // An effect's strip. Blender's words, because MMDers know Blender and a
       // vocabulary they already have beats one invented here.
       influence: "Influence",
+      /** WHO an effect is on. Only shown for an effect that reads the cast —
+       *  rain falls on the scene, and offering it there would be a control that
+       *  does nothing. */
+      onModels: "On models",
       blend: "Blend",
       pos: (axis: string) => `Pos ${axis}`,
       rot: (axis: string) => `Rot ${axis}`,
@@ -1614,6 +1618,7 @@ const zh: Dictionary = {
       scale: "缩放",
       size: "尺寸",
       influence: "影响",
+      onModels: "作用于",
       blend: "过渡",
       pos: (axis: string) => `位置 ${axis}`,
       rot: (axis: string) => `旋转 ${axis}`,
