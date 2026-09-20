@@ -839,6 +839,15 @@ export function parseSceneDoc(
         // means on — read as false it would take the floor out from under every
         // published scene at once.
         ground: { ...settings.ground, enabled: settings.ground.enabled ?? true },
+        // THE SHADOW SWITCH MOVED FROM THE GROUND TO THE SUN, because the ground
+        // is where a shadow is RECEIVED and the sun is what casts it — and off on
+        // the ground alone left every model still shadowed. A document written
+        // before the move keeps its answer, read here once so the next save
+        // writes the new shape; absent in both is a scene that had a shadow.
+        sun: {
+          ...settings.sun,
+          shadow: settings.sun?.shadow ?? (settings.ground as { shadow?: boolean }).shadow ?? true,
+        },
         background: { color: background.color },
       },
       backgroundEffects: appliedEffects(background, resolveEffect, resolveRef),
@@ -1279,7 +1288,19 @@ function restored(base: Scene): Scene {
       lights: stored?.lights ? lightsFromDoc(stored.lights) : base.state.lights,
       settings: {
         world: { ...base.state.settings.world, ...settingsBase.world },
-        sun: { ...base.state.settings.sun, ...settingsBase.sun },
+        // THE SWITCH MOVED FROM THE GROUND TO THE SUN, and a document written
+        // before it moved keeps its answer. Read once here, where a document
+        // becomes state, so the next save writes the new shape and this stops
+        // mattering — the same migration backgroundEffect took. Without it every
+        // published scene that had turned its shadow off comes back with one.
+        sun: {
+          ...base.state.settings.sun,
+          ...settingsBase.sun,
+          shadow:
+            settingsBase.sun?.shadow ??
+            (settingsBase.ground as { shadow?: boolean } | undefined)?.shadow ??
+            true,
+        },
         bloom: { ...base.state.settings.bloom, ...settingsBase.bloom },
         dof: { ...base.state.settings.dof, ...settingsBase.dof },
         outline: { ...base.state.settings.outline, ...settingsBase.outline },

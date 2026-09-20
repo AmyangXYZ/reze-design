@@ -219,7 +219,7 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
     diffuseColor: hexToLinearVec3(s.ground.color),
     gridLineColor: hexToLinearVec3(s.ground.grid),
     opacity: plate ? 0 : s.ground.opacity,
-    shadowStrength: s.ground.shadow ? 1 : 0,
+    shadowStrength: s.sun.shadow === false ? 0 : 1,
     shadowSoftness: s.sun.softness ?? 0,
     gridLineOpacity: s.ground.gridEnabled ? 0.4 : 0,
     ...groundExtent(s.ground),

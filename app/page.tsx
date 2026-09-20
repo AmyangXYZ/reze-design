@@ -676,7 +676,7 @@ const DOCK_CONTROLS: {
   { id: "ground-size", en: "Ground size", zh: "地面尺寸", row: "stage", stageTab: "ground", keywords: ["plane", "floor", "width", "extent", "大小", "范围"], value: (v) => dec1(v.settings.ground.size) },
   { id: "ground-height", en: "Ground height", zh: "地面高度", row: "stage", stageTab: "ground", keywords: ["y", "floor", "raise", "lower", "offset", "抬高", "位置"], value: (v) => dec1(v.settings.ground.y ?? 0) },
   { id: "ground-fade", en: "Ground fade", zh: "地面渐隐", row: "stage", stageTab: "ground", keywords: ["edge", "falloff", "horizon", "边缘", "淡出"], value: (v) => { const f = v.settings.ground.fade ?? GROUND_FADE; return `${Math.round(f.start * 100)}–${Math.round(f.end * 100)}%` } },
-  { id: "shadow", en: "Shadow", zh: "阴影", row: "stage", stageTab: "ground", value: (v) => sw(v.settings.ground.shadow, v.t) },
+  { id: "shadow", en: "Shadow", zh: "阴影", row: "light", lightTab: "sun", value: (v) => sw(v.settings.sun.shadow !== false, v.t) },
   { id: "showGround", en: "Show ground", zh: "显示地面", row: "stage", stageTab: "ground", value: (v) => sw(v.settings.ground.enabled, v.t) },
   { id: "grid", en: "Grid lines", zh: "网格", row: "stage", stageTab: "ground", value: (v) => sw(v.settings.ground.gridEnabled, v.t) },
   // The composite set. Every one of them has a row of its own by what it acts
@@ -3769,6 +3769,11 @@ export default function Lab() {
     onEffectSurface: setEffectSurface,
   })
 
+  /** Where a lamp is at half strength, as a fraction of its radius. The shader's
+   *  falloff is (1 - t²)², so this is the root of 1 - sqrt(0.5) — a number worth
+   *  deriving once rather than eyeballing, since it is what the inner ring means. */
+  const HALF_POWER = Math.sqrt(1 - Math.SQRT1_2)
+
   /** Whether the lamps are what you are working on — what both the markers and
    *  the overlay layer appear with. One expression, so the two cannot disagree
    *  about when a lamp is being edited. */
@@ -3812,15 +3817,36 @@ export default function Lab() {
           scale: [1, l.position[1], 1],
           color: [c.x, c.y, c.z, a * 0.5],
         })
-      // The reach, for the lamp being edited. Only that one: thirty of these at
-      // once is a fog, and the number is only in question while you are moving it.
-      if (l.id === lampOpen)
+      // THE REACH, AS TWO RINGS. Only for the lamp being edited: thirty of these
+      // at once is a fog, and the number is only in question while you move it.
+      //
+      // Rings rather than the sphere it used to be. The overlay draws a sphere as
+      // three great circles, which at a radius of a hundred units is three vast
+      // intersecting hoops filling the viewport that you have to mentally unpick
+      // into a volume. `circle` faces the camera, so ONE of them reads as a disc
+      // of exactly the right size from any angle, with nothing to unpick.
+      //
+      // And the outer ring is the least useful number on the dial. Falloff here
+      // is (1 - t²)², so the light is at HALF strength at t = 0.54 — barely past
+      // halfway — and everything you can actually see happens inside that. The
+      // inner ring is where the lamp does its work; the outer is only where it
+      // finally reaches nothing.
+      if (l.id === lampOpen) {
         marks.push({
-          shape: "sphere",
+          shape: "circle",
+          position: l.position,
+          scale: [l.radius * HALF_POWER, l.radius * HALF_POWER, l.radius * HALF_POWER],
+          color: [c.x, c.y, c.z, 0.5],
+          thickness: 2,
+        })
+        marks.push({
+          shape: "circle",
           position: l.position,
           scale: [l.radius, l.radius, l.radius],
-          color: [c.x, c.y, c.z, 0.25],
+          color: [c.x, c.y, c.z, 0.22],
+          thickness: 1,
         })
+      }
     }
     engine.setOverlay("lights", marks)
   }, [lights, lampOpen, ready, engineRef, editingLamps])
@@ -7966,16 +7992,6 @@ export default function Lab() {
                               onChange={([start, end]) => patch("ground", { fade: { start, end } })}
                               fmt={(v) => `${Math.round(v * 100)}%`}
                             />
-                            {/* Shadow persists below opacity (shadow catcher) — this
-                              turns it off entirely. */}
-                            <div className="mt-2.5 flex items-center justify-between">
-                              <span className="text-xs">{t.lab.ctl.shadow}</span>
-                              <Switch
-                                size="sm"
-                                checked={ground.shadow}
-                                onCheckedChange={(v) => patch("ground", { shadow: v })}
-                              />
-                            </div>
                             <div className="mt-2.5 flex items-center justify-between">
                               <span className="text-xs">{t.lab.ctl.grid}</span>
                               <div className="flex items-center gap-2">
@@ -8952,6 +8968,19 @@ export default function Lab() {
                           />
                         </TabsContent>
                         <TabsContent value="sun">
+                          {/* THE SCENE'S ONLY SHADOW SWITCH, and it belongs to the
+                              thing that CASTS. It sat under Ground, which is where
+                              a shadow is received — turning it off there left every
+                              model still shadowed, which is half a switch. Softness
+                              was already filed here for the same reason. */}
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs">{t.lab.ctl.shadow}</span>
+                            <Switch
+                              size="sm"
+                              checked={sun.shadow !== false}
+                              onCheckedChange={(v) => patch("sun", { shadow: v })}
+                            />
+                          </div>
                           <ColorRow
                             label={t.lab.ctl.color}
                             value={sun.color}

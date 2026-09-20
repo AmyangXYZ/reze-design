@@ -13,6 +13,20 @@ export type SceneSettings = {
     azimuth: number
     elevation: number
     /**
+     * Whether it casts a shadow at all.
+     *
+     * THE SCENE'S ONLY SHADOW SWITCH. The sun is the only thing that casts —
+     * positional lamps are diffuse-only and have no shadow term — so this is not
+     * one shadow among several, it is all of them, on the ground and on the cast
+     * alike. It used to live on the ground, which is where the shadow is
+     * RECEIVED, and turning it off there left every model still shadowed: half a
+     * switch.
+     *
+     * Optional, and absent means on: a document written before it moved says
+     * nothing here and had a shadow.
+     */
+    shadow?: boolean
+    /**
      * How soft the edge of the shadow it casts is, 0–1. Optional; absent on
      * every document written before the dial existed, and 0 is the sharp edge
      * those scenes were authored looking at.
@@ -109,8 +123,6 @@ export type SceneSettings = {
     enabled: boolean
     /** Whole-ground opacity 0–1 (1 = solid; shadow persists — shadow catcher). */
     opacity: number
-    /** Ground receives the model's shadow. */
-    shadow: boolean
     /** Grid LINE color. */
     grid: string
     /** Show the ground grid lines. */

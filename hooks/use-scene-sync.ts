@@ -182,6 +182,7 @@ export function useSceneSync({
       engine.setSun({
         color: hexToLinearVec3(sun.color),
         strength: sun.strength,
+        shadow: sun.shadow === false ? 0 : 1,
         direction: azElToDirection(sun.azimuth, sun.elevation),
       })
     }
@@ -255,7 +256,10 @@ export function useSceneSync({
         // over it is one floor too many. The shadow survives at opacity 0 —
         // that IS the shadow catcher, and it is the whole trick.
         opacity: compositing || plate ? 0 : ground.opacity,
-        shadowStrength: ground.shadow ? 1 : 0,
+        // The SUN's switch, applied where the shadow is received. One flag now
+        // reaches both the catcher and every material: turning it off on the
+        // ground alone left the cast shadowed by a map they were still reading.
+        shadowStrength: sun.shadow === false ? 0 : 1,
         // A property of the light, applied where the light lands.
         shadowSoftness: sun.softness ?? 0,
         gridLineOpacity: compositing || !ground.gridEnabled ? 0 : 0.4,
