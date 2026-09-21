@@ -557,6 +557,9 @@ fn rzLightRadius(i: u32) -> f32 { return 0.0; }
 fn rzLightColor(i: u32) -> vec3f { return vec3f(0.0); }
 fn rzLightsDiffuse(p: vec3f, n: vec3f) -> vec3f { return vec3f(0.0); }
 
+// NO SHADOW MAP: the card renders no caster, so every point is in the sun.
+fn rzShadow(p: vec3f) -> f32 { return 1.0; }
+
 // NO GRID STEPPED, for the same reason: a kernel reading its own previous state
 // on a card would read a texture nobody wrote.
 fn rzGridSize() -> f32 { return 256.0; }
