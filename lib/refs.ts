@@ -90,6 +90,14 @@ const reachable = (item: { visibility?: "public" | "private" }, scene: "public" 
  */
 const ENGINE_PRESETS = [DEFAULT_GRAPH, UNLIT_GRAPH]
 
+/** Unlit at the strength the preset ships with. The app turns that one dial on
+ *  a converted stage's sky — layers stored at 1/4 emit at 4 to glow past white
+ *  — and the look is still the engine's own. */
+const atUnlitStrength = (graph: ShaderGraph): ShaderGraph => ({
+  ...graph,
+  nodes: graph.nodes.map((n) => (n.id === "emit" && n.type === "emission" ? { ...n, inputs: { ...n.inputs, strength: 1 } } : n)),
+})
+
 export function unpublishedUses(
   scene: {
     gradeSpec: GradeSpec
@@ -130,6 +138,7 @@ export function unpublishedUses(
       // demand nobody can meet: there is no library entry to go and publish,
       // so every scene holding a media plane was unpublishable.
       if (ENGINE_PRESETS.some((preset) => sameGraphLook(g.graph, preset))) continue
+      if (sameGraphLook(atUnlitStrength(g.graph), UNLIT_GRAPH)) continue
       // One entry per look, however many groups wear it.
       if (seen.has(g.graph.name)) continue
       seen.add(g.graph.name)
