@@ -56,6 +56,16 @@ def vector(text, default=(0.0, 0.0, 0.0)):
         return default
 
 
+def vector2(text, default):
+    """`{x: 2, y: 1}` → (2.0, 1.0). A texture's tiling and offset are 2D, and
+    `vector` reads x, y and z together."""
+    got = dict(re.findall(r"([xy]):\s*(-?[\d.eE+-]+)", text or ""))
+    try:
+        return (float(got["x"]), float(got["y"]))
+    except KeyError:
+        return default
+
+
 def quaternion(text):
     got = dict(re.findall(r"([xyzw]):\s*(-?[\d.eE+-]+)", text or ""))
     try:
@@ -392,6 +402,10 @@ class Scene:
             if cls != 33 or f"m_GameObject: {{fileID: {game_object_id}}}" not in body:
                 continue
             m = re.search(r"m_Mesh:\s*\{fileID:\s*(-?\d+)(?:,\s*guid:\s*([0-9a-f]{32}))?", body)
+            # Unity's built-in meshes live in its default resources, under this
+            # guid; the fileID says which one.
+            if m and m.group(2) == "0000000000000000e000000000000000":
+                return f"builtin:{m.group(1)}"
             return m.group(2) if m and m.group(2) else None
         return None
 
@@ -473,8 +487,8 @@ def read_material(path):
             "guid": m.group(3),
             # Tiling and offset ride with the binding and are easy to lose; a
             # water overlay tiled 80x80 sampled at 1x1 is a flat wash.
-            "scale": vector("{" + (m.group(4) or "x: 1, y: 1") + "}", (1.0, 1.0))[:2],
-            "offset": vector("{" + (m.group(5) or "x: 0, y: 0") + "}", (0.0, 0.0))[:2],
+            "scale": vector2(m.group(4), (1.0, 1.0)),
+            "offset": vector2(m.group(5), (0.0, 0.0)),
         }
     floats_block = body[body.find("m_Floats") : body.find("m_Colors")] if "m_Colors" in body else body[body.find("m_Floats") :]
     colors_block = body[body.find("m_Colors") :] if "m_Colors" in body else ""

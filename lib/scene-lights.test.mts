@@ -183,4 +183,42 @@ const read = (doc: SceneDoc) => parseSceneDoc(doc, builtinEffect, libraryGraph).
   assert.deepEqual(sceneOwned(back), { ...before, strength: 1 }, "and an edit leaves the strength without it")
 }
 
+// ── The effects a stage brings ──
+// Named by built-in, with dials: a colour arrives as the hex a picker shows and
+// is stored the way every colour dial is, each channel over 255.
+{
+  const { effects } = stageLightsFromFile(
+    JSON.stringify({
+      effects: [
+        { name: "Galaxy Sky" },
+        { name: "Distance Fog", params: { COLOR: "#00279f", START: 245.6, END: 4323, BAD: "blue" } },
+        { params: { START: 1 } },
+      ],
+    }),
+    "stage-id",
+  )
+  assert.deepEqual(effects, [
+    { name: "Galaxy Sky", params: {} },
+    { name: "Distance Fog", params: { COLOR: { x: 0, y: 39 / 255, z: 159 / 255 }, START: 245.6, END: 4323 } },
+  ])
+}
+
+// ── An effect remembers the stage it came with ──
+{
+  const fog = { ...builtinEffect("Distance Fog"), params: { START: 245.6 }, stage: "stage-id" }
+  const doc = serializeSceneDoc({
+    ...empty(),
+    name: "t",
+    camera: base.state.camera,
+    settings: base.state.settings,
+    backgroundEffects: [fog],
+    groups: {},
+    hidden: {},
+    lights: [],
+  })
+  const back = parseSceneDoc(doc, builtinEffect, libraryGraph).state.backgroundEffects
+  assert.equal(back[0].stage, "stage-id", "the stage that brought it survives the document")
+  assert.deepEqual(back[0].params, { START: 245.6 })
+}
+
 console.log("scene-lights: ok")

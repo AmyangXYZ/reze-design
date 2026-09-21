@@ -150,3 +150,33 @@ class Mesh:
         idx = self.indices[start : start + s["indexCount"]]
         base = s["baseVertex"]
         return [(idx[i] + base, idx[i + 1] + base, idx[i + 2] + base) for i in range(0, len(idx) - 2, 3)]
+
+
+# Unity's built-in meshes, which a scene references by fileID in the "unity
+# default resources" rather than as an asset in the project — so the export has
+# nothing to read for them. Only the Quad appears in these stages: X309's six
+# columns of falling light are Quads stretched to hundreds of units.
+BUILTIN_QUAD = 10210
+
+
+class BuiltinMesh:
+    """A built-in mesh, with the same fields the converter reads off a Mesh.
+
+    The Quad is Unity's own: a unit square in the XY plane facing -Z, UVs 0..1,
+    wound 0-3-1, 3-0-2.
+    """
+
+    def __init__(self, file_id):
+        if file_id != BUILTIN_QUAD:
+            raise ValueError(f"built-in mesh {file_id} is not one this converter builds")
+        self.path = f"builtin:{file_id}"
+        self.name = "Quad"
+        self.positions = [(-0.5, -0.5, 0.0), (0.5, -0.5, 0.0), (-0.5, 0.5, 0.0), (0.5, 0.5, 0.0)]
+        self.normals = [(0.0, 0.0, -1.0)] * 4
+        self.uvs = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)]
+        self.uv1 = None
+        self.count = 4
+        self.submeshes = [{"firstByte": 0, "indexCount": 6, "topology": 0, "baseVertex": 0, "firstVertex": 0, "vertexCount": 4}]
+
+    def triangles(self, submesh):
+        return [(0, 3, 1), (3, 0, 2)]

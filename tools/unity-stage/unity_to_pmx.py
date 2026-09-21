@@ -50,8 +50,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from unity_effect_bake import GAIN, bake as bake_effect, repeats_across  # noqa: E402
 from unity_lights import Surfaces, stage_lights  # noqa: E402
-from unity_mesh import Mesh  # noqa: E402
+from unity_mesh import BuiltinMesh, Mesh  # noqa: E402
 from unity_scene import Project, Scene, read_material  # noqa: E402
 
 # Unity units to PMX units, and the turn between the two coordinate systems.
@@ -85,6 +86,20 @@ def transform(matrix, translation, v):
 
 def rotate(matrix, v):
     return tuple(sum(matrix[r][c] * v[c] for c in range(3)) for r in range(3))
+
+
+def face_origin(matrix, translation):
+    """The matrix turned about the vertical, through the pivot, so the card's
+    face points at the stage centre. The card is the XY plane of its mesh, so
+    its face is the matrix's third column."""
+    nx, nz = matrix[0][2], matrix[2][2]
+    tx, tz = -translation[0], -translation[2]
+    if math.hypot(nx, nz) < 1e-9 or math.hypot(tx, tz) < 1e-9:
+        return matrix
+    turn = math.atan2(tx, tz) - math.atan2(nx, nz)
+    c, s = math.cos(turn), math.sin(turn)
+    ry = ((c, 0.0, s), (0.0, 1.0, 0.0), (-s, 0.0, c))
+    return tuple(tuple(sum(ry[r][k] * matrix[k][col] for k in range(3)) for col in range(3)) for r in range(3))
 
 
 def normalise(v):
@@ -209,6 +224,47 @@ PROPERTY_SLOTS = ("_PropertyTex",)
 # right shapes and mipmaps, which answers both at once.
 RIPPLE_SLOTS = ("_RippleTex",)
 NORMAL_SLOTS = ("_NormalTex", "_BumpMap", "_NormalMap")
+
+# A TERRAIN blends numbered layers by a splat map: `_AlbedoTex_1`, `_AlbedoTex_2`
+# and their normals, weighted by the R, G, B, A of `_V_T2M_Control`
+# (SimPipeline/PBR/Standard_PBR_2). A PMX material holds one texture, so a
+# terrain wears the layer carrying the most weight — X309's beach is 97% its
+# sand, tiled 80 x 80. Read as an ordinary material it had no albedo at all and
+# came out a flat dark teal.
+_SPLAT_LAYER = {}
+
+
+def terrain_layer(material, png_root, proj):
+    """The dominant splat layer's number (1-4), or None for an ordinary material."""
+    control = material["textures"].get("_V_T2M_Control")
+    if not control:
+        return None
+    guid = control["guid"]
+    if guid not in _SPLAT_LAYER:
+        layer = 1
+        src = png_for(png_root, proj.path(guid) or "")
+        if src and os.path.exists(src):
+            from PIL import Image  # noqa: PLC0415
+
+            im = Image.open(src).convert("RGBA").resize((64, 64))
+            px = list(im.getdata())
+            weights = [sum(p[c] for p in px) for c in range(4)]
+            layer = 1 + max(range(4), key=lambda c: weights[c])
+        _SPLAT_LAYER[guid] = layer
+    layer = _SPLAT_LAYER[guid]
+    return layer if f"_AlbedoTex_{layer}" in material["textures"] else None
+
+
+def albedo_slot(material, png_root, proj):
+    layer = terrain_layer(material, png_root, proj)
+    return material["textures"][f"_AlbedoTex_{layer}"] if layer else slot(material, ALBEDO_SLOTS)
+
+
+def normal_slot(material, png_root, proj):
+    layer = terrain_layer(material, png_root, proj)
+    if layer and f"_NormalTex_{layer}" in material["textures"]:
+        return material["textures"][f"_NormalTex_{layer}"]
+    return slot(material, NORMAL_SLOTS)
 
 
 def slot(material, names):
@@ -422,11 +478,37 @@ def property_triple(material, png_root, proj):
 # claiming to be SimPipeline/PBR/Standard while carrying _SkyColorBackground,
 # _CloudColor and _Star_RChannel — so the PROPERTY SET identifies the family and
 # the shader name is a hint.
-SKY_PROPERTIES = ("_SkyColorBackground", "_CloudColor", "_SunGlowColor", "_Star_RChannel")
+# The sky shaders' own colours. X309's dome is a remapped sky material with
+# cloud, night and daytime colours and nothing else a surface would carry; its
+# moon hangs nearly as far out as the dome, so the size test cannot find it.
+SKY_PROPERTIES = (
+    "_SkyColorBackground",
+    "_CloudColor",
+    "_SunGlowColor",
+    "_Star_RChannel",
+    "_CloudColorOverAll",
+    "_NightColor",
+    "_DayTimeColor",
+)
 
 
 def is_sky(material):
     return sum(1 for k in SKY_PROPERTIES if k in material["colors"]) >= 2
+
+
+def is_sky_layer(material, shader):
+    """An effect sheet or a billboard named for the sky IS the sky.
+
+    X309's night is three effect layers on cylinders round the whole scene —
+    a nebula, twinkling stars, a purple band where they meet the sea — plus a
+    moon on a billboard. As effect sheets, they measure as a faint overlay and
+    the decal rule drops them; as sky they are kept, drawn unlit and two-sided,
+    and cast nothing.
+    """
+    if not material or not shader:
+        return False
+    name = material["name"].lower()
+    return ("sky" in name or "moon" in name) and (is_effect_decal(shader) or shader.endswith("SceneBillboard"))
 
 
 # Where the decoded images live.
@@ -686,7 +768,7 @@ def flame_points(scene, materials_by_guid, scale):
 # ── The whole pass ──────────────────────────────────────────────────────────
 
 
-def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0, normal_cap=0, verbose=True):
+def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0, normal_cap=0, verbose=True, world="gradient", sky="baked", key_light="game"):
     proj = Project(project_root)
     scene = Scene(os.path.join(project_root, scene_path))
     os.makedirs(os.path.join(out_dir, "tex"), exist_ok=True)
@@ -703,8 +785,14 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
 
     def mesh(guid):
         if guid not in meshes:
-            path = proj.path(guid)
-            meshes[guid] = Mesh(path) if path and os.path.exists(path) else None
+            if guid.startswith("builtin:"):
+                try:
+                    meshes[guid] = BuiltinMesh(int(guid.split(":", 1)[1]))
+                except ValueError:
+                    meshes[guid] = None
+            else:
+                path = proj.path(guid)
+                meshes[guid] = Mesh(path) if path and os.path.exists(path) else None
         return meshes[guid]
 
     # Geometry, gathered per material so a PMX's face ranges fall out of it.
@@ -733,6 +821,16 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
             matrix, translation = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)), (0.0, 0.0, 0.0)
         else:
             matrix, translation = scene.world_matrix(r["transform"])
+        # A BILLBOARD IS TURNED TO FACE THE STAGE. The game's SceneBillboard
+        # shader turns the card to the camera every frame; a PMX holds one
+        # pose, and the one that reads from where the cast stands is facing the
+        # stage's centre, about the vertical so it stays upright. X309's moon
+        # is such a card, 1,680 units out.
+        if any(
+            (proj.shader_name((materials_by_guid.get(g) or {}).get("shader_guid")) or "").endswith("SceneBillboard")
+            for g in r["materials"]
+        ):
+            matrix = face_origin(matrix, translation)
         # A scale can be negative or non-uniform, so normals take the same
         # matrix and are renormalised rather than assumed unit.
         for slot_index, guid in enumerate(r["materials"]):
@@ -742,16 +840,33 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
             mat = materials_by_guid.get(guid)
             key = mat["name"] if mat else f"unnamed_{guid[:8]}"
             if key not in per_material:
-                per_material[key] = {"vertices": [], "faces": [], "guid": guid}
+                shader_name = proj.shader_name(mat["shader_guid"]) if mat else None
+                per_material[key] = {
+                    "vertices": [],
+                    "faces": [],
+                    "guid": guid,
+                    # An effect layer of the sky is baked to one picture (see
+                    # unity_effect_bake), and the mesh's u carries its repeats.
+                    "baked": repeats_across(mat) if is_effect_decal(shader_name) and is_sky_layer(mat, shader_name) else 0,
+                }
                 used_order.append(key)
             bucket = per_material[key]
+            # THE ALBEDO'S TILING AND OFFSET GO INTO THE UVs — Unity samples at
+            # uv * scale + offset, and a PMX has one UV and no per-slot transform.
+            # Read as the identity, X305's terrain tiled 10 x 10 was one tile
+            # stretched across the ground. A baked sky layer keeps its raw UVs:
+            # every texture's own transform is inside the bake.
+            albedo_st = albedo_slot(mat, png_root, proj) if mat and not bucket["baked"] else None
+            (su, sv), (ou, ov) = (albedo_st["scale"], albedo_st["offset"]) if albedo_st else ((1.0, 1.0), (0.0, 0.0))
+            if bucket["baked"]:
+                su = float(bucket["baked"])
             remap = {}
-            world = {}
+            placed = {}
             for tri in m.triangles(i):
                 for v in tri:
-                    if v not in world:
-                        world[v] = (transform(matrix, translation, m.positions[v]), rotate(matrix, m.normals[v]))
-                a, b, c = (world[v] for v in tri)
+                    if v not in placed:
+                        placed[v] = (transform(matrix, translation, m.positions[v]), rotate(matrix, m.normals[v]))
+                a, b, c = (placed[v] for v in tri)
                 surfaces.add(
                     a[0], b[0], c[0],
                     normalise(tuple(a[1][k] + b[1][k] + c[1][k] for k in range(3))),
@@ -765,12 +880,13 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
                         uv = m.uvs[v]
                         remap[v] = len(bucket["vertices"])
                         # PMX's V runs the other way from Unity's.
-                        bucket["vertices"].append((p, normalise(n), (uv[0], 1.0 - uv[1])))
+                        bucket["vertices"].append((p, normalise(n), (uv[0] * su + ou, 1.0 - (uv[1] * sv + ov))))
                     out.append(remap[v])
                 bucket["faces"].append(tuple(out))
 
     # One PMX vertex list, with each material's faces contiguous after it.
     vertices, faces, pmx_materials, textures, texture_index = [], [], [], [], {}
+    baked_layers = []
     relief_written = set()
     decals = []
 
@@ -804,7 +920,7 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
             or is_sky(m)
             or is_effect_decal(sh)
         )
-        a = slot(m, ALBEDO_SLOTS)
+        a = albedo_slot(m, png_root, proj)
         if transparent and a:
             needs_alpha.add(a["guid"])
 
@@ -817,6 +933,66 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
         if r > 3.0 * others and others > 0.0:
             domes.add(key)
 
+    # THE SKY GOES FIRST, OUTERMOST FIRST. The engine draws transparent
+    # materials in the PMX's order and each writes its depth once its colour has
+    # blended, so a nearer sky layer drawn first hides every farther one behind
+    # it: X309's stars stand just inside its nebula, and its light columns just
+    # outside. Everything else keeps its order, after the sky.
+    #
+    # Measured from the vertical axis, not from the centre: the layers are
+    # nested cylinders, and a tall one reaches farther from the centre than a
+    # short one standing outside it — X309's stars against its purple band.
+    def sky_distance(key):
+        vs = per_material[key]["vertices"]
+        return sorted(math.hypot(v[0][0], v[0][2]) for v in vs)[len(vs) // 2] if vs else 0.0
+
+    def skyish(key):
+        m = materials_by_guid.get(per_material[key]["guid"])
+        sh = proj.shader_name(m["shader_guid"]) if m else None
+        return key in domes or bool(m and (is_sky(m) or is_sky_layer(m, sh)))
+
+    used_order.sort(key=lambda k: (0, -sky_distance(k)) if skyish(k) else (1, 0.0))
+
+    # ONE SURFACE, TWO LAYERS. X309's nebula and its purple band are the same
+    # cylinder at the same radius, and two layers in one surface fight over its
+    # depth: squares along the horizon that change with every camera move. A
+    # layer sharing its radius with one drawn before it is pulled in by a third
+    # of a percent, so it stands in front of the layer it is drawn over.
+    pulled_in = []
+    radii = []
+    for key in used_order:
+        if not skyish(key):
+            continue
+        r = sky_distance(key)
+        shared = sum(1 for q in radii if abs(q - r) <= r * 0.001)
+        if shared:
+            k = 1.0 - 0.003 * shared
+            per_material[key]["vertices"] = [((v[0][0] * k, v[0][1], v[0][2] * k),) + tuple(v[1:]) for v in per_material[key]["vertices"]]
+            pulled_in.append(key)
+        radii.append(r)
+
+    # --sky effect: THE SKY IS HANDED TO THE GALAXY SKY EFFECT. The dome and
+    # every sky layer that wraps the stage — more than half-way round it — are
+    # left out, and the rig names the effect in their place. What stands IN
+    # the sky stays geometry: X309's clouds, its moon, its columns of light,
+    # each covering a small arc.
+    handed_to_effect = []
+    if sky == "effect":
+        def wraps(key):
+            bins = {int((math.degrees(math.atan2(v[0][0], v[0][2])) % 360.0) // 10) for v in per_material[key]["vertices"]}
+            return len(bins) > 18
+
+        def dome(key):
+            m = materials_by_guid.get(per_material[key]["guid"])
+            return key in domes or bool(m and is_sky(m))
+
+        def layer(key):
+            m = materials_by_guid.get(per_material[key]["guid"])
+            return bool(m and is_sky_layer(m, proj.shader_name(m["shader_guid"])))
+
+        handed_to_effect = [k for k in used_order if dome(k) or (layer(k) and wraps(k))]
+        used_order = [k for k in used_order if k not in handed_to_effect]
+
     for key in used_order:
         bucket = per_material[key]
         base = len(vertices)
@@ -827,11 +1003,25 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
         shader = proj.shader_name(mat["shader_guid"]) if mat else None
         tint, tint_alpha = material_tint(mat, shader) if mat else ((1.0, 1.0, 1.0), 1.0)
         alpha = surface_alpha(mat, tint_alpha, shader, decal_has_coverage(mat, png_root, proj) if mat else False) if mat else 1.0
-        if is_effect_decal(shader) and alpha == 0.0:
+        sky_layer = is_sky_layer(mat, shader)
+        if is_effect_decal(shader) and alpha == 0.0 and not sky_layer:
             decals.append(key)
-        albedo = slot(mat, ALBEDO_SLOTS) if mat else None
+        albedo = albedo_slot(mat, png_root, proj) if mat else None
         index = -1
         albedo_rel = None
+        if bucket["baked"]:
+            # THE SKY LAYER, BAKED: its textures, colours, mask and rotations
+            # composed at time 0, colour and coverage in one picture, so the
+            # material itself is plain white.
+            rel = "tex/" + re.sub(r"[^A-Za-z0-9_.-]", "_", key) + f"_x{GAIN}.png"
+            if bake_effect(mat, proj, lambda g: png_for(png_root, proj.path(g) or ""), os.path.join(out_dir, rel)):
+                texture_index[rel] = len(textures)
+                textures.append(rel)
+                index = texture_index[rel]
+                albedo_rel = rel
+                albedo = None
+                tint, alpha = (1.0, 1.0, 1.0), 1.0
+                baked_layers.append(key)
         if albedo:
             src = png_for(png_root, proj.path(albedo["guid"]) or "")
             if src:
@@ -853,7 +1043,7 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
         # is most of what separates this from the frame it was ripped out of.
         relief = slot(mat, RIPPLE_SLOTS) if mat else None
         if not relief and mat:
-            relief = slot(mat, NORMAL_SLOTS)
+            relief = normal_slot(mat, png_root, proj)
         # THE STRENGTH RIDES IN SHININESS, and zero is the important value.
         #
         # Unity states a `_NormalScale` per material and most of them are 1, but
@@ -917,13 +1107,13 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
         # away follows the view. Unity gets away with `_Cull 2` because its
         # winding agrees with its normals there; ours is flipped globally to
         # match PMX, and a dome is where that assumption breaks.
-        sky = key in domes or (mat and is_sky(mat))
-        two_sided = mat and (int(mat["floats"].get("_Cull", 2.0)) == 0 or sky)
+        sky_material = key in domes or (mat and is_sky(mat)) or sky_layer
+        two_sided = mat and (int(mat["floats"].get("_Cull", 2.0)) == 0 or sky_material)
         # AND THE SKY CASTS NOTHING. It encloses the scene, so a shadow map
         # asked to cover it covers two thousand units instead of the garden —
         # every real shadow in the frame loses the resolution to a dome that
         # should not be in the pass at all.
-        shadow_bits = 0x00 if sky else (0x02 | 0x04 | 0x08)
+        shadow_bits = 0x00 if sky_material else (0x02 | 0x04 | 0x08)
         # A PREMULTIPLIED SHEET IS PAINTED LIGHT, not a surface. Glass, a light
         # shaft, a decal: the shader writes its colour and lets the background
         # through, and lighting it adds sun and ambient on top of light that is
@@ -937,7 +1127,7 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
         # claim it: a flat pale slab lying across the water.
         lit_family = bool(shader) and shader.rsplit("/", 1)[-1] in ("Glass", "Ripplet")
         unlit = bool(mat) and not lit_family and (
-            sky or "TRANSPARENT_PREMULT" in mat["keywords"] or is_effect_decal(shader)
+            sky_material or "TRANSPARENT_PREMULT" in mat["keywords"] or is_effect_decal(shader)
         )
         # (metal, roughness, occlusion) into the PMX's SPECULAR field. The
         # format carries one and MMD's own renderer barely uses it; the engine
@@ -970,22 +1160,52 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
     look = scene.scene_setting()
     probe = png_for(png_root, proj.path(look["reflectionGuid"]) or "") if look and look.get("reflectionGuid") else None
     sky_written = False
-    if probe:
+    stale_world = os.path.join(out_dir, f"{name}.hdr")
+    if world == "none" and os.path.exists(stale_world):
+        # The upload installs whatever .hdr sits beside the PMX, so a World
+        # left from an earlier run would still arrive.
+        os.remove(stale_world)
+    if probe and world != "none":
         ambient = scene.ambient()
         try:
             cube_strip_to_equirect(
                 probe,
                 os.path.join(out_dir, f"{name}.hdr"),
-                ambient=ambient if ambient and ambient["mode"] == 1 else None,
+                # --world probe: the probe at its own level. The game lights its
+                # cast by the trilight gradient but its water and every glossy
+                # surface see the probe, and at night the two are ten times
+                # apart — X309's gradient averages 0.5, its probe 0.05.
+                ambient=ambient if ambient and ambient["mode"] == 1 and world == "gradient" else None,
             )
             sky_written = True
         except Exception as e:  # noqa: BLE001 — a probe in another layout is data, not a crash
             print(f"[unity] REFLECTION PROBE NOT CONVERTED: {e}")
 
     # AND ITS LAMPS, beside it — the rig as the scene document holds it.
+    # --key moon: THE MOON IS THE KEY. A night stage's own directional light was
+    # authored for the game's renderer, where the cast is lit by a rig of its
+    # own; here it lights the cast too, and X309's is an orange glow 3.6° over
+    # the sea that turns a figure gold. The moon the stage hangs gives the
+    # direction and the colour; the brightness stays the game's.
+    moon = None
+    if key_light == "moon":
+        for r in scene.renderers():
+            for g in r["materials"]:
+                m = materials_by_guid.get(g)
+                sh = proj.shader_name(m["shader_guid"]) if m else None
+                if m and "moon" in m["name"].lower() and is_sky_layer(m, sh):
+                    tint, _ = material_tint(m, sh)
+                    moon = {"position": scene.world_matrix(r["transform"])[1], "color": tint}
     rig, rig_notes = stage_lights(
-        scene, surfaces, lambda guid: png_for(png_root, proj.path(guid) or ""), to_pmx, SCALE, name
+        scene, surfaces, lambda guid: png_for(png_root, proj.path(guid) or ""), to_pmx, SCALE, name, moon=moon
     )
+    # AND THE EFFECT THE STAGE BRINGS, named for the app to add with it: the
+    # galaxy that replaces its sky.
+    effects = []
+    if handed_to_effect:
+        effects.append({"name": "Galaxy Sky"})
+    if effects:
+        rig["effects"] = effects
     with open(os.path.join(out_dir, f"{name}.lights.json"), "w", encoding="utf-8") as fh:
         json.dump(rig, fh, indent=1, ensure_ascii=False)
 
@@ -996,10 +1216,26 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
         )
         if domes:
             print(f"[unity] sky dome: {', '.join(sorted(domes))} — unlit, two-sided, casts nothing")
+        if handed_to_effect:
+            print(f"[unity] sky handed to the Galaxy Sky effect: {', '.join(sorted(handed_to_effect))} left out")
+        if effects:
+            print(f"[unity] effects the stage brings: {', '.join(e['name'] for e in effects)}")
+        if baked_layers:
+            print(f"[unity] {len(baked_layers)} sky layers baked from the effect shader: {', '.join(sorted(baked_layers))}")
         if decals:
             print(f"[unity] {len(decals)} effect decals left out (coverage lives in maps we do not ship): {', '.join(sorted(decals))}")
         if sky_written:
-            print(f"[unity] world -> {out_dir}/{name}.hdr (its ambient gradient, with the probe as structure)")
+            print(
+                f"[unity] world -> {out_dir}/{name}.hdr "
+                + {
+                    "gradient": "(its ambient gradient, with the probe as structure)",
+                    "probe": "(the reflection probe at its own level)",
+                }[world]
+            )
+        elif world == "none":
+            print("[unity] world -> none (the scene keeps its own)")
+        if pulled_in:
+            print(f"[unity] sky layers sharing a surface, pulled in front of the one beneath: {', '.join(pulled_in)}")
         if relief_written:
             print(f"[unity] {len(relief_written)} relief maps -> {out_dir}/maps/ (named <albedo>_N, no sidecar)")
         if flames:
@@ -1029,10 +1265,16 @@ def main():
     p.add_argument("--scale", type=float, default=SCALE, help="PMX units per Unity unit (8 for AG, 12.5 if a unit is a metre)")
     p.add_argument("--albedo", type=int, default=0, help="longest edge for albedo maps, 0 keeps the source")
     p.add_argument("--normal", type=int, default=0, help="longest edge for normal maps, 0 keeps the source")
+    p.add_argument("--world", choices=("gradient", "probe", "none"), default="gradient",
+                   help="the World the stage brings: the declared ambient gradient (day), the reflection probe's own level, or none (the scene keeps its own)")
+    p.add_argument("--key", choices=("game", "moon"), default="game",
+                   help="the sun: the game's directional light, or the stage's moon at the game's brightness (night)")
+    p.add_argument("--sky", choices=("baked", "effect"), default="baked",
+                   help="the stage's own sky baked into the PMX, or handed to the Galaxy Sky effect")
     a = p.parse_args()
     SCALE = a.scale
     png = a.png or os.path.join(os.path.dirname(os.path.abspath(a.project)), "_png_textures")
-    convert(a.project, a.scene, a.out, a.name, png, a.albedo, a.normal)
+    convert(a.project, a.scene, a.out, a.name, png, a.albedo, a.normal, world=a.world, sky=a.sky, key_light=a.key)
 
 
 if __name__ == "__main__":

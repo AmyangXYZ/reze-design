@@ -185,6 +185,8 @@ export type SceneEffect = {
    *  scene document passes straight into `setEffectParam` with nothing in
    *  between to convert it — and nothing in between to disagree. */
   params?: Record<string, EffectParamValue>
+  /** The stage it came with — see AppliedEffect.stage. */
+  stage?: string
   /** Its strips, in FRAMES at 30fps — the space the timeline draws and a VMD is
    *  keyed in. A LANE, so one effect can fire at several moments. Absent or
    *  empty = alive for the whole scene. */
@@ -563,6 +565,8 @@ function appliedEffect(
     // And so does WHO it is on: two scenes can pin one effect and aim it at
     // different dancers, which is the same argument as the dials.
     ...(applied.models === undefined ? {} : { models: applied.models }),
+    // And whose it is: a stage's own galaxy leaves with the stage.
+    ...(typeof applied.stage === "string" ? { stage: applied.stage } : {}),
   }
   if (typeof src === "string") return { ...resolveEffect(src), ...when }
   if (isItemRef(src)) {
@@ -899,8 +903,12 @@ function lightsFromDoc(lights: SceneLight[] | null | undefined): SceneLight[] {
 export function stageLightsFromFile(
   text: string,
   stage: string,
-): { lamps: SceneLight[]; sun: Partial<SceneSettings["sun"]> } {
-  const raw = JSON.parse(text) as { lamps?: unknown[]; sun?: Record<string, unknown> }
+): {
+  lamps: SceneLight[]
+  sun: Partial<SceneSettings["sun"]>
+  effects: { name: string; params: Record<string, EffectParamValue> }[]
+} {
+  const raw = JSON.parse(text) as { lamps?: unknown[]; sun?: Record<string, unknown>; effects?: unknown[] }
   const lamps = lightsFromDoc(
     (raw.lamps ?? []).map((l) => ({ ...(l as SceneLight), id: newLightId(), stage })),
   )
@@ -913,7 +921,23 @@ export function stageLightsFromFile(
     ...(num(s.elevation) && Math.abs(s.elevation as number) <= 90 ? { elevation: s.elevation as number } : {}),
     ...(typeof s.shadow === "boolean" ? { shadow: s.shadow } : {}),
   }
-  return { lamps, sun }
+  // The effects the stage brings — its galaxy — by built-in name, with
+  // the dials it sets. A colour arrives as the hex a picker shows and is stored
+  // the way every colour dial is: each channel over 255.
+  const effects = (raw.effects ?? []).flatMap((e) => {
+    const entry = e as { name?: unknown; params?: Record<string, unknown> }
+    if (typeof entry?.name !== "string") return []
+    const params: Record<string, EffectParamValue> = {}
+    for (const [k, v] of Object.entries(entry.params ?? {})) {
+      if (typeof v === "number" && Number.isFinite(v)) params[k] = v
+      else if (typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v)) {
+        const n = parseInt(v.slice(1), 16)
+        params[k] = { x: ((n >> 16) & 255) / 255, y: ((n >> 8) & 255) / 255, z: (n & 255) / 255 }
+      }
+    }
+    return [{ name: entry.name, params }]
+  })
+  return { lamps, sun, effects }
 }
 
 /** Join a folder URL and a filename. No encoding — see AssetRef.url. */
@@ -1058,6 +1082,7 @@ export function serializeSceneDoc(
           // Omitted when it is on everybody, so an effect nobody has aimed
           // writes exactly what it wrote before aiming existed.
           ...(e.models?.length ? { models: e.models } : {}),
+          ...(e.stage ? { stage: e.stage } : {}),
         })),
       },
       // Omitted when there are none, so a scene lit by world and sun alone

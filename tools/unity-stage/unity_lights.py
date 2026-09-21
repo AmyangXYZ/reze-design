@@ -33,6 +33,7 @@
 # neither does the game's, so a lamp carries the game's number as it stands.
 
 import bisect
+import json
 import math
 import os
 
@@ -220,7 +221,26 @@ def sun_of(light):
     }
 
 
-def stage_lights(scene, surfaces, cookie_path, to_pmx, scale, name):
+def moon_sun(game_sun_light, moon):
+    """The key light from the stage's moon: travelling from it to the stage
+    centre, in the moon's colour, as bright as the game's own key.
+
+    Brightness is matched as luminance, so a cool light lands where the warm
+    one did rather than wherever a hue change would leave it."""
+    px, py, pz = moon["position"]
+    n = math.sqrt(px * px + py * py + pz * pz) or 1.0
+    light = dict(game_sun_light, direction=(-px / n, -py / n, -pz / n))
+    sun = sun_of(light)
+    game = game_radiance(game_sun_light)
+    lum = lambda c: 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]  # noqa: E731
+    colour = tuple(gamma_to_linear(c) for c in moon["color"])
+    peak = max(colour) or 1.0
+    sun["color"] = hex_of(tuple(c / peak for c in colour))
+    sun["strength"] = round(lum(game) / max(lum(tuple(c / peak for c in colour)), 1e-6) * math.pi, 3)
+    return sun
+
+
+def stage_lights(scene, surfaces, cookie_path, to_pmx, scale, name, moon=None):
     """The rig as the document holds it, plus what was left out and why.
 
     `cookie_path(guid)` finds a cookie's decoded PNG. Lamps are ordered
@@ -235,7 +255,7 @@ def stage_lights(scene, surfaces, cookie_path, to_pmx, scale, name):
             continue
         if light["type"] == "directional":
             if sun is None:
-                sun = sun_of(light)
+                sun = moon_sun(light, moon) if moon else sun_of(light)
             else:
                 notes.append(f"{light['name']}: a second directional light")
             continue

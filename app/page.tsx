@@ -5076,13 +5076,36 @@ export default function Lab() {
         // the table calls a real surface leaves this group and takes its look.
         .filter((m) => !SURFACE_LOOKS.has(shaderLookFor(m.memo ?? "") ?? stageLookFor(m.name) ?? ""))
         .map((m) => m.name)
-      const unlit = [...new Set([...(xUnlitMaterials(pmx) ?? []), ...fullBright])]
+      // A SKY BAKED BRIGHTER THAN WHITE. The Unity converter stores a sky layer
+      // at 1/gain and names the picture for it — `_x4` — because a PNG stops at
+      // white and the game's stars and wisps do not. Those draw in their own
+      // group, emitting at that gain, so what was brighter than white is again
+      // and blooms.
+      const textures = engineRef.current?.getModel(id)?.getTextures() ?? []
+      const gainOf = (m: (typeof materials)[number]) => {
+        const g = /_x(\d+)\.png$/i.exec((textures[m.diffuseTextureIndex]?.path ?? "").replace(/\\/g, "/"))
+        return g ? Number(g[1]) : 1
+      }
+      const skyGroups: StyleGroup[] = [...new Set(materials.map(gainOf).filter((g) => g > 1))].map((gain) => {
+        const graph = structuredClone(UNLIT_GRAPH)
+        const emit = graph.nodes.find((n) => n.id === "emit")
+        if (emit) emit.inputs = { ...emit.inputs, strength: gain }
+        return {
+          id: `stage-sky-x${gain}`,
+          label: "Sky",
+          materials: materials.filter((m) => fullBright.includes(m.name) && gainOf(m) === gain).map((m) => m.name),
+          graph,
+          renderClass: "auto",
+        }
+      })
+      const glowing = new Set(skyGroups.flatMap((g) => g.materials))
+      const unlit = [...new Set([...(xUnlitMaterials(pmx) ?? []), ...fullBright])].filter((n) => !glowing.has(n))
       styled.current.add(id)
       if (!unlit.length) {
         // No painted sheet in this one, but the keyword and shader tables still
         // have something to say. This used to return, leaving the stage to the
         // auto-style effect — which is the thing that must not run now.
-        const table = stageStyleGroups(names, [], memosOf(materials))
+        const table = stageStyleGroups(names, skyGroups, memosOf(materials)) ?? (skyGroups.length ? skyGroups : null)
         if (table) void applyGroups(id, table)
         return
       }
@@ -5100,7 +5123,7 @@ export default function Lab() {
         // 74% loses a random quarter of itself and reads as television static.
       }
       styled.current.add(id)
-      void applyGroups(id, stageStyleGroups(names, [group], memosOf(materials)) ?? [group])
+      void applyGroups(id, stageStyleGroups(names, [group, ...skyGroups], memosOf(materials)) ?? [group, ...skyGroups])
     },
     [engineRef, applyGroups],
   )
@@ -5249,6 +5272,7 @@ export default function Lab() {
     if (!gone.length) return
     const ids = new Set(gone.map((s) => s.id))
     setLightsState((list) => list.filter((l) => !l.stage || !ids.has(l.stage)))
+    setBgEffects((list) => list.filter((e) => !e.stage || !ids.has(e.stage)))
     setSettings((s2) => ({
       ...s2,
       sun: s2.sun.stage && ids.has(s2.sun.stage.id) ? s2.sun.stage.before : s2.sun,
@@ -5337,6 +5361,19 @@ export default function Lab() {
           )
         } else if (leavingLit) {
           dropCandlesUnlessLit(new Set(leaving.map((s) => s.id)))
+        }
+        // AND THE EFFECTS IT NAMES — its galaxy — at the dials it sets,
+        // marked as its own so they leave with it. One the scene already wears
+        // by that name stays as the scene has it.
+        for (const fx of rig?.effects ?? []) {
+          let applied: AppliedEffect
+          try {
+            applied = { ...builtinEffect(fx.name), params: fx.params, stage: id }
+          } catch {
+            console.warn(`[stage] it names an effect this app does not have: ${fx.name}`)
+            continue
+          }
+          setBgEffects((list) => (list.some((e) => e.name === fx.name) ? list : [...list, applied]))
         }
         noteArrival(id)
         setStageTab("stage")

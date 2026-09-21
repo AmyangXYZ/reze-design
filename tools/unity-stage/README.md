@@ -41,6 +41,15 @@ ambient gradient with the reflection probe ridden on top as structure, so it
 delivers the fill the scene declared while a mirror still sees the shape of the
 room. Water reflects it. The World row is where a different sky is argued for.
 
+**Three switches for a night stage.** `--world none` brings no `.hdr`, so the
+scene keeps its own World and backdrop; `--world probe` brings the reflection
+probe at its own level instead of the gradient. `--key moon` lights from the
+stage's moon billboard, in its colour, at the game key light's brightness, in
+place of the game's directional light. `--sky effect` leaves out the dome and
+every sky layer that wraps the stage and names the Galaxy Sky effect in
+`lights.json`; by default the game's effect-shader sky layers are baked into the
+PMX (`unity_effect_bake.py`). X309 ships as `--world none --key moon`.
+
 **No sidecar.** A material's relief map is found by name: `tex/T_D.png` pairs
 with `maps/T_N.png`, the set's own convention, so the folder states the pairing
 where a person can read it. A material that samples no albedo — water, whose

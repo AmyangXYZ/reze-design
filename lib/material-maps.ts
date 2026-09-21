@@ -142,7 +142,9 @@ export async function loadMaterialMaps(
         refs.map(async (ref) => {
           if (!ref) return null
           const source = await decode(ref.path)
-          return source ? { source, srgb: ref.srgb } : null
+          // A relief map is tiled across its surface, so it gets mips: without
+          // them X309's far sea sampled its ripples as noise and sparkled.
+          return source ? { source, srgb: ref.srgb, mipmaps: true } : null
         }),
       )
       byMaterial.set(name, images)

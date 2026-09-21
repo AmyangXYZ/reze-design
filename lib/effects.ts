@@ -45,6 +45,10 @@ export type AppliedEffect = {
    * instead of forking the shader.
    */
   params?: Record<string, EffectParamValue>
+  /** The stage it came with, by model id — a stage's galaxy, its fog. Deleting
+   *  that stage takes it along, and uploading a stage replaces every effect the
+   *  last one brought. Absent on an effect added by hand. */
+  stage?: string
   /** WHEN it is alive, in frames — a LANE, so one effect can fire more than
    *  once. Absent or empty = the whole scene, which is what an ambient effect
    *  does. */
