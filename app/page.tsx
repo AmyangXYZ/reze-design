@@ -2511,6 +2511,10 @@ export default function Lab() {
   // then followed a clip that is not the dance — the transport reading 0:00 over
   // a cast that is posed and ready to play.
   const masterId = models.find((m) => !stageIds.has(m.id) && animByModel[m.id])?.id ?? null
+  // THE PRIMARY MODEL: the first CAST member, never a stage or a prop — who a
+  // command lands on when it has to land on someone and cannot ask (the
+  // palette's motion, morph and lip sync). The same rule as firstCastId.
+  const primaryId = models.find((m) => !stageIds.has(m.id))?.id ?? null
   // Clip duration, polled until the engine reports it (main's approach — meta
   // arrives whenever the VMD finishes parsing, so a one-shot read races it).
   // Keyed by owner instead of reset-on-change: a stale value simply stops
@@ -6473,7 +6477,7 @@ export default function Lab() {
       // upload-lyrics command is — because a verb that silently does nothing
       // reads as broken.
       else if (item.id === "lipsync") {
-        const target = models[0]?.id
+        const target = primaryId
         if (target && lyricsClip) void generateLipSync(target)
         else if (target) lyricsInput.current?.click()
       } else if (item.id === "camera") gotoSection("camera")
@@ -6497,7 +6501,7 @@ export default function Lab() {
       // one sentence beats one that depends on what panel happens to be open.
       // Per-model uploads live on the cast rows, where the target is visible.
       else if (item.id === "upload-animation") {
-        const target = models[0]?.id
+        const target = primaryId
         if (target) {
           animTarget.current = target
           vmdInput.current?.click()
@@ -6505,7 +6509,7 @@ export default function Lab() {
       } else if (item.id === "upload-morph") {
         // The primary model, by the same rule as the motion above: an
         // expression has to land on someone and the palette cannot ask which.
-        const target = models[0]?.id
+        const target = primaryId
         if (target) {
           morphTarget.current = target
           morphInput.current?.click()
@@ -6528,7 +6532,7 @@ export default function Lab() {
       // in set it to itself, resolved to no model, and the panel could never be
       // opened again. Going through the RESOLVED model means a stale id falls
       // through to the first cast member instead of wedging.
-      else if (item.id === "materials") openMaterials(inspected?.id ?? models[0]?.id ?? null)
+      else if (item.id === "materials") openMaterials(inspected?.id ?? primaryId)
       // Each opens exactly what it says. A new draft starts from the same
       // template the library's own New button uses, so the two doors lead to
       // one place.
@@ -6591,7 +6595,7 @@ export default function Lab() {
       // been replaced away, and this callback must re-make itself when the
       // resolution changes, not when the stale string happens to.
       inspected?.id,
-      models,
+      primaryId,
       lyricsClip,
       generateLipSync,
       patch,
@@ -9812,7 +9816,7 @@ export default function Lab() {
               active={exportOpen}
               engineRef={engineRef}
               canvasRef={canvasRef}
-              modelName={masterId ?? models[0]?.id ?? ""}
+              modelName={masterId ?? primaryId ?? ""}
               extraModelNames={models.filter((m) => animByModel[m.id] && m.id !== masterId).map((m) => m.id)}
               visibility={visibilityTracks}
               sceneName={sceneName}
