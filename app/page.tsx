@@ -2511,9 +2511,9 @@ export default function Lab() {
   // then followed a clip that is not the dance — the transport reading 0:00 over
   // a cast that is posed and ready to play.
   const masterId = models.find((m) => !stageIds.has(m.id) && animByModel[m.id])?.id ?? null
-  // THE PRIMARY MODEL: the first CAST member, never a stage or a prop — who a
-  // command lands on when it has to land on someone and cannot ask (the
-  // palette's motion, morph and lip sync). The same rule as firstCastId.
+  // THE PRIMARY MODEL: the first cast member — who a command lands on when it
+  // has to land on someone and cannot ask (the palette's motion, morph and lip
+  // sync). The same rule as firstCastId.
   const primaryId = models.find((m) => !stageIds.has(m.id))?.id ?? null
   // Clip duration, polled until the engine reports it (main's approach — meta
   // arrives whenever the VMD finishes parsing, so a one-shot read races it).
