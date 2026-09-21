@@ -560,6 +560,22 @@ fn rzLightsDiffuse(p: vec3f, n: vec3f) -> vec3f { return vec3f(0.0); }
 // NO SHADOW MAP: the card renders no caster, so every point is in the sun.
 fn rzShadow(p: vec3f) -> f32 { return 1.0; }
 
+// FIVE STAND-IN WICKS: the card has no stage to name any, so an effect that
+// stands something on each (Candle Flames) gets a low row of candles in front
+// of the stand-in — enough to show what it draws.
+struct RzPoint {
+  pos: vec3f,
+  tip: vec3f,
+}
+fn rzPointCount() -> u32 { return 5u; }
+fn rzPoint(i: u32) -> RzPoint {
+  var p: RzPoint;
+  let x = (f32(i) - 2.0) * 3.5;
+  p.pos = vec3f(x, 6.0 + abs(x) * 0.25, -3.0);
+  p.tip = p.pos + vec3f(0.0, 2.2, 0.0);
+  return p;
+}
+
 // NO GRID STEPPED, for the same reason: a kernel reading its own previous state
 // on a card would read a texture nobody wrote.
 fn rzGridSize() -> f32 { return 256.0; }

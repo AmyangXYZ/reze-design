@@ -150,6 +150,7 @@ import {
   parseSceneDoc,
   saveSceneAssets,
   saveSceneState,
+  stageLightsFromFile,
   serializeSceneDoc,
   type Scene,
   type SceneCamera,
@@ -233,11 +234,11 @@ import { LampMarkers } from "@/components/scene/lamp-markers"
 import { accessoryFiles, convertXUploads, isFromX, xUnlitMaterials } from "@/lib/x-file"
 import { readRayMmd, type RayStage } from "@/lib/ray-mmd"
 import { loadMaterialMaps, setMaterialMaps } from "@/lib/material-maps"
-import { findSkies, skyThumbnail, type SkyCandidate } from "@/lib/stage-skies"
+import { findSkies, isStageOwnSky, skyThumbnail, type SkyCandidate } from "@/lib/stage-skies"
 import { GpuErrorNotice } from "@/components/gpu-error-notice"
 import { toast } from "sonner"
 import { lipSyncVmdFile } from "@/lib/lipsync"
-import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, hexToLinearVec3, windFreqFromSlider, windSliderFromFreq, type SceneSettings } from "@/lib/scene-settings"
+import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, hexToLinearVec3, windFreqFromSlider, windSliderFromFreq, sceneOwned, type SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 import { storageKey } from "@/lib/storage"
 
@@ -361,6 +362,9 @@ const DOME_ACCEPT = "image/*,.tga"
 /** Radiance only. An .hdr is a measurement of light, and the slot that takes it
  *  is the one that lights the scene — not the one that shows a picture. */
 const HDRI_ACCEPT = ".hdr"
+/** The built-in that stands a flame on every wick, and the bone prefix it reads. */
+const CANDLE_FLAMES = "Candle Flames (wick bones)"
+const WICK_PREFIX = "flame"
 
 /** Give every row a uid, keeping the ones already minted. A duplicate is
  *  re-minted rather than kept: two rows carrying the same uid is the very state
@@ -3114,7 +3118,12 @@ export default function Lab() {
   // redundant setSun dirties the shadow map for a full extra pass).
   const patch = useCallback(
     <K extends keyof SceneSettings>(key: K, part: Partial<SceneSettings[K]>) =>
-      setSettings((s2) => ({ ...s2, [key]: { ...s2[key], ...part } })),
+      setSettings((s2) => {
+        const next = { ...s2[key], ...part }
+        // A hand on the sun or the world makes it the scene's own: the stage
+        // that set it no longer puts back the one it replaced.
+        return { ...s2, [key]: key === "sun" || key === "world" ? sceneOwned(next as { stage?: unknown }) : next }
+      }),
     [],
   )
   const { sun, world, bloom, dof, grade, ground, physics, view, audio } = settings
@@ -4566,8 +4575,8 @@ export default function Lab() {
       setSettings((prev) => ({
         ...prev,
         view: { transform, exposure },
-        world: { ...prev.world, ...world },
-        ...(light?.sun ? { sun: { ...prev.sun, ...light.sun } } : {}),
+        world: sceneOwned({ ...prev.world, ...world }),
+        ...(light?.sun ? { sun: sceneOwned({ ...prev.sun, ...light.sun }) } : {}),
         ...(light?.bloom ? { bloom: { ...prev.bloom, ...light.bloom } } : {}),
       }))
       // Remembered for the NEXT model, not for this scene — the scene already
@@ -5140,13 +5149,13 @@ export default function Lab() {
       // opposite: it REPLACED the ambient with a dark room average, and every
       // stage went dark and blue.
       //
-      // AND IT LEAVES THE STRENGTH SLIDER ALONE. The engine multiplies an
-      // installed sky by the world strength, so the demo's 0.66 does dim this
-      // to two thirds — but writing 1 into the document to compensate changes a
-      // dial the person can see, and only in the live session: an upload then
-      // showed a brighter scene than a refresh of the same document. Whatever
-      // the scene says is what it gets, and the World row is where that is
-      // argued with.
+      // AT STRENGTH 1, CLAIMED. The converter bakes the game's own ambient,
+      // in linear, at the game's own level, and the engine multiplies an
+      // installed sky by the world strength — so any other strength rescales
+      // the game's fill against its sun and lamps. Written into the settings
+      // like the sun, so a refresh reads what the upload set, and claimed like
+      // the sun: deleting the stage puts the scene's strength back, and moving
+      // the dial makes it the scene's own.
       //
       // WHENEVER ONE ARRIVES, filled slot or not. A stage is a place, and the
       // light in it belongs to it: loading another one and keeping the last
@@ -5158,6 +5167,10 @@ export default function Lab() {
         if (probe) {
           try {
             swapHdri(await probeBackdrop(probe))
+            setSettings((s2) => {
+              const own = sceneOwned(s2.world)
+              return { ...s2, world: { ...own, strength: 1, stage: { id, before: own } } }
+            })
             // Noted, so removing the stage takes its sky with it. The World slot
             // also SHOWS what is in it, so a deleted stage was leaving its own
             // 1024x512 equirect standing as the backdrop — a blurry block of
@@ -5212,6 +5225,48 @@ export default function Lab() {
    */
   const [uploading, setUploading] = useState(0)
 
+  /** Whether a loaded model names candle wicks — bones the Candle Flames effect
+   *  stands a flame on (its `#points flame`). */
+  const hasWicks = (id: string) =>
+    (engineRef.current?.getModel(id)?.getSkeleton().bones ?? []).some((b) => b.name.startsWith(WICK_PREFIX))
+
+  /**
+   * Take back what leaving stages brought: their lamps, the sun they set and
+   * their own sky. The candles are the caller's, because only the caller knows
+   * whether the stage coming in lights them again.
+   *
+   * The sky is found by the side-file rule — a stage's own is the .hdr named for
+   * its PMX — so it is found after a reload too. `arriving` is the PMX coming in
+   * its place, whose sky of that name is about to be installed and stays. The
+   * sun goes back only while the stage's claim is on it: touch the sun and it
+   * is yours.
+   */
+  const releaseStageRig = (gone: { id: string; file: string }[], arriving: string | null = null) => {
+    if (!gone.length) return
+    const ids = new Set(gone.map((s) => s.id))
+    setLightsState((list) => list.filter((l) => !l.stage || !ids.has(l.stage)))
+    setSettings((s2) => ({
+      ...s2,
+      sun: s2.sun.stage && ids.has(s2.sun.stage.id) ? s2.sun.stage.before : s2.sun,
+      world: s2.world.stage && ids.has(s2.world.stage.id) ? s2.world.stage.before : s2.world,
+    }))
+    setHdri((prev) => {
+      if (!prev || !gone.some((s) => isStageOwnSky(s.file, prev.name))) return prev
+      // The stage coming in brings a sky of the same name, and it is the new one.
+      if (arriving && isStageOwnSky(arriving, prev.name)) return prev
+      releaseBackdrop(prev)
+      return null
+    })
+    if (stageHdri.current && ids.has(stageHdri.current)) stageHdri.current = null
+  }
+
+  /** Candle Flames leaves when the last model naming wicks does. */
+  const dropCandlesUnlessLit = (leaving: Set<string>) => {
+    if (!models.some((m) => !leaving.has(m.id) && hasWicks(m.id))) {
+      setBgEffects((list) => list.filter((e) => e.name !== CANDLE_FLAMES))
+    }
+  }
+
   const loadPicked = async (files: File[], pmx: File, target: ModelTarget) => {
     setUpload(null)
     setUploading((n) => n + 1)
@@ -5220,6 +5275,11 @@ export default function Lab() {
         // The .x accessories in the folder are the same set as its .pmx — the
         // effect layer, the sky — and come in with it as parts.
         const parts = isFromX(pmx) ? [] : files.filter(isFromX)
+        // THE STAGE LEAVING FIRST: its lamps, its sun and its sky, and whether
+        // it lit candles — read now, while its bones are still loaded.
+        const leaving = stages.map((s) => ({ id: s.id, file: s.file }))
+        const leavingLit = stages.some((s) => hasWicks(s.id))
+        releaseStageRig(leaving, pmx.name)
         const id = await loadScenery(
           files.filter((f) => !parts.includes(f)),
           pmx,
@@ -5237,6 +5297,43 @@ export default function Lab() {
         // rather than hidden, so the Ground row still says what happened and
         // anyone who wants a catcher under a floorless stage can turn it back.
         setSettings((s2) => (s2.ground.enabled ? { ...s2, ground: { ...s2.ground, enabled: false } } : s2))
+        // AND ITS OWN LAMPS AND SUN, from the rig the converter wrote beside it.
+        // Every lamp the last stage brought goes first, file or no file: a
+        // scene has one stage, and a garden lit by a bar's lamps is the same
+        // mistake as one lit by its sky.
+        const rigFile = files.find(
+          (f) => relFilePath(f) === relFilePath(pmx).replace(/\.pmx$/i, "") + ".lights.json",
+        )
+        let rig: ReturnType<typeof stageLightsFromFile> | null = null
+        if (rigFile) {
+          try {
+            rig = stageLightsFromFile(await rigFile.text(), id)
+          } catch (e) {
+            console.warn(`[stage] the lamps it brought could not be read:`, e)
+          }
+        }
+        const lamps = rig?.lamps ?? []
+        setLightsState((list) => [...list.filter((l) => !l.stage), ...lamps])
+        // The sun, CLAIMED: it remembers the scene's own, so deleting this
+        // stage puts that back — until someone touches the sun.
+        const sun = rig?.sun
+        if (sun && Object.keys(sun).length) {
+          setSettings((s2) => {
+            const own = sceneOwned(s2.sun)
+            return { ...s2, sun: { ...own, ...sun, stage: { id, before: own } } }
+          })
+        }
+        // AND ITS CANDLES. A stage that names wicks — bones flame.01 upward, as
+        // the Unity converter writes them — brings the effect that lights them,
+        // into the Effects list like any effect, once. One that names none
+        // takes the last stage's with it.
+        if (hasWicks(id)) {
+          setBgEffects((list) =>
+            list.some((e) => e.name === CANDLE_FLAMES) ? list : [...list, builtinEffect(CANDLE_FLAMES)],
+          )
+        } else if (leavingLit) {
+          dropCandlesUnlessLit(new Set(leaving.map((s) => s.id)))
+        }
         noteArrival(id)
         setStageTab("stage")
         // A stage folder that brought skies offers them; which one is yours.
@@ -7841,13 +7938,12 @@ export default function Lab() {
                                     danger
                                     label={t.lab.aria.deleteStage(displayName(stage.file))}
                                     onClick={() => {
-                                      for (const s of stages) {
-                                        if (stageHdri.current === s.id) {
-                                          stageHdri.current = null
-                                          swapHdri(null)
-                                        }
-                                        removeModelById(s.id)
-                                      }
+                                      // A sky the session installed goes too, whatever its name.
+                                      if (stages.some((s) => stageHdri.current === s.id)) swapHdri(null)
+                                      const lit = stages.some((s) => hasWicks(s.id))
+                                      releaseStageRig(stages)
+                                      if (lit) dropCandlesUnlessLit(new Set(stages.map((s) => s.id)))
+                                      for (const s of stages) removeModelById(s.id)
                                     }}
                                   />
                                 </>

@@ -3,40 +3,51 @@
 import { Vec3 } from "reze-engine"
 import type { GradeSettings } from "@/lib/grade"
 
+/** What a stage that set a light remembers: which stage, and the light it
+ *  replaced. Deleting that stage puts `before` back; any edit to the light drops
+ *  the claim, and the light is then the scene's own to keep. */
+export type StageClaim<T> = { id: string; before: T }
+
+/** The sky's own light: one colour, filling everything the sun misses. */
+export type WorldLight = { color: string; strength: number }
+
+/** The sun's own dials, azimuth/elevation degrees — friendlier than a raw vector. */
+export type SunLight = {
+  color: string
+  strength: number
+  azimuth: number
+  elevation: number
+  /**
+   * Whether it casts a shadow at all.
+   *
+   * THE SCENE'S ONLY SHADOW SWITCH. The sun is the only thing that casts —
+   * positional lamps are diffuse-only and have no shadow term — so this is not
+   * one shadow among several, it is all of them, on the ground and on the cast
+   * alike. It used to live on the ground, which is where the shadow is
+   * RECEIVED, and turning it off there left every model still shadowed: half a
+   * switch.
+   *
+   * Optional, and absent means on: a document written before it moved says
+   * nothing here and had a shadow.
+   */
+  shadow?: boolean
+  /**
+   * How soft the edge of the shadow it casts is, 0–1. Optional; absent on
+   * every document written before the dial existed, and 0 is the sharp edge
+   * those scenes were authored looking at.
+   *
+   * A property of the LIGHT even though the engine takes it on the floor
+   * that receives it: a point source throws a hard edge and an overcast sky
+   * throws none, and that is a fact about the sun, not about the ground.
+   */
+  softness?: number
+}
+
 export type SceneSettings = {
-  /** The sky's own light: one colour, filling everything the sun misses. */
-  world: { color: string; strength: number }
-  /** Sun direction as azimuth/elevation degrees — friendlier than a raw vector. */
-  sun: {
-    color: string
-    strength: number
-    azimuth: number
-    elevation: number
-    /**
-     * Whether it casts a shadow at all.
-     *
-     * THE SCENE'S ONLY SHADOW SWITCH. The sun is the only thing that casts —
-     * positional lamps are diffuse-only and have no shadow term — so this is not
-     * one shadow among several, it is all of them, on the ground and on the cast
-     * alike. It used to live on the ground, which is where the shadow is
-     * RECEIVED, and turning it off there left every model still shadowed: half a
-     * switch.
-     *
-     * Optional, and absent means on: a document written before it moved says
-     * nothing here and had a shadow.
-     */
-    shadow?: boolean
-    /**
-     * How soft the edge of the shadow it casts is, 0–1. Optional; absent on
-     * every document written before the dial existed, and 0 is the sharp edge
-     * those scenes were authored looking at.
-     *
-     * A property of the LIGHT even though the engine takes it on the floor
-     * that receives it: a point source throws a hard edge and an overcast sky
-     * throws none, and that is a fact about the sun, not about the ground.
-     */
-    softness?: number
-  }
+  /** A stage's own sky claims strength 1 — see StageClaim. */
+  world: WorldLight & { stage?: StageClaim<WorldLight> }
+  /** A stage's rig claims the sun it sets — see StageClaim. */
+  sun: SunLight & { stage?: StageClaim<SunLight> }
   bloom: {
     enabled: boolean
     threshold: number
@@ -336,4 +347,11 @@ export function groundExtent(ground: SceneSettings["ground"]) {
     fadeStart: half * fade.start,
     fadeEnd: half * fade.end,
   }
+}
+
+/** A light with no stage's claim on it — what any edit to it leaves. */
+export function sceneOwned<T extends { stage?: unknown }>(light: T): T {
+  const { stage, ...own } = light
+  void stage
+  return own as T
 }

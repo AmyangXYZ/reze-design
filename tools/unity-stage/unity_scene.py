@@ -165,6 +165,44 @@ class Scene:
         cls, body = self.docs.get(game_object_id, (None, ""))
         return shallow(body, "m_Name", "")
 
+    def active_in_hierarchy(self, game_object_id):
+        """Whether the GameObject is switched on, and every parent above it too.
+
+        Unity shows an object only when its whole chain is active. An artist
+        parks a lamp by switching off it or the fixture it hangs under, and the
+        lamp's own flag still reads 1 in the second case.
+        """
+        seen = set()
+        go = game_object_id
+        while go and go not in seen:
+            seen.add(go)
+            body = self.docs.get(go, (None, ""))[1]
+            if shallow(body, "m_IsActive", "1") != "1":
+                return False
+            tf = self.transform_of(go)
+            parent = self._transform(tf)["parent"] if tf else 0
+            go = self._transform(parent)["object"] if parent and parent in self.docs else 0
+        return True
+
+    def light_extension(self, game_object_id):
+        """The studio's ReplicaAdditionalLightData beside a Light, if it has one.
+
+        Found by its fields, like SceneSetting. Its shape radius caps the
+        inverse square: the game's shader takes min(1/d², 1/radius), so a lamp
+        inside its own lantern does not blow the lantern out.
+        """
+        for fid, (cls, body) in self.docs.items():
+            if cls != 114 or "m_ShapeRadius:" not in body:
+                continue
+            if f"m_GameObject: {{fileID: {game_object_id}}}" not in body:
+                continue
+            return {
+                "shapeRadius": float(shallow(body, "m_ShapeRadius", "0") or 0),
+                "extensionType": int(float(shallow(body, "m_ExtensionType", "0") or 0)),
+                "dummy": shallow(body, "m_Dummy", "0") != "0",
+            }
+        return {"shapeRadius": 0.0, "extensionType": 0, "dummy": False}
+
     def lights(self):
         """Every light, in world space, with the numbers that describe it."""
         out = []
@@ -173,15 +211,25 @@ class Scene:
                 continue
             go = int(re.search(r"m_GameObject:\s*\{fileID:\s*(-?\d+)", body).group(1))
             tf = self.transform_of(go)
-            m = self.world_rotation_matrix(tf) if tf else quat_matrix((0, 0, 0, 1))
+            # The composed matrix, not world_position: a lamp hangs under a
+            # fixture that hangs under a room, and each of them may be turned.
+            m, position = self.world_matrix(tf) if tf else (quat_matrix((0, 0, 0, 1)), (0.0, 0.0, 0.0))
+            forward = (m[0][2], m[1][2], m[2][2])
+            n = sum(c * c for c in forward) ** 0.5 or 1.0
+            cookie = re.search(r"m_Cookie:\s*\{fileID:\s*(-?\d+)(?:,\s*guid:\s*([0-9a-f]{32}))?", body)
+            culling = re.search(r"m_CullingMask:\s*\n\s+serializedVersion: \d+\n\s+m_Bits: (\d+)", body)
+            ext = self.light_extension(go)
             out.append(
                 {
                     "name": self.name_of(go),
                     "type": LIGHT_TYPES.get(int(float(shallow(body, "m_Type", "2"))), "point"),
-                    "position": self.world_position(tf) if tf else (0.0, 0.0, 0.0),
+                    "position": position,
+                    # The whole world matrix, scale included, because a cookie is
+                    # projected through it.
+                    "matrix": m,
                     # A Unity light shines down its local +Z, so the third column
                     # of its world rotation is where it points.
-                    "direction": (m[0][2], m[1][2], m[2][2]),
+                    "direction": tuple(c / n for c in forward),
                     "color": vector(shallow(body, "m_Color"), (1.0, 1.0, 1.0)),
                     "intensity": float(shallow(body, "m_Intensity", "1")),
                     "range": float(shallow(body, "m_Range", "10")),
@@ -189,6 +237,50 @@ class Scene:
                     "innerAngle": float(shallow(body, "m_InnerSpotAngle", "0") or 0),
                     "shadows": (re.search(r"m_Shadows:\s*\n\s+m_Type:\s*(\d+)", body) or [None, "0"])[1] != "0",
                     "baked": shallow(body, "m_Lightmapping", "4"),
+                    "on": shallow(body, "m_Enabled", "1") == "1" and self.active_in_hierarchy(go),
+                    # Which renderers it lights: their GameObject layer against
+                    # the culling mask, their rendering-layer mask against this.
+                    "cullingMask": int(culling.group(1)) if culling else 0xFFFFFFFF,
+                    "renderingLayerMask": int(shallow(body, "m_RenderingLayerMask", "1") or 1),
+                    "cookie": cookie.group(2) if cookie and cookie.group(1) != "0" else None,
+                    **ext,
+                }
+            )
+        return out
+
+    def particle_systems(self):
+        """Every ParticleSystemRenderer with the numbers that size what it draws.
+
+        A candle flame in this studio's stages is one of these: a single
+        particle, a stretched billboard standing on the wick, `startSize` wide
+        and `lengthScale` times that tall, sized again by the transform the
+        system's scaling mode names.
+        """
+        out = []
+        for fid, (cls, body) in self.docs.items():
+            if cls != 199:
+                continue
+            go = int(re.search(r"m_GameObject:\s*\{fileID:\s*(-?\d+)", body).group(1))
+            tf = self.transform_of(go)
+            system = next(
+                (b for c, b in self.docs.values() if c == 198 and f"m_GameObject: {{fileID: {go}}}" in b),
+                "",
+            )
+            initial = system[system.find("InitialModule:") :]
+            size = re.search(r"startSize:\s*\n(?:\s+serializedVersion: \d+\n)?\s+minMaxState: \d+\n\s+scalar: (-?[\d.eE+-]+)", initial)
+            matrix, position = self.world_matrix(tf) if tf else (quat_matrix((0, 0, 0, 1)), (0.0, 0.0, 0.0))
+            out.append(
+                {
+                    "name": self.name_of(go),
+                    "position": position,
+                    "matrix": matrix,
+                    "localScale": self._transform(tf)["scale"] if tf else (1.0, 1.0, 1.0),
+                    "materials": re.findall(r"guid:\s*([0-9a-f]{32})", body[body.find("m_Materials") :].split("\n  m_", 1)[0]),
+                    "on": shallow(body, "m_Enabled", "1") == "1" and self.active_in_hierarchy(go),
+                    "renderMode": int(shallow(body, "m_RenderMode", "0") or 0),
+                    "lengthScale": float(shallow(body, "m_LengthScale", "1") or 1),
+                    "scalingMode": int(shallow(system, "scalingMode", "1") or 1),
+                    "startSize": float(size.group(1)) if size else 0.0,
                 }
             )
         return out
@@ -286,6 +378,8 @@ class Scene:
                     "materials": mats,
                     "mesh": self.mesh_of(go),
                     "enabled": shallow(body, "m_Enabled", "1") == "1",
+                    "layer": int(shallow(self.docs.get(go, (None, ""))[1], "m_Layer", "0") or 0),
+                    "renderingLayerMask": int(shallow(body, "m_RenderingLayerMask", "1") or 1),
                     "firstSubMesh": first_submesh,
                     "batched": submesh_count > 0,
                 }

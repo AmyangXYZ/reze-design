@@ -269,6 +269,10 @@ export type SceneLight = {
   innerAngle?: number
   /** Absent means on — a lamp written before the switch existed is lit. */
   on?: boolean
+  /** The stage it came with, by model id. Deleting that stage takes it along,
+   *  and uploading a stage replaces every lamp the last one brought. Absent on
+   *  a lamp placed by hand. */
+  stage?: string
 }
 
 export type SceneState = {
@@ -880,6 +884,36 @@ function lightsFromDoc(lights: SceneLight[] | null | undefined): SceneLight[] {
       Number.isFinite(l.radius) &&
       l.radius > 0,
   )
+}
+
+/**
+ * A stage's own rig, from the `<Name>.lights.json` the Unity converter writes
+ * beside its PMX: the lamps the game switches on, and its sun.
+ *
+ * Read once, at upload, into the document — the file is how a rig travels, the
+ * document is where it lives. Every lamp is minted an id and marked with the
+ * stage it came with, then passes the same door a document's lamps do, so a
+ * converter bug cannot put a NaN lamp on screen either. The sun keeps only the
+ * fields that are sound; a missing one leaves the scene's own in place.
+ */
+export function stageLightsFromFile(
+  text: string,
+  stage: string,
+): { lamps: SceneLight[]; sun: Partial<SceneSettings["sun"]> } {
+  const raw = JSON.parse(text) as { lamps?: unknown[]; sun?: Record<string, unknown> }
+  const lamps = lightsFromDoc(
+    (raw.lamps ?? []).map((l) => ({ ...(l as SceneLight), id: newLightId(), stage })),
+  )
+  const s = raw.sun ?? {}
+  const num = (v: unknown) => typeof v === "number" && Number.isFinite(v)
+  const sun: Partial<SceneSettings["sun"]> = {
+    ...(typeof s.color === "string" && /^#[0-9a-f]{6}$/i.test(s.color) ? { color: s.color } : {}),
+    ...(num(s.strength) && (s.strength as number) >= 0 ? { strength: s.strength as number } : {}),
+    ...(num(s.azimuth) ? { azimuth: s.azimuth as number } : {}),
+    ...(num(s.elevation) && Math.abs(s.elevation as number) <= 90 ? { elevation: s.elevation as number } : {}),
+    ...(typeof s.shadow === "boolean" ? { shadow: s.shadow } : {}),
+  }
+  return { lamps, sun }
 }
 
 /** Join a folder URL and a filename. No encoding — see AssetRef.url. */

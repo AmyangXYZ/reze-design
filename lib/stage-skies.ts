@@ -89,3 +89,18 @@ export async function skyThumbnail(file: File, width: number): Promise<string> {
   bitmap.close()
   return URL.createObjectURL(await canvas.convertToBlob({ type: "image/png" }))
 }
+
+/**
+ * Whether a World sky is the stage's OWN: the .hdr named for its PMX, by the
+ * side-file rule the Unity converter writes to.
+ *
+ * Compared on bare file names, because the same sky carries different paths
+ * over its life — `X340.hdr` as uploaded, `hdri/X340.hdr` once it comes back
+ * out of a saved bundle — and a rule that compared the paths held only until
+ * the first reload.
+ */
+export function isStageOwnSky(stageFile: string, skyName: string): boolean {
+  const bare = (name: string) => (name.split("/").pop() ?? name).toLowerCase()
+  const sky = bare(skyName)
+  return sky.endsWith(".hdr") && sky.slice(0, -4) === bare(stageFile).replace(/\.pmx$/, "")
+}

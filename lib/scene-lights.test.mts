@@ -12,10 +12,11 @@
 // as a published scene that opens unlit.
 
 import assert from "node:assert/strict"
-import { parseSceneDoc, serializeSceneDoc, type SceneLight, type SceneDoc } from "@/lib/scene"
+import { parseSceneDoc, serializeSceneDoc, stageLightsFromFile, type SceneLight, type SceneDoc } from "@/lib/scene"
 import { EMPTY_SCENE_DOC } from "@/lib/default-scene"
 import { builtinEffect } from "@/lib/effects"
 import { libraryGraph } from "@/lib/materials"
+import { sceneOwned } from "@/lib/scene-settings"
 
 const LAMPS: SceneLight[] = [
   { id: "a", name: "Candle", position: [1.5, 20, -3], color: "#ffd9a0", intensity: 1.4, radius: 18 },
@@ -33,6 +34,9 @@ const LAMPS: SceneLight[] = [
     angle: 45,
     innerAngle: 20,
     on: false,
+    // Brought by a stage: the owner has to survive the trip, or deleting the
+    // stage after a reload leaves its lamps standing in an empty scene.
+    stage: "X340",
   },
 ]
 
@@ -98,6 +102,85 @@ const read = (doc: SceneDoc) => parseSceneDoc(doc, builtinEffect, libraryGraph).
 {
   const mixed = [LAMPS[0], { ...LAMPS[1], radius: -1 }] as SceneLight[]
   assert.deepEqual(read(docWith(mixed)), [LAMPS[0]], "one bad lamp does not take the others with it")
+}
+
+// ── A stage's rig file ──
+// The converter's shape, as tools/unity-stage/unity_lights.py writes it: no
+// ids (the app mints them), owned by the stage it arrived with, and through
+// the same door a document's lamps pass.
+{
+  const file = JSON.stringify({
+    lamps: [
+      { name: "X340 01", position: [0.5, 2.8, -6.1], color: "#ff9d61", intensity: 1.374, radius: 9.5 },
+      {
+        name: "X340 15",
+        position: [8.8, 22.3, -1.6],
+        color: "#ff9a5a",
+        intensity: 183.078,
+        radius: 24.2,
+        aim: [-0.1429, -0.9849, -0.0974],
+        angle: 44.23,
+        innerAngle: 1,
+      },
+      { name: "broken", position: [0, 0, 0], color: "#fff", intensity: 1, radius: 0 },
+    ],
+    sun: { color: "#b2d0ff", strength: 1.724, azimuth: 358.9, elevation: 77, shadow: true },
+  })
+  const { lamps, sun } = stageLightsFromFile(file, "stage-id")
+  assert.equal(lamps.length, 2, "the zero-radius lamp is refused like a document's would be")
+  assert.ok(lamps.every((l) => l.stage === "stage-id"), "every lamp belongs to the stage it came with")
+  assert.equal(new Set(lamps.map((l) => l.id)).size, 2, "every lamp is minted its own id")
+  assert.deepEqual(lamps[1].aim, [-0.1429, -0.9849, -0.0974], "a spot keeps its aim")
+  assert.deepEqual(sun, { color: "#b2d0ff", strength: 1.724, azimuth: 358.9, elevation: 77, shadow: true })
+  assert.deepEqual(read(docWith(lamps)), lamps, "and they round-trip like any other lamp")
+}
+
+// ── A sun keeps only its sound fields ──
+{
+  const { sun } = stageLightsFromFile(JSON.stringify({ sun: { color: "blue", strength: NaN, elevation: 120, azimuth: 30 } }), "s")
+  assert.deepEqual(sun, { azimuth: 30 }, "a bad colour, a NaN and an impossible elevation leave the scene's own")
+}
+
+// ── The sun a stage set remembers the one it replaced ──
+// Deleting the stage puts `before` back, after a reload too — so the claim has
+// to survive the document, and `sceneOwned` is what every edit leaves.
+{
+  const before = { ...base.state.settings.sun }
+  const claimed = { ...before, color: "#b2d0ff", strength: 1.724, elevation: 77, stage: { id: "stage-id", before } }
+  const doc = serializeSceneDoc({
+    ...empty(),
+    name: "t",
+    camera: base.state.camera,
+    settings: { ...base.state.settings, sun: claimed },
+    backgroundEffects: [],
+    groups: {},
+    hidden: {},
+    lights: [],
+  })
+  const back = parseSceneDoc(doc, builtinEffect, libraryGraph).state.settings.sun
+  assert.deepEqual(back.stage, { id: "stage-id", before }, "the claim and the sun it replaced survive the document")
+  assert.equal(back.elevation, 77)
+  assert.ok(!("stage" in sceneOwned(back)), "an edited sun carries no claim")
+  assert.equal(sceneOwned(back).elevation, 77, "and keeps its dials")
+}
+
+// ── The world a stage's sky set remembers its strength the same way ──
+{
+  const before = { ...base.state.settings.world }
+  const claimed = { ...before, strength: 1, stage: { id: "stage-id", before } }
+  const doc = serializeSceneDoc({
+    ...empty(),
+    name: "t",
+    camera: base.state.camera,
+    settings: { ...base.state.settings, world: claimed },
+    backgroundEffects: [],
+    groups: {},
+    hidden: {},
+    lights: [],
+  })
+  const back = parseSceneDoc(doc, builtinEffect, libraryGraph).state.settings.world
+  assert.deepEqual(back, claimed, "the world's claim survives the document")
+  assert.deepEqual(sceneOwned(back), { ...before, strength: 1 }, "and an edit leaves the strength without it")
 }
 
 console.log("scene-lights: ok")

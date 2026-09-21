@@ -20,10 +20,11 @@ Upload the `--out` folder to the app as a stage.
 
 | | |
 |---|---|
-| `X333.pmx` | geometry at MMD scale, one material per Unity material |
+| `X333.pmx` | geometry at MMD scale, one material per Unity material, and a `flame.NN` bone on every candle wick |
 | `tex/` | the albedo each material samples, at the game's own resolution |
-| `X333.hdr` | the scene's ambient gradient as an equirect, with the reflection probe ridden on top as structure |
+| `X333.hdr` | the scene's ambient gradient as an equirect, in linear, with the reflection probe ridden on top as structure |
 | `maps/` | the relief map each material samples — the ripple map water scrolls among them |
+| `X333.lights.json` | the lamps the game switches on and its sun, as the scene document holds them |
 
 **Textures are copied, not resized.** A 2048 albedo arrives as a 2048 albedo, and
 the same for normal maps. Downscaling was the default for a while and it cost the
@@ -33,7 +34,8 @@ is dropped per TEXTURE rather than per material, so one material needing it keep
 it for every material that shares the file. `--albedo N` and `--normal N` cap the
 longest edge when a stage really is too heavy; 0, the default, keeps the source.
 
-The `.hdr` goes onto the World (HDRI) slot the moment the stage loads, filled or
+The `.hdr` goes onto the World (HDRI) slot at strength 1 the moment the stage
+loads, filled or
 not — a stage is a place and the light in it belongs to it. It is the scene's own
 ambient gradient with the reflection probe ridden on top as structure, so it
 delivers the fill the scene declared while a mirror still sees the shape of the
@@ -47,14 +49,64 @@ under that name rather than the source's own, because the game does not always
 agree with itself: five materials across these stages sample a normal named for
 a different texture than their albedo.
 
-## What is deliberately left behind
+## The lighting rig
 
-**The lighting rig.** A game's sun, ambient, exposure and lamps were authored for
-its renderer and its subject. Carried across they fight defaults calibrated for a
-character standing in frame — and they are rarely what you want anyway: X305's
-four lamps stand *inside a piano* and reach 0.7 m.
+`X333.lights.json` goes into the scene document the moment the stage loads: its
+lamps join the Lamps tab, each marked as the stage's, and the sun takes the
+game's direction, colour and strength. Uploading another stage replaces the
+lamps the last one brought; deleting the stage takes them with it. Lamps placed
+by hand are never touched.
 
-**LOD1 and below**, baked-only lights, and renderers with no readable mesh.
+Position, aim, reach and the cone carry over as they are — the game's cone term
+is the engine's. Brightness has to be fitted, because the falloffs differ in
+shape: the game's is inverse-square, capped by each light's shape radius, and
+ours is the brightness at the lamp falling to zero at its reach. Each lamp gets
+the colour and intensity that land the same total light, per channel, on the
+stage's own surfaces — the triangles the game lets it light, by layer and
+rendering-layer mask, weighted by area, N·L and the cone. A cookie is sampled at
+every triangle, so a spot projecting stained glass arrives carrying the glass's
+colour and the fraction it lets through.
+
+Three facts from the game's pipeline (`AGTools/AGSimPipeline.cs` in the rip)
+decide the numbers:
+
+- **Colour is `(colour × intensity).linear`.** The game runs with
+  `lightsUseLinearIntensity` off, so intensity 17 is 17^2.2 in linear light.
+- **The sun takes one π, the lamps none.** The engine's sun term is
+  `sun·N·L/π`; URP's is `colour·N·L`. Neither side divides a lamp by π.
+- **The inverse square is capped.** The game's shader takes
+  `min(1/d², 1/shapeRadius)`, with the radius from the studio's
+  `ReplicaAdditionalLightData` beside each Light — 0.1 on most lamps, so a lamp
+  inside its own lantern does not blow the lantern out. The fit uses the same cap.
+- **The ambient colours are linear.** The pipeline takes RenderSettings' sky,
+  equator and ground through `.linear` before building the probe, so the bake
+  does too; stored as they are, X340's night sky came out two to six times too
+  bright. The bake keeps the gradient's own average, `(sky + 2·equator + ground) / 4`.
+- **The game's lamps light only the stage.** Their culling mask is the stage's
+  layer. Ours light everything, so a character under a bright fixture takes
+  light the game never gave its cast — X340's warm spot over the centre fits to
+  intensity 183.
+
+### Candle flames
+
+A flame in these stages is one particle system per wick — `huomiao` (火苗) in
+the material name — and the converter writes each as a bone, `flame.01` up,
+from the visible flame's foot to its tip. The *Candle Flames (wick bones)*
+effect stands a flame on every bone with that prefix, so a hand-made stage
+needs only a bone on each wick with its tail up the flame.
+
+The game draws the flame on a stretched billboard that emits DOWNWARD at almost
+no speed; a stretched card trails behind its velocity, so the card runs UP from
+the particle. Measured on X340, every candle's wax top sits 0.30–0.43 of the
+card above its particle — a card centred on the particle would bury the flame in
+the wax. The flipbook (`sc_x331_huoyan`) draws its flame in rows 67–186 of each
+256 tile, so the visible flame starts 26% up the card and is 47% of it long, and
+that is the bone. Its width is a seventh of its height, which the game's bloom
+and texture filtering fatten; the effect draws a real candle flame's third.
+
+Left out, and listed when the converter runs: lights switched off in the game
+(on themselves or through a parent), a second directional light, area lights,
+LOD1 and below, baked-only lights, and renderers with no readable mesh.
 
 ## What the PMX carries instead
 

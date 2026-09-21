@@ -11,13 +11,12 @@
 #   tex/               the albedo each material samples
 #   maps/              the relief map each material samples, named for that
 #                      material's albedo: tex/T_D.png pairs with maps/T_N.png
+#   X305.lights.json   the lamps and the sun, as the scene document holds them
 #
-# THE LIGHTING RIG IS NOT IMPORTED. A game scene's sun, ambient, exposure and
-# lamps were authored for its own renderer and its own subject — X305's four
-# lamps stand inside a piano and reach 0.7 m — and carried across they fight the
-# app's defaults, which are calibrated for a character standing in frame. The
-# probe is written out because it is a picture, and installing it stays a
-# decision. Nor are the PBR maps imported: a look per material sampling normal,
+# THE LIGHTING RIG comes out as <Name>.lights.json: the lamps the game switches
+# on and its sun, converted so the same light lands on the same surfaces (see
+# unity_lights.py). The app reads it into the scene document when the stage is
+# uploaded. Nor are the PBR maps imported: a look per material sampling normal,
 # metal, roughness and AO plus an environment reflection cost this stage its
 # frame rate, and the albedo alone reads as the same garden. Water's ripple map
 # is the one exception, and it earns it — those ripples ARE that texture, and
@@ -51,6 +50,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from unity_lights import Surfaces, stage_lights  # noqa: E402
 from unity_mesh import Mesh  # noqa: E402
 from unity_scene import Project, Scene, read_material  # noqa: E402
 
@@ -100,8 +100,12 @@ def pmx_text(s):
     return struct.pack("<i", len(b)) + b
 
 
-def write_pmx(path, name, vertices, faces, materials, textures):
-    """A PMX 2.0 with one bone and no physics — a stage is scenery, not a rig.
+def write_pmx(path, name, vertices, faces, materials, textures, points=()):
+    """A PMX 2.0 with a root bone and no physics — a stage is scenery, not a rig.
+
+    `points` are (name, head, tail) bones under the root, one per thing an
+    effect puts in the scene — a candle's flame, standing on its wick with its
+    tail pointing up the flame. Nothing is weighted to them.
 
     Index sizes are declared from the counts rather than fixed, which is what
     keeps a 200k-vertex stage inside a format whose smaller files use one byte.
@@ -109,10 +113,12 @@ def write_pmx(path, name, vertices, faces, materials, textures):
     vertex_index_size = 1 if len(vertices) < 256 else 2 if len(vertices) < 65536 else 4
     texture_index_size = 1 if len(textures) < 128 else 2
     material_index_size = 1 if len(materials) < 128 else 2
+    bone_index_size = 1 if 1 + len(points) < 128 else 2
+    bcode = {1: "<b", 2: "<h"}[bone_index_size]
     out = bytearray()
     out += b"PMX "
     out += struct.pack("<f", 2.0)
-    out += bytes([8, 1, 0, vertex_index_size, texture_index_size, material_index_size, 1, 1, 1])
+    out += bytes([8, 1, 0, vertex_index_size, texture_index_size, material_index_size, bone_index_size, 1, 1])
     for s in (name, name, f"Converted from a Unity scene by tools/unity-stage.", ""):
         out += pmx_text(s)
 
@@ -120,7 +126,7 @@ def write_pmx(path, name, vertices, faces, materials, textures):
     for p, n, uv in vertices:
         out += struct.pack("<8f", p[0], p[1], p[2], n[0], n[1], n[2], uv[0], uv[1])
         out += bytes([0])  # BDEF1
-        out += struct.pack("<B", 0)  # the one bone
+        out += struct.pack(bcode, 0)  # the root
         out += struct.pack("<f", 1.0)  # edge scale
 
     # WOUND THE OTHER WAY. The half turn about Y preserves handedness, so this
@@ -168,17 +174,18 @@ def write_pmx(path, name, vertices, faces, materials, textures):
         out += pmx_text(m.get("memo", ""))
         out += struct.pack("<i", m["faces"] * 3)
 
-    out += struct.pack("<i", 1)
-    out += pmx_text("全ての親") + pmx_text("Root")
-    out += struct.pack("<3f", 0.0, 0.0, 0.0)
-    out += struct.pack("<b", -1)  # parent
-    out += struct.pack("<i", 0)  # layer
-    out += struct.pack("<H", 0x0002 | 0x0004 | 0x0008)  # rotatable, movable, visible
-    out += struct.pack("<3f", 0.0, 0.0, 0.0)  # tail offset
+    out += struct.pack("<i", 1 + len(points))
+    for bone_name, head, tail, parent in [("全ての親", (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), -1)] + [(n, h, t, 0) for n, h, t in points]:
+        out += pmx_text(bone_name) + pmx_text(bone_name if parent >= 0 else "Root")
+        out += struct.pack("<3f", *head)
+        out += struct.pack(bcode, parent)
+        out += struct.pack("<i", 0)  # layer
+        out += struct.pack("<H", 0x0002 | 0x0004 | 0x0008)  # rotatable, movable, visible
+        out += struct.pack("<3f", *tail)  # tail as an offset
 
     out += struct.pack("<i", 0)  # morphs
     out += struct.pack("<i", 1)  # one display frame, holding the root bone
-    out += pmx_text("Root") + pmx_text("Root") + bytes([1]) + struct.pack("<i", 1) + bytes([0]) + struct.pack("<B", 0)
+    out += pmx_text("Root") + pmx_text("Root") + bytes([1]) + struct.pack("<i", 1) + bytes([0]) + struct.pack(bcode, 0)
     out += struct.pack("<i", 0)  # rigid bodies
     out += struct.pack("<i", 0)  # joints
     open(path, "wb").write(bytes(out))
@@ -509,7 +516,22 @@ def cube_strip_to_equirect(strip_path, out_path, width=1024, ambient=None):
     height = width // 2
     target = None
     if ambient:
-        target = [(ambient["sky"][i] + ambient["equator"][i]) * 0.5 * ambient["intensity"] for i in range(3)]
+        # LINEAR, as the game has them: its pipeline takes RenderSettings'
+        # ambient colours through `.linear` before building the probe
+        # (AGTools/AGSimPipeline.cs, SetupEnvironmentLighting). Baked as stored
+        # they are gamma values read as light — X340's night sky came out two to
+        # six times too bright and washed out of its blue.
+        def srgb(c):
+            return tuple(v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4 for v in c)
+
+        ambient = {**ambient, "sky": srgb(ambient["sky"]), "equator": srgb(ambient["equator"]), "ground": srgb(ambient["ground"])}
+        # The gradient's own average over the sphere: the sky half averages
+        # (sky + equator) / 2 and the ground half (ground + equator) / 2. The
+        # probe's structure is divided to a mean of 1, so this is the level the
+        # bake already has, and the gain below only takes back what the
+        # structure's correlation with the sky moved. Targeting the sky half
+        # alone lifted a scene with a black ground by a third.
+        target = [(ambient["sky"][i] + 2.0 * ambient["equator"][i] + ambient["ground"][i]) * 0.25 * ambient["intensity"] for i in range(3)]
 
     # MEASURED OVER SOLID ANGLE, the only average that means anything here: a
     # texel's contribution to irradiance is its solid angle, and an equirect's
@@ -611,6 +633,56 @@ def cube_strip_to_equirect(strip_path, out_path, width=1024, ambient=None):
     return width, height
 
 
+# ── Candle flames, as bones ─────────────────────────────────────────────────
+
+# A flame in this studio's stages is a particle system whose material is named
+# for fire: `huomiao` is 火苗, a flame; `huoyan` 火焰, a blaze.
+FLAME_WORDS = ("huomiao", "huoyan", "flame", "candle")
+# Where the visible flame sits along the game's card — see flame_points.
+FLAME_START = 67 / 256
+FLAME_LENGTH = (186 - 67) / 256
+
+
+def flame_points(scene, materials_by_guid, scale):
+    """Every candle flame the game draws, as (name, head, tail) bones in PMX space.
+
+    The game's flame is ONE particle that never moves: a stretched billboard
+    `startSize` wide and `lengthScale` times that long, sized by the transform
+    its scaling mode names. It emits DOWNWARD at almost no speed, and a
+    stretched card trails behind its velocity — so the card runs UP from the
+    particle. Measured on X340: every candle's wax top sits 0.30–0.43 of the
+    card above its particle, which a centred card would bury the flame under.
+
+    The bone is the VISIBLE flame, base to tip, not the card. The flipbook
+    (sc_x331_huoyan) draws its flame in the middle of each tile — rows 67–186
+    of 256 — so the flame starts FLAME_START of the way up the card and is
+    FLAME_LENGTH of it long. An effect then draws a flame exactly the bone's
+    length on the bone, and a hand-made stage needs only a bone on the wick.
+
+    Ordered nearest the origin first, and named flame.01 upward — the prefix
+    is what the effect looks for.
+    """
+    found = []
+    for ps in scene.particle_systems():
+        names = [(materials_by_guid.get(g) or {}).get("name", "").lower() for g in ps["materials"]]
+        if not ps["on"] or not any(w in n for n in names for w in FLAME_WORDS):
+            continue
+        if ps["scalingMode"] == 0:  # Hierarchy: the whole chain's scale
+            s = max(math.sqrt(sum(ps["matrix"][r][c] ** 2 for r in range(3))) for c in range(3))
+        elif ps["scalingMode"] == 1:  # Local: the system's own transform
+            s = max(abs(v) for v in ps["localScale"])
+        else:  # Shape: none
+            s = 1.0
+        width = ps["startSize"] * s
+        height = width * (ps["lengthScale"] if ps["renderMode"] == 1 else 1.0)
+        if height <= 0:
+            continue
+        x, y, z = ps["position"]
+        found.append((to_pmx((x, y + height * FLAME_START, z), scale), (0.0, height * FLAME_LENGTH * scale, 0.0)))
+    found.sort(key=lambda f: sum(v * v for v in f[0]))
+    return [(f"flame.{i + 1:02d}", head, tail) for i, (head, tail) in enumerate(found)]
+
+
 # ── The whole pass ──────────────────────────────────────────────────────────
 
 
@@ -643,6 +715,8 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
     # one of at a time and a converter would otherwise draw all of at once.
     fallbacks = scene.lod_fallback_renderers()
     dropped_lods = 0
+    # Every triangle again in the game's own space, for weighing its lamps.
+    surfaces = Surfaces()
     for r in scene.renderers():
         if not r["mesh"] or not r["enabled"]:
             continue
@@ -672,7 +746,17 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
                 used_order.append(key)
             bucket = per_material[key]
             remap = {}
+            world = {}
             for tri in m.triangles(i):
+                for v in tri:
+                    if v not in world:
+                        world[v] = (transform(matrix, translation, m.positions[v]), rotate(matrix, m.normals[v]))
+                a, b, c = (world[v] for v in tri)
+                surfaces.add(
+                    a[0], b[0], c[0],
+                    normalise(tuple(a[1][k] + b[1][k] + c[1][k] for k in range(3))),
+                    r["layer"], r["renderingLayerMask"],
+                )
                 out = []
                 for v in tri:
                     if v not in remap:
@@ -875,7 +959,8 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
         )
 
 
-    write_pmx(os.path.join(out_dir, f"{name}.pmx"), name, vertices, faces, pmx_materials, textures)
+    flames = flame_points(scene, materials_by_guid, SCALE)
+    write_pmx(os.path.join(out_dir, f"{name}.pmx"), name, vertices, faces, pmx_materials, textures, flames)
 
     # AND THE WORLD, beside it — the scene's ambient gradient with its
     # reflection probe baked in as structure. A separate file because the
@@ -897,6 +982,13 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
         except Exception as e:  # noqa: BLE001 — a probe in another layout is data, not a crash
             print(f"[unity] REFLECTION PROBE NOT CONVERTED: {e}")
 
+    # AND ITS LAMPS, beside it — the rig as the scene document holds it.
+    rig, rig_notes = stage_lights(
+        scene, surfaces, lambda guid: png_for(png_root, proj.path(guid) or ""), to_pmx, SCALE, name
+    )
+    with open(os.path.join(out_dir, f"{name}.lights.json"), "w", encoding="utf-8") as fh:
+        json.dump(rig, fh, indent=1, ensure_ascii=False)
+
     if verbose:
         print(
             f"[unity] {len(vertices):,} vertices, {len(faces):,} triangles, {len(pmx_materials)} materials, "
@@ -910,6 +1002,15 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
             print(f"[unity] world -> {out_dir}/{name}.hdr (its ambient gradient, with the probe as structure)")
         if relief_written:
             print(f"[unity] {len(relief_written)} relief maps -> {out_dir}/maps/ (named <albedo>_N, no sidecar)")
+        if flames:
+            print(f"[unity] {len(flames)} candle flames -> bones flame.01..{len(flames):02d} (Candle Flames (wick bones) stands a flame on each)")
+        spots = sum(1 for l in rig["lamps"] if "aim" in l)
+        print(
+            f"[unity] lights -> {out_dir}/{name}.lights.json: {len(rig['lamps'])} lamps ({spots} spots)"
+            + (f", sun at {rig['sun']['elevation']}° strength {rig['sun']['strength']}" if "sun" in rig else ", no sun")
+        )
+        for note in rig_notes:
+            print(f"[unity]   left out {note}")
         if dropped_lods:
             print(f"[unity] {dropped_lods} LOD fallback renderers dropped (level 0 kept)")
         if skipped:
