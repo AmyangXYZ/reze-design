@@ -1099,6 +1099,7 @@ avoid. Reading them is the fastest way into the idiom.
 | --- | --- |
 | *Snow* · *Rain* | GPU particle pools — one compute step, one instanced draw, depth-tested against the cast |
 | *Hand Ribbon* | A trail along a bone's recorded path, max-blended in its own layer |
+| *Finger Shapes* | Two outlines: the hull round both hands, always, and the space the fingers enclose, faded in by how enclosed it is — found with capsules on one camera-facing plane, starting points that climb clearance, and rays against capsules thickened to seal narrow gaps, then traced along the real finger edge with straight bridges across gaps |
 | *Footprints* | Reading a trail in **world** space: contacts inferred from the moment a foot stops descending, each with a light pillar integrated through the air above it |
 | *Vyke's Dragonbolt* | Arcs on the limbs — screen-space paths carrying real depth, so half of each ring passes behind the body; and a two-tier cull |
 | *Summoning Circle* | A figure on the plane through a declared bone by ray-plane intersection, depth-tested by hand, with line widths in measured pixels — one `#anchor` line moves it from under her feet to under her palm |
