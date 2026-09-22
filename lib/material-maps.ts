@@ -88,7 +88,25 @@ const fileSafe = (name: string) => name.replace(/[^A-Za-z0-9_.-]/g, "_")
 function namedMaps(model: Model, byPath: Map<string, File>, dir: string): Record<string, MapRef[]> {
   const textures = model.getTextures()
   const out: Record<string, MapRef[]> = {}
+  // A glTF stage names its maps for the MATERIAL, three of them: `_N` the
+  // normal, `_ORM` occlusion-roughness-metal in glTF's channel order, `_E` the
+  // emissive picture — the slots the Stage PBR look samples, in that order.
+  // Every material of such a stage has all three; a map it did not bring is a
+  // 1x1 stand-in written at upload (gltf-stage.ts).
+  const first = (stem: string, suffix: string): MapRef => {
+    for (const ext of ["png", "webp", "jpg"]) {
+      const rel = `maps/${stem}_${suffix}.${ext}`
+      if (byPath.has(dir + rel)) return { path: rel, srgb: suffix === "E" }
+    }
+    return null
+  }
   for (const m of model.getMaterials()) {
+    const own = fileSafe(m.name)
+    const orm = first(own, "ORM")
+    if (orm) {
+      out[m.name] = [first(own, "N"), orm, first(own, "E")]
+      continue
+    }
     const albedo = textures[m.diffuseTextureIndex]?.path
     const base = albedo
       ? (albedo.split(/[\\/]/).pop() ?? "").replace(/\.[^.]+$/, "").replace(/_D$/, "")

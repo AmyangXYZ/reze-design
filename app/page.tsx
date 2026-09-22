@@ -232,6 +232,7 @@ import {
 } from "reze-engine"
 import { LampMarkers } from "@/components/scene/lamp-markers"
 import { accessoryFiles, convertXUploads, isFromX, xUnlitMaterials } from "@/lib/x-file"
+import { convertGlbUploads, glbStageOf, glbStyleGroups } from "@/lib/gltf-stage"
 import { readRayMmd, type RayStage } from "@/lib/ray-mmd"
 import { loadMaterialMaps, setMaterialMaps } from "@/lib/material-maps"
 import { findSkies, isStageOwnSky, skyThumbnail, type SkyCandidate } from "@/lib/stage-skies"
@@ -2174,6 +2175,7 @@ export default function Lab() {
     addStageFromFiles,
     addStagePartFromFiles,
     setStageTransform,
+    setStageSun,
     props,
     addPropFromFiles,
     setPropTransform,
@@ -3764,6 +3766,7 @@ export default function Lab() {
   // compiles straight to the engine for its live preview, and telling the sync
   // pass what is already on screen keeps it from compiling the same shader a
   // second time when the applied effect lands in state.
+  const stageSunList = useMemo(() => stages.map((s) => ({ id: s.id, sun: s.sun ?? null })), [stages])
   const { noteAppliedWgsl, adoptInstall } = useSceneSync({
     engineRef,
     ready,
@@ -3782,6 +3785,7 @@ export default function Lab() {
     // Who an effect that declares a dissolve is about — the cast in order, so
     // the first of them is the engine's subject 0.
     castIds: castIdList,
+    stageSuns: stageSunList,
     onEffectSurface: setEffectSurface,
   })
 
@@ -5211,6 +5215,14 @@ export default function Lab() {
           }
         }
       }
+      // A glTF stage wears the looks its file says: Stage PBR over the maps it
+      // brought, per emissive strength, and the app's own look where the file
+      // names one.
+      const glb = glbStageOf(pmx)
+      if (glb) {
+        void applyGroups(id, glbStyleGroups(glb.materials))
+        return id
+      }
       if (!ray) {
         styleAccessory(id, pmx)
         return id
@@ -5346,15 +5358,42 @@ export default function Lab() {
         }
         const lamps = rig?.lamps ?? []
         setLightsState((list) => [...list.filter((l) => !l.stage), ...lamps])
-        // The sun, CLAIMED: it remembers the scene's own, so deleting this
-        // stage puts that back — until someone touches the sun.
+        // The sun, SPLIT. Its colour and strength are the stage's own — the
+        // daylight its game lit it by, which the cast never takes — and stay
+        // on the stage's row. Its direction and shadow are the scene's,
+        // CLAIMED: it remembers the scene's own, so deleting this stage puts
+        // that back — until someone touches the sun.
         const sun = rig?.sun
-        if (sun && Object.keys(sun).length) {
+        setStageSun(id, sun && sun.color !== undefined && sun.strength !== undefined ? { color: sun.color, strength: sun.strength } : null)
+        const shared = {
+          ...(sun?.azimuth !== undefined ? { azimuth: sun.azimuth } : {}),
+          ...(sun?.elevation !== undefined ? { elevation: sun.elevation } : {}),
+          ...(sun?.shadow !== undefined ? { shadow: sun.shadow } : {}),
+        }
+        if (Object.keys(shared).length) {
           setSettings((s2) => {
             const own = sceneOwned(s2.sun)
-            return { ...s2, sun: { ...own, ...sun, stage: { id, before: own } } }
+            return { ...s2, sun: { ...own, ...shared, stage: { id, before: own } } }
           })
         }
+        // AND THE WORLD IT WAS LIT UNDER, when the rig states one. A flat
+        // colour takes the World slot the way its .hdr would: claimed, at the
+        // strength the file says, with any sky standing there put aside — a
+        // neon stage built in a black world is lit by its lamps and its glow.
+        // An .hdr beside the PMX was installed above; a strength here rescales
+        // that claim.
+        const world = rig?.world
+        if (world) {
+          if (world.color) swapHdri(null)
+          setSettings((s2) => {
+            const own = sceneOwned(s2.world)
+            return { ...s2, world: { ...own, ...(world.color ? { color: world.color } : {}), strength: world.strength, stage: { id, before: own } } }
+          })
+        }
+        // AND THE VIEW IT WAS AUTHORED UNDER: a scene setting, not a claim —
+        // the transform and exposure the author looked at it through.
+        const view = rig?.view
+        if (view) setSettings((s2) => ({ ...s2, view: { ...s2.view, transform: view.transform, exposure: view.exposure } }))
         // AND THE CAST'S FILL, claimed the same way: the light the game gives its
         // characters apart from the room.
         const fill = rig?.fill
@@ -5428,8 +5467,10 @@ export default function Lab() {
       // Folder contents arrive as many files; a zip as one. Either way this
       // flattens to the same list.
       files = await expandUploadFiles(list)
-      // An MMD .x accessory is scenery, so scenery uploads read it as a PMX.
-      if (target.mode === "stage" || target.mode === "prop") files = await convertXUploads(files)
+      // An MMD .x accessory is scenery, so scenery uploads read it as a PMX,
+      // and a .glb — the file Blender exports — reads as the folder a
+      // converted stage is.
+      if (target.mode === "stage" || target.mode === "prop") files = await convertGlbUploads(await convertXUploads(files))
     } catch (e) {
       setUpload({
         kind: "notice",

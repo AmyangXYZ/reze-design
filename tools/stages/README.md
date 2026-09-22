@@ -1,0 +1,129 @@
+# Stages, by way of Blender
+
+A stage is a `.glb`: what Blender's glTF exporter writes, from a scene built by
+hand there or from a game's export read by the scripts here. Two entry points:
+
+- **`export_stage.py`** — any `.blend` to a stage, with what the stock export
+  leaves behind (see "Exporting from Blender" below).
+- **`unity_to_glb.py`** — a Unity scene from an AssetRipper export, through
+  Blender, to the same file.
+
+## Exporting from Blender
+
+```sh
+/Applications/Blender.app/Contents/MacOS/Blender -b "Stage.blend" \
+  --python tools/stages/export_stage.py -- "stages/Stage/Stage.glb"
+```
+
+Blender's own exporter writes the file; the script sets it up so the stage
+arrives as the `.blend` renders it: modifiers applied (a ring from a Bezier
+circle and geometry nodes exports as nothing otherwise), only what is visible
+and renders, lights with area lights as points of the same power, the world
+(its colour or its environment image, packed or on disk) and the view under
+`extras.reze`, node-driven emission colours folded to constants or baked to an
+image at the current frame, and fog volumes left out. A plain export from the
+dialog also loads, when "Punctual Lights" is ticked; it brings no world and no
+view, and a fog cube comes through as a solid box.
+
+## Unity stage → Blender → glTF
+
+Turns a scene from an AssetRipper export into a stage this app loads, by way of
+Blender.
+
+```sh
+python3 tools/stages/unity_to_glb.py \
+  --project "stages/x323-unity/ExportedProject" \
+  --scene   "Assets/ComScene/ABResources/Levels/X323.unity" \
+  --out     stages/x323-glb --name X323
+```
+
+Two steps, one command. The pre-pass reads the export — meshes, materials,
+lights, the scene's own settings — and writes a build folder; then Blender,
+headless, builds the scene from it, saves `X323.blend` for a person to open,
+and exports `X323.glb` with its own glTF exporter, the same exporter a stage
+built by hand in Blender goes through. Upload the `.glb` as a stage.
+
+Needs Pillow, numpy and Blender (`/Applications/Blender.app`). No FBX and no
+PMX in between: every hop through another format is a hop that renames a
+material or loses a map, and the material **name** is what a person assigns a
+look to in the app.
+
+## What comes out
+
+| | |
+|---|---|
+| `X323.glb` | the whole stage: geometry in metres, one material per Unity material with its albedo, its occlusion-roughness-metal map in glTF's order, its normal map and its emissive map; the lamps and the sun as `KHR_lights_punctual`; and under `extras.reze` the world, the cast's fill and the view the game forms its frame with |
+| `X323.blend` | the same scene, textures packed, viewed under Filmic +0.6 as the app views it |
+| `build/` | what Blender was built from: `scene.json`, geometry, the maps as packed |
+
+**Textures are copied, not resized.** A 2048 albedo arrives as a 2048 albedo.
+The property map is repacked, once per material remap: the game keeps metal in
+R, roughness in G and occlusion in B, remapped per material by
+`_PropertyMin`/`_PropertyMax`; glTF wants occlusion R, roughness G, metal B and
+no remap, so the remap is baked and the channels swapped. Emission lives in
+that map's alpha (see below) and becomes an emissive map with
+`KHR_materials_emissive_strength`.
+
+**Units are metres.** Aether Gazer's unit is not a metre — its props run 1.55×
+life size read as one — and a PMX unit is 8 cm, so 1 Unity unit = 0.64 m and
+the app scales by 12.5 on load. The mirror between Unity's left hand and
+glTF's right turns every triangle's winding, which the pre-pass turns back.
+UVs go to Blender as Unity stores them, bottom-up; the exporter flips V once.
+Flipped in the pre-pass as well, every island lands mirrored: the stool's
+seat wore the atlas's ribbed strip.
+
+**The rig.** Lamps carry the game's own numbers: `(colour × intensity).linear`
+as radiance, `range` as reach, the cone as it is; a cookie is folded in as its
+mean colour × coverage. The sun's radiance is its strength in W/m², which is
+also how the engine lights (`strength·albedo·N·L/π`, Blender's law), so the
+number carries as it is through the `.blend` and the app. The game's directional
+light lights only the stage — its character shaders never read it — so the app
+gives the stage its own sun and leaves the scene's to the cast, sharing only
+the direction and the shadow. The cast's fill is `_probeLightingBase`.
+
+**Emission.** `PBR/Standard` keeps it in the property map's alpha:
+`e = max((a − min.a) / (max.a − min.a), 0)`, and where e passes 1 the pixel is
+the albedo times it and lighting has no say. X203a's paper lamp reaches 2.6, its
+monitors more. The global `_EmissionIntensity` that would dim it is 0.
+
+**Left out, and listed when the converter runs:** renderers and lights the game
+switches off (on themselves or through a parent), a second directional light,
+area lights, LOD1 and below, baked-only lights, effect decals whose coverage
+lives in maps we do not ship, renderers with no readable mesh. A sky layer is
+kept whatever its switch says.
+
+## Read the game's shaders
+
+`Assets/Packages/com.p08.render/RenderPipeline/SimPipeline/Shader/` holds the
+real shaders (decompiled DXBC — huge, but the property block at the top is clean
+and the maths is followable by grepping a property name and tracing the `tmp`
+registers). This beats every inference from property names, and settled three
+things that had been guessed wrong:
+
+- **`Scene/Plant` tints by the world normal**, not by height:
+  `colour = lit * lerp(_BottomColor, _TopColor, n.y*0.5+0.5) * 2`. Averaged over a
+  leaf cluster that is `top + bottom`, a constant — which is what a PMX material
+  colour holds. It never reads `_AlbedoColor`.
+- **`OPAQUE` in the keywords is not opacity.** It tracks the `RenderType` tag.
+  X333's pool carries it while its pass reads `QUEUE = Transparent-1` and blends
+  `SrcAlpha OneMinusSrcAlpha` at 7% — reading the keyword as opacity exported the
+  pool as a solid teal slab.
+- **`Scene/Ripplet` is one normal map sampled twice**, scrolled in opposite
+  directions, over a cubemap reflection, with a per-pixel alpha.
+
+Key the behaviour off the **shader**, never off a keyword: `_TopColor` appears
+zero times in `PBR/Standard`, yet three materials there carry it as leftovers.
+
+## Traps
+
+- **Static batching** bakes transforms into a combined mesh and points each
+  renderer at a *range* of submeshes. Read only the first half and parts of the
+  scene appear twice while a plaza floor never appears at all.
+- **A mesh's `dimension` is a packed byte** — low nibble is the component count,
+  high nibble is flags. Reading `0x34` as 52 computes a stride five times too
+  wide.
+- **Scale is 8, not 12.5.** MMD's unit is 8 cm so metres convert at 12.5 — right
+  if a Unity unit is a metre, and in Aether Gazer it is not: the props run about
+  1.55× life size. A game whose unit IS a metre wants `--scale 12.5`.
+- **Textures are decoded PNGs beside the project** under `_png_textures`,
+  mirroring the asset tree. A `Texture2D` asset is not an image.

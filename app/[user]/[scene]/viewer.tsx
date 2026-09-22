@@ -398,10 +398,12 @@ function SceneStage({
   }, [models])
   const [eyes, setEyes] = useState(scene.state.settings.eyes.enabled)
   const settings = useMemo(() => ({ ...scene.state.settings, eyes: { enabled: eyes } }), [scene.state.settings, eyes])
+  const stageSuns = useMemo(() => stages.map((s) => ({ id: s.id, sun: s.sun ?? null })), [stages])
   useSceneSync({
     engineRef,
     ready: stageReady,
     castIds,
+    stageSuns,
     settings,
     camera: scene.state.camera,
     cameraVmd: !!scene.assets.cameraAnimation,

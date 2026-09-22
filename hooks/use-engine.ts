@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { EFFECTS } from "@/lib/effects"
 import { Engine, parseLRC, parseMidi, Vec3, type ApplyStyleGroupResult, type CompileOptions, type StyleGroup, type LyricLine } from "reze-engine"
 import { rasterizeLyrics } from "@/lib/lyrics-raster"
-import { modelKey, type Scene, type SceneAttach, type SceneCamera, type SceneParentKey } from "@/lib/scene"
+import { modelKey, type Scene, type SceneAttach, type SceneCamera, type SceneParentKey, type StageSun } from "@/lib/scene"
 import { sweepRetiredBundles } from "@/lib/asset-store"
 import { sceneFiles } from "@/lib/scene-files"
 import { clearMaterialMaps, withMaterialMaps } from "@/lib/material-maps"
@@ -470,7 +470,15 @@ export function useEngine(
       ? (stagesRef.current[0]?.transform ?? DEFAULT_STAGE_TRANSFORM)
       : (kept?.stage.transform ?? DEFAULT_STAGE_TRANSFORM)
     if (part || kept) engine.setModelTransform(id, stageTransformToEngine(transform))
-    setStages((prev) => withId(prev, { id, file: pmxBaseName(pmxFile.name), transform, morphs: kept?.stage.morphs ?? {} }))
+    setStages((prev) =>
+      withId(prev, {
+        id,
+        file: pmxBaseName(pmxFile.name),
+        transform,
+        morphs: kept?.stage.morphs ?? {},
+        ...(kept?.stage.sun ? { sun: kept.stage.sun } : {}),
+      }),
+    )
     return id
   }
   const addStageFromFiles = useCallback(
@@ -754,6 +762,18 @@ export function useEngine(
     const next = { ...current.transform, ...patch }
     for (const s of stagesRef.current) engineRef.current?.setModelTransform(s.id, stageTransformToEngine(next))
     setStages((prev) => prev.map((s) => ({ ...s, transform: next })))
+  }, [])
+
+  /** The sun a stage carries for itself — what its rig brought — or none. */
+  const setStageSun = useCallback((id: string, sun: StageSun | null) => {
+    setStages((prev) =>
+      prev.map((s) => {
+        if (s.id !== id) return s
+        if (sun) return { ...s, sun }
+        const { sun: _gone, ...rest } = s
+        return rest
+      }),
+    )
   }, [])
 
   /**
@@ -1325,6 +1345,7 @@ export function useEngine(
     addStageFromFiles,
     addStagePartFromFiles,
     setStageTransform,
+    setStageSun,
     props,
     addPropFromFiles,
     setPropTransform,

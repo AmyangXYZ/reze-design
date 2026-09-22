@@ -101,6 +101,9 @@ export function useSceneSync({
    *  own subjects are drawn from. Only used to decide WHO an effect that
    *  declares a dissolve is about; the first of them is subject 0. */
   castIds = [],
+  /** Each stage and the sun it carries for itself, or null: applied per stage
+   *  the way the fill is per cast member. */
+  stageSuns = [],
   /** What each applied effect exposes — its dials, and whether it reads the cast
    *  at all — keyed by uid, handed back after every install. The engine parsed
    *  the directives to build the uniform; reading them off the result is how the
@@ -123,6 +126,7 @@ export function useSceneSync({
   plate?: boolean
   plateStill?: boolean
   castIds?: string[]
+  stageSuns?: { id: string; sun: { color: string; strength: number } | null }[]
   onEffectSurface?: (byUid: Record<string, EffectSurface>) => void
 }) {
   const compositing = isCompositingBackground(exportBackground)
@@ -440,6 +444,22 @@ export function useSceneSync({
     const fill = c ? new Vec3(c.x * f!.strength, c.y * f!.strength, c.z * f!.strength) : null
     for (const id of castIds) engine.setModelFill(id, fill)
   }, [engineRef, ready, castIds, settings.fill])
+
+  // ── A stage's own sun ──
+  //
+  // The colour and strength the stage was lit by, in place of the scene's sun,
+  // which stays the cast's. Keyed on the values so a re-render with the same
+  // stages pushes nothing.
+  const stageSunKey = stageSuns.map((s) => `${s.id}:${s.sun ? `${s.sun.color}@${s.sun.strength}` : ""}`).join("\u0000")
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine || !ready) return
+    for (const { id, sun } of stageSuns) {
+      const c = sun && sun.strength > 0 ? hexToLinearVec3(sun.color) : null
+      engine.setModelSun(id, c ? new Vec3(c.x * sun!.strength, c.y * sun!.strength, c.z * sun!.strength) : null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engineRef, ready, stageSunKey])
 
   /**
    * A dial moved, without reinstalling.

@@ -48,6 +48,15 @@ export type ModelRef = {
  */
 export type SceneBackground = { kind: "backdrop" | "skybox" | "plate"; asset: AssetRef } | null
 
+/**
+ * The sun a stage carries for itself. A game lights its stage by its own
+ * daylight — Aether Gazer's kitchen at twenty times white — and its cast by a
+ * key of their own that the stage never states. So the stage keeps the sun it
+ * was lit by, the scene's sun stays the cast's, and the two share only their
+ * direction and shadow.
+ */
+export type StageSun = { color: string; strength: number }
+
 /** Placement for an environment model. Characters spawn on a deterministic
  *  offset; a stage has to be put somewhere, so it carries its own transform.
  *  Rotation is degrees per axis — what the slider shows, so nothing converts. */
@@ -94,6 +103,9 @@ export type SceneModel = {
    *  like a stage, but it keeps physics and outlines and leaves the ground
    *  alone. */
   prop?: boolean
+  /** A stage's own sun: the colour and strength it was lit by, in place of the
+   *  scene's, which stays the cast's. Its rig brings it; see StageSun. */
+  sun?: StageSun
   /** Hung from a bone of another model. See SceneAttach. */
   attach?: SceneAttach | null
   /** A prop's parent switches after its start hold. See SceneParentKey. */
@@ -377,6 +389,8 @@ export type SceneModelDoc = {
   stage?: boolean
   /** A prop. Placed by all three like a stage; see SceneModel.prop. */
   prop?: boolean
+  /** A stage's own sun. See StageSun. */
+  sun?: StageSun
   /** Hung from a bone of another model. Its transform's position and rotation
    *  are then offsets in that bone's space. */
   attach?: SceneAttach | null
@@ -632,11 +646,16 @@ const roleOf = (g: StyleGroup): StyleGroupDoc["role"] =>
  * silently stops round-tripping on the third.
  */
 function stageFieldsOf(
-  m: Pick<SceneModel, "stage" | "prop" | "attach" | "parentKeys" | "transform" | "morphs" | "visibility">,
+  m: Pick<SceneModel, "stage" | "prop" | "sun" | "attach" | "parentKeys" | "transform" | "morphs" | "visibility">,
 ) {
+  const sun = m.sun
   return {
     ...(m.stage ? { stage: true as const } : {}),
     ...(m.prop ? { prop: true as const } : {}),
+    // Checked in both directions: a document is a file on someone else's disk.
+    ...(sun && typeof sun.color === "string" && /^#[0-9a-f]{6}$/i.test(sun.color) && Number.isFinite(sun.strength) && sun.strength >= 0
+      ? { sun: { color: sun.color, strength: sun.strength } }
+      : {}),
     ...(m.attach ? { attach: { model: m.attach.model, bone: m.attach.bone } } : {}),
     ...(m.parentKeys && m.parentKeys.length > 0 ? { parentKeys: m.parentKeys } : {}),
     ...(m.transform ? { transform: m.transform } : {}),
@@ -923,12 +942,19 @@ export function stageLightsFromFile(
   sun: Partial<SceneSettings["sun"]>
   effects: { name: string; params: Record<string, EffectParamValue> }[]
   fill: { color: string; strength: number } | null
+  /** The world the stage was lit under: a colour, or the strength of the
+   *  .hdr beside it. Absent means the .hdr at 1 or the scene's own. */
+  world: { color?: string; strength: number } | null
+  /** The view the stage was authored under. */
+  view: { transform: "standard" | "filmic" | "agx"; exposure: number } | null
 } {
   const raw = JSON.parse(text) as {
     lamps?: unknown[]
     sun?: Record<string, unknown>
     effects?: unknown[]
     fill?: Record<string, unknown>
+    world?: Record<string, unknown>
+    view?: Record<string, unknown>
   }
   const lamps = lightsFromDoc(
     (raw.lamps ?? []).map((l) => ({ ...(l as SceneLight), id: newLightId(), stage })),
@@ -964,7 +990,17 @@ export function stageLightsFromFile(
     f && typeof f.color === "string" && /^#[0-9a-f]{6}$/i.test(f.color) && num(f.strength) && (f.strength as number) >= 0
       ? { color: f.color, strength: f.strength as number }
       : null
-  return { lamps, sun, effects, fill }
+  const w = raw.world
+  const world =
+    w && num(w.strength) && (w.strength as number) >= 0 && (w.color === undefined || (typeof w.color === "string" && /^#[0-9a-f]{6}$/i.test(w.color)))
+      ? { ...(typeof w.color === "string" ? { color: w.color } : {}), strength: w.strength as number }
+      : null
+  const v = raw.view
+  const view =
+    v && (v.transform === "standard" || v.transform === "filmic" || v.transform === "agx") && num(v.exposure)
+      ? { transform: v.transform as "standard" | "filmic" | "agx", exposure: v.exposure as number }
+      : null
+  return { lamps, sun, effects, fill, world, view }
 }
 
 /** Join a folder URL and a filename. No encoding — see AssetRef.url. */

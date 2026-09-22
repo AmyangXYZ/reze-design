@@ -13,7 +13,7 @@ import { SLOT_GRAPHS, libraryGraph } from "@/lib/materials"
 import { graphLibraryName } from "@/lib/refs"
 import { graphRole, packGraph } from "@/lib/materials"
 import { loadLookPref } from "@/lib/look-pref"
-import { idbBundleId, modelPmxUrl, type AssetRef, type Scene, type SceneAttach, type SceneCamera, type SceneParentKey, type SceneStageTransform } from "@/lib/scene"
+import { idbBundleId, modelPmxUrl, type AssetRef, type Scene, type SceneAttach, type SceneCamera, type SceneParentKey, type SceneStageTransform, type StageSun } from "@/lib/scene"
 import { unzipToFiles } from "@/lib/uploads"
 import { loadLocalBundle } from "@/lib/asset-store"
 import { sceneFiles } from "@/lib/scene-files"
@@ -351,7 +351,7 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
     if (entry.stage) {
       const tr = entry.transform ?? DEFAULT_STAGE_TRANSFORM
       const morphs = entry.morphs ?? {}
-      stageList.push({ id: entry.model.id, file: entry.model.file, transform: tr, morphs })
+      stageList.push({ id: entry.model.id, file: entry.model.file, transform: tr, morphs, ...(entry.sun ? { sun: entry.sun } : {}) })
       engine.setModelTransform(entry.model.id, { visible: false, ...stageTransformToEngine(tr) })
       // Switches are authored state, so they are restored before the first
       // visible frame rather than applied after the scene appears.
@@ -825,6 +825,8 @@ export type StageInfo = {
    *  document swap — ids are pmx basenames, so a new scene with a same-named
    *  stage inherited the old one's switches. */
   morphs: Record<string, number>
+  /** The sun it was lit by, in place of the scene's. See StageSun. */
+  sun?: StageSun
 }
 
 /** A prop: a stage's shape plus what it hangs from. `attach` and the transform

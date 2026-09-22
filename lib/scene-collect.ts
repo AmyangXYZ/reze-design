@@ -165,7 +165,7 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
       // a guess about an arrangement, and a document that recorded the guess
       // would freeze it into every scene ever opened.
       ...(stage
-        ? { stage: true, transform: stage.transform }
+        ? { stage: true, transform: stage.transform, ...(stage.sun ? { sun: stage.sun } : {}) }
         : prop
           ? {
               prop: true,
