@@ -526,6 +526,15 @@ function parseModelSource(path: string): { source: ModelSource; file: string } {
  *  needn't import the library's payload types. */
 type LibraryPayloadLike = { graph?: ShaderGraph; wgsl?: string; spec?: unknown; name?: string }
 
+function gradeWithSpec(
+  grade: SceneSettings["grade"],
+  resolveRef?: (ref: ItemRef) => LibraryPayloadLike | undefined,
+): SceneSettings["grade"] {
+  if (grade.spec || !grade.from) return grade
+  const spec = resolveRef?.(grade.from)?.spec as SceneSettings["grade"]["spec"] | undefined
+  return spec ? { ...grade, spec } : grade
+}
+
 /** A localStorage state stores RESOLVED effects rather than document forms.
  *  Absent means "this state predates the list" and the base scene's own effects
  *  stand; present-but-empty means the user removed them all, which is different
@@ -856,6 +865,12 @@ export function parseSceneDoc(
           ...settings.sun,
           shadow: settings.sun?.shadow ?? (settings.ground as { shadow?: boolean }).shadow ?? true,
         },
+        // A PINNED GRADE ARRIVES AS ITS VALUES. The document stores only the pin
+        // for a published grade, and a reader that looks the label up among the
+        // built-ins finds nothing for a community one — the viewer showed such
+        // a scene ungraded. The pin resolves to the published spec here, where
+        // every other pin already does.
+        grade: gradeWithSpec(settings.grade, resolveRef),
         background: { color: background.color },
       },
       backgroundEffects: appliedEffects(background, resolveEffect, resolveRef),
