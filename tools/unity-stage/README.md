@@ -72,15 +72,14 @@ apart from the room. A stage whose World is right for its room can leave a face
 turned from the lamps in the dark; the fill lifts the cast without lifting the
 room, and leaves with the stage like the sun.
 
-Position, aim, reach and the cone carry over as they are — the game's cone term
-is the engine's. Brightness has to be fitted, because the falloffs differ in
-shape: the game's is inverse-square, capped by each light's shape radius, and
-ours is the brightness at the lamp falling to zero at its reach. Each lamp gets
-the colour and intensity that land the same total light, per channel, on the
-stage's own surfaces — the triangles the game lets it light, by layer and
-rendering-layer mask, weighted by area, N·L and the cone. A cookie is sampled at
-every triangle, so a spot projecting stained glass arrives carrying the glass's
-colour and the fraction it lets through.
+Position, aim, reach, the cone and the brightness all carry over as they are.
+The game's cone term is the engine's, and so is its falloff: the engine's lamps
+fall off as the inverse square, windowed to zero at their reach and held flat
+inside a 2.5-unit bulb, which is Aether Gazer's usual 0.1 shape radius at MMD
+scale. A PMX distance is a Unity distance × 8, so a lamp's intensity is the
+game's colour × intensity × 64. A cookie is folded in as its mean colour ×
+coverage, so a spot projecting stained glass arrives carrying the glass's
+colour and the share of light it lets through.
 
 Three facts from the game's pipeline (`AGTools/AGSimPipeline.cs` in the rip)
 decide the numbers:
@@ -92,7 +91,8 @@ decide the numbers:
 - **The inverse square is capped.** The game's shader takes
   `min(1/d², 1/shapeRadius)`, with the radius from the studio's
   `ReplicaAdditionalLightData` beside each Light — 0.1 on most lamps, so a lamp
-  inside its own lantern does not blow the lantern out. The fit uses the same cap.
+  inside its own lantern does not blow the lantern out. The engine's 2.5-unit
+  bulb is that cap at MMD scale.
 - **The ambient colours are linear.** The pipeline takes RenderSettings' sky,
   equator and ground through `.linear` before building the probe, so the bake
   does too; stored as they are, X340's night sky came out two to six times too
@@ -119,9 +119,11 @@ the wax. The flipbook (`sc_x331_huoyan`) draws its flame in rows 67–186 of eac
 that is the bone. Its width is a seventh of its height, which the game's bloom
 and texture filtering fatten; the effect draws a real candle flame's third.
 
-Left out, and listed when the converter runs: lights switched off in the game
-(on themselves or through a parent), a second directional light, area lights,
-LOD1 and below, baked-only lights, and renderers with no readable mesh.
+Left out, and listed when the converter runs: lights and renderers switched off
+in the game (on themselves or through a parent), a second directional light,
+area lights, LOD1 and below, baked-only lights, and renderers with no readable
+mesh. A sky layer is kept whatever its switch says: X309's moon is off in the
+scene file.
 
 ## What the PMX carries instead
 
@@ -132,6 +134,18 @@ rather than in a sidecar:
   nothing, and a garden is mostly dappled shadow
 - **ambient 1** on the sky dome and premultiplied glass, MMD's "draw as painted",
   which the app reads back as an Unlit group
+- **the glowing parts as their own materials**, `<name>_glow`. `PBR/Standard`
+  keeps its emission in the property map's alpha, remapped by `_PropertyMax.a`;
+  where it passes 1 the pixel is the albedo times it and lighting has no say.
+  Each triangle that glows moves to the `_glow` material, drawn unlit from
+  `tex/<albedo>_glow_x<N>.png`: the albedo times the glow, stored at 1/N, which
+  the app emits at N. X203a's paper lamp reaches 2.6.
+- **what is brighter than white, carried for bloom.** The game adds its bloom
+  at full energy; the app's, at its default intensity 0.05 over five summed
+  levels, adds a quarter of it. So the glow parts and the baked sky layers
+  carry what they hold above white four times over, and keep everything at
+  white and below as it is: X203a's lamp shade and the lit windows in its view
+  throw the game's halo under the app's own bloom and Filmic view.
 - **a plant's vertical tint** folded into its material colour (see below)
 - **the source shader in the material memo** — the free-text field MMD shows and
   nothing reads. The app's stage table consults it before its keyword guesses,

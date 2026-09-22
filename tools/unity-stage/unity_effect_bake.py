@@ -19,9 +19,9 @@
 #
 # so _DstBlend 10 is an ordinary premultiplied layer and _DstBlend 1 is purely
 # additive. A PMX blends over, so the bake finds the straight colour and alpha
-# that come closest, stored at 1/GAIN for a look that emits at GAIN (below): an
-# additive layer over a dark sky loses almost nothing, and only light past GAIN
-# times white clips.
+# that come closest, stored at 1/gain for a look that emits at that gain
+# (below): an additive layer over a dark sky loses almost nothing, and only
+# light past sixteen times white clips.
 #
 # THE UVs are the vertex shader's: rotated about 0.5 by the slot's angle, then
 # scaled and offset by its _ST. Every texture here is sRGB, so it is decoded
@@ -145,16 +145,39 @@ def _linear_colour(material, name, default=(1.0, 1.0, 1.0)):
 
 # THE PICTURE IS STORED AT 1/GAIN. The game's sky is brighter than white — the
 # nebula's wisps reach twice it, its stars fifty times — and that excess is what
-# its bloom turns into shine. A PNG stops at white, so the bake divides by GAIN
-# and the look that draws it emits at GAIN: everything up to four times white
-# survives and blooms here too. The file name carries it, `_x4`.
-GAIN = 4
+# its bloom turns into shine. A PNG stops at white, so the bake divides by a
+# gain and the look that draws it emits at that gain. The file name carries it,
+# `_x4`: the least of 1, 2, 4, 8 and 16 that holds the picture, never below
+# `least`. A sky layer takes at least 4 — its coverage is its light over its
+# gain, so the higher the gain the less an additive layer darkens what is
+# behind it.
+GAINS = (1, 2, 4, 8, 16)
 
 
-def bake(material, proj, png_for_guid, out_path, max_width=4096, max_height=1024, gain=GAIN):
-    """Write the layer's time-0 picture over its UV square, at 1/gain; returns
-    the number of repeats across u the mesh must carry, or None when a texture
-    is missing."""
+def gain_for(peak, least=1):
+    return next((g for g in GAINS if g >= least and g >= peak), GAINS[-1])
+
+
+# BRIGHTER THAN WHITE CARRIES THE GAME'S BLOOM. The game adds its bloom at full
+# energy; the app's, at its default intensity 0.05 over a five-level pyramid
+# that sums its levels, adds a quarter of it. So what a picture holds above
+# white is carried four times over, and a lamp shade at 2.2 throws the halo it
+# throws in the game. At white and below nothing changes: the colour a surface
+# shows is the game's, and only what blooms is louder.
+BLOOM = 4.0
+
+
+def for_bloom(linear):
+    """Linear RGB with the part of each texel above white carried BLOOM times,
+    scaled on its brightest channel so the hue holds."""
+    peak = linear.max(axis=-1, keepdims=True)
+    lifted = np.where(peak > 1.0, 1.0 + BLOOM * (peak - 1.0), peak)
+    return linear * (lifted / np.maximum(peak, 1e-6))
+
+
+def bake(material, proj, png_for_guid, out_base, max_width=4096, max_height=1024):
+    """Write the layer's time-0 picture over its UV square to `<out_base>_x<gain>.png`
+    and return that path, or None when a texture is missing."""
     slots = _used_slots(material)
     textures = {}
     for slot in slots:
@@ -216,11 +239,13 @@ def bake(material, proj, png_for_guid, out_path, max_width=4096, max_height=1024
     # blended layer keeps its own alpha; an additive one takes the least alpha
     # that still carries its light, so it darkens what is behind as little as
     # the blend allows.
-    premultiplied = rgb * a[..., None]
+    premultiplied = for_bloom(rgb * a[..., None])
+    gain = gain_for(float(premultiplied.max()), least=4)
     own_alpha = a * (f.get("_DstBlend", 10.0) - 1.0) / 9.0
     alpha = np.clip(np.maximum(own_alpha, premultiplied.max(axis=-1) / gain), 0.0, 1.0)
     straight = premultiplied / (gain * np.maximum(alpha, 1e-6))[..., None]
     out = np.concatenate([_linear_to_srgb(straight), alpha[..., None]], axis=-1)
+    out_path = f"{out_base}_x{gain}.png"
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     Image.fromarray(np.round(out * 255.0).astype(np.uint8), "RGBA").save(out_path, optimize=True)
-    return k
+    return out_path

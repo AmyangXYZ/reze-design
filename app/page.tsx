@@ -5079,36 +5079,36 @@ export default function Lab() {
         // the table calls a real surface leaves this group and takes its look.
         .filter((m) => !SURFACE_LOOKS.has(shaderLookFor(m.memo ?? "") ?? stageLookFor(m.name) ?? ""))
         .map((m) => m.name)
-      // A SKY BAKED BRIGHTER THAN WHITE. The Unity converter stores a sky layer
-      // at 1/gain and names the picture for it — `_x4` — because a PNG stops at
-      // white and the game's stars and wisps do not. Those draw in their own
-      // group, emitting at that gain, so what was brighter than white is again
-      // and blooms.
+      // A GLOW BAKED BRIGHTER THAN WHITE. The Unity converter stores a sky layer
+      // or a lamp shade's glow at 1/gain and names the picture for it — `_x4` —
+      // because a PNG stops at white and the game's stars and lit paper do not.
+      // Those draw in their own group, emitting at that gain, so what was
+      // brighter than white is again and blooms.
       const textures = engineRef.current?.getModel(id)?.getTextures() ?? []
       const gainOf = (m: (typeof materials)[number]) => {
         const g = /_x(\d+)\.png$/i.exec((textures[m.diffuseTextureIndex]?.path ?? "").replace(/\\/g, "/"))
         return g ? Number(g[1]) : 1
       }
-      const skyGroups: StyleGroup[] = [...new Set(materials.map(gainOf).filter((g) => g > 1))].map((gain) => {
+      const glowGroups: StyleGroup[] = [...new Set(materials.map(gainOf).filter((g) => g > 1))].map((gain) => {
         const graph = structuredClone(UNLIT_GRAPH)
         const emit = graph.nodes.find((n) => n.id === "emit")
         if (emit) emit.inputs = { ...emit.inputs, strength: gain }
         return {
-          id: `stage-sky-x${gain}`,
-          label: "Sky",
+          id: `stage-glow-x${gain}`,
+          label: `Glow ×${gain}`,
           materials: materials.filter((m) => fullBright.includes(m.name) && gainOf(m) === gain).map((m) => m.name),
           graph,
           renderClass: "auto",
         }
       })
-      const glowing = new Set(skyGroups.flatMap((g) => g.materials))
+      const glowing = new Set(glowGroups.flatMap((g) => g.materials))
       const unlit = [...new Set([...(xUnlitMaterials(pmx) ?? []), ...fullBright])].filter((n) => !glowing.has(n))
       styled.current.add(id)
       if (!unlit.length) {
         // No painted sheet in this one, but the keyword and shader tables still
         // have something to say. This used to return, leaving the stage to the
         // auto-style effect — which is the thing that must not run now.
-        const table = stageStyleGroups(names, skyGroups, memosOf(materials)) ?? (skyGroups.length ? skyGroups : null)
+        const table = stageStyleGroups(names, glowGroups, memosOf(materials)) ?? (glowGroups.length ? glowGroups : null)
         if (table) void applyGroups(id, table)
         return
       }
@@ -5126,7 +5126,7 @@ export default function Lab() {
         // 74% loses a random quarter of itself and reads as television static.
       }
       styled.current.add(id)
-      void applyGroups(id, stageStyleGroups(names, [group, ...skyGroups], memosOf(materials)) ?? [group, ...skyGroups])
+      void applyGroups(id, stageStyleGroups(names, [group, ...glowGroups], memosOf(materials)) ?? [group, ...glowGroups])
     },
     [engineRef, applyGroups],
   )
@@ -9280,14 +9280,19 @@ export default function Lab() {
                                         dense
                                         labelClass="w-[4.75rem]"
                                       />
+                                      {/* The brightness one unit from the lamp: it
+                                          falls off as the inverse square, so the
+                                          numbers that light a figure run to the
+                                          hundreds. */}
                                       <SliderRow
                                         label={t.lab.ctl.intensity}
                                         value={l.intensity}
                                         min={0}
-                                        max={10}
-                                        step={0.05}
+                                        max={1000}
+                                        step={0.5}
+                                        inputMax={100000}
                                         onChange={(v) => patchLight(l.id, { intensity: v })}
-                                        fmt={(v) => v.toFixed(2)}
+                                        fmt={(v) => v.toFixed(1)}
                                         dense
                                         labelClass="w-[4.75rem]"
                                       />
@@ -9350,7 +9355,8 @@ export default function Lab() {
                                   name: t.lab.lamp.name(list.length + 1),
                                   position: [camera.target[0], camera.target[1], camera.target[2]],
                                   color: "#ffd9a0",
-                                  intensity: 1,
+                                  // As bright half-way out as the old default was.
+                                  intensity: 64,
                                   radius: 20,
                                 },
                               ])

@@ -14,8 +14,7 @@
 #   X305.lights.json   the lamps and the sun, as the scene document holds them
 #
 # THE LIGHTING RIG comes out as <Name>.lights.json: the lamps the game switches
-# on and its sun, converted so the same light lands on the same surfaces (see
-# unity_lights.py). The app reads it into the scene document when the stage is
+# on and its sun, carrying the game's own numbers (see unity_lights.py). The app reads it into the scene document when the stage is
 # uploaded. Nor are the PBR maps imported: a look per material sampling normal,
 # metal, roughness and AO plus an environment reflection cost this stage its
 # frame rate, and the albedo alone reads as the same garden. Water's ripple map
@@ -23,11 +22,12 @@
 # procedural noise in its place reads as moving grain.
 #
 # What a stage DOES state travels in the PMX, where MMD already has words for
-# it: two-sided from _Cull, the shadow bits, ambient 1 on the sky dome and the
-# painted glass so they arrive unlit, a plant's own vertical tint folded into
-# its material colour, and each material's SOURCE SHADER in the memo — the free
-# text field MMD shows and nothing reads, which is how the app gives a pane of
-# glass named Terrain_X333_005 the glass look without a sidecar.
+# it: two-sided from _Cull, the shadow bits, ambient 1 on the sky dome, the
+# painted glass and every glowing part so they arrive unlit, a plant's own
+# vertical tint folded into its material colour, and each material's SOURCE
+# SHADER in the memo — the free text field MMD shows and nothing reads, which
+# is how the app gives a pane of glass named Terrain_X333_005 the glass look
+# without a sidecar.
 #
 # NO BLENDER AND NO FBX. The exported project already holds meshes, materials
 # and a scene, and every hop through another format is a hop that renames a
@@ -50,8 +50,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from unity_effect_bake import GAIN, bake as bake_effect, repeats_across  # noqa: E402
-from unity_lights import Surfaces, stage_lights  # noqa: E402
+from unity_effect_bake import bake as bake_effect, for_bloom, gain_for, repeats_across  # noqa: E402
+from unity_lights import stage_lights  # noqa: E402
 from unity_mesh import BuiltinMesh, Mesh  # noqa: E402
 from unity_scene import Project, Scene, read_material  # noqa: E402
 
@@ -472,6 +472,87 @@ def property_triple(material, png_root, proj):
     return tuple(min(1.0, max(0.0, lo[i] + (hi[i] - lo[i]) * mean[i])) for i in range(3))
 
 
+# ── What a surface gives off ─────────────────────────────────────────────────
+
+_GLOW = {}
+
+
+def glow_map(material, shader, png_root, proj):
+    """How much each texel of an opaque Standard material glows, or None.
+
+    `PBR/Standard` keeps its emission in the property map's ALPHA:
+
+        e     = max((a - _PropertyMin.a) / (_PropertyMax.a - _PropertyMin.a), 0)
+                * (1 - _EmissionIntensity)
+        pixel = lerp(lit, albedo * e, min(e, 1))
+
+    `_EmissionIntensity` is a global the game leaves at 0. So where e reaches 1
+    the pixel is the albedo times e and lighting has no say — X203a's lamp
+    shade reaches 2.6, which is what its bloom turns into a glowing lamp. The
+    artists paint it on whole UV islands: the shade's material has 190
+    triangles, 82 glowing all over and 108 dark all over.
+
+    Returns e as a float array over the map. A premultiplied sheet is drawn as
+    painted already.
+    """
+    if not material or not (shader or "").endswith("PBR/Standard") or "TRANSPARENT_PREMULT" in material["keywords"]:
+        return None
+    bound = slot(material, PROPERTY_SLOTS)
+    if not bound or "_PropertyMax" not in material["alpha"]:
+        return None
+    src = png_for(png_root, proj.path(bound["guid"]) or "")
+    if not (src and os.path.exists(src)):
+        return None
+    key = (src, material["alpha"].get("_PropertyMin", 0.0), material["alpha"]["_PropertyMax"])
+    if key not in _GLOW:
+        import numpy as np  # noqa: PLC0415
+        from PIL import Image  # noqa: PLC0415
+
+        with Image.open(src) as im:
+            a = np.asarray(im.convert("RGBA"), np.float32)[..., 3] / 255.0
+        lo, hi = key[1], key[2]
+        e = np.maximum((a - lo) / max(hi - lo, 1e-4), 0.0)
+        _GLOW[key] = e if e.max() >= 0.5 else None
+    return _GLOW[key]
+
+
+def glowing_triangles(e, uvs, tris):
+    """Which triangles glow: e averaged over the three corners and the middle,
+    at least half a white. `uvs` are Unity's, the albedo's tiling applied."""
+    import numpy as np  # noqa: PLC0415
+
+    h, w = e.shape
+    uv = np.asarray(uvs, np.float64)
+    t = np.asarray(tris, np.int64)
+
+    def at(p):
+        u, v = np.mod(p[:, 0], 1.0), np.mod(p[:, 1], 1.0)
+        return e[((1.0 - v) * (h - 1)).astype(int), (u * (w - 1)).astype(int)]
+
+    samples = [at(uv[t[:, k]]) for k in range(3)] + [at(uv[t].mean(axis=1))]
+    return (sum(samples) / 4.0) >= 0.5
+
+
+def bake_glow(albedo_src, e, out_base):
+    """The glow as the Unlit look draws it: albedo × e in linear light, the part
+    above white carried for bloom, written to `<out_base>_x<gain>.png` at 1/gain
+    as a baked sky layer is. Returns the path written."""
+    import numpy as np  # noqa: PLC0415
+    from PIL import Image  # noqa: PLC0415
+
+    from unity_effect_bake import _linear_to_srgb, _srgb_to_linear  # noqa: PLC0415
+
+    with Image.open(albedo_src) as im:
+        rgb = np.asarray(im.convert("RGB"), np.float32) / 255.0
+    h, w = rgb.shape[:2]
+    scaled = np.asarray(Image.fromarray(e.astype(np.float32)).resize((w, h), Image.BILINEAR))
+    lin = for_bloom(_srgb_to_linear(rgb) * scaled[..., None])
+    gain = gain_for(float(lin.max()))
+    out_path = f"{out_base}_x{gain}.png"
+    Image.fromarray((_linear_to_srgb(lin / gain) * 255.0 + 0.5).astype(np.uint8)).save(out_path)
+    return out_path
+
+
 # A sky's own properties, which is how one is recognised when its shader
 # reference cannot be trusted. AssetRipper remaps a material whose shader was
 # not exported onto whatever it can find — X305's sky dome comes through
@@ -825,10 +906,25 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
             if mat and is_effect_decal(proj.shader_name(mat["shader_guid"])):
                 BACKDROP_EFFECTS.add(mat["name"])
 
-    # Every triangle again in the game's own space, for weighing its lamps.
-    surfaces = Surfaces()
+    # WHAT THE GAME HAS SWITCHED OFF IS NOT DRAWN. X203a keeps a darker shell
+    # switched off around its window-seat lamp, and spare copies of props
+    # beside the ones it shows; drawn, the shell hides the glowing shade inside
+    # it. The sky stays whatever its switch says: X309's moon is
+    # off in the scene file and hangs over its sea.
+    def wears_sky(r):
+        for g in r["materials"]:
+            mat = materials_by_guid.get(g)
+            sh = proj.shader_name(mat["shader_guid"]) if mat else None
+            if mat and (is_sky(mat) or is_sky_layer(mat, sh)):
+                return True
+        return False
+
+    switched_off = []
     for r in scene.renderers():
         if not r["mesh"] or not r["enabled"]:
+            continue
+        if not scene.active_in_hierarchy(r["object"]) and not wears_sky(r):
+            switched_off.append(r["name"])
             continue
         if r["id"] in fallbacks:
             dropped_lods += 1
@@ -861,18 +957,24 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
                 break
             mat = materials_by_guid.get(guid)
             key = mat["name"] if mat else f"unnamed_{guid[:8]}"
-            if key not in per_material:
-                shader_name = proj.shader_name(mat["shader_guid"]) if mat else None
-                per_material[key] = {
-                    "vertices": [],
-                    "faces": [],
-                    "guid": guid,
-                    # An effect layer of the sky is baked to one picture (see
-                    # unity_effect_bake), and the mesh's u carries its repeats.
-                    "baked": repeats_across(mat) if is_effect_decal(shader_name) and is_sky_layer(mat, shader_name) else 0,
-                }
-                used_order.append(key)
-            bucket = per_material[key]
+            shader_name = proj.shader_name(mat["shader_guid"]) if mat else None
+
+            def bucket_for(k, glow=None):
+                if k not in per_material:
+                    per_material[k] = {
+                        "vertices": [],
+                        "faces": [],
+                        "guid": guid,
+                        # An effect layer of the sky is baked to one picture (see
+                        # unity_effect_bake), and the mesh's u carries its repeats.
+                        "baked": repeats_across(mat) if is_effect_decal(shader_name) and is_sky_layer(mat, shader_name) else 0,
+                        # The glowing part of a material: its e from glow_map.
+                        "glow": glow,
+                    }
+                    used_order.append(k)
+                return per_material[k]
+
+            bucket = bucket_for(key)
             # THE ALBEDO'S TILING AND OFFSET GO INTO THE UVs — Unity samples at
             # uv * scale + offset, and a PMX has one UV and no per-slot transform.
             # Read as the identity, X305's terrain tiled 10 x 10 was one tile
@@ -882,33 +984,38 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
             (su, sv), (ou, ov) = (albedo_st["scale"], albedo_st["offset"]) if albedo_st else ((1.0, 1.0), (0.0, 0.0))
             if bucket["baked"]:
                 su = float(bucket["baked"])
+            triangles = m.triangles(i)
+            # A GLOWING TRIANGLE IS ITS OWN MATERIAL, `<name>_glow`, drawn as the
+            # glow alone (see glow_map). The property map shares the albedo's UVs.
+            glow = glow_map(mat, shader_name, png_root, proj) if mat and albedo_st else None
+            glowing = (
+                glowing_triangles(glow, [(uv[0] * su + ou, uv[1] * sv + ov) for uv in m.uvs], triangles)
+                if glow is not None and triangles
+                else None
+            )
             remap = {}
-            placed = {}
-            for tri in m.triangles(i):
-                for v in tri:
-                    if v not in placed:
-                        placed[v] = (transform(matrix, translation, m.positions[v]), rotate(matrix, m.normals[v]))
-                a, b, c = (placed[v] for v in tri)
-                surfaces.add(
-                    a[0], b[0], c[0],
-                    normalise(tuple(a[1][k] + b[1][k] + c[1][k] for k in range(3))),
-                    r["layer"], r["renderingLayerMask"],
-                )
+            for t, tri in enumerate(triangles):
+                target = bucket_for(f"{key}_glow", glow) if glowing is not None and glowing[t] else bucket
                 out = []
                 for v in tri:
-                    if v not in remap:
+                    if (id(target), v) not in remap:
                         p = to_pmx(transform(matrix, translation, m.positions[v]))
                         n = to_pmx(rotate(matrix, m.normals[v]))
                         uv = m.uvs[v]
-                        remap[v] = len(bucket["vertices"])
+                        remap[(id(target), v)] = len(target["vertices"])
                         # PMX's V runs the other way from Unity's.
-                        bucket["vertices"].append((p, normalise(n), (uv[0] * su + ou, 1.0 - (uv[1] * sv + ov))))
-                    out.append(remap[v])
-                bucket["faces"].append(tuple(out))
+                        target["vertices"].append((p, normalise(n), (uv[0] * su + ou, 1.0 - (uv[1] * sv + ov))))
+                    out.append(remap[(id(target), v)])
+                target["faces"].append(tuple(out))
+
+    # A material that glows everywhere it is drawn left its own bucket empty.
+    used_order = [k for k in used_order if per_material[k]["faces"]]
 
     # One PMX vertex list, with each material's faces contiguous after it.
     vertices, faces, pmx_materials, textures, texture_index = [], [], [], [], {}
     baked_layers = []
+    glows = []
+    glow_written = {}
     relief_written = set()
     decals = []
 
@@ -1035,8 +1142,11 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
             # THE SKY LAYER, BAKED: its textures, colours, mask and rotations
             # composed at time 0, colour and coverage in one picture, so the
             # material itself is plain white.
-            rel = "tex/" + re.sub(r"[^A-Za-z0-9_.-]", "_", key) + f"_x{GAIN}.png"
-            if bake_effect(mat, proj, lambda g: png_for(png_root, proj.path(g) or ""), os.path.join(out_dir, rel)):
+            written = bake_effect(
+                mat, proj, lambda g: png_for(png_root, proj.path(g) or ""), os.path.join(out_dir, "tex", re.sub(r"[^A-Za-z0-9_.-]", "_", key))
+            )
+            if written:
+                rel = os.path.relpath(written, out_dir)
                 texture_index[rel] = len(textures)
                 textures.append(rel)
                 index = texture_index[rel]
@@ -1044,6 +1154,19 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
                 albedo = None
                 tint, alpha = (1.0, 1.0, 1.0), 1.0
                 baked_layers.append(key)
+        if albedo and bucket["glow"] is not None:
+            src = png_for(png_root, proj.path(albedo["guid"]) or "")
+            if src:
+                base = "tex/" + os.path.splitext(os.path.basename(src))[0] + "_glow"
+                if base not in glow_written:
+                    glow_written[base] = os.path.relpath(bake_glow(src, bucket["glow"], os.path.join(out_dir, base)), out_dir)
+                rel = glow_written[base]
+                if rel not in texture_index:
+                    texture_index[rel] = len(textures)
+                    textures.append(rel)
+                index = texture_index[rel]
+                glows.append(key)
+            albedo = None
         if albedo:
             src = png_for(png_root, proj.path(albedo["guid"]) or "")
             if src:
@@ -1063,8 +1186,8 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
         # panelling, the tread on the plate, the ribbing on a stool rim. Without
         # them every surface takes light as though it were polished flat, which
         # is most of what separates this from the frame it was ripped out of.
-        relief = slot(mat, RIPPLE_SLOTS) if mat else None
-        if not relief and mat:
+        relief = slot(mat, RIPPLE_SLOTS) if mat and bucket["glow"] is None else None
+        if not relief and mat and bucket["glow"] is None:
             relief = normal_slot(mat, png_root, proj)
         # THE STRENGTH RIDES IN SHININESS, and zero is the important value.
         #
@@ -1149,7 +1272,7 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
         # claim it: a flat pale slab lying across the water.
         lit_family = bool(shader) and shader.rsplit("/", 1)[-1] in ("Glass", "Ripplet")
         unlit = bool(mat) and not lit_family and (
-            sky_material or "TRANSPARENT_PREMULT" in mat["keywords"] or is_effect_decal(shader)
+            sky_material or "TRANSPARENT_PREMULT" in mat["keywords"] or is_effect_decal(shader) or bucket["glow"] is not None
         )
         # (metal, roughness, occlusion) into the PMX's SPECULAR field. The
         # format carries one and MMD's own renderer barely uses it; the engine
@@ -1219,7 +1342,7 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
                     tint, _ = material_tint(m, sh)
                     moon = {"position": scene.world_matrix(r["transform"])[1], "color": tint}
     rig, rig_notes = stage_lights(
-        scene, surfaces, lambda guid: png_for(png_root, proj.path(guid) or ""), to_pmx, SCALE, name, moon=moon
+        scene, lambda guid: png_for(png_root, proj.path(guid) or ""), to_pmx, SCALE, name, moon=moon
     )
     # AND THE EFFECT THE STAGE BRINGS, named for the app to add with it: the
     # galaxy that replaces its sky.
@@ -1275,6 +1398,10 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
         )
         for note in rig_notes:
             print(f"[unity]   left out {note}")
+        if glows:
+            print(f"[unity] {len(glows)} glowing parts, drawn unlit at their glow: {', '.join(glows)}")
+        if switched_off:
+            print(f"[unity] {len(switched_off)} renderers the game switches off, left out: {', '.join(sorted(set(switched_off)))}")
         if dropped_lods:
             print(f"[unity] {dropped_lods} LOD fallback renderers dropped (level 0 kept)")
         if skipped:
