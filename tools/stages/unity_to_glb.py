@@ -57,6 +57,7 @@ from unity_materials import (  # noqa: E402
     material_tint,
     normal_slot,
     png_for,
+    RIPPLE_SLOTS,
     rotate,
     slot,
     surface_alpha,
@@ -280,7 +281,33 @@ def prepare(project_root, scene_path, out_dir, name, png_root=None):
                 # The mirror above reversed the winding; put it back.
                 bucket["indices"].append((out[0], out[2], out[1]))
 
-    # A DOME IS KNOWN BY ITS SIZE — see unity_to_pmx.
+    # ONE SURFACE, TWO LAYERS. X309's nebula and its purple band are the same
+    # cylinder at the same radius, and two layers in one surface fight over its
+    # depth: squares along the horizon that change with every camera move. A
+    # layer sharing its radius with one seen before it is pulled in by a third
+    # of a percent, so it stands in front of the layer it is drawn over.
+    def sky_radius(bucket):
+        rs = sorted(math.hypot(p[0], p[2]) for p in bucket["positions"])
+        return rs[len(rs) // 2] if rs else 0.0
+
+    def skyish(key):
+        m = materials_by_guid.get(per_material[key]["guid"])
+        return bool(m and (is_sky(m) or is_sky_layer(m, shader_of(m))))
+
+    radii = []
+    pulled_in = []
+    for key in order:
+        if not skyish(key):
+            continue
+        r = sky_radius(per_material[key])
+        shared = sum(1 for q in radii if abs(q - r) <= r * 0.001)
+        if shared:
+            k = 1.0 - 0.003 * shared
+            per_material[key]["positions"] = [(p[0] * k, p[1], p[2] * k) for p in per_material[key]["positions"]]
+            pulled_in.append(key)
+        radii.append(r)
+
+    # A DOME IS KNOWN BY ITS SIZE — see unity_materials.
     reach = {k: max((max(abs(c) for c in p) for p in b["positions"]), default=0.0) for k, b in per_material.items()}
     domes = set()
     for key, r in reach.items():
@@ -334,7 +361,10 @@ def prepare(project_root, scene_path, out_dir, name, png_root=None):
         if src:
             base = copy_texture(src, out_tex, copied)
         normal, normal_scale = None, 1.0
-        nslot = normal_slot(mat, png_root, proj) if mat else None
+        # SLOT 0 IS THE SURFACE'S OWN RELIEF: water scrolls its ripple map there
+        # (the Water look samples it twice, the way the game's Ripplet does),
+        # everything else its normal map, and the same socket reads both.
+        nslot = (slot(mat, RIPPLE_SLOTS) or normal_slot(mat, png_root, proj)) if mat else None
         nsrc = png_for(png_root, proj.path(nslot["guid"]) or "") if nslot else None
         if nsrc:
             normal = copy_texture(nsrc, out_tex, copied)
@@ -435,6 +465,8 @@ def prepare(project_root, scene_path, out_dir, name, png_root=None):
         notes.append(f"{len(decals_dropped)} effect decals left out (coverage lives in maps we do not ship): {', '.join(sorted(decals_dropped))}")
     if sky_layers:
         notes.append(f"{len(sky_layers)} sky layers baked from the effect shader: {', '.join(sorted(sky_layers))}")
+    if pulled_in:
+        notes.append(f"sky layers sharing a surface, pulled in front of the one beneath: {', '.join(pulled_in)}")
     for shader, names in unknown.items():
         notes.append(f"UNKNOWN SHADER FAMILY {shader}: {', '.join(names)} — exported as Standard")
 

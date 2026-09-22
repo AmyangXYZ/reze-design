@@ -22,6 +22,7 @@
 import { writePmxDocument, type PmxDocument, type PmxMaterial, type PmxVertex, type ShaderGraph, type StyleGroup, UNLIT_GRAPH } from "reze-engine"
 import { libraryGraph } from "@/lib/materials"
 import { relFilePath } from "@/lib/scene-files"
+import { SURFACE_LOOKS, stageLookFor } from "@/lib/stage-style"
 
 const PMX_PER_METRE = 12.5
 /** Lumens per watt at 555 nm: a light stated in candela, as glTF states one,
@@ -396,6 +397,26 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
     return rel
   }
 
+  // THE SKY GOES FIRST, OUTERMOST FIRST. The engine draws transparent
+  // materials in the PMX's order and each writes its depth once its colour has
+  // blended, so a nearer sky layer drawn first hides every farther one behind
+  // it — x309's stars stand just inside its nebula, its light columns just
+  // outside. Measured from the vertical axis: the layers are nested cylinders.
+  const skyRadius = (run: Run) => {
+    const rs: number[] = []
+    for (let i = 0; i < run.positions.length; i += 3) rs.push(Math.hypot(run.positions[i], run.positions[i + 2]))
+    rs.sort((a, b) => a - b)
+    return rs.length ? rs[rs.length >> 1] : 0
+  }
+  const ordered = [...runs.values()]
+  const skyOf = (run: Run) => (run.material >= 0 ? (reze<RezeMaterial>(g.materials?.[run.material])?.sky ?? false) : false)
+  ordered.sort((a, b) => {
+    const sa = skyOf(a), sb = skyOf(b)
+    if (sa !== sb) return sa ? -1 : 1
+    if (sa && sb) return skyRadius(b) - skyRadius(a)
+    return 0
+  })
+
   // ── Materials ──
   const textures: string[] = []
   const textureIndex = (rel: string | null) => {
@@ -411,7 +432,7 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
   const pmxMaterials: PmxMaterial[] = []
   const materials: GlbMaterial[] = []
   const maps: GlbStage["maps"] = new Map()
-  for (const run of runs.values()) {
+  for (const run of ordered) {
     if (!run.indices.length) continue
     const m: GltfMaterial = run.material >= 0 ? (g.materials?.[run.material] ?? {}) : {}
     const ex = reze<RezeMaterial>(m) ?? {}
@@ -681,8 +702,15 @@ export function glbStyleGroups(materials: GlbMaterial[]): StyleGroup[] {
   }
   for (const m of materials) {
     const hashed = m.alphaMode === "MASK"
-    if (m.look && libraryGraph(m.look === "glass" ? "Glass" : m.look === "water" ? "Water" : "Foliage")) {
-      const label = m.look === "glass" ? "Glass" : m.look === "water" ? "Water" : "Foliage"
+    // A look the file states, or one its NAME says for the two real surfaces:
+    // x333's pool is a Standard material called X333_shui, which the file can
+    // only describe as a painted sheet, and the name table knows better. Only
+    // Glass and Water are taken from the name — every other keyword look would
+    // replace the per-texel maps the file brought with a guess.
+    const named = !m.look ? stageLookFor(m.name) : null
+    const look = m.look ?? (named && SURFACE_LOOKS.has(named) ? named.toLowerCase() : null)
+    if (look && libraryGraph(look === "glass" ? "Glass" : look === "water" ? "Water" : "Foliage")) {
+      const label = look === "glass" ? "Glass" : look === "water" ? "Water" : "Foliage"
       add(`look:${label}`, () => ({ id: `stage-${label.toLowerCase()}`, label, materials: [], graph: structuredClone(libraryGraph(label)!), renderClass: "auto", ...(label === "Foliage" ? { alphaMode: "hashed" as const } : {}) }), m.name)
       continue
     }
