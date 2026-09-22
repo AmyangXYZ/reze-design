@@ -25,6 +25,16 @@ image at the current frame, and fog volumes left out. A plain export from the
 dialog also loads, when "Punctual Lights" is ticked; it brings no world and no
 view, and a fog cube comes through as a solid box.
 
+### Candle flames
+
+glTF has no particles, so a flame travels as its ANCHOR: an empty named
+`flame.01`, `flame.02`, … at the wick, its local Z running from the flame's
+base to its tip and scaled to the flame's length — an unrotated empty scaled
+to the length is the hand-built form. The loader reads each as a bone and the
+app stands the *Candle Flames (wick bones)* effect on every bone with that
+prefix. The Unity pre-pass writes them from the game's flame particle systems
+(x340: 53 of them); a stage built in Blender needs only the empties.
+
 ## Unity stage → Blender → glTF
 
 Turns a scene from an AssetRipper export into a stage this app loads, by way of

@@ -86,6 +86,53 @@ def normalised(v):
     return tuple(c / n for c in v)
 
 
+# ── Candle flames ────────────────────────────────────────────────────────────
+
+FLAME_WORDS = ("huomiao", "huoyan", "flame", "candle")
+# Where the visible flame sits along the game's card — see flame_points.
+FLAME_START = 67 / 256
+FLAME_LENGTH = (186 - 67) / 256
+
+
+def flame_points(scene, materials_by_guid):
+    """Every candle flame the game draws, as (name, base, tip) in glTF metres.
+
+    The game's flame is ONE particle that never moves: a stretched billboard
+    `startSize` wide and `lengthScale` times that long, sized by the transform
+    its scaling mode names. It emits DOWNWARD at almost no speed, and a
+    stretched card trails behind its velocity — so the card runs UP from the
+    particle. Measured on X340: every candle's wax top sits 0.30–0.43 of the
+    card above its particle, which a centred card would bury the flame under.
+
+    The point is the VISIBLE flame, base to tip, not the card. The flipbook
+    (sc_x331_huoyan) draws its flame in the middle of each tile — rows 67–186
+    of 256 — so the flame starts FLAME_START of the way up the card and is
+    FLAME_LENGTH of it long. The stage carries each as an empty named
+    flame.NN with its +Y running base to tip, which the app reads as a bone
+    and stands the Candle Flames effect on. Ordered nearest the origin first.
+    """
+    found = []
+    for ps in scene.particle_systems():
+        names = [(materials_by_guid.get(g) or {}).get("name", "").lower() for g in ps["materials"]]
+        if not ps["on"] or not any(w in n for n in names for w in FLAME_WORDS):
+            continue
+        if ps["scalingMode"] == 0:  # Hierarchy: the whole chain's scale
+            s = max(math.sqrt(sum(ps["matrix"][r][c] ** 2 for r in range(3))) for c in range(3))
+        elif ps["scalingMode"] == 1:  # Local: the system's own transform
+            s = max(abs(v) for v in ps["localScale"])
+        else:  # Shape: none
+            s = 1.0
+        width = ps["startSize"] * s
+        height = width * (ps["lengthScale"] if ps["renderMode"] == 1 else 1.0)
+        if height <= 0:
+            continue
+        x, y, z = ps["position"]
+        base = (x, y + height * FLAME_START, z)
+        found.append((to_gltf(base), to_gltf((x, y + height * (FLAME_START + FLAME_LENGTH), z))))
+    found.sort(key=lambda f: sum(v * v for v in f[0]))
+    return [{"name": f"flame.{i + 1:02d}", "from": list(a), "to": list(b)} for i, (a, b) in enumerate(found)]
+
+
 # ── Maps, packed the way glTF reads them ─────────────────────────────────────
 
 _PACKED = {}
@@ -470,8 +517,13 @@ def prepare(project_root, scene_path, out_dir, name, png_root=None):
     for shader, names in unknown.items():
         notes.append(f"UNKNOWN SHADER FAMILY {shader}: {', '.join(names)} — exported as Standard")
 
+    points = flame_points(scene, materials_by_guid)
+    if points:
+        notes.append(f"{len(points)} candle flames -> empties flame.01..{len(points):02d} (Candle Flames (wick bones) stands a flame on each)")
+
     scene_json = {
         "name": name,
+        "points": points,
         "metresPerUnityUnit": METRES,
         "pmxPerMetre": PMX_PER_METRE,
         "materials": materials,

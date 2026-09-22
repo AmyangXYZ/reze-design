@@ -310,10 +310,19 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
   // ── Geometry, one run per material, in PMX space ──
   const runs = new Map<number, Run>()
   const lamps: { node: GltfNode; world: Mat4 }[] = []
+  // A CANDLE FLAME IS AN EMPTY NAMED flame.NN, its +Y running from the wick
+  // to the flame's tip and as long as the flame. It becomes a bone from its
+  // origin to its +Y unit point, which the Candle Flames effect stands on.
+  const wicks: { name: string; head: [number, number, number]; tail: [number, number, number] }[] = []
   const visit = (index: number, parent: Mat4) => {
     const node = g.nodes![index]
     const world = mul(parent, localMatrix(node))
     if (node.extensions?.KHR_lights_punctual) lamps.push({ node, world })
+    if (node.mesh === undefined && /^flame\.\d+$/i.test(node.name ?? "")) {
+      const head = toPmx(xformPoint(world, 0, 0, 0))
+      const tail = toPmx(xformPoint(world, 0, 1, 0))
+      wicks.push({ name: node.name!, head, tail: [tail[0] - head[0], tail[1] - head[1], tail[2] - head[2]] })
+    }
     if (node.mesh !== undefined) {
       const nm = normalMatrix(world)
       for (const prim of g.meshes![node.mesh].primitives) {
@@ -597,7 +606,7 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
       vertexIndexSize: vertices.length < 65536 ? 2 : 4,
       textureIndexSize: indexSize(textures.length),
       materialIndexSize: indexSize(pmxMaterials.length),
-      boneIndexSize: 1,
+      boneIndexSize: indexSize(1 + wicks.length),
       morphIndexSize: 1,
       rigidbodyIndexSize: 1,
       extra: [],
@@ -620,6 +629,15 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
         flags: 0x0002 | 0x0004 | 0x0008 | 0x0010,
         tailPosition: [0, 0, 0],
       },
+      ...wicks.map((w) => ({
+        name: w.name,
+        nameEn: w.name,
+        position: w.head,
+        parentIndex: 0,
+        layer: 0,
+        flags: 0x0002 | 0x0004 | 0x0008 | 0x0010,
+        tailPosition: w.tail,
+      })),
     ],
     morphs: [],
     displayFrames: [
@@ -630,6 +648,7 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
     joints: [],
     trailing: null,
   }
+  if (wicks.length) notes.push(`${wicks.length} candle flames as bones ${wicks[0].name}..${wicks[wicks.length - 1].name}`)
   const pmxPath = `${dir}${stem}.pmx`
   files.push({ path: pmxPath, bytes: new Uint8Array(writePmxDocument(doc)) })
   return { files, pmxPath, materials, maps, notes }

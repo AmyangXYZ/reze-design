@@ -26,7 +26,7 @@ import sys
 
 import bpy
 import numpy as np
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 build, out_dir, name = sys.argv[sys.argv.index("--") + 1 :][:3]
 scene_json = json.load(open(os.path.join(build, "scene.json"), encoding="utf-8"))
@@ -216,6 +216,20 @@ for i, spec in enumerate(scene_json["materials"]):
     stage.objects.link(ob)
     if not spec["castShadow"]:
         ob.visible_shadow = False
+
+# Candle flames: an empty per wick, named flame.NN, its local Z from base to tip
+# and as long as the flame. Blender's Z becomes glTF's +Y on export, which is
+# the axis the app reads the bone along — so an unrotated empty scaled to the
+# flame's length is the hand-built form of the same thing.
+for pt in scene_json.get("points") or []:
+    ob = bpy.data.objects.new(pt["name"], None)
+    ob.empty_display_type = "SINGLE_ARROW"
+    a = Vector(blender_xyz(pt["from"]))
+    b = Vector(blender_xyz(pt["to"]))
+    up = b - a
+    length = up.length or 0.1
+    ob.matrix_world = Matrix.Translation(a) @ up.normalized().to_track_quat("Z", "Y").to_matrix().to_4x4() @ Matrix.Scale(length, 4)
+    stage.objects.link(ob)
 
 # Lamps: Blender lights for the .blend, and the app's own numbers as extras.
 for l in scene_json["lamps"]:
