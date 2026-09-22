@@ -11,6 +11,11 @@ export type StageClaim<T> = { id: string; before: T }
 /** The sky's own light: one colour, filling everything the sun misses. */
 export type WorldLight = { color: string; strength: number }
 
+/** Light added to every cast member's ambient and to nothing else — see the
+ *  engine's setModelFill. Absent is none. */
+export type FillLight = { color: string; strength: number }
+export const NO_FILL: FillLight = { color: "#ffffff", strength: 0 }
+
 /** The sun's own dials, azimuth/elevation degrees — friendlier than a raw vector. */
 export type SunLight = {
   color: string
@@ -48,6 +53,8 @@ export type SceneSettings = {
   world: WorldLight & { stage?: StageClaim<WorldLight> }
   /** A stage's rig claims the sun it sets — see StageClaim. */
   sun: SunLight & { stage?: StageClaim<SunLight> }
+  /** The cast's own fill. A stage's rig claims it like the sun. */
+  fill?: FillLight & { stage?: StageClaim<FillLight> }
   bloom: {
     enabled: boolean
     threshold: number

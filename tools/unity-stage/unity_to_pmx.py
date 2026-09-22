@@ -496,18 +496,27 @@ def is_sky(material):
     return sum(1 for k in SKY_PROPERTIES if k in material["colors"]) >= 2
 
 
+# Effect materials drawn on a cylinder — filled by convert() before its
+# renderers are read. See is_sky_layer.
+BACKDROP_EFFECTS = set()
+
+
 def is_sky_layer(material, shader):
-    """An effect sheet or a billboard named for the sky IS the sky.
+    """An effect sheet or a billboard named for the sky IS the sky, and so is an
+    effect sheet drawn on a cylinder, whatever it is called.
 
     X309's night is three effect layers on cylinders round the whole scene —
     a nebula, twinkling stars, a purple band where they meet the sea — plus a
-    moon on a billboard. As effect sheets, they measure as a faint overlay and
-    the decal rule drops them; as sky they are kept, drawn unlit and two-sided,
-    and cast nothing.
+    moon on a billboard. X203a's view from its windows is eleven more
+    cylinders, named for nothing but their number. As effect sheets, they
+    measure as a faint overlay and the decal rule drops them; as sky they are
+    kept, drawn unlit and two-sided, and cast nothing.
     """
     if not material or not shader:
         return False
     name = material["name"].lower()
+    if is_effect_decal(shader) and material["name"] in BACKDROP_EFFECTS:
+        return True
     return ("sky" in name or "moon" in name) and (is_effect_decal(shader) or shader.endswith("SceneBillboard"))
 
 
@@ -803,6 +812,19 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
     # one of at a time and a converter would otherwise draw all of at once.
     fallbacks = scene.lod_fallback_renderers()
     dropped_lods = 0
+    # WHICH EFFECT SHEETS ARE BACKDROP: the ones drawn on a cylinder mesh.
+    # Read before any vertex is written, because a sky layer is baked and its
+    # UVs follow.
+    BACKDROP_EFFECTS.clear()
+    for r in scene.renderers():
+        m = mesh(r["mesh"]) if r["mesh"] and r["enabled"] else None
+        if m is None or "cylinder" not in m.name.lower():
+            continue
+        for guid in r["materials"]:
+            mat = materials_by_guid.get(guid)
+            if mat and is_effect_decal(proj.shader_name(mat["shader_guid"])):
+                BACKDROP_EFFECTS.add(mat["name"])
+
     # Every triangle again in the game's own space, for weighing its lamps.
     surfaces = Surfaces()
     for r in scene.renderers():
@@ -1204,6 +1226,12 @@ def convert(project_root, scene_path, out_dir, name, png_root=None, albedo_cap=0
     effects = []
     if handed_to_effect:
         effects.append({"name": "Galaxy Sky"})
+    # AND THE CAST'S FILL: the game lights its characters with a base light of
+    # their own, apart from the room — X203a's is lavender, X309's grey. A gamma
+    # colour, as the app's hex is.
+    base = (look or {}).get("probeLightingBase")
+    if base:
+        rig["fill"] = {"color": "#" + "".join(f"{round(min(max(c, 0.0), 1.0) * 255):02x}" for c in base[:3]), "strength": 1.0}
     if effects:
         rig["effects"] = effects
     with open(os.path.join(out_dir, f"{name}.lights.json"), "w", encoding="utf-8") as fh:

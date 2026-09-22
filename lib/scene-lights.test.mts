@@ -199,6 +199,15 @@ const read = (doc: SceneDoc) => parseSceneDoc(doc, builtinEffect, libraryGraph).
   assert.deepEqual(effects, [{ name: "Galaxy Sky", params: { NEBULA: { x: 0, y: 39 / 255, z: 159 / 255 }, TURN: 30 } }])
 }
 
+// ── The cast's fill a stage brings: whole or not at all ──
+{
+  const ok = stageLightsFromFile(JSON.stringify({ fill: { color: "#6d628e", strength: 1 } }), "stage-id")
+  assert.deepEqual(ok.fill, { color: "#6d628e", strength: 1 })
+  const bad = stageLightsFromFile(JSON.stringify({ fill: { color: "lavender", strength: 1 } }), "stage-id")
+  assert.equal(bad.fill, null)
+  assert.equal(stageLightsFromFile(JSON.stringify({}), "stage-id").fill, null)
+}
+
 // ── An effect remembers the stage it came with ──
 {
   const sky = { ...builtinEffect("Galaxy Sky"), params: { TURN: 30 }, stage: "stage-id" }

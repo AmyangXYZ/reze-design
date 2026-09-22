@@ -238,7 +238,7 @@ import { findSkies, isStageOwnSky, skyThumbnail, type SkyCandidate } from "@/lib
 import { GpuErrorNotice } from "@/components/gpu-error-notice"
 import { toast } from "sonner"
 import { lipSyncVmdFile } from "@/lib/lipsync"
-import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, hexToLinearVec3, windFreqFromSlider, windSliderFromFreq, sceneOwned, type SceneSettings } from "@/lib/scene-settings"
+import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, hexToLinearVec3, windFreqFromSlider, windSliderFromFreq, sceneOwned, NO_FILL, type SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 import { storageKey } from "@/lib/storage"
 
@@ -3123,10 +3123,13 @@ export default function Lab() {
   const patch = useCallback(
     <K extends keyof SceneSettings>(key: K, part: Partial<SceneSettings[K]>) =>
       setSettings((s2) => {
-        const next = { ...s2[key], ...part }
-        // A hand on the sun or the world makes it the scene's own: the stage
-        // that set it no longer puts back the one it replaced.
-        return { ...s2, [key]: key === "sun" || key === "world" ? sceneOwned(next as { stage?: unknown }) : next }
+        const next = { ...(key === "fill" ? NO_FILL : undefined), ...s2[key], ...part }
+        // A hand on the sun, the world or the fill makes it the scene's own: the
+        // stage that set it no longer puts back the one it replaced.
+        return {
+          ...s2,
+          [key]: key === "sun" || key === "world" || key === "fill" ? sceneOwned(next as { stage?: unknown }) : next,
+        }
       }),
     [],
   )
@@ -5277,6 +5280,7 @@ export default function Lab() {
       ...s2,
       sun: s2.sun.stage && ids.has(s2.sun.stage.id) ? s2.sun.stage.before : s2.sun,
       world: s2.world.stage && ids.has(s2.world.stage.id) ? s2.world.stage.before : s2.world,
+      fill: s2.fill?.stage && ids.has(s2.fill.stage.id) ? s2.fill.stage.before : s2.fill,
     }))
     setHdri((prev) => {
       if (!prev || !gone.some((s) => isStageOwnSky(s.file, prev.name))) return prev
@@ -5349,6 +5353,15 @@ export default function Lab() {
           setSettings((s2) => {
             const own = sceneOwned(s2.sun)
             return { ...s2, sun: { ...own, ...sun, stage: { id, before: own } } }
+          })
+        }
+        // AND THE CAST'S FILL, claimed the same way: the light the game gives its
+        // characters apart from the room.
+        const fill = rig?.fill
+        if (fill) {
+          setSettings((s2) => {
+            const own = s2.fill ? sceneOwned(s2.fill) : NO_FILL
+            return { ...s2, fill: { ...fill, stage: { id, before: own } } }
           })
         }
         // AND ITS CANDLES. A stage that names wicks — bones flame.01 upward, as
@@ -9101,6 +9114,23 @@ export default function Lab() {
                             max={2}
                             step={0.01}
                             onChange={(v) => patch("world", { strength: v })}
+                            fmt={(v) => v.toFixed(2)}
+                          />
+                          {/* Light for the cast alone. A stage's World is right for
+                              its room and can leave a face in the dark; this lifts
+                              the cast without lifting the room. */}
+                          <ColorRow
+                            label={t.lab.ctl.castFill}
+                            value={(settings.fill ?? NO_FILL).color}
+                            onChange={(hex) => patch("fill", { color: hex })}
+                          />
+                          <SliderRow
+                            label={t.lab.ctl.strength}
+                            value={(settings.fill ?? NO_FILL).strength}
+                            min={0}
+                            max={4}
+                            step={0.01}
+                            onChange={(v) => patch("fill", { strength: v })}
                             fmt={(v) => v.toFixed(2)}
                           />
                         </TabsContent>

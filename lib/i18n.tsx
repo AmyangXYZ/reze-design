@@ -728,6 +728,8 @@ const en = {
       /** How soft the sun's shadow edge is. A property of the light, filed with
        *  the light, even though the floor is what receives it. */
       softness: "Shadow softness",
+      /** Light added to the cast alone — see settings.fill. */
+      castFill: "Cast fill",
       grid: "Grid lines",
       fade: "Fade",
       height: "Height",
@@ -1618,6 +1620,7 @@ const zh: Dictionary = {
       opacity: "不透明度",
       shadow: "阴影",
       softness: "阴影柔和度",
+      castFill: "角色补光",
       grid: "网格",
       fade: "渐隐",
       height: "高度",

@@ -922,8 +922,14 @@ export function stageLightsFromFile(
   lamps: SceneLight[]
   sun: Partial<SceneSettings["sun"]>
   effects: { name: string; params: Record<string, EffectParamValue> }[]
+  fill: { color: string; strength: number } | null
 } {
-  const raw = JSON.parse(text) as { lamps?: unknown[]; sun?: Record<string, unknown>; effects?: unknown[] }
+  const raw = JSON.parse(text) as {
+    lamps?: unknown[]
+    sun?: Record<string, unknown>
+    effects?: unknown[]
+    fill?: Record<string, unknown>
+  }
   const lamps = lightsFromDoc(
     (raw.lamps ?? []).map((l) => ({ ...(l as SceneLight), id: newLightId(), stage })),
   )
@@ -952,7 +958,13 @@ export function stageLightsFromFile(
     }
     return [{ name: entry.name, params }]
   })
-  return { lamps, sun, effects }
+  // The cast's fill — whole or not at all.
+  const f = raw.fill
+  const fill =
+    f && typeof f.color === "string" && /^#[0-9a-f]{6}$/i.test(f.color) && num(f.strength) && (f.strength as number) >= 0
+      ? { color: f.color, strength: f.strength as number }
+      : null
+  return { lamps, sun, effects, fill }
 }
 
 /** Join a folder URL and a filename. No encoding — see AssetRef.url. */

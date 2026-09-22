@@ -48,7 +48,7 @@ stage's moon billboard, in its colour, at the game key light's brightness, in
 place of the game's directional light. `--sky effect` leaves out the dome and
 every sky layer that wraps the stage and names the Galaxy Sky effect in
 `lights.json`; by default the game's effect-shader sky layers are baked into the
-PMX (`unity_effect_bake.py`). X309 ships as `--world none --key moon`.
+PMX (`unity_effect_bake.py`). X309 ships as `--key moon`.
 
 **No sidecar.** A material's relief map is found by name: `tex/T_D.png` pairs
 with `maps/T_N.png`, the set's own convention, so the folder states the pairing
@@ -65,6 +65,12 @@ lamps join the Lamps tab, each marked as the stage's, and the sun takes the
 game's direction, colour and strength. Uploading another stage replaces the
 lamps the last one brought; deleting the stage takes them with it. Lamps placed
 by hand are never touched.
+
+The rig also sets the **cast fill** (World tab): light added to the cast alone,
+from the game's `_probeLightingBase` — the base light it gives its characters
+apart from the room. A stage whose World is right for its room can leave a face
+turned from the lamps in the dark; the fill lifts the cast without lifting the
+room, and leaves with the stage like the sun.
 
 Position, aim, reach and the cone carry over as they are — the game's cone term
 is the engine's. Brightness has to be fitted, because the falloffs differ in

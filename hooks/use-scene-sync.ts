@@ -428,6 +428,19 @@ export function useSceneSync({
     for (const id of castIds) engine.setEyeTracking(id, settings.eyes.enabled ? {} : null)
   }, [engineRef, ready, castIds, settings.eyes])
 
+  // ── The cast's fill ──
+  //
+  // The same shape: per cast model, and again as models land. Only the cast —
+  // a stage or a prop wearing it would lift the room the fill exists to leave.
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine || !ready) return
+    const f = settings.fill
+    const c = f && f.strength > 0 ? hexToLinearVec3(f.color) : null
+    const fill = c ? new Vec3(c.x * f!.strength, c.y * f!.strength, c.z * f!.strength) : null
+    for (const id of castIds) engine.setModelFill(id, fill)
+  }, [engineRef, ready, castIds, settings.fill])
+
   /**
    * A dial moved, without reinstalling.
    *

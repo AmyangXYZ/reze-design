@@ -110,7 +110,7 @@ class Surfaces:
         if area <= 0:
             return
         centroid = ((a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3, (a[2] + b[2] + c[2]) / 3)
-        self.items.append((centroid, normal, area, layer, rendering_mask))
+        self.items.append((centroid, normal, area, layer, rendering_mask, (a, b, c)))
 
     def near(self, p, reach):
         if self._xs is None:
@@ -119,6 +119,32 @@ class Surfaces:
         lo = bisect.bisect_left(self._xs, p[0] - reach)
         hi = bisect.bisect_right(self._xs, p[0] + reach)
         return self.items[lo:hi]
+
+    def hit(self, origin, direction, reach, lit):
+        """The nearest triangle `lit` accepts that the ray meets within reach, as
+        (distance, its normal), or None. Every triangle is tried: one that
+        stretches under the ray can have its centre far outside any slab."""
+        best = None
+        for _c, n, _area, layer, rmask, (a, b, c) in self.items:
+            if not lit(layer, rmask):
+                continue
+            e1, e2 = _sub(b, a), _sub(c, a)
+            q = _cross(direction, e2)
+            det = _dot(e1, q)
+            if abs(det) < 1e-12:
+                continue
+            s0 = _sub(origin, a)
+            u = _dot(s0, q) / det
+            if u < 0.0 or u > 1.0:
+                continue
+            r = _cross(s0, e1)
+            v = _dot(direction, r) / det
+            if v < 0.0 or u + v > 1.0:
+                continue
+            t = _dot(e2, r) / det
+            if 1e-4 < t < reach and (best is None or t < best[0]):
+                best = (t, n)
+        return best
 
 
 class Cookie:
@@ -164,7 +190,7 @@ def fit_lamp(light, surfaces, cookie=None):
     game = [0.0, 0.0, 0.0]
     ours = 0.0
     r2 = r * r
-    for c, n, area, layer, rmask in surfaces.near(p, r):
+    for c, n, area, layer, rmask, _tri in surfaces.near(p, r):
         if not (light["cullingMask"] >> layer) & 1 or not (rmask & light["renderingLayerMask"]):
             continue
         d = _sub(p, c)
@@ -195,9 +221,25 @@ def fit_lamp(light, surfaces, cookie=None):
         ours += w * (1.0 - t2) ** 2
         for i in range(3):
             game[i] += g * k[i]
-    if ours <= 0:
-        return None
     radiance = game_radiance(light)
+    if ours <= 0:
+        # A SPOT CAN LIGHT WHAT ITS SAMPLES MISS. Triangles are weighed at their
+        # centres, so a narrow cone can light a triangle between them; and a
+        # spot can light nothing of the stage at all — X203a's three ceiling
+        # spots near the window end in open air, lighting whoever stands in the
+        # room. Such a lamp is fitted where its axis lands, or, landing nowhere,
+        # halfway along its reach: the two falloffs compared at that distance.
+        if not spot:
+            return None
+        hit = surfaces.hit(p, aim, r, lambda layer, rmask: (light["cullingMask"] >> layer) & 1 and rmask & light["renderingLayerMask"])
+        dist = max(hit[0] if hit and _dot(hit[1], aim) < 0 else 0.5 * r, math.sqrt(6.1035156e-05))
+        t2 = dist * dist / r2
+        mine = (1.0 - t2) ** 2
+        if mine <= 0:
+            return None
+        g = max(1.0 - t2 * t2, 0.0) ** 2 * min(1.0 / (dist * dist), cap)
+        k = cookie.at(0.5, 0.5) if cookie else (1.0, 1.0, 1.0)
+        return tuple(radiance[i] * k[i] * g / mine for i in range(3))
     return tuple(radiance[i] * game[i] / ours for i in range(3))
 
 

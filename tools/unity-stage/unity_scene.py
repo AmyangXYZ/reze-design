@@ -352,6 +352,9 @@ class Scene:
                 "equator": vector(shallow(body, "_equatorColor"), (1.0, 1.0, 1.0)),
                 "ground": vector(shallow(body, "_groundColor"), (0.0, 0.0, 0.0)),
                 "shadowColor": vector(shallow(body, "_realtimeShadowColor"), (0.0, 0.0, 0.0)),
+                # The base light the game gives what its light probes light — its
+                # characters — apart from the room's own ambient.
+                "probeLightingBase": vector(shallow(body, "_probeLightingBase"), None) if "_probeLightingBase:" in body else None,
                 # The scene's baked reflection probe — what its glossy surfaces
                 # actually mirror.
                 "reflectionGuid": (re.search(r"bakeReflectionTex:\s*\{fileID:\s*\d+,\s*guid:\s*([0-9a-f]{32})", body) or [None, None])[1],
