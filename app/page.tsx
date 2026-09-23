@@ -232,7 +232,7 @@ import {
 } from "reze-engine"
 import { LampMarkers } from "@/components/scene/lamp-markers"
 import { accessoryFiles, convertXUploads, isFromX, xUnlitMaterials } from "@/lib/x-file"
-import { convertGlbUploads, glbStageOf, glbStyleGroups } from "@/lib/gltf-stage"
+import { convertGlbUploads, glbStageOf, glbStyleGroups, stagePbrGraph } from "@/lib/gltf-stage"
 import { readRayMmd, type RayStage } from "@/lib/ray-mmd"
 import { loadMaterialMaps, setMaterialMaps } from "@/lib/material-maps"
 import { findSkies, isStageOwnSky, skyThumbnail, type SkyCandidate } from "@/lib/stage-skies"
@@ -5172,7 +5172,14 @@ export default function Lab() {
       // its materials' maps as it goes to the engine, so they have to be
       // resident first. A stage without one clears whatever the last model
       // under this id left behind, which is the same call doing that job.
-      await loadMaterialMaps(id, files, relFilePath(pmx), relFilePath, engineRef.current?.getModel(id))
+      const mapReport = await loadMaterialMaps(id, files, relFilePath(pmx), relFilePath, engineRef.current?.getModel(id))
+      if (mapReport) {
+        console.info(
+          `[stage] maps: ${mapReport.decoded}/${mapReport.materials} materials bound an ORM` +
+            (mapReport.missing.length ? ` — without: ${mapReport.missing.slice(0, 4).join(", ")}` : "") +
+            `\n  a material without one samples the 1x1 white stand-in: roughness 1, metal 1, so no highlight and nothing that moves with the camera`,
+        )
+      }
       // THE STAGE'S OWN WORLD, into the World slot — when nothing is there yet.
       //
       // Not just the reflection probe: the converter bakes the scene's ambient
@@ -5311,9 +5318,11 @@ export default function Lab() {
     }
   }
 
-  const loadPicked = async (files: File[], pmx: File, target: ModelTarget) => {
+  const loadPicked = async (files: File[], pmx: File, target: ModelTarget, toastId = `upload:${Date.now()}`) => {
     setUpload(null)
     setUploading((n) => n + 1)
+    const name = pmx.name.split("/").pop()!.replace(/\.pmx$/i, "")
+    toast.loading(t.lab.uploadLoading(name), { id: toastId })
     try {
       if (target.mode === "stage") {
         // The .x accessories in the folder are the same set as its .pmx — the
@@ -5329,6 +5338,7 @@ export default function Lab() {
           pmx,
           addStageFromFiles,
         )
+        toast.loading(t.lab.uploadPlacing, { id: toastId })
         for (const part of parts) {
           const partId = await addStagePartFromFiles(accessoryFiles(files, part), part)
           styleAccessory(partId, part)
@@ -5428,6 +5438,37 @@ export default function Lab() {
           setBgEffects((list) => (list.some((e) => e.name === fx.name) ? list : [...list, applied]))
         }
         noteArrival(id)
+        // WHAT THE STAGE ACTUALLY BECAME. A frame that does not look like the
+        // game's goes wrong in one of three places, and a screenshot shows none
+        // of them: which shader the engine compiled, what the World slot
+        // resolved to, and how many lamps arrived. Printed once per stage, to
+        // be copied out of the console.
+        //
+        // Two frames late on purpose — the lamps and the world reach the engine
+        // through scene state, not through this call, so reading them here
+        // reads the stage before it.
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            try {
+              const eng = engineRef.current
+              const wgsl = compileGraph(stagePbrGraph(0)).wgsl ?? ""
+              const w = eng?.getWorldLighting()
+              const r3 = (v: number) => Math.round(v * 1000) / 1000
+              const mats = eng?.getModel(id)?.getMaterials() ?? []
+              console.info(
+                [
+                  `[stage] ${id}: ${mats.length} materials`,
+                  `  engine   lamp specular ${wgsl.includes("rzLampsSpecular") ? "yes" : "NO — the build is stale"}, world reflection ${wgsl.includes("rzWorldSpecular(reflect") ? "yes" : "NO — the build is stale"}`,
+                  `  world    ${w ? `${w.source} strength=${r3(w.strength)} up=[${w.up.map(r3)}] down=[${w.down.map(r3)}]` : "no engine"}`,
+                  `  lamps    ${eng?.getLightCount() ?? "?"} in the engine, ${rig?.lamps?.length ?? 0} in the rig`,
+                  `  sun      ${rig?.sun ? JSON.stringify(rig.sun) : "none"}`,
+                ].join("\n"),
+              )
+            } catch (e) {
+              console.warn("[stage] the report could not be taken:", e)
+            }
+          }),
+        )
         setStageTab("stage")
         // A stage folder that brought skies offers them; which one is yours.
         const own = new Set(
@@ -5449,11 +5490,11 @@ export default function Lab() {
         noteStyled(target.id)
         noteArrival(newId)
       } else noteArrival(await addModelFromFiles(files, pmx))
+      toast.success(t.lab.uploadDone(name), { id: toastId })
     } catch (e) {
-      setUpload({
-        kind: "notice",
-        message: e instanceof Error ? e.message : String(e),
-      })
+      const message = e instanceof Error ? e.message : String(e)
+      toast.error(t.lab.uploadFailed(name), { id: toastId, description: message })
+      setUpload({ kind: "notice", message })
     } finally {
       setUploading((n) => n - 1)
     }
@@ -5462,6 +5503,12 @@ export default function Lab() {
   const onModelPicked = async (list: File[]) => {
     if (!list.length) return
     const target = modelTarget.current
+    // ONE TOAST FOR THE WHOLE ARRIVAL, bottom-right, reworded at each stage and
+    // resolved by loadPicked with the model's name. A stage is a quarter of a
+    // gigabyte read, converted, loaded and styled, and until this the only sign
+    // any of it was happening was the cursor.
+    const toastId = `upload:${Date.now()}`
+    toast.loading(t.lab.uploadReading, { id: toastId })
     let files: File[]
     try {
       // Folder contents arrive as many files; a zip as one. Either way this
@@ -5470,12 +5517,15 @@ export default function Lab() {
       // An MMD .x accessory is scenery, so scenery uploads read it as a PMX,
       // and a .glb — the file Blender exports — reads as the folder a
       // converted stage is.
-      if (target.mode === "stage" || target.mode === "prop") files = await convertGlbUploads(await convertXUploads(files))
+      if (target.mode === "stage" || target.mode === "prop") {
+        const glb = files.find((f) => /\.glb$/i.test(f.name))
+        if (glb) toast.loading(t.lab.uploadConverting(glb.name.split("/").pop() ?? glb.name), { id: toastId })
+        files = await convertGlbUploads(await convertXUploads(files))
+      }
     } catch (e) {
-      setUpload({
-        kind: "notice",
-        message: e instanceof Error ? e.message : String(e),
-      })
+      const message = e instanceof Error ? e.message : String(e)
+      toast.error(t.lab.uploadFailed(list[0].name), { id: toastId, description: message })
+      setUpload({ kind: "notice", message })
       return
     }
     // A converted .x is not a model the folder offered — it loads beside the
@@ -5484,15 +5534,18 @@ export default function Lab() {
     const own = models.filter((f) => !isFromX(f))
     const pmx = own.length ? own : models
     if (pmx.length === 0) {
+      toast.dismiss(toastId)
       setUpload({
         kind: "notice",
         message: t.lab.noPmx,
       })
     } else if (pmx.length === 1) {
-      await loadPicked(files, pmx[0], target)
+      await loadPicked(files, pmx[0], target, toastId)
     } else {
       // Several models in one folder (a costume pack, a stage set) — ask, do not
-      // guess. Paths sorted so the same folder always lists the same way.
+      // guess. Paths sorted so the same folder always lists the same way. The
+      // toast ends here; the pick starts its own when a model is chosen.
+      toast.dismiss(toastId)
       setUpload({
         kind: "pick",
         files,

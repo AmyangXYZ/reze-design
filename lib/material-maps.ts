@@ -137,9 +137,10 @@ export async function loadMaterialMaps(
   const byPath = new Map(files.map((f) => [pathOf(f), f]))
   const dir = pmxPath.slice(0, pmxPath.lastIndexOf("/") + 1)
   const materials = model ? namedMaps(model, byPath, dir) : {}
+  const count = model ? model.getMaterials().length : 0
   if (!Object.keys(materials).length) {
     clearMaterialMaps(modelId)
-    return
+    return { materials: count, named: 0, decoded: 0, missing: [] }
   }
   const decoded = new Map<string, Promise<ImageBitmap | null>>()
   const decode = (path: string) => {
@@ -169,4 +170,17 @@ export async function loadMaterialMaps(
     }),
   )
   setMaterialMaps(modelId, byMaterial)
+  // What actually bound. An unbound slot is not an absence — it is the 1x1
+  // WHITE stand-in, and white in an ORM map reads as roughness 1 and metal 1:
+  // a fully rough metal, which has no diffuse of its own and no highlight to
+  // find. The surface keeps its texture and its lamps and loses every trace of
+  // the camera, which is indistinguishable from a bad shader unless something
+  // says out loud whether the map arrived.
+  const missing: string[] = []
+  let bound = 0
+  for (const [name, images] of byMaterial) {
+    if (images[1]) bound++
+    else missing.push(name)
+  }
+  return { materials: count, named: Object.keys(materials).length, decoded: bound, missing }
 }

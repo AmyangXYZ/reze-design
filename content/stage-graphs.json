@@ -5313,31 +5313,6 @@
        "sheen_weight": 0,
        "sheen_tint": 0
       }
-     },
-     {
-      "id": "sky",
-      "type": "environment"
-     },
-     {
-      "id": "facing",
-      "type": "layer_weight/fresnel",
-      "inputs": {
-       "blend": 0.5
-      }
-     },
-     {
-      "id": "reflect",
-      "type": "math/multiply",
-      "inputs": {
-       "b": 0.5
-      }
-     },
-     {
-      "id": "lit",
-      "type": "mix/add",
-      "inputs": {
-       "fac": 1
-      }
      }
     ],
     "links": [
@@ -5500,60 +5475,10 @@
        "node": "principled",
        "socket": "normal"
       }
-     },
-     {
-      "from": {
-       "node": "rough",
-       "socket": "value"
-      },
-      "to": {
-       "node": "sky",
-       "socket": "roughness"
-      }
-     },
-     {
-      "from": {
-       "node": "facing",
-       "socket": "value"
-      },
-      "to": {
-       "node": "reflect",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
-       "node": "principled",
-       "socket": "color"
-      },
-      "to": {
-       "node": "lit",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
-       "node": "sky",
-       "socket": "color"
-      },
-      "to": {
-       "node": "lit",
-       "socket": "b"
-      }
-     },
-     {
-      "from": {
-       "node": "reflect",
-       "socket": "value"
-      },
-      "to": {
-       "node": "lit",
-       "socket": "fac"
-      }
      }
     ],
     "output": {
-     "node": "lit",
+     "node": "principled",
      "socket": "color"
     }
    }

@@ -87,7 +87,9 @@ assert.ok(Math.abs(rig.sun.elevation - RIG_SUN.elevation) < 0.15, `sun elevation
 assert.ok(Math.abs(rig.sun.strength - RIG_SUN.strength) / RIG_SUN.strength < 0.01, `sun strength ${rig.sun.strength} vs ${RIG_SUN.strength}`)
 assert.equal(rig.sun.color, RIG_SUN.color)
 assert.deepEqual(rig.fill, RIG_FILL)
-assert.equal(rig.view, undefined, "a Unity stage names no view; the scene keeps its own")
+// The view the .blend was set to, so the stage arrives looking as the .blend
+// renders it: Filmic at +0.6, the same field export_stage.py writes.
+assert.deepEqual(rig.view, { transform: "filmic", exposure: 0.6 }, "a Unity stage carries the view its .blend renders under")
 
 // ── The looks ──
 const groups = glbStyleGroups(stage.materials)

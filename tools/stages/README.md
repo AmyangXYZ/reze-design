@@ -64,7 +64,12 @@ look to in the app.
 |---|---|
 | `X323.glb` | the whole stage: geometry in metres, one material per Unity material with its albedo, its occlusion-roughness-metal map in glTF's order, its normal map and its emissive map; the lamps and the sun as `KHR_lights_punctual`; and under `extras.reze` the world, the cast's fill and the view the game forms its frame with |
 | `X323.blend` | the same scene, textures packed, viewed under Filmic +0.6 as the app views it |
-| `build/` | what Blender was built from: `scene.json`, geometry, the maps as packed |
+| `../x323-glb-build/` | what Blender was built from: `scene.json`, geometry, the maps as packed |
+
+The build folder sits BESIDE the stage folder, because the folder named by
+`--out` is what a person uploads and everything in it is read as part of the
+stage: its textures include the game's sky panoramas, and a stage that brought
+one is offered it to choose from.
 
 **Textures are copied, not resized.** A 2048 albedo arrives as a 2048 albedo.
 The property map is repacked, once per material remap: the game keeps metal in
@@ -95,6 +100,26 @@ the direction and the shadow. The cast's fill is `_probeLightingBase`.
 `e = max((a − min.a) / (max.a − min.a), 0)`, and where e passes 1 the pixel is
 the albedo times it and lighting has no say. X203a's paper lamp reaches 2.6, its
 monitors more. The global `_EmissionIntensity` that would dim it is 0.
+
+**The world.** The scene's baked reflection probe, at the level the game baked
+it. A probe is a BC6H cube — half floats, values far above white, which is where
+a room's windows and lamps live — and its blocks travel in the `.asset` as
+`_typelessdata`; Blender decodes them, so the file is read with the decoder the
+pipeline already has. The PNG an AssetRipper export writes beside it is that
+cube flattened to 8 bits, and a room lit by what survived that reads as muddy:
+what makes a dark room look lit is its highlights.
+
+Unity lights with two separate things, a trilight ambient for diffuse and the
+probe for what speculars mirror, and this engine has one world doing both jobs,
+so the image is the probe plus, per direction, whatever the ambient asks for
+above what the probe already gives — `probe + max(0, gradient − smooth)`, where
+smooth is the probe's own harmonics through l=2. Diffuse lands on the ambient
+the scene declares; a highlight brighter than the gradient is left as the game
+baked it. X333's world carries 0.35% of the sphere above white, to 7.5.
+
+The cube is looked up at the Unity direction for the engine direction it fills:
+X mirrors on the way to glTF and Z on the way in, so a probe sampled as-is is
+the room reflected half a turn against itself.
 
 **Left out, and listed when the converter runs:** renderers and lights the game
 switches off (on themselves or through a parent), a second directional light,

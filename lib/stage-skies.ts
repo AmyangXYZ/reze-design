@@ -6,6 +6,12 @@
 // equirect still is exactly 2:1. The stage's own textures and channel-packed
 // maps (_M, _M_L, _N) are left out, and one file copied into several folders is
 // offered once.
+//
+// A `maps/` folder is the style group's own — normals, ORM, emissive, by the
+// convention lib/material-maps.ts reads — so nothing in it is a sky, whatever
+// its shape. The model's texture table does not name those files, so they are
+// invisible to `stageTextures`: a glTF stage offered its sky material's
+// emissive map, at 2048x1024, as a panorama to choose from.
 
 import { relFilePath } from "@/lib/scene-files"
 import { decodeTga } from "@/lib/tga"
@@ -55,8 +61,10 @@ async function headerSize(file: File): Promise<{ width: number; height: number }
 export async function findSkies(files: File[], stageTextures: Set<string>): Promise<SkyCandidate[]> {
   const seen = new Set<string>()
   const picked = files.filter((f) => {
-    const name = baseOf(relFilePath(f))
+    const path = relFilePath(f)
+    const name = baseOf(path)
     if (!/\.(tga|png|jpe?g|bmp)$/i.test(name)) return false
+    if (/(^|\/)maps\//i.test(path)) return false
     if (/_(m|m_l|n|l)\.[^.]+$/i.test(name)) return false
     if (stageTextures.has(name.toLowerCase())) return false
     const key = `${name.toLowerCase()}:${f.size}`

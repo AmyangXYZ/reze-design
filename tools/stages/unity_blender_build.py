@@ -281,6 +281,11 @@ scene["reze"] = {
         "pmxPerMetre": PMX_PER_METRE,
         "fill": scene_json["fill"],
         "world": {"format": "hdr", "base64": world_b64} if world_b64 else None,
+        # The view the .blend below is set to, stated so the stage arrives
+        # looking as the .blend renders it rather than under whatever the scene
+        # was already on — the same field export_stage.py writes for a .blend
+        # built by hand.
+        "view": {"transform": "Filmic", "look": "None", "exposure": 0.6},
         "notes": scene_json["notes"],
 }
 

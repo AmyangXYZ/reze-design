@@ -42,13 +42,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from unity_effect_bake import _linear_to_srgb, _srgb_to_linear, bake as bake_effect, repeats_across  # noqa: E402
 from unity_lights import gamma_to_linear  # noqa: E402
+from unity_probe import probe_to_equirect  # noqa: E402
 from unity_scene import Project, Scene, read_material  # noqa: E402
 from unity_materials import (  # noqa: E402
     ALBEDO_SLOTS,
     BACKDROP_EFFECTS,
     PROPERTY_SLOTS,
     albedo_slot,
-    cube_strip_to_equirect,
     decal_has_coverage,
     face_origin,
     is_effect_decal,
@@ -222,7 +222,13 @@ def copy_texture(src, out_tex, copied):
 def prepare(project_root, scene_path, out_dir, name, png_root=None):
     proj = Project(project_root)
     scene = Scene(os.path.join(project_root, scene_path))
-    build = os.path.join(out_dir, "build")
+    # BESIDE the stage folder, never inside it: the folder named by --out is
+    # what a person uploads, and everything in it is read as part of the stage.
+    # The pre-pass's own textures include the game's sky panoramas, and a stage
+    # that brought a panorama is offered it to choose from — x333 asked which of
+    # Common_sky_19 and Common_sky_125 was its sky, neither being a file the
+    # stage uses. What Blender was built from is an input, not a deliverable.
+    build = os.path.join(os.path.dirname(os.path.abspath(out_dir)), f"{os.path.basename(os.path.abspath(out_dir))}-build")
     out_tex = os.path.join(build, "tex")
     out_geo = os.path.join(build, "geo")
     shutil.rmtree(build, ignore_errors=True)
@@ -426,7 +432,14 @@ def prepare(project_root, scene_path, out_dir, name, png_root=None):
         premult = bool(mat) and "TRANSPARENT_PREMULT" in mat["keywords"]
         cutoff = bool(mat) and "CUTOFF" in mat["keywords"]
         lit_family = family in ("Glass", "Ripplet")
-        unlit = bool(mat) and not lit_family and (sky_material or premult or is_effect_decal(shader))
+        # UNLIT IS THE SHADER'S TO SAY, never a blend keyword's. A sky and an
+        # effect sheet take no light; TRANSPARENT_PREMULT is how a surface is
+        # COMPOSITED and says nothing about whether it is lit. Reading it as
+        # unlit turned X340's floor circle — premultiplied, and carrying the
+        # game's own _DEFAULT_REFLECTION and _REAL_REFLECTION — into a flat
+        # picture that no lamp reached and no camera move changed, over a floor
+        # that was lit correctly underneath it.
+        unlit = bool(mat) and not lit_family and (sky_material or is_effect_decal(shader))
         additive = bool(mat) and float(mat["floats"].get("_DstBlend", 10.0)) == 1.0 and is_effect_decal(shader)
         alpha_mode = "MASK" if cutoff else ("BLEND" if (alpha < 1.0 or premult or is_effect_decal(shader) or baked) else "OPAQUE")
         materials.append(
@@ -492,12 +505,11 @@ def prepare(project_root, scene_path, out_dir, name, png_root=None):
         fill = {"color": [gamma_to_linear(c) for c in look["probeLightingBase"]], "strength": 1.0}
 
     world = None
-    probe = png_for(png_root, proj.path(look["reflectionGuid"]) or "") if look.get("reflectionGuid") else None
+    probe = proj.path(look["reflectionGuid"]) if look.get("reflectionGuid") else None
     if probe:
         hdr = os.path.join(build, f"{name}.hdr")
-        ambient = scene.ambient()
         try:
-            cube_strip_to_equirect(probe, hdr, ambient=ambient if ambient and ambient["mode"] == 1 else None)
+            probe_to_equirect(probe, hdr, ambient=scene.ambient(), blender=BLENDER)
             world = {"hdr": f"{name}.hdr"}
         except Exception as e:  # noqa: BLE001
             notes.append(f"reflection probe not converted: {e}")
