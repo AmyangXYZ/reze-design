@@ -440,6 +440,13 @@ export const xUnlitMaterials = (pmx: File) => converted.get(pmx)?.unlit
 /** Whether this PMX is a .x accessory converted on upload. */
 export const isFromX = (pmx: File) => converted.has(pmx)
 
+/** Keyed by the File object, like gltf-stage's: a .pmx that is rewritten and
+ *  handed back as a new File keeps its .x origin only if it is carried here. */
+export function carryXFile(from: File, to: File): void {
+  const x = converted.get(from)
+  if (x && from !== to) converted.set(to, x)
+}
+
 /**
  * A converted accessory and the files its materials read, found the way the
  * engine finds a texture: at its path, else by name. What to keep for it when it

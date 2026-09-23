@@ -747,6 +747,10 @@ export function glbStyleGroups(materials: GlbMaterial[]): StyleGroup[] {
         graph: stagePbrGraph(m.emissiveStrength),
         renderClass: "auto",
         ...(hashed ? { alphaMode: "hashed" as const } : {}),
+        // NOT blend: "additive" — see the note above the key. The engine can now
+        // say it, but these materials have no diffuse texture, so tex_s is the
+        // 1x1 white fallback and they were never being discarded on alpha; the
+        // blend was a fix for a problem they did not have.
       }),
       m.name,
     )
@@ -761,6 +765,21 @@ const converted = new WeakMap<File, { materials: GlbMaterial[]; notes: string[] 
 
 export const isFromGlb = (pmx: File) => converted.has(pmx)
 export const glbStageOf = (pmx: File) => converted.get(pmx)
+
+/**
+ * The identity a rewritten .pmx has to keep.
+ *
+ * KEYED BY THE FILE OBJECT, so anything that replaces the .pmx — the texture
+ * transcode rewrites its table and returns a new File — loses it unless it says
+ * so here. When it was lost, glbStageOf came back empty, the stage fell through
+ * to the name-based looks a PMX gets, and X309's sky layers lost the ×16
+ * emission that IS their picture: the dome stayed, the galaxy went, and nothing
+ * about textures or blending could bring it back.
+ */
+export function carryGlbStage(from: File, to: File): void {
+  const glb = converted.get(from)
+  if (glb && from !== to) converted.set(to, glb)
+}
 
 /** A 1x1 PNG of one colour, for a map slot the material did not bring. */
 async function solidPng(r: number, g: number, b: number): Promise<Blob> {

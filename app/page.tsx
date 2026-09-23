@@ -231,8 +231,8 @@ import {
   UNLIT_GRAPH,
 } from "reze-engine"
 import { LampMarkers } from "@/components/scene/lamp-markers"
-import { accessoryFiles, convertXUploads, isFromX, xUnlitMaterials } from "@/lib/x-file"
-import { convertGlbUploads, glbStageOf, glbStyleGroups, stagePbrGraph } from "@/lib/gltf-stage"
+import { accessoryFiles, carryXFile, convertXUploads, isFromX, xUnlitMaterials } from "@/lib/x-file"
+import { carryGlbStage, convertGlbUploads, glbStageOf, glbStyleGroups, stagePbrGraph } from "@/lib/gltf-stage"
 import { texturesToWebp } from "@/lib/texture-webp"
 import { readRayMmd, type RayStage } from "@/lib/ray-mmd"
 import { loadMaterialMaps, setMaterialMaps } from "@/lib/material-maps"
@@ -5351,12 +5351,19 @@ export default function Lab() {
         const webp = await texturesToWebp(files, pmx, (d, total) => toast.loading(t.lab.uploadTexturing(d, total), { id: toastId }))
         files = webp.files
         pmx = webp.pmx
-        if (webp.report.converted)
-          console.info(
-            `[webp] ${name}: ${webp.report.converted} textures, ` +
-              `${(webp.report.before / 1e6).toFixed(1)} MB -> ${(webp.report.after / 1e6).toFixed(1)} MB ` +
-              `(${(webp.report.before / Math.max(webp.report.after, 1)).toFixed(1)}x)`,
-          )
+        // A rewritten .pmx is a NEW File, and what a .glb or an .x became is
+        // keyed by the File object: without this the stage forgets it came from
+        // a .glb, falls through to name-based looks, and its emissive sky
+        // layers go dark — the galaxy that vanished from X309.
+        carryGlbStage(pmx0, pmx)
+        carryXFile(pmx0, pmx)
+        console.info(
+          `[webp] ${name}: ${webp.report.converted} converted ` +
+            `${(webp.report.before / 1e6).toFixed(1)} MB -> ${(webp.report.after / 1e6).toFixed(1)} MB ` +
+            `(${(webp.report.before / Math.max(webp.report.after, 1)).toFixed(1)}x); ` +
+            `${webp.report.kept} left as they were (${(webp.report.kept_mb / 1e6).toFixed(1)} MB) — ` +
+            `an alpha-bearing texture is kept, because a canvas eats the colour under it`,
+        )
       } catch (e) {
         console.warn(`[webp] ${name}: textures left as they were`, e)
         files = files0
@@ -5496,7 +5503,7 @@ export default function Lab() {
               const mats = eng?.getModel(id)?.getMaterials() ?? []
               console.info(
                 [
-                  `[stage] ${id}: ${mats.length} materials`,
+                  `[stage] ${id}: ${mats.length} materials, ${glbStageOf(pmx) ? "from a .glb (Stage PBR looks)" : "from a .pmx (name-based looks)"}`,
                   `  engine   lamp specular ${wgsl.includes("rzLampsSpecular") ? "yes" : "NO — the build is stale"}, world reflection ${wgsl.includes("rzWorldSpecular(reflect") ? "yes" : "NO — the build is stale"}`,
                   `  world    ${w ? `${w.source} strength=${r3(w.strength)} up=[${w.up.map(r3)}] down=[${w.down.map(r3)}]` : "no engine"}`,
                   `  lamps    ${eng?.getLightCount() ?? "?"} in the engine, ${rig?.lamps?.length ?? 0} in the rig`,

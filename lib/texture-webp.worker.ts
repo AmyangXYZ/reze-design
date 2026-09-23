@@ -15,6 +15,7 @@
 // and the upload keeps the original file.
 
 import { decodeTga } from "./tga"
+import { declaresAlpha, opaqueEverywhere } from "./texture-alpha"
 
 export type WebpJob = { id: number; buffer: ArrayBuffer; path: string; quality: number }
 export type WebpDone = { id: number; ok: true; out: ArrayBuffer } | { id: number; ok: false }
@@ -40,6 +41,13 @@ ctx.onmessage = async (e: MessageEvent<WebpJob>) => {
     }
     c2d.drawImage(bitmap, 0, 0)
     bitmap.close()
+    // A texture with anything behind its alpha is left as it was — see
+    // texture-alpha.ts. The canvas has already eaten the colour by now; this
+    // decides whether to hand back the damage or the original.
+    if (declaresAlpha(buffer, path) && !opaqueEverywhere(c2d, canvas.width, canvas.height)) {
+      ctx.postMessage({ id, ok: false } satisfies WebpDone)
+      return
+    }
     const out = await (await canvas.convertToBlob({ type: "image/webp", quality })).arrayBuffer()
     ctx.postMessage({ id, ok: true, out } satisfies WebpDone, [out])
   } catch {

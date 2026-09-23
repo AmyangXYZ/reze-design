@@ -7,11 +7,15 @@
 // the bundle, a publish and a fork all see one texture, encoded exactly once.
 // Re-encoding on republish is what would cost a generation, and there is none.
 //
-// LEFT ALONE, each for its own reason: JPEG and WebP, already lossy, so a round
-// trip costs a generation and buys little; `.spa` and `.sph`, MMD's sphere maps,
-// whose names are read by enough things that renaming them is not worth the
-// bytes; `.dds`, which the browser cannot decode at all; and anything small
-// enough that the encoder cannot beat it.
+// LEFT ALONE, each for its own reason: anything not opaque in every pixel,
+// because a 2D canvas is premultiplied and destroys the colour under low alpha
+// — see texture-alpha.ts, and X309's additive night sky, which it turned black;
+// JPEG and WebP, already lossy, so a round trip costs a generation and buys
+// little; `.spa` and `.sph`, MMD's sphere maps, whose names are read by enough
+// things that renaming them is not worth the bytes; `.dds`, which the browser
+// cannot decode at all; and anything small enough that the encoder cannot beat
+// it. Opaque images are 90-95% of a stage's texture bytes, so the guard costs
+// almost nothing.
 //
 // A FILE THAT GREW KEEPS ITS ORIGINAL. Flat colour and small palettes are
 // exactly what PNG is good at, and a stand-in map or a 64px ramp often comes
@@ -29,6 +33,7 @@
 import { readPmxDocument, writePmxDocument } from "reze-engine"
 import { decodeTga } from "@/lib/tga"
 import { relFilePath } from "@/lib/scene-files"
+import { declaresAlpha, opaqueEverywhere } from "@/lib/texture-alpha"
 import type { WebpDone, WebpJob } from "@/lib/texture-webp.worker"
 
 /** What is worth converting. TGA and BMP are uncompressed; PNG is the bulk. */
@@ -40,7 +45,7 @@ const QUALITY = 0.9
  *  on. Generous: a 4K TGA on a slow machine is seconds, not minutes. */
 const JOB_TIMEOUT = 60_000
 
-export type WebpReport = { converted: number; before: number; after: number }
+export type WebpReport = { converted: number; before: number; after: number; kept: number; kept_mb: number }
 
 /** The main-thread encoder — the fallback, and the whole implementation on a
  *  browser with no module workers. */
@@ -61,6 +66,7 @@ async function encodeHere(buffer: ArrayBuffer, path: string): Promise<ArrayBuffe
     }
     c2d.drawImage(bitmap, 0, 0)
     bitmap.close()
+    if (declaresAlpha(buffer, path) && !opaqueEverywhere(c2d, canvas.width, canvas.height)) return null
     return await (await canvas.convertToBlob({ type: "image/webp", quality: QUALITY })).arrayBuffer()
   } catch {
     return null
@@ -160,14 +166,14 @@ export async function texturesToWebp(
   pmx: File,
   onProgress?: (done: number, total: number) => void,
 ): Promise<{ files: File[]; pmx: File; report: WebpReport }> {
-  const untouched = { files, pmx, report: { converted: 0, before: 0, after: 0 } }
+  const untouched = { files, pmx, report: { converted: 0, before: 0, after: 0, kept: 0, kept_mb: 0 } }
   // The encoder every path here needs. Without it there is nothing to fall back
   // to, so the upload proceeds exactly as it did before this existed.
   if (typeof OffscreenCanvas === "undefined" || typeof createImageBitmap === "undefined") return untouched
   const targets = files.filter((f) => CONVERT.test(relFilePath(f)) && f.size > FLOOR)
   if (!targets.length) return untouched
 
-  const report: WebpReport = { converted: 0, before: 0, after: 0 }
+  const report: WebpReport = { converted: 0, before: 0, after: 0, kept: 0, kept_mb: 0 }
   const replaced = new Map<File, File>()
   /** Old basename, lower-case, to the new one — how the .pmx is rewritten. */
   const renamed = new Map<string, string>()
@@ -191,7 +197,12 @@ export async function texturesToWebp(
         }
         done++
         onProgress?.(done, targets.length)
-        if (!out || out.byteLength >= file.size) continue
+        if (!out || out.byteLength >= file.size) {
+          // Left as it was — an encoder that refused it, or the alpha guard.
+          report.kept++
+          report.kept_mb += file.size
+          continue
+        }
         const to = path.replace(/\.[^./]+$/, ".webp")
         replaced.set(file, new File([out], to, { type: "image/webp" }))
         renamed.set((path.split("/").pop() ?? path).toLowerCase(), to.split("/").pop()!)
