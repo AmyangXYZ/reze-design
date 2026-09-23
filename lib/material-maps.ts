@@ -66,7 +66,7 @@ type MapRef = { path: string; srgb: boolean } | null
 
 /** A name a file system and a zip both take, applied identically by whatever
  *  writes the maps — see `namedMaps`. */
-const fileSafe = (name: string) => name.replace(/[^A-Za-z0-9_.-]/g, "_")
+export const fileSafe = (name: string) => name.replace(/[^A-Za-z0-9_.-]/g, "_")
 
 /**
  * The maps a model states by NAMING.
@@ -115,6 +115,22 @@ function namedMaps(model: Model, byPath: Map<string, File>, dir: string): Record
     const rel = `maps/${base}_N.png`
     if (byPath.has(dir + rel)) out[m.name] = [{ path: rel, srgb: false }]
   }
+  return out
+}
+
+/**
+ * Every map file the rule above would bind, by path.
+ *
+ * The bundle has to carry exactly these for a model's looks to come back, and
+ * asking `namedMaps` rather than restating its naming is the point: a bundle
+ * that packed a different set than the loader looks for is a stage that reloads
+ * without its relief.
+ */
+export function materialMapPaths(model: Model, files: File[], pathOf: (f: File) => string, pmxPath: string): string[] {
+  const byPath = new Map(files.map((f) => [pathOf(f), f]))
+  const dir = pmxPath.slice(0, pmxPath.lastIndexOf("/") + 1)
+  const out: string[] = []
+  for (const refs of Object.values(namedMaps(model, byPath, dir))) for (const r of refs) if (r) out.push(dir + r.path)
   return out
 }
 

@@ -8,8 +8,8 @@ import { Engine, parseLRC, parseMidi, Vec3, type ApplyStyleGroupResult, type Com
 import { rasterizeLyrics } from "@/lib/lyrics-raster"
 import { modelKey, type Scene, type SceneAttach, type SceneCamera, type SceneParentKey, type StageSun } from "@/lib/scene"
 import { sweepRetiredBundles } from "@/lib/asset-store"
-import { sceneFiles } from "@/lib/scene-files"
-import { clearMaterialMaps, withMaterialMaps } from "@/lib/material-maps"
+import { referencedFiles, relFilePath, sceneFiles } from "@/lib/scene-files"
+import { clearMaterialMaps, materialMapPaths, withMaterialMaps } from "@/lib/material-maps"
 import { createMediaFollower, type MediaFollower } from "@/lib/media-clock"
 import { azElToDirection, hexToLinearVec3, hexToSrgbVec3 } from "@/lib/scene-settings"
 import {
@@ -368,14 +368,24 @@ export function useEngine(
   }
 
   /** ADD a model to the scene (folder pick / zip expansion / drop). */
+  /**
+   * Retain what the model USES, not what the picker handed over — see
+   * referencedFiles. Called once the model is loaded, because its texture table
+   * is the authority on which of the uploaded files are live.
+   */
+  const retainModelFiles = (id: string, pmxFile: File, all: File[], model: { getTextures(): { path: string }[]; getMaterials(): { name: string }[] }) => {
+    const maps = materialMapPaths(model as never, all, relFilePath, relFilePath(pmxFile))
+    sceneFiles.models.set(id, { pmx: pmxFile, files: referencedFiles(all, pmxFile, model, maps) })
+  }
+
   const addModelFromFiles = useCallback(async (files: File[] | FileList, pmxFile: File): Promise<string> => {
     const engine = engineRef.current
     if (!engine) throw new Error("engine not ready")
     const id = uniqueModelId(pmxFile.name)
     // Retained for zip-on-publish — the engine consumes the bytes, the bundle
     // needs them again.
-    sceneFiles.models.set(id, { pmx: pmxFile, files: Array.from(files) })
     const model = await engine.loadModel(id, { files, pmxFile })
+    retainModelFiles(id, pmxFile, Array.from(files), model)
     // HIDDEN until it is finished. A loaded model draws immediately, so without
     // this the arrival is three separate events: a raw untextured mesh, then the
     // same mesh restyled a beat later, then its row appearing in the dock. The
@@ -442,8 +452,8 @@ export function useEngine(
       hidden: (modelsRef.current.find((m) => m.id === id)?.materials ?? []).filter((m) => !m.visible).map((m) => m.name),
     }
     for (const prev of replaced) removeModelById(prev.id)
-    sceneFiles.models.set(id, { pmx: pmxFile, files: Array.from(files) })
     const model = await engine.loadStage(id, { files, pmxFile })
+    retainModelFiles(id, pmxFile, Array.from(files), model)
     // Deliberately NOT auto-grouped. resolvePreset matches material names by
     // substring against character hints (hair / eye / 髪 / 肌 …), and a stage's
     // materials are named for architecture. A chance hit does not just pick an
@@ -502,8 +512,8 @@ export function useEngine(
     const engine = engineRef.current
     if (!engine) throw new Error("engine not ready")
     const id = uniqueModelId(pmxFile.name)
-    sceneFiles.models.set(id, { pmx: pmxFile, files: Array.from(files) })
     const model = await engine.loadProp(id, { files, pmxFile })
+    retainModelFiles(id, pmxFile, Array.from(files), model)
     engine.setModelTransform(id, { visible: false })
     let groups: StyleGroup[]
     try {
@@ -859,10 +869,10 @@ export function useEngine(
       if (!engine) throw new Error("engine not ready")
       const id = uniqueModelId(pmxFile.name, targetId)
       sceneFiles.models.delete(targetId)
-      sceneFiles.models.set(id, { pmx: pmxFile, files: Array.from(files) })
       const transform = engine.getModelTransform(targetId)
       if (id === targetId) engine.removeModel(targetId)
       const model = await engine.loadModel(id, { files, pmxFile })
+      retainModelFiles(id, pmxFile, Array.from(files), model)
       if (id !== targetId) engine.removeModel(targetId)
       if (transform) engine.setModelTransform(id, { position: transform.position })
       const at: [number, number, number] | undefined = transform

@@ -233,6 +233,7 @@ import {
 import { LampMarkers } from "@/components/scene/lamp-markers"
 import { accessoryFiles, convertXUploads, isFromX, xUnlitMaterials } from "@/lib/x-file"
 import { convertGlbUploads, glbStageOf, glbStyleGroups, stagePbrGraph } from "@/lib/gltf-stage"
+import { texturesToWebp } from "@/lib/texture-webp"
 import { readRayMmd, type RayStage } from "@/lib/ray-mmd"
 import { loadMaterialMaps, setMaterialMaps } from "@/lib/material-maps"
 import { findSkies, isStageOwnSky, skyThumbnail, type SkyCandidate } from "@/lib/stage-skies"
@@ -4954,6 +4955,12 @@ export default function Lab() {
   // has no directory picker at all — that is a decision to make with the mobile
   // layout, not by bolting a second button onto this row.)
   const folderInput = useRef<HTMLInputElement>(null)
+  /** A GLB stage is ONE file, so it gets an input that takes one — and an input
+   *  carrying `webkitdirectory` can only take a directory, which is why this is
+   *  a second element rather than a second accept. Picking the folder instead
+   *  swept the author's .blend, a second .glb and their readme into the scene,
+   *  and asked which of two .pmx files to load. */
+  const glbInput = useRef<HTMLInputElement>(null)
   const sceneImportInput = useRef<HTMLInputElement>(null)
   // Same shape the shipped editor uses: one dialog covering "which .pmx?" and
   // "that did not load", because both are the upload failing to resolve to a
@@ -4962,6 +4969,12 @@ export default function Lab() {
   const pickModel = (target: ModelTarget) => {
     modelTarget.current = target
     folderInput.current?.click()
+  }
+
+  /** The same upload, from the one file a Blender stage is. */
+  const pickStageGlb = () => {
+    modelTarget.current = { mode: "stage" }
+    glbInput.current?.click()
   }
 
   /**
@@ -5318,12 +5331,38 @@ export default function Lab() {
     }
   }
 
-  const loadPicked = async (files: File[], pmx: File, target: ModelTarget, toastId = `upload:${Date.now()}`) => {
+  const loadPicked = async (files0: File[], pmx0: File, target: ModelTarget, toastId = `upload:${pmx0.name}`) => {
     setUpload(null)
     setUploading((n) => n + 1)
-    const name = pmx.name.split("/").pop()!.replace(/\.pmx$/i, "")
-    toast.loading(t.lab.uploadLoading(name), { id: toastId })
+    const name = pmx0.name.split("/").pop()!.replace(/\.pmx$/i, "")
+    let files = files0
+    let pmx = pmx0
     try {
+      // TEXTURES BECOME WEBP HERE, at the boundary, so that everything after
+      // this line — the engine, the autosave, the bundle, a publish, a fork —
+      // sees one texture rather than choosing between two. Same resolution; a
+      // stage's maps come down about five times with no visible difference.
+      // A MODEL NEVER FAILS TO LOAD BECAUSE OF COMPRESSION. texturesToWebp
+      // falls back internally file by file; this catches the case where the
+      // whole thing goes wrong, so the upload continues on the bytes that
+      // arrived. The cost of a bad day here is a larger scene, nothing more.
+      try {
+        toast.loading(t.lab.uploadTexturing(0, 0), { id: toastId })
+        const webp = await texturesToWebp(files, pmx, (d, total) => toast.loading(t.lab.uploadTexturing(d, total), { id: toastId }))
+        files = webp.files
+        pmx = webp.pmx
+        if (webp.report.converted)
+          console.info(
+            `[webp] ${name}: ${webp.report.converted} textures, ` +
+              `${(webp.report.before / 1e6).toFixed(1)} MB -> ${(webp.report.after / 1e6).toFixed(1)} MB ` +
+              `(${(webp.report.before / Math.max(webp.report.after, 1)).toFixed(1)}x)`,
+          )
+      } catch (e) {
+        console.warn(`[webp] ${name}: textures left as they were`, e)
+        files = files0
+        pmx = pmx0
+      }
+      toast.loading(t.lab.uploadLoading(name), { id: toastId })
       if (target.mode === "stage") {
         // The .x accessories in the folder are the same set as its .pmx — the
         // effect layer, the sky — and come in with it as parts.
@@ -5507,7 +5546,7 @@ export default function Lab() {
     // resolved by loadPicked with the model's name. A stage is a quarter of a
     // gigabyte read, converted, loaded and styled, and until this the only sign
     // any of it was happening was the cursor.
-    const toastId = `upload:${Date.now()}`
+    const toastId = `upload:${list[0]?.name ?? "model"}`
     toast.loading(t.lab.uploadReading, { id: toastId })
     let files: File[]
     try {
@@ -7232,6 +7271,17 @@ export default function Lab() {
         }}
       />
 
+      <input
+        ref={glbInput}
+        type="file"
+        accept=".glb"
+        className="hidden"
+        onChange={(e) => {
+          void onModelPicked(Array.from(e.target.files ?? []))
+          e.target.value = ""
+        }}
+      />
+
       {/* The element stays outside the `mounted` gate because effects reach for its
           ref, but the SRC has to wait: it comes from the restored scene, and the
           server has no storage to restore from. Rendering it on the first pass made
@@ -8070,17 +8120,12 @@ export default function Lab() {
                         </TabsTrigger>
                       </TabsList>
                       <TabsContent value="stage">
-                        {stage ? (
+                        {stage && (
                           <>
                             <CastLine
                               text={<span className="min-w-0 flex-1 truncate text-xs">{displayName(stage.file)}</span>}
                               actions={
                                 <>
-                                  <CastAction
-                                    icon={Upload}
-                                    label={t.lab.aria.replaceStage(displayName(stage.file))}
-                                    onClick={() => pickModel({ mode: "stage" })}
-                                  />
                                   <CastAction
                                     icon={X}
                                     danger
@@ -8145,15 +8190,34 @@ export default function Lab() {
                               />
                             ))}
                           </>
-                        ) : (
+                        )}
+                        {/* TWO DOORS, because a stage arrives as two different
+                            things: a PMX needs its texture folder beside it, a
+                            .glb IS the stage. One picker cannot be both — an
+                            input with `webkitdirectory` takes only directories
+                            — and making the folder serve both swept the
+                            author's .blend and every other .glb in the folder
+                            into the scene, then asked which .pmx to load.
+
+                            ALWAYS HERE, because an upload IS the replacement: a
+                            scene holds one stage, and picking another swaps it.
+                            There is no separate replace to find. */}
+                        <div className={cn("flex", stage && "mt-2")}>
                           <Button
                             variant="ghost"
                             onClick={() => pickModel({ mode: "stage" })}
-                            className="h-8 w-full rounded-interior border border-dashed border-line-strong text-xs font-normal text-muted-foreground hover:border-blue-400/50 hover:bg-transparent hover:text-blue-400"
+                            className="h-8 flex-1 rounded-interior rounded-r-none border border-r-0 border-dashed border-line-strong text-xs font-normal text-muted-foreground hover:border-blue-400/50 hover:bg-transparent hover:text-blue-400"
                           >
                             {t.lab.uploadStageFolder}
                           </Button>
-                        )}
+                          <Button
+                            variant="ghost"
+                            onClick={pickStageGlb}
+                            className="h-8 flex-1 rounded-interior rounded-l-none border border-dashed border-line-strong text-xs font-normal text-muted-foreground hover:border-blue-400/50 hover:bg-transparent hover:text-blue-400"
+                          >
+                            {t.lab.uploadStageGlb}
+                          </Button>
+                        </div>
                       </TabsContent>
                       <TabsContent value="ground">
                         {stage && <p className="mb-2 text-xs">{t.lab.stageOverridesGround}</p>}
