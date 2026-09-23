@@ -155,8 +155,20 @@ export async function GET(request: Request) {
 
     // Reddit's ordering: a young post with a few likes outranks an old one with
     // the same, and the gap closes as both age.
-    const hot = sql<number>`log(greatest(${schema.libraryItems.likeCount}, 1) + 1)
-      + extract(epoch from ${schema.libraryItems.createdAt}) / 45000`
+    //
+    // TUNED FOR THIS SITE'S VOLUME, which is the whole reason the divisor is not
+    // Reddit's 45000. At that figure a day of age is worth 1.92 and `log` is
+    // base 10, so a scene needed ~83 likes to outrank one published a day later
+    // — true to the original, and at counts of nought to a handful it made every
+    // like a rounding error and collapsed `hot` into `new`. The two orderings
+    // were the same list, which is what "sorting does not work" looked like.
+    // At 450000 a day is worth 0.192 and a single like clears it.
+    //
+    // `+ 1` inside the log, not outside a floor of 1: `greatest(likes, 1) + 1`
+    // scores nought likes and one like identically, so the first like — the one
+    // that most changes what a scene deserves — counted for nothing.
+    const hot = sql<number>`log(${schema.libraryItems.likeCount} + 1)
+      + extract(epoch from ${schema.libraryItems.createdAt}) / 450000`
     const order = sort === "new" ? desc(schema.libraryItems.createdAt) : sort === "top" ? desc(schema.libraryItems.likeCount) : desc(hot)
 
     // Only the personal facets read a session — the default list stays one public
@@ -179,6 +191,10 @@ export async function GET(request: Request) {
         posterKey: schema.libraryItems.posterKey,
         createdAt: schema.libraryItems.createdAt,
         visibility: schema.libraryItems.visibility,
+        // Selected so the cursor can be stated in the same terms the rows were
+        // ranked by. Stripped from the response below — it is paging machinery,
+        // not something a card shows.
+        hot,
       })
       .from(schema.libraryItems)
     const scenes = await (facet === "liked" && viewer
@@ -197,22 +213,42 @@ export async function GET(request: Request) {
           facet === "yours" && viewer ? undefined : eq(schema.libraryItems.visibility, "public"),
           isNull(schema.libraryItems.deletedAt),
           facet === "yours" && viewer ? eq(schema.libraryItems.ownerId, viewer.user.id) : undefined,
-          before ? lt(schema.libraryItems.createdAt, new Date(before)) : undefined,
+          // THE CURSOR IS THE SORT KEY, or it is not a cursor. Ranked by `hot`
+          // while paging by date, page two asked for "everything older than the
+          // last row shown, ranked by hot" — and the last row in hot order is
+          // not the oldest one on the page, so the scenes in between were
+          // skipped and ones already seen came back.
+          before === null
+            ? undefined
+            : sort === "new"
+              ? lt(schema.libraryItems.createdAt, new Date(before))
+              : sort === "top"
+                ? lt(schema.libraryItems.likeCount, before)
+                : lt(hot, before),
         ),
       )
       .orderBy(order)
       .limit(limit + 1)
 
     const page = scenes.slice(0, limit)
+    const last = page[page.length - 1]
+    /** Where this page ended, in whatever the rows were ranked by. */
+    const cursorOf = (row: (typeof page)[number]) =>
+      sort === "new" ? row.createdAt.getTime() : sort === "top" ? row.likeCount : Number(row.hot)
 
     return NextResponse.json({
-      scenes: page.map(({ posterKey, createdAt, ...s }) => ({
-        ...s,
-        createdAt: createdAt.toISOString(),
-        poster: posterKey ? `${process.env.R2_PUBLIC_BASE_URL}/${posterKey}` : null,
-      })),
+      scenes: page.map(({ posterKey, createdAt, hot, ...s }) => {
+        // Dropped rather than sent: the rank is how the next page finds its
+        // place, and a card has no use for it.
+        void hot
+        return {
+          ...s,
+          createdAt: createdAt.toISOString(),
+          poster: posterKey ? `${process.env.R2_PUBLIC_BASE_URL}/${posterKey}` : null,
+        }
+      }),
       // Keyset, not offset: rows shift under an offset as people publish.
-      nextCursor: scenes.length > limit ? page[page.length - 1].createdAt.getTime() : null,
+      nextCursor: scenes.length > limit && last ? cursorOf(last) : null,
     })
   }
 

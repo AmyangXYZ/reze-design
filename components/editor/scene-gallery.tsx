@@ -103,11 +103,22 @@ export type FacetCounts = Record<View, number>
 let facetCounts: FacetCounts | null = null
 let facetsInflight: Promise<FacetCounts> | null = null
 
+/**
+ * How a view is ranked.
+ *
+ * `all` keeps the ranking the gallery has always opened on — a young scene with
+ * a few likes above an old one with the same. The narrowings are yours and are
+ * newest-first, where recency is what you are actually looking for.
+ *
+ * ONE FUNCTION, because the two callers disagreed: the first page asked for
+ * `hot` and `loadMore` sent the VIEW as the sort, which on the default shelf is
+ * the string "all" — not a sort at all. It fell through to the server's default
+ * and happened to match, by luck rather than by intent.
+ */
+const sortFor = (v: View): "hot" | "new" => (isFacet(v) ? "new" : "hot")
+
 async function firstPage(v: View): Promise<Page> {
-  // `all` keeps the ranking the gallery has always opened on — a young scene with
-  // a few likes above an old one with the same. The narrowings are yours and are
-  // newest-first, where recency is what you are actually looking for.
-  const params = new URLSearchParams({ kind: "scene", sort: isFacet(v) ? "new" : "hot" })
+  const params = new URLSearchParams({ kind: "scene", sort: sortFor(v) })
   // Only a narrowing needs a session; `all` stays one public query.
   if (isFacet(v)) params.set("facet", v)
   const res = await fetch(`/api/library?${params}`)
@@ -469,7 +480,7 @@ function GalleryContent({
   const loadMore = () => {
     if (!cursor) return
     setLoading(true)
-    const params = new URLSearchParams({ kind: "scene", sort: isFacet(view) ? "new" : view, before: String(cursor) })
+    const params = new URLSearchParams({ kind: "scene", sort: sortFor(view), before: String(cursor) })
     if (isFacet(view)) params.set("facet", view)
     fetch(`/api/library?${params}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))

@@ -94,8 +94,13 @@ function ageDays(item: BrowseItem): number {
 
 function hotScore(item: BrowseItem, likes: number): number {
   const age = ageDays(item)
+  // `likes + 1`, not a floor of 1: log10 of either 0 or 1 like is zero, so the
+  // FIRST like — the one that most changes what a piece deserves — counted for
+  // nothing, and at counts of nought to a handful that left `hot` a function of
+  // age alone. Which is to say: the same list as `new`. One like is now worth
+  // 0.30, some 54 days of age.
   return (
-    Math.log10(Math.max(likes, 1)) -
+    Math.log10(likes + 1) -
     age / HOT_AGE_DAYS +
     NEW_BOOST * Math.max(0, 1 - age / NEW_WINDOW_DAYS)
   )
