@@ -278,24 +278,6 @@ export function useSceneSync({
       }
     }
     prev.current = { engine, settings, gradeSpec, backdrop: hasBackdrop, green: exportBackground, plate, plateStill }
-    // WHAT THIS HOST ACTUALLY PUSHED. The editor and the viewer run this same
-    // hook over the same document, so a scene that looks different in the two
-    // of them differs in what reached the engine — and reading both sides of
-    // that used to mean reasoning about it. One line each, diffable.
-    if (process.env.NODE_ENV === "development") {
-      const cdl = resolveSpec(gradeSpec, grade.intensity)
-      console.info(
-        `[sync] ${p ? "update" : "first"} · sun ${sun.color}×${sun.strength} az${sun.azimuth} el${sun.elevation}` +
-          ` shadow ${sun.shadow !== false}/${sun.softness ?? 0}` +
-          ` · world ${world.color}×${world.strength}` +
-          ` · bloom ${bloom.intensity > 0 ? `×${bloom.intensity} thr${bloom.threshold} r${bloom.radius}` : "off"}` +
-          ` · view ${view.transform} ev${view.exposure}` +
-          ` · grade ×${grade.intensity} sat${cdl.saturation} con${cdl.contrast}` +
-          ` · ground ${ground.enabled ? `on ${compositing || plate ? 0 : ground.opacity}` : "off"}` +
-          ` · outline ${outline.enabled}` +
-          ` · bg ${background.color}${hasBackdrop ? " +backdrop" : ""}${plate ? " plate" : ""}${compositing ? " composite" : ""}`,
-      )
-    }
   }, [settings, gradeSpec, ready, engineRef, hasBackdrop, exportBackground, compositing, plate, plateStill])
 
   // The lens, on its own effect and keyed on the VALUE: `camera` is a new object
@@ -461,10 +443,6 @@ export function useSceneSync({
     const c = f && f.strength > 0 ? hexToLinearVec3(f.color) : null
     const fill = c ? new Vec3(c.x * f!.strength, c.y * f!.strength, c.z * f!.strength) : null
     for (const id of castIds) engine.setModelFill(id, fill)
-    // The cast is what this one needs, and the cast lands over time — a host
-    // that pushed while the list was empty reached nobody.
-    if (process.env.NODE_ENV === "development")
-      console.info(`[sync] fill ${f && f.strength > 0 ? `${f.color}×${f.strength}` : "none"} → ${castIds.length} cast`)
   }, [engineRef, ready, castIds, settings.fill])
 
   // ── A stage's own sun ──
@@ -613,11 +591,6 @@ export function useSceneSync({
     if (!engine) return
     if (compositing || !hdri) {
       engine.setWorldEquirect(null)
-      // The silent branch, and the one that made a host disagree with itself:
-      // no image is pushed as REMOVING the sky, so a host that simply never
-      // passed one looked identical to a scene that has none. Say which.
-      if (process.env.NODE_ENV === "development")
-        console.info(`[world] no HDRI installed — ${compositing ? "suspended for compositing" : "this host passed none"}`)
       return
     }
     let stale = false

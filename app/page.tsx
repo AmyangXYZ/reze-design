@@ -2168,6 +2168,7 @@ export default function Lab() {
     viewportRef,
     models,
     ready,
+    stageReady,
     engineReady,
     styling,
     bundleReady,
@@ -3325,15 +3326,28 @@ export default function Lab() {
     [t],
   )
   const pickGrade = useCallback(
-    (name: string) => patch("grade", { preset: name, intensity: recallIntensity(name) }),
+    // The pin and the spec belong to the grade that WAS chosen, and `patch`
+    // merges — so they are cleared here or the next grade renders as the last
+    // one. Publishing re-derives both from what is applied (see collectLabSlots).
+    (name: string) => patch("grade", { preset: name, intensity: recallIntensity(name), spec: undefined, from: undefined }),
     [patch],
   )
   // An open session OVERRIDES the document's grade: the editor's working spec is
   // what the render resolves to, which is the whole reason dragging a slider is
   // visible on the canvas. The document is untouched until the session saves.
+  // THE DOCUMENT'S OWN ANSWER FIRST, which is the difference between a scene
+  // that opens graded and one that grades itself a second later. A community
+  // grade is pinned by id and `gradeWithSpec` resolves that pin at parse time,
+  // so the spec is already in hand — while looking it up by NAME finds nothing
+  // until `useCommunity` has been to the network and back, and until then the
+  // scene renders through NEUTRAL_SPEC. That round trip lands well after the
+  // models, which is why the grade was always the last thing to appear.
   const appliedGradeSpec = useMemo(
-    () => (gradeEditor ? gradeEditor.subject.spec : gradeSpec(grade.preset, [...gradeDrafts, ...communityGrades])),
-    [gradeEditor, grade.preset, gradeDrafts, communityGrades],
+    () =>
+      gradeEditor
+        ? gradeEditor.subject.spec
+        : (grade.spec ?? gradeSpec(grade.preset, [...gradeDrafts, ...communityGrades])),
+    [gradeEditor, grade.spec, grade.preset, gradeDrafts, communityGrades],
   )
   // Same three parts as the effect list, in the same order: the rows, an
   // "edited" hint when what is applied has drifted from the entry it came from,
@@ -3697,7 +3711,14 @@ export default function Lab() {
   // does: one loader per slot, or a reset would quietly keep the music the scene
   // it replaced was playing.
   useEffect(() => {
-    if (!ready) return
+    // ON `bundleReady`, NOT `ready`. Every slot below comes out of the bundle,
+    // and the bundle is unzipped long before the last model has finished — so
+    // waiting for the whole scene meant the world image was fetched and parsed
+    // AFTER the loading pill had gone, and the scene visibly re-lit itself in
+    // front of someone who had been told it was ready. Nothing here needs a
+    // model: the music, the backdrop, the sky and the camera clip's file
+    // answer to the zip alone.
+    if (!bundleReady) return
     let cancelled = false
     // ONE pass over the slots, in document order — the shipped editor's
     // loadDocExtras, which is async because resolving a slot to a File is.
@@ -3787,7 +3808,7 @@ export default function Lab() {
     return () => {
       cancelled = true
     }
-  }, [ready, scene, bundleFile, setMusicFile, swapBgImage, swapHdri])
+  }, [bundleReady, scene, bundleFile, setMusicFile, swapBgImage, swapHdri])
 
   // noteAppliedWgsl is the WGSL editor's half of the bargain: the editor
   // compiles straight to the engine for its live preview, and telling the sync
@@ -3796,7 +3817,15 @@ export default function Lab() {
   const stageSunList = useMemo(() => stages.map((s) => ({ id: s.id, sun: s.sun ?? null })), [stages])
   const { noteAppliedWgsl, adoptInstall } = useSceneSync({
     engineRef,
-    ready,
+    // ON `stageReady`, THE MOMENT THE GROUND IS UP — not on `ready`, which is
+    // the whole scene loaded. The render loop starts at `onStage`, so anything
+    // pushed after that is a visible change to a picture already on screen:
+    // the world, the bloom, the grade and the sun all snapped in at once,
+    // after the pill had gone, and read as the scene still making up its mind.
+    // Pushed here they land inside the loading window, where the models are
+    // still arriving and nobody is looking for a finished image yet. The
+    // viewer has always done this; the editor was the odd one out.
+    ready: stageReady,
     settings,
     camera,
     cameraVmd: cameraClip !== null,

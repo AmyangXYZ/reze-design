@@ -42,12 +42,6 @@ export function reportGroups(
     | undefined,
 ) {
   if (!result) return
-  // EVERY PASS, NAMED BY ITS CALLER. Styling a model twice is invisible when
-  // both passes succeed — the second simply recompiles what the first already
-  // built, and the only trace is the time and a stage that blinks while its
-  // pipelines are replaced. Two lines here for one model is that bug.
-  if (process.env.NODE_ENV === "development")
-    console.info(`[style] ${where}: applied ${result.groups?.length ?? 0} group(s)`)
   // COMPILING IS NOT COVERING, and `ok` only answers the first. A group whose
   // graph is perfect and whose material names match nothing on the model is
   // applied successfully and claims no draw call — those materials keep the
