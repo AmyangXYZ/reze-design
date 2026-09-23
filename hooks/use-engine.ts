@@ -1235,7 +1235,9 @@ export function useEngine(
   const applyGroups = useCallback(async (modelId: string, next: StyleGroup[]) => {
     setGroupsByModel((prev) => ({ ...prev, [modelId]: next }))
     reportGroups(
-      "applyGroups",
+      // Named by MODEL: every caller here shares one label, so two passes over
+      // one stage and one pass over each of two models read identically.
+      `applyGroups ${modelId}`,
       await engineRef.current?.applyStyleGroups(
         modelId,
         withMaterialMaps(

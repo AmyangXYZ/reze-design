@@ -13,7 +13,6 @@ import { useRouter } from "next/navigation"
 import { GalleryThumbnails, Loader2, X } from "lucide-react"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { LIBRARY_SHELL, LibraryLike, LibraryTags } from "@/components/editor/library-rail"
 import {
   LibraryRailFilters,
@@ -250,13 +249,6 @@ export function noteSceneRemoved(id: string): void {
   announce()
 }
 
-export function noteSceneRenamed(id: string, name: string): void {
-  for (const [v, page] of pages) {
-    pages.set(v, { ...page, scenes: page.scenes.map((s) => (s.id === id ? { ...s, name } : s)) })
-  }
-  announce()
-}
-
 /**
  * `initialFacet` is the browse slot's, the same one the three libraries take, so
  * an entrance that means "show me mine" arrives on that shelf here too — the
@@ -290,7 +282,6 @@ function GalleryContent({
   const t = useT()
   const router = useRouter()
   const { data: session } = useSession()
-  const [renamingId, setRenamingId] = useState<string | null>(null)
   const report = useReport()
   /** The scene a delete is being confirmed for. Held whole rather than by id:
    *  the dialog names it, and looking the name up again after the list has
@@ -526,23 +517,6 @@ function GalleryContent({
   }
 
 
-  const commitRename = (s: GalleryScene, raw: string) => {
-    setRenamingId(null)
-    const name = raw.trim()
-    if (!name || name === s.name) return
-    void fetch(`/api/library/${s.id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name }),
-    }).then(async (res) => {
-      if (!(await report(Promise.resolve(res), t.library.renamed))) return
-      setScenes((prev) => prev.map((x) => (x.id === s.id ? { ...x, name } : x)))
-      // The short id is the link, so a rename never breaks one — only the label
-      // the cached lists are still holding.
-      noteSceneRenamed(s.id, name)
-    })
-  }
-
   const remove = (s: GalleryScene) => setConfirming(s)
 
   const confirmRemove = () => {
@@ -565,23 +539,9 @@ function GalleryContent({
         {t.gallery.noPoster}
       </div>
     ),
-    nameNode:
-      renamingId === s.id ? (
-        <Input
-          autoFocus
-          defaultValue={s.name}
-          className="h-5 min-w-0 flex-1 border-line-strong bg-white/5 px-1 text-[13px] md:text-[13px]"
-          onClick={(e) => e.stopPropagation()}
-          onBlur={(e) => commitRename(s, e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") (e.target as HTMLInputElement).blur()
-            if (e.key === "Escape") setRenamingId(null)
-          }}
-        />
-      ) : undefined,
   })
 
-  /** Only your own scenes get a menu: open, rename, delete. */
+  /** Only your own scenes get a menu: open, edit, delete. */
   const wrap = (s: GalleryRow, node: React.ReactNode) =>
     s.mine ? (
       <ContextMenu>
@@ -596,7 +556,6 @@ function GalleryContent({
               pin stay with it. Only on your own — the menu is already only on
               your own — because replacing is an owner's act. */}
           <ContextMenuItem onSelect={() => editScene(s)}>{t.gallery.editPublished}</ContextMenuItem>
-          <ContextMenuItem onSelect={() => setRenamingId(s.id)}>{t.graph.rename}</ContextMenuItem>
           <ContextMenuItem variant="danger" onSelect={() => remove(s)}>
             {t.library.deletePublished}
           </ContextMenuItem>

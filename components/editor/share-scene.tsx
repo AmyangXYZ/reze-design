@@ -16,6 +16,7 @@ import { noteScenePublished, type GalleryScene } from "@/components/editor/scene
 import { buildZip, type BundleEntry } from "@/lib/bundle"
 import { MAX_BUNDLE_BYTES, type LibraryItem } from "@/lib/library"
 import { formatBytes } from "@/lib/png-sequence"
+import { posterToWebp } from "@/lib/poster"
 import { sceneRefs, type SceneDoc } from "@/lib/scene"
 import { useSession } from "@/lib/auth-client"
 import type { UnpublishedUse } from "@/lib/refs"
@@ -270,14 +271,19 @@ function ShareSceneForm({
         bundleBytes = zip.size
       }
       if (poster) {
+        // WebP, and no larger than a card or a share card can show — see
+        // lib/poster.ts. The gallery is a grid of these and its weight is paid
+        // by everyone who opens it, so the cover is compressed where it is
+        // chosen rather than left as whatever the screenshot tool produced.
+        const cover = await posterToWebp(poster)
         const presign = await fetch("/api/upload", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ sceneId: publishScope, size: poster.size, kind: "poster", contentType: poster.type }),
+          body: JSON.stringify({ sceneId: publishScope, size: cover.size, kind: "poster", contentType: cover.type }),
         })
         if (!presign.ok) throw new Error(await reason(presign))
         const { uploadUrl, key } = (await presign.json()) as { uploadUrl: string; key: string }
-        await putWithProgress(uploadUrl, poster, poster.type, () => {})
+        await putWithProgress(uploadUrl, cover, cover.type, () => {})
         posterKey = key
       }
 

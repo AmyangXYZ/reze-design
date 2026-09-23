@@ -42,6 +42,12 @@ export function reportGroups(
     | undefined,
 ) {
   if (!result) return
+  // EVERY PASS, NAMED BY ITS CALLER. Styling a model twice is invisible when
+  // both passes succeed — the second simply recompiles what the first already
+  // built, and the only trace is the time and a stage that blinks while its
+  // pipelines are replaced. Two lines here for one model is that bug.
+  if (process.env.NODE_ENV === "development")
+    console.info(`[style] ${where}: applied ${result.groups?.length ?? 0} group(s)`)
   // COMPILING IS NOT COVERING, and `ok` only answers the first. A group whose
   // graph is perfect and whose material names match nothing on the model is
   // applied successfully and claims no draw call — those materials keep the
@@ -345,6 +351,13 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
         : entry.prop
           ? await engine.loadProp(entry.model.id, { files, pmxFile })
           : await engine.loadModel(entry.model.id, { files, pmxFile })
+      // OUT OF SIGHT BEFORE THE NEXT AWAIT. A model is live and visible the
+      // instant its loader resolves, and the render loop is already running —
+      // so every await between here and the placement below is frames on
+      // screen wearing the default look. Loading a stage's ORM maps is 176
+      // files, which is how a stage appeared unstyled, hung there, and then
+      // vanished the moment the hide finally landed.
+      engine.setModelTransform(entry.model.id, { visible: false })
       const maps = await loadMaterialMaps(entry.model.id, files, pmxFile.name, (f) => f.name, model)
       // The same line the upload path prints, because a stage that came back
       // from the bundle without its ORM maps is a rough white metal — no
@@ -361,6 +374,7 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
       const pmxUrl = modelPmxUrl(entry.model)
       if (!pmxUrl) throw new Error(`Zip-sourced models aren't loadable from a URL yet: ${entry.model.file}`)
       model = await engine.loadModel(entry.model.id, pmxUrl)
+      engine.setModelTransform(entry.model.id, { visible: false })
     }
     if (stale()) return null
     // A cast member's placement, filled in by the branch below and carried into
