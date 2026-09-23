@@ -333,7 +333,17 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
         : entry.prop
           ? await engine.loadProp(entry.model.id, { files, pmxFile })
           : await engine.loadModel(entry.model.id, { files, pmxFile })
-      await loadMaterialMaps(entry.model.id, files, pmxFile.name, (f) => f.name, model)
+      const maps = await loadMaterialMaps(entry.model.id, files, pmxFile.name, (f) => f.name, model)
+      // The same line the upload path prints, because a stage that came back
+      // from the bundle without its ORM maps is a rough white metal — no
+      // highlight, nothing that moves with the camera — and looks like a
+      // shader bug rather than a missing file.
+      if (entry.stage && maps)
+        console.info(
+          `[stage] maps from the bundle: ${maps.decoded}/${maps.materials} materials bound an ORM` +
+            (maps.missing.length ? ` — without: ${maps.missing.slice(0, 4).join(", ")}` : "") +
+            ` (${files.length} files under "${pmxFile.name.slice(0, pmxFile.name.lastIndexOf("/") + 1) || "."}")`,
+        )
     } else {
       clearMaterialMaps(entry.model.id)
       const pmxUrl = modelPmxUrl(entry.model)
