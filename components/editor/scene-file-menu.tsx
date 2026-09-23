@@ -13,7 +13,7 @@ import { ArrowDownToLine, ArrowUpFromLine, FilePlus2, GalleryThumbnails, RotateC
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useT } from "@/lib/i18n"
 
-function Row({
+export function Row({
   icon: Icon,
   label,
   onClick,
@@ -44,6 +44,48 @@ export type SceneMenuHandlers = {
    *  the same notice the rest of the scene's file failures use. */
   onImport: (file: File) => void
   onReset: () => void
+}
+
+/**
+ * The logo as a menu: the trigger button and the panel it opens. One shell for
+ * every page that has the logo, so the menu opens on the same pixels whichever
+ * page you are on — only the rows differ.
+ */
+export function LogoMenu({
+  trigger,
+  open,
+  onOpenChange,
+  children,
+}: {
+  trigger: ReactNode
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  children: ReactNode
+}) {
+  const t = useT()
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      {/* No tooltip. Radix hands focus back to the trigger when the menu
+          closes, which re-arms the tip and flashes it over the panel that just
+          opened — and a tip that only repeats the aria-label buys nothing on a
+          control this prominent. The label stays for screen readers. */}
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={t.sceneFile.label}
+          className="cursor-pointer rounded-md outline-none transition-colors hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+          {trigger}
+        </button>
+      </PopoverTrigger>
+      {/* Radix returns focus to the trigger on close, and a programmatic focus counts
+          as keyboard focus — so the logo kept its focus ring after every use. Same
+          fix the material sidebar's context menu uses. */}
+      <PopoverContent align="start" className="w-fit min-w-40 p-1" onCloseAutoFocus={(e) => e.preventDefault()}>
+        {children}
+      </PopoverContent>
+    </Popover>
+  )
 }
 
 /** Wraps `trigger` (the logo, in either of its homes) as the opener of the scene menu. */
@@ -80,40 +122,22 @@ export function SceneFileMenu({ trigger, onNew, onGallery, onExport, onImport, o
           if (file) onImport(file)
         }}
       />
-      <Popover open={open} onOpenChange={setOpen}>
-        {/* No tooltip. Radix hands focus back to the trigger when the menu
-            closes, which re-arms the tip and flashes it over the panel that just
-            opened — and a tip that only repeats the aria-label buys nothing on a
-            control this prominent. The label stays for screen readers. */}
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            aria-label={t.sceneFile.label}
-            className="cursor-pointer rounded-md outline-none transition-colors hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-ring/50"
-          >
-            {trigger}
-          </button>
-        </PopoverTrigger>
-        {/* Radix returns focus to the trigger on close, and a programmatic focus counts
-            as keyboard focus — so the logo kept its focus ring after every use. Same
-            fix the material sidebar's context menu uses. */}
-        <PopoverContent align="start" className="w-fit min-w-40 p-1" onCloseAutoFocus={(e) => e.preventDefault()}>
-          <Row icon={FilePlus2} label={t.sceneFile.newScene} onClick={run(onNew)} />
-          <Row icon={ArrowUpFromLine} label={t.sceneFile.export} onClick={run(onExport)} />
-          <Row icon={ArrowDownToLine} label={t.sceneFile.import} onClick={pickFile} />
-          <Row icon={RotateCcw} label={t.sceneFile.reset} onClick={run(onReset)} />
-          {/* Its own section, under a rule. Everything above acts on the scene
-              you are in — makes one, writes it out, reads one in, puts it back.
-              This one LEAVES it for someone else's, which is a different kind of
-              act and should not read as the fifth thing you can do to your own
-              document. Last, where a menu keeps the way out. */}
-          {onGallery && (
-            <div className="mt-1 border-t border-white/10 pt-1">
-              <Row icon={GalleryThumbnails} label={t.gallery.door} onClick={run(onGallery)} />
-            </div>
-          )}
-        </PopoverContent>
-      </Popover>
+      <LogoMenu open={open} onOpenChange={setOpen} trigger={trigger}>
+        <Row icon={FilePlus2} label={t.sceneFile.newScene} onClick={run(onNew)} />
+        <Row icon={ArrowUpFromLine} label={t.sceneFile.export} onClick={run(onExport)} />
+        <Row icon={ArrowDownToLine} label={t.sceneFile.import} onClick={pickFile} />
+        <Row icon={RotateCcw} label={t.sceneFile.reset} onClick={run(onReset)} />
+        {/* Its own section, under a rule. Everything above acts on the scene
+            you are in — makes one, writes it out, reads one in, puts it back.
+            This one LEAVES it for someone else's, which is a different kind of
+            act and should not read as the fifth thing you can do to your own
+            document. Last, where a menu keeps the way out. */}
+        {onGallery && (
+          <div className="mt-1 border-t border-white/10 pt-1">
+            <Row icon={GalleryThumbnails} label={t.gallery.door} onClick={run(onGallery)} />
+          </div>
+        )}
+      </LogoMenu>
     </>
   )
 }

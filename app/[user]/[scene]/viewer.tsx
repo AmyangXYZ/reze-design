@@ -10,12 +10,13 @@ import { createMediaFollower } from "@/lib/media-clock"
 import { primeAudioAnalysis } from "@/lib/audio-analysis"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { GitFork, Heart, WandSparkles } from "lucide-react"
+import { ArrowLeft, GalleryThumbnails, GitFork, Heart, WandSparkles } from "lucide-react"
+import { LogoMenu, Row as MenuRow } from "@/components/editor/scene-file-menu"
+import { SceneGallery } from "@/components/editor/scene-gallery"
 import { AnimPlayer } from "@/components/scene/anim-player"
 import { builtinEffect } from "@/lib/effects"
 import { useEngine } from "@/hooks/use-engine"
 import { useSceneSync } from "@/hooks/use-scene-sync"
-import { drawStatsLine } from "@/lib/draw-stats"
 import { specOf } from "@/lib/grade"
 import { libraryGraph } from "@/lib/materials"
 import { newSceneId, parseSceneDoc, type Scene, type SceneDoc } from "@/lib/scene"
@@ -99,6 +100,8 @@ export function SceneViewer(props: ViewerProps) {
   // than sending it back to the network for a zip this tab already has.
   const bundleFilesRef = useRef<() => File[]>(() => [])
   const [forking, setForking] = useState(false)
+  const [logoMenu, setLogoMenu] = useState(false)
+  const [galleryOpen, setGalleryOpen] = useState(false)
 
   /**
    * Park the assets, then go.
@@ -138,9 +141,10 @@ export function SceneViewer(props: ViewerProps) {
       {scene ? <SceneStage {...props} scene={scene} bundleFilesRef={bundleFilesRef} /> : <LoadingPill />}
 
       {/* Top left: whose site this is. A shared link is often someone's first
-          contact with the product, and nothing else on the page says its name. */}
-      <Link
-        href="/"
+          contact with the product, and nothing else on the page says its name.
+          The logo is a menu, as in the editor: back to it, or on to another
+          scene without going through it. */}
+      <div
         // The editor's collapsed brand pill, box model and all: same top-3/left-3
         // origin, same 1px border, same pl-2/pr-1.5, same size-7 icon well. Only
         // the pill's surface is missing, so the mark and wordmark land on the exact
@@ -151,15 +155,46 @@ export function SceneViewer(props: ViewerProps) {
         // a size-7 well in. Built from padding instead, this box came out 42 tall
         // and put the mark one pixel lower — a step you see the moment you open a
         // scene from the editor, which is the one journey this pill exists for.
-        className="group absolute top-3 left-3 flex h-10 items-center gap-1.5 rounded-xl border border-transparent pr-1.5 pl-2"
+        className="absolute top-3 left-3 flex h-10 items-center gap-1.5 rounded-xl border border-transparent pr-1.5 pl-2"
       >
-        <span className="flex size-7 items-center justify-center text-pink-400" aria-hidden>
-          <WandSparkles className="size-4.5" />
-        </span>
-        <span className="whitespace-nowrap pb-0.5 text-sm font-semibold tracking-tight text-foreground transition-colors group-hover:text-white">
+        {/* The editor's trigger exactly — the mark is the menu, not the pill —
+            so the panel opens on the same pixels on both pages. */}
+        <LogoMenu
+          open={logoMenu}
+          onOpenChange={setLogoMenu}
+          trigger={
+            <span className="flex size-7 shrink-0 items-center justify-center text-pink-400">
+              <WandSparkles className="size-4.5" />
+            </span>
+          }
+        >
+          <MenuRow
+            icon={ArrowLeft}
+            label={t.share.backToEditor}
+            onClick={() => {
+              setLogoMenu(false)
+              router.push("/")
+            }}
+          />
+          <div className="mt-1 border-t border-white/10 pt-1">
+            <MenuRow
+              icon={GalleryThumbnails}
+              label={t.gallery.door}
+              onClick={() => {
+                setLogoMenu(false)
+                setGalleryOpen(true)
+              }}
+            />
+          </div>
+        </LogoMenu>
+        <Link
+          href="/"
+          className="whitespace-nowrap pb-0.5 text-sm font-semibold tracking-tight text-foreground transition-colors hover:text-white"
+        >
           Reze Design
-        </span>
-      </Link>
+        </Link>
+      </div>
+      <SceneGallery open={galleryOpen} onOpenChange={setGalleryOpen} />
 
       {/* Bottom left, above the transport: title, author, caption — TikTok's
           arrangement, where the text hugs itself and the scene stays the page. */}
@@ -428,18 +463,6 @@ function SceneStage({
   }, [models])
   const [eyes, setEyes] = useState(scene.state.settings.eyes.enabled)
   const settings = useMemo(() => ({ ...scene.state.settings, eyes: { enabled: eyes } }), [scene.state.settings, eyes])
-  // THE SAME LINE THE EDITOR PRINTS, for the same reason — see lib/draw-stats.
-  // A scene that looks different here than it does there differs in what
-  // reached the engine, and these are the numbers that say so: the material
-  // counts, how many of them a group claimed, and whether a world is installed.
-  const lastDraw = useRef("")
-  useEffect(() => {
-    if (process.env.NODE_ENV !== "development" || !ready) return
-    const line = drawStatsLine(engineRef.current)
-    if (!line || line === lastDraw.current) return
-    lastDraw.current = line
-    console.info(`[draw] ${line}`)
-  }, [ready, models, stages, engineRef])
   const stageSuns = useMemo(() => stages.map((s) => ({ id: s.id, sun: s.sun ?? null })), [stages])
   useSceneSync({
     engineRef,

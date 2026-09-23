@@ -135,7 +135,6 @@ import { primeClipDensity, useAudioPeaks } from "@/hooks/use-lane-graphs"
 import { useEngine, type EngineModelInfo } from "@/hooks/use-engine"
 import { useRenderFraming } from "@/hooks/use-render-framing"
 import { useSceneSync } from "@/hooks/use-scene-sync"
-import { drawStatsLine } from "@/lib/draw-stats"
 import { useBrowseSurface } from "@/hooks/use-browse-surface"
 import { useStoredRect } from "@/hooks/use-stored-rect"
 import { useDockSlot } from "@/hooks/use-dock-slot"
@@ -5071,8 +5070,6 @@ export default function Lab() {
    * stage arrives with empty eye/hair seeds it will never use.
    */
   const styled = useRef(new Set<string>())
-  /** The last `[draw]` line printed, so the effect below speaks on change only. */
-  const lastDrawStats = useRef("")
   useEffect(() => {
     if (!ready) return
     // Forget stages that are gone. Ids are minted from the FILE NAME and a
@@ -5102,24 +5099,6 @@ export default function Lab() {
         continue
       }
       if (autoStyleStage(stage.id)) styled.current.add(stage.id)
-    }
-    // WHAT THE ENGINE ACTUALLY HOLDS, once the looks have landed.
-    //
-    // This effect re-runs when the groups change, so by the time the line below
-    // settles it is describing the finished state — which is the only state
-    // worth comparing between an upload and a reload of the same document. Two
-    // entries for one stage means a replace left a model behind and every
-    // transparent surface is drawing twice; a high `ungrouped` means groups
-    // compiled and claimed nothing, leaving those materials on the default
-    // graph. Both read as "brighter", and neither is visible from the host's
-    // own lists.
-    //
-    // Printed only when it changes, so it is a record of what happened rather
-    // than a line per render.
-    const line = drawStatsLine(engineRef.current)
-    if (line !== lastDrawStats.current) {
-      lastDrawStats.current = line
-      console.info(`[draw] ${line}`)
     }
   }, [ready, stages, props, groupsByModel, autoStyleStage, engineRef])
 
@@ -6319,18 +6298,7 @@ export default function Lab() {
         // bundle already in IndexedDB.
         let bundleUrl: string | null = bundleWrittenRef.current
         if (bundleWrittenFor.current !== assetFingerprint) {
-          // The other half of a slow scene open, and the half nobody suspects:
-          // changing scenes changes the file set, so the WHOLE bundle is rewritten
-          // into IndexedDB. At a hundred-odd files that is real time, spent after
-          // the scene is already on screen.
-          const tWrite = performance.now()
-          const bytes = slots.entries.reduce((n, e) => n + (e.file?.size ?? 0), 0)
           bundleUrl = slots.entries.length && (await saveLocalBundle(id, slots.entries)) ? idbBundleOf(id) : null
-          if (slots.entries.length)
-            console.info(
-              `[reze] local bundle written: ${slots.entries.length} file(s), ` +
-                `${(bytes / 1024 / 1024).toFixed(1)}MB in ${((performance.now() - tWrite) / 1000).toFixed(2)}s`,
-            )
           bundleWrittenFor.current = assetFingerprint
           bundleWrittenRef.current = bundleUrl
         }

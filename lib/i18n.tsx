@@ -105,6 +105,7 @@ const en = {
   share: {
     label: "Share",
     fork: "Open in editor",
+    backToEditor: "Back to editor",
     editScene: "Edit",
     /** A fork opens under its own name, so the original's is never quietly
      *  overwritten in the library and two copies are told apart at a glance. */
@@ -1091,6 +1092,7 @@ const zh: Dictionary = {
   share: {
     label: "分享",
     fork: "在编辑器中打开",
+    backToEditor: "返回编辑器",
     editScene: "编辑",
     forkedName: (name: string) => `${name} - 复刻`,
     updateScene: "更新",

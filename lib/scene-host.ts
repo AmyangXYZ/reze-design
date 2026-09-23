@@ -237,14 +237,7 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
   // the working scene's is the same entries in IndexedDB (an `idb:` bundle). Either
   // way the File names carry bundle paths, which is exactly what the engine resolves
   // textures against — one seam, two stores.
-  // Opening a scene is four serial costs and it is not obvious which one a given
-  // user is waiting on: a big published bundle is network-bound, a big MODEL is
-  // decode-bound, and the two want opposite fixes. Timed rather than guessed —
-  // the line lands in the console ring buffer, so a slow-open report carries the
-  // breakdown instead of the word "slow".
-  const t0 = performance.now()
   let bundle: File[] | null = null
-  let bundleBytes = 0
   const idbId = idbBundleId(scene.assets.bundle)
   if (idbId) {
     bundle = await loadLocalBundle(idbId)
@@ -285,12 +278,10 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
     // Not null: the wait is not over, it has changed kind. Unzipping a 165MB
     // bundle is its own visible pause, and reporting "no download" here would
     // send the pill back to the name it uses before one has started.
-    bundleBytes = blob.size
-    onBytes?.({ received: bundleBytes, total: total || bundleBytes, bytesPerSecond: 0, done: true })
+    onBytes?.({ received: blob.size, total: total || blob.size, bytesPerSecond: 0, done: true })
     bundle = await unzipToFiles(new File([blob], "assets.zip"))
     if (stale()) return null
   }
-  const tBundle = performance.now()
   // The bundle is what clips, audio and a background image resolve out of, and
   // none of them have anything to do with how long the models take. Handed over
   // the moment it is unzipped.
@@ -315,14 +306,8 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
     if (stale()) return null
   }
 
-  // Load against style, kept apart: they are the two halves of the model wait
-  // and they answer to different fixes — bytes to a smaller texture set, a
-  // compile to fewer groups or a warmer cache.
-  let msLoading = 0
-  let msStyling = 0
   for (const entry of scene.assets.models) {
     const src = entry.model.source
-    const tEntry = performance.now()
     let model
     if (src.kind === "bundle") {
       const pmxFile = bundle?.find((f) => f.name === src.path)
@@ -419,9 +404,6 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
         ...(rot ? { rotation: castRotationToEngine(rot) } : {}),
       })
     }
-    // The mesh is in; everything after this line is the looks.
-    msLoading += performance.now() - tEntry
-    const tStyle = performance.now()
     onStyling?.(entry.model.file)
     // Styling: a document carrying groups for this model (a restored or imported scene)
     const docGroups = scene.state.groups?.[entry.model.id]
@@ -463,7 +445,6 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
       await engine.autoStyleGroups(entry.model.id)
     }
     if (stale()) return null
-    msStyling += performance.now() - tStyle
     const hidden = scene.state.hidden?.[entry.model.id] ?? []
     for (const name of hidden) engine.toggleMaterialVisible(entry.model.id, name)
     const info = infoFor(entry.model.id, entry.model.file, model, hidden, castPlacement, entry.visibility)
@@ -569,16 +550,6 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
   // Again at the end, for the empty-scene case and because the first model may
   // have arrived before its follow bone existed.
   applyCamera(engine, scene.state.camera, engine.getModel(firstCastId(scene.assets.models)))
-  // The breakdown, as one line. A slow open is reported as the word "slow" and
-  // every phase here wants a different fix, so the numbers go in the console
-  // ring buffer where a copied report brings them along.
-  console.info(
-    `[open] ${Math.round(performance.now() - t0)}ms — ` +
-      `bundle ${Math.round(tBundle - t0)}ms` +
-      (bundleBytes ? ` (${(bundleBytes / 1024 / 1024).toFixed(1)}MB)` : "") +
-      ` · ${infos.length} model${infos.length === 1 ? "" : "s"} ${Math.round(msLoading)}ms` +
-      ` · shaders ${Math.round(msStyling)}ms`,
-  )
   return { infos, groups, bundle, stageList, propList, planeList, restoredAnims }
 }
 

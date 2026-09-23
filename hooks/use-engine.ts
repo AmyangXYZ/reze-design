@@ -220,11 +220,8 @@ export function useEngine(
             return lines.length
           }
         }
-        const tInit = performance.now()
         await engine.init()
         if (disposed) return
-        // The first half of a cold open, and the half nothing else measures.
-        console.info(`[open] engine ${Math.round(performance.now() - tInit)}ms`)
         setEngineReady(true)
         const loaded = await loadSceneInto(engine, scene, () => disposed, {
           onStage: () => {
