@@ -29,6 +29,7 @@ import { useLibraryStats } from "@/hooks/use-library-stats"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useReport } from "@/hooks/use-report"
+import { setForkTarget } from "@/lib/fork"
 import { useSession } from "@/lib/auth-client"
 
 import { useZOrder } from "@/hooks/use-z-order"
@@ -494,6 +495,17 @@ function GalleryContent({
 
   const sceneHref = (s: GalleryScene) => `/${s.author}/${s.id}`
 
+  /** The same handoff the viewer makes, marked as an edit: the editor replaces
+   *  its working scene with this one and publishing updates it in place. */
+  const editScene = (s: GalleryScene) => {
+    setForkTarget(s.id, undefined, true)
+    router.push("/")
+    // Already on the editor route, so the push is a no-op and nothing would
+    // re-read the handoff. Reloading is what makes it take.
+    router.refresh()
+    if (typeof window !== "undefined" && window.location.pathname === "/") window.location.reload()
+  }
+
   const openScene = (s: GalleryScene) => {
     // Client-side, in this tab. A second tab would mean a second live WebGPU
     // device and a second copy of the models in VRAM — and since the viewer's
@@ -567,6 +579,12 @@ function GalleryContent({
         </ContextMenuTrigger>
         <ContextMenuContent className="w-40">
           <ContextMenuItem onSelect={() => openScene(s)}>{t.gallery.open}</ContextMenuItem>
+          {/* YOUR OWN SCENE, BACK IN THE EDITOR TO CORRECT IT. Ordinary editing
+              from there on: publishing updates this row rather than making a
+              second scene, so the link keeps working and the views, likes and
+              pin stay with it. Only on your own — the menu is already only on
+              your own — because replacing is an owner's act. */}
+          <ContextMenuItem onSelect={() => editScene(s)}>{t.gallery.editPublished}</ContextMenuItem>
           <ContextMenuItem onSelect={() => setRenamingId(s.id)}>{t.graph.rename}</ContextMenuItem>
           <ContextMenuItem variant="danger" onSelect={() => remove(s)}>
             {t.library.deletePublished}

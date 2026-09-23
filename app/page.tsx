@@ -135,6 +135,7 @@ import { primeClipDensity, useAudioPeaks } from "@/hooks/use-lane-graphs"
 import { useEngine, type EngineModelInfo } from "@/hooks/use-engine"
 import { useRenderFraming } from "@/hooks/use-render-framing"
 import { useSceneSync } from "@/hooks/use-scene-sync"
+import { drawStatsLine } from "@/lib/draw-stats"
 import { useBrowseSurface } from "@/hooks/use-browse-surface"
 import { useStoredRect } from "@/hooks/use-stored-rect"
 import { useDockSlot } from "@/hooks/use-dock-slot"
@@ -2141,6 +2142,23 @@ export default function Lab() {
    * and this must agree with what that effect is about to do.
    */
   const [forkOnBoot] = useState(forkTarget)
+  /**
+   * The published scene this working copy REPLACES, when the author opened
+   * their own to correct it. Publishing then updates that row — same short id,
+   * so every link already shared keeps working, and the views, likes and pin
+   * stay with it — rather than minting a second scene beside the first.
+   *
+   * Session-scoped, like the handoff that set it: it describes this editing
+   * session, not the document, so nothing about it belongs in the file.
+   */
+  const [updatesSceneId, setUpdatesSceneId] = useState<string | undefined>(
+    forkOnBoot?.edit ? forkOnBoot.scene : undefined,
+  )
+  /** What that scene already says about itself — its cover, description, tags
+   *  and 借物表 — so the publish dialog opens on the author's own words rather
+   *  than a blank form they have to write twice. */
+  const [updatesPoster, setUpdatesPoster] = useState<string | null>(null)
+  const [updatesMeta, setUpdatesMeta] = useState<{ description: string; tags: string[]; credits: string } | null>(null)
   const [forkPending, setForkPending] = useState(forkOnBoot !== null)
   const [scene, setScene] = useState(() => (forkOnBoot ? EMPTY_SCENE : hydrateScene(DEFAULT_SCENE)))
   const [sceneName, setSceneName] = useState(scene.state.name)
@@ -2150,7 +2168,10 @@ export default function Lab() {
     viewportRef,
     models,
     ready,
+    engineReady,
+    styling,
     bundleReady,
+    bundleProgress,
     bundleFile,
     bundleFiles,
     loadVmdFile,
@@ -2208,8 +2229,13 @@ export default function Lab() {
   // than the network. `null` collapses the pill to the general wait.
   const loadingLabel = useLoadingLabel({
     scene,
-    bundleProgress: null,
+    // The editor opens published scenes too — a fork, and an author correcting
+    // their own — and those come down the same zip the viewer waits on. Passing
+    // null here is what left the megabytes unreported on this side.
+    bundleProgress,
     bundleReady,
+    engineReady,
+    styling,
     loaded: models.length,
   })
 
@@ -5061,16 +5087,23 @@ export default function Lab() {
     //
     // Printed only when it changes, so it is a record of what happened rather
     // than a line per render.
-    const stats = engineRef.current?.getDrawStats() ?? []
-    const bg = engineRef.current?.getBackgroundState()
-    const line =
-      stats.map((s) => `${s.model} ${s.materials}m ${s.opaque}o/${s.transparent}t ${s.grouped}g/${s.ungrouped}u`).join(" · ") +
-      (bg ? ` | bg mode ${bg.mode} x${bg.level.toFixed(2)}${bg.backdrop ? " backdrop" : ""}${bg.world ? " world" : ""}` : "")
+    const line = drawStatsLine(engineRef.current)
     if (line !== lastDrawStats.current) {
       lastDrawStats.current = line
       console.info(`[draw] ${line}`)
     }
   }, [ready, stages, props, groupsByModel, autoStyleStage, engineRef])
+
+  /**
+   * The styling an upload kicked off, so its toast can wait for the LOOKS.
+   *
+   * applyGroups compiles a WGSL module and a pipeline per group — a stage's ten
+   * are the slowest part of an upload — and the scenery path fires it without
+   * awaiting, deliberately: the lamps, the sky and the rig should install while
+   * that happens rather than queue behind it. Only the toast waited on nothing,
+   * so it announced a stage that was still grey and filling in.
+   */
+  const stylingPending = useRef<Promise<unknown> | null>(null)
 
   /**
    * Scenery converted from a .x arrives looking the way MMD drew it: what MMD
@@ -5143,7 +5176,7 @@ export default function Lab() {
         // 74% loses a random quarter of itself and reads as television static.
       }
       styled.current.add(id)
-      void applyGroups(id, stageStyleGroups(names, [group, ...glowGroups], memosOf(materials)) ?? [group, ...glowGroups])
+      stylingPending.current = applyGroups(id, stageStyleGroups(names, [group, ...glowGroups], memosOf(materials)) ?? [group, ...glowGroups])
     },
     [engineRef, applyGroups],
   )
@@ -5160,7 +5193,7 @@ export default function Lab() {
       const loaded = engineRef.current?.getModel(id)?.getMaterials() ?? []
       const names = loaded.map((m) => m.name)
       styled.current.add(id)
-      void applyGroups(id, stageStyleGroups(names, ray.groups, memosOf(loaded)) ?? ray.groups)
+      stylingPending.current = applyGroups(id, stageStyleGroups(names, ray.groups, memosOf(loaded)) ?? ray.groups)
     },
     [engineRef, applyGroups, toggleVisible],
   )
@@ -5240,7 +5273,7 @@ export default function Lab() {
       // names one.
       const glb = glbStageOf(pmx)
       if (glb) {
-        void applyGroups(id, glbStyleGroups(glb.materials))
+        stylingPending.current = applyGroups(id, glbStyleGroups(glb.materials))
         return id
       }
       if (!ray) {
@@ -5535,7 +5568,20 @@ export default function Lab() {
         adoptReplacedModel(target.id, newId)
         noteStyled(target.id)
         noteArrival(newId)
-      } else noteArrival(await addModelFromFiles(files, pmx))
+      } else
+        noteArrival(
+          // A character's looks compile after its mesh is read, and on a heavy
+          // one that is the longer half — see addModelFromFiles' onPhase.
+          await addModelFromFiles(files, pmx, (phase) =>
+            toast.loading(phase === "styling" ? t.lab.uploadStyling : t.lab.uploadLoading(name), { id: toastId }),
+          ),
+        )
+      // The looks, before the toast says it is here — see stylingPending.
+      if (stylingPending.current) {
+        toast.loading(t.lab.uploadStyling, { id: toastId })
+        await stylingPending.current.catch(() => {})
+        stylingPending.current = null
+      }
       toast.success(t.lab.uploadDone(name), { id: toastId })
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
@@ -6416,7 +6462,22 @@ export default function Lab() {
         const res = await fetch(`/api/library/${handoff.scene}`)
         if (!res.ok) throw new Error(String(res.status))
         const { item } = (await res.json()) as {
-          item: { name: string; payload: { doc: SceneDoc } }
+          item: {
+            name: string
+            payload: { doc: SceneDoc }
+            poster?: string | null
+            description?: string | null
+            tags?: string[] | null
+            credits?: string | null
+          }
+        }
+        if (handoff.edit) {
+          if (item.poster) setUpdatesPoster(item.poster)
+          setUpdatesMeta({
+            description: item.description ?? "",
+            tags: item.tags ?? [],
+            credits: item.credits ?? "",
+          })
         }
         const resolve = await resolveSceneRefs(item.payload.doc)
         const scene = parseSceneDoc(item.payload.doc, builtinEffect, libraryGraph, resolve)
@@ -6431,7 +6492,7 @@ export default function Lab() {
         await applyLabScene({
           ...scene,
           assets,
-          state: { ...scene.state, id, name: t.share.forkedName(item.name) },
+          state: { ...scene.state, id, name: handoff.edit ? item.name : t.share.forkedName(item.name) },
         })
       } catch {
         setUpload({ kind: "notice", message: t.sceneFile.badFile })
@@ -7694,6 +7755,10 @@ export default function Lab() {
           sceneId={scene.state.id}
           sceneName={sceneName}
           onRename={setSceneName}
+          updatesId={updatesSceneId}
+          updatesPoster={updatesPoster}
+          updatesMeta={updatesMeta}
+          onPublished={setUpdatesSceneId}
           // The scene is up; the gallery is where it landed. Closing first, or
           // the browse surface opens underneath a dialog still sitting on it.
           onGallery={() => {

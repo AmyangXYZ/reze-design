@@ -343,41 +343,109 @@ export async function POST(request: Request) {
         ]
       : []
 
-    const [scene] = await db
-      .insert(schema.libraryItems)
-      .values({
-        ...common,
-        id: await freeShortId(),
-        kind: "scene",
-        credits: text(credits, MAX_CREDITS),
-        bundleKey: typeof bundleKey === "string" ? bundleKey : null,
-        bundleBytes: typeof bundleBytes === "number" ? bundleBytes : 0,
-        posterKey: typeof posterKey === "string" ? posterKey : null,
-        // Recorded automatically when the session began from someone else's scene
-        // — there is no fork button, publishing IS the fork.
-        forkedFromId: typeof forkedFromId === "string" ? forkedFromId : null,
-        visibility: wantVisibility,
-      })
-      .returning()
+    // ── Publishing over your own scene ───────────────────────────────────────
+    // The SAME entity, not a second one: same short id, so every link already
+    // shared keeps working, and the counters, the pin and the publish date stay
+    // with it. A scene is the one thing people hand around by URL, so making a
+    // correction mint a new one — and reset its views and likes — is the worst
+    // possible answer to "I fixed a typo".
+    //
+    // Ownership decides it, and only ownership: a client naming someone else's
+    // id gets a new scene of their own, exactly as if they had named nothing.
+    const [prior] =
+      typeof id === "string" && id
+        ? await db
+            .select({
+              id: schema.libraryItems.id,
+              kind: schema.libraryItems.kind,
+              ownerId: schema.libraryItems.ownerId,
+              visibility: schema.libraryItems.visibility,
+            })
+            .from(schema.libraryItems)
+            .where(eq(schema.libraryItems.id, id))
+            .limit(1)
+        : []
+    const replacing = prior && prior.kind === "scene" && prior.ownerId === session.user.id ? prior : null
 
-    if (pins.length > 0) {
-      const real = await db
-        .select({ id: schema.libraryItems.id })
-        .from(schema.libraryItems)
-        .where(inArray(schema.libraryItems.id, pins))
-      const valid = real.map((r) => r.id)
-      if (valid.length > 0) {
-        await db.transaction(async (tx) => {
-          await tx.insert(schema.sceneUses).values(valid.map((id) => ({ sceneId: scene.id, itemId: id })))
+    // Nothing ever returns to private — the rule PATCH already holds, restated
+    // here because this is a second door into the same field. Once an item is
+    // public, other people's scenes can pin it.
+    const nextVisibility = replacing?.visibility === "public" ? "public" : wantVisibility
+
+    // WHAT AN UPDATE LEAVES ALONE. A new scene sets every field, including the
+    // empty ones; an update sets only what this publish actually carried, so
+    // re-publishing to correct a stage does not silently drop the cover the
+    // author framed, or the bundle, because this pass happened not to send one.
+    const hasBundle = typeof bundleKey === "string"
+    const hasPoster = typeof posterKey === "string"
+    const values = {
+      ...common,
+      kind: "scene" as const,
+      credits: text(credits, MAX_CREDITS),
+      visibility: nextVisibility,
+      ...(hasBundle || !replacing
+        ? { bundleKey: hasBundle ? (bundleKey as string) : null, bundleBytes: typeof bundleBytes === "number" ? bundleBytes : 0 }
+        : {}),
+      ...(hasPoster || !replacing ? { posterKey: hasPoster ? (posterKey as string) : null } : {}),
+    }
+    const [scene] = replacing
+      ? await db
+          .update(schema.libraryItems)
+          // NOT ownerId, createdAt, likeCount, viewCount, exportCount or
+          // featuredAt: an update replaces what the author made, never what
+          // anyone else did with it.
+          .set({ ...values, updatedAt: new Date() })
+          .where(eq(schema.libraryItems.id, replacing.id))
+          .returning()
+      : await db
+          .insert(schema.libraryItems)
+          .values({
+            ...values,
+            id: await freeShortId(),
+            // Recorded automatically when the session began from someone else's
+            // scene — there is no fork button, publishing IS the fork.
+            forkedFromId: typeof forkedFromId === "string" ? forkedFromId : null,
+          })
+          .returning()
+
+    // The pins this document makes, reconciled rather than added: an update can
+    // drop a look as easily as add one, and usageCount is denormalised, so the
+    // old rows have to be taken off the items they credited before the new ones
+    // go on. Whole thing in one transaction — a half-applied reconcile leaves a
+    // count nobody can derive back.
+    const real = pins.length
+      ? await db.select({ id: schema.libraryItems.id }).from(schema.libraryItems).where(inArray(schema.libraryItems.id, pins))
+      : []
+    const valid = real.map((r) => r.id)
+    const previous = replacing
+      ? (await db.select({ itemId: schema.sceneUses.itemId }).from(schema.sceneUses).where(eq(schema.sceneUses.sceneId, scene.id))).map(
+          (r) => r.itemId,
+        )
+      : []
+    const added = valid.filter((v) => !previous.includes(v))
+    const removed = previous.filter((p) => !valid.includes(p))
+    if (added.length || removed.length) {
+      await db.transaction(async (tx) => {
+        if (removed.length) {
+          await tx
+            .delete(schema.sceneUses)
+            .where(and(eq(schema.sceneUses.sceneId, scene.id), inArray(schema.sceneUses.itemId, removed)))
+          await tx
+            .update(schema.libraryItems)
+            .set({ usageCount: sql`greatest(${schema.libraryItems.usageCount} - 1, 0)` })
+            .where(inArray(schema.libraryItems.id, removed))
+        }
+        if (added.length) {
+          await tx.insert(schema.sceneUses).values(added.map((itemId) => ({ sceneId: scene.id, itemId })))
           // Denormalised so a library card needs no join.
           await tx
             .update(schema.libraryItems)
             .set({ usageCount: sql`${schema.libraryItems.usageCount} + 1` })
-            .where(inArray(schema.libraryItems.id, valid))
-        })
-      }
+            .where(inArray(schema.libraryItems.id, added))
+        }
+      })
     }
-    if (wantVisibility === "public") refreshMakerPages(author)
+    if (nextVisibility === "public") refreshMakerPages(author)
     // Shaped like a gallery card so the client can drop it straight into the
     // list it just joined, instead of re-reading the whole page to learn one row.
     return NextResponse.json(
@@ -387,7 +455,7 @@ export async function POST(request: Request) {
           poster: scene.posterKey ? `${process.env.R2_PUBLIC_BASE_URL}/${scene.posterKey}` : null,
         },
       },
-      { status: 201 },
+      { status: replacing ? 200 : 201 },
     )
   }
 

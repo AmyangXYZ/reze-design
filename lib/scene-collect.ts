@@ -108,10 +108,21 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
   const liveModels: SceneModel[] = input.models.map((m) => {
     const kept = sceneFiles.models.get(m.id)
     const booted = input.booted.find((d) => d.model.id === m.id)?.model.source ?? null
+    // Stages carry their placement and their switch weights in the document.
+    // Without the flag they reload as ordinary cast: physics, IK, a spawn
+    // offset, and no ground suppression. Read HERE rather than below, because
+    // it also decides where the files go.
+    const stage = input.stages.find((s) => s.id === m.id)
+    const prop = input.props?.find((p) => p.id === m.id)
     let source: ModelSource | null = null
     if (kept) {
-      // Uploaded here: pack the files we were given.
-      const base = `models/${m.id}`
+      // Uploaded here: pack the files we were given. A STAGE GETS ITS OWN
+      // FOLDER: it is a place rather than a cast member, it is the largest
+      // thing in the bundle by far, and it brings side files — a world, a
+      // lighting rig — that read as debris under `models/`. The document
+      // records the path, so this decides the layout of new scenes only and
+      // every published one keeps the paths it was written with.
+      const base = `${stage ? "stages" : "models"}/${m.id}`
       const paths = modelFilePaths(kept.files)
       for (const f of kept.files) entries.push({ path: `${base}/${paths.get(f)!}`, file: f })
       source = { kind: "bundle", path: `${base}/${paths.get(kept.pmx)!}` }
@@ -150,11 +161,6 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
       morph = { name: expr.name, url: expr.source.url }
       carry(morph.url)
     }
-    // Stages carry their placement and their switch weights in the document.
-    // Without the flag they reload as ordinary cast: physics, IK, a spawn
-    // offset, and no ground suppression.
-    const stage = input.stages.find((s) => s.id === m.id)
-    const prop = input.props?.find((p) => p.id === m.id)
     return {
       model: { id: m.id, file: m.file, source: source! },
       animation,
@@ -240,8 +246,14 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
   // it — the two are separate slots and a scene may hold both.
   let hdri: AssetRef | null = null
   if (input.hdri) {
-    const path = packPath("hdri", input.hdri.name)
-    entries.push({ path, file: input.hdri.file })
+    // A CONVERTED STAGE BRINGS ITS OWN WORLD, and the stage's files are already
+    // packed above — so the same .hdr was landing in the bundle twice, once
+    // inside the stage's folder and once more under `hdri/`, at whatever path
+    // the upload folder happened to give it. Point at the copy that is already
+    // there; only a world the user dropped themselves needs packing.
+    const already = entries.find((e) => e.file === input.hdri!.file)
+    const path = already?.path ?? packPath("hdri", input.hdri.name)
+    if (!already) entries.push({ path, file: input.hdri.file })
     hdri = { name: input.hdri.name, url: path }
   }
   const hidden = Object.fromEntries(

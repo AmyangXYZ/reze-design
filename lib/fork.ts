@@ -23,11 +23,25 @@ const KEY = storageKey("fork")
  */
 import { storageKey } from "@/lib/storage"
 
-export type ForkHandoff = { scene: string; bundle?: string }
+export type ForkHandoff = {
+  scene: string
+  bundle?: string
+  /**
+   * The author opening their OWN scene to correct it, rather than anyone taking
+   * a copy. The editor then keeps the scene's name instead of marking it a copy,
+   * and publishing updates that scene in place — same URL, same counters —
+   * instead of minting a second one beside it.
+   */
+  edit?: boolean
+}
 
-export function setForkTarget(sceneId: string, bundleId?: string): void {
+export function setForkTarget(sceneId: string, bundleId?: string, edit?: boolean): void {
   try {
-    const handoff: ForkHandoff = bundleId ? { scene: sceneId, bundle: bundleId } : { scene: sceneId }
+    const handoff: ForkHandoff = {
+      scene: sceneId,
+      ...(bundleId ? { bundle: bundleId } : {}),
+      ...(edit ? { edit: true } : {}),
+    }
     window.sessionStorage.setItem(KEY, JSON.stringify(handoff))
   } catch {
     // Storage blocked: the fork simply doesn't carry, and the editor opens normally.

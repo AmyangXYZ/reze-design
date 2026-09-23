@@ -54,7 +54,14 @@ export const USE_DEFAULT_SCENE = YES.includes((process.env.NEXT_PUBLIC_USE_DEFAU
  */
 const DEMO = "https://assets.reze.one/demo/demo-cat"
 // The cast, shared by every site rather than copied into each one's folder.
-const MODEL = "https://assets.reze.one/demo/reze"
+//
+// `-2` because her textures are now WebP and the path is the version. She
+// shipped as 16.3MB of PNG, which is most of what a first-time visitor
+// downloads before anything appears, and a private window — having no cache to
+// spare it — paid that on every open. The same 13 maps are 1.9MB re-encoded
+// (scripts/model-textures-to-webp.mjs), with every pixel anything can sample
+// bit-identical on the two that carry real transparency.
+const MODEL = "https://assets.reze.one/demo/reze-2"
 
 const DEMO_SCENE_DOC: SceneDoc = {
   version: 1,

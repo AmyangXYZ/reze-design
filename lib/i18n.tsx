@@ -73,11 +73,12 @@ const en = {
     door: "Scene gallery",
     more: "Load more",
     loading: "Fetching scenes…",
-    open: "Open scene",
+    open: "Open",
     views: (n: number) => `${n} views`,
     empty: "No scenes published yet.",
     failed: "Couldn't load the gallery.",
     noPoster: "no image",
+    editPublished: "Edit",
     selectScene: "Select a scene",
     deleteTitle: "Delete scene",
     deleteConfirm: "Its link stops working, for everyone who has it.",
@@ -104,9 +105,14 @@ const en = {
   share: {
     label: "Share",
     fork: "Open in editor",
+    editScene: "Edit",
     /** A fork opens under its own name, so the original's is never quietly
      *  overwritten in the library and two copies are told apart at a glance. */
     forkedName: (name: string) => `${name} - fork`,
+    updateScene: "Update",
+    updateBlurb: "Replaces the published scene — same link, same views and likes.",
+    updatedTitle: "Scene updated",
+    coverKept: "Keeping the cover it already has — pick one to replace it.",
     thumbnail: "Thumbnail",
     thumbnailPick: "Choose image",
     thumbnailTooBig: "That image is over 20MB — pick a smaller one.",
@@ -117,7 +123,7 @@ const en = {
     packing: "Packing assets…",
     uploading: "Uploading assets…",
     publishing: "Publishing…",
-    openScene: "Open scene",
+    openScene: "Open",
     failedPacking: "Couldn't pack the scene's assets",
     failedUpload: "Upload failed",
     failedPublish: "Publish failed",
@@ -134,6 +140,13 @@ const en = {
   editor: {
     /** The general wait, before there is anything specific to say about it. */
     loadingScene: "Loading scene…",
+    /** The GPU device and the pipelines every scene needs, before the scene is
+     *  even asked for. A browser with no shader cache pays for all of them, and
+     *  on a first visit this is most of the open. */
+    startingEngine: "Starting the engine…",
+    /** A model's mesh is in and its looks are compiling — a WGSL module and a
+     *  pipeline per group, the longer half of loading a character. */
+    compilingShaders: (name: string) => `Compiling shaders · ${name}`,
     // Opening someone else's scene is four serial waits and the pill named none
     // of them. A 165MB bundle is most of a six-second open, and an unmoving
     // "loading…" for that long reads as a hang — so each phase says what it is
@@ -402,7 +415,7 @@ const en = {
     applyTo: (name: string) => `Apply to ${name}`,
     nameTaken: "That name is taken. Pick another.",
     nameTakenBy: (name: string) => `“${name}” already exists. Pick another name.`,
-    deletePublished: "Delete published",
+    deletePublished: "Delete",
     deletePublishedConfirm: "Remove this from the public library? Scenes using it fall back to defaults.",
     // What the server said, when it refused. See lib/api-error.ts.
     errNameTaken: "That name is already taken",
@@ -510,9 +523,10 @@ const en = {
     rayApplied: (n: number) => `Applied ${n} ray-mmd materials`,
     uploadReading: "Reading files…",
     uploadTexturing: (done: number, total: number) => `Compressing textures ${done}/${total}`,
-    uploadConverting: (name: string) => `Converting ${name}…`,
+    uploadConverting: (name: string) => `Parsing ${name}…`,
     uploadLoading: (name: string) => `Loading ${name}…`,
     uploadPlacing: "Placing lamps and sky…",
+    uploadStyling: "Compiling shaders…",
     uploadDone: (name: string) => `${name} is in the scene`,
     uploadFailed: (name: string) => `${name} could not be loaded`,
     /** A track the browser took and then could not play. Said plainly, because
@@ -1045,11 +1059,12 @@ const zh: Dictionary = {
     door: "场景画廊",
     more: "加载更多",
     loading: "正在获取场景…",
-    open: "打开场景",
+    open: "打开",
     views: (n: number) => `${n} 次浏览`,
     empty: "还没有已发布的场景。",
     failed: "画廊加载失败。",
     noPoster: "无封面",
+    editPublished: "编辑",
     selectScene: "选择一个场景",
     deleteTitle: "删除场景",
     deleteConfirm: "它的链接将对所有人失效。",
@@ -1076,7 +1091,12 @@ const zh: Dictionary = {
   share: {
     label: "分享",
     fork: "在编辑器中打开",
+    editScene: "编辑",
     forkedName: (name: string) => `${name} - 复刻`,
+    updateScene: "更新",
+    updateBlurb: "替换已发布的场景 —— 链接、播放量与点赞都不变。",
+    updatedTitle: "场景已更新",
+    coverKept: "保留原有封面 —— 选择图片即可替换。",
     thumbnail: "封面图",
     thumbnailPick: "选择图片",
     thumbnailTooBig: "图片超过 20MB，请换一张。",
@@ -1087,7 +1107,7 @@ const zh: Dictionary = {
     packing: "打包资源中…",
     uploading: "上传资源中…",
     publishing: "发布中…",
-    openScene: "打开场景",
+    openScene: "打开",
     failedPacking: "打包场景资源失败",
     failedUpload: "上传失败",
     failedPublish: "发布失败",
@@ -1101,6 +1121,8 @@ const zh: Dictionary = {
   },
   editor: {
     loadingScene: "正在加载场景…",
+    startingEngine: "正在启动引擎…",
+    compilingShaders: (name: string) => `正在编译着色器 · ${name}`,
     downloadingAssets: (received: string, total: string, speed: string) =>
       `正在下载素材 · ${received} / ${total} · ${speed}`,
     downloadingAssetsUnsized: (received: string, speed: string) => `正在下载素材 · ${received} · ${speed}`,
@@ -1354,7 +1376,7 @@ const zh: Dictionary = {
     applyTo: (name: string) => `应用到 ${name}`,
     nameTaken: "该名称已被使用，请换一个。",
     nameTakenBy: (name: string) => `“${name}”已存在，请换一个名称。`,
-    deletePublished: "删除已发布",
+    deletePublished: "删除",
     deletePublishedConfirm: "从公共库中移除？使用它的场景将回退到默认效果。",
     errNameTaken: "这个名字已被占用",
     errCannotUnpublish: "已发布的内容不能再改回私有",
@@ -1456,9 +1478,10 @@ const zh: Dictionary = {
     rayApplied: (n: number) => `已应用 ${n} 个 ray-mmd 材质`,
     uploadReading: "正在读取文件…",
     uploadTexturing: (done: number, total: number) => `正在压缩贴图 ${done}/${total}`,
-    uploadConverting: (name: string) => `正在转换 ${name}…`,
+    uploadConverting: (name: string) => `正在解析 ${name}…`,
     uploadLoading: (name: string) => `正在加载 ${name}…`,
     uploadPlacing: "正在放置灯光与天空…",
+    uploadStyling: "正在编译着色器…",
     uploadDone: (name: string) => `${name} 已加入场景`,
     uploadFailed: (name: string) => `${name} 无法加载`,
     audioDecodeFailed: "浏览器无法解码这段音频。部分 WAV（24 位以及一些浮点格式）会被拒绝，另存为 16 位 WAV 或 MP3 即可。",

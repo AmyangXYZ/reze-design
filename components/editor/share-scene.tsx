@@ -105,6 +105,19 @@ export function ShareSceneDialog(props: {
   sceneName: string
   onRename: (name: string) => void
   forkedFromId?: string
+  /** The published scene this one REPLACES — set when the author opened their
+   *  own scene to correct it. Publishing then updates that row in place. */
+  updatesId?: string
+  /** The cover that scene already has, shown in place of an empty frame. Kept
+   *  unless a new one is picked, and never re-uploaded: the server keeps the
+   *  poster it holds when a publish carries none. */
+  updatesPoster?: string | null
+  /** What that scene already says about itself, so an edit opens on the author's
+   *  own words instead of asking them to write the blurb a second time. */
+  updatesMeta?: Draft | null
+  /** The id a publish landed on, so a second publish in the same session
+   *  updates rather than making a third scene. */
+  onPublished?: (id: string) => void
   collect: () => ScenePublishSource
   unpublished: (visibility: Visibility) => UnpublishedUse[]
   /** Closes this dialog and opens the gallery — offered once the scene is up. */
@@ -125,6 +138,10 @@ function ShareSceneForm({
   sceneName,
   onRename,
   forkedFromId,
+  updatesId,
+  updatesPoster,
+  updatesMeta,
+  onPublished,
   collect,
   unpublished,
   onGallery,
@@ -137,6 +154,16 @@ function ShareSceneForm({
   onRename: (name: string) => void
   /** The scene this session was forked from, if any. Lineage, recorded quietly. */
   forkedFromId?: string
+  /** The published scene this one REPLACES — set when the author opened their
+   *  own scene to correct it. Publishing updates that row in place. */
+  updatesId?: string
+  /** The cover that scene already has — see the dialog's prop. */
+  updatesPoster?: string | null
+  /** What it already says about itself — see the dialog's prop. */
+  updatesMeta?: Draft | null
+  /** The id a publish landed on, so a second publish in the same session
+   *  updates rather than making a third scene. */
+  onPublished?: (id: string) => void
   collect: () => ScenePublishSource
   /** Looks this scene's readers could not resolve, under the visibility it is
    *  about to be published with. Publishing is blocked while this is non-empty
@@ -148,7 +175,17 @@ function ShareSceneForm({
   const { data: session } = useSession()
   // Lazily from storage: nothing is rendered until the dialog opens, so reading
   // client-only state here can't disagree with the server's markup.
-  const [draft] = useState(() => readDraft(sceneId))
+  // An edit starts from what is published; a draft left mid-sentence outranks it
+  // per field, because that is the writing this dialog exists to protect.
+  const [draft] = useState(() => {
+    const local = readDraft(sceneId)
+    if (!updatesMeta) return local
+    return {
+      description: local.description || updatesMeta.description,
+      tags: local.tags.length ? local.tags : updatesMeta.tags,
+      credits: local.credits || updatesMeta.credits,
+    }
+  })
   // Recomputed when the picker moves, NOT read once: a look that is fine for a
   // private scene can be exactly what a public one may not point at, so the
   // answer belongs to the visibility currently chosen. The scene itself is
@@ -261,6 +298,9 @@ function ShareSceneForm({
           bundleKey,
           bundleBytes,
           posterKey,
+          // Naming a scene you own replaces it: same short id, same counters.
+          // Ignored by the server for anyone else's, which then publishes anew.
+          ...(updatesId ? { id: updatesId } : {}),
           forkedFromId,
           // The published presets this scene pins — recorded as edges so "used in
           // N scenes" is a join rather than a scan through documents.
@@ -293,6 +333,7 @@ function ShareSceneForm({
       // Published — the draft has served its purpose.
       window.localStorage.removeItem(draftKey(sceneId))
       setRow(item)
+      onPublished?.(item.id)
       setStep("done")
     } catch (e) {
       setStep("idle")
@@ -328,8 +369,11 @@ function ShareSceneForm({
     >
         <DialogTitle className="flex items-center gap-2 text-sm font-medium">
           <Globe className="size-4 text-blue-400" />
-          {t.share.title}
+          {updatesId ? t.share.updateScene : t.share.title}
         </DialogTitle>
+        {updatesId && (
+          <p className="mt-1 text-xs leading-snug text-muted-foreground">{t.share.updateBlurb}</p>
+        )}
 
         {/* Shown before the form rather than on submit: discovering a block after
             writing a description, choosing tags and picking a thumbnail is the
@@ -444,6 +488,9 @@ function ShareSceneForm({
               </div>
               <label className="block">
                 <span className="text-xs text-muted-foreground">{t.share.thumbnail}</span>
+                {updatesId && !poster && updatesPoster && (
+                  <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">{t.share.coverKept}</span>
+                )}
                 <input
                   ref={posterInputRef}
                   type="file"
@@ -472,11 +519,14 @@ function ShareSceneForm({
                   onClick={() => posterInputRef.current?.click()}
                   className="mt-0.5 block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-md border border-white/10 bg-white/5 transition-colors hover:border-white/25"
                 >
-                  {posterUrl ? (
+                  {(posterUrl ?? updatesPoster) ? (
                     // Any shape is fine: the card crops to fill, so authors aren't
-                    // asked to produce a particular aspect ratio.
+                    // asked to produce a particular aspect ratio. Falling back to
+                    // the cover the scene already has, so an author correcting a
+                    // published scene sees it rather than an empty frame — and
+                    // keeps it by simply not picking another.
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={posterUrl} alt="" className="h-full w-full object-cover" />
+                    <img src={posterUrl ?? updatesPoster!} alt="" className="h-full w-full object-cover" />
                   ) : (
                     <span className="flex h-full flex-col items-center justify-center gap-1 text-muted-foreground/60">
                       <ImagePlus className="size-4" />
@@ -525,7 +575,9 @@ function ShareSceneForm({
                 !description.trim() ||
                 tags.length === 0 ||
                 !credits.trim() ||
-                !poster
+                // An update keeps whatever cover the scene already has, so
+                // re-publishing to fix a stage does not mean re-framing a shot.
+                (!poster && !updatesId)
               }
               className="mt-1.5 h-9 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-50"
             >
@@ -535,7 +587,7 @@ function ShareSceneForm({
                   {stepLabel}
                 </>
               ) : session ? (
-                t.gradeLibrary.publish
+                updatesId ? t.share.updateScene : t.gradeLibrary.publish
               ) : (
                 t.share.signIn
               )}

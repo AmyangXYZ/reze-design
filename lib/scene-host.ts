@@ -180,6 +180,12 @@ export type LoadProgress = {
   onModel?: (info: EngineModelInfo, groups: StyleGroup[], stage: StageInfo | null, prop: PropInfo | null) => void
   /** Bundle download, while it is downloading. Null once the bytes are in. */
   onBytes?: (p: BundleProgress | null) => void
+  /** This model's mesh is in and its LOOKS are compiling. Its own phase because
+   *  it is its own wait: a WGSL module and a pipeline per group, which on a
+   *  character is eight and on a stage can be ten, and a browser with a cold
+   *  shader cache pays for every one. Named, the pill stops calling the longer
+   *  half of an open by the shorter half's name. */
+  onStyling?: (file: string) => void
 }
 
 /**
@@ -194,7 +200,7 @@ export type LoadProgress = {
 export type BundleProgress = { received: number; total: number; bytesPerSecond: number; done?: boolean }
 
 export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean, progress: LoadProgress = {}) {
-  const { onStage, onBundle, onModel, onBytes } = progress
+  const { onStage, onBundle, onModel, onBytes, onStyling } = progress
   const s = scene.state.settings
   const infos: EngineModelInfo[] = []
   const groups: Record<string, StyleGroup[]> = {}
@@ -309,8 +315,14 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
     if (stale()) return null
   }
 
+  // Load against style, kept apart: they are the two halves of the model wait
+  // and they answer to different fixes — bytes to a smaller texture set, a
+  // compile to fewer groups or a warmer cache.
+  let msLoading = 0
+  let msStyling = 0
   for (const entry of scene.assets.models) {
     const src = entry.model.source
+    const tEntry = performance.now()
     let model
     if (src.kind === "bundle") {
       const pmxFile = bundle?.find((f) => f.name === src.path)
@@ -399,6 +411,10 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
         ...(rot ? { rotation: castRotationToEngine(rot) } : {}),
       })
     }
+    // The mesh is in; everything after this line is the looks.
+    msLoading += performance.now() - tEntry
+    const tStyle = performance.now()
+    onStyling?.(entry.model.file)
     // Styling: a document carrying groups for this model (a restored or imported scene)
     const docGroups = scene.state.groups?.[entry.model.id]
     if (docGroups) {
@@ -439,6 +455,7 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
       await engine.autoStyleGroups(entry.model.id)
     }
     if (stale()) return null
+    msStyling += performance.now() - tStyle
     const hidden = scene.state.hidden?.[entry.model.id] ?? []
     for (const name of hidden) engine.toggleMaterialVisible(entry.model.id, name)
     const info = infoFor(entry.model.id, entry.model.file, model, hidden, castPlacement, entry.visibility)
@@ -544,6 +561,16 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
   // Again at the end, for the empty-scene case and because the first model may
   // have arrived before its follow bone existed.
   applyCamera(engine, scene.state.camera, engine.getModel(firstCastId(scene.assets.models)))
+  // The breakdown, as one line. A slow open is reported as the word "slow" and
+  // every phase here wants a different fix, so the numbers go in the console
+  // ring buffer where a copied report brings them along.
+  console.info(
+    `[open] ${Math.round(performance.now() - t0)}ms — ` +
+      `bundle ${Math.round(tBundle - t0)}ms` +
+      (bundleBytes ? ` (${(bundleBytes / 1024 / 1024).toFixed(1)}MB)` : "") +
+      ` · ${infos.length} model${infos.length === 1 ? "" : "s"} ${Math.round(msLoading)}ms` +
+      ` · shaders ${Math.round(msStyling)}ms`,
+  )
   return { infos, groups, bundle, stageList, propList, planeList, restoredAnims }
 }
 

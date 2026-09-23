@@ -105,6 +105,18 @@ export function useEngine(
   // the models it shares the zip with have finished loading. State and not just
   // the ref, because a ref cannot tell anyone it changed.
   const [bundleReady, setBundleReady] = useState(false)
+  /**
+   * How far the boot has got before the scene load has anything to say.
+   *
+   * `engine.init()` acquires the GPU device and builds the pipelines every scene
+   * needs, and a browser with no shader cache — a private window, a first visit —
+   * pays for all of them before a single byte of the scene is asked for. That
+   * wait had no name, so it wore the next phase's: a window sitting on "Loading
+   * scene…" for half a minute was compiling, not loading.
+   */
+  const [engineReady, setEngineReady] = useState(false)
+  /** The model whose looks are compiling, while they compile. */
+  const [styling, setStyling] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [models, setModels] = useState<EngineModelInfo[]>([])
   // Which of `models` are environment rather than cast. Stages stay IN models so
@@ -208,8 +220,12 @@ export function useEngine(
             return lines.length
           }
         }
+        const tInit = performance.now()
         await engine.init()
         if (disposed) return
+        // The first half of a cold open, and the half nothing else measures.
+        console.info(`[open] engine ${Math.round(performance.now() - tInit)}ms`)
+        setEngineReady(true)
         const loaded = await loadSceneInto(engine, scene, () => disposed, {
           onStage: () => {
             // Stage up: paint now, models stream in behind.
@@ -217,6 +233,7 @@ export function useEngine(
             setStageReady(true)
           },
           onBytes: setBundleProgress,
+          onStyling: setStyling,
           onBundle: (files) => {
             bundleRef.current = files
             setBundleReady(true)
@@ -224,6 +241,8 @@ export function useEngine(
           // Each model joins the lists as it lands, so a host can name it, show
           // its row and give it its motion while the rest are still loading.
           onModel: (info, groups, stage, prop) => {
+            // This one's looks are done; the next one's bytes are not its shaders.
+            setStyling(null)
             setModels((prev) => withId(prev, info))
             setGroupsByModel((prev) => ({ ...prev, [info.id]: groups }))
             if (stage) setStages((prev) => withId(prev, stage))
@@ -245,6 +264,7 @@ export function useEngine(
         setPlanes(loaded.planeList)
         setGroupsByModel(groupsMap)
         // Bind pose until the user loads a VMD — material evaluation doesn't need motion.
+        setStyling(null)
         setReady(true)
         setError(null)
       } catch (e) {
@@ -265,6 +285,8 @@ export function useEngine(
       // nothing, with no error anywhere because nothing failed.
       setReady(false)
       setStageReady(false)
+      setEngineReady(false)
+      setStyling(null)
     }
   }, [])
 
@@ -378,10 +400,23 @@ export function useEngine(
     sceneFiles.models.set(id, { pmx: pmxFile, files: referencedFiles(all, pmxFile, model, maps) })
   }
 
-  const addModelFromFiles = useCallback(async (files: File[] | FileList, pmxFile: File): Promise<string> => {
+  /**
+   * `onPhase` reports where a load has got to, because the two halves take very
+   * different amounts of time and only one of them looks like progress: the mesh
+   * is read, and then a shader and a pipeline are compiled per style group. The
+   * second is the slow one on a heavy character, and without this the toast said
+   * "Loading" through all of it and "in the scene" a beat before the looks
+   * landed.
+   */
+  const addModelFromFiles = useCallback(async (
+    files: File[] | FileList,
+    pmxFile: File,
+    onPhase?: (phase: "loading" | "styling") => void,
+  ): Promise<string> => {
     const engine = engineRef.current
     if (!engine) throw new Error("engine not ready")
     const id = uniqueModelId(pmxFile.name)
+    onPhase?.("loading")
     // Retained for zip-on-publish — the engine consumes the bytes, the bundle
     // needs them again.
     const model = await engine.loadModel(id, { files, pmxFile })
@@ -399,6 +434,7 @@ export function useEngine(
     engine.setModelTransform(id, { visible: false, position: new Vec3(position[0], position[1], position[2]) })
     let groups: StyleGroup[]
     try {
+      onPhase?.("styling")
       await engine.autoStyleGroups(id)
       groups = withSpecialGroups(await restyled(engine, id, engine.getStyleGroups(id)))
     } finally {
@@ -1347,6 +1383,8 @@ export function useEngine(
     viewportRef,
     ready,
     stageReady,
+    engineReady,
+    styling,
     bundleProgress,
     bundleReady,
     error,

@@ -47,6 +47,10 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
       likeCount: schema.libraryItems.likeCount,
       createdAt: schema.libraryItems.createdAt,
       visibility: schema.libraryItems.visibility,
+      // The cover and the 借物表, so an author reopening their own scene to
+      // correct it gets back everything they wrote rather than a blank form.
+      posterKey: schema.libraryItems.posterKey,
+      credits: schema.libraryItems.credits,
     })
     .from(schema.libraryItems)
     .where(eq(schema.libraryItems.id, id))
@@ -65,9 +69,16 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
       return NextResponse.json({ error: "not found" }, { status: 404 })
     }
   }
-  // visibility is a gate, not payload — it never leaves the server.
-  const item = { ...row, visibility: undefined }
+  // visibility is a gate, not payload — it never leaves the server. The key is
+  // storage's business too; what a client can use is the URL.
+  const item = {
+    ...row,
+    visibility: undefined,
+    posterKey: undefined,
+    poster: row.posterKey ? `${process.env.R2_PUBLIC_BASE_URL}/${row.posterKey}` : null,
+  }
   delete item.visibility
+  delete item.posterKey
   return NextResponse.json({ item })
 }
 

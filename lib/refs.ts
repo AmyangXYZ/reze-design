@@ -10,6 +10,7 @@ import { DEFAULT_GRAPH, UNLIT_GRAPH, type ShaderGraph } from "reze-engine"
 import { EFFECTS } from "@/lib/effects"
 import { GRADE_PRESETS, type GradeSpec } from "@/lib/grade"
 import { GRAPH_LIBRARY, sameGraphLook } from "@/lib/materials"
+import { stagePbrGraph } from "@/lib/gltf-stage"
 import { communityItems } from "@/lib/community-store"
 import type { EffectItem, GradeItem, GraphItem, LibraryKind } from "@/lib/library"
 import type { ItemRef } from "@/lib/scene"
@@ -98,6 +99,28 @@ const atUnlitStrength = (graph: ShaderGraph): ShaderGraph => ({
   nodes: graph.nodes.map((n) => (n.id === "emit" && n.type === "emission" ? { ...n, inputs: { ...n.inputs, strength: 1 } } : n)),
 })
 
+/**
+ * The app's OWN look for a glTF stage, at whatever emissive strength that
+ * material declared.
+ *
+ * Same reasoning as the engine presets above, and the same failure without it.
+ * A .glb stage is grouped by the app, not by a person: one Stage PBR per
+ * emissive strength the file happens to carry, so X309 alone minted six —
+ * ×1, ×3, ×4, ×16, ×42 and the plain one — and every scene wearing a converted
+ * stage was unpublishable. Nobody chose those looks and there is no library
+ * entry to go and publish; they are one built-in with a number in its name, and
+ * they travel by value in the bundle like the rest.
+ *
+ * Rebuilt at the graph's own strength rather than matched by name, so an edited
+ * copy stops being recognised — which is the whole rule of this file.
+ */
+function isAppStageGraph(graph: ShaderGraph): boolean {
+  const principled = graph.nodes.find((n) => n.type === "principled")
+  const strength = Number(principled?.inputs?.emission_strength ?? 0)
+  if (!Number.isFinite(strength)) return false
+  return sameGraphLook(graph, stagePbrGraph(strength))
+}
+
 export function unpublishedUses(
   scene: {
     gradeSpec: GradeSpec
@@ -139,6 +162,7 @@ export function unpublishedUses(
       // so every scene holding a media plane was unpublishable.
       if (ENGINE_PRESETS.some((preset) => sameGraphLook(g.graph, preset))) continue
       if (sameGraphLook(atUnlitStrength(g.graph), UNLIT_GRAPH)) continue
+      if (isAppStageGraph(g.graph)) continue
       // One entry per look, however many groups wear it.
       if (seen.has(g.graph.name)) continue
       seen.add(g.graph.name)

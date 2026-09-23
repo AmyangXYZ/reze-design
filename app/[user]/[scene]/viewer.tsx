@@ -15,6 +15,7 @@ import { AnimPlayer } from "@/components/scene/anim-player"
 import { builtinEffect } from "@/lib/effects"
 import { useEngine } from "@/hooks/use-engine"
 import { useSceneSync } from "@/hooks/use-scene-sync"
+import { drawStatsLine } from "@/lib/draw-stats"
 import { specOf } from "@/lib/grade"
 import { libraryGraph } from "@/lib/materials"
 import { newSceneId, parseSceneDoc, type Scene, type SceneDoc } from "@/lib/scene"
@@ -287,6 +288,8 @@ function SceneStage({
     engineRef,
     ready,
     stageReady,
+    engineReady,
+    styling,
     bundleReady,
     bundleProgress,
     error,
@@ -303,7 +306,14 @@ function SceneStage({
     bundleFilesRef.current = bundleFiles
   }, [bundleFilesRef, bundleFiles])
 
-  const loadingLabel = useLoadingLabel({ scene, bundleProgress, bundleReady, loaded: models.length })
+  const loadingLabel = useLoadingLabel({
+    scene,
+    bundleProgress,
+    bundleReady,
+    engineReady,
+    styling,
+    loaded: models.length,
+  })
 
   // Background. A published scene packs its image, so both kinds resolve out of
   // the bundle synchronously. A flat backdrop is a DOM layer BEHIND the canvas,
@@ -328,6 +338,26 @@ function SceneStage({
     () => (background?.kind === "skybox" ? bundleFile(background.asset.url) : null),
     [background, bundleFile],
   )
+  /**
+   * The world that LIGHTS the scene, which the viewer was not reading at all.
+   *
+   * Two different slots: a skybox is the picture behind the cast, an .hdr is the
+   * light on them. Left unpassed, useSceneSync defaults hdri to null and its
+   * effect calls setWorldEquirect(null) — so a published scene did not merely
+   * fail to install its sky, it actively removed it and fell back to the flat
+   * world colour. Every stage that brings its own .hdr (every converted one
+   * does) was lit one way in the editor and another here, with the document,
+   * the groups and the lamps all identical: the drift had nowhere to show.
+   *
+   * ON `bundleReady`, like the background above and for the same reason, which
+   * is not obvious and cost a debugging round: `bundleFile` is a useCallback
+   * with no dependencies, so its identity never changes and a memo keyed on it
+   * alone runs exactly once — on the first render, before the zip exists,
+   * resolving to null and staying there. The gate is what makes the dependency
+   * move when the bytes land.
+   */
+  const hdri = bundleReady ? scene.assets.hdri : null
+  const hdriFile = useMemo(() => (hdri ? bundleFile(hdri.url) : null), [hdri, bundleFile])
   const backdropUrl = useMemo(() => (backdropFile ? URL.createObjectURL(backdropFile) : null), [backdropFile])
   // A video backdrop is a DIFFERENT ELEMENT, not a different src: an <img>
   // pointed at a video blob renders nothing at all, which is exactly how a
@@ -398,6 +428,18 @@ function SceneStage({
   }, [models])
   const [eyes, setEyes] = useState(scene.state.settings.eyes.enabled)
   const settings = useMemo(() => ({ ...scene.state.settings, eyes: { enabled: eyes } }), [scene.state.settings, eyes])
+  // THE SAME LINE THE EDITOR PRINTS, for the same reason — see lib/draw-stats.
+  // A scene that looks different here than it does there differs in what
+  // reached the engine, and these are the numbers that say so: the material
+  // counts, how many of them a group claimed, and whether a world is installed.
+  const lastDraw = useRef("")
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development" || !ready) return
+    const line = drawStatsLine(engineRef.current)
+    if (!line || line === lastDraw.current) return
+    lastDraw.current = line
+    console.info(`[draw] ${line}`)
+  }, [ready, models, stages, engineRef])
   const stageSuns = useMemo(() => stages.map((s) => ({ id: s.id, sun: s.sun ?? null })), [stages])
   useSceneSync({
     engineRef,
@@ -413,6 +455,7 @@ function SceneStage({
     hasBackdrop: !!backdropFile,
     plate: isPlate,
     skybox: skyboxFile,
+    hdri: hdriFile,
   })
 
   // Motions, PER MODEL as each one lands — not one pass after the last of them.

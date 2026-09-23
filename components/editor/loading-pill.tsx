@@ -58,12 +58,19 @@ export function useLoadingLabel(args: {
   scene: Scene
   bundleProgress: BundleProgress | null
   bundleReady: boolean
+  /** The GPU device and its pipelines are up — everything below waits on this. */
+  engineReady: boolean
+  /** The model whose looks are compiling, while they compile. */
+  styling: string | null
   /** Models that have reported in so far. */
   loaded: number
 }): string {
   const t = useT()
-  const { scene, bundleProgress, bundleReady, loaded } = args
+  const { scene, bundleProgress, bundleReady, engineReady, styling, loaded } = args
   return useMemo(() => {
+    // FIRST, because nothing else has started yet. This wait used to wear the
+    // generic name and is the whole open on a cold shader cache.
+    if (!engineReady) return t.editor.startingEngine
     if (bundleProgress && !bundleProgress.done) {
       // Every volatile number gets a field wide enough for the largest value it
       // can reach, so the line stays exactly as wide from the first byte to the
@@ -79,15 +86,18 @@ export function useLoadingLabel(args: {
     // The bytes are in and the zip is being walked — its own visible pause on a
     // bundle this size, and not the same wait as the download.
     if (bundleProgress?.done && !bundleReady) return t.editor.unpackingAssets
+    // The mesh is in and the pipelines are compiling — on a character the longer
+    // half of the wait, and indistinguishable from the download without this.
+    if (styling) return t.editor.compilingShaders(styling)
     const total = scene.assets.models.length
-    // Nothing specific to say yet: the engine is still booting, or a local
-    // bundle is coming out of IndexedDB, which reports no bytes because it
-    // never crossed a network.
+    // Nothing specific to say yet: a local bundle is coming out of IndexedDB,
+    // which reports no bytes because it never crossed a network, or the scene
+    // is empty and there is nothing to report on at all.
     if (!bundleReady || total === 0) return t.editor.loadingScene
     // Models resolve in document order, so the one in flight is the next that
     // has not reported in. Clamped: the last one is still "of total" while it
     // finishes.
     const index = Math.min(loaded, total - 1)
     return t.editor.loadingModels(index + 1, total, scene.assets.models[index]?.model.file ?? "")
-  }, [scene, bundleProgress, bundleReady, loaded, t])
+  }, [scene, bundleProgress, bundleReady, engineReady, styling, loaded, t])
 }
