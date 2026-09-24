@@ -4,7 +4,7 @@
 
 **→ [reze.design](https://reze.design)**
 
-![Hero](./screenshots/design.png)
+![Reze Design — several characters in one scene, exported from vertical 9:16 to cinemascope](./showcase.jpg)
 
 ## Features
 
