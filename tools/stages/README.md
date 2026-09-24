@@ -44,36 +44,38 @@ Blender.
 python3 tools/stages/unity_to_glb.py \
   --project "stages/x323-unity/ExportedProject" \
   --scene   "Assets/ComScene/ABResources/Levels/X323.unity" \
-  --out     stages/x323-glb --name X323
+  --out     stages/X323.glb --name X323
 ```
 
 Two steps, one command. The pre-pass reads the export — meshes, materials,
 lights, the scene's own settings — and writes a build folder; then Blender,
 headless, builds the scene from it, saves `X323.blend` for a person to open,
 and exports `X323.glb` with its own glTF exporter, the same exporter a stage
-built by hand in Blender goes through. Upload the `.glb` as a stage.
+built by hand in Blender goes through. Last, its textures become WebP at
+quality 90, same resolution (`EXT_texture_webp`, see `glb_webp.py`; `--png`
+keeps them PNG) — about five times smaller, X340 went from 260 MB to 47.
+Upload the `.glb` as a stage: it is the whole stage, one file.
 
-Needs Pillow, numpy and Blender (`/Applications/Blender.app`). No FBX and no
+Needs Pillow, numpy and Blender — `$BLENDER`, or the usual install on macOS or
+Windows. No FBX and no
 PMX in between: every hop through another format is a hop that renames a
 material or loses a map, and the material **name** is what a person assigns a
 look to in the app.
 
-Then shrink it: `python3 tools/stages/glb_webp.py stages/x323-glb/X323.glb`
-re-encodes every texture as WebP at quality 90, same resolution
-(`EXT_texture_webp`), about five times smaller — X340 went from 260 MB to 47.
+`python3 tools/stages/glb_webp.py <stage.glb>` does the WebP pass alone, for
+a .glb exported some other way.
 
 ## What comes out
 
 | | |
 |---|---|
 | `X323.glb` | the whole stage: geometry in metres, one material per Unity material with its albedo, its occlusion-roughness-metal map in glTF's order, its normal map and its emissive map; the lamps and the sun as `KHR_lights_punctual`; and under `extras.reze` the world, the cast's fill, the view the game forms its frame with, and its colour grade (`grading`, below) |
-| `X323.blend` | the same scene, textures packed, viewed under Filmic +0.6 as the app views it |
-| `../x323-glb-build/` | what Blender was built from: `scene.json`, geometry, the maps as packed |
+| `build/x323/X323.blend` | the same scene, textures packed, viewed under Filmic +0.6 as the app views it |
+| `build/x323/` | what Blender was built from: `scene.json`, geometry, the maps as packed |
 
-The build folder sits BESIDE the stage folder, because the folder named by
-`--out` is what a person uploads and everything in it is read as part of the
-stage: its textures include the game's sky panoramas, and a stage that brought
-one is offered it to choose from.
+Every stage is one `.glb` side by side in `stages/`, and everything it was made
+from sits under `stages/build/<stage>/`, out of the way: the build's textures
+include the game's sky panoramas, which are inputs and not part of the stage.
 
 **Textures are copied, not resized.** A 2048 albedo arrives as a 2048 albedo.
 The property map is repacked, once per material remap: the game keeps metal in

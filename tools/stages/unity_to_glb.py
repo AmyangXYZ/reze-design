@@ -66,7 +66,20 @@ from unity_materials import (  # noqa: E402
 )
 from unity_mesh import BuiltinMesh, Mesh  # noqa: E402
 
-BLENDER = "/Applications/Blender.app/Contents/MacOS/Blender"
+def _find_blender():
+    """$BLENDER, else the usual install on macOS or Windows (the newest)."""
+    if os.environ.get("BLENDER"):
+        return os.environ["BLENDER"]
+    mac = "/Applications/Blender.app/Contents/MacOS/Blender"
+    if os.path.exists(mac):
+        return mac
+    import glob
+
+    found = sorted(glob.glob(r"C:/Program Files/Blender Foundation/Blender */blender.exe"))
+    return found[-1] if found else mac
+
+
+BLENDER = _find_blender()
 METRES = 0.64
 # PMX units per metre: the app's intensities are per PMX unit.
 PMX_PER_METRE = 12.5
@@ -298,16 +311,17 @@ def game_fog(project_root, scene_path, notes):
     return {**base, **({"dyn": dyn} if dyn else {})}
 
 
-def prepare(project_root, scene_path, out_dir, name, png_root=None):
+def build_dir_for(out_glb, name):
+    """The build folder for a stage written to `out_glb`: `build/<name>/`
+    beside it. A stage is one .glb; what Blender was built from — geometry,
+    the maps as packed, the .blend — is an input, kept out of the way."""
+    return os.path.join(os.path.dirname(os.path.abspath(out_glb)), "build", name.lower())
+
+
+def prepare(project_root, scene_path, out_glb, name, png_root=None):
     proj = Project(project_root)
     scene = Scene(os.path.join(project_root, scene_path))
-    # BESIDE the stage folder, never inside it: the folder named by --out is
-    # what a person uploads, and everything in it is read as part of the stage.
-    # The pre-pass's own textures include the game's sky panoramas, and a stage
-    # that brought a panorama is offered it to choose from — x333 asked which of
-    # Common_sky_19 and Common_sky_125 was its sky, neither being a file the
-    # stage uses. What Blender was built from is an input, not a deliverable.
-    build = os.path.join(os.path.dirname(os.path.abspath(out_dir)), f"{os.path.basename(os.path.abspath(out_dir))}-build")
+    build = build_dir_for(out_glb, name)
     out_tex = os.path.join(build, "tex")
     out_geo = os.path.join(build, "geo")
     shutil.rmtree(build, ignore_errors=True)
@@ -552,7 +566,9 @@ def prepare(project_root, scene_path, out_dir, name, png_root=None):
             tint, alpha = (1.0, 1.0, 1.0), 1.0
 
         premult = bool(mat) and "TRANSPARENT_PREMULT" in mat["keywords"]
-        cutoff = bool(mat) and "CUTOFF" in mat["keywords"]
+        # SceneBillboard clips at _Cutoff with no keyword asking it to: a
+        # moon or a tree card read as opaque is its whole square.
+        cutoff = bool(mat) and ("CUTOFF" in mat["keywords"] or shader == "SimPipeline/Scene/SceneBillboard")
         lit_family = family in ("Glass", "Ripplet")
         # UNLIT IS THE SHADER'S TO SAY, never a blend keyword's. A sky and an
         # effect sheet take no light; TRANSPARENT_PREMULT is how a surface is
@@ -708,13 +724,16 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--project", required=True)
     ap.add_argument("--scene", required=True)
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--out", required=True, help="the stage file, e.g. stages/X323.glb; the build goes to stages/build/x323/")
     ap.add_argument("--name", required=True)
     ap.add_argument("--png-root", default=None, help="decoded textures; default <project>/../_png_textures")
     ap.add_argument("--prepare-only", action="store_true")
+    ap.add_argument("--png", action="store_true", help="keep Blender's PNG textures (default: WebP q90, see glb_webp.py)")
     args = ap.parse_args()
+    if not args.out.lower().endswith(".glb"):
+        raise SystemExit("--out is the stage file itself, e.g. stages/X323.glb")
     png_root = args.png_root or os.path.join(os.path.dirname(os.path.abspath(args.project)), "_png_textures")
-    os.makedirs(args.out, exist_ok=True)
+    os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     build, scene_json = prepare(args.project, args.scene, args.out, args.name, png_root)
     grade = f"{scene_json['grading']['size']}^3" if scene_json["grading"] else "none"
     print(f"[unity] {len(scene_json['materials'])} materials, {len(scene_json['lamps'])} lamps, sun {'yes' if scene_json['sun'] else 'no'}, world {'yes' if scene_json['world'] else 'no'}, grade {grade} -> {build}")
@@ -725,7 +744,14 @@ def main():
     builder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "unity_blender_build.py")
     cmd = [BLENDER, "-b", "--python", builder, "--", build, os.path.abspath(args.out), args.name]
     print("[blender]", " ".join(cmd))
-    sys.exit(subprocess.call(cmd))
+    rc = subprocess.call(cmd)
+    if rc == 0 and not args.png:
+        from glb_webp import convert
+
+        n, before, after = convert(args.out, args.out + ".tmp", 90)
+        os.replace(args.out + ".tmp", args.out)
+        print(f"[webp] {n} textures to WebP q90: {before / 1e6:.1f} MB -> {after / 1e6:.1f} MB; {args.out} is {os.path.getsize(args.out) / 1e6:.1f} MB")
+    sys.exit(rc)
 
 
 if __name__ == "__main__":

@@ -1,11 +1,11 @@
 # Builds a stage in Blender from a build folder and exports it. Run by
 # unity_to_glb.py:
 #
-#   Blender -b --python unity_blender_build.py -- <build> <out_dir> <Name>
+#   Blender -b --python unity_blender_build.py -- <build> <out.glb> <Name>
 #
-# Writes <out_dir>/<Name>.blend, for a person to open and fix, and
-# <out_dir>/<Name>.glb through Blender's own glTF exporter — the same
-# exporter a stage built by hand goes through.
+# Writes <build>/<Name>.blend, for a person to open and fix, and <out.glb>
+# through Blender's own glTF exporter — the same exporter a stage built by
+# hand goes through.
 #
 # MATERIALS ARE WIRED THE WAY THE EXPORTER READS THEM. The glTF exporter does
 # not bake; it recognises node patterns. Base Color from an Image Texture,
@@ -28,7 +28,7 @@ import bpy
 import numpy as np
 from mathutils import Matrix, Vector
 
-build, out_dir, name = sys.argv[sys.argv.index("--") + 1 :][:3]
+build, out_glb, name = sys.argv[sys.argv.index("--") + 1 :][:3]
 scene_json = json.load(open(os.path.join(build, "scene.json"), encoding="utf-8"))
 PMX_PER_METRE = scene_json["pmxPerMetre"]
 
@@ -321,14 +321,14 @@ scene.view_settings.look = "None"
 scene.view_settings.exposure = 0.6
 scene.display_settings.display_device = "sRGB"
 
-os.makedirs(out_dir, exist_ok=True)
+os.makedirs(os.path.dirname(os.path.abspath(out_glb)), exist_ok=True)
 # The images are referenced from the build folder; pack them so the .blend
 # stands alone.
 for img in bpy.data.images:
     if img.source == "FILE" and not img.packed_file:
         img.pack()
-bpy.ops.wm.save_as_mainfile(filepath=os.path.join(out_dir, f"{name}.blend"))
-glb = os.path.join(out_dir, f"{name}.glb")
+bpy.ops.wm.save_as_mainfile(filepath=os.path.join(build, f"{name}.blend"))
+glb = out_glb
 bpy.ops.export_scene.gltf(
     filepath=glb,
     export_format="GLB",
