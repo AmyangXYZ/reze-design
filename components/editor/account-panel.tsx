@@ -2,9 +2,9 @@
 
 // The account control: a sign-in dialog when signed out, a small menu when in.
 //
-// Social only. Google and GitHub both verify email ownership themselves, so we
-// owe users neither an email-verification flow nor a password reset — and store
-// no password hashes at all.
+// Google, GitHub, or a code sent by email. Each proves email ownership on its
+// own, so we owe users neither a verification flow nor a password reset — and
+// store no password hashes at all.
 
 import { useEffect, useState, type ReactNode } from "react"
 import { ArrowUpRight, CircleUserRound, GalleryThumbnails, Heart, House, LogOut, Palette, Sparkles, WandSparkles, Workflow } from "lucide-react"
@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } 
 import { Popover, PopoverAnchor, PopoverClose, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { GithubMark, GoogleMark } from "@/components/icons"
 import { authClient, signIn, signOut, useSession } from "@/lib/auth-client"
-import { useT } from "@/lib/i18n"
+import { useI18n, useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 const PROVIDERS = [
@@ -52,9 +52,10 @@ function SignInForm() {
     return <div className="py-4 text-center text-xs text-muted-foreground">{t.account.notConfigured}</div>
   }
 
+  const social = PROVIDERS.filter((p) => available.includes(p.id))
   return (
     <div className="space-y-2">
-      {PROVIDERS.filter((p) => available.includes(p.id)).map(({ id, label, Mark }) => (
+      {social.map(({ id, label, Mark }) => (
         <Button
           key={id}
           type="button"
@@ -71,7 +72,116 @@ function SignInForm() {
           {pending === id ? t.account.working : t.account.continueWith(label)}
         </Button>
       ))}
+      {available.includes("email") && (
+        <>
+          {social.length > 0 && (
+            <div className="flex items-center gap-3 py-1 text-[11px] text-muted-foreground">
+              <span className="h-px flex-1 bg-line" />
+              {t.account.or}
+              <span className="h-px flex-1 bg-line" />
+            </div>
+          )}
+          <EmailCodeForm />
+        </>
+      )}
     </div>
+  )
+}
+
+/** Email, then the 6-digit code sent to it. The session lands in this tab, so
+ *  it works when the mail is read on another device. */
+function EmailCodeForm() {
+  const { t, locale } = useI18n()
+  const [email, setEmail] = useState("")
+  const [sentTo, setSentTo] = useState<string | null>(null)
+  const [code, setCode] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  // Seconds until "Send again" works. The server enforces the same minute.
+  const [wait, setWait] = useState(0)
+  useEffect(() => {
+    if (wait <= 0) return
+    const id = setTimeout(() => setWait((w) => w - 1), 1000)
+    return () => clearTimeout(id)
+  }, [wait])
+
+  const send = async (to: string) => {
+    setBusy(true)
+    setError(null)
+    const { error } = await authClient.emailOtp.sendVerificationOtp(
+      { email: to, type: "sign-in" },
+      { headers: { "x-reze-locale": locale } },
+    )
+    setBusy(false)
+    if (error) return setError(t.account.sendFailed)
+    setSentTo(to)
+    setCode("")
+    setWait(60)
+  }
+
+  const verify = async () => {
+    if (!sentTo) return
+    setBusy(true)
+    setError(null)
+    const { error } = await signIn.emailOtp({ email: sentTo, otp: code })
+    setBusy(false)
+    if (error) setError(t.account.badCode)
+  }
+
+  const field = "h-10 border-line-strong bg-white/5 text-xs"
+  const submit = "h-10 w-full text-xs font-medium"
+
+  return (
+    <form
+      className="space-y-2"
+      onSubmit={(e) => {
+        e.preventDefault()
+        if (busy) return
+        if (sentTo) void verify()
+        else if (email.trim()) void send(email.trim())
+      }}
+    >
+      {sentTo ? (
+        <>
+          <p className="text-[11px] leading-relaxed text-muted-foreground">{t.account.codeSentTo(sentTo)}</p>
+          <Input
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            autoFocus
+            placeholder="000000"
+            className={cn(field, "text-center font-mono tracking-[0.4em]")}
+          />
+          <Button type="submit" disabled={busy || code.length !== 6} className={submit}>
+            {busy ? t.account.working : t.account.verifyCode}
+          </Button>
+          <div className="flex justify-between">
+            <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => setSentTo(null)} className="h-7 px-1 text-[11px] text-muted-foreground">
+              {t.account.otherEmail}
+            </Button>
+            <Button type="button" variant="ghost" size="sm" disabled={busy || wait > 0} onClick={() => void send(sentTo)} className="h-7 px-1 text-[11px] text-muted-foreground tabular-nums">
+              {wait > 0 ? `${t.account.sendAgain} (${wait})` : t.account.sendAgain}
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <Input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+            placeholder={t.account.emailPlaceholder}
+            className={field}
+          />
+          <Button type="submit" variant="outline" disabled={busy || !email.trim()} className={cn(submit, "border-line-strong bg-white/5 hover:bg-white/10")}>
+            {busy ? t.account.working : t.account.sendCode}
+          </Button>
+        </>
+      )}
+      {error && <p className="select-text text-[11px] text-amber-400">{error}</p>}
+    </form>
   )
 }
 

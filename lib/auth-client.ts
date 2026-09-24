@@ -1,7 +1,7 @@
 "use client"
 
 import { createAuthClient } from "better-auth/react"
-import { inferAdditionalFields } from "better-auth/client/plugins"
+import { emailOTPClient, inferAdditionalFields } from "better-auth/client/plugins"
 
 export const authClient = createAuthClient({
   // Declared literally rather than inferred from the server config: importing
@@ -14,6 +14,7 @@ export const authClient = createAuthClient({
         usernameChangedAt: { type: "date", required: false },
       },
     }),
+    emailOTPClient(),
   ],
 })
 

@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server"
 
-// Which social providers are actually configured. The sign-in dialog asks so it
-// can show only buttons that work — a clone without OAuth secrets should offer
-// email and password rather than two buttons that 404.
+// Which sign-in methods are actually configured. The sign-in dialog asks so it
+// can show only what works — a clone without the secrets shows no dead buttons.
 // Not under /api/auth/* — better-auth's catch-all owns that prefix.
 export function GET() {
-  const configured = (["google", "github"] as const).filter(
+  const configured: string[] = (["google", "github"] as const).filter(
     (id) => process.env[`${id.toUpperCase()}_CLIENT_ID`] && process.env[`${id.toUpperCase()}_CLIENT_SECRET`],
   )
+  if (process.env.RESEND_API_KEY) configured.push("email")
   return NextResponse.json({ providers: configured })
 }
