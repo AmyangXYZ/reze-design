@@ -512,6 +512,7 @@ def read_material(path):
         colors[k] = vector("{" + v + "}")
         alpha[k] = float(dict(re.findall(r"([rgba]):\s*(-?[\d.eE+-]+)", v)).get("a", 1.0))
     keywords = [k for k in re.findall(r"^\s+- (\w+)$", t, re.M) if k.isupper() or k.startswith("_")]
+    queue = re.search(r"m_CustomRenderQueue:\s*(-?\d+)", t)
     return {
         "name": re.search(r"m_Name:\s*(.+)", t).group(1).strip(),
         "shader_guid": shader.group(1) if shader else None,
@@ -520,6 +521,8 @@ def read_material(path):
         "colors": colors,
         "alpha": alpha,
         "keywords": keywords,
+        # -1 is the shader's own queue.
+        "queue": int(queue.group(1)) if queue else -1,
         "path": path,
     }
 

@@ -354,4 +354,11 @@ def png_for(png_root, asset_path):
         return None
     rel = asset_path[i + len(marker) :]
     candidate = os.path.join(png_root, os.path.splitext(rel)[0] + ".png")
-    return candidate if os.path.exists(candidate) else None
+    if os.path.exists(candidate):
+        return candidate
+    # A texture the project keeps as an image rather than a Texture2D asset —
+    # X323's additive stain glows through sc_X310_glow_1_0.png — has no decoded
+    # copy under the root; the file itself is the picture.
+    if asset_path.lower().endswith((".png", ".jpg", ".jpeg", ".tga")) and os.path.exists(asset_path):
+        return asset_path
+    return None

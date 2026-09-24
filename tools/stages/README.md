@@ -151,16 +151,25 @@ Its fog, `sim_FogColor`/`sim_FogParams` and the darkening `sim_DynFog*`, goes
 to `extras.reze.fog` in metres; the engine lays it PER VERTEX as the game does,
 which is most of what a floor of long triangles shows of it.
 
-**Surfaces the game builds differently.** `PBR/Detailed` (constants over a
+**Surfaces the game builds differently.** `ZTong/Effect_Common` — a sky
+layer or a decal on the ground — is baked through the shader's own arithmetic
+at time 0: its mask, its HDR second picture, add or blend, and each slot's
+tiling switch (off clamps rather than repeats). `PBR/Detailed` (constants over a
 mask and a tiling detail picture) is baked to an albedo and an ORM map;
 `ZTong/Tong_jichu_AB` (a projection, a soft shadow) to one unlit RGBA picture
 at `_Color.a × mask × alpha`; a `Scene/Transparent` coat with nothing of its
 own to paint — a view-dependent sheen the app cannot draw — is left out.
 
+**Opaque means opaque.** An OPAQUE material's albedo loses its alpha (an
+`_rgb.png` copy beside the original): the game keeps other things there, and a
+PMX renderer reads any alpha as see-through. **Draw order is the game's:** each
+material carries its render queue (`extras.reze.queue`) and the app draws a
+stage's materials in that order, so a stain at 3001 lies on the glass at 3000.
+
 **Left out, and listed when the converter runs:** renderers and lights the game
 switches off (on themselves or through a parent), a second directional light,
-area lights, LOD1 and below, baked-only lights, effect decals whose coverage
-lives in maps we do not ship, renderers with no readable mesh. A sky layer is
+area lights, LOD1 and below, baked-only lights, an effect decal that cannot be
+baked and whose own picture has no coverage, renderers with no readable mesh. A sky layer is
 kept whatever its switch says.
 
 ## Read the game's shaders

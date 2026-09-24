@@ -93,6 +93,7 @@ def _wrap(asset_path):
 
 
 ROTATION_OF = {"_MainTex": "_MainRotation", "_MainPlusTex": "_MainPlusRotation", "_MaskTex": "_MaskRotation"}
+TILING_OF = {"_MainTex": "_IsTillingUV_Main", "_MainPlusTex": "_IsTillingUV_MainPlus", "_MaskTex": "_IsTillingUV_Mask"}
 
 
 def _slot_uv(material, slot, u, v):
@@ -102,7 +103,15 @@ def _slot_uv(material, slot, u, v):
     du, dv = u - 0.5, v - 0.5
     ru, rv = c * du + s * dv + 0.5, -s * du + c * dv + 0.5
     st = material["textures"][slot]
-    return ru * st["scale"][0] + st["offset"][0], rv * st["scale"][1] + st["offset"][1]
+    su, sv = ru * st["scale"][0] + st["offset"][0], rv * st["scale"][1] + st["offset"][1]
+    # 平铺 OFF CLAMPS. The fragment ends every slot's UV with
+    #   uv = lerp(saturate(uv), uv, _IsTillingUV_<slot>)
+    # so with the switch off a picture shows once and holds its edge beyond —
+    # X323's additive stain glows through ONE spot of a glow tiled 10x, not a
+    # grid of them across the puddle.
+    if material["floats"].get(TILING_OF[slot], 1.0) < 0.5:
+        su, sv = np.clip(su, 0.0, 1.0), np.clip(sv, 0.0, 1.0)
+    return su, sv
 
 
 def _used_slots(material):

@@ -179,6 +179,7 @@ def make_material(spec):
             "sky": spec["sky"],
             "castShadow": spec["castShadow"],
             "look": spec["look"],
+            "queue": spec.get("queue", 2000),
     }
     return mat
 

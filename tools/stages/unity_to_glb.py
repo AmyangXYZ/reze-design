@@ -230,6 +230,31 @@ def copy_texture(src, out_tex, copied):
     return rel
 
 
+def opaque_texture(rel, out_tex):
+    """The picture an OPAQUE material wears, with no alpha channel.
+
+    glTF's OPAQUE says alpha is ignored; a PMX renderer reads it anyway, and
+    decides from the texture whether a material blends. X323's floor keeps
+    something else in its albedo's alpha (a fifth of its texels under 250), so
+    the app drew it as a blended surface, in material order, after the water
+    stains lying on it — and their depth cut the floor away under every stain.
+    A picture with no alpha below 255 is used as it is; one with any is copied
+    without it, beside the original, which a blended material may still share.
+    """
+    path = os.path.join(out_tex, rel)
+    try:
+        im = Image.open(path)
+        im.load()
+    except OSError:
+        return rel
+    if "A" not in im.getbands() or im.getchannel("A").getextrema()[0] == 255:
+        return rel
+    stem = os.path.splitext(rel)[0] + "_rgb.png"
+    if not os.path.exists(os.path.join(out_tex, stem)):
+        im.convert("RGB").save(os.path.join(out_tex, stem))
+    return stem
+
+
 # ── The scene ────────────────────────────────────────────────────────────────
 
 
@@ -465,6 +490,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
     materials = []
     sky_layers = []
     decals_dropped = []
+    baked_decals = []
     coats_dropped = []
     unknown = {}
     for index, key in enumerate(order):
@@ -478,7 +504,18 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
         coverage = decal_has_coverage(mat, png_root, proj) if mat else False
         alpha = surface_alpha(mat, tint_alpha, shader, coverage) if mat else 1.0
         sky_material = key in domes or bool(mat and (is_sky(mat) or is_sky_layer(mat, shader)))
-        if mat and is_effect_decal(shader) and alpha == 0.0 and not sky_material:
+        # AN EFFECT DECAL IS BAKED, as a sky layer is: the shader's own
+        # composition at time 0 — its mask, its HDR second picture, its add or
+        # blend — is what the game draws, and no single texture of it is. X323's
+        # puddle is the floor's own picture as a wet sheen through a
+        # puddle-shaped mask; left out, what stayed was the stains inside it,
+        # and those drawn as their raw picture at a flat alpha were grey smudges
+        # where the game's are bright and wet (_ColorPlus at ten times white,
+        # the first of them purely additive). One that cannot be baked keeps the
+        # old way: its picture and tint, or left out when that has no coverage.
+        bake_decal = bool(mat) and is_effect_decal(shader) and not sky_material
+        masked_decal = bake_decal and "MASK" in mat["keywords"]
+        if mat and is_effect_decal(shader) and alpha == 0.0 and not sky_material and not masked_decal:
             decals_dropped.append(key)
             continue
         # A REFLECTIVE COAT: SimPipeline/Scene/Transparent with nothing of its own
@@ -507,7 +544,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
 
         base = None
         baked = None
-        if mat and is_effect_decal(shader) and sky_material:
+        if mat and is_effect_decal(shader) and (sky_material or bake_decal):
             # The layer at time 0 — its textures, colours, mask and rotations
             # composed — stored at 1/gain and named for it; the material emits
             # it at gain, over black, with the picture's own coverage.
@@ -515,7 +552,10 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
             if written:
                 baked = os.path.basename(written)
                 gain = int(re.search(r"_x(\d+)\.png$", baked).group(1))
-                sky_layers.append(key)
+                (sky_layers if sky_material else baked_decals).append(key)
+            elif masked_decal:
+                decals_dropped.append(key)
+                continue
         # A plain effect sheet — a shadow projection, a candle's glow — is its
         # texture, mask and colour composed once, and takes no light: drawn as
         # a surface, a lamp overhead lit the black quad's whole rectangle.
@@ -580,6 +620,8 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
         unlit = bool(mat) and not lit_family and (sky_material or is_effect_decal(shader) or bool(sheet))
         additive = bool(mat) and float(mat["floats"].get("_DstBlend", 10.0)) == 1.0 and is_effect_decal(shader)
         alpha_mode = "MASK" if cutoff else ("BLEND" if (alpha < 1.0 or premult or is_effect_decal(shader) or baked or sheet) else "OPAQUE")
+        if alpha_mode == "OPAQUE" and base:
+            base = opaque_texture(base, out_tex)
         materials.append(
             {
                 "name": key,
@@ -597,6 +639,12 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
                 "sky": sky_material,
                 # The effect sheets have no shadow pass in the game.
                 "castShadow": not sky_material and not sheet,
+                # WHEN IT DRAWS among the transparent: Unity sorts them by render
+                # queue, and a stage's water stains (3001-3002) lie on the glass
+                # beneath them (3000). Drawn in material order the glass came
+                # last and greyed them out. Without a queue of its own, the
+                # blend mode's default.
+                "queue": (mat["queue"] if mat and mat.get("queue", -1) >= 0 else {"OPAQUE": 2000, "MASK": 2450}.get(alpha_mode, 3000)),
                 # What glTF cannot say: which of the app's looks this is.
                 "look": {"Glass": "glass", "Ripplet": "water", "Plant": "foliage"}.get(family),
             }
@@ -686,6 +734,8 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
         notes.append(f"{len(unreadable)} renderers had no readable mesh: {', '.join(unreadable[:5])}")
     if coats_dropped:
         notes.append(f"{len(coats_dropped)} reflective coats left out (a view-dependent sheen the app cannot draw): {', '.join(sorted(coats_dropped))}")
+    if baked_decals:
+        notes.append(f"{len(baked_decals)} effect decals baked from the effect shader: {', '.join(sorted(baked_decals))}")
     if decals_dropped:
         notes.append(f"{len(decals_dropped)} effect decals left out (coverage lives in maps we do not ship): {', '.join(sorted(decals_dropped))}")
     if sky_layers:

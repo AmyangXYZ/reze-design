@@ -99,7 +99,7 @@ type GltfLight = {
 }
 
 /** What our exporter writes under `extras.reze`; a hand-built stage has none. */
-type RezeMaterial = { shader?: string; unlit?: boolean; additive?: boolean; sky?: boolean; castShadow?: boolean; look?: string | null }
+type RezeMaterial = { shader?: string; unlit?: boolean; additive?: boolean; sky?: boolean; castShadow?: boolean; look?: string | null; queue?: number }
 type RezeLamp = { range?: number; intensity?: number; color?: number[]; angle?: number; innerAngle?: number }
 type RezeSun = { color?: number[]; shadow?: boolean }
 type RezeScene = {
@@ -431,11 +431,27 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
   }
   const ordered = [...runs.values()]
   const skyOf = (run: Run) => (run.material >= 0 ? (reze<RezeMaterial>(g.materials?.[run.material])?.sky ?? false) : false)
+  // AND THEN BY THE GAME'S RENDER QUEUE. A PMX draws its translucent materials
+  // in file order; Unity sorts them by queue, so X323's water stains (3001,
+  // 3002) lie on the glass under them (3000). In file order the glass came
+  // after and greyed them out. A file without queues keeps its own order: the
+  // sort is stable and every material then shares the one default.
+  const queueOf = (run: Run) => {
+    const m = run.material >= 0 ? g.materials?.[run.material] : undefined
+    const q = reze<RezeMaterial>(m)?.queue
+    if (typeof q === "number" && Number.isFinite(q)) return q
+    return m?.alphaMode === "BLEND" ? 3000 : m?.alphaMode === "MASK" ? 2450 : 2000
+  }
+  const unlitOf = (run: Run) => (run.material >= 0 ? (reze<RezeMaterial>(g.materials?.[run.material])?.unlit ?? false) : false)
   ordered.sort((a, b) => {
     const sa = skyOf(a), sb = skyOf(b)
     if (sa !== sb) return sa ? -1 : 1
     if (sa && sb) return skyRadius(b) - skyRadius(a)
-    return 0
+    // Within one queue Unity sorts by distance, which a file order cannot
+    // follow. An unlit effect layer is a decal LYING ON a surface, so it is
+    // the nearer of the two wherever they meet: it goes after. X323's fourth
+    // stain shares the glass's 3000.
+    return queueOf(a) - queueOf(b) || Number(unlitOf(a)) - Number(unlitOf(b))
   })
 
   // ── Materials ──
@@ -802,8 +818,11 @@ export function glbStyleGroups(materials: GlbMaterial[]): StyleGroup[] {
     // x333's pool is a Standard material called X333_shui, which the file can
     // only describe as a painted sheet, and the name table knows better. Only
     // Glass and Water are taken from the name — every other keyword look would
-    // replace the per-texel maps the file brought with a guess.
-    const named = !m.look ? stageLookFor(m.name) : null
+    // replace the per-texel maps the file brought with a guess. Never for an
+    // unlit sheet: a surface look is lit, and X323's water stains
+    // (sc_X323_shuizi, "shui" for water) wore Water over their baked glow and
+    // drew as the faintest ripple of it.
+    const named = !m.look && !m.unlit ? stageLookFor(m.name) : null
     const look = m.look ?? (named && SURFACE_LOOKS.has(named) ? named.toLowerCase() : null)
     if (look && libraryGraph(look === "glass" ? "Glass" : look === "water" ? "Water" : "Foliage")) {
       const label = look === "glass" ? "Glass" : look === "water" ? "Water" : "Foliage"
