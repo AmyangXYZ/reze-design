@@ -21,7 +21,7 @@
 #
 # The build folder's contract, read by unity_blender_build.py:
 #
-#   scene.json      materials[], lamps[], sun, fill, world, notes[]
+#   scene.json      materials[], lamps[], sun, fill, world, grading, notes[]
 #   geo/<i>.npz     positions, normals (glTF axes, metres), uvs (Blender's V, up), indices
 #   tex/            the images scene.json names, PNG, copied or packed here
 
@@ -40,7 +40,8 @@ from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from unity_effect_bake import _linear_to_srgb, _srgb_to_linear, bake as bake_effect, repeats_across  # noqa: E402
+from unity_grading import grading as stage_grading  # noqa: E402
+from unity_effect_bake import BASIC_EFFECT_SHADERS, _linear_to_srgb, _srgb_to_linear, bake as bake_effect, bake_basic, bake_detailed, repeats_across  # noqa: E402
 from unity_lights import gamma_to_linear  # noqa: E402
 from unity_probe import probe_to_equirect  # noqa: E402
 from unity_scene import Project, Scene, read_material  # noqa: E402
@@ -219,6 +220,84 @@ def copy_texture(src, out_tex, copied):
 # ── The scene ────────────────────────────────────────────────────────────────
 
 
+def game_ambient(project_root, scene_path, notes):
+    """The ambient the game lights surfaces with, as nine RGB coefficients in glTF
+    axes, or None.
+
+    Not the reflection probe: SimPipeline's diffuse ambient is _Replica_SH*,
+    Unity's own ambient probe of the scene's trilight (EnvironmentSetting when
+    the volume says so), packed raw — SHA = (c3, c1, c2, c0 − c6), SHB = (c4,
+    c5, 3·c6, c7), SHC = c8 — and evaluated as c0 + c1·y + c2·z + c3·x + c4·xy +
+    c5·yz + c6·(3z² − 1) + c7·xz + c8·(x² − y²). The probe feeds reflections
+    alone. The Unity project's render manifest records the coefficients as the
+    sim set them; glTF mirrors x, which turns c3, c4 and c7 over."""
+    path = os.path.join(project_root, "ag_render_manifest.json")
+    if not os.path.isfile(path):
+        notes.append("no ag_render_manifest.json: the ambient is fitted to the world picture")
+        return None
+    manifest = json.load(open(path, encoding="utf-8-sig"))
+    want = scene_path.replace("\\", "/")
+    scene = next((s for s in manifest.get("scenes", []) if s.get("scene", "").replace("\\", "/").endswith(want)), None)
+    g = (scene or {}).get("shaderGlobals", {})
+    if not all(k in g for k in ("_Replica_SHAr", "_Replica_SHAg", "_Replica_SHAb", "_Replica_SHBr", "_Replica_SHBg", "_Replica_SHBb", "_Replica_SHC")):
+        notes.append("the manifest has no _Replica_SH*: the ambient is fitted to the world picture")
+        return None
+    sh = [0.0] * 27
+    for ch, c in enumerate("rgb"):
+        a, b = g["_Replica_SHA" + c], g["_Replica_SHB" + c]
+        c6 = b[2] / 3.0
+        coeffs = [a[3] + c6, a[1], a[2], a[0], b[0], b[1], c6, b[3], g["_Replica_SHC"][ch]]
+        for i, s in ((3, -1.0), (4, -1.0), (7, -1.0)):
+            coeffs[i] *= s
+        for i in range(9):
+            sh[i * 3 + ch] = coeffs[i]
+    return sh
+
+
+def game_fog(project_root, scene_path, notes):
+    """The game's distance fog, in glTF metres, or None.
+
+    SimPipeline fogs every surface twice, per vertex: a haze (sim_FogColor,
+    sim_FogParams) and a second layer (sim_DynFog*) that X340 uses to darken
+    toward black. Each is t = saturate(f − (1 − f)·h), f = saturate(depth·x + y)
+    on the view depth, h = clamp((z − height)/w, −1, 1), the colour pulled to
+    the layer's by (1 − t)·colour.a. Read from the render manifest as the sim
+    set it — linear fog only (sim_FOG_LINEAR / sim_DYN_FOG_LINEAR)."""
+    path = os.path.join(project_root, "ag_render_manifest.json")
+    if not os.path.isfile(path):
+        return None
+    manifest = json.load(open(path, encoding="utf-8-sig"))
+    want = scene_path.replace("\\", "/")
+    scene = next((s for s in manifest.get("scenes", []) if s.get("scene", "").replace("\\", "/").endswith(want)), None)
+    if not scene:
+        return None
+    g, kw = scene.get("shaderGlobals", {}), scene.get("shaderKeywords", {})
+
+    def layer(colour, params, keyword):
+        c, p = g.get(colour), g.get(params)
+        if not (c and p and kw.get(keyword)) or c[3] <= 0:
+            return None
+        return {
+            "color": [c[0], c[1], c[2]],
+            "amount": c[3],
+            # Unity units to metres: a depth of d metres is d / 0.64 units.
+            "distance": [p[0] / METRES, p[1]],
+            "height": [p[2] * METRES, p[3] * METRES],
+        }
+
+    haze = layer("sim_FogColor", "sim_FogParams", "sim_FOG_LINEAR")
+    dyn = layer("sim_DynFogColor", "sim_DynFogParams", "sim_DYN_FOG_LINEAR")
+    for k in ("sim_DYN_FOG_EXP", "sim_DYN_FOG_EXP_SQ"):
+        if kw.get(k):
+            notes.append(f"fog: {k} is not reproduced")
+    if (g.get("sim_FogColor2") or [0, 0, 0, 0])[3] > 0 or (g.get("sim_FogDirectionalColor") or [0, 0, 0, 0])[3] > 0:
+        notes.append("fog: its second colour and directional tint are not reproduced")
+    if not haze and not dyn:
+        return None
+    base = haze or {"color": [0, 0, 0], "amount": 0.0, "distance": [0.0, 1.0], "height": [0.0, 1.0]}
+    return {**base, **({"dyn": dyn} if dyn else {})}
+
+
 def prepare(project_root, scene_path, out_dir, name, png_root=None):
     proj = Project(project_root)
     scene = Scene(os.path.join(project_root, scene_path))
@@ -372,6 +451,7 @@ def prepare(project_root, scene_path, out_dir, name, png_root=None):
     materials = []
     sky_layers = []
     decals_dropped = []
+    coats_dropped = []
     unknown = {}
     for index, key in enumerate(order):
         bucket = per_material[key]
@@ -387,7 +467,20 @@ def prepare(project_root, scene_path, out_dir, name, png_root=None):
         if mat and is_effect_decal(shader) and alpha == 0.0 and not sky_material:
             decals_dropped.append(key)
             continue
-        if family not in ("Standard", "Plant", "Glass", "Ripplet", "Effect_Common", "SceneBillboard", "FresnelColor", "Standard_PBR_2", ""):
+        # A REFLECTIVE COAT: SimPipeline/Scene/Transparent with nothing of its own
+        # to paint — its colour black or its shininess 1 — is a sheen, the room's
+        # blurred reflection at an alpha of (1 − N·V)^_AlphaFresnel, and takes no
+        # lamp. The app has no view-dependent alpha to draw that with, and drawn
+        # as a surface it caught every lamp above X340's floor as one broad
+        # glare. Left out, the frame loses what Unity measures as a 3% darkening
+        # at grazing angles.
+        if mat and family == "Transparent":
+            paint = max(c * (1.0 - mat["floats"].get("_Shininess", 0.0)) for c in (mat["colors"].get("_Color") or (1.0, 1.0, 1.0))[:3])
+            if paint < 0.02:
+                coats_dropped.append(key)
+                continue
+        basic_effect = bool(mat) and family in BASIC_EFFECT_SHADERS
+        if family not in ("Standard", "Plant", "Glass", "Ripplet", "Effect_Common", "SceneBillboard", "FresnelColor", "Standard_PBR_2", "Detailed", "", *BASIC_EFFECT_SHADERS):
             unknown.setdefault(shader, []).append(key)
 
         np.savez(
@@ -409,7 +502,17 @@ def prepare(project_root, scene_path, out_dir, name, png_root=None):
                 baked = os.path.basename(written)
                 gain = int(re.search(r"_x(\d+)\.png$", baked).group(1))
                 sky_layers.append(key)
-        albedo = albedo_slot(mat, png_root, proj) if mat and not baked else None
+        # A plain effect sheet — a shadow projection, a candle's glow — is its
+        # texture, mask and colour composed once, and takes no light: drawn as
+        # a surface, a lamp overhead lit the black quad's whole rectangle.
+        sheet = None
+        if basic_effect:
+            written = bake_basic(mat, proj, lambda g: png_for(png_root, proj.path(g) or ""), os.path.join(out_tex, re.sub(r"[^A-Za-z0-9_.-]", "_", key)), notes)
+            if written:
+                sheet = os.path.basename(written)
+            else:
+                notes.append(f"{key}: its {shader} texture is missing; exported as Standard")
+        albedo = albedo_slot(mat, png_root, proj) if mat and not baked and not sheet else None
         src = png_for(png_root, proj.path(albedo["guid"]) or "") if albedo else None
         if src:
             base = copy_texture(src, out_tex, copied)
@@ -423,11 +526,30 @@ def prepare(project_root, scene_path, out_dir, name, png_root=None):
             normal = copy_texture(nsrc, out_tex, copied)
             normal_scale = float(mat["floats"].get("_NormalScale", mat["floats"].get("_BumpScale", 1.0)))
         orm = pack_orm(mat, png_root, proj, out_tex) if mat and not sky_material else None
+        # A LAYERED SURFACE (PBR/Detailed): constants over a mask and a detail
+        # picture, baked to the albedo and ORM a Standard material would carry.
+        layered = None
+        if mat and family == "Detailed" and not sky_material:
+            layered = bake_detailed(mat, proj, lambda g: png_for(png_root, proj.path(g) or ""), os.path.join(out_tex, re.sub(r"[^A-Za-z0-9_.-]", "_", key)), notes)
+            if layered:
+                base, orm = os.path.basename(layered[0]), os.path.basename(layered[1])
+                bslot = mat["textures"].get("_BaseNormal")
+                bsrc = png_for(png_root, proj.path(bslot["guid"]) or "") if bslot else None
+                if bsrc:
+                    normal = copy_texture(bsrc, out_tex, copied)
+                    normal_scale = float(mat["floats"].get("_BaseNormalScale", 1.0))
+            else:
+                notes.append(f"{key}: its Detailed layers could not be read; exported as Standard")
         emissive = pack_emissive(mat, shader, png_root, proj, out_tex) if mat and not sky_material else None
         if baked:
             base = baked
             emissive = (baked, float(gain))
             tint, alpha = (0.0, 0.0, 0.0), 1.0
+        if sheet:
+            base, normal, orm, emissive = sheet, None, None, None
+            tint, alpha = (1.0, 1.0, 1.0), 1.0
+        if layered:
+            tint, alpha = (1.0, 1.0, 1.0), 1.0
 
         premult = bool(mat) and "TRANSPARENT_PREMULT" in mat["keywords"]
         cutoff = bool(mat) and "CUTOFF" in mat["keywords"]
@@ -439,9 +561,9 @@ def prepare(project_root, scene_path, out_dir, name, png_root=None):
         # game's own _DEFAULT_REFLECTION and _REAL_REFLECTION — into a flat
         # picture that no lamp reached and no camera move changed, over a floor
         # that was lit correctly underneath it.
-        unlit = bool(mat) and not lit_family and (sky_material or is_effect_decal(shader))
+        unlit = bool(mat) and not lit_family and (sky_material or is_effect_decal(shader) or bool(sheet))
         additive = bool(mat) and float(mat["floats"].get("_DstBlend", 10.0)) == 1.0 and is_effect_decal(shader)
-        alpha_mode = "MASK" if cutoff else ("BLEND" if (alpha < 1.0 or premult or is_effect_decal(shader) or baked) else "OPAQUE")
+        alpha_mode = "MASK" if cutoff else ("BLEND" if (alpha < 1.0 or premult or is_effect_decal(shader) or baked or sheet) else "OPAQUE")
         materials.append(
             {
                 "name": key,
@@ -457,7 +579,8 @@ def prepare(project_root, scene_path, out_dir, name, png_root=None):
                 "unlit": unlit,
                 "additive": additive,
                 "sky": sky_material,
-                "castShadow": not sky_material,
+                # The effect sheets have no shadow pass in the game.
+                "castShadow": not sky_material and not sheet,
                 # What glTF cannot say: which of the app's looks this is.
                 "look": {"Glass": "glass", "Ripplet": "water", "Plant": "foliage"}.get(family),
             }
@@ -504,15 +627,40 @@ def prepare(project_root, scene_path, out_dir, name, png_root=None):
     if look.get("probeLightingBase"):
         fill = {"color": [gamma_to_linear(c) for c in look["probeLightingBase"]], "strength": 1.0}
 
+    # The game's own diffuse ambient, when the project records it. With it the
+    # world picture is the reflection probe ALONE: the gradient the bake would
+    # add is there so a fitted ambient comes out right, and with the ambient
+    # stated it would only brighten every reflection — X340's dark marble
+    # mirrored five times the room it does in the game.
+    ambient = game_ambient(project_root, scene_path, notes)
+    fog = game_fog(project_root, scene_path, notes)
+    # The character shadow the game lays on its ground, from its own angles —
+    # RenderSettings.groundShadowDir, decompiled: (cos az·sin incl, cos incl,
+    # sin az·sin incl), the way to the light with inclination from straight up.
+    # Kept whether the stage switches it on or not; the app decides.
+    gs = look.get("groundShadow")
+    ground_shadow = None
+    if gs:
+        incl, az = math.radians(gs["inclination"]), math.radians(gs["azimuth"])
+        to_light = (math.cos(az) * math.sin(incl), math.cos(incl), math.sin(az) * math.sin(incl))
+        ground_shadow = {
+            "enabled": gs["enable"],
+            "direction": list(to_gltf_dir(to_light)),
+            "color": [gamma_to_linear(c) for c in gs["color"]],
+            "amount": gs["alpha"],
+            "fade": gs["fade"],
+        }
     world = None
     probe = proj.path(look["reflectionGuid"]) if look.get("reflectionGuid") else None
     if probe:
         hdr = os.path.join(build, f"{name}.hdr")
         try:
-            probe_to_equirect(probe, hdr, ambient=scene.ambient(), blender=BLENDER)
+            probe_to_equirect(probe, hdr, ambient=None if ambient else scene.ambient(), blender=BLENDER)
             world = {"hdr": f"{name}.hdr"}
         except Exception as e:  # noqa: BLE001
             notes.append(f"reflection probe not converted: {e}")
+
+    grade = stage_grading(scene, proj, look, notes)
 
     if switched_off:
         notes.append(f"{len(switched_off)} renderers the game switches off, left out: {', '.join(sorted(set(switched_off)))}")
@@ -520,6 +668,8 @@ def prepare(project_root, scene_path, out_dir, name, png_root=None):
         notes.append(f"{dropped_lods} LOD fallback renderers dropped (level 0 kept)")
     if unreadable:
         notes.append(f"{len(unreadable)} renderers had no readable mesh: {', '.join(unreadable[:5])}")
+    if coats_dropped:
+        notes.append(f"{len(coats_dropped)} reflective coats left out (a view-dependent sheen the app cannot draw): {', '.join(sorted(coats_dropped))}")
     if decals_dropped:
         notes.append(f"{len(decals_dropped)} effect decals left out (coverage lives in maps we do not ship): {', '.join(sorted(decals_dropped))}")
     if sky_layers:
@@ -543,6 +693,10 @@ def prepare(project_root, scene_path, out_dir, name, png_root=None):
         "sun": sun,
         "fill": fill,
         "world": world,
+        "grading": grade,
+        "ambient": ambient,
+        "fog": fog,
+        "groundShadow": ground_shadow,
         "notes": notes,
     }
     with open(os.path.join(build, "scene.json"), "w", encoding="utf-8") as f:
@@ -562,7 +716,8 @@ def main():
     png_root = args.png_root or os.path.join(os.path.dirname(os.path.abspath(args.project)), "_png_textures")
     os.makedirs(args.out, exist_ok=True)
     build, scene_json = prepare(args.project, args.scene, args.out, args.name, png_root)
-    print(f"[unity] {len(scene_json['materials'])} materials, {len(scene_json['lamps'])} lamps, sun {'yes' if scene_json['sun'] else 'no'}, world {'yes' if scene_json['world'] else 'no'} -> {build}")
+    grade = f"{scene_json['grading']['size']}^3" if scene_json["grading"] else "none"
+    print(f"[unity] {len(scene_json['materials'])} materials, {len(scene_json['lamps'])} lamps, sun {'yes' if scene_json['sun'] else 'no'}, world {'yes' if scene_json['world'] else 'no'}, grade {grade} -> {build}")
     for n in scene_json["notes"]:
         print(f"[unity]   {n}")
     if args.prepare_only:

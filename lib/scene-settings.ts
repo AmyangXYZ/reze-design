@@ -16,6 +16,19 @@ export type WorldLight = { color: string; strength: number }
 export type FillLight = { color: string; strength: number }
 export const NO_FILL: FillLight = { color: "#ffffff", strength: 0 }
 
+/** A stage's own colour grade: the cube its game's pipeline bakes, size³
+ *  texels of 8-bit sRGB RGB, red fastest, base64. Applied after the view and
+ *  before the author's grade — see the engine's setStageGrade. */
+export type StageGrade = { size: number; lut: string }
+
+/** One layer of a stage's fog: linear colour, amount, (slope, offset) on the
+ *  view depth, (reference, range) on the height — PMX units. */
+export type StageFogLayer = { color: number[]; amount: number; distance: number[]; height: number[] }
+export type StageFog = StageFogLayer & { dyn?: StageFogLayer }
+
+/** The way to the light (engine axes), linear colour, amount 0–1. */
+export type StageCastShadowSetting = { direction: number[]; color: number[]; amount: number }
+
 /** The sun's own dials, azimuth/elevation degrees — friendlier than a raw vector. */
 export type SunLight = {
   color: string
@@ -99,6 +112,26 @@ export type SceneSettings = {
   grain: { amount: number }
   /** Post-tonemap color grade. */
   grade: GradeSettings
+  /**
+   * The grade the stage arrived with, and which stage — it leaves with it.
+   * Not the author's: it has no dials, and `grade` above still applies on top.
+   * Absent on every scene without a graded stage.
+   */
+  stageGrade?: StageGrade & { stage: string }
+  /**
+   * The ambient the stage's game lit its surfaces with — nine RGB SH
+   * coefficients in the engine's axes (see the engine's setWorldAmbient) — and
+   * which stage. Drawn only while that stage's world claim stands: a sky picked
+   * by hand lights by its own fit again.
+   */
+  stageAmbient?: { stage: string; sh: number[] }
+  /** The stage's own distance fog, PMX units (see the engine's setSceneFog),
+   *  and which stage — it leaves with it. */
+  stageFog?: { stage: string; fog: StageFog }
+  /** The shadow the cast throws on the stage, from the stage's own direction
+   *  and colour (the engine's setStageCastShadow), and which stage — it leaves
+   *  with it. `on` false keeps the stage's values with the shadow switched off. */
+  stageCastShadow?: StageCastShadowSetting & { stage: string; on: boolean }
   /**
    * How loud the track plays, as amplitude 0–1.
    *

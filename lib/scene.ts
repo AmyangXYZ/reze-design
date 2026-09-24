@@ -13,6 +13,10 @@ import {
   DEFAULT_EYES, DEFAULT_PHYSICS,
   DEFAULT_VIEW,
   type SceneSettings,
+  type StageGrade,
+  type StageFog,
+  type StageFogLayer,
+  type StageCastShadowSetting,
 } from "@/lib/scene-settings"
 import { storageKey } from "@/lib/storage"
 
@@ -890,6 +894,11 @@ export function parseSceneDoc(
         // a scene ungraded. The pin resolves to the published spec here, where
         // every other pin already does.
         grade: gradeWithSpec(settings.grade, resolveRef),
+        // A cube that is not whole is not drawn — the engine refuses one.
+        stageGrade: stageGradeFromDoc(settings.stageGrade),
+        stageAmbient: stageAmbientFromDoc(settings.stageAmbient),
+        stageFog: stageFogFromDoc(settings.stageFog),
+        stageCastShadow: stageCastShadowFromDoc(settings.stageCastShadow),
         background: { color: background.color },
       },
       backgroundEffects: appliedEffects(background, resolveEffect, resolveRef),
@@ -947,6 +956,14 @@ export function stageLightsFromFile(
   world: { color?: string; strength: number } | null
   /** The view the stage was authored under. */
   view: { transform: "standard" | "filmic" | "agx"; exposure: number } | null
+  /** The stage's own colour grade, as a cube. */
+  grade: StageGrade | null
+  /** The stage's diffuse ambient, 27 SH floats. */
+  ambient: number[] | null
+  /** The stage's distance fog. */
+  fog: StageFog | null
+  /** The shadow its cast throws on it. */
+  castShadow: StageCastShadowSetting | null
 } {
   const raw = JSON.parse(text) as {
     lamps?: unknown[]
@@ -955,6 +972,10 @@ export function stageLightsFromFile(
     fill?: Record<string, unknown>
     world?: Record<string, unknown>
     view?: Record<string, unknown>
+    grade?: Record<string, unknown>
+    ambient?: unknown
+    fog?: unknown
+    castShadow?: unknown
   }
   const lamps = lightsFromDoc(
     (raw.lamps ?? []).map((l) => ({ ...(l as SceneLight), id: newLightId(), stage })),
@@ -1000,7 +1021,70 @@ export function stageLightsFromFile(
     v && (v.transform === "standard" || v.transform === "filmic" || v.transform === "agx") && num(v.exposure)
       ? { transform: v.transform as "standard" | "filmic" | "agx", exposure: v.exposure as number }
       : null
-  return { lamps, sun, effects, fill, world, view }
+  const gr = raw.grade
+  const grade = gr && isStageGrade(gr) ? { size: gr.size, lut: gr.lut } : null
+  const ambient = isAmbientSH(raw.ambient) ? raw.ambient : null
+  return { lamps, sun, effects, fill, world, view, grade, ambient, fog: stageFogFrom(raw.fog), castShadow: castShadowFrom(raw.castShadow) }
+}
+
+function castShadowFrom(v: unknown): StageCastShadowSetting | null {
+  const s = v as Partial<StageCastShadowSetting> | null
+  const vec = (a: unknown) => Array.isArray(a) && a.length >= 3 && a.slice(0, 3).every((x) => typeof x === "number" && Number.isFinite(x))
+  return s && vec(s.direction) && vec(s.color) && typeof s.amount === "number" && Number.isFinite(s.amount)
+    ? { direction: s.direction!.slice(0, 3), color: s.color!.slice(0, 3), amount: Math.min(Math.max(s.amount, 0), 1) }
+    : null
+}
+
+function stageCastShadowFromDoc(v: unknown): SceneSettings["stageCastShadow"] {
+  const s = v as { stage?: unknown; on?: unknown } | null
+  const base = s && typeof s.stage === "string" ? castShadowFrom(s) : null
+  return base ? { ...base, stage: s!.stage as string, on: s!.on !== false } : undefined
+}
+
+function fogLayerFrom(v: unknown): StageFogLayer | null {
+  const l = v as Partial<StageFogLayer> | null
+  const nums = (a: unknown, n: number) => Array.isArray(a) && a.length >= n && a.slice(0, n).every((x) => typeof x === "number" && Number.isFinite(x))
+  return l && nums(l.color, 3) && nums(l.distance, 2) && nums(l.height, 2) && typeof l.amount === "number" && Number.isFinite(l.amount)
+    ? { color: l.color!.slice(0, 3), amount: l.amount, distance: l.distance!.slice(0, 2), height: l.height!.slice(0, 2) }
+    : null
+}
+
+function stageFogFrom(v: unknown): StageFog | null {
+  const haze = fogLayerFrom(v)
+  if (!haze) return null
+  const dyn = fogLayerFrom((v as { dyn?: unknown }).dyn)
+  return dyn ? { ...haze, dyn } : haze
+}
+
+function stageFogFromDoc(v: unknown): SceneSettings["stageFog"] {
+  const s = v as { stage?: unknown; fog?: unknown } | null
+  const fog = s && typeof s.stage === "string" ? stageFogFrom(s.fog) : null
+  return fog ? { stage: s!.stage as string, fog } : undefined
+}
+
+const isAmbientSH = (v: unknown): v is number[] =>
+  Array.isArray(v) && v.length === 27 && v.every((n) => typeof n === "number" && Number.isFinite(n))
+
+function stageAmbientFromDoc(v: unknown): SceneSettings["stageAmbient"] {
+  const a = v as { stage?: unknown; sh?: unknown } | null
+  return a && typeof a.stage === "string" && isAmbientSH(a.sh) ? { stage: a.stage, sh: a.sh } : undefined
+}
+
+function stageGradeFromDoc(g: unknown): SceneSettings["stageGrade"] {
+  return isStageGrade(g) && typeof (g as { stage?: unknown }).stage === "string"
+    ? (g as NonNullable<SceneSettings["stageGrade"]>)
+    : undefined
+}
+
+/** A stage grade whose cube is whole: size³ RGB texels, base64. */
+export function isStageGrade(g: unknown): g is StageGrade {
+  const s = g as StageGrade | null
+  if (!s || typeof s.lut !== "string" || !Number.isInteger(s.size) || s.size < 2 || s.size > 64) return false
+  try {
+    return atob(s.lut).length === s.size ** 3 * 3
+  } catch {
+    return false
+  }
 }
 
 /** Join a folder URL and a filename. No encoding — see AssetRef.url. */
@@ -1434,6 +1518,10 @@ function restored(base: Scene): Scene {
         ground: { ...base.state.settings.ground, ...settingsBase.ground },
         physics: { ...base.state.settings.physics, ...settingsBase.physics },
         eyes: { ...base.state.settings.eyes, ...settingsBase.eyes },
+        stageGrade: stageGradeFromDoc(settingsBase.stageGrade ?? base.state.settings.stageGrade),
+        stageAmbient: stageAmbientFromDoc(settingsBase.stageAmbient ?? base.state.settings.stageAmbient),
+        stageFog: stageFogFromDoc(settingsBase.stageFog ?? base.state.settings.stageFog),
+        stageCastShadow: stageCastShadowFromDoc(settingsBase.stageCastShadow ?? base.state.settings.stageCastShadow),
       },
       groups: groupsUsable ? usableGroups : base.state.groups,
       // Same per-model gate as groups

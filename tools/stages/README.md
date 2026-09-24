@@ -58,11 +58,15 @@ PMX in between: every hop through another format is a hop that renames a
 material or loses a map, and the material **name** is what a person assigns a
 look to in the app.
 
+Then shrink it: `python3 tools/stages/glb_webp.py stages/x323-glb/X323.glb`
+re-encodes every texture as WebP at quality 90, same resolution
+(`EXT_texture_webp`), about five times smaller — X340 went from 260 MB to 47.
+
 ## What comes out
 
 | | |
 |---|---|
-| `X323.glb` | the whole stage: geometry in metres, one material per Unity material with its albedo, its occlusion-roughness-metal map in glTF's order, its normal map and its emissive map; the lamps and the sun as `KHR_lights_punctual`; and under `extras.reze` the world, the cast's fill and the view the game forms its frame with |
+| `X323.glb` | the whole stage: geometry in metres, one material per Unity material with its albedo, its occlusion-roughness-metal map in glTF's order, its normal map and its emissive map; the lamps and the sun as `KHR_lights_punctual`; and under `extras.reze` the world, the cast's fill, the view the game forms its frame with, and its colour grade (`grading`, below) |
 | `X323.blend` | the same scene, textures packed, viewed under Filmic +0.6 as the app views it |
 | `../x323-glb-build/` | what Blender was built from: `scene.json`, geometry, the maps as packed |
 
@@ -120,6 +124,36 @@ baked it. X333's world carries 0.35% of the sphere above white, to 7.5.
 The cube is looked up at the Unity direction for the engine direction it fills:
 X mirrors on the way to glTF and Z on the way in, so a probe sampled as-is is
 the room reflected half a turn against itself.
+
+**The grade.** The game grades every frame through a LUT its pipeline bakes
+from the volume stack — white balance, colour adjustments, split toning, channel
+mixer, shadows/midtones/highlights, lift/gamma/gain — with
+`Hidden/RenderPipeline/Lut`; `SceneSetting._colorGraddingLut` is never read.
+`unity_grading.py` resolves the scene's global volumes as ag-rip's
+`AGVolumes.cs` does and bakes the same cube, the decompiled shader line for
+line, into `extras.reze.grading`: `size`³ texels (16, or 32 with
+`lutSize32`), 8-bit sRGB, red fastest, and `from`, the overrides it was baked
+from. The Final pass looks up its tonemapped colour, linear, and the app looks
+up its view transform's output the same way. It keeps the game's integer
+division (`_LutParams.w` = 1), so white lands at 15/16 as it does in the game.
+A stage whose SceneSetting has tonemapping off shows no grade in the game and
+carries none; a local volume is left out and listed.
+
+**The ambient and the fog.** Read from the Unity project's
+`ag_render_manifest.json`, as the sim set them. The game lights surfaces with
+`_Replica_SH*` — Unity's ambient probe of the scene's trilight, a dim blue L2
+SH — and not with its reflection probe, which feeds reflections alone. The
+nine coefficients go to `extras.reze.ambient.sh` (glTF axes), the app states
+them as the world's diffuse, and the world picture is then the bare probe.
+Its fog, `sim_FogColor`/`sim_FogParams` and the darkening `sim_DynFog*`, goes
+to `extras.reze.fog` in metres; the engine lays it PER VERTEX as the game does,
+which is most of what a floor of long triangles shows of it.
+
+**Surfaces the game builds differently.** `PBR/Detailed` (constants over a
+mask and a tiling detail picture) is baked to an albedo and an ORM map;
+`ZTong/Tong_jichu_AB` (a projection, a soft shadow) to one unlit RGBA picture
+at `_Color.a × mask × alpha`; a `Scene/Transparent` coat with nothing of its
+own to paint — a view-dependent sheen the app cannot draw — is left out.
 
 **Left out, and listed when the converter runs:** renderers and lights the game
 switches off (on themselves or through a parent), a second directional light,

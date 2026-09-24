@@ -163,7 +163,7 @@ export function useSceneSync({
   useEffect(() => {
     const engine = engineRef.current
     if (!ready || !engine) return
-    const { world, sun, bloom, dof, outline, background, ground, grade, physics, view, grain } = settings
+    const { world, sun, bloom, dof, outline, background, ground, grade, physics, view, grain, stageGrade } = settings
     // A different engine is a first run, whatever the settings say.
     const p = prev.current?.engine === engine ? prev.current : null
     const modeChanged = !p || p.backdrop !== hasBackdrop || p.green !== exportBackground || p.plate !== plate
@@ -217,6 +217,38 @@ export function useSceneSync({
     // Before the grade, which is what the engine applies it to.
     if (!p || p.settings.view !== view) {
       engine.setViewTransformOptions({ transform: view.transform, exposure: view.exposure })
+    }
+    // The stage's own ambient, while the stage's own world is the world.
+    const ambientSH = settings.stageAmbient && world.stage?.id === settings.stageAmbient.stage ? settings.stageAmbient.sh : null
+    if (!p || (p.settings.stageAmbient !== settings.stageAmbient || p.settings.world !== world)) {
+      engine.setWorldAmbient(ambientSH)
+    }
+    if (!p || p.settings.stageCastShadow !== settings.stageCastShadow) {
+      const s = settings.stageCastShadow
+      engine.setStageCastShadow(
+        s && s.on
+          ? {
+              direction: { x: s.direction[0], y: s.direction[1], z: s.direction[2] },
+              color: { x: s.color[0], y: s.color[1], z: s.color[2] },
+              amount: s.amount,
+            }
+          : null,
+      )
+    }
+    if (!p || p.settings.stageFog !== settings.stageFog) {
+      const f = settings.stageFog?.fog
+      const layer = (l: NonNullable<typeof f>) => ({
+        color: { x: l.color[0], y: l.color[1], z: l.color[2] },
+        amount: l.amount,
+        distance: [l.distance[0], l.distance[1]] as [number, number],
+        height: [l.height[0], l.height[1]] as [number, number],
+      })
+      engine.setSceneFog(f ? { ...layer(f), dyn: f.dyn ? layer(f.dyn) : null } : null)
+    }
+    if (!p || p.settings.stageGrade !== stageGrade) {
+      engine.setStageGrade(
+        stageGrade ? { size: stageGrade.size, data: Uint8Array.from(atob(stageGrade.lut), (ch) => ch.charCodeAt(0)) } : null,
+      )
     }
     if (!p || p.settings.grade !== grade || p.gradeSpec !== gradeSpec) {
       const cdl = resolveSpec(gradeSpec, grade.intensity)

@@ -5097,6 +5097,10 @@ export default function Lab() {
       sun: s2.sun.stage && ids.has(s2.sun.stage.id) ? s2.sun.stage.before : s2.sun,
       world: s2.world.stage && ids.has(s2.world.stage.id) ? s2.world.stage.before : s2.world,
       fill: s2.fill?.stage && ids.has(s2.fill.stage.id) ? s2.fill.stage.before : s2.fill,
+      stageGrade: s2.stageGrade && ids.has(s2.stageGrade.stage) ? undefined : s2.stageGrade,
+      stageAmbient: s2.stageAmbient && ids.has(s2.stageAmbient.stage) ? undefined : s2.stageAmbient,
+      stageFog: s2.stageFog && ids.has(s2.stageFog.stage) ? undefined : s2.stageFog,
+      stageCastShadow: s2.stageCastShadow && ids.has(s2.stageCastShadow.stage) ? undefined : s2.stageCastShadow,
     }))
     swapHdri((prev) => {
       if (!prev || !gone.some((s) => isStageOwnSky(s.file, prev.name))) return prev
@@ -5233,6 +5237,18 @@ export default function Lab() {
         // the transform and exposure the author looked at it through.
         const view = rig?.view
         if (view) setSettings((s2) => ({ ...s2, view: { ...s2.view, transform: view.transform, exposure: view.exposure } }))
+        // AND THE GRADE IT WAS GRADED WITH, which leaves with it.
+        const stageGrade = rig?.grade
+        setSettings((s2) => ({ ...s2, stageGrade: stageGrade ? { ...stageGrade, stage: id } : undefined }))
+        // AND THE AMBIENT ITS SURFACES WERE LIT BY — drawn while its world stands.
+        const stageAmbient = rig?.ambient
+        setSettings((s2) => ({ ...s2, stageAmbient: stageAmbient ? { stage: id, sh: stageAmbient } : undefined }))
+        // AND ITS FOG, which leaves with it.
+        const stageFog = rig?.fog
+        setSettings((s2) => ({ ...s2, stageFog: stageFog ? { stage: id, fog: stageFog } : undefined }))
+        // AND THE SHADOW ITS CAST THROWS ON IT, on by default.
+        const castShadow = rig?.castShadow
+        setSettings((s2) => ({ ...s2, stageCastShadow: castShadow ? { ...castShadow, stage: id, on: true } : undefined }))
         // AND THE CAST'S FILL, claimed the same way: the light the game gives its
         // characters apart from the room.
         const fill = rig?.fill
@@ -5287,7 +5303,7 @@ export default function Lab() {
               console.info(
                 [
                   `[stage] ${id}: ${mats.length} materials, ${glbStageOf(pmx) ? "from a .glb (Stage PBR looks)" : "from a .pmx (name-based looks)"}`,
-                  `  engine   lamp specular ${wgsl.includes("rzLampsSpecular") ? "yes" : "NO — the build is stale"}, world reflection ${wgsl.includes("rzWorldSpecular(reflect") ? "yes" : "NO — the build is stale"}`,
+                  `  engine   lamp specular ${wgsl.includes("rzLampsSpecular") ? "yes" : "NO — the build is stale"}, world reflection ${/rzWorldSpecular(Lod)?\(reflect/.test(wgsl) ? "yes" : "NO — the build is stale"}`,
                   `  world    ${w ? `${w.source} strength=${r3(w.strength)} up=[${w.up.map(r3)}] down=[${w.down.map(r3)}]` : "no engine"}`,
                   `  lamps    ${eng?.getLightCount() ?? "?"} in the engine, ${rig?.lamps?.length ?? 0} in the rig`,
                   `  sun      ${rig?.sun ? JSON.stringify(rig.sun) : "none"}`,
@@ -5396,6 +5412,19 @@ export default function Lab() {
       })
     }
   }
+
+  // DEV ONLY — parity harness (reze-design ↔ Unity/Blender renders). Lets a
+  // DevTools-protocol script reach the engine and load a stage through the real
+  // upload path. Not in production builds.
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development") return
+    ;(globalThis as unknown as { __rezeDev?: unknown }).__rezeDev = {
+      engine: () => engineRef.current,
+      asStage: () => {
+        modelTarget.current = { mode: "stage" }
+      },
+    }
+  })
 
   // ── Identity colour per model ──
   // Resolved once a model is in the scene, then cached by id. Async and

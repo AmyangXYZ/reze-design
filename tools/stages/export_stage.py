@@ -206,7 +206,23 @@ if scene.world and scene.world.use_nodes and scene.world.node_tree:
 vs = scene.view_settings
 view = {"transform": vs.view_transform, "look": vs.look, "exposure": vs.exposure, "gamma": vs.gamma}
 
-scene["reze"] = {"version": 1, "world": world, "view": view, "notes": notes}
+# A grade the Unity build baked into this .blend stays with it: Blender has no
+# place of its own for the game's LUT, so it rides on the scene property.
+previous = scene.get("reze")
+grading = previous.get("grading") if hasattr(previous, "get") else None
+if hasattr(grading, "to_dict"):
+    grading = grading.to_dict()
+ambient = previous.get("ambient") if hasattr(previous, "get") else None
+if hasattr(ambient, "to_dict"):
+    ambient = ambient.to_dict()
+fog = previous.get("fog") if hasattr(previous, "get") else None
+if hasattr(fog, "to_dict"):
+    fog = fog.to_dict()
+ground_shadow = previous.get("groundShadow") if hasattr(previous, "get") else None
+if hasattr(ground_shadow, "to_dict"):
+    ground_shadow = ground_shadow.to_dict()
+
+scene["reze"] = {"version": 1, "world": world, "view": view, "notes": notes, **({"grading": grading} if grading else {}), **({"ambient": ambient} if ambient else {}), **({"fog": fog} if fog else {}), **({"groundShadow": ground_shadow} if ground_shadow else {})}
 
 os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
 bpy.ops.export_scene.gltf(

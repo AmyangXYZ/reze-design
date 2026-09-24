@@ -10,7 +10,7 @@ import { DEFAULT_GRAPH, UNLIT_GRAPH, type ShaderGraph } from "reze-engine"
 import { EFFECTS } from "@/lib/effects"
 import { GRADE_PRESETS, type GradeSpec } from "@/lib/grade"
 import { GRAPH_LIBRARY, sameGraphLook } from "@/lib/materials"
-import { stagePbrGraph } from "@/lib/gltf-stage"
+import { stagePbrGraph, stageSheetGraph } from "@/lib/gltf-stage"
 import { communityItems } from "@/lib/community-store"
 import type { EffectItem, GradeItem, GraphItem, LibraryKind } from "@/lib/library"
 import type { ItemRef } from "@/lib/scene"
@@ -115,10 +115,24 @@ const atUnlitStrength = (graph: ShaderGraph): ShaderGraph => ({
  * copy stops being recognised — which is the whole rule of this file.
  */
 function isAppStageGraph(graph: ShaderGraph): boolean {
+  const emit = graph.nodes.find((n) => n.type === "emission")
+  if (emit && sameGraphLook(graph, stageSheetGraph(Number(emit.inputs?.strength ?? 1)))) return true
   const principled = graph.nodes.find((n) => n.type === "principled")
   const strength = Number(principled?.inputs?.emission_strength ?? 0)
   if (!Number.isFinite(strength)) return false
-  return sameGraphLook(graph, stagePbrGraph(strength))
+  const current = stagePbrGraph(strength)
+  return sameGraphLook(graph, current) || sameGraphLook(graph, stagePbrBefore(current, strength))
+}
+
+/** Stage PBR as it was before 2026-09-24, still in every scene that took a
+ *  stage then: the cast's spec clamp at 10, no reflection_lod. Still the app's. */
+function stagePbrBefore(current: ShaderGraph, strength: number): ShaderGraph {
+  return {
+    ...current,
+    nodes: current.nodes.map((n) =>
+      n.type === "principled" ? { ...n, inputs: { specular_ior_level: 0.5, spec_clamp: 10.0, emission_strength: strength } } : n,
+    ),
+  }
 }
 
 export function unpublishedUses(

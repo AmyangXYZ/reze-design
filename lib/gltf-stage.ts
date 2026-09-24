@@ -109,8 +109,21 @@ type RezeScene = {
   world?: { format?: string; base64?: string; color?: number[]; strength?: number } | null
   /** What the scene was authored under: Blender's names for the transform. */
   view?: { transform?: string; look?: string; exposure?: number } | null
+  /** The game's colour grade as the cube its pipeline bakes: size³ texels,
+   *  8-bit sRGB, red fastest — see tools/stages/unity_grading.py. */
+  grading?: { size?: number; format?: string; base64?: string } | null
+  /** The game's diffuse ambient, nine RGB SH coefficients in glTF axes — see
+   *  tools/stages/unity_to_glb.game_ambient. */
+  ambient?: { sh?: number[] } | null
+  /** The game's distance fog, glTF metres — see unity_to_glb.game_fog. */
+  fog?: (FogLayerM & { dyn?: FogLayerM | null }) | null
+  /** The game's character shadow on its ground: the way to its light (glTF
+   *  axes), linear colour, alpha — see unity_to_glb. */
+  groundShadow?: { enabled?: boolean; direction?: number[]; color?: number[]; amount?: number } | null
   notes?: string[]
 }
+
+type FogLayerM = { color: number[]; amount: number; distance: number[]; height: number[] }
 
 /** Blender's view transform names as the app's. */
 const VIEW_TRANSFORM: Record<string, "standard" | "filmic" | "agx"> = {
@@ -530,7 +543,16 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
     const travel = toPmxDir(dir3)
     // Blender writes a sun's W/m² as lux and a lamp's W/(4π) as candela, both
     // through 683; read back, they are the numbers the .blend lit with.
-    const colour = ex.color ?? (light.color ?? [1, 1, 1]).map((c) => (c * (light.intensity ?? 1)) / LUMENS_PER_WATT)
+    //
+    // A GAME'S numbers (extras.reze.color, the Unity path) are in Unity's
+    // convention, which has no π: its lit term is albedo·radiance·N·L and its
+    // highlight URP's D·V·F with π folded out. The engine shades as Blender
+    // does, with the 1/π in both, so the same number lit X340's floor at a
+    // third of the game's — its candelabra spot left no pool at all. π here
+    // puts it back, for lamps and sun alike.
+    const colour = ex.color
+      ? ex.color.map((c) => c * Math.PI)
+      : (light.color ?? [1, 1, 1]).map((c) => (c * (light.intensity ?? 1)) / LUMENS_PER_WATT)
     if (light.type === "directional") {
       if (sun) {
         notes.push(`${node.name ?? "light"}: a second directional light was left out`)
@@ -593,6 +615,45 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
   if (view?.transform && VIEW_TRANSFORM[view.transform]) {
     rig.view = { transform: VIEW_TRANSFORM[view.transform], exposure: view.exposure ?? 0 }
     if (view.look && view.look !== "None" && !/^AgX - Base$|^Filmic - Medium High Contrast$/.test(view.look)) notes.push(`view look "${view.look}" is not one the app has; the transform is applied without it`)
+  }
+  // AND ITS GRADE, carried in the rig as the cube itself: it is small (12 KB
+  // at 16³) and it belongs to the document the rig is read into.
+  const grading = sceneExtras.grading
+  if (grading?.base64 && grading.size) {
+    if (grading.format === "rgb8-srgb" && atob(grading.base64).length === grading.size ** 3 * 3) {
+      rig.grade = { size: grading.size, lut: grading.base64 }
+    } else {
+      notes.push(`colour grade left out: a ${grading.format} cube the app does not read`)
+    }
+  }
+  // AND THE AMBIENT ITS SURFACES WERE LIT BY, apart from the world picture
+  // (which then answers reflections alone). glTF to PMX turns z over, and with
+  // it the z-odd terms: c2 (z), c5 (yz), c7 (xz).
+  const ambient = sceneExtras.ambient?.sh
+  if (Array.isArray(ambient) && ambient.length === 27 && ambient.every(Number.isFinite)) {
+    rig.ambient = ambient.map((v, i) => ([2, 5, 7].includes(Math.floor(i / 3)) ? -v : v))
+  }
+  // AND ITS FOG, in PMX units: a depth of d metres is d·12.5 units, so the
+  // slope per unit is the slope per metre over 12.5 and the heights times it.
+  const fogLayer = (l: FogLayerM | null | undefined) =>
+    l && [l.color, l.distance, l.height].every((a) => Array.isArray(a) && a.every(Number.isFinite)) && Number.isFinite(l.amount)
+      ? { color: l.color.slice(0, 3), amount: l.amount, distance: [l.distance[0] / PMX_PER_METRE, l.distance[1]], height: [l.height[0] * PMX_PER_METRE, l.height[1] * PMX_PER_METRE] }
+      : null
+  const haze = fogLayer(sceneExtras.fog)
+  if (haze) rig.fog = { ...haze, ...(fogLayer(sceneExtras.fog?.dyn) ? { dyn: fogLayer(sceneExtras.fog?.dyn) } : {}) }
+  // AND THE SHADOW ITS CAST THROWS ON ITS GROUND: the game's own direction and
+  // colour, on whether or not the game switched it on (X340 stores one and
+  // leaves it off — its moon threw a kneeling figure no shadow at all). A stage
+  // whose game gave it no strength, alpha 0, takes a plain dark one instead.
+  const gs = sceneExtras.groundShadow
+  if (gs && Array.isArray(gs.direction) && gs.direction.length === 3 && gs.direction.every(Number.isFinite)) {
+    const d = gs.direction
+    const given = Array.isArray(gs.color) && gs.color.length >= 3 && typeof gs.amount === "number" && gs.amount > 0
+    rig.castShadow = {
+      direction: [d[0], d[1], -d[2]],
+      color: given ? gs.color!.slice(0, 3) : [0.05, 0.05, 0.06],
+      amount: given ? gs.amount : 0.6,
+    }
   }
   files.push({ path: `${dir}${stem}.lights.json`, bytes: new TextEncoder().encode(JSON.stringify(rig, null, 1)) })
 
@@ -661,6 +722,15 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
  * slot 1 occlusion-roughness-metal in glTF's channel order, slot 2 the emissive
  * picture, which `strength` scales — a lamp shade at 3 or a monitor at 8 is
  * brighter than white and blooms.
+ *
+ * Its highlights are the game's: no spec clamp, because a lamp's glint on a
+ * polished floor IS the blown-out highlight the game draws — the clamp the
+ * cast's graphs carry against bump-aliased fireflies capped every lamp at a
+ * dull sheen here — and roughness picks the reflection's blur by Unity's probe
+ * curve, which the stage was tuned under (reflection_lod 1). Its lamps and sun
+ * shade with URP's direct-light BRDF (unity_direct 1): the lobe the game drew
+ * a candelabra's pool on the marble with, where the engine's own took the
+ * roughness unsquared and spread every lamp into a faint wash.
  */
 export function stagePbrGraph(strength: number): ShaderGraph {
   return {
@@ -679,7 +749,7 @@ export function stagePbrGraph(strength: number): ShaderGraph {
       { id: "relief_scale", type: "material_shininess" },
       { id: "normal", type: "normal_map" },
       { id: "glow", type: "tex_image/2" },
-      { id: "principled", type: "principled", inputs: { specular_ior_level: 0.5, spec_clamp: 10.0, emission_strength: strength } },
+      { id: "principled", type: "principled", inputs: { specular_ior_level: 0.5, reflection_lod: 1.0, unity_direct: 1.0, emission_strength: strength } },
     ],
     links: [
       { from: { node: "tex", socket: "color" }, to: { node: "base", socket: "a" } },
@@ -699,6 +769,28 @@ export function stagePbrGraph(strength: number): ShaderGraph {
       { from: { node: "glow", socket: "color" }, to: { node: "principled", socket: "emission_color" } },
     ],
     output: { node: "principled", socket: "color" },
+  }
+}
+
+/**
+ * The Stage Sheet graph: a painted sheet — a sky layer, an effect decal, a
+ * shadow projection — as the game draws it, its emissive picture (slot 2) given
+ * off at `strength` and no light taken. Its coverage is its base picture's
+ * alpha, as every material's is. Drawn through Stage PBR instead, a sheet over
+ * black was a glossy black surface, and X340's floor projection under its spot
+ * lamp lit up as the whole rectangle of its quad.
+ */
+export function stageSheetGraph(strength: number): ShaderGraph {
+  return {
+    version: 1,
+    name: `Stage Sheet ×${strength}`,
+    tags: ["stage", "unlit"],
+    nodes: [
+      { id: "glow", type: "tex_image/2" },
+      { id: "emit", type: "emission", inputs: { strength } },
+    ],
+    links: [{ from: { node: "glow", socket: "color" }, to: { node: "emit", socket: "color" } }],
+    output: { node: "emit", socket: "color" },
   }
 }
 
@@ -735,6 +827,23 @@ export function glbStyleGroups(materials: GlbMaterial[]): StyleGroup[] {
     }
     if (m.unlit && m.emissiveStrength === 0) {
       add("unlit", () => ({ id: "stage-unlit", label: "Unlit", materials: [], graph: structuredClone(UNLIT_GRAPH), renderClass: "auto" }), m.name)
+      continue
+    }
+    // An unlit sheet the exporter wrote as emission over black takes no light
+    // either — see stageSheetGraph.
+    if (m.unlit) {
+      add(
+        `sheet:${m.emissiveStrength}:${hashed ? "cut" : ""}`,
+        () => ({
+          id: `stage-sheet-x${m.emissiveStrength}${hashed ? "-cutout" : ""}`,
+          label: `Stage Sheet ×${m.emissiveStrength}${hashed ? " (cutout)" : ""}`,
+          materials: [],
+          graph: stageSheetGraph(m.emissiveStrength),
+          renderClass: "auto",
+          ...(hashed ? { alphaMode: "hashed" as const } : {}),
+        }),
+        m.name,
+      )
       continue
     }
     const key = `pbr:${m.emissiveStrength}:${hashed ? "cut" : ""}`

@@ -237,9 +237,21 @@ for l in scene_json["lamps"]:
     c = l["color"]
     peak = max(c) or 1.0
     data.color = (c[0] / peak, c[1] / peak, c[2] / peak)
-    # Radiant intensity (brightness one metre away) to Blender's watts.
-    data.energy = peak * l["intensity"] * 4.0 * math.pi
+    # Radiant intensity (brightness one metre away) to Blender's watts, and
+    # Unity's convention to Blender's: Unity's lit term has no π (albedo ·
+    # radiance · N·L), Blender's has 1/π, so the same lamp needs π more —
+    # 4π² in all. Measured against the Unity sim, 4π lit X340 at a third.
+    data.energy = peak * l["intensity"] * 4.0 * math.pi * math.pi
     data.shadow_soft_size = 0.05
+    # The game's lamps cast no shadow (every one is shadows: None), and reach
+    # no further than their range — Blender's cutoff is hard where Unity's
+    # window fades, which is as close as EEVEE goes.
+    data.use_shadow = False
+    try:
+        data.use_custom_distance = True
+        data.cutoff_distance = l["range"]
+    except AttributeError:
+        pass
     if l["type"] == "spot":
         data.spot_size = math.radians(l["angle"])
         data.spot_blend = 1.0 - (l["innerAngle"] / l["angle"] if l["angle"] else 0.0)
@@ -255,7 +267,8 @@ if scene_json["sun"]:
     data = bpy.data.lights.new("Sun", "SUN")
     peak = max(s["color"]) or 1.0
     data.color = tuple(v / peak for v in s["color"])
-    data.energy = peak
+    # W/m², with Unity's missing π restored as for the lamps.
+    data.energy = peak * math.pi
     data.use_shadow = s["shadow"]
     ob = bpy.data.objects.new("Sun", data)
     d = Vector(blender_xyz(s["direction"]))
@@ -286,7 +299,18 @@ scene["reze"] = {
         # was already on — the same field export_stage.py writes for a .blend
         # built by hand.
         "view": {"transform": "Filmic", "look": "None", "exposure": 0.6},
+        # The game's colour grade, as the LUT its pipeline bakes from the
+        # volume stack (see unity_grading.py). Applied after the view.
         "notes": scene_json["notes"],
+        **({"grading": scene_json["grading"]} if scene_json.get("grading") else {}),
+        # The ambient the game lights its surfaces with (glTF axes; see
+        # unity_to_glb.game_ambient) — apart from the world, which is its
+        # reflection probe.
+        **({"ambient": {"sh": scene_json["ambient"]}} if scene_json.get("ambient") else {}),
+        # The game's distance fog, in metres (unity_to_glb.game_fog).
+        **({"fog": scene_json["fog"]} if scene_json.get("fog") else {}),
+        # The game's character shadow on its ground (unity_to_glb).
+        **({"groundShadow": scene_json["groundShadow"]} if scene_json.get("groundShadow") else {}),
 }
 
 # Viewed as the app views it — Filmic at +0.6 stops — so the .blend and the

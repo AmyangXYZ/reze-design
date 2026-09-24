@@ -249,3 +249,147 @@ def bake(material, proj, png_for_guid, out_base, max_width=4096, max_height=1024
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     Image.fromarray(np.round(out * 255.0).astype(np.uint8), "RGBA").save(out_path, optimize=True)
     return out_path
+
+
+# ── ZTong/Tong_jichu_AB: the plain alpha-blended effect sheet ──
+#
+# A soft blob under a candle, a shadow projection on a floor ("touying"): one
+# texture, an optional mask, a colour, and no light. The fragment, as
+# decompiled:
+#
+#   tex  = _Tex, or (1,1,1,tex.a) with _Tex_IsSingleChannel 1, or tex.rrrr with 2
+#   mask = the same switches over _Tex_Mask (_Tex_Mask_IsSingleChannel)
+#   a    = luma(mask.rgb) · mask.a · tex.a · vertex.a        luma = .3/.59/.11
+#   rgb  = lerp(tex.rgb, luma(tex.rgb), _Desaturate) · _Color.rgb · vertex.rgb
+#   Blend SrcAlpha OneMinusSrcAlpha
+#
+# and the vertex stage folds _Color.a into vertex.a (times uv1.x through
+# _Color_Alpha_X, off on every sheet so far): X340's projection draws at 0.53
+# times the texture's alpha squared. Baked over the mesh's UV square at time 0
+# with each slot's _ST; its scroll and rotation dials are time's.
+
+BASIC_EFFECT_SHADERS = ("Tong_jichu_AB",)
+
+
+def _single(t, mode):
+    if mode > 1.5:
+        return np.repeat(t[..., :1], 4, axis=-1)
+    if mode > 0.5:
+        return np.concatenate([np.ones_like(t[..., :3]), t[..., 3:]], axis=-1)
+    return t
+
+
+def bake_basic(material, proj, png_for_guid, out_base, notes):
+    """Write the sheet's colour and coverage to `<out_base>.png`, sRGB RGBA,
+    and return that path, or None when its texture is missing."""
+    f = material["floats"]
+    tex_slot = material["textures"].get("_Tex")
+    if not tex_slot:
+        return None
+    loaded = {}
+    for name in ("_Tex", "_Tex_Mask"):
+        slot = material["textures"].get(name)
+        if not slot:
+            continue
+        png = png_for_guid(slot["guid"])
+        if not png or not os.path.exists(png):
+            return None
+        loaded[name] = (_Texture(png, *_wrap(proj.path(slot["guid"]) or "")), slot)
+    for dial in ("_Tex_Ang", "_Tex_Mask_Ang"):
+        if f.get(dial, 0.0):
+            notes.append(f"{material.get('name', '?')}: {dial} {f[dial]:g} left out of the bake")
+    main, _ = loaded["_Tex"]
+    width, height = max(64, main.w), max(64, main.h)
+    U, V = np.meshgrid((np.arange(width) + 0.5) / width, 1.0 - (np.arange(height) + 0.5) / height)
+
+    def sample(name):
+        tex, slot = loaded[name]
+        return tex.sample(U * slot["scale"][0] + slot["offset"][0], V * slot["scale"][1] + slot["offset"][1])
+
+    luma = np.array([0.3, 0.59, 0.11])
+    t = _single(sample("_Tex"), f.get("_Tex_IsSingleChannel", 0.0))
+    a = t[..., 3]
+    if "_Tex_Mask" in loaded:
+        m = _single(sample("_Tex_Mask"), f.get("_Tex_Mask_IsSingleChannel", 0.0))
+        a = a * (m[..., :3] @ luma) * m[..., 3]
+    colour, colour_a = _linear_colour(material, "_Color")
+    if f.get("_Color_Alpha_X", 0.0):
+        notes.append(f"{material.get('name', '?')}: _Color_Alpha_X fades by uv1.x, left out of the bake")
+    a = a * colour_a
+    rgb = t[..., :3]
+    rgb = rgb + f.get("_Desaturate", 0.0) * ((rgb @ luma)[..., None] - rgb)
+    rgb = rgb * colour
+    if rgb.max() > 1.0:
+        notes.append(f"{material.get('name', '?')}: colour past white clipped in the bake ({rgb.max():.2f})")
+    out = np.concatenate([_linear_to_srgb(np.clip(rgb, 0.0, 1.0)), np.clip(a, 0.0, 1.0)[..., None]], axis=-1)
+    path = f"{out_base}.png"
+    Image.fromarray(np.round(out * 255).astype(np.uint8), "RGBA").save(path)
+    return path
+
+
+# ── SimPipeline/PBR/Detailed: a layered surface, baked to albedo and ORM ──
+#
+# No albedo or property map of its own: constants blended by a mask, over a
+# tiling detail picture. From the fragment, every texture on UV0 through its
+# own _ST:
+#
+#   cover   = mask.r        (its up-facing term needs _CoverMaskSoft > 0)
+#   albedo  = lerp(detail · _BaseColor, _BaseWornColor, mask.g)
+#   albedo  = lerp(albedo, coverTex · _CoverColor, cover)
+#   metal   = lerp(_BaseMetallic, _CoverMetallic, cover)
+#   rough   = lerp(_BaseRoughness, _CoverRoughness, cover)      (perceptual)
+#
+# Exported as Standard it had none of this: glTF's defaults, roughness 1 and
+# METAL 1, turned X340's stone steps into white metal that every spot lit.
+
+
+def _raw(png):
+    return np.asarray(Image.open(png).convert("RGBA"), dtype=np.float64) / 255.0
+
+
+def bake_detailed(material, proj, png_for_guid, out_base, notes, max_size=2048):
+    """Write `<out_base>_D.png` (sRGB albedo) and `<out_base>_ORM.png` (glTF
+    order) over the UV square; return (albedo path, orm path) or None."""
+    t, f = material["textures"], material["floats"]
+
+    def load(slot, colour):
+        s = t.get(slot)
+        png = png_for_guid(s["guid"]) if s else None
+        if not png or not os.path.exists(png):
+            return None
+        return (_Texture(png, *_wrap(proj.path(s["guid"]) or "")) if colour else _raw(png)), s
+
+    mask, detail, cover = load("_MaskTex", False), load("_DetailTex", True), load("_CoverTex", True)
+    sizes = [m[0].shape[1] * abs(m[1]["scale"][0]) for m in (mask,) if m] + [d[0].w * abs(d[1]["scale"][0]) for d in (detail, cover) if d]
+    n = int(min(max_size, max([256] + sizes)))
+    U, V = np.meshgrid((np.arange(n) + 0.5) / n, 1.0 - (np.arange(n) + 0.5) / n)
+
+    def at(entry):
+        tex, s = entry
+        return tex.sample(U * s["scale"][0] + s["offset"][0], V * s["scale"][1] + s["offset"][1])
+
+    if mask:
+        raw, s = mask
+        h, w = raw.shape[:2]
+        x = np.clip(((U * s["scale"][0] + s["offset"][0]) % 1.0) * w, 0, w - 1).astype(int)
+        y = np.clip((1.0 - ((V * s["scale"][1] + s["offset"][1]) % 1.0)) * h, 0, h - 1).astype(int)
+        m = raw[y, x]
+    else:
+        m = np.zeros((n, n, 4))  # "black", the shader's default
+    if f.get("_CoverMaskSoft", 0.0) > 0:
+        notes.append(f"{material.get('name', '?')}: its up-facing cover is left out of the bake")
+    base = _linear_colour(material, "_BaseColor")[0]
+    worn = _linear_colour(material, "_BaseWornColor")[0]
+    cov = _linear_colour(material, "_CoverColor")[0]
+    d = at(detail)[..., :3] if detail else np.ones((n, n, 3))
+    c = at(cover)[..., :3] if cover else np.ones((n, n, 3))
+    g, r = m[..., 1:2], m[..., 0:1]
+    albedo = d * base * (1 - g) + worn * g
+    albedo = albedo * (1 - r) + c * cov * r
+    rough = f.get("_BaseRoughness", 1.0) * (1 - r[..., 0]) + f.get("_CoverRoughness", 1.0) * r[..., 0]
+    metal = f.get("_BaseMetallic", 0.0) * (1 - r[..., 0]) + f.get("_CoverMetallic", 0.0) * r[..., 0]
+    a_path, o_path = f"{out_base}_D.png", f"{out_base}_ORM.png"
+    Image.fromarray(np.round(_linear_to_srgb(np.clip(albedo, 0, 1)) * 255).astype(np.uint8), "RGB").save(a_path)
+    orm = np.stack([np.ones_like(rough), np.clip(rough, 0, 1), np.clip(metal, 0, 1)], axis=-1)
+    Image.fromarray(np.round(orm * 255).astype(np.uint8), "RGB").save(o_path)
+    return a_path, o_path

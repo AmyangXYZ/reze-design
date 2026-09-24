@@ -357,6 +357,17 @@ class Scene:
                 "probeLightingBase": vector(shallow(body, "_probeLightingBase"), None) if "_probeLightingBase:" in body else None,
                 # The scene's baked reflection probe — what its glossy surfaces
                 # actually mirror.
+                # The character shadow the game lays on the ground (SimPipeline
+                # GroundShadowSystem): its own direction, colour and alpha,
+                # whether or not the stage switches it on.
+                "groundShadow": {
+                    "enable": num("_groundShadowEnable", 0.0) > 0.5,
+                    "inclination": num("_groundShadowInclination", 45.0),
+                    "azimuth": num("_groundShadowAzimuth", 0.0),
+                    "fade": num("_groundShadowFade", 0.0),
+                    "color": vector(shallow(body, "_groundShadowColor"), (0.0, 0.0, 0.0)),
+                    "alpha": float((re.search(r"a:\s*(-?[\d.eE+-]+)", shallow(body, "_groundShadowColor", "") or "") or [None, "0"])[1]),
+                },
                 "reflectionGuid": (re.search(r"bakeReflectionTex:\s*\{fileID:\s*\d+,\s*guid:\s*([0-9a-f]{32})", body) or [None, None])[1],
             }
         return None
