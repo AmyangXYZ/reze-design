@@ -817,6 +817,7 @@ const en = {
       radius: "Radius",
       /** What a lamp reaches. "Radius" is the engine's word and the falloff is
        *  exactly zero at it, so the number is a promise rather than a feel. */
+      simulate: "Simulate",
       gravity: "Gravity",
       floor: "Ground collision",
       volume: "Volume",
@@ -1703,6 +1704,7 @@ const zh: Dictionary = {
       exposure: "曝光",
       threshold: "阈值",
       radius: "半径",
+      simulate: "模拟",
       gravity: "重力",
       floor: "地面碰撞",
       volume: "音量",

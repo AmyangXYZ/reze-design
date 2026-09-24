@@ -175,6 +175,9 @@ export type SceneSettings = {
   /** How the air behaves — what moves cloth and hair, not how anything looks.
    *  Lives in the document so a scene shared or exported keeps its motion. */
   physics: {
+    /** Whether cloth and hair are simulated at all. Off, every body sits on
+     *  its bone — what the rig and the motion do, with nothing on top. */
+    enabled: boolean
     /** Downward pull. The engine's default is 98 at MMD scale, where a
      *  character stands about 18 units tall. Lower floats, higher weighs down. */
     gravity: number
@@ -242,6 +245,8 @@ export const DEFAULT_AUDIO: SceneSettings["audio"] = { volume: 1 }
  *  the section existed are read through this rather than migrated — the same
  *  way pre-angle documents take stock orbit angles. */
 export const DEFAULT_PHYSICS: SceneSettings["physics"] = {
+  // ON: every scene before the switch existed was simulated.
+  enabled: true,
   gravity: 98,
   wind: 0,
   windAzimuth: 90,

@@ -263,6 +263,7 @@ export function useSceneSync({
           : null,
       )
       engine.setPhysicsFloor(physics.floor)
+      engine.setPhysicsEnabled(physics.enabled)
     }
     // The sun and the plate mode both reach into the ground's options — the
     // shadow's edge is the light's, and a floor drawn solid over footage is not

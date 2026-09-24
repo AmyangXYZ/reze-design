@@ -696,6 +696,7 @@ const DOCK_CONTROLS: {
   // "after effects" and "composite" are what someone is thinking when they want
   // this; "jsx" and "camera" are what they will type once they know it exists.
   { id: "ae-script", en: "AE composition script", zh: "AE 合成脚本", row: "export", keywords: ["after effects", "jsx", "composite", "camera", "null", "3d", "合成", "摄像机", "空对象"] },
+  { id: "simulate", en: "Simulate", zh: "模拟", row: "physics", keywords: ["physics", "on", "off", "disable", "cloth", "hair", "物理", "开关"], value: (v) => sw(v.settings.physics.enabled, v.t) },
   { id: "gravity", en: "Gravity", zh: "重力", row: "physics", value: (v) => v.settings.physics.gravity.toFixed(0) },
   { id: "ground-collision", en: "Ground collision", zh: "地面碰撞", row: "physics", keywords: ["floor", "cloth", "hair", "skirt", "through", "stage", "flying", "地面", "碰撞", "穿模", "浮空"], value: (v) => sw(v.settings.physics.floor, v.t) },
   { id: "wind", en: "Wind", zh: "风", row: "physics", value: (v) => v.settings.physics.wind.toFixed(0) },
@@ -9521,8 +9522,17 @@ export default function Lab() {
                       </TabsContent>
                     </Tabs>
                   ) : l.id === "physics" ? (
-                    // Always simulating — no on/off. Main's own controls, whole.
+                    // Simulating unless switched off — off sits every body on
+                    // its bone, to see what the rig and the motion do alone.
                     <>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs">{t.lab.ctl.simulate}</span>
+                        <Switch
+                          size="sm"
+                          checked={physics.enabled}
+                          onCheckedChange={(v) => patch("physics", { enabled: v })}
+                        />
+                      </div>
                       <SliderRow
                         label={t.lab.ctl.gravity}
                         value={physics.gravity}
