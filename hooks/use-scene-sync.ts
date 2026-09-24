@@ -223,18 +223,6 @@ export function useSceneSync({
     if (!p || (p.settings.stageAmbient !== settings.stageAmbient || p.settings.world !== world)) {
       engine.setWorldAmbient(ambientSH)
     }
-    if (!p || p.settings.stageCastShadow !== settings.stageCastShadow) {
-      const s = settings.stageCastShadow
-      engine.setStageCastShadow(
-        s && s.on
-          ? {
-              direction: { x: s.direction[0], y: s.direction[1], z: s.direction[2] },
-              color: { x: s.color[0], y: s.color[1], z: s.color[2] },
-              amount: s.amount,
-            }
-          : null,
-      )
-    }
     if (!p || p.settings.stageFog !== settings.stageFog) {
       const f = settings.stageFog?.fog
       const layer = (l: NonNullable<typeof f>) => ({

@@ -119,7 +119,6 @@ type RezeScene = {
   fog?: (FogLayerM & { dyn?: FogLayerM | null }) | null
   /** The game's character shadow on its ground: the way to its light (glTF
    *  axes), linear colour, alpha — see unity_to_glb. */
-  groundShadow?: { enabled?: boolean; direction?: number[]; color?: number[]; amount?: number } | null
   notes?: string[]
 }
 
@@ -641,20 +640,6 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
       : null
   const haze = fogLayer(sceneExtras.fog)
   if (haze) rig.fog = { ...haze, ...(fogLayer(sceneExtras.fog?.dyn) ? { dyn: fogLayer(sceneExtras.fog?.dyn) } : {}) }
-  // AND THE SHADOW ITS CAST THROWS ON ITS GROUND: the game's own direction and
-  // colour, on whether or not the game switched it on (X340 stores one and
-  // leaves it off — its moon threw a kneeling figure no shadow at all). A stage
-  // whose game gave it no strength, alpha 0, takes a plain dark one instead.
-  const gs = sceneExtras.groundShadow
-  if (gs && Array.isArray(gs.direction) && gs.direction.length === 3 && gs.direction.every(Number.isFinite)) {
-    const d = gs.direction
-    const given = Array.isArray(gs.color) && gs.color.length >= 3 && typeof gs.amount === "number" && gs.amount > 0
-    rig.castShadow = {
-      direction: [d[0], d[1], -d[2]],
-      color: given ? gs.color!.slice(0, 3) : [0.05, 0.05, 0.06],
-      amount: given ? gs.amount : 0.6,
-    }
-  }
   files.push({ path: `${dir}${stem}.lights.json`, bytes: new TextEncoder().encode(JSON.stringify(rig, null, 1)) })
 
   // ── The PMX ──

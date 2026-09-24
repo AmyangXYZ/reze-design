@@ -16,7 +16,6 @@ import {
   type StageGrade,
   type StageFog,
   type StageFogLayer,
-  type StageCastShadowSetting,
 } from "@/lib/scene-settings"
 import { storageKey } from "@/lib/storage"
 
@@ -898,7 +897,6 @@ export function parseSceneDoc(
         stageGrade: stageGradeFromDoc(settings.stageGrade),
         stageAmbient: stageAmbientFromDoc(settings.stageAmbient),
         stageFog: stageFogFromDoc(settings.stageFog),
-        stageCastShadow: stageCastShadowFromDoc(settings.stageCastShadow),
         background: { color: background.color },
       },
       backgroundEffects: appliedEffects(background, resolveEffect, resolveRef),
@@ -962,8 +960,6 @@ export function stageLightsFromFile(
   ambient: number[] | null
   /** The stage's distance fog. */
   fog: StageFog | null
-  /** The shadow its cast throws on it. */
-  castShadow: StageCastShadowSetting | null
 } {
   const raw = JSON.parse(text) as {
     lamps?: unknown[]
@@ -975,7 +971,6 @@ export function stageLightsFromFile(
     grade?: Record<string, unknown>
     ambient?: unknown
     fog?: unknown
-    castShadow?: unknown
   }
   const lamps = lightsFromDoc(
     (raw.lamps ?? []).map((l) => ({ ...(l as SceneLight), id: newLightId(), stage })),
@@ -1024,21 +1019,7 @@ export function stageLightsFromFile(
   const gr = raw.grade
   const grade = gr && isStageGrade(gr) ? { size: gr.size, lut: gr.lut } : null
   const ambient = isAmbientSH(raw.ambient) ? raw.ambient : null
-  return { lamps, sun, effects, fill, world, view, grade, ambient, fog: stageFogFrom(raw.fog), castShadow: castShadowFrom(raw.castShadow) }
-}
-
-function castShadowFrom(v: unknown): StageCastShadowSetting | null {
-  const s = v as Partial<StageCastShadowSetting> | null
-  const vec = (a: unknown) => Array.isArray(a) && a.length >= 3 && a.slice(0, 3).every((x) => typeof x === "number" && Number.isFinite(x))
-  return s && vec(s.direction) && vec(s.color) && typeof s.amount === "number" && Number.isFinite(s.amount)
-    ? { direction: s.direction!.slice(0, 3), color: s.color!.slice(0, 3), amount: Math.min(Math.max(s.amount, 0), 1) }
-    : null
-}
-
-function stageCastShadowFromDoc(v: unknown): SceneSettings["stageCastShadow"] {
-  const s = v as { stage?: unknown; on?: unknown } | null
-  const base = s && typeof s.stage === "string" ? castShadowFrom(s) : null
-  return base ? { ...base, stage: s!.stage as string, on: s!.on !== false } : undefined
+  return { lamps, sun, effects, fill, world, view, grade, ambient, fog: stageFogFrom(raw.fog) }
 }
 
 function fogLayerFrom(v: unknown): StageFogLayer | null {
@@ -1521,7 +1502,6 @@ function restored(base: Scene): Scene {
         stageGrade: stageGradeFromDoc(settingsBase.stageGrade ?? base.state.settings.stageGrade),
         stageAmbient: stageAmbientFromDoc(settingsBase.stageAmbient ?? base.state.settings.stageAmbient),
         stageFog: stageFogFromDoc(settingsBase.stageFog ?? base.state.settings.stageFog),
-        stageCastShadow: stageCastShadowFromDoc(settingsBase.stageCastShadow ?? base.state.settings.stageCastShadow),
       },
       groups: groupsUsable ? usableGroups : base.state.groups,
       // Same per-model gate as groups

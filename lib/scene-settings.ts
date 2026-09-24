@@ -26,9 +26,6 @@ export type StageGrade = { size: number; lut: string }
 export type StageFogLayer = { color: number[]; amount: number; distance: number[]; height: number[] }
 export type StageFog = StageFogLayer & { dyn?: StageFogLayer }
 
-/** The way to the light (engine axes), linear colour, amount 0–1. */
-export type StageCastShadowSetting = { direction: number[]; color: number[]; amount: number }
-
 /** The sun's own dials, azimuth/elevation degrees — friendlier than a raw vector. */
 export type SunLight = {
   color: string
@@ -128,10 +125,6 @@ export type SceneSettings = {
   /** The stage's own distance fog, PMX units (see the engine's setSceneFog),
    *  and which stage — it leaves with it. */
   stageFog?: { stage: string; fog: StageFog }
-  /** The shadow the cast throws on the stage, from the stage's own direction
-   *  and colour (the engine's setStageCastShadow), and which stage — it leaves
-   *  with it. `on` false keeps the stage's values with the shadow switched off. */
-  stageCastShadow?: StageCastShadowSetting & { stage: string; on: boolean }
   /**
    * How loud the track plays, as amplitude 0–1.
    *

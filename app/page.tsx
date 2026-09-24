@@ -5100,7 +5100,6 @@ export default function Lab() {
       stageGrade: s2.stageGrade && ids.has(s2.stageGrade.stage) ? undefined : s2.stageGrade,
       stageAmbient: s2.stageAmbient && ids.has(s2.stageAmbient.stage) ? undefined : s2.stageAmbient,
       stageFog: s2.stageFog && ids.has(s2.stageFog.stage) ? undefined : s2.stageFog,
-      stageCastShadow: s2.stageCastShadow && ids.has(s2.stageCastShadow.stage) ? undefined : s2.stageCastShadow,
     }))
     swapHdri((prev) => {
       if (!prev || !gone.some((s) => isStageOwnSky(s.file, prev.name))) return prev
@@ -5246,9 +5245,6 @@ export default function Lab() {
         // AND ITS FOG, which leaves with it.
         const stageFog = rig?.fog
         setSettings((s2) => ({ ...s2, stageFog: stageFog ? { stage: id, fog: stageFog } : undefined }))
-        // AND THE SHADOW ITS CAST THROWS ON IT, on by default.
-        const castShadow = rig?.castShadow
-        setSettings((s2) => ({ ...s2, stageCastShadow: castShadow ? { ...castShadow, stage: id, on: true } : undefined }))
         // AND THE CAST'S FILL, claimed the same way: the light the game gives its
         // characters apart from the room.
         const fill = rig?.fill
