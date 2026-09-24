@@ -1284,6 +1284,13 @@ export function useEngine(
     // The outgoing scene's last report was `done` — left standing, the incoming
     // scene opens on "unpacking" before it has fetched anything.
     setBundleProgress(null)
+    // AND ITS BUNDLE IS NOT THIS ONE. Left true from the outgoing scene, the
+    // editor's slot loader ran the moment the new document landed in state —
+    // against the OLD zip, still in bundleRef — found no `hdri/…` in it, and
+    // never ran again, because writing bundleRef re-renders nothing. A forked
+    // scene opened lit by the flat world colour while the viewer, which boots
+    // rather than swaps, showed its sky. Same false→true edge as boot.
+    setBundleReady(false)
     try {
       // The outgoing scene's models and its retained upload files go together —
       // keeping either would leak into the incoming document.
@@ -1300,7 +1307,14 @@ export function useEngine(
       clearPlanes()
       engine.clearCameraVmd()
 
-      const loaded = await loadSceneInto(engine, scene, stale, { onBytes: setBundleProgress })
+      const loaded = await loadSceneInto(engine, scene, stale, {
+        onBytes: setBundleProgress,
+        onBundle: (files) => {
+          if (stale()) return
+          bundleRef.current = files
+          setBundleReady(true)
+        },
+      })
       if (!loaded) return null
       bundleRef.current = loaded.bundle
       void loadMidiFor(scene.assets.midi, engine, stale, bundleRef.current, setMidiClip)
