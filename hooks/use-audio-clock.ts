@@ -16,6 +16,7 @@
 
 import { useEffect, useRef, type RefObject } from "react"
 import { createMediaFollower } from "@/lib/media-clock"
+import { primeAudioAnalysis } from "@/lib/audio-analysis"
 import type { Engine } from "reze-engine"
 
 export function useAudioClock({
@@ -27,6 +28,7 @@ export function useAudioClock({
   syncLyricsTo,
   tickPlanes,
   disabled = false,
+  autoplay = false,
 }: {
   engineRef: RefObject<Engine | null>
   /** The model whose clip is the clock — first of the animated set, or null. */
@@ -49,9 +51,76 @@ export function useAudioClock({
    *  silent — and the export decodes the backdrop from the file itself, so the
    *  element has no part in what it produces. */
   disabled?: boolean
+  /**
+   * The clock starts on its own — a published scene plays on arrival — rather
+   * than on a press of play. Sound then cannot wait for "the user has
+   * interacted", because on desktop nobody has to; and on iOS the one gesture
+   * that unlocks the element may land long before there is anything to play.
+   * See the blessing below.
+   */
+  autoplay?: boolean
 }) {
   /** The backdrop's own clock state. See lib/media-clock for the policy. */
   const followBackdrop = useRef(createMediaFollower())
+
+  /** Whether the clock currently wants sound. Written by the tick, read by the
+   *  blessing's gesture handler — a ref, because the handler is registered once
+   *  and must see the CURRENT answer. */
+  const wantAudio = useRef(false)
+
+  /**
+   * AUTOPLAY ONLY — iOS: take the element's autoplay blessing from the FIRST
+   * gesture, whenever that turns out to be.
+   *
+   * An autoplaying clock makes its first play() from the rAF tick with no user
+   * gesture behind it — WebKit rejects it, and every retry, none of them being
+   * gestures either. So this listens from MOUNT, not from when the scene is
+   * ready: on a phone the scene takes most of a minute, and the one tap a
+   * reader gives a loading page must not land where nothing is listening.
+   * play() inside a gesture clears the element's restriction in WebKit BEFORE
+   * it looks at the source, so the blessing can be taken while the element has
+   * no src yet, and it holds across the src React sets later.
+   *
+   * Three things this gets wrong if written casually, all learned the hard way:
+   *
+   * NOT MUTED. A muted prime lifts the video restriction, not the audio one.
+   *
+   * PAUSED SYNCHRONOUSLY, not in the promise — before a sample is produced, so
+   * there is no blip. The play() then rejects with AbortError, which is the
+   * expected outcome: the restriction was lifted on the way in.
+   *
+   * NOT ONCE. A prime taken before the element has a src may not stick, so this
+   * primes again on a later gesture once there is a source.
+   *
+   * Desktop needs none of it — autoplay needs no gesture there — which is why
+   * the editor, whose clock only starts on a press of play, leaves it off.
+   */
+  useEffect(() => {
+    if (!autoplay) return
+    const audio = audioRef.current
+    if (!audio) return
+    let primedWithSource = false
+    const bless = () => {
+      // The clock is already running: this tap is the reader asking for the
+      // track, so join it in and leave it playing.
+      if (wantAudio.current) {
+        if (audio.paused && audio.src) void audio.play().catch(() => {})
+        return
+      }
+      if (primedWithSource) return
+      void audio.play().catch(() => {})
+      audio.pause()
+      if (audio.src) primedWithSource = true
+    }
+    // Capture, so a handler that stops propagation cannot take the gesture.
+    const opts = { capture: true } as const
+    window.addEventListener("pointerdown", bless, opts)
+    window.addEventListener("keydown", bless, opts)
+    return () => {
+      window.removeEventListener("pointerdown", bless, opts)
+      window.removeEventListener("keydown", bless, opts)
+    }
+  }, [autoplay, audioRef])
 
   // Browsers block audio until the user interacts.
   const userInteracted = useRef(false)
@@ -73,6 +142,7 @@ export function useAudioClock({
     const audio = audioRef.current
     if (!audio) return
     if (!masterId) {
+      wantAudio.current = false
       audio.pause()
       return
     }
@@ -130,15 +200,20 @@ export function useAudioClock({
     // the buffer on the FIRST gesture anywhere (usually well before play), so
     // pressing play starts sound without a fetch+decode stall. Guarded: never
     // fires once data is buffered or playback has begun.
+    // Not under autoplay: the blessing's own play() already starts the fetch
+    // from inside the gesture, and a load() here would only reset it.
     const warm = () => {
       if (audio.paused && audio.readyState < 3 && audio.src) audio.load()
     }
-    window.addEventListener("pointerdown", warm, { once: true })
-    window.addEventListener("keydown", warm, { once: true })
+    if (!autoplay) {
+      window.addEventListener("pointerdown", warm, { once: true })
+      window.addEventListener("keydown", warm, { once: true })
+    }
 
     const tick = () => {
       raf = requestAnimationFrame(tick)
       const p = engineRef.current?.getModel(masterId)?.getAnimationProgress()
+      wantAudio.current = !!p?.playing && !disabled
       if (!p) return
       // A frame advances the clock ≤ ~0.05s — anything bigger is a discrete
       // jump. Read before either half below, because both want it.
@@ -155,7 +230,9 @@ export function useAudioClock({
         // point is lost — and driving both from the model's animation progress is
         // what makes a scrub, a pause and an offline export all agree.
         engineRef.current?.setMidiTime(p.current, p.playing)
-        const playing = p.playing && userInteracted.current
+        // An autoplaying clock asks regardless: a desktop browser lets it, and
+        // iOS refuses until the blessing above has had its gesture.
+        const playing = p.playing && (autoplay || userInteracted.current)
         if (playing) {
           // Free-running audio, like the reze.one demo: the clock is set at
           // playback start and on explicit jumps (scrub, loop wrap) and is then
@@ -261,5 +338,52 @@ export function useAudioClock({
       window.removeEventListener("keydown", warm)
     }
     // The refs are stable; listing them costs nothing and keeps the rule on.
-  }, [masterId, engineRef, disabled, audioRef, drawBackdrop, videoRef, syncLyricsTo, tickPlanes])
+  }, [masterId, engineRef, disabled, autoplay, audioRef, drawBackdrop, videoRef, syncLyricsTo, tickPlanes])
+}
+
+/**
+ * The track's two other jobs, for every page that plays a scene: its analysis
+ * for audio-reactive effects (rzAudio*), and the level it was mixed at.
+ *
+ * The analysis is primed when the track changes and cleared when it goes; the
+ * engine samples it at the time the clock above writes, so effects, sound and
+ * export agree. `volume` is a property with no content attribute behind it, so
+ * React cannot carry it in the JSX — written here, and on every track change
+ * too: a new src keeps the element's level, but a swapped element starts at 1.
+ */
+export function useTrackAudio({
+  engineRef,
+  audioRef,
+  ready,
+  url,
+  volume,
+}: {
+  engineRef: RefObject<Engine | null>
+  audioRef: RefObject<HTMLAudioElement | null>
+  ready: boolean
+  /** The playable track, or null/empty while there is none. */
+  url: string | null | undefined
+  volume: number
+}) {
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine || !ready) return
+    if (!url) {
+      engine.setAudioData(null, 0, 0)
+      return
+    }
+    let stale = false
+    void primeAudioAnalysis(url).then((a) => {
+      if (stale || !a) return
+      engineRef.current?.setAudioData(a.data, a.bands, a.secondsPerFrame)
+    })
+    return () => {
+      stale = true
+    }
+  }, [url, ready, engineRef])
+
+  useEffect(() => {
+    const el = audioRef.current
+    if (el) el.volume = Math.max(0, Math.min(1, volume))
+  }, [audioRef, volume, url])
 }

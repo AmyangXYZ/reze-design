@@ -119,8 +119,7 @@ import { ChoiceList } from "@/components/ui/choice-list"
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { Slider } from "@/components/ui/slider"
 import { ColorField } from "@/components/color-picker"
-import { useAudioClock } from "@/hooks/use-audio-clock"
-import { primeAudioAnalysis } from "@/lib/audio-analysis"
+import { useAudioClock, useTrackAudio } from "@/hooks/use-audio-clock"
 import { Dopesheet } from "@/components/scene/dopesheet"
 import { ClipBridge } from "@/components/scene/clip-bridge"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -128,13 +127,16 @@ import { ClipAutosave } from "@/components/scene/clip-autosave"
 import { ClipHistory } from "@/components/scene/clip-history"
 import { ClipInspector } from "@/components/scene/clip-inspector"
 import { holdsOf } from "@/lib/prop-throw"
-import { visibleAt, type VisibilityWindow } from "@/lib/visibility"
+import type { VisibilityWindow } from "@/lib/visibility"
 import { FPS } from "@/lib/clip"
 import { ClipEditor, type ClipEditKind } from "@/context/clip-editor"
 import { primeClipDensity, useAudioPeaks } from "@/hooks/use-lane-graphs"
 import { useEngine, type EngineModelInfo } from "@/hooks/use-engine"
 import { useRenderFraming } from "@/hooks/use-render-framing"
-import { useSceneSync } from "@/hooks/use-scene-sync"
+import { useSceneCast, useSceneSync } from "@/hooks/use-scene-sync"
+import { seedMusic, useSceneMedia, type BgSlot } from "@/hooks/use-scene-media"
+import { useSceneClips } from "@/hooks/use-scene-clips"
+import { SceneBackdrop } from "@/components/scene/scene-backdrop"
 import { useBrowseSurface } from "@/hooks/use-browse-surface"
 import { useStoredRect } from "@/hooks/use-stored-rect"
 import { useDockSlot } from "@/hooks/use-dock-slot"
@@ -191,7 +193,7 @@ import {
   type AppliedEffect,
   type EffectSurface,
 } from "@/lib/effects"
-import { BACKDROP_VIDEO_RE, probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
+import { BACKDROP_VIDEO_RE, probeBackdrop } from "@/lib/backdrop"
 import { useMediaBackdrop } from "@/hooks/use-media-backdrop"
 import { isCompositingBackground } from "@/lib/export-background"
 import type { ExportProgress } from "@/lib/video-export"
@@ -347,15 +349,6 @@ const CHECKERBOARD: React.CSSProperties = {
   backgroundPosition: "0 0, 12px 12px",
 }
 
-/**
- * Which seat the scene's one piece of background media is in.
- *
- * `flat` hangs behind the scene, `dome` wraps around it, `plate` is footage the
- * scene stands IN. Flat and plate take the same files and are told apart by
- * which row you uploaded from — the difference is a claim about the picture,
- * and no extension carries it.
- */
-type BgSlot = "flat" | "dome" | "plate"
 
 /** The flat backdrop and the plate take stills and moving pictures; the 360
  *  dome takes a still equirect, including Radiance. */
@@ -476,15 +469,6 @@ const REPO_URL = "https://github.com/AmyangXYZ/reze-design"
 /** How long edits settle before the working scene is written to localStorage. */
 const SAVE_SETTLE_MS = 1000
 
-/** A path the site serves, as opposed to one that only means something inside
- *  this scene's asset bundle. */
-const servedUrl = (url: string) => /^[/]|^https?:/.test(url)
-
-/** Release a track's object URL. Uploads become blob: URLs; a served path is not
- *  ours to revoke. */
-const dropMusicUrl = (clip: { url: string } | null) => {
-  if (clip?.url.startsWith("blob:")) URL.revokeObjectURL(clip.url)
-}
 
 /**
  * A document's motion rows before a byte of VMD has parsed — the claim the boot
@@ -516,22 +500,11 @@ function seedMorphs(scene: Scene): Record<string, { name: string; src: File | st
   return seed
 }
 
-/** The music row's seed, hoisted for the same reason. A served track plays straight
- *  off its URL; a packed one has no playable URL until the extras loader pulls it
- *  out of the bundle, so the row fills in first and the audio element follows. */
 const TRANSFORM_LABEL: Record<SceneSettings["view"]["transform"], string> = {
   standard: "Standard",
   filmic: "Filmic",
   agx: "AgX", // the ZZZ pack's transform, and offered in the picker for it
 }
-
-const seedMusic = (scene: Scene): { name: string; url: string } | null =>
-  scene.assets.audio
-    ? {
-        name: scene.assets.audio.name,
-        url: servedUrl(scene.assets.audio.url) ? scene.assets.audio.url : "",
-      }
-    : null
 
 /** The dictionary the UI is NOT showing. Every palette row carries its labels
  *  as altLabels, which is what keeps the search bag bilingual while the list on
@@ -2386,97 +2359,34 @@ export default function Lab() {
     </>
   )
 
-  // loadSceneInto deliberately leaves ANIMATED models hidden — it reveals only
-  // the ones with no clip, so the first visible frame wears the motion's first
-  // pose instead of flashing bind pose. Whatever loads the clips owns the
-  // reveal, and in the shipped editor that lives in app/page.tsx. Without it the
-  // model loads, styles, and never becomes visible.
-  //
-  // Keyed on `scene`, so this is the loader for EVERY document, not just the
-  // first: a swap replaces the state and the clips of the incoming cast stream in
-  // through exactly this path. See applyLabScene.
-  useEffect(() => {
-    if (!ready) return
-    let cancelled = false
-    void (async () => {
-      for (const entry of scene.assets.models) {
-        const clip = entry.animation
-        if (!clip || entry.stage) continue
-        const packed = bundleFile(clip.url)
-        const loaded = await (packed
-          ? loadVmdFile(entry.model.id, packed)
-          : loadVmdUrl(entry.model.id, clip.name, clip.url))
-        if (cancelled) return
-        if (!loaded) {
-          // A failed LOAD must not retract the document's CLAIM.
-          //
-          // This used to delete the entry, on the reasoning that a motion which
-          // is not playing should not be listed. The consequence was data loss:
-          // animByModel is what the collector writes the document from, so a
-          // transient miss — a bundle not finished writing, an idb url that
-          // outlived its blob, a reload landing mid-write — was persisted as
-          // `animation: null` a moment later, and the motion was gone from the
-          // scene for good. No refresh brought it back, because by then the
-          // document no longer said there had ever been one.
-          //
-          // Keeping the claim costs a row naming a clip the engine does not
-          // currently hold, which the next boot retries and usually resolves. A
-          // dangling name is visible and fixable; a deleted one is neither.
-          console.warn(`[scene] motion failed to load for ${entry.model.id}, keeping its claim:`, clip.name)
-          engineRef.current?.setModelTransform(entry.model.id, {
-            visible: visibleAt(entry.visibility, 0),
-          })
-          continue
-        }
-        // Success upgrades the seed's src to what actually loaded — a bundled
-        // File outlives the idb url it came from.
-        setAnimByModel((prev) => ({
-          ...prev,
-          [entry.model.id]: { name: clip.name, src: packed ?? clip.url },
-        }))
-        // Measure the timeline strip BEFORE revealing the model.
-        //
-        // Walking a dance for the lane graph is tens of milliseconds of main
-        // thread. Left to the lane's own hook it ran the moment the clip landed,
-        // which is the same moment the model appears and physics begins stepping
-        // — so the hitch showed up in the hair and the skirt, the two things that
-        // make a stall look like a bug rather than a load. One line earlier and
-        // it lands while the loading indicator is still up, which is where a
-        // stall is invisible and expected.
-        primeClipDensity(engineRef.current, entry.model.id, clip.name)
-        // Reveal even if the clip failed — a bind-pose model beats no model.
-        // At frame 0 of its own track: a costume that opens the scene off stage
-        // must never be on screen for the frame before the first tick.
-        engineRef.current?.setModelTransform(entry.model.id, { visible: visibleAt(entry.visibility, 0) })
-      }
-      // Morphs AFTER every motion, in their own pass: loading one merges
-      // into the motion's clip, and a motion arriving later rebuilds that clip
-      // and drops the merge. One pass each keeps the order guaranteed rather
-      // than incidental.
-      for (const entry of scene.assets.models) {
-        const expr = entry.morph
-        if (!expr || entry.stage) continue
-        const packed = bundleFile(expr.url)
-        const loaded = await (packed
-          ? loadMorphFile(entry.model.id, packed)
-          : loadMorphUrl(entry.model.id, expr.name, expr.url))
-        if (cancelled) return
-        // Same rule as the motion above: a failed load keeps the claim, because
-        // the collector writes the document from this state.
-        if (!loaded) {
-          console.warn(`[scene] morph failed to load for ${entry.model.id}, keeping its claim:`, expr.name)
-          continue
-        }
-        setMorphByModel((prev) => ({
-          ...prev,
-          [entry.model.id]: { name: expr.name, src: packed ?? expr.url },
-        }))
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [ready, scene, bundleFile, loadVmdFile, loadVmdUrl, loadMorphFile, loadMorphUrl, engineRef])
+  // The document's clips go on through the shared loader (hooks/use-scene-clips)
+  // — the same one a published scene plays through, for EVERY document: a swap
+  // replaces `scene` and the incoming cast's clips stream in the same way. It
+  // owns the reveal, too: loadSceneInto leaves animated models hidden so the
+  // first visible frame wears the motion's first pose. The editor adds only its
+  // bookkeeping — the rows the next save writes the document from.
+  useSceneClips({
+    engineRef,
+    scene,
+    bundleReady,
+    models,
+    bundleFile,
+    loadVmdFile,
+    loadVmdUrl,
+    loadMorphFile,
+    loadMorphUrl,
+    onMotion: (id, clip, src) => {
+      // Success upgrades the seed's src to what actually loaded — a bundled
+      // File outlives the idb url it came from.
+      setAnimByModel((prev) => ({ ...prev, [id]: { name: clip.name, src } }))
+      // Measure the timeline strip BEFORE the loader reveals the model: walking
+      // a dance for the lane graph is tens of milliseconds of main thread, and
+      // run the moment the model appears the hitch shows in the hair and the
+      // skirt. Here it lands while the loading indicator is still up.
+      primeClipDensity(engineRef.current, id, clip.name)
+    },
+    onMorph: (id, clip, src) => setMorphByModel((prev) => ({ ...prev, [id]: { name: clip.name, src } })),
+  })
   // Models that actually carry a clip — AnimPlayer drives the longest as master.
   /**
    * The CAST: everything loaded that is not scenery.
@@ -2487,13 +2397,7 @@ export default function Lab() {
    * here would give it two homes and two delete buttons. The shipped editor
    * filters by exactly this set.
    */
-  const stageIds = useMemo(() => new Set([...stages.map((s) => s.id), ...props.map((p) => p.id)]), [stages, props])
-  const cast = useMemo(() => models.filter((m) => !stageIds.has(m.id)), [models, stageIds])
-  /** The same list as ids, memoised on its CONTENTS: useSceneSync takes it as a
-   *  dependency, and a fresh array every render would reinstall the effect layer
-   *  sixty times a second. */
-  const castKey = cast.map((m) => m.id).join("\u0000")
-  const castIdList = useMemo(() => (castKey ? castKey.split("\u0000") : []), [castKey])
+  const { stageIds, cast, castIds: castIdList, stageSuns: stageSunList } = useSceneCast(models, stages, props)
   /**
    * Cast rows still ON THE WAY — one skeleton each.
    *
@@ -2588,7 +2492,24 @@ export default function Lab() {
    * Declared here rather than beside the rest of the background state because
    * the framing below reads it: a plate's own shape is the shot's shape.
    */
-  const [bgImage, setBgImage] = useState<(BackdropMedia & { slot: BgSlot }) | null>(null)
+  //
+  // The slots themselves — this, the HDRI and the music — are the shared
+  // loader's (hooks/use-scene-media), the same one a published scene is shown
+  // through, so the two pages cannot disagree about what a document holds. The
+  // editor adds only the bookkeeping a save needs: the packed bytes, kept.
+  const { bgImage, swapBgImage, hdri, swapHdri, musicClip, setMusicClip } = useSceneMedia({
+    scene,
+    bundleReady,
+    bundleFile,
+    onPacked: {
+      camera: (file) => {
+        sceneFiles.camera = file
+      },
+      // Declared further down; only ever called from the loader's effect, by
+      // which point it exists.
+      audio: (file) => setMusicFile(file),
+    },
+  })
   // Export framing: letterbox preview, green screen, exporting — the shared
   // hook, because an export in flight must survive whatever the chrome does.
   //
@@ -2827,34 +2748,9 @@ export default function Lab() {
   /** Set before the picker opens: which of the three rows this upload fills.
    *  A ref because the click is now and a re-render is not. */
   const bgImageSlot = useRef<BgSlot>("flat")
-  const swapBgImage = useCallback(
-    (next: (BackdropMedia & { slot: BgSlot }) | null) =>
-      setBgImage((prev) => {
-        releaseBackdrop(prev)
-        return next
-      }),
-    [],
-  )
-  /**
-   * The HDRI — its own slot, beside the background rather than inside it.
-   *
-   * Backdrop and skybox are two answers to "what is behind the scene" and only
-   * one can be. This answers "what is lighting it", which is true at the same
-   * time as either — so it does not go through swapBgImage and setting it
-   * clears nothing.
-   */
-  const [hdri, setHdri] = useState<BackdropMedia | null>(null)
   /** The stage whose own sky is currently installed, if any — so that stage
    *  leaving takes it back, and a sky chosen by hand is never touched. */
   const stageHdri = useRef<string | null>(null)
-  const swapHdri = useCallback(
-    (next: BackdropMedia | null) =>
-      setHdri((prev) => {
-        releaseBackdrop(prev)
-        return next
-      }),
-    [],
-  )
   /** The moving backdrop — video, gif, webp, apng — drawn from the clip's clock
    *  rather than played on one of its own. See useMediaBackdrop. */
   const mediaBackdrop = useMediaBackdrop(bgImage && bgImage.slot !== "dome" ? bgImage : null)
@@ -2972,17 +2868,8 @@ export default function Lab() {
 
   // The file lands in sceneFiles.audio — the same slot the shipped editor reads —
   // so the upload is real and the next persist packs its bytes.
-  // Seeded from the scene document, exactly as main does — the default scene
-  // ships with a track, and an empty music row under a dancing model would be
-  // the chrome contradicting the scene. The NAME is always known here; a track
-  // living in the asset bundle has no playable URL until the boot loader below
-  // pulls the file out, so the row fills in first and the audio element follows.
-  // Uploads become object URLs, revoked on the way out so replaced tracks do not
-  // pin their bytes for the session.
-  const [musicClip, setMusicClip] = useState<{
-    name: string
-    url: string
-  } | null>(() => seedMusic(scene))
+  // The row itself (musicClip) is useSceneMedia's: seeded from the document, and
+  // its object URLs revoked there as they are replaced.
   /**
    * Lip sync, from the lyrics the scene already carries — a rule table over the
    * .lrc, never a model (see lib/lipsync.ts). One-shot by design: the output is
@@ -3021,7 +2908,7 @@ export default function Lab() {
     [loadMorphFile, morphByModel],
   )
   const musicInput = useRef<HTMLInputElement | null>(null)
-  // THE OLD URL IS REVOKED BY THE EFFECT BELOW, not in here.
+  // THE OLD URL IS REVOKED BY useSceneMedia's EFFECT, not in here.
   //
   // A state updater must be pure: React is free to call it more than once and to
   // throw a result away. Revoking inside one meant a re-invocation could be
@@ -3042,13 +2929,6 @@ export default function Lab() {
     sceneFiles.lyrics = null
     setMusicClip(null)
   }
-  // One owner for every blob URL this row mints: the cleanup runs with the URL
-  // that is being replaced, after React has committed the one replacing it, so
-  // the element never points at a revoked blob.
-  useEffect(() => {
-    const clip = musicClip
-    return () => dropMusicUrl(clip)
-  }, [musicClip])
   // A TRACK THAT CANNOT DECODE SAYS SO. The element fails silently — the clock
   // keeps running, the motion plays, and the only symptom is no sound, which is
   // indistinguishable from a muted tab or a bug in this app. Chrome refuses WAVs
@@ -3097,25 +2977,6 @@ export default function Lab() {
   const dopePlayheadRef = useRef<((frame: number) => void) | null>(null)
   const musicPeaks = useAudioPeaks({ url: musicClip?.url ?? null })
 
-  // The track's analysis, for audio-reactive effects (rzAudio*). Primed when
-  // the track changes; cleared when it goes. The engine samples it by the time
-  // the audio clock above writes, so effects, sound and export agree.
-  useEffect(() => {
-    const engine = engineRef.current
-    if (!engine || !ready) return
-    if (!musicClip?.url) {
-      engine.setAudioData(null, 0, 0)
-      return
-    }
-    let stale = false
-    void primeAudioAnalysis(musicClip.url).then((a) => {
-      if (stale || !a) return
-      engineRef.current?.setAudioData(a.data, a.bands, a.secondsPerFrame)
-    })
-    return () => {
-      stale = true
-    }
-  }, [musicClip?.url, ready, engineRef])
 
   // Not restored. Which row is unfolded and which pane it was showing is where
   // you happened to stop, not where you want to start — reopening the editor
@@ -3163,14 +3024,9 @@ export default function Lab() {
     [],
   )
   const { sun, world, bloom, dof, grade, ground, physics, view, audio } = settings
-  // The scene's music level onto the element. `volume` is a property with no
-  // content attribute behind it, so React cannot carry it in the JSX — written
-  // here, and on every track change too: a new src keeps the element's level,
-  // but a row that swaps the element outright would start at 1.
-  useEffect(() => {
-    const el = audioRef.current
-    if (el) el.volume = Math.max(0, Math.min(1, audio.volume))
-  }, [audio.volume, musicClip])
+  // The track's analysis (rzAudio*) and its mixed level — the shared half of
+  // playing a scene's music, the same one the viewer runs.
+  useTrackAudio({ engineRef, audioRef, ready, url: musicClip?.url, volume: audio.volume })
   // The scene's effects, IN LAYER ORDER. The document has held a list for a
   // while and the viewer has rendered one; this was its first entry only, so a
   // four-effect scene opened here kept one and saved one back.
@@ -3697,123 +3553,10 @@ export default function Lab() {
     [swapBgImage, t],
   )
 
-  // ── The rest of the document ──
-  //
-  // The cast's clips load with the models above; these are the slots nobody owns
-  // — music, the background image, and the camera clip's identity. Each resolves
-  // out of the scene's BUNDLE first (a published zip and the local IndexedDB
-  // bundle look identical through bundleFile) and out of its URL otherwise, so a
-  // stored scene comes back with the same files it was saved with. A slot that
-  // fails to resolve is simply empty; nothing here may take the scene down.
-  //
-  // Boot and swap both arrive here, for the same reason the clip loader above
-  // does: one loader per slot, or a reset would quietly keep the music the scene
-  // it replaced was playing.
-  useEffect(() => {
-    // ON `bundleReady`, NOT `ready`. Every slot below comes out of the bundle,
-    // and the bundle is unzipped long before the last model has finished — so
-    // waiting for the whole scene meant the world image was fetched and parsed
-    // AFTER the loading pill had gone, and the scene visibly re-lit itself in
-    // front of someone who had been told it was ready. Nothing here needs a
-    // model: the music, the backdrop, the sky and the camera clip's file
-    // answer to the zip alone.
-    if (!bundleReady) return
-    let cancelled = false
-    // ONE pass over the slots, in document order — the shipped editor's
-    // loadDocExtras, which is async because resolving a slot to a File is.
-    void (async () => {
-      // The engine already loaded the camera VMD inside loadSceneInto. What is
-      // left is the File behind it, so the next persist re-packs the same bytes
-      // instead of dropping the clip on the first save.
-      const cam = scene.assets.cameraAnimation
-      if (cam) {
-        const packed = bundleFile(cam.url)
-        if (packed) sceneFiles.camera = packed
-      }
-      const track = scene.assets.audio
-      // A served track plays straight off its URL and was seeded at boot; only a
-      // packed one has to be pulled out of the bundle and given an object URL.
-      if (track) {
-        const packed = bundleFile(track.url)
-        if (packed) setMusicFile(packed)
-      }
-      // THE HDRI, BEFORE the background — that block ends in an early return,
-      // and anything restored after it would simply not be, for every scene
-      // that happens to have no background image.
-      const sky = scene.assets.hdri
-      if (sky) {
-        try {
-          const packed = bundleFile(sky.url)
-          let file = packed
-          if (!file && servedUrl(sky.url)) {
-            const blob = await (await fetch(sky.url)).blob()
-            file = new File([blob], sky.name, { type: blob.type })
-          }
-          if (file) {
-            const media = await probeBackdrop(file)
-            if (cancelled) releaseBackdrop(media)
-            else swapHdri(media)
-          }
-        } catch {
-          // A missing or undecodable HDRI degrades to a flat world, not a dead
-          // scene — the same bargain the background makes below.
-        }
-      }
-      const bg = scene.assets.background
-      if (!bg) return
-      // A LOCAL SCENE SAVED BEFORE THE SPLIT put its HDRI in the skybox slot,
-      // because that slot took either. Nothing central can patch those — they
-      // live in one browser — so they are moved on the way in, once: the next
-      // save writes it to `hdri` and this never fires for that scene again.
-      // Without it the sky simply disappears, since createImageBitmap cannot
-      // decode Radiance.
-      if (bg.kind === "skybox" && /\.hdr$/i.test(bg.asset.name)) {
-        try {
-          const packed = bundleFile(bg.asset.url)
-          let file = packed
-          if (!file && servedUrl(bg.asset.url)) {
-            const blob = await (await fetch(bg.asset.url)).blob()
-            file = new File([blob], bg.asset.name, { type: blob.type })
-          }
-          if (file) {
-            const media = await probeBackdrop(file)
-            if (cancelled) releaseBackdrop(media)
-            else swapHdri(media)
-          }
-        } catch {
-          // Same bargain as below: a slot that will not resolve is empty.
-        }
-        return
-      }
-      try {
-        const packed = bundleFile(bg.asset.url)
-        let file = packed
-        if (!file && servedUrl(bg.asset.url)) {
-          const blob = await (await fetch(bg.asset.url)).blob()
-          file = new File([blob], bg.asset.name, { type: blob.type })
-        }
-        if (!file) return
-        const media = await probeBackdrop(file)
-        // Probing minted an object URL; a superseded pass has to give it back.
-        if (cancelled) {
-          releaseBackdrop(media)
-          return
-        }
-        swapBgImage({ ...media, slot: bg.kind === "skybox" ? "dome" : bg.kind === "plate" ? "plate" : "flat" })
-      } catch {
-        // a missing or undecodable image degrades to no background, not a dead scene
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [bundleReady, scene, bundleFile, setMusicFile, swapBgImage, swapHdri])
-
   // noteAppliedWgsl is the WGSL editor's half of the bargain: the editor
   // compiles straight to the engine for its live preview, and telling the sync
   // pass what is already on screen keeps it from compiling the same shader a
   // second time when the applied effect lands in state.
-  const stageSunList = useMemo(() => stages.map((s) => ({ id: s.id, sun: s.sun ?? null })), [stages])
   const { noteAppliedWgsl, adoptInstall } = useSceneSync({
     engineRef,
     // ON `stageReady`, THE MOMENT THE GROUND IS UP — not on `ready`, which is
@@ -5355,11 +5098,10 @@ export default function Lab() {
       world: s2.world.stage && ids.has(s2.world.stage.id) ? s2.world.stage.before : s2.world,
       fill: s2.fill?.stage && ids.has(s2.fill.stage.id) ? s2.fill.stage.before : s2.fill,
     }))
-    setHdri((prev) => {
+    swapHdri((prev) => {
       if (!prev || !gone.some((s) => isStageOwnSky(s.file, prev.name))) return prev
       // The stage coming in brings a sky of the same name, and it is the new one.
       if (arriving && isStageOwnSky(arriving, prev.name)) return prev
-      releaseBackdrop(prev)
       return null
     })
     if (stageHdri.current && ids.has(stageHdri.current)) stageHdri.current = null
@@ -6379,10 +6121,9 @@ export default function Lab() {
     clearMidi()
     clearLyrics()
     setCameraClip(next.assets.cameraAnimation?.name ?? null)
-    setMusicClip((prev) => {
-      dropMusicUrl(prev)
-      return seedMusic(next)
-    })
+    // The outgoing clip's URL is revoked by useSceneMedia's effect once this
+    // one is committed — never inside an updater, which React may run twice.
+    setMusicClip(seedMusic(next))
     // Empty until the extras loader resolves the new document's image out of its
     // bundle — the old one's would otherwise sit behind an unrelated scene.
     swapBgImage(null)
@@ -6896,44 +6637,17 @@ export default function Lab() {
           style={{ ...frameStyle, ...CHECKERBOARD }}
         />
       )}
-      {backdropInShot && bgImage.kind === "image" && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={bgImage.url}
-          alt=""
-          className={cn("absolute object-cover", !frameRect && "inset-0 h-full w-full")}
-          style={frameStyle}
-        />
-      )}
-      {/* A gif/webp/apng, painted per frame by the clip's clock. */}
-      {backdropInShot && mediaBackdrop.moving && (
-        <canvas
-          ref={mediaBackdrop.canvasRef}
-          className={cn("absolute object-cover", !frameRect && "inset-0 h-full w-full")}
-          style={frameStyle}
-        />
-      )}
-      {/* A video, played natively — the compositor handles the frames, which is
-          what holds 4K60. muted is not a preference: a backdrop is picture, its
-          own soundtrack would play under the scene's music, and muted is also
-          what lets it start without a user gesture. playsInline keeps iOS from
-          taking it fullscreen.
-
-          Same slot, same object-cover and same frameStyle as the other two, so
-          changing the export aspect reframes all of them identically. */}
-      {backdropInShot && bgImage.kind === "video" && (
-        <video
-          key={bgImage.url}
-          ref={bgVideoRef}
-          src={bgImage.url}
-          muted
-          loop
-          playsInline
-          preload="auto"
-          className={cn("absolute object-cover", !frameRect && "inset-0 h-full w-full")}
-          style={frameStyle}
-        />
-      )}
+      {/* The backdrop — still, drawn or video — through the layer the viewer
+          renders too. Same slot, same object-cover and same frameStyle for all
+          three, so changing the export aspect reframes them identically. */}
+      <SceneBackdrop
+        media={backdropInShot ? bgImage : null}
+        moving={mediaBackdrop.moving}
+        canvasRef={mediaBackdrop.canvasRef}
+        videoRef={bgVideoRef}
+        className={cn("absolute object-cover", !frameRect && "inset-0 h-full w-full")}
+        style={frameStyle}
+      />
       {/* PLACING HER BY POINTING AT THE FLOOR.
           A pointer on the canvas becomes a ray, and where that ray meets the
           ground plane is where she stands. The camera has already been matched
@@ -7405,11 +7119,17 @@ export default function Lab() {
           offered the score file in the picker for the TRACK — two slots one
           `audio/*` cannot tell apart, and picking wrong there gives you a
           silent song rather than an error. These are the containers a media
-          element will actually decode. */}
+          element will actually decode.
+
+          .mp4 BY NAME, because a music video is a common source for a dance
+          and its soundtrack plays from an <audio> element as-is. macOS's
+          picker already offered it — it reads audio/mp4 as the whole MPEG-4
+          family — but Windows maps audio/mp4 to .m4a alone, so the same file
+          was hidden there. */}
       <input
         ref={musicInput}
         type="file"
-        accept=".mp3,.m4a,.aac,.wav,.ogg,.opus,.flac,audio/mpeg,audio/mp4,audio/aac,audio/wav,audio/ogg,audio/flac"
+        accept=".mp3,.m4a,.mp4,.aac,.wav,.ogg,.opus,.flac,audio/mpeg,audio/mp4,audio/aac,audio/wav,audio/ogg,audio/flac"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0]

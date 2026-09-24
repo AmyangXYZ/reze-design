@@ -5,9 +5,6 @@
 // why publishing bundles them in the first place.
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react"
-import { BACKDROP_VIDEO_RE } from "@/lib/backdrop"
-import { createMediaFollower } from "@/lib/media-clock"
-import { primeAudioAnalysis } from "@/lib/audio-analysis"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft, GalleryThumbnails, GitFork, Heart, WandSparkles } from "lucide-react"
@@ -16,7 +13,12 @@ import { SceneGallery } from "@/components/editor/scene-gallery"
 import { AnimPlayer } from "@/components/scene/anim-player"
 import { builtinEffect } from "@/lib/effects"
 import { useEngine } from "@/hooks/use-engine"
-import { useSceneSync } from "@/hooks/use-scene-sync"
+import { useSceneCast, useSceneSync } from "@/hooks/use-scene-sync"
+import { useSceneMedia } from "@/hooks/use-scene-media"
+import { useSceneClips } from "@/hooks/use-scene-clips"
+import { useAudioClock, useTrackAudio } from "@/hooks/use-audio-clock"
+import { useMediaBackdrop } from "@/hooks/use-media-backdrop"
+import { SceneBackdrop } from "@/components/scene/scene-backdrop"
 import { specOf } from "@/lib/grade"
 import { libraryGraph } from "@/lib/materials"
 import { newSceneId, parseSceneDoc, type Scene, type SceneDoc } from "@/lib/scene"
@@ -334,6 +336,11 @@ function SceneStage({
     tickPlanes,
     stages,
     props,
+    loadVmdFile,
+    loadVmdUrl,
+    loadMorphFile,
+    loadMorphUrl,
+    syncLyricsTo,
   } = useEngine(scene)
   // Published upward so Fork can hand the unzipped assets to the editor. A ref,
   // not state: nothing renders differently for it, and the getter is stable.
@@ -350,59 +357,24 @@ function SceneStage({
     loaded: models.length,
   })
 
-  // Background. A published scene packs its image, so both kinds resolve out of
-  // the bundle synchronously. A flat backdrop is a DOM layer BEHIND the canvas,
-  // which only shows if the canvas stays transparent — that is what `hasBackdrop`
-  // buys, and without it the engine painted the background colour straight over
-  // the image. A skybox is the engine's own dome, uploaded by the same hook.
-  //
-  // On `bundleReady`, not `ready`: the image is beside the models in the zip and
-  // owes them nothing, so it appears with the stage rather than after the last
-  // character has loaded.
-  const background = bundleReady ? scene.assets.background : null
+  // The scene's media slots — the sky that lights it, the picture behind it, its
+  // music — through the SAME loader the editor uses (hooks/use-scene-media), so
+  // what a document holds is resolved one way wherever it is shown. This page
+  // used to resolve them itself, and the two copies drifted apart in both
+  // directions: a slot one of them learned, the other never heard about.
+  const { bgImage, hdri, musicClip } = useSceneMedia({ scene, bundleReady, bundleFile })
+  /** A flat backdrop or a plate: a DOM layer BEHIND the canvas, which only shows
+   *  if the canvas stays transparent — that is what `hasBackdrop` buys. A skybox
+   *  is the engine's own dome, uploaded by useSceneSync. */
+  const backdrop = bgImage && bgImage.slot !== "dome" ? bgImage : null
   /** Footage the scene stands in, rather than wallpaper behind it. Everything
    *  about getting the picture on screen is identical — same file, same layer,
    *  same element — so only the two things the claim changes read this: the
    *  ground drops to a shadow catcher, and the plate's shape frames the shot. */
-  const isPlate = background?.kind === "plate"
-  const backdropFile = useMemo(
-    () => (background?.kind === "backdrop" || background?.kind === "plate" ? bundleFile(background.asset.url) : null),
-    [background, bundleFile],
-  )
-  const skyboxFile = useMemo(
-    () => (background?.kind === "skybox" ? bundleFile(background.asset.url) : null),
-    [background, bundleFile],
-  )
-  /**
-   * The world that LIGHTS the scene, which the viewer was not reading at all.
-   *
-   * Two different slots: a skybox is the picture behind the cast, an .hdr is the
-   * light on them. Left unpassed, useSceneSync defaults hdri to null and its
-   * effect calls setWorldEquirect(null) — so a published scene did not merely
-   * fail to install its sky, it actively removed it and fell back to the flat
-   * world colour. Every stage that brings its own .hdr (every converted one
-   * does) was lit one way in the editor and another here, with the document,
-   * the groups and the lamps all identical: the drift had nowhere to show.
-   *
-   * ON `bundleReady`, like the background above and for the same reason, which
-   * is not obvious and cost a debugging round: `bundleFile` is a useCallback
-   * with no dependencies, so its identity never changes and a memo keyed on it
-   * alone runs exactly once — on the first render, before the zip exists,
-   * resolving to null and staying there. The gate is what makes the dependency
-   * move when the bytes land.
-   */
-  const hdri = bundleReady ? scene.assets.hdri : null
-  const hdriFile = useMemo(() => (hdri ? bundleFile(hdri.url) : null), [hdri, bundleFile])
-  const backdropUrl = useMemo(() => (backdropFile ? URL.createObjectURL(backdropFile) : null), [backdropFile])
-  // A video backdrop is a DIFFERENT ELEMENT, not a different src: an <img>
-  // pointed at a video blob renders nothing at all, which is exactly how a
-  // published scene with a moving background came back blank behind the cast.
-  // The bundle's Files carry no mime (new File([bytes], name)), so the kind is
-  // read off the path — the same regex the editor's picker admits videos by.
-  const backdropIsVideo =
-    !!background &&
-    (background.kind === "backdrop" || background.kind === "plate") &&
-    BACKDROP_VIDEO_RE.test(background.asset.url)
+  const isPlate = bgImage?.slot === "plate"
+  /** A gif/webp/apng backdrop, drawn per frame from the clip's clock. */
+  const drawnBackdrop = useMediaBackdrop(backdrop)
+  /** A video backdrop, which plays natively and follows the same clock. */
   const bgVideoRef = useRef<HTMLVideoElement | null>(null)
   /**
    * A PLATE FRAMES THE SHOT, so every visitor sees the alignment the author made.
@@ -413,11 +385,11 @@ function SceneStage({
    * the visitor's window happens to be moves the floor out from under her. The
    * one thing a published composite must not do is depend on the window.
    *
-   * Measured off the element rather than stored in the document: the file
-   * already knows its own shape, and a second copy of it in the doc could only
-   * ever disagree with the picture it describes.
+   * Read off the file (the loader probed it) rather than stored in the
+   * document: a second copy of the shape in the doc could only ever disagree
+   * with the picture it describes.
    */
-  const [plateAspect, setPlateAspect] = useState<number | null>(null)
+  const plateAspect = isPlate && bgImage && bgImage.height > 0 ? bgImage.width / bgImage.height : null
   /** `inset-0` + `margin:auto` + a max on both axes letterboxes without any
    *  measuring — the box takes the largest size of that shape which fits, and
    *  centres in what is left. Inline rather than an arbitrary Tailwind value:
@@ -429,19 +401,10 @@ function SceneStage({
   /** The layers follow the box together or not at all — a canvas at the window's
    *  shape over a letterboxed plate is the same misalignment, mirrored. */
   const layerClass = plateBox ? "absolute inset-0" : "absolute inset-0 h-full w-full"
-  /** The one shared follow policy — lib/media-clock. Free-run while playing,
-   *  stamp on start and jump, never seek on pause. */
-  const followBackdrop = useRef(createMediaFollower())
-  useEffect(() => {
-    if (!backdropUrl) return
-    return () => URL.revokeObjectURL(backdropUrl)
-  }, [backdropUrl])
 
   // The cast — everything that is not a stage or a prop — for the settings
   // that apply per character: the same list the editor hands over.
-  const stageIds = useMemo(() => new Set([...stages.map((s) => s.id), ...props.map((p) => p.id)]), [stages, props])
-  const castKey = models.filter((m) => !stageIds.has(m.id)).map((m) => m.id).join("\u0000")
-  const castIds = useMemo(() => (castKey ? castKey.split("\u0000") : []), [castKey])
+  const { castIds, stageSuns } = useSceneCast(models, stages, props)
   // Eyes on the camera start where the author left them and are the visitor's to
   // switch — a property of watching, like following the camera. Never saved. Every
   // other section keeps its identity, so the sync re-applies only the eyes.
@@ -463,7 +426,6 @@ function SceneStage({
   }, [models])
   const [eyes, setEyes] = useState(scene.state.settings.eyes.enabled)
   const settings = useMemo(() => ({ ...scene.state.settings, eyes: { enabled: eyes } }), [scene.state.settings, eyes])
-  const stageSuns = useMemo(() => stages.map((s) => ({ id: s.id, sun: s.sun ?? null })), [stages])
   useSceneSync({
     engineRef,
     ready: stageReady,
@@ -475,339 +437,67 @@ function SceneStage({
     gradeSpec: specOf(scene.state.settings.grade),
     backgroundEffects: scene.state.backgroundEffects,
     lights: scene.state.lights,
-    hasBackdrop: !!backdropFile,
+    // Derived exactly as the editor derives them from the same slots.
+    hasBackdrop: !!backdrop,
     plate: isPlate,
-    skybox: skyboxFile,
-    hdri: hdriFile,
+    plateStill: isPlate && bgImage?.kind === "image",
+    skybox: bgImage?.slot === "dome" ? bgImage.file : null,
+    hdri: hdri?.file ?? null,
   })
 
-  // Motions, PER MODEL as each one lands — not one pass after the last of them.
-  // A character is hidden from load until its clip poses it, so waiting for the
-  // whole cast meant the first one stood invisible behind the second one's
-  // download. The bundle arrives before any of them, so a clip is resolvable the
-  // moment its model is.
-  const [animated, setAnimated] = useState<string[]>([])
-  const clipped = useRef(new Set<string>())
-  // One clip at a time, appended to whatever is still in flight: models arrive in
-  // their own time and each pass must not start a load the previous one is doing.
-  const clipQueue = useRef<Promise<void>>(Promise.resolve())
-  useEffect(() => {
-    if (!bundleReady) return
-    const engine = engineRef.current
-    if (!engine) return
-    const fresh = models.filter((m) => !clipped.current.has(m.id))
-    if (fresh.length === 0) return
-    for (const m of fresh) clipped.current.add(m.id)
-    clipQueue.current = clipQueue.current.then(async () => {
-      for (const m of fresh) {
-        const entry = scene.assets.models.find((e) => e.model.id === m.id)
-        const clip = entry?.animation
-        const model = engine.getModel(m.id)
-        if (!clip || !model) continue
-        const file = bundleFile(clip.url)
-        const url = file ? URL.createObjectURL(file) : clip.url
-        try {
-          await model.loadVmd(clip.name, url)
-          model.show(clip.name)
-          // Appended in arrival order, which is document order — so animated[0]
-          // stays the master the audio clock reads.
-          setAnimated((prev) => [...prev, m.id])
-        } finally {
-          if (file) URL.revokeObjectURL(url)
-          // Hidden since load so bind pose never shows — reveal on the clip's
-          // first pose (or reveal anyway if the clip failed).
-          engine.setModelTransform(m.id, { visible: true })
-        }
-      }
-      // The morph VMDs (表情モーション), AFTER every motion in this batch — the
-      // editor's rule, and the same reason: a morph merges INTO the motion's
-      // clip, and loading the motion afterwards rebuilds that clip and drops the
-      // merge. Without this pass the viewer played a published scene's dance
-      // with the motion's own face, which is what the editor never shows.
-      for (const m of fresh) {
-        const entry = scene.assets.models.find((e) => e.model.id === m.id)
-        const expr = entry?.morph
-        const model = engine.getModel(m.id)
-        if (!expr || !model || entry?.stage) continue
-        const file = bundleFile(expr.url)
-        const url = file ? URL.createObjectURL(file) : expr.url
-        // ASK THE MODEL which clip is playing rather than naming one ourselves:
-        // a bundled clip keeps its bundle PATH as its engine key, so the
-        // document's display name is not the key. Naming it from the document
-        // merges the morphs into a clip nothing plays — indistinguishable from
-        // a file with no morphs in it.
-        const playing = model.getAnimationProgress().animationName
-        const target = playing ?? expr.name
-        try {
-          await model.loadVmd(target, url, { tracks: "morphs" })
-          // Only when the morph IS the clip. With a motion playing, showing it
-          // again would restart the dance from frame 0.
-          if (!playing) model.show(target)
-        } catch (e) {
-          console.warn(`[scene] morph failed to load for ${m.id}:`, expr.name, e)
-        } finally {
-          if (file) URL.revokeObjectURL(url)
-          // A morph-only model is still hidden if loadSceneInto left it so.
-          engine.setModelTransform(m.id, { visible: true })
-        }
-      }
-      engine.resetPhysics()
-    })
-  }, [models, bundleReady, engineRef, scene, bundleFile])
+  // Motions and morph tracks, through the SAME loader the editor uses
+  // (hooks/use-scene-clips): per model as each one lands, morphs merged after
+  // their motion, and each model revealed on its clip's first pose. `animated`
+  // is the cast whose motion is on, in document order — [0] is the master the
+  // audio clock reads.
+  const { animated } = useSceneClips({
+    engineRef,
+    scene,
+    bundleReady,
+    models,
+    bundleFile,
+    loadVmdFile,
+    loadVmdUrl,
+    loadMorphFile,
+    loadMorphUrl,
+  })
 
-  // Audio: a bundled track needs an object URL; a site-served one already is one.
-  // Derived rather than stored — the document never changes under us.
-  const audioSrc = useMemo(() => {
-    // Same rule as the backdrop: the track is in the bundle, so it is ready when
-    // the bundle is — the models are not its business.
-    const track = bundleReady ? scene.assets.audio : null
-    if (!track) return null
-    const file = bundleFile(track.url)
-    return file ? URL.createObjectURL(file) : track.url
-  }, [bundleReady, scene, bundleFile])
-  useEffect(() => {
-    if (!audioSrc?.startsWith("blob:")) return
-    return () => URL.revokeObjectURL(audioSrc)
-  }, [audioSrc])
+  // The track, as the shared loader resolved it: a served URL straight away, a
+  // packed one once the bundle is out. Empty until then.
+  const audioSrc = musicClip?.url || null
 
   const audioElRef = useRef<HTMLAudioElement>(null)
-  // The level the scene was mixed at. A property with no content attribute
-  // behind it, so it is written rather than passed in the JSX below.
-  const musicVolume = scene.state.settings.audio.volume
-  useEffect(() => {
-    const el = audioElRef.current
-    if (el) el.volume = Math.max(0, Math.min(1, musicVolume))
-  }, [musicVolume, audioSrc])
-  // Whether the animation clock currently wants sound. Written by the tick
-  // below, read by the gesture handler above it — a ref rather than state
-  // because the handler is registered once, at mount, and must see the CURRENT
-  // answer rather than the one that was true when it was created.
-  const wantAudioRef = useRef(false)
-  /**
-   * iOS: take the element's autoplay blessing from the FIRST gesture, whenever
-   * that turns out to be.
-   *
-   * The viewer autoplays, so its first play() comes from the rAF tick with no
-   * user gesture behind it — WebKit rejects it, and rejects every retry too,
-   * none of them being gestures either. The standing fix was to listen for a tap
-   * and join the audio in from inside it, and the fix is still below. What broke
-   * is WHEN it starts listening: it lives in the tick's effect, which is gated on
-   * `ready`, and `ready` does not arrive until the last model of the scene has
-   * loaded. On a phone that is most of a minute, and the one tap a reader gives a
-   * loading page lands on the loading pill, where nothing is listening. The track
-   * then stays silent until they happen to touch the screen a second time — which
-   * on desktop never shows, because desktop autoplay needs no gesture at all.
-   *
-   * So this listens from mount. play() called inside a user gesture clears the
-   * element's autoplay restriction in WebKit BEFORE it looks at the source, so
-   * the blessing can be taken while the bundle is still downloading and the
-   * element still has no src — which is exactly when the tap arrives. The
-   * restriction stays cleared for the life of the element, across the src React
-   * sets later, so the tick's own play() is allowed when the scene finally runs.
-   *
-   * Three things this gets wrong if written casually, all learned the hard way:
-   *
-   * NOT MUTED. Priming a muted element does not buy the AUDIO permission —
-   * WebKit tracks the video and audio rate-change restrictions separately, and a
-   * silent prime lifts the wrong one. An earlier version muted across the call
-   * to avoid a blip and bought nothing at all.
-   *
-   * PAUSED SYNCHRONOUSLY, not in the promise. pause() on the next line runs
-   * before the element has produced a sample, so there is no blip to mute in the
-   * first place; waiting for the promise means waiting until sound has already
-   * started. The play() then rejects with AbortError, which is the expected
-   * outcome and not a failure — the restriction was lifted on the way in.
-   *
-   * NOT ONCE. A prime taken before the element has a src may not stick, so this
-   * keeps listening and primes again on a later gesture once there is a source
-   * to prime with. Cheap, and the alternative is a reader whose only tap landed
-   * on the loading pill hearing nothing for the rest of the scene.
-   */
-  useEffect(() => {
-    const audio = audioElRef.current
-    if (!audio) return
-    let primedWithSource = false
-    const bless = () => {
-      // The clock is already running: this tap is the reader asking for the
-      // track, so join it in and leave it playing.
-      if (wantAudioRef.current) {
-        if (audio.paused) void audio.play().catch(() => {})
-        return
-      }
-      if (primedWithSource) return
-      void audio.play().catch(() => {})
-      audio.pause()
-      // Only a prime that had a source to load counts as the one that stuck.
-      if (audio.src) primedWithSource = true
-    }
-    // Capture, so a handler that stops propagation on its way up cannot quietly
-    // take the one gesture this depends on.
-    const opts = { capture: true } as const
-    window.addEventListener("pointerdown", bless, opts)
-    window.addEventListener("keydown", bless, opts)
-    return () => {
-      window.removeEventListener("pointerdown", bless, opts)
-      window.removeEventListener("keydown", bless, opts)
-    }
-  }, [])
-  // The track's analysis for rzAudio* — same contract as the editor: primed on
-  // load, sampled by the tick's setAudioTime, so a published scene's reactive
-  // effects run identically to where they were authored.
-  useEffect(() => {
-    const engine = engineRef.current
-    if (!engine || !ready) return
-    if (!audioSrc) {
-      engine.setAudioData(null, 0, 0)
-      return
-    }
-    let stale = false
-    void primeAudioAnalysis(audioSrc).then((a) => {
-      if (stale || !a) return
-      engineRef.current?.setAudioData(a.data, a.bands, a.secondsPerFrame)
-    })
-    return () => {
-      stale = true
-    }
-  }, [audioSrc, ready, engineRef])
-  // The animation clock is the master, exactly as in the editor.
-  useEffect(() => {
-    const audio = audioElRef.current
-    const engine = engineRef.current
-    if (!audio || !engine || !ready) return
-    let raf = 0
-    let lastCurrent = -1
-    // One correction at ACTUAL sound start (decode can lag play() on a cold
-    // cache; free-run would keep that offset forever). Never fires mid-playback.
-    // Armed ONLY after an explicit stamp (start/loop): corrects decode latency
-    // once at true sound onset. Plain resumes never arm it — a seek there
-    // flushes the decoder and mutes the first beat.
-    let stampArmed = false
-    /** A play() is already in flight; asking again would abort it. */
-    let playPending = false
-    const onPlaying = () => {
-      if (!stampArmed) return
-      stampArmed = false
-      const master = animated[0] ? engine.getModel(animated[0]) : null
-      const p = master?.getAnimationProgress()
-      if (p?.playing && Math.abs(audio.currentTime - p.current) > 0.05) audio.currentTime = p.current
-    }
-    audio.addEventListener("playing", onPlaying)
-    // No gesture listener here any more. The blessing effect above owns every
-    // gesture: it registers at mount rather than waiting for `ready`, and it
-    // already joins the track in when the clock is running — which is all this
-    // one did. Two listeners for one tap meant two play() calls racing, and the
-    // second aborts the first, which is the very failure the latch below exists
-    // to prevent. Buffer warming is the blessing's too: its play() starts the
-    // fetch from inside the gesture, so a separate load() only reset an element
-    // that was already loading.
-    const tick = () => {
-      // Progress lives on the model (the animation clock's owner); the first
-      // animated model is the master, as in the editor.
-      const master = animated[0] ? engine.getModel(animated[0]) : null
-      const p = master?.getAnimationProgress()
-      // Both per-frame clocks an effect reads. The score's has three owners —
-      // this tick, the editor's, and the export loop — and an effect is frozen
-      // in whichever one forgets it.
-      if (p) engine.setAudioTime(p.current, p.playing)
-      if (p) engine.setMidiTime(p.current, p.playing)
-      // What the blessing handler reads to decide whether to pause straight back
-      // out of the play() it just made.
-      wantAudioRef.current = !!p?.playing
-      const wasPaused = audio.paused
-      // One play() in flight at a time — see the editor's audio clock for what
-      // asking every frame does to an element that is merely still loading.
-      if (p?.playing && audio.paused && !playPending) {
-        playPending = true
-        void audio
-          .play()
-          .catch(() => {})
-          .finally(() => {
-            playPending = false
-          })
-      }
-      if (!p?.playing && !audio.paused) audio.pause()
-      // Moving cards. The editor drives these from its own clock; a published
-      // scene has to as well, or a video card sits on the blank sheet it was
-      // allocated from — which is transparent, so it does not read as a broken
-      // card but as no card at all. A still card needed nothing here, which is
-      // why only the moving ones were missing.
-      if (p) tickPlanes(p.current, p.playing)
-      // The video backdrop, on the same clock as everything else. Muted, so
-      // playing it needs no gesture blessing — the audio element's ritual above
-      // is about sound, and this element has none.
-      const bgVideo = bgVideoRef.current
-      if (p && bgVideo) followBackdrop.current(bgVideo, p.current, p.playing)
-      if (p) {
-        // Free-running audio, like the reze.one demo: set the clock when
-        // playback (re)starts or the animation clock jumps (loop wrap, seek),
-        // then leave it alone — no drift lock, no rate bending. Continuous
-        // correction is what stuttered on mobile Safari.
-        const jumped = lastCurrent >= 0 && Math.abs(p.current - lastCurrent) > 0.35
-        lastCurrent = p.current
-        // Arm the onset correction on EVERY start, not only the starts that
-        // needed a stamp — see the editor's audio clock for the full note. In
-        // short: starting at frame 0 leaves both clocks at 0, so the 0.15
-        // threshold never trips, nothing armed, and onPlaying returned at its
-        // !stampArmed guard. The cold-buffer decode latency then rode the whole
-        // take as a fixed offset. onPlaying's own 0.05 guard keeps plain resumes
-        // seek-free.
-        if (p.playing && wasPaused) stampArmed = true
-        if (((p.playing && wasPaused) && Math.abs(audio.currentTime - p.current) > 0.15) || jumped) {
-          audio.currentTime = p.current
-          stampArmed = true
-        }
-      }
-      raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    return () => {
-      cancelAnimationFrame(raf)
-      audio.removeEventListener("playing", onPlaying)
-    }
-  }, [ready, engineRef, audioSrc, animated, tickPlanes])
+  // The clock — the SAME one the editor runs (hooks/use-audio-clock): the first
+  // animated model's clip is the master, and the track, the rzAudio*/MIDI
+  // clocks, the lyric pages, moving cards and the backdrop all follow it. The
+  // one difference is stated rather than forked: a published scene plays on
+  // arrival, so sound may not wait for a press of play.
+  useAudioClock({
+    engineRef,
+    masterId: animated[0] ?? null,
+    audioRef: audioElRef,
+    drawBackdrop: drawnBackdrop.draw,
+    videoRef: bgVideoRef,
+    syncLyricsTo,
+    tickPlanes,
+    autoplay: true,
+  })
+  useTrackAudio({ engineRef, audioRef: audioElRef, ready, url: audioSrc, volume: scene.state.settings.audio.volume })
 
   return (
     // A fragment: the page above owns <main> and the chrome, so nothing here has
     // to wait for anything here.
     <>
-      {/* Backdrop layer: page bg colour → image (cover) → transparent canvas. */}
-      {backdropUrl && !backdropIsVideo && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={backdropUrl}
-          alt=""
-          className={cn(layerClass, "object-cover")}
-          style={plateBox}
-          onLoad={(e) =>
-            isPlate &&
-            e.currentTarget.naturalHeight > 0 &&
-            setPlateAspect(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight)
-          }
-        />
-      )}
-      {/* Played natively, as the editor does — the compositor handles the
-          frames, which is what holds 4K60. muted is not a preference: a
-          backdrop is picture, and muted is also what lets it start without a
-          gesture. loop matches the follower's wrap: a clip longer than the
-          video seeks INSIDE it, never past its end. */}
-      {backdropUrl && backdropIsVideo && (
-        <video
-          key={backdropUrl}
-          ref={bgVideoRef}
-          src={backdropUrl}
-          muted
-          loop
-          playsInline
-          preload="auto"
-          className={cn(layerClass, "object-cover")}
-          style={plateBox}
-          onLoadedMetadata={(e) =>
-            isPlate &&
-            e.currentTarget.videoHeight > 0 &&
-            setPlateAspect(e.currentTarget.videoWidth / e.currentTarget.videoHeight)
-          }
-        />
-      )}
+      {/* Backdrop layer: page bg colour → picture → transparent canvas. The
+          same layer the editor renders; only where it sits is this page's. */}
+      <SceneBackdrop
+        media={backdrop}
+        moving={drawnBackdrop.moving}
+        canvasRef={drawnBackdrop.canvasRef}
+        videoRef={bgVideoRef}
+        className={cn(layerClass, "object-cover")}
+        style={plateBox}
+      />
       <canvas ref={canvasRef} className={cn(layerClass, "touch-none object-contain")} style={plateBox} />
 
       {!ready && !error && <LoadingPill label={loadingLabel} />}

@@ -9,7 +9,7 @@
 // own, so the editor can hand it live state and a viewer can hand it a fetched
 // document and neither knows the difference.
 
-import { useEffect, useRef } from "react"
+import { useEffect, useMemo, useRef } from "react"
 import {
   Vec3,
   parseHDR,
@@ -651,4 +651,26 @@ export function useSceneSync({
       if (engine) applySchedules(engine, list, engineIndex.current)
     },
   }
+}
+
+/**
+ * Who in a loaded scene is CAST, and what the stages bring — the per-model
+ * inputs useSceneSync takes, derived one way for every page that shows a scene.
+ *
+ * Stages and props ride in `models` because their materials take the same
+ * style-group path; the cast is everything else. `castIds` is memoised on its
+ * CONTENTS: useSceneSync depends on it, and a fresh array every render would
+ * reinstall the effect layer sixty times a second.
+ */
+export function useSceneCast<M extends { id: string }>(
+  models: M[],
+  stages: { id: string; sun?: { color: string; strength: number } | null }[],
+  props: { id: string }[],
+) {
+  const stageIds = useMemo(() => new Set([...stages.map((s) => s.id), ...props.map((p) => p.id)]), [stages, props])
+  const cast = useMemo(() => models.filter((m) => !stageIds.has(m.id)), [models, stageIds])
+  const castKey = cast.map((m) => m.id).join("\u0000")
+  const castIds = useMemo(() => (castKey ? castKey.split("\u0000") : []), [castKey])
+  const stageSuns = useMemo(() => stages.map((s) => ({ id: s.id, sun: s.sun ?? null })), [stages])
+  return { stageIds, cast, castIds, stageSuns }
 }
