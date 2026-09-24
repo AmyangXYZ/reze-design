@@ -2,30 +2,13 @@
 
 **English** · [简体中文](https://github.com/AmyangXYZ/reze-design/blob/main/docs/manual/zh.md)
 
-Reze Design is the authentic MMD experience, reforged in WebGPU and
-TypeScript. It runs in a browser tab: it reads the models and motions the
-MikuMikuDance community has been making since 2008, renders them on WebGPU, and
-turns the result into a video file or a live page anyone can open and orbit.
+Reze Design is an MMD scene editor in the browser, on its own WebGPU engine
+([reze-engine](https://github.com/AmyangXYZ/reze-engine)). It reads the models
+and motions the MMD community has made since 2008 and turns them into a video
+file or a live page anyone can open and orbit.
 
-It renders on its own engine — reze-engine, built for MMD — and that is where its
-reach comes from: materials are node graphs compiled straight to WGSL, scene
-effects are shaders you edit against the live scene, motion, expressions and the
-camera are editable on a timeline, and video export steps the clock offline,
-frame by frame, so a 4K 60 fps render comes out pixel-identical on any machine.
-Around the engine sits an editor that keeps your work across sessions, and a
-platform where every published scene is a live page others can open, orbit and
-fork.
-
-The manual follows the same path your work will: **Section 0** is background, for
-anyone who has never heard of MMD. **Section 1** walks the whole journey once —
-assets in, shot framed, lit, styled, motion edited, exported, published.
-**Section 2** goes deeper into the three authoring surfaces — colour grades, WGSL
-scene effects, and material node graphs — each complete enough to write from
-without reading anything else.
-[Appendix B](#appendix-b-finding-models-motions-and-music) covers where to find
-models, motion and music, and
-[Appendix D](#appendix-d-shader-graph-node-reference) is the node registry a
-generated graph is written against.
+**Section 1** is the editor, panel by panel. **Section 2** is the authoring
+reference for grades, WGSL scene effects and material node graphs.
 
 ---
 
@@ -33,24 +16,27 @@ generated graph is written against.
 
 - [0. MMD, in short](#0-mmd-in-short)
 - [1. Making a scene](#1-making-a-scene)
-  - [1.1 The shape of the work](#11-the-shape-of-the-work)
-  - [1.2 A model, a motion, a song](#12-a-model-a-motion-a-song)
-  - [1.3 The shot](#13-the-shot)
-  - [1.4 Light](#14-light)
-  - [1.5 What sits behind the character](#15-what-sits-behind-the-character)
-  - [1.6 A stage](#16-a-stage)
+  - [1.1 Getting started](#11-getting-started)
+  - [1.2 Cast, motion and music](#12-cast-motion-and-music)
+  - [1.3 Stage](#13-stage)
+  - [1.4 Backdrop, sky and footage](#14-backdrop-sky-and-footage)
+  - [1.5 Light](#15-light)
+  - [1.6 Camera](#16-camera)
   - [1.7 The look](#17-the-look)
-  - [1.8 Editing the motion](#18-editing-the-motion)
-  - [1.9 Export](#19-export)
-  - [1.10 Publishing](#110-publishing)
-  - [1.11 The gallery](#111-the-gallery)
-  - [1.12 When something goes wrong](#112-when-something-goes-wrong)
-- [2. Authoring your own look](#2-authoring-your-own-look)
+  - [1.8 Effects](#18-effects)
+  - [1.9 Objects](#19-objects)
+  - [1.10 Physics](#110-physics)
+  - [1.11 Timeline](#111-timeline)
+  - [1.12 Lyrics, lip sync and MIDI](#112-lyrics-lip-sync-and-midi)
+  - [1.13 Export](#113-export)
+  - [1.14 Publishing and the library](#114-publishing-and-the-library)
+  - [1.15 When something goes wrong](#115-when-something-goes-wrong)
+- [2. Authoring](#2-authoring)
   - [2.1 The rendering model](#21-the-rendering-model)
   - [2.2 Colour grades](#22-colour-grades)
   - [2.3 Scene effects in WGSL](#23-scene-effects-in-wgsl)
   - [2.4 Material shader graphs](#24-material-shader-graphs)
-  - [2.5 Drafts, publishing and versions](#25-drafts-publishing-and-versions)
+  - [2.5 Drafts, publishing and visibility](#25-drafts-publishing-and-visibility)
 - [Appendix A. Control reference](#appendix-a-control-reference)
 - [Appendix B. Finding models, motions and music](#appendix-b-finding-models-motions-and-music)
 - [Appendix C. Glossary](#appendix-c-glossary)
@@ -60,650 +46,410 @@ generated graph is written against.
 
 # 0. MMD, in short
 
-MikuMikuDance — **MMD** — is a free 3D animation program written by Yu Higuchi
-(樋口優) and released in February 2008 for animating Hatsune Miku. What grew around
-it is an ecosystem of interchangeable parts: a model is one file by one author, a
-dance is another file by someone else, a camera path is a third, and they combine
-because everyone follows the same bone-naming convention. A finished MMD video is
-typically the work of five to fifteen people who never met, which is why credits
-lists became a cultural institution and why a motion file from 2011 still works
-today. The program itself is a 32-bit DirectX 9 Windows application whose
-development stopped in the late 2010s, out of reach of phones and tablets
-entirely; those wanting modern rendering exported into Blender or Unity, where the
-rendering is excellent and the composability stops at the import step, since
-converted assets and hand-rebuilt materials are no longer parts anyone else can
-pick up.
+MikuMikuDance (**MMD**) is a free 3D animation program released by Yu Higuchi
+(樋口優) in 2008. Its ecosystem is built from interchangeable parts: a model
+(`.pmx`) from one author, a dance (`.vmd`) from another, a camera path from a
+third, all working together because everyone follows the same bone names. A
+motion from 2011 still drives a model made today.
 
-The look MMD popularised has since gone mainstream. Genshin Impact, Aether Gazer
-and Wuthering Waves all render 3D characters to read as hand-drawn 2D anime — what
-the Chinese community calls 三渲二 — and each carries a fan community
-producing enormous quantities of derivative work, much of it still made with MMD
-models and motion. WebGPU is what lets that aesthetic run properly in a browser,
-and the browser has been a serious target for some time:
-[**babylon-mmd**](https://github.com/noname0310/babylon-mmd) brought PMX models,
-VMD motion, physics and MMD-compatible shading into Babylon.js, and remains the
-reference for what the web can already do with MMD.
-[**reze-engine**](https://github.com/AmyangXYZ/reze-engine) takes the other route:
-a renderer written for MMD specifically rather than layered onto a general-purpose
-engine. Two applications sit on it — **Reze Design**, described here, for
-designing, rendering and publishing scenes; and
-[**Reze Studio**](https://github.com/AmyangXYZ/reze-studio), the standalone
-animation editor its timeline came from. Both run on any machine with a current
-browser, read the ecosystem's files as they are, and turn a scene into a URL
-somebody else can open, orbit and take further.
+The original program is a 32-bit Windows DirectX 9 application that stopped
+development in the late 2010s. Reze Design runs the same files in a browser tab,
+with a modern renderer, a timeline, and publishing to a permanent link. It is
+part of a family that covers the rest of the workflow: reze-engine (rendering
+and physics), [Reze Studio](https://github.com/AmyangXYZ/reze-studio)
+(animation editing), [MiKaPo](https://github.com/AmyangXYZ/MiKaPo) (motion
+capture) and [reze-rig](https://github.com/AmyangXYZ/reze-rig) (FBX → VMD).
+[babylon-mmd](https://github.com/noname0310/babylon-mmd) is the other serious
+MMD runtime on the web, built on Babylon.js.
 
 ---
 
 # 1. Making a scene
 
-## 1.1 The shape of the work
+## 1.1 Getting started
 
-A scene comes together in one pass, and the order matters less than the fact that
-each step is reversible: everything you set stays live, and nothing is baked until
-you export.
+You need a browser with WebGPU: Chrome or Edge 113+, or Safari 26+.
 
-> Load a model → give it a motion → add the music → decide the shot → light it →
-> pick a look → export a video, or publish the scene.
+Everything saves as you work — settings, uploads, drafts — in your browser's
+local storage and IndexedDB. Close the tab and come back; the scene is where you
+left it. Nothing reaches a server until you publish.
 
-The rest of this section follows that arc. Controls that speak for themselves —
-file pickers, colour chips, the play button — are left to speak for themselves;
-[Appendix A](#appendix-a-control-reference) lists every control with its range.
+The left dock holds the scene, top to bottom: **Cast**, **Clips**, **Music**,
+then the scene rows **Camera**, **Environment**, **Light**, **Effect**, **Post**,
+**Physics** and **Objects**. The timeline sits under the viewport. **⌘K** (Ctrl+K)
+opens the command palette, which reaches every action and setting by name.
 
-You need a browser with WebGPU: Chrome or Edge 113+, or Safari 26+. If the editor
-reports that it cannot start, that is almost always why. Nothing is uploaded while
-you work — files stay in the tab until you choose to publish.
+The logo menu holds **New scene**, **Export scene** (one `.zip` with the scene and
+every asset), **Import scene** and **Reset to default scene**.
 
-## 1.2 A model, a motion, a song
+## 1.2 Cast, motion and music
 
-Open **Assets** and load a model, either as the folder containing its `.pmx` or as
-the `.zip` you downloaded. Drag and drop works for both.
-
-| Format | What it is |
+| Slot | Accepts |
 | --- | --- |
-| `.pmx` | A model: mesh, materials, textures, skeleton, physics |
-| `.pmd` | The original model format. Convert to PMX in PMX Editor first |
-| `.vmd` | Keyframes — the same extension carries **body motion** and **camera motion**, which load in separate slots |
-| `.fx` | A MikuMikuEffect shader for DirectX 9. The counterparts here are [scene effects](#23-scene-effects-in-wgsl) and [shader graphs](#24-material-shader-graphs), in WGSL |
+| Model (**Cast → Add model**) | A folder holding a `.pmx`; zips inside it are unpacked. Several models can share a scene |
+| Motion, Morph (**Clips**, per model) | `.vmd`. Morph replaces the motion's own face track |
+| Camera (**Clips**) | `.vmd` camera motion, scene-wide |
+| Music | mp3, m4a, aac, wav, ogg, opus, flac |
+| MIDI, Lyrics (**Music** menu) | `.mid`, `.lrc` |
 
-**Keep the model's folder intact.** A PMX references its textures by relative
-path, so a `.pmx` pulled out on its own loads white or grey. This is the single
-most common thing that goes wrong on a first attempt.
+**Keep the model's folder intact.** A PMX finds its textures by relative path, so
+a `.pmx` on its own loads white or grey. `.pmd` needs converting to PMX in PMX
+Editor first.
 
-Load a body motion into the same slot and the transport bar appears; press play.
-Add a second model and it gets its own slot and its own motion, while the cast
-shares one camera, one light rig and one look. Music binds to the timeline, so
-scrubbing and looping move the audio with the dance. Motion targets a standard
-skeleton and will drive any model — where proportions differ you will see feet
-sliding or floating, and a model closer in build to the one the motion was
-authored for resolves it.
+Motion targets the standard skeleton and drives any model. Where proportions
+differ, feet slide; a model closer in build to the one the motion was made for
+fixes it. Hair and skirts are simulated and settle after a seek; exports render a
+warm-up first, so the settling never reaches the file.
 
-Hair and skirts are simulated, and settle over the first moments after a seek.
-That settling never reaches an exported file, because the exporter renders a
-warm-up before it starts recording.
+## 1.3 Stage
 
-## 1.3 The shot
+**Environment → Stage** loads one stage per scene, as either:
 
-Left-drag orbits, right-drag pans, the wheel zooms.
+- **PMX folder** — a classic MMD stage. `.x` accessories convert to PMX on
+  upload, ray-mmd `.fx`/`.emd` material files apply their materials, a
+  `<name>.lights.json` beside the PMX brings its lamps, sun, world, grade and
+  effects, and a `<name>.hdr` becomes the World light.
+- **GLB file** — a stage exported from Blender, carrying its geometry, maps,
+  lamps, sun and world. It is lit the way Blender lit it: inverse-square lamps,
+  the same sun, glossy floors that take the lamps' highlights. Game stages come
+  the same way — `tools/stages` reads a Unity export into Blender, and Blender
+  writes the `.glb`.
 
-Most distributed dance motions come with a **camera motion** — a second `.vmd`
-that carries the choreographer's own framing. Load it into **Assets → Camera** and
-it drives the shot exactly as authored, taking the mouse out of the loop; the
-toggle in the transport bar hands control back whenever you want to look around,
-without stopping playback.
+A stage's materials are grouped into looks automatically — Wood, Stone, Glass,
+Water, Foliage, Gold and so on, by material name in Japanese, Chinese or English.
+A GLB brings its own *Stage PBR* looks. Regroup them in the Materials panel like a
+character's.
 
-For framing by hand, **Scene → Camera** is more precise than the mouse. Target Y
-is the control you will reach for most: a character stands about 10 units tall, so
-a target height near 10 frames the face, near 5 the torso, and 0 puts the camera
-on the floor looking up. Any slider value can be typed exactly — double-click the
-number.
+While a stage is loaded, the built-in ground turns off; the stage brings its own
+floor. A stage folder holding 2:1 sky panoramas asks which to use, and wick bones
+named `flame…` get the *Candle Flames* effect automatically. Placement is scale
+and position.
 
-**Follow center** binds the orbit to the character's centre bone, so a motion that
-travels across the stage stays framed instead of dancing out of shot; the target
-sliders then read as an offset from the character rather than a point in the
-world. A loaded camera motion still takes priority while it is on.
+## 1.4 Backdrop, sky and footage
 
-## 1.4 Light
+**Environment** has four tabs.
 
-Three sections compose the lighting, and the interesting decisions are few.
+- **Ground** — colour, opacity, size, height, fade and grid lines. At opacity 0 it
+  still catches shadows, which makes a shadow catcher for photographic
+  backdrops.
+- **Backdrop** — the background colour, plus one of: **Media** (an image, GIF or
+  video behind the scene) or **Skybox** (a 360° panorama the camera looks out
+  into). **World** takes an `.hdr` that lights the scene and shows in glossy
+  surfaces, independently of what is displayed behind.
+- **Footage** — video the character stands *in*. **Read camera from footage** and
+  **Place her on the floor** match the camera and floor to the shot; camera
+  height, FOV, elevation and roll fine-tune it, including the lean of footage
+  shot on a phone. The ground becomes a shadow catcher while footage is loaded.
 
-**Sun** is the key light, and the shadow map is cast from the same direction it
-lights from, so shading and shadows always agree. **Elevation** is the expressive
-control: low sun gives long shadows and strong rim separation, high sun flattens
-the figure and shortens shadows to nothing.
+Media, Skybox and Footage share one seat: filling one empties the others.
 
-**World** is the ambient fill — everything the sun does not reach. At strength 0
-unlit surfaces go black; raised too far, the image flattens. Most looks want a
-cool world against a warm sun, or the reverse. The colour contrast between key and
-fill does more work than either does alone.
+## 1.5 Light
 
-**Bloom** is the glow around bright areas. Intensity 0 is off, and the pass is
-skipped entirely at that value. A threshold near 1.0 blooms genuine highlights
-only; drop it toward 0.3 and the whole image hazes, which is a strong and
-deliberate look.
+**Light** has three tabs.
 
-**Ground** is worth one note beyond the obvious: opacity fades the surface while
-the shadow stays. At opacity 0 with shadow on you have a shadow catcher — the
-character's shadow floating on the background with no floor plane fighting a
-photographic backdrop.
+- **World** — the ambient light everything sits in, plus **Cast fill**, a fill
+  that lights the characters only.
+- **Sun** — the key light and the shadow it casts, with colour, strength,
+  azimuth and elevation. Low sun gives long shadows and strong rim separation.
+- **Lamps** — point lights you place, shown as markers in the viewport. Stage
+  rigs can also bring spot lamps.
 
-## 1.5 What sits behind the character
+A cool world against a warm sun (or the reverse) does most of the work.
 
-Back to front: the **background colour**, then one of three things — a
-**backdrop** (a flat image behind the scene), a **skybox** (a 360° equirectangular
-panorama projected as a dome, which follows the camera so that orbiting looks out
-into an environment), or a **plate** (footage the character stands *in*, rather
-than in front of). A plate is a claim as much as a file: it says the camera, the
-floor and the light are meant to agree with the shot, so it restores the camera
-and the floor placement it was set up with, and it can lean, because a plate shot
-on a phone leans and a scene standing in one has to lean with it. Then a **scene
-effect** — a shader that can paint on either side of the character. Stars and auroras go behind; rain, petals, sparks and fog go in front,
-and the ones in front know how far away the character is, so a raindrop passing
-behind a shoulder is hidden by it.
+## 1.6 Camera
 
-Pick an effect from **Scene → Background**, or open the library for the full set.
-Writing your own is [§2.3](#23-scene-effects-in-wgsl).
+Left-drag orbits, right-drag pans, the wheel zooms. **Camera → Lens** sets FOV,
+distance, angles and target; **Focus** adds depth of field.
 
-## 1.6 A stage
-
-A backdrop is a picture behind the character. A **stage** is geometry the
-character stands in — a shrine, a street, a concert floor — distributed as a PMX
-like any model, and loaded from **Assets → Stage**, as a folder or a zip.
-
-A scene holds one stage, so uploading another replaces it. Under it:
-
-**Placement.** Position, rotation and uniform scale. Stage PMX are authored
-facing whatever direction the artist worked in and at wildly different scales, so
-expect to turn and resize one before it sits right. Reset returns the block to
-its defaults.
-
-**Switches.** Stage artists rig options as morphs — a roof on or off, a banner
-swapped, a neon set recoloured. No motion drives these; the weight you pick is
-the scene's, and it is saved with the document. Only morphs the renderer can
-actually move are listed, so a slider here always does something.
-
-**The ground turns off.** A stage brings its own floor, and the built-in ground
-plane sits at the same height — drawing both makes them fight for every pixel.
-The Ground section goes inert while a stage is loaded and says so; its settings
-are kept and return when you remove the stage.
-
-Background effects still run behind a stage, so petals or stars drift past a
-shrine the same way they drift past a backdrop.
-
-A stage's materials are ordinary materials: they appear in the Materials tab and
-take style groups and shader graphs like a character's. They are **not**
-auto-grouped, because the automatic grouping matches names like hair and skin —
-meaningless on architecture, and occasionally wrong in ways that reorder the
-whole scene. A fresh stage renders on the neutral default graph; group it by hand
-when you want more.
-
-Many stages ship with their lighting **baked into the textures**. Those shadows
-are part of the image and will not move when you change the sun, and they will
-not match the live shadow your character casts. That is a property of the stage,
-not a setting.
-
-**Props.** A microphone, a fan, an umbrella, a sword — a PMX object the
-character holds or wears is a **prop**, and it lives in **Scene → Objects →
-Props**, beside the cards. Upload one the way you upload a stage (⌘K, *Upload
-prop PMX*, or the tab's own button); it arrives standing at the origin with its
-own scale, position and rotation. **Attach to** hangs it from a bone of a cast
-member — MMD's 外部親 — and the bone picker leads with the ones people reach for:
-both wrists, the head, the neck, the torso, the centre, the ankles, then the rest
-of the rig. Once hung, the position and rotation sliders are **offsets in that
-bone's space**, the caption names the bone, and they start over at zero. A mic
-first shows up lying along the forearm — a prop's length runs up its own Y while
-a wrist bone's axis runs down the arm — and one rotation puts it in her hand.
-Scale keeps its meaning throughout. A prop keeps its physics and its outline (the
-charm on a phone strap swings, and swings the right way when she tilts her hand),
-but it is never a cast member: silhouette effects still outline her, not the mic,
-and it leaves the floor alone where a stage would replace it. All of it is scene
-state, so it autosaves and publishes.
+**Follow** binds the camera to a bone (the centre by default), so a motion that
+travels stays in frame; the target then reads as an offset. A loaded camera
+motion drives the view; the transport bar switches between it and free orbit
+without stopping playback. **Eyes on camera** in the transport bar turns the
+cast's eyes toward the lens.
 
 ## 1.7 The look
 
-**The quickest way to change everything: press ⌘K and type a rendering style.**
-The four built-in sets — *Aether Gazer*, *Wuthering Waves*, *Zenless Zone Zero*
-and *Honkai: Star Rail* — are whole styles, and picking one restyles every group
-in the scene role for role: the body group takes that set's body look, the hair
-group its hair look. Groups the set has no opinion about are left alone, so a
-stage material, a look you built yourself and the neutral default all survive a
-switch.
+**Rendering styles.** Press ⌘K and type a style name — *Aether Gazer*,
+*Wuthering Waves*, *Zenless Zone Zero*, *Honkai: Star Rail*. A style restyles
+every group role for role and brings the view transform, exposure and world
+light its ramps are tuned for (ZZZ also brings a sun and bloom). Your background,
+outline, grade and ground stay where you put them. The choice is remembered for
+the next model you load.
 
-What travels with a set is what its ramps need in order to read, and nothing
-else. The **view transform** and its exposure — WuWa and ZZZ are authored under
-Standard, AG and HSR under Filmic, and reading any of them under another's is a
-different picture. The **world light**, since every surface multiplies ambient
-and a world tuned for one set fights the other. And, where a set needs one, its
-**key light**: ZZZ quantises against the light that actually reaches it, so it
-brings a sun of its own — 2.0 from behind and a little above — and a low wide
-bloom with it.
+**Style groups.** A model's materials are sorted on load into groups — hair,
+eyes, skin, cloth — and each group uses one shader graph. The **Materials** panel
+lets you move materials between groups, hide one, create a group, or change its
+graph. A group marked **edited** carries its own copy of the graph; picking a
+look again is how a group takes a retuned built-in.
 
-Your background colour, your outline, your grade and your ground are left where
-you put them. Those are staging, and switching rendering style is not an occasion
-to restage your shot.
+**Post** holds four tabs:
 
-The choice is remembered, so the next model you load arrives in the same style
-instead of the set it was auto-grouped into. **Restore default scene** clears it
-back to Aether Gazer, since the demo's own cast and world are that set and a
-remembered other would dress the next model against them. **New scene** leaves it
-alone — an empty stage has no cast to disagree with, so the style you are working
-in carries.
+- **Grade** — *Neutral*, *Bloody*, *Cyberpunk*, *Divine*, *Moonlit*, *Sakura*, or
+  anything from the library, with an intensity remembered per preset.
+- **Tone** — Standard, Filmic or AgX, and exposure.
+- **Bloom** — intensity, threshold and radius. Intensity 0 skips the pass.
+- **Outline** — the MMD edge line, on or off.
 
-Two systems decide how the scene reads, and they work at different scales.
+Writing your own grade or graph is [Section 2](#2-authoring).
 
-A **colour grade** transforms the whole finished image, after lighting and before
-export. It is the difference between "the render" and "the look": the same scene
-graded warm and lifted reads as a summer afternoon, and graded cool with crushed
-shadows reads as night. **Scene → Grade** offers the built-ins — *Neutral*,
-*Bloody*, *Cyberpunk*, *Divine*, *Moonlit*, *Sakura* — with an intensity slider
-that is remembered per preset, so trying several looks and coming back restores
-the strength you chose for each. Building your own is
-[§2.2](#22-colour-grades).
+## 1.8 Effects
 
-**Style groups** decide how surfaces respond to light, and this is the part with
-no MMD equivalent:
+**Effect** applies scene effects: rain, petals, fireworks, ribbons on the hands,
+stage lights, lyrics on screen, film looks and more. Pick one from the shortlist
+or open the **Effect library**. Several run at once, in list order.
 
-> A **style group** is a set of materials that share one look. A **shader graph**
-> is the program that defines that look. Each group uses exactly one graph.
+Each applied effect has:
 
-A PMX model carries between ten and sixty materials — one for the face, one for
-the hair, several for the costume. Setting each individually would be intolerable,
-so on load they are sorted into groups automatically by name and property: hair to
-a hair group, eyes to an eye group, skin to a body group. On unusual models the
-sort places something oddly, and the **Materials** tab is where you correct it —
-drag a material to another group, create a group, hide a stray accessory, or
-change which graph a group uses.
+- **Influence** — its strength.
+- **Parameters** (the gear) — the dials the effect declares, with reset.
+- **On models** (the gear, with more than one model) — which characters it
+  follows. A hand ribbon aimed at one dancer follows only her.
+- **Edit shader** — opens it in the WGSL editor as your own copy.
 
-Two behaviours to expect. A group shows an **edited** marker once its graph
-diverges from the library entry it came from, and that divergence travels inside
-your scene, so a published scene reproduces exactly what you made. And some groups
-carry a **role** that changes how the renderer treats them beyond shading — hair
-and eyes get special pass handling, stockings get alpha hashing so they sort
-correctly through layers. Roles are inferred, which is why a hair group behaves
-differently from a cloth one.
+When an effect plays is set on the timeline's **Effect** lanes (§1.11).
 
-Building a graph node by node is [§2.4](#24-material-shader-graphs).
+## 1.9 Objects
 
-## 1.8 Editing the motion
+**Objects** has two tabs.
 
-A loaded motion is not fixed. The timeline under the transport opens onto the
-keyframes of whatever is playing, and edits go back into the scene as VMD.
+- **Planes** — images, GIFs or videos standing in the scene as cards, with size,
+  position and rotation.
+- **Props** — a microphone, a fan, a sword: a PMX (or `.x`, or `.glb`) the cast
+  holds or wears. **Attach to** hangs it from a bone of a character, like MMD's
+  外部親; its position and rotation then become offsets in that bone's space. A
+  prop keeps its own physics and outline.
 
-Three choices decide what you are looking at:
+On the timeline's **Objects** lane a prop can change hands over time: key which
+bone it hangs from, and **Throw** it to another bone or a point, as a pass, a
+toss or a lob.
 
-| | |
+## 1.10 Physics
+
+**Physics** switches simulation on or off and sets gravity, wind and whether hair
+and cloth collide with the floor. **Reset physics** (⌘K) restarts the simulation.
+
+## 1.11 Timeline
+
+The timeline edits what is playing, and every edit is written back into the
+scene as VMD — it autosaves, publishes, and downloads from its row.
+
+- **Tracks** — Motion, Morph, Camera, Effect, Visibility and Objects.
+- **Posing** — double-click a bone on the character, drag the gizmo, and the pose
+  is keyed at the playhead.
+- **Timing and easing** — drag keys along the strip; the curve view shows the
+  VMD's own bezier, with presets (Linear, In, Out, InOut, Slow In, Slow Out,
+  Slow IO, Over).
+- **Simplify** fits a dense track (captured or retargeted motion) with fewer keys.
+- **Effect lanes** — one block per stretch of time an effect plays; the effect's
+  clock starts at the block's left edge. Drag, trim, copy and paste blocks.
+  A block's edges ramp smoothly (**Dissolve edges**) or in steps (**Stepped
+  edges**). Deleting the last block removes the effect.
+- **Visibility lanes** — take a cast member on and off stage over time.
+
+⌘Z / ⇧⌘Z undo and redo. ←/→ jump between keys; ⌘C, ⌘X, ⌘V copy, cut and paste.
+
+## 1.12 Lyrics, lip sync and MIDI
+
+An `.lrc` beside the music does two things.
+
+- **Lip sync from lyrics** (Clips menu) writes a mouth-morph VMD, syllable by
+  syllable onto the five MMD vowel shapes, from kana, hangul, hanzi, romaji,
+  pinyin or English. A bilingual `.lrc` sings the original line, not its
+  translation.
+- **Lyrics**, **Subtitles** and **Now Playing** effects draw it on screen;
+  *Subtitles* stacks a bilingual line over its translation.
+
+A `.mid` gives effects the notes — *Note Fall* draws them as a piano roll.
+
+## 1.13 Export
+
+**Render** sets the output, aspect (16:9, 9:16, 2.39:1, 1:1, 4:3), quality (up to
+4K) and an optional range. While it is open, the viewport shows the frame that
+will be recorded.
+
+| Output | For |
 | --- | --- |
-| **Which track** | The edit button on a motion, expression or camera row |
-| **Which channel** | The tab strip — rotation, translation, weight, or a camera channel |
-| **Which bone** | The list on the left, or a double-click on the character in the viewport |
+| Scene · MP4 | The finished video, 60 fps |
+| Green screen · MP4 | Pure `#00FF00` background, for keying |
+| Alpha · PNG sequence | Transparent frames (Chrome: needs a folder) |
+| Alpha · WebM | Transparent video |
 
-**Posing.** Drag the gizmo on the selected bone and the pose is written to the
-frame under the playhead, creating a key there if none exists. The sliders in the
-properties dock do the same thing by number, and the channel you drag is the one
-the timeline follows.
+Export renders frame by frame, offline, at 4× MSAA: a slow machine makes the same
+file, just more slowly, and the music lands on the same frame every time. On
+Chromium the file streams to disk as it encodes, so long 4K exports never need to
+fit in memory. **AE composition script** writes an After Effects script that
+rebuilds the camera for compositing.
 
-**Timing.** Drag a key along the dope strip to move it in time. The curve half
-plots the same keys as values, so a key can be moved in time and value at once.
+**Capture PNG** saves the current frame — the intended way to make a thumbnail.
 
-**Easing.** The bezier between two keys is the VMD's own — the same four bytes
-MMD writes — shown as a 127×127 square with two control points. Drag them, or
-take one of the eight presets. A curve belongs to a key, so the editor is live
-only when a key is selected or the playhead sits on one.
+**Share export stats** (off by default) reports what a finished video was made
+of — resolution, model filenames, effects, graphs and grade — and nothing about
+who made it. The totals are public at
+[reze.design/analysis](https://reze.design/analysis);
+[reze.design/privacy](https://reze.design/privacy) lists exactly what is sent.
 
-**Track operations.** Insert and Delete act at the playhead. **Simplify** fits a
-curve through a dense track and drops the keys it does not need, which is what
-makes a captured or retargeted motion editable by hand. **Clear** empties the
-track.
+## 1.14 Publishing and the library
 
-**Effects.** The Effects tab lists the scene's effects, one lane each. A block
-on a lane is one stretch of time the effect plays, and the effect's own clock
-starts at the block's left edge. Drag a block to move it, drag an edge to trim
-it, and copy and paste it — ⌘C and ⌘V, or the right-click menu — to fire the
-same effect again; a paste lands at the playhead, or the first free spot after
-it. An effect you have not scheduled plays for the whole scene and shows as one
-block from the first frame. Blocks on a lane never overlap, and deleting the
-last one removes the effect.
+**Accounts.** Sign in with Google, GitHub, or a six-digit code sent to your email.
+One email is one account however you sign in. On first sign-in you pick your
+name, which appears in every link and can be set once.
 
-⌘Z and ⇧⌘Z undo and redo, per clip. Everything is written back as a standard VMD
-in the scene's own slot, so an edit survives a reload, travels with a publish, and
-downloads from the row it belongs to.
-
-## 1.9 Export
-
-The **Render** tab sets aspect and quality — 2.39:1 cinemascope through vertical
-9:16, at up to 4K — and optionally a range, so you can export `0:12` to `0:30`
-instead of the whole clip. While the tab is open the viewport shows the framing
-preview, drawn over the live scene: what you see framed is what will be recorded.
-
-**Render video** produces 60 fps H.264 MP4. On Chromium desktop you choose where
-to save first and frames stream to that file as they encode, so a long 4K export
-never has to fit in memory.
-
-Two things about the exporter are worth knowing. It renders **offline**, frame by
-frame, so export quality is independent of your display and of whether the tab is
-in focus — a slow machine produces the same file, it just takes longer. And your
-live camera, light and grade are exactly what gets recorded; there is no second
-set of render settings to keep in step.
-
-**Capture PNG** writes a single frame at the same aspect and resolution,
-honouring the same watermark and green-screen settings. It captures the pose on
-screen without seeking or resetting anything, needs no motion, and is the intended
-way to produce the thumbnail a published scene requires. Capture thumbnails at
-1080p — a 4K PNG of a detailed scene can exceed the 20 MB limit.
-
-**Green screen** replaces the background with pure `#00FF00` for compositing
-elsewhere, the classic MMD PV route.
-
-**Share export stats** is a switch below the render buttons, off until you turn it
-on. With it on, a finished video reports the resolution and aspect it was rendered
-at, the filenames of the models in it, and which effects, shader graphs and grade
-it used. Nothing identifies you — the rows carry no account, signed in or not —
-and your motion, your music, your scene and the video itself never leave your
-machine. What it adds up to is public at
-[reze.design/analysis](https://reze.design/analysis), and
-[reze.design/privacy](https://reze.design/privacy) is the full list of what is
-sent and what never is.
-
-**Exporting the scene itself** lives in the scene menu — click the logo at the top
-of the left rail (or on the floating pill when the panels are collapsed). **Export
-scene** writes one zip holding the scene document and every uploaded asset: model,
-motion, music, backdrop. **Import scene** opens such a zip on any machine and the
-scene arrives whole. The same menu holds **New scene**, which starts from a blank,
-neutrally lit stage, and **Reset to default scene**, which brings back the bundled
-demo.
-
-**Your work persists.** Every change is saved the moment you make it — settings
-and material work, and the models, motion and music you uploaded, all stored in
-your own browser (localStorage and IndexedDB; nothing is sent to a server until
-you publish). Refresh mid-edit, close the tab, come back tomorrow: the editor
-reopens exactly where you left off, uploads included. Only four actions change
-what loads — New scene, Reset, importing a scene file, and opening someone
-else's scene in the editor.
-
-## 1.10 Publishing
-
-Publishing turns your scene into a page anyone can open — a live 3D render they
-can orbit.
-
-Before you press **Share**, check what you are allowed to share. Nearly every
-model ships with a 利用規約 (*riyō kiyaku*, terms of use) in its download, and
-**再配布禁止 — redistribution prohibited — is very common**. Publishing packs the
-model, motion and audio you loaded and uploads them so the scene can render in
-other browsers, which under most terms counts as redistribution. Rendering a video
-is a different matter, since the model file is not in the video. Terms also
-commonly cover editing, R-18 depiction, political and religious use, and
-commercial use.
-
-The community's own convention sits alongside the licence: the **借物表**
-(*karimono-hyō*, "borrowed items list") names every model, motion, effect and
-track used, with its author, so a viewer can trace a part back to the person who
-made it. Reze Design requires one:
+**Publishing a scene** uploads its models, motion and music so it plays in other
+browsers. Check each model's terms first: many ship with a 利用規約 (terms of
+use), and **再配布禁止 — no redistribution — is common**; publishing counts as
+redistribution, a rendered video does not. The dialog asks for a name, tags, a
+thumbnail and a **借物表** (credits list) naming every model, motion, effect and
+track with its author:
 
 ```
-Model: Tda式初音ミク・アペンド by Tda / Modified by …
+Model: Tda式初音ミク・アペンド by Tda
 Motion: … by …
 Camera: … by …
 Music: … by …
 ```
 
-Beyond the credits, the dialog asks for a name, a description, up to five tags,
-and a thumbnail. Progress is reported per stage — packing, uploading, publishing —
-and failures name the stage and the underlying cause. Your text is saved as you
-type, so going away to capture a thumbnail keeps the description you just wrote.
+A scene can be **public** or **private**. The link is `reze.design/<name>/<id>`
+and never changes: renaming the scene or yourself keeps it working, and
+republishing (**Update**) keeps its views and likes. Grades, effects and graphs
+the scene uses must be published first, and a public scene cannot use private
+ones.
 
-The result is a permanent link of the form `reze.design/<your-name>/<id>`. The
-short id is what resolves, so renaming the scene, or renaming yourself, keeps
-every link already shared working.
+**The library** holds grades, shader graphs, effects and scenes — built-in,
+community and your own — filtered by All, Local, Community, Built-in, Yours and
+Liked.
 
-## 1.11 The gallery
+**The scene gallery** and a scene's page let anyone orbit, play and like it.
+**Open in editor** brings the whole scene into your editor as your own copy
+(named `… - fork`), with its credits. Each maker has a page at
+`reze.design/<name>` listing their scenes, effects, graphs and grades.
 
-**Scene gallery**, in the menu behind the logo — and in ⌘K — opens what everyone
-has published. Its rail is the one every library has: **All**, **Yours**,
-**Liked**, each with a count, and tags narrow whichever you are on. Publishing a
-scene offers the same door on its way out, next to the link; your account's scene
-count opens it already on **Yours**.
+## 1.15 When something goes wrong
 
-On a scene's page you can orbit, play, and like it. **Open in editor** brings the
-whole scene into your editor as **your own copy** — every model, motion, light,
-grade and material assignment, ready to take somewhere else. It reuses what the
-page already downloaded, so nothing arrives twice, and your own scene is left
-alone until the copy is ready. The copy is independent: it opens under the
-original's name with `- fork` appended, publishing it creates a new scene, and
-the original is untouched. Its credits come with it; extend them as you go.
+| Symptom | Cause |
+| --- | --- |
+| The editor will not start | The browser has no WebGPU |
+| Model loads white, grey or black | Textures not found — load the whole folder |
+| Model will not load | It is `.pmd`; convert to PMX first |
+| Motion plays, model stands still | Motion on another model's slot, or non-standard bone names |
+| Feet slide or sink | Proportions differ from the model the motion was made for |
+| Camera will not orbit | A camera motion is driving it — switch to free orbit |
+| Publish is blocked | The scene uses an unpublished or private grade, effect or graph; the dialog names it |
+| Publish fails | The error names the stage: packing (missing asset), uploading (bundle over 2 GB, connection), publishing (signed out) |
 
-Accounts exist to own what you publish. On first sign-in you choose your name,
-which appears in every scene link you create and can be set only once — permanence
-is what keeps a shared link working forever.
-
-## 1.12 When something goes wrong
-
-**The model loads white, grey or black.** Textures were not found, almost always
-because the `.pmx` was loaded without its folder. Load the whole folder or the
-original `.zip`.
-
-**The model will not load.** Check that it is `.pmx` rather than `.pmd`; convert
-older models in PMX Editor first.
-
-**Motion plays but the model stands still.** The motion is on a different model
-slot, or the model's bone names depart from the standard convention — common with
-models converted from other games.
-
-**Feet slide or sink through the floor.** Proportion mismatch between the model
-and the one the motion was authored for.
-
-**The camera does not respond.** A camera motion is driving it. Toggle to free
-orbit in the transport bar.
-
-**Export takes a while.** It renders every frame offline: a 4K three-minute export
-is thousands of full-quality frames. Iterate at 1080p on a short range, then go to
-4K for the final pass.
-
-**Publishing fails.** The error names the stage. *Packing* points at a missing
-asset; *uploading* at a bundle over 200 MB or a dropped connection; *publishing*
-at a signed-out session or a name collision.
+Export is slow by design: it renders every frame at full quality. Iterate at
+1080p on a short range, then do the final pass at 4K.
 
 ---
 
-# 2. Authoring your own look
+# 2. Authoring
 
-Section 1 covered choosing from what exists. This section covers making your own,
-and it is the part of the platform that has no counterpart in other MMD tools:
-the look of a scene here is programmable, live, at three levels of one pipeline.
-**Grades** (§2.2) shape the whole frame's colour. **Scene effects** (§2.3) are
-WGSL functions painting the layers behind and in front of the character. **Material
-graphs** (§2.4) define how each surface responds to light, as nodes that compile
-to WGSL. Each section states its full contract — read one and you can author in
-it, in the editor or by writing the document directly. §2.5 explains how drafts,
-publishing and versions work for all three.
+The look of a scene is programmable at three levels. **Grades** (§2.2) shape the
+colour of the whole frame. **Scene effects** (§2.3) are WGSL programs that paint
+around, over and among the cast. **Material graphs** (§2.4) define how each
+surface responds to light. Each section states its full contract.
 
 ## 2.1 The rendering model
 
-Knowing where each thing you author actually acts explains most of what follows.
-From the camera's point of view, back to front:
+Back to front:
 
 ```
-  background colour  →  backdrop / skybox  →  fn background  (§2.3)
-                                                       ↓
-                                            the character, shaded by
-                                            MATERIAL SHADER GRAPHS (§2.4)
-                                            per style group
-                                                       ↓
-                                                    bloom
-                                                       ↓
-                                            COLOUR GRADE (§2.2)
-                                            applied to the whole image
-                                                       ↓
-                                            fn foreground  (§2.3)
-                                            over the finished frame,
-                                            holding the scene's depth
-                                                       ↓
-                                                  your screen,
-                                              the video, the PNG
+background colour → media / skybox → fn background (§2.3)
+        ↓
+the scene: cast, stage, props — each surface shaded by its GRAPH (§2.4),
+lit by sun, world, lamps and effect lights; particles and trails drawn here
+        ↓
+bloom → view transform → COLOUR GRADE (§2.2)
+        ↓
+fn foreground (§2.3), holding the scene's depth
+        ↓
+filters (§2.3, rzSceneFrame) — last, over everything
 ```
 
-So:
-
-- A **scene effect** is one file that can paint at two points in that stack, and
-  which of them it uses is decided by the functions it defines — `fn background`
-  behind the character, `fn foreground` over the finished frame. It may define
-  both, which is how one file is a whole weather system.
-- A **shader graph** governs one style group on one model, and works from that
-  surface's own data — its texture, its normal, the view direction.
-- A **grade** applies last, to every pixel uniformly, when the image is already
-  final.
-
-All three travel *inside* the scene document, so a published scene reproduces your
-look exactly, whether or not the viewer has the presets you used.
+A grade applies to every pixel. A graph governs one style group. An effect paints
+at the mounts it defines. All three travel inside the scene document.
 
 ## 2.2 Colour grades
 
-Grades are **ASC CDL** transforms — the American Society of Cinematographers'
-Color Decision List, the primitive film post-production runs on. Three tonal
-ranges, each with a slope, an offset and a power, manipulated through a colour
-wheel. The vocabulary transfers to and from every other grading tool.
+Grades are **ASC CDL** transforms — slope, offset and power per tonal range — the
+standard of film post-production.
 
-### The editor
+Open the grade library and choose **Edit** on a preset, or edit the applied one
+from **Post → Grade**. The scene is the preview.
 
-Open the grade library, hover a preset and choose **Edit**, or edit the applied
-grade from **Scene → Grade**. The scene behind the editor is the preview — every
-adjustment lands live on your own character, in your own light, which is the only
-reliable way to judge a grade.
+- **Split tone** (−1 to +1) pushes shadows and highlights apart on a warm/cool
+  axis. Negative is teal shadows and orange highlights; positive is the reverse.
+- **Three wheels** — shadows, midtones, highlights. Angle is the hue, distance
+  from centre the amount, the rail beside it the lightness.
+- **Contrast** (0.5–1.6) pivots on mid-grey; **Saturation** (0–2).
 
-**Split tone** (−1 to +1) comes first, deliberately — it is the single move that
-expresses most grading intent. It pushes shadows and highlights in opposite
-directions along a warm/cool axis. Negative gives cool shadows against warm
-highlights, the "teal and orange" of modern film; positive inverts it, warm
-shadows against cool highlights, which reads as candlelight, sunset, or nostalgia.
-
-**Three wheels** — shadows, midtones, highlights — control the tonal ranges
-independently:
-
-- **Angle** — the hue that range is pushed toward.
-- **Distance from centre** — how far it is pushed.
-- **The rail beside the wheel** — lightness for that range. Pulling the shadow
-  rail down crushes the blacks; pushing the highlight rail up lifts them.
-
-**Contrast** (0.5 – 1.6) pivots around mid-grey. **Saturation** (0 – 2) scales
-colour intensity, 0 giving monochrome.
-
-### Working method
-
-The order that produces predictable results:
-
-1. **Fix the lighting first.** A grade builds on what the light gives it. If the
-   character reads flat, adjust sun elevation and world strength before touching
-   the grade.
-2. **Set split tone**, then stop for a moment. Very often this alone is the grade,
-   and everything after it is refinement.
-3. **Crush or lift with the rails, then push hue** — contrast decisions are more
-   visible than colour ones and constrain them. Push one range at a time, and less
-   than you think: a wheel at half distance is already a strong look.
-4. **Saturation last**, usually downward, and judge at intensity 1 before setting
-   the strength you want in the Scene tab. Grading at half strength invites
-   overcorrection.
-
-Two habits pay for themselves. **Compare against Neutral often** — prolonged
-looking normalises anything, and two seconds on Neutral tells you whether the
-grade is earning its place. And **grade at your export resolution**, since a bloom
-threshold that looked right in a small window can bloom readily at 4K.
-
-### Saving and sharing
-
-Editing a preset opens a scratchpad. Close it and you are asked whether to keep
-the result as a **draft** of your own — stored locally in your browser, free to
-rename, keep working on, and apply to as many scenes as you like. Once it is a
-draft it saves as you work, so there is nothing to confirm the next time. Drafts
-are private and stay on your machine.
-
-A grade also **exports and imports as JSON** from the editor's header, so a look
-can be written by hand, generated, or passed to someone else without a scene or
-an account. The same buttons sit in the shader-graph editor.
-
-**Publish** turns a draft into a library item under your name, visible to
-everyone. See [§2.5](#25-drafts-publishing-and-versions) for what that implies.
+Fix the lighting first, set split tone, then crush or lift with the rails, push
+hue one range at a time, and lower saturation last. Compare against *Neutral*
+often. Grades export and import as JSON from the editor header.
 
 ## 2.3 Scene effects in WGSL
 
-A scene effect is a shader that paints part of the frame, per pixel, from the
-view direction and the clock. Rain, snow, an aurora, fog on the ground, lightning
-clinging to a body, a sigil under someone's feet, a title card.
+A scene effect is one WGSL file. **The functions it defines decide what it is and
+where it draws** — there is no layer setting.
 
-### The six mounts
-
-**Which functions you define decides both what the effect is and where it lands.**
-There is no layer setting anywhere in the app; the code says.
+### Mounts
 
 | Define | You get |
 | --- | --- |
-| `fn background(ray, uv, time)` | A layer between the backdrop and the character |
-| `fn foreground(ray, uv, time, depth)` | A layer over the finished frame |
-| `fn particleInit` · `particleStep` · `particleShade` | A GPU particle pool |
-| `fn trailWidth` · `trailShade` | Ribbons along bones you asked for |
-| `fn lightEmit` | Real lights that shade the cast |
+| `fn background(ray, uv, time)` | A layer behind the cast |
+| `fn foreground(ray, uv, time, depth)` | A layer over the frame, holding the scene's depth |
+| `fn particleInit` · `particleStep` · `particleShade` | A GPU particle pool, drawn inside the scene |
+| `fn trailWidth` · `trailShade` | Ribbons along the recorded paths of bones |
+| `fn lightEmit` | Point lights that shade the scene |
 | `fn gridStep` | A simulation grid that persists between frames |
+| `#mirror` | A planar mirror — no function at all |
 
-Define `background` **and** `foreground` and they are one effect: a storm is a
-dark sky and the rain in front of it, in one file.
+`background` and `foreground` together are one effect (a storm: dark sky, rain in
+front). A file uses **field** mounts (`background`/`foreground`) **or** particles
+and trails, not both; lights and grids combine with either.
 
-Particles and trails each stand alone. An effect declares field mounts
-(`background`/`foreground`) **or** particles, not both, so sparks that need their
-own sky are two effects applied one after another.
+### Directives
 
-### Declaring what you need
-
-Lines starting with `#` at the top of the file, each on its own line:
+`#` lines at the top of the file. They are syntax: the engine parses them and
+reports an unknown one with its line number. Text after `—`, `--`, `//` or ` # `
+is a note.
 
 ```wgsl
-#anchor 頭              a bone by name        -> rzAnchor(subject, 0)
-#anchor 左手首 trail    ...and keep its PATH  -> rzTrail(subject, 1, i)
-#particles 4096         pool size, with the particle mounts
-#blend additive         particles add light instead of covering it
-#bloom                  particles reach the bloom pyramid
-#halfres                field mounts run at half resolution
-#layer additive         the FIELD adds light instead of covering
-#lights 4               light slots, with fn lightEmit
-#grid 768               simulation resolution, with fn gridStep
-#param float speed 1.0 0 4    a dial the app builds a slider for
-#duration 3.0           how long ONE firing lasts, in seconds
+#anchor 頭                 a bone by name        -> rzAnchor(subject, 0)
+#anchor 左手首 trail       ...and record its path -> rzTrail(subject, 1, i)
+#points flame              every bone starting "flame" -> rzPoint(i)
+#particles 4096            pool size (default 1024)
+#blend additive            particles add light
+#blend cutout              particles write depth, alpha as coverage (grass)
+#bloom                     particles / ribbons reach bloom
+#layer additive            the FIELD adds light instead of covering
+#halfres                   field mounts at half resolution
+#lights 4                  light slots, with fn lightEmit
+#grid 768                  grid resolution, with fn gridStep
+#param float speed 1.0 0 4 a dial: float name default [min max]
+#param color tint #3b82f6  a colour dial, hex default
+#param vec3 offset 0 1 0   a vector dial
+#duration 3.0              one firing lasts 3 s — the effect is a HIT
+#dissolve                  takes subject 0 apart and back
+#ground #202020 grain 0.3  replaces the floor while installed
+#mirror                    the effect is a mirror
 ```
 
-These are **syntax, not comments**. The engine parses them, strips them before
-compiling, and tells you with a line number when it does not recognise one.
-Anything after a `—` or a `//` on the same line is a note to yourself and is
-ignored, so a directive can explain itself.
+- **`#layer additive`** is right for anything that is light rather than matter.
+  The default composites alpha-over, so two crossing glows occlude each other.
+- **`#anchor`** slots are in declaration order. `.valid` is false on a rig that
+  names the bone differently — check it.
+- **`#halfres`** suits soft effects. Avoid it when alpha has a hard edge, such as
+  a foreground compared against `depth` along every silhouette.
+- **`#duration`** makes the effect a hit with an arc; without it the effect is
+  ambient (rain, stars, fog).
+- **`#param`** values are read as `params.<name>`. The app builds the controls, so
+  what the panel offers and what the shader reads never come apart.
+- **`#dissolve`** timings come from `const DISSOLVE_APART/GONE/BACK/WHOLE` or
+  `#param` dials of those names.
+- **`#mirror`** places its plane from dials named `POS_X/Y/Z`, `ROT_X/Y/Z`,
+  `WIDTH`, `HEIGHT`, `TINT`, `BLUR`, `FRAME`, `FRAME_COLOR`.
 
-They used to be `// @anchor`, which looked like prose and behaved like it: one
-of the readers was anchored to the end of the line, so `// @fullres — note`
-declared nothing at all, and three shipped effects rendered soft for months
-with nothing to say so. A wrong `#` line is an error you can read.
-
-**`#layer additive` is the one most new effects need and most forget.** The
-default composites alpha-over, which is right for anything with mass — smoke,
-fog, a painted sky. It is wrong for light, and visibly so the moment two glows
-cross: the later one occludes the earlier instead of adding to it, so a second
-bolt punches a hole through the first. Seven of the built-ins declare it. If
-what you are drawing is light rather than matter, so should you.
-
-`#anchor` slots are **declaration order** — the first is slot 0. Any bone the
-model has works, and `.valid` is false on a rig that spells it differently. Check
-it, or the effect draws a hand flourish at the world origin on half the library.
-
-`#halfres` is an **opt-out**. Field mounts run at full resolution unless you say
-otherwise. Half costs a quarter of the pixels and is right for anything soft —
-smoke, glow, billowing noise all upsample invisibly. What decides it is not how
-soft the effect looks but whether its **alpha** has a hard edge anywhere: a
-foreground comparing against `depth` has one along every silhouette in the
-scene, and at half resolution that edge arrives as stair-steps up the character.
-
-`#duration` says the effect is a **hit** — it has an arc, and this is how long
-one firing takes. Declare nothing and it is **ambient**: rain, stars, fog — a
-condition the scene is in rather than something that happens at a moment.
-
-`#param` exposes a dial. `#param float name default min max`, or `#param color
-name r g b`, and the app builds the control from the declaration — so what the
-panel offers and what the shader reads cannot come apart, and tweaking a value
-does not mean forking the effect.
-
-### The contract
+### The field contract
 
 ```wgsl
 fn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f
@@ -712,500 +458,255 @@ fn foreground(ray: vec3f, uv: vec2f, time: f32, depth: f32) -> vec4f
 
 | Parameter | Meaning |
 | --- | --- |
-| `ray` | The pixel's world-space view direction, normalised. It **pans with the camera orbit**, so anything computed from it is pinned to the world rather than the screen |
-| `uv` | Screen coordinates, 0 – 1, origin **bottom-left** |
-| `time` | Seconds since the effect was applied |
-| `depth` | **`foreground` only.** How far away, in scene units, whatever the scene drew at this pixel is — the far plane where it drew nothing |
+| `ray` | World-space view direction; turns with the camera, so anything built from it is pinned to the world |
+| `uv` | Screen position 0–1, origin bottom-left |
+| `time` | Seconds on the effect's clock (from its clip's start) |
+| `depth` | `foreground` only — distance to what the scene drew here, the far plane where nothing |
 
-The return value is **sRGB colour with straight alpha**, and the alpha is the
-interesting half: it is your mask over everything behind you.
+Return **sRGB with straight alpha**: 0 leaves what is behind untouched, 1 replaces
+it.
 
-- `alpha = 0` — transparent; whatever is behind shows through untouched.
-- `alpha = 1` — opaque; your effect replaces it.
+**`ray` or `uv`** decides behaviour under camera motion. From `uv`, the effect is
+glued to the frame — right for weather, vignettes and grain. From `ray`, it
+belongs to the world — stars built from `uv` slide when the camera orbits. For
+anything pointing *up* on a character (flames, a column of light), project a
+world-up vector from the subject; screen up tilts with the camera.
 
-A sparse effect — rain, sparks, footprints — holds alpha near 0 between its marks
-and raises it where one lands. A covering one — a gradient sky, a painted
-backdrop — returns 1 everywhere.
+**`depth`** does three jobs. Compare against it (feathered, or silhouettes
+staircase) so drops pass behind a shoulder. Read it directly — `1 - exp(-depth *
+density)` is fog. Turn it into a place with `rzWorldPos(ray, depth)`, so a
+pattern stays put when the camera moves. For something the character stands
+*inside*, march the ray between `rzCameraPos()` and that point.
 
 ### Reading the scene
 
-An effect is not limited to its own pixel. This is what separates a decoration
-from something that reacts to the performance.
+| Helper | Gives you |
+| --- | --- |
+| `rzResolution()` · `rzViewportHeight()` | Canvas size in pixels |
+| `rzTime()` · `rzDt()` | The clock and the frame step |
+| `rzCameraPos()` · `rzCameraRight()` · `rzCameraUp()` · `rzCameraForward()` | The camera |
+| `rzSubjectCount()` · `rzSubject(i)` | The characters this effect is on: `{ root, center, bounds, dissolve, gaze, looking, valid }` |
+| `rzSubjectHip(i)` · `rzSubjectId(i)` | Hip position; a stable id per model |
+| `rzAnchor(s, slot)` | A declared bone: `{ pos, vel, fwd, valid }` |
+| `rzTrailCount(s, slot)` · `rzTrail(s, slot, i)` | That bone's recent path — `xyz` position, `w` seconds ago |
+| `rzTrailAt` · `rzTangentAt` · `rzSpline` · `rzSplineTangent(s)` · `rzKnot` · `rzTurnRadius` | Smooth sampling of a path |
+| `rzPointCount()` · `rzPoint(i)` | Bones matched by `#points`: `{ pos, tip }` |
+| `rzWorldPos(ray, depth)` | This pixel's depth as a world point |
+| `rzProject(p)` | A world point on screen: `xy` uv, `z` distance, comparable to `depth`, negative behind the camera |
+| `rzCastDistance(uv)` | Screen pixels to the cast's silhouette — 0 on her, positive outside |
+| `rzObjectAt(uv)` · `rzMaterialAt(uv)` | Which object and material drew this pixel (field mounts) |
+| `rzShadow(p)` · `rzWorldAmbient(n)` · `rzLightsDiffuse(p, n)` | The scene's sun shadow, world light and lamp light at a point |
+| `rzLightCount()` · `rzLightPos/Color/Radius/Aim/Cone(i)` | The scene's lamps |
+| `rzHash11/21/31/13` · `rzValueNoise(p)` · `rzCurlNoise(p)` · `rzFalloff(d, r)` | Hashes, noise, and a falloff that is exactly 0 at `r` |
+
+**Which characters an effect is on is the scene's call** (§1.8, *On models*).
+`rzSubject(0)` is the first of those, so write the loop and let the scene aim it.
+Loop to the count functions, never to constants.
+
+`rzSubject().bounds` is a generous cull sphere; size things by hip height
+(`center.y - root.y`). `rzProject` makes world-anchored drawing cheap: project
+points once and measure in 2D, with occlusion as one compare against `depth`.
+
+The older `bg*` names (`bgWorldPos`, `bgResolution`, …) still work.
+
+### Reading the frame — filters
 
 | Helper | Gives you |
 | --- | --- |
-| `rzResolution()` | Canvas size in pixels, for aspect correction |
-| `rzCameraPos()` | Where the camera is, in world space |
-| `rzCameraRight()` · `rzCameraUp()` · `rzCameraForward()` | Its axes |
-| `rzSubjectCount()` | How many characters **this effect is on**, up to four |
-| `rzSubject(i)` | `{ root, center, bounds, valid }` |
-| `rzAnchor(subject, slot)` | `{ pos, vel, fwd, valid }` for a bone you declared |
-| `rzTrailCount(subject, slot)` · `rzTrail(subject, slot, i)` | That bone's recent **path** — `xyz` where it was, `w` how many seconds ago |
-| `rzWorldPos(ray, depth)` | This pixel's depth turned into a **place** |
-| `rzProject(p)` | A world point as the camera sees it — `xy` the uv it lands on, `z` its distance along the view axis |
+| `rzScene(uv)` · `rzSceneAlpha(uv)` | The scene layer in linear HDR, and how much of the pixel it covers |
+| `rzSceneDisplay(uv)` | The scene in display space — exposure, view transform and grade applied |
+| `rzSceneDepth(uv)` · `rzSceneHit(uv)` · `rzSceneFar()` | Depth at any pixel, whether anything was drawn, the far plane |
+| `rzBackground()` | The background colour |
+| `rzSceneFrame(uv)` | The finished frame, other effects included |
 
-**Which characters an effect is on is the scene's call, not the shader's.** An
-effect applies to the whole cast until someone narrows it: open the gear beside it
-in Effects and tick the models it is for. `rzSubjectCount()` then counts only
-those, and `rzSubject(0)`, `rzAnchor(0, …)` and `rzTrail(0, …)` are the first of
-them — so a ribbon written against the whole cast follows one dancer with no
-change to the file, and one written for `rzSubject(0)` follows the model it was
-aimed at rather than whoever loaded first. Write the loop; the scene aims it.
+These read the frame at any uv — refraction, heat haze, CRT curvature, a
+pixelated cast. **Calling `rzSceneFrame` makes the effect a filter**: it runs
+after every other effect and absorbs them (*Holo Card*, *World Slash*).
 
-The list is offered only for an effect that actually reads the cast. Rain falls on
-the scene and a glitch is on the lens, and a control on those would be a control
-that does nothing.
+### Music, score and words
 
-Three of these repay a second reading.
-
-**`rzSubject().bounds` is a *generous* cull sphere, not a fit.** It is sized to
-cover a raised arm, so it is the right thing to reject against and the wrong
-thing to size anything by. For a measure of how big someone actually is, take the
-hip height — `center.y - root.y` — which is a dependable fraction of any rig's
-height. Sizing a ground sigil off `bounds.w` puts it several body-heights across.
-
-**`rzProject` is what makes anything anchored to the world affordable.** Marching
-a curve in 3D costs a distance evaluation per sample per pixel; projecting its
-points once and measuring in 2D costs a subtraction. Its `z` is directly
-comparable to `depth`, so occlusion is a single test — draw where your `z` is
-nearer than the scene's — and it is negative behind the camera, which is worth
-rejecting before you use the `uv`.
-
-**A trail is what a ribbon is made of.** One position and one velocity give a
-straight segment that jitters, because a velocity is the difference between two
-frames; the path is what actually happened. It is sampled at a fixed rate on the
-**scene clock**, so it is identical in the editor, in an export and in a
-re-export, and its spacing does not change with your framerate.
-
-Loop to the count functions, never to a constant. Four characters, eight anchors
-and 128 trail samples are **minimums** and are free to grow, which stays true
-only while nobody hardcodes them.
-
-Older effects call these `bgResolution`, `bgCameraPos`, `bgWorldPos`,
-`bgSubjectCount` and `bgSubjectPos`. Those names still work and always will — a
-published scene is a permanent link, so nothing it depends on is ever removed.
-
-### Reacting to the music
+The whole track is analysed once, ahead of time, so an export matches the editor
+and an effect can read the future.
 
 | Helper | Gives you |
 | --- | --- |
-| `rzAudioLevel()` | Loudness now, 0 – 1 |
-| `rzAudioOnset()` | How hard the bass is **rising** — the kick detector |
-| `rzAudioBandCount()` · `rzAudioBand(i)` | The spectrum, log-spaced, each band 0 – 1 |
-| `rzAudioLevelAt(o)` · `rzAudioOnsetAt(o)` · `rzAudioBandAt(i, o)` | The same, `o` **seconds away** — negative is the past, positive the future |
-| `rzAudioTime()` · `rzAudioPlaying()` | Where the song is, and whether it is running |
+| `rzAudioLevel()` · `rzAudioOnset()` | Loudness 0–1; how hard the bass is rising (the kick) |
+| `rzAudioBandCount()` · `rzAudioBand(i)` | Log-spaced spectrum, 0–1 |
+| `rzAudioLevelAt(o)` · `rzAudioOnsetAt(o)` · `rzAudioBandAt(i, o)` | The same, `o` seconds away — negative past, positive future |
+| `rzAudioTime()` · `rzAudioPlaying()` · `rzAudioFrames()` | Song position, playing, analysis length |
+| `rzMidiTime()` · `rzMidiDuration()` · `rzMidiPlaying()` | The score's clock |
+| `rzNoteCount()` · `rzNoteStart(i)` · `rzNoteLength(i)` | Notes, sorted by start — binary-search the live window |
+| `rzNotePitch(i)` · `rzNoteVelocity(i)` · `rzNoteAge(i)` · `rzNoteHeld(i)` | Pitch, velocity 0–1, age, sounding now |
+| `rzPitchLow()` · `rzPitchHigh()` · `rzPitchX(p)` · `rzKeyEnergy(p)` | The range the file uses, a pitch as 0–1 across it, a decaying key level |
+| `rzLyricCount()` · `rzLyricIndex(t)` | Lines; which is live at `t` (`-1` between) |
+| `rzLyricStart(i)` · `rzLyricEnd(i)` · `rzLyricProgress(i, t)` | A line's window and the karaoke sweep |
+| `rzLyricText(i, uv)` · `rzLyricHasText(i)` · `rzLyricChars(i)` | Glyph coverage over the line's own box |
+| `rzLyricAspect(i)` · `rzLyricPixels(i)` · `rzLyricRect(i)` · `rzLyricWidest()` | Its shape, atlas size and place; the widest line's aspect |
 
-The whole track is analysed **once, ahead of time**, not sampled live. That is
-what lets an export be identical to the editor: an export steps the engine frame
-by frame rather than playing in real time, so a live analyser would hear silence
-and every audio-reactive effect would quietly vanish from the video.
-
-It is also why the `At(offset)` forms exist. The future is already computed, so a
-bar can lean into a beat *before* it lands — something no live analyser can do.
-Everything reads zero when the scene has no music.
-
-### The score and the words
-
-A `.mid` beside the track gives an effect the notes; a `.lrc` gives it the line on
-screen. Both run on the same prepared clock as the audio, so an export matches the
-editor exactly.
-
-| Helper | Gives you |
-| --- | --- |
-| `rzMidiTime()` · `rzMidiDuration()` · `rzMidiPlaying()` | Where the score is, how long it runs, whether it is running |
-| `rzNoteCount()` | How many notes the file holds |
-| `rzNoteStart(i)` · `rzNoteLength(i)` | When note `i` begins and how long it lasts, in seconds |
-| `rzNotePitch(i)` · `rzNoteVelocity(i)` | Its MIDI pitch, and how hard it was struck, 0 – 1 |
-| `rzNoteAge(i)` · `rzNoteHeld(i)` | Seconds since it began; whether it is sounding now |
-| `rzPitchLow()` · `rzPitchHigh()` | The pitch range the file actually uses — the keyboard's own extent, not 0 – 127 |
-| `rzPitchX(pitch)` | That pitch as 0 – 1 across the range, so a layout does not have to know the tune |
-| `rzKeyEnergy(pitch)` | How much that pitch is sounding right now, decayed — a key that is still ringing |
-
-Notes are **sorted by start time**, so a binary search finds the live window
-rather than a scan over every note in the file. *Note Fall* does exactly that, and
-that is the reason it can carry a whole piano roll.
-
-| Helper | Gives you |
-| --- | --- |
-| `rzLyricCount()` · `rzLyricIndex(t)` | How many lines; which is live at time `t`, or `-1` between them |
-| `rzLyricStart(i)` · `rzLyricEnd(i)` | That line's window, in seconds |
-| `rzLyricProgress(i, t)` | 0 – 1 through the line — the karaoke sweep |
-| `rzLyricHasText(i)` | Whether the line rasterised to anything |
-| `rzLyricText(i, uv)` | Glyph coverage of line `i`; `uv` is 0 – 1 across its own box |
-| `rzLyricAspect(i)` · `rzLyricPixels(i)` · `rzLyricRect(i)` | Its width over height, its size in atlas texels, its place in the atlas |
-| `rzLyricChars(i)` | How many characters it holds |
-
-The text is rasterised by the host, not by the shader — the effect samples
-coverage. Sample it **across a pixel** rather than at a point: a glyph edge is a
-step, and point-sampling one at small sizes shimmers as the line moves.
-`rzLyricPixels` is what turns a screen-space footprint into the right filter
-width.
-
-Everything here reads zero, `-1` or `false` when the scene has no `.mid` or
-`.lrc`, so an effect that uses them still compiles and draws in a scene that has
-neither.
-
-### What `depth` is for
-
-A foreground is not stuck in front. `depth` is what lets it decide, per pixel.
-
-**Compare against it.** A particle knows its own distance. If the scene is nearer,
-the scene wins that pixel — so drops pass behind a shoulder and in front of a face
-in the same frame. Feather the comparison, or the silhouette comes out as a
-staircase:
-
-```wgsl
-// How much of a curtain hanging `dist` away survives at this pixel.
-fn curtain(dist: f32, depth: f32) -> f32 {
-  return smoothstep(dist - 0.6, dist + 0.6, depth);
-}
-```
-
-**Read it directly.** Fog needs no comparison at all — its opacity simply *is* a
-function of distance, so `1.0 - exp(-depth * density)` is already fog, and pixels
-the scene never drew report the far plane, which is why it closes over the sky on
-its own.
-
-**Turn it into a place.** For anything belonging to a *location* rather than a
-distance, `rzWorldPos(ray, depth)` gives the world point the scene drew, and the
-pattern stops swimming when the camera orbits.
-
-One caution before you reach for it: a foreground evaluated at that single depth
-is a function of the surface the scene drew — a texture *on* that surface. It
-cannot know about the air *between* the camera and it. For something the
-character stands inside rather than behind, walk the ray yourself between
-`rzCameraPos()` and `rzWorldPos(...)`, accumulating as you go.
-
-### Two orientations
-
-`ray` or `uv` is the first decision, and it decides how the effect behaves when
-the camera moves.
-
-**Screen-space**, from `uv` — glued to the frame. Rain falls down the screen
-regardless of where the camera looks. Correct for weather, vignettes and grain.
-
-```wgsl
-fn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f {
-  // Aspect-correct so circles come out round.
-  let res = rzResolution();
-  let p = (uv - 0.5) * vec2f(res.x / res.y, 1.0);
-  let vignette = smoothstep(0.8, 0.2, length(p));
-  return vec4f(vec3f(0.02, 0.03, 0.08), 1.0 - vignette);
-}
-```
-
-**World-space**, from `ray` — part of the environment. Orbit and it stays put, as
-a real sky would. Project the ray the same way the skybox is sampled:
-
-```wgsl
-fn background(ray: vec3f, uv: vec2f, time: f32) -> vec4f {
-  // Longitude/latitude — the skybox's own projection.
-  let sky = vec2f(atan2(ray.x, ray.z), asin(clamp(ray.y, -1.0, 1.0)));
-  let band = smoothstep(0.0, 0.35, sky.y);          // horizon → zenith
-  return vec4f(mix(vec3f(0.85, 0.45, 0.30), vec3f(0.06, 0.09, 0.22), band), 1.0);
-}
-```
-
-Choose deliberately: stars built from `uv` slide across the sky when the camera
-orbits, which reads as wrong immediately even to a viewer who cannot say why.
-
-There is a third case that catches people. If your effect is attached to a
-character and something in it points **up** — flames climbing, a column of light —
-screen up is not world up. Measuring against the frame's `+y` makes flames tilt
-with the camera and climb sideways out of frame when you orbit under someone.
-Project a world-up vector from the subject instead; its screen direction is what
-you want, and its foreshortened length is how tall the effect should look from
-that angle.
+Text is rasterised by the app; sample coverage across a pixel (using
+`rzLyricPixels`) rather than at a point, or small type shimmers. Everything
+reads zero, `-1` or `false` when the scene has no music, `.mid` or `.lrc`.
 
 ### Lights
 
-An effect can put light **into the shading**, not just pixels on the frame. Declare
-how many slots and fill them:
-
 ```wgsl
 #lights 4
-
 fn lightEmit(i: u32, time: f32) -> RzLight {
   var l: RzLight;
-  l.pos = vec3f(0.0, 12.0, 0.0);   // world space
+  l.pos = vec3f(0.0, 12.0, 0.0);  // world space
   l.color = vec3f(1.0, 0.85, 0.6);
-  l.intensity = 0.0;                // 0 is OFF, not "a dark light"
-  l.radius = 8.0;                   // falloff distance
+  l.intensity = 0.0;               // 0 retires the slot
+  l.radius = 8.0;                  // falloff distance
   return l;
 }
 ```
 
-Called once per slot per frame. The count and the function come as a pair — one
-without the other is a compile error, and `#lights` is capped by the engine.
-
-`intensity = 0` retires the slot entirely, which is what makes a burst effect
-cheap: a firework between bursts is not a light at zero brightness sitting
-somewhere, it is no light. Set every field on every call — a slot you leave alone
-keeps whatever the previous frame put there.
-
-This is the only mount that changes how the CHARACTER looks. Bloom does not: it
-spreads bright pixels in screen space after shading, so a glowing ribbon does not
-illuminate the dress next to it. A light does.
+Called per slot per frame; set every field. Effect lights are point lights, up to
+128. This is the mount that changes how the *cast* looks — bloom spreads bright
+pixels after shading and lights nothing.
 
 ### Particles
 
-Three functions, and the pool never touches the CPU: one compute dispatch steps
-every particle, one instanced draw puts them on screen.
-
 ```wgsl
 #particles 4096
-fn particleInit(i: u32, seed: f32) -> Particle    // a fresh particle
-fn particleStep(p: Particle, dt: f32) -> Particle // one frame of motion
-fn particleShade(p: Particle, uv: vec2f) -> vec4f // its billboard, uv 0–1
+fn particleInit(i: u32, seed: f32) -> Particle
+fn particleStep(p: Particle, dt: f32) -> Particle
+fn particleShade(p: Particle, uv: vec2f) -> vec4f      // billboard, uv 0–1
+fn particleCover(p: Particle, uv: vec2f) -> f32        // optional, with #blend cutout
+fn particleCount() -> u32                              // optional, live count
 ```
 
-`Particle` carries `pos`, `vel`, `age`, `life`, `size`, `rot`, `seed` and
-`stretch`. Setting `life` to zero in `particleStep` retires one, and it comes back
-through `particleInit` with a new seed. `stretch` is aspect along the direction of
-travel: 1 is a square billboard, a raindrop is 10 or 20.
-
-Particles are drawn **inside the scene pass**, so they are depth-tested against
-the cast for free — one behind a shoulder is simply hidden, with no work from you.
-*Snow* and *Rain* are the worked examples.
+`Particle` holds `pos`, `vel`, `age`, `life`, `size`, `rot`, `seed`, `stretch`.
+`life = 0` retires one and it respawns through `particleInit`. `stretch` is the
+aspect along travel — a raindrop is 10–20. Particles are drawn in the scene pass,
+so the cast hides them for free. The pool goes up to 2,097,152; `particleCount()`
+runs fewer when fewer are needed (*Field of Flowers*).
 
 ### Trails
 
-Two functions, over the recorded path of every bone you declared with `trail`:
-
 ```wgsl
 #anchor 右手首 trail
-fn trailWidth(u: f32, age: f32) -> f32                                  // pixels
+fn trailWidth(u: f32, age: f32) -> f32                                   // pixels
 fn trailShade(u: f32, v: f32, age: f32, weight: f32, slot: i32) -> vec4f
 ```
 
-`u` runs along the ribbon and `v` across it, so a soft edge is a function of `v`
-and a taper is a function of `u`. The path is smoothed into a spline and extruded
-in screen space, so a ribbon holds its width whatever the camera does.
-
-Ribbons composite in their own layer with MAX blending, after tone mapping. That
-is what keeps a bright ribbon crossing itself from stacking into a white blob.
-*Hand Ribbon* is the worked example.
+`u` runs along the ribbon, `v` across it. The path is sampled on the scene clock,
+so it is identical in the editor and every export, smoothed into a spline, and
+drawn at constant screen width. Ribbons max-blend in their own layer, so a ribbon
+crossing itself does not stack into white.
 
 ### A simulation grid
 
-Everything else here is stateless — the same `time` gives the same frame. A grid
-is the exception: a texture the effect owns, stepped once per frame, where each
-frame reads the last one.
-
 ```wgsl
 #grid 768
-
 fn gridStep(uv: vec2f, prev: vec4f, dt: f32) -> vec4f {
-  if (rzGridFrame() == 0) { return vec4f(0.0); }   // frame 0 is your seed
-  let te = rzGridTexel();                          // one texel, in uv
-  let left = rzGridPrev(uv - vec2f(te, 0.0));      // any cell, last frame
-  return prev;                                     // four floats, yours to define
+  if (rzGridFrame() == 0) { return vec4f(0.0); }   // seed on frame 0
+  let left = rzGridPrev(uv - vec2f(rzGridTexel(), 0.0));
+  return prev;                                      // four floats, yours
 }
 ```
 
-The four channels mean whatever you decide. *Dry Ice* carries velocity in `xy`,
-density in `z` and pressure in `w`, which is enough for a real fluid: project,
-advect backwards, inject, decay. The field mounts then read the settled grid with
-`rzGrid(uv)` and shade it — in that effect, marched as a volume above the floor.
-
 | Helper | Gives you |
 | --- | --- |
-| `rzGrid(uv)` | This frame's cell |
-| `rzGridPrev(uv)` | Last frame's — what `gridStep` reads |
-| `rzGridTexel()` · `rzGridSize()` | One texel in uv, and the resolution |
-| `rzGridFrame()` | Frames since the effect was applied; `0` is the one to seed on |
+| `rzGrid(uv)` · `rzGridPrev(uv)` | This frame's cell; last frame's |
+| `rzGridTexel()` · `rzGridSize()` · `rzGridFrame()` | Texel size in uv, resolution, frames since applied |
 
-Resolution is a cost like any other: 768² is half a million cells stepped every
-frame. Default is 256, and the engine caps the top. `dt` is real elapsed time, so
-anything integrated with it survives a frame-rate change — but a simulation is
-history, and an export that starts mid-scene starts from an empty grid rather
-than from what you were watching.
+Default 256, maximum 1024. The one stateful mount: an export starting mid-scene
+starts from an empty grid. *Dry Ice* and *Water* are fluids built on it.
 
 ### Making it fast
 
-This runs behind a full character render, every frame, at up to 4K, and an export
-multiplies it by thousands of frames. Two habits carry almost all of it.
+This runs every frame behind a full character render, at up to 4K.
 
-**Cull first, and cull hierarchically.** If your effect belongs to a character,
-reject the pixels nowhere near her before setting up anything per-mark — most of
-any frame is empty. Then reject per *limb* before setting up per *mark*: a pixel
-beside one arm can throw out everything on the other arm and both legs with a
-single comparison, and that is worth far more than making the marks themselves
-cheaper.
-
-**Derive the cull radius; never guess it.** A guessed radius clips your own
-effect, and it fails in a way that does not look like a radius: near the top of a
-circle the boundary is flat to within a pixel, so a too-small bound reads as
-someone having drawn a straight line across your work. Write the radius as the sum
-of the things that actually reach — how far a mark can sit from its anchor, plus
-how far it spreads — so it tracks when you retune them.
-
-**Bound every glow.** A `1/r` falloff never reaches zero and so gives you no
-radius to cull with. A bounded falloff does, and nobody can tell them apart.
-
-Setting the effect to *None* for a single export tells you how much of the frame
-time is yours.
+- **Cull first, hierarchically** — reject pixels far from the cast, then per limb,
+  before per mark.
+- **Derive cull radii** from what actually reaches (offset plus spread); a guessed
+  radius clips as a straight line across the effect.
+- **Bound every glow** — `smoothstep(REACH, 0.0, d)` or `rzFalloff`, never a bare
+  `1/r`, which has no edge to cull at and turns a cut into a bloom ring.
+- **March volumes**; do not shade the depth buffer — density at the floor's depth
+  cannot wrap around someone standing in it.
+- **Keep loops fixed and small**; use `fwidth` only in uniform control flow.
+- **Drive motion from `time`** — it is what makes an export reproducible.
+- **Brightness is opacity** — keep width and brightness as separate dials.
 
 ### The editing loop
 
-Open **Scene → Effects → Library**, then **New effect** for a commented starter
-template, or right-click any preset and **Edit shader** to fork it.
+**Effect library → New effect** starts from a commented template; **Edit shader**
+on any effect forks it. **⌘Enter compiles and applies.** On failure the previous
+shader stays live and diagnostics point at your line and column.
 
-**<kbd>⌘/Ctrl</kbd>+<kbd>Enter</kbd> compiles and applies.** The scene is the
-preview — no separate render button. On success the effect is live immediately. On
-failure the previous shader stays applied and you get diagnostics with
-`line:column` positions rebased to your own code, so iterating never leaves you
-looking at a black screen.
+### The built-ins as worked examples
 
-### Rules
+Every built-in is commented with the mistake it avoids.
 
-- **Self-contained.** No textures, no external bindings, no state between frames.
-- **Drive all motion from `time`.** It is the only clock, and what makes an
-  exported video reproducible.
-- **Keep loops fixed and small**, and hoist anything shared out of them.
-- **`fwidth` only in uniform control flow.** The derivative holds as long as
-  neighbouring pixels took the same branch — keep it out of code following a
-  data-dependent early return.
-- **WGSL resolves in any order**, so helpers may sit below the functions that use
-  them.
-
-And five learned by getting them wrong, each of which cost a round of "it looks
-wrong but I cannot say why":
-
-- **March a volume, do not shade the depth buffer.** Sampling density at the world
-  position the depth buffer reports can only ever be a function of where the floor
-  is — a texture painted on the ground. It cannot represent the air in FRONT of
-  someone, so it can never wrap around them.
-- **Bound the march analytically.** Solve the ray against the volume's own shape
-  first. Undersampling reads as grain, and a step length that jumps where a ray
-  stops on the ground rather than reaching the sky reads as a horizon-shaped crack.
-- **Every `1/r` glow needs a finite edge.** `size / (d + ε)` never reaches zero, so
-  a cull truncates live signal and bloom turns the cut into a ring. Fade to zero
-  AT the cull radius — `smoothstep(REACH, 0.0, d)` — so the boundary is a
-  definition rather than an estimate.
-- **Derive cull radii from the visibility floor, and remember tone mapping lifts
-  it.** Alpha resolves as `1 − exp(−1.52·c)`, so a value stays visible far below
-  1/255 of its raw size. Radii checked against the raw value cut into the image.
-- **Brightness is opacity.** A layer's alpha is its own energy, so a dim streak is
-  a see-through one and a `1/r` glow spreads as it brightens. Keep width and
-  brightness as separate dials, or the only legible streak is a fat one.
-
-### The built-ins, and what each one is for
-
-Every preset is a worked example, commented with the mistake it is built to
-avoid. Reading them is the fastest way into the idiom.
-
-| Effect | The technique it demonstrates |
+| Effect | Demonstrates |
 | --- | --- |
-| *Snow* · *Rain* | GPU particle pools — one compute step, one instanced draw, depth-tested against the cast |
-| *Hand Ribbon* | A trail along a bone's recorded path, max-blended in its own layer |
-| *Finger Shapes* | Two outlines: the hull round both hands, always, and the space the fingers enclose, faded in by how enclosed it is — found with capsules on one camera-facing plane, starting points that climb clearance, and rays against capsules thickened to seal narrow gaps, then traced along the real finger edge with straight bridges across gaps |
-| *Footprints* | Reading a trail in **world** space: contacts inferred from the moment a foot stops descending, each with a light pillar integrated through the air above it |
-| *Vyke's Dragonbolt* | Arcs on the limbs — screen-space paths carrying real depth, so half of each ring passes behind the body; and a two-tier cull |
-| *Summoning Circle* | A figure on the plane through a declared bone by ray-plane intersection, depth-tested by hand, with line widths in measured pixels — one `#anchor` line moves it from under her feet to under her palm |
-| *Stage Lights* | Volumetric beams marched through their own cylinder, aimed by a damped follow |
-| *Waveform* | The audio interface driving a ported Shadertoy visualiser |
-| *Shining Stars* | Hash-grid fields |
-| *REZE DESIGN* | Signed-distance glyphs |
-| *Fireworks* | World-anchored ballistics, projected per frame |
-| *Note Fall* | The MIDI interface as geometry — height above the strike line IS time ahead of now, so a bar's length is its own duration |
-| *Dry Ice* | A persistent simulation grid: velocity and density advected on the floor between frames, then marched as a volume |
-| *Lyrics* | The lyric interface over a host-rasterised text atlas, sampled across a pixel rather than at a point |
-| *Subtitles* | Lines that share a stamp — a bilingual `.lrc`'s original and translation — found as consecutive lines with the live line's start, and stacked as one caption |
-| *Signature* | Stroke-median hanzi as segment distance fields, beside the same neon the wordmark is drawn with |
+| *Rain* · *Snow* · *Sakura Drift* | Particle pools, depth-tested against the cast |
+| *Floating Stars* · *Ember Drift* · *Ember Motes* | Additive particles with bloom and lights |
+| *Hand Ribbon* · *Hand Threads* | Trails along a bone's recorded path |
+| *Hand Sparks* · *Fuse Sparks* · *Hand Blossoms* · *Divine Ribbon* | Particles emitted from anchors |
+| *Teleportation* · *Divine Teleportation* | `#dissolve` with `#duration` — a body taken apart and rebuilt |
+| *Candle Flames* | `#points` — one flame per matching bone |
+| *Field of Flowers* | `#blend cutout`, `particleCover`, `particleCount`, a grid, `rzShadow` |
+| *Dry Ice* · *Water* | Persistent grids: fluid on the floor, a rippling pool |
+| *Footprints* | Reading a trail in world space |
+| *Vyke's Dragonbolt* | Screen-space arcs carrying real depth |
+| *Summoning Circle* | Ray–plane intersection under a declared bone |
+| *Stage Lights* | Volumetric beams marched through their own cylinder |
+| *Gojo* · *World Slash* | Hits with `#duration`; a filter over the frame |
+| *Laser Eyes* · *Laser Stare* | `rzSubject().gaze`, lights on the face |
+| *Sticker Outline* · *Holy Light* · *Bloody Ash* | `rzCastDistance` — outlines and rims off the silhouette |
+| *Holo Card* | `rzSceneFrame` — a filter carrying every other effect |
+| *CRT Glitch* · *Line Art* · *Manga* · *8-Bit* | Rereading the frame; *8-Bit* uses `rzObjectAt` |
+| *Mirror* | `#mirror` |
+| *Waveform* | The audio interface |
+| *Note Fall* | The MIDI interface as geometry |
+| *Lyrics* · *Subtitles* · *Now Playing* | The lyric interface |
+| *Shining Stars* · *Galaxy Sky* | World-space skies from `ray` |
+| *Fireworks* | World-anchored ballistics with lights |
+| *REZE DESIGN* · *Signature* | Signed-distance glyphs |
+| *Finger Shapes* | Hulls around both hands and the shape the fingers close |
 
 ## 2.4 Material shader graphs
 
-A shader graph defines how one style group's surfaces respond to light. It is a
-node graph in the Blender idiom — nodes with typed sockets, connected by links —
-compiled to WGSL and applied live.
+A shader graph defines how one style group responds to light: Blender-style
+nodes with typed sockets, compiled to WGSL and applied live. From **Materials**,
+click a group's graph, **Browse all…**, then **Edit graph**.
 
-From the Materials tab, click a group's graph name, **Browse all…**, then **Edit
-graph** on any entry. The built-ins come as three sets plus a neutral base, and
-all of them are reference implementations to fork:
+### The built-in sets
 
-- **AG** — *AG Body*, *AG Eye*, *AG Face*, *AG Hair*, *AG Metal*, *AG Rough
-  Cloth*, *AG Smooth Cloth*, *AG Stockings*. Eight worked examples of specific
-  surface types, each built around a lighting closure and a ramp.
-- **WuWa** — *WuWa Body*, *WuWa Cloth*, *WuWa Hair*, *WuWa Face*, *WuWa Metal*,
-  *WuWa Eye*. Twenty-one nodes each, built around the light directly rather than a
-  closure: a half-Lambert through a narrow soft threshold, a shadow that passes
-  through a warm band on its way to lit, the model's own sphere-map highlight,
-  and a rim. Start here for a hard-terminator anime look.
-- **ZZZ** — *ZZZ Body*, *ZZZ Cloth*, *ZZZ Eye*, *ZZZ Face*, *ZZZ Hair*, *ZZZ
-  Metal*. One recipe with six sets of numbers, which is how the source .blend is
-  built: the lighting closure quantised into a mask, and the texture split into a
-  lit branch and a shadow branch that are tinted separately and multiplied back
-  together through it. Body, face and hair take a smoothstep terminator; cloth,
-  eye and metal take a three-tone hard step. Hair adds `sphere_map` on top, which
-  is where the source keeps its highlight — so hair reads flat on a model whose
-  hair material carries no sphere map. Read this one for how few nodes a complete
-  look can be.
-The neutral base is not in the library: it is what an ungrouped material already
-renders and what a new group and a new graph both start from, so listing it as
-something to apply would have been a shelf copy of the blank page.
+| Set | Graphs | Built around |
+| --- | --- | --- |
+| **AG** — Aether Gazer | Body, Eye, Face, Hair, Metal, Rough Cloth, Smooth Cloth, Stockings | The lighting closure into a ramp |
+| **WuWa** — Wuthering Waves | Body, Cloth, Hair, Face, Metal, Eye | Half-Lambert through a narrow threshold, a warm band, sphere map, rim |
+| **ZZZ** — Zenless Zone Zero | Body, Cloth, Eye, Face, Hair, Metal | The closure quantised into a mask, lit and shadow branches tinted apart |
+| **HSR** — Honkai: Star Rail | Body, Face, Hair, Cloth, Metal, Eye | The `light` node and the sphere map |
+| **Stage** | Tile, Emissive, Wood, Brick, Plastic, Glass, Concrete, Stone, Fabric, Rubber, Leather, Paper, Water, Gold, Mapped PBR, Foliage, Stage Surface | Principled PBR; *Water* uses `time` and `environment`, *Foliage* hashed alpha |
 
-No set carries an image of its own. A preset reads the material's own
-texture and sphere map, so it applies to any model — which is the property to
-preserve if you publish one.
-
-### The palette
-
-| Category | What lives there |
-| --- | --- |
-| **Input** | The surface's own data: texture fetch, geometry (normal, view direction, world and rest position, UV, reflection), the material's diffuse colour, its sphere map, plain values and RGB constants |
-| **Scene** | `light` — the key light as values: direction, colour, ambient, shadow. `head_basis` — the head bone's forward/right/up |
-| **Colour** | Hue/saturation, brightness/contrast, invert, gamma, RGB curves, separate/combine in RGB, HSV and HSL, and colour ramps — linear, constant, cardinal, anti-aliased constant, triangular, and a three-stop linear |
-| **Texture** | Procedural noise, gradients and voronoi, plus up to four image maps carried by the style group |
-| **Vector** | Mapping, bump, normal map, separate/combine XYZ, vector rotate, vector transform, and 24 vector-math operations |
-| **Math / Mix** | 39 arithmetic operations, 20 blend modes, map range |
-| **Shader** | Principled BSDF, emission, add and mix shader, shader-to-RGB as colour or scalar, diffuse and transparent BSDFs, fresnel, layer weight |
-
-The socket names you will meet most often are `color`, `alpha`, `normal`, `view`,
-`uv`, `fac` (a 0–1 blend factor), `strength`, `roughness`, `metallic` and
-`base_color`.
-
-**Reaching the light directly.** `shader_to_rgb_diffuse` and `bsdf_diffuse` bake
-a whole lighting closure and hand back a result, which is the AG idiom. The `light`
-node instead exposes the sun as values, so a graph can build its own term —
-`dot(normal, direction)` pushed through a ramp or a threshold — which is what
-gives an anime shader a hard terminator, and what the WuWa set is built on.
+An ungrouped material renders the neutral default graph, which is also where a
+new graph starts. No built-in carries an image: they read the material's own
+texture and sphere map, so they work on any model.
 
 ### Building
 
-- **Add a node** — right-click the canvas, or use the add-node menu, which is
-  searchable by name.
-- **Connect** — drag from an output socket to an input socket. Types must be
-  compatible.
-- **Unlinked inputs use their literal default**, editable on the node itself. A
-  graph with no links at all is a valid graph.
-- **Set the output** — right-click a node and choose *Set as output*. This is the
-  value the material renders, every graph has exactly one, and it must resolve to
-  a colour (`vec3f`) or a scalar (`float`).
-- **Preview any socket** — *Preview output* routes a socket to the screen so you
-  can see what a branch produces in isolation; *Stop preview* returns to the real
-  output. This is the editor's most useful debugging tool: when a graph looks
-  wrong, preview sockets backwards from the output, and the first one that looks
-  wrong is where the problem is.
-- **Generated WGSL** — the editor shows the code your graph compiles to, which is
-  worth reading when a graph is not doing what you expect.
+- **Add a node** — right-click the canvas, or the searchable add menu.
+- **Connect** — drag output to input; incompatible types refuse the link.
+- **Unlinked inputs** use the literal on the node.
+- **Set as output** — one per graph; must resolve to a colour or a float.
+- **Preview output** routes any socket to the screen. When a graph looks wrong,
+  preview backwards from the output; the first wrong socket is the bug.
+- **Generated WGSL** shows what the graph compiles to.
 
-Node positions are layout. Moving nodes never changes the result, and a rearranged
-graph still counts as identical to the library entry it came from.
+Node positions are layout only. Graphs import and export as JSON from the header.
 
-### The graph as a document
-
-Everything the editor builds is a plain JSON document — `ShaderGraph` in
-reze-engine — and the document is a first-class way to author. This is the whole
-shape:
+### The graph document
 
 ```jsonc
 {
   "version": 1,
   "name": "My Graph",
   "nodes": [
-    // id: unique, /^[a-z0-9_]+$/ · type: one of the registry ids below
-    // inputs: literal defaults for sockets you leave unlinked
     { "id": "tex", "type": "texture" },
     { "id": "diff", "type": "material_diffuse" },
     { "id": "base", "type": "mix/multiply", "inputs": { "fac": 1.0 } },
@@ -1225,415 +726,152 @@ shape:
 }
 ```
 
-That example is a complete, working cel shader: the texture times the material's
-own diffuse tint, with diffuse lighting quantised to two bands multiplied over
-it. `output` must resolve to a colour (`vec3f`) or scalar (`f32`); floats and
-colours convert where sensible. An optional `params` array exposes chosen node
-inputs as named sliders that adjust live without recompiling, and `tags` are
-free-form hints for library search.
+A complete cel shader: texture × material tint, times diffuse light quantised to
+two bands. An optional `params` array exposes node inputs as live sliders; `tags`
+help library search. Every node type and socket is in
+[Appendix D](#appendix-d-shader-graph-node-reference).
 
-The node vocabulary, by registry id — sockets in parentheses:
+### Two spines
 
-| Type id | Inputs → outputs |
-| --- | --- |
-| `texture` | → `color`, `alpha` — the material's diffuse texture at this pixel |
-| `geometry` | → `normal`, `view`, `world_pos`, `rest_pos`, `uv`, `reflection` |
-| `material_diffuse` | → `color` — the PMX material's authored base tint |
-| `value` / `rgb` | a literal float / colour → `value` / `color` |
-| `hue_sat` | `hue`, `saturation`, `value`, `fac`, `color` → `color` |
-| `bright_contrast` | `color`, `bright`, `contrast` → `color` |
-| `invert` | `fac`, `color` → `color` |
-| `ramp_constant`, `ramp_linear`, `ramp_cardinal` | `fac`, `pos0`, `color0`, `pos1`, `color1` → `color`, `alpha`, `fac_out` |
-| `ramp_constant_aa` | `fac`, `edge`, `color0`, `color1` → `color` — the anti-aliased two-band ramp; the cel-shading workhorse |
-| `ramp_tri` | `fac` → `value` — triangle wave |
-| `math/*` | `a`, `b`, `c` → `value` — 39 operations, Blender's set: `add` `subtract` `multiply` `divide` `multiply_add` `power` `logarithm` `sqrt` `inversesqrt` `absolute` `exponent` `minimum` `maximum` `less_than` `greater_than` `sign` `compare` `smooth_min` `smooth_max` `round` `floor` `ceil` `truncate` `fraction` `modulo` `floored_modulo` `wrap` `snap` `pingpong` `sine` `cosine` `tangent` `arcsine` `arccosine` `arctangent` `arctan2` `radians` `degrees` `clamp01` |
-| `vector_math/*` | `a`, `b`, `c`, `scale` → `vector` or `value` — 24 operations: `add` `subtract` `multiply` `divide` `multiply_add` `cross` `project` `reflect` `refract` `dot` `distance` `length` `scale` `normalize` `absolute` `minimum` `maximum` `floor` `ceil` `fraction` `modulo` `wrap` `snap` `faceforward` |
-| `mix/*` | `fac`, `a`, `b` → `color` — 20 blend modes: `blend` `add` `subtract` `multiply` `divide` `screen` `overlay` `soft_light` `dodge` `burn` `darken` `lighten` `difference` `exclusion` `linear_light` `hue` `saturation` `color` `value` `add_emit` |
-| `map_range`, `map_range/linear`, `map_range/smoothstep` | `value`, `from_min`, `from_max`, `to_min`, `to_max` → `value` — the plain id clamps |
-| `principled` | `base_color`, `metallic`, `roughness`, `ior`, `specular_ior_level`, `sheen_weight`, `sheen_tint`, `emission_color`, `emission_strength`, `normal`, `spec_clamp` → `color` — the GGX core, Principled v2 sockets |
-| `emission` | `color`, `strength` → `color` |
-| `add_shader` | `a`, `b` → `color` |
-| `mix_shader` | `fac`, `a`, `b` → `color` |
-| `fresnel` | `ior` → `value` |
-| `layer_weight/fresnel`, `layer_weight/facing` | `blend` → `value` |
-| `shader_to_rgb_diffuse` | → `value` — the scene's diffuse lighting term (normal · light, sun, ambient, shadow), the input a toon ramp wants |
-| `shader_to_rgb` | → `color` — the same closure as a colour, so a warm sun and cool ambient stay warm and cool |
-| `light` | → `direction`, `color`, `ambient`, `shadow` — the key light as values, for a graph that builds its own diffuse term |
-| `head_basis` | → `forward`, `right`, `up` — the head bone's world axes, for face shading that tracks the head |
-| `sphere_map` | `base`, `strength` → `color` — the model's own sphere map; an exact no-op on a material without one |
-| `bsdf_diffuse` | `color` → `color` · `bsdf_transparent` → `color` |
-| `tex_image/0`…`tex_image/3` | `uv` → `color`, `alpha` — the style group's own image maps, mesh UV by default |
-| `ramp_linear_3` | `fac`, `pos0`, `color0`, `pos1`, `color1`, `pos2`, `color2` → `color`, `alpha`, `fac_out` |
-| `rgb_curve` | `color`, `fac`, `y0`…`y4` → `color` — one curve sampled five times |
-| `separate_color`, `combine_color` (+ `/hsv`, `/hsl`) | `color` ↔ `r`, `g`, `b` |
-| `separate_xyz` | `vector` → `x`, `y`, `z` · `combine_xyz` | `x`, `y`, `z` → `vector` |
-| `normal_map` | `color`, `strength` → `normal` · `gamma` | `color`, `gamma` → `color` |
-| `vector_rotate/axis_angle`, `vector_rotate/euler_xyz` | `vector`, `center`, `axis`, `angle`, `rotation` → `vector` |
-| `vector_transform/*` | `vector` → `vector` — world↔camera |
-| `uv_map` | → `uv` · `attribute`, `object_info`, `light_path` — answered with honest constants on a PMX |
-| `vect_cross` | `a`, `b` → `vector` |
-| `mapping` | `vector`, `loc`, `rot`, `scl` → `vector` |
-| `bump` | `strength`, `height`, `normal` → `vector` |
-| `tex_noise` | `vector`, `scale`, `detail`, `roughness`, `distortion` → `value` |
-| `tex_gradient` | `vector` → `value` |
-| `tex_voronoi/f1`, `tex_voronoi/color` | `vector`, `scale` → `value` / `color` |
+**The closure** (AG): `texture` × `material_diffuse` (a `mix/multiply` at `fac 1`
+— without it untextured materials render white), then `shader_to_rgb_diffuse`
+into `ramp_constant_aa` for bands or `ramp_linear` for a soft falloff, multiplied
+over the base. Add a rim with `layer_weight/facing` into `mix/add_emit`.
 
-The compiler reports diagnostics with node and socket names rather than failing
-silently, and pass integration (the hair/eye stencil, hashed alpha) belongs to
-the style group's role, never to the graph — a graph only ever computes colour.
+**Your own term** (WuWa, HSR): `light.direction` · `geometry.normal` through
+`vector_math/dot`, then `math/multiply_add` (0.5, 0.5) for a half-Lambert;
+`map_range` over a narrow window (say 0.46–0.54) for a hard terminator;
+`ramp_linear_3` from shadow through a warm band to lit; multiply over the
+texture. Then fold in the scene's light — `light.color × (band × light.shadow ÷
+π) + light.ambient`, mixed halfway toward white — so the material responds to sun
+colour, world light and cast shadows without taking on the world's hue. Finish
+with `sphere_map` for the model's own highlight.
 
-### Writing a graph that compiles
+### Rules the compiler checks
 
-The editor keeps you inside the schema as you drag: it offers only sockets that
-exist, dims the ones a wire cannot legally reach, and replaces the old link when
-a second one lands on an occupied input. A document written by hand or generated
-by a tool has none of that, so it is checked on arrival — **Import graph JSON**
-in the editor's header validates the file before it reaches the canvas and lists
-what is wrong with it in the diagnostics panel. What follows is what you need to
-write one that lands clean.
+- `version` is 1. Node ids are unique and match `/^[a-z0-9_]+$/`; `type` is an
+  exact registry id (`math/power`).
+- One link per input; no cycles; `output` resolves to a colour or float.
+- At most **64 nodes** and **16 params**.
+- A literal must fit its socket: a scalar splats onto colour and vector, a vector
+  on a float is an error. Ramp stop colours are `vec4` literals and take no links.
+- Sockets that carry the processed value (`invert.color`, `separate_xyz.vector`,
+  `principled.base_color`, a ramp's `fac`) need a link or an explicit literal.
+- Params target unlinked inputs, one per socket, `float` or `color` — to expose a
+  ramp stop, drive it through a `mix/*` and expose that.
+- Types convert implicitly: colour → float is BT.601 luminance, float → colour
+  splats, vector → float is rejected (use `separate_xyz`).
+- **Coordinates are left-handed, Y-up.** Blender's `(x, y, z)` is `(x, z, y)`
+  here; the vertical of a normal is `separate_xyz.y`.
 
-**There are two spines**, and starting from either gets a surface most of the way
-there. The first takes the engine's lighting closure and quantises it — the AG
-idiom:
-
-1. **Base colour** — `texture` multiplied by `material_diffuse`, as a
-   `mix/multiply` with `fac: 1`. Leave the multiply out and untextured materials
-   render white.
-2. **A lighting term** — `shader_to_rgb_diffuse` into a ramp: `ramp_constant_aa`
-   for cel bands, `ramp_linear` for a soft falloff. Use `principled` in its place
-   when the surface should read as lit PBR rather than toon.
-3. **Combine the two** — another `mix/multiply` at `fac: 1`, the ramp over the
-   base. That alone is a working cel shader.
-4. **Then add** — `fresnel` or `layer_weight/facing` into `emission`, joined with
-   `add_shader`, for rim light; `mix/add_emit` for a glowing region; `bump` or
-   `tex_noise` into `principled.normal` for surface detail.
-
-The second builds its own diffuse term from the light, which is how most game NPR
-presets work and what the WuWa set does. It costs a few more nodes and gives a
-much harder terminator:
-
-1. **The term** — `light.direction` and `geometry.normal` into `vector_math/dot`,
-   then `math/multiply_add` with `b: 0.5, c: 0.5`. That is a half-Lambert: −1…1
-   remapped to 0…1, keeping some shape in the unlit half instead of clipping it.
-2. **The terminator** — `map_range` (the clamping one) over a NARROW window, say
-   0.46 to 0.54. Width is the whole character of the look: wide is a soft
-   falloff, narrow is the hard step anime shading wants.
-3. **The colour** — `ramp_linear_3` on that, shadow → warm → lit. The middle stop
-   is what stops a shadow reading grey.
-4. **Over the texture** — `mix/multiply` of `texture.color` by the ramp, at a
-   factor below 1 so the tint sits over the texture rather than replacing it.
-5. **The scene's light** — `light.color × (band × light.shadow ÷ π)` plus
-   `light.ambient`, mixed HALFWAY TOWARD WHITE, then multiplied over the result.
-   Two things to remember here. Build a term from `light.direction` alone and the
-   material ignores sun colour, sun strength, world colour and cast shadows
-   entirely, rendering the same under every lighting setup in the scene. But take
-   that term whole and every surface multiplies the world's hue, so a saturated
-   world drags the whole figure toward it and collapses shadow to the ambient —
-   the softening is what keeps all four legible without handing the world the
-   character. Folding `light.shadow` into the band before the ramp also makes a
-   cast shadow wear the same colour the terminator does.
-6. **Then add** — `sphere_map` for the model's own highlight, and
-   `layer_weight/facing` into `mix/add_emit` for a rim.
-
-Expose the two or three numbers you will want to retune later as `params`, and
-they become sliders that adjust live without a recompile.
-
-These are the rules the result is checked against.
-
-**Structure.** `version` is `1`. Node ids are unique and match
-`/^[a-z0-9_]+$/` — lowercase, digits, underscore, nothing else — and `type` is
-an exact registry id from the table above: `math/power`, never `Math` or
-`power`. Each input socket takes at most one link, the graph is acyclic, and
-`output` must resolve to a colour or a float, a `vec4` output being rejected and
-a float splatting to colour. A graph is capped at 64 nodes and 16 exposed params.
-
-**Literals and links.** `inputs` carries literal values for the sockets you leave
-unlinked, and the shape has to fit the socket: a 3-vector on a `float` socket is
-an error, while a scalar splats onto colour, vector and `vec4` sockets. The
-sockets that carry the value a node processes — `invert.color`,
-`separate_xyz.vector`, `principled.base_color`, the ramps' `fac` — need either a link
-or an explicit literal; leaving one at its registry default is the error, and it
-is only reported for nodes that actually feed the output. Ramp stop colours
-(`color0`, `color1`) are `vec4` and can only be literals; nothing links into them.
-
-**Params** target unlinked inputs, one param per socket, and a param's `kind`
-must match the socket's type. Since `kind` is `float` or `color`, a ramp stop
-cannot be exposed at all — to make a toon shadow tint adjustable, drive it
-through a `mix/*` node and expose that node's colour input instead. A param
-aimed at a node that gets pruned still compiles, with a warning that the slider
-does nothing.
-
-**Types convert implicitly** where they differ, so conversion nodes are never
-needed: colour → float takes BT.601 luminance, float → colour or vector splats,
-and colour and vector pass through each other unchanged. Vector → float is
-rejected, exactly as in Blender — use `separate_xyz`.
-
-**Coordinates are the engine's** — left-handed and Y-up, the PMX convention,
-where Blender is right-handed and Z-up. The vertical component of a normal is
-`separate_xyz` socket `y`, not `z`, and a direction vector written for Blender as
-`(x, y, z)` is `(x, z, y)` here, sign checked. UVs are unchanged. Get this wrong
-and the shading looks plausible but lit from the wrong axis, which is the most
-common mistake in a hand-written graph.
-
-**What the vocabulary has**, since it is wider than a Blender user tends to
-expect and knowing the shape saves rebuilding something that already exists:
-
-- **39 math operations** and **24 vector-math operations** — the full Blender
-  sets, safeguards included: divide by zero is 0 rather than infinity, modulo is
-  truncated, and the per-channel blend modes clamp the way Blender's do.
-- **20 mix modes** — every Blender blend type, including screen, dodge, burn,
-  soft light, difference, hue, saturation, colour and value, plus `mix/add_emit`.
-- **Ramps** with two stops in four interpolations, a **three-stop linear ramp**
-  (`ramp_linear_3`), and `ramp_tri` for the black→white→black case. Three stops
-  is what lets a shadow pass through a colour on its way to lit, which is most of
-  what makes a toon shadow read as warm rather than grey.
-- **RGB curves**, as five samples of one curve applied to all channels.
-- **Group image maps** — `tex_image/0` to `tex_image/3`, four extra images
-  carried by the style group and sampled at the mesh UV by default, or at any
-  vector you feed them.
-
-**What it does not have**, still worth knowing before you write against it:
-
-- **A node graph does not carry an image.** The built-ins ship none, and a preset
-  that does is a preset for one character rather than a look. Prefer the
-  material's own texture and sphere map.
-- **Sockets belong to the node, not the operation.** Every math node offers three
-  value inputs and every vector-math node three vectors and a scale, whichever
-  operation is selected — the unused ones are inert, exactly as in Blender, so a
-  transcription maps socket for socket without knowing which the op reads.
-- **Shading is colour.** `add_shader` compiles to `a + b` and `mix_shader` to
-  `mix(a, b, fac)`, both on `vec3f` — evaluate each branch to a colour, then
-  combine. There is no BSDF object to mix beforehand.
-- **A ramp stop cannot be a slider.** Stop colours are `vec4` literals and a
-  param is `float` or `colour`, so to make a shadow tint adjustable, drive it
-  through a `mix/*` node and expose that node's colour input instead.
-- **No EEVEE Next lighting.** No screen-traced GI, no virtual shadow maps, no
-  irradiance probes. Coat, transmission, subsurface, anisotropy and thin film are
-  absent from Principled rather than approximated.
-- **A graph is capped at 64 nodes** and 16 exposed params.
-
-**Checking a graph outside the editor.** reze-engine exports
-`validateGraph(graph)`, which returns the diagnostics above, and
-`compileGraph(graph)`, which returns `{ ok, wgsl, diagnostics }`; both report
-problems rather than throwing. Sockets that need a link, cycles and pruned nodes
-are reported by the compile rather than by validation, so compile before handing
-a graph over.
+**Import graph JSON** validates a file before it reaches the canvas. Outside the
+editor, reze-engine exports `validateGraph(graph)` and `compileGraph(graph)` →
+`{ ok, wgsl, diagnostics }`; cycles and missing links are found by the compile.
 
 ### Coming from Blender
 
-Node semantics track **Blender 5.2**, so most of a material transfers socket for
-socket — Principled carries its v2 names (`base_color`, `specular_ior_level`,
-`sheen_weight`), and the math, vector and mix operation sets are Blender's own,
-transcribed from its GLSL with the safeguards intact. reze reads no `.blend`
-file: the conversion is an authoring-time translation you do once.
+Node semantics track **Blender 5.2**: Principled uses v2 socket names, and the
+math (39), vector math (24) and mix (20) operations are Blender's own, safeguards
+included. A node's mode is part of its type — Math set to Power is `math/power`,
+a Color Ramp's interpolation picks the `ramp_*` type.
 
-Two things still differ, and both change values rather than structure.
-**EEVEE Next lighting does not exist here** — no screen-traced GI, no virtual
-shadow maps, no probes — so a preset tuned against probe bounce reads flatter and
-wants re-tuning by eye. And **the view transform is yours to set**: the Tone
-controls in the Post row carry Standard, Filmic and AgX, and a `.blend` rendering
-under one will not match until you match it. Anime and NPR work is often
-Standard, where the colours the graph computes are the colours that land — but
-match the source rather than the convention. AgX is Blender's own
-`AgX_Base_sRGB` cube, so a `.blend` under base AgX transfers exactly; the Looks
-layered on top of it, High Contrast among them, have no equivalent here.
-
-**Two idioms transfer.** A material built on a diffuse closure — Shader to RGB
-into a ramp — maps onto `shader_to_rgb`/`shader_to_rgb_diffuse` directly. A
-material that builds its own term from a light vector, which is how most game NPR
-presets work, maps onto the `light` node: where the original reads a light empty's
-direction through a driver or an attribute, read `light.direction` and the rest of
-the chain transfers unchanged.
-
-**What will not transfer** is anything the graph reads from an image the model
-does not carry: highlight maps, ID masks, face SDFs. Those belong to one
-character. Where the original uses an ID mask to tell one shader which region it
-is shading, use style groups — that is the same information, and it is what the
-built-ins do.
-
-**Node for node:**
-
-| Blender node | reze type |
+| Blender | reze |
 | --- | --- |
-| Principled BSDF | `principled` — eight inputs, see below |
-| Emission | `emission` |
-| Mix Shader, Add Shader | `mix_shader`, `add_shader` — RGB, see below |
-| Shader to RGB | `shader_to_rgb_diffuse` |
-| Image Texture | `texture` — the material's own diffuse map at the mesh UV |
+| Principled BSDF | `principled` |
+| Shader to RGB | `shader_to_rgb` (colour) · `shader_to_rgb_diffuse` (scalar) |
+| Image Texture | `texture` (the material's map) · `tex_image/0…3` (the group's maps) |
 | Texture Coordinate, Geometry | `geometry` |
-| Value, RGB | `value`, `rgb` |
-| Hue/Saturation, Bright/Contrast, Invert | `hue_sat`, `bright_contrast`, `invert` |
-| Color Ramp | `ramp_constant`, `ramp_linear`, `ramp_cardinal`, by interpolation |
-| Math | `math/add`, `math/multiply`, `math/power`, `math/greater_than` |
-| Mix Color | `mix/blend`, `mix/overlay`, `mix/multiply`, `mix/lighten`, `mix/linear_light` |
-| Fresnel, Layer Weight | `fresnel`, `layer_weight/fresnel`, `layer_weight/facing` |
-| Separate XYZ, Vector Math (cross), Mapping, Bump | `separate_xyz`, `vect_cross`, `mapping`, `bump` |
-| Noise, Gradient, Voronoi Texture | `tex_noise`, `tex_gradient`, `tex_voronoi/f1`, `tex_voronoi/color` |
+| Color Ramp | `ramp_constant`, `ramp_linear`, `ramp_cardinal`; `ramp_linear_3` for three stops |
+| Math, Vector Math, Mix Color | `math/…`, `vector_math/…`, `mix/…` |
+| Layer Weight | `layer_weight/fresnel`, `layer_weight/facing` |
+| Mix Shader, Add Shader | `mix_shader`, `add_shader` — on colours |
 
-A node's mode is part of the type string, because it is topology rather than a
-parameter: `Math` set to POWER is `math/power`, a Color Ramp's interpolation
-picks between the three `ramp_*` types, and Layer Weight's chosen output picks
-`layer_weight/fresnel` or `layer_weight/facing`. A few types have no Blender
-source and are worth reaching for — `material_diffuse` (the PMX material's own
-tint; multiply the diffuse texture by it, or untextured materials render white),
-`ramp_constant_aa`, `ramp_tri`, `mix/add_emit` and `math/clamp01`.
+Differences that change values:
 
-**Principled BSDF carries v2 sockets**, so a 4.x or 5.x material maps by name.
+- **Lighting** — no screen-traced GI, virtual shadow maps or probes. `principled`
+  does include indirect specular from the World, so do not add an `environment`
+  node on top of it.
+- **View transform** — match the source under **Post → Tone**. AgX is Blender's
+  base AgX; its Looks (High Contrast and others) have no equivalent.
+- **Principled** — coat, transmission, subsurface, anisotropy and thin film are
+  absent. At `ior` 1.5 a 3.6 material's Specular transfers unchanged.
+  `spec_clamp` is EEVEE's light clamp; `reflection_lod` and `unity_direct` are
+  for converted game stages.
+- **Shading is colour** — `mix_shader` is `mix(a, b, fac)` on `vec3f`. A tree that
+  mixes closures and evaluates afterwards has to be rewritten Shader-to-RGB
+  style: evaluate each branch to a colour, then combine.
+- **Too many nodes** — fold constant subtrees, drop reroutes and frames, flatten
+  node groups. Normal Map, Displacement and AOV Output have no equivalent.
+- **Per-character images** (highlight maps, ID masks, face SDFs) do not transfer.
+  Where an ID mask picks regions, use style groups instead.
 
-| reze socket | Blender 5.2 | Notes |
-| --- | --- | --- |
-| `base_color` | Base Color | direct |
-| `metallic` | Metallic | direct; v2's F82 tint is lost |
-| `roughness` | Roughness | direct |
-| `ior` | IOR | with `specular_ior_level`, gives f0 |
-| `specular_ior_level` | Specular IOR Level | 0–1, 0.5 default |
-| `sheen_weight` | Sheen Weight | direct |
-| `sheen_tint` | Sheen Tint (colour) | take the luminance |
-| `emission_color`, `emission_strength` | Emission | folded into Principled, as in 4.x+ |
-| `normal` | Normal | flipped as above; unlinked means the shading normal |
-| `spec_clamp` | — | reze-only, EEVEE's Light Clamp; leave it off unless a noisy bump throws specular fireflies |
-
-At `ior` 1.5 the v2 chain is an identity onto the old convention, so a 3.6
-material's Specular value transfers unchanged. Everything else bakes into
-`base_color` at authoring time or is dropped: coat, subsurface, transmission,
-alpha, anisotropy, tangent, thin film, diffuse roughness.
-
-**Mixed BSDFs are a rewrite rather than a transcription.** A tree that mixes
-closures and evaluates the result afterwards has to be restructured in the
-Shader-to-RGB style — evaluate each branch to a colour, then combine — and what
-comes out wants checking against a reference render. *Hair* is the built-in to
-read for the idiom.
-
-**A large tree will not fit.** Sixty-four nodes is the ceiling, so a material of
-eighty-seven has to lose twenty-three. Most of the excess is reroutes, frames and
-constant plumbing carrying no runtime meaning: fold constant subtrees, collapse
-chains of literal math into single values, and drop the branches feeding
-Principled inputs that do not exist here. Node groups flatten before porting,
-Float and RGB Curves resample into ramps or a math chain, and Menu Switch
-resolves to the one branch you want. Normal Map, Displacement, Attribute, Object
-Info, Light Path and AOV Output have no equivalent at all.
-
-**Say what did not survive.** A silently degraded material reads as a renderer
-bug to whoever inherits it. Name the Blender node or socket you dropped and
-whether it was baked into another value, approximated or omitted; and where the
-source leans on multi-stop ramps, transformed texture lookups or real closure
-mixing, say up front that the result is a rewrite rather than a port.
-
-**Say what did not survive the port.** A silently degraded material reads as a
-renderer bug to whoever inherits it. Name the Blender node or socket you dropped
-and whether it was baked into another value, approximated or omitted; and if the
-source leans on multi-stop ramps, transformed texture lookups or real closure
-mixing, say up front that it is a rewrite rather than a port.
+Say what did not survive a port: a silently degraded material reads as a
+renderer bug to whoever inherits it.
 
 ### The MMD idiom
 
-Models from this ecosystem carry conventions worth exploiting:
+- **Toon bands** from a constant or anti-aliased constant ramp on the lighting
+  term — two or three bands, not a gradient.
+- **Rim light** — fresnel or facing into emission, kept faint.
+- **Eyes** want their own graph: flatter, more saturated, less lit.
+- **Hair** wants a banded sheen along its rest position; uniform specular reads
+  as plastic.
+- **Stockings** need hashed alpha to sort through layers — the group's role
+  handles it; start from *AG Stockings*.
 
-- **Toon ramps.** MMD models ship with toon textures that quantise lighting into
-  bands. The characteristic cel look comes from a **constant** or **anti-aliased
-  constant** colour ramp driven by the dot product of normal and light — two or
-  three bands, not a gradient. Prefer the anti-aliased variant, which holds up in
-  motion.
-- **Rim light via fresnel.** A fresnel node into an emission, added to the main
-  shader, gives the edge separation that reads as anime lighting. Keep the
-  strength low; rim light is a hint.
-- **Eyes want their own graph.** They are flatter, more saturated and less
-  responsive to scene light than skin, which is why *Eye* exists as a separate
-  built-in and why the eye style group is created automatically.
-- **Hair wants anisotropy.** A gradient along the hair's rest position, driven into
-  a highlight, produces the banded sheen the style expects. Uniform specular on
-  hair reads as plastic.
-- **Stockings and other layered semi-transparent materials** need alpha hashing to
-  sort correctly through layers. The built-in *Stockings* graph and its group role
-  handle this; start from it when you build your own.
+A graph runs for every pixel of its group every frame, so it costs more on a
+costume filling the frame than on the eyes. Check a close-up and a wide shot.
 
-Work one change at a time, checking the viewport after each — an unexpected result
-usually traces back to a link made three edits ago. Check a close-up and a wide
-shot, since a graph tuned tight can turn to noise at distance. And remember that
-cost multiplies: a graph runs for every pixel of every material in its group,
-every frame, so the same graph costs far more on a costume filling the frame than
-on the eyes.
+## 2.5 Drafts, publishing and visibility
 
-## 2.5 Drafts, publishing and versions
+Grades, effects and graphs share one lifecycle.
 
-All three surfaces share one lifecycle, and one rule: **what you keep lives in
-Local, what you don't is gone.**
-
-**Your own drafts save as you work.** Every change goes to local storage as you
-make it, so closing a draft is simply closing it — nothing to confirm, and a
-stray reload costs nothing.
-
-**Everything else is a scratchpad.** A built-in, someone else's published item,
-or a look you build directly on a style group: it is live on screen while you
-work, but nothing is written anywhere until you close. Then you are asked whether
-to keep it. Keep it and it lands in **Local**, free to rename, re-edit, apply to
-other scenes and publish. Decline and it is discarded — including from the scene
-you were previewing it in, which returns to what it was.
-
-That is why there is no "saved in this scene but not in your library" state to
-reason about: a look you want exists in Local, or it does not exist.
-
-**Applying a draft embeds it in your scene by value**,
-so the scene carries the actual grade, shader or graph, which is what lets a
-published scene reproduce exactly on someone else's machine.
-
-**Publishing mints a library item** under your name, visible to everyone. Two
-properties follow:
-
-- **Publishing replaces.** Publishing over your own item overwrites it. There is
-  no version *n+1* to keep the old one alive beside it.
-- **Scenes follow the item.** A scene records `{ id }`, and resolves it to
-  whatever that item is when someone opens the scene. Retune your grade next
-  month and the scene somebody published with it last month retunes with you.
-
-So publishing is a commitment, and a live one. Fixing a preset reaches every
-scene using it, which is the point — and so does breaking one.
-
-Unmodified built-ins travel differently: a scene records them as a bare reference,
-resolved from the application itself. This is why a scene using only built-in
-presets renders correctly with no network and no database at all.
+- **Your drafts save as you work**, locally, in the library's **Local** filter.
+- **Anything else you edit is a scratchpad** — a built-in, someone else's item, a
+  look built on a style group. On close you choose to keep it as a draft or
+  discard it (the scene returns to what it was).
+- **Publishing** makes a draft a library item under your name, **public** or
+  **private**. A private item is visible only to you; a public one cannot be
+  made private again. Names are unique per author per kind.
+- **Publishing over your own item replaces it**, and scenes that reference it by
+  id follow: retune your grade or effect and scenes using it retune too.
+- **Graphs are the exception.** A style group keeps its own copy of the graph, so
+  a scene keeps the look it was published with. Pick the look again to take a
+  retune.
+- **Built-ins** travel as references resolved from the app, so a scene using only
+  built-ins renders with no network or database.
 
 ---
 
 # Appendix A. Control reference
 
-**Assets**
-
-| Control | Accepts | Notes |
-| --- | --- | --- |
-| Model | `.pmx` folder or `.zip` | Multiple models, one per slot |
-| Motion | `.vmd` body motion | Per model |
-| Morph | `.vmd` expression motion | Per model; replaces the motion's own morphs, so the body keeps dancing while the face follows this file |
-| Camera | `.vmd` camera motion | Scene-wide; owns the camera while active |
-| Music | `.mp3` / `.wav` / `.ogg` | Bound to the timeline |
-| MIDI | `.mid` | The track's notes, for effects that read a score |
-| Lyrics | `.lrc` | The track's words and their timings, for effects that draw them |
-| Backdrop | image | Flat, behind the scene |
-| Skybox | equirectangular 2:1 image | 360° dome, display-only |
-
 **Scene**
 
 | Section | Control | Range |
 | --- | --- | --- |
-| Grade | preset, intensity | 0 – 1, remembered per preset |
-| Background | colour, effect | — |
-| Sun | colour, strength / azimuth / elevation | 0 – 6 / 0 – 360° / −90 – 90° |
-| World | colour, strength | 0 – 2 |
-| Bloom | colour, threshold / intensity | 0 – 2 / 0 – 1 (0 = off) |
-| Ground | colour, opacity, shadow, grid lines | 0 – 1 opacity |
-| Camera | distance, target X / Y / Z | 1 – 100 / ±50, −10 – 50, ±50 |
+| Light → World | colour, strength; cast fill colour, strength | 0–2; 0–4 |
+| Light → Sun | shadow, colour, strength, azimuth, elevation | 0–6, 0–360°, 0–90° |
+| Light → Lamps | on, colour, intensity, radius, X/Y/Z | — |
+| Post → Grade | preset, intensity | 0–1, remembered per preset |
+| Post → Tone | Standard / Filmic / AgX, exposure | — |
+| Post → Bloom | intensity, threshold, radius | 0 = off |
+| Environment → Ground | show, colour, opacity, size, height, fade, grid lines | opacity 0–1 |
+| Environment → Stage | PMX folder / GLB file, scale, position | 0.05–10×, ±50 |
+| Camera → Lens | follow + bone, FOV, distance, azimuth, elevation, target | — |
+| Camera → Focus | depth of field, strength | — |
+| Physics | simulate, gravity, ground collision, wind, frequency, direction | — |
 
 **Render**
 
 | Control | Options |
 | --- | --- |
+| Output | Scene · MP4, Green screen · MP4, Alpha · PNG sequence, Alpha · WebM |
 | Aspect | 16:9, 9:16, 2.39:1, 1:1, 4:3 |
-| Quality | 720p, 1080p, 1440p, 4K |
+| Quality | 1080p, 1440p, 4K |
 | Range | `m:ss` – `m:ss`, blank = whole clip |
-| Audio | Music, None |
-| Green screen | on / off (turns the watermark off) |
+| Audio | Music track, None |
 | Watermark | on / off |
-| Outputs | 60 fps H.264 MP4; PNG still |
+| Also | Capture PNG, AE composition script, Share export stats |
 
 **Limits**
 
@@ -1643,90 +881,75 @@ presets renders correctly with no network and no database at all.
 | Description | 500 characters |
 | Tags | 5, of 16 characters each |
 | Credits | 4,000 characters |
-| Published bundle | 200 MB |
-| Thumbnail | 20 MB |
+| Published bundle | 2 GB |
+| Thumbnail | 20 MB — capture at 1080p |
 
 ---
 
 # Appendix B. Finding models, motions and music
 
-- **BOOTH** (`booth.pm`) — pixiv's marketplace, and the centre of gravity for
-  currently-maintained models. Search in Japanese (`MMD モデル`) for the widest
-  results.
+- **BOOTH** (`booth.pm`) — pixiv's marketplace, where most maintained models
+  live. Search `MMD モデル`.
 - **Niconi Solid** (`3d.nicovideo.jp`) — Niconico's model host, including official
   Crypton models.
-- **BowlRoll** (`bowlroll.net`) — a file host. Most motion, and much else, is
-  distributed through it, linked from a Niconico video or a Twitter post and
-  sometimes behind a password given in that post.
-- **Aplaybox** (`aplaybox.com`) — a large Chinese-language model site, widely used
-  by the bilibili MMD and VTuber communities.
-- **DeviantArt** — long the Western hub, and still full of links. Much of it is
-  redistribution of someone else's model, so prefer the original author's page.
+- **BowlRoll** (`bowlroll.net`) — where most motion is hosted, often linked from a
+  Niconico video or a post, sometimes behind a password given there.
+- **Aplaybox** (`aplaybox.com`) — a large Chinese model site used by the bilibili
+  MMD and VTuber communities.
+- **DeviantArt** — the long-time Western hub; prefer the original author's page.
 
-Body and camera motion usually arrive together, per song, from the choreographer;
-search the song title plus `モーション配布`. Motion targets a standard skeleton, so
-it drives any model — where proportions differ you will see foot sliding, and a
-model closer in build to the one it was authored for resolves it.
-
-For music, most dance motion is choreographed to a specific commercial track.
-VOCALOID producers often permit non-commercial derivative use, royalty-free
-libraries such as DOVA-SYNDROME (`dova-s.jp`) are explicit about it, and anything
-you made yourself is yours. Since publishing uploads the audio, treat music as the
-most rights-sensitive asset in the scene.
+Body and camera motion usually come together per song: search the song title plus
+`モーション配布`. For music, VOCALOID producers often allow non-commercial
+derivative use and libraries such as DOVA-SYNDROME (`dova-s.jp`) are explicit
+about it. Publishing uploads the audio, so treat music as the most
+rights-sensitive part of a scene.
 
 ---
 
 # Appendix C. Glossary
 
-**ASC CDL** — American Society of Cinematographers Color Decision List. The
-slope/offset/power colour transform behind Reze Design's grades.
+**ASC CDL** — the slope/offset/power colour transform behind grades.
 
-**借物表 (karimono-hyō)** — "borrowed items list". The credit list naming every
-model, motion, effect and track used in a work, with authors. Required when
-publishing.
+**借物表 (karimono-hyō)** — the credits list naming every model, motion, effect
+and track with its author. Required when publishing.
 
-**Bone** — a joint in a model's skeleton. Motion files address bones by name,
-which is what makes files interchangeable.
+**Bone** — a joint in a model's skeleton; motion files address bones by name.
 
-**Cel shading / toon shading** — quantising lighting into flat bands rather than a
-smooth gradient. The characteristic MMD look.
+**Cel / toon shading** — lighting quantised into flat bands.
 
-**Equirectangular** — a 2:1 panoramic projection, used for skyboxes.
+**Equirectangular** — a 2:1 panorama, used for skyboxes and HDR worlds.
 
-**Grade** — a colour transform applied to the whole finished image.
+**外部親 (external parent)** — MMD's way of hanging one object from another's
+bone; props use it.
 
-**MME (MikuMikuEffect)** — the DirectX 9 HLSL effect plugin for desktop MMD. Its
-counterparts here are scene effects and shader graphs, in WGSL.
+**GLB** — binary glTF, the format stages come in from Blender.
 
-**Morph** — a named blend shape, most often a facial expression, driven by motion
-files alongside bones.
+**Grade** — a colour transform over the whole finished image.
 
-**PMX / PMD** — MMD model formats. PMX is current.
+**MME (MikuMikuEffect)** — desktop MMD's DirectX 9 effect plugin. Its
+counterparts here are scene effects and shader graphs.
 
-**Physics** — simulated hair, cloth and accessory motion, defined in the model and
-simulated at runtime.
+**Morph** — a named blend shape, usually an expression.
 
-**Shader graph** — a node graph defining how a surface responds to light,
-compiled to WGSL.
+**PMX / PMD** — MMD model formats; PMX is current.
 
-**Style group** — a set of materials sharing one shader graph.
+**Shader graph** — a node graph defining how a surface responds to light.
 
-**利用規約 (riyō kiyaku)** — a model's terms of use. Read it before publishing.
+**Style group** — materials sharing one shader graph.
 
-**VMD** — Vocaloid Motion Data. Carries either body motion or camera motion.
+**利用規約 (riyō kiyaku)** — a model's terms of use. Read them before publishing.
 
-**WebGPU** — the browser GPU API this application is built on.
+**VMD** — Vocaloid Motion Data: body, morph or camera motion.
 
-**WGSL** — WebGPU Shading Language. Scene effects are written in it, and
-shader graphs compile to it.
+**WGSL** — the WebGPU shading language; effects are written in it and graphs
+compile to it.
 
 ---
 
 # Appendix D. Shader graph node reference
 
-Every node type the compiler accepts, with its socket names — the exact strings
-a `type` and a `socket` take in the document. Generated from the engine's own
-registry. A graph holds at most 64 nodes and 16 exposed params.
+Every node type the compiler accepts, with its exact socket names, from
+reze-engine's registry (151 types). A graph holds at most 64 nodes and 16 params.
 
 ## Families
 
@@ -1735,25 +958,36 @@ One type id per operation, written `family/operation`.
 | Type | In | Out | Operations |
 | --- | --- | --- | --- |
 | `math/…` | `a` `b` `c` | `value` | `absolute` `sqrt` `inversesqrt` `exponent` `sign` `round` `floor` `ceil` `truncate` `fraction` `sine` `cosine` `tangent` `arcsine` `arccosine` `arctangent` `radians` `degrees` `subtract` `divide` `logarithm` `minimum` `maximum` `less_than` `modulo` `floored_modulo` `snap` `pingpong` `arctan2` `multiply_add` `compare` `smooth_min` `smooth_max` `wrap` `add` `multiply` `power` `greater_than` `clamp01` |
-| `vector_math/…` | `a` `b` `c` `scale` | `vector` | `normalize` `absolute` `floor` `ceil` `fraction` `add` `subtract` `multiply` `divide` `cross` `project` `reflect` `minimum` `maximum` `modulo` `snap` `dot` `distance` `length` `scale` `multiply_add` `faceforward` `refract` `wrap` |
-| `mix/…` | `fac` `a` `b` | `color` | `add` `subtract` `darken` `difference` `exclusion` `screen` `soft_light` `dodge` `burn` `divide` `hue` `saturation` `value` `color` `blend` `overlay` `multiply` `lighten` `linear_light` `add_emit` |
+| `vector_math/…` | `a` `b` `c` `scale` | `vector` | `normalize` `absolute` `floor` `ceil` `fraction` `add` `subtract` `multiply` `divide` `cross` `project` `reflect` `minimum` `maximum` `modulo` `snap` `scale` `multiply_add` `faceforward` `wrap` |
+| `vector_math/…` | `a` `b` `c` `scale` | `value` | `dot` `distance` `length` |
+| `vector_math/…` | `a` `b` `c` `ior` `scale` | `vector` | `refract` |
+| `mix/…` | `a` `b` `fac` | `color` | `add` `subtract` `darken` `difference` `exclusion` `screen` `soft_light` `dodge` `burn` `divide` `hue` `saturation` `value` `color` `blend` `overlay` `multiply` `lighten` `linear_light` |
+| `mix/…` | `a` `b` | `color` | `add_emit` |
 | `vector_transform/…` | `vector` | `vector` | `world_to_camera` `camera_to_world` `point_world_to_camera` |
 | `tex_image/…` | `uv` | `color` `alpha` | `0` `1` `2` `3` |
-| `separate_color/…` | `color` | `h` `s` `v` | `hsv` `hsl` |
-| `combine_color/…` | `h` `s` `v` | `color` | `hsv` `hsl` |
-| `map_range/…` | `value` `from_min` `from_max` `to_min` `to_max` | `value` | `linear` `smoothstep` |
-| `vector_rotate/…` | `vector` `center` `axis` `angle` `rotation` | `vector` | `axis_angle` `euler_xyz` |
-| `layer_weight/…` | `blend` | `value` | `fresnel` `facing` |
-| `tex_voronoi/…` | `vector` `scale` | `value` | `f1` `color` |
+| `separate_color/…` | `color` | `h` `s` `v` | `hsv` |
+| `separate_color/…` | `color` | `h` `s` `l` | `hsl` |
+| `combine_color/…` | `h` `s` `v` | `color` | `hsv` |
+| `combine_color/…` | `h` `l` `s` | `color` | `hsl` |
+| `map_range/…` | `from_max` `from_min` `to_max` `to_min` `value` | `value` | `linear` `smoothstep` |
+| `vector_rotate/…` | `angle` `axis` `center` `rotation` `vector` | `vector` | `axis_angle` `euler_xyz` |
+| `layer_weight/…` | `blend` `normal` | `value` | `fresnel` `facing` |
+| `bump/…` | `height` `normal` `strength` | `vector` | `world` |
+| `tex_voronoi/…` | `scale` `vector` | `value` | `f1` |
+| `tex_voronoi/…` | `scale` `vector` | `color` | `color` |
 
 ## Nodes
 
 | Type | In | Out |
 | --- | --- | --- |
 | `texture` | — | `color` `alpha` |
-| `geometry` | — | `normal` `view` `world_pos` `rest_pos` `uv` `reflection` |
+| `time` | — | `value` |
+| `geometry` | — | `normal` `view` `world_pos` `rest_pos` `uv` `reflection` `footprint` |
 | `light` | — | `direction` `color` `ambient` `shadow` |
 | `head_basis` | — | `forward` `right` `up` |
+| `material_alpha` | — | `value` |
+| `material_specular` | — | `color` |
+| `material_shininess` | — | `value` |
 | `material_diffuse` | — | `color` |
 | `sphere_map` | `base` `strength` | `color` |
 | `rgb_curve` | `color` `fac` `y0` `y1` `y2` `y3` `y4` | `color` |
@@ -1784,6 +1018,7 @@ One type id per operation, written `family/operation`.
 | `add_shader` | `a` `b` | `color` |
 | `mix_shader` | `fac` `a` `b` | `color` |
 | `fresnel` | `ior` | `value` |
+| `environment` | `vector` `roughness` | `color` |
 | `shader_to_rgb_diffuse` | — | `value` |
 | `shader_to_rgb` | — | `color` |
 | `separate_xyz` | `vector` | `x` `y` `z` |
@@ -1792,4 +1027,4 @@ One type id per operation, written `family/operation`.
 | `bump` | `strength` `height` `normal` | `vector` |
 | `tex_noise` | `vector` `scale` `detail` `roughness` `distortion` | `value` |
 | `tex_gradient` | `vector` | `value` |
-| `principled` | `base_color` `metallic` `roughness` `ior` `specular_ior_level` `sheen_weight` `sheen_tint` `emission_color` `emission_strength` `normal` `spec_clamp` | `color` |
+| `principled` | `base_color` `metallic` `roughness` `ior` `specular_ior_level` `sheen_weight` `sheen_tint` `emission_color` `emission_strength` `normal` `spec_clamp` `reflection_lod` `unity_direct` | `color` |
