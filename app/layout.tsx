@@ -23,16 +23,20 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const TITLE = "Reze Design - MMD design, rendering and sharing"
 const DESCRIPTION =
-  "An MMD design, rendering and sharing platform. Compose a scene in the browser — node-graph material shaders compiled to WGSL, colour grading, background effects, lighting and framing — then export video or publish a live 3D link. Powered by reze-engine on WebGPU.";
+  "MMD design, rendering and sharing in the browser. Compose a scene — node-graph material shaders compiled to WGSL, colour grading, background effects, lighting and framing — then export video or publish a live 3D link. Powered by reze-engine on WebGPU.";
 
 export const metadata: Metadata = {
-  title: "Reze Design",
+  // Resolves relative preview-image paths to absolute URLs, which every crawler
+  // requires.
+  metadataBase: new URL("https://reze.design"),
+  title: TITLE,
   description: DESCRIPTION,
   // Scenes are shared as links, so the site's own card should say what the link
   // leads to. Published scenes override this with their own title and blurb.
-  openGraph: { title: "Reze Design", description: DESCRIPTION, type: "website" },
-  twitter: { card: "summary_large_image", title: "Reze Design", description: DESCRIPTION },
+  openGraph: { title: TITLE, description: DESCRIPTION, type: "website", siteName: "Reze Design" },
+  twitter: { card: "summary_large_image", title: TITLE, description: DESCRIPTION },
   // The app translates itself — see lib/i18n. A machine translator on top of it
   // rewrites text nodes React is holding references to, and React's next
   // deletion walks into a node that is no longer its child: "Failed to execute

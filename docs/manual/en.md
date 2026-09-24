@@ -2,7 +2,7 @@
 
 **English** · [简体中文](https://github.com/AmyangXYZ/reze-design/blob/main/docs/manual/zh.md)
 
-Reze Design is an MMD scene editor in the browser, on its own WebGPU engine
+Reze Design is MMD design, rendering and sharing in the browser, on its own WebGPU engine
 ([reze-engine](https://github.com/AmyangXYZ/reze-engine)). It reads the models
 and motions the MMD community has made since 2008 and turns them into a video
 file or a live page anyone can open and orbit.

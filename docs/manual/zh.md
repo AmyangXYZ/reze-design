@@ -2,7 +2,7 @@
 
 [English](https://github.com/AmyangXYZ/reze-design/blob/main/docs/manual/en.md) · **简体中文**
 
-Reze Design 是一个运行在浏览器里的 MMD 场景编辑器，基于自研的 WebGPU 引擎
+Reze Design 在浏览器中完成 MMD 设计、渲染和分享，基于自研的 WebGPU 引擎
 [reze-engine](https://github.com/AmyangXYZ/reze-engine)。它读取 MMD 社区自 2008
 年以来制作的模型和动作，输出为视频文件，或一个任何人都能打开、旋转视角观看的实时页面。
 

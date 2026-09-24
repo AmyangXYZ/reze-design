@@ -1,6 +1,6 @@
 # Reze Design
 
-**The authentic MMD experience, reforged in WebGPU and TypeScript.** Design, render and share MMD scenes in the browser — models, motions, camera work, MME effects — with nothing to install and a permanent link anyone can open.
+**The authentic MMD experience, reforged in WebGPU and TypeScript.** MMD design, rendering and sharing in the browser — models, motions, camera work, MME effects — with nothing to install and a permanent link anyone can open.
 
 **→ [reze.design](https://reze.design)**
 
@@ -27,7 +27,7 @@ One piece of the **Reze MMD family**, covering the whole MMD workflow on the web
 |                                                         |                                                                                |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | [reze-engine](https://github.com/AmyangXYZ/reze-engine) | The WebGPU foundation — anime-character rendering and physics, dependency-free |
-| **reze-design**                                         | This repo — scene design, rendering and sharing                                |
+| **reze-design**                                         | This repo — MMD design, rendering and sharing                                  |
 | [reze-studio](https://github.com/AmyangXYZ/reze-studio) | Animation editing on a professional timeline and curve editor                  |
 | [MiKaPo](https://github.com/AmyangXYZ/MiKaPo)           | Real-time motion capture in the browser, exporting straight to VMD             |
 | [reze-rig](https://github.com/AmyangXYZ/reze-rig)       | Retarget FBX animations to MMD VMD format, Mixamo and Unity tested             |
