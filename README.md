@@ -1,6 +1,6 @@
 # Reze Design
 
-**The authentic MMD experience, reforged in WebGPU and TypeScript.** MMD design, rendering and sharing in the browser — models, motions, camera work, MME effects — with nothing to install and a permanent link anyone can open.
+**The authentic MMD experience, reforged in WebGPU and TypeScript.** MMD design, rendering and sharing in the browser — models, motions, camera, stage, effects — with nothing to install and a permanent link anyone can open.
 
 **→ [reze.design](https://reze.design)**
 
