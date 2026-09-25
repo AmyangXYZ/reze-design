@@ -2,9 +2,9 @@
 
 **The authentic MMD experience, reforged in WebGPU and TypeScript.** MMD design, rendering and sharing in the browser — models, motions, camera, stage, effects — with nothing to install and a permanent link anyone can open.
 
-**→ [reze.design](https://reze.design)**
+**→ [reze.design](https://reze.design)** · **▶ [Watch the 1.0 teaser](https://youtu.be/jZdjWSM0bkI)**
 
-![Reze Design — several characters in one scene, exported from vertical 9:16 to cinemascope](./showcase.jpg)
+[![Reze Design — several characters in one scene, exported from vertical 9:16 to cinemascope](./showcase.jpg)](https://youtu.be/jZdjWSM0bkI)
 
 ## Features
 
