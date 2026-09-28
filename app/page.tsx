@@ -3903,7 +3903,9 @@ export default function Lab() {
     async (base: AppliedEffect[], subject: AppliedEffect, wgsl: string) => {
       const engine = engineRef.current
       if (!engine) return { ok: false, diagnostics: [t.lab.engineNotReady] }
-      const next = mergeEffect(base, { ...subject, wgsl })
+      // Stamped BEFORE installing, so the dials the install reports are filed
+      // under the uid the row will carry — a draft opened fresh has none yet.
+      const next = stampEffectUids(mergeEffect(base, { ...subject, wgsl }))
       const rs = await engine.setEffects(next.map((e) => ({ wgsl: e.wgsl, params: effectParams(e.wgsl, e.params) })))
       const at = next.findIndex((e) => e.id === subject.id)
       // The subject's own result. Another layer failing is not this edit's

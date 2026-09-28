@@ -11151,6 +11151,16 @@
       }
      },
      {
+      "id": "pale",
+      "type": "hue_sat",
+      "inputs": {
+       "hue": 0.5,
+       "saturation": 0.72,
+       "value": 1.06,
+       "fac": 1.0
+      }
+     },
+     {
       "id": "geo",
       "type": "geometry"
      },
@@ -11279,6 +11289,35 @@
       "inputs": {
        "scale": 0.3183098861837907
       }
+     },
+     {
+      "id": "amb_sep",
+      "type": "separate_color"
+     },
+     {
+      "id": "amb_b",
+      "type": "math/multiply",
+      "inputs": {
+       "b": 0.0722
+      }
+     },
+     {
+      "id": "amb_g",
+      "type": "math/multiply_add",
+      "inputs": {
+       "b": 0.7152
+      }
+     },
+     {
+      "id": "amb_l",
+      "type": "math/multiply_add",
+      "inputs": {
+       "b": 0.2126
+      }
+     },
+     {
+      "id": "amb_grey",
+      "type": "combine_color"
      },
      {
       "id": "ibl",
@@ -11445,6 +11484,16 @@
       "type": "vector_math/scale",
       "inputs": {
        "scale": 1.4
+      }
+     },
+     {
+      "id": "coat_w",
+      "type": "hue_sat",
+      "inputs": {
+       "hue": 0.5,
+       "saturation": 0.0,
+       "value": 1.0,
+       "fac": 1.0
       }
      },
      {
@@ -11749,6 +11798,96 @@
        "socket": "ambient"
       },
       "to": {
+       "node": "amb_sep",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "amb_sep",
+       "socket": "b"
+      },
+      "to": {
+       "node": "amb_b",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "amb_sep",
+       "socket": "g"
+      },
+      "to": {
+       "node": "amb_g",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "amb_b",
+       "socket": "value"
+      },
+      "to": {
+       "node": "amb_g",
+       "socket": "c"
+      }
+     },
+     {
+      "from": {
+       "node": "amb_sep",
+       "socket": "r"
+      },
+      "to": {
+       "node": "amb_l",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "amb_g",
+       "socket": "value"
+      },
+      "to": {
+       "node": "amb_l",
+       "socket": "c"
+      }
+     },
+     {
+      "from": {
+       "node": "amb_l",
+       "socket": "value"
+      },
+      "to": {
+       "node": "amb_grey",
+       "socket": "r"
+      }
+     },
+     {
+      "from": {
+       "node": "amb_l",
+       "socket": "value"
+      },
+      "to": {
+       "node": "amb_grey",
+       "socket": "g"
+      }
+     },
+     {
+      "from": {
+       "node": "amb_l",
+       "socket": "value"
+      },
+      "to": {
+       "node": "amb_grey",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "amb_grey",
+       "socket": "color"
+      },
+      "to": {
        "node": "ibl",
        "socket": "a"
       }
@@ -11999,6 +12138,16 @@
        "socket": "color"
       },
       "to": {
+       "node": "pale",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "pale",
+       "socket": "color"
+      },
+      "to": {
        "node": "diff",
        "socket": "a"
       }
@@ -12059,6 +12208,16 @@
        "socket": "vector"
       },
       "to": {
+       "node": "coat_w",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "coat_w",
+       "socket": "color"
+      },
+      "to": {
        "node": "coated",
        "socket": "b"
       }
@@ -12114,6 +12273,16 @@
       "id": "albedo",
       "type": "mix/multiply",
       "inputs": {
+       "fac": 1.0
+      }
+     },
+     {
+      "id": "pale",
+      "type": "hue_sat",
+      "inputs": {
+       "hue": 0.5,
+       "saturation": 0.72,
+       "value": 1.06,
        "fac": 1.0
       }
      },
@@ -12246,6 +12415,35 @@
       "inputs": {
        "scale": 0.3183098861837907
       }
+     },
+     {
+      "id": "amb_sep",
+      "type": "separate_color"
+     },
+     {
+      "id": "amb_b",
+      "type": "math/multiply",
+      "inputs": {
+       "b": 0.0722
+      }
+     },
+     {
+      "id": "amb_g",
+      "type": "math/multiply_add",
+      "inputs": {
+       "b": 0.7152
+      }
+     },
+     {
+      "id": "amb_l",
+      "type": "math/multiply_add",
+      "inputs": {
+       "b": 0.2126
+      }
+     },
+     {
+      "id": "amb_grey",
+      "type": "combine_color"
      },
      {
       "id": "ibl",
@@ -12412,6 +12610,16 @@
       "type": "vector_math/scale",
       "inputs": {
        "scale": 1.0
+      }
+     },
+     {
+      "id": "coat_w",
+      "type": "hue_sat",
+      "inputs": {
+       "hue": 0.5,
+       "saturation": 0.0,
+       "value": 1.0,
+       "fac": 1.0
       }
      },
      {
@@ -12716,6 +12924,96 @@
        "socket": "ambient"
       },
       "to": {
+       "node": "amb_sep",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "amb_sep",
+       "socket": "b"
+      },
+      "to": {
+       "node": "amb_b",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "amb_sep",
+       "socket": "g"
+      },
+      "to": {
+       "node": "amb_g",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "amb_b",
+       "socket": "value"
+      },
+      "to": {
+       "node": "amb_g",
+       "socket": "c"
+      }
+     },
+     {
+      "from": {
+       "node": "amb_sep",
+       "socket": "r"
+      },
+      "to": {
+       "node": "amb_l",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "amb_g",
+       "socket": "value"
+      },
+      "to": {
+       "node": "amb_l",
+       "socket": "c"
+      }
+     },
+     {
+      "from": {
+       "node": "amb_l",
+       "socket": "value"
+      },
+      "to": {
+       "node": "amb_grey",
+       "socket": "r"
+      }
+     },
+     {
+      "from": {
+       "node": "amb_l",
+       "socket": "value"
+      },
+      "to": {
+       "node": "amb_grey",
+       "socket": "g"
+      }
+     },
+     {
+      "from": {
+       "node": "amb_l",
+       "socket": "value"
+      },
+      "to": {
+       "node": "amb_grey",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "amb_grey",
+       "socket": "color"
+      },
+      "to": {
        "node": "ibl",
        "socket": "a"
       }
@@ -12966,6 +13264,16 @@
        "socket": "color"
       },
       "to": {
+       "node": "pale",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "pale",
+       "socket": "color"
+      },
+      "to": {
        "node": "diff",
        "socket": "a"
       }
@@ -13024,6 +13332,16 @@
       "from": {
        "node": "coat_k",
        "socket": "vector"
+      },
+      "to": {
+       "node": "coat_w",
+       "socket": "color"
+      }
+     },
+     {
+      "from": {
+       "node": "coat_w",
+       "socket": "color"
       },
       "to": {
        "node": "coated",

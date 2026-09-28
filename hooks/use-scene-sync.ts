@@ -676,12 +676,22 @@ export function useSceneSync({
      * fresh instances, and a fresh instance is unscheduled — so without this a
      * recompile in the shader editor left every strip on the timeline pointing
      * at nothing, and the effects played through the whole scene.
+     *
+     * And what each one exposes, for the same reason: the sync pass is the other
+     * place dials are reported from, and taking over from it without reporting
+     * left an effect made in the editor — every local draft — with no sliders
+     * until it was published and applied the ordinary way.
      */
-    adoptInstall: (list: AppliedEffect[], results: { ok: boolean }[]) => {
+    adoptInstall: (list: AppliedEffect[], results: { ok: boolean; params: EffectSurface["params"]; readsCast: boolean }[]) => {
       lastWgsl.current = list.map((e) => e.wgsl).join("\0")
       engineIndex.current = installedIndex(results)
       const engine = engineRef.current
       if (engine) applySchedules(engine, list, engineIndex.current)
+      onEffectSurface?.(
+        Object.fromEntries(
+          results.map((r, i) => [list[i]?.uid ?? String(i), { params: r.params, readsCast: r.readsCast }] as const),
+        ) as Record<string, EffectSurface>,
+      )
     },
   }
 }
