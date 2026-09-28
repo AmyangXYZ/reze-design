@@ -41,7 +41,7 @@ const en = {
     signIn: "Sign in",
     signOut: "Sign out",
     signInTitle: "Sign in to Reze Design",
-    signInBlurb: "Publish your looks and scenes, and get a permanent link to share.",
+    signInBlurb: "Publish your shaders and scenes, and get a permanent link to share.",
     continueWith: (provider: string) => `Continue with ${provider}`,
     notConfigured: "Sign-in isn't configured on this deployment.",
     working: "Working…",
@@ -73,6 +73,11 @@ const en = {
     // what you gave theirs. Two different sets, so two different rows.
     youLiked: "liked by you",
     handleFixed: "Your name is set and can't be changed.",
+  },
+  nsfw: {
+    label: "NSFW",
+    toggle: "NSFW (18+)",
+    publish: "NSFW (18+)",
   },
   gallery: {
     title: "Gallery",
@@ -1046,7 +1051,7 @@ const zh: Dictionary = {
     signIn: "登录",
     signOut: "退出登录",
     signInTitle: "登录 Reze Design",
-    signInBlurb: "发布你的调色与场景，并获得可分享的永久链接。",
+    signInBlurb: "发布你的着色器与场景，并获得可分享的永久链接。",
     continueWith: (provider: string) => `使用 ${provider} 继续`,
     notConfigured: "此部署未配置登录方式。",
     working: "处理中…",
@@ -1076,6 +1081,11 @@ const zh: Dictionary = {
     likesEarned: "获赞",
     youLiked: "我赞过的",
     handleFixed: "用户名已设置，无法更改。",
+  },
+  nsfw: {
+    label: "NSFW",
+    toggle: "NSFW (18+)",
+    publish: "NSFW (18+)",
   },
   gallery: {
     title: "画廊",

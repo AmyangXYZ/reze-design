@@ -2135,7 +2135,12 @@ export default function Lab() {
    *  and 借物表 — so the publish dialog opens on the author's own words rather
    *  than a blank form they have to write twice. */
   const [updatesPoster, setUpdatesPoster] = useState<string | null>(null)
-  const [updatesMeta, setUpdatesMeta] = useState<{ description: string; tags: string[]; credits: string } | null>(null)
+  const [updatesMeta, setUpdatesMeta] = useState<{
+    description: string
+    tags: string[]
+    credits: string
+    nsfw: boolean
+  } | null>(null)
   const [forkPending, setForkPending] = useState(forkOnBoot !== null)
   const [scene, setScene] = useState(() => (forkOnBoot ? EMPTY_SCENE : hydrateScene(DEFAULT_SCENE)))
   const [sceneName, setSceneName] = useState(scene.state.name)
@@ -6248,6 +6253,7 @@ export default function Lab() {
             description?: string | null
             tags?: string[] | null
             credits?: string | null
+            nsfw?: boolean
           }
         }
         if (handoff.edit) {
@@ -6256,6 +6262,7 @@ export default function Lab() {
             description: item.description ?? "",
             tags: item.tags ?? [],
             credits: item.credits ?? "",
+            nsfw: item.nsfw === true,
           })
         }
         const resolve = await resolveSceneRefs(item.payload.doc)
@@ -7516,7 +7523,11 @@ export default function Lab() {
           updatesId={updatesSceneId}
           updatesPoster={updatesPoster}
           updatesMeta={updatesMeta}
-          onPublished={setUpdatesSceneId}
+          onPublished={(id, meta) => {
+            setUpdatesSceneId(id)
+            setUpdatesMeta(meta)
+            if (meta.poster) setUpdatesPoster(meta.poster)
+          }}
           // The scene is up; the gallery is where it landed. Closing first, or
           // the browse surface opens underneath a dialog still sitting on it.
           onGallery={() => {

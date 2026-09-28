@@ -32,10 +32,11 @@ import { useReport } from "@/hooks/use-report"
 import { useSession } from "@/lib/auth-client"
 import { useI18n, useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
+import { SceneCover } from "@/components/nsfw"
 
 type Published = { id: string; name: string; description: string; likeCount: number; createdAt: string }
 
-export type ProfileScene = Published & { viewCount: number; poster: string | null; pinned: boolean }
+export type ProfileScene = Published & { viewCount: number; poster: string | null; pinned: boolean; nsfw: boolean }
 export type ProfileEffect = Published & { wgsl: string }
 export type ProfileGraph = Published & { graph: ShaderGraph }
 export type ProfileGrade = Published & { spec: GradeSpec }
@@ -83,11 +84,15 @@ export function Profile({
   const likes = [...scenes, ...effects, ...graphs, ...grades].reduce((n, item) => n + item.likeCount, 0)
 
   // The banner: the scene the author pinned, else the one watched most among
-  // those with a picture to show.
+  // those with a picture to show and no flag on it. A flagged pin is still the
+  // banner — the author chose it — and blurs like any flagged cover.
   const hero = useMemo(
     () =>
       scenes.find((s) => s.pinned) ??
-      scenes.reduce<ProfileScene | null>((best, s) => (s.poster && (!best || s.viewCount > best.viewCount) ? s : best), null),
+      scenes.reduce<ProfileScene | null>(
+        (best, s) => (s.poster && !s.nsfw && (!best || s.viewCount > best.viewCount) ? s : best),
+        null,
+      ),
     [scenes],
   )
   // The wall repeats nothing the banner already shows — unless the banner is all there is.
@@ -342,8 +347,7 @@ function Hero({ handle, scene, ...rest }: { handle: string; scene: ProfileScene 
       className="group relative block aspect-video overflow-hidden rounded-surface bg-zinc-900 outline-none focus-visible:ring-2 focus-visible:ring-blue-400 sm:aspect-[21/9]"
     >
       {scene.poster ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={scene.poster} alt="" className="absolute inset-0 h-full w-full object-cover" />
+        <SceneCover src={scene.poster} nsfw={scene.nsfw} className="absolute inset-0 h-full w-full" />
       ) : (
         <span className="absolute inset-0 flex items-center justify-center text-muted-foreground" aria-hidden>
           <WandSparkles className="size-6" />
@@ -395,8 +399,7 @@ function SceneCard({ handle, scene, ...rest }: { handle: string; scene: ProfileS
     >
       <div className="relative aspect-video overflow-hidden rounded-surface bg-zinc-900 group-focus-visible:ring-2 group-focus-visible:ring-blue-400">
         {scene.poster ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={scene.poster} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
+          <SceneCover src={scene.poster} nsfw={scene.nsfw} loading="lazy" className="absolute inset-0 h-full w-full" />
         ) : (
           <span className="absolute inset-0 flex items-center justify-center text-muted-foreground" aria-hidden>
             <WandSparkles className="size-5" />

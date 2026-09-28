@@ -12,6 +12,7 @@
 
 import { sql } from "drizzle-orm"
 import {
+  boolean,
   date,
   index,
   integer,
@@ -66,6 +67,11 @@ export const libraryItems = pgTable(
      *  than silently breaking every scene that references one. */
     ownerId: text("owner_id").references(() => user.id, { onDelete: "set null" }),
     visibility: text("visibility").$type<Visibility>().notNull().default("private"),
+    /** Scenes only: the author says this is not for every audience. Listings
+     *  blur its cover until the viewer opts in, its link preview carries no
+     *  cover, and its page asks before it loads. Server-only like visibility —
+     *  it is about how the scene is SHOWN, so it never rides in a document. */
+    nsfw: boolean("nsfw").notNull().default(false),
     likeCount: integer("like_count").notNull().default(0),
     /** Scene page loads. Cheap counter — a raw event table can come later if the
      *  question ever gets more specific than "how many". */

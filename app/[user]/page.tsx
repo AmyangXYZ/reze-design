@@ -63,6 +63,7 @@ const load = cache(async (handle: string) => {
         likeCount: items.likeCount,
         viewCount: items.viewCount,
         posterKey: items.posterKey,
+        nsfw: items.nsfw,
         featuredAt: items.featuredAt,
         createdAt: items.createdAt,
       })
@@ -110,7 +111,9 @@ export async function generateMetadata({ params }: { params: Promise<{ user: str
   if (!profile) return { title: "Not found · Reze Design" }
   const title = `@${profile.handle} · Reze Design`
   const description = `${profile.scenes.length} scenes on Reze Design.`
-  const poster = profile.scenes.find((s) => s.poster)?.poster
+  // Never a flagged cover: a link preview is shown to whoever the link is pasted
+  // in front of, and none of them opted in.
+  const poster = profile.scenes.find((s) => s.poster && !s.nsfw)?.poster
   const images = poster ? [poster] : undefined
   return {
     title,

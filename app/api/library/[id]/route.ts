@@ -51,6 +51,7 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
       // correct it gets back everything they wrote rather than a blank form.
       posterKey: schema.libraryItems.posterKey,
       credits: schema.libraryItems.credits,
+      nsfw: schema.libraryItems.nsfw,
     })
     .from(schema.libraryItems)
     .where(eq(schema.libraryItems.id, id))

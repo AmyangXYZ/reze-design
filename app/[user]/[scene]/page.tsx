@@ -30,6 +30,7 @@ async function load(id: string) {
       createdAt: schema.libraryItems.createdAt,
       visibility: schema.libraryItems.visibility,
       posterKey: schema.libraryItems.posterKey,
+      nsfw: schema.libraryItems.nsfw,
       ownerId: schema.libraryItems.ownerId,
       kind: schema.libraryItems.kind,
       handle: user.username,
@@ -55,8 +56,9 @@ export async function generateMetadata({ params }: { params: Promise<{ user: str
   if (!row) return { title: "Scene not found · Reze Design" }
   const title = `${row.name} · Reze Design`
   const description = row.description || `A 3D scene by ${row.handle ?? row.author}.`
-  // The link preview is the cover the author chose at publish.
-  const images = row.posterKey ? [`${process.env.R2_PUBLIC_BASE_URL}/${row.posterKey}`] : undefined
+  // The link preview is the cover the author chose at publish — except on a
+  // flagged scene, whose preview is shown to whoever the link lands in front of.
+  const images = row.posterKey && !row.nsfw ? [`${process.env.R2_PUBLIC_BASE_URL}/${row.posterKey}`] : undefined
   return {
     title,
     description,

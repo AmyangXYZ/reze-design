@@ -191,6 +191,9 @@ export async function GET(request: Request) {
         posterKey: schema.libraryItems.posterKey,
         createdAt: schema.libraryItems.createdAt,
         visibility: schema.libraryItems.visibility,
+        // Sent, not filtered on: a flagged scene is still listed, with its cover
+        // blurred until the viewer asks to see it.
+        nsfw: schema.libraryItems.nsfw,
         // Selected so the cursor can be stated in the same terms the rows were
         // ranked by. Stripped from the response below — it is paging machinery,
         // not something a card shows.
@@ -314,7 +317,7 @@ export async function POST(request: Request) {
 
   // No `changelog`: it described what a new VERSION changed, and there are no
   // versions to describe. A client still sending one is simply ignored.
-  const { id, kind, name, description, tags, payload, credits, bundleKey, bundleBytes, posterKey, forkedFromId, uses, visibility } =
+  const { id, kind, name, description, tags, payload, credits, bundleKey, bundleBytes, posterKey, forkedFromId, uses, visibility, nsfw } =
     (body ?? {}) as Record<string, unknown>
   // Public unless asked otherwise: publishing is a public act, and the dialog
   // says so. A client sending nothing gets what it always got.
@@ -423,6 +426,9 @@ export async function POST(request: Request) {
         ? { bundleKey: hasBundle ? (bundleKey as string) : null, bundleBytes: typeof bundleBytes === "number" ? bundleBytes : 0 }
         : {}),
       ...(hasPoster || !replacing ? { posterKey: hasPoster ? (posterKey as string) : null } : {}),
+      // The author's to set and to clear, on every publish that says; one that
+      // does not (an older client) leaves the flag as it was.
+      ...(typeof nsfw === "boolean" || !replacing ? { nsfw: nsfw === true } : {}),
     }
     const [scene] = replacing
       ? await db
