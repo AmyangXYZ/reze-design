@@ -3017,9 +3017,20 @@ export default function Lab() {
         const next = { ...(key === "fill" ? NO_FILL : undefined), ...s2[key], ...part }
         // A hand on the sun, the world or the fill makes it the scene's own: the
         // stage that set it no longer puts back the one it replaced.
+        //
+        // Except the world's STRENGTH alone. The stage's own ambient (its baked
+        // sky, settings.stageAmbient) is lit only while the world is still the
+        // stage's, so dropping the claim on a strength nudge switched that sky
+        // off - the whole scene's light changed, and dragging the dial back to 1
+        // could not bring it back. Dimming the stage's sky is still its sky; a
+        // new colour is a new world.
+        const strengthOnly = key === "world" && Object.keys(part).every((k) => k === "strength")
         return {
           ...s2,
-          [key]: key === "sun" || key === "world" || key === "fill" ? sceneOwned(next as { stage?: unknown }) : next,
+          [key]:
+            (key === "sun" || key === "world" || key === "fill") && !strengthOnly
+              ? sceneOwned(next as { stage?: unknown })
+              : next,
         }
       }),
     [],

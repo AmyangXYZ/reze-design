@@ -35,10 +35,10 @@
      },
      {
       "id": "toon",
-      "type": "ramp_constant",
+      "type": "ramp_cardinal",
       "inputs": {
-       "pos0": 0,
-       "pos1": 0.2966
+       "pos0": 0.2466,
+       "pos1": 0.3466
       }
      },
      {
@@ -732,6 +732,47 @@
       "inputs": {
        "fac": 1.0
       }
+     },
+     {
+      "id": "eye_hb",
+      "type": "head_basis"
+     },
+     {
+      "id": "eye_lt",
+      "type": "light"
+     },
+     {
+      "id": "eye_fl",
+      "type": "vector_math/dot"
+     },
+     {
+      "id": "eye_half",
+      "type": "math/multiply_add",
+      "inputs": {
+       "b": 0.5,
+       "c": 0.5
+      }
+     },
+     {
+      "id": "eye_lvl",
+      "type": "map_range",
+      "inputs": {
+       "from_min": 0.0,
+       "from_max": 1.0,
+       "to_min": 0.2,
+       "to_max": 1.0
+      }
+     },
+     {
+      "id": "eye_str",
+      "type": "math/multiply",
+      "inputs": {
+       "b": 1.5
+      }
+     },
+     {
+      "id": "eye_sh",
+      "type": "math/multiply"
      }
     ],
     "links": [
@@ -794,6 +835,86 @@
        "node": "tex_base",
        "socket": "b"
       }
+     },
+     {
+      "from": {
+       "node": "eye_hb",
+       "socket": "forward"
+      },
+      "to": {
+       "node": "eye_fl",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "eye_lt",
+       "socket": "direction"
+      },
+      "to": {
+       "node": "eye_fl",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "eye_fl",
+       "socket": "value"
+      },
+      "to": {
+       "node": "eye_half",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "eye_half",
+       "socket": "value"
+      },
+      "to": {
+       "node": "eye_sh",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "eye_lvl",
+       "socket": "value"
+      },
+      "to": {
+       "node": "eye_str",
+       "socket": "a"
+      }
+     },
+     {
+      "from": {
+       "node": "eye_str",
+       "socket": "value"
+      },
+      "to": {
+       "node": "emission",
+       "socket": "strength"
+      }
+     },
+     {
+      "from": {
+       "node": "eye_lt",
+       "socket": "shadow"
+      },
+      "to": {
+       "node": "eye_sh",
+       "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "eye_sh",
+       "socket": "value"
+      },
+      "to": {
+       "node": "eye_lvl",
+       "socket": "value"
+      }
      }
     ],
     "output": {
@@ -839,9 +960,10 @@
      },
      {
       "id": "toon",
-      "type": "ramp_constant_aa",
+      "type": "ramp_cardinal",
       "inputs": {
-       "edge": 0.2966
+       "pos0": 0.2466,
+       "pos1": 0.3466
       }
      },
      {
@@ -1630,16 +1752,16 @@
      },
      {
       "id": "ramp_008",
-      "type": "ramp_constant",
+      "type": "ramp_cardinal",
       "inputs": {
-       "pos0": 0,
+       "pos0": 0.2466,
        "color0": [
         0,
         0,
         0,
         1
        ],
-       "pos1": 0.2966,
+       "pos1": 0.3466,
        "color1": [
         1,
         1,
@@ -2083,9 +2205,10 @@
      },
      {
       "id": "ramp_008",
-      "type": "ramp_constant_aa",
+      "type": "ramp_cardinal",
       "inputs": {
-       "edge": 0.2966
+       "pos0": 0.2466,
+       "pos1": 0.3466
       }
      },
      {
@@ -2479,9 +2602,10 @@
      },
      {
       "id": "ramp_008",
-      "type": "ramp_constant_aa",
+      "type": "ramp_cardinal",
       "inputs": {
-       "edge": 0.2966
+       "pos0": 0.2466,
+       "pos1": 0.3466
       }
      },
      {
@@ -2909,9 +3033,10 @@
      },
      {
       "id": "ramp_008",
-      "type": "ramp_constant_aa",
+      "type": "ramp_cardinal",
       "inputs": {
-       "edge": 0.2966
+       "pos0": 0.2466,
+       "pos1": 0.3466
       }
      },
      {

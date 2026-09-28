@@ -466,6 +466,18 @@ export function useSceneSync({
     for (const id of castIds) engine.setModelFill(id, fill)
   }, [engineRef, ready, castIds, settings.fill])
 
+  // ── The cast takes the sky flat ──
+  //
+  // Its colour and brightness, not its shape: a stage's HDRI taken at each
+  // normal shaded faces with soft realistic gradients the anime ramps never
+  // drew. Only the cast — a stage keeps its directional sky. A flat World is
+  // its own average, so without an HDRI nothing changes.
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine || !ready) return
+    for (const id of castIds) engine.setModelFlatSky(id, true)
+  }, [engineRef, ready, castIds])
+
   // ── A stage's own sun ──
   //
   // The colour and strength the stage was lit by, in place of the scene's sun,
