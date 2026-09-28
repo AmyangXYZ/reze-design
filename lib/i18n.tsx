@@ -25,7 +25,7 @@ const en = {
     style: "Rendering style",
     // One locale's name each. The palette's KEYWORDS carry both languages, so
     // searching either still finds it — the row itself does not have to.
-    styles: { ag: "Aether Gazer", wuwa: "Wuthering Waves", zzz: "Zenless Zone Zero", hsr: "Honkai: Star Rail" },
+    styles: { ag: "Aether Gazer", wuwa: "Wuthering Waves", zzz: "Zenless Zone Zero", hsr: "Honkai: Star Rail", doll: "Doll" },
   },
   // Export / import / reset all act on the same slice: the scene's look, not its files.
   sceneFile: {
@@ -967,6 +967,7 @@ const en = {
     add_shader: "Add Shader",
     mix_shader: "Mix Shader",
     shader_to_rgb_diffuse: "Shader to RGB · Diffuse",
+    subsurface: "Subsurface Scattering",
     fresnel: "Fresnel",
     "layer_weight/fresnel": "Layer Weight · Fresnel",
     "layer_weight/facing": "Layer Weight · Facing",
@@ -1030,7 +1031,7 @@ const zh: Dictionary = {
     renameScene: "双击重命名",
     language: "语言",
     style: "渲染风格",
-    styles: { ag: "深空之眼", wuwa: "鸣潮", zzz: "绝区零", hsr: "崩坏：星穹铁道" },
+    styles: { ag: "深空之眼", wuwa: "鸣潮", zzz: "绝区零", hsr: "崩坏：星穹铁道", doll: "娃娃" },
   },
   sceneFile: {
     label: "场景",
@@ -1853,6 +1854,7 @@ const zh: Dictionary = {
     add_shader: "相加着色器",
     mix_shader: "混合着色器",
     shader_to_rgb_diffuse: "着色器转 RGB · 漫射",
+    subsurface: "次表面散射",
     fresnel: "菲涅尔",
     "layer_weight/fresnel": "层权重 · 菲涅尔",
     "layer_weight/facing": "层权重 · 朝向",

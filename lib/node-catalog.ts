@@ -193,6 +193,7 @@ export const NODE_CATALOG: CatalogGroup[] = [
       { type: "mix_shader", label: "Mix Shader" },
       { type: "shader_to_rgb", label: "Shader to RGB" },
       { type: "shader_to_rgb_diffuse", label: "Shader to RGB · Diffuse" },
+      { type: "subsurface", label: "Subsurface Scattering" },
       { type: "fresnel", label: "Fresnel" },
       { type: "environment", label: "Environment" },
       { type: "layer_weight/fresnel", label: "Layer Weight · Fresnel" },

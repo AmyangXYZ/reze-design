@@ -1488,6 +1488,9 @@ function restored(base: Scene): Scene {
             (settingsBase.ground as { shadow?: boolean } | undefined)?.shadow ??
             true,
         },
+        // Optional, and absent means no fill — so it is carried as stored rather
+        // than merged over a default.
+        ...(settingsBase.fill ? { fill: settingsBase.fill } : {}),
         bloom: { ...base.state.settings.bloom, ...settingsBase.bloom },
         dof: { ...base.state.settings.dof, ...settingsBase.dof },
         outline: { ...base.state.settings.outline, ...settingsBase.outline },
