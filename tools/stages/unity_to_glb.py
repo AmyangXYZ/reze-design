@@ -523,6 +523,14 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
         tint, tint_alpha = material_tint(mat, shader) if mat else ((1.0, 1.0, 1.0), 1.0)
         coverage = decal_has_coverage(mat, png_root, proj) if mat else False
         alpha = surface_alpha(mat, tint_alpha, shader, coverage) if mat else 1.0
+        # BOTTLE GLASS IS GLASS. Particles/BottleGlass draws a bottle from matcap
+        # reflection and refraction pictures, blended SrcAlpha/OneMinusSrcAlpha,
+        # and states its own colour and transparency in _BaseColor ("漫反射颜色
+        # (A:透明度)") — X317's are dark amber at 0.21. No texture of its own,
+        # so read as Standard it was a shelf of opaque white bottles.
+        if mat and family == "BottleGlass" and "_BaseColor" in mat["colors"]:
+            tint, alpha = tuple(mat["colors"]["_BaseColor"][:3]), mat["alpha"].get("_BaseColor", 1.0)
+            family = "Glass"
         # CARTOON WATER IS WATER. Scene/CartoonWaterV2 (X348's sea) shades by depth
         # between _ShallowColor and _BaseColor, with caustics and foam this app has
         # no depth to draw. Its body is the two mixed 7:3 — what Unity draws for
@@ -558,9 +566,15 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
         # as a surface it caught every lamp above X340's floor as one broad
         # glare. Left out, the frame loses what Unity measures as a 3% darkening
         # at grazing angles.
+        #
+        # AND ANY COAT WHOSE ALPHA IS ITS FRESNEL, whatever it paints: the pass
+        # writes alpha = tex.a · _Color.a · (1 − N·V)^_AlphaFresnel, so it is
+        # all but clear from above and only shows at a grazing view — which a
+        # constant alpha cannot say. X317's reflect plane is white at shininess
+        # 0.013, passed the paint test, and covered the floor in a white sheet.
         if mat and family == "Transparent":
             paint = max(c * (1.0 - mat["floats"].get("_Shininess", 0.0)) for c in (mat["colors"].get("_Color") or (1.0, 1.0, 1.0))[:3])
-            if paint < 0.02:
+            if paint < 0.02 or mat["floats"].get("_AlphaFresnel", 0.0) > 0.0:
                 coats_dropped.append(key)
                 continue
         basic_effect = bool(mat) and family in BASIC_EFFECT_SHADERS

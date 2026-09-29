@@ -62,3 +62,7 @@ tools/blender-port/
 
 # Someone else's music, clipped locally to time a scene against.
 /lrc-clip/
+
+# Python bytecode (tools/stages)
+__pycache__/
+*.pyc
