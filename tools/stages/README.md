@@ -1,8 +1,15 @@
 # Stages, by way of Blender
 
 A stage is a `.glb`: what Blender's glTF exporter writes, from a scene built by
-hand there or from a game's export read by the scripts here. Two entry points:
+hand there or from a game's export read by the scripts here. Entry points:
 
+- **`reze_stage_export.py`** — the one to share: a single-file Blender add-on
+  (4.2+). Preferences → Add-ons → Install from Disk → this file, then
+  **File → Export → reze Stage (.glb)**. It does what `export_stage.py` does,
+  with WebP textures from Blender's own exporter (nothing else to install), on
+  a copy in a background Blender, so the open file is never changed. Also runs
+  without installing: `blender -b Stage.blend --python reze_stage_export.py --
+  Stage.glb [--quality 90] [--png]`.
 - **`export_stage.py`** — any `.blend` to a stage, with what the stock export
   leaves behind (see "Exporting from Blender" below).
 - **`unity_to_glb.py`** — a Unity scene from an AssetRipper export, through

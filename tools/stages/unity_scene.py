@@ -295,6 +295,78 @@ class Scene:
             )
         return out
 
+    def mesh_particles(self):
+        """Particle systems that are really a mesh standing still, as renderers.
+
+        X348's waterfalls and the sheets of water in its pools are ParticleSystems
+        drawing ONE mesh particle (m_RenderMode 4, maxNumParticles 1) that never
+        moves — no shape, no speed, no gravity — aligned to the emitter (Local)
+        and sized per axis by startSize3D: a water-sheet mesh posed by the
+        particle module instead of a MeshRenderer. glTF has no particles, so as
+        particles they were lost; as a mesh at the particle's pose they are the
+        same picture, less the scrolling (see the effect bake).
+
+        Returned in the renderers() shape, plus "particle": the particle's own
+        rotation (Unity Euler degrees, Z then X then Y) and size, applied inside
+        the emitter's transform.
+        """
+        out = []
+        systems = {}
+        for fid, (cls, body) in self.docs.items():
+            if cls == 198:
+                go = re.search(r"m_GameObject:\s*\{fileID:\s*(-?\d+)", body)
+                if go:
+                    systems[int(go.group(1))] = body
+
+        def curve(body, key, default=0.0):
+            m = re.search(rf"\n\s+{key}:\s*\n(?:\s+serializedVersion: \d+\n)?\s+minMaxState: (\d+)\n\s+scalar: (-?[\d.eE+-]+)\n\s+minScalar: (-?[\d.eE+-]+)", body)
+            if not m:
+                return default
+            state, hi, lo = int(m.group(1)), float(m.group(2)), float(m.group(3))
+            return (hi + lo) / 2.0 if state == 3 else hi   # 3: random between two constants
+
+        for fid, (cls, body) in self.docs.items():
+            if cls != 199 or int(shallow(body, "m_RenderMode", "0") or 0) != 4:
+                continue
+            mesh = re.search(r"m_Mesh:\s*\{fileID:\s*(-?\d+)(?:,\s*guid:\s*([0-9a-f]{32}))?", body)
+            if not mesh or mesh.group(1) == "0":
+                continue
+            go = int(re.search(r"m_GameObject:\s*\{fileID:\s*(-?\d+)", body).group(1))
+            system = systems.get(go, "")
+            initial = system[system.find("InitialModule:") :]
+            shape = system[system.find("ShapeModule:") :]
+            if int(field(system, "maxNumParticles", "0") or 0) != 1:
+                continue
+            if field(shape, "enabled", "0") != "0" or curve(initial, "startSpeed") != 0.0 or curve(initial, "gravityModifier") != 0.0:
+                continue                        # it moves, or it is born somewhere in a shape: a real effect
+            if int(shallow(body, "m_RenderAlignment", "0") or 0) != 2:
+                continue                        # only Local alignment stands still with its emitter
+            sx = curve(initial, "startSize", 1.0)
+            size = (sx, curve(initial, "startSizeY", sx), curve(initial, "startSizeZ", sx)) if field(initial, "size3D", "0") == "1" else (sx, sx, sx)
+            rz = curve(initial, "startRotation")
+            rot = (curve(initial, "startRotationX"), curve(initial, "startRotationY"), rz) if field(initial, "rotation3D", "0") == "1" else (0.0, 0.0, rz)
+            tf = self.transform_of(go)
+            guid = mesh.group(2)
+            out.append(
+                {
+                    "name": self.name_of(go),
+                    "id": fid,
+                    "object": go,
+                    "transform": tf,
+                    "position": self.world_position(tf) if tf else (0, 0, 0),
+                    "materials": re.findall(r"guid:\s*([0-9a-f]{32})", body[body.find("m_Materials") :].split("\n  m_", 1)[0]),
+                    "mesh": f"builtin:{mesh.group(1)}" if guid == "0000000000000000e000000000000000" else guid,
+                    "enabled": shallow(body, "m_Enabled", "1") == "1",
+                    "layer": int(shallow(self.docs.get(go, (None, ""))[1], "m_Layer", "0") or 0),
+                    "renderingLayerMask": int(shallow(body, "m_RenderingLayerMask", "1") or 1),
+                    "firstSubMesh": 0,
+                    "batched": False,
+                    # particle rotations are stored in radians
+                    "particle": {"rotation": tuple(r * 57.29577951308232 for r in rot), "size": size},
+                }
+            )
+        return out
+
     def lod_fallback_renderers(self):
         """Renderer ids that belong to LOD1 and below.
 

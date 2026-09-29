@@ -41,7 +41,7 @@ from PIL import Image
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from unity_grading import grading as stage_grading  # noqa: E402
-from unity_effect_bake import BASIC_EFFECT_SHADERS, _linear_to_srgb, _srgb_to_linear, bake as bake_effect, bake_basic, bake_detailed, repeats_across  # noqa: E402
+from unity_effect_bake import BASIC_EFFECT_SHADERS, _linear_to_srgb, _srgb_to_linear, bake as bake_effect, bake_basic, bake_detailed, live_effect, repeats_across  # noqa: E402
 from unity_lights import gamma_to_linear  # noqa: E402
 from unity_probe import probe_to_equirect  # noqa: E402
 from unity_scene import Project, Scene, read_material  # noqa: E402
@@ -394,11 +394,12 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
 
     notes = []
     fallbacks = scene.lod_fallback_renderers()
-    switched_off, dropped_lods, unreadable = [], 0, []
+    switched_off, dropped_lods, unreadable, helpers = [], 0, [], []
     per_material = {}
     order = []
 
-    for r in scene.renderers():
+    particle_meshes = scene.mesh_particles()
+    for r in scene.renderers() + particle_meshes:
         if not r["mesh"] or not r["enabled"]:
             continue
         if not scene.active_in_hierarchy(r["object"]) and not wears_sky(r):
@@ -406,6 +407,12 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
             continue
         if r["id"] in fallbacks:
             dropped_lods += 1
+            continue
+        # Unity's Default-Material is a built-in Standard the game's pipeline
+        # does not draw: X330's eleven Cubes wearing it are helpers (shadow
+        # blocks), and brought in they stood as grey boxes.
+        if r["materials"] and all(os.path.basename(proj.path(g) or "") == "Default-Material.mat" for g in r["materials"]):
+            helpers.append(r["name"])
             continue
         m = mesh(r["mesh"])
         if m is None:
@@ -415,6 +422,18 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
             matrix, translation = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)), (0.0, 0.0, 0.0)
         else:
             matrix, translation = scene.world_matrix(r["transform"])
+        if r.get("particle"):
+            # A standing mesh particle: its own rotation (Unity Euler, Z then X
+            # then Y) and per-axis size, inside the emitter's transform.
+            ax, ay, az = (math.radians(a) for a in r["particle"]["rotation"])
+            rx = ((1, 0, 0), (0, math.cos(ax), -math.sin(ax)), (0, math.sin(ax), math.cos(ax)))
+            ry = ((math.cos(ay), 0, math.sin(ay)), (0, 1, 0), (-math.sin(ay), 0, math.cos(ay)))
+            rz = ((math.cos(az), -math.sin(az), 0), (math.sin(az), math.cos(az), 0), (0, 0, 1))
+            mm = lambda a, b: tuple(tuple(sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)) for i in range(3))
+            local = mm(mm(ry, rx), rz)
+            s = r["particle"]["size"]
+            local = tuple(tuple(local[i][j] * s[j] for j in range(3)) for i in range(3))
+            matrix = mm(matrix, local)
         if any((shader_of(materials_by_guid.get(g)) or "").endswith("SceneBillboard") for g in r["materials"]):
             matrix = face_origin(matrix, translation)
         for slot_index, guid in enumerate(r["materials"]):
@@ -491,6 +510,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
     sky_layers = []
     decals_dropped = []
     baked_decals = []
+    live_effects = []
     coats_dropped = []
     unknown = {}
     for index, key in enumerate(order):
@@ -503,6 +523,19 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
         tint, tint_alpha = material_tint(mat, shader) if mat else ((1.0, 1.0, 1.0), 1.0)
         coverage = decal_has_coverage(mat, png_root, proj) if mat else False
         alpha = surface_alpha(mat, tint_alpha, shader, coverage) if mat else 1.0
+        # CARTOON WATER IS WATER. Scene/CartoonWaterV2 (X348's sea) shades by depth
+        # between _ShallowColor and _BaseColor, with caustics and foam this app has
+        # no depth to draw. Its body is the two mixed 7:3 — what Unity draws for
+        # X348's sea around the island, sRGB (0.05, 0.53, 0.60) against a _BaseColor
+        # of (0, 0.44, 0.62) — and its ripples are _NormalTex. Read as an unknown
+        # shader the sea was left out; read as Standard its _MainTex (a grey
+        # detail mask under _MainColor) would paint it concrete.
+        cartoon_water = bool(mat) and family == "CartoonWaterV2"
+        if cartoon_water:
+            deep = mat["colors"].get("_BaseColor", (0.0, 0.44, 0.62))[:3]
+            shallow_c = mat["colors"].get("_ShallowColor", deep)[:3]
+            tint, alpha = tuple(0.7 * d + 0.3 * s for d, s in zip(deep, shallow_c)), mat["alpha"].get("_BaseColor", 1.0)
+            family = "Ripplet"
         sky_material = key in domes or bool(mat and (is_sky(mat) or is_sky_layer(mat, shader)))
         # AN EFFECT DECAL IS BAKED, as a sky layer is: the shader's own
         # composition at time 0 — its mask, its HDR second picture, its add or
@@ -556,6 +589,11 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
             elif masked_decal:
                 decals_dropped.append(key)
                 continue
+        # AND WHEN IT MOVES, the layers themselves ride along (unity_effect_bake,
+        # live_effect): the baked picture stays as the frame any other viewer shows.
+        effect = live_effect(mat, lambda g: png_for(png_root, proj.path(g) or "")) if baked and not sky_material else None
+        if effect:
+            live_effects.append(key)
         # A plain effect sheet — a shadow projection, a candle's glow — is its
         # texture, mask and colour composed once, and takes no light: drawn as
         # a surface, a lamp overhead lit the black quad's whole rectangle.
@@ -566,7 +604,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
                 sheet = os.path.basename(written)
             else:
                 notes.append(f"{key}: its {shader} texture is missing; exported as Standard")
-        albedo = albedo_slot(mat, png_root, proj) if mat and not baked and not sheet else None
+        albedo = albedo_slot(mat, png_root, proj) if mat and not baked and not sheet and not cartoon_water else None
         src = png_for(png_root, proj.path(albedo["guid"]) or "") if albedo else None
         if src:
             base = copy_texture(src, out_tex, copied)
@@ -647,6 +685,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
                 "queue": (mat["queue"] if mat and mat.get("queue", -1) >= 0 else {"OPAQUE": 2000, "MASK": 2450}.get(alpha_mode, 3000)),
                 # What glTF cannot say: which of the app's looks this is.
                 "look": {"Glass": "glass", "Ripplet": "water", "Plant": "foliage"}.get(family),
+                **({"effect": effect} if effect else {}),
             }
         )
 
@@ -732,10 +771,17 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
         notes.append(f"{dropped_lods} LOD fallback renderers dropped (level 0 kept)")
     if unreadable:
         notes.append(f"{len(unreadable)} renderers had no readable mesh: {', '.join(unreadable[:5])}")
+    if helpers:
+        notes.append(f"{len(helpers)} renderers wear only Unity's Default-Material (not drawn by the game), left out: {', '.join(helpers[:5])}")
     if coats_dropped:
         notes.append(f"{len(coats_dropped)} reflective coats left out (a view-dependent sheen the app cannot draw): {', '.join(sorted(coats_dropped))}")
     if baked_decals:
         notes.append(f"{len(baked_decals)} effect decals baked from the effect shader: {', '.join(sorted(baked_decals))}")
+    if live_effects:
+        notes.append(f"{len(live_effects)} effect layers move (drawn live by the app): {', '.join(sorted(live_effects))}")
+    if particle_meshes:
+        notes.append(f"{len(particle_meshes)} standing mesh particles (waterfalls, water sheets) as meshes, still: "
+                     f"{', '.join(sorted({p['name'] for p in particle_meshes})[:8])}")
     if decals_dropped:
         notes.append(f"{len(decals_dropped)} effect decals left out (coverage lives in maps we do not ship): {', '.join(sorted(decals_dropped))}")
     if sky_layers:

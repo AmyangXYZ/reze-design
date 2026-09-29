@@ -260,6 +260,82 @@ def bake(material, proj, png_for_guid, out_base, max_width=4096, max_height=1024
     return out_path
 
 
+# ── The same layer, live: what moves, for the app to draw each frame ──
+#
+# THE SCROLL, read from the vertex shader: every slot's UV is
+#   uv' = (rotated uv + time · _UVOffset_<slot>.xy) · _ST.xy + _ST.zw
+# unless its particle switch (_UVOffset_Main_XY, _UVOffset_MainPlus_XY,
+# _UVOffset_Mask_ZW) hands the offset to the particle's custom data instead —
+# which X348's systems leave at zero, so a switched slot stands still. Time is
+# the game clock in seconds. The noise that ripples a slot and the dissolve
+# are not carried: the layers slide, they do not shimmer.
+#
+# A layer whose slots all stand still stays baked; one that moves carries its
+# pictures and numbers in the material's extras.reze.effect, and the app draws
+# the formula above (see gltf-stage.ts, effectSheetGraph) with the time in it.
+
+SWITCH_OF = {"_MainTex": "_UVOffset_Main_XY", "_MainPlusTex": "_UVOffset_MainPlus_XY", "_MaskTex": "_UVOffset_Mask_ZW"}
+SPEED_OF = {"_MainTex": "_UVOffset_Main", "_MainPlusTex": "_UVOffset_MainPlus", "_MaskTex": "_UVOffset_Mask"}
+LAYER_OF = {"_MainTex": "main", "_MainPlusTex": "plus", "_MaskTex": "mask"}
+
+
+def _speed(material, slot):
+    if material["floats"].get(SWITCH_OF[slot], 0.0) > 0.5:
+        return (0.0, 0.0)
+    c = material["colors"].get(SPEED_OF[slot], (0.0, 0.0, 0.0))
+    return (float(c[0]), float(c[1]))
+
+
+def live_effect(material, png_for_guid, max_size=1024):
+    """The layer's pictures and numbers when any of its slots scrolls, else None."""
+    import base64
+    import io
+
+    slots = _used_slots(material)
+    if "_MainTex" not in slots or not any(_speed(material, s) != (0.0, 0.0) for s in slots):
+        return None
+    f = material["floats"]
+    layers = {}
+    for slot in slots:
+        png = png_for_guid(material["textures"][slot]["guid"])
+        if not png or not os.path.exists(png):
+            return None
+        im = Image.open(png).convert("RGBA")
+        if max(im.size) > max_size:
+            k = max_size / max(im.size)
+            im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.LANCZOS)
+        buf = io.BytesIO()
+        im.save(buf, "PNG", optimize=True)
+        st = material["textures"][slot]
+        layers[LAYER_OF[slot]] = {
+            "png": base64.b64encode(buf.getvalue()).decode("ascii"),
+            "scale": [float(st["scale"][0]), float(st["scale"][1])],
+            "offset": [float(st["offset"][0]), float(st["offset"][1])],
+            "rotation": float(f.get(ROTATION_OF[slot], 0.0)),
+            "tiling": f.get(TILING_OF[slot], 1.0) >= 0.5,
+            "speed": list(_speed(material, slot)),
+        }
+    colour, colour_a = _linear_colour(material, "_Color")
+    plus_colour, plus_a = _linear_colour(material, "_ColorPlus")
+    return {
+        "layers": layers,
+        "mainPow": list(material["colors"].get("_MainPow", (1.0, 1.0, 1.0))[:3]) + [material["alpha"].get("_MainPow", 0.0)],
+        "color": [float(c) for c in colour] + [colour_a],
+        "redAlphaMain": f.get("_IsRedAlpha_Main", 0.0) > 0.5,
+        "plusPow": list(material["colors"].get("_MainPlusPow", (1.0, 1.0, 1.0))[:3]) + [material["alpha"].get("_MainPlusPow", 0.0)],
+        "plusColor": [float(c) for c in plus_colour] + [plus_a],
+        "redAlphaPlus": f.get("_IsRedAlpha_MainPlus", 0.0) > 0.5,
+        "plusStrength": f.get("_MainPlusStrength", 1.0),
+        "plusColorOn": f.get("_IsPlusColor", 0.0),
+        "plusAlphaOn": f.get("_IsPlusAlpha", 0.0),
+        "plusMode": int(f.get("_PlusMode", 0.0)),
+        "redAlphaMask": f.get("_IsRedAlpha_Mask", 0.0) > 0.5,
+        "maskStrength": f.get("_MaskStrength", 0.0),
+        # _DstBlend 1 adds its light; 10 lays it over; between, the shader's own mix
+        "dstBlend": f.get("_DstBlend", 10.0),
+    }
+
+
 # ── ZTong/Tong_jichu_AB: the plain alpha-blended effect sheet ──
 #
 # A soft blob under a candle, a shadow projection on a floor ("touying"): one

@@ -154,29 +154,71 @@ class Mesh:
 
 # Unity's built-in meshes, which a scene references by fileID in the "unity
 # default resources" rather than as an asset in the project — so the export has
-# nothing to read for them. Only the Quad appears in these stages: X309's six
-# columns of falling light are Quads stretched to hundreds of units.
+# nothing to read for them. X309's six columns of falling light are Quads
+# stretched to hundreds of units; X348's sea is a Plane scaled ×149; X330 has
+# eleven Cubes.
 BUILTIN_QUAD = 10210
+BUILTIN_PLANE = 10209
+BUILTIN_CUBE = 10202
 
 
 class BuiltinMesh:
     """A built-in mesh, with the same fields the converter reads off a Mesh.
 
-    The Quad is Unity's own: a unit square in the XY plane facing -Z, UVs 0..1,
-    wound 0-3-1, 3-0-2.
+    Unity's own shapes, wound its way — a front face is clockwise, so for a
+    triangle a-b-c the face normal is (b − a) × (c − a):
+      Quad   a unit square in the XY plane facing −Z, UVs 0..1, wound 0-3-1, 3-0-2
+      Plane  10 × 10 in the XZ plane facing +Y, 10 × 10 cells; UV (0, 0) at
+             (+5, 0, +5) and (1, 1) at (−5, 0, −5)
+      Cube   a unit cube about the origin, each face UV 0..1
     """
 
     def __init__(self, file_id):
-        if file_id != BUILTIN_QUAD:
-            raise ValueError(f"built-in mesh {file_id} is not one this converter builds")
         self.path = f"builtin:{file_id}"
-        self.name = "Quad"
-        self.positions = [(-0.5, -0.5, 0.0), (0.5, -0.5, 0.0), (-0.5, 0.5, 0.0), (0.5, 0.5, 0.0)]
-        self.normals = [(0.0, 0.0, -1.0)] * 4
-        self.uvs = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)]
+        if file_id == BUILTIN_QUAD:
+            self.name = "Quad"
+            self.positions = [(-0.5, -0.5, 0.0), (0.5, -0.5, 0.0), (-0.5, 0.5, 0.0), (0.5, 0.5, 0.0)]
+            self.normals = [(0.0, 0.0, -1.0)] * 4
+            self.uvs = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)]
+            self._tris = [(0, 3, 1), (3, 0, 2)]
+        elif file_id == BUILTIN_PLANE:
+            self.name = "Plane"
+            self.positions, self.normals, self.uvs, self._tris = [], [], [], []
+            for j in range(11):
+                for i in range(11):
+                    self.positions.append((5.0 - i, 0.0, 5.0 - j))
+                    self.normals.append((0.0, 1.0, 0.0))
+                    self.uvs.append((i / 10.0, j / 10.0))
+            for j in range(10):
+                for i in range(10):
+                    p00, p10, p01, p11 = j * 11 + i, j * 11 + i + 1, (j + 1) * 11 + i, (j + 1) * 11 + i + 1
+                    self._tris += [(p00, p11, p10), (p00, p01, p11)]
+        elif file_id == BUILTIN_CUBE:
+            self.name = "Cube"
+            self.positions, self.normals, self.uvs, self._tris = [], [], [], []
+            for n in ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)):
+                u = (0, 1, 0) if n[1] == 0 else (1, 0, 0)          # an axis across the face
+                v = (n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0])   # n × u
+                base = len(self.positions)
+                # corners −u−v, +u−v, −u+v, +u+v
+                for su, sv in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
+                    self.positions.append(tuple(0.5 * (n[k] + su * u[k] + sv * v[k]) for k in range(3)))
+                    self.normals.append(tuple(float(c) for c in n))
+                    self.uvs.append(((su + 1) / 2.0, (sv + 1) / 2.0))
+                # wound so (b − a) × (c − a) points along n
+                a, b, c = (self.positions[base + k] for k in (0, 1, 3))
+                e1 = [b[k] - a[k] for k in range(3)]
+                e2 = [c[k] - a[k] for k in range(3)]
+                out = (e1[1] * e2[2] - e1[2] * e2[1]) * n[0] + (e1[2] * e2[0] - e1[0] * e2[2]) * n[1] + (e1[0] * e2[1] - e1[1] * e2[0]) * n[2]
+                if out > 0:
+                    self._tris += [(base, base + 1, base + 3), (base, base + 3, base + 2)]
+                else:
+                    self._tris += [(base, base + 3, base + 1), (base, base + 2, base + 3)]
+        else:
+            raise ValueError(f"built-in mesh {file_id} is not one this converter builds")
         self.uv1 = None
-        self.count = 4
-        self.submeshes = [{"firstByte": 0, "indexCount": 6, "topology": 0, "baseVertex": 0, "firstVertex": 0, "vertexCount": 4}]
+        self.count = len(self.positions)
+        self.submeshes = [{"firstByte": 0, "indexCount": len(self._tris) * 3, "topology": 0, "baseVertex": 0, "firstVertex": 0, "vertexCount": self.count}]
 
     def triangles(self, submesh):
-        return [(0, 3, 1), (3, 0, 2)]
+        return list(self._tris)

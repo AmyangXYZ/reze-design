@@ -6,7 +6,7 @@
 // two from growing separate ideas of what a scene means, which is exactly how
 // the editor and the viewer drifted apart once before.
 
-import { Engine, parseLRC, parseMidi, Quat, Vec3, type GizmoDragEvent, type Model, type ModelParentKey, type RenderClass, type StyleGroup } from "reze-engine"
+import { Engine, NODE_REGISTRY, parseLRC, parseMidi, Quat, Vec3, type GizmoDragEvent, type Model, type ModelParentKey, type RenderClass, type ShaderGraph, type StyleGroup } from "reze-engine"
 import { FPS, clipTrimmedToMotion } from "@/lib/clip"
 import { rasterizeLyrics } from "@/lib/lyrics-raster"
 import { SLOT_GRAPHS, libraryGraph } from "@/lib/materials"
@@ -73,6 +73,46 @@ export function reportGroups(
     const detail = JSON.stringify(g.diagnostics, null, 1)
     if (failed) console.error(`[style] ${where}: group "${g.groupId}" failed —`, detail)
     else console.info(`[style] ${where}: group "${g.groupId}" not applied —`, detail)
+  }
+}
+
+/**
+ * A saved graph with its nodes the engine no longer has taken out.
+ *
+ * A group's graph is stored whole, so a node type that existed while a scene
+ * was styled and was removed since (an experiment's pmx_toon_tint) leaves the
+ * scene's group failing on every load, the whole look with it. Such a node is
+ * bypassed — whatever fed it now feeds what it fed — and dropped, and the next
+ * save stores the clean graph.
+ */
+function withoutUnknownNodes(graph: ShaderGraph, where: string): ShaderGraph {
+  const unknown = new Set(graph.nodes.filter((n) => !NODE_REGISTRY[n.type]).map((n) => n.id))
+  if (!unknown.size) return graph
+  const source = (id: string) => {
+    const ins = graph.links.filter((l) => l.to.node === id)
+    return (ins.find((l) => l.to.socket === "color") ?? ins[0])?.from ?? null
+  }
+  const through = (ref: { node: string; socket: string }) => {
+    let r: { node: string; socket: string } | null = ref
+    for (let i = 0; r && unknown.has(r.node) && i < 16; i++) r = source(r.node)
+    return r
+  }
+  const links: ShaderGraph["links"] = []
+  for (const l of graph.links) {
+    if (unknown.has(l.to.node)) continue
+    const from = through(l.from)
+    if (from) links.push({ from, to: l.to })
+  }
+  const output = through(graph.output) ?? graph.output
+  const opacity = graph.opacity ? through(graph.opacity) : null
+  console.info(`[style] ${where}: "${graph.name}" dropped node(s) this engine no longer has: ${[...unknown].join(", ")}`)
+  return {
+    ...graph,
+    nodes: graph.nodes.filter((n) => !unknown.has(n.id)),
+    links,
+    output,
+    ...(graph.opacity ? (opacity ? { opacity } : { opacity: undefined }) : {}),
+    params: graph.params?.filter((p) => !unknown.has(p.target.node)),
   }
 }
 
@@ -406,7 +446,7 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
     }
     onStyling?.(entry.model.file)
     // Styling: a document carrying groups for this model (a restored or imported scene)
-    const docGroups = scene.state.groups?.[entry.model.id]
+    const docGroups = scene.state.groups?.[entry.model.id]?.map((g) => ({ ...g, graph: withoutUnknownNodes(g.graph, entry.model.file) }))
     if (docGroups) {
       // A GROUP'S GRAPH IS A SNAPSHOT, and a snapshot goes stale silently.
       //

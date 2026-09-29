@@ -99,7 +99,28 @@ type GltfLight = {
 }
 
 /** What our exporter writes under `extras.reze`; a hand-built stage has none. */
-type RezeMaterial = { shader?: string; unlit?: boolean; additive?: boolean; sky?: boolean; castShadow?: boolean; look?: string | null; queue?: number }
+type RezeMaterial = { shader?: string; unlit?: boolean; additive?: boolean; sky?: boolean; castShadow?: boolean; look?: string | null; queue?: number; effect?: EffectSpec }
+
+/** One layer of a moving effect sheet: its picture (base64 PNG, in the file only)
+ *  and the numbers that place it — see tools/stages/unity_effect_bake.py. */
+export type EffectLayer = { png?: string; scale: [number, number]; offset: [number, number]; rotation: number; tiling: boolean; speed: [number, number] }
+/** The game's effect shader (Effect_Common) for a sheet whose layers scroll. */
+export type EffectSpec = {
+  layers: { main?: EffectLayer; plus?: EffectLayer; mask?: EffectLayer }
+  mainPow: number[]
+  color: number[]
+  redAlphaMain: boolean
+  plusPow: number[]
+  plusColor: number[]
+  redAlphaPlus: boolean
+  plusStrength: number
+  plusColorOn: number
+  plusAlphaOn: number
+  plusMode: number
+  redAlphaMask: boolean
+  maskStrength: number
+  dstBlend: number
+}
 type RezeLamp = { range?: number; intensity?: number; color?: number[]; angle?: number; innerAngle?: number }
 type RezeSun = { color?: number[]; shadow?: boolean }
 type RezeScene = {
@@ -292,6 +313,9 @@ export type GlbMaterial = {
   roughness: number
   metallic: number
   emissiveFactor: [number, number, number]
+  /** A moving effect sheet: its layers are its maps (_N main, _ORM plus, _E
+   *  mask) and effectSheetGraph draws them. The pictures stay out of here. */
+  effect: EffectSpec | null
 }
 
 export type GlbStage = {
@@ -528,6 +552,9 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
       roughness: pbr.roughnessFactor ?? 1,
       metallic: pbr.metallicFactor ?? 1,
       emissiveFactor: [(m.emissiveFactor ?? [0, 0, 0])[0], (m.emissiveFactor ?? [0, 0, 0])[1], (m.emissiveFactor ?? [0, 0, 0])[2]],
+      effect: ex.effect
+        ? { ...ex.effect, layers: Object.fromEntries(Object.entries(ex.effect.layers ?? {}).map(([k, l]) => [k, { ...l, png: undefined }])) }
+        : null,
     })
     // The maps, under the material's own name — see material-maps.ts.
     const mapFile = (ref: TextureRef | undefined, suffix: string): Uint8Array | null => {
@@ -538,11 +565,24 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
       files.push({ path: `${dir}maps/${fileSafe(name)}_${suffix}.${EXT[img.mimeType ?? ""] ?? "png"}`, bytes })
       return bytes
     }
-    maps.set(name, {
-      normal: mapFile(m.normalTexture, "N"),
-      orm: mapFile(pbr.metallicRoughnessTexture ?? m.occlusionTexture, "ORM"),
-      emissive: mapFile(m.emissiveTexture, "E"),
-    })
+    // A MOVING EFFECT SHEET brings its layers instead: main, plus and mask, in
+    // the three slots its graph samples (effectSheetGraph).
+    const layerFile = (layer: EffectLayer | undefined, suffix: string): Uint8Array | null => {
+      if (!layer?.png) return null
+      const bytes = Uint8Array.from(atob(layer.png), (c) => c.charCodeAt(0))
+      files.push({ path: `${dir}maps/${fileSafe(name)}_${suffix}.png`, bytes })
+      return bytes
+    }
+    maps.set(
+      name,
+      ex.effect
+        ? { normal: layerFile(ex.effect.layers?.main, "N"), orm: layerFile(ex.effect.layers?.plus, "ORM"), emissive: layerFile(ex.effect.layers?.mask, "E") }
+        : {
+            normal: mapFile(m.normalTexture, "N"),
+            orm: mapFile(pbr.metallicRoughnessTexture ?? m.occlusionTexture, "ORM"),
+            emissive: mapFile(m.emissiveTexture, "E"),
+          },
+    )
     if (pbr.metallicRoughnessTexture && m.occlusionTexture && imageOf(pbr.metallicRoughnessTexture) !== imageOf(m.occlusionTexture))
       notes.push(`${name}: its occlusion map is a different image from its roughness/metal map and was left out`)
   }
@@ -796,6 +836,119 @@ export function stageSheetGraph(strength: number): ShaderGraph {
 }
 
 /**
+ * A moving effect sheet: the game's Effect_Common, drawn live — X348's
+ * waterfalls, fountains and water sheets, which a bake could only freeze.
+ *
+ * Each layer's UV is the vertex shader's: rotated about 0.5, then
+ * `(uv + time · speed) · scale + offset`, clamped where the slot does not tile,
+ * in Unity's v-up (so 1 − v on the way in and out). Main and plus sit in the
+ * data slots 0 and 1 and are decoded from sRGB here; the mask sits in slot 2,
+ * which the maps upload as colour. Then the fragment, as the bake has it
+ * (unity_effect_bake.py): main raised and mixed by _MainPow, times _Color;
+ * plus mixed in by _PlusMode; alpha times the mask; and the result laid down
+ * as the game's One/OneMinusSrcAlpha does — `a·rgb` added, and what it covers
+ * dimmed by `a·(_DstBlend − 1)/9` — so a _DstBlend of 1 is pure light (the
+ * group blends additively) and 10 an ordinary layer. Noise and dissolve are
+ * not drawn.
+ */
+export function effectSheetGraph(name: string, e: EffectSpec): ShaderGraph {
+  type Ref = { node: string; socket: string }
+  type In = Ref | number | [number, number, number]
+  const nodes: ShaderGraph["nodes"] = []
+  const links: ShaderGraph["links"] = []
+  let count = 0
+  const node = (type: string, inputs: Record<string, In>, socket: string): Ref => {
+    const id = `n${count++}`
+    const literals: Record<string, number | [number, number, number]> = {}
+    for (const [k, v] of Object.entries(inputs)) {
+      if (typeof v === "number" || Array.isArray(v)) literals[k] = v
+      else links.push({ from: v, to: { node: id, socket: k } })
+    }
+    nodes.push({ id, type, inputs: literals })
+    return { node: id, socket }
+  }
+  const at = (r: Ref, socket: string): Ref => ({ node: r.node, socket })
+  const mul = (a: In, b: In) => node("math/multiply", { a, b }, "value")
+  const vscale = (a: In, scale: In) => node("vector_math/scale", { a, scale }, "vector")
+  const time = node("time", {}, "value")
+  // the mesh UV in Unity's v-up: (u, 1 − v)
+  const q = node("vector_math/multiply_add", { a: node("geometry", {}, "uv"), b: [1, -1, 0], c: [0, 1, 0] }, "vector")
+
+  // A layer's picture, linear, and its alpha. Rotation about 0.5, scale, offset,
+  // scroll and the flip back to the image's rows fold into two dot products and
+  // two constants: engine (x, y) = (su, 1 − sv).
+  const sample = (slot: 0 | 1 | 2, l: EffectLayer) => {
+    const th = 2 * Math.PI * ((((l.rotation / 360) % 1) + 1) % 1)
+    const c = Math.cos(th)
+    const s = Math.sin(th)
+    const [sx, sy] = l.scale
+    const bu = sx * (0.5 - 0.5 * c - 0.5 * s) + l.offset[0]
+    const bv = sy * (0.5 + 0.5 * s - 0.5 * c) + l.offset[1]
+    const su = node("vector_math/dot", { a: q, b: [sx * c, sx * s, 0] }, "value")
+    const sv = node("vector_math/dot", { a: q, b: [-sy * s, sy * c, 0] }, "value")
+    let uv: In = node("vector_math/multiply_add", { a: node("combine_xyz", { x: su, y: sv, z: 0 }, "vector"), b: [1, -1, 0], c: [bu, 1 - bv, 0] }, "vector")
+    if (l.speed[0] || l.speed[1]) uv = node("vector_math/multiply_add", { a: [sx * l.speed[0], -sy * l.speed[1], 0], b: node("combine_xyz", { x: time, y: time, z: 0 }, "vector"), c: uv }, "vector")
+    if (!l.tiling) uv = node("vector_math/minimum", { a: node("vector_math/maximum", { a: uv, b: [0, 0, 0] }, "vector"), b: [1, 1, 1] }, "vector")
+    const tex = node(`tex_image/${slot}`, { uv }, "color")
+    // slots 0 and 1 are data maps: decode here what the mask's slot decodes on upload
+    const rgb: In = slot === 2 ? tex : node("gamma", { color: tex, gamma: 2.2 }, "color")
+    return { rgb, a: at(tex, "alpha") as In }
+  }
+  // lerp(P.x·t, P.y·t^P.z, P.w)
+  const powMix = (t: In, p: number[]): In => {
+    const [x, y, z, w] = p
+    if (!w) return x === 1 ? t : vscale(t, x)
+    return node("vector_math/multiply_add", { a: t, b: [(1 - w) * x, (1 - w) * x, (1 - w) * x], c: vscale(node("gamma", { color: t, gamma: Math.max(z, 0.01) }, "color"), w * y) }, "vector")
+  }
+  const red = (c: In) => node("separate_color", { color: c }, "r")
+
+  const main = sample(0, e.layers.main!)
+  let rgb: In = powMix(main.rgb, e.mainPow)
+  let a: In = e.redAlphaMain ? red(rgb) : main.a
+  rgb = node("vector_math/multiply", { a: rgb, b: [e.color[0], e.color[1], e.color[2]] }, "vector")
+  if ((e.color[3] ?? 1) !== 1) a = mul(a, e.color[3])
+  if (e.layers.plus) {
+    const p = sample(1, e.layers.plus)
+    const pa: In = e.redAlphaPlus ? red(p.rgb) : p.a
+    const plusRgb = node("vector_math/multiply", { a: powMix(vscale(p.rgb, pa), e.plusPow), b: [e.plusColor[0], e.plusColor[1], e.plusColor[2]] }, "vector")
+    const plusA: In = (e.plusColor[3] ?? 1) === 1 ? pa : mul(pa, e.plusColor[3])
+    const kc = e.plusColorOn * e.plusStrength
+    const ka = e.plusAlphaOn * e.plusStrength
+    if (e.plusMode === 2) {
+      if (kc) rgb = node("vector_math/multiply_add", { a: plusRgb, b: [kc, kc, kc], c: vscale(rgb, 1 - kc) }, "vector")
+      if (ka) a = node("math/multiply_add", { a: plusA, b: ka, c: mul(a, 1 - ka) }, "value")
+    } else if (e.plusMode === 1) {
+      if (kc) rgb = node("vector_math/multiply_add", { a: plusRgb, b: [kc, kc, kc], c: rgb }, "vector")
+      if (ka) a = node("math/multiply_add", { a: plusA, b: ka, c: a }, "value")
+    } else {
+      if (kc) rgb = node("vector_math/multiply", { a: rgb, b: node("vector_math/multiply_add", { a: plusRgb, b: [kc, kc, kc], c: [1 - kc, 1 - kc, 1 - kc] }, "vector") }, "vector")
+      if (ka) a = mul(a, node("math/multiply_add", { a: plusA, b: ka, c: 1 - ka }, "value"))
+    }
+  }
+  rgb = node("vector_math/maximum", { a: rgb, b: [0, 0, 0] }, "vector")
+  if (e.layers.mask) {
+    const m = sample(2, e.layers.mask)
+    const mv: In = e.redAlphaMask ? red(m.rgb) : m.a
+    a = mul(a, e.maskStrength ? node("math/add", { a: mv, b: -e.maskStrength }, "value") : mv)
+  }
+  a = node("math/minimum", { a: node("math/maximum", { a, b: 0 }, "value"), b: 1 }, "value")
+
+  const additive = e.dstBlend <= 1.0001
+  const cover = Math.max((e.dstBlend - 1) / 9, 1e-3)
+  // additive: the light a·rgb; laid over: colour rgb/cover at opacity cover·a
+  const out = node("emission", { color: additive ? vscale(rgb, a) : vscale(rgb, 1 / cover), strength: 1 }, "color")
+  return {
+    version: 1,
+    name: `Effect ${name}`,
+    tags: ["stage", "unlit", "effect"],
+    nodes,
+    links,
+    output: out,
+    ...(additive ? {} : { opacity: cover === 1 ? a : mul(a, cover) }),
+  }
+}
+
+/**
  * The style groups a glTF stage wears: Stage PBR per emissive strength (and
  * per cutout), the app's own look where the file names one, Unlit for what
  * takes no light.
@@ -813,6 +966,23 @@ export function glbStyleGroups(materials: GlbMaterial[]): StyleGroup[] {
     g.materials.push(material)
   }
   for (const m of materials) {
+    // A moving effect sheet, drawn live — one group each, its numbers its own.
+    if (m.effect?.layers?.main) {
+      const effect = m.effect
+      add(
+        `effect:${m.name}`,
+        () => ({
+          id: `stage-effect-${fileSafe(m.name).toLowerCase()}`,
+          label: `Effect ${m.name}`,
+          materials: [],
+          graph: effectSheetGraph(m.name, effect),
+          renderClass: "auto",
+          ...(effect.dstBlend <= 1.0001 ? { blend: "additive" as const } : {}),
+        }),
+        m.name,
+      )
+      continue
+    }
     const hashed = m.alphaMode === "MASK"
     // A look the file states, or one its NAME says for the two real surfaces:
     // x333's pool is a Standard material called X333_shui, which the file can

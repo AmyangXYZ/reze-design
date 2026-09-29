@@ -180,6 +180,7 @@ def make_material(spec):
             "castShadow": spec["castShadow"],
             "look": spec["look"],
             "queue": spec.get("queue", 2000),
+            **({"effect": spec["effect"]} if spec.get("effect") else {}),
     }
     return mat
 
