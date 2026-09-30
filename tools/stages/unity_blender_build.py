@@ -181,6 +181,7 @@ def make_material(spec):
             "look": spec["look"],
             "queue": spec.get("queue", 2000),
             **({"effect": spec["effect"]} if spec.get("effect") else {}),
+            **({"ripple": spec["ripple"]} if spec.get("ripple") else {}),
     }
     return mat
 

@@ -99,7 +99,7 @@ type GltfLight = {
 }
 
 /** What our exporter writes under `extras.reze`; a hand-built stage has none. */
-type RezeMaterial = { shader?: string; unlit?: boolean; additive?: boolean; sky?: boolean; castShadow?: boolean; look?: string | null; queue?: number; effect?: EffectSpec }
+type RezeMaterial = { shader?: string; unlit?: boolean; additive?: boolean; sky?: boolean; castShadow?: boolean; look?: string | null; queue?: number; effect?: EffectSpec; ripple?: RippleSpec }
 
 /** One layer of a moving effect sheet: its picture (base64 PNG, in the file only)
  *  and the numbers that place it — see tools/stages/unity_effect_bake.py. */
@@ -107,6 +107,8 @@ export type EffectLayer = { png?: string; scale: [number, number]; offset: [numb
 /** The game's effect shader (Effect_Common) for a sheet whose layers scroll. */
 export type EffectSpec = {
   layers: { main?: EffectLayer; plus?: EffectLayer; mask?: EffectLayer }
+  /** The noise that bends the flagged layers' UVs (_UseNoise), in slot 3. */
+  noise?: { png?: string; scale: [number, number]; offset: [number, number]; speed: [number, number]; strength: [number, number]; main: boolean; plus: boolean; mask: boolean }
   mainPow: number[]
   color: number[]
   redAlphaMain: boolean
@@ -120,6 +122,21 @@ export type EffectSpec = {
   redAlphaMask: boolean
   maskStrength: number
   dstBlend: number
+}
+/** The game's Ripplet water (tools/stages/unity_to_glb.py, ripple_spec): two
+ *  layers of its ripple map in world metres, and how it reflects. */
+export type RippleSpec = {
+  /** Per layer: UV per metre along (-x, z), UV per second, normal strength. */
+  layers: { scale: [number, number]; drift: [number, number]; strength: number }[]
+  /** The blend of the two toward straight up (_RippleScale). */
+  strength: number
+  /** _Color, linear, with its alpha. */
+  color: number[]
+  /** _ReflectionColor, linear; its alpha is what grazing angles reach. */
+  reflection: number[]
+  /** _ReflectionIntensity, and the reflection's own scale (_CustomEnvCubeScale, applied twice). */
+  intensity: number
+  cube: number
 }
 type RezeLamp = { range?: number; intensity?: number; color?: number[]; angle?: number; innerAngle?: number }
 type RezeSun = { color?: number[]; shadow?: boolean }
@@ -316,6 +333,8 @@ export type GlbMaterial = {
   /** A moving effect sheet: its layers are its maps (_N main, _ORM plus, _E
    *  mask) and effectSheetGraph draws them. The pictures stay out of here. */
   effect: EffectSpec | null
+  /** The game's water, drawn by rippletGraph. */
+  ripple: RippleSpec | null
 }
 
 export type GlbStage = {
@@ -349,12 +368,14 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
   // A CANDLE FLAME IS AN EMPTY NAMED flame.NN, its +Y running from the wick
   // to the flame's tip and as long as the flame. It becomes a bone from its
   // origin to its +Y unit point, which the Candle Flames effect stands on.
+  // splash.NN and spray.NN are the same, for the water effects: +Y the way the
+  // water leaves, as long as the game's largest splash there.
   const wicks: { name: string; head: [number, number, number]; tail: [number, number, number] }[] = []
   const visit = (index: number, parent: Mat4) => {
     const node = g.nodes![index]
     const world = mul(parent, localMatrix(node))
     if (node.extensions?.KHR_lights_punctual) lamps.push({ node, world })
-    if (node.mesh === undefined && /^flame\.\d+$/i.test(node.name ?? "")) {
+    if (node.mesh === undefined && /^(flame|splash|spray)\.\d+$/i.test(node.name ?? "")) {
       const head = toPmx(xformPoint(world, 0, 0, 0))
       const tail = toPmx(xformPoint(world, 0, 1, 0))
       wicks.push({ name: node.name!, head, tail: [tail[0] - head[0], tail[1] - head[1], tail[2] - head[2]] })
@@ -553,8 +574,13 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
       metallic: pbr.metallicFactor ?? 1,
       emissiveFactor: [(m.emissiveFactor ?? [0, 0, 0])[0], (m.emissiveFactor ?? [0, 0, 0])[1], (m.emissiveFactor ?? [0, 0, 0])[2]],
       effect: ex.effect
-        ? { ...ex.effect, layers: Object.fromEntries(Object.entries(ex.effect.layers ?? {}).map(([k, l]) => [k, { ...l, png: undefined }])) }
+        ? {
+            ...ex.effect,
+            layers: Object.fromEntries(Object.entries(ex.effect.layers ?? {}).map(([k, l]) => [k, { ...l, png: undefined }])),
+            ...(ex.effect.noise ? { noise: { ...ex.effect.noise, png: undefined } } : {}),
+          }
         : null,
+      ripple: ex.ripple ?? null,
     })
     // The maps, under the material's own name — see material-maps.ts.
     const mapFile = (ref: TextureRef | undefined, suffix: string): Uint8Array | null => {
@@ -572,6 +598,10 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
       const bytes = Uint8Array.from(atob(layer.png), (c) => c.charCodeAt(0))
       files.push({ path: `${dir}maps/${fileSafe(name)}_${suffix}.png`, bytes })
       return bytes
+    }
+    // its noise picture, when it has one, beside them as the fourth (material-maps.ts)
+    if (ex.effect?.noise?.png) {
+      files.push({ path: `${dir}maps/${fileSafe(name)}_X.png`, bytes: Uint8Array.from(atob(ex.effect.noise.png), (c) => c.charCodeAt(0)) })
     }
     maps.set(
       name,
@@ -750,7 +780,10 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
     joints: [],
     trailing: null,
   }
-  if (wicks.length) notes.push(`${wicks.length} candle flames as bones ${wicks[0].name}..${wicks[wicks.length - 1].name}`)
+  for (const kind of ["flame", "splash", "spray"]) {
+    const these = wicks.filter((w) => w.name.toLowerCase().startsWith(`${kind}.`))
+    if (these.length) notes.push(`${these.length} ${kind} points as bones ${these[0].name}..${these[these.length - 1].name}`)
+  }
   const pmxPath = `${dir}${stem}.pmx`
   files.push({ path: pmxPath, bytes: new Uint8Array(writePmxDocument(doc)) })
   return { files, pmxPath, materials, maps, notes }
@@ -839,8 +872,9 @@ export function stageSheetGraph(strength: number): ShaderGraph {
  * A moving effect sheet: the game's Effect_Common, drawn live — X348's
  * waterfalls, fountains and water sheets, which a bake could only freeze.
  *
- * Each layer's UV is the vertex shader's: rotated about 0.5, then
- * `(uv + time · speed) · scale + offset`, clamped where the slot does not tile,
+ * Each layer's UV is the vertex shader's: `(u + time · speed.y, v + time ·
+ * speed.x)`, rotated about 0.5, then `· scale + offset`, clamped where the slot
+ * does not tile,
  * in Unity's v-up (so 1 − v on the way in and out). Main and plus sit in the
  * data slots 0 and 1 and are decoded from sRGB here; the mask sits in slot 2,
  * which the maps upload as colour. Then the fragment, as the bake has it
@@ -877,6 +911,29 @@ export function effectSheetGraph(name: string, e: EffectSpec): ShaderGraph {
   // A layer's picture, linear, and its alpha. Rotation about 0.5, scale, offset,
   // scroll and the flip back to the image's rows fold into two dot products and
   // two constants: engine (x, y) = (su, 1 − sv).
+  // THE NOISE: its red, sampled on the mesh UV scrolled by speed a second and
+  // then scaled, and in Unity's v-up the pull is uv + k·(n − uv); in the
+  // engine's rows (x, 1 − v) that is x + kx·(n − x), y + ky·((1 − n) − y).
+  const nz = e.noise
+  let nred: In | null = null
+  if (nz) {
+    const nuv = node(
+      "vector_math/multiply_add",
+      {
+        a: node("vector_math/multiply_add", { a: [nz.speed[0], nz.speed[1], 0], b: node("combine_xyz", { x: time, y: time, z: 0 }, "vector"), c: q }, "vector"),
+        b: [nz.scale[0], -nz.scale[1], 0],
+        c: [nz.offset[0], 1 - nz.offset[1], 0],
+      },
+      "vector",
+    )
+    nred = node("separate_color", { color: node("tex_image/3", { uv: nuv }, "color") }, "r")
+  }
+  const bend = (uv: In, on: boolean): In => {
+    if (!nz || !nred || !on) return uv
+    const [kx, ky] = nz.strength
+    const pull = node("vector_math/multiply_add", { a: node("combine_xyz", { x: nred, y: nred, z: 0 }, "vector"), b: [kx, -ky, 0], c: [0, ky, 0] }, "vector")
+    return node("vector_math/multiply_add", { a: uv, b: [1 - kx, 1 - ky, 1], c: pull }, "vector")
+  }
   const sample = (slot: 0 | 1 | 2, l: EffectLayer) => {
     const th = 2 * Math.PI * ((((l.rotation / 360) % 1) + 1) % 1)
     const c = Math.cos(th)
@@ -887,7 +944,16 @@ export function effectSheetGraph(name: string, e: EffectSpec): ShaderGraph {
     const su = node("vector_math/dot", { a: q, b: [sx * c, sx * s, 0] }, "value")
     const sv = node("vector_math/dot", { a: q, b: [-sy * s, sy * c, 0] }, "value")
     let uv: In = node("vector_math/multiply_add", { a: node("combine_xyz", { x: su, y: sv, z: 0 }, "vector"), b: [1, -1, 0], c: [bu, 1 - bv, 0] }, "vector")
-    if (l.speed[0] || l.speed[1]) uv = node("vector_math/multiply_add", { a: [sx * l.speed[0], -sy * l.speed[1], 0], b: node("combine_xyz", { x: time, y: time, z: 0 }, "vector"), c: uv }, "vector")
+    // THE SCROLL IS ADDED BEFORE THE ROTATION, AND CROSSED: the vertex shader adds
+    // time · speed to (v, u) — speed.x moves v, speed.y moves u — then rotates and
+    // scales. Rotation and scale are linear, so the scroll arrives as a constant
+    // velocity through them: X348's falls roll their mask down the fall (the
+    // mesh's u) instead of across it.
+    const du0 = l.speed[1]
+    const dv0 = l.speed[0]
+    const rate = [sx * (c * du0 + s * dv0), -sy * (-s * du0 + c * dv0)]
+    if (rate[0] || rate[1]) uv = node("vector_math/multiply_add", { a: [rate[0], rate[1], 0], b: node("combine_xyz", { x: time, y: time, z: 0 }, "vector"), c: uv }, "vector")
+    uv = bend(uv, slot === 0 ? !!nz?.main : slot === 1 ? !!nz?.plus : !!nz?.mask)
     if (!l.tiling) uv = node("vector_math/minimum", { a: node("vector_math/maximum", { a: uv, b: [0, 0, 0] }, "vector"), b: [1, 1, 1] }, "vector")
     const tex = node(`tex_image/${slot}`, { uv }, "color")
     // slots 0 and 1 are data maps: decode here what the mask's slot decodes on upload
@@ -949,6 +1015,130 @@ export function effectSheetGraph(name: string, e: EffectSpec): ShaderGraph {
 }
 
 /**
+ * The game's Ripplet water (SimPipeline/Scene/Ripplet), from its decompiled
+ * fragment — X348's pool, whose glints are the sky mirrored in its ripples.
+ *
+ * Two samples of the ripple map, each in world space: (x, z) in the game's
+ * units times density, tiling and the layer's own density, scrolled by time ·
+ * speed · 0.1 · _RippleUVOffest (the converter folds those into per-metre
+ * scales and per-second drifts). Each is unpacked as the game unpacks it (its
+ * red times its alpha: the converter's maps are RGB, alpha 1) — lifted toward flat by
+ * its strength, the two blended (xy summed, z multiplied), and the result
+ * leaned from straight up by _RippleScale. Then:
+ *
+ *   F      = (1 − N·V)^4
+ *   refl   = mix(_ReflectionColor.rgb, _ReflectionColor.a, F)
+ *   colour = (sky(reflect(−V, N)) · cube² · refl + _Color · (1 + N·L · sun · shadow))
+ *            · _ReflectionIntensity
+ *   alpha  = min(luminance(refl) + _Color.a, 1)
+ *
+ * The sky is the stage's own world picture — the reflection probe the
+ * converter bakes — where the game reads its own cubemap. Its sun highlight
+ * falls to zero at X348's _ReflectionColor.a of 1 (a roughness of 0), so it is
+ * not drawn; nor are the horizon fade, the rim against depth and the fluid
+ * simulation.
+ */
+export function rippletGraph(name: string, r: RippleSpec): ShaderGraph {
+  type Ref = { node: string; socket: string }
+  type In = Ref | number | [number, number, number]
+  const nodes: ShaderGraph["nodes"] = []
+  const links: ShaderGraph["links"] = []
+  let count = 0
+  const node = (type: string, inputs: Record<string, In>, socket: string): Ref => {
+    const id = `n${count++}`
+    const literals: Record<string, number | [number, number, number]> = {}
+    for (const [k, v] of Object.entries(inputs)) {
+      if (typeof v === "number" || Array.isArray(v)) literals[k] = v
+      else links.push({ from: v, to: { node: id, socket: k } })
+    }
+    nodes.push({ id, type, inputs: literals })
+    return { node: id, socket }
+  }
+  const at = (ref: Ref, socket: string): Ref => ({ node: ref.node, socket })
+  const mul = (a: In, b: In) => node("math/multiply", { a, b }, "value")
+  const geo = node("geometry", {}, "world_pos")
+  const time = node("time", {}, "value")
+  const clock = node("combine_xyz", { x: time, y: time, z: 0 }, "vector")
+
+  // One layer's tangent normal (x, y, z), lifted toward flat by its strength.
+  const layer = (l: RippleSpec["layers"][number]): Ref => {
+    // THE WORLD HERE IS THE PMX'S: 12.5 to the metre, and the game's (x, z)
+    // is (−X, −Z) of it. So u = −X·k and, the image's rows running down and
+    // the map tiling, −v = Z·k.
+    const ku = l.scale[0] / PMX_PER_METRE
+    const kv = l.scale[1] / PMX_PER_METRE
+    const su = node("vector_math/dot", { a: geo, b: [-ku, 0, 0] }, "value")
+    const sv = node("vector_math/dot", { a: geo, b: [0, 0, kv] }, "value")
+    const uv = node("vector_math/multiply_add", { a: [l.drift[0], -l.drift[1], 0], b: clock, c: node("combine_xyz", { x: su, y: sv, z: 0 }, "vector") }, "vector")
+    const tex = node("tex_image/0", { uv }, "color")
+    const sep = node("separate_color", { color: tex }, "r")
+    const t = node(
+      "vector_math/multiply_add",
+      { a: node("combine_xyz", { x: sep, y: at(sep, "g"), z: 0 }, "vector"), b: [2, 2, 0], c: [-1, -1, 0] },
+      "vector",
+    )
+    const z = node(
+      "math/sqrt",
+      { a: node("math/maximum", { a: node("math/subtract", { a: 1, b: node("vector_math/dot", { a: t, b: t }, "value") }, "value"), b: 1e-8 }, "value") },
+      "value",
+    )
+    const full = node("vector_math/add", { a: t, b: node("combine_xyz", { x: 0, y: 0, z }, "vector") }, "vector")
+    const k = l.strength
+    return node("vector_math/multiply_add", { a: full, b: [k, k, k], c: [0, 0, 1 - k] }, "vector")
+  }
+  const a = layer(r.layers[0])
+  const b = layer(r.layers[1])
+  const sum = node("separate_xyz", { vector: node("vector_math/add", { a, b }, "vector") }, "x")
+  const bz = mul(node("separate_xyz", { vector: a }, "z"), node("separate_xyz", { vector: b }, "z"))
+  // tangent (x, y, z) is the game's world (x, z, y), leaned from up by S; the PMX mirrors x and z
+  const S = r.strength
+  const n = node(
+    "vector_math/normalize",
+    { a: node("combine_xyz", { x: mul(sum, -S), y: node("math/multiply_add", { a: bz, b: S, c: 1 - S }, "value"), z: mul(at(sum, "y"), -S) }, "vector") },
+    "vector",
+  )
+  const view = at(geo, "view")
+  // the water faces the camera and the sun is above it: neither dot needs a floor
+  const ndv = node("vector_math/dot", { a: n, b: view }, "value")
+  const f = node("math/power", { a: node("math/subtract", { a: 1, b: ndv }, "value"), b: 4 }, "value")
+  const [rr, rg, rb, ra] = r.reflection
+  const refl = node(
+    "vector_math/multiply_add",
+    { a: node("combine_xyz", { x: f, y: f, z: f }, "vector"), b: [ra - rr, ra - rg, ra - rb], c: [rr, rg, rb] },
+    "vector",
+  )
+  const bounce = node("vector_math/reflect", { a: node("vector_math/scale", { a: view, scale: -1 }, "vector"), b: n }, "vector")
+  const sky = node("environment", { vector: bounce, roughness: 0 }, "color")
+  const mirrored = node("vector_math/multiply", { a: node("vector_math/scale", { a: sky, scale: r.cube * r.cube }, "vector"), b: refl }, "vector")
+  const light = node("light", {}, "direction")
+  const ndl = node("vector_math/dot", { a: n, b: light }, "value")
+  const lit = node("vector_math/scale", { a: at(light, "color"), scale: mul(ndl, at(light, "shadow")) }, "vector")
+  const [cr, cg, cb, ca] = r.color
+  const body = node("vector_math/multiply_add", { a: lit, b: [cr, cg, cb], c: [cr, cg, cb] }, "vector")
+  const colour = node("vector_math/scale", { a: node("vector_math/add", { a: mirrored, b: body }, "vector"), scale: r.intensity }, "vector")
+  const out = node("emission", { color: colour, strength: 1 }, "color")
+  // opaque where the reflection's own luminance and _Color.a reach 1; X348's pool is about 0.77
+  const floor = 0.2126729 * rr + 0.7151522 * rg + 0.072175 * rb + (ca ?? 1)
+  return {
+    version: 1,
+    name: `Water ${name}`,
+    tags: ["stage", "water"],
+    nodes,
+    links,
+    output: out,
+    ...(floor >= 1
+      ? {}
+      : {
+          opacity: node(
+            "math/minimum",
+            { a: node("math/add", { a: node("vector_math/dot", { a: refl, b: [0.2126729, 0.7151522, 0.072175] }, "value"), b: ca }, "value"), b: 1 },
+            "value",
+          ),
+        }),
+  }
+}
+
+/**
  * The style groups a glTF stage wears: Stage PBR per emissive strength (and
  * per cutout), the app's own look where the file names one, Unlit for what
  * takes no light.
@@ -979,6 +1169,16 @@ export function glbStyleGroups(materials: GlbMaterial[]): StyleGroup[] {
           renderClass: "auto",
           ...(effect.dstBlend <= 1.0001 ? { blend: "additive" as const } : {}),
         }),
+        m.name,
+      )
+      continue
+    }
+    // THE GAME'S WATER, on its own numbers — one group each.
+    if (m.ripple && m.ripple.layers?.length === 2) {
+      const ripple = m.ripple
+      add(
+        `ripple:${m.name}`,
+        () => ({ id: `stage-water-${fileSafe(m.name).toLowerCase()}`, label: `Water ${m.name}`, materials: [], graph: rippletGraph(m.name, ripple), renderClass: "auto" }),
         m.name,
       )
       continue

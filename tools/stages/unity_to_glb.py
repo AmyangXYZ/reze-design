@@ -147,6 +147,78 @@ def flame_points(scene, materials_by_guid):
     return [{"name": f"flame.{i + 1:02d}", "from": list(a), "to": list(b)} for i, (a, b) in enumerate(found)]
 
 
+# ── Splashes ────────────────────────────────────────────────────────────────
+
+SPRAY_WORDS = ("shui", "water", "penquan", "spray", "pubu")
+# A pull this strong (gravityModifier) is a SPLASH at a fall's foot or a
+# fountain's crown — tall splats, few, big — and a lighter one SPRAY: smaller
+# splats sitting above the water, more of them. X348's are 3-5 against 0.1-1.5.
+MIST_GRAVITY = 2.0
+# A wide emitter (a line of spray along a fall's foot) gets a point every this far.
+SPRAY_STEP = 1.5
+
+
+def ripple_spec(mat):
+    """The game's Ripplet water, as the app's rippletGraph draws it.
+
+    Its vertex shader: uv = (x, z) · _RippleDensity · _RippleDensityN ·
+    _RippleTiling + _Time.y · _RippleSpeed · 0.1 · _RippleUVOffest, in the
+    game's units — here per glTF metre (x mirrored, so along −x) and per second.
+    The colours are gamma in the file and linear to the shader.
+    """
+    f, c, a = mat["floats"], mat["colors"], mat["alpha"]
+    tiling = [*c.get("_RippleTiling", (1.0, 1.0, 1.0))[:3], a.get("_RippleTiling", 1.0)]
+    offset = [*c.get("_RippleUVOffest", (0.0, 0.0, 0.0))[:3], a.get("_RippleUVOffest", 0.0)]
+    density = f.get("_RippleDensity", 1.0)
+    drift = f.get("_RippleSpeed", 0.0) * 0.1
+    layers = []
+    for k, (tu, tv, ou, ov) in enumerate(((tiling[0], tiling[1], offset[0], offset[1]), (tiling[2], tiling[3], offset[2], offset[3]))):
+        d = density * f.get(f"_RippleDensity{k + 1}", 1.0)
+        layers.append({"scale": [d * tu / METRES, d * tv / METRES], "drift": [drift * ou, drift * ov], "strength": f.get(f"_RippleScale{k + 1}", 1.0)})
+    colour = c.get("_Color", (1.0, 1.0, 1.0))
+    reflection = c.get("_ReflectionColor", (1.0, 1.0, 1.0))
+    return {
+        "layers": layers,
+        "strength": f.get("_RippleScale", 1.0),
+        "color": [gamma_to_linear(v) for v in colour[:3]] + [a.get("_Color", 1.0)],
+        "reflection": [gamma_to_linear(v) for v in reflection[:3]] + [a.get("_ReflectionColor", 1.0)],
+        "intensity": f.get("_ReflectionIntensity", 1.0),
+        "cube": f.get("_CustomEnvCubeScale", 1.0),
+    }
+
+
+def spray_points(scene, materials_by_guid):
+    """Every water splash the game draws, as points for the app's effects.
+
+    Two kinds by the game's own pull (MIST_GRAVITY): splash.NN and spray.NN.
+
+    X348's are billboard particle systems, and none of them FLIES: every one
+    clamps its particles to a unit a second (ClampVelocity), launch speed and
+    gravity notwithstanding. What shows is the picture — a bright splat of
+    water, rotated at random, growing and fading where it was born. glTF has no
+    particles, so each emitter becomes a point the app stands Water Splash or
+    Water Spray on (as flame.NN carries Candle Flames): +Y the way the water
+    leaves, and as long as the game's largest particle, since everything the
+    effect draws is sized against that. A wide one is a row of them.
+    """
+    splash, spray = [], []
+    for e in scene.spray_emitters():
+        names = [(materials_by_guid.get(g) or {}).get("name", "").lower() for g in e["materials"]]
+        if not any(w in n for n in names for w in SPRAY_WORDS) or e["speed"] <= 0.0:
+            continue
+        count = max(1, min(12, round(e["width"] / SPRAY_STEP)))
+        for k in range(count):
+            t = (k + 0.5) / count - 0.5 if count > 1 else 0.0
+            base = tuple(e["position"][i] + e["spanAxis"][i] * e["width"] * t for i in range(3))
+            tip = tuple(base[i] + e["axis"][i] * e["size"] for i in range(3))
+            (splash if e["gravity"] >= MIST_GRAVITY else spray).append((to_gltf(base), to_gltf(tip)))
+    out = []
+    for kind, found in (("splash", splash), ("spray", spray)):
+        found.sort(key=lambda f: sum(v * v for v in f[0]))
+        out += [{"name": f"{kind}.{i + 1:02d}", "from": list(a), "to": list(b)} for i, (a, b) in enumerate(found)]
+    return out
+
+
 # ── Maps, packed the way glTF reads them ─────────────────────────────────────
 
 _PACKED = {}
@@ -176,7 +248,7 @@ def pack_orm(material, png_root, proj, out_tex):
         orm = np.clip(np.stack([remapped[..., 2], remapped[..., 1], remapped[..., 0]], axis=-1), 0.0, 1.0)
         name = re.sub(r"[^A-Za-z0-9_.-]", "_", os.path.splitext(os.path.basename(src))[0])
         rel = f"{name}_{len(_PACKED):02d}_ORM.png"
-        Image.fromarray((orm * 255.0 + 0.5).astype(np.uint8)).save(os.path.join(out_tex, rel))
+        Image.fromarray((orm * 255.0 + 0.5).astype(np.uint8)).save(os.path.join(out_tex, rel), compress_level=1)
         _PACKED[key] = rel
     return _PACKED[key]
 
@@ -217,7 +289,7 @@ def pack_emissive(material, shader, png_root, proj, out_tex):
             lin = _srgb_to_linear(rgb) * e[..., None] / strength
             name = re.sub(r"[^A-Za-z0-9_.-]", "_", os.path.splitext(os.path.basename(asrc))[0])
             rel = f"{name}_{len(_PACKED):02d}_E.png"
-            Image.fromarray((_linear_to_srgb(lin) * 255.0 + 0.5).astype(np.uint8)).save(os.path.join(out_tex, rel))
+            Image.fromarray((_linear_to_srgb(lin) * 255.0 + 0.5).astype(np.uint8)).save(os.path.join(out_tex, rel), compress_level=1)
             _PACKED[key] = (rel, strength)
     return _PACKED[key]
 
@@ -251,7 +323,7 @@ def opaque_texture(rel, out_tex):
         return rel
     stem = os.path.splitext(rel)[0] + "_rgb.png"
     if not os.path.exists(os.path.join(out_tex, stem)):
-        im.convert("RGB").save(os.path.join(out_tex, stem))
+        im.convert("RGB").save(os.path.join(out_tex, stem), compress_level=1)
     return stem
 
 
@@ -433,17 +505,35 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
             local = mm(mm(ry, rx), rz)
             s = r["particle"]["size"]
             local = tuple(tuple(local[i][j] * s[j] for j in range(3)) for i in range(3))
+            # a standing field's particle stands where it was born in the emitter's space
+            o = r["particle"].get("offset") or (0.0, 0.0, 0.0)
+            translation = tuple(translation[i] + sum(matrix[i][j] * o[j] for j in range(3)) for i in range(3))
             matrix = mm(matrix, local)
         if any((shader_of(materials_by_guid.get(g)) or "").endswith("SceneBillboard") for g in r["materials"]):
             matrix = face_origin(matrix, translation)
+        # A MIRRORED OBJECT (a negative scale in its chain) turns its triangles
+        # inside out, and Unity turns them back when it draws: X348 builds its
+        # left-hand falls as the right-hand ones under a parent at (−1, 1, 1),
+        # and taken as they are their single-sided sheets faced away and the
+        # whole left half of the curtain was culled.
+        mirrored = (
+            matrix[0][0] * (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1])
+            - matrix[0][1] * (matrix[1][0] * matrix[2][2] - matrix[1][2] * matrix[2][0])
+            + matrix[0][2] * (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0])
+        ) < 0
         for slot_index, guid in enumerate(r["materials"]):
             i = r["firstSubMesh"] + slot_index
             if i >= len(m.submeshes):
                 break
             mat = materials_by_guid.get(guid)
             key = mat["name"] if mat else f"unnamed_{guid[:8]}"
+            # A PARTICLE'S OWN COLOUR tints what it wears (the effect shader's
+            # vertex colour), so a tinted one is a material of its own.
+            tint = tuple(round(c, 3) for c in (r.get("particle") or {}).get("color", (1.0, 1.0, 1.0, 1.0)))
+            if tint != (1.0, 1.0, 1.0, 1.0):
+                key = f"{key} tint {tint[0]:.2f} {tint[1]:.2f} {tint[2]:.2f} {tint[3]:.2f}"
             if key not in per_material:
-                per_material[key] = {"guid": guid, "positions": [], "normals": [], "uvs": [], "indices": []}
+                per_material[key] = {"guid": guid, "positions": [], "normals": [], "uvs": [], "indices": [], "tint": tint}
                 order.append(key)
             bucket = per_material[key]
             shader_name = shader_of(mat)
@@ -451,7 +541,12 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
             # and the mesh's u carries its repeats; every texture's own transform
             # is inside the bake, so the UVs go raw.
             layer_repeats = repeats_across(mat) if mat and is_effect_decal(shader_name) and is_sky_layer(mat, shader_name) else 0
-            albedo_st = albedo_slot(mat, png_root, proj) if mat and not layer_repeats else None
+            # AND SO ARE THE REST OF THE FAMILY: the decal's bake and the live
+            # sheet's graph each apply every layer's own tiling, so its UVs go
+            # raw too. Taking _MainTex's here as well applied it twice — X348's
+            # rainbow (2.24 across) drew as two, its mist domes (17.4 across)
+            # as three hundred rows of dashes.
+            albedo_st = albedo_slot(mat, png_root, proj) if mat and not layer_repeats and not is_effect_decal(shader_name) else None
             (su, sv), (ou, ov) = (albedo_st["scale"], albedo_st["offset"]) if albedo_st else ((float(layer_repeats or 1), 1.0), (0.0, 0.0))
             remap = {}
             for tri in m.triangles(i):
@@ -468,8 +563,9 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
                         # ribbed strip and a net panel its emissive screen.
                         bucket["uvs"].append((uv[0] * su + ou, uv[1] * sv + ov))
                     out.append(remap[v])
-                # The mirror above reversed the winding; put it back.
-                bucket["indices"].append((out[0], out[2], out[1]))
+                # The mirror above reversed the winding; put it back — unless the
+                # object is mirrored too, which reversed it once more.
+                bucket["indices"].append((out[0], out[1], out[2]) if mirrored else (out[0], out[2], out[1]))
 
     # ONE SURFACE, TWO LAYERS. X309's nebula and its purple band are the same
     # cylinder at the same radius, and two layers in one surface fight over its
@@ -531,19 +627,19 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
         if mat and family == "BottleGlass" and "_BaseColor" in mat["colors"]:
             tint, alpha = tuple(mat["colors"]["_BaseColor"][:3]), mat["alpha"].get("_BaseColor", 1.0)
             family = "Glass"
-        # CARTOON WATER IS WATER. Scene/CartoonWaterV2 (X348's sea) shades by depth
-        # between _ShallowColor and _BaseColor, with caustics and foam this app has
-        # no depth to draw. Its body is the two mixed 7:3 — what Unity draws for
-        # X348's sea around the island, sRGB (0.05, 0.53, 0.60) against a _BaseColor
-        # of (0, 0.44, 0.62) — and its ripples are _NormalTex. Read as an unknown
-        # shader the sea was left out; read as Standard its _MainTex (a grey
-        # detail mask under _MainColor) would paint it concrete.
+        # CARTOON WATER IS A LIT PICTURE. Scene/CartoonWaterV2 (X348's sea), as
+        # decompiled: _MainTex (on the mesh UV, its own tiling) times _MainColor,
+        # lit by the ambient and the sun through _NormalTex, opaque wherever the
+        # water is deeper than its soft edge. _BaseColor and _ShallowColor are an
+        # older shader's leftovers it never reads; its reflection, sun glint and
+        # sparkle are all scaled by material values of 0 on X348; its caustics,
+        # soft shore and foam line need the scene's depth and only show where the
+        # water meets something. Taken as the app's Water look instead, the sea
+        # was the sky's reflection at every grazing angle — white.
         cartoon_water = bool(mat) and family == "CartoonWaterV2"
         if cartoon_water:
-            deep = mat["colors"].get("_BaseColor", (0.0, 0.44, 0.62))[:3]
-            shallow_c = mat["colors"].get("_ShallowColor", deep)[:3]
-            tint, alpha = tuple(0.7 * d + 0.3 * s for d, s in zip(deep, shallow_c)), mat["alpha"].get("_BaseColor", 1.0)
-            family = "Ripplet"
+            tint, alpha = tuple(mat["colors"].get("_MainColor", (1.0, 1.0, 1.0))[:3]), 1.0
+            family = "Standard"
         sky_material = key in domes or bool(mat and (is_sky(mat) or is_sky_layer(mat, shader)))
         # AN EFFECT DECAL IS BAKED, as a sky layer is: the shader's own
         # composition at time 0 — its mask, its HDR second picture, its add or
@@ -556,9 +652,8 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
         # old way: its picture and tint, or left out when that has no coverage.
         bake_decal = bool(mat) and is_effect_decal(shader) and not sky_material
         masked_decal = bake_decal and "MASK" in mat["keywords"]
-        if mat and is_effect_decal(shader) and alpha == 0.0 and not sky_material and not masked_decal:
-            decals_dropped.append(key)
-            continue
+        # (one the bake can draw is judged by the bake, below: X348's sheer
+        # curtains carry no coverage in their albedo and all of it in the shader)
         # A REFLECTIVE COAT: SimPipeline/Scene/Transparent with nothing of its own
         # to paint — its colour black or its shininess 1 — is a sheen, the room's
         # blurred reflection at an alpha of (1 − N·V)^_AlphaFresnel, and takes no
@@ -578,7 +673,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
                 coats_dropped.append(key)
                 continue
         basic_effect = bool(mat) and family in BASIC_EFFECT_SHADERS
-        if family not in ("Standard", "Plant", "Glass", "Ripplet", "Effect_Common", "SceneBillboard", "FresnelColor", "Standard_PBR_2", "Detailed", "", *BASIC_EFFECT_SHADERS):
+        if family not in ("Standard", "Plant", "Glass", "Ripplet", "Effect_Common", "Effect_Common_VertexOffset", "SceneBillboard", "FresnelColor", "Standard_PBR_2", "Detailed", "", *BASIC_EFFECT_SHADERS):
             unknown.setdefault(shader, []).append(key)
 
         np.savez(
@@ -600,12 +695,15 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
                 baked = os.path.basename(written)
                 gain = int(re.search(r"_x(\d+)\.png$", baked).group(1))
                 (sky_layers if sky_material else baked_decals).append(key)
-            elif masked_decal:
+            elif masked_decal or alpha == 0.0:
                 decals_dropped.append(key)
                 continue
         # AND WHEN IT MOVES, the layers themselves ride along (unity_effect_bake,
         # live_effect): the baked picture stays as the frame any other viewer shows.
         effect = live_effect(mat, lambda g: png_for(png_root, proj.path(g) or "")) if baked and not sky_material else None
+        tint = per_material[key].get("tint", (1.0, 1.0, 1.0, 1.0))
+        if effect and tint != (1.0, 1.0, 1.0, 1.0):
+            effect["color"] = [c * gamma_to_linear(t) for c, t in zip(effect["color"][:3], tint[:3])] + [effect["color"][3] * tint[3]]
         if effect:
             live_effects.append(key)
         # A plain effect sheet — a shadow projection, a candle's glow — is its
@@ -618,7 +716,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
                 sheet = os.path.basename(written)
             else:
                 notes.append(f"{key}: its {shader} texture is missing; exported as Standard")
-        albedo = albedo_slot(mat, png_root, proj) if mat and not baked and not sheet and not cartoon_water else None
+        albedo = albedo_slot(mat, png_root, proj) if mat and not baked and not sheet else None
         src = png_for(png_root, proj.path(albedo["guid"]) or "") if albedo else None
         if src:
             base = copy_texture(src, out_tex, copied)
@@ -660,7 +758,10 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
         premult = bool(mat) and "TRANSPARENT_PREMULT" in mat["keywords"]
         # SceneBillboard clips at _Cutoff with no keyword asking it to: a
         # moon or a tree card read as opaque is its whole square.
-        cutoff = bool(mat) and ("CUTOFF" in mat["keywords"] or shader == "SimPipeline/Scene/SceneBillboard")
+        # The effect family has no CUTOFF variant at all — X348's clouds carry the
+        # keyword stale and the game blends them; taken as a cutout they drew as
+        # dithered specks.
+        cutoff = bool(mat) and not is_effect_decal(shader) and ("CUTOFF" in mat["keywords"] or shader == "SimPipeline/Scene/SceneBillboard")
         lit_family = family in ("Glass", "Ripplet")
         # UNLIT IS THE SHADER'S TO SAY, never a blend keyword's. A sky and an
         # effect sheet take no light; TRANSPARENT_PREMULT is how a surface is
@@ -669,7 +770,13 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
         # game's own _DEFAULT_REFLECTION and _REAL_REFLECTION — into a flat
         # picture that no lamp reached and no camera move changed, over a floor
         # that was lit correctly underneath it.
-        unlit = bool(mat) and not lit_family and (sky_material or is_effect_decal(shader) or bool(sheet))
+        # A SKY DOME ON A LIT SHADER IS LIT: X348's is SimPipeline/PBR/Standard
+        # (its cloud colours an older sky shader's leftovers), so the game lights
+        # it and lays its fog over it — the black second layer is what darkens
+        # its horizon to navy. Drawn unlit it took no fog and stayed pale azure
+        # down to the sea.
+        lit_dome = sky_material and shader in ("SimPipeline/PBR/Standard", "SimPipeline/PBR/Standard_PBR_2") and not is_effect_decal(shader)
+        unlit = bool(mat) and not lit_family and not lit_dome and (sky_material or is_effect_decal(shader) or bool(sheet))
         additive = bool(mat) and float(mat["floats"].get("_DstBlend", 10.0)) == 1.0 and is_effect_decal(shader)
         alpha_mode = "MASK" if cutoff else ("BLEND" if (alpha < 1.0 or premult or is_effect_decal(shader) or baked or sheet) else "OPAQUE")
         if alpha_mode == "OPAQUE" and base:
@@ -698,8 +805,13 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
                 # blend mode's default.
                 "queue": (mat["queue"] if mat and mat.get("queue", -1) >= 0 else {"OPAQUE": 2000, "MASK": 2450}.get(alpha_mode, 3000)),
                 # What glTF cannot say: which of the app's looks this is.
-                "look": {"Glass": "glass", "Ripplet": "water", "Plant": "foliage"}.get(family),
+                # "" states NONE: the app guesses a look from a name only when the
+                # file is silent, and X348_water_002 — a lit picture of the sea —
+                # would be taken for Water by its name.
+                "look": {"Glass": "glass", "Ripplet": "water", "Plant": "foliage"}.get(family, "" if cartoon_water else None),
                 **({"effect": effect} if effect else {}),
+                # The game's own water, on its own numbers (rippletGraph).
+                **({"ripple": ripple_spec(mat)} if mat and (shader or "").endswith("/Ripplet") else {}),
             }
         )
 
@@ -805,9 +917,15 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
     for shader, names in unknown.items():
         notes.append(f"UNKNOWN SHADER FAMILY {shader}: {', '.join(names)} — exported as Standard")
 
-    points = flame_points(scene, materials_by_guid)
-    if points:
-        notes.append(f"{len(points)} candle flames -> empties flame.01..{len(points):02d} (Candle Flames (wick bones) stands a flame on each)")
+    flames = flame_points(scene, materials_by_guid)
+    if flames:
+        notes.append(f"{len(flames)} candle flames -> empties flame.01..{len(flames):02d} (Candle Flames (wick bones) stands a flame on each)")
+    sprays = spray_points(scene, materials_by_guid)
+    for kind, effect in (("splash", "Water Splash (splash bones)"), ("spray", "Water Spray (spray bones)")):
+        n = sum(1 for p in sprays if p["name"].startswith(kind + "."))
+        if n:
+            notes.append(f"{n} water {kind} points -> empties {kind}.01..{n:02d} ({effect} splashes on each)")
+    points = flames + sprays
 
     scene_json = {
         "name": name,

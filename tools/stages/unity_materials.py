@@ -180,7 +180,9 @@ def material_tint(material, shader):
 # The effect-decal family: a wet patch, a scorch, a light pool. Painted rather
 # than lit, premultiplied, ZWrite off, and its coverage comes from its own
 # textures — see EFFECT_DECAL_NOTE at the call below.
-EFFECT_SHADERS = ("Effect_Common",)
+# Effect_Common_VertexOffset is the same shader with a wind sway on its
+# vertices (X348's sheer curtains): drawn as the sheet it is, standing still.
+EFFECT_SHADERS = ("Effect_Common", "Effect_Common_VertexOffset")
 
 
 def is_effect_decal(shader):

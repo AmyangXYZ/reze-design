@@ -104,7 +104,9 @@ function namedMaps(model: Model, byPath: Map<string, File>, dir: string): Record
     const own = fileSafe(m.name)
     const orm = first(own, "ORM")
     if (orm) {
-      out[m.name] = [first(own, "N"), orm, first(own, "E")]
+      // a moving effect sheet's noise picture, when it has one, is the fourth
+      const noise = first(own, "X")
+      out[m.name] = noise ? [first(own, "N"), orm, first(own, "E"), noise] : [first(own, "N"), orm, first(own, "E")]
       continue
     }
     const albedo = textures[m.diffuseTextureIndex]?.path

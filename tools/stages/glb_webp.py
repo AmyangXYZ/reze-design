@@ -16,6 +16,7 @@
 
 import argparse
 import io
+from concurrent.futures import ProcessPoolExecutor
 import json
 import os
 import struct
@@ -69,12 +70,17 @@ def convert(src, dst, quality):
     views = js.get("bufferViews", [])
     replaced = {}
     before = after = 0
-    for i, img in enumerate(images):
-        if img.get("bufferView") is None or img.get("mimeType") not in ("image/png", "image/jpeg"):
-            continue
-        bv = views[img["bufferView"]]
-        raw = binary[bv.get("byteOffset", 0) : bv.get("byteOffset", 0) + bv["byteLength"]]
-        webp = to_webp(raw, quality)
+    todo = [
+        (i, binary[views[img["bufferView"]].get("byteOffset", 0) : views[img["bufferView"]].get("byteOffset", 0) + views[img["bufferView"]]["byteLength"]])
+        for i, img in enumerate(images)
+        if img.get("bufferView") is not None and img.get("mimeType") in ("image/png", "image/jpeg")
+    ]
+    # Every image on its own core: 225 of X348's took minutes one after another.
+    with ProcessPoolExecutor() as pool:
+        encoded = dict(zip((i for i, _ in todo), pool.map(to_webp, (raw for _, raw in todo), [quality] * len(todo))))
+    for i, raw in todo:
+        img = images[i]
+        webp = encoded[i]
         before += len(raw)
         if len(webp) >= len(raw):
             after += len(raw)

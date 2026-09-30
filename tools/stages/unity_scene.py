@@ -11,7 +11,9 @@
 # half that reads it. `profile.py` is the half that writes it out in the shape
 # the app takes.
 
+import math
 import os
+import random
 import re
 import struct
 
@@ -295,6 +297,93 @@ class Scene:
             )
         return out
 
+    def spray_emitters(self):
+        """Every billboard particle system that emits, with what places its spray.
+
+        X348's splashes and fountain jets: a system born on a shape (a box, a
+        cone) and launched along the shape's +Z at startSpeed, pulled down by
+        gravityModifier × 9.81. Returned in Unity world units: where it emits
+        (`position`), along what (`axis`, unit), the shape's width and the axis
+        it spans (a box's x, a line of spray along a fall's foot), the launch
+        speed and gravity scaled the way the system's scaling mode scales them,
+        and its materials so the caller can tell water from birds.
+        """
+        out = []
+        systems = {}
+        for fid, (cls, body) in self.docs.items():
+            if cls == 198:
+                go = re.search(r"m_GameObject:\s*\{fileID:\s*(-?\d+)", body)
+                if go:
+                    systems[int(go.group(1))] = body
+
+        def curve(body, key, default=0.0):
+            m = re.search(rf"\n\s+{key}:\s*\n(?:\s+serializedVersion: \d+\n)?\s+minMaxState: (\d+)\n\s+scalar: (-?[\d.eE+-]+)\n\s+minScalar: (-?[\d.eE+-]+)", body)
+            if not m:
+                return default
+            state, hi, lo = int(m.group(1)), float(m.group(2)), float(m.group(3))
+            return (hi + lo) / 2.0 if state == 3 else hi
+
+        for fid, (cls, body) in self.docs.items():
+            if cls != 199 or int(shallow(body, "m_RenderMode", "0") or 0) == 4:
+                continue
+            go = int(re.search(r"m_GameObject:\s*\{fileID:\s*(-?\d+)", body).group(1))
+            if shallow(body, "m_Enabled", "1") != "1" or not self.active_in_hierarchy(go):
+                continue
+            system = systems.get(go, "")
+            initial = system[system.find("InitialModule:") :]
+            shape = system[system.find("ShapeModule:") :]
+            emission = system[system.find("EmissionModule:") :]
+            if field(emission, "enabled", "0") != "1" or curve(emission, "rateOverTime") <= 0.0:
+                continue
+            tf = self.transform_of(go)
+            if not tf:
+                continue
+            matrix, position = self.world_matrix(tf)
+            srot = vector(field(shape, "m_Rotation"), (0.0, 0.0, 0.0))
+            sscale = vector(field(shape, "m_Scale"), (1.0, 1.0, 1.0))
+            spos = vector(field(shape, "m_Position"), (0.0, 0.0, 0.0))
+
+            # the shape's own rotation (Euler, Z then X then Y), inside the transform
+            ax, ay, az = (math.radians(a) for a in srot)
+            rx = ((1, 0, 0), (0, math.cos(ax), -math.sin(ax)), (0, math.sin(ax), math.cos(ax)))
+            ry = ((math.cos(ay), 0, math.sin(ay)), (0, 1, 0), (-math.sin(ay), 0, math.cos(ay)))
+            rz = ((math.cos(az), -math.sin(az), 0), (math.sin(az), math.cos(az), 0), (0, 0, 1))
+            mm = lambda a, b: tuple(tuple(sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)) for i in range(3))
+            m = mm(matrix, mm(mm(ry, rx), rz))
+            apply = lambda v: tuple(sum(m[r][c] * v[c] for c in range(3)) for r in range(3))
+            origin = tuple(position[r] + sum(matrix[r][c] * spos[c] for c in range(3)) for r in range(3))
+            axis = apply((0.0, 0.0, 1.0))
+            span_axis = apply((1.0, 0.0, 0.0))
+            n = math.sqrt(sum(c * c for c in axis)) or 1.0
+            ns = math.sqrt(sum(c * c for c in span_axis)) or 1.0
+            kind = int(field(shape, "type", "4") or 4) if field(shape, "enabled", "0") == "1" else -1
+            # a box spans its x; a cone or circle its radius, both ways
+            if kind == 5:
+                width = abs(sscale[0]) * ns
+            elif kind in (4, 7, 8, 10):
+                width = 2.0 * float(re.search(r"radius:\s*\n\s+value: (-?[\d.eE+-]+)", shape).group(1)) * ns if re.search(r"radius:\s*\n\s+value:", shape) else 0.0
+            else:
+                width = 0.0
+            # Hierarchy scaling scales speeds with the chain; Local and Shape do not
+            speed_scale = n if int(field(system, "scalingMode", "1") or 1) == 0 else 1.0
+            out.append(
+                {
+                    "name": self.name_of(go),
+                    "position": origin,
+                    "axis": tuple(c / n for c in axis),
+                    "spanAxis": tuple(c / ns for c in span_axis),
+                    "width": width,
+                    "speed": curve(initial, "startSpeed") * speed_scale,
+                    "startSpeed": curve(initial, "startSpeed"),
+                    "lifetime": curve(initial, "startLifetime", 1.0),
+                    "size": curve(initial, "startSize", 1.0) * (speed_scale if speed_scale != 1.0 else 1.0),
+                    "gravity": curve(initial, "gravityModifier"),
+                    "rate": curve(emission, "rateOverTime"),
+                    "materials": re.findall(r"guid:\s*([0-9a-f]{32})", body[body.find("m_Materials") :].split("\n  m_", 1)[0]),
+                }
+            )
+        return out
+
     def mesh_particles(self):
         """Particle systems that are really a mesh standing still, as renderers.
 
@@ -325,6 +414,14 @@ class Scene:
             state, hi, lo = int(m.group(1)), float(m.group(2)), float(m.group(3))
             return (hi + lo) / 2.0 if state == 3 else hi   # 3: random between two constants
 
+        def spread(body, key, default=0.0):
+            """(low, high) a particle draws from: two constants, or one twice."""
+            m = re.search(rf"\n\s+{key}:\s*\n(?:\s+serializedVersion: \d+\n)?\s+minMaxState: (\d+)\n\s+scalar: (-?[\d.eE+-]+)\n\s+minScalar: (-?[\d.eE+-]+)", body)
+            if not m:
+                return default, default
+            state, hi, lo = int(m.group(1)), float(m.group(2)), float(m.group(3))
+            return (min(lo, hi), max(lo, hi)) if state == 3 else (hi, hi)
+
         for fid, (cls, body) in self.docs.items():
             if cls != 199 or int(shallow(body, "m_RenderMode", "0") or 0) != 4:
                 continue
@@ -333,39 +430,102 @@ class Scene:
                 continue
             go = int(re.search(r"m_GameObject:\s*\{fileID:\s*(-?\d+)", body).group(1))
             system = systems.get(go, "")
-            initial = system[system.find("InitialModule:") :]
-            shape = system[system.find("ShapeModule:") :]
-            if int(field(system, "maxNumParticles", "0") or 0) != 1:
+            initial = system[system.find("InitialModule:") : system.find("ShapeModule:")]
+            shape = system[system.find("ShapeModule:") : system.find("EmissionModule:")]
+            most = int(field(system, "maxNumParticles", "0") or 0)
+            # one that never emits draws nothing: X348's bian_1 has its emission
+            # module switched off, and brought in it stood as a sheet on the fountain
+            emission = system[system.find("EmissionModule:") : system.find("SizeModule:")]
+            bursts = sum(float(c) for c in re.findall(r"time: [-\d.eE+]+\s*\n\s+countCurve:\s*\n\s+serializedVersion: \d+\n\s+minMaxState: \d+\n\s+scalar: ([-\d.eE+]+)", emission))
+            rate = curve(emission, "rateOverTime")
+            if field(emission, "enabled", "0") != "1" or (rate <= 0.0 and bursts <= 0.0):
                 continue
-            if field(shape, "enabled", "0") != "0" or curve(initial, "startSpeed") != 0.0 or curve(initial, "gravityModifier") != 0.0:
-                continue                        # it moves, or it is born somewhere in a shape: a real effect
+            if curve(initial, "startSpeed") != 0.0 or curve(initial, "gravityModifier") != 0.0:
+                continue                        # it moves: a real effect
             if int(shallow(body, "m_RenderAlignment", "0") or 0) != 2:
                 continue                        # only Local alignment stands still with its emitter
-            sx = curve(initial, "startSize", 1.0)
-            size = (sx, curve(initial, "startSizeY", sx), curve(initial, "startSizeZ", sx)) if field(initial, "size3D", "0") == "1" else (sx, sx, sx)
-            rz = curve(initial, "startRotation")
-            rot = (curve(initial, "startRotationX"), curve(initial, "startRotationY"), rz) if field(initial, "rotation3D", "0") == "1" else (0.0, 0.0, rz)
+            # A STANDING FIELD — many particles born at random in a shape and never
+            # moving (X348's petals on the pool, its glows by the falls) — is
+            # drawn as the game's steady state: as many as its bursts and its
+            # rate over a mean life keep alive, each where a seeded draw puts it
+            # in the shape, turned and sized within its own ranges.
+            shaped = field(shape, "enabled", "0") != "0"
+            count = 1 if most == 1 and not shaped else min(most, round(bursts + rate * curve(initial, "startLifetime", 1.0)))
+            if count < 1:
+                continue
+            draw = random.Random(fid)
+            kind = int(field(shape, "type", "0") or 0)
+            radius = float((re.search(r"\n\s+radius:\s*\n\s+value: ([-\d.eE+]+)", shape) or [0, "1"])[1])
+            box = vector(field(shape, "m_Scale"), (1.0, 1.0, 1.0)) if field(shape, "m_Scale") else (1.0, 1.0, 1.0)
+
+            def born():
+                if not shaped:
+                    return (0.0, 0.0, 0.0)
+                if kind == 5:                   # box
+                    return tuple((draw.random() - 0.5) * s for s in box)
+                while True:                     # sphere and the rest: a point in the ball
+                    p = tuple(draw.uniform(-1.0, 1.0) for _ in range(3))
+                    if sum(v * v for v in p) <= 1.0:
+                        return tuple(v * radius * s for v, s in zip(p, box))
+
+            def pick(key, default=0.0):
+                lo, hi = spread(initial, key, default)
+                return draw.uniform(lo, hi) if lo != hi else lo
+
+            # its colour over life, averaged, dims what stands in for all of it
+            life_alpha = 1.0
+            colour_module = system[system.find("ColorModule:") : system.find("UVModule:")]
+            if field(colour_module, "enabled", "0") == "1":
+                n_alpha = int(field(colour_module, "m_NumAlphaKeys", "0") or 0)
+                keys = [float(a) for a in re.findall(r"key\d: \{r: \S+ g: \S+ b: \S+ a: ([-\d.eE+]+)\}", colour_module)][:n_alpha]
+                times = [int(t) / 65535.0 for t in re.findall(r"atime\d: (\d+)", colour_module)][:n_alpha]
+                if len(keys) >= 2:
+                    life_alpha = sum((times[i + 1] - times[i]) * (keys[i] + keys[i + 1]) / 2.0 for i in range(len(keys) - 1))
+                    life_alpha += keys[0] * times[0] + keys[-1] * (1.0 - times[-1])
             tf = self.transform_of(go)
-            guid = mesh.group(2)
-            out.append(
-                {
-                    "name": self.name_of(go),
-                    "id": fid,
-                    "object": go,
-                    "transform": tf,
-                    "position": self.world_position(tf) if tf else (0, 0, 0),
-                    "materials": re.findall(r"guid:\s*([0-9a-f]{32})", body[body.find("m_Materials") :].split("\n  m_", 1)[0]),
-                    "mesh": f"builtin:{mesh.group(1)}" if guid == "0000000000000000e000000000000000" else guid,
-                    "enabled": shallow(body, "m_Enabled", "1") == "1",
-                    "layer": int(shallow(self.docs.get(go, (None, ""))[1], "m_Layer", "0") or 0),
-                    "renderingLayerMask": int(shallow(body, "m_RenderingLayerMask", "1") or 1),
-                    "firstSubMesh": 0,
-                    "batched": False,
-                    # particle rotations are stored in radians
-                    "particle": {"rotation": tuple(r * 57.29577951308232 for r in rot), "size": size},
-                }
-            )
+            for k in range(count):
+                offset = born()
+                sx = pick("startSize", 1.0)
+                size = (sx, pick("startSizeY", sx), pick("startSizeZ", sx)) if field(initial, "size3D", "0") == "1" else (sx, sx, sx)
+                rz = pick("startRotation")
+                rot = (pick("startRotationX"), pick("startRotationY"), rz) if field(initial, "rotation3D", "0") == "1" else (0.0, 0.0, rz)
+                self._mesh_particle(out, fid, k, go, tf, body, mesh, initial, rot, size, offset, life_alpha)
         return out
+
+    def _mesh_particle(self, out, fid, k, go, tf, body, mesh, initial, rot, size, offset, life_alpha):
+        """One standing mesh particle, in the renderers() shape."""
+        guid = mesh.group(2)
+        # ITS START COLOUR, which the effect shader multiplies in as the vertex
+        # colour: X348's mist domes are (0.70, 0.91, 1) at 0.26-1. A constant,
+        # or the mean of two, is the colour it stands in, its alpha dimmed by
+        # its colour over life.
+        sc = initial[initial.find("startColor:") :][:700]
+        cols = [tuple(float(v) for v in c) for c in re.findall(r"(?:min|max)Color: \{r: (\S+), g: (\S+), b: (\S+), a: (\S+)\}", sc)]
+        cstate = re.search(r"minMaxState: (\d)", sc)
+        colour = (1.0, 1.0, 1.0, 1.0)
+        if cols:
+            mn, mx = (cols[0], cols[1]) if len(cols) > 1 else (cols[0], cols[0])
+            colour = tuple((a + b) / 2.0 for a, b in zip(mn, mx)) if cstate and cstate.group(1) == "2" else mx
+        colour = (*colour[:3], colour[3] * life_alpha)
+        out.append(
+            {
+                "name": self.name_of(go),
+                "id": fid,
+                "object": go,
+                "transform": tf,
+                "position": self.world_position(tf) if tf else (0, 0, 0),
+                "materials": re.findall(r"guid:\s*([0-9a-f]{32})", body[body.find("m_Materials") :].split("\n  m_", 1)[0]),
+                "mesh": f"builtin:{mesh.group(1)}" if guid == "0000000000000000e000000000000000" else guid,
+                "enabled": shallow(body, "m_Enabled", "1") == "1",
+                "layer": int(shallow(self.docs.get(go, (None, ""))[1], "m_Layer", "0") or 0),
+                "renderingLayerMask": int(shallow(body, "m_RenderingLayerMask", "1") or 1),
+                "firstSubMesh": 0,
+                "batched": False,
+                # particle rotations are stored in radians; offset is where in
+                # the emitter's own space a field's particle was born
+                "particle": {"rotation": tuple(r * 57.29577951308232 for r in rot), "size": size, "color": colour, "offset": offset},
+            }
+        )
 
     def lod_fallback_renderers(self):
         """Renderer ids that belong to LOD1 and below.
@@ -385,10 +545,12 @@ class Scene:
             if cls != 205:
                 continue
             levels = re.findall(r"- screenRelativeHeight:.*?renderers:\n((?:\s+- renderer: \{fileID: -?\d+\}\n)*)", body, re.S)
-            for i, block in enumerate(levels):
-                if i == 0:
-                    continue
-                out.update(int(m) for m in re.findall(r"renderer: \{fileID: (-?\d+)\}", block))
+            ids = [{int(m) for m in re.findall(r"renderer: \{fileID: (-?\d+)\}", block)} for block in levels]
+            # A renderer can sit in several levels at once — X348's handrails
+            # share their middle piece between LOD0 and LOD1 — and one that
+            # level 0 draws is kept whatever else lists it.
+            for level in ids[1:]:
+                out.update(level - ids[0])
         return out
 
     def scene_setting(self):

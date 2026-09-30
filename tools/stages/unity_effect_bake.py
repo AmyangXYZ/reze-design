@@ -256,14 +256,15 @@ def bake(material, proj, png_for_guid, out_base, max_width=4096, max_height=1024
     out = np.concatenate([_linear_to_srgb(straight), alpha[..., None]], axis=-1)
     out_path = f"{out_base}_x{gain}.png"
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    Image.fromarray(np.round(out * 255.0).astype(np.uint8), "RGBA").save(out_path, optimize=True)
+    Image.fromarray(np.round(out * 255.0).astype(np.uint8), "RGBA").save(out_path, compress_level=1)
     return out_path
 
 
 # ── The same layer, live: what moves, for the app to draw each frame ──
 #
 # THE SCROLL, read from the vertex shader: every slot's UV is
-#   uv' = (rotated uv + time · _UVOffset_<slot>.xy) · _ST.xy + _ST.zw
+#   uv' = rotate(u + time · _UVOffset_<slot>.y, v + time · _UVOffset_<slot>.x) · _ST.xy + _ST.zw
+# — added before the rotation and crossed (x moves v, y moves u)
 # unless its particle switch (_UVOffset_Main_XY, _UVOffset_MainPlus_XY,
 # _UVOffset_Mask_ZW) hands the offset to the particle's custom data instead —
 # which X348's systems leave at zero, so a switched slot stands still. Time is
@@ -315,10 +316,37 @@ def live_effect(material, png_for_guid, max_size=1024):
             "tiling": f.get(TILING_OF[slot], 1.0) >= 0.5,
             "speed": list(_speed(material, slot)),
         }
+    # THE NOISE (_UseNoise): the fragment pulls each flagged layer's UV toward
+    # the noise picture's red, uv + _NoiseParam.xy · (n − uv), the noise's own
+    # UV scrolling by _NoiseParam.zw a second. X348's mist domes tile their
+    # ripple 17 times across and would draw it as hard dashes without it.
+    noise = None
+    nslot = material["textures"].get("_NoiseTex")
+    npar = list(material["colors"].get("_NoiseParam", (0.0, 0.0, 0.0))[:3]) + [material["alpha"].get("_NoiseParam", 0.0)]
+    if f.get("_UseNoise", 0.0) > 0.5 and nslot and nslot.get("guid") and (npar[0] or npar[1]):
+        png = png_for_guid(nslot["guid"])
+        if png and os.path.exists(png):
+            im = Image.open(png).convert("RGBA")
+            if max(im.size) > max_size:
+                k = max_size / max(im.size)
+                im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.LANCZOS)
+            buf = io.BytesIO()
+            im.save(buf, "PNG", optimize=True)
+            noise = {
+                "png": base64.b64encode(buf.getvalue()).decode("ascii"),
+                "scale": [float(nslot["scale"][0]), float(nslot["scale"][1])],
+                "offset": [float(nslot["offset"][0]), float(nslot["offset"][1])],
+                "speed": [float(npar[2]), float(npar[3])],
+                "strength": [float(npar[0]), float(npar[1])],
+                "main": f.get("_IsDisturbUV_Main", 1.0) > 0.5,
+                "plus": f.get("_IsDisturbUV_MainPlus", 1.0) > 0.5,
+                "mask": f.get("_IsDisturbUV_Mask", 0.0) > 0.5,
+            }
     colour, colour_a = _linear_colour(material, "_Color")
     plus_colour, plus_a = _linear_colour(material, "_ColorPlus")
     return {
         "layers": layers,
+        **({"noise": noise} if noise else {}),
         "mainPow": list(material["colors"].get("_MainPow", (1.0, 1.0, 1.0))[:3]) + [material["alpha"].get("_MainPow", 0.0)],
         "color": [float(c) for c in colour] + [colour_a],
         "redAlphaMain": f.get("_IsRedAlpha_Main", 0.0) > 0.5,
@@ -408,7 +436,7 @@ def bake_basic(material, proj, png_for_guid, out_base, notes):
         notes.append(f"{material.get('name', '?')}: colour past white clipped in the bake ({rgb.max():.2f})")
     out = np.concatenate([_linear_to_srgb(np.clip(rgb, 0.0, 1.0)), np.clip(a, 0.0, 1.0)[..., None]], axis=-1)
     path = f"{out_base}.png"
-    Image.fromarray(np.round(out * 255).astype(np.uint8), "RGBA").save(path)
+    Image.fromarray(np.round(out * 255).astype(np.uint8), "RGBA").save(path, compress_level=1)
     return path
 
 
@@ -474,7 +502,7 @@ def bake_detailed(material, proj, png_for_guid, out_base, notes, max_size=2048):
     rough = f.get("_BaseRoughness", 1.0) * (1 - r[..., 0]) + f.get("_CoverRoughness", 1.0) * r[..., 0]
     metal = f.get("_BaseMetallic", 0.0) * (1 - r[..., 0]) + f.get("_CoverMetallic", 0.0) * r[..., 0]
     a_path, o_path = f"{out_base}_D.png", f"{out_base}_ORM.png"
-    Image.fromarray(np.round(_linear_to_srgb(np.clip(albedo, 0, 1)) * 255).astype(np.uint8), "RGB").save(a_path)
+    Image.fromarray(np.round(_linear_to_srgb(np.clip(albedo, 0, 1)) * 255).astype(np.uint8), "RGB").save(a_path, compress_level=1)
     orm = np.stack([np.ones_like(rough), np.clip(rough, 0, 1), np.clip(metal, 0, 1)], axis=-1)
-    Image.fromarray(np.round(orm * 255).astype(np.uint8), "RGB").save(o_path)
+    Image.fromarray(np.round(orm * 255).astype(np.uint8), "RGB").save(o_path, compress_level=1)
     return a_path, o_path

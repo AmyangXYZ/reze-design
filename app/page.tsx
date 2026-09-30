@@ -360,6 +360,13 @@ const HDRI_ACCEPT = ".hdr"
 /** The built-in that stands a flame on every wick, and the bone prefix it reads. */
 const CANDLE_FLAMES = "Candle Flames (wick bones)"
 const WICK_PREFIX = "flame"
+/** The built-ins a stage's named points bring, by the bone prefix each reads:
+ *  its candles, and the splashes where its water lands. */
+const POINT_EFFECTS = [
+  { prefix: WICK_PREFIX, effect: CANDLE_FLAMES },
+  { prefix: "splash", effect: "Water Splash (splash bones)" },
+  { prefix: "spray", effect: "Water Spray (spray bones)" },
+]
 
 /** Give every row a uid, keeping the ones already minted. A duplicate is
  *  re-minted rather than kept: two rows carrying the same uid is the very state
@@ -5096,8 +5103,10 @@ export default function Lab() {
 
   /** Whether a loaded model names candle wicks — bones the Candle Flames effect
    *  stands a flame on (its `#points flame`). */
-  const hasWicks = (id: string) =>
-    (engineRef.current?.getModel(id)?.getSkeleton().bones ?? []).some((b) => b.name.startsWith(WICK_PREFIX))
+  const hasPoints = (id: string, prefix: string) =>
+    (engineRef.current?.getModel(id)?.getSkeleton().bones ?? []).some((b) => b.name.startsWith(prefix))
+  /** Whether it names any points a built-in stands on (see POINT_EFFECTS). */
+  const hasWicks = (id: string) => POINT_EFFECTS.some((pe) => hasPoints(id, pe.prefix))
 
   /**
    * Take back what leaving stages brought: their lamps, the sun they set and
@@ -5133,10 +5142,12 @@ export default function Lab() {
     if (stageHdri.current && ids.has(stageHdri.current)) stageHdri.current = null
   }
 
-  /** Candle Flames leaves when the last model naming wicks does. */
+  /** Each point built-in leaves when the last model naming its points does. */
   const dropCandlesUnlessLit = (leaving: Set<string>) => {
-    if (!models.some((m) => !leaving.has(m.id) && hasWicks(m.id))) {
-      setBgEffects((list) => list.filter((e) => e.name !== CANDLE_FLAMES))
+    for (const pe of POINT_EFFECTS) {
+      if (!models.some((m) => !leaving.has(m.id) && hasPoints(m.id, pe.prefix))) {
+        setBgEffects((list) => list.filter((e) => e.name !== pe.effect))
+      }
     }
   }
 
@@ -5281,12 +5292,14 @@ export default function Lab() {
         // the Unity converter writes them — brings the effect that lights them,
         // into the Effects list like any effect, once. One that names none
         // takes the last stage's with it.
-        if (hasWicks(id)) {
-          setBgEffects((list) =>
-            list.some((e) => e.name === CANDLE_FLAMES) ? list : [...list, builtinEffect(CANDLE_FLAMES)],
-          )
-        } else if (leavingLit) {
-          dropCandlesUnlessLit(new Set(leaving.map((s) => s.id)))
+        // Its water splashes the same way (POINT_EFFECTS).
+        const leavingIds = new Set(leaving.map((s) => s.id))
+        for (const pe of POINT_EFFECTS) {
+          if (hasPoints(id, pe.prefix)) {
+            setBgEffects((list) => (list.some((e) => e.name === pe.effect) ? list : [...list, builtinEffect(pe.effect)]))
+          } else if (leavingLit && !models.some((m) => !leavingIds.has(m.id) && m.id !== id && hasPoints(m.id, pe.prefix))) {
+            setBgEffects((list) => list.filter((e) => e.name !== pe.effect))
+          }
         }
         // AND THE EFFECTS IT NAMES — its galaxy — at the dials it sets,
         // marked as its own so they leave with it. One the scene already wears

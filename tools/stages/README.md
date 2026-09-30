@@ -14,6 +14,11 @@ hand there or from a game's export read by the scripts here. Entry points:
   leaves behind (see "Exporting from Blender" below).
 - **`unity_to_glb.py`** — a Unity scene from an AssetRipper export, through
   Blender, to the same file.
+- **`stage_audit.py`** — after a conversion, everything the Unity scene draws
+  against what the `.glb` carries: renderers per shader family, the game-shader
+  switches the app may not draw, every particle system and what became of it,
+  and the converter's notes. `python3 tools/stages/stage_audit.py <project>
+  <scene.unity> <stage.glb> [report.md]`.
 
 ## Exporting from Blender
 
