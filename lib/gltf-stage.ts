@@ -1156,7 +1156,11 @@ export function fresnelGraph(name: string, fr: FresnelSpec): ShaderGraph {
   const tint: [number, number, number] = [fr.color[0] ?? 1, fr.color[1] ?? 1, fr.color[2] ?? 1]
   const rgb = node("vector_math/scale", { a: node("vector_math/multiply", { a: mask, b: tint }, "vector"), scale: f }, "vector")
   const out = node("emission", { color: rgb, strength: 1 }, "color")
-  return { version: 1, name: `Glow ${name}`, tags: ["stage", "unlit", "effect"], nodes, links, output: out }
+  // AN OPACITY, full, so it draws in the transparent phase: light added in the
+  // opaque one wrote depth, and X316's glow cone hid the window glows behind it
+  // (the game's pass is ZWrite Off). The additive blend ignores the value.
+  const opacity = node("math/add", { a: 1, b: 0 }, "value")
+  return { version: 1, name: `Glow ${name}`, tags: ["stage", "unlit", "effect"], nodes, links, output: out, opacity }
 }
 
 export function rippletGraph(name: string, r: RippleSpec): ShaderGraph {

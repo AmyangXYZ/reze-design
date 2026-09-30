@@ -184,9 +184,16 @@ def for_bloom(linear):
     return linear * (lifted / np.maximum(peak, 1e-6))
 
 
-def bake(material, proj, png_for_guid, out_base, max_width=4096, max_height=1024):
+def bake(material, proj, png_for_guid, out_base, max_width=4096, max_height=1024, tint=(1.0, 1.0, 1.0, 1.0)):
     """Write the layer's time-0 picture over its UV square to `<out_base>_x<gain>.png`
-    and return that path, or None when a texture is missing."""
+    and return that path, or None when a texture is missing.
+
+    `tint` is the colour the renderer gives it on top — a standing mesh
+    particle's start colour, gamma, with its alpha — which the shader takes as
+    the vertex colour: it multiplies the colour (made linear, as the particle
+    renderer makes it) and the alpha. Left out, X316's purple, red and orange
+    window glows (alpha 0.05-0.08) baked white at full cover and blew the car's
+    windows out."""
     slots = _used_slots(material)
     textures = {}
     for slot in slots:
@@ -236,6 +243,9 @@ def bake(material, proj, png_for_guid, out_base, max_width=4096, max_height=1024
             rgb = rgb * ((1 - kc) + kc * plus_rgb)
             a = a * ((1 - ka) + ka * plus_alpha)
     rgb = np.maximum(rgb, 0.0)
+    # the vertex colour, after the plus picture as the fragment has it
+    rgb = rgb * np.array([gamma_to_linear(c) for c in tint[:3]])
+    a = a * tint[3]
 
     if "_MaskTex" in textures:
         m = textures["_MaskTex"].sample(*_slot_uv(material, "_MaskTex", U, V))

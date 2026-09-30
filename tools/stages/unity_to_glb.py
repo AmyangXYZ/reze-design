@@ -939,7 +939,8 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
             # The layer at time 0 — its textures, colours, mask and rotations
             # composed — stored at 1/gain and named for it; the material emits
             # it at gain, over black, with the picture's own coverage.
-            written = bake_effect(mat, proj, lambda g: png_for(png_root, proj.path(g) or ""), os.path.join(out_tex, re.sub(r"[^A-Za-z0-9_.-]", "_", key)))
+            written = bake_effect(mat, proj, lambda g: png_for(png_root, proj.path(g) or ""), os.path.join(out_tex, re.sub(r"[^A-Za-z0-9_.-]", "_", key)),
+                                  tint=per_material[key].get("tint", (1.0, 1.0, 1.0, 1.0)))
             if written:
                 baked = os.path.basename(written)
                 gain = int(re.search(r"_x(\d+)\.png$", baked).group(1))
