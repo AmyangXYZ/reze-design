@@ -672,6 +672,30 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
     def shader_of(mat):
         return proj.shader_name(mat["shader_guid"]) if mat else None
 
+    # WHETHER A SHADER CAN CAST AT ALL: a renderer set to cast shadows casts
+    # nothing in the game unless its shader has a ShadowCaster pass, and the
+    # effect family (light shafts, glows, mist cards), the waters and the glass
+    # have none. Taken from the renderer alone, X348's shafts cast their whole
+    # quads as hard rectangles. Read from the game's own shader source, once
+    # per shader, so no stage needs a list.
+    casts = {}
+
+    def shader_casts(mat):
+        guid = mat["shader_guid"] if mat else None
+        if not guid:
+            return True                     # nothing to ask: cast, as before
+        if guid not in casts:
+            path = proj.path(guid) if guid else None
+            found = False
+            if path and os.path.exists(path):
+                with open(path, encoding="utf-8", errors="replace") as fh:
+                    for line in fh:
+                        if "SHADOWCASTER" in line.upper() and "LIGHTMODE" in line.upper():
+                            found = True
+                            break
+            casts[guid] = found
+        return casts[guid]
+
     def wears_sky(r):
         return any(materials_by_guid.get(g) and (is_sky(materials_by_guid[g]) or is_sky_layer(materials_by_guid[g], shader_of(materials_by_guid[g]))) for g in r["materials"])
 
@@ -980,12 +1004,14 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
             tint, alpha = (1.0, 1.0, 1.0), 1.0
 
         premult = bool(mat) and "TRANSPARENT_PREMULT" in mat["keywords"]
-        # SceneBillboard clips at _Cutoff with no keyword asking it to: a
-        # moon or a tree card read as opaque is its whole square.
+        # SceneBillboard and Plant clip at _Cutoff with no keyword asking them
+        # to — every fragment variant of both discards below it: a moon or a
+        # tree card read as opaque is its whole square, and X343's sakura
+        # crowns (Plant, VEGETATION alone) drew as a mass of flat leaf cards.
         # The effect family has no CUTOFF variant at all — X348's clouds carry the
         # keyword stale and the game blends them; taken as a cutout they drew as
         # dithered specks.
-        cutoff = bool(mat) and not is_effect_decal(shader) and ("CUTOFF" in mat["keywords"] or shader == "SimPipeline/Scene/SceneBillboard")
+        cutoff = bool(mat) and not is_effect_decal(shader) and ("CUTOFF" in mat["keywords"] or shader in ("SimPipeline/Scene/SceneBillboard", "SimPipeline/Scene/Plant"))
         lit_family = family in ("Glass", "Ripplet")
         # UNLIT IS THE SHADER'S TO SAY, never a blend keyword's. A sky and an
         # effect sheet take no light; TRANSPARENT_PREMULT is how a surface is
@@ -1041,8 +1067,9 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
                 "unlit": unlit,
                 "additive": additive,
                 "sky": sky_material,
-                # The effect sheets have no shadow pass in the game.
-                "castShadow": not sky_material and not sheet,
+                # Only a shader with a ShadowCaster pass casts (shader_casts);
+                # the effect sheets and the sky never do.
+                "castShadow": not sky_material and not sheet and shader_casts(mat),
                 # WHEN IT DRAWS among the transparent: Unity sorts them by render
                 # queue, and a stage's water stains (3001-3002) lie on the glass
                 # beneath them (3000). Drawn in material order the glass came
