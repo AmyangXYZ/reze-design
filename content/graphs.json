@@ -2604,8 +2604,8 @@
       "id": "ramp_008",
       "type": "ramp_cardinal",
       "inputs": {
-       "pos0": 0.2466,
-       "pos1": 0.3466
+       "pos0": 0.2,
+       "pos1": 0.45
       }
      },
      {
@@ -2702,10 +2702,10 @@
       "type": "principled",
       "inputs": {
        "metallic": 0,
-       "roughness": 0.8187,
+       "roughness": 1.0,
        "spec_clamp": 10,
        "sheen_tint": 0,
-       "specular_ior_level": 0.8,
+       "specular_ior_level": 0.25,
        "sheen_weight": 0
       }
      },
