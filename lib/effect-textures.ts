@@ -14,6 +14,24 @@ type EffectTexture = { source: ImageBitmap; srgb: boolean } | null
 
 const byWgsl = new Map<string, EffectTexture[]>()
 
+// WHEN THE PICTURES ARRIVE IS NOT WHEN THE EFFECTS DO. After a refresh the
+// scene document brings its effects back at once, while their pictures load
+// with the stage model, later — so the install that ran first went out with
+// none, and nothing ran it again: the list had not changed. The registry is
+// observable instead, and its version is part of what the install keys on.
+let version = 0
+const listeners = new Set<() => void>()
+
+/** Changes whenever pictures are registered; for useSyncExternalStore. */
+export function effectTexturesVersion(): number {
+  return version
+}
+
+export function subscribeEffectTextures(cb: () => void): () => void {
+  listeners.add(cb)
+  return () => listeners.delete(cb)
+}
+
 /** The pictures registered for an effect's source, in slot order, if any. */
 export function effectTexturesFor(wgsl: string): EffectTexture[] | undefined {
   return byWgsl.get(wgsl)
@@ -57,6 +75,10 @@ export async function loadParticleTextures(files: File[], pmxPath: string, pathO
     )
     byWgsl.set(p.wgsl, textures)
     n++
+  }
+  if (n) {
+    version++
+    for (const cb of listeners) cb()
   }
   return n
 }

@@ -9,8 +9,8 @@
 // own, so the editor can hand it live state and a viewer can hand it a fetched
 // document and neither knows the difference.
 
-import { effectTexturesFor } from "@/lib/effect-textures"
-import { useEffect, useMemo, useRef } from "react"
+import { effectTexturesFor, effectTexturesVersion, subscribeEffectTextures } from "@/lib/effect-textures"
+import { useEffect, useMemo, useRef, useSyncExternalStore } from "react"
 import {
   Vec3,
   parseHDR,
@@ -319,6 +319,8 @@ export function useSceneSync({
 
   // Recompile only when the shader itself (or its suspension) actually changes.
   const lastWgsl = useRef<string | null>(null)
+  // Bumps when a stage's particle pictures are registered (lib/effect-textures.ts)
+  const texturesVersion = useSyncExternalStore(subscribeEffectTextures, effectTexturesVersion, () => 0)
   /** The engine `lastWgsl` describes. Same trap as `prev` above: a fresh engine
    *  has no effects installed, and a key left over from the previous one made
    *  the install skip itself. */
@@ -350,7 +352,9 @@ export function useSceneSync({
     const sources = (exportBackground === "green" ? [] : backgroundEffects).map((e) => e.wgsl)
     // One key for the whole list, so adding an effect recompiles and a
     // re-render with the same list does not.
-    const wgsl = sources.length ? sources.join("\0") : null
+    // …and the pictures they were given: a stage's particle pictures arriving
+    // after its effects (a refresh restores the list first) reinstalls them
+    const wgsl = sources.length ? `${sources.join("\0")}\0textures:${texturesVersion}` : null
     // REMOVING one does not wait for `ready`. That flag is off for the whole
     // scene swap — every model still to arrive — and gating removal on it left
     // the outgoing scene's effect running over the incoming one until the last
@@ -444,7 +448,7 @@ export function useSceneSync({
     return () => {
       stale = true
     }
-  }, [backgroundEffects, exportBackground, ready, engineRef, onEffectSurface])
+  }, [backgroundEffects, exportBackground, ready, engineRef, onEffectSurface, texturesVersion])
 
   // ── Eyes on the camera ──
   //
