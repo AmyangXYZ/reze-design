@@ -490,16 +490,35 @@ class Scene:
                 lo, hi = spread(initial, key, default)
                 return draw.uniform(lo, hi) if lo != hi else lo
 
-            # its colour over life, averaged, dims what stands in for all of it
+            # its colour over life, averaged, dims and turns what stands in for
+            # all of it: a field of standing cards is every age at once. The
+            # alpha keys AND the colour keys — X316's window glows darken and
+            # cool over life (Unity's live mean 0.44, 0.08, 0.51 against a start
+            # of 0.87, 0.17, 0.82), and taken at their start they were a
+            # magenta wash twice as strong as the game's
             life_alpha = 1.0
+            life_rgb = (1.0, 1.0, 1.0)
             colour_module = system[system.find("ColorModule:") : system.find("UVModule:")]
+
+            def mean_over_life(values, times):
+                if len(values) < 2:
+                    return values[0] if values else 1.0
+                m = sum((times[i + 1] - times[i]) * (values[i] + values[i + 1]) / 2.0 for i in range(len(values) - 1))
+                return m + values[0] * times[0] + values[-1] * (1.0 - times[-1])
+
             if field(colour_module, "enabled", "0") == "1":
                 n_alpha = int(field(colour_module, "m_NumAlphaKeys", "0") or 0)
-                keys = [float(a) for a in re.findall(r"key\d: \{r: \S+ g: \S+ b: \S+ a: ([-\d.eE+]+)\}", colour_module)][:n_alpha]
-                times = [int(t) / 65535.0 for t in re.findall(r"atime\d: (\d+)", colour_module)][:n_alpha]
-                if len(keys) >= 2:
-                    life_alpha = sum((times[i + 1] - times[i]) * (keys[i] + keys[i + 1]) / 2.0 for i in range(len(keys) - 1))
-                    life_alpha += keys[0] * times[0] + keys[-1] * (1.0 - times[-1])
+                n_colour = int(field(colour_module, "m_NumColorKeys", "0") or 0)
+                keys = re.findall(r"key\d: \{r: (\S+), g: (\S+), b: (\S+), a: ([-\d.eE+]+)\}", colour_module)
+                if not keys:
+                    keys = re.findall(r"key\d: \{r: (\S+) g: (\S+) b: (\S+) a: ([-\d.eE+]+)\}", colour_module)
+                keys = [tuple(float(v) for v in k) for k in keys]
+                atimes = [int(t) / 65535.0 for t in re.findall(r"atime\d: (\d+)", colour_module)][:n_alpha]
+                ctimes = [int(t) / 65535.0 for t in re.findall(r"ctime\d: (\d+)", colour_module)][:n_colour]
+                if len(keys[:n_alpha]) >= 2:
+                    life_alpha = mean_over_life([k[3] for k in keys[:n_alpha]], atimes)
+                if len(keys[:n_colour]) >= 2:
+                    life_rgb = tuple(mean_over_life([k[c] for k in keys[:n_colour]], ctimes) for c in range(3))
             tf = self.transform_of(go)
             for k in range(count):
                 offset = born()
@@ -507,10 +526,10 @@ class Scene:
                 size = (sx, pick("startSizeY", sx), pick("startSizeZ", sx)) if field(initial, "size3D", "0") == "1" else (sx, sx, sx)
                 rz = pick("startRotation")
                 rot = (pick("startRotationX"), pick("startRotationY"), rz) if field(initial, "rotation3D", "0") == "1" else (0.0, 0.0, rz)
-                self._mesh_particle(out, fid, k, go, tf, body, mesh_ref, initial, rot, size, offset, life_alpha)
+                self._mesh_particle(out, fid, k, go, tf, body, mesh_ref, initial, rot, size, offset, life_alpha, life_rgb)
         return out
 
-    def _mesh_particle(self, out, fid, k, go, tf, body, mesh_ref, initial, rot, size, offset, life_alpha):
+    def _mesh_particle(self, out, fid, k, go, tf, body, mesh_ref, initial, rot, size, offset, life_alpha, life_rgb=(1.0, 1.0, 1.0)):
         """One standing mesh particle, in the renderers() shape."""
         # ITS START COLOUR, which the effect shader multiplies in as the vertex
         # colour: X348's mist domes are (0.70, 0.91, 1) at 0.26-1. A constant,
@@ -523,7 +542,7 @@ class Scene:
         if cols:
             mn, mx = (cols[0], cols[1]) if len(cols) > 1 else (cols[0], cols[0])
             colour = tuple((a + b) / 2.0 for a, b in zip(mn, mx)) if cstate and cstate.group(1) == "2" else mx
-        colour = (*colour[:3], colour[3] * life_alpha)
+        colour = (*(c * m for c, m in zip(colour[:3], life_rgb)), colour[3] * life_alpha)
         out.append(
             {
                 "name": self.name_of(go),
