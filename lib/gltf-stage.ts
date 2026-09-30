@@ -951,6 +951,34 @@ export function stageSheetGraph(strength: number): ShaderGraph {
 }
 
 /**
+ * The Stage Light Sheet graph: a baked sheet the game ADDS (Blend One One —
+ * Effect_Common at _DstBlend 1, Tong_jichu_Add): its emissive picture's colour ·
+ * alpha · `strength` is the light, blended additively so nothing behind it is
+ * covered. The bake stores straight colour and the least alpha that carries the
+ * light (unity_effect_bake.py); laid over as a Stage Sheet, that alpha dimmed
+ * what was behind, and X306's monitors drew as dark translucent panes with a
+ * faint glow on them.
+ */
+export function stageLightSheetGraph(strength: number): ShaderGraph {
+  return {
+    version: 1,
+    name: `Stage Light Sheet ×${strength}`,
+    tags: ["stage", "unlit", "effect"],
+    nodes: [
+      { id: "glow", type: "tex_image/2" },
+      { id: "light", type: "vector_math/scale", inputs: {} },
+      { id: "emit", type: "emission", inputs: { strength } },
+    ],
+    links: [
+      { from: { node: "glow", socket: "color" }, to: { node: "light", socket: "a" } },
+      { from: { node: "glow", socket: "alpha" }, to: { node: "light", socket: "scale" } },
+      { from: { node: "light", socket: "vector" }, to: { node: "emit", socket: "color" } },
+    ],
+    output: { node: "emit", socket: "color" },
+  }
+}
+
+/**
  * A moving effect sheet: the game's Effect_Common, drawn live — X348's
  * waterfalls, fountains and water sheets, which a bake could only freeze.
  *
@@ -1463,6 +1491,22 @@ export function glbStyleGroups(materials: GlbMaterial[]): StyleGroup[] {
     }
     if (m.unlit && m.emissiveStrength === 0) {
       add("unlit", () => ({ id: "stage-unlit", label: "Unlit", materials: [], graph: structuredClone(UNLIT_GRAPH), renderClass: "auto" }), m.name)
+      continue
+    }
+    // A baked sheet the game adds is light, not cover — see stageLightSheetGraph.
+    if (m.unlit && m.additive) {
+      add(
+        `light:${m.emissiveStrength}`,
+        () => ({
+          id: `stage-light-sheet-x${m.emissiveStrength}`,
+          label: `Stage Light Sheet ×${m.emissiveStrength}`,
+          materials: [],
+          graph: stageLightSheetGraph(m.emissiveStrength),
+          renderClass: "auto",
+          blend: "additive" as const,
+        }),
+        m.name,
+      )
       continue
     }
     // An unlit sheet the exporter wrote as emission over black takes no light

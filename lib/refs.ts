@@ -10,7 +10,7 @@ import { DEFAULT_GRAPH, UNLIT_GRAPH, type ShaderGraph } from "reze-engine"
 import { EFFECTS } from "@/lib/effects"
 import { GRADE_PRESETS, type GradeSpec } from "@/lib/grade"
 import { GRAPH_LIBRARY, sameGraphLook } from "@/lib/materials"
-import { stagePbrGraph, stageSheetGraph } from "@/lib/gltf-stage"
+import { stageLightSheetGraph, stagePbrGraph, stageSheetGraph } from "@/lib/gltf-stage"
 import { communityItems } from "@/lib/community-store"
 import type { EffectItem, GradeItem, GraphItem, LibraryKind } from "@/lib/library"
 import type { ItemRef } from "@/lib/scene"
@@ -118,6 +118,7 @@ const atUnlitStrength = (graph: ShaderGraph): ShaderGraph => ({
 function isAppStageGraph(graph: ShaderGraph): boolean {
   const emit = graph.nodes.find((n) => n.type === "emission")
   if (emit && sameGraphLook(graph, stageSheetGraph(Number(emit.inputs?.strength ?? 1)))) return true
+  if (emit && sameGraphLook(graph, stageLightSheetGraph(Number(emit.inputs?.strength ?? 1)))) return true
   const principled = graph.nodes.find((n) => n.type === "principled")
   const strength = Number(principled?.inputs?.emission_strength ?? 0)
   if (!Number.isFinite(strength)) return false
