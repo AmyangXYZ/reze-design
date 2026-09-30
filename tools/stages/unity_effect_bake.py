@@ -267,7 +267,9 @@ def bake(material, proj, png_for_guid, out_base, max_width=4096, max_height=1024
 # — added before the rotation and crossed (x moves v, y moves u)
 # unless its particle switch (_UVOffset_Main_XY, _UVOffset_MainPlus_XY,
 # _UVOffset_Mask_ZW) hands the offset to the particle's custom data instead —
-# which X348's systems leave at zero, so a switched slot stands still. Time is
+# a still decal has none, so its switched slot stands still, while a particle
+# system's effect slides it by the Custom1 its CustomData module gives each
+# particle (lib/unity-particles.ts). Time is
 # the game clock in seconds. The noise that ripples a slot and the dissolve
 # are not carried: the layers slide, they do not shimmer.
 #
@@ -287,14 +289,20 @@ def _speed(material, slot):
     return (float(c[0]), float(c[1]))
 
 
-def live_effect(material, png_for_guid, max_size=1024):
-    """The layer's pictures and numbers when any of its slots scrolls, else None."""
+def live_effect(material, png_for_guid, max_size=1024, always=False, asset_for_guid=None):
+    """The layer's pictures and numbers when any of its slots scrolls, else None.
+
+    `always` gives them whether or not anything scrolls — a particle system's
+    material is drawn live by its effect however still its layers are — and
+    `asset_for_guid`, when given, lets each picture say whether it is colour
+    (sRGB) or data, as its Texture2D asset does."""
     import base64
     import io
 
     slots = _used_slots(material)
-    if "_MainTex" not in slots or not any(_speed(material, s) != (0.0, 0.0) for s in slots):
+    if "_MainTex" not in slots or not (always or any(_speed(material, s) != (0.0, 0.0) for s in slots)):
         return None
+    srgb_of = (lambda g: _is_srgb(asset_for_guid(g) or "")) if asset_for_guid else (lambda g: True)
     f = material["floats"]
     layers = {}
     for slot in slots:
@@ -315,6 +323,10 @@ def live_effect(material, png_for_guid, max_size=1024):
             "rotation": float(f.get(ROTATION_OF[slot], 0.0)),
             "tiling": f.get(TILING_OF[slot], 1.0) >= 0.5,
             "speed": list(_speed(material, slot)),
+            "srgb": srgb_of(material["textures"][slot]["guid"]),
+            # switched to the particle's own Custom1 (TEXCOORD1): main and plus
+            # slide by its xy, the mask by its zw — (u + x, v + y) either way
+            **({"custom": "zw" if slot == "_MaskTex" else "xy"} if f.get(SWITCH_OF[slot], 0.0) > 0.5 else {}),
         }
     # THE NOISE (_UseNoise): the fragment pulls each flagged layer's UV toward
     # the noise picture's red, uv + _NoiseParam.xy · (n − uv), the noise's own
@@ -338,6 +350,7 @@ def live_effect(material, png_for_guid, max_size=1024):
                 "offset": [float(nslot["offset"][0]), float(nslot["offset"][1])],
                 "speed": [float(npar[2]), float(npar[3])],
                 "strength": [float(npar[0]), float(npar[1])],
+                "srgb": srgb_of(nslot["guid"]),
                 "main": f.get("_IsDisturbUV_Main", 1.0) > 0.5,
                 "plus": f.get("_IsDisturbUV_MainPlus", 1.0) > 0.5,
                 "mask": f.get("_IsDisturbUV_Mask", 0.0) > 0.5,

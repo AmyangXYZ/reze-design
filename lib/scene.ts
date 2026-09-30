@@ -960,6 +960,8 @@ export function stageLightsFromFile(
   ambient: number[] | null
   /** The stage's distance fog. */
   fog: StageFog | null
+  /** The game's particle systems, as effects generated at conversion. */
+  particles: { name: string; wgsl: string }[]
 } {
   const raw = JSON.parse(text) as {
     lamps?: unknown[]
@@ -971,6 +973,7 @@ export function stageLightsFromFile(
     grade?: Record<string, unknown>
     ambient?: unknown
     fog?: unknown
+    particles?: unknown[]
   }
   const lamps = lightsFromDoc(
     (raw.lamps ?? []).map((l) => ({ ...(l as SceneLight), id: newLightId(), stage })),
@@ -1019,7 +1022,12 @@ export function stageLightsFromFile(
   const gr = raw.grade
   const grade = gr && isStageGrade(gr) ? { size: gr.size, lut: gr.lut } : null
   const ambient = isAmbientSH(raw.ambient) ? raw.ambient : null
-  return { lamps, sun, effects, fill, world, view, grade, ambient, fog: stageFogFrom(raw.fog) }
+  const particles = (raw.particles ?? []).flatMap((p) => {
+    const e = p as { name?: unknown; wgsl?: unknown }
+    return typeof e?.name === "string" && typeof e.wgsl === "string" ? [{ name: e.name, wgsl: e.wgsl }] : []
+  })
+  return {
+    particles, lamps, sun, effects, fill, world, view, grade, ambient, fog: stageFogFrom(raw.fog) }
 }
 
 function fogLayerFrom(v: unknown): StageFogLayer | null {

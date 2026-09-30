@@ -148,18 +148,46 @@ def flame_points(scene, materials_by_guid):
     return [{"name": f"flame.{i + 1:02d}", "from": list(a), "to": list(b)} for i, (a, b) in enumerate(found)]
 
 
-# ── Splashes ────────────────────────────────────────────────────────────────
-
-SPRAY_WORDS = ("shui", "water", "penquan", "spray", "pubu")
-# A pull this strong (gravityModifier) is a SPLASH at a fall's foot or a
-# fountain's crown — tall splats, few, big — and a lighter one SPRAY: smaller
-# splats sitting above the water, more of them. X348's are 3-5 against 0.1-1.5.
-MIST_GRAVITY = 2.0
-# A wide emitter (a line of spray along a fall's foot) gets a point every this far.
-SPRAY_STEP = 1.5
+# An HDR reflection held in 8 bits: rgb · alpha · RGBM_RANGE, linear.
+RGBM_RANGE = 8.0
+_CUBES = {}
 
 
-def ripple_spec(mat):
+def cube_rgbm(asset_path, width=512):
+    """A cubemap asset as an equirect RGBM picture, base64 PNG — the direction
+    convention the world picture has (unity_probe.probe_to_equirect): row 0
+    straight up, u = atan2(x, z)/2π + 0.5 in the engine's axes."""
+    if asset_path in _CUBES:
+        return _CUBES[asset_path]
+    from unity_probe import _cube_sample, probe_cube
+
+    faces = probe_cube(asset_path, BLENDER)
+    height = width // 2
+    theta = math.pi * (np.arange(height) + 0.5) / height
+    phi = ((np.arange(width) + 0.5) / width - 0.5) * 2.0 * math.pi
+    sy = np.cos(theta)[:, None] * np.ones((1, width))
+    r = np.sin(theta)[:, None] * np.ones((1, width))
+    rgb = np.maximum(_cube_sample(faces, -(r * np.sin(phi)[None, :]), sy, -(r * np.cos(phi)[None, :])), 0.0)
+    m = np.clip(np.ceil(rgb.max(axis=-1, keepdims=True) / RGBM_RANGE * 255.0) / 255.0, 1.0 / 255.0, 1.0)
+    enc = np.concatenate([np.clip(rgb / (m * RGBM_RANGE), 0.0, 1.0), m], axis=-1)
+    buf = io.BytesIO()
+    Image.fromarray(np.round(enc * 255.0).astype(np.uint8), "RGBA").save(buf, "PNG")
+    _CUBES[asset_path] = base64.b64encode(buf.getvalue()).decode("ascii")
+    return _CUBES[asset_path]
+
+
+def game_globals(project_root, scene_path):
+    """The shader globals the Unity sim recorded for this scene (render manifest)."""
+    path = os.path.join(project_root, "ag_render_manifest.json")
+    if not os.path.isfile(path):
+        return {}
+    manifest = json.load(open(path, encoding="utf-8-sig"))
+    want = scene_path.replace("\\", "/")
+    scene = next((x for x in manifest.get("scenes", []) if x.get("scene", "").replace("\\", "/").endswith(want)), None)
+    return (scene or {}).get("shaderGlobals", {})
+
+
+def ripple_spec(mat, proj=None, tint=1.0):
     """The game's Ripplet water, as the app's rippletGraph draws it.
 
     Its vertex shader: uv = (x, z) · _RippleDensity · _RippleDensityN ·
@@ -185,7 +213,19 @@ def ripple_spec(mat):
         "reflection": [gamma_to_linear(v) for v in reflection[:3]] + [a.get("_ReflectionColor", 1.0)],
         "intensity": f.get("_ReflectionIntensity", 1.0),
         "cube": f.get("_CustomEnvCubeScale", 1.0),
+        # the scene tint the game's final multiply carries (SimSceneTint, 0.74 on X348)
+        "tint": tint,
+        # ITS OWN REFLECTION, _CustomEnvCube: X348's water reflects ReflectionProbe-1,
+        # not the probe the rest of the stage does, and the sky it mirrors is its colour
+        **({"env": {"png": cube_rgbm(cube_path), "range": RGBM_RANGE}} if (cube_path := _custom_cube(mat, proj)) else {}),
     }
+
+
+def _custom_cube(mat, proj):
+    """The asset path of the material's _CustomEnvCube, when it has one."""
+    slot = mat["textures"].get("_CustomEnvCube") if proj else None
+    path = proj.path(slot["guid"]) if slot and slot.get("guid") else None
+    return path if path and os.path.exists(path) else None
 
 
 # The water's depth is read to this many game units, and no deeper: past it the
@@ -320,36 +360,82 @@ def sea_spec(mat, sea_y, beds, png_for_guid, out_tex, key):
     }
 
 
-def spray_points(scene, materials_by_guid):
-    """Every water splash the game draws, as points for the app's effects.
+# ── The game's particle systems ─────────────────────────────────────────────
 
-    Two kinds by the game's own pull (MIST_GRAVITY): splash.NN and spray.NN.
 
-    X348's are billboard particle systems, and none of them FLIES: every one
-    clamps its particles to a unit a second (ClampVelocity), launch speed and
-    gravity notwithstanding. What shows is the picture — a bright splat of
-    water, rotated at random, growing and fading where it was born. glTF has no
-    particles, so each emitter becomes a point the app stands Water Splash or
-    Water Spray on (as flame.NN carries Candle Flames): +Y the way the water
-    leaves, and as long as the game's largest particle, since everything the
-    effect draws is sized against that. A wide one is a row of them.
-    """
-    splash, spray = [], []
-    for e in scene.spray_emitters():
-        names = [(materials_by_guid.get(g) or {}).get("name", "").lower() for g in e["materials"]]
-        if not any(w in n for n in names for w in SPRAY_WORDS) or e["speed"] <= 0.0:
+def particle_classes(scene, materials_by_guid, proj, png_root, shader_of):
+    """Every particle system the game draws through its effect shader, as the
+    app's generated effects draw it (lib/unity-particles.ts): one class per
+    kind of system — the same modules, the same material — with its material's
+    Effect_Common settings and its own pictures, and its emitters as points.
+
+    EACH EMITTER IS A PAIR OF POINTS, ps<k>_NNN in order: the first along its
+    local +Z, one of the game's units long at the emitter's SIZE scale; the
+    second along its local +X, one unit at its SHAPE scale. Unity's scaling
+    modes decide both: Hierarchy scales everything by the chain, Local by the
+    emitter's own transform alone, Shape only the shape.
+
+    Standing billboards turned to their emitter are left to mesh_particles,
+    which draws them as the cards they are."""
+    from unity_particles import systems
+
+    standing = {p["object"] for p in scene.mesh_particles()}
+    classes, order = {}, []
+    for spec, mats, go, tf, name in systems(scene):
+        if go in standing or not mats or tf is None:
             continue
-        count = max(1, min(12, round(e["width"] / SPRAY_STEP)))
-        for k in range(count):
-            t = (k + 0.5) / count - 0.5 if count > 1 else 0.0
-            base = tuple(e["position"][i] + e["spanAxis"][i] * e["width"] * t for i in range(3))
-            tip = tuple(base[i] + e["axis"][i] * e["size"] for i in range(3))
-            (splash if e["gravity"] >= MIST_GRAVITY else spray).append((to_gltf(base), to_gltf(tip)))
-    out = []
-    for kind, found in (("splash", splash), ("spray", spray)):
-        found.sort(key=lambda f: sum(v * v for v in f[0]))
-        out += [{"name": f"{kind}.{i + 1:02d}", "from": list(a), "to": list(b)} for i, (a, b) in enumerate(found)]
-    return out
+        mat = materials_by_guid.get(mats[0])
+        if not mat or not is_effect_decal(shader_of(mat)):
+            continue
+        key = json.dumps([spec, mats[0]], sort_keys=True)
+        if key not in classes:
+            effect = live_effect(mat, lambda g: png_for(png_root, proj.path(g) or ""), always=True, asset_for_guid=proj.path)
+            if not effect:
+                continue
+            classes[key] = {"name": f"{name} ({mat['name']})", "spec": spec, "effect": effect, "emitters": []}
+            order.append(key)
+        matrix, position = scene.world_matrix(tf)
+        col = lambda i: [matrix[r][i] for r in range(3)]   # noqa: E731
+        norm = lambda v: math.sqrt(sum(c * c for c in v)) or 1.0   # noqa: E731
+        lossy = [norm(col(i)) for i in range(3)]
+        own = scene._transform(tf)["scale"]
+        mode = spec["scalingMode"]
+        size_k = sum(lossy) / 3 if mode == 0 else (sum(abs(v) for v in own) / 3 if mode == 1 else 1.0)
+        shape_k = sum(abs(v) for v in own) / 3 if mode == 1 else sum(lossy) / 3
+        z, x = col(2), col(0)
+        z = [c / norm(z) for c in z]
+        x = [c / norm(x) for c in x]
+        classes[key]["emitters"].append((position, z, x, size_k, shape_k))
+
+    out, points = [], []
+    for k, key in enumerate(order):
+        c = classes[key]
+        prefix = f"ps{k}_"
+        n = 0
+        for position, z, x, size_k, shape_k in c["emitters"]:
+            o = to_gltf(position)
+            for axis, length in ((z, size_k), (x, shape_k)):
+                n += 1
+                points.append({"name": f"{prefix}{n:03d}", "from": list(o), "to": list(to_gltf(tuple(position[i] + axis[i] * length for i in range(3))))})
+        effect = c["effect"]
+        layers = effect["layers"]
+        noise = effect.get("noise")
+        # the pictures, in the slots the effect samples: main, plus, mask, noise
+        textures = [
+            {"png": l["png"], "srgb": bool(l.get("srgb", True))} if l else None
+            for l in (layers.get("main"), layers.get("plus"), layers.get("mask"), noise)
+        ]
+        strip = lambda d: {k2: v for k2, v in d.items() if k2 != "png"}   # noqa: E731
+        material = {
+            **{k2: v for k2, v in effect.items() if k2 not in ("layers", "noise")},
+            "layers": {k2: strip(v) for k2, v in layers.items()},
+            **({"noise": strip(noise)} if noise else {}),
+        }
+        # metresPerUnit: one of the game's units in the stage's metres, so the
+        # effect knows the WORLD's scale apart from each emitter's — gravity
+        # pulls in world units, whatever the emitter's own scale
+        out.append({"name": c["name"], "prefix": prefix, "emitters": len(c["emitters"]), "metresPerUnit": METRES, "spec": c["spec"], "material": material, "textures": textures})
+    return out, points
 
 
 # ── Maps, packed the way glTF reads them ─────────────────────────────────────
@@ -551,6 +637,8 @@ def build_dir_for(out_glb, name):
 def prepare(project_root, scene_path, out_glb, name, png_root=None):
     proj = Project(project_root)
     scene = Scene(os.path.join(project_root, scene_path))
+    # SimSceneTint: the scene-wide multiply the game's water (and PBR) end on
+    scene_tint = float((game_globals(project_root, scene_path).get("SimSceneTint") or [1.0])[0])
     build = build_dir_for(out_glb, name)
     out_tex = os.path.join(build, "tex")
     out_geo = os.path.join(build, "geo")
@@ -945,7 +1033,11 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
                 "emissive": {"image": f"tex/{emissive[0]}", "strength": emissive[1]} if emissive else None,
                 "alphaMode": alpha_mode,
                 "alphaCutoff": float(mat["floats"].get("_Cutoff", 0.5)) if cutoff else None,
-                "doubleSided": bool(mat) and (int(mat["floats"].get("_Cull", 2.0)) == 0 or sky_material),
+                # Standard says _Cull, the effect and water shaders _CullMode (Cull
+                # [_CullMode]); 0 is off. Reading only _Cull, X348's central
+                # waterfall — three billboard cards with _CullMode 0 — was culled
+                # from the side the camera sees.
+                "doubleSided": bool(mat) and (int(mat["floats"].get("_Cull", 2.0)) == 0 or int(mat["floats"].get("_CullMode", 2.0)) == 0 or sky_material),
                 "unlit": unlit,
                 "additive": additive,
                 "sky": sky_material,
@@ -964,7 +1056,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
                 "look": {"Glass": "glass", "Ripplet": "water", "Plant": "foliage"}.get(family, "" if cartoon_water else None),
                 **({"effect": effect} if effect else {}),
                 # The game's own water, on its own numbers (rippletGraph).
-                **({"ripple": ripple_spec(mat)} if mat and (shader or "").endswith("/Ripplet") else {}),
+                **({"ripple": ripple_spec(mat, proj, scene_tint)} if mat and (shader or "").endswith("/Ripplet") else {}),
                 **({"sea": sea} if sea else {}),
             }
         )
@@ -1074,12 +1166,10 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
     flames = flame_points(scene, materials_by_guid)
     if flames:
         notes.append(f"{len(flames)} candle flames -> empties flame.01..{len(flames):02d} (Candle Flames (wick bones) stands a flame on each)")
-    sprays = spray_points(scene, materials_by_guid)
-    for kind, effect in (("splash", "Water Splash (splash bones)"), ("spray", "Water Spray (spray bones)")):
-        n = sum(1 for p in sprays if p["name"].startswith(kind + "."))
-        if n:
-            notes.append(f"{n} water {kind} points -> empties {kind}.01..{n:02d} ({effect} splashes on each)")
-    points = flames + sprays
+    particles, emitter_points = particle_classes(scene, materials_by_guid, proj, png_root, shader_of)
+    for c in particles:
+        notes.append(f"particles {c['prefix']}: {c['name']} — {c['emitters']} emitters, drawn by the game's own rules and pictures")
+    points = flames + emitter_points
 
     scene_json = {
         "name": name,
@@ -1095,6 +1185,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
         "ambient": ambient,
         "fog": fog,
         "groundShadow": ground_shadow,
+        "particles": particles,
         "notes": notes,
     }
     with open(os.path.join(build, "scene.json"), "w", encoding="utf-8") as f:

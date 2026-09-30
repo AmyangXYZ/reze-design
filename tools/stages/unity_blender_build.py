@@ -307,6 +307,9 @@ scene["reze"] = {
         # volume stack (see unity_grading.py). Applied after the view.
         "notes": scene_json["notes"],
         **({"grading": scene_json["grading"]} if scene_json.get("grading") else {}),
+        # the game's particle systems, for the app's generated effects (lib/unity-particles.ts)
+        # (as JSON text: Blender's ID properties hold no lists of objects, nor nulls)
+        **({"particlesJson": json.dumps(scene_json["particles"])} if scene_json.get("particles") else {}),
         # The ambient the game lights its surfaces with (glTF axes; see
         # unity_to_glb.game_ambient) — apart from the world, which is its
         # reflection probe.

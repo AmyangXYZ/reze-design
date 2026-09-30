@@ -9,6 +9,7 @@
 // own, so the editor can hand it live state and a viewer can hand it a fetched
 // document and neither knows the difference.
 
+import { effectTexturesFor } from "@/lib/effect-textures"
 import { useEffect, useMemo, useRef } from "react"
 import {
   Vec3,
@@ -395,6 +396,8 @@ export function useSceneSync({
               // effect aimed at one dancer must not spend its first frame on all
               // of them, which on a ribbon or a sigil reads as a flash.
               subjects: applied[i]?.models ?? null,
+              // the pictures a generated effect samples, from the stage that brought it
+              textures: effectTexturesFor(s),
             }))
           : null,
       )

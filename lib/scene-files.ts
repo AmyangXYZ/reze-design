@@ -85,6 +85,8 @@ export function referencedFiles(
   return files.filter((f) => {
     const p = relFilePath(f)
     if (keep.has(p) || bases.has((p.split("/").pop() ?? p).toLowerCase())) return true
+    // the pictures its particle systems draw (lib/effect-textures.ts)
+    if (p.startsWith(`${dir}particles/`)) return true
     const lower = p.toLowerCase()
     return owned.some((o) => lower.startsWith(o))
   })

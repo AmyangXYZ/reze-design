@@ -433,10 +433,18 @@ class Scene:
             return (min(lo, hi), max(lo, hi)) if state == 3 else (hi, hi)
 
         for fid, (cls, body) in self.docs.items():
-            if cls != 199 or int(shallow(body, "m_RenderMode", "0") or 0) != 4:
-                continue
-            mesh = re.search(r"m_Mesh:\s*\{fileID:\s*(-?\d+)(?:,\s*guid:\s*([0-9a-f]{32}))?", body)
-            if not mesh or mesh.group(1) == "0":
+            mode = int(shallow(body, "m_RenderMode", "0") or 0) if cls == 199 else -1
+            if mode == 4:
+                mesh = re.search(r"m_Mesh:\s*\{fileID:\s*(-?\d+)(?:,\s*guid:\s*([0-9a-f]{32}))?", body)
+                if not mesh or mesh.group(1) == "0":
+                    continue
+                mesh_ref = f"builtin:{mesh.group(1)}" if mesh.group(2) == "0000000000000000e000000000000000" else mesh.group(2)
+            elif mode == 0 and int(shallow(body, "m_RenderAlignment", "0") or 0) == 2:
+                # A STANDING BILLBOARD turned to its emitter (Local) is a quad in the
+                # scene: X348's central waterfall is three of them, 27 x 30 m, an
+                # arch-shaped mask cutting the curtain behind its middle arch.
+                mesh_ref = "builtin:10210"      # Unity's Quad, the billboard's own card
+            else:
                 continue
             go = int(re.search(r"m_GameObject:\s*\{fileID:\s*(-?\d+)", body).group(1))
             system = systems.get(go, "")
@@ -499,12 +507,11 @@ class Scene:
                 size = (sx, pick("startSizeY", sx), pick("startSizeZ", sx)) if field(initial, "size3D", "0") == "1" else (sx, sx, sx)
                 rz = pick("startRotation")
                 rot = (pick("startRotationX"), pick("startRotationY"), rz) if field(initial, "rotation3D", "0") == "1" else (0.0, 0.0, rz)
-                self._mesh_particle(out, fid, k, go, tf, body, mesh, initial, rot, size, offset, life_alpha)
+                self._mesh_particle(out, fid, k, go, tf, body, mesh_ref, initial, rot, size, offset, life_alpha)
         return out
 
-    def _mesh_particle(self, out, fid, k, go, tf, body, mesh, initial, rot, size, offset, life_alpha):
+    def _mesh_particle(self, out, fid, k, go, tf, body, mesh_ref, initial, rot, size, offset, life_alpha):
         """One standing mesh particle, in the renderers() shape."""
-        guid = mesh.group(2)
         # ITS START COLOUR, which the effect shader multiplies in as the vertex
         # colour: X348's mist domes are (0.70, 0.91, 1) at 0.26-1. A constant,
         # or the mean of two, is the colour it stands in, its alpha dimmed by
@@ -525,7 +532,7 @@ class Scene:
                 "transform": tf,
                 "position": self.world_position(tf) if tf else (0, 0, 0),
                 "materials": re.findall(r"guid:\s*([0-9a-f]{32})", body[body.find("m_Materials") :].split("\n  m_", 1)[0]),
-                "mesh": f"builtin:{mesh.group(1)}" if guid == "0000000000000000e000000000000000" else guid,
+                "mesh": mesh_ref,
                 "enabled": shallow(body, "m_Enabled", "1") == "1",
                 "layer": int(shallow(self.docs.get(go, (None, ""))[1], "m_Layer", "0") or 0),
                 "renderingLayerMask": int(shallow(body, "m_RenderingLayerMask", "1") or 1),

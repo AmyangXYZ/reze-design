@@ -238,6 +238,7 @@ import { carryGlbStage, convertGlbUploads, glbStageOf, glbStyleGroups, stagePbrG
 import { texturesToWebp } from "@/lib/texture-webp"
 import { readRayMmd, type RayStage } from "@/lib/ray-mmd"
 import { loadMaterialMaps, setMaterialMaps } from "@/lib/material-maps"
+import { loadParticleTextures } from "@/lib/effect-textures"
 import { findSkies, isStageOwnSky, skyThumbnail, type SkyCandidate } from "@/lib/stage-skies"
 import { GpuErrorNotice } from "@/components/gpu-error-notice"
 import { toast } from "sonner"
@@ -5000,6 +5001,8 @@ export default function Lab() {
       // resident first. A stage without one clears whatever the last model
       // under this id left behind, which is the same call doing that job.
       const mapReport = await loadMaterialMaps(id, files, relFilePath(pmx), relFilePath, engineRef.current?.getModel(id))
+      // and the pictures its particle systems draw, before those effects install
+      await loadParticleTextures(files, relFilePath(pmx), relFilePath)
       if (mapReport) {
         console.info(
           `[stage] maps: ${mapReport.decoded}/${mapReport.materials} materials bound an ORM` +
@@ -5304,6 +5307,12 @@ export default function Lab() {
         // AND THE EFFECTS IT NAMES — its galaxy — at the dials it sets,
         // marked as its own so they leave with it. One the scene already wears
         // by that name stays as the scene has it.
+        // AND ITS PARTICLE SYSTEMS — the game's splashes, spray, birds — as the
+        // effects the converter's data generated, marked as its own
+        for (const p of rig?.particles ?? []) {
+          const applied: AppliedEffect = { id: `stage-particles:${p.name}`, name: p.name, wgsl: p.wgsl, stage: id }
+          setBgEffects((list) => (list.some((e) => e.wgsl === p.wgsl) ? list : [...list, applied]))
+        }
         for (const fx of rig?.effects ?? []) {
           let applied: AppliedEffect
           try {

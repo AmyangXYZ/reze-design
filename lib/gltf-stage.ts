@@ -19,6 +19,7 @@
 // triangle's winding turned back. A lamp's brightness is stated one metre away
 // and the app's per-PMX-unit intensity is that x 12.5², by the inverse square.
 
+import { particleEffectWgsl, type ParticleClass } from "@/lib/unity-particles"
 import { writePmxDocument, type PmxDocument, type PmxMaterial, type PmxVertex, type ShaderGraph, type StyleGroup, UNLIT_GRAPH } from "reze-engine"
 import { libraryGraph } from "@/lib/materials"
 import { relFilePath } from "@/lib/scene-files"
@@ -137,6 +138,10 @@ export type RippleSpec = {
   /** _ReflectionIntensity, and the reflection's own scale (_CustomEnvCubeScale, applied twice). */
   intensity: number
   cube: number
+  /** SimSceneTint, the game's final multiply. */
+  tint?: number
+  /** Its own reflection (_CustomEnvCube) as an RGBM equirect in slot 1: rgb · a · range. */
+  env?: { png?: string; range: number }
 }
 /** The game's sea (tools/stages/unity_to_glb.py, sea_spec): its depth over the
  *  stage baked from the beds under it, and the shallows' caustics and foam. */
@@ -395,7 +400,7 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
     const node = g.nodes![index]
     const world = mul(parent, localMatrix(node))
     if (node.extensions?.KHR_lights_punctual) lamps.push({ node, world })
-    if (node.mesh === undefined && /^(flame|splash|spray)\.\d+$/i.test(node.name ?? "")) {
+    if (node.mesh === undefined && (/^(flame|splash|spray)\.\d+$/i.test(node.name ?? "") || /^ps\d+_\d+$/i.test(node.name ?? ""))) {
       const head = toPmx(xformPoint(world, 0, 0, 0))
       const tail = toPmx(xformPoint(world, 0, 1, 0))
       wicks.push({ name: node.name!, head, tail: [tail[0] - head[0], tail[1] - head[1], tail[2] - head[2]] })
@@ -600,7 +605,7 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
             ...(ex.effect.noise ? { noise: { ...ex.effect.noise, png: undefined } } : {}),
           }
         : null,
-      ripple: ex.ripple ?? null,
+      ripple: ex.ripple ? { ...ex.ripple, ...(ex.ripple.env ? { env: { ...ex.ripple.env, png: undefined } } : {}) } : null,
       sea: ex.sea ? { ...ex.sea, depth: { ...ex.sea.depth, png: undefined }, caustics: { ...ex.sea.caustics, png: undefined }, foam: { ...ex.sea.foam, png: undefined } } : null,
     })
     // The maps, under the material's own name — see material-maps.ts.
@@ -627,6 +632,11 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
       const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0))
       files.push({ path: `${dir}maps/${fileSafe(name)}_${suffix}.png`, bytes })
       return bytes
+    }
+    // THE WATER'S OWN REFLECTION rides in slot 1 beside its ripple map (rippletGraph)
+    if (ex.ripple?.env?.png) {
+      maps.set(name, { normal: mapFile(m.normalTexture, "N"), orm: pictureFile(ex.ripple.env.png, "ORM"), emissive: null })
+      continue
     }
     if (ex.sea) {
       pictureFile(ex.sea.foam.png, "X")
@@ -760,6 +770,30 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
       : null
   const haze = fogLayer(sceneExtras.fog)
   if (haze) rig.fog = { ...haze, ...(fogLayer(sceneExtras.fog?.dyn) ? { dyn: fogLayer(sceneExtras.fog?.dyn) } : {}) }
+  // THE GAME'S PARTICLE SYSTEMS, as effects generated here (lib/unity-particles.ts),
+  // their pictures beside the stage under particles/ — the document keeps the
+  // source, the stage's own files the pictures (lib/effect-textures.ts)
+  type ParticleEntry = ParticleClass & { textures?: ({ png?: string; srgb?: boolean } | null)[] }
+  const particlesJson = (sceneExtras as { particlesJson?: unknown }).particlesJson
+  let particles: ParticleEntry[] | undefined
+  try {
+    particles = typeof particlesJson === "string" ? (JSON.parse(particlesJson) as ParticleEntry[]) : undefined
+  } catch {
+    notes.push("the stage's particle systems could not be read")
+  }
+  if (particles?.length) {
+    rig.particles = particles.map((c) => ({
+      name: c.name,
+      wgsl: particleEffectWgsl(c, (c.metresPerUnit ?? 0.64) * PMX_PER_METRE),
+      textures: (c.textures ?? []).map((t, i) => {
+        if (!t?.png) return null
+        const path = `particles/${c.prefix}${i}.png`
+        files.push({ path: `${dir}${path}`, bytes: Uint8Array.from(atob(t.png), (ch) => ch.charCodeAt(0)) })
+        return { path, srgb: t.srgb !== false }
+      }),
+    }))
+    notes.push(`${particles.length} particle systems drawn by the game's own rules and pictures: ${particles.map((c) => c.name).join(", ")}`)
+  }
   files.push({ path: `${dir}${stem}.lights.json`, bytes: new TextEncoder().encode(JSON.stringify(rig, null, 1)) })
 
   // ── The PMX ──
@@ -1142,14 +1176,25 @@ export function rippletGraph(name: string, r: RippleSpec): ShaderGraph {
     "vector",
   )
   const bounce = node("vector_math/reflect", { a: node("vector_math/scale", { a: view, scale: -1 }, "vector"), b: n }, "vector")
-  const sky = node("environment", { vector: bounce, roughness: 0 }, "color")
+  // ITS OWN CUBEMAP where it has one (_CustomEnvCube, slot 1): X348's pool mirrors
+  // ReflectionProbe-1, baked in the pool — the arches and pillars its ripples
+  // break into glints — not the stage's sky. Looked up along the reflection
+  // the way the converter laid it out: u = atan2(x, z)/2π + 0.5, v = acos(y)/π.
+  let sky: Ref
+  if (r.env) {
+    const rsep = node("separate_xyz", { vector: bounce }, "x")
+    const u = node("math/multiply_add", { a: node("math/arctan2", { a: rsep, b: at(rsep, "z") }, "value"), b: 1 / (2 * Math.PI), c: 0.5 }, "value")
+    const v = mul(node("math/arccosine", { a: node("math/minimum", { a: node("math/maximum", { a: at(rsep, "y"), b: -1 }, "value"), b: 1 }, "value") }, "value"), 1 / Math.PI)
+    const probe = node("tex_image/1", { uv: node("combine_xyz", { x: u, y: v, z: 0 }, "vector") }, "color")
+    sky = node("vector_math/scale", { a: probe, scale: mul(at(probe, "alpha"), r.env.range) }, "vector")
+  } else sky = node("environment", { vector: bounce, roughness: 0 }, "color")
   const mirrored = node("vector_math/multiply", { a: node("vector_math/scale", { a: sky, scale: r.cube * r.cube }, "vector"), b: refl }, "vector")
   const light = node("light", {}, "direction")
   const ndl = node("vector_math/dot", { a: n, b: light }, "value")
   const lit = node("vector_math/scale", { a: at(light, "color"), scale: mul(ndl, at(light, "shadow")) }, "vector")
   const [cr, cg, cb, ca] = r.color
   const body = node("vector_math/multiply_add", { a: lit, b: [cr, cg, cb], c: [cr, cg, cb] }, "vector")
-  const colour = node("vector_math/scale", { a: node("vector_math/add", { a: mirrored, b: body }, "vector"), scale: r.intensity }, "vector")
+  const colour = node("vector_math/scale", { a: node("vector_math/add", { a: mirrored, b: body }, "vector"), scale: r.intensity * (r.tint ?? 1) }, "vector")
   const out = node("emission", { color: colour, strength: 1 }, "color")
   // opaque where the reflection's own luminance and _Color.a reach 1; X348's pool is about 0.77
   const floor = 0.2126729 * rr + 0.7151522 * rg + 0.072175 * rb + (ca ?? 1)

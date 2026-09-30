@@ -18,6 +18,7 @@ import { unzipToFiles } from "@/lib/uploads"
 import { loadLocalBundle } from "@/lib/asset-store"
 import { sceneFiles } from "@/lib/scene-files"
 import { clearMaterialMaps, loadMaterialMaps, withMaterialMaps } from "@/lib/material-maps"
+import { loadParticleTextures } from "@/lib/effect-textures"
 import { BACKDROP_VIDEO_RE, openAnimatedImage } from "@/lib/backdrop"
 import { groundExtent, hexToLinearVec3 } from "@/lib/scene-settings"
 import { visibilityAt, visibleAt, type VisibilityWindow } from "@/lib/visibility"
@@ -378,6 +379,8 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
       // vanished the moment the hide finally landed.
       engine.setModelTransform(entry.model.id, { visible: false })
       const maps = await loadMaterialMaps(entry.model.id, files, pmxFile.name, (f) => f.name, model)
+      // the pictures its particle systems draw (lib/effect-textures.ts)
+      await loadParticleTextures(files, pmxFile.name, (f) => f.name)
       // The same line the upload path prints, because a stage that came back
       // from the bundle without its ORM maps is a rough white metal — no
       // highlight, nothing that moves with the camera — and looks like a
