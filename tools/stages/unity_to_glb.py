@@ -42,7 +42,7 @@ from PIL import Image
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from unity_grading import grading as stage_grading  # noqa: E402
-from unity_effect_bake import BASIC_EFFECT_SHADERS, _linear_to_srgb, _srgb_to_linear, bake as bake_effect, bake_basic, bake_detailed, live_effect, repeats_across  # noqa: E402
+from unity_effect_bake import BASIC_EFFECT_SHADERS, _linear_to_srgb, _srgb_to_linear, bake as bake_effect, bake_basic, bake_detailed, live_effect, repeats_across, tong_add_effect  # noqa: E402
 from unity_lights import gamma_to_linear  # noqa: E402
 from unity_probe import probe_to_equirect  # noqa: E402
 from unity_scene import Project, Scene, read_material  # noqa: E402
@@ -385,11 +385,15 @@ def particle_classes(scene, materials_by_guid, proj, png_root, shader_of):
         if go in standing or not mats or tf is None:
             continue
         mat = materials_by_guid.get(mats[0])
-        if not mat or not is_effect_decal(shader_of(mat)):
+        # the effect shader, or the plain additive one (X203a's light glows)
+        tong_add = bool(mat) and shader_of(mat) == "ZTong/Tong_jichu_Add"
+        if not mat or not (is_effect_decal(shader_of(mat)) or tong_add):
             continue
         key = json.dumps([spec, mats[0]], sort_keys=True)
         if key not in classes:
-            effect = live_effect(mat, lambda g: png_for(png_root, proj.path(g) or ""), always=True, asset_for_guid=proj.path)
+            png_of = lambda g: png_for(png_root, proj.path(g) or "")   # noqa: E731
+            effect = (tong_add_effect(mat, png_of, asset_for_guid=proj.path) if tong_add
+                      else live_effect(mat, png_of, always=True, asset_for_guid=proj.path))
             if not effect:
                 continue
             classes[key] = {"name": f"{name} ({mat['name']})", "spec": spec, "effect": effect, "emitters": []}

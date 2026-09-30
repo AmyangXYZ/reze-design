@@ -82,6 +82,32 @@ export type ParticleMaterial = {
   maskStrength: number
   dstBlend: number
 }
+/** One picture of ZTong/Tong_jichu_Add (tools/stages/unity_effect_bake.tong_add_effect). */
+export type TongLayer = {
+  scale: [number, number]
+  offset: [number, number]
+  /** UV per second, (u, v) — unless Custom1 drives that axis */
+  speed: [number, number]
+  /** which axes the particle's Custom1 drives instead: xy for the picture, zw for the mask */
+  customAxes: [boolean, boolean]
+  /** turned by this many degrees about 0.5 — or spinning at `spin` rad/s */
+  angle: number
+  spin: number | null
+  /** 0 the whole picture, 1 its alpha only (white), 2 its red everywhere */
+  single: number
+  srgb?: boolean
+}
+/** ZTong/Tong_jichu_Add: the plain additive sheet (X203a's light glows). */
+export type TongMaterial = {
+  kind: "tong_add"
+  layers: { main: TongLayer; mask?: TongLayer }
+  color: number[]
+  alphaFromCustom: boolean
+  /** _Vertex_Color: ON ignores the vertex colour (the shader's switch is that way round) */
+  ignoreVertexColor: boolean
+  worldMask?: boolean
+  dstBlend: number
+}
 export type ParticleClass = {
   name: string
   prefix: string
@@ -89,7 +115,7 @@ export type ParticleClass = {
   /** One of the game's units in the stage's metres. */
   metresPerUnit?: number
   spec: ParticleSpec
-  material: ParticleMaterial
+  material: ParticleMaterial | TongMaterial
 }
 
 const f = (v: number) => (Number.isFinite(v) ? (Number.isInteger(v) ? `${v}.0` : `${v}`) : "0.0")
@@ -145,7 +171,15 @@ function shapeMatrix(rot: readonly number[]): string {
  *  `world` is one of the game's units in engine units — the scale gravity pulls
  *  in, where everything else scales with its own emitter. */
 export function particleEffectWgsl(cls: ParticleClass, world: number): string {
-  const { spec: s, material: m } = cls
+  const s = cls.spec
+  // Two of the game's shaders draw particles: Effect_Common (most of them) and
+  // the plain additive Tong_jichu_Add. The spawn and flight are the same; only
+  // the picture differs, so the second runs the same code with a neutral
+  // Effect_Common stand-in and swaps its own layers and shading in below.
+  const tong = (cls.material as { kind?: string }).kind === "tong_add" ? (cls.material as TongMaterial) : null
+  const m: ParticleMaterial = tong
+    ? { layers: {}, mainPow: [1, 1, 1, 0], color: [1, 1, 1, 1], redAlphaMain: false, plusPow: [1, 1, 1, 0], plusColor: [1, 1, 1, 1], redAlphaPlus: false, plusStrength: 0, plusColorOn: 0, plusAlphaOn: 0, plusMode: 0, redAlphaMask: false, maskStrength: 0, dstBlend: 1 }
+    : (cls.material as ParticleMaterial)
   const decls: string[] = []
   // how many of the pool each emitter keeps alive: its rate over a mean life plus
   // its bursts, capped where the game caps it
@@ -171,7 +205,9 @@ export function particleEffectWgsl(cls: ParticleClass, world: number): string {
   const frame = s.uv ? curveExpr(s.uv.frame, "cFrame", "t", "rc.z", decls) : "0.0"
   // Custom1, per particle over its life
   const custom1 = [0, 1, 2, 3].map((i) => (s.custom?.[`0_${i}`] ? curveExpr(s.custom[`0_${i}`], `cCustom${i}`, "t", "rq.x", decls) : "0.0"))
-  const readsCustom = Object.values(m.layers).some((l) => l?.custom)
+  const readsCustom =
+    Object.values(m.layers).some((l) => l?.custom) ||
+    (!!tong && (tong.alphaFromCustom || [tong.layers.main, tong.layers.mask].some((l) => l?.customAxes.some(Boolean))))
   const startFrame = s.uv ? curveExpr(s.uv.start, "cStartFrame", "0.0", "rc.z", decls) : "0.0"
 
   const sh = s.shape
@@ -235,6 +271,21 @@ fn ${name}(q: vec2f, n: f32, c1: vec4f) -> vec4f {
   return rzTexture(${tex(slot)}u, vec2f(uv.x, 1.0 - uv.y));
 }`
   }
+  // Tong_jichu_Add's UV, from its vertex shader: slid by time · (_U, _V) or, per
+  // axis, by Custom1; turned about 0.5 (u' = cos·x + sin·y, v' = cos·y − sin·x)
+  // by _Ang degrees, or spinning at _Rotate_speed rad/s; then _ST.
+  const tongLayerFn = (name: string, l: TongLayer, slot: number, axes: "xy" | "zw") => `
+fn ${name}(q: vec2f, c1: vec4f) -> vec4f {
+  let tm = rzTime();
+  let off = vec2f(${l.customAxes[0] ? `c1.${axes[0]}` : `tm * ${f(l.speed[0])}`}, ${l.customAxes[1] ? `c1.${axes[1]}` : `tm * ${f(l.speed[1])}`});
+  let w = q + off - vec2f(0.5);
+  let ang = ${l.spin !== null ? `tm * ${f(l.spin)}` : f((l.angle * Math.PI) / 180)};
+  let c = cos(ang);
+  let sn = sin(ang);
+  let uv = (vec2f(c * w.x + sn * w.y, c * w.y - sn * w.x) + vec2f(0.5)) * vec2f(${f(l.scale[0])}, ${f(l.scale[1])}) + vec2f(${f(l.offset[0])}, ${f(l.offset[1])});
+  let t = rzTexture(${slot}u, vec2f(uv.x, 1.0 - uv.y));
+  ${l.single >= 2 ? "return t.rrrr;" : l.single === 1 ? "return vec4f(1.0, 1.0, 1.0, t.a);" : "return t;"}
+}`
   const nz = m.noise
   const powMix = (x: string, p: number[]) => {
     const [px, py, pz, pw] = p
@@ -264,6 +315,35 @@ fn ${name}(q: vec2f, n: f32, c1: vec4f) -> vec4f {
   a = a * mix(1.0, ${pA}, ${f(ka)});`
       })()
     : ""
+  // Tong_jichu_Add's fragment: the picture times _Color and both alphas, times
+  // the mask's luminance · alpha, then — unless _Vertex_Color says ignore it —
+  // the vertex colour and its alpha twice (the second Custom1.x under
+  // _Color_Alpha_X). Added whole: Blend One One.
+  const tongBody = tong
+    ? `  let mt = tongMain(uv, c1);
+  var rgb = mt.rgb * ${v3(tong.color)} * mt.a * ${f(tong.color[3] ?? 1)};
+  ${tong.layers.mask ? "let mk = tongMask(uv, c1);\n  rgb = rgb * (dot(mk.rgb, vec3f(0.3, 0.59, 0.11)) * mk.a);" : ""}
+  ${tong.ignoreVertexColor ? "" : `var vc = ${startCol} * ${col};
+  ${s.renderer.linear ? "vc = vec4f(pow(max(vc.rgb, vec3f(0.0)), vec3f(2.2)), vc.a);" : ""}
+  rgb = rgb * vc.rgb * vc.a * ${tong.alphaFromCustom ? "c1.x" : "vc.a"};`}
+  return vec4f(max(rgb, vec3f(0.0)), inside);`
+    : ""
+  const effectBody = `  let mt = mainLayer(uv, n, c1);
+  var rgb = ${powMix("mt.rgb", m.mainPow)};
+  var a = ${m.redAlphaMain ? "rgb.r" : "mt.a"};
+  rgb = rgb * ${v3(m.color)};
+  a = a * ${f(m.color[3] ?? 1)};
+  ${plusCode}
+  rgb = max(rgb, vec3f(0.0));
+  // the vertex colour: start colour times colour over life${s.renderer.linear ? ", made linear as the game's renderer makes it" : ""}
+  var vc = ${startCol} * ${col};
+  ${s.renderer.linear ? "vc = vec4f(pow(max(vc.rgb, vec3f(0.0)), vec3f(2.2)), vc.a);" : ""}
+  rgb = rgb * vc.rgb;
+  a = a * vc.a;
+  ${m.layers.mask ? `let mk = maskLayer(uv, n, c1);\n  a = a * (${m.redAlphaMask ? "mk.r" : "mk.a"} - ${f(m.maskStrength)});` : ""}
+  a = clamp(a, 0.0, 1.0) * inside;
+  ${additive ? "return vec4f(rgb, a);" : `// laid over as _DstBlend says: a·rgb added, what it covers dimmed by a·${f(cover)}
+  return vec4f(rgb / ${f(cover)}, a * ${f(cover)});`}`
   const uvs = s.uv
   const tilesX = uvs ? uvs.tiles[0] : 1
   const tilesY = uvs ? uvs.tiles[1] : 1
@@ -368,9 +448,12 @@ fn particleStep(p: Particle, dt: f32) -> Particle {
   ${stretched ? `q.stretch = max(${f(s.renderer.lengthScale)} + ${f(s.renderer.velocityScale)} * length(q.vel) / max(2.0 * q.size, 1e-4), 1.0001);` : ""}
   return q;
 }
-${layerFn("mainLayer", m.layers.main ?? { scale: [1, 1], offset: [0, 0], rotation: 0, tiling: true, speed: [0, 0] }, 0, !!nz?.main)}
+${tong
+  ? `${tongLayerFn("tongMain", tong.layers.main, 0, "xy")}
+${tong.layers.mask ? tongLayerFn("tongMask", tong.layers.mask, 2, "zw") : ""}`
+  : `${layerFn("mainLayer", m.layers.main ?? { scale: [1, 1], offset: [0, 0], rotation: 0, tiling: true, speed: [0, 0] }, 0, !!nz?.main)}
 ${m.layers.plus ? layerFn("plusLayer", m.layers.plus, 1, !!nz?.plus) : ""}
-${m.layers.mask ? layerFn("maskLayer", m.layers.mask, 2, !!nz?.mask) : ""}
+${m.layers.mask ? layerFn("maskLayer", m.layers.mask, 2, !!nz?.mask) : ""}`}
 
 fn particleShade(p: Particle, quv: vec2f) -> vec4f {
   let t = clamp(p.age / max(p.life, 1e-3), 0.0, 1.0);
@@ -393,22 +476,7 @@ fn particleShade(p: Particle, quv: vec2f) -> vec4f {
   let n = rzTexture(3u, vec2f(nuv.x, 1.0 - nuv.y)).r;` : "let n = 0.0;"}
   ${readsCustom ? `let rq = rzHash13(p.seed * 13.1 + 0.3);
   let c1 = vec4f(${custom1.join(", ")});` : "let c1 = vec4f(0.0);"}
-  let mt = mainLayer(uv, n, c1);
-  var rgb = ${powMix("mt.rgb", m.mainPow)};
-  var a = ${m.redAlphaMain ? "rgb.r" : "mt.a"};
-  rgb = rgb * ${v3(m.color)};
-  a = a * ${f(m.color[3] ?? 1)};
-  ${plusCode}
-  rgb = max(rgb, vec3f(0.0));
-  // the vertex colour: start colour times colour over life${s.renderer.linear ? ", made linear as the game's renderer makes it" : ""}
-  var vc = ${startCol} * ${col};
-  ${s.renderer.linear ? "vc = vec4f(pow(max(vc.rgb, vec3f(0.0)), vec3f(2.2)), vc.a);" : ""}
-  rgb = rgb * vc.rgb;
-  a = a * vc.a;
-  ${m.layers.mask ? `let mk = maskLayer(uv, n, c1);\n  a = a * (${m.redAlphaMask ? "mk.r" : "mk.a"} - ${f(m.maskStrength)});` : ""}
-  a = clamp(a, 0.0, 1.0) * inside;
-  ${additive ? "return vec4f(rgb, a);" : `// laid over as _DstBlend says: a·rgb added, what it covers dimmed by a·${f(cover)}
-  return vec4f(rgb / ${f(cover)}, a * ${f(cover)});`}
+${tong ? tongBody : effectBody}
 }
 `
 }

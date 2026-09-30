@@ -377,6 +377,69 @@ def live_effect(material, png_for_guid, max_size=1024, always=False, asset_for_g
     }
 
 
+
+def tong_add_effect(material, png_for_guid, max_size=1024, asset_for_guid=None):
+    """ZTong/Tong_jichu_Add as a particle system's picture: the pictures and numbers
+    lib/unity-particles.ts draws with (kind "tong_add"), or None without a _Tex.
+
+    THE FORMULA, read from the shader's one fragment (Blend One One):
+      tex  = _Tex, taken whole, as (1,1,1,a) at _Tex_IsSingleChannel 1, or red
+             everywhere at 2; rgb = tex.rgb · _Color.rgb · tex.a · _Color.a
+      mask = _Tex_Mask the same way; its weight luminance(rgb) · a
+      out  = rgb · mask, and unless _Vertex_Color is on — the switch that IGNORES
+             it — times the vertex colour and its alpha twice over (the second
+             Custom1.x under _Color_Alpha_X)
+    Each picture's UV slides by time · (_Tex_U, _Tex_V) — or by Custom1.xy
+    (_Tex_Mask: .zw) per axis under the _X/_Y switches — turns about 0.5 by
+    _Tex_Ang, or spins at _Tex_Rotate_speed rad/s under _Tex_Rotate, then _ST."""
+    import base64
+    import io
+
+    f = material["floats"]
+    srgb_of = (lambda g: _is_srgb(asset_for_guid(g) or "")) if asset_for_guid else (lambda g: True)
+
+    def layer(slot, prefix, custom):
+        st = material["textures"].get(slot)
+        if not st or not st.get("guid"):
+            return None
+        png = png_for_guid(st["guid"])
+        if not png or not os.path.exists(png):
+            return None
+        im = Image.open(png).convert("RGBA")
+        if max(im.size) > max_size:
+            k = max_size / max(im.size)
+            im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.LANCZOS)
+        buf = io.BytesIO()
+        im.save(buf, "PNG", optimize=True)
+        return {
+            "png": base64.b64encode(buf.getvalue()).decode("ascii"),
+            "scale": [float(st["scale"][0]), float(st["scale"][1])],
+            "offset": [float(st["offset"][0]), float(st["offset"][1])],
+            "speed": [f.get(f"{prefix}_U", 0.0), f.get(f"{prefix}_V", 0.0)],
+            # which axes Custom1 drives instead of time: xy for the picture, zw for the mask
+            "customAxes": [f.get(f"{prefix}_U_{custom[0]}", 0.0) > 0.5, f.get(f"{prefix}_V_{custom[1]}", 0.0) > 0.5],
+            "angle": f.get(f"{prefix}_Ang", 0.0),
+            "spin": f.get(f"{prefix}_Rotate_speed", 0.0) if f.get(f"{prefix}_Rotate", 0.0) > 0.5 else None,
+            "single": int(round(f.get(f"{prefix}_IsSingleChannel", 0.0))),
+            "srgb": srgb_of(st["guid"]),
+        }
+
+    main = layer("_Tex", "_Tex", "XY")
+    if not main:
+        return None
+    mask = layer("_Tex_Mask", "_Tex_Mask", "ZW")
+    colour, colour_a = _linear_colour(material, "_Color")
+    return {
+        "kind": "tong_add",
+        "layers": {"main": main, **({"mask": mask} if mask else {})},
+        "color": [float(c) for c in colour] + [colour_a],
+        "alphaFromCustom": f.get("_Color_Alpha_X", 0.0) > 0.5,
+        "ignoreVertexColor": f.get("_Vertex_Color", 0.0) > 0.5,
+        # world/view-space masks (_World_Mask) are not carried: the particle has no such UV
+        "worldMask": f.get("_World_Mask", 0.0) > 0.5,
+        "dstBlend": 1.0,
+    }
+
 # ── ZTong/Tong_jichu_AB: the plain alpha-blended effect sheet ──
 #
 # A soft blob under a candle, a shadow projection on a floor ("touying"): one

@@ -5,7 +5,7 @@
 Lists every active renderer by shader family and which of their materials the
 glb has, the game-shader switches each exported family turns on (what the app
 may not draw), every particle system and what became of it (a mesh, a
-splash/spray/flame point, or DROPPED), and the converter's own notes. Run it
+generated particle effect, a flame point, or DROPPED), and the converter's own notes. Run it
 after a conversion: a gap is a line here rather than a surprise on screen.
 """
 import collections
@@ -31,7 +31,7 @@ glb_base = collections.defaultdict(list)
 for name, r in glb_mats.items():
     glb_base[name.split(' tint ')[0]].append(r)
 notes = gj['scenes'][0]['extras']['reze'].get('notes', [])
-points = collections.Counter(re.sub(r'\.\d+$', '', x.get('name', '')) for x in gj['nodes'] if re.match(r'^(flame|splash|spray)\.\d+$', x.get('name', '')))
+points = collections.Counter(re.sub(r'(\.|_)\d+$', '', x.get('name', '')) for x in gj['nodes'] if re.match(r'^((flame|splash|spray)\.\d+|ps\d+_\d+)$', x.get('name', '')))
 
 mat_cache = {}
 
@@ -109,8 +109,12 @@ for s in sorted(featmap):
 w('\n# Particle systems (active)\n')
 MODES = {0: 'billboard', 1: 'stretched', 2: 'horizontal', 3: 'vertical', 4: 'mesh'}
 mp_ids = {p['object'] for p in scene.mesh_particles()}
-import unity_to_glb as U
-spray_names = {e['name'] for e in scene.spray_emitters() if e['speed'] > 0 and any(w_ in (mat(g) or {}).get('name', '').lower() for g in e['materials'] for w_ in U.SPRAY_WORDS)}
+# the systems the converter hands the app as generated effects (unity_to_glb.particle_classes):
+# drawn through the game's effect shader, and not a standing card mesh_particles took
+from unity_particles import systems
+from unity_materials import is_effect_decal
+effect_gos = {go for _spec, mats, go, tf, _n in systems(scene)
+              if go not in mp_ids and mats and tf is not None and is_effect_decal(shader(mat(mats[0])))}
 by = collections.Counter()
 dropped = collections.Counter()
 for fid, (cls, body) in scene.docs.items():
@@ -126,8 +130,8 @@ for fid, (cls, body) in scene.docs.items():
     if go in mp_ids:
         how = 'mesh particle -> mesh'
     else:
-        if name in spray_names and mode != 'mesh':
-            how = 'splash/spray point'
+        if go in effect_gos:
+            how = 'particle effect (generated)'
         elif any(w_ in mname.lower() for w_ in ('huomiao', 'huoyan', 'flame', 'candle')):
             how = 'flame point'
         else:
@@ -153,5 +157,6 @@ w('\n# Converter notes\n')
 for x in notes:
     w(f'- {x[:300]}')
 w(f'\n# Points in glb: {dict(points)}')
-open(os.path.join(os.path.dirname(__file__), 'x348_audit.md'), 'w', encoding='utf8').write('\n'.join(out))
+if REPORT:
+    open(REPORT, 'w', encoding='utf8').write('\n'.join(out))
 print('\n'.join(out))
