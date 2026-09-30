@@ -99,7 +99,7 @@ type GltfLight = {
 }
 
 /** What our exporter writes under `extras.reze`; a hand-built stage has none. */
-type RezeMaterial = { shader?: string; unlit?: boolean; additive?: boolean; sky?: boolean; castShadow?: boolean; look?: string | null; queue?: number; effect?: EffectSpec; ripple?: RippleSpec }
+type RezeMaterial = { shader?: string; unlit?: boolean; additive?: boolean; sky?: boolean; castShadow?: boolean; look?: string | null; queue?: number; effect?: EffectSpec; ripple?: RippleSpec; sea?: SeaSpec }
 
 /** One layer of a moving effect sheet: its picture (base64 PNG, in the file only)
  *  and the numbers that place it — see tools/stages/unity_effect_bake.py. */
@@ -137,6 +137,24 @@ export type RippleSpec = {
   /** _ReflectionIntensity, and the reflection's own scale (_CustomEnvCubeScale, applied twice). */
   intensity: number
   cube: number
+}
+/** The game's sea (tools/stages/unity_to_glb.py, sea_spec): its depth over the
+ *  stage baked from the beds under it, and the shallows' caustics and foam. */
+export type SeaSpec = {
+  /** The water's vertical depth in game units over [0, range], an 8-bit map
+   *  laid over glTF (x, z) from `origin`, `size` metres across. */
+  depth: { png?: string; origin: [number, number]; size: [number, number]; range: number }
+  caustics: { png?: string; tiling: number; speed: number; brightness: number }
+  foam: { png?: string; tiling: number; speed: number; clipping: number; length: number; falloff: number; color: number[] }
+  /** _RimAplha, _RimSoft: the soft edge's alpha from depth. */
+  rim: [number, number]
+  /** _MainColor, linear. */
+  color: number[]
+  /** _NormalStrength. */
+  normal: number
+  /** The ripple normal's tiling on the mesh UV and speed a second, and how far
+   *  it bends the caustics (_NormalTiling, _NormalSpeed, _CausticsDistortion). */
+  ripple?: [number, number, number]
 }
 type RezeLamp = { range?: number; intensity?: number; color?: number[]; angle?: number; innerAngle?: number }
 type RezeSun = { color?: number[]; shadow?: boolean }
@@ -335,6 +353,8 @@ export type GlbMaterial = {
   effect: EffectSpec | null
   /** The game's water, drawn by rippletGraph. */
   ripple: RippleSpec | null
+  /** The game's sea, drawn by seaGraph. */
+  sea: SeaSpec | null
 }
 
 export type GlbStage = {
@@ -581,6 +601,7 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
           }
         : null,
       ripple: ex.ripple ?? null,
+      sea: ex.sea ? { ...ex.sea, depth: { ...ex.sea.depth, png: undefined }, caustics: { ...ex.sea.caustics, png: undefined }, foam: { ...ex.sea.foam, png: undefined } } : null,
     })
     // The maps, under the material's own name — see material-maps.ts.
     const mapFile = (ref: TextureRef | undefined, suffix: string): Uint8Array | null => {
@@ -598,6 +619,19 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
       const bytes = Uint8Array.from(atob(layer.png), (c) => c.charCodeAt(0))
       files.push({ path: `${dir}maps/${fileSafe(name)}_${suffix}.png`, bytes })
       return bytes
+    }
+    // THE SEA brings its own: the depth map, the caustics and the foam noise in
+    // slots 1-3 beside its ripple normal (seaGraph)
+    const pictureFile = (png: string | undefined, suffix: string): Uint8Array | null => {
+      if (!png) return null
+      const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0))
+      files.push({ path: `${dir}maps/${fileSafe(name)}_${suffix}.png`, bytes })
+      return bytes
+    }
+    if (ex.sea) {
+      pictureFile(ex.sea.foam.png, "X")
+      maps.set(name, { normal: mapFile(m.normalTexture, "N"), orm: pictureFile(ex.sea.depth.png, "ORM"), emissive: pictureFile(ex.sea.caustics.png, "E") })
+      continue
     }
     // its noise picture, when it has one, beside them as the fourth (material-maps.ts)
     if (ex.effect?.noise?.png) {
@@ -1139,6 +1173,112 @@ export function rippletGraph(name: string, r: RippleSpec): ShaderGraph {
 }
 
 /**
+ * The game's sea (Scene/CartoonWaterV2), from its decompiled fragment — where
+ * X348's water is shallow it clears to the sand under it, is lit by caustics
+ * and draws a foam line along the shore; out at sea it is its own lit picture.
+ *
+ * All three turn on d, how much water the eye looks through. The game reads it
+ * off the depth buffer; the stage never moves, so the converter baked the
+ * vertical depth over a grid (slot 1, 0..range game units) and d here is that
+ * leaned by the view, as a slant sees more water:
+ *
+ *   rim   = pow(saturate(d·rim[0]), rim[1])                     → alpha
+ *   foam  = step(clipping, saturate(n·fall + fall)), fall = saturate((1 − saturate(e^d / length)) / falloff)
+ *   caustics = min(tex(cuv + t·s), tex(0.8·cuv − t·s)) · max(1 − rim − foam, 0) · brightness · sun
+ *   colour   = lit(mix(_MainTex · _MainColor, foam colour, foam), normal) + caustics
+ *
+ * Slots: 0 the ripple normal, 1 the depth map, 2 the caustics, 3 the foam noise.
+ * Sun glint, sparkle and reflection are scaled to 0 on X348 and not drawn.
+ */
+export function seaGraph(name: string, s: SeaSpec): ShaderGraph {
+  type Ref = { node: string; socket: string }
+  type In = Ref | number | [number, number, number]
+  const nodes: ShaderGraph["nodes"] = []
+  const links: ShaderGraph["links"] = []
+  let count = 0
+  const node = (type: string, inputs: Record<string, In>, socket: string): Ref => {
+    const id = `n${count++}`
+    const literals: Record<string, number | [number, number, number]> = {}
+    for (const [k, v] of Object.entries(inputs)) {
+      if (typeof v === "number" || Array.isArray(v)) literals[k] = v
+      else links.push({ from: v, to: { node: id, socket: k } })
+    }
+    nodes.push({ id, type, inputs: literals })
+    return { node: id, socket }
+  }
+  const at = (ref: Ref, socket: string): Ref => ({ node: ref.node, socket })
+  const mul = (a: In, b: In) => node("math/multiply", { a, b }, "value")
+  const clamp01 = (a: In) => node("math/clamp01", { a }, "value")
+  const geo = node("geometry", {}, "world_pos")
+  const uv = at(geo, "uv")
+  const view = at(geo, "view")
+  const time = node("time", {}, "value")
+  const clock = node("combine_xyz", { x: time, y: time, z: 0 }, "vector")
+  // the PMX world is the glTF's at 12.5 to the metre with z turned: (x, z)m = (X, −Z)/12.5
+  const m = 1 / PMX_PER_METRE
+
+  // d: the depth map over (x, z), leaned by the view
+  const [x0, z0] = s.depth.origin
+  const [w, h] = s.depth.size
+  const dxz = node("separate_xyz", { vector: node("vector_math/multiply_add", { a: geo, b: [m / w, 0, -m / h], c: [-x0 / w, 0, -z0 / h] }, "vector") }, "x")
+  const depthUv = node("combine_xyz", { x: dxz, y: at(dxz, "z"), z: 0 }, "vector")
+  const vertical = mul(node("separate_color", { color: node("tex_image/1", { uv: depthUv }, "color") }, "r"), s.depth.range)
+  // the camera is above the sea, so the view's y is never below zero
+  const lean = node("math/maximum", { a: node("vector_math/dot", { a: view, b: [0, 1, 0] }, "value"), b: 0.1 }, "value")
+  const d = node("math/divide", { a: vertical, b: lean }, "value")
+
+  // the soft edge
+  const rim = node("math/power", { a: clamp01(mul(d, s.rim[0])), b: s.rim[1] }, "value")
+
+  // the foam line
+  const f = s.foam
+  const inter = node("math/subtract", { a: 1, b: clamp01(mul(node("math/exponent", { a: d }, "value"), 1 / Math.max(f.length, 1e-3))) }, "value")
+  const fall = clamp01(mul(inter, 1 / Math.max(f.falloff, 1e-3)))
+  const noiseUv = node("vector_math/multiply_add", { a: [f.speed, -f.speed, 0], b: clock, c: node("vector_math/scale", { a: uv, scale: f.tiling }, "vector") }, "vector")
+  const noise = node("separate_color", { color: node("tex_image/3", { uv: noiseUv }, "color") }, "r")
+  const foam = node("math/less_than", { a: f.clipping, b: clamp01(node("math/multiply_add", { a: noise, b: fall, c: fall }, "value")) }, "value")
+
+  // the surface: its picture lit through its ripple normal
+  // the ripples scroll, as the game's do
+  const [rt, rs, rd] = s.ripple ?? [1, 0, 0]
+  const rippleUv = node("vector_math/multiply_add", { a: [rs, rs, 0], b: clock, c: rt === 1 ? uv : node("vector_math/scale", { a: uv, scale: rt }, "vector") }, "vector")
+  const nt = node("vector_math/multiply_add", { a: node("tex_image/0", { uv: rippleUv }, "color"), b: [2, 2, 0], c: [-1, -1, 0] }, "vector")
+  const nsep = node("separate_xyz", { vector: nt }, "x")
+  const k = s.normal
+  const normal = node("vector_math/normalize", { a: node("combine_xyz", { x: mul(nsep, k), y: 1, z: mul(at(nsep, "y"), -k) }, "vector") }, "vector")
+  // the foam is laid into the surface's colour BEFORE the light, as the game does,
+  // so the sun lights it white; laid over after, it was a grey band
+  const base = node("mix/blend", {
+    fac: foam,
+    a: node("vector_math/multiply", { a: node("texture", {}, "color"), b: [s.color[0], s.color[1], s.color[2]] }, "vector"),
+    b: [f.color[0], f.color[1], f.color[2]],
+  }, "color")
+  const lit = node("principled", { base_color: base, normal, roughness: 1, metallic: 0, specular_ior_level: 0 }, "color")
+
+  // the caustics, on the world (x, z)
+  const c = s.caustics
+  const cxz = node("separate_xyz", { vector: node("vector_math/scale", { a: geo, scale: c.tiling * m }, "vector") }, "x")
+  // bent by the moving ripples (_CausticsDistortion), which is what makes them swim
+  const cuv = node("vector_math/multiply_add", { a: nt, b: [rd, rd, 0], c: node("combine_xyz", { x: cxz, y: mul(at(cxz, "z"), -1), z: 0 }, "vector") }, "vector")
+  const tapA = node("tex_image/2", { uv: node("vector_math/multiply_add", { a: [c.speed, c.speed, 0], b: clock, c: cuv }, "vector") }, "color")
+  const tapB = node("tex_image/2", { uv: node("vector_math/multiply_add", { a: [-c.speed, -c.speed, 0], b: clock, c: node("vector_math/scale", { a: cuv, scale: 0.8 }, "vector") }, "vector") }, "color")
+  const shallow = node("math/maximum", { a: node("math/subtract", { a: node("math/subtract", { a: 1, b: rim }, "value"), b: foam }, "value"), b: 0 }, "value")
+  const sun = node("light", {}, "color")
+  const caustics = node("vector_math/multiply", { a: node("vector_math/scale", { a: node("vector_math/minimum", { a: tapA, b: tapB }, "vector"), scale: mul(shallow, c.brightness) }, "vector"), b: sun }, "vector")
+
+  const out = node("emission", { color: node("vector_math/add", { a: lit, b: caustics }, "vector"), strength: 1 }, "color")
+  return {
+    version: 1,
+    name: `Sea ${name}`,
+    tags: ["stage", "water"],
+    nodes,
+    links,
+    output: out,
+    opacity: node("math/minimum", { a: node("math/add", { a: rim, b: foam }, "value"), b: 1 }, "value"),
+  }
+}
+
+/**
  * The style groups a glTF stage wears: Stage PBR per emissive strength (and
  * per cutout), the app's own look where the file names one, Unlit for what
  * takes no light.
@@ -1169,6 +1309,16 @@ export function glbStyleGroups(materials: GlbMaterial[]): StyleGroup[] {
           renderClass: "auto",
           ...(effect.dstBlend <= 1.0001 ? { blend: "additive" as const } : {}),
         }),
+        m.name,
+      )
+      continue
+    }
+    // THE GAME'S SEA, its shallows from the depth baked under it — one group each.
+    if (m.sea) {
+      const sea = m.sea
+      add(
+        `sea:${m.name}`,
+        () => ({ id: `stage-sea-${fileSafe(m.name).toLowerCase()}`, label: `Sea ${m.name}`, materials: [], graph: seaGraph(m.name, sea), renderClass: "auto" }),
         m.name,
       )
       continue

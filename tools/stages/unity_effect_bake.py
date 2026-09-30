@@ -460,9 +460,21 @@ def _raw(png):
     return np.asarray(Image.open(png).convert("RGBA"), dtype=np.float64) / 255.0
 
 
+def _is_srgb(asset_path):
+    """Whether the Texture2D asset is sampled as colour (m_ColorSpace 1): the
+    GPU decodes it before the shader sees it, mask or not."""
+    try:
+        text = open(asset_path, encoding="utf-8", errors="replace").read()
+    except OSError:
+        return False
+    m = re.search(r"m_ColorSpace:\s*(\d+)", text)
+    return bool(m and m.group(1) == "1")
+
+
 def bake_detailed(material, proj, png_for_guid, out_base, notes, max_size=2048):
-    """Write `<out_base>_D.png` (sRGB albedo) and `<out_base>_ORM.png` (glTF
-    order) over the UV square; return (albedo path, orm path) or None."""
+    """Write `<out_base>_D.png` (sRGB albedo), `<out_base>_ORM.png` (glTF
+    order) and, when a layer has relief, `<out_base>_N.png` over the UV square;
+    return (albedo path, orm path, normal path or None) or None."""
     t, f = material["textures"], material["floats"]
 
     def load(slot, colour):
@@ -487,6 +499,11 @@ def bake_detailed(material, proj, png_for_guid, out_base, notes, max_size=2048):
         x = np.clip(((U * s["scale"][0] + s["offset"][0]) % 1.0) * w, 0, w - 1).astype(int)
         y = np.clip((1.0 - ((V * s["scale"][1] + s["offset"][1]) % 1.0)) * h, 0, h - 1).astype(int)
         m = raw[y, x]
+        # AN sRGB MASK IS DECODED before the blend reads it: X348's beach mask is
+        # one, and read raw it weighted the grey cover and the dark worn colour
+        # half again — the sand baked grey-brown where the game's is pale.
+        if _is_srgb(proj.path(s["guid"]) or ""):
+            m = np.concatenate([_srgb_to_linear(m[..., :3]), m[..., 3:]], axis=-1)
     else:
         m = np.zeros((n, n, 4))  # "black", the shader's default
     if f.get("_CoverMaskSoft", 0.0) > 0:
@@ -505,4 +522,25 @@ def bake_detailed(material, proj, png_for_guid, out_base, notes, max_size=2048):
     Image.fromarray(np.round(_linear_to_srgb(np.clip(albedo, 0, 1)) * 255).astype(np.uint8), "RGB").save(a_path, compress_level=1)
     orm = np.stack([np.ones_like(rough), np.clip(rough, 0, 1), np.clip(metal, 0, 1)], axis=-1)
     Image.fromarray(np.round(orm * 255).astype(np.uint8), "RGB").save(o_path, compress_level=1)
-    return a_path, o_path
+    # THE RELIEF: lerp(detail normal · _DetailNormalScale, cover normal ·
+    # _CoverNormalScale, cover), tangent space, through the same tiling — X348's
+    # sand ripples live only here, its albedo all but flat.
+    n_path = None
+    dn, cn = load("_DetailNormal", False), load("_CoverNormal", False)
+    ks = (f.get("_DetailNormalScale", 1.0), f.get("_CoverNormalScale", 1.0))
+    if (dn and ks[0]) or (cn and ks[1]):
+        def relief(entry, k):
+            if not entry or not k:
+                return np.zeros((n, n, 2))
+            raw, s = entry
+            h, w = raw.shape[:2]
+            x = np.clip(((U * s["scale"][0] + s["offset"][0]) % 1.0) * w, 0, w - 1).astype(int)
+            y = np.clip((1.0 - ((V * s["scale"][1] + s["offset"][1]) % 1.0)) * h, 0, h - 1).astype(int)
+            return (raw[y, x][..., :2] * 2.0 - 1.0) * k
+        xy = relief(dn, ks[0]) * (1 - r) + relief(cn, ks[1]) * r
+        z = np.sqrt(np.clip(1.0 - (xy ** 2).sum(-1, keepdims=True), 0.0, 1.0))
+        nrm = np.concatenate([xy, z], axis=-1)
+        nrm /= np.linalg.norm(nrm, axis=-1, keepdims=True) + 1e-9
+        n_path = f"{out_base}_N.png"
+        Image.fromarray(np.round((nrm * 0.5 + 0.5) * 255).astype(np.uint8), "RGB").save(n_path, compress_level=1)
+    return a_path, o_path, n_path

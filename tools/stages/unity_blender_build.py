@@ -182,6 +182,7 @@ def make_material(spec):
             "queue": spec.get("queue", 2000),
             **({"effect": spec["effect"]} if spec.get("effect") else {}),
             **({"ripple": spec["ripple"]} if spec.get("ripple") else {}),
+            **({"sea": spec["sea"]} if spec.get("sea") else {}),
     }
     return mat
 

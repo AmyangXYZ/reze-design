@@ -27,6 +27,7 @@
 
 import argparse
 import base64
+import io
 import json
 import math
 import os
@@ -184,6 +185,138 @@ def ripple_spec(mat):
         "reflection": [gamma_to_linear(v) for v in reflection[:3]] + [a.get("_ReflectionColor", 1.0)],
         "intensity": f.get("_ReflectionIntensity", 1.0),
         "cube": f.get("_CustomEnvCubeScale", 1.0),
+    }
+
+
+# The water's depth is read to this many game units, and no deeper: past it the
+# game's sea is opaque, caustic-free and foamless (its soft edge saturates at
+# 1/_RimAplha, three units on X348).
+SEA_DEPTH_RANGE = 8.0
+# One texel of the depth map, in metres.
+SEA_DEPTH_CELL = 0.5
+
+
+def sea_depth_map(sea_y, beds):
+    """How deep the water is over each point, from above: the seabed the game
+    reads off its depth buffer, baked once because the stage never moves.
+
+    `beds` are (positions, indices) of every opaque surface, glTF metres. Each
+    triangle is sampled densely enough to touch every cell it covers and the
+    highest surface in a cell is its bed. Returns (image, origin, size) with
+    the image an 8-bit depth in game units over SEA_DEPTH_RANGE, or None when
+    nothing lies under the water.
+    """
+    pts = []
+    for positions, indices in beds:
+        if not indices:
+            continue
+        p = np.asarray(positions, np.float32)
+        t = np.asarray(indices, np.int64).reshape(-1, 3)
+        a, b, c = p[t[:, 0]], p[t[:, 1]], p[t[:, 2]]
+        low = np.minimum(np.minimum(a[:, 1], b[:, 1]), c[:, 1])
+        keep = low < sea_y           # only what reaches below the surface is a bed
+        if not keep.any():
+            continue
+        a, b, c = a[keep], b[keep], c[keep]
+        area = 0.5 * np.abs((b[:, 0] - a[:, 0]) * (c[:, 2] - a[:, 2]) - (c[:, 0] - a[:, 0]) * (b[:, 2] - a[:, 2]))
+        n = np.clip(np.ceil(area / (SEA_DEPTH_CELL * SEA_DEPTH_CELL) * 3.0), 3, 20000).astype(np.int64)
+        tri = np.repeat(np.arange(len(a)), n)
+        u, v = np.random.default_rng(0).random((2, len(tri)), np.float32)
+        flip = u + v > 1.0
+        u[flip], v[flip] = 1.0 - u[flip], 1.0 - v[flip]
+        pts.append(a[tri] + (b[tri] - a[tri]) * u[:, None] + (c[tri] - a[tri]) * v[:, None])
+    if not pts:
+        return None
+    q = np.concatenate(pts)
+    # the island, not the horizon: the beds within reach of the stage's middle
+    q = q[(np.abs(q[:, 0]) < 400.0) & (np.abs(q[:, 2]) < 400.0)]
+    if not len(q):
+        return None
+    x0, z0 = q[:, 0].min() - 4.0, q[:, 2].min() - 4.0
+    w = int(np.ceil((q[:, 0].max() + 4.0 - x0) / SEA_DEPTH_CELL))
+    h = int(np.ceil((q[:, 2].max() + 4.0 - z0) / SEA_DEPTH_CELL))
+    top = np.full((h, w), -1e9, np.float32)
+    ix = np.clip(((q[:, 0] - x0) / SEA_DEPTH_CELL).astype(np.int64), 0, w - 1)
+    iz = np.clip(((q[:, 2] - z0) / SEA_DEPTH_CELL).astype(np.int64), 0, h - 1)
+    np.maximum.at(top, (iz, ix), q[:, 1])
+    depth_units = np.clip((sea_y - top) / METRES, 0.0, SEA_DEPTH_RANGE)
+    # smoothed over a few cells: the foam is a hard cut on this depth, and on the
+    # raw cells the shoreline came out in half-metre steps
+    k = np.array([1.0, 4.0, 6.0, 4.0, 1.0]) / 16.0
+    for axis in (0, 1):
+        pad = np.pad(depth_units, [(2, 2) if a == axis else (0, 0) for a in (0, 1)], mode="edge")
+        depth_units = sum(k[i] * np.take(pad, np.arange(i, i + depth_units.shape[axis]), axis=axis) for i in range(5))
+    img = np.round(depth_units / SEA_DEPTH_RANGE * 255.0).astype(np.uint8)
+    img[:, [0, -1]] = 255                # the border is open sea, so clamped sampling reads deep
+    img[[0, -1], :] = 255
+    return Image.fromarray(img, "L"), (float(x0), float(z0)), (w * SEA_DEPTH_CELL, h * SEA_DEPTH_CELL)
+
+
+def sea_spec(mat, sea_y, beds, png_for_guid, out_tex, key):
+    """The game's CartoonWaterV2, for the app's seaGraph: where the water is
+    shallow it clears to the sand under it, lights it with caustics and draws
+    its foam line — each driven, as decompiled, by the water's depth d:
+
+        rim   = pow(saturate(d · _RimAplha), _RimSoft)            → alpha
+        inter = 1 − saturate(e^d / _IntersectionLength)
+        foam  = step(_IntersectionClipping, saturate(noise·fall + fall)), fall = saturate(inter / _IntersectionFalloff)
+        caustics = min(tex(cuv + t·s), tex(0.8·cuv − t·s)) · max(1 − rim − foam, 0) · _CausticsBrightness · sun
+
+    with cuv the world (x, z) · _CausticsTiling. d is the game's view-depth
+    difference; the map carries the vertical depth and the graph leans it by
+    the view, as the eye sees more water at a slant.
+    """
+    made = sea_depth_map(sea_y, beds)
+    if not made:
+        return None
+    img, origin, size = made
+    f, c, a = mat["floats"], mat["colors"], mat["alpha"]
+
+    def picture(slot):
+        s = mat["textures"].get(slot)
+        src = png_for_guid(s["guid"]) if s and s.get("guid") else None
+        if not (src and os.path.exists(src)):
+            return None
+        buf = io.BytesIO()
+        with Image.open(src) as im:
+            im.convert("RGBA").save(buf, "PNG")
+        return base64.b64encode(buf.getvalue()).decode("ascii")
+
+    depth_png = io.BytesIO()
+    img.save(depth_png, "PNG")
+    img.save(os.path.join(out_tex, f"{re.sub(r'[^A-Za-z0-9_.-]', '_', key)}_depth.png"))
+    colour = c.get("_MainColor", (1.0, 1.0, 1.0))
+    foam = c.get("_IntersectionColor", (1.0, 1.0, 1.0))
+    return {
+        "depth": {"png": base64.b64encode(depth_png.getvalue()).decode("ascii"), "origin": list(origin), "size": list(size), "range": SEA_DEPTH_RANGE},
+        "caustics": {
+            "png": picture("_CausticsTex"),
+            # the game tiles them per unit of world (x, z); here per glTF metre
+            "tiling": f.get("_CausticsTiling", 0.05) / METRES,
+            "speed": f.get("_CausticsSpeed", 0.0),
+            "brightness": f.get("_CausticsBrightness", 1.0),
+        },
+        "foam": {
+            "png": picture("_IntersectionNoise"),
+            # on the mesh UV, which already carries _MainTex's tiling
+            "tiling": f.get("_IntersectionTiling", 1.0) / max(float((mat["textures"].get("_MainTex") or {}).get("scale", (1.0, 1.0))[0]), 1e-6),
+            "speed": f.get("_IntersectionSpeed", 0.0),
+            "clipping": f.get("_IntersectionClipping", 0.5),
+            "length": f.get("_IntersectionLength", 1.0),
+            "falloff": f.get("_IntersectionFalloff", 1.0),
+            "color": [gamma_to_linear(v) for v in foam[:3]],
+        },
+        "rim": [f.get("_RimAplha", 1.0), f.get("_RimSoft", 1.0)],
+        "color": [gamma_to_linear(v) for v in colour[:3]],
+        "normal": f.get("_NormalStrength", 1.0),
+        # its ripples scroll: uv0 · _NormalTiling + t · _NormalSpeed, here on the
+        # mesh UV (which carries _MainTex's tiling), and the caustics ride them
+        "ripple": [
+            f.get("_NormalTiling", 1.0) / max(float((mat["textures"].get("_MainTex") or {}).get("scale", (1.0, 1.0))[0]), 1e-6),
+            f.get("_NormalSpeed", 0.0),
+            # the game bends them in world units before tiling: in their UV, × tiling
+            f.get("_CausticsDistortion", 0.0) * f.get("_CausticsTiling", 0.05),
+        ],
     }
 
 
@@ -742,6 +875,9 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
                 if bsrc:
                     normal = copy_texture(bsrc, out_tex, copied)
                     normal_scale = float(mat["floats"].get("_BaseNormalScale", 1.0))
+                elif layered[2]:
+                    # no base relief: the layers' own, baked through their tiling
+                    normal, normal_scale = os.path.basename(layered[2]), 1.0
             else:
                 notes.append(f"{key}: its Detailed layers could not be read; exported as Standard")
         emissive = pack_emissive(mat, shader, png_root, proj, out_tex) if mat and not sky_material else None
@@ -779,6 +915,23 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
         unlit = bool(mat) and not lit_family and not lit_dome and (sky_material or is_effect_decal(shader) or bool(sheet))
         additive = bool(mat) and float(mat["floats"].get("_DstBlend", 10.0)) == 1.0 and is_effect_decal(shader)
         alpha_mode = "MASK" if cutoff else ("BLEND" if (alpha < 1.0 or premult or is_effect_decal(shader) or baked or sheet) else "OPAQUE")
+        # THE SEA'S SHALLOWS: its depth under every point, from the beds below it
+        # (sea_spec). It then blends — clear over the sand, opaque out at sea —
+        # and draws after the sand it clears to, as the game's Transparent−400.
+        sea = None
+        if cartoon_water:
+            beds = []
+            for other in order:
+                om = materials_by_guid.get(per_material[other]["guid"])
+                osh = (shader_of(om) or "") if om else ""
+                if other == key or not om or other in domes or is_effect_decal(osh) or is_sky(om) or osh.endswith(("Ripplet", "CartoonWaterV2")):
+                    continue
+                beds.append((per_material[other]["positions"], per_material[other]["indices"]))
+            ys = [p[1] for p in bucket["positions"]]
+            sea = sea_spec(mat, sum(ys) / max(len(ys), 1), beds, lambda g: png_for(png_root, proj.path(g) or ""), out_tex, key) if ys else None
+            if sea:
+                alpha_mode = "BLEND"
+                notes.append(f"{key}: the sea's shallows from a depth map of the beds under it, {sea['depth']['size'][0]:.0f} x {sea['depth']['size'][1]:.0f} m")
         if alpha_mode == "OPAQUE" and base:
             base = opaque_texture(base, out_tex)
         materials.append(
@@ -812,6 +965,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
                 **({"effect": effect} if effect else {}),
                 # The game's own water, on its own numbers (rippletGraph).
                 **({"ripple": ripple_spec(mat)} if mat and (shader or "").endswith("/Ripplet") else {}),
+                **({"sea": sea} if sea else {}),
             }
         )
 

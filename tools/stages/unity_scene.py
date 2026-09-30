@@ -323,6 +323,13 @@ class Scene:
             state, hi, lo = int(m.group(1)), float(m.group(2)), float(m.group(3))
             return (hi + lo) / 2.0 if state == 3 else hi
 
+        def largest(body, key, default=0.0):
+            m = re.search(rf"\n\s+{key}:\s*\n(?:\s+serializedVersion: \d+\n)?\s+minMaxState: (\d+)\n\s+scalar: (-?[\d.eE+-]+)\n\s+minScalar: (-?[\d.eE+-]+)", body)
+            if not m:
+                return default
+            state, hi, lo = int(m.group(1)), float(m.group(2)), float(m.group(3))
+            return max(hi, lo) if state == 3 else hi
+
         for fid, (cls, body) in self.docs.items():
             if cls != 199 or int(shallow(body, "m_RenderMode", "0") or 0) == 4:
                 continue
@@ -376,7 +383,10 @@ class Scene:
                     "speed": curve(initial, "startSpeed") * speed_scale,
                     "startSpeed": curve(initial, "startSpeed"),
                     "lifetime": curve(initial, "startLifetime", 1.0),
-                    "size": curve(initial, "startSize", 1.0) * (speed_scale if speed_scale != 1.0 else 1.0),
+                    # the LARGEST it draws: the effects size every particle against
+                    # it within the game's own range. The range's mean made X348's
+                    # fall splashes (0.36-4.01) half the game's size.
+                    "size": largest(initial, "startSize", 1.0) * (speed_scale if speed_scale != 1.0 else 1.0),
                     "gravity": curve(initial, "gravityModifier"),
                     "rate": curve(emission, "rateOverTime"),
                     "materials": re.findall(r"guid:\s*([0-9a-f]{32})", body[body.find("m_Materials") :].split("\n  m_", 1)[0]),
