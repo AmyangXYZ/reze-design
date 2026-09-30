@@ -113,8 +113,10 @@ mp_ids = {p['object'] for p in scene.mesh_particles()}
 # drawn through the game's effect shader, and not a standing card mesh_particles took
 from unity_particles import systems
 from unity_materials import is_effect_decal
+# every billboard through the effect shader or Tong_jichu_Add, Local ones included
+# (unity_to_glb.drawn_as_particles): the app draws them live, not as still quads
 effect_gos = {go for _spec, mats, go, tf, _n in systems(scene)
-              if go not in mp_ids and mats and tf is not None and is_effect_decal(shader(mat(mats[0])))}
+              if mats and tf is not None and (is_effect_decal(shader(mat(mats[0]))) or shader(mat(mats[0])) == "ZTong/Tong_jichu_Add")}
 by = collections.Counter()
 dropped = collections.Counter()
 for fid, (cls, body) in scene.docs.items():
@@ -127,7 +129,9 @@ for fid, (cls, body) in scene.docs.items():
     mats = [mat(g) for g in re.findall(r'guid:\s*([0-9a-f]{32})', body[body.find('m_Materials'):].split('\n  m_', 1)[0])]
     mname = ','.join(m['name'] for m in mats if m) or '-'
     name = scene.name_of(go)
-    if go in mp_ids:
+    if go in effect_gos:
+        how = 'particle effect (generated)'
+    elif go in mp_ids:
         how = 'mesh particle -> mesh'
     else:
         if go in effect_gos:

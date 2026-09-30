@@ -92,8 +92,8 @@ def _wrap(asset_path):
     return (u is None or u.group(1) == "0"), (v is None or v.group(1) == "0")
 
 
-ROTATION_OF = {"_MainTex": "_MainRotation", "_MainPlusTex": "_MainPlusRotation", "_MaskTex": "_MaskRotation"}
-TILING_OF = {"_MainTex": "_IsTillingUV_Main", "_MainPlusTex": "_IsTillingUV_MainPlus", "_MaskTex": "_IsTillingUV_Mask"}
+ROTATION_OF = {"_MainTex": "_MainRotation", "_MainPlusTex": "_MainPlusRotation", "_MaskTex": "_MaskRotation", "_DissovleTex": "_DissovleRotation"}
+TILING_OF = {"_MainTex": "_IsTillingUV_Main", "_MainPlusTex": "_IsTillingUV_MainPlus", "_MaskTex": "_IsTillingUV_Mask", "_DissovleTex": "_IsTillingUV_Dissovle"}
 
 
 def _slot_uv(material, slot, u, v):
@@ -122,6 +122,37 @@ def _used_slots(material):
     if "MASK" in kw:
         slots.append("_MaskTex")
     return [s for s in slots if s in material["textures"]]
+
+
+def _dissolve(material, proj, png_for_guid, U, V):
+    """DISSOLVE_SIMPLE's cover, 1 where it is off — from the fragment:
+
+      d = the dissolve picture's red (or alpha), 1 − d under _IsOpposition_Dissovle
+      W = soft + 1;  lo = W · strength − soft
+      cover = smoothstep of saturate((d − lo) / soft)
+
+    strength and soft are _DissovleStrength and _DissovleSoft, or the particle's
+    Custom2 .z / .w under their _Z2 / _W2 switches — none on a still sheet, so 0.
+    Left out, X203a's brightest window layer (sc11, a blue at 24x white eaten
+    away to a sparse pattern at strength 0.59) drew whole and washed the rainy
+    night city into a bright cyan day."""
+    f = material["floats"]
+    slot = material["textures"].get("_DissovleTex")
+    if "DISSOLVE_SIMPLE" not in set(material["keywords"]) or f.get("_UseDissolve", 0.0) < 0.5 or not slot or not slot.get("guid"):
+        return 1.0
+    png = png_for_guid(slot["guid"])
+    if not png or not os.path.exists(png):
+        return 1.0
+    tex = _Texture(png, *_wrap(proj.path(slot["guid"]) or ""))
+    d = tex.sample(*_slot_uv(material, "_DissovleTex", U, V))
+    d = d[..., 0] if f.get("_IsRedAlpha_Dissovle", 0.0) > 0.5 else d[..., 3]
+    if f.get("_IsOpposition_Dissovle", 0.0) > 0.5:
+        d = 1.0 - d
+    strength = 0.0 if f.get("_DissovleStrength_Z2", 0.0) > 0.5 else f.get("_DissovleStrength", 0.0)
+    soft = 0.0 if f.get("_DissovleSoft_W2", 0.0) > 0.5 else f.get("_DissovleSoft", 0.0)
+    lo = (soft + 1.0) * strength - soft
+    x = np.clip((np.clip(d, 0.0, 1.0) - lo) / max(soft, 1e-6), 0.0, 1.0)
+    return x * x * (3.0 - 2.0 * x)
 
 
 def repeats_across(material):
@@ -251,6 +282,7 @@ def bake(material, proj, png_for_guid, out_base, max_width=4096, max_height=1024
         m = textures["_MaskTex"].sample(*_slot_uv(material, "_MaskTex", U, V))
         mv = np.where(f.get("_IsRedAlpha_Mask", 0.0) > 0.5, m[..., 0], m[..., 3]) - f.get("_MaskStrength", 0.0)
         a = a * mv
+    a = a * _dissolve(material, proj, png_for_guid, U, V)
     a = np.clip(a, 0.0, 1.0)
 
     # Drawn as gain × colour over, with coverage alpha: the light it adds is
@@ -467,7 +499,11 @@ def tong_add_effect(material, png_for_guid, max_size=1024, asset_for_guid=None):
 # times the texture's alpha squared. Baked over the mesh's UV square at time 0
 # with each slot's _ST; its scroll and rotation dials are time's.
 
-BASIC_EFFECT_SHADERS = ("Tong_jichu_AB",)
+# Tong_jichu_Add is the same composition added whole (Blend One One) rather than
+# laid over: its colour times its coverage is the light it adds, which is what
+# the bake's picture holds — the converter draws it additive (X306's screen,
+# sc_107601_x306_pingmu2_2, wore Standard and drew as a lit solid)
+BASIC_EFFECT_SHADERS = ("Tong_jichu_AB", "Tong_jichu_Add")
 
 
 def _single(t, mode):

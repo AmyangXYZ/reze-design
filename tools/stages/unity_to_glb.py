@@ -1065,7 +1065,8 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
         # down to the sea.
         lit_dome = sky_material and shader in ("SimPipeline/PBR/Standard", "SimPipeline/PBR/Standard_PBR_2") and not is_effect_decal(shader)
         unlit = bool(mat) and not lit_family and not lit_dome and (sky_material or is_effect_decal(shader) or bool(sheet))
-        additive = bool(mat) and (float(mat["floats"].get("_DstBlend", 10.0)) == 1.0 and is_effect_decal(shader) or bool(fresnel))
+        additive = bool(mat) and (float(mat["floats"].get("_DstBlend", 10.0)) == 1.0 and is_effect_decal(shader) or bool(fresnel)
+                                  or (family == "Tong_jichu_Add" and bool(sheet)))
         alpha_mode = "MASK" if cutoff else ("BLEND" if (alpha < 1.0 or premult or is_effect_decal(shader) or baked or sheet) else "OPAQUE")
         # THE SEA'S SHALLOWS: its depth under every point, from the beds below it
         # (sea_spec). It then blends — clear over the sand, opaque out at sea —
