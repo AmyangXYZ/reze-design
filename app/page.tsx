@@ -583,7 +583,7 @@ type PaletteValues = {
   camera: SceneCamera
   locale: Locale
   /** The loaded stage's placement, or null when there is none. */
-  stage: { scale: number; position: [number, number, number] } | null
+  stage: { scale: number; position: [number, number, number]; rotation: [number, number, number] } | null
   /** Applied names, already resolved — a value function must not have to look
    *  anything up. */
   effect: string | null
@@ -658,6 +658,7 @@ const DOCK_CONTROLS: {
   { id: "camera-dof", en: "Depth of field", zh: "景深", row: "camera", cameraTab: "focus", keywords: ["dof", "bokeh", "blur", "focus", "虚化"], value: (v) => sw(v.settings.dof.enabled, v.t) },
   { id: "stage-scale", en: "Stage scale", zh: "舞台缩放", row: "stage", stageTab: "stage", value: (v) => (v.stage ? `${dec2(v.stage.scale)}×` : "") },
   { id: "stage-position", en: "Stage position", zh: "舞台位置", row: "stage", stageTab: "stage", value: (v) => (v.stage ? xyz(v.stage.position) : "") },
+  { id: "stage-rotation", en: "Stage rotation", zh: "舞台旋转", row: "stage", stageTab: "stage", keywords: ["turn", "rotate", "yaw", "旋转", "转动"], value: (v) => (v.stage ? v.stage.rotation.map((d) => `${Math.round(d)}°`).join(" ") : "") },
   { id: "ground-color", en: "Ground color", zh: "地面颜色", row: "stage", stageTab: "ground", value: (v) => v.settings.ground.color },
   { id: "ground-opacity", en: "Ground opacity", zh: "地面不透明度", row: "stage", stageTab: "ground", value: (v) => dec2(v.settings.ground.opacity) },
   { id: "ground-size", en: "Ground size", zh: "地面尺寸", row: "stage", stageTab: "ground", keywords: ["plane", "floor", "width", "extent", "大小", "范围"], value: (v) => dec1(v.settings.ground.size) },
@@ -5668,7 +5669,7 @@ export default function Lab() {
     locale,
     settings,
     camera,
-    stage: stage ? { scale: stage.transform.scale, position: stage.transform.position } : null,
+    stage: stage ? { scale: stage.transform.scale, position: stage.transform.position, rotation: stage.transform.rotation } : null,
     effect: effectSummary,
     planes: planeSummary,
     props: propSummary,
@@ -8053,6 +8054,25 @@ export default function Lab() {
                                   setStageTransform(stage.id, { position })
                                 }}
                                 fmt={(v) => v.toFixed(1)}
+                              />
+                            ))}
+                            {/* Turned in degrees, Euler X-Y-Z — the transform
+                                has always carried it (a saved scene keeps it);
+                                these are its dials. */}
+                            {(["X", "Y", "Z"] as const).map((axis, i) => (
+                              <SliderRow
+                                key={`r${axis}`}
+                                label={t.lab.ctl.rot(axis)}
+                                value={stage.transform.rotation[i]}
+                                min={-180}
+                                max={180}
+                                step={1}
+                                onChange={(v) => {
+                                  const rotation = [...stage.transform.rotation] as [number, number, number]
+                                  rotation[i] = v
+                                  setStageTransform(stage.id, { rotation })
+                                }}
+                                fmt={(v) => `${v.toFixed(0)}°`}
                               />
                             ))}
                           </>
