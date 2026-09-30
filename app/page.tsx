@@ -7570,6 +7570,7 @@ export default function Lab() {
                 gradeName: settings.grade.preset,
                 effects: bgEffects,
                 groups: groupsByModel,
+                stageModels: new Set(stages.map((s) => s.id)),
               },
               visibility,
             )

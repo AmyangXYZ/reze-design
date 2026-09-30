@@ -14,6 +14,7 @@ import { stagePbrGraph, stageSheetGraph } from "@/lib/gltf-stage"
 import { communityItems } from "@/lib/community-store"
 import type { EffectItem, GradeItem, GraphItem, LibraryKind } from "@/lib/library"
 import type { ItemRef } from "@/lib/scene"
+import { loadDrafts } from "@/lib/drafts"
 
 /** Built-ins first: they ship in the bundle, so a pin to one resolves offline. */
 function candidates<T>(kind: LibraryKind, builtins: T[]): T[] {
@@ -142,8 +143,11 @@ export function unpublishedUses(
     /** EVERY applied effect. A scene layers several, and checking only the first
      *  would let the other three publish as pins to drafts that exist on one
      *  device. */
-    effects: { name: string; wgsl: string }[]
+    effects: { name: string; wgsl: string; stage?: string }[]
     groups: Record<string, { graph?: ShaderGraph }[]>
+    /** The ids of the models that are stages. What a stage wears is ITS own —
+     *  see the rule below. */
+    stageModels?: ReadonlySet<string>
   },
   /** What this scene is about to be published AS. A public scene has a stricter
    *  bar than a private one, so this cannot be computed once and reused across
@@ -154,17 +158,34 @@ export function unpublishedUses(
   const grade = gradeMatch(scene.gradeSpec)
   if (!grade) out.push({ kind: "grade", name: scene.gradeName, reason: "missing" })
   else if (!reachable(grade, visibility)) out.push({ kind: "grade", name: scene.gradeName, reason: "private" })
+  // WHAT A STAGE BROUGHT IS THE STAGE'S — one rule for every kind, never a list
+  // per stage. A converted stage arrives with looks and effects the app made
+  // from its file (its water, its sky, its particle systems, whatever the next
+  // stage carries); nobody chose them, there is no library entry anyone could
+  // publish, and they travel with the stage by value. An effect says so by its
+  // `stage` tag, which every edit drops (an edited copy is a new entry); a look
+  // says so by being worn by a stage model — unless it is some library item or
+  // draft the scene's readers could not reach, which is someone's own work put
+  // on the stage, and blocks as anywhere else.
+  const drafts = loadDrafts()
+  const isDraftGraph = (g: ShaderGraph) =>
+    drafts.graph.some((d) => {
+      const own = (d.payload as { graph?: ShaderGraph }).graph
+      return !!own && sameGraphLook(own, g)
+    })
   for (const e of scene.effects) {
+    if (e.stage) continue
     const hit = effectMatch(e.wgsl)
     if (!hit) out.push({ kind: "effect", name: e.name, reason: "missing" })
     else if (!reachable(hit, visibility)) out.push({ kind: "effect", name: e.name, reason: "private" })
   }
   const seen = new Set<string>()
-  for (const list of Object.values(scene.groups)) {
+  for (const [modelId, list] of Object.entries(scene.groups)) {
     for (const g of list) {
       if (!g.graph) continue
       const hit = graphMatch(g.graph)
       if (hit && reachable(hit, visibility)) continue
+      if (!hit && scene.stageModels?.has(modelId) && !isDraftGraph(g.graph)) continue
       // The engine's own presets are not drafts. The neutral base is what every
       // new group starts on and what an ungrouped material already renders;
       // Unlit is what the APP puts on a media plane, a .x accessory's unlit
