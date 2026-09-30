@@ -100,7 +100,7 @@ type GltfLight = {
 }
 
 /** What our exporter writes under `extras.reze`; a hand-built stage has none. */
-type RezeMaterial = { shader?: string; unlit?: boolean; additive?: boolean; sky?: boolean; castShadow?: boolean; look?: string | null; queue?: number; effect?: EffectSpec; ripple?: RippleSpec; sea?: SeaSpec }
+type RezeMaterial = { shader?: string; unlit?: boolean; additive?: boolean; sky?: boolean; castShadow?: boolean; look?: string | null; queue?: number; effect?: EffectSpec; ripple?: RippleSpec; sea?: SeaSpec; fresnel?: FresnelSpec }
 
 /** One layer of a moving effect sheet: its picture (base64 PNG, in the file only)
  *  and the numbers that place it — see tools/stages/unity_effect_bake.py. */
@@ -145,6 +145,17 @@ export type RippleSpec = {
 }
 /** The game's sea (tools/stages/unity_to_glb.py, sea_spec): its depth over the
  *  stage baked from the beds under it, and the shallows' caustics and foam. */
+/** ZTong/Tong_jichu_Fresnel_Add's live half (tools/stages/unity_effect_bake.bake_fresnel):
+ *  its mask is baked into the emissive picture, this is the rest. */
+export type FresnelSpec = {
+  /** _Fresnel_Color.rgb · .a, linear, past white as the game's HDR colour is */
+  color: number[]
+  /** e^(1 − _Fresnel_Intensity) */
+  power: number
+  /** _OneMinus: bright where the surface faces the eye, not at its rim */
+  oneMinus: boolean
+}
+
 export type SeaSpec = {
   /** The water's vertical depth in game units over [0, range], an 8-bit map
    *  laid over glTF (x, z) from `origin`, `size` metres across. */
@@ -358,6 +369,8 @@ export type GlbMaterial = {
   effect: EffectSpec | null
   /** The game's water, drawn by rippletGraph. */
   ripple: RippleSpec | null
+  /** A fresnel glow, drawn by fresnelGraph. */
+  fresnel: FresnelSpec | null
   /** The game's sea, drawn by seaGraph. */
   sea: SeaSpec | null
 }
@@ -607,6 +620,7 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
         : null,
       ripple: ex.ripple ? { ...ex.ripple, ...(ex.ripple.env ? { env: { ...ex.ripple.env, png: undefined } } : {}) } : null,
       sea: ex.sea ? { ...ex.sea, depth: { ...ex.sea.depth, png: undefined }, caustics: { ...ex.sea.caustics, png: undefined }, foam: { ...ex.sea.foam, png: undefined } } : null,
+      fresnel: ex.fresnel ?? null,
     })
     // The maps, under the material's own name — see material-maps.ts.
     const mapFile = (ref: TextureRef | undefined, suffix: string): Uint8Array | null => {
@@ -1106,6 +1120,45 @@ export function effectSheetGraph(name: string, e: EffectSpec): ShaderGraph {
  * not drawn; nor are the horizon fade, the rim against depth and the fluid
  * simulation.
  */
+/**
+ * ZTong/Tong_jichu_Fresnel_Add, from its decompiled fragment (Blend One One,
+ * Cull Off, both faces turned to the eye):
+ *
+ *   f      = 1 − max(N·V, 0)           — 1 − f again under _OneMinus
+ *   colour = f ^ e^(1 − _Fresnel_Intensity) · _Fresnel_Color.rgb · .a · mask
+ *
+ * The mask (its luminance · alpha) is baked into the emissive picture, slot 2;
+ * the rest is live, since it turns with the camera. X316's scene glow, which
+ * wore Standard and drew as a lit solid.
+ */
+export function fresnelGraph(name: string, fr: FresnelSpec): ShaderGraph {
+  type Ref = { node: string; socket: string }
+  type In = Ref | number | [number, number, number]
+  const nodes: ShaderGraph["nodes"] = []
+  const links: ShaderGraph["links"] = []
+  let count = 0
+  const node = (type: string, inputs: Record<string, In>, socket: string): Ref => {
+    const id = `n${count++}`
+    const literals: Record<string, number | [number, number, number]> = {}
+    for (const [k, v] of Object.entries(inputs)) {
+      if (typeof v === "number" || Array.isArray(v)) literals[k] = v
+      else links.push({ from: v, to: { node: id, socket: k } })
+    }
+    nodes.push({ id, type, inputs: literals })
+    return { node: id, socket }
+  }
+  const geo = node("geometry", {}, "normal")
+  // both faces: the back face's normal is turned to the eye, so |N·V|
+  const ndv = node("math/absolute", { a: node("vector_math/dot", { a: geo, b: { node: geo.node, socket: "view" } }, "value") }, "value")
+  const edge = fr.oneMinus ? ndv : node("math/subtract", { a: 1, b: ndv }, "value")
+  const f = node("math/power", { a: node("math/maximum", { a: edge, b: 0.0001 }, "value"), b: fr.power }, "value")
+  const mask = node("tex_image/2", {}, "color")
+  const tint: [number, number, number] = [fr.color[0] ?? 1, fr.color[1] ?? 1, fr.color[2] ?? 1]
+  const rgb = node("vector_math/scale", { a: node("vector_math/multiply", { a: mask, b: tint }, "vector"), scale: f }, "vector")
+  const out = node("emission", { color: rgb, strength: 1 }, "color")
+  return { version: 1, name: `Glow ${name}`, tags: ["stage", "unlit", "effect"], nodes, links, output: out }
+}
+
 export function rippletGraph(name: string, r: RippleSpec): ShaderGraph {
   type Ref = { node: string; socket: string }
   type In = Ref | number | [number, number, number]
@@ -1354,6 +1407,16 @@ export function glbStyleGroups(materials: GlbMaterial[]): StyleGroup[] {
           renderClass: "auto",
           ...(effect.dstBlend <= 1.0001 ? { blend: "additive" as const } : {}),
         }),
+        m.name,
+      )
+      continue
+    }
+    // A FRESNEL GLOW, its view-angle term live over its baked mask — one group each.
+    if (m.fresnel) {
+      const fresnel = m.fresnel
+      add(
+        `fresnel:${m.name}`,
+        () => ({ id: `stage-fresnel-${fileSafe(m.name).toLowerCase()}`, label: `Glow ${m.name}`, materials: [], graph: fresnelGraph(m.name, fresnel), renderClass: "auto", blend: "additive" as const }),
         m.name,
       )
       continue

@@ -516,6 +516,47 @@ def bake_basic(material, proj, png_for_guid, out_base, notes):
     return path
 
 
+def bake_fresnel(material, proj, png_for_guid, out_base, notes):
+    """ZTong/Tong_jichu_Fresnel_Add, split where it can be: `<out_base>.png` is its
+    mask's weight — luminance · alpha, as the fragment takes it — in grey, and the
+    returned spec is the rest, drawn live by the app (lib/gltf-stage.ts fresnelGraph):
+
+      f      = 1 − max(N·V, 0), both faces; 1 − f again under _OneMinus
+      colour = f ^ e^(1 − _Fresnel_Intensity) · _Fresnel_Color.rgb · _Fresnel_Color.a · mask
+    added whole (Blend One One). Returns (path, spec), or (None, None) without a mask
+    — its default is white, which bakes to nothing but the colour."""
+    f = material["floats"]
+    slot = material["textures"].get("_Tex_Mask")
+    width = height = 64
+    weight = None
+    if slot and slot.get("guid"):
+        png = png_for_guid(slot["guid"])
+        if png and os.path.exists(png):
+            tex = _Texture(png, *_wrap(proj.path(slot["guid"]) or ""))
+            width, height = max(64, tex.w), max(64, tex.h)
+            U, V = np.meshgrid((np.arange(width) + 0.5) / width, 1.0 - (np.arange(height) + 0.5) / height)
+            m = _single(tex.sample(U * slot["scale"][0] + slot["offset"][0], V * slot["scale"][1] + slot["offset"][1]),
+                        f.get("_Tex_Mask_IsSingleChannel", 0.0))
+            weight = (m[..., :3] @ np.array([0.3, 0.59, 0.11])) * m[..., 3]
+            for dial in ("_Tex_Mask_Ang", "_Tex_Mask_U", "_Tex_Mask_V"):
+                if f.get(dial, 0.0):
+                    notes.append(f"{material.get('name', '?')}: {dial} {f[dial]:g} left out of the bake")
+    if weight is None:
+        weight = np.ones((height, width))
+    if material["textures"].get("_Tex_Mask_2", {}).get("guid"):
+        notes.append(f"{material.get('name', '?')}: its second mask is left out")
+    grey = _linear_to_srgb(np.clip(weight, 0.0, 1.0))
+    out = np.stack([grey, grey, grey, np.ones_like(grey)], axis=-1)
+    path = f"{out_base}_fresnel.png"
+    Image.fromarray(np.round(out * 255).astype(np.uint8), "RGBA").save(path, compress_level=1)
+    colour, colour_a = _linear_colour(material, "_Fresnel_Color")
+    return path, {
+        "color": [float(c) * colour_a for c in colour],
+        "power": float(math.exp(1.0 - f.get("_Fresnel_Intensity", 0.0))),
+        "oneMinus": f.get("_OneMinus", 0.0) > 0.5,
+    }
+
+
 # ── SimPipeline/PBR/Detailed: a layered surface, baked to albedo and ORM ──
 #
 # No albedo or property map of its own: constants blended by a mask, over a

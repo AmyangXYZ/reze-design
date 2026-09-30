@@ -183,6 +183,7 @@ def make_material(spec):
             **({"effect": spec["effect"]} if spec.get("effect") else {}),
             **({"ripple": spec["ripple"]} if spec.get("ripple") else {}),
             **({"sea": spec["sea"]} if spec.get("sea") else {}),
+            **({"fresnel": spec["fresnel"]} if spec.get("fresnel") else {}),
     }
     return mat
 

@@ -42,7 +42,7 @@ from PIL import Image
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from unity_grading import grading as stage_grading  # noqa: E402
-from unity_effect_bake import BASIC_EFFECT_SHADERS, _linear_to_srgb, _srgb_to_linear, bake as bake_effect, bake_basic, bake_detailed, live_effect, repeats_across, tong_add_effect  # noqa: E402
+from unity_effect_bake import BASIC_EFFECT_SHADERS, _linear_to_srgb, _srgb_to_linear, bake as bake_effect, bake_basic, bake_detailed, live_effect, repeats_across, tong_add_effect, bake_fresnel  # noqa: E402
 from unity_lights import gamma_to_linear  # noqa: E402
 from unity_probe import probe_to_equirect  # noqa: E402
 from unity_scene import Project, Scene, read_material  # noqa: E402
@@ -922,7 +922,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
                 coats_dropped.append(key)
                 continue
         basic_effect = bool(mat) and family in BASIC_EFFECT_SHADERS
-        if family not in ("Standard", "Plant", "Glass", "Ripplet", "Effect_Common", "Effect_Common_VertexOffset", "SceneBillboard", "FresnelColor", "Standard_PBR_2", "Detailed", "", *BASIC_EFFECT_SHADERS):
+        if family not in ("Standard", "Plant", "Glass", "Ripplet", "Effect_Common", "Effect_Common_VertexOffset", "SceneBillboard", "FresnelColor", "Standard_PBR_2", "Detailed", "Tong_jichu_Fresnel_Add", "", *BASIC_EFFECT_SHADERS):
             unknown.setdefault(shader, []).append(key)
 
         np.savez(
@@ -965,6 +965,12 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
                 sheet = os.path.basename(written)
             else:
                 notes.append(f"{key}: its {shader} texture is missing; exported as Standard")
+        # A FRESNEL GLOW (Tong_jichu_Fresnel_Add): its mask baked, its view-angle
+        # term drawn live — see bake_fresnel. X316's scene glow wore Standard.
+        fresnel = None
+        if mat and family == "Tong_jichu_Fresnel_Add":
+            written, fresnel = bake_fresnel(mat, proj, lambda g: png_for(png_root, proj.path(g) or ""), os.path.join(out_tex, re.sub(r"[^A-Za-z0-9_.-]", "_", key)), notes)
+            sheet = os.path.basename(written) if written else None
         albedo = albedo_slot(mat, png_root, proj) if mat and not baked and not sheet else None
         src = png_for(png_root, proj.path(albedo["guid"]) or "") if albedo else None
         if src:
@@ -1001,7 +1007,9 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
             base = baked
             emissive = (baked, float(gain))
             tint, alpha = (0.0, 0.0, 0.0), 1.0
-        if sheet:
+        if sheet and fresnel:
+            base, normal, orm, emissive = None, None, None, (sheet, 1.0)
+        elif sheet:
             base, normal, orm, emissive = sheet, None, None, None
             tint, alpha = (1.0, 1.0, 1.0), 1.0
         if layered:
@@ -1031,7 +1039,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
         # down to the sea.
         lit_dome = sky_material and shader in ("SimPipeline/PBR/Standard", "SimPipeline/PBR/Standard_PBR_2") and not is_effect_decal(shader)
         unlit = bool(mat) and not lit_family and not lit_dome and (sky_material or is_effect_decal(shader) or bool(sheet))
-        additive = bool(mat) and float(mat["floats"].get("_DstBlend", 10.0)) == 1.0 and is_effect_decal(shader)
+        additive = bool(mat) and (float(mat["floats"].get("_DstBlend", 10.0)) == 1.0 and is_effect_decal(shader) or bool(fresnel))
         alpha_mode = "MASK" if cutoff else ("BLEND" if (alpha < 1.0 or premult or is_effect_decal(shader) or baked or sheet) else "OPAQUE")
         # THE SEA'S SHALLOWS: its depth under every point, from the beds below it
         # (sea_spec). It then blends — clear over the sand, opaque out at sea —
@@ -1067,7 +1075,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
                 # [_CullMode]); 0 is off. Reading only _Cull, X348's central
                 # waterfall — three billboard cards with _CullMode 0 — was culled
                 # from the side the camera sees.
-                "doubleSided": bool(mat) and (int(mat["floats"].get("_Cull", 2.0)) == 0 or int(mat["floats"].get("_CullMode", 2.0)) == 0 or sky_material),
+                "doubleSided": bool(mat) and (int(mat["floats"].get("_Cull", 2.0)) == 0 or int(mat["floats"].get("_CullMode", 2.0)) == 0 or sky_material or bool(fresnel)),
                 "unlit": unlit,
                 "additive": additive,
                 "sky": sky_material,
@@ -1089,6 +1097,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
                 # The game's own water, on its own numbers (rippletGraph).
                 **({"ripple": ripple_spec(mat, proj, scene_tint)} if mat and (shader or "").endswith("/Ripplet") else {}),
                 **({"sea": sea} if sea else {}),
+                **({"fresnel": fresnel} if fresnel else {}),
             }
         )
 
