@@ -363,7 +363,29 @@ def sea_spec(mat, sea_y, beds, png_for_guid, out_tex, key):
 # ── The game's particle systems ─────────────────────────────────────────────
 
 
-def particle_classes(scene, materials_by_guid, proj, png_root, shader_of):
+PARTICLE_SHADERS = ("ZTong/Tong_jichu_Add",)
+
+
+def drawn_as_particles(scene, materials_by_guid, shader_of):
+    """The GameObjects whose particle systems the app draws live, as the game's
+    particles (particle_classes): every active billboard or stretched system
+    through the effect shader or Tong_jichu_Add. A Local-aligned billboard is one
+    of them — a card flat in its emitter's plane (particleOrient), living,
+    fading and dying by the game's own curves — and no longer a still quad
+    (unity_scene.mesh_particles): X316's raindrop glows on the car windows stood
+    frozen at their mean alpha, a fixed pattern of discs where the game shows a
+    shimmer of drops coming and going."""
+    from unity_particles import systems
+
+    out = set()
+    for _spec, mats, go, tf, _name in systems(scene):
+        mat = materials_by_guid.get(mats[0]) if mats else None
+        if mat and tf is not None and (is_effect_decal(shader_of(mat)) or shader_of(mat) in PARTICLE_SHADERS):
+            out.add(go)
+    return out
+
+
+def particle_classes(scene, materials_by_guid, proj, png_root, shader_of, live=None):
     """Every particle system the game draws through its effect shader, as the
     app's generated effects draw it (lib/unity-particles.ts): one class per
     kind of system — the same modules, the same material — with its material's
@@ -379,14 +401,15 @@ def particle_classes(scene, materials_by_guid, proj, png_root, shader_of):
     which draws them as the cards they are."""
     from unity_particles import systems
 
-    standing = {p["object"] for p in scene.mesh_particles()}
+    live = live if live is not None else drawn_as_particles(scene, materials_by_guid, shader_of)
+    standing = {p["object"] for p in scene.mesh_particles()} - live
     classes, order = {}, []
     for spec, mats, go, tf, name in systems(scene):
         if go in standing or not mats or tf is None:
             continue
         mat = materials_by_guid.get(mats[0])
         # the effect shader, or the plain additive one (X203a's light glows)
-        tong_add = bool(mat) and shader_of(mat) == "ZTong/Tong_jichu_Add"
+        tong_add = bool(mat) and shader_of(mat) in PARTICLE_SHADERS
         if not mat or not (is_effect_decal(shader_of(mat)) or tong_add):
             continue
         key = json.dumps([spec, mats[0]], sort_keys=True)
@@ -719,7 +742,9 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
     per_material = {}
     order = []
 
-    particle_meshes = scene.mesh_particles()
+    # what the app draws as the game's particles is not also a still mesh
+    live_particles = drawn_as_particles(scene, materials_by_guid, shader_of)
+    particle_meshes = [p for p in scene.mesh_particles() if p["object"] not in live_particles]
     for r in scene.renderers() + particle_meshes:
         if not r["mesh"] or not r["enabled"]:
             continue
@@ -1207,7 +1232,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
     flames = flame_points(scene, materials_by_guid)
     if flames:
         notes.append(f"{len(flames)} candle flames -> empties flame.01..{len(flames):02d} (Candle Flames (wick bones) stands a flame on each)")
-    particles, emitter_points = particle_classes(scene, materials_by_guid, proj, png_root, shader_of)
+    particles, emitter_points = particle_classes(scene, materials_by_guid, proj, png_root, shader_of, live_particles)
     for c in particles:
         notes.append(f"particles {c['prefix']}: {c['name']} — {c['emitters']} emitters, drawn by the game's own rules and pictures")
     points = flames + emitter_points

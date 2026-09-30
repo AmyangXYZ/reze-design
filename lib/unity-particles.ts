@@ -29,6 +29,10 @@ export type ParticleSpec = {
   size3D: boolean
   size: [Curve, Curve, Curve]
   rotation: Curve
+  rotation3D?: boolean
+  /** With rotation3D: the start turn about X and Y, radians (Unity applies Z, X, then Y). */
+  rotationX?: Curve
+  rotationY?: Curve
   color: Colour
   gravity: Curve
   emission: { on: boolean; rate: Curve; bursts: { time: number; count: number; cycles: number; interval: number }[] }
@@ -50,7 +54,15 @@ export type ParticleSpec = {
   colorOverLife: Colour | null
   uv: { tiles: [number, number]; mode: number; row: number; frame: Curve; start: Curve; cycles: number } | null
   clamp: { limit: Curve; dampen: number } | null
-  renderer: { mode: number; pivot: [number, number, number]; lengthScale: number; velocityScale: number; linear: boolean }
+  renderer: {
+    mode: number
+    pivot: [number, number, number]
+    lengthScale: number
+    velocityScale: number
+    linear: boolean
+    /** 0 View (faces the camera), 1 World, 2 Local (flat in the emitter's plane), 3 Facing, 4 Velocity */
+    alignment?: number
+  }
   /** The CustomData module's vectors, "<stream>_<component>": stream 0 is
    *  Custom1, which the renderer hands the shader as TEXCOORD1. */
   custom?: Record<string, Curve> | null
@@ -200,7 +212,8 @@ export function particleEffectWgsl(cls: ParticleClass, world: number): string {
   const solX = s.sizeOverLife ? curveExpr(s.sizeOverLife.x, "cSolX", "t", "rc.y", decls) : "1.0"
   const solY = s.sizeOverLife ? (s.sizeOverLife.separate ? curveExpr(s.sizeOverLife.y, "cSolY", "t", "rc.y", decls) : solX) : "1.0"
   const rol = s.rotationOverLife ? curveExpr(s.rotationOverLife.z, "cRol", "t", "rc.z", decls) : "0.0"
-  const col = colourExpr(s.colorOverLife, "cCol", "t", "rc.w", decls)
+  // rzHash13 has three components, all taken: a fourth random, folded from them
+  const col = colourExpr(s.colorOverLife, "cCol", "t", "fract(rc.x * 7.31 + rc.y * 3.17)", decls)
   const clampLim = s.clamp ? curveExpr(s.clamp.limit, "cClamp", "t", "rc.y", decls) : "0.0"
   const frame = s.uv ? curveExpr(s.uv.frame, "cFrame", "t", "rc.z", decls) : "0.0"
   // Custom1, per particle over its life
@@ -344,6 +357,39 @@ fn ${name}(q: vec2f, c1: vec4f) -> vec4f {
   a = clamp(a, 0.0, 1.0) * inside;
   ${additive ? "return vec4f(rgb, a);" : `// laid over as _DstBlend says: a·rgb added, what it covers dimmed by a·${f(cover)}
   return vec4f(rgb / ${f(cover)}, a * ${f(cover)});`}`
+  // THE CARD'S PLANE (particleOrient): a Local card lies flat in its emitter's
+  // own X-Y plane — its turn about Z is the corner rotation the engine already
+  // applies — leaned by its start turns about X, then Y (Unity's Z, X, Y order,
+  // drawn here per particle from its seed); a World card in the world's X-Y.
+  // View, Facing and Velocity face the eye, the engine's own billboard.
+  const align = s.renderer.alignment ?? 0
+  const rx3 = s.rotation3D && s.rotationX ? curveExpr(s.rotationX, "cRotX", "0.0", "ro.x", decls) : "0.0"
+  const ry3 = s.rotation3D && s.rotationY ? curveExpr(s.rotationY, "cRotY", "0.0", "ro.y", decls) : "0.0"
+  const orientFn =
+    align === 2
+      ? `
+fn particleOrient(p: Particle, id: u32) -> mat3x3f {
+  let e = emitter(id);
+  let ro = rzHash13(p.seed * 17.3 + 0.9);
+  let ax = ${rx3};
+  let ay = ${ry3};
+  // Ry · Rx in the emitter's frame, then the frame itself
+  let cx = cos(ax);
+  let sx = sin(ax);
+  let cy = cos(ay);
+  let sy = sin(ay);
+  let r = vec3f(cy, 0.0, -sy);
+  let u = vec3f(sy * sx, cx, cy * sx);
+  let n = vec3f(sy * cx, -sx, cy * cx);
+  let frame = mat3x3f(e.x, e.y, e.z);
+  return mat3x3f(frame * r, frame * u, frame * n);
+}`
+      : align === 1
+        ? `
+fn particleOrient(p: Particle, id: u32) -> mat3x3f {
+  return mat3x3f(vec3f(1.0, 0.0, 0.0), vec3f(0.0, 1.0, 0.0), vec3f(0.0, 0.0, 1.0));
+}`
+        : ""
   const uvs = s.uv
   const tilesX = uvs ? uvs.tiles[0] : 1
   const tilesY = uvs ? uvs.tiles[1] : 1
@@ -426,6 +472,7 @@ fn particleInit(id: u32, seed: f32) -> Particle {
   return p;
 }
 
+${orientFn}
 fn particleStep(p: Particle, dt: f32) -> Particle {
   var q = p;
   let t = clamp(p.age / max(p.life, 1e-3), 0.0, 1.0);
@@ -459,9 +506,14 @@ fn particleShade(p: Particle, quv: vec2f) -> vec4f {
   let t = clamp(p.age / max(p.life, 1e-3), 0.0, 1.0);
   let rc = rzHash13(p.seed * 11.7 + 0.5);
   let rs = rzHash13(p.seed * 5.3 + 0.21);
+  ${stretched ? `// A STRETCHED card carries its picture's U along the stretch, as Unity lays
+  // it (a streak texture points sideways): the engine's card runs V along the
+  // velocity, and taken as it came the beams showed their thin cross-section
+  // drawn long — flat slabs with hard ends, a fan of rectangles
+  let card = vec2f(1.0 - quv.y, quv.x);` : "let card = quv;"}
   // a card wider or taller than square is drawn inside the square quad
   let wh = vec2f(${sizeX} * (${solX}), ${sizeY} * (${solY}));
-  var uv = (quv - vec2f(0.5)) * (max(wh.x, wh.y) / max(wh, vec2f(1e-5))) + vec2f(0.5);
+  var uv = (card - vec2f(0.5)) * (max(wh.x, wh.y) / max(wh, vec2f(1e-5))) + vec2f(0.5);
   // outside the card, masked rather than returned from: the pictures must be
   // sampled in uniform control flow, which an early return breaks
   let inside = select(0.0, 1.0, all(uv >= vec2f(0.0)) && all(uv <= vec2f(1.0)));

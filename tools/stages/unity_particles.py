@@ -151,7 +151,11 @@ def system_spec(ps, renderer):
         "size3D": int(init.get("size3D", 0)) == 1,
         "size": [minmax(init.get("startSize"), 1.0), minmax(init.get("startSizeY"), 1.0), minmax(init.get("startSizeZ"), 1.0)],
         "rotation3D": int(init.get("rotation3D", 0)) == 1,
-        "rotation": minmax(init.get("startRotation"), 0.0),         # radians
+        "rotation": minmax(init.get("startRotation"), 0.0),         # radians (Z)
+        # with rotation3D, the card also turns about X and Y (radians; Unity
+        # applies Z, then X, then Y) — how a Local card leans off its emitter's plane
+        "rotationX": minmax(init.get("startRotationX"), 0.0),
+        "rotationY": minmax(init.get("startRotationY"), 0.0),
         "color": colour(init.get("startColor") or {}),
         "gravity": minmax(init.get("gravityModifier"), 0.0),
         "emission": {"on": on(emission), "rate": minmax(emission.get("rateOverTime"), 0.0), "bursts": bursts},
@@ -190,6 +194,9 @@ def system_spec(ps, renderer):
             "lengthScale": float(renderer.get("m_LengthScale", 2.0)),
             "velocityScale": float(renderer.get("m_VelocityScale", 0.0)),
             "linear": int(renderer.get("m_ApplyActiveColorSpace", 1)) == 1,
+            # 0 View (faces the camera), 1 World, 2 Local (flat in the emitter's
+            # own plane), 3 Facing, 4 Velocity
+            "alignment": int(renderer.get("m_RenderAlignment", 0)),
         },
     }
     return spec
