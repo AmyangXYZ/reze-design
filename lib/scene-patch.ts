@@ -148,6 +148,18 @@ export function mergeScenePatch(base: SceneDoc, patchDoc: unknown): SceneDoc {
     return { id, doc: structuredClone(m) as unknown as PatchModelDoc }
   })
   if (assetsP && "cast" in assetsP && assetsP.cast === null) rows = rows.filter((r) => r.doc.stage || r.doc.prop)
+  // A scene holds one stage: a patch bringing a game stage replaces the stage
+  // the scene had, as an uploaded stage does — two floors at one height fight.
+  // What it brought goes with it: its tagged lamps and effects (by its id) and
+  // the fog, ambient and grade it claimed.
+  if (assetsP && typeof assetsP.nativeStage === "string" && assetsP.nativeStage) {
+    const gone = rows.filter((r) => r.doc.stage).map((r) => r.id)
+    rows = rows.filter((r) => !r.doc.stage)
+    for (const id of gone) tags.add(id)
+    const s = merged.settings as unknown as Record<string, { stage?: string } | undefined>
+    for (const k of ["stageGrade", "stageAmbient", "stageFog"])
+      if (s[k] && typeof s[k]!.stage === "string" && gone.includes(s[k]!.stage!) && !(settingsP && k in settingsP)) delete s[k]
+  }
   if (assetsP && Array.isArray(assetsP.models)) {
     const listed = assetsP.models.filter(isObject) as PatchModelDoc[]
     const keys = new Set(listed.map(keyOf))

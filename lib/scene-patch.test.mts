@@ -239,7 +239,7 @@ const one = mergeScenePatch(base(), take("touch1", ["cup", "fan"], ["sparks", "d
   assert.equal(her.animation, "character.vmd")
   assert.equal(her.morph, null, "the slot is replaced whole: the old overlay does not ride the new motion")
   assert.equal(her.materials?.groups[0].label, "Body", "her materials stay")
-  assert.equal(out.assets.models[0].animation, undefined, "the stage before her is not the lead")
+  assert.equal(out.assets.models.some((m) => m.model === "stages/room/room.pmx"), false, "the take's game stage replaced the room")
   assert.equal(out.assets.models.find((m) => m.model === "props/fan/fan.pmx")?.animation, "props/fan/fan.vmd")
   assert.equal(out.assets.cameraAnimation, "camera.vmd")
   assert.equal("castMotion" in out.assets, false, "the patch's own vocabulary never lands in the scene")
@@ -305,6 +305,18 @@ const one = mergeScenePatch(base(), take("touch1", ["cup", "fan"], ["sparks", "d
   assert.deepEqual((t2.settings.lights ?? []).map((l) => `${l.id}:${l.stage ?? ""}`), ["mine:", "c:dlc"], "a take replaces the last take's lamps only")
   const quiet = mergeScenePatch(t1, { patch: true, origin: "dlc", settings: { sun: { elevation: 30 } } })
   assert.equal((quiet.settings.lights ?? []).length, 3, "a patch without lights leaves them alone")
+}
+
+// ── A game stage replaces the scene's stage, and what that stage brought ──
+{
+  const doc = base()
+  doc.assets.models = [{ model: "stages/x340/x340.pmx", stage: true }, ...doc.assets.models] as typeof doc.assets.models
+  const lamp = (id: string, stage?: string) => ({ id, kind: "point", color: "#ffffff", strength: 1, position: [0, 0, 0], ...(stage ? { stage } : {}) })
+  doc.settings.lights = [lamp("mine"), lamp("glb", "x340")] as unknown as typeof doc.settings.lights
+  const out = mergeScenePatch(doc, { patch: true, origin: "dlc", assets: { nativeStage: "stage/" }, settings: { lights: [lamp("game")] } })
+  assert.equal(out.assets.models.some((m) => m.stage), false, "the old stage is gone")
+  assert.ok(out.assets.models.length > 0, "the cast stays")
+  assert.deepEqual((out.settings.lights ?? []).map((l) => l.id), ["mine", "game"], "its lamps went with it")
 }
 
 console.log("scene-patch: ok")
