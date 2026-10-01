@@ -40,7 +40,8 @@ export const TrackPicker = memo(function TrackPicker({
   onSelectModel,
 }: {
   kind: ClipEditKind
-  /** The Visibility tab's rows: the cast, and which one is selected. */
+  /** The Visibility tab's rows: the cast, then the props, and which one is
+   *  selected. */
   models?: LaneRow[] | null
   selectedModel?: string | null
   onSelectModel?: (uid: string | null) => void
@@ -193,8 +194,8 @@ function ObjectTrackList({
 }
 
 /**
- * The Visibility tab's column: one row per cast member, topmost first as the
- * lanes draw them, each as tall as its lane. The count is how many stretches
+ * The Visibility tab's column: one row per cast member and then per prop,
+ * topmost first as the lanes draw them, each as tall as its lane. The count is how many stretches
  * that model is on stage for — none means throughout, which is the default and
  * what an unscheduled scene shows.
  */

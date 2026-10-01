@@ -65,11 +65,12 @@ export type SceneSettings = {
   sun: SunLight & { stage?: StageClaim<SunLight> }
   /** The cast's own fill. A stage's rig claims it like the sun. */
   fill?: FillLight & { stage?: StageClaim<FillLight> }
+  /** The game's bloom (the engine's only one): what qualifies, how far it
+   *  spreads (0–1; the game is 0.77), how much (1 is the game), its tint. */
   bloom: {
     enabled: boolean
     threshold: number
-    knee: number
-    radius: number
+    scatter: number
     intensity: number
     color: string
   }
@@ -91,13 +92,13 @@ export type SceneSettings = {
    * immediately after it, and because the two are always tuned together — a
    * different transform lands at a different brightness, so exposure follows it.
    *
-   * The transform is a LOOK decision, not a preference. Filmic rolls highlights
-   * off and desaturates as it does; Standard passes the colours the graph
-   * computed straight through, which is what anime and NPR work expects and what
-   * both Wuthering Waves reference projects render under. A preset authored
-   * against one and viewed under the other is a different look.
+   * The transform is a LOOK decision, not a preference. Soft is the game's own
+   * curve and the default; Neutral and ACES are Unity's; None passes the colours
+   * the graph computed straight through, which is what anime and NPR work
+   * expects. A preset authored against one and viewed under another is a
+   * different look.
    */
-  view: { transform: "standard" | "filmic" | "agx"; exposure: number }
+  view: { transform: ViewTransform; exposure: number }
   /**
    * Sensor grain over the rendered scene, 0–1.
    *
@@ -216,25 +217,65 @@ export type SceneSettings = {
 }
 
 /** Same story as DEFAULT_PHYSICS, one section over: both blocks arrived with the
- *  0.4.0 chrome, so every document written before it is read through these. Off
- *  is the honest default for both — a scene that never asked for blur or outlines
- *  must come back looking exactly as it did. */
+ *  0.4.0 chrome, so every document written before it is read through these.
+ *  Blur stays off — a scene that never asked for it must come back looking as it
+ *  did. */
 export const DEFAULT_DOF: SceneSettings["dof"] = { enabled: false, aperture: 1 }
 /** What a document without a grain block gets. None: a scene written before the
  *  dial existed was authored looking at a clean render, and that is the only
  *  value that brings one back as it was. */
 export const DEFAULT_GRAIN: SceneSettings["grain"] = { amount: 0 }
-export const DEFAULT_OUTLINE: SceneSettings["outline"] = { enabled: false }
+/** Outlines are on: since they follow the game's (closed hull from smoothed
+ *  normals, thinning with distance, antialiased) they are part of the house look. */
+export const DEFAULT_OUTLINE: SceneSettings["outline"] = { enabled: true }
 
-/**
- * What a document without a view block gets: the engine's own defaults, which
- * are the Aether Gazer reference's Filmic at exposure 0.6.
- *
- * Every scene written before this setting existed was authored looking at that,
- * so it is the only value that brings one back unchanged — a scene must not
- * re-grade itself because the control it never touched became visible.
- */
-export const DEFAULT_VIEW: SceneSettings["view"] = { transform: "filmic", exposure: 0.6 }
+/** The view transforms the app offers, by the engine's names. */
+export type ViewTransform = "soft" | "neutral" | "aces" | "none"
+export const VIEW_TRANSFORMS: readonly ViewTransform[] = ["soft", "neutral", "aces", "none"]
+
+/** A stored transform name as one of today's: the four themselves, and the
+ *  names documents were written with before — Filmic reads as ACES, Standard as
+ *  None, AgX as Neutral, Aether Gazer as Soft. Anything else is null. */
+export function viewTransformFrom(name: unknown): ViewTransform | null {
+  if (typeof name !== "string") return null
+  if ((VIEW_TRANSFORMS as readonly string[]).includes(name)) return name as ViewTransform
+  return ({ filmic: "aces", standard: "none", agx: "neutral", "aether-gazer": "soft" } as Record<string, ViewTransform>)[name] ?? null
+}
+
+/** The view a new scene starts with: the game's curve, as authored. */
+export const DEFAULT_VIEW: SceneSettings["view"] = { transform: "soft", exposure: 0 }
+
+/** What a document without a view block gets. Every scene written before the
+ *  setting existed was authored under the engine's Filmic at 0.6, which is ACES
+ *  today. */
+export const LEGACY_VIEW: SceneSettings["view"] = { transform: "aces", exposure: 0.6 }
+
+/** A stored view block as today's: the transform renamed, an unknown one the default. */
+export function viewFrom(v: { transform?: unknown; exposure?: unknown } | undefined, fallback: SceneSettings["view"]): SceneSettings["view"] {
+  if (!v) return fallback
+  return {
+    transform: viewTransformFrom(v.transform) ?? fallback.transform,
+    exposure: typeof v.exposure === "number" && Number.isFinite(v.exposure) ? v.exposure : fallback.exposure,
+  }
+}
+
+/** The bloom a new scene starts with: the game's (threshold 0.7, scatter 0.77,
+ *  white, intensity 1). */
+export const DEFAULT_BLOOM: SceneSettings["bloom"] = { enabled: true, threshold: 0.7, scatter: 0.77, intensity: 1, color: "#ffffff" }
+
+/** A stored bloom block as today's. The old Blender fields (knee, radius) are
+ *  dropped; what is missing comes from the default. */
+export function bloomFrom(b: Partial<Record<string, unknown>> | undefined): SceneSettings["bloom"] {
+  const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d)
+  const d = DEFAULT_BLOOM
+  return {
+    enabled: typeof b?.enabled === "boolean" ? b.enabled : d.enabled,
+    threshold: num(b?.threshold, d.threshold),
+    scatter: num(b?.scatter, d.scatter ?? 0.77),
+    intensity: num(b?.intensity, d.intensity),
+    color: typeof b?.color === "string" && /^#[0-9a-f]{6}$/i.test(b.color) ? b.color : d.color,
+  }
+}
 
 /** What a document without an audio block gets. Full level: every scene written
  *  before the control existed played its track at the element's own default, and

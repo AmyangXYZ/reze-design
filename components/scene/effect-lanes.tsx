@@ -36,7 +36,7 @@ import {
 import { useUndoScope } from "@/hooks/use-undo-scope"
 import { useT } from "@/lib/i18n"
 import type { EffectWindow } from "@/lib/effect-schedule"
-import { FX_FRAMES, type FadeCurve } from "@/lib/visibility"
+import { FX_FRAMES, type FadeCurve } from "@/lib/timeline"
 import { cn } from "@/lib/utils"
 
 /** One row, the Effects list's `h-6`, so the list and the lanes scroll as one. */

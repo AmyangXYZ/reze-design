@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react"
 import type { Engine } from "reze-engine"
 import type { AssetRef, Scene } from "@/lib/scene"
-import { visibleAt } from "@/lib/visibility"
+import { visibleAt } from "@/lib/timeline"
 
 type Loader = (modelId: string, file: File) => Promise<string | null>
 type UrlLoader = (modelId: string, name: string, url: string) => Promise<string | null>

@@ -10,18 +10,24 @@
 // document and neither knows the difference.
 
 import { effectTexturesFor, effectTexturesVersion, subscribeEffectTextures } from "@/lib/effect-textures"
-import { useEffect, useMemo, useRef, useSyncExternalStore } from "react"
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import {
   Vec3,
   parseHDR,
+  RENDERING_LAYER_CHARACTER,
+  RENDERING_LAYER_DEFAULT,
   type Engine,
+  type HdrImage,
 } from "reze-engine"
+
+/** Every rendering layer — the sun's reach while no stage brings a sun of its own. */
+const ALL_LAYERS = 0xffffffff
 import { effectParams, type AppliedEffect, type EffectSurface } from "@/lib/effects"
 import { resolveSpec, type GradeSpec } from "@/lib/grade"
 import { CAMERA_DEFAULT_FOV, type SceneCamera, type SceneLight } from "@/lib/scene"
 import { GREEN, isCompositingBackground, type ExportBackground } from "@/lib/export-background"
 import { azElToDirection, groundExtent, windVariation, hexToLinearVec3, hexToSrgbVec3, windDirection, type SceneSettings } from "@/lib/scene-settings"
-import { windowToEngine } from "@/lib/effect-schedule"
+import { pushTimeline, timelineOf } from "@/lib/timeline"
 
 /**
  * Which engine instance each entry of the list became.
@@ -37,24 +43,38 @@ function installedIndex(results: { ok: boolean }[]): (number | null)[] {
 }
 
 /**
- * Every applied effect's timing — and who it is on — onto its instance.
- *
- * The same effect applied twice gets two strips rather than one shared between
- * them: an instance is a copy, and its timing belongs to that copy. So does the
- * cast it plays to, which is the whole point of aiming one copy at one dancer.
- *
- * Frames cross to the engine's seconds here and nowhere else.
+ * Every applied effect's timing — and who it is on — onto its instance, through
+ * the scene timeline's one push. See pushTimeline for why the index matters.
  */
 function applySchedules(engine: Engine, list: AppliedEffect[], index: (number | null)[] | null): void {
-  list.forEach((e, i) => {
-    const k = index ? index[i] : i
-    if (k == null) return
-    engine.setEffectInfluence(k, e.influence ?? 1)
-    engine.setEffectSchedule(k, windowToEngine(e.window))
-    engine.setEffectSubjects(k, e.models ?? null)
-  })
+  pushTimeline(engine, timelineOf({ effects: list }), index)
 }
 
+/**
+ * An HDRI's AVERAGE light: its radiance over the whole sphere, by solid angle.
+ *
+ * The constant term of the irradiance SH the engine fits the same image to
+ * (ibl.ts projectIrradianceSH: A = c4·L00/π = ∫L dω / 4π, normalised so a sky
+ * of radiance 1 lights a surface with 1), on the same stride-4 grid — so the
+ * cast's flat sky is the engine's own sky, averaged.
+ */
+function hdriMeanRadiance(img: HdrImage, stride = 4): [number, number, number] {
+  const { width: w, height: h, data } = img
+  const sum = [0, 0, 0]
+  let weight = 0
+  for (let y = 0; y < h; y += stride) {
+    const dw = Math.sin((Math.PI * (y + 0.5)) / h)
+    if (dw <= 0) continue
+    for (let x = 0; x < w; x += stride) {
+      const i = (y * w + x) * 4
+      sum[0] += data[i] * dw
+      sum[1] += data[i + 1] * dw
+      sum[2] += data[i + 2] * dw
+      weight += dw
+    }
+  }
+  return weight > 0 ? [sum[0] / weight, sum[1] / weight, sum[2] / weight] : [0, 0, 0]
+}
 
 export function useSceneSync({
   engineRef,
@@ -102,8 +122,8 @@ export function useSceneSync({
    *  own subjects are drawn from. Only used to decide WHO an effect that
    *  declares a dissolve is about; the first of them is subject 0. */
   castIds = [],
-  /** Each stage and the sun it carries for itself, or null: applied per stage
-   *  the way the fill is per cast member. */
+  /** Each stage and the sun it carries for itself, or null: a directional
+   *  light on the stage's layer, while the scene's sun keys the cast. */
   stageSuns = [],
   /** What each applied effect exposes — its dials, and whether it reads the cast
    *  at all — keyed by uid, handed back after every install. The engine parsed
@@ -160,6 +180,8 @@ export function useSceneSync({
   const groundOpts = useRef<Parameters<Engine["addGround"]>[0] | null>(null)
   const groundRaf = useRef(0)
   useEffect(() => () => cancelAnimationFrame(groundRaf.current), [])
+  /** The installed HDRI's average radiance, tagged with the file it came from. */
+  const [hdriMean, setHdriMean] = useState<{ file: File; mean: [number, number, number] } | null>(null)
 
   useEffect(() => {
     const engine = engineRef.current
@@ -197,8 +219,7 @@ export function useSceneSync({
       engine.setBloomOptions({
         enabled: bloom.intensity > 0,
         threshold: bloom.threshold,
-        knee: bloom.knee,
-        radius: bloom.radius,
+        scatter: bloom.scatter,
         intensity: bloom.intensity,
         color: hexToLinearVec3(bloom.color),
       })
@@ -460,46 +481,42 @@ export function useSceneSync({
     for (const id of castIds) engine.setEyeTracking(id, settings.eyes.enabled ? {} : null)
   }, [engineRef, ready, castIds, settings.eyes])
 
-  // ── The cast's fill ──
-  //
-  // The same shape: per cast model, and again as models land. Only the cast —
-  // a stage or a prop wearing it would lift the room the fill exists to leave.
-  useEffect(() => {
-    const engine = engineRef.current
-    if (!engine || !ready) return
-    const f = settings.fill
-    const c = f && f.strength > 0 ? hexToLinearVec3(f.color) : null
-    const fill = c ? new Vec3(c.x * f!.strength, c.y * f!.strength, c.z * f!.strength) : null
-    for (const id of castIds) engine.setModelFill(id, fill)
-  }, [engineRef, ready, castIds, settings.fill])
-
   // ── The cast takes the sky flat ──
   //
-  // Its colour and brightness, not its shape: a stage's HDRI taken at each
-  // normal shaded faces with soft realistic gradients the anime ramps never
-  // drew. Only the cast — a stage keeps its directional sky. A flat World is
-  // its own average, so without an HDRI nothing changes.
+  // What reze-engine 0.63 did with setModelFlatSky, on the primitive 0.64 kept:
+  // a per-model ambient (setModelAmbient), constant over every normal — the
+  // world's AVERAGE light rather than the HDRI's shape, which shades an anime
+  // face like PBR. Only the cast: a stage keeps its directional sky.
+  const stageSH = settings.stageAmbient && settings.world.stage?.id === settings.stageAmbient.stage ? settings.stageAmbient.sh : null
+  const skyMean = !compositing && hdri && hdriMean?.file === hdri ? hdriMean.mean : null
+  const { world: castWorld, fill: castFill } = settings
   useEffect(() => {
     const engine = engineRef.current
     if (!engine || !ready) return
-    for (const id of castIds) engine.setModelFlatSky(id, true)
-  }, [engineRef, ready, castIds])
+    // The engine's own order: a stated ambient, then the HDRI, then the flat
+    // colour — each times the World strength, as the engine scales them.
+    const c = hexToLinearVec3(castWorld.color)
+    const avg = stageSH ? [stageSH[0], stageSH[1], stageSH[2]] : skyMean ?? [c.x, c.y, c.z]
+    const sh = new Array<number>(27).fill(0)
+    for (let k = 0; k < 3; k++) sh[k] = Math.max(avg[k] * castWorld.strength, 0)
+    for (const id of castIds) engine.setModelAmbient(id, sh)
+  }, [engineRef, ready, castIds, castWorld, stageSH, skyMean])
 
-  // ── A stage's own sun ──
+  // ── The cast's fill ──
   //
-  // The colour and strength the stage was lit by, in place of the scene's sun,
-  // which stays the cast's. Keyed on the values so a re-render with the same
-  // stages pushes nothing.
-  const stageSunKey = stageSuns.map((s) => `${s.id}:${s.sun ? `${s.sun.color}@${s.sun.strength}` : ""}`).join("\u0000")
+  // Added after her graph (setModelFill), fill × her surface colour: it lifts
+  // her evenly and leaves every toon shadow where it is — in the ambient a ramp
+  // would read it as light. Per cast model, and again as models land. Only the
+  // cast — a stage or a prop wearing it would lift the room the fill exists to
+  // leave.
   useEffect(() => {
     const engine = engineRef.current
     if (!engine || !ready) return
-    for (const { id, sun } of stageSuns) {
-      const c = sun && sun.strength > 0 ? hexToLinearVec3(sun.color) : null
-      engine.setModelSun(id, c ? new Vec3(c.x * sun!.strength, c.y * sun!.strength, c.z * sun!.strength) : null)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engineRef, ready, stageSunKey])
+    const f = castFill
+    const c = f && f.strength > 0 ? hexToLinearVec3(f.color) : null
+    const fill = c && f ? { x: c.x * f.strength, y: c.y * f.strength, z: c.z * f.strength } : null
+    for (const id of castIds) engine.setModelFill(id, fill)
+  }, [engineRef, ready, castIds, castFill])
 
   /**
    * A dial moved, without reinstalling.
@@ -553,9 +570,7 @@ export function useSceneSync({
    * unrelated edit to the list, and re-running is harmless when it does: both
    * calls are idempotent writes of a number.
    */
-  const scheduleKey = JSON.stringify(
-    backgroundEffects.map((e) => [e.influence ?? 1, e.window ?? null, e.models ?? null]),
-  )
+  const scheduleKey = JSON.stringify(timelineOf({ effects: backgroundEffects }).effects)
   useEffect(() => {
     const engine = engineRef.current
     if (!engine || !ready) return
@@ -593,12 +608,33 @@ export function useSceneSync({
    * still costs the per-fragment distance test for every pixel it covers, and a
    * switch that quietly keeps paying is a switch that lies.
    */
+  const stageSunKey = stageSuns.map((s) => `${s.id}:${s.sun ? `${s.sun.color}@${s.sun.strength}` : ""}`).join("\u0000")
   useEffect(() => {
     const engine = engineRef.current
     if (!ready || !engine) return
     const on = lights.filter((l) => l.on !== false)
-    engine.setLights(
-      on.map((l) => {
+    // A stage that carries its own sun is lit by it as a directional light on
+    // the stage's layer, along the scene sun's direction — one sun casts — and
+    // the scene's sun then keys the cast alone. The two are apart by LAYER, as
+    // the game lights its rooms and its characters.
+    const stageSun = stageSuns.find((s) => s.sun && s.sun.strength > 0)?.sun ?? null
+    const s = settings.sun
+    engine.setSun({ layers: stageSun ? RENDERING_LAYER_CHARACTER : ALL_LAYERS })
+    const daylight = stageSun
+      ? [
+          {
+            kind: "directional" as const,
+            position: { x: 0, y: 0, z: 0 },
+            aim: azElToDirection(s.azimuth, s.elevation),
+            color: hexToLinearVec3(stageSun.color),
+            intensity: stageSun.strength,
+            layers: RENDERING_LAYER_DEFAULT,
+          },
+        ]
+      : []
+    engine.setLights([
+      ...daylight,
+      ...on.map((l) => {
         const c = hexToLinearVec3(l.color)
         return {
           position: { x: l.position[0], y: l.position[1], z: l.position[2] },
@@ -610,8 +646,9 @@ export function useSceneSync({
           ...(l.innerAngle !== undefined ? { innerAngle: l.innerAngle } : {}),
         }
       }),
-    )
-  }, [lights, ready, engineRef])
+    ])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lights, ready, engineRef, stageSunKey, settings.sun.azimuth, settings.sun.elevation])
 
   /**
    * The HDRI world, on its own slot.
@@ -643,6 +680,7 @@ export function useSceneSync({
         if (stale) return
         const img = parseHDR(buf)
         engine.setWorldEquirect(img)
+        setHdriMean({ file: hdri, mean: hdriMeanRadiance(img) })
         // The install receipt: with this line and __reze.getWorldLighting(),
         // "is the sky lighting her" is a console question, not a guess.
         const wl = engine.getWorldLighting()

@@ -11,6 +11,7 @@ import {
   DEFAULT_OUTLINE,
   DEFAULT_EYES, DEFAULT_PHYSICS,
   DEFAULT_VIEW,
+  DEFAULT_BLOOM,
 } from "@/lib/scene-settings"
 
 /**
@@ -140,7 +141,8 @@ const DEMO_SCENE_DOC: SceneDoc = {
     },
     world: { color: "#ed6aff", strength: 0.66 },
     sun: { color: "#ffffff", strength: 2.0, azimuth: 205, elevation: 21 },
-    bloom: { enabled: true, threshold: 0.5, knee: 0.5, radius: 4.0, intensity: 0.05, color: "#ffc9c9" },
+    // The game's bloom, in the demo's pink.
+    bloom: { ...DEFAULT_BLOOM, color: "#ffc9c9" },
     dof: DEFAULT_DOF,
     outline: { enabled: true },
     grain: DEFAULT_GRAIN,
@@ -211,7 +213,7 @@ export const EMPTY_SCENE_DOC: SceneDoc = {
     camera: { ...DEMO_SCENE_DOC.settings.camera, follow: null },
     world: { color: "#ffffff", strength: 0.35 },
     sun: { color: "#ffffff", strength: 2.0, azimuth: 205, elevation: 21 },
-    bloom: { enabled: true, threshold: 0.8, knee: 0.5, radius: 4.0, intensity: 0.03, color: "#ffffff" },
+    bloom: DEFAULT_BLOOM,
     dof: DEFAULT_DOF,
     outline: DEFAULT_OUTLINE,
     grain: DEFAULT_GRAIN,

@@ -127,7 +127,7 @@ import { ClipAutosave } from "@/components/scene/clip-autosave"
 import { ClipHistory } from "@/components/scene/clip-history"
 import { ClipInspector } from "@/components/scene/clip-inspector"
 import { holdsOf } from "@/lib/prop-throw"
-import type { VisibilityWindow } from "@/lib/visibility"
+import { timelineOf, type VisibilityWindow } from "@/lib/timeline"
 import { FPS } from "@/lib/clip"
 import { ClipEditor, type ClipEditKind } from "@/context/clip-editor"
 import { primeClipDensity, useAudioPeaks } from "@/hooks/use-lane-graphs"
@@ -161,6 +161,7 @@ import {
   type SceneState,
 } from "@/lib/scene"
 import { collectSceneSlots as collectSlots, type CollectedAnim, type SceneSlots } from "@/lib/scene-collect"
+import { isScenePatch, mergePatchFiles, mergeScenePatch, patchRoots } from "@/lib/scene-patch"
 import { downloadBlob, sceneZipFileName } from "@/lib/scene-file"
 import { buildZip } from "@/lib/bundle"
 import { resolveSceneRefs } from "@/lib/resolve-refs"
@@ -243,7 +244,7 @@ import { findSkies, isStageOwnSky, skyThumbnail, type SkyCandidate } from "@/lib
 import { GpuErrorNotice } from "@/components/gpu-error-notice"
 import { toast } from "sonner"
 import { lipSyncVmdFile } from "@/lib/lipsync"
-import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, hexToLinearVec3, windFreqFromSlider, windSliderFromFreq, sceneOwned, NO_FILL, type SceneSettings } from "@/lib/scene-settings"
+import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, hexToLinearVec3, windFreqFromSlider, windSliderFromFreq, sceneOwned, NO_FILL, VIEW_TRANSFORMS, type SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
 import { storageKey } from "@/lib/storage"
 
@@ -508,10 +509,12 @@ function seedMorphs(scene: Scene): Record<string, { name: string; src: File | st
   return seed
 }
 
-const TRANSFORM_LABEL: Record<SceneSettings["view"]["transform"], string> = {
-  standard: "Standard",
-  filmic: "Filmic",
-  agx: "AgX", // the ZZZ pack's transform, and offered in the picker for it
+/** The palette row's value, in English — the row carries both languages itself. */
+const TRANSFORM_LABEL: Record<string, string> = {
+  soft: "Soft", // the game's own final curve, and the default
+  neutral: "Neutral",
+  aces: "ACES",
+  none: "None",
 }
 
 /** The dictionary the UI is NOT showing. Every palette row carries its labels
@@ -687,11 +690,11 @@ const DOCK_CONTROLS: {
   { id: "prop", en: "Props", zh: "道具", row: "object", objectTab: "prop", keywords: ["prop", "accessory", "hold", "hand", "attach", "bind", "bone", "道具", "アクセサリ", "外部親", "手持", "绑定"], value: (v) => v.props ?? v.t.lab.ctl.none },
   { id: "grade-preset", en: "Grade preset", zh: "调色预设", row: "post", postTab: "grade", keywords: ["color", "look", "后期"], value: (v) => v.gradeName },
   { id: "grade-intensity", en: "Grade intensity", zh: "调色强度", row: "post", postTab: "grade", value: (v) => dec2(v.settings.grade.intensity) },
-  { id: "view-transform", en: "View transform", zh: "视图变换", row: "post", postTab: "tone", keywords: ["tonemap", "tone map", "filmic", "agx", "standard", "color management", "色调映射", "色彩管理"], value: (v) => TRANSFORM_LABEL[v.settings.view.transform] },
+  { id: "view-transform", en: "View transform", zh: "视图变换", row: "post", postTab: "tone", keywords: ["tonemap", "tone map", "soft", "neutral", "aces", "none", "filmic", "color management", "色调映射", "色彩管理"], value: (v) => TRANSFORM_LABEL[v.settings.view.transform] },
   { id: "exposure", en: "Exposure", zh: "曝光", row: "post", postTab: "tone", keywords: ["brightness", "ev", "亮度"], value: (v) => dec2(v.settings.view.exposure) },
   { id: "bloom-intensity", en: "Bloom intensity", zh: "泛光强度", row: "post", postTab: "bloom", keywords: ["glow", "辉光"], value: (v) => v.settings.bloom.intensity.toFixed(3) },
   { id: "bloom-threshold", en: "Bloom threshold", zh: "泛光阈值", row: "post", postTab: "bloom", keywords: ["cutoff"], value: (v) => dec2(v.settings.bloom.threshold) },
-  { id: "bloom-radius", en: "Bloom radius", zh: "泛光半径", row: "post", postTab: "bloom", keywords: ["spread", "扩散"], value: (v) => dec1(v.settings.bloom.radius) },
+  { id: "bloom-spread", en: "Bloom spread", zh: "泛光扩散", row: "post", postTab: "bloom", keywords: ["scatter", "radius", "半径"], value: (v) => dec2(v.settings.bloom.scatter) },
   { id: "outline-toggle", en: "Outline", zh: "描边", row: "post", postTab: "outline", keywords: ["edge", "rim", "线稿", "轮廓"], value: (v) => sw(v.settings.outline.enabled, v.t) },
   { id: "world-strength", en: "World strength", zh: "环境光强度", row: "light", lightTab: "world", keywords: ["ambient"], value: (v) => dec2(v.settings.world.strength) },
   { id: "sun-strength", en: "Sun strength", zh: "太阳强度", row: "light", lightTab: "sun", value: (v) => dec2(v.settings.sun.strength) },
@@ -2186,6 +2189,8 @@ export default function Lab() {
     removeModelById,
     stopAnimation,
     stages,
+    nativeStage,
+    removeNativeStage,
     addStageFromFiles,
     addStagePartFromFiles,
     setStageTransform,
@@ -3007,14 +3012,14 @@ export default function Lab() {
   // What the environment IS, in the order it reads: a stage, footage, a
   // backdrop, or the ground. The row's summary names it and opening the row
   // lands on its tab, so the two never disagree.
-  const envTab: "stage" | "ground" | "background" | "composite" = stage
+  const envTab: "stage" | "ground" | "background" | "composite" = stage || nativeStage
     ? "stage"
     : bgImage?.slot === "plate"
       ? "composite"
       : bgImage
         ? "background"
         : "ground"
-  const stageSummary = stage ? displayName(stage.file) : t.lab.tabs[envTab]
+  const stageSummary = stage ? displayName(stage.file) : (nativeStage?.name ?? t.lab.tabs[envTab])
   // Controlled (not key-remounted): go-to deep-links need to land on a pane —
   // "Background" opens this row on its background tab. Where you left each one
   // is UI state, so it comes back from the same store the stack's own shape does.
@@ -4164,35 +4169,46 @@ export default function Lab() {
       : (cast.find((m) => m.id === editTarget?.modelId)?.id ?? inspectedId ?? cast[0]?.id ?? null)
   const editingProp = editingKind === "object" ? (props.find((p) => p.id === editingModelId) ?? null) : null
   /**
-   * Every scheduled model's lane, by id.
+   * The scene's timeline — every model's lane, every effect's strips, every
+   * prop's parent track — read off the live state the one way lib/timeline
+   * reads it.
    *
    * What the transport evaluates each frame and what the export is handed, so
-   * the file and the preview answer "who is on stage" from one list. Models with
-   * no lane are left out entirely: an unscheduled scene never touches
-   * visibility, which is what keeps this free for everyone who is not using it.
+   * the file and the preview answer "who is on stage" from one value. The
+   * declarative parts reach the engine where they are edited (the effect sync,
+   * the prop setters), through the same module's push.
    */
-  const visibilityTracks = useMemo(() => {
-    const out: Record<string, VisibilityWindow[]> = {}
-    for (const m of models) if (m.visibility?.length) out[m.id] = m.visibility
-    return out
-  }, [models])
+  const timeline = useMemo(() => timelineOf({ models, props, effects: bgEffects }), [models, props, bgEffects])
   /** Which model's lane is picked, for the row highlight. */
   const [selectedVisibility, setSelectedVisibility] = useState<string | null>(null)
   /** The cast as an effect can be aimed at it: the id the document stores and the
    *  name the panel shows. Memoised on the cast's contents rather than rebuilt per
    *  render — it is a prop on a popover that is open while someone reads it. */
   const castTargets = useMemo(() => cast.map((m) => ({ id: m.id, name: displayName(m.file) })), [cast])
-  /** The cast as lane rows. A model with no windows draws one clip spanning the
+  /**
+   * Who can be scheduled: the cast and the props — a prop on cue is most of
+   * what a ported game prop is. Stages are not listed; a set is the place the
+   * scene happens in, not something that enters it.
+   *
+   * The band draws the LAST row on top, as it does for effects, so the props go
+   * FIRST in the list: read from the top, the cast leads, in the order it
+   * always showed in, and the props follow beneath it.
+   */
+  const laneModels = useMemo(() => {
+    const propIds = new Set(props.map((p) => p.id))
+    return [...models.filter((m) => propIds.has(m.id)), ...cast]
+  }, [cast, models, props])
+  /** The lanes as rows. A model with no windows draws one clip spanning the
    *  scene, which is exactly what "on stage throughout" looks like. */
   const visibilityRows = useMemo(
     () =>
-      cast.map((m) => ({
+      laneModels.map((m) => ({
         id: m.id,
         uid: m.id,
         name: displayName(m.file),
         ...(m.visibility?.length ? { window: m.visibility } : {}),
       })),
-    [cast],
+    [laneModels],
   )
   /**
    * The lanes, written back.
@@ -4205,7 +4221,7 @@ export default function Lab() {
    */
   const onVisibilityRows = (next: { id: string; uid?: string; window?: VisibilityWindow[] }[]) => {
     const byId = new Map(next.map((r) => [r.uid ?? r.id, r.window ?? []]))
-    for (const m of cast) {
+    for (const m of laneModels) {
       const want = byId.get(m.id) ?? []
       const have = m.visibility ?? []
       if (JSON.stringify(want) !== JSON.stringify(have)) setCastVisibility(m.id, want)
@@ -5203,6 +5219,9 @@ export default function Lab() {
         const leaving = stages.map((s) => ({ id: s.id, file: s.file }))
         const leavingLit = stages.some((s) => hasWicks(s.id))
         releaseStageRig(leaving, pmx.name)
+        // A scene holds one stage, and a game stage is one too: the upload
+        // replaces it the way it replaces a PMX one.
+        removeNativeStage()
         const id = await loadScenery(
           files.filter((f) => !parts.includes(f)),
           pmx,
@@ -5283,15 +5302,12 @@ export default function Lab() {
         // AND ITS FOG, which leaves with it.
         const stageFog = rig?.fog
         setSettings((s2) => ({ ...s2, stageFog: stageFog ? { stage: id, fog: stageFog } : undefined }))
-        // AND THE CAST'S FILL, claimed the same way: the light the game gives its
-        // characters apart from the room.
-        const fill = rig?.fill
-        if (fill) {
-          setSettings((s2) => {
-            const own = s2.fill ? sceneOwned(s2.fill) : NO_FILL
-            return { ...s2, fill: { ...fill, stage: { id, before: own } } }
-          })
-        }
+        // NOT ITS CAST FILL. A rig may name the light the game gives its
+        // characters apart from the room, but the cast's fill is the scene's own:
+        // it starts at 0 and only the person composing the scene raises it. A
+        // stage that brought one lit a different model than the game's, a
+        // different amount, and was the main reason one stage's cast looked
+        // washed next to another's.
         // AND ITS CANDLES. A stage that names wicks — bones flame.01 upward, as
         // the Unity converter writes them — brings the effect that lights them,
         // into the Effects list like any effect, once. One that names none
@@ -5462,6 +5478,14 @@ export default function Lab() {
     if (process.env.NODE_ENV !== "development") return
     ;(globalThis as unknown as { __rezeDev?: unknown }).__rezeDev = {
       engine: () => engineRef.current,
+      // What the page believes the scene holds, to check against the engine's
+      // own `getModelNames()` — the two drifting apart is a bug class.
+      doc: () => ({
+        ready,
+        id: scene.state.id,
+        models: models.map((m) => m.id),
+        nativeStage: nativeStage?.name ?? null,
+      }),
       asStage: () => {
         modelTarget.current = { mode: "stage" }
       },
@@ -5976,6 +6000,9 @@ export default function Lab() {
     // wears. Ids are minted per upload, so the pair is unique per card.
     planes.map((p) => `${p.id}:${p.file}`).join("|"),
     cameraClip ?? "",
+    // The game stage, by its folder: removing it has to repack, or the bundle
+    // goes on carrying a stage the scene no longer draws.
+    nativeStage?.path ?? "",
     // Edited clips are the one asset whose BYTES change while its name does
     // not. Everything else in this list is a slot whose file arrives with a new
     // name, so a name is enough to notice it; a keyframe edit rewrites
@@ -6009,6 +6036,7 @@ export default function Lab() {
         models,
         stages,
         props,
+        nativeStage: nativeStage?.path ?? null,
         booted: scene.assets.models,
         bundleFiles: bundleFiles(),
         // This route keeps a motion as {name, src} where src is the File or the
@@ -6070,6 +6098,7 @@ export default function Lab() {
       models,
       stages,
       props,
+      nativeStage,
       scene,
       bundleFiles,
       animByModel,
@@ -6130,6 +6159,7 @@ export default function Lab() {
             // then left out of the record naming them, so the bytes were there
             // and nothing knew to look.
             planes: slots.planes,
+            nativeStage: slots.nativeStage,
             bundle: bundleUrl,
           }),
         )
@@ -6417,6 +6447,7 @@ export default function Lab() {
         groups: groupsByModel,
         hidden: slots.hidden,
         planes: slots.planes,
+        nativeStage: slots.nativeStage,
       },
       { graph: graphRef, effect: effectRef },
     )
@@ -6464,7 +6495,12 @@ export default function Lab() {
       const files = await unzipToFiles(file)
       const docFile = files.find((f) => f.name === "scene.json")
       if (!docFile) throw new Error("no scene.json")
-      const doc = JSON.parse(await docFile.text()) as SceneDoc
+      const parsed: unknown = JSON.parse(await docFile.text())
+      if (isScenePatch(parsed)) {
+        await importScenePatch(parsed, files.filter((f) => f !== docFile))
+        return
+      }
+      const doc = parsed as SceneDoc
       const resolve = await resolveSceneRefs(doc)
       const imported = parseSceneDoc(doc, builtinEffect, libraryGraph, resolve)
       // A blob URL, so loadSceneInto's bundle fetch reads the zip we already hold.
@@ -6480,8 +6516,59 @@ export default function Lab() {
       } finally {
         URL.revokeObjectURL(url)
       }
-    } catch {
+    } catch (e) {
+      console.warn("[import]", e)
       setUpload({ kind: "notice", message: t.sceneFile.badFile })
+    }
+  }
+
+  /**
+   * A patch lands ON the scene rather than in place of it (lib/scene-patch).
+   *
+   * Merged as DOCUMENTS and then loaded the one way every document is: the
+   * current scene goes out exactly as Export would write it, the patch is merged
+   * into that, and the result is swapped in. Applying it live instead would mean
+   * a second, piecemeal path for props with looks and lanes, a game stage, tagged
+   * effects, a camera track and audio — the meaning loadSceneInto already owns —
+   * and the cost it saves is reloading the cast, which swapScene does on the
+   * device and pipelines it already has.
+   *
+   * Two sources of files: the current scene's (what the collector packs, the
+   * user's uploads included) and the patch zip's. They are written together as
+   * this scene's IndexedDB bundle BEFORE the swap, so the swap reads the merged
+   * set and a refresh at any point after finds it. The scene keeps its id: it is
+   * the same scene, changed.
+   */
+  const importScenePatch = async (patch: unknown, patchFiles: File[]) => {
+    // Holds the autosave off: it would write the outgoing scene's bundle over the
+    // merged one in the window before the swap.
+    setUploading((n) => n + 1)
+    try {
+      const slots = collectLabSlots()
+      const merged = mergeScenePatch(makeSceneDoc(slots, null), patch)
+      const entries = mergePatchFiles(
+        slots.entries,
+        patchFiles.map((f) => ({ path: f.name, file: f as Blob })),
+        patchRoots(patch),
+      )
+      const id = scene.state.id
+      // Quota is the failure to expect: the merged set then rides a blob: zip,
+      // the same way a plain import does, and the persist effect retries IDB.
+      const stored = await saveLocalBundle(id, entries)
+      const url = stored ? null : URL.createObjectURL(await buildZip(entries))
+      try {
+        const resolve = await resolveSceneRefs(merged)
+        const next = parseSceneDoc(merged, builtinEffect, libraryGraph, resolve)
+        await applyLabScene({
+          ...next,
+          assets: { ...next.assets, bundle: url ?? idbBundleOf(id) },
+          state: { ...next.state, id },
+        })
+      } finally {
+        if (url) URL.revokeObjectURL(url)
+      }
+    } finally {
+      setUploading((n) => n - 1)
     }
   }
 
@@ -7987,6 +8074,22 @@ export default function Lab() {
                         </TabsTrigger>
                       </TabsList>
                       <TabsContent value="stage">
+                        {/* A game stage: drawn by the game's shaders where the
+                            game put it, so there is nothing to place — its
+                            name, and the way out. */}
+                        {nativeStage && (
+                          <CastLine
+                            text={<span className="min-w-0 flex-1 truncate text-xs">{nativeStage.name}</span>}
+                            actions={
+                              <CastAction
+                                icon={X}
+                                danger
+                                label={t.lab.aria.deleteStage(nativeStage.name)}
+                                onClick={removeNativeStage}
+                              />
+                            }
+                          />
+                        )}
                         {stage && (
                           <>
                             <CastLine
@@ -8088,7 +8191,7 @@ export default function Lab() {
                             ALWAYS HERE, because an upload IS the replacement: a
                             scene holds one stage, and picking another swaps it.
                             There is no separate replace to find. */}
-                        <div className={cn("flex", stage && "mt-2")}>
+                        <div className={cn("flex", (stage || nativeStage) && "mt-2")}>
                           <Button
                             variant="ghost"
                             onClick={() => pickModel({ mode: "stage" })}
@@ -9497,12 +9600,9 @@ export default function Lab() {
                         {/* The view transform is its own tab, next to Grade and in front
                             of it: the transform maps the render to the display, the
                             grade then works on its result. It is a LOOK
-                            decision, not a preference: Filmic rolls highlights off
-                            and desaturates doing it, AgX further and with a longer
-                            toe, Standard passes through what the shader computed.
-                            Which one is right is the reference's to say — Wuthering
-                            Waves is Standard, Zenless Zone Zero is AgX, and a graph
-                            authored under one carries compensation for it. */}
+                            decision, not a preference: Soft is the game's own curve
+                            and the default, Neutral and ACES are Unity's, None
+                            passes through what the shader computed. */}
                         <div className="mb-1 flex min-w-0 items-center justify-between gap-2">
                           <span className="shrink-0 text-xs">{t.lab.ctl.transform}</span>
                           <Select
@@ -9517,19 +9617,11 @@ export default function Lab() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              {/* Blender's own names — translating them would make
-                                  the preset they were authored against harder to find. */}
-                              {/* AgX was withheld here while no reference project
-                                  rendered under it: it is built for photographic
-                                  HDR and desaturates rolling highlights off, which
-                                  is the colour an anime look is made of. The ZZZ
-                                  .blend renders under it, and its graphs push
-                                  saturation to compensate — so the pack sets it,
-                                  and a value the picker cannot show is a blank
-                                  Select. Offered, last, and still not the default. */}
-                              <SelectItem value="standard">Standard</SelectItem>
-                              <SelectItem value="filmic">Filmic</SelectItem>
-                              <SelectItem value="agx">AgX</SelectItem>
+                              {VIEW_TRANSFORMS.map((v) => (
+                                <SelectItem key={v} value={v}>
+                                  {t.lab.ctl.transforms[v]}
+                                </SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         </div>
@@ -9546,16 +9638,18 @@ export default function Lab() {
                       {/* No on/off: intensity 0 IS off — useSceneSync maps it to
                           enabled:false and the pyramid is skipped entirely. The
                           three that change the look, in the order you reach for
-                          them: how much, what qualifies, how far it spreads. */}
+                          them: how much, what qualifies, how far it spreads,
+                          and its tint. The bloom is the game's own; intensity 1
+                          is the game, and the slider goes past it. */}
                       <TabsContent value="bloom">
                         <SliderRow
                           label={t.lab.ctl.intensity}
                           value={bloom.intensity}
                           min={0}
-                          max={1}
-                          step={0.005}
+                          max={3}
+                          step={0.01}
                           onChange={(v) => patch("bloom", { intensity: v })}
-                          fmt={(v) => v.toFixed(3)}
+                          fmt={(v) => v.toFixed(2)}
                         />
                         <SliderRow
                           label={t.lab.ctl.threshold}
@@ -9566,16 +9660,21 @@ export default function Lab() {
                           onChange={(v) => patch("bloom", { threshold: v })}
                           fmt={(v) => v.toFixed(2)}
                         />
-                        {/* Tent-filter sample scale in texels (engine clamps at
-                            0.5); 4 is the EEVEE-ish default the scene ships. */}
+                        {/* The chain's scatter: how far each level leans toward
+                            the wider one on the way up. 0.77 is the game. */}
                         <SliderRow
-                          label={t.lab.ctl.radius}
-                          value={bloom.radius}
-                          min={0.5}
-                          max={8}
-                          step={0.1}
-                          onChange={(v) => patch("bloom", { radius: v })}
-                          fmt={(v) => v.toFixed(1)}
+                          label={t.lab.ctl.spread}
+                          value={bloom.scatter}
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          onChange={(v) => patch("bloom", { scatter: v })}
+                          fmt={(v) => v.toFixed(2)}
+                        />
+                        <ColorRow
+                          label={t.lab.ctl.color}
+                          value={bloom.color}
+                          onChange={(hex) => patch("bloom", { color: hex })}
                         />
                       </TabsContent>
                       {/* One switch, and a pane of its own — outline is a third
@@ -9944,7 +10043,7 @@ export default function Lab() {
               canvasRef={canvasRef}
               modelName={masterId ?? primaryId ?? ""}
               extraModelNames={models.filter((m) => animByModel[m.id] && m.id !== masterId).map((m) => m.id)}
-              visibility={visibilityTracks}
+              timeline={timeline}
               sceneName={sceneName}
               animName={masterClipName}
               animDuration={animDuration}
@@ -10120,7 +10219,7 @@ export default function Lab() {
               <AnimPlayer
                 engineRef={engineRef}
                 modelNames={modelNames}
-                visibility={visibilityTracks}
+                timeline={timeline}
                 hasCamera={cameraClip !== null}
                 eyes={settings.eyes.enabled}
                 onEyes={(on) => patch("eyes", { enabled: on })}

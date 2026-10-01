@@ -89,8 +89,9 @@ assert.ok(Math.abs(rig.sun.strength - RIG_SUN.strength * Math.PI) / RIG_SUN.stre
 assert.equal(rig.sun.color, RIG_SUN.color)
 assert.deepEqual(rig.fill, RIG_FILL)
 // The view the .blend was set to, so the stage arrives looking as the .blend
-// renders it: Filmic at +0.6, the same field export_stage.py writes.
-assert.deepEqual(rig.view, { transform: "filmic", exposure: 0.6 }, "a Unity stage carries the view its .blend renders under")
+// renders it: Filmic at +0.6, the same field export_stage.py writes, as the
+// app names it — ACES.
+assert.deepEqual(rig.view, { transform: "aces", exposure: 0.6 }, "a Unity stage carries the view its .blend renders under")
 
 // ── The looks ──
 const groups = glbStyleGroups(stage.materials)

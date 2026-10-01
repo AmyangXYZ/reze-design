@@ -43,8 +43,10 @@ import type {
   StageInfo,
   StageTransform,
   ViewportHandlers,
+  NativeStageInfo,
 } from "@/lib/scene-host"
-import { normalizeVisibility, type VisibilityWindow } from "@/lib/visibility"
+import { laneChanged, normalizeVisibility, type VisibilityWindow } from "@/lib/timeline"
+import { clearEngineScene, setNativeStageInTurn, undress } from "@/lib/unity-native"
 
 // Re-exported, because these are this module's public surface as far as the
 // rest of the app is concerned and moving the pipeline out from under it is
@@ -60,6 +62,7 @@ export type {
   StageInfo,
   StageTransform,
   ViewportHandlers,
+  NativeStageInfo,
 } from "@/lib/scene-host"
 
 /**
@@ -126,6 +129,9 @@ export function useEngine(
   /** Props: PMX objects the cast holds or wears. Their own list for the reason
    *  planes have one — a scene holds one stage and any number of these. */
   const [props, setProps] = useState<PropInfo[]>([])
+  /** The game stage package the scene draws, if any — the other kind of stage.
+   *  Not in `models`: it is drawn by the game's shaders, not as a PMX. */
+  const [nativeStage, setNativeStage] = useState<NativeStageInfo | null>(null)
   /**
    * Media planes: flat cards carrying a picture, placed in the scene.
    *
@@ -142,8 +148,23 @@ export function useEngine(
   const modelsRef = useRef<EngineModelInfo[]>([])
   // The scene's unzipped asset bundle, for resolving clips and audio by path.
   const bundleRef = useRef<File[] | null>(null)
-  // Bumped per swap so a superseded load stops touching state mid-flight.
+  // THE load generation: bumped by boot and by every swap, so a superseded load
+  // — either kind — stops touching the engine and state at its next step.
   const swapToken = useRef(0)
+  /**
+   * The load in flight, boot or swap, settled or not. A swap waits on it before
+   * it empties the engine: a superseded load can only bail BETWEEN its awaits,
+   * and a model whose loader was already running lands after any clear issued
+   * meanwhile — an orphan, under an id the next load then can't have. Waited
+   * out, the bail has happened and whatever it added is in the engine for the
+   * clear to find.
+   */
+  const loadTail = useRef<Promise<unknown>>(Promise.resolve())
+  /** Set when this hook's engine is torn down; read by its loads as `stale`. */
+  const engineGone = useRef({ gone: false })
+  /** A dev teardown waiting one tick to see whether Fast Refresh re-runs the
+   *  boot effect (see below). */
+  const pendingTeardown = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     modelsRef.current = models
   }, [models])
@@ -153,7 +174,51 @@ export function useEngine(
   }, [groupsByModel])
 
   useEffect(() => {
-    let disposed = false
+    /**
+     * FAST REFRESH RE-RUNS THIS EFFECT, deps or no deps, and keeps every piece of
+     * state and every ref. Tearing the engine down here and booting a new one
+     * from `sceneRef` reloaded a document the page no longer showed — whatever
+     * was added or imported since the last swap was gone from the canvas while
+     * the lists still named it — and a swap in flight on the old engine went on
+     * to write ITS lists over the new boot's. So in development the teardown
+     * waits a tick, and an effect that re-runs inside it (a refresh, never a
+     * real unmount) cancels it and keeps the engine: nothing reloads, the state
+     * Fast Refresh kept still describes what the engine holds, and loads in
+     * flight carry on. Production tears down at once, as it always has.
+     */
+    const teardown = () => {
+      pendingTeardown.current = null
+      engineGone.current.gone = true
+      engineRef.current?.dispose?.()
+      engineRef.current = null
+      // AND THE FLAGS THIS ENGINE SET. They are state, so Fast Refresh keeps
+      // them across an edit while this cleanup throws the engine away — and
+      // `ready` staying true through a teardown is invisible and total: the
+      // reveal in app/page.tsx is keyed on it, loadSceneInto deliberately leaves
+      // animated models HIDDEN for that reveal to un-hide, and with the flag
+      // unchanged the effect never re-runs. The scene reloads, styles, and shows
+      // nothing, with no error anywhere because nothing failed.
+      setReady(false)
+      setStageReady(false)
+      setEngineReady(false)
+      setStyling(null)
+    }
+    const teardownLater = () => {
+      if (process.env.NODE_ENV === "development") pendingTeardown.current = setTimeout(teardown, 0)
+      else teardown()
+    }
+    if (pendingTeardown.current !== null) {
+      clearTimeout(pendingTeardown.current)
+      pendingTeardown.current = null
+      // Re-adopted. A boot that never got an engine (it threw) boots again,
+      // which is what a refresh after fixing it is for.
+      if (engineRef.current) return teardownLater
+      teardown()
+    }
+    const life = { gone: false }
+    engineGone.current = life
+    const token = ++swapToken.current
+    const stale = () => life.gone || token !== swapToken.current
     const boot = async () => {
       if (!canvasRef.current) return
       // Before anything reads the bundle store: drop what an older key wrote.
@@ -221,9 +286,17 @@ export function useEngine(
           }
         }
         await engine.init()
-        if (disposed) return
+        if (life.gone) return
         setEngineReady(true)
-        const loaded = await loadSceneInto(engine, scene, () => disposed, {
+        // Superseded before it loaded anything — a swap is waiting on this boot
+        // and brings its own scene. The canvas still needs its loop, which the
+        // stage hook below would have started and a swap never does.
+        if (stale()) {
+          engine.runRenderLoop()
+          setStageReady(true)
+          return
+        }
+        const loaded = await loadSceneInto(engine, scene, stale, {
           onStage: () => {
             // Stage up: paint now, models stream in behind.
             engine.runRenderLoop()
@@ -232,12 +305,16 @@ export function useEngine(
           onBytes: setBundleProgress,
           onStyling: setStyling,
           onBundle: (files) => {
+            if (stale()) return
             bundleRef.current = files
             setBundleReady(true)
           },
           // Each model joins the lists as it lands, so a host can name it, show
           // its row and give it its motion while the rest are still loading.
           onModel: (info, groups, stage, prop) => {
+            // A superseded boot's rows would name models the swap that
+            // superseded it is about to clear.
+            if (stale()) return
             // This one's looks are done; the next one's bytes are not its shaders.
             setStyling(null)
             setModels((prev) => withId(prev, info))
@@ -251,12 +328,13 @@ export function useEngine(
         // The track's companions — AFTER the bundle, which is where a published
         // scene carries its own copies. Not awaited: a scene must paint whether
         // or not either exists.
-        void loadMidiFor(scene.assets.midi, engine, () => disposed, bundleRef.current, setMidiClip)
-        void loadLyricsFor(scene.assets.lyrics, engine, () => disposed, canvasRef.current?.height ?? 0, bundleRef.current, setLyricsClip)
+        void loadMidiFor(scene.assets.midi, engine, stale, bundleRef.current, setMidiClip)
+        void loadLyricsFor(scene.assets.lyrics, engine, stale, canvasRef.current?.height ?? 0, bundleRef.current, setLyricsClip)
         const { infos, groups: groupsMap } = loaded
         setModels(infos)
         setStages(loaded.stageList)
         setProps(loaded.propList)
+        setNativeStage(loaded.nativeStage)
         for (const [id, anim] of loaded.restoredAnims) planeAnims.current.set(id, anim)
         setPlanes(loaded.planeList)
         setGroupsByModel(groupsMap)
@@ -265,26 +343,12 @@ export function useEngine(
         setReady(true)
         setError(null)
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e))
+        if (!stale()) setError(e instanceof Error ? e.message : String(e))
       }
     }
-    void boot()
-    return () => {
-      disposed = true
-      engineRef.current?.dispose?.()
-      engineRef.current = null
-      // AND THE FLAGS THIS ENGINE SET. They are state, so Fast Refresh keeps
-      // them across an edit while this cleanup throws the engine away — and
-      // `ready` staying true through a teardown is invisible and total: the
-      // reveal in app/page.tsx is keyed on it, loadSceneInto deliberately leaves
-      // animated models HIDDEN for that reveal to un-hide, and with the flag
-      // unchanged the effect never re-runs. The scene reloads, styles, and shows
-      // nothing, with no error anywhere because nothing failed.
-      setReady(false)
-      setStageReady(false)
-      setEngineReady(false)
-      setStyling(null)
-    }
+    // The first load in the queue: a swap asked for during boot waits it out.
+    loadTail.current = boot()
+    return teardownLater
   }, [])
 
   /**
@@ -351,6 +415,8 @@ export function useEngine(
   const removeModelById = useCallback((modelId: string) => {
     sceneFiles.models.delete(modelId)
     clearMaterialMaps(modelId)
+    // Its game look first: the engine frees the buffers it draws from.
+    if (engineRef.current) undress(engineRef.current, modelId)
     engineRef.current?.removeModel(modelId)
     setModels((prev) => prev.filter((m) => m.id !== modelId))
     // Removing the last stage un-suppresses the ground inside the engine, so
@@ -860,23 +926,18 @@ export function useEngine(
   }, [])
 
   /**
-   * The stretches a cast member is on stage for — its lane on the timeline.
+   * The stretches a model is on stage for — its lane on the timeline. Any model:
+   * a cast member's costume change, or a prop that is only there for a stretch.
    *
    * Normalised on the way in, so the lane, the evaluator and the document all
-   * read one list: ascending, and nothing with no length in it.
-   *
-   * Carrying a lane also turns on cloth simulation while hidden. That is the
-   * whole reason a costume swap reads as a cut rather than as a glitch: a dress
-   * simulated from rest at the moment it is revealed snaps into place in front
-   * of the audience. A model whose lane is emptied goes back to costing nothing
-   * while invisible — and back to WHOLE, because "on stage throughout" is not
-   * something a model can be half dissolved for. Deleting the last clip while
-   * she was mid-departure would otherwise leave her burned away for good.
+   * read one list: ascending, and nothing with no length in it. What having a
+   * lane costs the engine — cloth simulated while hidden, and a model put back
+   * whole and shown when its lane is emptied — is the timeline's; see
+   * laneChanged.
    */
   const setCastVisibility = useCallback((id: string, windows: VisibilityWindow[]) => {
     const visibility = normalizeVisibility(windows)
-    engineRef.current?.setModelPhysicsWhileHidden(id, visibility.length > 0)
-    if (visibility.length === 0) engineRef.current?.setModelDissolve(id, 1)
+    if (engineRef.current) laneChanged(engineRef.current, id, visibility)
     setModels((prev) => prev.map((m) => (m.id === id ? { ...m, visibility } : m)))
   }, [])
 
@@ -903,6 +964,8 @@ export function useEngine(
       const id = uniqueModelId(pmxFile.name, targetId)
       sceneFiles.models.delete(targetId)
       const transform = engine.getModelTransform(targetId)
+      // The outgoing model's game look goes with it; the upload is a new model.
+      undress(engine, targetId)
       if (id === targetId) engine.removeModel(targetId)
       const model = await engine.loadModel(id, { files, pmxFile })
       retainModelFiles(id, pmxFile, Array.from(files), model)
@@ -1267,6 +1330,13 @@ export function useEngine(
     setGroupsByModel((prev) => ({ ...prev, [modelId]: withSpecialGroups(next) }))
   }, [])
 
+  /** Take the game stage down. Its files leave the bundle on the next repack,
+   *  because the collector packs only the stage the scene still has. */
+  const removeNativeStage = useCallback(() => {
+    if (engineRef.current) void setNativeStageInTurn(engineRef.current, null)
+    setNativeStage(null)
+  }, [])
+
   /**
    * Replace the whole scene without tearing down the device, canvas or swap
    * chain — one WebGPU context for the session, documents flowing through it.
@@ -1279,7 +1349,13 @@ export function useEngine(
     const engine = engineRef.current
     if (!engine) return "engine not ready"
     const token = ++swapToken.current
-    const stale = () => token !== swapToken.current
+    const life = engineGone.current
+    const stale = () => life.gone || token !== swapToken.current
+    // Queued behind the load in flight (see loadTail), and that one is now
+    // stale: it bails at its next step rather than finishing.
+    const prior = loadTail.current
+    let settle!: () => void
+    loadTail.current = new Promise<void>((r) => (settle = r))
     setReady(false)
     // The outgoing scene's last report was `done` — left standing, the incoming
     // scene opens on "unpacking" before it has fetched anything.
@@ -1292,9 +1368,19 @@ export function useEngine(
     // rather than swaps, showed its sky. Same false→true edge as boot.
     setBundleReady(false)
     try {
+      await prior
+      // Superseded while it waited: the newer swap does all of what follows.
+      if (stale()) return null
       // The outgoing scene's models and its retained upload files go together —
       // keeping either would leak into the incoming document.
-      for (const m of modelsRef.current) engine.removeModel(m.id)
+      //
+      // EVERYTHING THE ENGINE HOLDS, not the models in state: those are what
+      // finished loads reported, and the load this one superseded may have
+      // added a model it never got to report. That orphan, left, drew unstyled
+      // under every scene after and took its id from the next load of it. The
+      // game stage and every look go the same way — neither is a model.
+      void clearEngineScene(engine)
+      setNativeStage(null)
       sceneFiles.models.clear()
       sceneFiles.audio = null
       sceneFiles.score = null
@@ -1305,6 +1391,9 @@ export function useEngine(
       // pictures would be found in the incoming one — and its videos would go
       // on decoding for a scene nobody is looking at.
       clearPlanes()
+      // A superseded load's card is in the engine (cleared above) and its
+      // bytes are here, under an id no list names.
+      sceneFiles.planes.clear()
       engine.clearCameraVmd()
 
       const loaded = await loadSceneInto(engine, scene, stale, {
@@ -1323,6 +1412,7 @@ export function useEngine(
       setModels(loaded.infos)
       setStages(loaded.stageList)
       setProps(loaded.propList)
+      setNativeStage(loaded.nativeStage)
       for (const [id, anim] of loaded.restoredAnims) planeAnims.current.set(id, anim)
       setPlanes(loaded.planeList)
       setGroupsByModel(loaded.groups)
@@ -1331,9 +1421,10 @@ export function useEngine(
       return null
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
-      setError(message)
+      if (!stale()) setError(message)
       return message
     } finally {
+      settle()
       if (!stale()) setReady(true)
     }
   }, [clearPlanes])
@@ -1408,6 +1499,8 @@ export function useEngine(
     setStageTransform,
     setStageSun,
     props,
+    nativeStage,
+    removeNativeStage,
     addPropFromFiles,
     setPropTransform,
     setPropAttach,

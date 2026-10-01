@@ -15,6 +15,10 @@
 #   shape     cone / box / sphere / circle: radius, angle, arc, scale, rotation
 #   over life size, rotation, colour (gradients), the flipbook (UV module)
 #   clamp     the velocity limit and its dampen
+#   noise     strength per axis, frequency, damping, octaves, scroll, remap,
+#             position / rotation / size amounts (only position is simulated)
+#   velocity  over life: linear, orbital (about the system's centre + offset),
+#             radial, speed modifier, space
 #   custom    the custom-data vectors the material reads (dissolve, offsets)
 #   renderer  billboard or stretched, pivot, length scale, colour space
 # Curves are sampled through Unity's own Hermite tangents, not averaged.
@@ -134,6 +138,8 @@ def system_spec(ps, renderer):
     uv = ps.get("UVModule") or {}
     clamp = ps.get("ClampVelocityModule") or {}
     custom = ps.get("CustomDataModule") or {}
+    noise = ps.get("NoiseModule") or {}
+    vel = ps.get("VelocityModule") or {}
     on = lambda m: int(m.get("enabled", 0)) == 1   # noqa: E731
     bursts = [
         {"time": float(b.get("time", 0.0)), "count": minmax(b.get("countCurve"), 0.0)["hi"], "cycles": int(b.get("cycleCount", 1)), "interval": float(b.get("repeatInterval", 0.01))}
@@ -184,6 +190,33 @@ def system_spec(ps, renderer):
             "cycles": float(uv.get("cycles", 1.0)),
         } if on(uv) and int(uv.get("mode", 0)) == 0 else None,
         "clamp": {"limit": minmax(clamp.get("magnitude"), 1.0), "dampen": float(clamp.get("dampen", 0.0))} if on(clamp) and int(clamp.get("separateAxis", 0)) == 0 else None,
+        # NoiseModule: a 3D noise field sampled at the particle's position x
+        # frequency, scrolled over time; strength per axis (one for all without
+        # separateAxes), divided by frequency when damping is on
+        "noise": {
+            "separate": int(noise.get("separateAxes", 0)) == 1,
+            "strength": [minmax(noise.get(k), 1.0) for k in ("strength", "strengthY", "strengthZ")],
+            "frequency": float(noise.get("frequency", 0.5)),
+            "damping": int(noise.get("damping", 1)) == 1,
+            "octaves": int(noise.get("octaves", 1)),
+            "octaveMultiplier": float(noise.get("octaveMultiplier", 0.5)),
+            "octaveScale": float(noise.get("octaveScale", 2.0)),
+            "scroll": minmax(noise.get("scrollSpeed"), 0.0),
+            "remap": [minmax(noise.get(k), 1.0) for k in ("remap", "remapY", "remapZ")] if int(noise.get("remapEnabled", 0)) == 1 else None,
+            "positionAmount": minmax(noise.get("positionAmount"), 1.0),
+            "rotationAmount": minmax(noise.get("rotationAmount"), 0.0),
+            "sizeAmount": minmax(noise.get("sizeAmount"), 0.0),
+        } if on(noise) else None,
+        # VelocityModule (velocity over lifetime): linear x/y/z, orbital about
+        # the system's centre (+ offset) in radians/second, radial
+        "velocity": {
+            "linear": [minmax(vel.get(k), 0.0) for k in "xyz"],
+            "orbital": [minmax(vel.get(k), 0.0) for k in ("orbitalX", "orbitalY", "orbitalZ")],
+            "offset": [minmax(vel.get(k), 0.0) for k in ("orbitalOffsetX", "orbitalOffsetY", "orbitalOffsetZ")],
+            "radial": minmax(vel.get("radial"), 0.0),
+            "speedModifier": minmax(vel.get("speedModifier"), 1.0),
+            "world": int(vel.get("inWorldSpace", 0)) == 1,
+        } if on(vel) else None,
         "custom": {
             f"{s}_{i}": minmax(custom.get(f"vector{s}_{i}"), 0.0)
             for s in (0, 1) for i in range(4) if on(custom) and int(custom.get(f"mode{s}", 0)) == 1

@@ -18,7 +18,8 @@
 import { Mat4, Quat, Vec3, type Engine } from "reze-engine"
 import { FPS } from "@/lib/clip"
 import type { SceneParentKey } from "@/lib/scene"
-import { castRotationToEngine, type PropInfo } from "@/lib/scene-host"
+import type { PropInfo } from "@/lib/scene-host"
+import { castRotationToEngine, parentTrackOf } from "@/lib/timeline"
 
 type M4 = Float32Array
 type Tuple = [number, number, number]
@@ -48,16 +49,10 @@ const degrees = (q: Quat): Tuple => {
   return [e.x * DEG, e.y * DEG, e.z * DEG]
 }
 
-/** Every hold on a prop's track, in order: the start its row sets, then each key. */
+/** Every hold on a prop's track, in order: the start its row sets, then each
+ *  key — the track the engine plays, read the one way lib/timeline reads it. */
 export function holdsOf(p: PropInfo): SceneParentKey[] {
-  const start: SceneParentKey = {
-    frame: 0,
-    model: p.attach?.model ?? null,
-    ...(p.attach ? { bone: p.attach.bone } : {}),
-    position: p.transform.position,
-    rotation: p.transform.rotation,
-  }
-  return [start, ...p.parentKeys]
+  return parentTrackOf(p)
 }
 
 /** Index into holdsOf of the hold in force at frame `at`. */

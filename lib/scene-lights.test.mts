@@ -212,8 +212,9 @@ const read = (doc: SceneDoc) => parseSceneDoc(doc, builtinEffect, libraryGraph).
 {
   const r = stageLightsFromFile(JSON.stringify({ world: { color: "#000000", strength: 1 }, view: { transform: "agx", exposure: -0.55 } }), "s")
   assert.deepEqual(r.world, { color: "#000000", strength: 1 })
-  assert.deepEqual(r.view, { transform: "agx", exposure: -0.55 })
-  const bad = stageLightsFromFile(JSON.stringify({ world: { color: "black", strength: 1 }, view: { transform: "aces", exposure: 0 } }), "s")
+  // An old name reads as today's: AgX is Neutral.
+  assert.deepEqual(r.view, { transform: "neutral", exposure: -0.55 })
+  const bad = stageLightsFromFile(JSON.stringify({ world: { color: "black", strength: 1 }, view: { transform: "reinhard", exposure: 0 } }), "s")
   assert.equal(bad.world, null)
   assert.equal(bad.view, null)
   assert.deepEqual(stageLightsFromFile(JSON.stringify({ world: { strength: 0.5 } }), "s").world, { strength: 0.5 })

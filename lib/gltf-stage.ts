@@ -196,12 +196,13 @@ type RezeScene = {
 
 type FogLayerM = { color: number[]; amount: number; distance: number[]; height: number[] }
 
-/** Blender's view transform names as the app's. */
-const VIEW_TRANSFORM: Record<string, "standard" | "filmic" | "agx"> = {
-  AgX: "agx",
-  Filmic: "filmic",
-  Standard: "standard",
-  "Khronos PBR Neutral": "standard",
+/** Blender's view transform names as the app's nearest: its film curves as
+ *  ACES and Neutral, Standard as no curve at all. */
+const VIEW_TRANSFORM: Record<string, "soft" | "neutral" | "aces" | "none"> = {
+  AgX: "neutral",
+  Filmic: "aces",
+  Standard: "none",
+  "Khronos PBR Neutral": "neutral",
 }
 
 const reze = <T>(holder: { extras?: unknown } | undefined): T | null => {

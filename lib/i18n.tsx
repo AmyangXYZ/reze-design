@@ -826,6 +826,10 @@ const en = {
       elevation: "Elevation",
       intensity: "Intensity",
       transform: "Transform",
+      /** The view transforms, by the engine name each stands for. */
+      transforms: { soft: "Soft", neutral: "Neutral", aces: "ACES", none: "None" },
+      /** Bloom scatter: how far the glow reaches. */
+      spread: "Spread",
       exposure: "Exposure",
       threshold: "Threshold",
       radius: "Radius",
@@ -1730,6 +1734,8 @@ const zh: Dictionary = {
       elevation: "仰角",
       intensity: "强度",
       transform: "变换",
+      transforms: { soft: "柔和", neutral: "中性", aces: "ACES", none: "无" },
+      spread: "扩散",
       exposure: "曝光",
       threshold: "阈值",
       radius: "半径",

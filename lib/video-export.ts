@@ -18,7 +18,7 @@ import { GREEN, isCompositingBackground, type ExportBackground } from "./export-
 import { PngSequenceWriter } from "./png-sequence"
 import { aeScript, type CastSample, type ShotSample } from "./ae-script"
 import { FPS } from "./clip"
-import { applyVisibility, type VisibilityWindow } from "./visibility"
+import { applyTimelineFrame, type SceneTimeline } from "./timeline"
 
 /**
  * MMD units to AE pixels.
@@ -644,9 +644,9 @@ export async function exportVideo(opts: {
   modelName: string
   /** Every OTHER animated model */
   extraModelNames?: string[]
-  /** Who is on stage when, by model id. The same lanes the preview applies, so
-   *  the file shows the swaps that were composed. */
-  visibility?: Record<string, VisibilityWindow[]>
+  /** The scene's timeline — the same one the preview applies, so the file shows
+   *  the swaps that were composed. */
+  timeline?: SceneTimeline
   /** Segment start on the clip's timeline, seconds (default 0). */
   startTime?: number
   /** Segment length in seconds — defines the video length. */
@@ -815,7 +815,7 @@ export async function exportVideo(opts: {
       // Who is on stage on THIS frame, in clip frames rather than export frames
       // — a track is authored against the 30fps VMD clock, so a 60fps render
       // must not read it at its own rate or every swap lands twice as early.
-      if (opts.visibility) applyVisibility(engine, opts.visibility, (startTime + t) * FPS)
+      if (opts.timeline) applyTimelineFrame(engine, opts.timeline, (startTime + t) * FPS)
       // dt=0 renders the t=0 pose itself; afterwards each call advances one frame.
       // Audio time is TRACK time: the export may start mid-song.
       engine.setAudioTime(startTime + t)

@@ -188,7 +188,7 @@ export const LOOK_PACKS: Record<
   LookPack,
   {
     tag: string
-    transform: "standard" | "filmic" | "agx"
+    transform: SceneSettings["view"]["transform"]
     exposure: number
     world: { color: string; strength: number }
     /**
@@ -207,9 +207,10 @@ export const LOOK_PACKS: Record<
     }
   }
 > = {
-  ag: { tag: "aether-gazer", transform: "filmic", exposure: 0.6, world: { color: "#ed6aff", strength: 0.66 } },
-  wuwa: { tag: "wuthering-waves", transform: "standard", exposure: 0, world: { color: "#fdf2f8", strength: 0.36 } },
-  // As set by hand in a scene (2026-09-08): the standard transform at 0.2 over
+  // ACES, which took over from Filmic: the same rolled-off highlights.
+  ag: { tag: "aether-gazer", transform: "aces", exposure: 0.6, world: { color: "#ed6aff", strength: 0.66 } },
+  wuwa: { tag: "wuthering-waves", transform: "none", exposure: 0, world: { color: "#fdf2f8", strength: 0.36 } },
+  // As set by hand in a scene (2026-09-08): no tone curve (then "standard") at 0.2 over
   // a warm pink world at 0.62, lit by a 2.0 sun from behind and a little above,
   // with a low wide bloom. It replaced the port's own numbers — Filmic at 0.5
   // over a 0.122-linear grey world — which read dark and washed against the
@@ -217,17 +218,17 @@ export const LOOK_PACKS: Record<
   // light that hits them, so the world alone does not get there.
   zzz: {
     tag: "zenless-zone-zero",
-    transform: "standard",
+    transform: "none",
     exposure: 0.2,
     world: { color: "#ffc9c9", strength: 0.62 },
     light: {
       sun: { color: "#ffffff", strength: 2, azimuth: 184, elevation: 22 },
-      bloom: { enabled: true, threshold: 1.03, knee: 0.5, radius: 6.4, intensity: 0.14, color: "#ffffff" },
+      bloom: { enabled: true, threshold: 1.03, scatter: 0.77, intensity: 1, color: "#ffffff" },
     },
   },
-  // Filmic because the source IS Filmic — view transform Filmic, look High
-  // Contrast, exposure 0, read straight off the .blend. That makes this the one
-  // pack whose transform needed no argument.
+  // ACES because the source is Filmic — view transform Filmic, look High
+  // Contrast, exposure 0, read straight off the .blend — and ACES is the
+  // film-like roll-off the app has now.
   //
   // The world does not come from the .blend, for the reason ZZZ already found
   // the hard way: this file's Background is 0.050876, the very same near-black,
@@ -236,20 +237,21 @@ export const LOOK_PACKS: Record<
   // proven grey and lifted slightly — HSR's own presentation is airier, and its
   // ramps barely darken, so ambient decides less about the terminator here than
   // it does there and can afford to carry more of the fill.
-  hsr: { tag: "honkai-star-rail", transform: "filmic", exposure: 0.35, world: { color: "#6a6a6a", strength: 1 } },
+  hsr: { tag: "honkai-star-rail", transform: "aces", exposure: 0.35, world: { color: "#6a6a6a", strength: 1 } },
   // The 硅胶娃娃 look lives in its fill: a warm near-white world strong enough that
   // shadow keeps about half of lit, which is what makes the body read as one soft
   // volume. The world also drives the Principled gloss's reflection, so its warmth
   // is the sheen's colour. The bloom is the glow the look is known for.
   //
-  // Standard, because Filmic's per-channel curve squeezes skin's red hardest: a
-  // (245,205,190) texel in full sun landed at (215,189,178), dim and grey-green.
+  // No tone curve, because a filmic per-channel curve squeezes skin's red
+  // hardest: a (245,205,190) texel in full sun landed at (215,189,178), dim and
+  // grey-green.
   doll: {
     tag: "doll",
-    transform: "standard",
+    transform: "none",
     exposure: 0,
     world: { color: "#ffeef0", strength: 0.5 },
-    light: { bloom: { enabled: true, threshold: 0.9, knee: 0.5, radius: 5, intensity: 0.08, color: "#ffe4e4" } },
+    light: { bloom: { enabled: true, threshold: 0.9, scatter: 0.77, intensity: 1, color: "#ffe4e4" } },
   },
 }
 

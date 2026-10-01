@@ -17,12 +17,42 @@
 // its shape scale. From them the effect has the emitter's whole frame.
 //
 // Not drawn: dissolve (the systems on X348 drive it from custom data that is 0)
-// and the depth fade against the scene (a particle has no depth to read).
+// and the depth fade against the scene (a particle has no depth to read). Not
+// simulated: the noise module's rotation and size amounts, and velocity over
+// life's speed modifier.
 
 export type Curve = { mode?: number; lo: number; hi: number; curve?: number[]; curveLo?: number[] }
 export type Colour = { mode: number; lo?: number[]; hi?: number[]; gradient?: number[][]; gradientLo?: number[][] }
+export type NoiseSpec = {
+  separate: boolean
+  /** per axis (x only without `separate`), in the simulation space's units per second */
+  strength: [Curve, Curve, Curve]
+  frequency: number
+  /** strength divided by frequency, so the field scales without changing how it moves */
+  damping: boolean
+  octaves: number
+  octaveMultiplier: number
+  octaveScale: number
+  scroll: Curve
+  /** the noise (-1..1) remapped through these curves, over 0..1 */
+  remap: [Curve, Curve, Curve] | null
+  positionAmount: Curve
+  rotationAmount: Curve
+  sizeAmount: Curve
+}
+export type VelocitySpec = {
+  linear: [Curve, Curve, Curve]
+  /** radians per second about the system's own axes, through its centre + offset */
+  orbital: [Curve, Curve, Curve]
+  offset: [Curve, Curve, Curve]
+  radial: Curve
+  speedModifier: Curve
+  world: boolean
+}
 export type ParticleSpec = {
   max: number
+  /** false: one shot — the system plays from its start, not from a random point of a loop */
+  looping?: boolean
   scalingMode: number
   lifetime: Curve
   speed: Curve
@@ -66,6 +96,8 @@ export type ParticleSpec = {
   /** The CustomData module's vectors, "<stream>_<component>": stream 0 is
    *  Custom1, which the renderer hands the shader as TEXCOORD1. */
   custom?: Record<string, Curve> | null
+  noise?: NoiseSpec | null
+  velocity?: VelocitySpec | null
 }
 export type ParticleLayer = {
   scale: [number, number]
@@ -194,10 +226,12 @@ export function particleEffectWgsl(cls: ParticleClass, world: number): string {
     : (cls.material as ParticleMaterial)
   const decls: string[] = []
   // how many of the pool each emitter keeps alive: its rate over a mean life plus
-  // its bursts, capped where the game caps it
+  // its bursts, capped where the game caps it. A rate random between two
+  // constants emits at their mean (X340's glow: 0.5..3 a second keeps 7 alive)
   const meanLife = (s.lifetime.lo + s.lifetime.hi) / 2
   const burst = s.emission.bursts.reduce((n, b) => n + b.count * Math.max(1, b.cycles), 0)
-  const perEmitter = Math.max(1, Math.min(s.max, Math.round((s.emission.on ? s.emission.rate.hi * meanLife + burst : 1) || 1)))
+  const rate = s.emission.rate.mode === 3 ? (s.emission.rate.lo + s.emission.rate.hi) / 2 : s.emission.rate.hi
+  const perEmitter = Math.max(1, Math.min(s.max, Math.round((s.emission.on ? rate * meanLife + burst : 1) || 1)))
   const pool = perEmitter * cls.emitters
   const additive = m.dstBlend <= 1.0001
   const cover = Math.max((m.dstBlend - 1) / 9, 1e-3)
@@ -265,6 +299,104 @@ export function particleEffectWgsl(cls: ParticleClass, world: number): string {
   var lp = vec3f(0.0);
   var ld = vec3f(0.0, 0.0, 1.0);`
     }
+  })()
+
+  // THE SHAPE'S SCALE stretches a cone, sphere or circle — where it spawns and
+  // the way it sends — as Unity's shape transform does (a box is its scale
+  // already). X340's glow cone, scaled (1, 0, 27.5), is flat and runs along Z.
+  const scaled = [0, 1, 2, 3, 4, 7, 8, 9, 10, 11].includes(sp.type) && sh.scale.some((v) => v !== 1)
+  const shapeTransform = scaled
+    ? `
+  lp = sm * (lp * ${v3(sh.scale)}) + ${v3(sh.position)};
+  ld = sm * (ld * ${v3(sh.scale)});
+  ld = select(sm * vec3f(0.0, 0.0, 1.0), normalize(ld), dot(ld, ld) > 1e-12);`
+    : `
+  lp = sm * lp + ${v3(sh.position)};
+  ld = normalize(sm * ld);`
+
+  // THE DRIFT over a life, on top of the flight: velocity over lifetime (linear,
+  // orbital about the system's centre, radial) and the noise module. Both work
+  // in the emitter's own frame, so a particle carries its emitter's index in its
+  // seed's whole part (particleStep has no id of its own).
+  const nzm = s.noise ?? null
+  const vm = s.velocity ?? null
+  const nonZero = (c: Curve) => c.lo !== 0 || c.hi !== 0
+  const linear = !!vm && vm.linear.some(nonZero)
+  const orbital = !!vm && vm.orbital.some(nonZero)
+  const radial = !!vm && nonZero(vm.radial)
+  const noisy = !!nzm && (nzm.separate ? nzm.strength : [nzm.strength[0]]).some(nonZero) && nonZero(nzm.positionAmount)
+  const drifts = linear || orbital || radial || noisy
+  const driftCode = (() => {
+    if (!drifts) return ""
+    const out: string[] = [`
+  // the drift, in the emitter's frame (its index rides in the seed's whole part)
+  let e = emitter(u32(p.seed));
+  let su = max(e.shapeUnit, 1e-6);`]
+    if (linear && vm) {
+      const [x, y, z] = vm.linear.map((c, i) => curveExpr(c, `cVel${"XYZ"[i]}`, "t", `rv.${"xyz"[i]}`, decls))
+      // world space: the game's axes, x and z turned over as everything else is
+      out.push(`
+  // velocity over lifetime, linear: added to the flight, not kept in it
+  let rv = rzHash13(p.seed * 19.7 + 0.37);
+  let lv = vec3f(${x}, ${y}, ${z});
+  q.pos = q.pos + ${vm.world ? `vec3f(-lv.x, lv.y, -lv.z) * ${f(world)}` : "(e.x * lv.x + e.y * lv.y + e.z * lv.z) * unit"} * dt;`)
+    }
+    if ((orbital || radial) && vm) {
+      const [ox, oy, oz] = vm.offset.map((c, i) => curveExpr(c, `cOrbOff${"XYZ"[i]}`, "t", "ro.w", decls))
+      out.push(`
+  let ro = vec4f(rzHash13(p.seed * 29.3 + 0.61), fract(p.seed * 41.9 + 0.23));
+  let centre = e.o + (e.x * (${ox}) + e.y * (${oy}) + e.z * (${oz})) * su;`)
+      if (orbital) {
+        const [x, y, z] = vm.orbital.map((c, i) => curveExpr(c, `cOrb${"XYZ"[i]}`, "t", `ro.${"xyz"[i]}`, decls))
+        out.push(`
+  // orbital: turned about the centre at this many radians a second, per axis
+  let ow = vec3f(${x}, ${y}, ${z});
+  let axis = ${vm.world ? "vec3f(-ow.x, ow.y, -ow.z)" : "e.x * ow.x + e.y * ow.y + e.z * ow.z"};
+  let th = length(axis) * dt;
+  if (th > 1e-9) {
+    let k = axis / length(axis);
+    let r = q.pos - centre;
+    q.pos = centre + r * cos(th) + cross(k, r) * sin(th) + k * dot(k, r) * (1.0 - cos(th));
+  }`)
+      }
+      if (radial) {
+        const rad = curveExpr(vm.radial, "cRadial", "t", "ro.w", decls)
+        out.push(`
+  // radial: away from the centre
+  let away = q.pos - centre;
+  q.pos = q.pos + select(vec3f(0.0), normalize(away), dot(away, away) > 1e-12) * (${rad}) * unit * dt;`)
+      }
+    }
+    if (noisy && nzm) {
+      const axes = nzm.separate ? nzm.strength : [nzm.strength[0], nzm.strength[0], nzm.strength[0]]
+      const [sx, sy, sz] = axes.map((c, i) => curveExpr(c, `cNoise${"XYZ"[i]}`, "t", nzm.separate ? `rn.${"xyz"[i]}` : "rn.x", decls))
+      const amount = curveExpr(nzm.positionAmount, "cNoiseAmount", "t", "rn.w", decls)
+      const scroll = (nzm.scroll.lo + nzm.scroll.hi) / 2
+      const octaves: string[] = []
+      for (let k = 0, amp = 1, fq = 1; k < Math.max(1, Math.min(nzm.octaves, 4)); k++, amp *= nzm.octaveMultiplier, fq *= nzm.octaveScale)
+        octaves.push(`${k ? "nv = nv + " : "var nv = "}${amp === 1 ? "" : `${f(amp)} * `}unityNoise(np${fq === 1 ? "" : ` * ${f(fq)}`});`)
+      const remap = nzm.remap
+        ? (() => {
+            const [rx, ry, rz] = nzm.remap.map((c, i) => curveExpr(c, `cRemap${"XYZ"[i]}`, `(nv.${"xyz"[i]} * 0.5 + 0.5)`, "0.0", decls))
+            return `\n  nv = vec3f(${rx}, ${ry}, ${rz});`
+          })()
+        : ""
+      decls.push(`// the noise module's field: a value noise per axis, -1..1
+fn unityNoise(p: vec3f) -> vec3f {
+  return vec3f(rzValueNoise(p), rzValueNoise(p + vec3f(31.4, 17.1, 5.3)), rzValueNoise(p + vec3f(11.7, 43.2, 23.9))) * 2.0 - 1.0;
+}`)
+      out.push(`
+  // NOISE: the field at where the particle is in its emitter's space, times the
+  // frequency${scroll ? ", scrolled" : ""}; its strength a velocity, in the emitter's units a second${nzm.damping ? `,
+  // over the frequency (damping: the field scales and moves the same)` : ""}
+  let rn = vec4f(rzHash13(p.seed * 23.9 + 0.13), fract(p.seed * 37.1 + 0.71));
+  let rel = q.pos - e.o;
+  let np = vec3f(dot(rel, e.x), dot(rel, e.y), dot(rel, e.z)) / su * ${f(nzm.frequency)}${scroll ? ` + vec3f(rzTime() * ${f(scroll)})` : ""};
+  ${octaves.join("\n  ")}${remap}
+  let ns = vec3f(${sx}, ${sy}, ${sz}) * (${amount})${nzm.damping ? ` / ${f(Math.max(nzm.frequency, 1e-4))}` : ""};
+  q.pos = q.pos + (e.x * (nv.x * ns.x) + e.y * (nv.y * ns.y) + e.z * (nv.z * ns.z)) * su * dt;`)
+    }
+    return out.join("")
   })()
 
   const tex = (slot: number) => slot
@@ -445,20 +577,19 @@ fn particleInit(id: u32, seed: f32) -> Particle {
   let r0 = rzHash13(seed + f32(id) * 0.371);
   let r1 = rzHash13(seed * 1.93 + f32(id) * 0.113);
   let rb = rzHash13(seed * 3.17 + f32(id) * 0.557);
-  p.seed = fract(r0.z * 7.31 + r1.z);
+  p.seed = fract(r0.z * 7.31 + r1.z);${drifts ? "\n  p.seed = p.seed + f32(id % max(rzPointCount() / 2u, 1u));" : ""}
   let rs = rzHash13(p.seed * 5.3 + 0.21);
   ${shapeCode}
-  let sm = ${shapeMatrix(sh.rotation)};
-  lp = sm * lp + ${v3(sh.position)};
-  ld = normalize(sm * ld);
+  let sm = ${shapeMatrix(sh.rotation)};${shapeTransform}
   ${sh.randomDirection > 0 ? `ld = normalize(mix(ld, normalize(rzHash13(seed * 9.1 + f32(id)) - vec3f(0.5)), ${f(sh.randomDirection)}));` : ""}
   let world = e.x * lp.x + e.y * lp.y + e.z * lp.z;
   let dir = e.x * ld.x + e.y * ld.y + e.z * ld.z;
   p.pos = e.o + world * e.shapeUnit;
   p.vel = dir * (${speed}) * e.unit;
   p.life = max(${life}, 1e-3);
-  // staggered on the first spawn, so a scene does not open on every particle born at once
-  p.age = select(0.0, r1.y * p.life, rzTime() < p.life);
+  ${s.looping === false
+    ? "// one shot: born when the system starts, as the game plays it (staggered, a\n  // card was born mid-life and a second one came inside its window)\n  p.age = 0.0;"
+    : "// staggered on the first spawn, so a scene does not open on every particle born at once\n  p.age = select(0.0, r1.y * p.life, rzTime() < p.life);"}
   let rc = rzHash13(p.seed * 11.7 + 0.5);
   let t = 0.0;
   p.size = 0.5 * max(${sizeX} * (${solX}), ${sizeY} * (${solY})) * e.unit;
@@ -488,7 +619,7 @@ fn particleStep(p: Particle, dt: f32) -> Particle {
   let lim = (${clampLim}) * unit;
   let sp = length(q.vel);
   if (sp > lim) { q.vel = q.vel * mix(1.0, lim / sp, 1.0 - pow(1.0 - ${f(s.clamp.dampen)}, dt * 60.0)); }` : ""}
-  q.pos = q.pos + q.vel * dt;
+  q.pos = q.pos + q.vel * dt;${driftCode}
   ${stretched ? "" : `q.rot = q.rot + (${rol}) * dt;`}
   // size over life, against the start size this particle drew
   q.size = 0.5 * max(${sizeX} * (${solX}), ${sizeY} * (${solY})) * unit;

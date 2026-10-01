@@ -12,6 +12,7 @@ import type { BundleEntry } from "@/lib/bundle"
 import type { EngineModelInfo, PropInfo, StageInfo } from "@/hooks/use-engine"
 import type { AssetRef, ModelSource, SceneBackground, SceneModel, ScenePlane, SceneStageTransform } from "@/lib/scene"
 import { modelFilePaths, sceneFiles } from "@/lib/scene-files"
+import { dirOf, stageFolder } from "@/lib/unity-native"
 
 /** One model's motion, however the page happens to store it. */
 export type CollectedAnim = {
@@ -56,6 +57,8 @@ export type SceneSlotsInput = {
   hdri: { name: string; file: File } | null
   /** Media planes, each with the file it is made from. */
   planes: { name: string; file: File; width: number; height: number; transform: SceneStageTransform }[]
+  /** The game stage package's bundle folder, while the scene still draws it. */
+  nativeStage?: string | null
 }
 
 export type SceneSlots = {
@@ -68,6 +71,7 @@ export type SceneSlots = {
   background: SceneBackground
   hdri: AssetRef | null
   planes: ScenePlane[]
+  nativeStage: string | null
   hidden: Record<string, string[]>
 }
 
@@ -105,6 +109,12 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
     const f = input.bundleFiles.find((b) => b.name === url)
     if (f) entries.push({ path: url, file: f })
   }
+  /** Re-add every bundle file under a folder — the same carry, for the game's
+   *  packages, which are folders of files the document names by one path. */
+  const carryDir = (dir: string) => {
+    const have = new Set(entries.map((e) => e.path))
+    for (const f of input.bundleFiles) if (f.name.startsWith(dir) && !have.has(f.name)) entries.push({ path: f.name, file: f })
+  }
   const liveModels: SceneModel[] = input.models.map((m) => {
     const kept = sceneFiles.models.get(m.id)
     const booted = input.booted.find((d) => d.model.id === m.id)?.model.source ?? null
@@ -139,6 +149,15 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
     } else {
       source = booted
     }
+    // The game look rides with the model it came in with. Only then: a model
+    // uploaded over this slot is a different model, and the look's material
+    // names would be dressing a stranger. Its folder is carried whole — the
+    // look.json, its shaders and its pictures.
+    const look = kept ? undefined : input.booted.find((d) => d.model.id === m.id)?.look
+    if (look) carryDir(dirOf(look))
+    // So is the tag of the patch that brought it, on the same terms: a model
+    // uploaded over the slot is the user's, and no later patch may take it.
+    const origin = kept ? undefined : input.booted.find((d) => d.model.id === m.id)?.origin
     const anim = input.anims[m.id]
     let animation: AssetRef | null = null
     if (anim?.source.kind === "file") {
@@ -197,6 +216,8 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
       // piece of timing that belongs to ANY model — a costume is a cast member,
       // and a prop can be made to appear on cue just as well.
       ...(m.visibility?.length ? { visibility: m.visibility } : {}),
+      ...(look ? { look } : {}),
+      ...(origin ? { origin } : {}),
     }
   })
   let cameraAnimation: AssetRef | null = null
@@ -281,6 +302,12 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
     return { asset: { name: p.name, url: path }, width: p.width, height: p.height, transform: p.transform }
   })
 
+  // The game stage: never uploaded here, only ever arrived in a bundle, so it
+  // is carried forward from there like any other bundle file the document
+  // still names. Removed, it is not named, and the next repack leaves it out.
+  const nativeStage = input.nativeStage ? stageFolder(input.nativeStage) : null
+  if (nativeStage) carryDir(nativeStage)
+
   // NO TWO ENTRIES MAY SHARE A PATH.
   //
   // A bundle is a flat list of {path, file}, so a repeated path is not an
@@ -302,5 +329,5 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
     )
   }
 
-  return { entries: unique, models: liveModels, cameraAnimation, audio, midi, lyrics, background, hdri, planes, hidden }
+  return { entries: unique, models: liveModels, cameraAnimation, audio, midi, lyrics, background, hdri, planes, nativeStage, hidden }
 }

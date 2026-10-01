@@ -200,6 +200,28 @@ export const NODE_CATALOG: CatalogGroup[] = [
       { type: "layer_weight/facing", label: "Layer Weight · Facing" },
     ],
   },
+  {
+    // Aether Gazer's character shading, step by step — the game's own shader
+    // taken apart (see the engine's ag_* nodes).
+    category: "Aether Gazer",
+    items: [
+      { type: "ag_uber/0", label: "AG Uber BSDF · Image 0" },
+      { type: "ag_uber/1", label: "AG Uber BSDF · Image 1" },
+      { type: "ag_uber/2", label: "AG Uber BSDF · Image 2" },
+      { type: "ag_uber/3", label: "AG Uber BSDF · Image 3" },
+      { type: "ag_face_sdf/0", label: "AG Face SDF · Image 0" },
+      { type: "ag_face_sdf/1", label: "AG Face SDF · Image 1" },
+      { type: "ag_face_sdf/2", label: "AG Face SDF · Image 2" },
+      { type: "ag_face_sdf/3", label: "AG Face SDF · Image 3" },
+      { type: "ag_key_light", label: "AG Key Light" },
+      { type: "ag_shade_term", label: "AG Shade Term" },
+      { type: "ag_ramp_uv", label: "AG Ramp UV" },
+      { type: "ag_view_reflection", label: "AG View Reflection" },
+      { type: "ag_matcap", label: "AG Matcap" },
+      { type: "ag_rim", label: "AG Rim" },
+      { type: "ag_fill", label: "AG Fill" },
+    ],
+  },
 ]
 
 /** Human label for a node type (falls back to the raw registry key). */
@@ -215,6 +237,7 @@ export const CATEGORY_COLORS: Record<string, string> = {
   Math: "#94a3b8", // slate (converters, à la Blender)
   Mix: "#a78bfa", // violet
   Shader: "#4ade80", // green
+  "Aether Gazer": "#f0abfc", // fuchsia
 }
 const TYPE_TO_CATEGORY: Record<string, string> = Object.fromEntries(
   NODE_CATALOG.flatMap((g) => g.items.map((i) => [i.type, g.category])),

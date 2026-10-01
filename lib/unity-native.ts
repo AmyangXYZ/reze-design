@@ -1,0 +1,224 @@
+// The game's own materials, out of a scene bundle.
+//
+// ag-rip writes two kinds of them beside a scene: a STAGE PACKAGE (a folder
+// with stage.json, its meshes, its textures and its translated shaders), which
+// the engine draws as the game draws it, and a LOOK (a look.json beside a
+// prop's .pmx), which dresses that model's materials in the game's shaders.
+// Both are read here out of the bundle's files by path; the engine does the
+// rest. Nothing is tuned on the way: what the files say is what draws.
+
+import type { Engine, NativeLook, NativeMaterialSpec, NativeShaderInfo, NativeStagePackage, NativeStageReader, NativeTexture } from "reze-engine"
+
+/** A look.json as ag-rip writes it. Its materials carry a few keys of their
+ *  own (`game`, `shader`, `defaults`) for whoever reads the file; the engine
+ *  reads none of them. */
+export type NativeLookFile = {
+  shaders: string[]
+  textures: Record<string, { file: string; srgb: boolean }>
+  materials: (NativeMaterialSpec & Record<string, unknown>)[]
+}
+
+/** Reads one bundle file's bytes by its bundle path, or null when it is not there. */
+export type BundleRead = (path: string) => Promise<ArrayBuffer | null>
+
+/** A reader over unzipped bundle files, whose names ARE their bundle paths. */
+export function bundleReader(files: readonly File[]): BundleRead {
+  const byPath = new Map(files.map((f) => [f.name, f]))
+  return async (path) => (await byPath.get(path)?.arrayBuffer()) ?? null
+}
+
+/** The folder a path sits in, slash included — "" for a path at the root. */
+export const dirOf = (path: string) => path.slice(0, path.lastIndexOf("/") + 1)
+
+/** A stage folder as the document names it, always ending in a slash, so a
+ *  prefix match cannot reach a sibling called "stage2/". */
+export const stageFolder = (folder: string) => (folder.endsWith("/") ? folder : `${folder}/`)
+
+/**
+ * Every file a look names, as bundle paths.
+ *
+ * The look's own paths are relative to the look.json, because the converter
+ * writes the folder before it knows where the scene will put it. Pure, so the
+ * one rule that can go quietly wrong — a texture resolved against the bundle
+ * root instead of the look's folder decodes nothing and draws white — is
+ * testable without a decoder.
+ */
+export function lookFilePaths(lookPath: string, look: NativeLookFile) {
+  const dir = dirOf(lookPath)
+  return {
+    shaders: look.shaders.map((name) => ({
+      name,
+      vert: `${dir}shaders/${name}.vert.wgsl`,
+      frag: `${dir}shaders/${name}.frag.wgsl`,
+      info: `${dir}shaders/${name}.json`,
+    })),
+    textures: Object.entries(look.textures).map(([key, t]) => ({
+      key,
+      path: dir + t.file.replace(/\\/g, "/").replace(/^\.\//, ""),
+      srgb: t.srgb,
+    })),
+  }
+}
+
+/**
+ * A PNG or WebP as the engine wants a native texture: RGBA8, rows top first,
+ * exactly the bytes in the file. No colour conversion and no premultiply —
+ * the game's shaders decide what a texel means, and a browser that "helped"
+ * would hand them different numbers than the game's.
+ */
+async function decodeTexture(bytes: ArrayBuffer, srgb: boolean): Promise<NativeTexture> {
+  const bmp = await createImageBitmap(new Blob([bytes]), { colorSpaceConversion: "none", premultiplyAlpha: "none" })
+  const { width, height } = bmp
+  const ctx = new OffscreenCanvas(width, height).getContext("2d", { willReadFrequently: true })
+  if (!ctx) throw new Error("no 2d context to decode a look's texture")
+  ctx.drawImage(bmp, 0, 0)
+  bmp.close()
+  const { data } = ctx.getImageData(0, 0, width, height)
+  return { width, height, data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength), srgb }
+}
+
+/** Read a look.json and everything it names into the engine's NativeLook. */
+export async function loadNativeLook(lookPath: string, read: BundleRead): Promise<NativeLook> {
+  const need = async (path: string) => {
+    const bytes = await read(path)
+    if (!bytes) throw new Error(`missing ${path}`)
+    return bytes
+  }
+  const text = async (path: string) => new TextDecoder().decode(await need(path))
+  const file = JSON.parse(await text(lookPath)) as NativeLookFile
+  const paths = lookFilePaths(lookPath, file)
+  const [shaders, textures] = await Promise.all([
+    Promise.all(
+      paths.shaders.map(async (s) => ({
+        name: s.name,
+        vert: await text(s.vert),
+        frag: await text(s.frag),
+        info: JSON.parse(await text(s.info)) as NativeShaderInfo,
+      })),
+    ),
+    Promise.all(paths.textures.map(async (t) => [t.key, await decodeTexture(await need(t.path), t.srgb)] as const)),
+  ])
+  return {
+    shaders,
+    textures: Object.fromEntries(textures),
+    // Only the keys the engine reads: the rest is the converter's notes.
+    materials: file.materials.map((m) => ({
+      materials: m.materials,
+      queue: m.queue,
+      passes: m.passes,
+      values: m.values,
+      textures: m.textures,
+    })),
+  }
+}
+
+/**
+ * Which models wear a look, per engine.
+ *
+ * The engine's removeModel frees a model's buffers and does NOT take its look
+ * off, and the look draws out of those buffers — so a removed prop would leave
+ * the next frame submitting destroyed ones. Every removal goes through
+ * `undress` first; the set is what lets it skip the models that never wore one.
+ */
+const dressed = new WeakMap<Engine, Set<string>>()
+
+export function dress(engine: Engine, modelId: string, look: NativeLook): boolean {
+  const ok = engine.setModelNativeLook(modelId, look)
+  if (ok) {
+    if (!dressed.has(engine)) dressed.set(engine, new Set())
+    dressed.get(engine)!.add(modelId)
+  }
+  return ok
+}
+
+export function undress(engine: Engine, modelId: string): void {
+  if (!dressed.get(engine)?.delete(modelId)) return
+  engine.setModelNativeLook(modelId, null)
+}
+
+/**
+ * Empty the engine of everything a scene put in it — every model, every look,
+ * the game stage — by asking the ENGINE what it holds rather than trusting any
+ * list a host keeps.
+ *
+ * That difference is the whole point. A host's lists are what its loads
+ * REPORTED, and a load superseded mid-flight adds its model and then bails
+ * before reporting it: an orphan that no list names, so a swap that removed
+ * "the models in state" left it drawing — unstyled, since it bailed before its
+ * looks — under every scene after, and a second swap missed it the same way.
+ * It also kept its id, so the next load of that id was minted `id_1`.
+ *
+ * Looks before models, for the reason `undress` exists. Planes are models to
+ * the engine and go too; their decoders are the host's to close.
+ */
+export function clearEngineScene(engine: Engine): Promise<void> {
+  for (const id of dressed.get(engine) ?? []) engine.setModelNativeLook(id, null)
+  dressed.delete(engine)
+  for (const name of engine.getModelNames()) engine.removeModel(name)
+  return setNativeStageInTurn(engine, null)
+}
+
+/**
+ * One stage install at a time, per engine.
+ *
+ * `setNativeStage` keeps whichever load finishes LAST, so two in flight — a
+ * scene's stage still loading when the next scene's clear arrives — could put
+ * the outgoing scene's stage back after the incoming one cleared it. Queued,
+ * every call sees the one before it finished, and a load that has gone stale
+ * by the time it lands takes itself down before the next call runs.
+ */
+const turns = new WeakMap<Engine, Promise<unknown>>()
+
+export function setNativeStageInTurn(
+  engine: Engine,
+  pkg: NativeStagePackage | null,
+  read?: NativeStageReader,
+  stale: () => boolean = () => false,
+): Promise<void> {
+  const run = (turns.get(engine) ?? Promise.resolve()).then(async () => {
+    if (pkg && stale()) return
+    await engine.setNativeStage(pkg, read)
+    if (pkg && stale()) await engine.setNativeStage(null)
+  })
+  turns.set(
+    engine,
+    run.catch(() => {}),
+  )
+  return run
+}
+
+/**
+ * Put a bundle's stage package up. Returns its name, or null when the package
+ * is not in the bundle (evicted, or never packed).
+ *
+ * A package that is there but fails to draw still answers with its name: the
+ * document keeps naming it and the panel keeps its row, so a shader that did
+ * not compile costs the picture rather than the user's scene.
+ */
+export async function loadNativeStage(
+  engine: Engine,
+  folder: string,
+  read: BundleRead,
+  stale: () => boolean,
+): Promise<string | null> {
+  const dir = stageFolder(folder)
+  const json = await read(`${dir}stage.json`)
+  if (!json) {
+    console.warn(`[native stage] no ${dir}stage.json in the scene's bundle`)
+    return null
+  }
+  const pkg = JSON.parse(new TextDecoder().decode(json)) as NativeStagePackage
+  const reader: NativeStageReader = async (path) => {
+    const bytes = await read(dir + path)
+    if (!bytes) throw new Error(`missing ${dir}${path}`)
+    return bytes
+  }
+  try {
+    await setNativeStageInTurn(engine, pkg, reader, stale)
+    const report = engine.nativeReport()
+    if (report.errors.length) console.warn(`[native stage] ${pkg.name}: ${report.errors.length} shader error(s)`, report.errors)
+  } catch (e) {
+    console.error(`[native stage] ${pkg.name} did not load:`, e)
+  }
+  return pkg.name
+}

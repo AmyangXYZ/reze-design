@@ -18,9 +18,14 @@
 // default and the honest one.
 //
 // Pure, and deliberately so. The preview's rAF tick and the export's frame loop
-// both answer "who is on stage at frame f" through `visibilityAt`, so a
-// rendered file cannot disagree with the playback it was rendered from — the
-// single commonest way a timeline feature ships broken.
+// both answer "who is on stage at frame f" through `visibilityAt` — by way of
+// the timeline's `applyTimelineFrame`, the one place that answer reaches the
+// engine — so a rendered file cannot disagree with the playback it was rendered
+// from: the single commonest way a timeline feature ships broken.
+//
+// Every model can carry a lane: a cast member's costume change, and a prop or a
+// stage part that is only there for a stretch, which is most of what a ported
+// game prop is — a sword drawn for the chorus, a petal burst on the bridge.
 
 /** One stretch a model is on stage for. FRAMES, at 30fps, like every lane. */
 export type VisibilityWindow = {
@@ -143,38 +148,4 @@ export function normalizeVisibility(windows: readonly VisibilityWindow[]): Visib
   return [...windows]
     .filter((w) => w.end === undefined || w.end > w.start)
     .sort((a, b) => a.start - b.start)
-}
-
-/** As much of the engine as this needs: who is loaded, and the dissolve dial. */
-type VisibilityEngine = {
-  getModel(id: string): { visible: boolean; setVisible(on: boolean): void } | null | undefined
-  setModelDissolve(id: string, value: number): boolean
-}
-
-/**
- * Apply a whole cast's lanes to the engine at one frame.
- *
- * The one crossing between the clips and what is drawn, called from the preview
- * tick and from the export loop. Both writes are cheap and both are guarded
- * against repeating themselves: `setVisible` flips a flag the cull pass reads,
- * and `setModelDissolve` returns early when the value has not moved, so a scene
- * of hard cuts pays a comparison per model per frame and nothing else.
- *
- * Driving the dissolve from HERE rather than from the engine's own scheduler is
- * what makes it addressable: the engine's `#dissolve` effects only ever take
- * apart cast subject 0, while a costume swap needs a named model. The two do
- * not collide — `evaluateDissolves` resets only the models it drove itself.
- */
-export function applyVisibility(
-  engine: VisibilityEngine,
-  lanes: Readonly<Record<string, VisibilityWindow[]>>,
-  frame: number,
-): void {
-  for (const id in lanes) {
-    const model = engine.getModel(id)
-    if (!model) continue
-    const state = visibilityAt(lanes[id], frame)
-    if (model.visible !== state.visible) model.setVisible(state.visible)
-    engine.setModelDissolve(id, state.dissolve)
-  }
 }

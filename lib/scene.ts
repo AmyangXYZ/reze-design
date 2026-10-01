@@ -4,14 +4,17 @@ import type { EffectParamValue, ShaderGraph, StyleGroup } from "reze-engine"
 import pkg from "@/package.json"
 import type { AppliedEffect } from "@/lib/effects"
 import type { EffectWindow } from "@/lib/effect-schedule"
-import type { VisibilityWindow } from "@/lib/visibility"
+import type { VisibilityWindow } from "@/lib/timeline"
 import {
   DEFAULT_AUDIO,
   DEFAULT_DOF,
   DEFAULT_GRAIN,
   DEFAULT_OUTLINE,
   DEFAULT_EYES, DEFAULT_PHYSICS,
-  DEFAULT_VIEW,
+  LEGACY_VIEW,
+  bloomFrom,
+  viewFrom,
+  viewTransformFrom,
   type SceneSettings,
   type StageGrade,
   type StageFog,
@@ -118,8 +121,14 @@ export type SceneModel = {
    *  user set, not animation, so they are document state — see stage-morphs.tsx. */
   morphs?: Record<string, number>
   /** The stretches this model is on stage for. Absent means throughout, which
-   *  is the answer every scene written before this gave. See lib/visibility. */
+   *  is the answer every scene written before this gave. See lib/timeline/visibility. */
   visibility?: VisibilityWindow[]
+  /** Bundle path to a look.json: the game's own materials for this model, drawn
+   *  by its translated shaders. See lib/unity-native. */
+  look?: string
+  /** What brought it: the tag of the scene patch it came in with. A later patch
+   *  with the same tag replaces it. See lib/scene-patch. Absent: added by hand. */
+  origin?: string
 }
 
 export type SceneAssets = {
@@ -150,6 +159,9 @@ export type SceneAssets = {
    * plumbing.
    */
   hdri: AssetRef | null
+  /** Bundle-relative folder holding a game stage package (its stage.json and the
+   *  files beside it), drawn by the game's shaders. Absent or null: none. */
+  nativeStage?: string | null
   /** Asset zip these models/clips live in, or null when every path is site-served. */
   bundle: string | null
 }
@@ -408,6 +420,10 @@ export type SceneModelDoc = {
   morphs?: Record<string, number>
   /** The stretches this model is on stage for. Absent = on stage throughout. */
   visibility?: VisibilityWindow[]
+  /** Path to a look.json — the game's own materials for this model. */
+  look?: string
+  /** The tag of the scene patch it came in with. See SceneModel.origin. */
+  origin?: string
   /** This model's Materials-tab state. Absent = auto-group at load. */
   materials?: SceneModelMaterialsDoc
 }
@@ -460,6 +476,9 @@ export type SceneAssetsDoc = {
    *  Named for the file rather than for the seat it fills, because `world` is
    *  already taken — settings.world is the flat colour and the strength dial. */
   hdri?: string | null
+  /** A game stage package's folder ("stage/"), drawn as the game draws it. The
+   *  scene's one stage, beside the PMX kind rather than one of them. */
+  nativeStage?: string | null
   /**
    * URL of the scene's asset zip. Paths above that don't start with "/" or a
    * scheme are relative to this bundle; site-served demo assets keep absolute
@@ -649,7 +668,10 @@ const roleOf = (g: StyleGroup): StyleGroupDoc["role"] =>
  * silently stops round-tripping on the third.
  */
 function stageFieldsOf(
-  m: Pick<SceneModel, "stage" | "prop" | "sun" | "attach" | "parentKeys" | "transform" | "morphs" | "visibility">,
+  m: Pick<
+    SceneModel,
+    "stage" | "prop" | "sun" | "attach" | "parentKeys" | "transform" | "morphs" | "visibility" | "look" | "origin"
+  >,
 ) {
   const sun = m.sun
   return {
@@ -666,6 +688,10 @@ function stageFieldsOf(
     ...(m.morphs && Object.keys(m.morphs).length > 0 ? { morphs: m.morphs } : {}),
     // An empty lane is the same as no lane: on stage throughout.
     ...visibilityFieldOf(m.visibility),
+    // Here with the rest because it has the same three sites to survive.
+    ...(typeof m.look === "string" && m.look ? { look: m.look } : {}),
+    // And what brought it, for the next patch with the same tag to find.
+    ...(typeof m.origin === "string" && m.origin ? { origin: m.origin } : {}),
   }
 }
 
@@ -736,6 +762,7 @@ export function parseAssetsDoc(a: SceneAssetsDoc): SceneAssets {
           })),
         }
       : {}),
+    ...(typeof a.nativeStage === "string" && a.nativeStage ? { nativeStage: a.nativeStage } : {}),
     bundle: a.bundle ?? null,
   }
 }
@@ -762,6 +789,8 @@ export function assetsDocOf(a: SceneAssets): SceneAssetsDoc {
     // Written only when there are any: a scene with no cards should read the
     // same as every scene written before they existed.
     ...(a.planes?.length ? { planes: a.planes.map(planeDocOf) } : {}),
+    // Likewise: a scene without a game stage reads as every scene before them.
+    ...(a.nativeStage ? { nativeStage: a.nativeStage } : {}),
     bundle: a.bundle,
   }
 }
@@ -868,8 +897,11 @@ export function parseSceneDoc(
         outline: { ...DEFAULT_OUTLINE, ...settings.outline },
         grain: { ...DEFAULT_GRAIN, ...settings.grain },
         // Likewise for the view transform: absent means the scene was authored
-        // under the engine's Filmic default, which is what DEFAULT_VIEW restates.
-        view: { ...DEFAULT_VIEW, ...settings.view },
+        // under the engine's old Filmic default, which is ACES today
+        // (LEGACY_VIEW). Old transform names read as today's.
+        view: viewFrom(settings.view, LEGACY_VIEW),
+        // The bloom as today's: old Blender fields (knee, radius) dropped.
+        bloom: bloomFrom(settings.bloom as Partial<Record<string, unknown>> | undefined),
         // And for the music level: absent means the track was authored playing
         // at full, which is what DEFAULT_AUDIO restates.
         audio: { ...DEFAULT_AUDIO, ...settings.audio },
@@ -953,7 +985,7 @@ export function stageLightsFromFile(
    *  .hdr beside it. Absent means the .hdr at 1 or the scene's own. */
   world: { color?: string; strength: number } | null
   /** The view the stage was authored under. */
-  view: { transform: "standard" | "filmic" | "agx"; exposure: number } | null
+  view: SceneSettings["view"] | null
   /** The stage's own colour grade, as a cube. */
   grade: StageGrade | null
   /** The stage's diffuse ambient, 27 SH floats. */
@@ -1015,10 +1047,9 @@ export function stageLightsFromFile(
       ? { ...(typeof w.color === "string" ? { color: w.color } : {}), strength: w.strength as number }
       : null
   const v = raw.view
-  const view =
-    v && (v.transform === "standard" || v.transform === "filmic" || v.transform === "agx") && num(v.exposure)
-      ? { transform: v.transform as "standard" | "filmic" | "agx", exposure: v.exposure as number }
-      : null
+  // Old names (filmic, standard, agx, aether-gazer) read as today's.
+  const vt = viewTransformFrom(v?.transform)
+  const view = v && vt && num(v.exposure) ? { transform: vt, exposure: v.exposure as number } : null
   const gr = raw.grade
   const grade = gr && isStageGrade(gr) ? { size: gr.size, lut: gr.lut } : null
   const ambient = isAmbientSH(raw.ambient) ? raw.ambient : null
@@ -1132,6 +1163,7 @@ export function serializeSceneDoc(
     background: SceneBackground
     hdri: AssetRef | null
     planes: ScenePlane[]
+    nativeStage?: string | null
     /** Public URL of the uploaded asset zip, or null for a bundle-free scene. */
     bundle: string | null
     name: string
@@ -1177,6 +1209,7 @@ export function serializeSceneDoc(
         background: live.background,
         hdri: live.hdri,
         planes: live.planes,
+        nativeStage: live.nativeStage,
         bundle: live.bundle,
       }),
       // The one thing that mapping cannot carry: material groups belong to the
@@ -1499,10 +1532,10 @@ function restored(base: Scene): Scene {
         // Optional, and absent means no fill — so it is carried as stored rather
         // than merged over a default.
         ...(settingsBase.fill ? { fill: settingsBase.fill } : {}),
-        bloom: { ...base.state.settings.bloom, ...settingsBase.bloom },
+        bloom: bloomFrom({ ...base.state.settings.bloom, ...settingsBase.bloom }),
         dof: { ...base.state.settings.dof, ...settingsBase.dof },
         outline: { ...base.state.settings.outline, ...settingsBase.outline },
-        view: { ...base.state.settings.view, ...settingsBase.view },
+        view: viewFrom({ ...base.state.settings.view, ...settingsBase.view }, base.state.settings.view),
         audio: { ...base.state.settings.audio, ...settingsBase.audio },
         grain: { ...base.state.settings.grain, ...settingsBase.grain },
         background: { ...base.state.settings.background, ...settingsBase.background },

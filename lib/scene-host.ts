@@ -6,8 +6,8 @@
 // two from growing separate ideas of what a scene means, which is exactly how
 // the editor and the viewer drifted apart once before.
 
-import { Engine, NODE_REGISTRY, parseLRC, parseMidi, Quat, Vec3, type GizmoDragEvent, type Model, type ModelParentKey, type RenderClass, type ShaderGraph, type StyleGroup } from "reze-engine"
-import { FPS, clipTrimmedToMotion } from "@/lib/clip"
+import { Engine, NODE_REGISTRY, parseLRC, parseMidi, Quat, Vec3, type GizmoDragEvent, type Model, type RenderClass, type ShaderGraph, type StyleGroup } from "reze-engine"
+import { clipTrimmedToMotion } from "@/lib/clip"
 import { rasterizeLyrics } from "@/lib/lyrics-raster"
 import { SLOT_GRAPHS, libraryGraph } from "@/lib/materials"
 import { graphLibraryName } from "@/lib/refs"
@@ -21,7 +21,8 @@ import { clearMaterialMaps, loadMaterialMaps, withMaterialMaps } from "@/lib/mat
 import { loadParticleTextures } from "@/lib/effect-textures"
 import { BACKDROP_VIDEO_RE, openAnimatedImage } from "@/lib/backdrop"
 import { groundExtent, hexToLinearVec3 } from "@/lib/scene-settings"
-import { visibilityAt, visibleAt, type VisibilityWindow } from "@/lib/visibility"
+import { castRotationToEngine, pushTimeline, seedLane, timelineOf, visibleAt, type VisibilityWindow } from "@/lib/timeline"
+import { bundleReader, dress, loadNativeLook, loadNativeStage } from "@/lib/unity-native"
 
 /**
  * Surface what the engine said about a style-group apply.
@@ -273,6 +274,15 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
   })
   applyCamera(engine, scene.state.camera, null)
   onStage?.()
+  // The document's looks compile while its bytes download: a group's pipeline
+  // needs its graph, not the model it will draw. Each model's applyStyleGroups
+  // below then finds its pipelines built, or still in flight, in the engine's
+  // shader cache. Not awaited — it installs nothing.
+  void engine.prewarmStyleGroups(
+    Object.values(scene.state.groups ?? {})
+      .flat()
+      .filter((g) => g.materials.length > 0),
+  )
 
   // A scene's uploads live in one bundle: a published scene's is a zip behind a URL,
   // the working scene's is the same entries in IndexedDB (an `idb:` bundle). Either
@@ -332,6 +342,8 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
   // normal Tuesday — the scene boots with whatever still resolves and the user
   // re-uploads the rest, rather than hitting a wall of error.
   const lenient = !scene.assets.bundle || idbId !== null
+  // The game's own files — a stage package, a prop's look — are read by path.
+  const read = bundleReader(bundle ?? [])
 
   // Camera VMD before any model: the authored shot is driving by the time the
   // first model reveals, so nothing on screen ever jumps to a new framing.
@@ -488,6 +500,21 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
       await engine.autoStyleGroups(entry.model.id)
     }
     if (stale()) return null
+    // The game's own materials, over the groups: the ones a look names are
+    // drawn by the game's shaders from here on, the rest keep their graphs.
+    // A look that fails costs that model its game shading, never the scene.
+    if (entry.look && bundle) {
+      try {
+        const look = await loadNativeLook(entry.look, read)
+        if (stale()) return null
+        // Revealed with its look drawable: the pipelines compile async, and
+        // a dressed material sits out until they have.
+        if (dress(engine, entry.model.id, look)) await engine.nativeLookReady(entry.model.id)
+        if (stale()) return null
+      } catch (e) {
+        console.warn(`[look] ${entry.model.file}: ${entry.look} did not load:`, e)
+      }
+    }
     const hidden = scene.state.hidden?.[entry.model.id] ?? []
     for (const name of hidden) engine.toggleMaterialVisible(entry.model.id, name)
     const info = infoFor(entry.model.id, entry.model.file, model, hidden, castPlacement, entry.visibility)
@@ -504,21 +531,11 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
     if (!entry.stage && !entry.prop && infos.length - stageList.length - propList.length === 1) {
       applyCamera(engine, scene.state.camera, model)
     }
-    // A scheduled model keeps simulating its cloth while it is off stage, so the
-    // frame it appears on is a frame its skirt is already moving on. Set before
-    // the reveal, because the hiding starts here.
-    //
-    // Its dissolve is seeded here too, for the same reason the reveal below asks
-    // the track instead of simply showing her: a switch at frame 0 that
-    // dissolves her IN wants nothing of her on screen yet, and a model revealed
-    // whole for the one frame before the first tick is exactly the pop this
-    // feature exists to avoid. Both live here because every reveal path — with a
-    // motion, without one, and the one taken when a motion fails to load — comes
-    // through this block first.
-    if (entry.visibility?.length) {
-      engine.setModelPhysicsWhileHidden(entry.model.id, true)
-      engine.setModelDissolve(entry.model.id, visibilityAt(entry.visibility, 0).dissolve)
-    }
+    // A scheduled model's lane is armed before the reveal — cloth that keeps
+    // simulating off stage, and the dissolve at frame 0 (see seedLane). It lives
+    // here because every reveal path — with a motion, without one, and the one
+    // taken when a motion fails to load — comes through this block first.
+    seedLane(engine, entry.model.id, entry.visibility)
     // Reveal this one NOW. Models with an animation stay hidden a moment longer:
     // their clip loader reveals them after show(), so the first visible frame
     // wears the motion's first pose instead of flashing bind pose. (If the clip
@@ -541,6 +558,16 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
 
   // Every model is in, so every parent a prop's track names exists.
   for (const p of propList) placeProp(engine, p)
+
+  // The game's stage, after the cast: it is the most bytes in the scene by far,
+  // and the cast is what a viewer looks for first. It draws where the game put
+  // it — the package is in the scene's own units, so there is no transform.
+  let nativeStage: NativeStageInfo | null = null
+  if (scene.assets.nativeStage && bundle) {
+    const name = await loadNativeStage(engine, scene.assets.nativeStage, read, stale)
+    if (stale()) return null
+    if (name) nativeStage = { path: scene.assets.nativeStage, name }
+  }
 
   // Cards, after the cast: they are scenery and a scene without them is still
   // the scene, so a card that fails to resolve costs a picture rather than the
@@ -593,7 +620,7 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
   // Again at the end, for the empty-scene case and because the first model may
   // have arrived before its follow bone existed.
   applyCamera(engine, scene.state.camera, engine.getModel(firstCastId(scene.assets.models)))
-  return { infos, groups, bundle, stageList, propList, planeList, restoredAnims }
+  return { infos, groups, bundle, stageList, propList, planeList, restoredAnims, nativeStage }
 }
 
 /**
@@ -888,18 +915,19 @@ export type StageInfo = {
   sun?: StageSun
 }
 
+/** A game stage package in the scene: the bundle folder the document names it
+ *  by, and the name its stage.json gives itself. */
+export type NativeStageInfo = { path: string; name: string }
+
 /** A prop: a stage's shape plus what it hangs from. `attach` and the transform
  *  are the start hold — null stands on its own — and `parentKeys` the switches
  *  the timeline keyed after it. */
 export type PropInfo = StageInfo & { attach: SceneAttach | null; parentKeys: SceneParentKey[] }
 
-/** Degrees per axis → the engine's quaternion, in MMD's own euler order.
- *  Shared by the loader and the slider so the two cannot disagree about what a
- *  number in the document means. */
-export function castRotationToEngine(rotation: [number, number, number]): Quat {
-  const rad = (d: number) => (d * Math.PI) / 180
-  return Quat.fromEuler(rad(rotation[0]), rad(rotation[1]), rad(rotation[2]))
-}
+/** Degrees per axis → the engine's quaternion. Lives with the parent track,
+ *  which converts every hold through it; re-exported for the loader's and the
+ *  sliders' callers. */
+export { castRotationToEngine }
 
 /** The document's degrees-and-tuples form → what setModelTransform wants. One
  *  converter, so the boot path and the sliders cannot drift apart. */
@@ -913,36 +941,18 @@ export function stageTransformToEngine(t: StageTransform) {
 }
 
 /**
- * Put a prop on its whole parent track: the start hold its row sets, then every
- * switch the timeline keyed. The engine picks the hold for the frame it draws,
- * so playback, a scrub and an export all switch on the same frame.
+ * Put a prop on its whole parent track — the start hold its row sets, then
+ * every switch the timeline keyed — and at its scale. The track goes through
+ * the scene timeline's push like every other timed part; the engine picks the
+ * hold for the frame it draws, so playback, a scrub and an export all switch
+ * on the same frame.
  *
- * One function for the boot path, the sliders and the timeline, like the
- * converter above. The keys own position and rotation; scale is the transform's.
+ * One function for the boot path, the sliders and the timeline. The keys own
+ * position and rotation; scale is the transform's.
  */
 export function placeProp(engine: Engine, p: PropInfo): void {
-  engine.setModelParentKeys(p.id, propParentKeys(p))
+  pushTimeline(engine, timelineOf({ props: [p] }))
   engine.setModelTransform(p.id, { scale: p.transform.scale })
-}
-
-/** A prop's track in the engine's terms — frames to seconds, degrees to a
- *  quaternion through the same converter the sliders use. */
-export function propParentKeys(p: PropInfo): ModelParentKey[] {
-  const start: SceneParentKey = {
-    frame: 0,
-    model: p.attach?.model ?? null,
-    ...(p.attach ? { bone: p.attach.bone } : {}),
-    position: p.transform.position,
-    rotation: p.transform.rotation,
-  }
-  return [start, ...p.parentKeys.filter((k) => k.frame > 0)].map((k) => ({
-    time: k.frame / FPS,
-    parent: k.model,
-    ...(k.bone ? { bone: k.bone } : {}),
-    position: new Vec3(k.position[0], k.position[1], k.position[2]),
-    rotation: castRotationToEngine(k.rotation),
-    ...(k.tween ? { tween: true } : {}),
-  }))
 }
 
 // Added models stand beside the first, not inside
