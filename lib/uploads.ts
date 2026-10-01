@@ -99,8 +99,12 @@ function detectLegacyEncoding(nameBytes: Uint8Array[]): string {
   return best;
 }
 
-/** Extract a .zip into File objects (relative paths in the names). */
-export async function unzipToFiles(zip: File): Promise<File[]> {
+/** Extract a .zip into File objects (relative paths in the names). `onProgress`
+ *  counts entries, for a host that names the wait. */
+export async function unzipToFiles(
+  zip: File,
+  onProgress?: (done: number, total: number) => void,
+): Promise<File[]> {
   const buffer = await zip.arrayBuffer();
   const view = new DataView(buffer);
   const u8 = new Uint8Array(buffer);
@@ -169,7 +173,8 @@ export async function unzipToFiles(zip: File): Promise<File[]> {
   }
 
   const out: File[] = [];
-  for (const e of entries) {
+  for (const [i, e] of entries.entries()) {
+    onProgress?.(i, entries.length);
     const name = (e.name ?? "").replace(/\\/g, "/");
     if (!name || name.endsWith("/")) continue; // directory entry
 

@@ -327,6 +327,7 @@ function SceneStage({
     stageReady,
     engineReady,
     styling,
+    nativeStageLoad,
     bundleReady,
     bundleProgress,
     error,
@@ -355,6 +356,7 @@ function SceneStage({
     engineReady,
     styling,
     loaded: models.length,
+    nativeStage: nativeStageLoad,
   })
 
   // The scene's media slots — the sky that lights it, the picture behind it, its

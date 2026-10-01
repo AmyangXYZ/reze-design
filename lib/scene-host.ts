@@ -228,7 +228,12 @@ export type LoadProgress = {
    *  shader cache pays for every one. Named, the pill stops calling the longer
    *  half of an open by the shorter half's name. */
   onStyling?: (file: string) => void
+  /** The game stage, as its package loads: done of total by the engine's
+   *  weights (a picture weighs its megapixels). Null once it is in. */
+  onNativeStage?: (p: NativeStageProgress | null) => void
 }
+
+export type NativeStageProgress = { name: string; done: number; total: number }
 
 /**
  * A bundle download in flight. `total` is 0 when the server sent no length.
@@ -242,7 +247,7 @@ export type LoadProgress = {
 export type BundleProgress = { received: number; total: number; bytesPerSecond: number; done?: boolean }
 
 export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean, progress: LoadProgress = {}) {
-  const { onStage, onBundle, onModel, onBytes, onStyling } = progress
+  const { onStage, onBundle, onModel, onBytes, onStyling, onNativeStage } = progress
   const s = scene.state.settings
   const infos: EngineModelInfo[] = []
   const groups: Record<string, StyleGroup[]> = {}
@@ -564,7 +569,14 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
   // it — the package is in the scene's own units, so there is no transform.
   let nativeStage: NativeStageInfo | null = null
   if (scene.assets.nativeStage && bundle) {
-    const name = await loadNativeStage(engine, scene.assets.nativeStage, read, stale)
+    const name = await loadNativeStage(
+      engine,
+      scene.assets.nativeStage,
+      read,
+      stale,
+      onNativeStage && ((name, done, total) => onNativeStage({ name, done, total })),
+    )
+    onNativeStage?.(null)
     if (stale()) return null
     if (name) nativeStage = { path: scene.assets.nativeStage, name }
   }

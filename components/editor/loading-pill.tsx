@@ -64,9 +64,11 @@ export function useLoadingLabel(args: {
   styling: string | null
   /** Models that have reported in so far. */
   loaded: number
+  /** The game stage, while its package loads. */
+  nativeStage?: { name: string; percent: number } | null
 }): string {
   const t = useT()
-  const { scene, bundleProgress, bundleReady, engineReady, styling, loaded } = args
+  const { scene, bundleProgress, bundleReady, engineReady, styling, loaded, nativeStage } = args
   return useMemo(() => {
     // FIRST, because nothing else has started yet. This wait used to wear the
     // generic name and is the whole open on a cold shader cache.
@@ -89,6 +91,9 @@ export function useLoadingLabel(args: {
     // The mesh is in and the pipelines are compiling — on a character the longer
     // half of the wait, and indistinguishable from the download without this.
     if (styling) return t.editor.compilingShaders(styling)
+    // After the cast, and the most bytes in the scene: measured by the engine,
+    // so it quotes a share.
+    if (nativeStage) return t.editor.loadingStage(nativeStage.name, pad(String(nativeStage.percent), 3))
     const total = scene.assets.models.length
     // Nothing specific to say yet: a local bundle is coming out of IndexedDB,
     // which reports no bytes because it never crossed a network, or the scene
@@ -99,5 +104,5 @@ export function useLoadingLabel(args: {
     // finishes.
     const index = Math.min(loaded, total - 1)
     return t.editor.loadingModels(index + 1, total, scene.assets.models[index]?.model.file ?? "")
-  }, [scene, bundleProgress, bundleReady, engineReady, styling, loaded, t])
+  }, [scene, bundleProgress, bundleReady, engineReady, styling, loaded, nativeStage, t])
 }

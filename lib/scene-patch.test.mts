@@ -294,4 +294,17 @@ const one = mergeScenePatch(base(), take("touch1", ["cup", "fan"], ["sparks", "d
   )
 }
 
+// ── Lights, by tag: the scene's own lamps stay, a take's replace the last take's ──
+{
+  const lamp = (id: string, stage?: string) => ({ id, kind: "point", color: "#ffffff", strength: 1, position: [0, 0, 0], ...(stage ? { stage } : {}) })
+  const doc = base()
+  doc.settings.lights = [lamp("mine")] as unknown as typeof doc.settings.lights
+  const t1 = mergeScenePatch(doc, { patch: true, origin: "dlc", settings: { lights: [lamp("a"), lamp("b")] } })
+  assert.deepEqual((t1.settings.lights ?? []).map((l) => `${l.id}:${l.stage ?? ""}`), ["mine:", "a:dlc", "b:dlc"])
+  const t2 = mergeScenePatch(t1, { patch: true, origin: "dlc", settings: { lights: [lamp("c")] } })
+  assert.deepEqual((t2.settings.lights ?? []).map((l) => `${l.id}:${l.stage ?? ""}`), ["mine:", "c:dlc"], "a take replaces the last take's lamps only")
+  const quiet = mergeScenePatch(t1, { patch: true, origin: "dlc", settings: { sun: { elevation: 30 } } })
+  assert.equal((quiet.settings.lights ?? []).length, 3, "a patch without lights leaves them alone")
+}
+
 console.log("scene-patch: ok")

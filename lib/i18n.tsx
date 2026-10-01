@@ -172,6 +172,8 @@ const en = {
     downloadingAssetsUnsized: (received: string, speed: string) => `Downloading assets · ${received} · ${speed}`,
     unpackingAssets: "Unpacking assets",
     loadingModels: (index: number, total: number, name: string) => `Loading models · ${index} of ${total} · ${name}`,
+    /** The game stage's package, by the engine's own weights. */
+    loadingStage: (name: string, percent: string) => `Loading stage · ${name} · ${percent}%`,
     selectMaterial: "Select a material to edit its shader graph",
     engineError: (message: string) => `Engine: ${message}`,
   },
@@ -537,6 +539,10 @@ const en = {
     rayConverting: (done: number, total: number) => `Converting ray-mmd maps ${done}/${total}`,
     rayApplied: (n: number) => `Applied ${n} ray-mmd materials`,
     uploadReading: "Reading files…",
+    /** A zip, entry by entry. */
+    uploadReadingShare: (done: number, total: number) => `Reading files… ${done}/${total}`,
+    /** Into IndexedDB, so the scene survives a refresh — seconds on a game scene. */
+    uploadSaving: "Saving to this browser…",
     uploadTexturing: (done: number, total: number) => `Compressing textures ${done}/${total}`,
     uploadConverting: (name: string) => `Parsing ${name}…`,
     uploadLoading: (name: string) => `Loading ${name}…`,
@@ -1166,6 +1172,7 @@ const zh: Dictionary = {
     downloadingAssetsUnsized: (received: string, speed: string) => `正在下载素材 · ${received} · ${speed}`,
     unpackingAssets: "正在解压素材",
     loadingModels: (index: number, total: number, name: string) => `正在加载模型 · ${index}/${total} · ${name}`,
+    loadingStage: (name: string, percent: string) => `正在加载舞台 · ${name} · ${percent}%`,
     selectMaterial: "选择一个材质以编辑其外观",
     engineError: (message: string) => `引擎：${message}`,
   },
@@ -1515,6 +1522,8 @@ const zh: Dictionary = {
     rayConverting: (done: number, total: number) => `正在转换 ray-mmd 贴图 ${done}/${total}`,
     rayApplied: (n: number) => `已应用 ${n} 个 ray-mmd 材质`,
     uploadReading: "正在读取文件…",
+    uploadReadingShare: (done: number, total: number) => `正在读取文件… ${done}/${total}`,
+    uploadSaving: "正在保存到本地…",
     uploadTexturing: (done: number, total: number) => `正在压缩贴图 ${done}/${total}`,
     uploadConverting: (name: string) => `正在解析 ${name}…`,
     uploadLoading: (name: string) => `正在加载 ${name}…`,

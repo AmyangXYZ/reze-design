@@ -2165,6 +2165,8 @@ export default function Lab() {
     stageReady,
     engineReady,
     styling,
+    loaded,
+    nativeStageLoad,
     bundleReady,
     bundleProgress,
     bundleFile,
@@ -2233,7 +2235,8 @@ export default function Lab() {
     bundleReady,
     engineReady,
     styling,
-    loaded: models.length,
+    loaded,
+    nativeStage: nativeStageLoad,
   })
 
   // Motion names by model id. One clip per character is already the document's
@@ -6186,7 +6189,7 @@ export default function Lab() {
    * WebGPU device, its pipelines and every compiled shader. A page reload would have
    * thrown all of that away and flashed the DOM on the way.
    */
-  const applyLabScene = async (next: Scene) => {
+  const applyLabScene = async (next: Scene): Promise<string | null> => {
     beforePlate.current = null
     // STARTED, not awaited yet. swapScene turns `ready` off synchronously, before its
     // first await, so every re-seed below lands in the SAME commit as ready:false —
@@ -6259,7 +6262,7 @@ export default function Lab() {
     setGradeEditor(null)
     setEffectEditor(null)
 
-    await swapping
+    const failed = await swapping
 
     // Persisted NOW rather than left to the debounced effects: Reset and New are the
     // user stating what the scene is, and a refresh inside the debounce window must
@@ -6277,6 +6280,7 @@ export default function Lab() {
       }),
     )
     if (!next.assets.bundle) void clearLocalBundle()
+    return failed
   }
 
   /**
@@ -6491,33 +6495,49 @@ export default function Lab() {
    * `.reze.json`; this route never wrote one.)
    */
   const importScene = async (file: File) => {
+    // One toast per import, as for any upload: it names the arrival and its
+    // outcome. The scene load between is the pill's, as it is for every swap.
+    const toastId = `import:${file.name}`
+    const name = file.name.replace(/\.zip$/i, "")
+    toast.loading(t.lab.uploadReading, { id: toastId })
+    let painted = 0
     try {
-      const files = await unzipToFiles(file)
+      const files = await unzipToFiles(file, (done, total) => {
+        // Four a second, like the download line: a game scene is thousands of entries.
+        const now = performance.now()
+        if (now - painted < 250) return
+        painted = now
+        toast.loading(t.lab.uploadReadingShare(done, total), { id: toastId })
+      })
       const docFile = files.find((f) => f.name === "scene.json")
       if (!docFile) throw new Error("no scene.json")
       const parsed: unknown = JSON.parse(await docFile.text())
       if (isScenePatch(parsed)) {
-        await importScenePatch(parsed, files.filter((f) => f !== docFile))
-        return
+        await importScenePatch(parsed, files.filter((f) => f !== docFile), toastId, name)
+      } else {
+        const doc = parsed as SceneDoc
+        const resolve = await resolveSceneRefs(doc)
+        const imported = parseSceneDoc(doc, builtinEffect, libraryGraph, resolve)
+        // A blob URL, so loadSceneInto's bundle fetch reads the zip we already hold.
+        const url = URL.createObjectURL(file)
+        try {
+          toast.loading(t.lab.uploadLoading(name), { id: toastId })
+          const failed = await applyLabScene({
+            ...imported,
+            assets: { ...imported.assets, bundle: url },
+            // Its own identity: an imported file may be shared around, and two people's
+            // working scenes must not collide on one id.
+            state: { ...imported.state, id: newSceneId() },
+          })
+          if (failed) throw new Error(failed)
+        } finally {
+          URL.revokeObjectURL(url)
+        }
       }
-      const doc = parsed as SceneDoc
-      const resolve = await resolveSceneRefs(doc)
-      const imported = parseSceneDoc(doc, builtinEffect, libraryGraph, resolve)
-      // A blob URL, so loadSceneInto's bundle fetch reads the zip we already hold.
-      const url = URL.createObjectURL(file)
-      try {
-        await applyLabScene({
-          ...imported,
-          assets: { ...imported.assets, bundle: url },
-          // Its own identity: an imported file may be shared around, and two people's
-          // working scenes must not collide on one id.
-          state: { ...imported.state, id: newSceneId() },
-        })
-      } finally {
-        URL.revokeObjectURL(url)
-      }
+      toast.success(t.lab.uploadDone(name), { id: toastId })
     } catch (e) {
       console.warn("[import]", e)
+      toast.error(t.lab.uploadFailed(name), { id: toastId, description: e instanceof Error ? e.message : String(e) })
       setUpload({ kind: "notice", message: t.sceneFile.badFile })
     }
   }
@@ -6539,7 +6559,7 @@ export default function Lab() {
    * set and a refresh at any point after finds it. The scene keeps its id: it is
    * the same scene, changed.
    */
-  const importScenePatch = async (patch: unknown, patchFiles: File[]) => {
+  const importScenePatch = async (patch: unknown, patchFiles: File[], toastId: string, name: string) => {
     // Holds the autosave off: it would write the outgoing scene's bundle over the
     // merged one in the window before the swap.
     setUploading((n) => n + 1)
@@ -6554,16 +6574,19 @@ export default function Lab() {
       const id = scene.state.id
       // Quota is the failure to expect: the merged set then rides a blob: zip,
       // the same way a plain import does, and the persist effect retries IDB.
+      toast.loading(t.lab.uploadSaving, { id: toastId })
       const stored = await saveLocalBundle(id, entries)
       const url = stored ? null : URL.createObjectURL(await buildZip(entries))
       try {
         const resolve = await resolveSceneRefs(merged)
         const next = parseSceneDoc(merged, builtinEffect, libraryGraph, resolve)
-        await applyLabScene({
+        toast.loading(t.lab.uploadLoading(name), { id: toastId })
+        const failed = await applyLabScene({
           ...next,
           assets: { ...next.assets, bundle: url ?? idbBundleOf(id) },
           state: { ...next.state, id },
         })
+        if (failed) throw new Error(failed)
       } finally {
         if (url) URL.revokeObjectURL(url)
       }

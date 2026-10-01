@@ -44,6 +44,7 @@ import type {
   StageTransform,
   ViewportHandlers,
   NativeStageInfo,
+  NativeStageProgress,
 } from "@/lib/scene-host"
 import { laneChanged, normalizeVisibility, type VisibilityWindow } from "@/lib/timeline"
 import { clearEngineScene, setNativeStageInTurn, undress } from "@/lib/unity-native"
@@ -64,6 +65,17 @@ export type {
   ViewportHandlers,
   NativeStageInfo,
 } from "@/lib/scene-host"
+
+type NativeStageLoad = { name: string; percent: number }
+
+/** The game stage's progress as a whole percent. The engine ticks per file and
+ *  a stage is hundreds of them: the same state back is no re-render. */
+const nativeStageStep =
+  (p: NativeStageProgress | null) =>
+  (prev: NativeStageLoad | null): NativeStageLoad | null => {
+    const next = p && { name: p.name, percent: Math.floor((100 * p.done) / Math.max(p.total, 1e-6)) }
+    return prev?.name === next?.name && prev?.percent === next?.percent ? prev : next
+  }
 
 /**
  * Add or replace by id.
@@ -120,6 +132,12 @@ export function useEngine(
   const [engineReady, setEngineReady] = useState(false)
   /** The model whose looks are compiling, while they compile. */
   const [styling, setStyling] = useState<string | null>(null)
+  /** Models the load in flight has reported in. Not `models.length`: a swap
+   *  keeps the outgoing scene's rows until it is done, so that count named the
+   *  wrong model, or none, for the whole of an import. */
+  const [loaded, setLoaded] = useState(0)
+  /** The game stage, while its package loads, as a whole percent. */
+  const [nativeStageLoad, setNativeStageLoad] = useState<NativeStageLoad | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [models, setModels] = useState<EngineModelInfo[]>([])
   // Which of `models` are environment rather than cast. Stages stay IN models so
@@ -304,6 +322,7 @@ export function useEngine(
           },
           onBytes: setBundleProgress,
           onStyling: setStyling,
+          onNativeStage: (p) => setNativeStageLoad(nativeStageStep(p)),
           onBundle: (files) => {
             if (stale()) return
             bundleRef.current = files
@@ -317,6 +336,7 @@ export function useEngine(
             if (stale()) return
             // This one's looks are done; the next one's bytes are not its shaders.
             setStyling(null)
+            setLoaded((n) => n + 1)
             setModels((prev) => withId(prev, info))
             setGroupsByModel((prev) => ({ ...prev, [info.id]: groups }))
             if (stage) setStages((prev) => withId(prev, stage))
@@ -1360,6 +1380,9 @@ export function useEngine(
     // The outgoing scene's last report was `done` — left standing, the incoming
     // scene opens on "unpacking" before it has fetched anything.
     setBundleProgress(null)
+    setLoaded(0)
+    setStyling(null)
+    setNativeStageLoad(null)
     // AND ITS BUNDLE IS NOT THIS ONE. Left true from the outgoing scene, the
     // editor's slot loader ran the moment the new document landed in state —
     // against the OLD zip, still in bundleRef — found no `hdri/…` in it, and
@@ -1396,12 +1419,23 @@ export function useEngine(
       sceneFiles.planes.clear()
       engine.clearCameraVmd()
 
+      // The pill's phases, as boot reports them. The rows themselves still
+      // land together at the end: they are the outgoing scene's until then.
       const loaded = await loadSceneInto(engine, scene, stale, {
         onBytes: setBundleProgress,
+        onStyling: (file) => {
+          if (!stale()) setStyling(file)
+        },
+        onNativeStage: (p) => setNativeStageLoad(nativeStageStep(p)),
         onBundle: (files) => {
           if (stale()) return
           bundleRef.current = files
           setBundleReady(true)
+        },
+        onModel: () => {
+          if (stale()) return
+          setStyling(null)
+          setLoaded((n) => n + 1)
         },
       })
       if (!loaded) return null
@@ -1425,7 +1459,10 @@ export function useEngine(
       return message
     } finally {
       settle()
-      if (!stale()) setReady(true)
+      if (!stale()) {
+        setStyling(null)
+        setReady(true)
+      }
     }
   }, [clearPlanes])
 
@@ -1489,6 +1526,8 @@ export function useEngine(
     stageReady,
     engineReady,
     styling,
+    loaded,
+    nativeStageLoad,
     bundleProgress,
     bundleReady,
     error,

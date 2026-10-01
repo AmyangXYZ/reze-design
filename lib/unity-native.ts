@@ -174,10 +174,11 @@ export function setNativeStageInTurn(
   pkg: NativeStagePackage | null,
   read?: NativeStageReader,
   stale: () => boolean = () => false,
+  onProgress?: (done: number, total: number) => void,
 ): Promise<void> {
   const run = (turns.get(engine) ?? Promise.resolve()).then(async () => {
     if (pkg && stale()) return
-    await engine.setNativeStage(pkg, read)
+    await engine.setNativeStage(pkg, read, onProgress)
     if (pkg && stale()) await engine.setNativeStage(null)
   })
   turns.set(
@@ -200,6 +201,8 @@ export async function loadNativeStage(
   folder: string,
   read: BundleRead,
   stale: () => boolean,
+  /** How far its pictures, meshes and shaders have got, by the engine's weights. */
+  onProgress?: (name: string, done: number, total: number) => void,
 ): Promise<string | null> {
   const dir = stageFolder(folder)
   const json = await read(`${dir}stage.json`)
@@ -214,7 +217,7 @@ export async function loadNativeStage(
     return bytes
   }
   try {
-    await setNativeStageInTurn(engine, pkg, reader, stale)
+    await setNativeStageInTurn(engine, pkg, reader, stale, onProgress && ((done, total) => onProgress(pkg.name, done, total)))
     const report = engine.nativeReport()
     if (report.errors.length) console.warn(`[native stage] ${pkg.name}: ${report.errors.length} shader error(s)`, report.errors)
   } catch (e) {

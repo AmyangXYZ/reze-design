@@ -20,6 +20,8 @@
 //         model that is neither stage nor prop — the cast.
 //       settings.background.effects — appended, after taking out every
 //         current effect that carries one of the patch's tags.
+//       settings.lights — the same, by each lamp's `stage` tag: the scene's own
+//         lamps stay, the previous take's go.
 //
 // CAST MOTION: `assets.castMotion` is the primary cast member's motion slot —
 // the first model that is neither stage nor prop, the one the camera follows
@@ -88,6 +90,8 @@ export function patchTags(patch: JsonObject): Set<string> {
   const bg = isObject(patch.settings) && isObject(patch.settings.background) ? patch.settings.background : {}
   for (const e of Array.isArray(bg.effects) ? bg.effects : [])
     if (isObject(e) && typeof e.stage === "string" && e.stage) tags.add(e.stage)
+  const lights = isObject(patch.settings) && Array.isArray(patch.settings.lights) ? patch.settings.lights : []
+  for (const l of lights) if (isObject(l) && typeof l.stage === "string" && l.stage) tags.add(l.stage)
   return tags
 }
 
@@ -124,10 +128,15 @@ export function mergeScenePatch(base: SceneDoc, patchDoc: unknown): SceneDoc {
     delete a.bundle
     plain.assets = a
   }
-  if (settingsP && bgP) {
-    const b: JsonObject = { ...bgP }
-    delete b.effects
-    plain.settings = { ...settingsP, background: b }
+  if (settingsP) {
+    const s: JsonObject = { ...settingsP }
+    delete s.lights
+    if (bgP) {
+      const b: JsonObject = { ...bgP }
+      delete b.effects
+      s.background = b
+    }
+    plain.settings = s
   }
   const merged = mergePatch(base as unknown as Json, plain) as unknown as SceneDoc
 
@@ -181,6 +190,21 @@ export function mergeScenePatch(base: SceneDoc, patchDoc: unknown): SceneDoc {
         return c as unknown as NonNullable<SceneDoc["settings"]["background"]["effects"]>[number]
       })
       merged.settings.background.effects = [...kept, ...added]
+    }
+  }
+
+  // ── settings.lights, by tag, as effects are: the scene's own lamps stay, the
+  // previous take's go, the patch's join them ──
+  if (settingsP && "lights" in settingsP) {
+    if (settingsP.lights === null) merged.settings.lights = []
+    else if (Array.isArray(settingsP.lights)) {
+      const kept = (base.settings.lights ?? []).filter((l) => !(l && typeof l.stage === "string" && tags.has(l.stage)))
+      const added = settingsP.lights.filter(isObject).map((l) => {
+        const c = structuredClone(l) as JsonObject
+        if (origin && !c.stage) c.stage = origin
+        return c as unknown as NonNullable<SceneDoc["settings"]["lights"]>[number]
+      })
+      merged.settings.lights = [...kept, ...added]
     }
   }
   return merged
