@@ -8,7 +8,7 @@ import { auth } from "@/lib/auth"
 import { hasDatabase, db } from "@/lib/db"
 import { user } from "@/lib/db/auth-schema"
 import { libraryItems } from "@/lib/db/schema"
-import { refreshMakerPages } from "@/lib/public-pages"
+import { refreshEveryItem, refreshMakerPages } from "@/lib/public-pages"
 import { isTaken, normalize, validate } from "@/lib/username"
 
 export async function POST(request: Request) {
@@ -56,6 +56,7 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "taken" }, { status: 409 })
   }
+  refreshEveryItem()
   refreshMakerPages(me?.handle, wanted)
   return NextResponse.json({ username: wanted })
 }

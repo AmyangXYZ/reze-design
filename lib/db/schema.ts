@@ -73,9 +73,6 @@ export const libraryItems = pgTable(
      *  it is about how the scene is SHOWN, so it never rides in a document. */
     nsfw: boolean("nsfw").notNull().default(false),
     likeCount: integer("like_count").notNull().default(0),
-    /** Scene page loads. Cheap counter — a raw event table can come later if the
-     *  question ever gets more specific than "how many". */
-    viewCount: integer("view_count").notNull().default(0),
     /** Published scenes using this preset, denormalised from scene_uses. */
     usageCount: integer("usage_count").notNull().default(0),
     /** Finished video exports that used this preset, from the browsers that opted

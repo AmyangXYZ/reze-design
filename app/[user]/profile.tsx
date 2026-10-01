@@ -12,7 +12,7 @@
 
 import { useMemo, useRef, useState, useSyncExternalStore } from "react"
 import Link from "next/link"
-import { Eye, Heart, Pin, PinOff, Play, Trash2, WandSparkles } from "lucide-react"
+import { Heart, Pin, PinOff, Play, Trash2, WandSparkles } from "lucide-react"
 import type { ShaderGraph } from "reze-engine"
 import type { GradeSpec } from "@/lib/grade"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -36,7 +36,7 @@ import { SceneCover } from "@/components/nsfw"
 
 type Published = { id: string; name: string; description: string; likeCount: number; createdAt: string }
 
-export type ProfileScene = Published & { viewCount: number; poster: string | null; pinned: boolean; nsfw: boolean }
+export type ProfileScene = Published & { poster: string | null; pinned: boolean; nsfw: boolean }
 export type ProfileEffect = Published & { wgsl: string }
 export type ProfileGraph = Published & { graph: ShaderGraph }
 export type ProfileGrade = Published & { spec: GradeSpec }
@@ -80,17 +80,16 @@ export function Profile({
   const [scenes, setScenes] = useState(initialScenes)
   const [confirming, setConfirming] = useState<ProfileScene | null>(null)
 
-  const views = scenes.reduce((n, s) => n + s.viewCount, 0)
   const likes = [...scenes, ...effects, ...graphs, ...grades].reduce((n, item) => n + item.likeCount, 0)
 
-  // The banner: the scene the author pinned, else the one watched most among
+  // The banner: the scene the author pinned, else the one liked most among
   // those with a picture to show and no flag on it. A flagged pin is still the
   // banner — the author chose it — and blurs like any flagged cover.
   const hero = useMemo(
     () =>
       scenes.find((s) => s.pinned) ??
       scenes.reduce<ProfileScene | null>(
-        (best, s) => (s.poster && !s.nsfw && (!best || s.viewCount > best.viewCount) ? s : best),
+        (best, s) => (s.poster && !s.nsfw && (!best || s.likeCount > best.likeCount) ? s : best),
         null,
       ),
     [scenes],
@@ -176,8 +175,6 @@ export function Profile({
             <h1 className="truncate text-lg font-semibold tracking-tight text-foreground">@{handle}</h1>
             <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground tabular-nums">
               <span>{t.profile.scenes(scenes.length)}</span>
-              <span aria-hidden>·</span>
-              <span>{t.profile.views(views)}</span>
               <span aria-hidden>·</span>
               <span>{t.profile.likes(likes)}</span>
               <span aria-hidden>·</span>
@@ -358,14 +355,10 @@ function Hero({ handle, scene, ...rest }: { handle: string; scene: ProfileScene 
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 text-sm text-white/70">
             {scene.pinned && <Pin className="size-3.5" />}
-            {scene.pinned ? t.profile.pinned : t.profile.mostViewed}
+            {scene.pinned ? t.profile.pinned : t.profile.mostLiked}
           </div>
           <h2 className="mt-1 truncate text-lg font-semibold tracking-tight text-white">{scene.name}</h2>
           <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-white/75 tabular-nums">
-            <span className="flex items-center gap-1.5">
-              <Eye className="size-4" />
-              {scene.viewCount}
-            </span>
             <span className="flex items-center gap-1.5">
               <Heart className="size-4" />
               {scene.likeCount}
@@ -406,10 +399,6 @@ function SceneCard({ handle, scene, ...rest }: { handle: string; scene: ProfileS
           </span>
         )}
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-3 bg-gradient-to-t from-black/70 to-transparent px-3 pt-10 pb-2.5 text-sm text-white tabular-nums opacity-0 transition-opacity duration-200 group-hover:opacity-100 [@media(hover:none)]:opacity-100">
-          <span className="flex items-center gap-1">
-            <Eye className="size-3.5" />
-            {scene.viewCount}
-          </span>
           <span className="flex items-center gap-1">
             <Heart className="size-3.5" />
             {scene.likeCount}

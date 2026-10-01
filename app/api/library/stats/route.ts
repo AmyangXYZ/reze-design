@@ -13,10 +13,12 @@
 // uses by id, so a name-keyed usage count could not be joined to anyway.
 
 import { NextResponse } from "next/server"
+import { unstable_cache } from "next/cache"
 import { and, eq, isNull, sql } from "drizzle-orm"
 import { alias } from "drizzle-orm/pg-core"
 import { auth } from "@/lib/auth"
 import { hasDatabase, db, schema } from "@/lib/db"
+import { LIBRARY_TAG } from "@/lib/public-pages"
 
 export type ItemStats = { likeCount: number; liked: boolean; scenes: number; exports: number }
 
@@ -25,51 +27,63 @@ export async function GET(request: Request) {
   // interpret. See lib/db — running without one is supported.
   if (!hasDatabase) return NextResponse.json({ stats: {}, signedIn: false })
 
+  // The counts are everyone's and cached; only which ones YOU liked is read live,
+  // and only when someone is signed in.
   const session = await auth.api.getSession({ headers: request.headers })
-
-  // The scene side of scene_uses, so one table can be joined to itself.
-  const scenes = alias(schema.libraryItems, "scenes")
-
-  const [items, mine, usage] = await Promise.all([
-    db
-      .select({
-        id: schema.libraryItems.id,
-        likeCount: schema.libraryItems.likeCount,
-        // Counted, not joined: export_stats has no scene id to group by — see the
-        // table. The counter on the item IS the aggregate, which is also what
-        // lets the raw rows expire without taking the number with them.
-        exportCount: schema.libraryItems.exportCount,
-      })
-      .from(schema.libraryItems),
+  const [shared, mine] = await Promise.all([
+    sharedStats(),
     session
       ? db.select({ itemId: schema.likes.itemId }).from(schema.likes).where(eq(schema.likes.userId, session.user.id))
       : Promise.resolve([] as { itemId: string }[]),
-    // scene_uses, extracted from each document at publish, rather than a scan
-    // through the scene's JSON. The scan predated the table and had gone stale in
-    // three ways: it read `settings.grade.preset` and `settings.background.effect`
-    // as NAMES, when both are `{ id }` pins now (see sceneRefs in
-    // lib/scene.ts); it counted no shader graphs at all, so every graph in the
-    // library read as used by nobody; and it matched on a name that is no longer
-    // unique. `scene_uses_item_idx` exists for exactly this query.
-    db
-      .select({ itemId: schema.sceneUses.itemId, n: sql<number>`count(*)::int` })
-      .from(schema.sceneUses)
-      .innerJoin(scenes, eq(scenes.id, schema.sceneUses.sceneId))
-      // Only scenes someone can actually go and look at. usage_count on the item
-      // is incremented at publish and never decremented, so counting here is what
-      // keeps "used in N scenes" true after a scene is taken down.
-      .where(and(eq(scenes.visibility, "public"), isNull(scenes.deletedAt)))
-      .groupBy(schema.sceneUses.itemId),
   ])
 
   const liked = new Set(mine.map((m) => m.itemId))
-  const scenesUsing = new Map(usage.map((u) => [u.itemId, u.n]))
-
   const stats: Record<string, ItemStats> = {}
-  for (const i of items) {
-    stats[i.id] = { likeCount: i.likeCount, liked: liked.has(i.id), scenes: scenesUsing.get(i.id) ?? 0, exports: i.exportCount }
-  }
+  for (const [id, s] of Object.entries(shared)) stats[id] = { ...s, liked: liked.has(id) }
   return NextResponse.json({ stats, signedIn: !!session })
 }
+
+/** Every item's counts, cached until a write marks the library stale
+ *  (lib/public-pages). */
+const sharedStats = unstable_cache(
+  async () => {
+    // The scene side of scene_uses, so one table can be joined to itself.
+    const scenes = alias(schema.libraryItems, "scenes")
+    const [items, usage] = await Promise.all([
+      db
+        .select({
+          id: schema.libraryItems.id,
+          likeCount: schema.libraryItems.likeCount,
+          // Counted, not joined: export_stats has no scene id to group by — see the
+          // table. The counter on the item IS the aggregate, which is also what
+          // lets the raw rows expire without taking the number with them.
+          exportCount: schema.libraryItems.exportCount,
+        })
+        .from(schema.libraryItems),
+      // scene_uses, extracted from each document at publish, rather than a scan
+      // through the scene's JSON. The scan predated the table and had gone stale in
+      // three ways: it read `settings.grade.preset` and `settings.background.effect`
+      // as NAMES, when both are `{ id }` pins now (see sceneRefs in
+      // lib/scene.ts); it counted no shader graphs at all, so every graph in the
+      // library read as used by nobody; and it matched on a name that is no longer
+      // unique. `scene_uses_item_idx` exists for exactly this query.
+      db
+        .select({ itemId: schema.sceneUses.itemId, n: sql<number>`count(*)::int` })
+        .from(schema.sceneUses)
+        .innerJoin(scenes, eq(scenes.id, schema.sceneUses.sceneId))
+        // Only scenes someone can actually go and look at. usage_count on the item
+        // is incremented at publish and never decremented, so counting here is what
+        // keeps "used in N scenes" true after a scene is taken down.
+        .where(and(eq(scenes.visibility, "public"), isNull(scenes.deletedAt)))
+        .groupBy(schema.sceneUses.itemId),
+    ])
+    const scenesUsing = new Map(usage.map((u) => [u.itemId, u.n]))
+    const out: Record<string, Omit<ItemStats, "liked">> = {}
+    for (const i of items) out[i.id] = { likeCount: i.likeCount, scenes: scenesUsing.get(i.id) ?? 0, exports: i.exportCount }
+    return out
+  },
+  ["library-stats"],
+  { tags: [LIBRARY_TAG] },
+)
 
 export const revalidate = 0

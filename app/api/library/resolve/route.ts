@@ -9,9 +9,11 @@
 // showing it is already public. No session needed, and none is read.
 
 import { NextResponse } from "next/server"
-import { inArray } from "drizzle-orm"
+import { unstable_cache } from "next/cache"
+import { and, eq, inArray, ne } from "drizzle-orm"
 import { auth } from "@/lib/auth"
 import { hasDatabase, db, schema } from "@/lib/db"
+import { ITEMS_TAG, itemTag } from "@/lib/public-pages"
 
 const MAX_REFS = 64
 
@@ -43,34 +45,46 @@ export async function POST(request: Request) {
   // when its author retires it; a scene already using it keeps rendering, which
   // is the reason deletion is soft in the first place.
   //
-  // PRIVATE does not. Private means never seen, and that only holds if this
-  // route refuses to hand the payload to anyone but its owner — a pin is a bare
-  // id, so without the check any id is a read. A private item simply has no key
-  // in the answer, which is what a deleted one looks like.
-  const rows = await db
-    .select({
-      id: schema.libraryItems.id,
-      payload: schema.libraryItems.payload,
-      name: schema.libraryItems.name,
-      author: schema.libraryItems.author,
-      visibility: schema.libraryItems.visibility,
-      ownerId: schema.libraryItems.ownerId,
-    })
-    .from(schema.libraryItems)
-    .where(inArray(schema.libraryItems.id, ids))
-
-  // Read only when something private is actually in the answer — the common case
-  // is a scene wearing public presets, and that must not wait on a session.
-  const viewer = rows.some((r) => r.visibility === "private")
-    ? await auth.api.getSession({ headers: request.headers })
-    : null
-
-  const payloads: Record<string, { payload: unknown; name: string; author: string }> = {}
-  for (const r of rows) {
-    if (r.visibility === "private" && (!viewer || r.ownerId !== viewer.user.id)) continue
-    payloads[r.id] = { payload: r.payload, name: r.name, author: r.author }
+  // PRIVATE is not. Private means never seen, and that only holds if this route
+  // refuses to hand the payload to anyone but its owner — a pin is a bare id, so
+  // without the check any id is a read. The shared answer is public rows only,
+  // cached for everyone; an id it lacks is looked up live, and only for a
+  // signed-in owner. To anyone else a private item simply has no key in the
+  // answer, which is what a deleted one looks like.
+  const payloads = await publicPayloads(ids)
+  const missing = ids.filter((id) => !(id in payloads))
+  if (missing.length) {
+    const viewer = await auth.api.getSession({ headers: request.headers })
+    if (viewer) {
+      const own = await db
+        .select({ id: schema.libraryItems.id, payload: schema.libraryItems.payload, name: schema.libraryItems.name, author: schema.libraryItems.author })
+        .from(schema.libraryItems)
+        .where(and(inArray(schema.libraryItems.id, missing), eq(schema.libraryItems.ownerId, viewer.user.id)))
+      for (const r of own) payloads[r.id] = { payload: r.payload, name: r.name, author: r.author }
+    }
   }
   return NextResponse.json({ payloads })
+}
+
+type Resolved = Record<string, { payload: unknown; name: string; author: string }>
+
+/** The public payloads among these ids, cached per id set until a write to any
+ *  of them marks it stale (lib/public-pages). */
+function publicPayloads(ids: string[]): Promise<Resolved> {
+  const key = [...ids].sort()
+  return unstable_cache(
+    async () => {
+      const rows = await db
+        .select({ id: schema.libraryItems.id, payload: schema.libraryItems.payload, name: schema.libraryItems.name, author: schema.libraryItems.author })
+        .from(schema.libraryItems)
+        .where(and(inArray(schema.libraryItems.id, key), ne(schema.libraryItems.visibility, "private")))
+      const out: Resolved = {}
+      for (const r of rows) out[r.id] = { payload: r.payload, name: r.name, author: r.author }
+      return out
+    },
+    ["resolve", ...key],
+    { tags: [...key.map(itemTag), ITEMS_TAG] },
+  )()
 }
 
 export const revalidate = 0

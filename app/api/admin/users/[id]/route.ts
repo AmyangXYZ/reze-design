@@ -7,7 +7,7 @@ import { requireAdmin } from "@/lib/admin"
 import { hasDatabase, db } from "@/lib/db"
 import { user } from "@/lib/db/auth-schema"
 import { libraryItems } from "@/lib/db/schema"
-import { handleOf, refreshMakerPages } from "@/lib/public-pages"
+import { handleOf, refreshEveryItem, refreshMakerPages } from "@/lib/public-pages"
 import { isTaken, normalize, validate } from "@/lib/username"
 
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -43,6 +43,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     } catch {
       return NextResponse.json({ error: "taken" }, { status: 409 })
     }
+    refreshEveryItem()
     refreshMakerPages(before, wanted)
     return NextResponse.json({ id, username: wanted })
   }
@@ -78,6 +79,7 @@ export async function DELETE(request: Request, ctx: { params: Promise<{ id: stri
   // its content. Delete those explicitly first if that is what you want.
   const handle = await handleOf(id)
   await db.delete(user).where(eq(user.id, id))
+  refreshEveryItem()
   refreshMakerPages(handle)
   return NextResponse.json({ deleted: id })
 }

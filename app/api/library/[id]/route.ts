@@ -8,7 +8,7 @@ import { and, eq, inArray, ne } from "drizzle-orm"
 import { auth } from "@/lib/auth"
 import { requireAdmin } from "@/lib/admin"
 import { hasDatabase, db, schema } from "@/lib/db"
-import { handleOf, refreshMakerPages } from "@/lib/public-pages"
+import { handleOf, refreshLibrary, refreshMakerPages } from "@/lib/public-pages"
 import { nameClash } from "@/lib/db/names"
 import { normalizeName, withGraphName, type ScenePayload } from "@/lib/library"
 import type { Visibility } from "@/lib/db/schema"
@@ -138,6 +138,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
       .update(schema.libraryItems)
       .set({ featuredAt: featured ? new Date() : null })
       .where(eq(schema.libraryItems.id, id))
+    refreshLibrary(id)
     refreshMakerPages(await handleOf(row.ownerId))
     return NextResponse.json({ id, featured })
   }
@@ -209,6 +210,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     // The unique (owner, kind, name) index — the database's own last word.
     return NextResponse.json({ error: "name-taken" }, { status: 409 })
   }
+  refreshLibrary(id)
   if ((wantVisibility ?? row.visibility) === "public") {
     refreshMakerPages(await handleOf(row.ownerId))
   }
@@ -229,6 +231,7 @@ export async function DELETE(request: Request, ctx: { params: Promise<{ id: stri
     .where(eq(schema.libraryItems.id, id))
     .limit(1)
   await db.delete(schema.libraryItems).where(eq(schema.libraryItems.id, id))
+  refreshLibrary(id)
   if (owned?.visibility === "public") {
     refreshMakerPages(await handleOf(owned.ownerId))
   }

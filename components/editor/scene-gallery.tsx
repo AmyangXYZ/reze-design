@@ -45,7 +45,6 @@ export type GalleryScene = {
   credits: string
   tags: string[]
   likeCount: number
-  viewCount: number
   poster: string | null
   createdAt: string
   /** Only ever your own rows carry one; everyone else's read as public. The card
@@ -442,7 +441,7 @@ function GalleryContent({
       const row = byId.get(id)
       return {
         likes: known(id) ? statFor(id).likeCount : (row?.likeCount ?? 0),
-        uses: row?.viewCount ?? 0,
+        uses: 0,
         liked: statFor(id).liked,
       }
     },
@@ -588,7 +587,7 @@ function GalleryContent({
           <GalleryThumbnails className="size-4 text-blue-400" />
           {t.gallery.title}
         </DialogTitle>
-        <LibraryToolbar browse={browse} usedLabel={t.rail.views} />
+        <LibraryToolbar browse={browse} />
         {/* One switch for every flagged cover, remembered by this browser. */}
         <label className="ml-3 flex h-6 shrink-0 cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
           {t.nsfw.toggle}
@@ -618,7 +617,6 @@ function GalleryContent({
             meta={meta}
             numbers={numbers}
             wrap={wrap}
-            usedLabel={t.rail.views}
             empty={failed ? t.gallery.failed : loading ? t.gallery.loading : t.gallery.empty}
             footer={
               <>
@@ -682,14 +680,9 @@ function GalleryContent({
                     </p>
                   </div>
                 )}
-                {/* Same strip as the three preset libraries — the other number on
-                    the left, the heart at the right edge — except a scene's other
-                    number is its views. Nothing uses a scene, so there is no
-                    usage count to show here. */}
-                <div className="mt-3 -mr-2.5 flex items-center gap-2">
-                  <span className="min-w-0 flex-1 font-mono text-[11px] leading-tight text-muted-foreground">
-                    {t.gallery.views(selected.viewCount)}
-                  </span>
+                {/* Same strip as the three preset libraries, the heart at the right
+                    edge. A scene has no second number: nothing uses a scene. */}
+                <div className="mt-3 -mr-2.5 flex items-center justify-end gap-2">
                   <LibraryLike
                     likeCount={likesOf(selected)}
                     liked={statFor(selected.id).liked}

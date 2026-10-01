@@ -8,6 +8,7 @@ import { NextResponse } from "next/server"
 import { and, eq, sql } from "drizzle-orm"
 import { auth } from "@/lib/auth"
 import { hasDatabase, db, schema } from "@/lib/db"
+import { refreshLibrary } from "@/lib/public-pages"
 
 export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
   // No database configured — see lib/db. Nothing to publish to, and nothing to
@@ -60,5 +61,6 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     .from(schema.libraryItems)
     .where(eq(schema.libraryItems.id, id))
     .limit(1)
+  refreshLibrary(id)
   return NextResponse.json({ liked, likeCount: row?.likeCount ?? 0 })
 }

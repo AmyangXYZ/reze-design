@@ -5,12 +5,13 @@
 // stable id and a name under which others will see it.
 
 import { NextResponse } from "next/server"
-import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm"
+import { unstable_cache } from "next/cache"
+import { and, desc, eq, inArray, isNull, lt, ne, sql } from "drizzle-orm"
 import { auth } from "@/lib/auth"
 import { hasDatabase, db, schema } from "@/lib/db"
 import { user } from "@/lib/db/auth-schema"
 import { nameClash } from "@/lib/db/names"
-import { refreshMakerPages } from "@/lib/public-pages"
+import { LIBRARY_TAG, refreshLibrary, refreshMakerPages } from "@/lib/public-pages"
 import { normalizeName, withGraphName, type LibraryKind } from "@/lib/library"
 import type { Visibility } from "@/lib/db/schema"
 
@@ -95,44 +96,28 @@ export async function GET(request: Request) {
     // Tag counts across EVERY public scene, not the page in front of you: tags are
     // a way of browsing the whole gallery, so they must not shrink when you narrow
     // it to your own or to what you liked.
-    if (url.searchParams.get("counts") === "tags") {
-      const rows = await db
-        .select({ tag: sql<string>`tag`, n: sql<number>`count(*)::int` })
-        .from(sql`${schema.libraryItems}, unnest(${schema.libraryItems.tags}) as tag`)
-        .where(
-          and(
-            eq(schema.libraryItems.kind, "scene"),
-            eq(schema.libraryItems.visibility, "public"),
-            isNull(schema.libraryItems.deletedAt),
-          ),
-        )
-        .groupBy(sql`tag`)
-      return NextResponse.json({ tags: rows.sort((a, b) => b.n - a.n || a.tag.localeCompare(b.tag)) })
-    }
+    if (url.searchParams.get("counts") === "tags") return NextResponse.json({ tags: await galleryTags() })
 
     // Facet counts for the rail, over the WHOLE gallery rather than the page in
     // front of you — a rail that counted the loaded window would climb as you
     // scrolled. `yours` and `liked` need a session and are 0 without one, which
     // is also what those rails hold for a signed-out reader.
     if (url.searchParams.get("counts") === "facets") {
-      const published = and(
-        eq(schema.libraryItems.kind, "scene"),
-        eq(schema.libraryItems.visibility, "public"),
-        isNull(schema.libraryItems.deletedAt),
-      )
       const viewer = await auth.api.getSession({ headers: request.headers })
       const n = sql<number>`count(*)::int`
-      const mineAnyVisibility = and(
-        eq(schema.libraryItems.kind, "scene"),
-        isNull(schema.libraryItems.deletedAt),
-      )
       const [all, yours, liked] = await Promise.all([
-        db.select({ n }).from(schema.libraryItems).where(published),
+        galleryCount(),
         viewer
           ? db
               .select({ n })
               .from(schema.libraryItems)
-              .where(and(mineAnyVisibility, eq(schema.libraryItems.ownerId, viewer.user.id)))
+              .where(
+                and(
+                  eq(schema.libraryItems.kind, "scene"),
+                  isNull(schema.libraryItems.deletedAt),
+                  eq(schema.libraryItems.ownerId, viewer.user.id),
+                ),
+              )
           : Promise.resolve([{ n: 0 }]),
         viewer
           ? db
@@ -142,10 +127,10 @@ export async function GET(request: Request) {
                 schema.likes,
                 and(eq(schema.likes.itemId, schema.libraryItems.id), eq(schema.likes.userId, viewer.user.id)),
               )
-              .where(published)
+              .where(PUBLISHED_SCENE)
           : Promise.resolve([{ n: 0 }]),
       ])
-      return NextResponse.json({ all: all[0]?.n ?? 0, yours: yours[0]?.n ?? 0, liked: liked[0]?.n ?? 0 })
+      return NextResponse.json({ all, yours: yours[0]?.n ?? 0, liked: liked[0]?.n ?? 0 })
     }
 
     const sort = url.searchParams.get("sort") ?? "hot"
@@ -153,109 +138,177 @@ export async function GET(request: Request) {
     const before = Number(url.searchParams.get("before")) || null
     const limit = Math.min(Number(url.searchParams.get("limit")) || 24, 48)
 
-    // Reddit's ordering: a young post with a few likes outranks an old one with
-    // the same, and the gap closes as both age.
-    //
-    // TUNED FOR THIS SITE'S VOLUME, which is the whole reason the divisor is not
-    // Reddit's 45000. At that figure a day of age is worth 1.92 and `log` is
-    // base 10, so a scene needed ~83 likes to outrank one published a day later
-    // — true to the original, and at counts of nought to a handful it made every
-    // like a rounding error and collapsed `hot` into `new`. The two orderings
-    // were the same list, which is what "sorting does not work" looked like.
-    // At 450000 a day is worth 0.192 and a single like clears it.
-    //
-    // `+ 1` inside the log, not outside a floor of 1: `greatest(likes, 1) + 1`
-    // scores nought likes and one like identically, so the first like — the one
-    // that most changes what a scene deserves — counted for nothing.
-    const hot = sql<number>`log(${schema.libraryItems.likeCount} + 1)
-      + extract(epoch from ${schema.libraryItems.createdAt}) / 450000`
-    const order = sort === "new" ? desc(schema.libraryItems.createdAt) : sort === "top" ? desc(schema.libraryItems.likeCount) : desc(hot)
-
-    // Only the personal facets read a session — the default list stays one public
-    // query with no auth round trip in front of it.
-    const viewer = facet ? await auth.api.getSession({ headers: request.headers }) : null
-    if (facet && !viewer) return NextResponse.json({ scenes: [], nextCursor: null })
-
-    const selection = db
-      .select({
-        id: schema.libraryItems.id,
-        name: schema.libraryItems.name,
-        author: schema.libraryItems.author,
-        description: schema.libraryItems.description,
-        // Sent with the list rather than fetched on selection: a second round trip
-        // to Singapore to read a credit is how a credit ends up unread.
-        credits: schema.libraryItems.credits,
-        tags: schema.libraryItems.tags,
-        likeCount: schema.libraryItems.likeCount,
-        viewCount: schema.libraryItems.viewCount,
-        posterKey: schema.libraryItems.posterKey,
-        createdAt: schema.libraryItems.createdAt,
-        visibility: schema.libraryItems.visibility,
-        // Sent, not filtered on: a flagged scene is still listed, with its cover
-        // blurred until the viewer asks to see it.
-        nsfw: schema.libraryItems.nsfw,
-        // Selected so the cursor can be stated in the same terms the rows were
-        // ranked by. Stripped from the response below — it is paging machinery,
-        // not something a card shows.
-        hot,
-      })
-      .from(schema.libraryItems)
-    const scenes = await (facet === "liked" && viewer
-      ? selection.innerJoin(
-          schema.likes,
-          and(eq(schema.likes.itemId, schema.libraryItems.id), eq(schema.likes.userId, viewer.user.id)),
-        )
-      : selection
-    )
-      .where(
-        and(
-          eq(schema.libraryItems.kind, "scene"),
-          // "Yours" is the one shelf that shows your private scenes:
-          // they are yours to see, and hiding them there is how a private scene
-          // becomes a scene you cannot find. Every other list is public only.
-          facet === "yours" && viewer ? undefined : eq(schema.libraryItems.visibility, "public"),
-          isNull(schema.libraryItems.deletedAt),
-          facet === "yours" && viewer ? eq(schema.libraryItems.ownerId, viewer.user.id) : undefined,
-          // THE CURSOR IS THE SORT KEY, or it is not a cursor. Ranked by `hot`
-          // while paging by date, page two asked for "everything older than the
-          // last row shown, ranked by hot" — and the last row in hot order is
-          // not the oldest one on the page, so the scenes in between were
-          // skipped and ones already seen came back.
-          before === null
-            ? undefined
-            : sort === "new"
-              ? lt(schema.libraryItems.createdAt, new Date(before))
-              : sort === "top"
-                ? lt(schema.libraryItems.likeCount, before)
-                : lt(hot, before),
-        ),
-      )
-      .orderBy(order)
-      .limit(limit + 1)
-
-    const page = scenes.slice(0, limit)
-    const last = page[page.length - 1]
-    /** Where this page ended, in whatever the rows were ranked by. */
-    const cursorOf = (row: (typeof page)[number]) =>
-      sort === "new" ? row.createdAt.getTime() : sort === "top" ? row.likeCount : Number(row.hot)
-
-    return NextResponse.json({
-      scenes: page.map(({ posterKey, createdAt, hot, ...s }) => {
-        // Dropped rather than sent: the rank is how the next page finds its
-        // place, and a card has no use for it.
-        void hot
-        return {
-          ...s,
-          createdAt: createdAt.toISOString(),
-          poster: posterKey ? `${process.env.R2_PUBLIC_BASE_URL}/${posterKey}` : null,
-        }
-      }),
-      // Keyset, not offset: rows shift under an offset as people publish.
-      nextCursor: scenes.length > limit && last ? cursorOf(last) : null,
-    })
+    // The public pages are cached for everyone; only the personal facets read a
+    // session, and those go to the database.
+    if (!facet) return NextResponse.json(await publicGalleryPage(sort, before, limit))
+    const viewer = await auth.api.getSession({ headers: request.headers })
+    if (!viewer || (facet !== "yours" && facet !== "liked")) return NextResponse.json({ scenes: [], nextCursor: null })
+    return NextResponse.json(await galleryPage(sort, before, limit, { facet, viewerId: viewer.user.id }))
   }
 
+  // The presets: every public row, cached for everyone, plus your own private
+  // ones read live — your private presets belong in YOUR library, badged, or
+  // "private" would mean "lost".
   const session = await auth.api.getSession({ headers: request.headers })
+  const [shared, own] = await Promise.all([
+    publicPresets(),
+    session
+      ? presetRows(and(eq(schema.libraryItems.visibility, "private"), eq(schema.libraryItems.ownerId, session.user.id)))
+      : Promise.resolve([]),
+  ])
+  // Newest first, which is also the order a client with no sort of its own
+  // renders. The date travels with the row: the library ranks by it, so the
+  // ordering here is a sensible default rather than the only signal.
+  const items = [...shared, ...own]
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))
+    .map(({ ownerId, ...r }) => ({ ...r, owner: "user" as const, mine: !!session && ownerId === session.user.id }))
+  return NextResponse.json({ items })
+}
+
+const PUBLISHED_SCENE = and(
+  eq(schema.libraryItems.kind, "scene"),
+  eq(schema.libraryItems.visibility, "public"),
+  isNull(schema.libraryItems.deletedAt),
+)
+
+/** Tag counts across every public scene, cached until a write marks the library
+ *  stale (lib/public-pages). */
+const galleryTags = unstable_cache(
+  async () => {
+    const rows = await db
+      .select({ tag: sql<string>`tag`, n: sql<number>`count(*)::int` })
+      .from(sql`${schema.libraryItems}, unnest(${schema.libraryItems.tags}) as tag`)
+      .where(PUBLISHED_SCENE)
+      .groupBy(sql`tag`)
+    return rows.sort((a, b) => b.n - a.n || a.tag.localeCompare(b.tag))
+  },
+  ["gallery-tags"],
+  { tags: [LIBRARY_TAG] },
+)
+
+/** How many public scenes there are, cached like the tags. */
+const galleryCount = unstable_cache(
+  async () => {
+    const [row] = await db.select({ n: sql<number>`count(*)::int` }).from(schema.libraryItems).where(PUBLISHED_SCENE)
+    return row?.n ?? 0
+  },
+  ["gallery-count"],
+  { tags: [LIBRARY_TAG] },
+)
+
+/** A page of the public gallery, cached per sort and cursor like the tags. */
+const publicGalleryPage = unstable_cache(
+  (sort: string, before: number | null, limit: number) => galleryPage(sort, before, limit, null),
+  ["gallery-page"],
+  { tags: [LIBRARY_TAG] },
+)
+
+/** A page of the gallery: the public scenes, or one person's shelf of them. */
+async function galleryPage(
+  sort: string,
+  before: number | null,
+  limit: number,
+  shelf: { facet: "yours" | "liked"; viewerId: string } | null,
+) {
+  // Reddit's ordering: a young post with a few likes outranks an old one with
+  // the same, and the gap closes as both age.
+  //
+  // TUNED FOR THIS SITE'S VOLUME, which is the whole reason the divisor is not
+  // Reddit's 45000. At that figure a day of age is worth 1.92 and `log` is
+  // base 10, so a scene needed ~83 likes to outrank one published a day later
+  // — true to the original, and at counts of nought to a handful it made every
+  // like a rounding error and collapsed `hot` into `new`. The two orderings
+  // were the same list, which is what "sorting does not work" looked like.
+  // At 450000 a day is worth 0.192 and a single like clears it.
+  //
+  // `+ 1` inside the log, not outside a floor of 1: `greatest(likes, 1) + 1`
+  // scores nought likes and one like identically, so the first like — the one
+  // that most changes what a scene deserves — counted for nothing.
+  const hot = sql<number>`log(${schema.libraryItems.likeCount} + 1)
+    + extract(epoch from ${schema.libraryItems.createdAt}) / 450000`
+  const order = sort === "new" ? desc(schema.libraryItems.createdAt) : sort === "top" ? desc(schema.libraryItems.likeCount) : desc(hot)
+
+  const selection = db
+    .select({
+      id: schema.libraryItems.id,
+      name: schema.libraryItems.name,
+      author: schema.libraryItems.author,
+      description: schema.libraryItems.description,
+      // Sent with the list rather than fetched on selection: a second round trip
+      // to Singapore to read a credit is how a credit ends up unread.
+      credits: schema.libraryItems.credits,
+      tags: schema.libraryItems.tags,
+      likeCount: schema.libraryItems.likeCount,
+      posterKey: schema.libraryItems.posterKey,
+      createdAt: schema.libraryItems.createdAt,
+      visibility: schema.libraryItems.visibility,
+      // Sent, not filtered on: a flagged scene is still listed, with its cover
+      // blurred until the viewer asks to see it.
+      nsfw: schema.libraryItems.nsfw,
+      // Selected so the cursor can be stated in the same terms the rows were
+      // ranked by. Stripped from the response below — it is paging machinery,
+      // not something a card shows.
+      hot,
+    })
+    .from(schema.libraryItems)
+  const yours = shelf?.facet === "yours"
+  const scenes = await (shelf?.facet === "liked"
+    ? selection.innerJoin(
+        schema.likes,
+        and(eq(schema.likes.itemId, schema.libraryItems.id), eq(schema.likes.userId, shelf.viewerId)),
+      )
+    : selection
+  )
+    .where(
+      and(
+        eq(schema.libraryItems.kind, "scene"),
+        // "Yours" is the one shelf that shows your private scenes:
+        // they are yours to see, and hiding them there is how a private scene
+        // becomes a scene you cannot find. Every other list is public only.
+        yours ? undefined : eq(schema.libraryItems.visibility, "public"),
+        isNull(schema.libraryItems.deletedAt),
+        yours ? eq(schema.libraryItems.ownerId, shelf.viewerId) : undefined,
+        // THE CURSOR IS THE SORT KEY, or it is not a cursor. Ranked by `hot`
+        // while paging by date, page two asked for "everything older than the
+        // last row shown, ranked by hot" — and the last row in hot order is
+        // not the oldest one on the page, so the scenes in between were
+        // skipped and ones already seen came back.
+        before === null
+          ? undefined
+          : sort === "new"
+            ? lt(schema.libraryItems.createdAt, new Date(before))
+            : sort === "top"
+              ? lt(schema.libraryItems.likeCount, before)
+              : lt(hot, before),
+      ),
+    )
+    .orderBy(order)
+    .limit(limit + 1)
+
+  const page = scenes.slice(0, limit)
+  const last = page[page.length - 1]
+  /** Where this page ended, in whatever the rows were ranked by. */
+  const cursorOf = (row: (typeof page)[number]) =>
+    sort === "new" ? row.createdAt.getTime() : sort === "top" ? row.likeCount : Number(row.hot)
+
+  return {
+    scenes: page.map(({ posterKey, createdAt, hot, ...s }) => {
+      // Dropped rather than sent: the rank is how the next page finds its
+      // place, and a card has no use for it.
+      void hot
+      return {
+        ...s,
+        createdAt: createdAt.toISOString(),
+        poster: posterKey ? `${process.env.R2_PUBLIC_BASE_URL}/${posterKey}` : null,
+      }
+    }),
+    // Keyset, not offset: rows shift under an offset as people publish.
+    nextCursor: scenes.length > limit && last ? cursorOf(last) : null,
+  }
+}
+
+/** Preset rows (scenes have the gallery) matching `where`, newest first. */
+async function presetRows(where: ReturnType<typeof and>) {
   const rows = await db
     .select({
       id: schema.libraryItems.id,
@@ -275,25 +328,15 @@ export async function GET(request: Request) {
     })
     .from(schema.libraryItems)
     .leftJoin(user, eq(schema.libraryItems.ownerId, user.id))
-    // Public to everyone, plus everything you own — your private presets belong
-    // in YOUR library, badged, or "private" would mean "lost".
-    .where(
-      session
-        ? or(eq(schema.libraryItems.visibility, "public"), eq(schema.libraryItems.ownerId, session.user.id))
-        : eq(schema.libraryItems.visibility, "public"),
-    )
-    // Newest first, which is also the order a client with no sort of its own
-    // renders. The date travels with the row now: the library ranks by it, so
-    // the ordering here is a sensible default rather than the only signal.
+    .where(and(ne(schema.libraryItems.kind, "scene"), where))
     .orderBy(desc(schema.libraryItems.createdAt))
-  const items = rows.map(({ ownerId, createdAt, ...r }) => ({
-    ...r,
-    createdAt: createdAt.toISOString(),
-    owner: "user" as const,
-    mine: !!session && ownerId === session.user.id,
-  }))
-  return NextResponse.json({ items })
+  return rows.map(({ createdAt, ...r }) => ({ ...r, createdAt: createdAt.toISOString() }))
 }
+
+/** Every public preset, cached like the gallery. */
+const publicPresets = unstable_cache(() => presetRows(eq(schema.libraryItems.visibility, "public")), ["public-presets"], {
+  tags: [LIBRARY_TAG],
+})
 
 export async function POST(request: Request) {
   if (!hasDatabase) return NextResponse.json({ error: "no database on this deployment" }, { status: 503 })
@@ -433,7 +476,7 @@ export async function POST(request: Request) {
     const [scene] = replacing
       ? await db
           .update(schema.libraryItems)
-          // NOT ownerId, createdAt, likeCount, viewCount, exportCount or
+          // NOT ownerId, createdAt, likeCount, exportCount or
           // featuredAt: an update replaces what the author made, never what
           // anyone else did with it.
           .set({ ...values, updatedAt: new Date() })
@@ -487,6 +530,7 @@ export async function POST(request: Request) {
         }
       })
     }
+    refreshLibrary(scene.id, ...added, ...removed)
     if (nextVisibility === "public") refreshMakerPages(author)
     // Shaped like a gallery card so the client can drop it straight into the
     // list it just joined, instead of re-reading the whole page to learn one row.
@@ -563,6 +607,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "name-taken" }, { status: 409 })
   }
 
+  refreshLibrary(itemId)
   if (wantVisibility === "public") refreshMakerPages(author)
   return NextResponse.json({ item: row }, { status: 201 })
 }

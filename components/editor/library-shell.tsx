@@ -482,8 +482,8 @@ export function LibraryRailFilters<T extends BrowseItem>({ browse }: { browse: B
 /** Search, sort and density — the controls that decide what the middle column
  *  holds. Kind-specific things (title, New, close) stay with the host. */
 export function LibraryToolbar<T extends BrowseItem>({
-  browse, usedLabel,
-}: { browse: Browse<T>; usedLabel: string }) {
+  browse, usedLabel = "",
+}: { browse: Browse<T>; usedLabel?: string }) {
   const t = useT()
   const { query, setQuery, sort, chooseSort, density, setDensity } = browse
   // Two orderings, because those are the two the rest of the chrome cannot give
@@ -561,6 +561,8 @@ export function LibraryToolbar<T extends BrowseItem>({
  *  The count follows the width, so a card never shrinks to satisfy a number. */
 const GRID = "grid content-start gap-2.5 px-3.5 pt-2 pb-6 [grid-template-columns:repeat(auto-fill,minmax(118px,1fr))]"
 const COLS = "grid items-center gap-2 [grid-template-columns:30px_minmax(0,1.4fr)_minmax(0,1.3fr)_64px_78px_46px_50px]"
+/** The same columns for a kind with no second number. */
+const COLS_NO_USED = "grid items-center gap-2 [grid-template-columns:30px_minmax(0,1.4fr)_minmax(0,1.3fr)_64px_78px_46px]"
 
 /** A sortable column heading. One click sorts by it, a second reverses. */
 function SortHeader({
@@ -695,7 +697,8 @@ type ResultsProps<T extends BrowseItem> = {
   displayName?: (item: T) => string
   /** Wraps a card in the kind's context menu. Identity by default. */
   wrap?: (item: T, node: React.ReactNode) => React.ReactNode
-  usedLabel: string
+  /** The heading of the second number's column; a kind without one has no column. */
+  usedLabel?: string
   empty: React.ReactNode
   /** Below the rows, inside the same scroller: paging, spinners, errors. */
   footer?: React.ReactNode
@@ -720,13 +723,14 @@ export function LibraryResults<T extends BrowseItem>({
   const label = (i: T) => displayName?.(i) ?? i.name
 
   if (density === "list") {
+    const cols = usedLabel ? COLS : COLS_NO_USED
     const th = (k: SortKey, children: React.ReactNode, right?: boolean) => (
       <SortHeader k={k} sort={sort} dir={dir} onSort={setSort} right={right}>{children}</SortHeader>
     )
     return (
       <ScrollArea className="min-h-0 flex-1">
         <div className="px-2 pb-5">
-          <div className={cn(COLS, "sticky top-0 z-10 border-b border-line bg-zinc-950/95 px-1.5 py-1.5")}>
+          <div className={cn(cols, "sticky top-0 z-10 border-b border-line bg-zinc-950/95 px-1.5 py-1.5")}>
             <span />
             {th("name", t.rail.name)}
             {th("maker", t.rail.makers)}
@@ -735,7 +739,7 @@ export function LibraryResults<T extends BrowseItem>({
                 menu drive one sort rather than two that agree by accident. */}
             {th("new", t.rail.published)}
             {th("likes", t.rail.likes, true)}
-            {th("used", usedLabel, true)}
+            {usedLabel && th("used", usedLabel, true)}
           </div>
           {rows.map((item) => {
             const st = itemState(item)
@@ -767,7 +771,7 @@ export function LibraryResults<T extends BrowseItem>({
                   if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(item) }
                 }}
                 className={cn(
-                  COLS,
+                  cols,
                   "group cursor-default rounded-chip px-1.5 py-1 transition-colors",
                   tone,
                   isSelected
@@ -789,7 +793,9 @@ export function LibraryResults<T extends BrowseItem>({
                 </span>
                 <span className={cn("font-mono text-[11px] tabular-nums transition-colors", cell)}>{publishedShort(item.createdAt)}</span>
                 <span className={cn("text-right font-mono text-[11px] tabular-nums transition-colors", cell)}>{n.likes}</span>
-                <span className={cn("text-right font-mono text-[11px] tabular-nums transition-colors", cell)}>{n.uses}</span>
+                {usedLabel && (
+                  <span className={cn("text-right font-mono text-[11px] tabular-nums transition-colors", cell)}>{n.uses}</span>
+                )}
               </div>
             )
             return <div key={id(item)}>{wrap ? wrap(item, row) : row}</div>

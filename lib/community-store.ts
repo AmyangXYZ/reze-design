@@ -45,6 +45,9 @@ let inflight: Promise<CommunityItem[]> | null = null
 // decides what is unpublished has to wait rather than guess. A failed fetch
 // leaves this false — unknown is not the same as none.
 export let settled = false
+/** When the rows last landed, so a library opening refreshes a stale copy
+ *  without every surface mounted at boot fetching the same list again. */
+let loadedAt = 0
 /** @internal */
 export const listeners = new Set<() => void>()
 // The seed mirrors builtins with the ADMIN ACCOUNT's live handle as author —
@@ -87,6 +90,7 @@ export function load(force = false): Promise<CommunityItem[]> {
       }
       cache = rows.filter((i) => !BUILTIN_IDS[i.kind]?.has(i.id))
       settled = true
+      loadedAt = Date.now()
       inflight = null
       for (const l of listeners) l()
       return cache
@@ -133,6 +137,12 @@ export function builtinAuthor(id: string, fallback: string): string {
  *  database, and the caller falls back to initials. */
 export function authorImage(name: string): string | null {
   return authorImages.get(name) ?? null
+}
+
+/** Refresh the rows when they are older than a minute; otherwise answer with
+ *  what is there, or join the fetch already in the air. */
+export function loadFresh(): Promise<CommunityItem[]> {
+  return load(!inflight && Date.now() - loadedAt > 60_000)
 }
 
 /** The cached rows for a kind, without subscribing — for callbacks that must not

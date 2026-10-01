@@ -1,11 +1,13 @@
+import { cache } from "react"
 import { notFound, permanentRedirect } from "next/navigation"
 import { headers } from "next/headers"
-import { after } from "next/server"
+import { unstable_cache } from "next/cache"
 import { auth } from "@/lib/auth"
-import { eq, sql } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 import { db, hasDatabase, schema } from "@/lib/db"
 import { user } from "@/lib/db/auth-schema"
 import type { ScenePayload } from "@/lib/library"
+import { ITEMS_TAG, itemTag } from "@/lib/public-pages"
 import { SceneViewer } from "./viewer"
 
 // A published scene at reze.design/<handle>/<shortId> — the address the Share
@@ -14,31 +16,44 @@ import { SceneViewer } from "./viewer"
 
 export const revalidate = 0
 
-async function load(id: string) {
+/** The scene's row, cached until a write to it marks it stale (lib/public-pages),
+ *  so opening a link leaves the database asleep. */
+const sceneRow = (id: string) =>
+  unstable_cache(
+    async () => {
+      const [row] = await db
+        .select({
+          id: schema.libraryItems.id,
+          name: schema.libraryItems.name,
+          author: schema.libraryItems.author,
+          description: schema.libraryItems.description,
+          credits: schema.libraryItems.credits,
+          payload: schema.libraryItems.payload,
+          likeCount: schema.libraryItems.likeCount,
+          createdAt: schema.libraryItems.createdAt,
+          visibility: schema.libraryItems.visibility,
+          posterKey: schema.libraryItems.posterKey,
+          nsfw: schema.libraryItems.nsfw,
+          ownerId: schema.libraryItems.ownerId,
+          kind: schema.libraryItems.kind,
+          handle: user.username,
+        })
+        .from(schema.libraryItems)
+        .leftJoin(user, eq(schema.libraryItems.ownerId, user.id))
+        .where(eq(schema.libraryItems.id, id))
+        .limit(1)
+      return row ? { ...row, createdAt: row.createdAt.toISOString() } : null
+    },
+    ["scene-page", id],
+    { tags: [itemTag(id), ITEMS_TAG] },
+  )()
+
+/** One read for the page and its metadata. */
+const load = cache(async (id: string) => {
   // Nothing is published where nothing is stored. See lib/db — a clone with no
   // database still runs the editor; scene links simply resolve to not-found.
   if (!hasDatabase) return null
-  const [row] = await db
-    .select({
-      id: schema.libraryItems.id,
-      name: schema.libraryItems.name,
-      author: schema.libraryItems.author,
-      description: schema.libraryItems.description,
-      credits: schema.libraryItems.credits,
-      payload: schema.libraryItems.payload,
-      likeCount: schema.libraryItems.likeCount,
-      createdAt: schema.libraryItems.createdAt,
-      visibility: schema.libraryItems.visibility,
-      posterKey: schema.libraryItems.posterKey,
-      nsfw: schema.libraryItems.nsfw,
-      ownerId: schema.libraryItems.ownerId,
-      kind: schema.libraryItems.kind,
-      handle: user.username,
-    })
-    .from(schema.libraryItems)
-    .leftJoin(user, eq(schema.libraryItems.ownerId, user.id))
-    .where(eq(schema.libraryItems.id, id))
-    .limit(1)
+  const row = await sceneRow(id)
   if (!row || row.kind !== "scene") return null
   // Private is the author's alone. A stranger holding the link gets the same
   // not-found a nonexistent id gets — never a 403, which would confirm it.
@@ -48,7 +63,7 @@ async function load(id: string) {
   }
 
   return row
-}
+})
 
 export async function generateMetadata({ params }: { params: Promise<{ user: string; scene: string }> }) {
   const { scene } = await params
@@ -79,22 +94,6 @@ export default async function ScenePage({ params }: { params: Promise<{ user: st
   const canonical = row.handle ?? row.author
   if (handle !== canonical) permanentRedirect(`/${canonical}/${row.id}`)
 
-  // Count the view once the response is on its way — the counter must never cost the
-  // visitor the round trip to the database. After the redirect check, so a stale-handle
-  // URL counts once, not once per hop; and here rather than in load(), which
-  // generateMetadata also calls and would double every hit. Atomic in SQL — two
-  // simultaneous visitors both land.
-  after(async () => {
-    try {
-      await db
-        .update(schema.libraryItems)
-        .set({ viewCount: sql`${schema.libraryItems.viewCount} + 1` })
-        .where(eq(schema.libraryItems.id, row.id))
-    } catch {
-      // a lost count is nothing
-    }
-  })
-
   const doc = (row.payload as ScenePayload).doc
   return (
     <SceneViewer
@@ -105,7 +104,7 @@ export default async function ScenePage({ params }: { params: Promise<{ user: st
       description={row.description}
       credits={row.credits}
       likeCount={row.likeCount}
-      publishedAt={row.createdAt.toISOString()}
+      publishedAt={row.createdAt}
     />
   )
 }

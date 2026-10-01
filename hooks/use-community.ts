@@ -6,7 +6,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react"
 import type { LibraryItem, LibraryKind } from "@/lib/library"
-import { cache, listeners, load, settled, subscribe, type CommunityItem } from "@/lib/community-store"
+import { cache, listeners, load, loadFresh, settled, subscribe, type CommunityItem } from "@/lib/community-store"
 
 
 /**
@@ -30,9 +30,10 @@ export function useCommunity<T extends LibraryItem = LibraryItem>(kind: LibraryK
   useEffect(() => {
     let stale = false
     const apply = (all: CommunityItem[]) => !stale && setItems([...all])
-    // Forced: mounting means a library just opened, and the cached rows are
-    // already on screen while the check runs. A failed refresh keeps them.
-    void load(true).then(apply)
+    // Mounting means a library just opened: a copy older than a minute is
+    // refreshed while the cached rows stay on screen, and a failed refresh keeps
+    // them. Every surface mounted at boot shares the one startup fetch.
+    void loadFresh().then(apply)
     const relay = () => apply(cache ?? [])
     listeners.add(relay)
     return () => {

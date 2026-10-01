@@ -61,7 +61,6 @@ const load = cache(async (handle: string) => {
         name: items.name,
         description: items.description,
         likeCount: items.likeCount,
-        viewCount: items.viewCount,
         posterKey: items.posterKey,
         nsfw: items.nsfw,
         featuredAt: items.featuredAt,

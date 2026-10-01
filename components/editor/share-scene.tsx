@@ -343,7 +343,6 @@ function ShareSceneForm({
         credits: credits.trim(),
         tags: item.tags ?? [],
         likeCount: 0,
-        viewCount: 0,
         poster: item.poster ?? null,
         createdAt: item.createdAt ?? new Date().toISOString(),
         nsfw,
