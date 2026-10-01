@@ -6574,7 +6574,6 @@ export default function Lab() {
       const id = scene.state.id
       // Quota is the failure to expect: the merged set then rides a blob: zip,
       // the same way a plain import does, and the persist effect retries IDB.
-      toast.loading(t.lab.uploadSaving, { id: toastId })
       const stored = await saveLocalBundle(id, entries)
       const url = stored ? null : URL.createObjectURL(await buildZip(entries))
       try {

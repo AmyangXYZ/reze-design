@@ -542,7 +542,6 @@ const en = {
     /** A zip, entry by entry. */
     uploadReadingShare: (done: number, total: number) => `Reading files… ${done}/${total}`,
     /** Into IndexedDB, so the scene survives a refresh — seconds on a game scene. */
-    uploadSaving: "Saving to this browser…",
     uploadTexturing: (done: number, total: number) => `Compressing textures ${done}/${total}`,
     uploadConverting: (name: string) => `Parsing ${name}…`,
     uploadLoading: (name: string) => `Loading ${name}…`,
@@ -1523,7 +1522,6 @@ const zh: Dictionary = {
     rayApplied: (n: number) => `已应用 ${n} 个 ray-mmd 材质`,
     uploadReading: "正在读取文件…",
     uploadReadingShare: (done: number, total: number) => `正在读取文件… ${done}/${total}`,
-    uploadSaving: "正在保存到本地…",
     uploadTexturing: (done: number, total: number) => `正在压缩贴图 ${done}/${total}`,
     uploadConverting: (name: string) => `正在解析 ${name}…`,
     uploadLoading: (name: string) => `正在加载 ${name}…`,
