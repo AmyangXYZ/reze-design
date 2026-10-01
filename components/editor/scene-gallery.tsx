@@ -680,9 +680,9 @@ function GalleryContent({
                     </p>
                   </div>
                 )}
-                {/* Same strip as the three preset libraries, the heart at the right
-                    edge. A scene has no second number: nothing uses a scene. */}
-                <div className="mt-3 -mr-2.5 flex items-center justify-end gap-2">
+                {/* The heart alone, flush with the text above: a scene has no
+                    second number, since nothing uses a scene. */}
+                <div className="mt-3 -ml-2.5 flex items-center gap-2">
                   <LibraryLike
                     likeCount={likesOf(selected)}
                     liked={statFor(selected.id).liked}
