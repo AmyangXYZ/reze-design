@@ -22,12 +22,16 @@ import {
 
 /** Every rendering layer — the sun's reach while no stage brings a sun of its own. */
 const ALL_LAYERS = 0xffffffff
+
+/** One lamp as setLights takes it, with its bulb (`near`, record word 14). */
+type EngineLamp = NonNullable<Parameters<Engine["setLights"]>[0]>[number] & { near?: number }
 import { effectParams, type AppliedEffect, type EffectSurface } from "@/lib/effects"
 import { resolveSpec, type GradeSpec } from "@/lib/grade"
 import { CAMERA_DEFAULT_FOV, type SceneCamera, type SceneLight } from "@/lib/scene"
 import { GREEN, isCompositingBackground, type ExportBackground } from "@/lib/export-background"
 import { azElToDirection, groundExtent, windVariation, hexToLinearVec3, hexToSrgbVec3, windDirection, type SceneSettings } from "@/lib/scene-settings"
-import { pushTimeline, timelineOf } from "@/lib/timeline"
+import { pushTimeline, setLampRig, timelineOf } from "@/lib/timeline"
+import { lightCookieImage, type LightCookie } from "@/lib/light-cookies"
 
 /**
  * Which engine instance each entry of the list became.
@@ -110,14 +114,6 @@ export function useSceneSync({
    *  render in-canvas and would cover the key or fill the alpha. "green" keys
    *  the hole, "alpha" leaves it empty. */
   exportBackground = "scene",
-  /** The backdrop is a PLATE: footage the scene stands in rather than wallpaper
-   *  behind it. Passed rather than read off the settings because it is not a
-   *  preference — it is which seat the scene's one piece of background media is
-   *  sitting in, and the document says that where it names the asset. */
-  plate = false,
-  /** The plate is a single photograph, so its grain does not move — and neither
-   *  should the grain laid over the render that stands in it. */
-  plateStill = false,
   /** Cast member ids, in order — stages excluded, the same list the engine's
    *  own subjects are drawn from. Only used to decide WHO an effect that
    *  declares a dissolve is about; the first of them is subject 0. */
@@ -144,8 +140,6 @@ export function useSceneSync({
   skybox?: File | null
   hdri?: File | null
   exportBackground?: ExportBackground
-  plate?: boolean
-  plateStill?: boolean
   castIds?: string[]
   stageSuns?: { id: string; sun: { color: string; strength: number } | null }[]
   onEffectSurface?: (byUid: Record<string, EffectSurface>) => void
@@ -172,8 +166,6 @@ export function useSceneSync({
     gradeSpec: GradeSpec
     backdrop: boolean
     green: ExportBackground
-    plate: boolean
-    plateStill: boolean
   } | null>(null)
   // addGround rebuilds GPU buffers and a bind group per call, so ground edits
   // coalesce to at most one rebuild per frame from the latest options.
@@ -189,7 +181,7 @@ export function useSceneSync({
     const { world, sun, bloom, dof, outline, background, ground, grade, physics, view, grain, stageGrade } = settings
     // A different engine is a first run, whatever the settings say.
     const p = prev.current?.engine === engine ? prev.current : null
-    const modeChanged = !p || p.backdrop !== hasBackdrop || p.green !== exportBackground || p.plate !== plate
+    const modeChanged = !p || p.backdrop !== hasBackdrop || p.green !== exportBackground
 
     if (modeChanged || p.settings.background !== background) {
       // Transparent joins the backdrop case: null IS the transparent canvas,
@@ -233,8 +225,8 @@ export function useSceneSync({
     if (!p || p.settings.outline !== outline) {
       engine.setOutlineEnabled(outline.enabled)
     }
-    if (modeChanged || p.settings.grain !== grain || p.plateStill !== plateStill) {
-      engine.setFilmGrain(grain.amount, !plateStill)
+    if (modeChanged || p.settings.grain !== grain) {
+      engine.setFilmGrain(grain.amount)
     }
     // Before the grade, which is what the engine applies it to.
     if (!p || p.settings.view !== view) {
@@ -287,9 +279,8 @@ export function useSceneSync({
       engine.setPhysicsFloor(physics.floor)
       engine.setPhysicsEnabled(physics.enabled)
     }
-    // The sun and the plate mode both reach into the ground's options — the
-    // shadow's edge is the light's, and a floor drawn solid over footage is not
-    // a floor the scene is standing on — so this block answers to all three.
+    // The sun reaches into the ground's options — the shadow's edge is the
+    // light's — so this block answers to both.
     if (modeChanged || p.settings.ground !== ground || p.settings.sun !== sun) {
       // Before the options, and outside the rAF coalescing below: this is a
       // flag, not a buffer rebuild, and it is what a scene with no floor is
@@ -298,11 +289,9 @@ export function useSceneSync({
       groundOpts.current = {
         diffuseColor: hexToLinearVec3(ground.color),
         gridLineColor: hexToLinearVec3(ground.grid),
-        // A plate joins the compositing modes here for the same reason they are
-        // in it: the floor in the picture is the floor, and a surface painted
-        // over it is one floor too many. The shadow survives at opacity 0 —
-        // that IS the shadow catcher, and it is the whole trick.
-        opacity: compositing || plate ? 0 : ground.opacity,
+        // The compositing modes keep the shadow and drop the surface: at
+        // opacity 0 the ground IS the shadow catcher.
+        opacity: compositing ? 0 : ground.opacity,
         // The SUN's switch, applied where the shadow is received. One flag now
         // reaches both the catcher and every material: turning it off on the
         // ground alone left the cast shadowed by a map they were still reading.
@@ -320,8 +309,8 @@ export function useSceneSync({
         })
       }
     }
-    prev.current = { engine, settings, gradeSpec, backdrop: hasBackdrop, green: exportBackground, plate, plateStill }
-  }, [settings, gradeSpec, ready, engineRef, hasBackdrop, exportBackground, compositing, plate, plateStill])
+    prev.current = { engine, settings, gradeSpec, backdrop: hasBackdrop, green: exportBackground }
+  }, [settings, gradeSpec, ready, engineRef, hasBackdrop, exportBackground, compositing])
 
   // The lens, on its own effect and keyed on the VALUE: `camera` is a new object
   // every time a target slider moves, and the fov has no business being pushed
@@ -632,11 +621,15 @@ export function useSceneSync({
           },
         ]
       : []
-    engine.setLights([
-      ...daylight,
-      ...on.map((l) => {
+    // Through the timeline's rig rather than straight to setLights: a lamp the
+    // game animated is resampled there every frame the clock moves, and the
+    // daylight has to ride along on each of those writes.
+    setLampRig<EngineLamp>(engine, {
+      fixed: daylight,
+      lamps: on,
+      toEngine: (l) => {
         const c = hexToLinearVec3(l.color)
-        return {
+        const lamp: EngineLamp = {
           position: { x: l.position[0], y: l.position[1], z: l.position[2] },
           color: { x: c.x, y: c.y, z: c.z },
           intensity: l.intensity,
@@ -644,11 +637,35 @@ export function useSceneSync({
           ...(l.aim ? { aim: { x: l.aim[0], y: l.aim[1], z: l.aim[2] } } : {}),
           ...(l.angle !== undefined ? { angle: l.angle } : {}),
           ...(l.innerAngle !== undefined ? { innerAngle: l.innerAngle } : {}),
+          ...(l.layers !== undefined ? { layers: l.layers } : {}),
+          ...(l.near !== undefined ? { near: l.near } : {}),
+          ...(l.cookie && l.aim ? { cookie: l.cookie } : {}),
         }
-      }),
-    ])
+        return lamp
+      },
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lights, ready, engineRef, stageSunKey, settings.sun.azimuth, settings.sun.elevation])
+
+  /**
+   * The gobos the spot lamps name, drawn once each and handed to the engine.
+   * The engine rewrites its lamps when one lands, so a lamp set before its
+   * picture arrives lights plainly for a moment and then takes the pattern.
+   */
+  const cookieKey = [...new Set(lights.filter((l) => l.on !== false && l.cookie && l.aim).map((l) => l.cookie!))].sort().join(",")
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!ready || !engine || !cookieKey) return
+    let stale = false
+    for (const name of cookieKey.split(",") as LightCookie[]) {
+      void lightCookieImage(name).then((bmp) => {
+        if (!stale) void engine.loadLightCookie(name, bmp)
+      })
+    }
+    return () => {
+      stale = true
+    }
+  }, [cookieKey, ready, engineRef])
 
   /**
    * The HDRI world, on its own slot.

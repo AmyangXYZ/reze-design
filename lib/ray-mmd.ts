@@ -320,10 +320,10 @@ export function rayGraph(m: RayMaterial, sampled: (source: Source) => Sampled | 
     return [id, "value"]
   }
 
-  // Specular clamped the way the stage looks clamp it: a normal map under a low
-  // roughness is exactly the noise-bumped highlight the clamp exists for.
-  const shading: Record<string, SocketValue> = { spec_clamp: 10, specular_ior_level: m.specular, sheen_weight: 0 }
-  const principled = node("principled", "principled", shading)
+  // Lit, Unity's PBR: ray-mmd's metalness/smoothness model is the same one,
+  // and its specular is the dielectric reflectance Lit's means (0.5 is 0.04).
+  const shading: Record<string, SocketValue> = { specular: m.specular }
+  const principled = node("lit", "lit", shading)
 
   // Albedo.
   const albedoAt = m.albedo.source && sampled(m.albedo.source)
@@ -354,24 +354,17 @@ export function rayGraph(m: RayMaterial, sampled: (source: Source) => Sampled | 
     link([nm, "normal"], principled, "normal")
   }
 
-  // Roughness. Principled's roughness is the perceptual one, and ray-mmd's GGX
-  // roughness is (1 - smoothness)², so the socket takes 1 - smoothness.
+  // Smoothness, as ray-mmd and Unity both mean it: GGX roughness (1 - s)².
   const sm = m.smoothness
   const smoothAt = "source" in sm ? sampled(sm.source) : null
   if ("source" in sm && smoothAt != null) {
     const v = channelOf(smoothAt, sm.channel)
-    let rough: Ref
-    if (sm.scaleMode === 0 && sm.type === 2) rough = v
-    else if (sm.scaleMode === 0 && sm.type === 1) rough = math("power", v, 0.5)
-    else {
-      let s: Ref = sm.type === 1 ? math("subtract", 1, math("power", v, 0.5)) : sm.type === 2 ? math("subtract", 1, v) : v
-      if (sm.scaleMode === 1) s = math("multiply", s, sm.scale)
-      if (sm.scaleMode === 2) s = math("power", s, sm.scale)
-      rough = math("subtract", 1, s)
-    }
-    link(rough, principled, "roughness")
+    let s: Ref = sm.type === 1 ? math("subtract", 1, math("power", v, 0.5)) : sm.type === 2 ? math("subtract", 1, v) : v
+    if (sm.scaleMode === 1) s = math("multiply", s, sm.scale)
+    if (sm.scaleMode === 2) s = math("power", s, sm.scale)
+    link(s, principled, "smoothness")
   } else {
-    shading.roughness = Math.round((1 - Math.min(1, Math.max(0, "value" in sm ? sm.value : 0))) * 1e6) / 1e6
+    shading.smoothness = Math.min(1, Math.max(0, "value" in sm ? sm.value : 0))
   }
 
   // Metalness.
@@ -386,19 +379,19 @@ export function rayGraph(m: RayMaterial, sampled: (source: Source) => Sampled | 
     shading.metallic = "value" in mt ? mt.value : 0
   }
 
-  // Emission: ray-mmd lights the albedo through the mask.
+  // Emission: ray-mmd lights the albedo through the mask, as HDR colour.
   const em = m.emissive
   if (em && "source" in em) {
     const maskAt = sampled(em.source)
     if (maskAt != null) {
       const mask = channelOf(maskAt, em.channel)
-      if (base) link(base, principled, "emission_color")
-      else shading.emission_color = m.albedo.tint
-      link(em.intensity === 1 ? mask : math("multiply", mask, em.intensity), principled, "emission_strength")
+      const glow = node("glow", "vector_math/scale", base ? {} : { a: m.albedo.tint })
+      if (base) link(base, glow, "a")
+      link(em.intensity === 1 ? mask : math("multiply", mask, em.intensity), glow, "scale")
+      link([glow, "vector"], principled, "emission")
     }
   } else if (em) {
-    shading.emission_color = em.color
-    shading.emission_strength = em.intensity
+    shading.emission = [em.color[0] * em.intensity, em.color[1] * em.intensity, em.color[2] * em.intensity]
   }
 
   return {

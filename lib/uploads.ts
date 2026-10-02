@@ -1,4 +1,4 @@
-// Upload plumbing for model files: ZIP extraction and drag-&-drop directory traversal.
+// Upload plumbing for model files: ZIP reading and drag-&-drop directory traversal.
 
 const EOCD_SIG = 0x06054b50;
 const CDIR_SIG = 0x02014b50;
@@ -99,28 +99,171 @@ function detectLegacyEncoding(nameBytes: Uint8Array[]): string {
   return best;
 }
 
-/** Extract a .zip into File objects (relative paths in the names). `onProgress`
- *  counts entries, for a host that names the wait. */
-export async function unzipToFiles(
-  zip: File,
-  onProgress?: (done: number, total: number) => void,
-): Promise<File[]> {
-  const buffer = await zip.arrayBuffer();
-  const view = new DataView(buffer);
-  const u8 = new Uint8Array(buffer);
-  let eocd = -1;
-  for (
-    let i = buffer.byteLength - 22;
-    i >= Math.max(0, buffer.byteLength - 22 - 65536);
-    i--
+const LOCAL_SIG = 0x04034b50;
+
+/**
+ * Inflations in flight at once, across every open zip.
+ *
+ * A stage asks for its whole folder in one go and a game scene's folder is
+ * hundreds of files, so each request queues here rather than starting a
+ * decompressor at once. One per core keeps every core busy without a hundred
+ * streams fighting over them.
+ */
+const INFLATE_LIMIT = Math.max(
+  2,
+  (typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 4,
+);
+let inflating = 0;
+const inflateQueue: (() => void)[] = [];
+
+async function bounded<T>(run: () => Promise<T>): Promise<T> {
+  // A released slot is handed straight to the next waiter, so the count only
+  // drops when nobody is queued.
+  if (inflating >= INFLATE_LIMIT)
+    await new Promise<void>((resolve) => inflateQueue.push(resolve));
+  else inflating++;
+  try {
+    return await run();
+  } finally {
+    const next = inflateQueue.shift();
+    if (next) next();
+    else inflating--;
+  }
+}
+
+/**
+ * One file inside a zip, not yet read.
+ *
+ * Opening a zip reads its central directory and nothing else, so a 100MB scene
+ * with thousands of entries is open in milliseconds, and only the entries a
+ * loader actually asks for are ever touched. A stored entry is a slice of the
+ * zip — no bytes copied; a deflated one is inflated when asked for, and not
+ * kept: whoever asked holds the bytes for as long as they need them.
+ *
+ * `name` is the zip path, which is what a bundle file's name is everywhere.
+ */
+export class ZipEntry {
+  readonly type: string;
+  constructor(
+    /** The whole zip this entry lives in. */
+    readonly zip: Blob,
+    readonly name: string,
+    readonly method: number,
+    readonly compSize: number,
+    /** Uncompressed. */
+    readonly size: number,
+    readonly localOff: number,
   ) {
-    if (view.getUint32(i, true) === EOCD_SIG) {
+    this.type = mimeForPath(name);
+  }
+
+  /** The same bytes under another path. */
+  as(name: string): ZipEntry {
+    return new ZipEntry(
+      this.zip,
+      name,
+      this.method,
+      this.compSize,
+      this.size,
+      this.localOff,
+    );
+  }
+
+  /** The bytes as a File named by its path. */
+  async file(): Promise<File> {
+    // The local header's name and extra lengths can differ from the central
+    // directory's, so the data's start is read from the entry itself.
+    const head = new DataView(
+      await this.zip.slice(this.localOff, this.localOff + 30).arrayBuffer(),
+    );
+    if (head.byteLength < 30 || head.getUint32(0, true) !== LOCAL_SIG)
+      throw new Error(`Corrupt zip entry: ${this.name}`);
+    const start =
+      this.localOff + 30 + head.getUint16(26, true) + head.getUint16(28, true);
+    const comp = this.zip.slice(start, start + this.compSize);
+    if (this.method === 0)
+      return new File([comp], this.name, { type: this.type });
+    if (this.method !== 8)
+      throw new Error(
+        `Unsupported zip compression (${this.method}) in ${this.name}`,
+      );
+    // The compressed bytes in one read first: streaming a slice of a file on
+    // disk arrives in small chunks, and measured slower than the read itself.
+    const blob = await bounded(async () =>
+      new Response(
+        new Blob([await comp.arrayBuffer()])
+          .stream()
+          .pipeThrough(new DecompressionStream("deflate-raw")),
+      ).blob(),
+    );
+    return new File([blob], this.name, { type: this.type });
+  }
+
+  async arrayBuffer(): Promise<ArrayBuffer> {
+    return (await this.file()).arrayBuffer();
+  }
+
+  async text(): Promise<string> {
+    return (await this.file()).text();
+  }
+}
+
+/**
+ * A file of a scene bundle, by its bundle path: a File already in memory (an
+ * upload, a record written before bundles kept their zips) or an entry of a
+ * zip that has not been read. Both carry `name`, `size`, `type` and
+ * `arrayBuffer()`; a consumer that needs a real File asks `readBundleFile`.
+ */
+export type BundleFile = File | ZipEntry;
+
+/**
+ * Bytes under a bundle path, as a bundle file whose name is that path.
+ *
+ * The type is named from the path when the blob has none, which is the common
+ * case: a Blob out of the zip packer carries no type at all, and WebKit will
+ * not play a typeless object URL (see MIME_BY_EXT).
+ */
+export function bundleFileOf(path: string, file: Blob | ZipEntry): BundleFile {
+  if (file instanceof ZipEntry) return file.name === path ? file : file.as(path);
+  return new File([file], path, { type: file.type || mimeForPath(path) });
+}
+
+export function readBundleFile(f: BundleFile): Promise<File> {
+  return f instanceof ZipEntry ? f.file() : Promise.resolve(f);
+}
+
+/** Every one of them, read concurrently — inflation is bounded underneath. */
+export function readBundleFiles(files: readonly BundleFile[]): Promise<File[]> {
+  return Promise.all(files.map(readBundleFile));
+}
+
+/**
+ * A zip's files, from its central directory alone (relative paths in the
+ * names). Reads the tail of the blob and nothing else; directory entries are
+ * left out.
+ */
+export async function openZip(
+  zip: Blob,
+  label = zip instanceof File ? zip.name : "zip",
+): Promise<ZipEntry[]> {
+  // The end record is the last 22 bytes, plus a comment of at most 64KB.
+  const tailStart = Math.max(0, zip.size - 22 - 65536);
+  const tail = new DataView(await zip.slice(tailStart).arrayBuffer());
+  let eocd = -1;
+  for (let i = tail.byteLength - 22; i >= 0; i--) {
+    if (tail.getUint32(i, true) === EOCD_SIG) {
       eocd = i;
       break;
     }
   }
-  if (eocd < 0) throw new Error(`Not a zip file: ${zip.name}`);
-  const count = view.getUint16(eocd + 10, true);
+  if (eocd < 0) throw new Error(`Not a zip file: ${label}`);
+  const count = tail.getUint16(eocd + 10, true);
+  const cdirSize = tail.getUint32(eocd + 12, true);
+  const cdirOff = tail.getUint32(eocd + 16, true);
+  const u8 = new Uint8Array(
+    await zip.slice(cdirOff, cdirOff + cdirSize).arrayBuffer(),
+  );
+  const view = new DataView(u8.buffer);
 
   // Pass 1: collect entries + name bytes, resolve UTF-8 sources (extra field / flag)
   type Entry = {
@@ -128,19 +271,21 @@ export async function unzipToFiles(
     bytes: Uint8Array;
     method: number;
     compSize: number;
+    size: number;
     localOff: number;
   };
   const entries: Entry[] = [];
   const undecided: Uint8Array[] = [];
   const utf8Strict = new TextDecoder("utf-8", { fatal: true });
   let allValidUtf8 = true;
-  let off = view.getUint32(eocd + 16, true);
+  let off = 0;
   for (let n = 0; n < count; n++) {
-    if (view.getUint32(off, true) !== CDIR_SIG)
-      throw new Error(`Corrupt zip: ${zip.name}`);
+    if (off + 46 > u8.length || view.getUint32(off, true) !== CDIR_SIG)
+      throw new Error(`Corrupt zip: ${label}`);
     const flags = view.getUint16(off + 8, true);
     const method = view.getUint16(off + 10, true);
     const compSize = view.getUint32(off + 20, true);
+    const size = view.getUint32(off + 24, true);
     const nameLen = view.getUint16(off + 28, true);
     const extraLen = view.getUint16(off + 30, true);
     const commentLen = view.getUint16(off + 32, true);
@@ -161,7 +306,7 @@ export async function unzipToFiles(
       }
       undecided.push(bytes);
     }
-    entries.push({ name, bytes, method, compSize, localOff });
+    entries.push({ name, bytes, method, compSize, size, localOff });
     off += 46 + nameLen + extraLen + commentLen;
   }
 
@@ -172,31 +317,48 @@ export async function unzipToFiles(
     for (const e of entries) if (e.name === null) e.name = dec.decode(e.bytes);
   }
 
-  const out: File[] = [];
-  for (const [i, e] of entries.entries()) {
-    onProgress?.(i, entries.length);
+  const out: ZipEntry[] = [];
+  for (const e of entries) {
     const name = (e.name ?? "").replace(/\\/g, "/");
     if (!name || name.endsWith("/")) continue; // directory entry
-
-    // Local header name/extra lengths differ from the central ones
-    const lNameLen = view.getUint16(e.localOff + 26, true);
-    const lExtraLen = view.getUint16(e.localOff + 28, true);
-    const dataStart = e.localOff + 30 + lNameLen + lExtraLen;
-    const comp = u8.slice(dataStart, dataStart + e.compSize);
-    let blob: Blob;
-    if (e.method === 0) blob = new Blob([comp]);
-    else if (e.method === 8) {
-      const ds = new DecompressionStream("deflate-raw");
-      blob = await new Response(
-        new Blob([comp]).stream().pipeThrough(ds),
-      ).blob();
-    } else
-      throw new Error(
-        `Unsupported zip compression (${e.method}) in ${zip.name}`,
-      );
-    out.push(new File([blob], name, { type: mimeForPath(name) }));
+    out.push(new ZipEntry(zip, name, e.method, e.compSize, e.size, e.localOff));
   }
   return out;
+}
+
+/** Extract a .zip into File objects (relative paths in the names). */
+export async function unzipToFiles(zip: File): Promise<File[]> {
+  return readBundleFiles(await openZip(zip));
+}
+
+/**
+ * Bundles this tab already holds open, by the blob: URL a document names them
+ * with.
+ *
+ * An imported zip is opened once to read its scene.json; handing the document
+ * a plain object URL of it would make the loader fetch those bytes back and
+ * open them a second time. Held here, the loader takes the open bundle as is.
+ * The URL is still a real blob: one, so everything that treats a blob: bundle
+ * as this session's alone keeps doing so.
+ */
+const heldBundles = new Map<string, BundleFile[]>();
+
+export function holdBundle(
+  files: BundleFile[],
+  blob: Blob = new Blob(),
+): string {
+  const url = URL.createObjectURL(blob);
+  heldBundles.set(url, files);
+  return url;
+}
+
+export function heldBundle(url: string): BundleFile[] | undefined {
+  return heldBundles.get(url);
+}
+
+export function releaseBundle(url: string): void {
+  heldBundles.delete(url);
+  URL.revokeObjectURL(url);
 }
 
 /** Expand any .zip files in a selection; everything else passes through. */

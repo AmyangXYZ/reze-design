@@ -18,7 +18,9 @@ import { builtinEffect } from "@/lib/effects"
 import { libraryGraph } from "@/lib/materials"
 import { collectSceneSlots } from "@/lib/scene-collect"
 import type { EngineModelInfo } from "@/lib/scene-host"
-import { lookFilePaths, stageFolder, type NativeLookFile } from "@/lib/unity-native"
+import { clearEngineScene, dress, lookFilePaths, lookUniformTracks, stageFolder, undress, type NativeLookFile } from "@/lib/unity-native"
+import { applyTimelineFrame, timelineOf, uniformAt } from "@/lib/timeline"
+import type { Engine, NativeLook } from "reze-engine"
 
 // ── A look's files resolve against the look's own folder ──
 {
@@ -140,6 +142,89 @@ const scene = parseSceneDoc(doc, builtinEffect, libraryGraph)
   const gone = collect(null)
   assert.equal(gone.nativeStage, null)
   assert.ok(!gone.entries.some((e) => e.path.startsWith("stage")), "a removed stage leaves the bundle")
+}
+
+// ── A look's keyed material values play on the timeline's clock ──
+{
+  // X324 touch1's pour stream, as ag-rip writes it: the dissolve rises over
+  // frames 287..296 and holds; the colour's alpha fades with it. The second
+  // material keys nothing and the third is not keyed at all.
+  const look: NativeLookFile = {
+    shaders: [],
+    textures: {},
+    materials: [
+      {
+        materials: ["water1_fx_X324_water1"],
+        queue: 3000,
+        passes: [],
+        values: { _DissovleStrength: 0, _Color: [1, 0.857157, 0.692071, 0.045] },
+        textures: {},
+        uniforms: {
+          _DissovleStrength: [
+            [287, 0],
+            [288, 0.022291],
+            [292, 0.378946],
+            [296, 0.65],
+          ],
+          _Color: [
+            [287, [1, 0.857157, 0.692071, 0.045]],
+            [296, [1, 0.857157, 0.692071, 0.00126]],
+          ],
+        },
+      },
+      { materials: ["water3_a", "water3_b"], queue: 3000, passes: [], values: {}, textures: {}, uniforms: { _DissovleStrength: [] } },
+      { materials: ["cup"], queue: 2000, passes: [], values: {}, textures: {} },
+    ],
+  }
+  const tracks = lookUniformTracks(look)
+  assert.deepEqual(Object.keys(tracks), ["water1_fx_X324_water1"], "only keyed materials, by the model's names")
+  assert.deepEqual(lookUniformTracks({ materials: [look.materials[2]!] }), {}, "a look keying nothing gives nothing to visit")
+
+  // Sampling: held before the first key and after the last, linear between,
+  // a step where two keys share a frame.
+  const k = tracks.water1_fx_X324_water1!._DissovleStrength!
+  assert.equal(uniformAt(k, 0), 0)
+  assert.equal(uniformAt(k, 400), 0.65)
+  assert.ok(Math.abs((uniformAt(k, 290) as number) - (0.022291 + (0.378946 - 0.022291) * 0.5)) < 1e-12)
+  assert.equal(uniformAt([[5, 1], [5, 2], [9, 3]], 5), 2, "the later of two keys on a frame wins")
+  const c = uniformAt(tracks.water1_fx_X324_water1!._Color!, 291.5) as number[]
+  assert.deepEqual(c.slice(0, 3), [1, 0.857157, 0.692071], "a vector key interpolates per channel")
+  assert.ok(Math.abs(c[3]! - (0.045 + (0.00126 - 0.045) * 0.5)) < 1e-12)
+
+  // Dressed: the engine is handed the values of the frame the timeline is at,
+  // once per frame the clock moves, and nothing once the look is off.
+  const calls: [string, string, Record<string, unknown>][] = []
+  const engine = {
+    setModelNativeLook: () => true,
+    setModelNativeUniforms: (m: string, mat: string, v: Record<string, unknown>) => (calls.push([m, mat, v]), true),
+    getModel: () => null,
+    setModelDissolve: () => true,
+    getModelNames: () => [],
+    removeModel: () => {},
+    setNativeStage: async () => {},
+  } as unknown as Engine
+  const loaded = { look: { shaders: [], textures: {}, materials: [] } as NativeLook, uniforms: tracks }
+  const timeline = timelineOf({})
+  assert.ok(dress(engine, "pour", loaded))
+  assert.deepEqual(calls, [["pour", "water1_fx_X324_water1", { _DissovleStrength: 0, _Color: [1, 0.857157, 0.692071, 0.045] }]], "set at once, at the frame last drawn")
+  calls.length = 0
+  applyTimelineFrame(engine as never, timeline, 296)
+  assert.deepEqual(calls, [["pour", "water1_fx_X324_water1", { _DissovleStrength: 0.65, _Color: [1, 0.857157, 0.692071, 0.00126] }]])
+  applyTimelineFrame(engine as never, timeline, 296)
+  assert.equal(calls.length, 1, "a frame the values are already at sets nothing")
+  // a scrub back: the export and the preview read the same function
+  applyTimelineFrame(engine as never, timeline, 100)
+  assert.equal(calls.at(-1)![2]._DissovleStrength, 0)
+  calls.length = 0
+  undress(engine, "pour")
+  applyTimelineFrame(engine as never, timeline, 290)
+  assert.equal(calls.length, 0, "an undressed model is not visited")
+  // and a cleared scene forgets every one
+  dress(engine, "pour", loaded)
+  await clearEngineScene(engine)
+  calls.length = 0
+  applyTimelineFrame(engine as never, timeline, 291)
+  assert.equal(calls.length, 0, "a cleared scene is not visited")
 }
 
 console.log("unity-native: ok")

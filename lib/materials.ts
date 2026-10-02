@@ -222,8 +222,8 @@ export const LOOK_PACKS: Record<
     exposure: 0.2,
     world: { color: "#ffc9c9", strength: 0.62 },
     light: {
-      sun: { color: "#ffffff", strength: 2, azimuth: 184, elevation: 22 },
-      bloom: { enabled: true, threshold: 1.03, scatter: 0.77, intensity: 1, color: "#ffffff" },
+      sun: { color: "#ffffff", strength: 0.64, azimuth: 184, elevation: 22 },
+      bloom: { enabled: true, threshold: 1.03, scatter: 0.8, intensity: 1, color: "#ffffff" },
     },
   },
   // ACES because the source is Filmic — view transform Filmic, look High
@@ -251,7 +251,7 @@ export const LOOK_PACKS: Record<
     transform: "none",
     exposure: 0,
     world: { color: "#ffeef0", strength: 0.5 },
-    light: { bloom: { enabled: true, threshold: 0.9, scatter: 0.77, intensity: 1, color: "#ffe4e4" } },
+    light: { bloom: { enabled: true, threshold: 0.9, scatter: 0.8, intensity: 1, color: "#ffe4e4" } },
   },
 }
 

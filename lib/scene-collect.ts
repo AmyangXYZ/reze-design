@@ -13,6 +13,7 @@ import type { EngineModelInfo, PropInfo, StageInfo } from "@/hooks/use-engine"
 import type { AssetRef, ModelSource, SceneBackground, SceneModel, ScenePlane, SceneStageTransform } from "@/lib/scene"
 import { modelFilePaths, sceneFiles } from "@/lib/scene-files"
 import { dirOf, stageFolder } from "@/lib/unity-native"
+import type { BundleFile } from "@/lib/uploads"
 
 /** One model's motion, however the page happens to store it. */
 export type CollectedAnim = {
@@ -30,8 +31,9 @@ export type SceneSlotsInput = {
   /** The BOOT document's models: where a slot that was never re-uploaded in this
    *  session gets its source from. */
   booted: SceneModel[]
-  /** The scene's bundle as loaded — a fork's unzipped zip, or the idb bundle. */
-  bundleFiles: File[]
+  /** The scene's bundle as loaded — a fork's zip, or the idb bundle. Carried
+   *  files are passed on unread: a file still inside its zip stays there. */
+  bundleFiles: readonly BundleFile[]
   /** Per-model motion by model id. */
   anims: Record<string, CollectedAnim>
   /** Per-model EXPRESSION VMD by model id — the file laid over the motion's
@@ -51,7 +53,7 @@ export type SceneSlotsInput = {
   midi: { name: string | null; booted: AssetRef | null }
   lyrics: { name: string | null; booted: AssetRef | null }
   /** The background image, whichever slot it came from. */
-  background: { kind: "backdrop" | "skybox" | "plate"; name: string; file: File } | null
+  background: { kind: "backdrop" | "skybox"; name: string; file: File } | null
   /** The HDRI. Independent of `background` — that one is what you see and this
    *  is what lights, and a scene can want both. */
   hdri: { name: string; file: File } | null

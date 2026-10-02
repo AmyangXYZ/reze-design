@@ -158,12 +158,12 @@ const body = compiles(
   }),
 )
 eq(slots.map((p) => p.split("/").pop()), ["wall_N.tga", "wall_M.tga", "wall_M_L.tga"], "one slot per map file")
-eq(body.includes("n_map1_rgb.g, 10.0"), true, "roughness is the green channel as stored")
-eq(/n_(\w+) = math_multiply\(n_map2_rgb\.r, 2\.0\)[\s\S]*\+ tex_color \* n_\1;/.test(body), true, "emission is albedo times the scaled mask")
+eq(body.includes("math_subtract(1.0, n_map1_rgb.g)"), true, "smoothness is 1 - the green channel stored as roughness")
+eq(/n_(\w+) = math_multiply\(n_map2_rgb\.r, 2\.0\)[\s\S]*n_glow = vector_scale\(tex_color, n_\1\)/.test(body), true, "emission is albedo times the scaled mask")
 
 const floor = readRayMaterial(parsePreset(FLOOR)!, "set/Toon/floor.fx", [])
 const flat = compiles("floor", rayGraph(floor, () => "pmx"))
-eq(/PrincipledIn\(tex_color, 0\.25, 0\.5, 0\.2\d*,/.test(flat), true, "constants become roughness 1 - smoothness and metallic")
+eq(/urp_lit\(tex_color, 0\.25, 0\.8\d*,/.test(flat), true, "constants become metallic and smoothness")
 
 // A map that never made it falls away rather than breaking the graph.
 compiles("wall without maps", rayGraph(wall, (s) => (s.kind === "pmx" || s === wall.albedo.source ? "pmx" : null)))

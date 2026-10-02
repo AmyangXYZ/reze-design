@@ -37,13 +37,14 @@
 
 import { parsePmxMesh, type PmxMesh } from "@/lib/pmx-mesh"
 import { CAST_PALETTES, type CastPalette, type CastPaletteId } from "@/lib/cast-palette"
+import { type BundleFile, readBundleFile } from "@/lib/uploads"
 
 /** Everything the extraction needs to know about one model. */
 export type CastColourSource = {
-  /** The .pmx itself — a kept upload or a served URL. */
-  pmx: File | string
+  /** The .pmx itself — a kept upload, a bundle file or a served URL. */
+  pmx: BundleFile | string
   /** Resolve a texture path from the PMX table to something fetchable. */
-  resolveTexture: (path: string) => File | string | null
+  resolveTexture: (path: string) => BundleFile | string | null
   /** A material's render class ("hair", "eye", …), from the engine's grouping.
    *  The weights those roles carry live HERE, beside their rationale. */
   roleOf?: (materialName: string) => string | undefined
@@ -93,13 +94,13 @@ function arc(a: number, b: number): number {
   return Math.min(d, 360 - d)
 }
 
-async function blobOf(src: File | string): Promise<Blob> {
-  return typeof src === "string" ? await (await fetch(src)).blob() : src
+async function blobOf(src: BundleFile | string): Promise<Blob> {
+  return typeof src === "string" ? await (await fetch(src)).blob() : readBundleFile(src)
 }
 
 /** Fetch + parse, scoped so the multi-megabyte buffer is collectable the moment
  *  the mesh (a few small arrays) has been copied out of it. */
-async function meshOf(src: File | string): Promise<PmxMesh | null> {
+async function meshOf(src: BundleFile | string): Promise<PmxMesh | null> {
   try {
     return parsePmxMesh(await (await blobOf(src)).arrayBuffer())
   } catch {
@@ -109,7 +110,7 @@ async function meshOf(src: File | string): Promise<PmxMesh | null> {
 
 /** Decoded straight to GRID size — never a full-resolution RGBA copy in memory.
  *  UAs without resize options return the full bitmap; the draw call scales. */
-async function bitmapOf(src: File | string): Promise<ImageBitmap | null> {
+async function bitmapOf(src: BundleFile | string): Promise<ImageBitmap | null> {
   try {
     return await createImageBitmap(await blobOf(src), {
       resizeWidth: GRID,
@@ -156,7 +157,7 @@ export async function castColour(source: CastColourSource): Promise<CastPaletteI
   // Each referenced diffuse sheet, decoded once and in PARALLEL — these are the
   // slow half (network + image decode), and they are independent. Only the
   // shared-canvas readback is serial.
-  const wanted = new Map<number, File | string>()
+  const wanted = new Map<number, BundleFile | string>()
   for (const mat of mesh.materials) {
     const i = mat.textureIndex
     if (i < 0 || wanted.has(i)) continue

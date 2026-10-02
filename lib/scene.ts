@@ -21,6 +21,7 @@ import {
   type StageFogLayer,
 } from "@/lib/scene-settings"
 import { storageKey } from "@/lib/storage"
+import { isLightCookie, type LightCookie } from "@/lib/light-cookies"
 
 export const SCENE_FORMAT_VERSION = 1
 
@@ -43,16 +44,12 @@ export type ModelRef = {
 }
 
 /**
- * The background's BASE layer, and which of the three things it is.
+ * The background's BASE layer, and which of the two things it is.
  *
- * All three answer "what is behind the scene" and only one can be, which is why
- * they are one field rather than three. A `plate` is footage the scene STANDS
- * IN — the same file a backdrop would hold, saying that the camera, the floor
- * and the light are supposed to agree with it. What separates them is the
- * claim, never the file, so it is something the author states and never
- * something a reader infers from an extension.
+ * Both answer "what is behind the scene" and only one can be, which is why
+ * they are one field rather than two.
  */
-export type SceneBackground = { kind: "backdrop" | "skybox" | "plate"; asset: AssetRef } | null
+export type SceneBackground = { kind: "backdrop" | "skybox"; asset: AssetRef } | null
 
 /**
  * The sun a stage carries for itself. A game lights its stage by its own
@@ -257,9 +254,6 @@ export type SceneCamera = {
    * upright axis, which is a shot with no roll by construction. A scene that
    * sets this is driven through the engine's pose input instead, so the value
    * here is what decides WHICH of the two modes aims the camera.
-   *
-   * It exists because a real camera is not always level: a plate shot on a
-   * phone leans, and a scene standing in that plate has to lean with it.
    */
   roll?: number
   /** Bone the orbit centre rides on, so a travelling motion stays in frame.
@@ -302,6 +296,30 @@ export type SceneLight = {
    *  and uploading a stage replaces every lamp the last one brought. Absent on
    *  a lamp placed by hand. */
   stage?: string
+  /** Its bulb, scene units: inside this distance the inverse square is held
+   *  flat. Absent is the engine's default. Set by an importer from the game's
+   *  own lamp (8 sqrt(shapeRadius)); there is no control for it. */
+  near?: number
+  /** The rendering layers it reaches, as bits. Absent reaches everything. */
+  layers?: number
+  /** A spot's gobo: one of the built-in patterns (lib/light-cookies). */
+  cookie?: LightCookie
+  /** The lamp over the scene, as the game animated it. See SceneLightTrack. */
+  track?: SceneLightTrack
+}
+
+/**
+ * A lamp's keyed channels, in CLIP frames at 30fps — the clock the cast's
+ * motion and the camera VMD play on. Each channel present replaces its plain
+ * field; values are linear between keys and hold before the first and after the
+ * last. Sparse: a channel the take never moves is simply absent, and a lamp
+ * with no track at all is the static lamp it always was.
+ */
+export type SceneLightTrack = {
+  position?: [frame: number, x: number, y: number, z: number][]
+  radius?: [frame: number, radius: number][]
+  intensity?: [frame: number, intensity: number][]
+  color?: [frame: number, color: string][]
 }
 
 export type SceneState = {
@@ -461,15 +479,15 @@ export type SceneAssetsDoc = {
    */
   midi?: string | null
   lyrics?: string | null
-  /** Three slots, as in the Assets panel. Mutually exclusive at runtime — the
-   *  editor holds one piece of media and a slot name, so filling any of them
+  /** Two slots, as in the Assets panel. Mutually exclusive at runtime — the
+   *  editor holds one piece of media and a slot name, so filling either
    *  replaces whichever was there. Read in this order.
    *
-   *  `plate` is the same kind of file as `backdrop`; what it says is that the
-   *  scene stands in it rather than in front of it. */
+   *  A document written while scenes could stand in footage may also carry a
+   *  `plate`. It is not read: that feature is gone, and its file is left out of
+   *  the scene rather than shown as wallpaper it never claimed to be. */
   backdrop?: string | null
   skybox?: string | null
-  plate?: string | null
   /** The HDRI. NOT one of the pair above: those two are what you see, and this
    *  is what lights. A scene can have one of them and this.
    *
@@ -742,9 +760,7 @@ export function parseAssetsDoc(a: SceneAssetsDoc): SceneAssets {
       ? { kind: "backdrop", asset: assetFromPath(a.backdrop) }
       : a.skybox
         ? { kind: "skybox", asset: assetFromPath(a.skybox) }
-        : a.plate
-          ? { kind: "plate", asset: assetFromPath(a.plate) }
-          : null,
+        : null,
     // Absent parses to no cards, which is what every document written before
     // them says and what one with none says too.
     ...(a.planes?.length
@@ -785,7 +801,6 @@ export function assetsDocOf(a: SceneAssets): SceneAssetsDoc {
     hdri: a.hdri?.url ?? null,
     backdrop: a.background?.kind === "backdrop" ? a.background.asset.url : null,
     skybox: a.background?.kind === "skybox" ? a.background.asset.url : null,
-    plate: a.background?.kind === "plate" ? a.background.asset.url : null,
     // Written only when there are any: a scene with no cards should read the
     // same as every scene written before they existed.
     ...(a.planes?.length ? { planes: a.planes.map(planeDocOf) } : {}),
@@ -951,16 +966,53 @@ export function parseSceneDoc(
 function lightsFromDoc(lights: SceneLight[] | null | undefined): SceneLight[] {
   const xyz = (v: unknown): v is [number, number, number] =>
     Array.isArray(v) && v.length === 3 && v.every((n) => typeof n === "number" && Number.isFinite(n))
-  return (lights ?? []).filter(
-    (l): l is SceneLight =>
-      !!l &&
-      typeof l.id === "string" &&
-      xyz(l.position) &&
-      typeof l.color === "string" &&
-      Number.isFinite(l.intensity) &&
-      Number.isFinite(l.radius) &&
-      l.radius > 0,
-  )
+  return (lights ?? [])
+    .filter(
+      (l): l is SceneLight =>
+        !!l &&
+        typeof l.id === "string" &&
+        xyz(l.position) &&
+        typeof l.color === "string" &&
+        Number.isFinite(l.intensity) &&
+        Number.isFinite(l.radius) &&
+        l.radius > 0,
+    )
+    .map((l) => {
+      // The optional parts pass the same door: a bulb or mask that is not a
+      // number is dropped, and so is any key that would put a NaN on screen —
+      // a track is sampled every frame, so one bad key is a bad frame forever.
+      const { near, layers, track, cookie, ...rest } = l
+      const out: SceneLight = rest
+      if (typeof near === "number" && Number.isFinite(near) && near > 0) out.near = near
+      if (isLightCookie(cookie)) out.cookie = cookie
+      if (typeof layers === "number" && Number.isInteger(layers)) out.layers = layers >>> 0
+      const t = trackFromDoc(track)
+      if (t) out.track = t
+      return out
+    })
+}
+
+/** A lamp's track with every malformed key dropped and each channel in frame
+ *  order, or undefined when nothing usable is left. */
+function trackFromDoc(track: unknown): SceneLightTrack | undefined {
+  if (!track || typeof track !== "object") return undefined
+  const t = track as Record<string, unknown>
+  const fin = (v: unknown) => typeof v === "number" && Number.isFinite(v)
+  const keys = <K extends unknown[]>(v: unknown, ok: (k: unknown[]) => boolean): K[] | undefined => {
+    if (!Array.isArray(v)) return undefined
+    const good = v.filter((k): k is K => Array.isArray(k) && fin(k[0]) && ok(k)).sort((a, b) => (a[0] as number) - (b[0] as number))
+    return good.length ? good : undefined
+  }
+  const out: SceneLightTrack = {}
+  const position = keys<[number, number, number, number]>(t.position, (k) => k.length === 4 && k.every(fin))
+  const radius = keys<[number, number]>(t.radius, (k) => k.length === 2 && fin(k[1]) && (k[1] as number) > 0)
+  const intensity = keys<[number, number]>(t.intensity, (k) => k.length === 2 && fin(k[1]) && (k[1] as number) >= 0)
+  const color = keys<[number, string]>(t.color, (k) => k.length === 2 && typeof k[1] === "string" && /^#[0-9a-f]{6}$/i.test(k[1]))
+  if (position) out.position = position
+  if (radius) out.radius = radius
+  if (intensity) out.intensity = intensity
+  if (color) out.color = color
+  return Object.keys(out).length ? out : undefined
 }
 
 /**

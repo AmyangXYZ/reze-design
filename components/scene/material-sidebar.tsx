@@ -29,7 +29,7 @@ import { cn } from "@/lib/utils"
 const UNGROUPED = "\0ungrouped" // sentinel collapse-key / drop-target id for "no group"
 
 // The engine's stock graph, shown as plain "Default"
-const ENGINE_DEFAULT_GRAPH = "Principled BSDF"
+const ENGINE_DEFAULT_GRAPH = "Lit"
 
 // Eye/Hair own the special render classes
 const isProtected = (g: StyleGroup) => g.renderClass === "eye" || g.renderClass === "hair"

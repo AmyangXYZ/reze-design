@@ -16,6 +16,7 @@
 // One collapse toggle instead — collapsed IS the view state, so "what a share
 // link renders" stops being a mode anybody has to maintain.
 
+import { LIGHT_COOKIES, type LightCookie } from "@/lib/light-cookies"
 import {
   useCallback,
   useEffect,
@@ -72,8 +73,6 @@ import {
   Sparkles,
   WandSparkles,
   X,
-  Move,
-  Wand2,
   Hand,
   Shapes,
   Eye,
@@ -169,7 +168,7 @@ import { effectRef, gradeRef, graphRef, unpublishedUses } from "@/lib/refs"
 import { ShareSceneDialog, type ScenePublishSource } from "@/components/editor/share-scene"
 import { clearLocalBundle, loadCastPalette, loadLocalBundle, saveCastPalette, saveLocalBundle } from "@/lib/asset-store"
 import { dictionaries, LOCALES, LOCALE_LABELS, useI18n, useT, type Dictionary, type Locale } from "@/lib/i18n"
-import { expandUploadFiles, unzipToFiles } from "@/lib/uploads"
+import { type BundleFile, bundleFileOf, expandUploadFiles, holdBundle, openZip, releaseBundle } from "@/lib/uploads"
 import { GRADE_PRESETS, gradeSpec, NEUTRAL_SPEC, NEW_GRADE_SPEC, recallIntensity, rememberIntensity } from "@/lib/grade"
 import {
   communityQuickPickItems,
@@ -352,8 +351,8 @@ const CHECKERBOARD: React.CSSProperties = {
 }
 
 
-/** The flat backdrop and the plate take stills and moving pictures; the 360
- *  dome takes a still equirect, including Radiance. */
+/** The flat backdrop takes stills and moving pictures; the 360 dome takes a
+ *  still equirect, including Radiance. */
 const BACKDROP_ACCEPT = "image/*,video/mp4,video/webm,video/quicktime"
 const DOME_ACCEPT = "image/*,.tga"
 /** Radiance only. An .hdr is a measurement of light, and the slot that takes it
@@ -596,10 +595,6 @@ type PaletteValues = {
   props: string | null
   gradeName: string
   backdrop: string | null
-  /** The footage the scene is standing in, by name. Its own field beside
-   *  `backdrop`: the two are the same kind of file in different seats, and a
-   *  row that showed one for the other would report a plate as wallpaper. */
-  plate: string | null
   dome: string | null
   /** The HDRI, by name. Its own field beside `dome` because it is its own slot
    *  — a scene can wear both, and a palette row that showed one for the other
@@ -640,7 +635,7 @@ const DOCK_CONTROLS: {
   en: string
   zh: string
   row: string
-  stageTab?: "stage" | "ground" | "background" | "composite"
+  stageTab?: "stage" | "ground" | "background"
   lightTab?: "world" | "sun"
   cameraTab?: "lens" | "focus"
   postTab?: "grade" | "tone" | "bloom" | "outline"
@@ -657,6 +652,7 @@ const DOCK_CONTROLS: {
   { id: "camera-distance", en: "Camera distance", zh: "相机距离", row: "camera", cameraTab: "lens", keywords: ["zoom", "距离"], value: (v) => dec1(v.camera.distance) },
   { id: "camera-azimuth", en: "Camera azimuth", zh: "相机方位角", row: "camera", cameraTab: "lens", keywords: ["orbit", "angle", "方位"], value: (v) => deg(rad2deg(v.camera.alpha)) },
   { id: "camera-elevation", en: "Camera elevation", zh: "相机仰角", row: "camera", cameraTab: "lens", keywords: ["orbit", "height", "俯仰"], value: (v) => deg(90 - rad2deg(v.camera.beta)) },
+  { id: "camera-roll", en: "Camera roll", zh: "相机倾斜", row: "camera", cameraTab: "lens", keywords: ["tilt", "dutch", "level", "倾斜"], value: (v) => deg(rad2deg(v.camera.roll ?? 0)) },
   { id: "camera-target", en: "Camera target", zh: "相机目标", row: "camera", cameraTab: "lens", keywords: ["offset", "look at", "偏移"], value: (v) => xyz(v.camera.target) },
   { id: "camera-dof", en: "Depth of field", zh: "景深", row: "camera", cameraTab: "focus", keywords: ["dof", "bokeh", "blur", "focus", "虚化"], value: (v) => sw(v.settings.dof.enabled, v.t) },
   { id: "stage-scale", en: "Stage scale", zh: "舞台缩放", row: "stage", stageTab: "stage", value: (v) => (v.stage ? `${dec2(v.stage.scale)}×` : "") },
@@ -670,14 +666,6 @@ const DOCK_CONTROLS: {
   { id: "shadow", en: "Shadow", zh: "阴影", row: "light", lightTab: "sun", value: (v) => sw(v.settings.sun.shadow !== false, v.t) },
   { id: "showGround", en: "Show ground", zh: "显示地面", row: "stage", stageTab: "ground", value: (v) => sw(v.settings.ground.enabled, v.t) },
   { id: "grid", en: "Grid lines", zh: "网格", row: "stage", stageTab: "ground", value: (v) => sw(v.settings.ground.gridEnabled, v.t) },
-  // The composite set. Every one of them has a row of its own by what it acts
-  // on — the lens is the camera's, the shadow's edge is the light's — so the
-  // shared keyword is what gathers them: one search for "composite" or "实景"
-  // returns the whole task, each row still labelled with where it lives.
-  { id: "plate", en: "Footage", zh: "实景素材", row: "stage", stageTab: "composite", keywords: ["composite", "plate", "footage", "live action", "video", "photo", "实景", "合成", "素材"], value: (v) => v.plate ?? v.t.lab.ctl.none },
-  { id: "camera-roll", en: "Camera roll", zh: "相机倾斜", row: "stage", stageTab: "composite", keywords: ["composite", "tilt", "dutch", "level", "实景", "合成", "倾斜"], value: (v) => deg(rad2deg(v.camera.roll ?? 0)) },
-  { id: "grain", en: "Grain", zh: "颗粒", row: "stage", stageTab: "composite", keywords: ["composite", "noise", "film", "sensor", "实景", "合成", "噪点", "颗粒"], value: (v) => dec2(v.settings.grain.amount) },
-  { id: "shadow-softness", en: "Shadow softness", zh: "阴影柔和度", row: "stage", stageTab: "composite", keywords: ["composite", "soft", "penumbra", "overcast", "实景", "合成", "柔和"], value: (v) => dec2(v.settings.sun.softness ?? 0) },
   { id: "bg-color", en: "Background color", zh: "背景颜色", row: "stage", stageTab: "background", value: (v) => v.settings.background.color },
   { id: "bg-image", en: "Background image", zh: "背景图片", row: "stage", stageTab: "background", keywords: ["backdrop", "photo", "video", "mp4", "webm", "gif", "webp", "背景视频"], value: (v) => v.backdrop ?? v.t.lab.ctl.none },
   { id: "bg-360", en: "Skybox", zh: "天空盒", row: "stage", stageTab: "background", keywords: ["360", "skybox", "panorama", "equirect", "全景"], value: (v) => v.dome ?? v.t.lab.ctl.none },
@@ -692,6 +680,7 @@ const DOCK_CONTROLS: {
   { id: "grade-intensity", en: "Grade intensity", zh: "调色强度", row: "post", postTab: "grade", value: (v) => dec2(v.settings.grade.intensity) },
   { id: "view-transform", en: "View transform", zh: "视图变换", row: "post", postTab: "tone", keywords: ["tonemap", "tone map", "soft", "neutral", "aces", "none", "filmic", "color management", "色调映射", "色彩管理"], value: (v) => TRANSFORM_LABEL[v.settings.view.transform] },
   { id: "exposure", en: "Exposure", zh: "曝光", row: "post", postTab: "tone", keywords: ["brightness", "ev", "亮度"], value: (v) => dec2(v.settings.view.exposure) },
+  { id: "grain", en: "Grain", zh: "颗粒", row: "post", postTab: "tone", keywords: ["noise", "film", "sensor", "噪点", "颗粒"], value: (v) => dec2(v.settings.grain.amount) },
   { id: "bloom-intensity", en: "Bloom intensity", zh: "泛光强度", row: "post", postTab: "bloom", keywords: ["glow", "辉光"], value: (v) => v.settings.bloom.intensity.toFixed(3) },
   { id: "bloom-threshold", en: "Bloom threshold", zh: "泛光阈值", row: "post", postTab: "bloom", keywords: ["cutoff"], value: (v) => dec2(v.settings.bloom.threshold) },
   { id: "bloom-spread", en: "Bloom spread", zh: "泛光扩散", row: "post", postTab: "bloom", keywords: ["scatter", "radius", "半径"], value: (v) => dec2(v.settings.bloom.scatter) },
@@ -700,6 +689,7 @@ const DOCK_CONTROLS: {
   { id: "sun-strength", en: "Sun strength", zh: "太阳强度", row: "light", lightTab: "sun", value: (v) => dec2(v.settings.sun.strength) },
   { id: "sun-azimuth", en: "Sun azimuth", zh: "太阳方位", row: "light", lightTab: "sun", value: (v) => deg(v.settings.sun.azimuth) },
   { id: "sun-elevation", en: "Sun elevation", zh: "太阳高度", row: "light", lightTab: "sun", value: (v) => deg(v.settings.sun.elevation) },
+  { id: "shadow-softness", en: "Shadow softness", zh: "阴影柔和度", row: "light", lightTab: "sun", keywords: ["soft", "penumbra", "overcast", "柔和"], value: (v) => dec2(v.settings.sun.softness ?? 0) },
   { id: "resolution", en: "Resolution", zh: "分辨率", row: "export", keywords: ["1080", "4k", "size", "quality"] },
   { id: "aspect", en: "Aspect ratio", zh: "画面比例", row: "export", keywords: ["16:9", "9:16", "square", "vertical"] },
   { id: "duration", en: "Export duration", zh: "导出时长", row: "export", keywords: ["length", "range", "seconds"] },
@@ -2094,6 +2084,8 @@ const leadWith = (names: readonly string[], lead: readonly string[]): string[] =
 }
 /** The parent picker's "none". Radix Select refuses an empty string as a value. */
 const NO_PARENT = "__none"
+/** The Pattern select's "none": no gobo on the lamp. */
+const NO_COOKIE = "__none"
 
 /** The settings keys that hold a block of dials, which is what `patch` merges
  *  into. A scalar setting is set outright. */
@@ -2510,14 +2502,6 @@ export default function Lab() {
    * One state rather than three, which is what makes the three slots mutually
    * exclusive for free: filling any of them replaces whatever was there, and no
    * code path exists in which two are set at once.
-   *
-   * `plate` and `flat` take the same files and differ only in the claim — a
-   * backdrop hangs behind the scene, a plate is footage the scene stands in. So
-   * the seat is something the author SAYS by choosing a row, never something
-   * guessed from the file.
-   *
-   * Declared here rather than beside the rest of the background state because
-   * the framing below reads it: a plate's own shape is the shot's shape.
    */
   //
   // The slots themselves — this, the HDRI and the music — are the shared
@@ -2540,85 +2524,7 @@ export default function Lab() {
   // Export framing: letterbox preview, green screen, exporting — the shared
   // hook, because an export in flight must survive whatever the chrome does.
   //
-  // A plate hands it an aspect: standing the scene in footage makes the
-  // footage's shape the shot's shape, with or without the render surface open.
-  //
-  // A still is as good a plate as a clip and is the easier case — locked off by
-  // construction, nothing to step, nothing to drift.
-  const plate = bgImage?.slot === "plate" ? bgImage : null
-  // What footage changed, to give back when it goes: the camera Match the
-  // plate wrote (roll, lens, pitch), and where Place her on the floor moved
-  // the primary cast member. Each is kept the first time it changes under a
-  // given plate, and both are restored when that plate is taken away. Scoped
-  // to the plate object, and forgotten on a scene swap, so a fresh scene never
-  // inherits either.
-  // Keyed by the footage's FILE: the backdrop object is rebuilt whenever its
-  // slot is re-applied, and a key on the object let the restore miss.
-  const beforePlate = useRef<{
-    plate: File
-    camera?: SceneCamera
-    cast?: { id: string; position: [number, number, number] }
-  } | null>(null)
-  const plateSnapshot = useCallback((): NonNullable<typeof beforePlate.current> | null => {
-    if (!plate) return null
-    if (!beforePlate.current || beforePlate.current.plate !== plate.file) beforePlate.current = { plate: plate.file }
-    return beforePlate.current
-  }, [plate])
-  /**
-   * Placing her by pointing at the floor in the footage.
-   *
-   * A MODE rather than a modifier, because the canvas already means "orbit" to a
-   * drag and the two cannot both have it. Explicit, visible while it is on, and
-   * discoverable — a shift-drag nobody is told about is not a feature.
-   *
-   * While it is on the orbit is locked, so the camera cannot drift out of the
-   * match the read just made.
-   */
-  const [placingOn, setPlacingOn] = useState(false)
-  /** DERIVED, not synced back: the mode means nothing without footage to point
-   *  at, and an effect that reset the flag would be a render's worth of the
-   *  canvas quietly meaning something it no longer does. */
-  const placing = placingOn && !!plate
-  /** Put the primary cast member where the pointer meets the floor.
-   *
-   *  The PRIMARY member by rule, never by whatever happens to be selected: a
-   *  command with an ambiguous subject is one that does something different
-   *  depending on state nobody was looking at. */
-  const placeAtPointer = useCallback(
-    (e: React.PointerEvent<HTMLCanvasElement>) => {
-      const engine = engineRef.current
-      if (!engine) return
-      const r = e.currentTarget.getBoundingClientRect()
-      const at = engine.groundPointAt(e.clientX - r.left, e.clientY - r.top)
-      // Null is a click above the horizon — the floor is not there to be pointed
-      // at, and moving her to a made-up spot would be worse than doing nothing.
-      if (!at) return
-      const id = castIdList[0]
-      if (!id) return
-      const snap = plateSnapshot()
-      if (snap && !snap.cast) {
-        const m = models.find((x) => x.id === id)
-        snap.cast = { id, position: m?.position ? [...m.position] as [number, number, number] : [0, 0, 0] }
-      }
-      setCastPosition(id, [at.x, 0, at.z])
-    },
-    [engineRef, castIdList, setCastPosition, models, plateSnapshot],
-  )
-
-  /** What the last read of the footage found, for the line under the button. */
-  const [solveNote, setSolveNote] = useState<string | null>(null)
-  const [solving, setSolving] = useState(false)
-  useEffect(() => {
-    // The orbit and the placement drag cannot both own the pointer, and of the
-    // two the orbit is the one that must not move: the camera has just been
-    // matched to the footage, and a stray drag would take it back out of match.
-    const engine = engineRef.current
-    if (!engine || !ready) return
-    engine.setCameraInputLocked(placing)
-    return () => engine.setCameraInputLocked(false)
-  }, [placing, ready, engineRef])
-  const plateAspect = plate && plate.height > 0 ? plate.width / plate.height : null
-  const framing = useRenderFraming(plateAspect)
+  const framing = useRenderFraming()
   const [exportOpen, setExportOpen] = useState(false)
   /**
    * Bumped every time a right panel is SUMMONED, which is what raises it.
@@ -2868,17 +2774,6 @@ export default function Lab() {
     [setCameraView],
   )
 
-  // The footage is gone, or is other footage now: give back what the old one
-  // changed — see beforePlate.
-  useEffect(() => {
-    const before = beforePlate.current
-    if (before && plate?.file !== before.plate) {
-      beforePlate.current = null
-      if (before.camera) changeCamera(before.camera)
-      if (before.cast) setCastPosition(before.cast.id, before.cast.position)
-    }
-  }, [plate, changeCamera, setCastPosition])
-
   /**
    * ORBITING THE CANVAS DOES NOT CHANGE THE SCENE.
    *
@@ -2915,8 +2810,18 @@ export default function Lab() {
       // morph .vmd, and generating a lip sync used to hand a clean file to the
       // same slot — the blinks went, and nothing said so, because the slot
       // still held a morph track and the mouth still moved.
+      // A File when it was picked here; a URL when it came with the scene (a
+      // published or forked one, where the artist's blinks live) — fetched the
+      // way the engine loaded it, or the lip sync replaced them there.
       const worn = morphByModel[id]?.src
-      const under = worn instanceof File ? await worn.arrayBuffer() : undefined
+      const under =
+        worn instanceof File
+          ? await worn.arrayBuffer()
+          : typeof worn === "string"
+            ? await fetch(worn)
+                .then((r) => (r.ok ? r.arrayBuffer() : undefined))
+                .catch(() => undefined)
+            : undefined
       const file = lipSyncVmdFile(lines, lyrics.name, under)
       if (!file) return
       const name = await loadMorphFile(id, file)
@@ -3012,21 +2917,19 @@ export default function Lab() {
   const [openRow, setOpenRow] = useState<string | null>(null)
 
   const stage = stages[0] ?? null
-  // What the environment IS, in the order it reads: a stage, footage, a
-  // backdrop, or the ground. The row's summary names it and opening the row
-  // lands on its tab, so the two never disagree.
-  const envTab: "stage" | "ground" | "background" | "composite" = stage || nativeStage
+  // What the environment IS, in the order it reads: a stage, a backdrop, or
+  // the ground. The row's summary names it and opening the row lands on its
+  // tab, so the two never disagree.
+  const envTab: "stage" | "ground" | "background" = stage || nativeStage
     ? "stage"
-    : bgImage?.slot === "plate"
-      ? "composite"
-      : bgImage
-        ? "background"
-        : "ground"
+    : bgImage
+      ? "background"
+      : "ground"
   const stageSummary = stage ? displayName(stage.file) : (nativeStage?.name ?? t.lab.tabs[envTab])
   // Controlled (not key-remounted): go-to deep-links need to land on a pane —
   // "Background" opens this row on its background tab. Where you left each one
   // is UI state, so it comes back from the same store the stack's own shape does.
-  const [stageTab, setStageTab] = useState<"stage" | "ground" | "background" | "composite">("ground")
+  const [stageTab, setStageTab] = useState<"stage" | "ground" | "background">("ground")
   const [cameraTab, setCameraTab] = useState<"lens" | "focus">("lens")
   const [postTab, setPostTab] = useState<"grade" | "tone" | "bloom" | "outline">("grade")
   const [lightTab, setLightTab] = useState<"world" | "sun" | "lamps">("world")
@@ -3422,127 +3325,9 @@ export default function Lab() {
     // imperatively for the same reason the flag is a ref — the click is now,
     // and a re-render is not.
     const input = bgImageInput.current
-    // A plate takes exactly what a backdrop takes — same files, different claim.
     if (input) input.accept = slot === "dome" ? DOME_ACCEPT : BACKDROP_ACCEPT
     input?.click()
   }
-  /**
-   * Read the camera out of the footage.
-   *
-   * Applies ONLY what the picture actually determined. A shot square-on to a wall
-   * is in one-point perspective and does not determine its own focal length at
-   * all — only one horizontal direction converges — so on plates like that this
-   * sets the lean and leaves the lens where the author had it. Moving a slider to
-   * a number the image never supported would be worse than leaving it alone.
-   *
-   * The solver is loaded on demand: it is a few hundred lines of geometry that
-   * only matters the moment somebody presses this, and it has no business in the
-   * first load of the editor.
-   */
-  const solvePlate = useCallback(async () => {
-    if (!plate) return
-    setSolving(true)
-    try {
-      const [{ calibratePlate }, { estimatePlateLight }] = await Promise.all([
-        import("@/lib/plate-calibrate"),
-        import("@/lib/plate-light"),
-      ])
-      // A video reads from the element, which is sitting on the frame the author
-      // is looking at; a still reads from its own bytes.
-      const vid = bgVideoRef.current
-      const src =
-        plate.kind === "video" && vid && vid.videoWidth > 0 ? vid : await createImageBitmap(plate.file)
-      const cw = "videoWidth" in src ? src.videoWidth : src.width
-      const ch = "videoHeight" in src ? src.videoHeight : src.height
-      const cvs = document.createElement("canvas")
-      cvs.width = cw
-      cvs.height = ch
-      const ctx = cvs.getContext("2d", { willReadFrequently: true })
-      if (!ctx) return
-      ctx.drawImage(src, 0, 0)
-      if ("close" in src) src.close()
-      // The lens the scene already wears, as a prior — in half-diagonals, which
-      // is the solver's unit and is the same ratio at any resolution.
-      const fov = camera.fov ?? CAMERA_DEFAULT_FOV
-      const prior = ch / 2 / Math.tan(fov / 2) / (Math.hypot(cw, ch) / 2)
-      const img = ctx.getImageData(0, 0, cw, ch)
-      const r = calibratePlate(img, prior)
-
-      // ── The light, from the plate itself ──────────────────────────────────
-      //
-      // Geometry is only half of why a figure looks pasted on. The other half is
-      // that she is lit by a different room — a scene opened on the stock world
-      // wears a magenta ambient, and no camera match makes a magenta character
-      // belong in a brown wood-panelled hall.
-      //
-      // The elevation is deliberately NOT set: nothing in a picture says how high
-      // its lights hang, and moving that slider to a guess would be worse than
-      // leaving it where the author had it. The azimuth IS a guess and is marked
-      // as one in the note.
-      const lit = estimatePlateLight(img, (camera.alpha * 180) / Math.PI)
-      patch("world", { color: lit.ambient })
-      patch("sun", { color: lit.key, azimuth: lit.azimuth, softness: lit.softness })
-      if (!r.solved.roll && !r.solved.fov && !r.solved.pitch) {
-        setSolveNote(t.lab.ctl.solveNone)
-        return
-      }
-      // A camera matched to a real one does not chase a bone — the plate does
-      // not move when she does — and while following, `target` is an offset from
-      // that bone rather than a point in the world, which would make the height
-      // below meaningless.
-      // The camera as it stood, for when the footage goes — once per plate.
-      const snap = plateSnapshot()
-      if (snap && !snap.camera) snap.camera = camera
-      // A followed camera's target triple is an OFFSET from the bone. Dropping
-      // the follow for the plate, the target has to become the world point the
-      // orbit actually centres on, or the shot swings to a spot near the origin.
-      const orbit = engineRef.current?.getCameraOrbit()
-      const worldTarget: [number, number, number] =
-        camera.follow && orbit ? [orbit.target.x, orbit.target.y, orbit.target.z] : [...camera.target]
-      const next = { ...camera, follow: null, target: worldTarget }
-      const found: string[] = []
-      if (r.solved.roll) {
-        // NEGATED. The engine tips the up vector toward screen-right for a
-        // positive roll; the solver reports the lean of the world's verticals,
-        // which runs the other way. Derived from the two conventions rather than
-        // observed, so it is the one number here worth checking by eye.
-        next.roll = -r.roll
-        found.push(`${t.lab.ctl.roll} ${((-r.roll * 180) / Math.PI).toFixed(1)}°`)
-      }
-      if (r.solved.fov) {
-        next.fov = r.fov
-        found.push(`${t.lab.ctl.fov} ${Math.round((r.fov * 180) / Math.PI)}°`)
-      }
-      if (r.solved.pitch) {
-        // Their elevation is measured from the horizon and beta from overhead;
-        // a camera looking DOWN is one above the subject.
-        next.beta = Math.PI / 2 - r.pitch
-        found.push(`${t.lab.ctl.elevation} ${Math.round((r.pitch * 180) / Math.PI)}°`)
-      }
-      // HEIGHT IS NOT SOLVED AND CANNOT BE. A single frame is scale-free, so
-      // nothing in the picture says how high the camera stood — and that is the
-      // number that decides whether her feet land on the floor rather than
-      // hanging over it. A scene opened on stock orbit angles has its eye about
-      // three units up, a quarter of a metre, which puts the floor somewhere
-      // nobody shot from. Seeded to chest height so the first press lands in the
-      // right neighbourhood, and only when the current value is implausible, so
-      // a height the author has already set is never overwritten.
-      const eyeY = next.target[1] + next.distance * Math.cos(next.beta)
-      if (eyeY < 6) {
-        // ~1.4 m, at the scale a character stands 18 units tall.
-        next.target[1] = 16 - next.distance * Math.cos(next.beta)
-        found.push(`${t.lab.ctl.camHeight} 16`)
-      }
-      changeCamera(next)
-      found.push(`${t.lab.ctl.softness} ${lit.softness.toFixed(2)}`)
-      setSolveNote(`${found.join(" · ")} — ${Math.round(r.confidence * 100)}%`)
-    } catch (e) {
-      setSolveNote(e instanceof Error ? e.message : String(e))
-    } finally {
-      setSolving(false)
-    }
-  }, [plate, camera, changeCamera, patch, t, plateSnapshot, engineRef])
-
   /** The HDRI. Its own input, because its accept list is one extension and
    *  sharing the background's would offer .hdr in slots that cannot use it. */
   const hdriInput = useRef<HTMLInputElement | null>(null)
@@ -3613,8 +3398,6 @@ export default function Lab() {
     backgroundEffects: bgEffects,
     lights,
     hasBackdrop: !!bgImage && bgImage.slot !== "dome",
-    plate: bgImage?.slot === "plate",
-    plateStill: plate?.kind === "image",
     skybox: bgImage?.slot === "dome" ? bgImage.file : null,
     hdri: hdri?.file ?? null,
     exportBackground: framing.liveBackground,
@@ -5545,19 +5328,16 @@ export default function Lab() {
       // boot loader's order, for the same reason. Bundle first, like the clip.
       // A failed load keeps its claim, as at boot: the collector writes the
       // document from this state.
-      const wearMorph = () => {
+      const wearMorph = async () => {
         if (!expr) return
-        const packed = typeof expr.src === "string" ? bundleFile(expr.src) : null
+        const packed = typeof expr.src === "string" ? await bundleFile(expr.src) : null
         const src = packed ?? expr.src
-        void (typeof src === "string" ? loadMorphUrl(newId, expr.name, src) : loadMorphFile(newId, src)).then(
-          (loaded) => {
-            if (loaded && packed)
-              setMorphByModel((prev) => (prev[newId] ? { ...prev, [newId]: { name: expr.name, src: packed } } : prev))
-          },
-        )
+        const loaded = await (typeof src === "string" ? loadMorphUrl(newId, expr.name, src) : loadMorphFile(newId, src))
+        if (loaded && packed)
+          setMorphByModel((prev) => (prev[newId] ? { ...prev, [newId]: { name: expr.name, src: packed } } : prev))
       }
-      if (!clip) wearMorph()
-      if (clip) {
+      if (!clip) void wearMorph()
+      if (clip) void (async () => {
         // Resolved through the bundle first, exactly as the boot loader does — a
         // clip that came from the scene's own bundle is named by its path INSIDE
         // that bundle, which is not a URL anything can fetch. Boot upgrades the
@@ -5566,7 +5346,7 @@ export default function Lab() {
         // timing. That is what made the motion carry over only sometimes: an
         // uploaded File or a served /animations path inherited fine, and a
         // bundled clip replaced before boot had upgraded it silently did not.
-        const packed = typeof clip.src === "string" ? bundleFile(clip.src) : null
+        const packed = typeof clip.src === "string" ? await bundleFile(clip.src) : null
         const src = packed ?? clip.src
         void (typeof src === "string" ? loadVmdUrl(newId, clip.name, src) : loadVmdFile(newId, src)).then((loaded) => {
           if (loaded) {
@@ -5581,9 +5361,9 @@ export default function Lab() {
               return next
             })
           }
-          wearMorph()
+          void wearMorph()
         })
-      }
+      })()
       setPalettes((prev) => {
         const old = prev[oldId]
         if (!old || oldId === newId) return prev
@@ -5702,7 +5482,6 @@ export default function Lab() {
     props: propSummary,
     gradeName: gradeLabel(settings.grade.preset),
     backdrop: bgImage?.slot === "flat" ? bgImage.name : null,
-    plate: bgImage?.slot === "plate" ? bgImage.name : null,
     dome: bgImage?.slot === "dome" ? bgImage.name : null,
     hdri: hdri?.name ?? null,
     pack: activePack,
@@ -5785,7 +5564,7 @@ export default function Lab() {
     (
       target: string,
       tabs?: {
-        stage?: "stage" | "ground" | "background" | "composite"
+        stage?: "stage" | "ground" | "background"
         light?: "world" | "sun"
         camera?: "lens" | "focus"
         post?: "grade" | "tone" | "bloom" | "outline"
@@ -6091,7 +5870,7 @@ export default function Lab() {
         // is what makes it a dome.
         background: bgImage
           ? {
-              kind: bgImage.slot === "dome" ? "skybox" : bgImage.slot === "plate" ? "plate" : "backdrop",
+              kind: bgImage.slot === "dome" ? "skybox" : "backdrop",
               name: bgImage.name,
               file: bgImage.file,
             }
@@ -6190,7 +5969,6 @@ export default function Lab() {
    * thrown all of that away and flashed the DOM on the way.
    */
   const applyLabScene = async (next: Scene): Promise<string | null> => {
-    beforePlate.current = null
     // STARTED, not awaited yet. swapScene turns `ready` off synchronously, before its
     // first await, so every re-seed below lands in the SAME commit as ready:false —
     // which is what keeps the two document loaders from ever running against a
@@ -6489,7 +6267,7 @@ export default function Lab() {
    * effect re-packs the zip's files into the IndexedDB bundle, so the import survives
    * refresh with no dependence on the original file.
    *
-   * Anything that is not one of those zips fails through unzipToFiles or the parse and
+   * Anything that is not one of those zips fails through openZip or the parse and
    * lands in the upload notice, which is where every other file failure on this route
    * is already read. (The shipped editor also still reads the legacy config-only
    * `.reze.json`; this route never wrote one.)
@@ -6500,15 +6278,11 @@ export default function Lab() {
     const toastId = `import:${file.name}`
     const name = file.name.replace(/\.zip$/i, "")
     toast.loading(t.lab.uploadReading, { id: toastId })
-    let painted = 0
     try {
-      const files = await unzipToFiles(file, (done, total) => {
-        // Four a second, like the download line: a game scene is thousands of entries.
-        const now = performance.now()
-        if (now - painted < 250) return
-        painted = now
-        toast.loading(t.lab.uploadReadingShare(done, total), { id: toastId })
-      })
+      // The zip's directory and its scene.json, nothing more: every other file
+      // stays in the zip until a loader asks for it, so the wait from here on
+      // is the scene loading, counted by the pill as it goes.
+      const files = await openZip(file)
       const docFile = files.find((f) => f.name === "scene.json")
       if (!docFile) throw new Error("no scene.json")
       const parsed: unknown = JSON.parse(await docFile.text())
@@ -6518,8 +6292,8 @@ export default function Lab() {
         const doc = parsed as SceneDoc
         const resolve = await resolveSceneRefs(doc)
         const imported = parseSceneDoc(doc, builtinEffect, libraryGraph, resolve)
-        // A blob URL, so loadSceneInto's bundle fetch reads the zip we already hold.
-        const url = URL.createObjectURL(file)
+        // A blob URL holding the zip already open, so loadSceneInto reads it as is.
+        const url = holdBundle(files, file)
         try {
           toast.loading(t.lab.uploadLoading(name), { id: toastId })
           const failed = await applyLabScene({
@@ -6531,7 +6305,7 @@ export default function Lab() {
           })
           if (failed) throw new Error(failed)
         } finally {
-          URL.revokeObjectURL(url)
+          releaseBundle(url)
         }
       }
       toast.success(t.lab.uploadDone(name), { id: toastId })
@@ -6557,9 +6331,10 @@ export default function Lab() {
    * user's uploads included) and the patch zip's. They are written together as
    * this scene's IndexedDB bundle BEFORE the swap, so the swap reads the merged
    * set and a refresh at any point after finds it. The scene keeps its id: it is
-   * the same scene, changed.
+   * the same scene, changed. Neither is read to do it: the patch's files are
+   * still in their zip, which is stored whole beside the merged path list.
    */
-  const importScenePatch = async (patch: unknown, patchFiles: File[], toastId: string, name: string) => {
+  const importScenePatch = async (patch: unknown, patchFiles: BundleFile[], toastId: string, name: string) => {
     // Holds the autosave off: it would write the outgoing scene's bundle over the
     // merged one in the window before the swap.
     setUploading((n) => n + 1)
@@ -6568,14 +6343,14 @@ export default function Lab() {
       const merged = mergeScenePatch(makeSceneDoc(slots, null), patch)
       const entries = mergePatchFiles(
         slots.entries,
-        patchFiles.map((f) => ({ path: f.name, file: f as Blob })),
+        patchFiles.map((f) => ({ path: f.name, file: f })),
         patchRoots(patch),
       )
       const id = scene.state.id
-      // Quota is the failure to expect: the merged set then rides a blob: zip,
+      // Quota is the failure to expect: the merged set then rides a blob: URL,
       // the same way a plain import does, and the persist effect retries IDB.
       const stored = await saveLocalBundle(id, entries)
-      const url = stored ? null : URL.createObjectURL(await buildZip(entries))
+      const url = stored ? null : holdBundle(entries.map((e) => bundleFileOf(e.path, e.file)))
       try {
         const resolve = await resolveSceneRefs(merged)
         const next = parseSceneDoc(merged, builtinEffect, libraryGraph, resolve)
@@ -6587,7 +6362,7 @@ export default function Lab() {
         })
         if (failed) throw new Error(failed)
       } finally {
-        if (url) URL.revokeObjectURL(url)
+        if (url) releaseBundle(url)
       }
     } finally {
       setUploading((n) => n - 1)
@@ -6830,34 +6605,10 @@ export default function Lab() {
         className={cn("absolute object-cover", !frameRect && "inset-0 h-full w-full")}
         style={frameStyle}
       />
-      {/* PLACING HER BY POINTING AT THE FLOOR.
-          A pointer on the canvas becomes a ray, and where that ray meets the
-          ground plane is where she stands. The camera has already been matched
-          to the footage, so that plane IS the floor in the picture — and because
-          the projection is a perspective one, dragging her further into the room
-          makes her smaller by exactly the right amount. Position and size stop
-          being two numbers to tune against each other.
-
-          Capture is taken on the way down so a drag that leaves the canvas keeps
-          delivering, which is exactly what happens when you push her to the back
-          of a room. */}
       <canvas
         ref={canvasRef}
-        className={cn(
-          "absolute touch-none object-contain",
-          !frameRect && "inset-0 h-full w-full",
-          placing && "cursor-crosshair",
-        )}
+        className={cn("absolute touch-none object-contain", !frameRect && "inset-0 h-full w-full")}
         style={frameStyle}
-        onPointerDown={
-          placing
-            ? (e) => {
-                e.currentTarget.setPointerCapture(e.pointerId)
-                placeAtPointer(e)
-              }
-            : undefined
-        }
-        onPointerMove={placing ? (e) => e.buttons === 1 && placeAtPointer(e) : undefined}
       />
 
       {/* THE LAMPS, while lamps are what you are working on. They are chrome for
@@ -8091,9 +7842,6 @@ export default function Lab() {
                         <TabsTrigger value="background" className="flex-1">
                           {t.lab.tabs.background}
                         </TabsTrigger>
-                        <TabsTrigger value="composite" className="flex-1">
-                          {t.lab.tabs.composite}
-                        </TabsTrigger>
                       </TabsList>
                       <TabsContent value="stage">
                         {/* A game stage: drawn by the game's shaders where the
@@ -8256,28 +8004,15 @@ export default function Lab() {
                               value={ground.color}
                               onChange={(hex) => patch("ground", { color: hex })}
                             />
-                            {/* Footage holds this at 0 — the invisible floor IS
-                                the shadow catcher. Disabled and left at that: a
-                                control that is plainly unavailable does not also
-                                need a paragraph about why. */}
-                            {/* The wrapper carries the row gap: its SliderRow is a first
-                                child and would otherwise zero its own margin, leaving
-                                Opacity tight against Colour while every other row in the
-                                section sits 2.5 apart. */}
-                            <fieldset
-                              disabled={!!plate}
-                              className={cn("mt-2.5", plate && "pointer-events-none opacity-40")}
-                            >
-                              <SliderRow
-                                label={t.lab.ctl.opacity}
-                                value={plate ? 0 : ground.opacity}
-                                min={0}
-                                max={1}
-                                step={0.01}
-                                onChange={(v) => patch("ground", { opacity: v })}
-                                fmt={(v) => v.toFixed(2)}
-                              />
-                            </fieldset>
+                            <SliderRow
+                              label={t.lab.ctl.opacity}
+                              value={ground.opacity}
+                              min={0}
+                              max={1}
+                              step={0.01}
+                              onChange={(v) => patch("ground", { opacity: v })}
+                              fmt={(v) => v.toFixed(2)}
+                            />
                             <SliderRow
                               label={t.lab.ctl.size}
                               value={ground.size}
@@ -8343,13 +8078,10 @@ export default function Lab() {
                             a compact inline action, not a hover reserve — one
                             always-relevant button does not earn 48px of blank
                             right margin that breaks the column.
-                            Image, 360° and the Footage tab's row are ONE slot
-                            in three rows: filling any of them empties the other
-                            two, so the seat is something you SAY, never
-                            something the app guesses from the file. Footage
-                            takes exactly the files this row does — what makes
-                            it a plate is the claim that the scene stands in it,
-                            and no extension carries that.
+                            Image and 360° are ONE slot in two rows: filling
+                            either empties the other, so the seat is something
+                            you SAY, never something the app guesses from the
+                            file.
 
                             WORLD IS NOT ONE OF THEM. Those two answer "what is
                             behind the scene" and only one can be; this answers
@@ -8427,243 +8159,6 @@ export default function Lab() {
                             </div>
                           )
                         })}
-                      </TabsContent>
-                      {/* Standing the scene IN the backdrop. The Background tab
-                          holds the picture; this pane is the scene agreeing
-                          with it — the same four numbers a match-move solves,
-                          reachable while you watch the canvas.
-
-                          The lens, the tilt and the roll ARE the camera's, and
-                          the shadow's edge IS the light's. Shown here, stored
-                          there: these write the same state the Camera row and
-                          the Light row do, so there is one value with two
-                          doors rather than two values that can disagree. */}
-                      <TabsContent value="composite">
-                        {/* The slot IS the mode. A plate and a backdrop take the
-                            same files and differ only in the claim, so a second
-                            switch beside this row could only ever disagree with
-                            which row the file is in. Filling it empties the
-                            other two: a scene has one background, not three. */}
-                        <div className="flex h-5 min-w-0 items-center gap-2">
-                          <span className="shrink-0 text-xs">{t.lab.ctl.plate}</span>
-                          {plate ? (
-                            <>
-                              <span className="ml-auto max-w-[7.5rem] min-w-0 truncate text-right text-xs text-muted-foreground">
-                                {plate.name}
-                              </span>
-                              <CastAction
-                                icon={Upload}
-                                compact
-                                label={t.lab.aria.replace(t.lab.kinds.plate)}
-                                onClick={() => pickBgImage("plate")}
-                              />
-                              <CastAction
-                                icon={X}
-                                danger
-                                compact
-                                label={t.lab.aria.remove(t.lab.kinds.plate)}
-                                onClick={() => swapBgImage(null)}
-                              />
-                            </>
-                          ) : (
-                            <span className="ml-auto flex min-w-0 justify-end">
-                              <UploadInvite
-                                label={t.lab.uploadPlate}
-                                onClick={() => pickBgImage("plate")}
-                                aria={t.lab.aria.upload(t.lab.kinds.plate)}
-                                className="text-right text-xs"
-                              />
-                            </span>
-                          )}
-                        </div>
-                        {/* The catcher IS the ground plane at zero opacity, so
-                            the control that removes the plane removes the
-                            shadow — silently, and two tabs from here. */}
-                        {plate && !ground.enabled && (
-                          <p className="mt-2.5 text-xs text-amber-400">{t.lab.ctl.plateNeedsGround}</p>
-                        )}
-                        <fieldset
-                          disabled={!plate}
-                          className={cn("mt-2.5", !plate && "pointer-events-none opacity-40")}
-                        >
-                          {/* The one ACTION in the pane, and it sits above
-                              everything it fills in. The rows below stay the
-                              authority: it reports what it found rather than
-                              silently moving eight controls, because a number
-                              you did not choose is one you have to be able to
-                              disbelieve. */}
-                          <button
-                            onClick={solvePlate}
-                            disabled={solving}
-                            className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground ring-1 ring-line-strong transition-colors hover:text-blue-400 hover:ring-blue-400/50 disabled:cursor-default disabled:opacity-50"
-                          >
-                            <Wand2 className="size-3.5 shrink-0" />
-                            <span className="truncate">{solving ? t.lab.ctl.solving : t.lab.ctl.solve}</span>
-                          </button>
-                          {solveNote && <p className="mt-1.5 text-xs text-muted-foreground">{solveNote}</p>}
-                          {/* The second action, and the one that finishes the
-                              job: the read puts the floor in the right place,
-                              this puts her on it. Blue while it is on, because
-                              the canvas means something different for as long as
-                              it is — and a mode you cannot see is a mode you
-                              will be surprised by. */}
-                          <button
-                            onClick={() => setPlacingOn((v) => !v)}
-                            className={cn(
-                              "mt-1.5 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium ring-1 transition-colors",
-                              placing
-                                ? "text-blue-400 ring-blue-400/50"
-                                : "text-muted-foreground ring-line-strong hover:text-blue-400 hover:ring-blue-400/50",
-                            )}
-                          >
-                            <Move className="size-3.5 shrink-0" />
-                            <span className="truncate">
-                              {placing ? t.lab.ctl.placing : t.lab.ctl.placeOnFloor}
-                            </span>
-                          </button>
-
-                          {/* THREE GROUPS, each under a heading and a rule.
-                              Eight sliders in one column is a list, not a pane —
-                              and scope has to be shown by a rule or a heading
-                              rather than by position, which is exactly what a
-                              flat list leaves to chance. They are filed by what
-                              they ACT ON, which is also the order you use them
-                              in: put her in the room, light her, then match the
-                              sensor. */}
-                          <p className="mt-3 border-t border-line pt-2 text-xs text-muted-foreground">
-                            {t.lab.ctl.gCamera}
-                          </p>
-                          {/* THE NUMBER THE PICTURE CANNOT GIVE UP. A single
-                              photograph is scale-free: no algorithm recovers
-                              metres from pixels without a known length in frame,
-                              so the read above fixes which way the floor TILTS
-                              and says nothing about where it IS. Held as a height
-                              above the floor because that is the thing anyone can
-                              estimate — you know roughly how high you held the
-                              phone. A character stands about 18 units, so 1.4 m
-                              is about 16. The orbit's own numbers are solved back
-                              out of it. */}
-                          <SliderRow
-                            label={t.lab.ctl.camHeight}
-                            value={camera.target[1] + camera.distance * Math.cos(camera.beta)}
-                            min={0}
-                            max={60}
-                            step={0.5}
-                            onChange={(v) =>
-                              changeCamera({
-                                ...camera,
-                                // A camera matched to a real one does not chase a
-                                // bone: the plate does not move when she does.
-                                // Following also makes `target` an OFFSET rather
-                                // than a world point, which would make this mean
-                                // nothing.
-                                follow: null,
-                                target: [
-                                  camera.target[0],
-                                  v - camera.distance * Math.cos(camera.beta),
-                                  camera.target[2],
-                                ],
-                              })
-                            }
-                            fmt={(v) => `${v.toFixed(1)}`}
-                          />
-                          {/* Degrees on the slider, radians in the document — the
-                              same boundary conversion the Camera row makes, on
-                              the same value. */}
-                          <SliderRow
-                            label={t.lab.ctl.fov}
-                            value={Math.round(((camera.fov ?? CAMERA_DEFAULT_FOV) * 180) / Math.PI)}
-                            min={10}
-                            max={120}
-                            step={1}
-                            onChange={(v) => changeCamera({ ...camera, fov: (v * Math.PI) / 180 })}
-                            fmt={(v) => `${Math.round(v)}°`}
-                          />
-                          {/* Beta is polar, measured from straight overhead, so
-                              this reads 0 at the horizon and + from above —
-                              matched to the Camera row rather than restated. */}
-                          <SliderRow
-                            label={t.lab.ctl.elevation}
-                            value={Math.round(90 - (camera.beta * 180) / Math.PI)}
-                            min={-85}
-                            max={85}
-                            step={1}
-                            onChange={(v) => changeCamera({ ...camera, beta: ((90 - v) * Math.PI) / 180 })}
-                            fmt={(v) => `${v}°`}
-                          />
-                          {/* The one channel the orbit cannot hold. */}
-                          <SliderRow
-                            label={t.lab.ctl.roll}
-                            value={((camera.roll ?? 0) * 180) / Math.PI}
-                            min={-45}
-                            max={45}
-                            step={0.5}
-                            onChange={(v) => changeCamera({ ...camera, roll: (v * Math.PI) / 180 })}
-                            fmt={(v) => `${v.toFixed(1)}°`}
-                          />
-
-                          <p className="mt-3 border-t border-line pt-2 text-xs text-muted-foreground">
-                            {t.lab.ctl.gLight}
-                          </p>
-                          {/* After her feet are on the floor, a shadow falling the
-                              wrong way is the loudest thing left. Turn this until
-                              hers lies along the shadows already in the picture —
-                              the read guesses it from which side of the frame is
-                              brighter, which is right more often than a stock
-                              value and is still a guess. Same state the Light row
-                              owns: one value, two doors. */}
-                          <SliderRow
-                            label={t.lab.ctl.azimuth}
-                            value={settings.sun.azimuth}
-                            min={0}
-                            max={360}
-                            step={1}
-                            onChange={(v) => patch("sun", { azimuth: v })}
-                            fmt={(v) => `${Math.round(v)}°`}
-                          />
-                          {/* Not set by the read, on purpose: nothing in a picture
-                              of a room says how high its lights hang. */}
-                          <SliderRow
-                            label={t.lab.ctl.elevation}
-                            value={settings.sun.elevation}
-                            min={0}
-                            max={90}
-                            step={1}
-                            onChange={(v) => patch("sun", { elevation: v })}
-                            fmt={(v) => `${Math.round(v)}°`}
-                          />
-                          {/* A hard edge under an overcast sky is the loudest
-                              thing wrong in a composite, and no other control in
-                              the app could say otherwise. */}
-                          <SliderRow
-                            label={t.lab.ctl.softness}
-                            value={settings.sun.softness ?? 0}
-                            min={0}
-                            max={1}
-                            step={0.01}
-                            onChange={(v) => patch("sun", { softness: v })}
-                            fmt={(v) => v.toFixed(2)}
-                          />
-
-                          <p className="mt-3 border-t border-line pt-2 text-xs text-muted-foreground">
-                            {t.lab.ctl.gFilm}
-                          </p>
-                          {/* Grain, on the RENDER only — the footage arrived from
-                              a real sensor with grain of its own, and a second
-                              helping would grade the photograph rather than match
-                              it. Freezes by itself for a still plate: noise
-                              crawling over a frozen picture makes the rendering
-                              look more alive than the room it stands in. */}
-                          <SliderRow
-                            label={t.lab.ctl.grain}
-                            value={settings.grain.amount}
-                            min={0}
-                            max={1}
-                            step={0.01}
-                            onChange={(v) => patch("grain", { amount: v })}
-                            fmt={(v) => v.toFixed(2)}
-                          />
-                        </fieldset>
                       </TabsContent>
                     </Tabs>
                   ) : l.id === "effect" ? (
@@ -9326,8 +8821,8 @@ export default function Lab() {
                             label={t.lab.ctl.strength}
                             value={sun.strength}
                             min={0}
-                            max={6}
-                            step={0.05}
+                            max={2}
+                            step={0.01}
                             onChange={(v) => patch("sun", { strength: v })}
                             fmt={(v) => v.toFixed(2)}
                           />
@@ -9348,6 +8843,15 @@ export default function Lab() {
                             step={1}
                             onChange={(v) => patch("sun", { elevation: v })}
                             fmt={(v) => `${v.toFixed(0)}°`}
+                          />
+                          <SliderRow
+                            label={t.lab.ctl.softness}
+                            value={sun.softness ?? 0}
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            onChange={(v) => patch("sun", { softness: v })}
+                            fmt={(v) => v.toFixed(2)}
                           />
                         </TabsContent>
                         <TabsContent value="lamps">
@@ -9449,6 +8953,53 @@ export default function Lab() {
                                         dense
                                         labelClass="w-[4.75rem]"
                                       />
+                                      {/* A gobo makes the lamp a spot: a
+                                          point has no cone to throw a picture
+                                          along, so picking one aims the lamp at
+                                          the view's centre, where you are
+                                          looking. None takes the picture away
+                                          and leaves the cone. */}
+                                      <div className="mt-2.5 flex items-center gap-2 first:mt-0">
+                                        <span className="w-[4.75rem] shrink-0 truncate text-[11px]">{t.lab.ctl.pattern}</span>
+                                        <Select
+                                          value={l.cookie ?? NO_COOKIE}
+                                          onValueChange={(v) => {
+                                            if (v === NO_COOKIE) return patchLight(l.id, { cookie: undefined })
+                                            const cookie = v as LightCookie
+                                            if (l.aim) return patchLight(l.id, { cookie })
+                                            const d = camera.target.map((c, i) => c - l.position[i])
+                                            const len = Math.hypot(d[0], d[1], d[2])
+                                            const aim: [number, number, number] =
+                                              len > 1e-3 ? [d[0] / len, d[1] / len, d[2] / len] : [0, -1, 0]
+                                            patchLight(l.id, { cookie, aim, angle: l.angle ?? 50 })
+                                          }}
+                                        >
+                                          <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] text-[11px] data-[size=sm]:h-4">
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value={NO_COOKIE}>{t.lab.ctl.none}</SelectItem>
+                                            {LIGHT_COOKIES.map((c) => (
+                                              <SelectItem key={c} value={c}>
+                                                {t.lab.ctl.cookie[c]}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                      {l.aim && (
+                                        <SliderRow
+                                          label={t.lab.ctl.cone}
+                                          value={l.angle ?? 45}
+                                          min={5}
+                                          max={150}
+                                          step={1}
+                                          onChange={(v) => patchLight(l.id, { angle: v })}
+                                          fmt={(v) => `${v.toFixed(0)}°`}
+                                          dense
+                                          labelClass="w-[4.75rem]"
+                                        />
+                                      )}
                                       {/* The brightness one unit from the lamp: it
                                           falls off as the inverse square, so the
                                           numbers that light a figure run to the
@@ -9524,8 +9075,9 @@ export default function Lab() {
                                   name: t.lab.lamp.name(list.length + 1),
                                   position: [camera.target[0], camera.target[1], camera.target[2]],
                                   color: "#ffd9a0",
-                                  // As bright half-way out as the old default was.
-                                  intensity: 64,
+                                  // Unity's units: a warm bulb, as bright ten
+                                  // units out as a 0.2 sun.
+                                  intensity: 20,
                                   radius: 20,
                                 },
                               ])
@@ -9656,6 +9208,16 @@ export default function Lab() {
                           onChange={(v) => patch("view", { exposure: v })}
                           fmt={(v) => v.toFixed(2)}
                         />
+                        {/* Over what the engine drew only — never the backdrop. */}
+                        <SliderRow
+                          label={t.lab.ctl.grain}
+                          value={settings.grain.amount}
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          onChange={(v) => patch("grain", { amount: v })}
+                          fmt={(v) => v.toFixed(2)}
+                        />
                       </TabsContent>
                       {/* No on/off: intensity 0 IS off — useSceneSync maps it to
                           enabled:false and the pyramid is skipped entirely. The
@@ -9683,7 +9245,7 @@ export default function Lab() {
                           fmt={(v) => v.toFixed(2)}
                         />
                         {/* The chain's scatter: how far each level leans toward
-                            the wider one on the way up. 0.77 is the game. */}
+                            the wider one on the way up. 0.8 is the game. */}
                         <SliderRow
                           label={t.lab.ctl.spread}
                           value={bloom.scatter}
@@ -9919,6 +9481,16 @@ export default function Lab() {
                               })
                             }
                             fmt={(v) => `${v}°`}
+                          />
+                          {/* The one channel the orbit cannot hold. */}
+                          <SliderRow
+                            label={t.lab.ctl.roll}
+                            value={((camera.roll ?? 0) * 180) / Math.PI}
+                            min={-45}
+                            max={45}
+                            step={0.5}
+                            onChange={(v) => changeCamera({ ...camera, roll: (v * Math.PI) / 180 })}
+                            fmt={(v) => `${v.toFixed(1)}°`}
                           />
                           {(["X", "Y", "Z"] as const).map((axis, i) => (
                             <SliderRow

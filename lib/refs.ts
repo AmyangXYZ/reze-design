@@ -97,7 +97,7 @@ const ENGINE_PRESETS = [DEFAULT_GRAPH, UNLIT_GRAPH]
  *  — and the look is still the engine's own. */
 const atUnlitStrength = (graph: ShaderGraph): ShaderGraph => ({
   ...graph,
-  nodes: graph.nodes.map((n) => (n.id === "emit" && n.type === "emission" ? { ...n, inputs: { ...n.inputs, strength: 1 } } : n)),
+  nodes: graph.nodes.map((n) => (n.id === "emit" && n.type === "vector_math/scale" ? { ...n, inputs: { ...n.inputs, scale: 1 } } : n)),
 })
 
 /**
@@ -116,25 +116,14 @@ const atUnlitStrength = (graph: ShaderGraph): ShaderGraph => ({
  * copy stops being recognised — which is the whole rule of this file.
  */
 function isAppStageGraph(graph: ShaderGraph): boolean {
-  const emit = graph.nodes.find((n) => n.type === "emission")
-  if (emit && sameGraphLook(graph, stageSheetGraph(Number(emit.inputs?.strength ?? 1)))) return true
-  if (emit && sameGraphLook(graph, stageLightSheetGraph(Number(emit.inputs?.strength ?? 1)))) return true
-  const principled = graph.nodes.find((n) => n.type === "principled")
-  const strength = Number(principled?.inputs?.emission_strength ?? 0)
+  const emit = graph.nodes.find((n) => n.id === "emit" && n.type === "vector_math/scale")
+  const strength = Number(emit?.inputs?.scale ?? 1)
   if (!Number.isFinite(strength)) return false
-  const current = stagePbrGraph(strength)
-  return sameGraphLook(graph, current) || sameGraphLook(graph, stagePbrBefore(current, strength))
-}
-
-/** Stage PBR as it was before 2026-09-24, still in every scene that took a
- *  stage then: the cast's spec clamp at 10, no reflection_lod. Still the app's. */
-function stagePbrBefore(current: ShaderGraph, strength: number): ShaderGraph {
-  return {
-    ...current,
-    nodes: current.nodes.map((n) =>
-      n.type === "principled" ? { ...n, inputs: { specular_ior_level: 0.5, spec_clamp: 10.0, emission_strength: strength } } : n,
-    ),
-  }
+  return (
+    sameGraphLook(graph, stageSheetGraph(strength)) ||
+    sameGraphLook(graph, stageLightSheetGraph(strength)) ||
+    sameGraphLook(graph, stagePbrGraph(strength))
+  )
 }
 
 export function unpublishedUses(

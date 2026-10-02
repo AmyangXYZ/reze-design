@@ -8,21 +8,46 @@
 // rest. Nothing is tuned on the way: what the files say is what draws.
 
 import type { Engine, NativeLook, NativeMaterialSpec, NativeShaderInfo, NativeStagePackage, NativeStageReader, NativeTexture } from "reze-engine"
+import { clearUniformTracks, setUniformTracks, type MaterialUniformTracks, type UniformKey } from "@/lib/timeline/uniforms"
 
 /** A look.json as ag-rip writes it. Its materials carry a few keys of their
  *  own (`game`, `shader`, `defaults`) for whoever reads the file; the engine
- *  reads none of them. */
+ *  reads none of them. `uniforms` are the values the game animates over the
+ *  take: per name, sparse [clip frame, value] keys, which the timeline samples
+ *  (lib/timeline/uniforms.ts) over the static `values`. */
 export type NativeLookFile = {
   shaders: string[]
-  textures: Record<string, { file: string; srgb: boolean }>
-  materials: (NativeMaterialSpec & Record<string, unknown>)[]
+  /** wrap / filter: Unity's import settings (Repeat, Clamp...; Point, Bilinear...). */
+  textures: Record<string, { file: string; srgb: boolean; wrap?: string; filter?: string }>
+  materials: (NativeMaterialSpec & { uniforms?: Record<string, UniformKey[]> } & Record<string, unknown>)[]
+  /** Game vertex stream semantic -> the PMX additional UV channel holding it. */
+  streams?: Record<string, number>
+}
+
+/** A look ready to dress a model: the engine's part, and the keyed material
+ *  values the timeline plays on it. */
+export type LoadedLook = { look: NativeLook; uniforms: MaterialUniformTracks }
+
+/**
+ * A look's keyed values per model material: each spec's `uniforms` under
+ * every material name it dresses. Pure. A keyless name is dropped, and a
+ * look with nothing keyed gives {} — nothing for the timeline to visit.
+ */
+export function lookUniformTracks(look: Pick<NativeLookFile, "materials">): MaterialUniformTracks {
+  const out: MaterialUniformTracks = {}
+  for (const m of look.materials) {
+    const keyed = Object.entries(m.uniforms ?? {}).filter(([, keys]) => Array.isArray(keys) && keys.length > 0)
+    if (!keyed.length) continue
+    for (const name of m.materials) out[name] = Object.fromEntries(keyed)
+  }
+  return out
 }
 
 /** Reads one bundle file's bytes by its bundle path, or null when it is not there. */
 export type BundleRead = (path: string) => Promise<ArrayBuffer | null>
 
-/** A reader over unzipped bundle files, whose names ARE their bundle paths. */
-export function bundleReader(files: readonly File[]): BundleRead {
+/** A reader over bundle files, whose names ARE their bundle paths. */
+export function bundleReader(files: readonly { name: string; arrayBuffer(): Promise<ArrayBuffer> }[]): BundleRead {
   const byPath = new Map(files.map((f) => [f.name, f]))
   return async (path) => (await byPath.get(path)?.arrayBuffer()) ?? null
 }
@@ -56,6 +81,8 @@ export function lookFilePaths(lookPath: string, look: NativeLookFile) {
       key,
       path: dir + t.file.replace(/\\/g, "/").replace(/^\.\//, ""),
       srgb: t.srgb,
+      ...(t.wrap ? { wrap: t.wrap } : {}),
+      ...(t.filter ? { filter: t.filter } : {}),
     })),
   }
 }
@@ -77,8 +104,9 @@ async function decodeTexture(bytes: ArrayBuffer, srgb: boolean): Promise<NativeT
   return { width, height, data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength), srgb }
 }
 
-/** Read a look.json and everything it names into the engine's NativeLook. */
-export async function loadNativeLook(lookPath: string, read: BundleRead): Promise<NativeLook> {
+/** Read a look.json and everything it names into the engine's NativeLook, with
+ *  its keyed values for the timeline. */
+export async function loadNativeLook(lookPath: string, read: BundleRead): Promise<LoadedLook> {
   const need = async (path: string) => {
     const bytes = await read(path)
     if (!bytes) throw new Error(`missing ${path}`)
@@ -96,9 +124,22 @@ export async function loadNativeLook(lookPath: string, read: BundleRead): Promis
         info: JSON.parse(await text(s.info)) as NativeShaderInfo,
       })),
     ),
-    Promise.all(paths.textures.map(async (t) => [t.key, await decodeTexture(await need(t.path), t.srgb)] as const)),
+    Promise.all(
+      paths.textures.map(
+        async (t) =>
+          [
+            t.key,
+            {
+              ...(await decodeTexture(await need(t.path), t.srgb)),
+              // how the game samples it: a clamped mask read past its edge is its border
+              ...(t.wrap ? { wrap: t.wrap } : {}),
+              ...(t.filter ? { filter: t.filter } : {}),
+            },
+          ] as const,
+      ),
+    ),
   ])
-  return {
+  const look: NativeLook = {
     shaders,
     textures: Object.fromEntries(textures),
     // Only the keys the engine reads: the rest is the converter's notes.
@@ -109,7 +150,11 @@ export async function loadNativeLook(lookPath: string, read: BundleRead): Promis
       values: m.values,
       textures: m.textures,
     })),
+    // the game vertex streams the PMX carries in its additional UVs (vertex
+    // colour, keyed over a particle's life by its UV morphs)
+    ...(file.streams ? { streams: file.streams } : {}),
   }
+  return { look, uniforms: lookUniformTracks(file) }
 }
 
 /**
@@ -122,17 +167,20 @@ export async function loadNativeLook(lookPath: string, read: BundleRead): Promis
  */
 const dressed = new WeakMap<Engine, Set<string>>()
 
-export function dress(engine: Engine, modelId: string, look: NativeLook): boolean {
+export function dress(engine: Engine, modelId: string, { look, uniforms }: LoadedLook): boolean {
   const ok = engine.setModelNativeLook(modelId, look)
   if (ok) {
     if (!dressed.has(engine)) dressed.set(engine, new Set())
     dressed.get(engine)!.add(modelId)
+    // the values the game animates on its materials, on the timeline's clock
+    setUniformTracks(engine, modelId, uniforms)
   }
   return ok
 }
 
 export function undress(engine: Engine, modelId: string): void {
   if (!dressed.get(engine)?.delete(modelId)) return
+  setUniformTracks(engine, modelId, null)
   engine.setModelNativeLook(modelId, null)
 }
 
@@ -154,6 +202,7 @@ export function undress(engine: Engine, modelId: string): void {
 export function clearEngineScene(engine: Engine): Promise<void> {
   for (const id of dressed.get(engine) ?? []) engine.setModelNativeLook(id, null)
   dressed.delete(engine)
+  clearUniformTracks(engine)
   for (const name of engine.getModelNames()) engine.removeModel(name)
   return setNativeStageInTurn(engine, null)
 }

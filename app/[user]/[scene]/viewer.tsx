@@ -24,6 +24,7 @@ import { libraryGraph } from "@/lib/materials"
 import { newSceneId, parseSceneDoc, type Scene, type SceneDoc } from "@/lib/scene"
 import { timelineOf } from "@/lib/timeline"
 import { saveLocalBundle } from "@/lib/asset-store"
+import type { BundleFile } from "@/lib/uploads"
 import { setForkTarget } from "@/lib/fork"
 import { LoadingPill, useLoadingLabel } from "@/components/editor/loading-pill"
 import { resolveSceneRefs, resolveSceneRefsSync } from "@/lib/resolve-refs"
@@ -97,10 +98,10 @@ export function SceneViewer(props: ViewerProps) {
     }
   }, [props.doc, scene])
 
-  // The unzipped bundle, reached up from the stage below. The engine holds it
+  // The open bundle, reached up from the stage below. The engine holds it
   // because it is rendering it; Fork hands the same Files to the editor rather
   // than sending it back to the network for a zip this tab already has.
-  const bundleFilesRef = useRef<() => File[]>(() => [])
+  const bundleFilesRef = useRef<() => BundleFile[]>(() => [])
   const [forking, setForking] = useState(false)
   const [logoMenu, setLogoMenu] = useState(false)
   const [galleryOpen, setGalleryOpen] = useState(false)
@@ -318,7 +319,7 @@ function LikeButton({ like, compact, className }: { like: LikeState; compact?: b
 function SceneStage({
   scene,
   bundleFilesRef,
-}: ViewerProps & { scene: Scene; bundleFilesRef: RefObject<() => File[]> }) {
+}: ViewerProps & { scene: Scene; bundleFilesRef: RefObject<() => BundleFile[]> }) {
   const t = useT()
   const {
     canvasRef,
@@ -365,45 +366,14 @@ function SceneStage({
   // used to resolve them itself, and the two copies drifted apart in both
   // directions: a slot one of them learned, the other never heard about.
   const { bgImage, hdri, musicClip } = useSceneMedia({ scene, bundleReady, bundleFile })
-  /** A flat backdrop or a plate: a DOM layer BEHIND the canvas, which only shows
-   *  if the canvas stays transparent — that is what `hasBackdrop` buys. A skybox
-   *  is the engine's own dome, uploaded by useSceneSync. */
+  /** A flat backdrop: a DOM layer BEHIND the canvas, which only shows if the
+   *  canvas stays transparent — that is what `hasBackdrop` buys. A skybox is the
+   *  engine's own dome, uploaded by useSceneSync. */
   const backdrop = bgImage && bgImage.slot !== "dome" ? bgImage : null
-  /** Footage the scene stands in, rather than wallpaper behind it. Everything
-   *  about getting the picture on screen is identical — same file, same layer,
-   *  same element — so only the two things the claim changes read this: the
-   *  ground drops to a shadow catcher, and the plate's shape frames the shot. */
-  const isPlate = bgImage?.slot === "plate"
   /** A gif/webp/apng backdrop, drawn per frame from the clip's clock. */
   const drawnBackdrop = useMediaBackdrop(backdrop)
   /** A video backdrop, which plays natively and follows the same clock. */
   const bgVideoRef = useRef<HTMLVideoElement | null>(null)
-  /**
-   * A PLATE FRAMES THE SHOT, so every visitor sees the alignment the author made.
-   *
-   * A backdrop is wallpaper and cover-cropping it to the window is right — it
-   * has nothing to agree with. A plate does: the author lined the cast up
-   * against a floor in the picture, and cropping that picture to whatever shape
-   * the visitor's window happens to be moves the floor out from under her. The
-   * one thing a published composite must not do is depend on the window.
-   *
-   * Read off the file (the loader probed it) rather than stored in the
-   * document: a second copy of the shape in the doc could only ever disagree
-   * with the picture it describes.
-   */
-  const plateAspect = isPlate && bgImage && bgImage.height > 0 ? bgImage.width / bgImage.height : null
-  /** `inset-0` + `margin:auto` + a max on both axes letterboxes without any
-   *  measuring — the box takes the largest size of that shape which fits, and
-   *  centres in what is left. Inline rather than an arbitrary Tailwind value:
-   *  v4 mangles a shorthand holding min()/calc(). */
-  const plateBox =
-    isPlate && plateAspect
-      ? { aspectRatio: String(plateAspect), maxWidth: "100%", maxHeight: "100%", margin: "auto" }
-      : undefined
-  /** The layers follow the box together or not at all — a canvas at the window's
-   *  shape over a letterboxed plate is the same misalignment, mirrored. */
-  const layerClass = plateBox ? "absolute inset-0" : "absolute inset-0 h-full w-full"
-
   // The cast — everything that is not a stage or a prop — for the settings
   // that apply per character: the same list the editor hands over.
   const { castIds, stageSuns } = useSceneCast(models, stages, props)
@@ -440,8 +410,6 @@ function SceneStage({
     lights: scene.state.lights,
     // Derived exactly as the editor derives them from the same slots.
     hasBackdrop: !!backdrop,
-    plate: isPlate,
-    plateStill: isPlate && bgImage?.kind === "image",
     skybox: bgImage?.slot === "dome" ? bgImage.file : null,
     hdri: hdri?.file ?? null,
   })
@@ -496,10 +464,9 @@ function SceneStage({
         moving={drawnBackdrop.moving}
         canvasRef={drawnBackdrop.canvasRef}
         videoRef={bgVideoRef}
-        className={cn(layerClass, "object-cover")}
-        style={plateBox}
+        className="absolute inset-0 h-full w-full object-cover"
       />
-      <canvas ref={canvasRef} className={cn(layerClass, "touch-none object-contain")} style={plateBox} />
+      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none object-contain" />
 
       {!ready && !error && <LoadingPill label={loadingLabel} />}
       {error && (

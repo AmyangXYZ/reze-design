@@ -2,12 +2,16 @@
 //
 // Store-only (no compression): PMX textures are already-compressed PNGs and
 // deflating them again buys single-digit percents for real CPU time. Store
-// entries also round-trip through lib/uploads.ts's unzipToFiles (method 0), so
+// entries also round-trip through lib/uploads.ts's zip reader (method 0), so
 // the write and read paths share one format with no dependency.
 
+import type { ZipEntry } from "@/lib/uploads"
+
 /** Entry paths are bundle-relative and become File names on the way back out —
- *  the engine resolves textures by relative path, so structure is content. */
-export type BundleEntry = { path: string; file: Blob }
+ *  the engine resolves textures by relative path, so structure is content.
+ *  A file carried over from an open bundle may still be inside its zip; it is
+ *  read here only when a zip is actually built. */
+export type BundleEntry = { path: string; file: Blob | ZipEntry }
 
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256)
@@ -32,10 +36,13 @@ export async function buildZip(entries: BundleEntry[]): Promise<Blob> {
   const parts: BlobPart[] = []
   const central: BlobPart[] = []
   let offset = 0
+  // Read together: an entry still inside its zip inflates on the way, and
+  // those run side by side (bounded in lib/uploads) rather than one by one.
+  const datas = await Promise.all(entries.map(async (e) => new Uint8Array(await e.file.arrayBuffer())))
 
-  for (const e of entries) {
+  for (const [i, e] of entries.entries()) {
     const name = encoder.encode(e.path)
-    const data = new Uint8Array(await e.file.arrayBuffer())
+    const data = datas[i]
     const crc = crc32(data)
 
     const local = new DataView(new ArrayBuffer(30))

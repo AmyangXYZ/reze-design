@@ -14,7 +14,7 @@ import { graphLibraryName } from "@/lib/refs"
 import { graphRole, packGraph } from "@/lib/materials"
 import { loadLookPref } from "@/lib/look-pref"
 import { idbBundleId, modelPmxUrl, type AssetRef, type Scene, type SceneAttach, type SceneCamera, type SceneParentKey, type SceneStageTransform, type StageSun } from "@/lib/scene"
-import { unzipToFiles } from "@/lib/uploads"
+import { type BundleFile, heldBundle, openZip, readBundleFiles } from "@/lib/uploads"
 import { loadLocalBundle } from "@/lib/asset-store"
 import { sceneFiles } from "@/lib/scene-files"
 import { clearMaterialMaps, loadMaterialMaps, withMaterialMaps } from "@/lib/material-maps"
@@ -218,7 +218,7 @@ export function firstCastId(entries: readonly { model: { id: string }; stage?: b
  *  one call per model as it finishes loading and styling. */
 export type LoadProgress = {
   onStage?: () => void
-  onBundle?: (files: File[] | null) => void
+  onBundle?: (files: BundleFile[] | null) => void
   onModel?: (info: EngineModelInfo, groups: StyleGroup[], stage: StageInfo | null, prop: PropInfo | null) => void
   /** Bundle download, while it is downloading. Null once the bytes are in. */
   onBytes?: (p: BundleProgress | null) => void
@@ -263,15 +263,10 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
   // (models are the megabytes) this is the difference between a scene loading
   // and a blank screen loading.
   engine.setGroundVisible(s.ground.enabled)
-  // A scene standing in footage opens with its floor already a catcher. The
-  // sync layer would arrive at the same options a beat later, so this is not
-  // what makes the mode work — it is what stops a published composite opening
-  // on one frame of a solid floor painted over the picture.
-  const plate = scene.assets.background?.kind === "plate"
   engine.addGround({
     diffuseColor: hexToLinearVec3(s.ground.color),
     gridLineColor: hexToLinearVec3(s.ground.grid),
-    opacity: plate ? 0 : s.ground.opacity,
+    opacity: s.ground.opacity,
     shadowStrength: s.sun.shadow === false ? 0 : 1,
     shadowSoftness: s.sun.softness ?? 0,
     gridLineOpacity: s.ground.gridEnabled ? 0.4 : 0,
@@ -293,11 +288,18 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
   // the working scene's is the same entries in IndexedDB (an `idb:` bundle). Either
   // way the File names carry bundle paths, which is exactly what the engine resolves
   // textures against — one seam, two stores.
-  let bundle: File[] | null = null
+  //
+  // Opened, not unpacked: a zip is read by its central directory, and a file in it
+  // is read only when something below asks for it.
+  let bundle: BundleFile[] | null = null
   const idbId = idbBundleId(scene.assets.bundle)
+  const held = scene.assets.bundle ? heldBundle(scene.assets.bundle) : undefined
   if (idbId) {
     bundle = await loadLocalBundle(idbId)
     if (stale()) return null
+  } else if (held) {
+    // An import this tab opened already (lib/uploads holdBundle).
+    bundle = held
   } else if (scene.assets.bundle) {
     const res = await fetch(scene.assets.bundle)
     if (!res.ok) throw new Error(`Can't fetch scene assets: ${res.status}`)
@@ -331,16 +333,16 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
     } else {
       blob = await res.blob()
     }
-    // Not null: the wait is not over, it has changed kind. Unzipping a 165MB
-    // bundle is its own visible pause, and reporting "no download" here would
+    // Not null: the wait is not over, it has changed kind — briefly now that
+    // only the zip's directory is read — and reporting "no download" here would
     // send the pill back to the name it uses before one has started.
     onBytes?.({ received: blob.size, total: total || blob.size, bytesPerSecond: 0, done: true })
-    bundle = await unzipToFiles(new File([blob], "assets.zip"))
+    bundle = await openZip(blob, "assets.zip")
     if (stale()) return null
   }
   // The bundle is what clips, audio and a background image resolve out of, and
   // none of them have anything to do with how long the models take. Handed over
-  // the moment it is unzipped.
+  // the moment it is open.
   onBundle?.(bundle)
   // For a published zip a missing path is corruption and throwing is honest. Local
   // bytes are different: browsers evict IndexedDB under pressure, so "gone" is a
@@ -368,8 +370,8 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
     const src = entry.model.source
     let model
     if (src.kind === "bundle") {
-      const pmxFile = bundle?.find((f) => f.name === src.path)
-      if (!pmxFile) {
+      const packed = bundle?.find((f) => f.name === src.path)
+      if (!packed) {
         if (lenient) {
           console.warn(`Local scene asset missing (evicted?): ${src.path}`)
           continue
@@ -379,7 +381,10 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
       // Scoped to this model's folder: two models in one bundle can share a
       // texture basename, and the engine's basename fallback would guess.
       const dir = src.path.slice(0, src.path.lastIndexOf("/") + 1)
-      const files = bundle!.filter((f) => f.name.startsWith(dir))
+      // Read out of the zip here, this folder only, all at once.
+      const files = await readBundleFiles(bundle!.filter((f) => f.name.startsWith(dir)))
+      if (stale()) return null
+      const pmxFile = files.find((f) => f.name === src.path)!
       // A stage has to go in through the stage door, or it comes back as an
       // ordinary cast member: physics, IK, a spawn offset, and no ground
       // suppression. The document's `stage` flag is the only thing that knows.
@@ -1019,7 +1024,7 @@ export async function loadMidiFor(
   ref: AssetRef | null,
   engine: Engine,
   cancelled: () => boolean,
-  bundleFiles: File[] | null,
+  bundleFiles: BundleFile[] | null,
   onLoaded?: (name: string | null) => void,
 ): Promise<void> {
   // Cleared first, all three: the retained bytes, the row's name, and the
@@ -1052,7 +1057,7 @@ export async function loadLyricsFor(
   /** Canvas backing height, so lines are rasterised at the size they are drawn
    *  at — a row stored at one size and sampled at another is what soft text is. */
   canvasHeightPx: number,
-  bundleFiles: File[] | null,
+  bundleFiles: BundleFile[] | null,
   onLoaded?: (name: string | null) => void,
 ): Promise<void> {
   sceneFiles.lyrics = null

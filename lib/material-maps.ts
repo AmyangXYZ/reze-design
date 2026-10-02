@@ -77,9 +77,10 @@ export const fileSafe = (name: string) => name.replace(/[^A-Za-z0-9_.-]/g, "_")
  *
  *   a material's relief map is `maps/<base>_N.png`, where `<base>` is its
  *   albedo's file name without the extension and without a trailing `_D` — or
- *   the material's own name, for a material that samples no albedo.
+ *   the material's own name, for a material that samples no albedo — and its
+ *   packed property map, when it has one, `maps/<base>_P.png`.
  *
- * ONE SLOT, LINEAR — the whole of what a name can carry, and all a stage needs.
+ * TWO SLOTS, LINEAR — what a name can carry, and all a stage needs.
  * A ray-mmd import wants more than that (four slots in the order its graph
  * samples them, each with its own colour space), so it hands its maps straight
  * to the engine on the group's own `images` and they last as long as the
@@ -114,8 +115,15 @@ function namedMaps(model: Model, byPath: Map<string, File>, dir: string): Record
       ? (albedo.split(/[\\/]/).pop() ?? "").replace(/\.[^.]+$/, "").replace(/_D$/, "")
       : fileSafe(m.name)
     if (!base) continue
+    // Slot 0 the relief map, slot 1 the packed property map — the game's own
+    // contract (R metal, G roughness, B occlusion, A glow), which the stage
+    // looks read on property_map/1. Both data, not colour.
     const rel = `maps/${base}_N.png`
-    if (byPath.has(dir + rel)) out[m.name] = [{ path: rel, srgb: false }]
+    const props = `maps/${base}_P.png`
+    const relief: MapRef = byPath.has(dir + rel) ? { path: rel, srgb: false } : null
+    const property: MapRef = byPath.has(dir + props) ? { path: props, srgb: false } : null
+    if (property) out[m.name] = [relief, property]
+    else if (relief) out[m.name] = [relief]
   }
   return out
 }

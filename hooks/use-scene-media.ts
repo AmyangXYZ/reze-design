@@ -5,7 +5,7 @@
 //
 // Lifted out of the editor because the viewer had grown its own copy, and the
 // two drifted: the viewer never fell back to a served URL, never probed a
-// backdrop (so it could not tell a still plate from footage), and — the other
+// backdrop (so it could not tell a still from a video), and — the other
 // way round — the editor's copy was the one a swap starved of its bundle. One
 // loader means a slot added here reaches a published scene without anyone
 // remembering to add it there.
@@ -14,9 +14,9 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
 import type { Scene } from "@/lib/scene"
 
-/** Which seat the scene's one background picture is in. `plate` and `flat` take
- *  the same files and differ only in the claim; `dome` is the 360 skybox. */
-export type BgSlot = "flat" | "dome" | "plate"
+/** Which seat the scene's one background picture is in: `flat` behind the
+ *  scene, or `dome`, the 360 skybox. */
+export type BgSlot = "flat" | "dome"
 export type BgMedia = BackdropMedia & { slot: BgSlot }
 export type MusicClip = { name: string; url: string }
 
@@ -47,7 +47,7 @@ export function useSceneMedia({
 }: {
   scene: Scene
   bundleReady: boolean
-  bundleFile: (path: string) => File | null
+  bundleFile: (path: string) => Promise<File | null>
   /**
    * The editor's hook for keeping the bytes behind a packed slot, so its next
    * save re-packs them instead of dropping them. Only the editor saves; a
@@ -129,14 +129,17 @@ export function useSceneMedia({
       // left is the File behind it, for whoever re-packs the scene.
       const cam = scene.assets.cameraAnimation
       if (cam) {
-        const packed = bundleFile(cam.url)
+        const packed = await bundleFile(cam.url)
+        // Read out of the zip first, so a superseded pass may have woken here.
+        if (cancelled) return
         if (packed) packedRef.current?.camera?.(packed)
       }
       const track = scene.assets.audio
       // A served track plays straight off its URL and was seeded above; only a
       // packed one has to be pulled out of the bundle and given an object URL.
       if (track) {
-        const packed = bundleFile(track.url)
+        const packed = await bundleFile(track.url)
+        if (cancelled) return
         if (packed) {
           const own = packedRef.current?.audio
           if (own) own(packed)
@@ -190,7 +193,7 @@ export function useSceneMedia({
           releaseBackdrop(media)
           return
         }
-        swapBgImage({ ...media, slot: bg.kind === "skybox" ? "dome" : bg.kind === "plate" ? "plate" : "flat" })
+        swapBgImage({ ...media, slot: bg.kind === "skybox" ? "dome" : "flat" })
       } catch {
         // a missing or undecodable image degrades to no background, not a dead scene
       }
@@ -206,9 +209,9 @@ export function useSceneMedia({
 /** Out of the bundle, else off its URL when it has one that is served. */
 async function resolveFile(
   ref: { url: string; name: string },
-  bundleFile: (path: string) => File | null,
+  bundleFile: (path: string) => Promise<File | null>,
 ): Promise<File | null> {
-  const packed = bundleFile(ref.url)
+  const packed = await bundleFile(ref.url)
   if (packed) return packed
   if (!servedUrl(ref.url)) return null
   const blob = await (await fetch(ref.url)).blob()

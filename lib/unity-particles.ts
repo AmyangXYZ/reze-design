@@ -53,6 +53,9 @@ export type ParticleSpec = {
   max: number
   /** false: one shot — the system plays from its start, not from a random point of a loop */
   looping?: boolean
+  /** Seconds one cycle emits for (Unity's duration): a one shot's rate runs this long. */
+  duration?: number
+  prewarm?: boolean
   scalingMode: number
   lifetime: Curve
   speed: Curve
@@ -160,6 +163,11 @@ export type ParticleClass = {
   metresPerUnit?: number
   spec: ParticleSpec
   material: ParticleMaterial | TongMaterial
+  /** Its material draws with ZTest Always: over the scene, not depth tested. */
+  overlay?: boolean
+  /** Per emitter, in point order: seconds after the effect's own start that its
+   *  system starts (a one shot's emission is counted from there). Omitted = 0. */
+  starts?: number[]
 }
 
 const f = (v: number) => (Number.isFinite(v) ? (Number.isInteger(v) ? `${v}.0` : `${v}`) : "0.0")
@@ -211,6 +219,23 @@ function shapeMatrix(rot: readonly number[]): string {
   return `mat3x3f(${m.map((c) => c.map(f).join(", ")).join(", ")})`
 }
 
+/** A one-shot system's emission times in seconds from its start, in order: its
+ *  bursts (each cycle), then rate over time across its duration. Null for a
+ *  looping system, or one with nothing to emit — those keep the recycling pool. */
+function oneShotEvents(s: ParticleSpec, rate: number): number[] | null {
+  if (s.looping !== false || !s.emission.on) return null
+  const out: number[] = []
+  for (const b of s.emission.bursts) {
+    const count = Math.max(0, Math.round(b.count))
+    for (let c = 0; c < Math.max(1, b.cycles); c++) for (let i = 0; i < count; i++) out.push(b.time + c * b.interval)
+  }
+  const duration = s.duration ?? 5
+  const n = rate > 0 ? Math.floor(rate * duration + 1e-6) : 0
+  for (let j = 0; j < n; j++) out.push(j / rate)
+  out.sort((a, b) => a - b)
+  return out.length ? out : null
+}
+
 /** The effect's WGSL for one kind of system, emitting from `emitters` point pairs.
  *  `world` is one of the game's units in engine units — the scale gravity pulls
  *  in, where everything else scales with its own emitter. */
@@ -231,7 +256,17 @@ export function particleEffectWgsl(cls: ParticleClass, world: number): string {
   const meanLife = (s.lifetime.lo + s.lifetime.hi) / 2
   const burst = s.emission.bursts.reduce((n, b) => n + b.count * Math.max(1, b.cycles), 0)
   const rate = s.emission.rate.mode === 3 ? (s.emission.rate.lo + s.emission.rate.hi) / 2 : s.emission.rate.hi
-  const perEmitter = Math.max(1, Math.min(s.max, Math.round((s.emission.on ? rate * meanLife + burst : 1) || 1)))
+  // A ONE SHOT IS ITS EMISSION, event by event: each burst particle at its
+  // burst's time, then one every 1/rate over the system's duration. Slot k of an
+  // emitter takes events k, k + N, k + 2N... of that list; a slot whose event has
+  // not come yet draws nothing, and one whose particle has died stays dead, so
+  // the effect thins out and ends as the game's does instead of a pool that
+  // keeps respawning at full strength until its window cuts it.
+  const events = oneShotEvents(s, rate)
+  const emitted = events !== null
+  const perEmitter = emitted
+    ? Math.max(1, Math.min(s.max, events.length))
+    : Math.max(1, Math.min(s.max, Math.round((s.emission.on ? rate * meanLife + burst : 1) || 1)))
   const pool = perEmitter * cls.emitters
   const additive = m.dstBlend <= 1.0001
   const cover = Math.max((m.dstBlend - 1) / 9, 1e-3)
@@ -526,12 +561,60 @@ fn particleOrient(p: Particle, id: u32) -> mat3x3f {
   const tilesX = uvs ? uvs.tiles[0] : 1
   const tilesY = uvs ? uvs.tiles[1] : 1
   const stretched = s.renderer.mode === 1
+  // The renderer's pivot, in the particle's size per axis, in the card's own
+  // plane: the card turns about it. A billboard's (a lighthouse beam whose card
+  // starts at the lamp: X309's guangshu1, pivot x -0.23 of a 149-unit card, 34
+  // units off its emitter) goes to the engine's particlePivot, which offsets the
+  // corners in half-size units of the square quad before the turn.
+  // The one shot's emission list and each emitter's start, and the head of
+  // particleInit that finds this slot's latest event: none yet, nothing drawn.
+  // Its randomness is its slot's and that event's, so a seek or a replay draws
+  // the same particle at the same moment.
+  const starts = cls.starts && cls.starts.length === cls.emitters && cls.starts.some((v) => v > 0) ? cls.starts : null
+  const emitDecl = emitted
+    ? `// THE EMISSION, seconds from the system's start (${events.length} events, ${perEmitter} slots per emitter)
+var<private> rzEmit: array<f32, ${events.length}> = array<f32, ${events.length}>(${events.map(f).join(", ")});
+fn rzEmitterStart(e: u32) -> f32 {
+  ${starts ? `var a = ${arr(starts)};
+  return a[min(e, ${starts.length - 1}u)];` : "return 0.0;"}
+}
+
+`
+    : ""
+  const emitHead = emitted
+    ? `
+  let ne = max(rzPointCount() / 2u, 1u);
+  let slot = id / ne;
+  let now = rzTime() - rzEmitterStart(id % ne);
+  var born = -1.0;
+  var gen = 0u;
+  for (var g = 0u; g < ${Math.ceil(events.length / perEmitter)}u; g = g + 1u) {
+    let j = slot + g * ${perEmitter}u;
+    if (j >= ${events.length}u || rzEmit[min(j, ${events.length - 1}u)] > now) { break; }
+    born = rzEmit[j];
+    gen = g;
+  }
+  if (born < 0.0) { return p; }
+  let seed = rzHash11(f32(id) * 0.618 + f32(gen) * 1.37 + 0.11);`
+    : ""
+  const pivot = s.renderer.pivot
+  const pivotFn =
+    !stretched && (pivot[0] || pivot[1])
+      ? `
+fn particlePivot(p: Particle, id: u32) -> vec2f {
+  let t = clamp(p.age / max(p.life, 1e-3), 0.0, 1.0);
+  let rc = rzHash13(p.seed * 11.7 + 0.5);
+  let rs = rzHash13(p.seed * 5.3 + 0.21);
+  let wh = vec2f(${sizeX} * (${solX}), ${sizeY} * (${solY}));
+  return 2.0 * vec2f(${f(pivot[0])}, ${f(pivot[1])}) * wh / max(max(wh.x, wh.y), 1e-5);
+}`
+      : ""
 
   return `#particles ${pool}
 #points ${cls.prefix}
 #textures 4
 #bloom
-${additive ? "#blend additive\n" : ""}
+${additive ? "#blend additive\n" : ""}${cls.overlay ? "#depth always\n" : ""}
 // ${cls.name}: generated from the game's particle system and its material
 // (lib/unity-particles.ts). ${cls.emitters} emitters, ${perEmitter} alive on each.
 
@@ -570,9 +653,9 @@ fn emitter(id: u32) -> Emitter {
   return e;
 }
 
-fn particleInit(id: u32, seed: f32) -> Particle {
+${emitDecl}fn particleInit(id: u32, ${emitted ? "seed0" : "seed"}: f32) -> Particle {
   var p: Particle;
-  if (rzPointCount() < 2u) { return p; }
+  if (rzPointCount() < 2u) { return p; }${emitHead}
   let e = emitter(id);
   let r0 = rzHash13(seed + f32(id) * 0.371);
   let r1 = rzHash13(seed * 1.93 + f32(id) * 0.113);
@@ -587,23 +670,34 @@ fn particleInit(id: u32, seed: f32) -> Particle {
   p.pos = e.o + world * e.shapeUnit;
   p.vel = dir * (${speed}) * e.unit;
   p.life = max(${life}, 1e-3);
-  ${s.looping === false
+  ${emitted
+    ? "// a particle whose life is over by now stays dead\n  let catchUp = now - born;\n  if (catchUp >= p.life) { var dead: Particle; return dead; }\n  p.age = 0.0;"
+    : s.looping === false
     ? "// one shot: born when the system starts, as the game plays it (staggered, a\n  // card was born mid-life and a second one came inside its window)\n  p.age = 0.0;"
     : "// staggered on the first spawn, so a scene does not open on every particle born at once\n  p.age = select(0.0, r1.y * p.life, rzTime() < p.life);"}
   let rc = rzHash13(p.seed * 11.7 + 0.5);
   let t = 0.0;
   p.size = 0.5 * max(${sizeX} * (${solX}), ${sizeY} * (${solY})) * e.unit;
-  ${s.renderer.pivot[1] ? `p.pos = p.pos + vec3f(0.0, ${f(-s.renderer.pivot[1])} * max(${sizeX}, ${sizeY}) * e.unit, 0.0);` : ""}
+  ${stretched && s.renderer.pivot[1] ? `p.pos = p.pos + vec3f(0.0, ${f(-s.renderer.pivot[1])} * max(${sizeX}, ${sizeY}) * e.unit, 0.0);` : ""}
   // THE EMITTER'S SCALE rides in a field the engine ignores for this particle:
   // a square card's stretch (anything at or below 1 is square), a stretched
   // card's rotation (the velocity is its orientation)
   ${stretched ? `p.rot = e.unit;
   p.stretch = ${f(Math.max(s.renderer.lengthScale, 1.0001))};` : `p.rot = ${rot};
-  p.stretch = -e.unit;`}
+  p.stretch = -e.unit;`}${emitted ? `
+  // born between two frames, or before a seek: brought forward to its age
+  if (catchUp > 0.0) {
+    let steps = min(u32(ceil(catchUp * 30.0)), 8u);
+    let h = catchUp / f32(steps);
+    for (var si = 0u; si < steps; si = si + 1u) {
+      p = particleStep(p, h);
+      p.age = p.age + h;
+    }
+  }` : ""}
   return p;
 }
 
-${orientFn}
+${orientFn}${pivotFn}
 fn particleStep(p: Particle, dt: f32) -> Particle {
   var q = p;
   let t = clamp(p.age / max(p.life, 1e-3), 0.0, 1.0);

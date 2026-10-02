@@ -113,7 +113,7 @@ export function QuickPick({
       <PopoverContent
         align="end"
         sideOffset={6}
-        // Wide enough for the longest built-in name ("Principled BSDF") — truncating
+        // Wide enough for the longest built-in names — truncating
         // the labels in a list whose whole job is naming things reads as broken.
         //
         // A flex column with a bounded height is what makes the pinned sections

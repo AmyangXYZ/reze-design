@@ -202,8 +202,10 @@ fn foreground(ray: vec3f, uv: vec2f, time: f32, depth: f32) -> vec4f {
 //
 //   #anchor 頭              a bone, by name -> rzAnchor(subject, 0)
 //   #anchor 左手首 trail    ...and keep its recent PATH -> rzTrail(...)
+//   #anchor 右手首 trail along 0.9   ...of the point 0.9 units down the bone
 //   #particles 4096         pool size, if you write the particle mounts
 //   #blend additive         particles add light instead of covering (fire)
+//   #blend over             ribbons lay over the scene instead of adding light
 //   #bloom                  particles reach the bloom pyramid
 //   #lights 4               light slots, if you write fn lightEmit
 //   #mirror                 a real planar reflection on a plane you place
@@ -217,6 +219,14 @@ fn foreground(ray: vec3f, uv: vec2f, time: f32, depth: f32) -> vec4f {
 // #anchor slots are DECLARATION ORDER: the first is slot 0. Any bone the model
 // has works, and .valid is false on a rig that spells it differently — check
 // it, or your hand effect draws at the world origin on half the library.
+// \`along d\` moves the anchor d model units down the bone's own axis — the way
+// the bone points, so a left and a right wrist both reach their knuckles.
+//
+// RIBBONS (trailWidth / trailShade) ADD their light unless the file says
+// #blend over; then they lay over what is behind them by their alpha, and a
+// dark ribbon darkens. trailWidth is a HALF-width in world units; several
+// strands that share one path are one ribbon as wide as the widest, each
+// drawn inside it by its own v.
 //
 // #halfres is an OPT-OUT. Field mounts run at full resolution unless you say
 // otherwise, because the alternative — soft by default — fails silently: an

@@ -100,7 +100,7 @@ const one = mergeScenePatch(base(), take("touch1", ["cup", "fan"], ["sparks", "d
   // Settings it does not name stay; the ones it names merge field by field.
   assert.equal(one.settings.sun.azimuth, 10)
   assert.equal(one.settings.sun.color, "#ffffff", "a sibling the patch did not name stays")
-  assert.equal(one.settings.sun.strength, 2)
+  assert.equal(one.settings.sun.strength, 0.64)
   assert.equal(one.settings.ground.enabled, true)
   assert.equal(one.settings.background.color, "#000000")
   assert.deepEqual(one.settings.camera, base().settings.camera)

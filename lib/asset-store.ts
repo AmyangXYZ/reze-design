@@ -21,7 +21,7 @@
 
 import type { BundleEntry } from "@/lib/bundle"
 import { storageKey } from "@/lib/storage"
-import { mimeForPath } from "@/lib/uploads"
+import { type BundleFile, bundleFileOf, openZip, ZipEntry } from "@/lib/uploads"
 
 const DB_NAME = "reze-design"
 // v2: an earlier (reverted) experiment shipped this database at v1 with a different
@@ -37,7 +37,80 @@ const KEY = storageKey("local-bundle")
  *  and clearing a scene's bytes must not throw its colours away. */
 const PALETTE_STORE = "cast-palette"
 
-type BundleRecord = { sceneId: string; entries: BundleEntry[] }
+/**
+ * A file the record keeps inside one of its zips: `zip` indexes `zips`, and
+ * `name` is the entry's path in that zip where it is not `path` itself.
+ */
+type StoredRef = { path: string; zip: number; name?: string }
+type StoredEntry = { path: string; file: Blob } | StoredRef
+
+/**
+ * One scene's files.
+ *
+ * `entries` is the bundle's whole file list, in order, exactly as the collector
+ * or a patch merge produced it — each either its own Blob or a reference into
+ * one of `zips`. An imported zip is stored ONCE, as the file it arrived as,
+ * rather than as its thousands of unpacked entries, and the path list beside
+ * it says which of those entries the scene still has; whoever wins a path was
+ * decided before the write (lib/scene-patch's mergePatchFiles), so reading back
+ * is a lookup, never a precedence rule.
+ *
+ * A record written before zips were kept has no `zips` and only Blobs, and
+ * reads back the same as it always did.
+ */
+export type BundleRecord = { sceneId: string; entries: StoredEntry[]; zips?: Blob[] }
+
+/** The record for a bundle: files still inside a zip become references to it. */
+export function packBundleRecord(sceneId: string, entries: BundleEntry[]): BundleRecord {
+  const zips: Blob[] = []
+  const stored = entries.map((e): StoredEntry => {
+    if (!(e.file instanceof ZipEntry)) return { path: e.path, file: e.file }
+    let zip = zips.indexOf(e.file.zip)
+    if (zip < 0) zip = zips.push(e.file.zip) - 1
+    return e.file.name === e.path ? { path: e.path, zip } : { path: e.path, zip, name: e.file.name }
+  })
+  return zips.length ? { sceneId, entries: stored, zips } : { sceneId, entries: stored }
+}
+
+/**
+ * A record's files, with the bytes still where they are: each zip is opened by
+ * its central directory, and its entries are read only when asked for.
+ *
+ * Re-wrapped so the path IS the name — entries carry Blobs (the publish zip
+ * type), and whatever name an original File had, `path` was computed before
+ * storing and is authoritative. webkitRelativePath would not have survived
+ * structured clone anyway.
+ *
+ * The type is named from the path when the stored blob has none (bundleFileOf).
+ * Without that the unzip fix does not reach the path the editor actually
+ * reloads from — a locally persisted scene would keep handing the audio element
+ * a typeless object URL, which WebKit refuses to play. It also repairs records
+ * written before any of this, since the fallback is applied on the way OUT.
+ *
+ * A zip that no longer opens costs the files inside it, not the scene: the
+ * same "gone is normal" bargain as an evicted record.
+ */
+export async function unpackBundleRecord(rec: BundleRecord): Promise<BundleFile[]> {
+  const zips = await Promise.all(
+    (rec.zips ?? []).map(async (z) => {
+      try {
+        return new Map((await openZip(z, "local bundle")).map((e) => [e.name, e]))
+      } catch {
+        return null
+      }
+    }),
+  )
+  const out: BundleFile[] = []
+  for (const e of rec.entries) {
+    if ("file" in e) {
+      out.push(bundleFileOf(e.path, e.file))
+      continue
+    }
+    const found = zips[e.zip]?.get(e.name ?? e.path)
+    if (found) out.push(bundleFileOf(e.path, found))
+  }
+  return out
+}
 
 function open(): Promise<IDBDatabase | null> {
   if (typeof indexedDB === "undefined") return Promise.resolve(null)
@@ -68,7 +141,7 @@ export async function saveLocalBundle(sceneId: string, entries: BundleEntry[]): 
   return new Promise((resolve) => {
     try {
       const tx = db.transaction(STORE, "readwrite")
-      const record: BundleRecord = { sceneId, entries }
+      const record = packBundleRecord(sceneId, entries)
       tx.objectStore(STORE).put(record, KEY)
       tx.oncomplete = () => resolve(true)
       // Quota is the expected failure — a large model in a tight browser.
@@ -83,32 +156,19 @@ export async function saveLocalBundle(sceneId: string, entries: BundleEntry[]): 
 }
 
 /**
- * The stored bundle as Files whose `name` is the bundle-relative path — the exact shape
- * `unzipToFiles` produces for a published bundle, so the two are interchangeable at the
+ * The stored bundle as files whose `name` is the bundle-relative path — the exact shape
+ * `openZip` produces for a published bundle, so the two are interchangeable at the
  * engine seam. Null when absent, evicted, or belonging to a different scene.
  */
-export async function loadLocalBundle(sceneId: string): Promise<File[] | null> {
+export async function loadLocalBundle(sceneId: string): Promise<BundleFile[] | null> {
   const db = await open()
   if (!db) return null
-  return new Promise((resolve) => {
+  const rec = await new Promise<BundleRecord | null>((resolve) => {
     try {
       const req = db.transaction(STORE, "readonly").objectStore(STORE).get(KEY)
       req.onsuccess = () => {
         const rec = req.result as BundleRecord | undefined
-        if (!rec || rec.sceneId !== sceneId) return resolve(null)
-        // Re-wrapped so the path IS the name — entries carry Blobs (the publish zip
-        // type), and whatever name an original File had, `path` was computed before
-        // storing and is authoritative. webkitRelativePath would not have survived
-        // structured clone anyway.
-        //
-        // The type is named from the path when the stored blob has none, which is
-        // the common case: entries are Blobs, and a Blob out of the zip packer
-        // carries no type at all. Without this the unzip fix does not reach the
-        // path the editor actually reloads from — a locally persisted scene would
-        // keep handing the audio element a typeless object URL, which WebKit
-        // refuses to play. It also repairs records written before any of this,
-        // since the fallback is applied on the way OUT.
-        resolve(rec.entries.map((e) => new File([e.file], e.path, { type: e.file.type || mimeForPath(e.path) })))
+        resolve(rec && rec.sceneId === sceneId ? rec : null)
       }
       req.onerror = () => resolve(null)
     } catch {
@@ -117,6 +177,7 @@ export async function loadLocalBundle(sceneId: string): Promise<File[] | null> {
       db.close()
     }
   })
+  return rec ? unpackBundleRecord(rec) : null
 }
 
 /**
@@ -139,7 +200,9 @@ export async function peekLocalBundle(): Promise<{ sceneId: string; entries: num
         resolve({
           sceneId: rec.sceneId,
           entries: rec.entries.length,
-          bytes: rec.entries.reduce((n, e) => n + (e.file?.size ?? 0), 0),
+          bytes:
+            rec.entries.reduce((n, e) => n + ("file" in e ? (e.file?.size ?? 0) : 0), 0) +
+            (rec.zips ?? []).reduce((n, z) => n + z.size, 0),
         })
       }
       req.onerror = () => resolve(null)

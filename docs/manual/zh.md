@@ -17,7 +17,7 @@ Reze Design 在浏览器中完成 MMD 设计、渲染和分享，基于自研的
   - [1.1 开始](#11-开始)
   - [1.2 角色 动作与音乐](#12-角色-动作与音乐)
   - [1.3 舞台](#13-舞台)
-  - [1.4 背景 天空与实景](#14-背景-天空与实景)
+  - [1.4 背景与天空](#14-背景与天空)
   - [1.5 灯光](#15-灯光)
   - [1.6 相机](#16-相机)
   - [1.7 风格](#17-风格)
@@ -109,20 +109,17 @@ Logo 菜单中有 **新建场景**、**导出场景**（一个包含场景和全
 使用哪一张；名称以 `flame` 开头的烛芯骨骼会自动添加 *Candle Flames* 特效。舞台可以调整缩放
 和位置。
 
-## 1.4 背景 天空与实景
+## 1.4 背景与天空
 
-**环境** 有四个标签页。
+**环境** 有三个标签页。
 
 - **地面**：颜色、不透明度、大小、高度、渐隐和网格线。不透明度为 0 时仍然接收阴影，可以
   作为照片背景的阴影捕捉面。
 - **背景**：背景颜色，以及 **媒体**（场景后面的图片、GIF 或视频）或 **天空盒**（相机
   可以环视的 360° 全景）二选一。**世界** 接受 `.hdr`，它照亮场景并出现在光滑表面的反射中，
   与背景显示的内容无关。
-- **实景**：让角色站在视频画面 *里*。**从素材读取相机** 和 **放到地面上** 会让相机和地面
-  与画面对齐；相机高度、视野、仰角和倾斜可以微调，包括手机拍摄时的倾斜。加载实景时地面会
-  作为阴影捕捉面。
 
-媒体、天空盒和实景共用一个位置，设置其中一个会清空另外两个。
+媒体和天空盒共用一个位置，设置其中一个会清空另一个。
 
 ## 1.5 灯光
 
@@ -361,10 +358,12 @@ fn foreground (§2.3)，带有场景深度
 ```wgsl
 #anchor 頭                 a bone by name        -> rzAnchor(subject, 0)
 #anchor 左手首 trail       ...and record its path -> rzTrail(subject, 1, i)
+#anchor 右手首 trail along 0.9   the point 0.9 units down the bone (knuckles)
 #points flame              every bone starting "flame" -> rzPoint(i)
 #particles 4096            pool size (default 1024)
 #blend additive            particles add light
 #blend cutout              particles write depth, alpha as coverage (grass)
+#blend over                ribbons lay over the scene instead of adding light
 #bloom                     particles / ribbons reach bloom
 #layer additive            the FIELD adds light instead of covering
 #halfres                   field mounts at half resolution
@@ -380,7 +379,8 @@ fn foreground (§2.3)，带有场景深度
 ```
 
 - **`#layer additive`** 适合光而不是实体。默认是 alpha 覆盖，两道光交叉时会互相遮挡。
-- **`#anchor`** 的槽位按声明顺序编号。骨骼名称不同的模型上 `.valid` 为 false，请检查。
+- **`#anchor`** 的槽位按声明顺序编号。骨骼名称不同的模型上 `.valid` 为 false，请检查。`along d`
+  把锚点沿骨骼自身的方向移动 `d` 个模型单位，一个数字就能把两只手的锚点都放到指根。
 - **`#halfres`** 适合柔和的效果。alpha 有硬边时不要用，例如与 `depth` 比较的前景特效在每条
   轮廓上都有硬边。
 - **`#duration`** 让特效成为有起止的一次性效果；不声明则是持续性的（雨、星空、雾）。
@@ -515,12 +515,14 @@ fn particleCount() -> u32                              // optional, live count
 
 ```wgsl
 #anchor 右手首 trail
-fn trailWidth(u: f32, age: f32) -> f32                                   // pixels
+fn trailWidth(u: f32, age: f32) -> f32                                   // 半宽，世界单位
 fn trailShade(u: f32, v: f32, age: f32, weight: f32, slot: i32) -> vec4f
 ```
 
-`u` 沿光带方向，`v` 横跨光带。轨迹按场景时钟采样，因此在编辑器和每次导出中都相同；它会被平滑
-为样条曲线，并以固定的屏幕宽度绘制。光带在单独的图层中以最大值混合，自身交叉时不会叠成白色。
+`u` 沿光带方向，`v` 横跨光带（−1..1），`age` 是这一段在几秒前留下的。轨迹按场景时钟采样，因此
+在编辑器和每次导出中都相同，并被平滑为样条曲线。光带在场景中绘制并叠加光；`#blend over` 改为按
+alpha 覆盖在后面的画面上，深色的光带会压暗背景（深蓝的烟雾尾巴若叠加就看不见了）。
+共用一条轨迹的多股光带可以画成一条，宽度取最宽的一股，每股按自己的 `v` 在其中绘制。
 
 ### 模拟网格
 
@@ -600,11 +602,11 @@ fn gridStep(uv: vec2f, prev: vec4f, dt: f32) -> vec4f {
 
 | 套组 | 节点图 | 核心做法 |
 | --- | --- | --- |
-| **AG**（深空之眼） | Body、Eye、Face、Hair、Metal、Rough Cloth、Smooth Cloth、Stockings | 光照闭包接色带 |
+| **AG**（深空之眼） | Body、Eye、Face、Hair、Metal、Rough Cloth、Smooth Cloth、Stockings | Lambert 接色带，叠加一层 Lit 光泽 |
 | **WuWa**（鸣潮） | Body、Cloth、Hair、Face、Metal、Eye | 半兰伯特经过窄阈值、暖色过渡带、球面贴图、边缘光 |
-| **ZZZ**（绝区零） | Body、Cloth、Eye、Face、Hair、Metal | 闭包量化为遮罩，亮部和暗部分支分别着色 |
+| **ZZZ**（绝区零） | Body、Cloth、Eye、Face、Hair、Metal | Lambert 量化为遮罩，亮部和暗部分支分别着色 |
 | **HSR**（崩坏：星穹铁道） | Body、Face、Hair、Cloth、Metal、Eye | `light` 节点和球面贴图 |
-| **舞台** | Tile、Emissive、Wood、Brick、Plastic、Glass、Concrete、Stone、Fabric、Rubber、Leather、Paper、Water、Gold、Mapped PBR、Foliage、Stage Surface | Principled PBR；*Water* 使用 `time` 和 `environment`，*Foliage* 使用哈希透明 |
+| **舞台** | Lit、Wood、Tile、Stone、Plaster、Metal、Lacquer、Fabric、Neon、Stage Surface、Glass、Glass Shell、Bottle Glass、Water、Foliage、Terrain | Unity 的 Lit；*Water* 使用 `time` 和 `reflection_probe`，*Foliage* 使用哈希透明 |
 
 未分组的材质使用中性的默认节点图，新建节点图也从它开始。内置节点图都不带图片：它们读取材质
 自己的贴图和球面贴图，因此适用于任何模型。
@@ -631,7 +633,7 @@ fn gridStep(uv: vec2f, prev: vec4f, dt: f32) -> vec4f {
     { "id": "tex", "type": "texture" },
     { "id": "diff", "type": "material_diffuse" },
     { "id": "base", "type": "mix/multiply", "inputs": { "fac": 1.0 } },
-    { "id": "shade", "type": "shader_to_rgb_diffuse" },
+    { "id": "shade", "type": "lambert" },
     { "id": "band", "type": "ramp_constant_aa",
       "inputs": { "edge": 0.35, "color0": [0.62, 0.58, 0.72, 1], "color1": [1, 1, 1, 1] } },
     { "id": "lit", "type": "mix/multiply", "inputs": { "fac": 1.0 } }
@@ -653,14 +655,14 @@ fn gridStep(uv: vec2f, prev: vec4f, dt: f32) -> vec4f {
 
 ### 两种主干
 
-**闭包做法**（AG）：`texture` × `material_diffuse`（`mix/multiply`，`fac 1`；不乘的话无贴图
-材质会显示为白色），然后 `shader_to_rgb_diffuse` 接 `ramp_constant_aa` 得到色阶，或接
+**Lambert 做法**（AG）：`texture` × `material_diffuse`（`mix/multiply`，`fac 1`；不乘的话无贴图
+材质会显示为白色），然后 `lambert` 的 `value` 接 `ramp_constant_aa` 得到色阶，或接
 `ramp_linear` 得到柔和过渡，再乘到底色上。边缘光用 `layer_weight/facing` 接 `mix/add_emit`。
 
 **自建光照项**（WuWa、HSR）：`light.direction` · `geometry.normal` 经过 `vector_math/dot`，
 再 `math/multiply_add`（0.5, 0.5）得到半兰伯特；用 `map_range` 取一个窄窗口（例如 0.46–0.54）
 得到硬分界线；`ramp_linear_3` 从暗部经过暖色带到亮部；乘到贴图上。然后加入场景光照：
-`light.color × (band × light.shadow ÷ π) + light.ambient`，向白色混合一半，这样材质会响应太阳
+`light.color × band × light.shadow + light.ambient`，向白色混合一半，这样材质会响应太阳
 颜色、环境光和投影，又不会被环境光的色相带偏。最后用 `sphere_map` 加上模型自带的高光。
 
 ### 编译器检查的规则
@@ -671,7 +673,7 @@ fn gridStep(uv: vec2f, prev: vec4f, dt: f32) -> vec4f {
 - 最多 **64 个节点**、**16 个参数**。
 - 数值必须符合接口类型：标量可以扩展到颜色和向量，向量用在浮点接口上会报错。色带的颜色停靠点
   是 `vec4` 数值，不能连线。
-- 承载被处理值的接口（`invert.color`、`separate_xyz.vector`、`principled.base_color`、色带的
+- 承载被处理值的接口（`invert.color`、`separate_xyz.vector`、`lit.base_color`、色带的
   `fac`）必须连线或显式填写数值。
 - 参数只能指向未连接的输入，每个接口一个，类型为 `float` 或 `color`。要暴露色带停靠点，
   请经过一个 `mix/*` 节点并暴露它的颜色输入。
@@ -684,34 +686,34 @@ fn gridStep(uv: vec2f, prev: vec4f, dt: f32) -> vec4f {
 `validateGraph(graph)` 和 `compileGraph(graph)` → `{ ok, wgsl, diagnostics }`；环和缺失的连线
 由编译检查。
 
-### 从 Blender 迁移
+### 从 Unity Shader Graph 迁移
 
-节点语义对应 **Blender 5.2**：Principled 使用 v2 接口名，数学（39 种）、向量数学（24 种）和
-混合（20 种）运算与 Blender 相同，包括其保护措施。节点的模式是类型的一部分：设为 Power 的 Math
-是 `math/power`，色带的插值方式决定使用哪个 `ramp_*` 类型。
+光照遵循 **Unity 的 URP**：光源使用 Unity 的单位（强度为 1 的白色太阳正对表面时按 1:1 照亮
+反照率），粗糙度的含义与 Unity 相同；一个表面要么是 **Lit**，要么像卡通 Shader Graph 那样用主光源
+自己搭建。数学（39 种）、向量数学（24 种）和混合（20 种）运算与 Blender 相同，包括其保护措施，
+行为与 Shader Graph 中对应的节点一致。节点的模式是类型的一部分：设为 Power 的 Math 是
+`math/power`，色带的插值方式决定使用哪个 `ramp_*` 类型。
 
-| Blender | reze |
+| Shader Graph | reze |
 | --- | --- |
-| Principled BSDF | `principled` |
-| Shader to RGB | `shader_to_rgb`（颜色）· `shader_to_rgb_diffuse`（标量） |
-| Image Texture | `texture`（材质自己的贴图）· `tex_image/0…3`（样式组的贴图） |
-| Texture Coordinate, Geometry | `geometry` |
-| Color Ramp | `ramp_constant`、`ramp_linear`、`ramp_cardinal`；三个停靠点用 `ramp_linear_3` |
-| Math, Vector Math, Mix Color | `math/…`、`vector_math/…`、`mix/…` |
-| Layer Weight | `layer_weight/fresnel`、`layer_weight/facing` |
-| Mix Shader, Add Shader | `mix_shader`、`add_shader`，作用于颜色 |
+| Lit 主栈（Base Color、Metallic、Smoothness、Normal、Emission、Occlusion、Alpha） | `lit` |
+| Main Light（方向、颜色、阴影衰减）、Ambient | `light` |
+| 自定义光照：`LightingLambert` + 环境光 | `lambert` |
+| Reflection Probe | `reflection_probe` |
+| Sample Texture 2D | `texture`（材质自己的贴图）· `tex_image/0…3`（样式组的贴图） |
+| Position、Normal、View Direction、UV | `geometry`、`uv_map` |
+| Sample Gradient | `ramp_constant`、`ramp_linear`、`ramp_cardinal`；三个停靠点用 `ramp_linear_3` |
+| Math、Vector、Lerp、Blend | `math/…`、`vector_math/…`、`mix/…` |
+| Fresnel Effect | `fresnel`、`layer_weight/…` |
 
 会影响数值的差异：
 
-- **光照**：没有屏幕空间 GI、虚拟阴影贴图或光照探针。`principled` 已经包含来自世界的间接
-  高光，不要再叠加 `environment` 节点。
-- **视图变换**：在 **后期 → 色调** 中与源文件保持一致。AgX 对应 Blender 的基础 AgX；它的 Looks
-  （High Contrast 等）没有对应项。
-- **Principled**：没有 coat、transmission、subsurface、anisotropy 和 thin film。`ior` 为 1.5 时，
-  3.6 版本材质的 Specular 值可以直接沿用。`spec_clamp` 对应 EEVEE 的 light clamp；
-  `reflection_lod` 和 `unity_direct` 用于转换的游戏舞台。
-- **着色就是颜色**：`mix_shader` 是 `vec3f` 上的 `mix(a, b, fac)`。先混合闭包再求值的节点树
-  需要按 Shader to RGB 的方式重写：先把每个分支求值为颜色，再组合。
+- **光照**：没有屏幕空间 GI。`lit` 已经包含反射探针（或天空），不要再叠加 `reflection_probe`。
+- **视图变换**：在 **后期 → 色调** 中与源文件保持一致。
+- **Lit**：Unity 的金属度工作流，电介质高光为 0.04，没有清漆和绒面。Alpha 小于 1 时保留反射
+  （Unity 的 Preserve Specular Lighting），请配合混合方式为 **预乘** 的样式组。
+- **着色就是颜色**：每个节点都返回颜色，卡通外观先求出光照（`lambert`、`light`），再用 `mix/…`
+  组合颜色。
 - **节点太多**：折叠常量子树，删除转接点和框，展开节点组。Normal Map、Displacement 和 AOV
   Output 没有对应项。
 - **角色专用的图片**（高光贴图、ID 遮罩、面部 SDF）无法迁移。用 ID 遮罩区分区域的地方，请改用
@@ -889,8 +891,6 @@ fn gridStep(uv: vec2f, prev: vec4f, dt: f32) -> vec4f {
 | `rgb_curve` | `color` `fac` `y0` `y1` `y2` `y3` `y4` | `color` |
 | `uv_map` | — | `uv` |
 | `normal_map` | `color` `strength` | `normal` |
-| `bsdf_transparent` | — | `color` |
-| `bsdf_diffuse` | `color` | `color` |
 | `attribute` | — | `color` `fac` |
 | `object_info` | — | `location` `color` `random` |
 | `light_path` | — | `is_camera_ray` `is_shadow_ray` `ray_depth` |
@@ -910,17 +910,13 @@ fn gridStep(uv: vec2f, prev: vec4f, dt: f32) -> vec4f {
 | `ramp_constant_aa` | `fac` `edge` `color0` `color1` | `color` `alpha` `fac_out` |
 | `ramp_linear_3` | `fac` `pos0` `color0` `pos1` `color1` `pos2` `color2` | `color` `alpha` `fac_out` |
 | `ramp_tri` | `fac` | `value` |
-| `emission` | `color` `strength` | `color` |
-| `add_shader` | `a` `b` | `color` |
-| `mix_shader` | `fac` `a` `b` | `color` |
 | `fresnel` | `ior` | `value` |
-| `environment` | `vector` `roughness` | `color` |
-| `shader_to_rgb_diffuse` | — | `value` |
-| `shader_to_rgb` | — | `color` |
+| `lambert` | `normal` | `color` `value` |
 | `separate_xyz` | `vector` | `x` `y` `z` |
 | `vect_cross` | `a` `b` | `vector` |
 | `mapping` | `vector` `loc` `rot` `scl` | `vector` |
 | `bump` | `strength` `height` `normal` | `vector` |
 | `tex_noise` | `vector` `scale` `detail` `roughness` `distortion` | `value` |
 | `tex_gradient` | `vector` | `value` |
-| `principled` | `base_color` `metallic` `roughness` `ior` `specular_ior_level` `sheen_weight` `sheen_tint` `emission_color` `emission_strength` `normal` `spec_clamp` `reflection_lod` `unity_direct` | `color` |
+| `lit` | `base_color` `metallic` `smoothness` `occlusion` `emission` `alpha` `normal` | `color` `alpha` |
+| `reflection_probe` | `vector` `smoothness` | `color` |

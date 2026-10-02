@@ -33,6 +33,8 @@ export const NODE_CATALOG: CatalogGroup[] = [
       { type: "tex_image/1", label: "Group Image 1" },
       { type: "tex_image/2", label: "Group Image 2" },
       { type: "tex_image/3", label: "Group Image 3" },
+      // Whether each image slot holds a real map, not the 1×1 stand-in.
+      { type: "image_bound", label: "Image Present" },
     ],
   },
   {
@@ -76,6 +78,7 @@ export const NODE_CATALOG: CatalogGroup[] = [
       // what skin does not.
       { type: "bump/world", label: "Bump · World" },
       { type: "normal_map", label: "Normal Map" },
+      { type: "normal_map/packed", label: "Normal Map · Packed" },
       { type: "separate_xyz", label: "Separate XYZ" },
       { type: "combine_xyz", label: "Combine XYZ" },
       { type: "vect_cross", label: "Cross Product" },
@@ -185,17 +188,20 @@ export const NODE_CATALOG: CatalogGroup[] = [
   {
     category: "Shader",
     items: [
-      { type: "principled", label: "Principled BSDF" },
-      { type: "bsdf_diffuse", label: "Diffuse BSDF" },
-      { type: "bsdf_transparent", label: "Transparent BSDF" },
-      { type: "emission", label: "Emission" },
-      { type: "add_shader", label: "Add Shader" },
-      { type: "mix_shader", label: "Mix Shader" },
-      { type: "shader_to_rgb", label: "Shader to RGB" },
-      { type: "shader_to_rgb_diffuse", label: "Shader to RGB · Diffuse" },
+      // Unity's Lit (URP's PBR), and what feeds it: the packed property map
+      // and the stage's reflection probe.
+      { type: "lit", label: "Lit" },
+      { type: "property_map/0", label: "Property Map · Image 0" },
+      { type: "property_map/1", label: "Property Map · Image 1" },
+      { type: "property_map/2", label: "Property Map · Image 2" },
+      { type: "property_map/3", label: "Property Map · Image 3" },
+      { type: "reflection_probe", label: "Reflection Probe" },
+      { type: "glossy_direct", label: "Glossy · Direct Light" },
+      // URP's LightingLambert for the main light, plus the ambient: what a
+      // toon look ramps.
+      { type: "lambert", label: "Lambert" },
       { type: "subsurface", label: "Subsurface Scattering" },
       { type: "fresnel", label: "Fresnel" },
-      { type: "environment", label: "Environment" },
       { type: "layer_weight/fresnel", label: "Layer Weight · Fresnel" },
       { type: "layer_weight/facing", label: "Layer Weight · Facing" },
     ],

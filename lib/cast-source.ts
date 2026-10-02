@@ -11,6 +11,7 @@ import type { StyleGroup } from "reze-engine"
 import { assetUrl, modelPmxUrl } from "@/lib/scene"
 import { sceneFiles, relFilePath } from "@/lib/scene-files"
 import type { CastColourSource } from "@/lib/model-colour"
+import type { BundleFile } from "@/lib/uploads"
 
 /** Case-insensitive path comparison — texture references and filenames rarely
  *  agree on case across authoring tools. Slashes are already normalized on both
@@ -21,11 +22,11 @@ export function castSourceFor(
   id: string,
   scene: Scene,
   groups: StyleGroup[] | undefined,
-  /** The scene's unzipped asset bundle, when there is one. A model you uploaded
+  /** The scene's open asset bundle, when there is one. A model you uploaded
    *  keeps its Files only for THIS session; after a refresh the same bytes are
    *  in here, and without them the swatch fell back to neutral on every reload
    *  — the colour appeared to be a property of having just uploaded. */
-  bundle?: File[],
+  bundle?: readonly BundleFile[],
 ): CastColourSource | null {
   // The render class, not the group id: ids are label slugs ("long-hair"), the
   // render class is the role the engine actually assigned. ROLE_WEIGHT in

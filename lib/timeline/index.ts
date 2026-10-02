@@ -36,9 +36,13 @@ import type { SceneParentKey } from "@/lib/scene"
 import type { ModelParentKey, EffectWindow as EngineWindow } from "reze-engine"
 import { parentKeysToEngine, parentTrackOf, type PropTrackSource } from "./parents"
 import { visibilityAt, type VisibilityWindow } from "./visibility"
+import { applyLampFrame } from "./lights"
+import { applyUniformFrame } from "./uniforms"
 
 export * from "./visibility"
 export * from "./parents"
+export * from "./lights"
+export * from "./uniforms"
 
 /** One applied effect's timing, in list order — the order the engine installs
  *  them in, which is what an index into `effects` addresses. */
@@ -139,7 +143,8 @@ type FrameEngine = {
 }
 
 /**
- * The timeline at one frame — who is on stage, and how much of them.
+ * The timeline at one frame — who is on stage, how much of them, where the
+ * keyed lamps stand and what the props' keyed material values are.
  *
  * The one crossing between the lanes and what is drawn, called from the
  * preview tick and from the export loop, both in CLIP frames: a lane is
@@ -157,6 +162,12 @@ type FrameEngine = {
  * not collide — `evaluateDissolves` resets only the models it drove itself.
  */
 export function applyTimelineFrame(engine: FrameEngine, timeline: SceneTimeline, frame: number): void {
+  // The lamps a game animated, at this frame (lights.ts). Nothing when none is
+  // keyed or the frame has not moved.
+  applyLampFrame(engine, frame)
+  // The game props' keyed material values, at this frame (uniforms.ts).
+  // Nothing when no look keys any or the frame has not moved.
+  applyUniformFrame(engine, frame)
   const lanes = timeline.visibility
   for (const id in lanes) {
     const model = engine.getModel(id)

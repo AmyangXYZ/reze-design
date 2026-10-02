@@ -39,7 +39,7 @@ export function useSceneClips({
   /** The engine's loaded models, as useEngine reports them — a clip is loaded
    *  the moment its model has landed, not once the whole cast has. */
   models: { id: string }[]
-  bundleFile: (path: string) => File | null
+  bundleFile: (path: string) => Promise<File | null>
   loadVmdFile: Loader
   loadVmdUrl: UrlLoader
   loadMorphFile: Loader
@@ -92,7 +92,7 @@ export function useSceneClips({
       for (const entry of fresh) {
         const clip = entry.animation
         if (!clip) continue
-        const packed = bundleFile(clip.url)
+        const packed = await bundleFile(clip.url)
         const name = await (packed ? loadVmdFile(entry.model.id, packed) : loadVmdUrl(entry.model.id, clip.name, clip.url))
         if (stale()) return
         if (name) {
@@ -118,7 +118,7 @@ export function useSceneClips({
       for (const entry of fresh) {
         const expr = entry.morph
         if (!expr) continue
-        const packed = bundleFile(expr.url)
+        const packed = await bundleFile(expr.url)
         const name = await (packed
           ? loadMorphFile(entry.model.id, packed)
           : loadMorphUrl(entry.model.id, expr.name, expr.url))

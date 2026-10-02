@@ -321,7 +321,6 @@ const en = {
     uploadBackdrop: "Upload image",
     skybox: "Skybox",
     uploadSkybox: "Upload 360° image",
-    uploadPlate: "Upload footage",
     uploadHdri: "Upload .hdr",
   },
   stage: {
@@ -536,8 +535,6 @@ const en = {
     rayConverting: (done: number, total: number) => `Converting ray-mmd maps ${done}/${total}`,
     rayApplied: (n: number) => `Applied ${n} ray-mmd materials`,
     uploadReading: "Reading files…",
-    /** A zip, entry by entry. */
-    uploadReadingShare: (done: number, total: number) => `Reading files… ${done}/${total}`,
     /** Into IndexedDB, so the scene survives a refresh — seconds on a game scene. */
     uploadTexturing: (done: number, total: number) => `Compressing textures ${done}/${total}`,
     uploadConverting: (name: string) => `Parsing ${name}…`,
@@ -555,7 +552,6 @@ const en = {
     uploadPlane: "Upload media",
     uploadProp: "Upload prop",
     uploadSkybox: "Upload 360° image",
-    uploadPlate: "Upload footage",
     uploadHdri: "Upload .hdr",
     on: "On",
     off: "Off",
@@ -590,14 +586,8 @@ const en = {
       prop: "Props",
       ground: "Ground",
       /** Backdrop, not Background: the flat picture behind the scene is what
-       *  this tab holds now that footage has a seat of its own, and four tabs
-       *  share one strip. */
+       *  this tab holds. */
       background: "Backdrop",
-      /** A plain noun for what you put in the pane, like the three beside it.
-       *  "Composite" names the act and is a word a hobbyist may not have;
-       *  "Plate" is the trade's word for the same thing and is worse for the
-       *  same reason. Both are also wider, and four tabs share one strip. */
-      composite: "Footage",
       world: "World",
       sun: "Sun",
       /** The scene's positional lights. Plural and plain: a stage import brings
@@ -737,7 +727,6 @@ const en = {
       backgroundImage: "background media",
       plane: "plane",
       prop: "prop",
-      plate: "footage",
       background360: "skybox",
       world: "world",
     },
@@ -772,31 +761,8 @@ const en = {
       grid: "Grid lines",
       fade: "Fade",
       height: "Height",
-      /** The footage the scene stands in. A noun for the slot, like the three
-       *  rows in Backdrop — what makes it a plate is which row it is in. */
-      plate: "Footage",
-      /** The catcher IS the ground plane at zero opacity, so the one control
-       *  that removes the plane also removes the shadow — silently, two tabs
-       *  away from where you would look for it. */
-      plateNeedsGround: "Her shadow needs the ground plane — turn it on in Ground.",
-      /** Said out loud: a slider that silently does nothing is
-       *  indistinguishable from one that is broken. */
-      /** The auto-calibration. Named for what it reads, not for what it does. */
-      solve: "Read camera from footage",
-      solving: "Reading…",
-      solveNone: "No straight edges to read a camera from.",
-      /** The one number a single photo cannot give up. */
-      camHeight: "Camera height",
-      /** A property of the sensor, and the loudest tell after the shadow. */
+      /** Sensor grain over the render. */
       grain: "Grain",
-      /** Group headings in the Footage pane. Scope shown by a heading and a
-       *  rule, never by position alone. */
-      gCamera: "Camera",
-      gLight: "Light",
-      gFilm: "Film",
-      /** The placement mode. Named for the gesture, not the mode. */
-      placeOnFloor: "Place her on the floor",
-      placing: "Click the floor in your footage",
       /** Camera tilt off level, degrees. The orbit cannot express it. */
       roll: "Roll",
       scale: "Scale",
@@ -835,6 +801,11 @@ const en = {
       exposure: "Exposure",
       threshold: "Threshold",
       radius: "Radius",
+      /** A lamp's gobo: the pattern a spot throws (lib/light-cookies). */
+      pattern: "Pattern",
+      /** A spot lamp's cone, its whole angle in degrees. */
+      cone: "Cone",
+      cookie: { leaves: "Leaves", window: "Window", blinds: "Blinds", stars: "Stars", dots: "Dots", rings: "Rings" } as Record<string, string>,
       /** What a lamp reaches. "Radius" is the engine's word and the falloff is
        *  exactly zero at it, so the number is a promise rather than a feel. */
       simulate: "Simulate",
@@ -973,11 +944,8 @@ const en = {
     "mix/lighten": "Lighten",
     "mix/linear_light": "Linear Light",
     "mix/add_emit": "Add Emission",
-    principled: "Principled BSDF",
-    emission: "Emission",
-    add_shader: "Add Shader",
-    mix_shader: "Mix Shader",
-    shader_to_rgb_diffuse: "Shader to RGB · Diffuse",
+    lit: "Lit",
+    lambert: "Lambert",
     subsurface: "Subsurface Scattering",
     fresnel: "Fresnel",
     "layer_weight/fresnel": "Layer Weight · Fresnel",
@@ -1312,7 +1280,6 @@ const zh: Dictionary = {
     uploadBackdrop: "上传图片",
     skybox: "天空盒",
     uploadSkybox: "上传 360° 全景图",
-    uploadPlate: "上传实景素材",
     uploadHdri: "上传 .hdr",
   },
   stage: {
@@ -1515,7 +1482,6 @@ const zh: Dictionary = {
     rayConverting: (done: number, total: number) => `正在转换 ray-mmd 贴图 ${done}/${total}`,
     rayApplied: (n: number) => `已应用 ${n} 个 ray-mmd 材质`,
     uploadReading: "正在读取文件…",
-    uploadReadingShare: (done: number, total: number) => `正在读取文件… ${done}/${total}`,
     uploadTexturing: (done: number, total: number) => `正在压缩贴图 ${done}/${total}`,
     uploadConverting: (name: string) => `正在解析 ${name}…`,
     uploadLoading: (name: string) => `正在加载 ${name}…`,
@@ -1530,7 +1496,6 @@ const zh: Dictionary = {
     uploadPlane: "上传媒体",
     uploadProp: "上传道具",
     uploadSkybox: "上传 360° 全景图",
-    uploadPlate: "上传实景素材",
     uploadHdri: "上传 .hdr",
     on: "开",
     off: "关",
@@ -1560,7 +1525,6 @@ const zh: Dictionary = {
       prop: "道具",
       ground: "地面",
       background: "背景",
-      composite: "实景",
       world: "环境光",
       sun: "太阳",
       lamps: "灯",
@@ -1679,7 +1643,6 @@ const zh: Dictionary = {
       backgroundImage: "背景媒体",
       plane: "平面",
       prop: "道具",
-      plate: "实景素材",
       background360: "天空盒",
       world: "世界",
     },
@@ -1701,18 +1664,7 @@ const zh: Dictionary = {
       grid: "网格",
       fade: "渐隐",
       height: "高度",
-      plate: "实景素材",
-      plateNeedsGround: "影子需要地面——请在「地面」中打开。",
-      solve: "从素材读取相机",
-      solving: "读取中…",
-      solveNone: "画面中没有可用的直线边缘。",
-      camHeight: "相机高度",
       grain: "颗粒",
-      gCamera: "相机",
-      gLight: "灯光",
-      gFilm: "胶片",
-      placeOnFloor: "放到地面上",
-      placing: "点击素材中的地面",
       roll: "倾斜",
       scale: "缩放",
       size: "尺寸",
@@ -1740,6 +1692,9 @@ const zh: Dictionary = {
       exposure: "曝光",
       threshold: "阈值",
       radius: "半径",
+      pattern: "图案",
+      cone: "光锥",
+      cookie: { leaves: "树影", window: "窗格", blinds: "百叶", stars: "星点", dots: "圆点", rings: "光环" } as Record<string, string>,
       simulate: "模拟",
       gravity: "重力",
       floor: "地面碰撞",
@@ -1866,11 +1821,8 @@ const zh: Dictionary = {
     "mix/lighten": "变亮",
     "mix/linear_light": "线性光",
     "mix/add_emit": "增加自发光",
-    principled: "原理化 BSDF",
-    emission: "自发光",
-    add_shader: "相加着色器",
-    mix_shader: "混合着色器",
-    shader_to_rgb_diffuse: "着色器转 RGB · 漫射",
+    lit: "Lit 光照",
+    lambert: "Lambert 漫反射",
     subsurface: "次表面散射",
     fresnel: "菲涅尔",
     "layer_weight/fresnel": "层权重 · 菲涅尔",

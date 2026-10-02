@@ -31,7 +31,7 @@
      },
      {
       "id": "str",
-      "type": "shader_to_rgb_diffuse"
+      "type": "lambert"
      },
      {
       "id": "toon",
@@ -75,9 +75,9 @@
      },
      {
       "id": "emission3",
-      "type": "emission",
+      "type": "vector_math/scale",
       "inputs": {
-       "strength": 4
+       "scale": 4
       }
      },
      {
@@ -113,9 +113,9 @@
      },
      {
       "id": "warm_emit",
-      "type": "emission",
+      "type": "vector_math/scale",
       "inputs": {
-       "strength": 0.30000001192092896
+       "scale": 0.30000001192092896
       }
      },
      {
@@ -138,14 +138,8 @@
      },
      {
       "id": "rim1",
-      "type": "emission",
-      "inputs": {
-       "color": [
-        0.984157919883728,
-        0.6110184788703918,
-        0.5736401677131653
-       ]
-      }
+      "type": "vector_math/scale",
+      "inputs": {}
      },
      {
       "id": "rim2_lw",
@@ -171,7 +165,7 @@
      },
      {
       "id": "rim2_mix",
-      "type": "mix_shader",
+      "type": "mix/blend",
       "inputs": {
        "b": [
         1,
@@ -182,11 +176,11 @@
      },
      {
       "id": "npr_add1",
-      "type": "add_shader"
+      "type": "vector_math/add"
      },
      {
       "id": "npr_stack",
-      "type": "add_shader"
+      "type": "vector_math/add"
      },
      {
       "id": "map",
@@ -234,30 +228,26 @@
      },
      {
       "id": "p_emit",
-      "type": "emission",
+      "type": "vector_math/scale",
       "inputs": {
-       "strength": 0.2
+       "scale": 0.2
       }
      },
      {
       "id": "principled",
-      "type": "principled",
+      "type": "lit",
       "inputs": {
        "metallic": 0,
-       "roughness": 0.3,
-       "spec_clamp": 10,
-       "sheen_tint": 0,
-       "specular_ior_level": 0.5,
-       "sheen_weight": 0
+       "smoothness": 0.4523
       }
      },
      {
       "id": "p_sum",
-      "type": "add_shader"
+      "type": "vector_math/add"
      },
      {
       "id": "mix_shader_001",
-      "type": "mix_shader",
+      "type": "mix/blend",
       "inputs": {
        "fac": 0.5
       }
@@ -271,6 +261,17 @@
       "type": "mix/multiply",
       "inputs": {
        "fac": 1.0
+      }
+     },
+     {
+      "id": "rim1_color",
+      "type": "rgb",
+      "inputs": {
+       "color": [
+        0.984157919883728,
+        0.6110184788703918,
+        0.5736401677131653
+       ]
       }
      }
     ],
@@ -352,7 +353,7 @@
       },
       "to": {
        "node": "emission3",
-       "socket": "color"
+       "socket": "a"
       }
      },
      {
@@ -392,7 +393,7 @@
       },
       "to": {
        "node": "warm_emit",
-       "socket": "color"
+       "socket": "a"
       }
      },
      {
@@ -422,7 +423,7 @@
       },
       "to": {
        "node": "rim1",
-       "socket": "strength"
+       "socket": "scale"
       }
      },
      {
@@ -448,7 +449,7 @@
      {
       "from": {
        "node": "emission3",
-       "socket": "color"
+       "socket": "vector"
       },
       "to": {
        "node": "rim2_mix",
@@ -468,7 +469,7 @@
      {
       "from": {
        "node": "rim1",
-       "socket": "color"
+       "socket": "vector"
       },
       "to": {
        "node": "npr_add1",
@@ -488,7 +489,7 @@
      {
       "from": {
        "node": "npr_add1",
-       "socket": "color"
+       "socket": "vector"
       },
       "to": {
        "node": "npr_stack",
@@ -498,7 +499,7 @@
      {
       "from": {
        "node": "warm_emit",
-       "socket": "color"
+       "socket": "vector"
       },
       "to": {
        "node": "npr_stack",
@@ -582,7 +583,7 @@
       },
       "to": {
        "node": "p_emit",
-       "socket": "color"
+       "socket": "a"
       }
      },
      {
@@ -618,7 +619,7 @@
      {
       "from": {
        "node": "p_emit",
-       "socket": "color"
+       "socket": "vector"
       },
       "to": {
        "node": "p_sum",
@@ -628,7 +629,7 @@
      {
       "from": {
        "node": "npr_stack",
-       "socket": "color"
+       "socket": "vector"
       },
       "to": {
        "node": "mix_shader_001",
@@ -638,7 +639,7 @@
      {
       "from": {
        "node": "p_sum",
-       "socket": "color"
+       "socket": "vector"
       },
       "to": {
        "node": "mix_shader_001",
@@ -663,6 +664,16 @@
       "to": {
        "node": "tex_base",
        "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "rim1_color",
+       "socket": "color"
+      },
+      "to": {
+       "node": "rim1",
+       "socket": "a"
       }
      }
     ],
@@ -701,26 +712,22 @@
      },
      {
       "id": "principled",
-      "type": "principled",
+      "type": "lit",
       "inputs": {
        "metallic": 0,
-       "roughness": 0.5,
-       "spec_clamp": 1e+30,
-       "sheen_tint": 0,
-       "specular_ior_level": 0.5,
-       "sheen_weight": 0
+       "smoothness": 0.2929
       }
      },
      {
       "id": "emission",
-      "type": "emission",
+      "type": "vector_math/scale",
       "inputs": {
-       "strength": 1.5
+       "scale": 1.5
       }
      },
      {
       "id": "add",
-      "type": "add_shader"
+      "type": "vector_math/add"
      },
      {
       "id": "mat_diffuse",
@@ -793,7 +800,7 @@
       },
       "to": {
        "node": "emission",
-       "socket": "color"
+       "socket": "a"
       }
      },
      {
@@ -809,7 +816,7 @@
      {
       "from": {
        "node": "emission",
-       "socket": "color"
+       "socket": "vector"
       },
       "to": {
        "node": "add",
@@ -893,7 +900,7 @@
       },
       "to": {
        "node": "emission",
-       "socket": "strength"
+       "socket": "scale"
       }
      },
      {
@@ -919,7 +926,7 @@
     ],
     "output": {
      "node": "add",
-     "socket": "color"
+     "socket": "vector"
     }
    }
   }
@@ -956,7 +963,7 @@
      },
      {
       "id": "str",
-      "type": "shader_to_rgb_diffuse"
+      "type": "lambert"
      },
      {
       "id": "toon",
@@ -1000,9 +1007,9 @@
      },
      {
       "id": "emission3",
-      "type": "emission",
+      "type": "vector_math/scale",
       "inputs": {
-       "strength": 2.5
+       "scale": 2.5
       }
      },
      {
@@ -1045,9 +1052,9 @@
      },
      {
       "id": "warm_emit",
-      "type": "emission",
+      "type": "vector_math/scale",
       "inputs": {
-       "strength": 0.30000001192092896
+       "scale": 0.30000001192092896
       }
      },
      {
@@ -1070,14 +1077,8 @@
      },
      {
       "id": "rim1",
-      "type": "emission",
-      "inputs": {
-       "color": [
-        0.984157919883728,
-        0.6110184788703918,
-        0.5736401677131653
-       ]
-      }
+      "type": "vector_math/scale",
+      "inputs": {}
      },
      {
       "id": "rim2_fres",
@@ -1106,7 +1107,7 @@
      },
      {
       "id": "rim2_mix",
-      "type": "mix_shader",
+      "type": "mix/blend",
       "inputs": {
        "b": [
         1,
@@ -1131,15 +1132,15 @@
      },
      {
       "id": "npr_add1",
-      "type": "add_shader"
+      "type": "vector_math/add"
      },
      {
       "id": "npr_add2",
-      "type": "add_shader"
+      "type": "vector_math/add"
      },
      {
       "id": "npr_stack",
-      "type": "add_shader"
+      "type": "vector_math/add"
      },
      {
       "id": "map",
@@ -1187,30 +1188,26 @@
      },
      {
       "id": "p_emit",
-      "type": "emission",
+      "type": "vector_math/scale",
       "inputs": {
-       "strength": 0.2
+       "scale": 0.2
       }
      },
      {
       "id": "principled",
-      "type": "principled",
+      "type": "lit",
       "inputs": {
        "metallic": 0,
-       "roughness": 0.3,
-       "spec_clamp": 10,
-       "sheen_tint": 0,
-       "specular_ior_level": 0.5,
-       "sheen_weight": 0
+       "smoothness": 0.4523
       }
      },
      {
       "id": "p_sum",
-      "type": "add_shader"
+      "type": "vector_math/add"
      },
      {
       "id": "mix_shader_001",
-      "type": "mix_shader",
+      "type": "mix/blend",
       "inputs": {
        "fac": 0.5
       }
@@ -1224,6 +1221,17 @@
       "type": "mix/multiply",
       "inputs": {
        "fac": 1.0
+      }
+     },
+     {
+      "id": "rim1_color",
+      "type": "rgb",
+      "inputs": {
+       "color": [
+        0.984157919883728,
+        0.6110184788703918,
+        0.5736401677131653
+       ]
       }
      }
     ],
@@ -1305,7 +1313,7 @@
       },
       "to": {
        "node": "emission3",
-       "socket": "color"
+       "socket": "a"
       }
      },
      {
@@ -1355,7 +1363,7 @@
       },
       "to": {
        "node": "warm_emit",
-       "socket": "color"
+       "socket": "a"
       }
      },
      {
@@ -1385,7 +1393,7 @@
       },
       "to": {
        "node": "rim1",
-       "socket": "strength"
+       "socket": "scale"
       }
      },
      {
@@ -1421,7 +1429,7 @@
      {
       "from": {
        "node": "emission3",
-       "socket": "color"
+       "socket": "vector"
       },
       "to": {
        "node": "rim2_mix",
@@ -1461,7 +1469,7 @@
      {
       "from": {
        "node": "rim1",
-       "socket": "color"
+       "socket": "vector"
       },
       "to": {
        "node": "npr_add1",
@@ -1481,7 +1489,7 @@
      {
       "from": {
        "node": "npr_add1",
-       "socket": "color"
+       "socket": "vector"
       },
       "to": {
        "node": "npr_add2",
@@ -1501,7 +1509,7 @@
      {
       "from": {
        "node": "npr_add2",
-       "socket": "color"
+       "socket": "vector"
       },
       "to": {
        "node": "npr_stack",
@@ -1511,7 +1519,7 @@
      {
       "from": {
        "node": "warm_emit",
-       "socket": "color"
+       "socket": "vector"
       },
       "to": {
        "node": "npr_stack",
@@ -1595,7 +1603,7 @@
       },
       "to": {
        "node": "p_emit",
-       "socket": "color"
+       "socket": "a"
       }
      },
      {
@@ -1631,7 +1639,7 @@
      {
       "from": {
        "node": "p_emit",
-       "socket": "color"
+       "socket": "vector"
       },
       "to": {
        "node": "p_sum",
@@ -1641,7 +1649,7 @@
      {
       "from": {
        "node": "npr_stack",
-       "socket": "color"
+       "socket": "vector"
       },
       "to": {
        "node": "mix_shader_001",
@@ -1651,7 +1659,7 @@
      {
       "from": {
        "node": "p_sum",
-       "socket": "color"
+       "socket": "vector"
       },
       "to": {
        "node": "mix_shader_001",
@@ -1676,6 +1684,16 @@
       "to": {
        "node": "tex_base",
        "socket": "b"
+      }
+     },
+     {
+      "from": {
+       "node": "rim1_color",
+       "socket": "color"
+      },
+      "to": {
+       "node": "rim1",
+       "socket": "a"
       }
      }
     ],
@@ -1748,7 +1766,7 @@
      },
      {
       "id": "str",
-      "type": "shader_to_rgb_diffuse"
+      "type": "lambert"
      },
      {
       "id": "ramp_008",
@@ -1821,7 +1839,7 @@
      },
      {
       "id": "mix_shader_002",
-      "type": "mix_shader",
+      "type": "mix/blend",
       "inputs": {
        "b": [
         0.1673291176557541,
@@ -1850,19 +1868,16 @@
      },
      {
       "id": "principled",
-      "type": "principled",
+      "type": "lit",
       "inputs": {
        "metallic": 0,
-       "roughness": 0.3,
-       "spec_clamp": 10,
-       "sheen_tint": 0,
-       "specular_ior_level": 1,
-       "sheen_weight": 0
+       "smoothness": 0.4523,
+       "specular": 1
       }
      },
      {
       "id": "mix_shader_001",
-      "type": "mix_shader",
+      "type": "mix/blend",
       "inputs": {
        "fac": 0.2
       }
@@ -2201,7 +2216,7 @@
      },
      {
       "id": "str",
-      "type": "shader_to_rgb_diffuse"
+      "type": "lambert"
      },
      {
       "id": "ramp_008",
@@ -2251,9 +2266,9 @@
      },
      {
       "id": "npr_emit",
-      "type": "emission",
+      "type": "vector_math/scale",
       "inputs": {
-       "strength": 8.100000381469727
+       "scale": 8.100000381469727
       }
      },
      {
@@ -2298,19 +2313,16 @@
      },
      {
       "id": "principled",
-      "type": "principled",
+      "type": "lit",
       "inputs": {
        "metallic": 1,
-       "roughness": 0.3,
-       "spec_clamp": 1e+30,
-       "sheen_tint": 0,
-       "specular_ior_level": 1,
-       "sheen_weight": 0
+       "smoothness": 0.4523,
+       "specular": 1
       }
      },
      {
       "id": "mix_shader_001",
-      "type": "mix_shader",
+      "type": "mix/blend",
       "inputs": {
        "fac": 0.6967
       }
@@ -2435,7 +2447,7 @@
       },
       "to": {
        "node": "npr_emit",
-       "socket": "color"
+       "socket": "a"
       }
      },
      {
@@ -2521,7 +2533,7 @@
      {
       "from": {
        "node": "npr_emit",
-       "socket": "color"
+       "socket": "vector"
       },
       "to": {
        "node": "mix_shader_001",
@@ -2598,7 +2610,7 @@
      },
      {
       "id": "str",
-      "type": "shader_to_rgb_diffuse"
+      "type": "lambert"
      },
      {
       "id": "ramp_008",
@@ -2660,9 +2672,9 @@
      },
      {
       "id": "npr_emit",
-      "type": "emission",
+      "type": "vector_math/scale",
       "inputs": {
-       "strength": 18.200000762939453
+       "scale": 18.200000762939453
       }
      },
      {
@@ -2699,19 +2711,16 @@
      },
      {
       "id": "principled",
-      "type": "principled",
+      "type": "lit",
       "inputs": {
        "metallic": 0,
-       "roughness": 1.0,
-       "spec_clamp": 10,
-       "sheen_tint": 0,
-       "specular_ior_level": 0.25,
-       "sheen_weight": 0
+       "smoothness": 0.0,
+       "specular": 0.25
       }
      },
      {
       "id": "mix_shader_001",
-      "type": "mix_shader",
+      "type": "mix/blend",
       "inputs": {
        "fac": 0.8999999761581421
       }
@@ -2876,7 +2885,7 @@
       },
       "to": {
        "node": "npr_emit",
-       "socket": "color"
+       "socket": "a"
       }
      },
      {
@@ -2952,7 +2961,7 @@
      {
       "from": {
        "node": "npr_emit",
-       "socket": "color"
+       "socket": "vector"
       },
       "to": {
        "node": "mix_shader_001",
@@ -3029,7 +3038,7 @@
      },
      {
       "id": "str",
-      "type": "shader_to_rgb_diffuse"
+      "type": "lambert"
      },
      {
       "id": "ramp_008",
@@ -3091,9 +3100,9 @@
      },
      {
       "id": "npr_emit",
-      "type": "emission",
+      "type": "vector_math/scale",
       "inputs": {
-       "strength": 18.200000762939453
+       "scale": 18.200000762939453
       }
      },
      {
@@ -3108,19 +3117,16 @@
      },
      {
       "id": "principled",
-      "type": "principled",
+      "type": "lit",
       "inputs": {
        "metallic": 0,
-       "roughness": 0.5,
-       "spec_clamp": 10,
-       "sheen_tint": 0,
-       "specular_ior_level": 0.8,
-       "sheen_weight": 0
+       "smoothness": 0.2929,
+       "specular": 0.8
       }
      },
      {
       "id": "mix_shader_001",
-      "type": "mix_shader",
+      "type": "mix/blend",
       "inputs": {
        "fac": 0.8999999761581421
       }
@@ -3285,7 +3291,7 @@
       },
       "to": {
        "node": "npr_emit",
-       "socket": "color"
+       "socket": "a"
       }
      },
      {
@@ -3311,7 +3317,7 @@
      {
       "from": {
        "node": "npr_emit",
-       "socket": "color"
+       "socket": "vector"
       },
       "to": {
        "node": "mix_shader_001",
@@ -3464,19 +3470,16 @@
      },
      {
       "id": "principled",
-      "type": "principled",
+      "type": "lit",
       "inputs": {
        "metallic": 0.1,
-       "roughness": 0.5,
-       "spec_clamp": 1e+30,
-       "sheen_tint": 0.5,
-       "specular_ior_level": 1,
-       "sheen_weight": 0.7017999887466431
+       "smoothness": 0.2929,
+       "specular": 1
       }
      },
      {
       "id": "mix_shader_001",
-      "type": "mix_shader"
+      "type": "mix/blend"
      },
      {
       "id": "mat_diffuse",
@@ -3785,13 +3788,6 @@
       }
      },
      {
-      "id": "bpi",
-      "type": "math/multiply",
-      "inputs": {
-       "b": 0.3183098861837907
-      }
-     },
-     {
       "id": "suncol",
       "type": "mix/multiply",
       "inputs": {
@@ -3952,16 +3948,6 @@
      },
      {
       "from": {
-       "node": "bs",
-       "socket": "value"
-      },
-      "to": {
-       "node": "bpi",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
        "node": "lt",
        "socket": "color"
       },
@@ -3972,7 +3958,7 @@
      },
      {
       "from": {
-       "node": "bpi",
+       "node": "bs",
        "socket": "value"
       },
       "to": {
@@ -4214,13 +4200,6 @@
       }
      },
      {
-      "id": "bpi",
-      "type": "math/multiply",
-      "inputs": {
-       "b": 0.3183098861837907
-      }
-     },
-     {
       "id": "suncol",
       "type": "mix/multiply",
       "inputs": {
@@ -4381,16 +4360,6 @@
      },
      {
       "from": {
-       "node": "bs",
-       "socket": "value"
-      },
-      "to": {
-       "node": "bpi",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
        "node": "lt",
        "socket": "color"
       },
@@ -4401,7 +4370,7 @@
      },
      {
       "from": {
-       "node": "bpi",
+       "node": "bs",
        "socket": "value"
       },
       "to": {
@@ -4643,13 +4612,6 @@
       }
      },
      {
-      "id": "bpi",
-      "type": "math/multiply",
-      "inputs": {
-       "b": 0.3183098861837907
-      }
-     },
-     {
       "id": "suncol",
       "type": "mix/multiply",
       "inputs": {
@@ -4810,16 +4772,6 @@
      },
      {
       "from": {
-       "node": "bs",
-       "socket": "value"
-      },
-      "to": {
-       "node": "bpi",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
        "node": "lt",
        "socket": "color"
       },
@@ -4830,7 +4782,7 @@
      },
      {
       "from": {
-       "node": "bpi",
+       "node": "bs",
        "socket": "value"
       },
       "to": {
@@ -5072,13 +5024,6 @@
       }
      },
      {
-      "id": "bpi",
-      "type": "math/multiply",
-      "inputs": {
-       "b": 0.3183098861837907
-      }
-     },
-     {
       "id": "suncol",
       "type": "mix/multiply",
       "inputs": {
@@ -5239,16 +5184,6 @@
      },
      {
       "from": {
-       "node": "bs",
-       "socket": "value"
-      },
-      "to": {
-       "node": "bpi",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
        "node": "lt",
        "socket": "color"
       },
@@ -5259,7 +5194,7 @@
      },
      {
       "from": {
-       "node": "bpi",
+       "node": "bs",
        "socket": "value"
       },
       "to": {
@@ -5501,13 +5436,6 @@
       }
      },
      {
-      "id": "bpi",
-      "type": "math/multiply",
-      "inputs": {
-       "b": 0.3183098861837907
-      }
-     },
-     {
       "id": "suncol",
       "type": "mix/multiply",
       "inputs": {
@@ -5668,16 +5596,6 @@
      },
      {
       "from": {
-       "node": "bs",
-       "socket": "value"
-      },
-      "to": {
-       "node": "bpi",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
        "node": "lt",
        "socket": "color"
       },
@@ -5688,7 +5606,7 @@
      },
      {
       "from": {
-       "node": "bpi",
+       "node": "bs",
        "socket": "value"
       },
       "to": {
@@ -5930,13 +5848,6 @@
       }
      },
      {
-      "id": "bpi",
-      "type": "math/multiply",
-      "inputs": {
-       "b": 0.3183098861837907
-      }
-     },
-     {
       "id": "suncol",
       "type": "mix/multiply",
       "inputs": {
@@ -6097,16 +6008,6 @@
      },
      {
       "from": {
-       "node": "bs",
-       "socket": "value"
-      },
-      "to": {
-       "node": "bpi",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
        "node": "lt",
        "socket": "color"
       },
@@ -6117,7 +6018,7 @@
      },
      {
       "from": {
-       "node": "bpi",
+       "node": "bs",
        "socket": "value"
       },
       "to": {
@@ -6261,7 +6162,7 @@
      },
      {
       "id": "str",
-      "type": "shader_to_rgb_diffuse"
+      "type": "lambert"
      },
      {
       "id": "band",
@@ -6540,7 +6441,7 @@
      },
      {
       "id": "str",
-      "type": "shader_to_rgb_diffuse"
+      "type": "lambert"
      },
      {
       "id": "band",
@@ -6819,7 +6720,7 @@
      },
      {
       "id": "str",
-      "type": "shader_to_rgb_diffuse"
+      "type": "lambert"
      },
      {
       "id": "band",
@@ -7115,7 +7016,7 @@
      },
      {
       "id": "str",
-      "type": "shader_to_rgb_diffuse"
+      "type": "lambert"
      },
      {
       "id": "step_lo",
@@ -7456,7 +7357,7 @@
      },
      {
       "id": "str",
-      "type": "shader_to_rgb_diffuse"
+      "type": "lambert"
      },
      {
       "id": "step_lo",
@@ -7797,7 +7698,7 @@
      },
      {
       "id": "str",
-      "type": "shader_to_rgb_diffuse"
+      "type": "lambert"
      },
      {
       "id": "step_lo",
@@ -8265,13 +8166,6 @@
       }
      },
      {
-      "id": "bpi",
-      "type": "math/multiply",
-      "inputs": {
-       "b": 0.3183098861837907
-      }
-     },
-     {
       "id": "suncol",
       "type": "mix/multiply",
       "inputs": {
@@ -8452,16 +8346,6 @@
      },
      {
       "from": {
-       "node": "ufloor",
-       "socket": "value"
-      },
-      "to": {
-       "node": "bpi",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
        "node": "lt",
        "socket": "color"
       },
@@ -8472,7 +8356,7 @@
      },
      {
       "from": {
-       "node": "bpi",
+       "node": "ufloor",
        "socket": "value"
       },
       "to": {
@@ -8753,13 +8637,6 @@
       }
      },
      {
-      "id": "bpi",
-      "type": "math/multiply",
-      "inputs": {
-       "b": 0.3183098861837907
-      }
-     },
-     {
       "id": "suncol",
       "type": "mix/multiply",
       "inputs": {
@@ -8966,16 +8843,6 @@
      },
      {
       "from": {
-       "node": "ufloor",
-       "socket": "value"
-      },
-      "to": {
-       "node": "bpi",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
        "node": "lt",
        "socket": "color"
       },
@@ -8986,7 +8853,7 @@
      },
      {
       "from": {
-       "node": "bpi",
+       "node": "ufloor",
        "socket": "value"
       },
       "to": {
@@ -9327,13 +9194,6 @@
       }
      },
      {
-      "id": "bpi",
-      "type": "math/multiply",
-      "inputs": {
-       "b": 0.3183098861837907
-      }
-     },
-     {
       "id": "suncol",
       "type": "mix/multiply",
       "inputs": {
@@ -9514,16 +9374,6 @@
      },
      {
       "from": {
-       "node": "ufloor",
-       "socket": "value"
-      },
-      "to": {
-       "node": "bpi",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
        "node": "lt",
        "socket": "color"
       },
@@ -9534,7 +9384,7 @@
      },
      {
       "from": {
-       "node": "bpi",
+       "node": "ufloor",
        "socket": "value"
       },
       "to": {
@@ -9815,13 +9665,6 @@
       }
      },
      {
-      "id": "bpi",
-      "type": "math/multiply",
-      "inputs": {
-       "b": 0.3183098861837907
-      }
-     },
-     {
       "id": "suncol",
       "type": "mix/multiply",
       "inputs": {
@@ -10002,16 +9845,6 @@
      },
      {
       "from": {
-       "node": "ufloor",
-       "socket": "value"
-      },
-      "to": {
-       "node": "bpi",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
        "node": "lt",
        "socket": "color"
       },
@@ -10022,7 +9855,7 @@
      },
      {
       "from": {
-       "node": "bpi",
+       "node": "ufloor",
        "socket": "value"
       },
       "to": {
@@ -10303,13 +10136,6 @@
       }
      },
      {
-      "id": "bpi",
-      "type": "math/multiply",
-      "inputs": {
-       "b": 0.3183098861837907
-      }
-     },
-     {
       "id": "suncol",
       "type": "mix/multiply",
       "inputs": {
@@ -10490,16 +10316,6 @@
      },
      {
       "from": {
-       "node": "ufloor",
-       "socket": "value"
-      },
-      "to": {
-       "node": "bpi",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
        "node": "lt",
        "socket": "color"
       },
@@ -10510,7 +10326,7 @@
      },
      {
       "from": {
-       "node": "bpi",
+       "node": "ufloor",
        "socket": "value"
       },
       "to": {
@@ -10791,13 +10607,6 @@
       }
      },
      {
-      "id": "bpi",
-      "type": "math/multiply",
-      "inputs": {
-       "b": 0.3183098861837907
-      }
-     },
-     {
       "id": "suncol",
       "type": "mix/multiply",
       "inputs": {
@@ -10978,16 +10787,6 @@
      },
      {
       "from": {
-       "node": "ufloor",
-       "socket": "value"
-      },
-      "to": {
-       "node": "bpi",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
        "node": "lt",
        "socket": "color"
       },
@@ -10998,7 +10797,7 @@
      },
      {
       "from": {
-       "node": "bpi",
+       "node": "ufloor",
        "socket": "value"
       },
       "to": {
@@ -11284,13 +11083,6 @@
       }
      },
      {
-      "id": "sun_pi",
-      "type": "vector_math/scale",
-      "inputs": {
-       "scale": 0.3183098861837907
-      }
-     },
-     {
       "id": "amb_sep",
       "type": "separate_color"
      },
@@ -11448,15 +11240,15 @@
      },
      {
       "id": "gloss",
-      "type": "principled",
+      "type": "lit",
       "inputs": {
        "base_color": [
         0.0,
         0.0,
         0.0
        ],
-       "roughness": 0.81,
-       "specular_ior_level": 0.35
+       "smoothness": 0.1,
+       "specular": 0.35
       }
      },
      {
@@ -11468,15 +11260,15 @@
      },
      {
       "id": "coat",
-      "type": "principled",
+      "type": "lit",
       "inputs": {
        "base_color": [
         0.0,
         0.0,
         0.0
        ],
-       "roughness": 0.24,
-       "specular_ior_level": 1.0
+       "smoothness": 0.5101,
+       "specular": 1.0
       }
      },
      {
@@ -11784,16 +11576,6 @@
      },
      {
       "from": {
-       "node": "sun_col",
-       "socket": "color"
-      },
-      "to": {
-       "node": "sun_pi",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
        "node": "lt",
        "socket": "ambient"
       },
@@ -12094,8 +11876,8 @@
      },
      {
       "from": {
-       "node": "sun_pi",
-       "socket": "vector"
+       "node": "sun_col",
+       "socket": "color"
       },
       "to": {
        "node": "light_t",
@@ -12410,13 +12192,6 @@
       }
      },
      {
-      "id": "sun_pi",
-      "type": "vector_math/scale",
-      "inputs": {
-       "scale": 0.3183098861837907
-      }
-     },
-     {
       "id": "amb_sep",
       "type": "separate_color"
      },
@@ -12574,15 +12349,15 @@
      },
      {
       "id": "gloss",
-      "type": "principled",
+      "type": "lit",
       "inputs": {
        "base_color": [
         0.0,
         0.0,
         0.0
        ],
-       "roughness": 0.81,
-       "specular_ior_level": 0.35
+       "smoothness": 0.1,
+       "specular": 0.35
       }
      },
      {
@@ -12594,15 +12369,15 @@
      },
      {
       "id": "coat",
-      "type": "principled",
+      "type": "lit",
       "inputs": {
        "base_color": [
         0.0,
         0.0,
         0.0
        ],
-       "roughness": 0.32,
-       "specular_ior_level": 0.7
+       "smoothness": 0.4343,
+       "specular": 0.7
       }
      },
      {
@@ -12910,16 +12685,6 @@
      },
      {
       "from": {
-       "node": "sun_col",
-       "socket": "color"
-      },
-      "to": {
-       "node": "sun_pi",
-       "socket": "a"
-      }
-     },
-     {
-      "from": {
        "node": "lt",
        "socket": "ambient"
       },
@@ -13220,8 +12985,8 @@
      },
      {
       "from": {
-       "node": "sun_pi",
-       "socket": "vector"
+       "node": "sun_col",
+       "socket": "color"
       },
       "to": {
        "node": "light_t",
@@ -13523,16 +13288,16 @@
      },
      {
       "id": "gloss",
-      "type": "principled",
+      "type": "lit",
       "inputs": {
        "base_color": [
         0.0,
         0.0,
         0.0
        ],
-       "roughness": 0.26,
-       "specular_ior_level": 0.8,
-       "metallic": 0.0
+       "metallic": 0.0,
+       "smoothness": 0.4901,
+       "specular": 0.8
       }
      },
      {
@@ -13989,16 +13754,16 @@
      },
      {
       "id": "gloss",
-      "type": "principled",
+      "type": "lit",
       "inputs": {
        "base_color": [
         0.0,
         0.0,
         0.0
        ],
-       "roughness": 0.55,
-       "specular_ior_level": 0.4,
-       "metallic": 0.0
+       "metallic": 0.0,
+       "smoothness": 0.2584,
+       "specular": 0.4
       }
      },
      {
@@ -14455,11 +14220,10 @@
      },
      {
       "id": "gloss",
-      "type": "principled",
+      "type": "lit",
       "inputs": {
-       "roughness": 0.32,
-       "specular_ior_level": 0.5,
-       "metallic": 0.85
+       "metallic": 0.85,
+       "smoothness": 0.4343
       }
      },
      {
@@ -14926,16 +14690,16 @@
      },
      {
       "id": "gloss",
-      "type": "principled",
+      "type": "lit",
       "inputs": {
        "base_color": [
         0.0,
         0.0,
         0.0
        ],
-       "roughness": 0.12,
-       "specular_ior_level": 0.8,
-       "metallic": 0.0
+       "metallic": 0.0,
+       "smoothness": 0.6536,
+       "specular": 0.8
       }
      },
      {

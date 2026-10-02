@@ -19,7 +19,7 @@ reference for grades, WGSL scene effects and material node graphs.
   - [1.1 Getting started](#11-getting-started)
   - [1.2 Cast, motion and music](#12-cast-motion-and-music)
   - [1.3 Stage](#13-stage)
-  - [1.4 Backdrop, sky and footage](#14-backdrop-sky-and-footage)
+  - [1.4 Backdrop and sky](#14-backdrop-and-sky)
   - [1.5 Light](#15-light)
   - [1.6 Camera](#16-camera)
   - [1.7 The look](#17-the-look)
@@ -125,9 +125,9 @@ floor. A stage folder holding 2:1 sky panoramas asks which to use, and wick bone
 named `flame…` get the *Candle Flames* effect automatically. Placement is scale
 and position.
 
-## 1.4 Backdrop, sky and footage
+## 1.4 Backdrop and sky
 
-**Environment** has four tabs.
+**Environment** has three tabs.
 
 - **Ground** — colour, opacity, size, height, fade and grid lines. At opacity 0 it
   still catches shadows, which makes a shadow catcher for photographic
@@ -136,12 +136,8 @@ and position.
   video behind the scene) or **Skybox** (a 360° panorama the camera looks out
   into). **World** takes an `.hdr` that lights the scene and shows in glossy
   surfaces, independently of what is displayed behind.
-- **Footage** — video the character stands *in*. **Read camera from footage** and
-  **Place her on the floor** match the camera and floor to the shot; camera
-  height, FOV, elevation and roll fine-tune it, including the lean of footage
-  shot on a phone. The ground becomes a shadow catcher while footage is loaded.
 
-Media, Skybox and Footage share one seat: filling one empties the others.
+Media and Skybox share one seat: filling one empties the other.
 
 ## 1.5 Light
 
@@ -416,10 +412,12 @@ is a note.
 ```wgsl
 #anchor 頭                 a bone by name        -> rzAnchor(subject, 0)
 #anchor 左手首 trail       ...and record its path -> rzTrail(subject, 1, i)
+#anchor 右手首 trail along 0.9   the point 0.9 units down the bone (knuckles)
 #points flame              every bone starting "flame" -> rzPoint(i)
 #particles 4096            pool size (default 1024)
 #blend additive            particles add light
 #blend cutout              particles write depth, alpha as coverage (grass)
+#blend over                ribbons lay over the scene instead of adding light
 #bloom                     particles / ribbons reach bloom
 #layer additive            the FIELD adds light instead of covering
 #halfres                   field mounts at half resolution
@@ -437,7 +435,9 @@ is a note.
 - **`#layer additive`** is right for anything that is light rather than matter.
   The default composites alpha-over, so two crossing glows occlude each other.
 - **`#anchor`** slots are in declaration order. `.valid` is false on a rig that
-  names the bone differently — check it.
+  names the bone differently — check it. `along d` moves the anchor `d` model
+  units down the bone's own axis (the way the bone points), so one number puts
+  both hands' anchors at the knuckles.
 - **`#halfres`** suits soft effects. Avoid it when alpha has a hard edge, such as
   a foreground compared against `depth` along every silhouette.
 - **`#duration`** makes the effect a hit with an arc; without it the effect is
@@ -586,14 +586,17 @@ runs fewer when fewer are needed (*Field of Flowers*).
 
 ```wgsl
 #anchor 右手首 trail
-fn trailWidth(u: f32, age: f32) -> f32                                   // pixels
+fn trailWidth(u: f32, age: f32) -> f32                                   // half-width, world units
 fn trailShade(u: f32, v: f32, age: f32, weight: f32, slot: i32) -> vec4f
 ```
 
-`u` runs along the ribbon, `v` across it. The path is sampled on the scene clock,
-so it is identical in the editor and every export, smoothed into a spline, and
-drawn at constant screen width. Ribbons max-blend in their own layer, so a ribbon
-crossing itself does not stack into white.
+`u` runs along the ribbon, `v` across it (−1..1), `age` is how many seconds ago
+that stretch was laid. The path is sampled on the scene clock, so it is identical
+in the editor and every export, and smoothed into a spline. Ribbons draw in the
+scene pass and ADD their light; `#blend over` lays them over what is behind
+instead, by their alpha, so a dark ribbon darkens (a deep-blue smoke tail would
+vanish added). Several strands that share one path are one
+ribbon as wide as the widest, each drawn inside it by its own `v`.
 
 ### A simulation grid
 
@@ -678,11 +681,11 @@ click a group's graph, **Browse all…**, then **Edit graph**.
 
 | Set | Graphs | Built around |
 | --- | --- | --- |
-| **AG** — Aether Gazer | Body, Eye, Face, Hair, Metal, Rough Cloth, Smooth Cloth, Stockings | The lighting closure into a ramp |
+| **AG** — Aether Gazer | Body, Eye, Face, Hair, Metal, Rough Cloth, Smooth Cloth, Stockings | Lambert into a ramp, with a Lit gloss layer |
 | **WuWa** — Wuthering Waves | Body, Cloth, Hair, Face, Metal, Eye | Half-Lambert through a narrow threshold, a warm band, sphere map, rim |
-| **ZZZ** — Zenless Zone Zero | Body, Cloth, Eye, Face, Hair, Metal | The closure quantised into a mask, lit and shadow branches tinted apart |
+| **ZZZ** — Zenless Zone Zero | Body, Cloth, Eye, Face, Hair, Metal | Lambert quantised into a mask, lit and shadow branches tinted apart |
 | **HSR** — Honkai: Star Rail | Body, Face, Hair, Cloth, Metal, Eye | The `light` node and the sphere map |
-| **Stage** | Tile, Emissive, Wood, Brick, Plastic, Glass, Concrete, Stone, Fabric, Rubber, Leather, Paper, Water, Gold, Mapped PBR, Foliage, Stage Surface | Principled PBR; *Water* uses `time` and `environment`, *Foliage* hashed alpha |
+| **Stage** | Lit, Wood, Tile, Stone, Plaster, Metal, Lacquer, Fabric, Neon, Stage Surface, Glass, Glass Shell, Bottle Glass, Water, Foliage, Terrain | Unity's Lit; *Water* uses `time` and `reflection_probe`, *Foliage* hashed alpha |
 
 An ungrouped material renders the neutral default graph, which is also where a
 new graph starts. No built-in carries an image: they read the material's own
@@ -710,7 +713,7 @@ Node positions are layout only. Graphs import and export as JSON from the header
     { "id": "tex", "type": "texture" },
     { "id": "diff", "type": "material_diffuse" },
     { "id": "base", "type": "mix/multiply", "inputs": { "fac": 1.0 } },
-    { "id": "shade", "type": "shader_to_rgb_diffuse" },
+    { "id": "shade", "type": "lambert" },
     { "id": "band", "type": "ramp_constant_aa",
       "inputs": { "edge": 0.35, "color0": [0.62, 0.58, 0.72, 1], "color1": [1, 1, 1, 1] } },
     { "id": "lit", "type": "mix/multiply", "inputs": { "fac": 1.0 } }
@@ -733,8 +736,8 @@ help library search. Every node type and socket is in
 
 ### Two spines
 
-**The closure** (AG): `texture` × `material_diffuse` (a `mix/multiply` at `fac 1`
-— without it untextured materials render white), then `shader_to_rgb_diffuse`
+**Lambert** (AG): `texture` × `material_diffuse` (a `mix/multiply` at `fac 1`
+— without it untextured materials render white), then `lambert`'s `value`
 into `ramp_constant_aa` for bands or `ramp_linear` for a soft falloff, multiplied
 over the base. Add a rim with `layer_weight/facing` into `mix/add_emit`.
 
@@ -742,8 +745,8 @@ over the base. Add a rim with `layer_weight/facing` into `mix/add_emit`.
 `vector_math/dot`, then `math/multiply_add` (0.5, 0.5) for a half-Lambert;
 `map_range` over a narrow window (say 0.46–0.54) for a hard terminator;
 `ramp_linear_3` from shadow through a warm band to lit; multiply over the
-texture. Then fold in the scene's light — `light.color × (band × light.shadow ÷
-π) + light.ambient`, mixed halfway toward white — so the material responds to sun
+texture. Then fold in the scene's light — `light.color × band ×
+light.shadow + light.ambient`, mixed halfway toward white — so the material responds to sun
 colour, world light and cast shadows without taking on the world's hue. Finish
 with `sphere_map` for the model's own highlight.
 
@@ -756,7 +759,7 @@ with `sphere_map` for the model's own highlight.
 - A literal must fit its socket: a scalar splats onto colour and vector, a vector
   on a float is an error. Ramp stop colours are `vec4` literals and take no links.
 - Sockets that carry the processed value (`invert.color`, `separate_xyz.vector`,
-  `principled.base_color`, a ramp's `fac`) need a link or an explicit literal.
+  `lit.base_color`, a ramp's `fac`) need a link or an explicit literal.
 - Params target unlinked inputs, one per socket, `float` or `color` — to expose a
   ramp stop, drive it through a `mix/*` and expose that.
 - Types convert implicitly: colour → float is BT.601 luminance, float → colour
@@ -768,40 +771,40 @@ with `sphere_map` for the model's own highlight.
 editor, reze-engine exports `validateGraph(graph)` and `compileGraph(graph)` →
 `{ ok, wgsl, diagnostics }`; cycles and missing links are found by the compile.
 
-### Coming from Blender
+### Coming from Unity's Shader Graph
 
-Node semantics track **Blender 5.2**: Principled uses v2 socket names, and the
-math (39), vector math (24) and mix (20) operations are Blender's own, safeguards
-included. A node's mode is part of its type — Math set to Power is `math/power`,
-a Color Ramp's interpolation picks the `ramp_*` type.
+Lighting follows **Unity's URP**: lights are in Unity's units (a white sun of 1
+lights albedo 1:1 head on), roughness means what it means there, and a surface
+is either **Lit** or built by hand from the main light, as a toon Shader Graph
+is. The math (39), vector math (24) and mix (20) operations are Blender's own,
+safeguards included, and behave as their Shader Graph counterparts do. A node's
+mode is part of its type — Math set to Power is `math/power`, a ramp's
+interpolation picks the `ramp_*` type.
 
-| Blender | reze |
+| Shader Graph | reze |
 | --- | --- |
-| Principled BSDF | `principled` |
-| Shader to RGB | `shader_to_rgb` (colour) · `shader_to_rgb_diffuse` (scalar) |
-| Image Texture | `texture` (the material's map) · `tex_image/0…3` (the group's maps) |
-| Texture Coordinate, Geometry | `geometry` |
-| Color Ramp | `ramp_constant`, `ramp_linear`, `ramp_cardinal`; `ramp_linear_3` for three stops |
-| Math, Vector Math, Mix Color | `math/…`, `vector_math/…`, `mix/…` |
-| Layer Weight | `layer_weight/fresnel`, `layer_weight/facing` |
-| Mix Shader, Add Shader | `mix_shader`, `add_shader` — on colours |
+| Lit master stack (Base Color, Metallic, Smoothness, Normal, Emission, Occlusion, Alpha) | `lit` |
+| Main Light (direction, colour, shadow attenuation), Ambient | `light` |
+| Custom lighting: `LightingLambert` + ambient | `lambert` |
+| Reflection Probe | `reflection_probe` |
+| Sample Texture 2D | `texture` (the material's map) · `tex_image/0…3` (the group's maps) |
+| Position, Normal, View Direction, UV | `geometry`, `uv_map` |
+| Sample Gradient | `ramp_constant`, `ramp_linear`, `ramp_cardinal`; `ramp_linear_3` for three stops |
+| Math, Vector, Lerp, Blend | `math/…`, `vector_math/…`, `mix/…` |
+| Fresnel Effect | `fresnel`, `layer_weight/…` |
 
 Differences that change values:
 
-- **Lighting** — no screen-traced GI, virtual shadow maps or probes. `principled`
-  does include indirect specular from the World, so do not add an `environment`
-  node on top of it.
-- **View transform** — match the source under **Post → Tone**. AgX is Blender's
-  base AgX; its Looks (High Contrast and others) have no equivalent.
-- **Principled** — coat, transmission, subsurface, anisotropy and thin film are
-  absent. At `ior` 1.5 a 3.6 material's Specular transfers unchanged.
-  `spec_clamp` is EEVEE's light clamp; `reflection_lod` and `unity_direct` are
-  for converted game stages.
-- **Shading is colour** — `mix_shader` is `mix(a, b, fac)` on `vec3f`. A tree that
-  mixes closures and evaluates afterwards has to be rewritten Shader-to-RGB
-  style: evaluate each branch to a colour, then combine.
+- **Lighting** — no screen-traced GI. `lit` includes the reflection probe (or the
+  sky) itself, so do not add a `reflection_probe` on top of it.
+- **View transform** — match the source under **Post → Tone**.
+- **Lit** — Unity's metallic workflow: dielectric specular is 0.04, and there is
+  no clear coat or sheen. Alpha below 1 keeps the reflection (Unity's Preserve
+  Specular Lighting); pair it with a group blending **premultiplied**.
+- **Shading is colour** — every node returns a colour, so a toon look evaluates
+  its light (`lambert`, `light`) and combines colours with `mix/…`.
 - **Too many nodes** — fold constant subtrees, drop reroutes and frames, flatten
-  node groups. Normal Map, Displacement and AOV Output have no equivalent.
+  node groups. Displacement and AOV-style outputs have no equivalent.
 - **Per-character images** (highlight maps, ID masks, face SDFs) do not transfer.
   Where an ID mask picks regions, use style groups instead.
 
@@ -993,8 +996,6 @@ One type id per operation, written `family/operation`.
 | `rgb_curve` | `color` `fac` `y0` `y1` `y2` `y3` `y4` | `color` |
 | `uv_map` | — | `uv` |
 | `normal_map` | `color` `strength` | `normal` |
-| `bsdf_transparent` | — | `color` |
-| `bsdf_diffuse` | `color` | `color` |
 | `attribute` | — | `color` `fac` |
 | `object_info` | — | `location` `color` `random` |
 | `light_path` | — | `is_camera_ray` `is_shadow_ray` `ray_depth` |
@@ -1014,17 +1015,13 @@ One type id per operation, written `family/operation`.
 | `ramp_constant_aa` | `fac` `edge` `color0` `color1` | `color` `alpha` `fac_out` |
 | `ramp_linear_3` | `fac` `pos0` `color0` `pos1` `color1` `pos2` `color2` | `color` `alpha` `fac_out` |
 | `ramp_tri` | `fac` | `value` |
-| `emission` | `color` `strength` | `color` |
-| `add_shader` | `a` `b` | `color` |
-| `mix_shader` | `fac` `a` `b` | `color` |
 | `fresnel` | `ior` | `value` |
-| `environment` | `vector` `roughness` | `color` |
-| `shader_to_rgb_diffuse` | — | `value` |
-| `shader_to_rgb` | — | `color` |
+| `lambert` | `normal` | `color` `value` |
 | `separate_xyz` | `vector` | `x` `y` `z` |
 | `vect_cross` | `a` `b` | `vector` |
 | `mapping` | `vector` `loc` `rot` `scl` | `vector` |
 | `bump` | `strength` `height` `normal` | `vector` |
 | `tex_noise` | `vector` `scale` `detail` `roughness` `distortion` | `value` |
 | `tex_gradient` | `vector` | `value` |
-| `principled` | `base_color` `metallic` `roughness` `ior` `specular_ior_level` `sheen_weight` `sheen_tint` `emission_color` `emission_strength` `normal` `spec_clamp` `reflection_lod` `unity_direct` | `color` |
+| `lit` | `base_color` `metallic` `smoothness` `occlusion` `emission` `alpha` `normal` | `color` `alpha` |
+| `reflection_probe` | `vector` `smoothness` | `color` |

@@ -23,7 +23,7 @@ import { particleEffectWgsl, type ParticleClass } from "@/lib/unity-particles"
 import { writePmxDocument, type PmxDocument, type PmxMaterial, type PmxVertex, type ShaderGraph, type StyleGroup, UNLIT_GRAPH } from "reze-engine"
 import { libraryGraph } from "@/lib/materials"
 import { relFilePath } from "@/lib/scene-files"
-import { SURFACE_LOOKS, stageLookFor } from "@/lib/stage-style"
+import { LOOK_STATE, SURFACE_LOOKS, stageLookFor } from "@/lib/stage-style"
 
 const PMX_PER_METRE = 12.5
 /** Lumens per watt at 555 nm: a light stated in candela, as glTF states one,
@@ -705,9 +705,9 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
       const { color, strength } = colourAndStrength(colour)
       sun = {
         color,
-        // Blender's sun strength is W/m², and the engine's sun term is
-        // strength·albedo·N·L/π — the same law, so the number carries as it is.
-        strength: Math.round(strength * 1000) / 1000,
+        // Blender's sun strength is W/m² (albedo·N·L/π); the engine's is
+        // Unity's intensity (albedo·N·L), so it carries divided by π.
+        strength: Math.round((strength / Math.PI) * 1000) / 1000,
         elevation: Math.round((Math.asin(Math.max(-1, Math.min(1, -travel[1]))) * 180) / Math.PI * 10) / 10,
         azimuth: Math.round((((Math.atan2(-travel[0], -travel[2]) * 180) / Math.PI) % 360 + 360) % 360 * 10) / 10,
         shadow: ex.shadow ?? true,
@@ -722,7 +722,8 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
       name: node.name ?? light.name ?? "Lamp",
       position: position.map((v) => Math.round(v * 1000) / 1000),
       color,
-      intensity: Math.round(strength * perMetre * PMX_PER_METRE * PMX_PER_METRE * 1000) / 1000,
+      // Blender's units over π, as the sun above
+      intensity: Math.round(((strength * perMetre * PMX_PER_METRE * PMX_PER_METRE) / Math.PI) * 1000) / 1000,
       radius: Math.round(range * PMX_PER_METRE * 1000) / 1000,
     }
     if (light.type === "spot") {
@@ -880,14 +881,8 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
  * picture, which `strength` scales — a lamp shade at 3 or a monitor at 8 is
  * brighter than white and blooms.
  *
- * Its highlights are the game's: no spec clamp, because a lamp's glint on a
- * polished floor IS the blown-out highlight the game draws — the clamp the
- * cast's graphs carry against bump-aliased fireflies capped every lamp at a
- * dull sheen here — and roughness picks the reflection's blur by Unity's probe
- * curve, which the stage was tuned under (reflection_lod 1). Its lamps and sun
- * shade with URP's direct-light BRDF (unity_direct 1): the lobe the game drew
- * a candelabra's pool on the marble with, where the engine's own took the
- * roughness unsquared and spread every lamp into a faint wash.
+ * Shaded by Lit, Unity's own PBR — the model the stage was authored under:
+ * occlusion from the map's red channel, metal from blue, smoothness 1 − green.
  */
 export function stagePbrGraph(strength: number): ShaderGraph {
   return {
@@ -900,32 +895,31 @@ export function stagePbrGraph(strength: number): ShaderGraph {
       { id: "base", type: "mix/multiply", inputs: { fac: 1.0 } },
       { id: "orm", type: "tex_image/1" },
       { id: "ch", type: "separate_color" },
-      { id: "ao_rgb", type: "combine_color" },
-      { id: "albedo", type: "mix/multiply", inputs: { fac: 1.0 } },
+      // glTF's roughness, as Unity's smoothness
+      { id: "smooth", type: "math/subtract", inputs: { a: 1.0 } },
       { id: "relief", type: "tex_image/0" },
       { id: "relief_scale", type: "material_shininess" },
       { id: "normal", type: "normal_map" },
       { id: "glow", type: "tex_image/2" },
-      { id: "principled", type: "principled", inputs: { specular_ior_level: 0.5, reflection_lod: 1.0, unity_direct: 1.0, emission_strength: strength } },
+      { id: "emit", type: "vector_math/scale", inputs: { scale: strength } },
+      { id: "lit", type: "lit" },
     ],
     links: [
       { from: { node: "tex", socket: "color" }, to: { node: "base", socket: "a" } },
       { from: { node: "mat", socket: "color" }, to: { node: "base", socket: "b" } },
       { from: { node: "orm", socket: "color" }, to: { node: "ch", socket: "color" } },
-      { from: { node: "ch", socket: "r" }, to: { node: "ao_rgb", socket: "r" } },
-      { from: { node: "ch", socket: "r" }, to: { node: "ao_rgb", socket: "g" } },
-      { from: { node: "ch", socket: "r" }, to: { node: "ao_rgb", socket: "b" } },
-      { from: { node: "base", socket: "color" }, to: { node: "albedo", socket: "a" } },
-      { from: { node: "ao_rgb", socket: "color" }, to: { node: "albedo", socket: "b" } },
-      { from: { node: "albedo", socket: "color" }, to: { node: "principled", socket: "base_color" } },
-      { from: { node: "ch", socket: "b" }, to: { node: "principled", socket: "metallic" } },
-      { from: { node: "ch", socket: "g" }, to: { node: "principled", socket: "roughness" } },
+      { from: { node: "base", socket: "color" }, to: { node: "lit", socket: "base_color" } },
+      { from: { node: "ch", socket: "r" }, to: { node: "lit", socket: "occlusion" } },
+      { from: { node: "ch", socket: "b" }, to: { node: "lit", socket: "metallic" } },
+      { from: { node: "ch", socket: "g" }, to: { node: "smooth", socket: "b" } },
+      { from: { node: "smooth", socket: "value" }, to: { node: "lit", socket: "smoothness" } },
       { from: { node: "relief", socket: "color" }, to: { node: "normal", socket: "color" } },
       { from: { node: "relief_scale", socket: "value" }, to: { node: "normal", socket: "strength" } },
-      { from: { node: "normal", socket: "normal" }, to: { node: "principled", socket: "normal" } },
-      { from: { node: "glow", socket: "color" }, to: { node: "principled", socket: "emission_color" } },
+      { from: { node: "normal", socket: "normal" }, to: { node: "lit", socket: "normal" } },
+      { from: { node: "glow", socket: "color" }, to: { node: "emit", socket: "a" } },
+      { from: { node: "emit", socket: "vector" }, to: { node: "lit", socket: "emission" } },
     ],
-    output: { node: "principled", socket: "color" },
+    output: { node: "lit", socket: "color" },
   }
 }
 
@@ -944,10 +938,10 @@ export function stageSheetGraph(strength: number): ShaderGraph {
     tags: ["stage", "unlit"],
     nodes: [
       { id: "glow", type: "tex_image/2" },
-      { id: "emit", type: "emission", inputs: { strength } },
+      { id: "emit", type: "vector_math/scale", inputs: { scale: strength } },
     ],
-    links: [{ from: { node: "glow", socket: "color" }, to: { node: "emit", socket: "color" } }],
-    output: { node: "emit", socket: "color" },
+    links: [{ from: { node: "glow", socket: "color" }, to: { node: "emit", socket: "a" } }],
+    output: { node: "emit", socket: "vector" },
   }
 }
 
@@ -968,14 +962,14 @@ export function stageLightSheetGraph(strength: number): ShaderGraph {
     nodes: [
       { id: "glow", type: "tex_image/2" },
       { id: "light", type: "vector_math/scale", inputs: {} },
-      { id: "emit", type: "emission", inputs: { strength } },
+      { id: "emit", type: "vector_math/scale", inputs: { scale: strength } },
     ],
     links: [
       { from: { node: "glow", socket: "color" }, to: { node: "light", socket: "a" } },
       { from: { node: "glow", socket: "alpha" }, to: { node: "light", socket: "scale" } },
-      { from: { node: "light", socket: "vector" }, to: { node: "emit", socket: "color" } },
+      { from: { node: "light", socket: "vector" }, to: { node: "emit", socket: "a" } },
     ],
-    output: { node: "emit", socket: "color" },
+    output: { node: "emit", socket: "vector" },
   }
 }
 
@@ -1113,7 +1107,7 @@ export function effectSheetGraph(name: string, e: EffectSpec): ShaderGraph {
   const additive = e.dstBlend <= 1.0001
   const cover = Math.max((e.dstBlend - 1) / 9, 1e-3)
   // additive: the light a·rgb; laid over: colour rgb/cover at opacity cover·a
-  const out = node("emission", { color: additive ? vscale(rgb, a) : vscale(rgb, 1 / cover), strength: 1 }, "color")
+  const out = node("vector_math/scale", { a: additive ? vscale(rgb, a) : vscale(rgb, 1 / cover), scale: 1 }, "vector")
   return {
     version: 1,
     name: `Effect ${name}`,
@@ -1184,7 +1178,7 @@ export function fresnelGraph(name: string, fr: FresnelSpec): ShaderGraph {
   const mask = node("tex_image/2", {}, "color")
   const tint: [number, number, number] = [fr.color[0] ?? 1, fr.color[1] ?? 1, fr.color[2] ?? 1]
   const rgb = node("vector_math/scale", { a: node("vector_math/multiply", { a: mask, b: tint }, "vector"), scale: f }, "vector")
-  const out = node("emission", { color: rgb, strength: 1 }, "color")
+  const out = node("vector_math/scale", { a: rgb, scale: 1 }, "vector")
   // AN OPACITY, full, so it draws in the transparent phase: light added in the
   // opaque one wrote depth, and X316's glow cone hid the window glows behind it
   // (the game's pass is ZWrite Off). The additive blend ignores the value.
@@ -1273,7 +1267,7 @@ export function rippletGraph(name: string, r: RippleSpec): ShaderGraph {
     const v = mul(node("math/arccosine", { a: node("math/minimum", { a: node("math/maximum", { a: at(rsep, "y"), b: -1 }, "value"), b: 1 }, "value") }, "value"), 1 / Math.PI)
     const probe = node("tex_image/1", { uv: node("combine_xyz", { x: u, y: v, z: 0 }, "vector") }, "color")
     sky = node("vector_math/scale", { a: probe, scale: mul(at(probe, "alpha"), r.env.range) }, "vector")
-  } else sky = node("environment", { vector: bounce, roughness: 0 }, "color")
+  } else sky = node("reflection_probe", { vector: bounce, smoothness: 1 }, "color")
   const mirrored = node("vector_math/multiply", { a: node("vector_math/scale", { a: sky, scale: r.cube * r.cube }, "vector"), b: refl }, "vector")
   const light = node("light", {}, "direction")
   const ndl = node("vector_math/dot", { a: n, b: light }, "value")
@@ -1281,7 +1275,7 @@ export function rippletGraph(name: string, r: RippleSpec): ShaderGraph {
   const [cr, cg, cb, ca] = r.color
   const body = node("vector_math/multiply_add", { a: lit, b: [cr, cg, cb], c: [cr, cg, cb] }, "vector")
   const colour = node("vector_math/scale", { a: node("vector_math/add", { a: mirrored, b: body }, "vector"), scale: r.intensity * (r.tint ?? 1) }, "vector")
-  const out = node("emission", { color: colour, strength: 1 }, "color")
+  const out = node("vector_math/scale", { a: colour, scale: 1 }, "vector")
   // opaque where the reflection's own luminance and _Color.a reach 1; X348's pool is about 0.77
   const floor = 0.2126729 * rr + 0.7151522 * rg + 0.072175 * rb + (ca ?? 1)
   return {
@@ -1384,7 +1378,7 @@ export function seaGraph(name: string, s: SeaSpec): ShaderGraph {
     a: node("vector_math/multiply", { a: node("texture", {}, "color"), b: [s.color[0], s.color[1], s.color[2]] }, "vector"),
     b: [f.color[0], f.color[1], f.color[2]],
   }, "color")
-  const lit = node("principled", { base_color: base, normal, roughness: 1, metallic: 0, specular_ior_level: 0 }, "color")
+  const lit = node("lit", { base_color: base, normal, smoothness: 0 }, "color")
 
   // the caustics, on the world (x, z)
   const c = s.caustics
@@ -1397,7 +1391,7 @@ export function seaGraph(name: string, s: SeaSpec): ShaderGraph {
   const sun = node("light", {}, "color")
   const caustics = node("vector_math/multiply", { a: node("vector_math/scale", { a: node("vector_math/minimum", { a: tapA, b: tapB }, "vector"), scale: mul(shallow, c.brightness) }, "vector"), b: sun }, "vector")
 
-  const out = node("emission", { color: node("vector_math/add", { a: lit, b: caustics }, "vector"), strength: 1 }, "color")
+  const out = node("vector_math/scale", { a: node("vector_math/add", { a: lit, b: caustics }, "vector"), scale: 1 }, "vector")
   return {
     version: 1,
     name: `Sea ${name}`,
@@ -1485,9 +1479,11 @@ export function glbStyleGroups(materials: GlbMaterial[]): StyleGroup[] {
     // drew as the faintest ripple of it.
     const named = !m.look && !m.unlit ? stageLookFor(m.name) : null
     const look = m.look ?? (named && SURFACE_LOOKS.has(named) ? named.toLowerCase() : null)
-    if (look && libraryGraph(look === "glass" ? "Glass" : look === "water" ? "Water" : "Foliage")) {
-      const label = look === "glass" ? "Glass" : look === "water" ? "Water" : "Foliage"
-      add(`look:${label}`, () => ({ id: `stage-${label.toLowerCase()}`, label, materials: [], graph: structuredClone(libraryGraph(label)!), renderClass: "auto", ...(label === "Foliage" ? { alphaMode: "hashed" as const } : {}) }), m.name)
+    // The file's look word (glass / water / foliage) or a surface look's name,
+    // as the library entry it means.
+    const label = look ? ({ glass: "Glass", water: "Water", foliage: "Foliage" } as Record<string, string>)[look] ?? named ?? null : null
+    if (look && label && libraryGraph(label)) {
+      add(`look:${label}`, () => ({ id: `stage-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, label, materials: [], graph: structuredClone(libraryGraph(label)!), renderClass: "auto", ...LOOK_STATE[label] }), m.name)
       continue
     }
     if (m.unlit && m.emissiveStrength === 0) {

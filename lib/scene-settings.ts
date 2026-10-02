@@ -66,7 +66,7 @@ export type SceneSettings = {
   /** The cast's own fill. A stage's rig claims it like the sun. */
   fill?: FillLight & { stage?: StageClaim<FillLight> }
   /** The game's bloom (the engine's only one): what qualifies, how far it
-   *  spreads (0–1; the game is 0.77), how much (1 is the game), its tint. */
+   *  spreads (0–1, URP's Scatter; 0.8 is the game's 0.77), how much (1 is the game), its tint. */
   bloom: {
     enabled: boolean
     threshold: number
@@ -101,11 +101,6 @@ export type SceneSettings = {
   view: { transform: ViewTransform; exposure: number }
   /**
    * Sensor grain over the rendered scene, 0–1.
-   *
-   * Stored as an amount only. WHETHER IT MOVES is not a preference — it is a
-   * fact about the footage the scene stands in: a still photograph's grain is
-   * frozen, and CG noise crawling over a frozen picture makes the rendering look
-   * more alive than the thing it is standing in. So the sync derives it.
    */
   grain: { amount: number }
   /** Post-tonemap color grade. */
@@ -259,9 +254,9 @@ export function viewFrom(v: { transform?: unknown; exposure?: unknown } | undefi
   }
 }
 
-/** The bloom a new scene starts with: the game's (threshold 0.7, scatter 0.77,
+/** The bloom a new scene starts with: the game's (threshold 0.7, scatter 0.8 — its 0.77,
  *  white, intensity 1). */
-export const DEFAULT_BLOOM: SceneSettings["bloom"] = { enabled: true, threshold: 0.7, scatter: 0.77, intensity: 1, color: "#ffffff" }
+export const DEFAULT_BLOOM: SceneSettings["bloom"] = { enabled: true, threshold: 0.7, scatter: 0.8, intensity: 1, color: "#ffffff" }
 
 /** A stored bloom block as today's. The old Blender fields (knee, radius) are
  *  dropped; what is missing comes from the default. */
@@ -271,7 +266,7 @@ export function bloomFrom(b: Partial<Record<string, unknown>> | undefined): Scen
   return {
     enabled: typeof b?.enabled === "boolean" ? b.enabled : d.enabled,
     threshold: num(b?.threshold, d.threshold),
-    scatter: num(b?.scatter, d.scatter ?? 0.77),
+    scatter: num(b?.scatter, d.scatter ?? 0.8),
     intensity: num(b?.intensity, d.intensity),
     color: typeof b?.color === "string" && /^#[0-9a-f]{6}$/i.test(b.color) ? b.color : d.color,
   }

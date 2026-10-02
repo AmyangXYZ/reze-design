@@ -32,6 +32,7 @@ import {
   trimToMotion,
   withSpecialGroups,
 } from "@/lib/scene-host"
+import { type BundleFile, readBundleFile } from "@/lib/uploads"
 import type {
   BundleProgress,
   EngineModelInfo,
@@ -164,8 +165,8 @@ export function useEngine(
   const [groupsByModel, setGroupsByModel] = useState<Record<string, StyleGroup[]>>({})
   // Callbacks need the CURRENT model list without re-creating themselves per render (memoized
   const modelsRef = useRef<EngineModelInfo[]>([])
-  // The scene's unzipped asset bundle, for resolving clips and audio by path.
-  const bundleRef = useRef<File[] | null>(null)
+  // The scene's open asset bundle, for resolving clips and audio by path.
+  const bundleRef = useRef<BundleFile[] | null>(null)
   // THE load generation: bumped by boot and by every swap, so a superseded load
   // — either kind — stops touching the engine and state at its next step.
   const swapToken = useRef(0)
@@ -1271,13 +1272,17 @@ export function useEngine(
     setLyricsClip(null)
   }, [])
 
-  /** A file out of the scene's asset bundle, by its bundle-relative path. */
-  const bundleFile = useCallback((path: string): File | null => bundleRef.current?.find((f) => f.name === path) ?? null, [])
+  /** A file out of the scene's asset bundle, by its bundle-relative path — read out
+   *  of its zip now, if it is still in one. */
+  const bundleFile = useCallback(async (path: string): Promise<File | null> => {
+    const packed = bundleRef.current?.find((f) => f.name === path)
+    return packed ? readBundleFile(packed) : null
+  }, [])
 
-  /** The whole unzipped bundle. Publishing a scene that came from one re-packs
+  /** The whole bundle, unread. Publishing a scene that came from one re-packs
    *  these, so a forked scene owns its assets instead of pointing at someone
    *  else's — which would break the moment they deleted theirs. */
-  const bundleFiles = useCallback((): File[] => bundleRef.current ?? [], [])
+  const bundleFiles = useCallback((): BundleFile[] => bundleRef.current ?? [], [])
 
   /** Load a VMD from a URL (a bundled default clip) onto one model, posed at frame 0 but PAUSED */
   const loadVmdUrl = useCallback(async (modelId: string, name: string, url: string): Promise<string | null> => {

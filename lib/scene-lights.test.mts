@@ -17,6 +17,7 @@ import { EMPTY_SCENE_DOC } from "@/lib/default-scene"
 import { builtinEffect } from "@/lib/effects"
 import { libraryGraph } from "@/lib/materials"
 import { sceneOwned } from "@/lib/scene-settings"
+import { applyLampFrame, lampAt, setLampRig } from "@/lib/timeline/lights"
 
 const LAMPS: SceneLight[] = [
   { id: "a", name: "Candle", position: [1.5, 20, -3], color: "#ffd9a0", intensity: 1.4, radius: 18 },
@@ -236,6 +237,81 @@ const read = (doc: SceneDoc) => parseSceneDoc(doc, builtinEffect, libraryGraph).
   const back = parseSceneDoc(doc, builtinEffect, libraryGraph).state.backgroundEffects
   assert.equal(back[0].stage, "stage-id", "the stage that brought it survives the document")
   assert.deepEqual(back[0].params, { TURN: 30 })
+}
+
+// ── A game's lamp: its bulb, its layers and its keys survive the trip ──
+// The importer writes these from the recording; the parser is their only door,
+// so it has to keep good keys, drop a bad one, and put them in frame order.
+{
+  const rig: SceneLight = {
+    id: "r",
+    name: "Rim",
+    position: [4, 14, 8],
+    color: "#4080ff",
+    intensity: 321614,
+    radius: 6.1,
+    near: 30.04,
+    layers: 0x40000001,
+    stage: "113701",
+    track: { position: [[1, 4, 14, 8], [30, 0, 12, 10]], radius: [[1, 6.1], [30, 9]] },
+  }
+  const back = read(docWith([rig]))
+  assert.deepEqual(back, [rig], "bulb, layers and track come back exactly")
+  const messy = read(
+    docWith([
+      {
+        ...rig,
+        near: Number.NaN,
+        track: {
+          position: [[30, 0, 12, 10], [1, 4, 14, 8], [2, Number.NaN, 0, 0]],
+          color: [[1, "red"]],
+          intensity: [],
+        },
+      } as SceneLight,
+    ]),
+  )
+  assert.equal(messy[0].near, undefined, "a bulb that is not a number is dropped")
+  assert.deepEqual(messy[0].track, { position: [[1, 4, 14, 8], [30, 0, 12, 10]] }, "bad keys go, good ones sort")
+}
+
+// ── A keyed lamp at a frame ──
+{
+  const l: SceneLight = {
+    id: "k",
+    name: "k",
+    position: [0, 0, 0],
+    color: "#000000",
+    intensity: 1,
+    radius: 1,
+    track: { position: [[10, 0, 0, 0], [20, 10, 20, 30]], intensity: [[10, 2]], color: [[0, "#000000"], [10, "#ff0000"]] },
+  }
+  assert.deepEqual(lampAt(l, 15).position, [5, 10, 15], "linear between keys")
+  assert.deepEqual(lampAt(l, 0).position, [0, 0, 0], "held before the first")
+  assert.deepEqual(lampAt(l, 99).position, [10, 20, 30], "held after the last")
+  assert.equal(lampAt(l, 3).intensity, 2, "a single key holds everywhere")
+  assert.equal(lampAt(l, 5).color, "#800000", "colour keys blend as bytes")
+  assert.equal(lampAt(l, 5).radius, 1, "an unkeyed channel keeps its field")
+  const still = { ...l, track: undefined }
+  assert.equal(lampAt(still, 5), still, "an unkeyed lamp is itself")
+
+  // The rig: one write when set, one per MOVED frame when keyed, none when not.
+  const writes: unknown[][] = []
+  let captures = 0
+  const engine = { setLights: (x: unknown[]) => void writes.push(x), captureReflectionProbe: () => void captures++ }
+  setLampRig(engine, { fixed: ["sun"], lamps: [l], toEngine: (x) => x.position })
+  assert.deepEqual(writes[0], ["sun", [0, 0, 0]])
+  assert.equal(captures, 1, "setting the lamps re-captures the reflection probe")
+  applyLampFrame(engine, 15)
+  applyLampFrame(engine, 15)
+  assert.equal(writes.length, 2, "a frame the lamps are already at writes nothing")
+  assert.equal(captures, 1, "playing keyed lamps never re-captures it")
+  assert.deepEqual(writes[1], ["sun", [5, 10, 15]], "the daylight rides along")
+  setLampRig(engine, { fixed: [], lamps: [l], toEngine: (x) => x.position })
+  assert.deepEqual(writes[2], [[5, 10, 15]], "a new list is sampled at the frame last drawn")
+  const quiet = { setLights: (x: unknown[]) => void writes.push(x), captureReflectionProbe: () => {} }
+  setLampRig(quiet, { fixed: [], lamps: [still], toEngine: (x) => x.id })
+  applyLampFrame(quiet, 40)
+  assert.equal(writes.length, 4, "an unkeyed rig is written once and never per frame")
 }
 
 console.log("scene-lights: ok")

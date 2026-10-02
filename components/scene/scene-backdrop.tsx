@@ -16,7 +16,7 @@ export function SceneBackdrop({
   className,
   style,
 }: {
-  /** The flat backdrop or plate in the shot, or null. Never the dome — that one
+  /** The flat backdrop in the shot, or null. Never the dome — that one
    *  is the engine's, drawn in-canvas. */
   media: BackdropMedia | null
   /** useMediaBackdrop's answer: the picture is an animation it draws… */
