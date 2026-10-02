@@ -35,6 +35,7 @@ const en = {
     import: "Import scene",
     reset: "Reset to default scene",
     badFile: "Not a Reze Design scene file",
+    exportWaits: "Exporting once the scene has finished loading…",
   },
   account: {
     label: "Account",
@@ -1019,6 +1020,7 @@ const zh: Dictionary = {
     import: "导入场景",
     reset: "恢复默认场景",
     badFile: "不是 Reze Design 场景文件",
+    exportWaits: "场景加载完成后导出…",
   },
   account: {
     label: "账户",

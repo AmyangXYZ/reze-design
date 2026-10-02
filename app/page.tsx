@@ -6234,17 +6234,49 @@ export default function Lab() {
       { graph: graphRef, effect: effectRef },
     )
 
+  // ── Writing the scene out waits for it to be whole ──
+  //
+  // Export and Publish read the live model list, and that list fills as models
+  // land: the cast first, the stage — the largest thing in a scene by far —
+  // last. Taken mid-load, the document had no stage: a fork exported seconds
+  // after it opened lost its room, and came back from Import without it. So
+  // both wait for the load, and then read the scene as it stands THEN — through
+  // `writers`, refreshed every render — not as the click's render saw it, when
+  // the stage and the light it claims were not there yet.
+  const writers = useRef<{ publish: () => ScenePublishSource; export: () => Promise<void> } | null>(null)
+  const loadGate = useRef<{ open: boolean; waiting: (() => void)[] }>({ open: false, waiting: [] })
+  const sceneWhole = (): Promise<void> =>
+    loadGate.current.open ? Promise.resolve() : new Promise((resolve) => loadGate.current.waiting.push(resolve))
+
   /** What the publish dialog packs and uploads: the same slots the save path
    *  collects, with the doc deferred until the bundle has a URL. */
-  const collectScenePublish = (): ScenePublishSource => {
+  const publishSourceNow = (): ScenePublishSource => {
     const slots = collectLabSlots()
     return {
       entries: slots.entries,
       makeDoc: (bundle) => makeSceneDoc(slots, bundle),
     }
   }
+  const collectScenePublish = async (): Promise<ScenePublishSource> => {
+    await sceneWhole()
+    return writers.current!.publish()
+  }
 
+  const exporting = useRef(false)
   const exportScene = async () => {
+    // One export at a time: a second click while this one waits on the load
+    // would download the scene twice.
+    if (exporting.current) return
+    exporting.current = true
+    try {
+      if (!loadGate.current.open) toast(t.sceneFile.exportWaits)
+      await sceneWhole()
+      await writers.current!.export()
+    } finally {
+      exporting.current = false
+    }
+  }
+  const exportNow = async () => {
     const slots = collectLabSlots()
     // bundle: null — the assets travel BESIDE the doc in the same zip, and
     // import points the parsed scene at the zip it came from.
@@ -6260,6 +6292,16 @@ export default function Lab() {
     ])
     downloadBlob(zip, sceneZipFileName(sceneName))
   }
+  // The writers first, then the gate: a waiter released below must find this
+  // render's collectors, not the ones from before the stage landed.
+  useEffect(() => {
+    writers.current = { publish: publishSourceNow, export: exportNow }
+  })
+  useEffect(() => {
+    const gate = loadGate.current
+    gate.open = ready && !forkPending
+    if (gate.open) for (const resolve of gate.waiting.splice(0)) resolve()
+  }, [ready, forkPending])
 
   /**
    * A zip with `scene.json` beside its assets. Loaded exactly like a fork — parse the

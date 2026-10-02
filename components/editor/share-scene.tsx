@@ -126,7 +126,7 @@ export function ShareSceneDialog(props: {
   /** The id a publish landed on, so a second publish in the same session
    *  updates rather than making a third scene. */
   onPublished?: (id: string, meta: PublishedMeta) => void
-  collect: () => ScenePublishSource
+  collect: () => Promise<ScenePublishSource>
   unpublished: (visibility: Visibility) => UnpublishedUse[]
   /** Closes this dialog and opens the gallery — offered once the scene is up. */
   onGallery: () => void
@@ -172,7 +172,7 @@ function ShareSceneForm({
   /** The id a publish landed on, so a second publish in the same session
    *  updates rather than making a third scene. */
   onPublished?: (id: string, meta: PublishedMeta) => void
-  collect: () => ScenePublishSource
+  collect: () => Promise<ScenePublishSource>
   /** Looks this scene's readers could not resolve, under the visibility it is
    *  about to be published with. Publishing is blocked while this is non-empty
    *  — see lib/refs.ts for why. */
@@ -249,7 +249,8 @@ function ShareSceneForm({
     let stage: Step = "packing"
     try {
       setStep("packing")
-      const { entries, makeDoc } = collect()
+      // Waits for the scene to finish loading: published mid-load, it had no stage.
+      const { entries, makeDoc } = await collect()
       let bundle: string | null = null
       let bundleKey: string | null = null
       let bundleBytes = 0
