@@ -6,6 +6,7 @@ import {
   BufferTarget,
   StreamTarget,
   CanvasSource,
+  canEncodeVideo,
   getFirstEncodableAudioCodec,
   getFirstEncodableVideoCodec,
   Mp4OutputFormat,
@@ -66,10 +67,20 @@ export type ExportPlane = {
   frameHeight: number
 }
 
+/** How many bits the encoder may spend — see videoBitrate. */
+export type ExportBitrate = "standard" | "high"
+/** The MP4's video codec. WebM is always VP9, a PNG sequence has none. */
+export type ExportCodec = "h264" | "hevc"
+
 export type ExportSettings = {
   width: number
   height: number
   fps: number
+  /** Absent = "standard", what every export before the choice existed used. */
+  bitrate?: ExportBitrate
+  /** Absent = "h264". A codec the browser cannot encode at this size falls
+   *  back to the next that it can, rather than failing the export. */
+  codec?: ExportCodec
   audioSource: ExportAudioSource
   /** Draw the Reze Design wordmark bottom-right. */
   watermark: boolean
@@ -132,9 +143,24 @@ const yieldToUI = (): Promise<void> => {
   return s?.yield ? s.yield() : new Promise<void>((r) => setTimeout(r, 0))
 }
 
-/** ~0.1 bit/pixel/frame — 1080p60 ≈ 12 Mbps, 4K60 ≈ 50 Mbps — clamped to sane bounds. */
-const videoBitrate = (w: number, h: number, fps: number) =>
-  Math.round(Math.min(80e6, Math.max(6e6, w * h * fps * 0.1)))
+/**
+ * The encoder's target, in bits per second.
+ *
+ * Standard is ~0.1 bit/pixel/frame — 1080p60 ≈ 12 Mbps, 4K60 ≈ 50 Mbps — which
+ * is what every export used before this was a choice. High doubles it (4K60 ≈
+ * 100 Mbps, YouTube's 4K60 upload range and then some) with the ceiling raised
+ * to match: particles, grain and fine outlines are what run out of bits first,
+ * and they are this app's whole look. Variable bitrate either way, so a quiet
+ * shot spends less than this and the file grows only where the picture needs it.
+ */
+export const videoBitrate = (w: number, h: number, fps: number, level: ExportBitrate = "standard") =>
+  level === "high"
+    ? Math.round(Math.min(160e6, Math.max(12e6, w * h * fps * 0.2)))
+    : Math.round(Math.min(80e6, Math.max(6e6, w * h * fps * 0.1)))
+
+/** Whether this browser can encode HEVC at this size — Chromium does where the
+ *  GPU or OS provides an encoder, which is most Windows and macOS machines. */
+export const canEncodeHevc = (width: number, height: number) => canEncodeVideo("hevc", { width, height })
 
 // Watermark: "REZE DESIGN" wordmark, top-left
 
@@ -558,7 +584,8 @@ async function muxerSink(opts: {
   const { width, height, target } = settings
   const webm = target === "webm"
 
-  const videoCodec = await getFirstEncodableVideoCodec(webm ? ["vp9", "vp8"] : ["avc", "hevc", "av1"], {
+  const order = webm ? (["vp9", "vp8"] as const) : settings.codec === "hevc" ? (["hevc", "avc", "av1"] as const) : (["avc", "hevc", "av1"] as const)
+  const videoCodec = await getFirstEncodableVideoCodec([...order], {
     width,
     height,
   })
@@ -571,7 +598,7 @@ async function muxerSink(opts: {
   })
   const videoSource = new CanvasSource(composite, {
     codec: videoCodec,
-    bitrate: videoBitrate(width, height, fps),
+    bitrate: videoBitrate(width, height, fps, settings.bitrate),
     // mediabunny splits colour and alpha on the CPU when the encoder cannot
     // keep alpha itself, and emits the alpha as VP9 side data — which is what
     // makes the track come out marked transparent.

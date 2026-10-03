@@ -345,6 +345,9 @@ const en = {
     renderVideo: "Render video",
     capturePng: "Capture PNG",
     range: "Range",
+    /** Export bitrate; the options are the rate itself, at the current size. */
+    bitrate: "Bitrate",
+    codec: "Codec",
     watermark: "Watermark",
     /** The toggle that writes the AE script beside the video. */
     aeScript: "AE composition script",
@@ -1328,6 +1331,8 @@ const zh: Dictionary = {
     renderVideo: "渲染视频",
     capturePng: "截取 PNG",
     range: "区间",
+    bitrate: "码率",
+    codec: "编码",
     watermark: "水印",
     aeScript: "AE 合成脚本",
     shareStats: "分享导出统计",

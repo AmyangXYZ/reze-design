@@ -18,10 +18,14 @@ import {
 } from "@/components/ui/select"
 import type { BackdropMedia } from "@/lib/backdrop"
 import {
+  canEncodeHevc,
   captureStill,
   exportAeScript,
   exportVideo,
+  videoBitrate,
   type ExportAudioSource,
+  type ExportBitrate,
+  type ExportCodec,
   type ExportPlane,
   type ExportProgress,
   type ExportTarget,
@@ -88,8 +92,8 @@ const QUALITY_LABELS: Record<Quality, string> = { "1080p": "1080p", "1440p": "14
  * putting the panel into a state with no matching option.
  */
 const EXPORT_PREFS_KEY = "reze-design.export"
-type ExportPrefs = { aspect: Aspect; quality: Quality; watermark: boolean }
-const EXPORT_DEFAULTS: ExportPrefs = { aspect: "2.39:1", quality: "4k", watermark: true }
+type ExportPrefs = { aspect: Aspect; quality: Quality; watermark: boolean; bitrate: ExportBitrate; codec: ExportCodec }
+const EXPORT_DEFAULTS: ExportPrefs = { aspect: "2.39:1", quality: "4k", watermark: true, bitrate: "standard", codec: "h264" }
 
 function readExportPrefs(): ExportPrefs {
   if (typeof window === "undefined") return EXPORT_DEFAULTS
@@ -101,6 +105,8 @@ function readExportPrefs(): ExportPrefs {
       aspect: ASPECTS.includes(p.aspect as Aspect) ? (p.aspect as Aspect) : EXPORT_DEFAULTS.aspect,
       quality: QUALITIES.includes(p.quality as Quality) ? (p.quality as Quality) : EXPORT_DEFAULTS.quality,
       watermark: typeof p.watermark === "boolean" ? p.watermark : EXPORT_DEFAULTS.watermark,
+      bitrate: p.bitrate === "high" ? "high" : "standard",
+      codec: p.codec === "hevc" ? "hevc" : "h264",
     }
   } catch {
     return EXPORT_DEFAULTS
@@ -251,6 +257,8 @@ export const RenderPanel = memo(function RenderPanel({
   const [rangeStart, setRangeStart] = useState("")
   const [rangeEnd, setRangeEnd] = useState("")
   const [watermark, setWatermark] = useState(prefs.watermark)
+  const [bitrate, setBitrate] = useState<ExportBitrate>(prefs.bitrate)
+  const [codec, setCodec] = useState<ExportCodec>(prefs.codec)
   // Read through the store rather than seeded into state like the prefs above:
   // those render the same on both sides because they have real defaults, while a
   // stored yes here would have the server paint the switch off and the client
@@ -276,8 +284,26 @@ export const RenderPanel = memo(function RenderPanel({
   // Written on change, not on export: someone who sets up a frame and then walks
   // away should find it there next time, whether or not they rendered anything.
   useEffect(() => {
-    writeExportPrefs({ aspect, quality, watermark })
-  }, [aspect, quality, watermark])
+    writeExportPrefs({ aspect, quality, watermark, bitrate, codec })
+  }, [aspect, quality, watermark, bitrate, codec])
+
+  // The frame this panel would render, for the rates the Bitrate options print
+  // and for asking whether HEVC can be encoded at it.
+  const [frameW, frameH] = DIMS[aspect][quality]
+  const mbps = (level: ExportBitrate) => Math.round(videoBitrate(frameW, frameH, VIDEO_FPS, level) / 1e6)
+  // Asked per size: an encoder that takes 1080p can refuse 4K. Null until it
+  // answers, and the option stays selectable meanwhile — the export falls back
+  // to H.264 on its own if the answer turns out to be no.
+  const [hevcOk, setHevcOk] = useState<boolean | null>(null)
+  useEffect(() => {
+    let stale = false
+    canEncodeHevc(frameW, frameH)
+      .then((ok) => !stale && setHevcOk(ok))
+      .catch(() => !stale && setHevcOk(false))
+    return () => {
+      stale = true
+    }
+  }, [frameW, frameH])
 
   const [exporting, setExporting] = useState(false)
   const [progress, setProgressState] = useState<ExportProgress | null>(null)
@@ -511,6 +537,8 @@ export const RenderPanel = memo(function RenderPanel({
           width,
           height,
           fps: VIDEO_FPS,
+          bitrate,
+          codec: hevcOk === false ? "h264" : codec,
           audioSource: audioSource ?? (musicUrl ? "music" : "none"),
           watermark: compositing ? false : watermark,
           background,
@@ -626,6 +654,45 @@ export const RenderPanel = memo(function RenderPanel({
                     {QUALITY_LABELS[q]}
                   </SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+          </Row>
+          {/* Inert, not hidden, for a PNG sequence — it has no bitrate or
+              codec — so the panel does not change shape with the output. */}
+          <Row label={t.render.bitrate}>
+            <Select
+              value={bitrate}
+              onValueChange={(v) => setBitrate(v as ExportBitrate)}
+              disabled={exporting || target === "png"}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="standard" className="tabular-nums">
+                  {mbps("standard")} Mbps
+                </SelectItem>
+                <SelectItem value="high" className="tabular-nums">
+                  {mbps("high")} Mbps
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </Row>
+          {/* MP4 only: WebM is VP9 and a PNG sequence has no codec. */}
+          <Row label={t.render.codec}>
+            <Select
+              value={target === "mp4" && hevcOk !== false ? codec : "h264"}
+              onValueChange={(v) => setCodec(v as ExportCodec)}
+              disabled={exporting || target !== "mp4"}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="h264">H.264</SelectItem>
+                <SelectItem value="hevc" disabled={hevcOk === false}>
+                  HEVC
+                </SelectItem>
               </SelectContent>
             </Select>
           </Row>
