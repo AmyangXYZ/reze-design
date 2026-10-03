@@ -135,11 +135,12 @@ export type RippleSpec = {
   color: number[]
   /** _ReflectionColor, linear; its alpha is what grazing angles reach. */
   reflection: number[]
-  /** _ReflectionIntensity, and the reflection's own scale (_CustomEnvCubeScale, applied twice). */
+  /** _ReflectionIntensity, and the reflection's whole scale: sim_EnvCubeScale, times
+   *  _CustomEnvCubeScale² where the water reads its own cube. */
   intensity: number
   cube: number
-  /** SimSceneTint, the game's final multiply. */
-  tint?: number
+  /** SimSceneTint, linear, the game's final multiply. */
+  tint?: number[]
   /** Its own reflection (_CustomEnvCube) as an RGBM equirect in slot 1: rgb · a · range. */
   env?: { png?: string; range: number }
 }
@@ -987,8 +988,9 @@ export function stageLightSheetGraph(strength: number): ShaderGraph {
  * plus mixed in by _PlusMode; alpha times the mask; and the result laid down
  * as the game's One/OneMinusSrcAlpha does — `a·rgb` added, and what it covers
  * dimmed by `a·(_DstBlend − 1)/9` — so a _DstBlend of 1 is pure light (the
- * group blends additively) and 10 an ordinary layer. Noise and dissolve are
- * not drawn.
+ * group blends additively) and 10 an ordinary layer. The noise bends the
+ * layers it is flagged for; dissolve is not drawn, and the vertex colour the
+ * game multiplies in is not carried.
  */
 export function effectSheetGraph(name: string, e: EffectSpec): ShaderGraph {
   type Ref = { node: string; socket: string }
@@ -1268,13 +1270,44 @@ export function rippletGraph(name: string, r: RippleSpec): ShaderGraph {
     const probe = node("tex_image/1", { uv: node("combine_xyz", { x: u, y: v, z: 0 }, "vector") }, "color")
     sky = node("vector_math/scale", { a: probe, scale: mul(at(probe, "alpha"), r.env.range) }, "vector")
   } else sky = node("reflection_probe", { vector: bounce, smoothness: 1 }, "color")
-  const mirrored = node("vector_math/multiply", { a: node("vector_math/scale", { a: sky, scale: r.cube * r.cube }, "vector"), b: refl }, "vector")
+  const mirrored = node("vector_math/multiply", { a: node("vector_math/scale", { a: sky, scale: r.cube }, "vector"), b: refl }, "vector")
   const light = node("light", {}, "direction")
-  const ndl = node("vector_math/dot", { a: n, b: light }, "value")
+  const ndl = node("math/clamp01", { a: node("vector_math/dot", { a: n, b: light }, "value") }, "value")
   const lit = node("vector_math/scale", { a: at(light, "color"), scale: mul(ndl, at(light, "shadow")) }, "vector")
+  // THE SUN'S GLINT, the game's GGX on the rippled normal — what sparkles and
+  // rides the ripples. Roughness is 1 − _ReflectionColor.a (0.06 on X333's pool),
+  // tinted by _ReflectionColor.rgb:
+  //   d = (N·H)²·(r² − 1) + 1,  spec = min(r² / (d² · max((L·H)², 0.1) · (4r + 2)), 1000)
+  const rough = 1 - ra
+  const half = node("vector_math/normalize", { a: node("vector_math/add", { a: view, b: light }, "vector") }, "vector")
+  const ndh = node("math/clamp01", { a: node("vector_math/dot", { a: n, b: half }, "value") }, "value")
+  const ldh = node("math/clamp01", { a: node("vector_math/dot", { a: light, b: half }, "value") }, "value")
+  const d = node("math/maximum", { a: node("math/multiply_add", { a: mul(ndh, ndh), b: rough * rough - 1, c: 1 }, "value"), b: 0.002 }, "value")
+  const ggx = node("math/divide", { a: rough, b: d }, "value")
+  const spec = node(
+    "math/minimum",
+    {
+      a: node("math/divide", { a: mul(ggx, ggx), b: mul(node("math/maximum", { a: mul(ldh, ldh), b: 0.1 }, "value"), 4 * rough + 2) }, "value"),
+      b: 1000,
+    },
+    "value",
+  )
+  // THE LAMPS (PlusLighting), as the game adds them: each one's N·L into the
+  // body beside the sun's, and a glint on pow(N·H, 128·smoothness + 0.01)
+  const lamps = node("additional_lights", { normal: n, exponent: ra * 128 + 0.01 }, "diffuse")
+  const glint = node(
+    "vector_math/multiply",
+    { a: node("vector_math/add", { a: node("vector_math/scale", { a: at(light, "color"), scale: mul(spec, at(light, "shadow")) }, "vector"), b: at(lamps, "specular") }, "vector"), b: [rr, rg, rb] },
+    "vector",
+  )
   const [cr, cg, cb, ca] = r.color
-  const body = node("vector_math/multiply_add", { a: lit, b: [cr, cg, cb], c: [cr, cg, cb] }, "vector")
-  const colour = node("vector_math/scale", { a: node("vector_math/add", { a: mirrored, b: body }, "vector"), scale: r.intensity * (r.tint ?? 1) }, "vector")
+  const body = node("vector_math/multiply_add", { a: node("vector_math/add", { a: lit, b: lamps }, "vector"), b: [cr, cg, cb], c: [cr, cg, cb] }, "vector")
+  const [tr, tg, tb] = r.tint ?? [1, 1, 1]
+  const colour = node(
+    "vector_math/multiply",
+    { a: node("vector_math/add", { a: node("vector_math/add", { a: mirrored, b: glint }, "vector"), b: body }, "vector"), b: [r.intensity * tr, r.intensity * tg, r.intensity * tb] },
+    "vector",
+  )
   const out = node("vector_math/scale", { a: colour, scale: 1 }, "vector")
   // opaque where the reflection's own luminance and _Color.a reach 1; X348's pool is about 0.77
   const floor = 0.2126729 * rr + 0.7151522 * rg + 0.072175 * rb + (ca ?? 1)

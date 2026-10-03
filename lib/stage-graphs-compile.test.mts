@@ -74,7 +74,7 @@ const ripple = {
   cube: 1,
 }
 ok("ripplet", rippletGraph("r", ripple))
-ok("ripplet tinted, own env", rippletGraph("r", { ...ripple, tint: 0.8, env: { range: 4 } }))
+ok("ripplet tinted, own env", rippletGraph("r", { ...ripple, tint: [0.41, 0.49, 0.59], env: { range: 4 } }))
 
 const sea = {
   depth: { origin: [0, 0] as [number, number], size: [100, 100] as [number, number], range: 10 },

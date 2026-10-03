@@ -197,6 +197,7 @@ export const NODE_CATALOG: CatalogGroup[] = [
       { type: "property_map/3", label: "Property Map · Image 3" },
       { type: "reflection_probe", label: "Reflection Probe" },
       { type: "glossy_direct", label: "Glossy · Direct Light" },
+      { type: "additional_lights", label: "Additional Lights" },
       // URP's LightingLambert for the main light, plus the ambient: what a
       // toon look ramps.
       { type: "lambert", label: "Lambert" },

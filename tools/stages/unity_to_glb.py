@@ -187,7 +187,7 @@ def game_globals(project_root, scene_path):
     return (scene or {}).get("shaderGlobals", {})
 
 
-def ripple_spec(mat, proj=None, tint=1.0):
+def ripple_spec(mat, proj=None, tint=(1.0, 1.0, 1.0), env_scale=1.0):
     """The game's Ripplet water, as the app's rippletGraph draws it.
 
     Its vertex shader: uv = (x, z) · _RippleDensity · _RippleDensityN ·
@@ -206,18 +206,23 @@ def ripple_spec(mat, proj=None, tint=1.0):
         layers.append({"scale": [d * tu / METRES, d * tv / METRES], "drift": [drift * ou, drift * ov], "strength": f.get(f"_RippleScale{k + 1}", 1.0)})
     colour = c.get("_Color", (1.0, 1.0, 1.0))
     reflection = c.get("_ReflectionColor", (1.0, 1.0, 1.0))
+    self_cube = round(f.get("_USE_CUBEMAP", 0.0)) == 2
+    custom = f.get("_CustomEnvCubeScale", 1.0)
     return {
         "layers": layers,
         "strength": f.get("_RippleScale", 1.0),
         "color": [gamma_to_linear(v) for v in colour[:3]] + [a.get("_Color", 1.0)],
         "reflection": [gamma_to_linear(v) for v in reflection[:3]] + [a.get("_ReflectionColor", 1.0)],
         "intensity": f.get("_ReflectionIntensity", 1.0),
-        "cube": f.get("_CustomEnvCubeScale", 1.0),
-        # the scene tint the game's final multiply carries (SimSceneTint, 0.74 on X348)
-        "tint": tint,
+        # THE REFLECTION'S WHOLE SCALE, by _USE_CUBEMAP: 2 (SIM_SELF_CUBEMAP) reads its
+        # own cube · sim_EnvCubeScale · _CustomEnvCubeScale², 1 (SIM_USE_CUBEMAP) the
+        # scene's probe · sim_EnvCubeScale; 0 is a planar mirror, drawn here as the probe
+        "cube": env_scale * (custom ** 2 if self_cube else 1.0),
+        # the scene tint the game's final multiply carries (SimSceneTint, linear)
+        "tint": list(tint),
         # ITS OWN REFLECTION, _CustomEnvCube: X348's water reflects ReflectionProbe-1,
         # not the probe the rest of the stage does, and the sky it mirrors is its colour
-        **({"env": {"png": cube_rgbm(cube_path), "range": RGBM_RANGE}} if (cube_path := _custom_cube(mat, proj)) else {}),
+        **({"env": {"png": cube_rgbm(cube_path), "range": RGBM_RANGE}} if self_cube and (cube_path := _custom_cube(mat, proj)) else {}),
     }
 
 
@@ -664,8 +669,14 @@ def build_dir_for(out_glb, name):
 def prepare(project_root, scene_path, out_glb, name, png_root=None):
     proj = Project(project_root)
     scene = Scene(os.path.join(project_root, scene_path))
-    # SimSceneTint: the scene-wide multiply the game's water (and PBR) end on
-    scene_tint = float((game_globals(project_root, scene_path).get("SimSceneTint") or [1.0])[0])
+    # SimSceneTint: the scene-wide multiply the game's water (and PBR) end on. A
+    # colour, set with SetGlobalColor, so the shader sees it linear; the manifest
+    # records it as set (gamma), like sim_FogColor beside it.
+    globals_ = game_globals(project_root, scene_path)
+    scene_tint = [gamma_to_linear(c) for c in (globals_.get("SimSceneTint") or [1.0, 1.0, 1.0])[:3]]
+    # sim_EnvCubeScale: the scene's bake-reflection scale (ForwardFeature.SetupCubeReflection),
+    # on every cube the water reflects; 2 on X333
+    env_scale = float(globals_.get("sim_EnvCubeScale", 1.0))
     build = build_dir_for(out_glb, name)
     out_tex = os.path.join(build, "tex")
     out_geo = os.path.join(build, "geo")
@@ -1122,7 +1133,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
                 "look": {"Glass": "glass", "Ripplet": "water", "Plant": "foliage"}.get(family, "" if cartoon_water else None),
                 **({"effect": effect} if effect else {}),
                 # The game's own water, on its own numbers (rippletGraph).
-                **({"ripple": ripple_spec(mat, proj, scene_tint)} if mat and (shader or "").endswith("/Ripplet") else {}),
+                **({"ripple": ripple_spec(mat, proj, scene_tint, env_scale)} if mat and (shader or "").endswith("/Ripplet") else {}),
                 **({"sea": sea} if sea else {}),
                 **({"fresnel": fresnel} if fresnel else {}),
             }
