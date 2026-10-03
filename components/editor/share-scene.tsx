@@ -15,6 +15,7 @@ import { TagsInput } from "@/components/editor/tags-input"
 import { VisibilityPicker, type Visibility } from "@/components/editor/library-shell"
 import { noteScenePublished, type GalleryScene } from "@/components/editor/scene-gallery"
 import { buildZip, type BundleEntry } from "@/lib/bundle"
+import { isSealedBundle, sealBundle, sealedName } from "@/lib/bundle-cipher"
 import { MAX_BUNDLE_BYTES, type LibraryItem } from "@/lib/library"
 import { formatBytes } from "@/lib/png-sequence"
 import { posterToWebp } from "@/lib/poster"
@@ -280,7 +281,12 @@ function ShareSceneForm({
           publicUrl: string
         }
         setProgress(0)
-        await putWithProgress(uploadUrl, zip, "application/zip", setProgress)
+        // Sealed under the name the server picked (lib/bundle-cipher), so what
+        // lands in storage is not a zip anyone can save and open. An older
+        // server still hands out an assets.zip key; that goes up as it is.
+        const sealed = isSealedBundle(key)
+        const body = sealed ? await sealBundle(zip, sealedName(key)) : zip
+        await putWithProgress(uploadUrl, body, sealed ? "application/octet-stream" : "application/zip", setProgress)
         bundle = publicUrl
         bundleKey = key
         bundleBytes = zip.size

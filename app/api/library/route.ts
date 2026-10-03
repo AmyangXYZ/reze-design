@@ -14,6 +14,7 @@ import { nameClash } from "@/lib/db/names"
 import { LIBRARY_TAG, refreshLibrary, refreshMakerPages } from "@/lib/public-pages"
 import { normalizeName, withGraphName, type LibraryKind } from "@/lib/library"
 import type { Visibility } from "@/lib/db/schema"
+import { deleteReplacedBundle, ownsBundleKey } from "@/lib/bundle-owner"
 
 const KINDS: LibraryKind[] = ["grade", "graph", "effect", "scene"]
 const MAX_NAME = 60
@@ -444,6 +445,7 @@ export async function POST(request: Request) {
               kind: schema.libraryItems.kind,
               ownerId: schema.libraryItems.ownerId,
               visibility: schema.libraryItems.visibility,
+              bundleKey: schema.libraryItems.bundleKey,
             })
             .from(schema.libraryItems)
             .where(eq(schema.libraryItems.id, id))
@@ -462,6 +464,12 @@ export async function POST(request: Request) {
     // author framed, or the bundle, because this pass happened not to send one.
     const hasBundle = typeof bundleKey === "string"
     const hasPoster = typeof posterKey === "string"
+    // A bundle is the publisher's own upload or nothing: the key has to sit in
+    // their storage (lib/bundle-owner), which is also what lets a replaced one
+    // be deleted below without ever touching someone else's file.
+    if (hasBundle && !ownsBundleKey(session.user.id, bundleKey as string)) {
+      return NextResponse.json({ error: "invalid bundle" }, { status: 400 })
+    }
     const values = {
       ...common,
       kind: "scene" as const,
@@ -536,6 +544,10 @@ export async function POST(request: Request) {
     }
     refreshLibrary(scene.id, ...added, ...removed)
     if (nextVisibility === "public") refreshMakerPages(author)
+    // The scene now serves the new bundle, so the one it replaced has no reader.
+    if (replacing?.bundleKey && hasBundle && replacing.bundleKey !== bundleKey) {
+      await deleteReplacedBundle(session.user.id, replacing.bundleKey)
+    }
     // Shaped like a gallery card so the client can drop it straight into the
     // list it just joined, instead of re-reading the whole page to learn one row.
     return NextResponse.json(

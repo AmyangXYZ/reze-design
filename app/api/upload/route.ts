@@ -1,11 +1,13 @@
-// Presigned upload for a scene's asset bundle.
+// Presigned upload for a scene's asset bundle, or its poster.
 //
 // The browser PUTs straight to R2 — Vercel caps request bodies at 4.5MB, and a
 // model zip is routinely ten times that. The key is permanent storage, not a
-// staging area: scoped under the CALLER's user id (from the session, never the
-// request), so nobody can write outside their own prefix no matter what id they
-// claim. The client sends a fresh id per publish, because every publish creates a
-// new scene row and two scenes must never share one bundle.
+// staging area, and the server picks it, never the request: a bundle goes to a
+// fresh opaque key under the CALLER's owner tag (lib/bundle-owner), sealed by
+// the browser before upload (lib/bundle-cipher); a poster stays under the
+// caller's user id, since a poster is public by design. Fresh per publish,
+// because every publish creates a new scene row and two scenes must never share
+// one bundle.
 
 import { NextResponse } from "next/server"
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3"
@@ -13,6 +15,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 import { auth } from "@/lib/auth"
 import { MAX_BUNDLE_BYTES } from "@/lib/library"
 import { hasDatabase } from "@/lib/db"
+import { newBundleKey } from "@/lib/bundle-owner"
 
 // A published object is immutable — every publish mints a new scene row and a
 // new key — so it wants `public, max-age=31536000, immutable`, and without it R2
@@ -65,14 +68,14 @@ export async function POST(request: Request) {
   if (poster && typeof size === "number" && size > MAX_POSTER_BYTES) {
     return NextResponse.json({ error: "poster too large" }, { status: 413 })
   }
-  const ext = poster ? (posterType.split("/")[1] === "jpeg" ? "jpg" : posterType.split("/")[1]) : "zip"
-  const key = `scenes/${session.user.id}/${sceneId}/${poster ? `poster.${ext}` : "assets.zip"}`
+  const ext = posterType.split("/")[1] === "jpeg" ? "jpg" : posterType.split("/")[1]
+  const key = poster ? `scenes/${session.user.id}/${sceneId}/poster.${ext}` : newBundleKey(session.user.id)
   const uploadUrl = await getSignedUrl(
     s3(),
     new PutObjectCommand({
       Bucket: process.env.R2_BUCKET,
       Key: key,
-      ContentType: poster ? posterType : "application/zip",
+      ContentType: poster ? posterType : "application/octet-stream",
     }),
     { expiresIn: 600 },
   )

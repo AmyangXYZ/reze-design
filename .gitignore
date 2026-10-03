@@ -66,3 +66,6 @@ tools/blender-port/
 # Python bytecode (tools/stages)
 __pycache__/
 *.pyc
+
+# db-seal-bundles.mjs: which old zips --delete-old may remove
+scripts/.sealed-bundles.json

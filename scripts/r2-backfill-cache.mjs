@@ -31,24 +31,26 @@ const s3 = new S3Client({
 
 const contentTypeFor = (key) => {
   if (key.endsWith(".zip")) return "application/zip"
+  if (key.endsWith(".bin")) return "application/octet-stream"
   if (key.endsWith(".png")) return "image/png"
   if (key.endsWith(".jpg") || key.endsWith(".jpeg")) return "image/jpeg"
   return "image/webp"
 }
 
-// Only what publish writes. A prefix rather than the whole bucket, so a stray
-// object someone put there by hand is never rewritten by this.
+// Only what publish writes: posters (and older bundles) under scenes/, sealed
+// bundles under b/. Prefixes rather than the whole bucket, so a stray object
+// someone put there by hand is never rewritten by this.
 const objects = []
-let token
-do {
-  const page = await s3.send(
-    new ListObjectsV2Command({ Bucket: R2_BUCKET, Prefix: "scenes/", ContinuationToken: token }),
-  )
-  for (const o of page.Contents ?? []) objects.push(o)
-  token = page.IsTruncated ? page.NextContinuationToken : undefined
-} while (token)
+for (const prefix of ["scenes/", "b/"]) {
+  let token
+  do {
+    const page = await s3.send(new ListObjectsV2Command({ Bucket: R2_BUCKET, Prefix: prefix, ContinuationToken: token }))
+    for (const o of page.Contents ?? []) objects.push(o)
+    token = page.IsTruncated ? page.NextContinuationToken : undefined
+  } while (token)
+}
 
-console.log(`scenes/: ${objects.length} object(s)`)
+console.log(`scenes/ + b/: ${objects.length} object(s)`)
 
 const stale = []
 for (const o of objects) {
