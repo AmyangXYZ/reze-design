@@ -82,7 +82,18 @@ export type SceneSettings = {
   /** The inverted-hull outline pass, scene-wide. A preference most scenes never
    *  touch — no dock row, reachable from the palette — but it changes how the
    *  scene LOOKS, so it travels with the document like any other look setting. */
-  outline: { enabled: boolean }
+  outline: {
+    enabled: boolean
+    /** Every line's width as a multiple of what its PMX material asked for
+     *  (edgeSize): 1 is the author's own. Absent in scenes saved before it —
+     *  loading merges DEFAULT_OUTLINE, which says 1. */
+    width: number
+    /** One colour for every line in place of each material's edge colour.
+     *  A switch beside the colour rather than a nullable colour, so turning
+     *  it off and on again keeps the one you picked. */
+    recolor: boolean
+    color: string
+  }
   background: { color: string }
   /**
    * How the rendered image is mapped to the display, before the grade.
@@ -222,7 +233,7 @@ export const DEFAULT_DOF: SceneSettings["dof"] = { enabled: false, aperture: 1 }
 export const DEFAULT_GRAIN: SceneSettings["grain"] = { amount: 0 }
 /** Outlines are on: since they follow the game's (closed hull from smoothed
  *  normals, thinning with distance, antialiased) they are part of the house look. */
-export const DEFAULT_OUTLINE: SceneSettings["outline"] = { enabled: true }
+export const DEFAULT_OUTLINE: SceneSettings["outline"] = { enabled: true, width: 1, recolor: false, color: "#000000" }
 
 /** The view transforms the app offers, by the engine's names. */
 export type ViewTransform = "soft" | "neutral" | "aces" | "none"

@@ -13,6 +13,7 @@ function Slider({
   max = 100,
   accent,
   origin,
+  track,
   ...props
 }: React.ComponentProps<typeof SliderPrimitive.Root> & {
   /** Paint the fill and the thumb this colour instead of the primary. For axis
@@ -23,6 +24,10 @@ function Slider({
    *  rotation is signed, so a bar that always grows from the left implies a
    *  magnitude when what the number means is a direction from zero. */
   origin?: number
+  /** A CSS background for the track itself, with no fill drawn over it. For a
+   *  colour channel, where the track IS the scale — the colours the thumb
+   *  would give at every point — and a fill would hide half of it. */
+  track?: string
 }) {
   const _values = React.useMemo(
     () =>
@@ -52,8 +57,9 @@ function Slider({
         className={cn(
           "relative grow overflow-hidden rounded-full bg-muted data-[orientation=horizontal]:h-1.5 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1.5"
         )}
+        style={track ? { background: track } : undefined}
       >
-        {origin == null ? (
+        {track ? null : origin == null ? (
           <SliderPrimitive.Range
             data-slot="slider-range"
             className={cn(

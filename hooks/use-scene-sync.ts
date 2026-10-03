@@ -47,6 +47,16 @@ function installedIndex(results: { ok: boolean }[]): (number | null)[] {
 }
 
 /**
+ * What the install files the engine's list under — and what the dial writes
+ * check before trusting their indices. ONE function because two copies drifted:
+ * the install grew the textures term and the dials kept comparing the sources
+ * alone, so no key ever matched and every slider waited for a reload.
+ */
+function installKey(sources: string[], texturesVersion: number): string | null {
+  return sources.length ? `${sources.join("\0")}\0textures:${texturesVersion}` : null
+}
+
+/**
  * Every applied effect's timing — and who it is on — onto its instance, through
  * the scene timeline's one push. See pushTimeline for why the index matters.
  */
@@ -224,6 +234,9 @@ export function useSceneSync({
     }
     if (!p || p.settings.outline !== outline) {
       engine.setOutlineEnabled(outline.enabled)
+      engine.setOutlineWidth(outline.width)
+      // sRGB values, as a PMX carries its edge colour and the engine draws it.
+      engine.setOutlineColor(outline.recolor ? hexToSrgbVec3(outline.color) : null)
     }
     if (modeChanged || p.settings.grain !== grain) {
       engine.setFilmGrain(grain.amount)
@@ -364,7 +377,7 @@ export function useSceneSync({
     // re-render with the same list does not.
     // …and the pictures they were given: a stage's particle pictures arriving
     // after its effects (a refresh restores the list first) reinstalls them
-    const wgsl = sources.length ? `${sources.join("\0")}\0textures:${texturesVersion}` : null
+    const wgsl = installKey(sources, texturesVersion)
     // REMOVING one does not wait for `ready`. That flag is off for the whole
     // scene swap — every model still to arrive — and gating removal on it left
     // the outgoing scene's effect running over the incoming one until the last
@@ -528,7 +541,10 @@ export function useSceneSync({
     const engine = engineRef.current
     if (!engine) return
     const applied = exportBackground === "green" ? [] : backgroundEffects
-    const key = applied.length ? applied.map((e) => e.wgsl).join("\0") : null
+    const key = installKey(
+      applied.map((e) => e.wgsl),
+      texturesVersion,
+    )
     if (key !== lastWgsl.current || lastWgslEngine.current !== engine) return
     applied.forEach((e, i) => {
       // An entry that failed to compile installed nothing, so it has no dials to
@@ -544,7 +560,7 @@ export function useSceneSync({
         engine.setEffectParam(k, name, value)
       }
     })
-  }, [backgroundEffects, exportBackground, engineRef])
+  }, [backgroundEffects, exportBackground, engineRef, texturesVersion])
 
   /**
    * Strips and targets onto instances, whenever one is edited.
@@ -729,7 +745,7 @@ export function useSceneSync({
   // time when the applied effect lands in state.
   return {
     noteAppliedWgsl: (wgsl: string) => {
-      lastWgsl.current = wgsl
+      lastWgsl.current = installKey([wgsl], texturesVersion)
       engineIndex.current = null
     },
     /**
@@ -745,7 +761,10 @@ export function useSceneSync({
      * until it was published and applied the ordinary way.
      */
     adoptInstall: (list: AppliedEffect[], results: { ok: boolean; params: EffectSurface["params"]; readsCast: boolean }[]) => {
-      lastWgsl.current = list.map((e) => e.wgsl).join("\0")
+      lastWgsl.current = installKey(
+        list.map((e) => e.wgsl),
+        texturesVersion,
+      )
       engineIndex.current = installedIndex(results)
       const engine = engineRef.current
       if (engine) applySchedules(engine, list, engineIndex.current)

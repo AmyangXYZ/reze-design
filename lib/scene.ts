@@ -260,6 +260,16 @@ export type SceneCamera = {
    *  Absent or null = a fixed point in the world, which is what every scene
    *  written before this does. */
   follow?: string | null
+  /**
+   * The scene's adjustment to a loaded camera MOTION, added to every pose it
+   * plays: `target` slides the shot (world units), `distance` pulls it back
+   * along its own line of sight, `fov` widens the lens (radians). The angle is
+   * never touched — that is the motion's choreography.
+   *
+   * Separate from the orbit fields above, so removing the motion brings back
+   * the scene's own shot exactly. Absent = no adjustment.
+   */
+  trackOffset?: { target: [number, number, number]; distance: number; fov: number }
 }
 
 /**

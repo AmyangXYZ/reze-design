@@ -408,6 +408,9 @@ struct RzLight {
   color: vec3f,
   intensity: f32,
   radius: f32,
+  // reze-engine 0.66's bulb. Missing here, every effect that sets it (Hand
+  // Sparks) failed to compile and previewed blank.
+  near: f32,
 }
 
 // The MIDI interface, over a stand-in score.

@@ -618,6 +618,8 @@ const dec2 = (v: number) => v.toFixed(2)
 const xyz = (v: readonly [number, number, number]) => v.map(dec1).join(", ")
 /** A switch, in the reader's language. */
 const sw = (on: boolean, t: Dictionary) => (on ? t.lab.on : t.lab.off)
+/** A camera motion played as authored — see SceneCamera.trackOffset. */
+const TRACK_OFFSET_NONE: NonNullable<SceneCamera["trackOffset"]> = { target: [0, 0, 0], distance: 0, fov: 0 }
 const rad2deg = (r: number) => (r * 180) / Math.PI
 
 /**
@@ -685,6 +687,8 @@ const DOCK_CONTROLS: {
   { id: "bloom-threshold", en: "Bloom threshold", zh: "泛光阈值", row: "post", postTab: "bloom", keywords: ["cutoff"], value: (v) => dec2(v.settings.bloom.threshold) },
   { id: "bloom-spread", en: "Bloom spread", zh: "泛光扩散", row: "post", postTab: "bloom", keywords: ["scatter", "radius", "半径"], value: (v) => dec2(v.settings.bloom.scatter) },
   { id: "outline-toggle", en: "Outline", zh: "描边", row: "post", postTab: "outline", keywords: ["edge", "rim", "线稿", "轮廓"], value: (v) => sw(v.settings.outline.enabled, v.t) },
+  { id: "outline-width", en: "Outline width", zh: "描边粗细", row: "post", postTab: "outline", keywords: ["edge", "thickness", "size", "line", "线宽", "宽度"], value: (v) => `${dec2(v.settings.outline.width)}×` },
+  { id: "outline-color", en: "Outline color", zh: "描边颜色", row: "post", postTab: "outline", keywords: ["edge", "line", "ink", "override", "线稿", "颜色"], value: (v) => (v.settings.outline.recolor ? v.settings.outline.color : sw(false, v.t)) },
   { id: "world-strength", en: "World strength", zh: "环境光强度", row: "light", lightTab: "world", keywords: ["ambient"], value: (v) => dec2(v.settings.world.strength) },
   { id: "sun-strength", en: "Sun strength", zh: "太阳强度", row: "light", lightTab: "sun", value: (v) => dec2(v.settings.sun.strength) },
   { id: "sun-azimuth", en: "Sun azimuth", zh: "太阳方位", row: "light", lightTab: "sun", value: (v) => deg(v.settings.sun.azimuth) },
@@ -2773,6 +2777,10 @@ export default function Lab() {
     },
     [setCameraView],
   )
+  /** The camera motion's offset, zero when the scene has never set one. */
+  const trackOffset = camera.trackOffset ?? TRACK_OFFSET_NONE
+  const changeTrackOffset = (patch: Partial<NonNullable<SceneCamera["trackOffset"]>>) =>
+    changeCamera({ ...camera, trackOffset: { ...trackOffset, ...patch } })
 
   /**
    * ORBITING THE CANVAS DOES NOT CHANGE THE SCENE.
@@ -9315,6 +9323,34 @@ export default function Lab() {
                             onCheckedChange={(v) => patch("outline", { enabled: v })}
                           />
                         </div>
+                        {/* A multiple of each model's own edge size, so a
+                            model's fine and heavy lines keep their ratio. */}
+                        <SliderRow
+                          label={t.lab.ctl.outlineWidth}
+                          value={settings.outline.width}
+                          min={0}
+                          max={10}
+                          step={0.05}
+                          onChange={(v) => patch("outline", { width: v })}
+                          fmt={(v) => v.toFixed(2)}
+                        />
+                        {/* The colour beside its switch, always there and inert
+                            while off, so flipping it moves nothing. */}
+                        <div className="mt-2.5 flex items-center justify-between">
+                          <span className="text-xs">{t.lab.ctl.outlineRecolor}</span>
+                          <div className="flex items-center gap-2">
+                            <ColorField
+                              value={settings.outline.color}
+                              onChange={(hex) => patch("outline", { color: hex })}
+                              disabled={!settings.outline.recolor}
+                            />
+                            <Switch
+                              size="sm"
+                              checked={settings.outline.recolor}
+                              onCheckedChange={(v) => patch("outline", { recolor: v })}
+                            />
+                          </div>
+                        </div>
                       </TabsContent>
                     </Tabs>
                   ) : l.id === "physics" ? (
@@ -9408,18 +9444,28 @@ export default function Lab() {
                             camera VMD owns the shot, so the orbit controls grey
                             out under a one-line note instead of fighting it. */}
                         {cameraClip && <p className="mb-2 text-xs">{t.lab.cameraDrivesView}</p>}
-                        <fieldset
-                          disabled={!!cameraClip}
-                          className={cn(cameraClip && "pointer-events-none opacity-40")}
-                        >
+                        {/* ONE PANE, TWO MEANINGS, NO ROW MOVES. While a camera
+                            motion drives, FOV, Distance and the three target
+                            rows edit its OFFSET (camera.trackOffset) — added to
+                            every pose it plays — and the rows that would change
+                            its angle, or what it follows, sit disabled in
+                            place. Disabled per row, not by a fieldset: a
+                            SliderRow first in a fieldset drops its top margin. */}
+                        <div>
                           {/* Follow first — it decides what the three numbers at
                               the bottom MEAN (offset from a bone vs a point in
                               the world), so each direction re-seeds its own
                               default rather than reinterpreting the other's. */}
-                          <div className="flex items-center justify-between">
+                          <div
+                            className={cn(
+                              "flex items-center justify-between",
+                              cameraClip && "pointer-events-none opacity-40",
+                            )}
+                          >
                             <span className="text-xs">{t.lab.ctl.follow}</span>
                             <Switch
                               size="sm"
+                              disabled={!!cameraClip}
                               checked={!!camera.follow}
                               onCheckedChange={(on) =>
                                 changeCamera({
@@ -9439,11 +9485,13 @@ export default function Lab() {
                               the pane. Changing the bone keeps the offset: it
                               is the user's framing, and a re-seed here would
                               throw it away for a bone a few units off. */}
-                          <div className="mt-2.5 flex items-center gap-2">
+                          <div
+                            className={cn("mt-2.5 flex items-center gap-2", cameraClip && "pointer-events-none opacity-40")}
+                          >
                             <span className="w-16 shrink-0 truncate text-xs">{t.lab.ctl.bone}</span>
                             <Select
                               value={camera.follow ?? ""}
-                              disabled={!camera.follow}
+                              disabled={!camera.follow || !!cameraClip}
                               onValueChange={(v) => camera.follow && changeCamera({ ...camera, follow: v })}
                             >
                               <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] text-[11px] data-[size=sm]:h-4">
@@ -9463,29 +9511,54 @@ export default function Lab() {
                               make two rows down. A camera VMD animates fov
                               itself, which is what the fieldset above greys the
                               whole pane for. */}
-                          <SliderRow
-                            label={t.lab.ctl.fov}
-                            value={Math.round(((camera.fov ?? CAMERA_DEFAULT_FOV) * 180) / Math.PI)}
-                            min={10}
-                            max={120}
-                            step={1}
-                            onChange={(v) =>
-                              changeCamera({
-                                ...camera,
-                                fov: (v * Math.PI) / 180,
-                              })
-                            }
-                            fmt={(v) => `${Math.round(v)}°`}
-                          />
-                          <SliderRow
-                            label={t.lab.ctl.distance}
-                            value={camera.distance}
-                            min={1}
-                            max={100}
-                            step={0.1}
-                            onChange={(v) => changeCamera({ ...camera, distance: v })}
-                            fmt={(v) => v.toFixed(1)}
-                          />
+                          {cameraClip ? (
+                            <>
+                              <SliderRow
+                                label={t.lab.ctl.fov}
+                                value={Math.round((trackOffset.fov * 180) / Math.PI)}
+                                min={-60}
+                                max={60}
+                                step={1}
+                                onChange={(v) => changeTrackOffset({ fov: (v * Math.PI) / 180 })}
+                                fmt={(v) => `${v > 0 ? "+" : ""}${Math.round(v)}°`}
+                              />
+                              <SliderRow
+                                label={t.lab.ctl.distance}
+                                value={trackOffset.distance}
+                                min={-50}
+                                max={50}
+                                step={0.1}
+                                onChange={(v) => changeTrackOffset({ distance: v })}
+                                fmt={(v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}`}
+                              />
+                            </>
+                          ) : (
+                            <>
+                              <SliderRow
+                                label={t.lab.ctl.fov}
+                                value={Math.round(((camera.fov ?? CAMERA_DEFAULT_FOV) * 180) / Math.PI)}
+                                min={10}
+                                max={120}
+                                step={1}
+                                onChange={(v) =>
+                                  changeCamera({
+                                    ...camera,
+                                    fov: (v * Math.PI) / 180,
+                                  })
+                                }
+                                fmt={(v) => `${Math.round(v)}°`}
+                              />
+                              <SliderRow
+                                label={t.lab.ctl.distance}
+                                value={camera.distance}
+                                min={1}
+                                max={100}
+                                step={0.1}
+                                onChange={(v) => changeCamera({ ...camera, distance: v })}
+                                fmt={(v) => v.toFixed(1)}
+                              />
+                            </>
+                          )}
                           {/* Azimuth and Elevation, the same pair the Sun uses —
                               both are a direction, so they answer to one set of
                               words. Alpha/beta are Babylon's internal names and
@@ -9498,6 +9571,7 @@ export default function Lab() {
                               slider reads 0 at the horizon and + from above. */}
                           <SliderRow
                             label={t.lab.ctl.azimuth}
+                            disabled={!!cameraClip}
                             value={Math.round((camera.alpha * 180) / Math.PI)}
                             min={-180}
                             max={180}
@@ -9512,6 +9586,7 @@ export default function Lab() {
                           />
                           <SliderRow
                             label={t.lab.ctl.elevation}
+                            disabled={!!cameraClip}
                             value={Math.round(90 - (camera.beta * 180) / Math.PI)}
                             min={-85}
                             max={85}
@@ -9527,6 +9602,7 @@ export default function Lab() {
                           {/* The one channel the orbit cannot hold. */}
                           <SliderRow
                             label={t.lab.ctl.roll}
+                            disabled={!!cameraClip}
                             value={((camera.roll ?? 0) * 180) / Math.PI}
                             min={-45}
                             max={45}
@@ -9534,23 +9610,40 @@ export default function Lab() {
                             onChange={(v) => changeCamera({ ...camera, roll: (v * Math.PI) / 180 })}
                             fmt={(v) => `${v.toFixed(1)}°`}
                           />
-                          {(["X", "Y", "Z"] as const).map((axis, i) => (
-                            <SliderRow
-                              key={axis}
-                              label={camera.follow ? t.lab.ctl.offset(axis) : t.lab.ctl.target(axis)}
-                              value={camera.target[i]}
-                              min={i === 1 ? -10 : -50}
-                              max={50}
-                              step={0.1}
-                              onChange={(v) => {
-                                const target = [...camera.target] as [number, number, number]
-                                target[i] = v
-                                changeCamera({ ...camera, target })
-                              }}
-                              fmt={(v) => v.toFixed(1)}
-                            />
-                          ))}
-                        </fieldset>
+                          {(["X", "Y", "Z"] as const).map((axis, i) =>
+                            cameraClip ? (
+                              <SliderRow
+                                key={axis}
+                                label={t.lab.ctl.offset(axis)}
+                                value={trackOffset.target[i]}
+                                min={-50}
+                                max={50}
+                                step={0.1}
+                                onChange={(v) => {
+                                  const target = [...trackOffset.target] as [number, number, number]
+                                  target[i] = v
+                                  changeTrackOffset({ target })
+                                }}
+                                fmt={(v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}`}
+                              />
+                            ) : (
+                              <SliderRow
+                                key={axis}
+                                label={camera.follow ? t.lab.ctl.offset(axis) : t.lab.ctl.target(axis)}
+                                value={camera.target[i]}
+                                min={i === 1 ? -10 : -50}
+                                max={50}
+                                step={0.1}
+                                onChange={(v) => {
+                                  const target = [...camera.target] as [number, number, number]
+                                  target[i] = v
+                                  changeCamera({ ...camera, target })
+                                }}
+                                fmt={(v) => v.toFixed(1)}
+                              />
+                            ),
+                          )}
+                        </div>
                       </TabsContent>
                       <TabsContent value="focus">
                         {/* Focus is automatic — the engine tracks the character's

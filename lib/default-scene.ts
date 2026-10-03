@@ -144,7 +144,7 @@ const DEMO_SCENE_DOC: SceneDoc = {
     // The game's bloom, in the demo's pink.
     bloom: { ...DEFAULT_BLOOM, color: "#ffc9c9" },
     dof: DEFAULT_DOF,
-    outline: { enabled: true },
+    outline: DEFAULT_OUTLINE,
     grain: DEFAULT_GRAIN,
     view: DEFAULT_VIEW,
     audio: DEFAULT_AUDIO,

@@ -197,6 +197,11 @@ export function applyCamera(engine: Engine, camera: SceneCamera, model: Model | 
   engine.setCameraDistance(camera.distance)
   engine.setCameraAlpha(camera.alpha)
   engine.setCameraBeta(camera.beta)
+  // Read only while a camera motion drives; harmless to hold otherwise.
+  const o = camera.trackOffset
+  engine.setCameraTrackOffset(
+    o ? { target: { x: o.target[0], y: o.target[1], z: o.target[2] }, distance: o.distance, fov: o.fov } : null,
+  )
 }
 
 /**
