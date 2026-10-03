@@ -83,6 +83,11 @@ export function SceneViewer(props: ViewerProps) {
   const t = useT()
   const router = useRouter()
   const like = useLike(props.sceneId, props.likeCount)
+  // Phone only: the caption and the 借物表 start folded to one line each, as
+  // TikTok's overlay does, and a tap opens them in place. Desktop has the room
+  // and shows both, each scrolling past five lines.
+  const [captionOpen, setCaptionOpen] = useState(false)
+  const [creditsOpen, setCreditsOpen] = useState(false)
   // Synchronously when every pin is bundled — the common case. Then the canvas
   // is in the first render and the engine starts on mount, instead of after a
   // resolve round trip and a second pass.
@@ -215,12 +220,12 @@ export function SceneViewer(props: ViewerProps) {
           that footer and nothing else, so the two cases are one card.
           Editor chrome: bg-surface without blur (it floats over the canvas,
           which a blur would re-sample every frame), two text colours. */}
-      <div className="absolute bottom-16 left-4 flex w-[min(10.5rem,44vw)] flex-col overflow-hidden rounded-surface border border-line-strong bg-surface md:top-3 md:right-3 md:bottom-auto md:left-auto md:w-64">
+      <div className="absolute bottom-16 left-4 flex max-h-[32dvh] w-[min(10.5rem,44vw)] flex-col overflow-hidden rounded-surface border border-line-strong bg-surface md:top-3 md:right-3 md:bottom-auto md:left-auto md:max-h-[50dvh] md:w-64">
         {/* Everything, always: crediting only counts if people can read it
             without knowing to ask. Long text scrolls DOWN inside the panel and
             wraps anywhere — a pasted URL is one unbroken word, and without that
             it pushed the card sideways into a horizontal scrollbar. */}
-        <div className="max-h-[50dvh] min-h-0 overflow-x-hidden overflow-y-auto px-3 py-2.5 [overflow-wrap:anywhere] md:max-h-[calc(100dvh-7rem)]">
+        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-2.5 [overflow-wrap:anywhere]">
           <div className="truncate text-sm font-semibold tracking-tight text-foreground">{props.title}</div>
           <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
             <Link href={`/${props.author}`} className="transition-colors hover:text-foreground hover:underline">
@@ -230,23 +235,64 @@ export function SceneViewer(props: ViewerProps) {
             <PublishedAt iso={props.publishedAt} />
           </div>
           {props.description && (
-            <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-foreground">{props.description}</p>
+            <>
+              {/* Phone: one line and an ellipsis until tapped, as TikTok's. */}
+              <Button
+                variant="ghost"
+                onClick={() => setCaptionOpen((v) => !v)}
+                aria-expanded={captionOpen}
+                className="mt-2 block h-auto w-full rounded-none p-0 text-left font-normal whitespace-normal hover:bg-transparent has-[>svg]:px-0 md:hidden dark:hover:bg-transparent"
+              >
+                <span
+                  className={cn(
+                    "block text-xs leading-relaxed whitespace-pre-wrap text-foreground",
+                    !captionOpen && "line-clamp-1",
+                  )}
+                >
+                  {props.description}
+                </span>
+              </Button>
+              {/* Desktop: plain text — selectable, wheel-scrollable past five
+                  lines, so a long caption never pushes the credits away. */}
+              <p className="mt-2 hidden max-h-[5lh] overflow-y-auto overscroll-contain whitespace-pre-wrap text-xs leading-relaxed text-foreground md:block">
+                {props.description}
+              </p>
+            </>
           )}
           {props.credits && (
-            <div className="mt-2.5 border-t border-line pt-2">
-              {/* A label at reading size: tracking and uppercase only pulled 借物表
-                  apart, and at 10px it read as a footnote. */}
-              <div className="text-xs font-medium text-muted-foreground">
-                {t.share.credits}
-              </div>
-              <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">{props.credits}</p>
+            <div className="mt-2.5 border-t border-line pt-2.5">
+              {/* Phone, folded: one row — the label and the first credit. A tap
+                  opens the whole 借物表; it stays one tap away because it is what
+                  people check before reusing anything. Desktop: always open. */}
+              <Button
+                variant="ghost"
+                onClick={() => setCreditsOpen((v) => !v)}
+                aria-expanded={creditsOpen}
+                className="flex h-auto w-full min-w-0 justify-start gap-1 rounded-none p-0 text-left font-normal hover:bg-transparent has-[>svg]:px-0 md:cursor-default dark:hover:bg-transparent"
+              >
+                <span className="shrink-0 text-xs font-medium text-foreground">{t.share.credits}</span>
+                {!creditsOpen && (
+                  <span className="min-w-0 truncate text-xs text-muted-foreground md:hidden">
+                    · {props.credits.split("\n").find((l) => l.trim()) ?? ""}
+                  </span>
+                )}
+              </Button>
+              {/* Its own scroll on desktop, as in the gallery panel. */}
+              <p
+                className={cn(
+                  "mt-1 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground md:block md:max-h-[5lh] md:overflow-y-auto md:overscroll-contain",
+                  creditsOpen ? "block" : "hidden",
+                )}
+              >
+                {props.credits}
+              </p>
             </div>
           )}
         </div>
         {/* Desktop footer. The like keeps its left place either way; the fork
             sits right, and a display-only scene simply has none. Mobile keeps
             its standalone like rail instead (below). */}
-        <div className="hidden h-8 shrink-0 items-center justify-between gap-2 border-t border-line px-3 md:flex">
+        <div className="hidden h-10 shrink-0 items-center justify-between gap-2 border-t border-line px-3 md:flex">
           <LikeButton like={like} compact />
           {/* Where the fork would be, the reason it is not. */}
           {props.displayOnly ? (
@@ -277,6 +323,27 @@ function useLike(sceneId: string, initial: number) {
   const [liked, setLiked] = useState(false)
   const [count, setCount] = useState(initial)
   const [busy, setBusy] = useState(false)
+
+  // The page is cached for everyone, so it cannot know whether YOU like this
+  // scene — asked once a session exists, so the heart comes back red after a
+  // refresh and the count is the live one. Never for an anonymous visit: that
+  // would wake the database for a page that is otherwise served from cache.
+  const userId = session?.user.id
+  useEffect(() => {
+    if (!userId) return
+    let stale = false
+    fetch(`/api/library/${sceneId}/like`)
+      .then((r) => (r.ok ? (r.json() as Promise<{ liked: boolean; likeCount: number | null }>) : null))
+      .then((s) => {
+        if (stale || !s) return
+        setLiked(s.liked)
+        if (s.likeCount !== null) setCount(s.likeCount)
+      })
+      .catch(() => {})
+    return () => {
+      stale = true
+    }
+  }, [sceneId, userId])
 
   const toggle = async () => {
     if (!session || busy) return

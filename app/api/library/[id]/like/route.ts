@@ -10,6 +10,34 @@ import { auth } from "@/lib/auth"
 import { hasDatabase, db, schema } from "@/lib/db"
 import { refreshLibrary } from "@/lib/public-pages"
 
+/**
+ * Whether YOU like it, and its live count. The scene page is cached for
+ * everyone, so it can say neither: without this a refresh drew your heart
+ * empty on a scene you had liked, and showed whatever count was cached.
+ *
+ * Signed in only, and the session is checked BEFORE any query: an anonymous
+ * visit must leave the database asleep (Neon wakes on any query, read or
+ * write), and a visitor with no session has no like to report.
+ */
+export async function GET(request: Request, ctx: { params: Promise<{ id: string }> }) {
+  if (!hasDatabase) return NextResponse.json({ liked: false, likeCount: null })
+  const session = await auth.api.getSession({ headers: request.headers })
+  if (!session) return NextResponse.json({ liked: false, likeCount: null })
+  const { id } = await ctx.params
+  const [row] = await db
+    .select({ likeCount: schema.libraryItems.likeCount, visibility: schema.libraryItems.visibility })
+    .from(schema.libraryItems)
+    .where(eq(schema.libraryItems.id, id))
+    .limit(1)
+  if (!row || row.visibility === "private") return NextResponse.json({ error: "not found" }, { status: 404 })
+  const mine = await db
+    .select({ userId: schema.likes.userId })
+    .from(schema.likes)
+    .where(and(eq(schema.likes.userId, session.user.id), eq(schema.likes.itemId, id)))
+    .limit(1)
+  return NextResponse.json({ liked: mine.length > 0, likeCount: row.likeCount })
+}
+
 export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
   // No database configured — see lib/db. Nothing to publish to, and nothing to
   // sign in as, so the honest answer is that this deployment cannot do it.
