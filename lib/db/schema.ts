@@ -72,6 +72,12 @@ export const libraryItems = pgTable(
      *  cover, and its page asks before it loads. Server-only like visibility —
      *  it is about how the scene is SHOWN, so it never rides in a document. */
     nsfw: boolean("nsfw").notNull().default(false),
+    /** Scenes only: watch, don't fork. The scene page offers no "Open in
+     *  editor" and the editor will not take it as a fork. A courtesy, not a
+     *  lock — playing the scene downloads it — and the author's to switch
+     *  either way at any time, which is why it is a flag beside nsfw and not a
+     *  third visibility (visibility is one-way, and is who can REACH it). */
+    displayOnly: boolean("display_only").notNull().default(false),
     likeCount: integer("like_count").notNull().default(0),
     /** Published scenes using this preset, denormalised from scene_uses. */
     usageCount: integer("usage_count").notNull().default(0),

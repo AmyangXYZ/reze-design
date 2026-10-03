@@ -291,19 +291,21 @@ export const RenderPanel = memo(function RenderPanel({
   // and for asking whether HEVC can be encoded at it.
   const [frameW, frameH] = DIMS[aspect][quality]
   const mbps = (level: ExportBitrate) => Math.round(videoBitrate(frameW, frameH, VIDEO_FPS, level) / 1e6)
-  // Asked per size: an encoder that takes 1080p can refuse 4K. Null until it
-  // answers, and the option stays selectable meanwhile — the export falls back
-  // to H.264 on its own if the answer turns out to be no.
+  // Asked per size and rate: an encoder that takes 1080p can refuse 4K, and
+  // one that takes 4K at 50 Mbps can refuse it at 100. Null until it answers,
+  // and the option stays selectable meanwhile — the export falls back to H.264
+  // on its own if the answer turns out to be no.
+  const hevcRate = videoBitrate(frameW, frameH, VIDEO_FPS, bitrate)
   const [hevcOk, setHevcOk] = useState<boolean | null>(null)
   useEffect(() => {
     let stale = false
-    canEncodeHevc(frameW, frameH)
+    canEncodeHevc(frameW, frameH, hevcRate)
       .then((ok) => !stale && setHevcOk(ok))
       .catch(() => !stale && setHevcOk(false))
     return () => {
       stale = true
     }
-  }, [frameW, frameH])
+  }, [frameW, frameH, hevcRate])
 
   const [exporting, setExporting] = useState(false)
   const [progress, setProgressState] = useState<ExportProgress | null>(null)

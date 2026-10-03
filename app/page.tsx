@@ -2148,6 +2148,7 @@ export default function Lab() {
     tags: string[]
     credits: string
     nsfw: boolean
+    displayOnly: boolean
   } | null>(null)
   const [forkPending, setForkPending] = useState(forkOnBoot !== null)
   const [scene, setScene] = useState(() => (forkOnBoot ? EMPTY_SCENE : hydrateScene(DEFAULT_SCENE)))
@@ -6099,7 +6100,14 @@ export default function Lab() {
             tags?: string[] | null
             credits?: string | null
             nsfw?: boolean
+            displayOnly?: boolean
           }
+        }
+        // Watch, don't fork — unless it is the author reopening their own.
+        if (item.displayOnly && !handoff.edit) {
+          setUpload({ kind: "notice", message: t.share.displayOnlyRefused })
+          await applyLabScene(hydrateScene(DEFAULT_SCENE))
+          return
         }
         if (handoff.edit) {
           if (item.poster) setUpdatesPoster(item.poster)
@@ -6108,6 +6116,7 @@ export default function Lab() {
             tags: item.tags ?? [],
             credits: item.credits ?? "",
             nsfw: item.nsfw === true,
+            displayOnly: item.displayOnly === true,
           })
         }
         const resolve = await resolveSceneRefs(item.payload.doc)

@@ -158,9 +158,15 @@ export const videoBitrate = (w: number, h: number, fps: number, level: ExportBit
     ? Math.round(Math.min(160e6, Math.max(12e6, w * h * fps * 0.2)))
     : Math.round(Math.min(80e6, Math.max(6e6, w * h * fps * 0.1)))
 
-/** Whether this browser can encode HEVC at this size — Chromium does where the
- *  GPU or OS provides an encoder, which is most Windows and macOS machines. */
-export const canEncodeHevc = (width: number, height: number) => canEncodeVideo("hevc", { width, height })
+/**
+ * Whether this browser can encode HEVC at this size AND this rate.
+ *
+ * The rate is the part that matters: a hardware HEVC encoder that takes 4K
+ * at 50 Mbps can refuse it at 100 (its tier and level cap the bitrate), and
+ * a probe without one said yes to an export that then failed at configure.
+ */
+export const canEncodeHevc = (width: number, height: number, bitrate: number) =>
+  canEncodeVideo("hevc", { width, height, bitrate })
 
 // Watermark: "REZE DESIGN" wordmark, top-left
 
@@ -585,9 +591,13 @@ async function muxerSink(opts: {
   const webm = target === "webm"
 
   const order = webm ? (["vp9", "vp8"] as const) : settings.codec === "hevc" ? (["hevc", "avc", "av1"] as const) : (["avc", "hevc", "av1"] as const)
+  const bitrate = videoBitrate(width, height, fps, settings.bitrate)
+  // Probed at the rate it will be asked for, so a codec that takes the size
+  // but not the bitrate falls through to the next instead of failing later.
   const videoCodec = await getFirstEncodableVideoCodec([...order], {
     width,
     height,
+    bitrate,
   })
   if (!videoCodec) throw new Error(`No supported video encoder for ${width}×${height}`)
 
@@ -598,7 +608,7 @@ async function muxerSink(opts: {
   })
   const videoSource = new CanvasSource(composite, {
     codec: videoCodec,
-    bitrate: videoBitrate(width, height, fps, settings.bitrate),
+    bitrate,
     // mediabunny splits colour and alpha on the CPU when the encoder cannot
     // keep alpha itself, and emits the alpha as VP9 side data — which is what
     // makes the track come out marked transparent.

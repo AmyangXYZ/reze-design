@@ -22,6 +22,7 @@ import { sceneRefs, type SceneDoc } from "@/lib/scene"
 import { useSession } from "@/lib/auth-client"
 import type { UnpublishedUse } from "@/lib/refs"
 import { useT } from "@/lib/i18n"
+import { cn } from "@/lib/utils"
 
 const MAX_TAGS = 5
 // Generous: an untouched Retina screenshot is routinely past 10MB.
@@ -33,11 +34,11 @@ const MAX_POSTER_BYTES = 20 * 1024 * 1024
 // coming back to a blank form after composing a description and a credits list is
 // the kind of small loss that stops people publishing at all. Per scene, so two
 // scenes in two tabs don't overwrite each other's drafts.
-type Draft = { description: string; tags: string[]; credits: string; nsfw?: boolean }
+type Draft = { description: string; tags: string[]; credits: string; nsfw?: boolean; displayOnly?: boolean }
 
 /** What a publish just said about the scene, handed back so the next publish in
  *  the same session starts from it rather than from a blank form. */
-export type PublishedMeta = Draft & { nsfw: boolean; poster: string | null }
+export type PublishedMeta = Draft & { nsfw: boolean; displayOnly: boolean; poster: string | null }
 
 const draftKey = (sceneId: string) => `reze:publish-draft:${sceneId}`
 
@@ -55,6 +56,7 @@ function readDraft(sceneId: string): Draft {
       credits: typeof d.credits === "string" ? d.credits : "",
       // Absent when the draft never touched it, so the published flag stands.
       ...(typeof d.nsfw === "boolean" ? { nsfw: d.nsfw } : {}),
+      ...(typeof d.displayOnly === "boolean" ? { displayOnly: d.displayOnly } : {}),
     }
   } catch {
     return empty
@@ -193,6 +195,7 @@ function ShareSceneForm({
       tags: local.tags.length ? local.tags : updatesMeta.tags,
       credits: local.credits || updatesMeta.credits,
       nsfw: local.nsfw ?? updatesMeta.nsfw,
+      displayOnly: local.displayOnly ?? updatesMeta.displayOnly,
     }
   })
   // Recomputed when the picker moves, NOT read once: a look that is fine for a
@@ -207,6 +210,7 @@ function ShareSceneForm({
   const [visibility, setVisibility] = useState<Visibility>("public")
   // Off unless the author says so; an edit starts from what the scene already is.
   const [nsfw, setNsfw] = useState(draft.nsfw ?? false)
+  const [displayOnly, setDisplayOnly] = useState(draft.displayOnly ?? false)
   const blocking = useMemo(() => unpublished(visibility), [unpublished, visibility])
   // Chosen by the author, not grabbed from the canvas: the frame that happens to
   // be showing at publish is rarely the one they would pick to represent the work.
@@ -225,11 +229,11 @@ function ShareSceneForm({
   // going away to a screenshot tool, which fires no close handler.
   useEffect(() => {
     if (step === "done") return
-    const draft: Draft = { description, tags, credits, nsfw }
+    const draft: Draft = { description, tags, credits, nsfw, displayOnly }
     const key = draftKey(sceneId)
-    if (!description && !tags.length && !credits && !nsfw) window.localStorage.removeItem(key)
+    if (!description && !tags.length && !credits && !nsfw && !displayOnly) window.localStorage.removeItem(key)
     else window.localStorage.setItem(key, JSON.stringify(draft))
-  }, [sceneId, description, tags, credits, nsfw, step])
+  }, [sceneId, description, tags, credits, nsfw, displayOnly, step])
   // Whatever origin this is — localhost while testing, reze.design in production.
   // Hard-coding the production host meant a link you could not follow from a dev
   // build, and one you could not verify before it was real.
@@ -325,6 +329,8 @@ function ShareSceneForm({
           tags,
           visibility,
           nsfw,
+          // Only a public scene has strangers to withhold the editor from.
+          displayOnly: visibility === "public" && displayOnly,
         }),
       })
       if (res.status === 409) {
@@ -356,6 +362,7 @@ function ShareSceneForm({
         tags,
         credits: credits.trim(),
         nsfw,
+        displayOnly: visibility === "public" && displayOnly,
         poster: item.poster ?? null,
       })
       setStep("done")
@@ -590,6 +597,21 @@ function ShareSceneForm({
               <Switch checked={nsfw} onCheckedChange={setNsfw} />
             </label>
             <VisibilityPicker value={visibility} onChange={setVisibility} />
+            {/* After the picker it qualifies: who may fork a PUBLIC scene.
+                Inert, not hidden, while private, so the form keeps its shape. */}
+            <label
+              className={cn(
+                "flex cursor-pointer items-center justify-between gap-3",
+                visibility !== "public" && "pointer-events-none opacity-40",
+              )}
+            >
+              <span className="text-xs text-muted-foreground">{t.share.displayOnly}</span>
+              <Switch
+                checked={visibility === "public" && displayOnly}
+                onCheckedChange={setDisplayOnly}
+                disabled={visibility !== "public"}
+              />
+            </label>
             {error && (
               <div className="rounded-md bg-red-500/10 px-2.5 py-2 text-[11px] leading-relaxed break-words text-red-400">
                 {error}

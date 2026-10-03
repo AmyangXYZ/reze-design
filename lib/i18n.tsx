@@ -123,6 +123,9 @@ const en = {
     /** A fork opens under its own name, so the original's is never quietly
      *  overwritten in the library and two copies are told apart at a glance. */
     forkedName: (name: string) => `${name} - fork`,
+    /** A published scene others can watch but not open in the editor. */
+    displayOnly: "Display only",
+    displayOnlyRefused: "This scene is display only.",
     updateScene: "Update",
     updateBlurb: "Replaces the published scene — same link, same views and likes.",
     updatedTitle: "Scene updated",
@@ -379,7 +382,7 @@ const en = {
     seqDone: (frames: number, folder: string, size: string) => `${frames} frames — ${folder} · ${size}`,
     needsFolderPicker: "A PNG sequence needs a destination folder — try Chrome.",
     failed: (message: string) => `Export failed: ${message}`,
-    encoderUnsupported: "This browser can't encode video at these settings — try Chrome.",
+    encoderUnsupported: "This browser can't encode video at these settings.",
     upscaleWarn: "Backdrop is lower-resolution than the output and will be upscaled.",
   },
   analysis: {
@@ -1127,6 +1130,8 @@ const zh: Dictionary = {
     backToEditor: "返回编辑器",
     editScene: "编辑",
     forkedName: (name: string) => `${name} - 复刻`,
+    displayOnly: "仅展示",
+    displayOnlyRefused: "此场景仅供展示。",
     updateScene: "更新",
     updateBlurb: "替换已发布的场景 —— 链接、播放量与点赞都不变。",
     updatedTitle: "场景已更新",
@@ -1359,7 +1364,7 @@ const zh: Dictionary = {
     seqDone: (frames: number, folder: string, size: string) => `${frames} 帧 — ${folder} · ${size}`,
     needsFolderPicker: "PNG 序列需要选择目标文件夹，请改用 Chrome。",
     failed: (message: string) => `导出失败：${message}`,
-    encoderUnsupported: "当前浏览器无法按此参数编码视频，请改用 Chrome。",
+    encoderUnsupported: "当前浏览器无法按此参数编码视频。",
     upscaleWarn: "背景分辨率低于输出分辨率，将被放大。",
   },
   analysis: {

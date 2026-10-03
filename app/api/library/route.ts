@@ -360,7 +360,7 @@ export async function POST(request: Request) {
 
   // No `changelog`: it described what a new VERSION changed, and there are no
   // versions to describe. A client still sending one is simply ignored.
-  const { id, kind, name, description, tags, payload, credits, bundleKey, bundleBytes, posterKey, forkedFromId, uses, visibility, nsfw } =
+  const { id, kind, name, description, tags, payload, credits, bundleKey, bundleBytes, posterKey, forkedFromId, uses, visibility, nsfw, displayOnly } =
     (body ?? {}) as Record<string, unknown>
   // Public unless asked otherwise: publishing is a public act, and the dialog
   // says so. A client sending nothing gets what it always got.
@@ -472,6 +472,8 @@ export async function POST(request: Request) {
       // The author's to set and to clear, on every publish that says; one that
       // does not (an older client) leaves the flag as it was.
       ...(typeof nsfw === "boolean" || !replacing ? { nsfw: nsfw === true } : {}),
+      // Same rule.
+      ...(typeof displayOnly === "boolean" || !replacing ? { displayOnly: displayOnly === true } : {}),
     }
     const [scene] = replacing
       ? await db

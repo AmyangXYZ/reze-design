@@ -1,0 +1,1 @@
+ALTER TABLE "library_items" ADD COLUMN "display_only" boolean DEFAULT false NOT NULL;

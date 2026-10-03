@@ -34,6 +34,7 @@ const sceneRow = (id: string) =>
           visibility: schema.libraryItems.visibility,
           posterKey: schema.libraryItems.posterKey,
           nsfw: schema.libraryItems.nsfw,
+          displayOnly: schema.libraryItems.displayOnly,
           ownerId: schema.libraryItems.ownerId,
           kind: schema.libraryItems.kind,
           handle: user.username,
@@ -105,6 +106,7 @@ export default async function ScenePage({ params }: { params: Promise<{ user: st
       credits={row.credits}
       likeCount={row.likeCount}
       publishedAt={row.createdAt}
+      displayOnly={row.displayOnly}
     />
   )
 }

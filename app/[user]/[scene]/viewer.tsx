@@ -44,6 +44,8 @@ type ViewerProps = {
   likeCount: number
   /** When it was published, ISO. Printed under the author. */
   publishedAt: string
+  /** The author asked that it be watched, not forked: no Open in editor. */
+  displayOnly?: boolean
 }
 
 /**
@@ -209,14 +211,19 @@ export function SceneViewer(props: ViewerProps) {
       <div className="absolute bottom-16 left-4 w-[min(10.5rem,44vw)] overflow-hidden rounded-xl bg-zinc-950/50 backdrop-blur-md md:top-3 md:right-3 md:bottom-auto md:left-auto md:w-60">
         {/* Desktop header: the two actions, pushed apart, over the panel they act on. */}
         <div className="hidden items-center justify-between gap-2 border-b border-white/10 px-3 py-2.5 md:flex">
-          <button
-            onClick={() => void openInEditor()}
-            disabled={forking}
-            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md bg-blue-400 px-3 text-xs font-medium text-white transition-colors hover:bg-blue-300 disabled:cursor-default disabled:opacity-60"
-          >
-            <GitFork className="size-3.5" />
-            {t.share.fork}
-          </button>
+          {/* An empty slot when display only, so the like keeps its right edge. */}
+          {props.displayOnly ? (
+            <span />
+          ) : (
+            <button
+              onClick={() => void openInEditor()}
+              disabled={forking}
+              className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md bg-blue-400 px-3 text-xs font-medium text-white transition-colors hover:bg-blue-300 disabled:cursor-default disabled:opacity-60"
+            >
+              <GitFork className="size-3.5" />
+              {t.share.fork}
+            </button>
+          )}
           <LikeButton like={like} compact />
         </div>
         {/* Everything, always: crediting only counts if people can read it without
