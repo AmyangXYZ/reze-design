@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft, GalleryThumbnails, GitFork, Heart, WandSparkles } from "lucide-react"
 import { LogoMenu, Row as MenuRow } from "@/components/editor/scene-file-menu"
-import { SceneGallery } from "@/components/editor/scene-gallery"
+import { DisplayOnlyTag, SceneGallery } from "@/components/editor/scene-gallery"
 import { AnimPlayer } from "@/components/scene/anim-player"
 import { builtinEffect } from "@/lib/effects"
 import { useEngine } from "@/hooks/use-engine"
@@ -248,7 +248,10 @@ export function SceneViewer(props: ViewerProps) {
             its standalone like rail instead (below). */}
         <div className="hidden h-8 shrink-0 items-center justify-between gap-2 border-t border-line px-3 md:flex">
           <LikeButton like={like} compact />
-          {!props.displayOnly && (
+          {/* Where the fork would be, the reason it is not. */}
+          {props.displayOnly ? (
+            <DisplayOnlyTag />
+          ) : (
             <Button
               size="xs"
               onClick={() => void openInEditor()}

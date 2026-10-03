@@ -353,6 +353,7 @@ function ShareSceneForm({
         poster: item.poster ?? null,
         createdAt: item.createdAt ?? new Date().toISOString(),
         nsfw,
+        displayOnly: visibility === "public" && displayOnly,
       })
       // Published — the draft has served its purpose.
       window.localStorage.removeItem(draftKey(sceneId))

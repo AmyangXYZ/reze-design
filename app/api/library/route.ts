@@ -245,6 +245,8 @@ async function galleryPage(
       // Sent, not filtered on: a flagged scene is still listed, with its cover
       // blurred until the viewer asks to see it.
       nsfw: schema.libraryItems.nsfw,
+      // So the detail panel can say a scene is watch-only before it is opened.
+      displayOnly: schema.libraryItems.displayOnly,
       // Selected so the cursor can be stated in the same terms the rows were
       // ranked by. Stripped from the response below — it is paging machinery,
       // not something a card shows.

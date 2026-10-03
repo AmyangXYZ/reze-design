@@ -215,10 +215,13 @@ export function RailTags({
 }
 
 /** Tag chips as the item's own metadata — the detail panel's, not the rail's. */
-export function LibraryTags({ tags }: { tags: string[] }) {
-  if (tags.length === 0) return null
+export function LibraryTags({ tags, lead }: { tags: string[]; lead?: ReactNode }) {
+  if (tags.length === 0 && !lead) return null
   return (
     <div className="mt-2 flex flex-wrap gap-1">
+      {/* A tag that is a fact about the item rather than the author's word for
+          it (Display only), first in the same row. */}
+      {lead}
       {tags.map((tag) => (
         <span key={tag} className={cn("rounded border px-1.5 py-0.5 text-[11px]", tagHue(tag))}>
           {tag}

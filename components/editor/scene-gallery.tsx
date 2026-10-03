@@ -33,6 +33,7 @@ import { useSession } from "@/lib/auth-client"
 
 import { useZOrder } from "@/hooks/use-z-order"
 import { useT } from "@/lib/i18n"
+import { cn } from "@/lib/utils"
 import { SceneCover } from "@/components/nsfw"
 import { Switch } from "@/components/ui/switch"
 import { setShowNsfw, useShowNsfw } from "@/lib/nsfw-pref"
@@ -52,6 +53,31 @@ export type GalleryScene = {
   visibility?: "public" | "private"
   /** Flagged by its author; its cover blurs until the viewer opts in. */
   nsfw?: boolean
+  /** Its author asked that it be watched, not opened in the editor. */
+  displayOnly?: boolean
+}
+
+/**
+ * The mark a display-only scene carries where its details are read — the
+ * gallery's panel and the scene page's card. Not on the grid's covers: it
+ * matters once you are deciding what to do with a scene, not while browsing.
+ *
+ * NOT a tag's shape. Beside the author's tags a bordered chip read as one more
+ * topic and went unseen; this is a filled pill, so it reads as a property of
+ * the scene. Grey, not an accent: it is a fact, not a warning.
+ */
+export function DisplayOnlyTag({ className }: { className?: string }) {
+  const t = useT()
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center truncate rounded-full bg-white/10 px-2 py-0.5 text-[11px] leading-none font-medium text-foreground",
+        className,
+      )}
+    >
+      {t.share.displayOnly}
+    </span>
+  )
 }
 
 /**
@@ -665,7 +691,7 @@ function GalleryContent({
                 {selected.description && (
                   <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground select-text">{selected.description}</p>
                 )}
-                <LibraryTags tags={selected.tags} />
+                <LibraryTags tags={selected.tags} lead={selected.displayOnly ? <DisplayOnlyTag /> : undefined} />
                 {/* Who made the model, the motion and the music — the thing the
                     community actually asks to see before anyone reuses anything. */}
                 {selected.credits && (
