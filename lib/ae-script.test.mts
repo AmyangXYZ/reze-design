@@ -54,10 +54,26 @@ const base = { width: 1920, height: 1080, fps: 60, startTime: 0, scale: 10, cast
 // the handedness, so a rotation about the flipped axis has to reverse too —
 // flip the position and forget the yaw and the shot mirrors, which reads as a
 // camera pointing the wrong way rather than as an axis mistake.
+//
+// The flip is followed by the centring: the comp is 1920x1080, so (1, 2, 3) at
+// scale 10 is (1·10 + 960, −2·10 + 540, 3·10) = (970, 520, 30).
 {
   const s = aeScript({ ...base, frames: 1, camera: [shot({ target: [1, 2, 3], rotation: [0, Math.PI / 2, 0] })] })
-  has(s, "[ 10.000, -20.000, 30.000 ]", "y is negated, everything scaled")
+  has(s, "[ 970.000, 520.000, 30.000 ]", "y is negated, everything scaled, then centred")
   has(s, "layNully.yRotation.setValueAtTime( 0.00000000, -90.000 );", "yaw is negated with it")
+}
+
+// ── The shot is centred on the comp ───────────────────────────────────────
+// MMD2AE builds its rig around the middle of the frame, and AE's origin is the
+// top-left corner. The same MMD point therefore lands at half-width, half-height
+// further in — and it has to move with the comp, because a 4K comp centres at
+// (1920, 1080) rather than (960, 540).
+{
+  const s = aeScript({ ...base, frames: 1, camera: [shot({ target: [0, 0, 0] })] })
+  has(s, "[ 960.000, 540.000, 0.000 ]", "the origin lands at the comp centre")
+  const fourK = aeScript({ ...base, width: 3840, height: 2160, frames: 1, camera: [shot({ target: [0, 0, 0] })] })
+  has(fourK, "[ 1920.000, 1080.000, 0.000 ]", "and follows the comp when it changes")
+  ok(!fourK.includes("[ 0.000, 0.000, 0.000 ]"), "the raw origin is NOT what gets written")
 }
 
 // Pitch and roll are NOT negated — they turn about axes the flip left alone.
@@ -71,9 +87,15 @@ const base = { width: 1920, height: 1080, fps: 60, startTime: 0, scale: 10, cast
 // An anchor offset applies AFTER that null's rotations, so it pushes the camera
 // back along its own axis — which is what an MMD distance means. As a position
 // it would push along the parent's axes instead, and the shot would swing.
+//
+// POSITIVE, because a VMD distance is NEGATIVE: the camera sits behind its target,
+// so the anchor value is −distance. −(−45)·10 = +450, and a rig that wrote the
+// VMD's own sign would put the camera in front of the shot, mirrored through its
+// target at exactly the right remove — the sort of wrong that reads as a scene
+// problem rather than a maths one.
 {
   const s = aeScript({ ...base, frames: 1, camera: [shot({ distance: -45 })] })
-  has(s, "layNullx.anchorPoint.setValueAtTime( 0.00000000,[ 0.0, 0.0, -450.000 ] );", "distance, scaled, on the anchor")
+  has(s, "layNullx.anchorPoint.setValueAtTime( 0.00000000, [ 0.000, 0.000, 450.000 ] );", "distance, negated and scaled, on the anchor")
   ok(!s.includes("layNullx.position.setValueAtTime"), "the child null's POSITION is never keyed")
 }
 
@@ -101,8 +123,18 @@ const base = { width: 1920, height: 1080, fps: 60, startTime: 0, scale: 10, cast
 // ── Frame times ───────────────────────────────────────────────────────────
 // Keys land on frame boundaries in seconds. A key a hair off its frame is one
 // AE may snap somewhere else.
+//
+// The samples have to MOVE, and to move non-linearly, or there is nothing to
+// time: three identical shots decimate to their two ends, and a straight ramp
+// decimates to the same pair, so a mid-key only survives if it turns. y goes
+// 10 → 12 → 10 for that reason.
 {
-  const s = aeScript({ ...base, fps: 30, frames: 3, camera: [shot(), shot(), shot()] })
+  const s = aeScript({
+    ...base,
+    fps: 30,
+    frames: 3,
+    camera: [shot({ target: [0, 10, 0] }), shot({ target: [0, 12, 0] }), shot({ target: [0, 10, 0] })],
+  })
   has(s, "( 0.00000000,", "frame 0")
   has(s, "( 0.03333333,", "frame 1 at 30fps")
   has(s, "( 0.06666667,", "frame 2")
@@ -121,7 +153,11 @@ const base = { width: 1920, height: 1080, fps: 60, startTime: 0, scale: 10, cast
   })
   has(s, 'layCast0.name        = "レゼ";', "a null per character, under its own name")
   has(s, "layCast0.threeDLayer = true;", "and it is 3D, or it cannot hold a Z")
-  has(s, "[ 10.000, -20.000, 30.000 ]", "same flip and scale as the camera")
+  // Same flip, scale AND centring as the camera — a cast null and the camera's
+  // target are points in one MMD space, so mapping them differently would put
+  // them a half-frame apart. (1, 2, 3) at scale 10 on a 1920x1080 comp = (970, 520, 30).
+  has(s, "[ 970.000, 520.000, 30.000 ]", "same flip, scale and centring as the camera")
+  has(s, "[ 960.000, 540.000, 0.000 ]", "including a character standing at the MMD origin")
   has(s, "-180.000", "and the same yaw negation")
 }
 

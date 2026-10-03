@@ -195,6 +195,14 @@ const EPS_ZOOM = 5e-4
 export function aeScript(input: AeScriptInput): string {
   const { width, height, fps, frames, camera, cast, scale } = input
   const duration = frames / fps
+  // THE COMP'S ORIGIN IS ITS TOP-LEFT CORNER, and every position below is
+  // measured from it. MMD2AE centres the shot instead — its rig is built around
+  // the middle of the frame — so the same numbers land in the same place only
+  // once the half-width/half-height is added. It is the reason an uncentred
+  // export reads as a framing problem rather than a maths one: the whole scene
+  // sits a half-frame up and to the left, and every move within it is correct.
+  const ox = width / 2
+  const oy = height / 2
   const out: string[] = []
   const w = (s: string) => out.push(s)
 
@@ -256,13 +264,14 @@ export function aeScript(input: AeScriptInput): string {
     w("")
   }
 
-  // Y IS FLIPPED, here and on every position below. AE's y axis points down the
-  // screen and MMD's points up, and this is the one place the two spaces
-  // disagree — get it wrong and the shot is upside down in a way that looks like
-  // a rotation bug.
+  // Y IS FLIPPED, here and on every position below, and the result is CENTRED.
+  // AE's y axis points down the screen and MMD's points up, and this is the one
+  // place the two spaces disagree — get it wrong and the shot is upside down in a
+  // way that looks like a rotation bug. The flip happens BEFORE the centring, so
+  // the y offset is added to an already-flipped value.
   channel(
     "layNully.position",
-    camera.map((s) => [s.target[0] * scale, -s.target[1] * scale, s.target[2] * scale]),
+    camera.map((s) => [s.target[0] * scale + ox, -s.target[1] * scale + oy, s.target[2] * scale]),
     EPS_POS * scale,
     true,
   )
@@ -293,9 +302,12 @@ export function aeScript(input: AeScriptInput): string {
     w(`${v}.name        = ${JSON.stringify(member.name)};`)
     w(`${v}.threeDLayer = true;`)
     w(`${v}.anchorPoint.setValue( [ 0.0, 0.0, 0.0 ] );`)
+    // The camera's own flip and centring, unchanged: a null for a character is a
+    // point in the same MMD space the camera's target lives in, so it has to be
+    // mapped the same way or the two sit a half-frame apart.
     channel(
       `${v}.position`,
-      member.samples.map((s) => [s.position[0] * scale, -s.position[1] * scale, s.position[2] * scale]),
+      member.samples.map((s) => [s.position[0] * scale + ox, -s.position[1] * scale + oy, s.position[2] * scale]),
       EPS_POS * scale,
       true,
     )
