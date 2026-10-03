@@ -23,7 +23,7 @@ import { BACKDROP_VIDEO_RE, openAnimatedImage } from "@/lib/backdrop"
 import { groundExtent, hexToLinearVec3 } from "@/lib/scene-settings"
 import { castRotationToEngine, pushTimeline, seedLane, timelineOf, visibleAt, type VisibilityWindow } from "@/lib/timeline"
 import { bundleReader, dress, loadNativeLook, loadNativeStage } from "@/lib/unity-native"
-import { isSealedBundle, openSealedBundle, sealedName } from "@/lib/bundle-cipher"
+import { bundleZip } from "@/lib/bundle-cipher"
 
 /**
  * Surface what the engine said about a style-group apply.
@@ -344,8 +344,8 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
     // send the pill back to the name it uses before one has started.
     onBytes?.({ received: blob.size, total: total || blob.size, bytesPerSecond: 0, done: true })
     // A sealed bundle (lib/bundle-cipher) opens back into its zip first; one
-    // published before sealing is a plain zip already.
-    if (isSealedBundle(scene.assets.bundle)) blob = await openSealedBundle(blob, sealedName(scene.assets.bundle))
+    // published before sealing — or by a tab that predates it — is a plain zip.
+    blob = await bundleZip(blob, scene.assets.bundle)
     bundle = await openZip(blob, "assets.zip")
     if (stale()) return null
   }

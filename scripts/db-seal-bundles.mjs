@@ -4,6 +4,7 @@
 //   node --env-file=.env.local scripts/db-seal-bundles.mjs --write         seal, upload, repoint rows
 //   node --env-file=.env.local scripts/db-seal-bundles.mjs --write --limit 1
 //   node --env-file=.env.local scripts/db-seal-bundles.mjs --write --id <scene id>
+//   node --env-file=.env.local scripts/db-seal-bundles.mjs --recheck-bin   .bin bundles that are plain zips
 //   node --env-file=.env.local scripts/db-seal-bundles.mjs --delete-old    after `npm run db:refresh`
 //
 // TWO PASSES, so nothing is ever unreadable. --write uploads each sealed copy
@@ -75,11 +76,30 @@ if (DELETE_OLD) {
   process.exit(0)
 }
 
-const rows = await sql`
-  select id, name, owner_id, bundle_key, bundle_bytes, payload->'doc'->'assets'->>'bundle' as url
-  from library_items
-  where kind = 'scene' and bundle_key like 'scenes/%' and owner_id is not null
-  order by created_at`
+// --recheck-bin: the .bin bundles that are really plain zips — uploaded by an
+// editor tab loaded before sealing shipped, which took the new opaque key and
+// put its unsealed zip there. Found by their first four bytes.
+const RECHECK = process.argv.includes("--recheck-bin")
+const candidates = RECHECK
+  ? await sql`
+      select id, name, owner_id, bundle_key, bundle_bytes, payload->'doc'->'assets'->>'bundle' as url
+      from library_items
+      where kind = 'scene' and bundle_key like 'b/%' and owner_id is not null
+      order by created_at`
+  : await sql`
+      select id, name, owner_id, bundle_key, bundle_bytes, payload->'doc'->'assets'->>'bundle' as url
+      from library_items
+      where kind = 'scene' and bundle_key like 'scenes/%' and owner_id is not null
+      order by created_at`
+const rows = []
+for (const r of candidates) {
+  if (!RECHECK) {
+    rows.push(r)
+    continue
+  }
+  const head = new Uint8Array(await (await fetch(r.url, { headers: { range: "bytes=0-3" } })).arrayBuffer())
+  if (head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04) rows.push(r)
+}
 const todo = (ONLY ? rows.filter((r) => r.id === ONLY) : rows).slice(0, LIMIT)
 const total = todo.reduce((n, r) => n + Number(r.bundle_bytes ?? 0), 0)
 console.log(`${WRITE ? "SEALING" : "DRY RUN"} — ${todo.length} of ${rows.length} unsealed bundle(s), ${mb(total)}\n`)

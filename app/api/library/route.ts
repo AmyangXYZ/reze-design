@@ -546,7 +546,7 @@ export async function POST(request: Request) {
     if (nextVisibility === "public") refreshMakerPages(author)
     // The scene now serves the new bundle, so the one it replaced has no reader.
     if (replacing?.bundleKey && hasBundle && replacing.bundleKey !== bundleKey) {
-      await deleteReplacedBundle(session.user.id, replacing.bundleKey)
+      await deleteReplacedBundle(replacing.bundleKey)
     }
     // Shaped like a gallery card so the client can drop it straight into the
     // list it just joined, instead of re-reading the whole page to learn one row.

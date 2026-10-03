@@ -34,9 +34,16 @@ export const ownsBundleKey = (userId: string, key: string): boolean =>
  * Remove a bundle a republish has replaced. Every publish uploads a fresh one,
  * so without this each correction left its predecessor in storage forever.
  * Best effort: a failure here leaves one orphan, never a broken publish.
+ *
+ * `key` is the bundle the author's OWN row named, so it needs no owner-tag
+ * check: a row only ever gets a key through a publish — which checks the
+ * incoming key's tag — or through scripts/db-seal-bundles.mjs, which assigned
+ * keys by owner. (That script ran with a different secret than production, so
+ * a migrated key's tag does not verify here; requiring it would orphan every
+ * migrated bundle on its first republish.) Only bundle-shaped keys are deleted.
  */
-export async function deleteReplacedBundle(userId: string, key: string): Promise<void> {
-  if (!ownsBundleKey(userId, key)) return
+export async function deleteReplacedBundle(key: string): Promise<void> {
+  if (!/^b\/[^/]+\/[^/]+\.bin$/.test(key) && !/^scenes\/[^/]+\/[^/]+\/assets\.zip$/.test(key)) return
   try {
     const s3 = new S3Client({
       region: "auto",

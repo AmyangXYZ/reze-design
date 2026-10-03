@@ -39,6 +39,22 @@ export async function sealBundle(zip: Blob, name: string): Promise<Blob> {
   return new Blob([out], { type: "application/octet-stream" })
 }
 
+/**
+ * The zip a fetched bundle holds, whichever way it was stored.
+ *
+ * A `.bin` that already begins with a zip's local-file signature was never
+ * sealed: an editor tab loaded before sealing shipped took the opaque key the
+ * new server handed out and uploaded its plain zip there (51TSnp). Opened as
+ * it is rather than "decrypted" into noise. A sealed file starting with those
+ * four bytes by chance is a one-in-four-billion event.
+ */
+export async function bundleZip(data: Blob, url: string): Promise<Blob> {
+  if (!isSealedBundle(url)) return data
+  const head = new Uint8Array(await data.slice(0, 4).arrayBuffer())
+  if (head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04) return data
+  return openSealedBundle(data, sealedName(url))
+}
+
 /** Open a sealed bundle back into its zip. */
 export async function openSealedBundle(data: Blob, name: string): Promise<Blob> {
   const { key, counter } = await keyFor(name)
