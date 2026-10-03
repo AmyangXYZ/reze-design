@@ -75,8 +75,10 @@ def convert(src, dst, quality):
         for i, img in enumerate(images)
         if img.get("bufferView") is not None and img.get("mimeType") in ("image/png", "image/jpeg")
     ]
-    # Every image on its own core: 225 of X348's took minutes one after another.
-    with ProcessPoolExecutor() as pool:
+    # In parallel, as 225 of X348's took minutes one after another, but FOUR at a
+    # time, not one per core: each worker holds its images decoded, and
+    # twenty of them on a 460 MB stage ran Windows out of commit (X317, X333)
+    with ProcessPoolExecutor(max_workers=min(4, os.cpu_count() or 1)) as pool:
         encoded = dict(zip((i for i, _ in todo), pool.map(to_webp, (raw for _, raw in todo), [quality] * len(todo))))
     for i, raw in todo:
         img = images[i]

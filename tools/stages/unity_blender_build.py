@@ -290,6 +290,7 @@ if scene_json["world"]:
     env.image = bpy.data.images.load(hdr_path)
     bg = world.node_tree.nodes["Background"]
     world.node_tree.links.new(env.outputs["Color"], bg.inputs["Color"])
+    bg.inputs["Strength"].default_value = scene_json["world"].get("strength", 1.0)
     scene.world = world
     world_b64 = base64.b64encode(open(hdr_path, "rb").read()).decode("ascii")
 
@@ -298,7 +299,7 @@ scene["reze"] = {
         "name": name,
         "pmxPerMetre": PMX_PER_METRE,
         "fill": scene_json["fill"],
-        "world": {"format": "hdr", "base64": world_b64} if world_b64 else None,
+        "world": {"format": "hdr", "base64": world_b64, "strength": scene_json["world"].get("strength", 1.0)} if world_b64 else None,
         # The view the .blend below is set to, stated so the stage arrives
         # looking as the .blend renders it rather than under whatever the scene
         # was already on — the same field export_stage.py writes for a .blend

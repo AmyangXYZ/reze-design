@@ -139,7 +139,7 @@ export type RippleSpec = {
    *  _CustomEnvCubeScale² where the water reads its own cube. */
   intensity: number
   cube: number
-  /** SimSceneTint, linear, the game's final multiply. */
+  /** SimSceneTint as the shader reads it (a global: not linearised), the game's final multiply. */
   tint?: number[]
   /** Its own reflection (_CustomEnvCube) as an RGBM equirect in slot 1: rgb · a · range. */
   env?: { png?: string; range: number }
@@ -686,18 +686,14 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
     const ex = reze<RezeLamp & RezeSun>(node) ?? {}
     const dir3 = unit([-world[8], -world[9], -world[10]])
     const travel = toPmxDir(dir3)
-    // Blender writes a sun's W/m² as lux and a lamp's W/(4π) as candela, both
-    // through 683; read back, they are the numbers the .blend lit with.
-    //
-    // A GAME'S numbers (extras.reze.color, the Unity path) are in Unity's
-    // convention, which has no π: its lit term is albedo·radiance·N·L and its
-    // highlight URP's D·V·F with π folded out. The engine shades as Blender
-    // does, with the 1/π in both, so the same number lit X340's floor at a
-    // third of the game's — its candelabra spot left no pool at all. π here
-    // puts it back, for lamps and sun alike.
+    // THE ENGINE'S LIGHT UNITS ARE UNITY'S: a sun's intensity lights albedo·N·L,
+    // a lamp's the same over d². A GAME'S numbers (extras.reze.color, the Unity
+    // path) are already that, as the shader read them. Blender writes a sun's
+    // W/m² as lux and a lamp's W/(4π) as candela, both through 683; read back,
+    // they are the .blend's, whose lit term carries 1/π — so over π.
     const colour = ex.color
-      ? ex.color.map((c) => c * Math.PI)
-      : (light.color ?? [1, 1, 1]).map((c) => (c * (light.intensity ?? 1)) / LUMENS_PER_WATT)
+      ? ex.color
+      : (light.color ?? [1, 1, 1]).map((c) => (c * (light.intensity ?? 1)) / LUMENS_PER_WATT / Math.PI)
     if (light.type === "directional") {
       if (sun) {
         notes.push(`${node.name ?? "light"}: a second directional light was left out`)
@@ -706,9 +702,7 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
       const { color, strength } = colourAndStrength(colour)
       sun = {
         color,
-        // Blender's sun strength is W/m² (albedo·N·L/π); the engine's is
-        // Unity's intensity (albedo·N·L), so it carries divided by π.
-        strength: Math.round((strength / Math.PI) * 1000) / 1000,
+        strength: Math.round(strength * 1000) / 1000,
         elevation: Math.round((Math.asin(Math.max(-1, Math.min(1, -travel[1]))) * 180) / Math.PI * 10) / 10,
         azimuth: Math.round((((Math.atan2(-travel[0], -travel[2]) * 180) / Math.PI) % 360 + 360) % 360 * 10) / 10,
         shadow: ex.shadow ?? true,
@@ -723,8 +717,8 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
       name: node.name ?? light.name ?? "Lamp",
       position: position.map((v) => Math.round(v * 1000) / 1000),
       color,
-      // Blender's units over π, as the sun above
-      intensity: Math.round(((strength * perMetre * PMX_PER_METRE * PMX_PER_METRE) / Math.PI) * 1000) / 1000,
+      // per metre to per PMX unit, by the inverse square
+      intensity: Math.round(strength * perMetre * PMX_PER_METRE * PMX_PER_METRE * 1000) / 1000,
       radius: Math.round(range * PMX_PER_METRE * 1000) / 1000,
     }
     if (light.type === "spot") {
@@ -749,7 +743,9 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
     const bytes = new Uint8Array(text.length)
     for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i)
     files.push({ path: `${dir}${stem}.hdr`, bytes })
-    if (world.strength !== undefined) rig.world = { strength: world.strength }
+    // the strength it is lit at, stated or 1: a stage brings its world whole,
+    // not at whatever the scene had
+    rig.world = { strength: world.strength ?? 1 }
   } else if (world?.color) {
     // A flat world: the colour and strength the .blend was lit under, which
     // for a neon stage is black — its lamps and its glow are all its light.

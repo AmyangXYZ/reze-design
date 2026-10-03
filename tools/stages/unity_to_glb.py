@@ -218,7 +218,7 @@ def ripple_spec(mat, proj=None, tint=(1.0, 1.0, 1.0), env_scale=1.0):
         # own cube · sim_EnvCubeScale · _CustomEnvCubeScale², 1 (SIM_USE_CUBEMAP) the
         # scene's probe · sim_EnvCubeScale; 0 is a planar mirror, drawn here as the probe
         "cube": env_scale * (custom ** 2 if self_cube else 1.0),
-        # the scene tint the game's final multiply carries (SimSceneTint, linear)
+        # the scene tint the game's final multiply carries (SimSceneTint, as the shader reads it)
         "tint": list(tint),
         # ITS OWN REFLECTION, _CustomEnvCube: X348's water reflects ReflectionProbe-1,
         # not the probe the rest of the stage does, and the sky it mirrors is its colour
@@ -670,10 +670,11 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
     proj = Project(project_root)
     scene = Scene(os.path.join(project_root, scene_path))
     # SimSceneTint: the scene-wide multiply the game's water (and PBR) end on. A
-    # colour, set with SetGlobalColor, so the shader sees it linear; the manifest
-    # records it as set (gamma), like sim_FogColor beside it.
+    # GLOBAL colour, which Unity does not convert (only material colours go gamma
+    # -> linear on upload): the shader reads the number as set, as the manifest
+    # records it — sim_FogColor beside it is the scene file's value to the digit.
     globals_ = game_globals(project_root, scene_path)
-    scene_tint = [gamma_to_linear(c) for c in (globals_.get("SimSceneTint") or [1.0, 1.0, 1.0])[:3]]
+    scene_tint = [float(c) for c in (globals_.get("SimSceneTint") or [1.0, 1.0, 1.0])[:3]]
     # sim_EnvCubeScale: the scene's bake-reflection scale (ForwardFeature.SetupCubeReflection),
     # on every cube the water reflects; 2 on X333
     env_scale = float(globals_.get("sim_EnvCubeScale", 1.0))
@@ -1209,7 +1210,9 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
         hdr = os.path.join(build, f"{name}.hdr")
         try:
             probe_to_equirect(probe, hdr, ambient=None if ambient else scene.ambient(), blender=BLENDER)
-            world = {"hdr": f"{name}.hdr"}
+            # at the strength the game reflects it: sim_EnvCubeScale, the scene's
+            # bake-reflection scale (ForwardFeature.SetupCubeReflection; 2 on X333)
+            world = {"hdr": f"{name}.hdr", "strength": env_scale}
         except Exception as e:  # noqa: BLE001
             notes.append(f"reflection probe not converted: {e}")
 
