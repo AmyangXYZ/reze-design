@@ -291,21 +291,28 @@ export const RenderPanel = memo(function RenderPanel({
   // and for asking whether HEVC can be encoded at it.
   const [frameW, frameH] = DIMS[aspect][quality]
   const mbps = (level: ExportBitrate) => Math.round(videoBitrate(frameW, frameH, VIDEO_FPS, level) / 1e6)
-  // Asked per size and rate: an encoder that takes 1080p can refuse 4K, and
-  // one that takes 4K at 50 Mbps can refuse it at 100. Null until it answers,
-  // and the option stays selectable meanwhile — the export falls back to H.264
-  // on its own if the answer turns out to be no.
-  const hevcRate = videoBitrate(frameW, frameH, VIDEO_FPS, bitrate)
+  // HEVC ENCODES AT THE STANDARD RATE ONLY. Hardware HEVC encoders cap the
+  // bitrate by tier and level, and Chrome said yes to 4K at 100 Mbps when asked
+  // and then refused it at configure — so the doubled rate is not offered with
+  // HEVC at all, and the Bitrate row sits inert at the standard number. (HEVC
+  // at the standard rate already looks about as good as H.264 at double.)
+  //
+  // Asked per size: an encoder that takes 1080p can refuse 4K. Null until it
+  // answers, and the option stays selectable meanwhile — the export falls back
+  // to H.264 on its own if the answer turns out to be no.
+  const hevcRate = videoBitrate(frameW, frameH, VIDEO_FPS, "standard")
   const [hevcOk, setHevcOk] = useState<boolean | null>(null)
   useEffect(() => {
     let stale = false
-    canEncodeHevc(frameW, frameH, hevcRate)
+    canEncodeHevc(frameW, frameH, hevcRate, VIDEO_FPS)
       .then((ok) => !stale && setHevcOk(ok))
       .catch(() => !stale && setHevcOk(false))
     return () => {
       stale = true
     }
   }, [frameW, frameH, hevcRate])
+  const hevc = target === "mp4" && codec === "hevc" && hevcOk !== false
+  const rate: ExportBitrate = hevc ? "standard" : bitrate
 
   const [exporting, setExporting] = useState(false)
   const [progress, setProgressState] = useState<ExportProgress | null>(null)
@@ -539,8 +546,8 @@ export const RenderPanel = memo(function RenderPanel({
           width,
           height,
           fps: VIDEO_FPS,
-          bitrate,
-          codec: hevcOk === false ? "h264" : codec,
+          bitrate: rate,
+          codec: hevc ? "hevc" : "h264",
           audioSource: audioSource ?? (musicUrl ? "music" : "none"),
           watermark: compositing ? false : watermark,
           background,
@@ -663,9 +670,9 @@ export const RenderPanel = memo(function RenderPanel({
               codec — so the panel does not change shape with the output. */}
           <Row label={t.render.bitrate}>
             <Select
-              value={bitrate}
+              value={rate}
               onValueChange={(v) => setBitrate(v as ExportBitrate)}
-              disabled={exporting || target === "png"}
+              disabled={exporting || target === "png" || hevc}
             >
               <SelectTrigger>
                 <SelectValue />

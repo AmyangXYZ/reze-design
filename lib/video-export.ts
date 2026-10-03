@@ -159,14 +159,63 @@ export const videoBitrate = (w: number, h: number, fps: number, level: ExportBit
     : Math.round(Math.min(80e6, Math.max(6e6, w * h * fps * 0.1)))
 
 /**
- * Whether this browser can encode HEVC at this size AND this rate.
+ * The encoder probe, asked exactly what the export will configure.
  *
- * The rate is the part that matters: a hardware HEVC encoder that takes 4K
- * at 50 Mbps can refuse it at 100 (its tier and level cap the bitrate), and
- * a probe without one said yes to an export that then failed at configure.
+ * mediabunny's probe leaves the frame rate out, and its encoder puts the
+ * track's in — so Chrome was asked about 4K HEVC "at some rate", said yes, and
+ * then refused 4K HEVC at 60 fps when the export configured it. The frame rate
+ * is not in the probe's option type but it is spread over the probe's own
+ * `framerate: undefined`, so passing it closes the gap. The bitrate matters for
+ * the same reason: an encoder's tier and level cap it.
  */
-export const canEncodeHevc = (width: number, height: number, bitrate: number) =>
-  canEncodeVideo("hevc", { width, height, bitrate })
+const probeOptions = (width: number, height: number, bitrate: number, fps: number, fullCodecString?: string) =>
+  ({ width, height, bitrate, framerate: fps, ...(fullCodecString ? { fullCodecString } : {}) }) as Parameters<
+    typeof canEncodeVideo
+  >[1]
+
+/**
+ * HEVC levels (H.265 Table A.8): the most pixels a picture may have, the most
+ * pixels a second, and the bitrate ceiling in each tier.
+ */
+const HEVC_LEVELS: { code: number; picture: number; rate: number; main: number; high: number | null }[] = [
+  { code: 93, picture: 983040, rate: 33177600, main: 10e6, high: null }, // 3.1
+  { code: 120, picture: 2228224, rate: 66846720, main: 12e6, high: 30e6 }, // 4
+  { code: 123, picture: 2228224, rate: 133693440, main: 20e6, high: 50e6 }, // 4.1
+  { code: 150, picture: 8912896, rate: 267386880, main: 25e6, high: 100e6 }, // 5
+  { code: 153, picture: 8912896, rate: 534773760, main: 40e6, high: 160e6 }, // 5.1
+  { code: 156, picture: 8912896, rate: 1069547520, main: 60e6, high: 240e6 }, // 5.2
+  { code: 180, picture: 35651584, rate: 1069547520, main: 60e6, high: 240e6 }, // 6
+  { code: 183, picture: 35651584, rate: 2139095040, main: 120e6, high: 480e6 }, // 6.1
+  { code: 186, picture: 35651584, rate: 4278190080, main: 240e6, high: 800e6 }, // 6.2
+]
+
+/**
+ * The HEVC codec string for this export, its level chosen by frame rate too.
+ *
+ * mediabunny picks the level from size and bitrate alone — a 30 fps
+ * assumption — so 4K at 60 fps went out as level 5, which tops out at 4K30,
+ * and an encoder had to refuse it whatever it could actually do. Same string
+ * shape as mediabunny's own: Main profile, progressive.
+ */
+const hevcCodecString = (width: number, height: number, bitrate: number, fps: number) => {
+  const picture = width * height
+  for (const l of HEVC_LEVELS) {
+    if (picture > l.picture || picture * fps > l.rate) continue
+    if (bitrate <= l.main) return `hev1.1.6.L${l.code}.B0`
+    if (l.high !== null && bitrate <= l.high) return `hev1.1.6.H${l.code}.B0`
+  }
+  return "hev1.1.6.H186.B0"
+}
+
+/**
+ * Whether this browser can encode HEVC for this export, as configured.
+ *
+ * Hardware only — Chrome has no software HEVC encoder — so the answer is the
+ * GPU driver's: on Windows, commonly 1080p at any rate but 4K at 30 fps, which
+ * puts anything above 1080p out of reach at our 60.
+ */
+export const canEncodeHevc = (width: number, height: number, bitrate: number, fps: number) =>
+  canEncodeVideo("hevc", probeOptions(width, height, bitrate, fps, hevcCodecString(width, height, bitrate, fps)))
 
 // Watermark: "REZE DESIGN" wordmark, top-left
 
@@ -590,15 +639,16 @@ async function muxerSink(opts: {
   const { width, height, target } = settings
   const webm = target === "webm"
 
-  const order = webm ? (["vp9", "vp8"] as const) : settings.codec === "hevc" ? (["hevc", "avc", "av1"] as const) : (["avc", "hevc", "av1"] as const)
   const bitrate = videoBitrate(width, height, fps, settings.bitrate)
-  // Probed at the rate it will be asked for, so a codec that takes the size
-  // but not the bitrate falls through to the next instead of failing later.
-  const videoCodec = await getFirstEncodableVideoCodec([...order], {
-    width,
-    height,
-    bitrate,
-  })
+  // HEVC with our own codec string (see hevcCodecString), asked exactly as it
+  // will be configured; anything else, or HEVC refused, falls to the first of
+  // the rest that takes this size, rate and frame rate. H.264 almost always
+  // does — Chrome has a software encoder for it when the hardware says no.
+  const hevcString = !webm && settings.codec === "hevc" ? hevcCodecString(width, height, bitrate, fps) : null
+  const useHevc = hevcString !== null && (await canEncodeHevc(width, height, bitrate, fps))
+  const videoCodec = useHevc
+    ? "hevc"
+    : await getFirstEncodableVideoCodec(webm ? ["vp9", "vp8"] : ["avc", "av1"], probeOptions(width, height, bitrate, fps))
   if (!videoCodec) throw new Error(`No supported video encoder for ${width}×${height}`)
 
   const output = new Output({
@@ -608,6 +658,7 @@ async function muxerSink(opts: {
   })
   const videoSource = new CanvasSource(composite, {
     codec: videoCodec,
+    ...(useHevc && hevcString ? { fullCodecString: hevcString } : {}),
     bitrate,
     // mediabunny splits colour and alpha on the CPU when the encoder cannot
     // keep alpha itself, and emits the alpha as VP9 side data — which is what
