@@ -351,6 +351,27 @@ export function useSceneSync({
   /** What the last install made of the list — see installedIndex. Null is
    *  one instance per entry, in order, which is every install that compiled. */
   const engineIndex = useRef<(number | null)[] | null>(null)
+  /**
+   * ONE INSTALL AT A TIME, newest last.
+   *
+   * setEffects compiles across awaits and swaps its instances in only at the
+   * end, with nothing checking whether a newer call started meanwhile — so two
+   * overlapping installs land in whichever order their compiles FINISH. After a
+   * refresh that is the common case: the list installs at once without its
+   * particle pictures, the stage's pictures arrive and a second install starts
+   * with them, and when the first compile finished last the engine kept the
+   * picture-less one while this hook believed the other was on — splashes drawn
+   * as bare cards, or not at all, depending on the race. Queued, each install
+   * waits for the one before it, and one already superseded by the time its
+   * turn comes is skipped rather than run.
+   *
+   * Superseded means a NEWER INSTALL was queued (installSeq), not that this
+   * effect re-ran: it re-runs on every new list object — a slider drag makes
+   * one — and most of those re-runs install nothing, so cancelling on them
+   * would drop the one install that was due.
+   */
+  const installChain = useRef<Promise<unknown>>(Promise.resolve())
+  const installSeq = useRef(0)
   useEffect(() => {
     const engine = engineRef.current
     if (!engine) return
@@ -393,7 +414,11 @@ export function useSceneSync({
       // reset appeared to hang.
       if (lastWgsl.current !== null && lastWgslEngine.current === engine) {
         lastWgsl.current = null
-        void engine.setEffects(null)
+        // Behind any install still compiling, or that install would land after
+        // this removal and put the outgoing effects back; and it supersedes
+        // any still waiting.
+        installSeq.current++
+        installChain.current = installChain.current.catch(() => {}).then(() => engine.setEffects(null))
       }
       return
     }
@@ -408,13 +433,12 @@ export function useSceneSync({
     }
     if (wgsl === lastWgsl.current) return
     lastWgsl.current = wgsl
-    let stale = false
     // Params ride the install so an effect's first frame is already at the
     // scene's settings — seeding after the fact would show the author's default
     // for a frame, which on a colour reads as a flash.
     const applied = exportBackground === "green" ? [] : backgroundEffects
-    void engine
-      .setEffects(
+    const install = () =>
+      engine.setEffects(
         sources.length
           ? sources.map((s, i) => ({
               wgsl: s,
@@ -428,8 +452,19 @@ export function useSceneSync({
             }))
           : null,
       )
+    // Queued behind the previous install (see installChain). Superseded by the
+    // time its turn comes — a newer install was queued — it never runs, so the
+    // newest list is always the one compiled last.
+    const seq = ++installSeq.current
+    const current = () => seq === installSeq.current
+    const job = installChain.current.catch(() => {}).then(() => (current() ? install() : null))
+    installChain.current = job
+    void job
       .then((rs) => {
-        if (stale) return
+        // Applied while still the newest install, whether or not the effect has
+        // re-run since: its results (indices, schedules, dials) describe what is
+        // on screen, and a re-run that installed nothing changed none of that.
+        if (!rs || !current()) return
         // An install builds fresh instances, so whatever was scheduled is gone
         // with the ones it was set on. Re-applied HERE as well as on change,
         // because the two arrive in either order: editing a strip does not
@@ -465,12 +500,9 @@ export function useSceneSync({
         // next edit then removes an effect from a list the engine never took,
         // and the one taken off the list keeps rendering with no way to reach
         // it. Forgetting the key is what makes the next render try again.
-        if (!stale) lastWgsl.current = null
+        if (current()) lastWgsl.current = null
         console.error("[effect] install failed:", err)
       })
-    return () => {
-      stale = true
-    }
   }, [backgroundEffects, exportBackground, ready, engineRef, onEffectSurface, texturesVersion])
 
   // ── Eyes on the camera ──
