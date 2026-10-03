@@ -169,22 +169,28 @@ function unwrap(deg: number[][]): number[][] {
 }
 
 /**
- * What a dropped keyframe may cost — HALF THE LAST DIGIT THE FILE PRINTS, in
- * every channel, because every channel is written to three decimals.
+ * What a dropped keyframe may cost.
  *
- * Which makes the decimation as good as free: a key it drops was carrying a
- * number the surviving keys already interpolate to inside the file's own
- * rounding. A held stretch collapses to its two ends, so does an evenly moving
- * one, and only real curvature spends keys. On a 600-frame shot that orbits,
- * rolls, dollies and zooms at once it is 2216 keys instead of 4800, and the
- * camera it rebuilds lands within 0.15 px of the one that went in.
+ * NOT the file's own rounding, though that is the number it wants to be. The
+ * samples come out of the engine's bezier sampler, and that solver bisects to a
+ * 1e-4 tolerance in its normalised parameter — so a sample taken BETWEEN two
+ * keys can sit off the true curve by that much, scaled by whatever the channel
+ * travels across the segment. A distance that swings 24 MMD units between keys
+ * carries 2.4e-3 units of it, which at a rig scale of 20 is 0.06 px.
  *
- * Tightening them buys nothing: past here the error is the three decimals, not
- * the dropped keys.
+ * An epsilon below that floor does not decimate at all — it TRACKS THE NOISE,
+ * spending a key every couple of frames for the length of the track. Measurably
+ * so: a 21-key distance channel came out at 237 keys, and a roll that is flat
+ * for most of the shot at 113. Above the floor the decimation works again and
+ * the same channels fall back to 26 and 21.
+ *
+ * What that costs is 0.06 px on a 1080p comp — a tenth of a pixel, at worst, on
+ * a property no compositor can see move. Tightening below the floor buys no
+ * accuracy at all; it only spends the keys the file already carried.
  */
-const EPS_POS = 5e-4
-const EPS_ROT = 5e-4
-const EPS_ZOOM = 5e-4
+const EPS_POS = 3e-3
+const EPS_ROT = 3e-3
+const EPS_ZOOM = 3e-3
 
 /**
  * Write the script.
