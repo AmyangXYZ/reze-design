@@ -259,6 +259,31 @@ const one = mergeScenePatch(base(), take("touch1", ["cup", "fan"], ["sparks", "d
   assert.deepEqual(o2.assets.models.map((m) => m.animation), ["character.vmd", "/motions/m.vmd"])
 }
 
+// ── "@cast": a prop the patch hangs from her hand rides the user's lead ──
+{
+  const ring = {
+    model: "props/ring/ring.pmx",
+    prop: true,
+    attach: { model: "@cast", bone: "左手首" },
+    parentKeys: [
+      { frame: 30, model: null, position: [0, 0, 0], rotation: [0, 0, 0] },
+      { frame: 60, model: "@cast", bone: "右手首", position: [0, 0.1, 0], rotation: [0, 0, 0] },
+    ],
+  }
+  const out = mergeScenePatch(base(), { patch: true, origin: "109503", assets: { models: [ring] } })
+  const r = out.assets.models.find((m) => m.model === "props/ring/ring.pmx")!
+  assert.deepEqual(r.attach, { model: "reze", bone: "左手首" }, "the lead's own key")
+  assert.deepEqual(r.parentKeys?.map((k) => k.model), [null, "reze"])
+  const scene = parseSceneDoc(out, builtinEffect, libraryGraph)
+  assert.equal(scene.assets.models.find((m) => m.model.id === "ring")?.attach?.model, "reze")
+  // No cast member: the prop stands on its own.
+  const empty = base()
+  empty.assets.models = []
+  const alone = mergeScenePatch(empty, { patch: true, origin: "109503", assets: { models: [ring] } })
+  assert.equal(alone.assets.models[0].attach, null)
+  assert.deepEqual(alone.assets.models[0].parentKeys?.map((k) => k.model), [null, null])
+}
+
 // ── castMotion: null clears her motion; no cast member is a no-op ──
 {
   const out = mergeScenePatch(base(), { patch: true, assets: { castMotion: null } })

@@ -31,6 +31,10 @@
 // its materials, placement and visibility stay. No cast member: nothing to set,
 // and the field is dropped.
 //
+// "@cast": a model's `attach.model` (or a parent key's `model`) set to "@cast"
+// is the primary cast member — the patch cannot know its key — resolved after
+// the models merge; with no cast member the prop stands on its own.
+//
 // TAGS: what a patch brings carries a tag — an effect its `stage`, a model its
 // `origin` — and a patch replaces everything it finds with its own tags. So the
 // second take of a sequence over the first replaces the first's props and
@@ -46,6 +50,9 @@ import { modelKey, type SceneDoc } from "@/lib/scene"
 
 type Json = null | boolean | number | string | Json[] | { [k: string]: Json }
 type JsonObject = { [k: string]: Json }
+
+/** The model a patch's `attach` or parent key names to mean the primary cast member. */
+export const CAST = "@cast"
 
 /** A model entry as a patch lists it: a document entry, or a removal. */
 export type PatchModelDoc = { [k: string]: Json } & { id?: string; remove?: boolean; model?: string; origin?: string }
@@ -188,6 +195,19 @@ export function mergeScenePatch(base: SceneDoc, patchDoc: unknown): SceneDoc {
     if (motion === undefined) console.warn("[scene patch] castMotion: neither an object nor null; ignored")
     else if (!lead) console.info("[scene patch] castMotion: the scene has no cast member to move; ignored")
     else lead.doc = { ...lead.doc, animation: motion.animation, morph: motion.morph }
+  }
+  // ── "@cast": a prop the patch hangs from the primary cast member ──
+  // A game prop rides her hand bone, but the patch cannot know the key of the
+  // model the user's scene casts, so it names the lead "@cast" — in `attach`
+  // and in each parent key — resolved here to the model castMotion lands on.
+  // No cast member: the prop stands where its offset puts it.
+  const leadId = rows.find((r) => !r.doc.stage && !r.doc.prop)?.id ?? null
+  for (const r of rows) {
+    const attach = r.doc.attach as Json | undefined
+    if (isObject(attach) && attach.model === CAST) r.doc = { ...r.doc, attach: leadId ? { ...attach, model: leadId } : null }
+    const keys = r.doc.parentKeys as Json | undefined
+    if (Array.isArray(keys))
+      r.doc = { ...r.doc, parentKeys: keys.map((k) => (isObject(k) && k.model === CAST ? { ...k, model: leadId } : k)) }
   }
   merged.assets.models = rows.map((r) => r.doc as unknown as SceneDoc["assets"]["models"][number])
 
