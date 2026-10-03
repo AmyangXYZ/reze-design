@@ -9329,7 +9329,7 @@ export default function Lab() {
                           label={t.lab.ctl.outlineWidth}
                           value={settings.outline.width}
                           min={0}
-                          max={10}
+                          max={5}
                           step={0.05}
                           onChange={(v) => patch("outline", { width: v })}
                           fmt={(v) => v.toFixed(2)}
