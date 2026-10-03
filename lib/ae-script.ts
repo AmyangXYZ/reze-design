@@ -169,22 +169,28 @@ function unwrap(deg: number[][]): number[][] {
 }
 
 /**
- * What a dropped keyframe may cost — HALF THE LAST DIGIT THE FILE PRINTS, in
- * every channel, because every channel is written to three decimals.
+ * What a dropped keyframe may cost.
  *
- * Which makes the decimation as good as free: a key it drops was carrying a
- * number the surviving keys already interpolate to inside the file's own
- * rounding. A held stretch collapses to its two ends, so does an evenly moving
- * one, and only real curvature spends keys. On a 600-frame shot that orbits,
- * rolls, dollies and zooms at once it is 2216 keys instead of 4800, and the
- * camera it rebuilds lands within 0.15 px of the one that went in.
+ * NOT the file's own rounding, though that is the number it wants to be. The
+ * samples come out of the engine's bezier sampler, and that solver bisects to a
+ * 1e-4 tolerance in its normalised parameter — so a sample taken BETWEEN two
+ * keys can sit off the true curve by that much, scaled by whatever the channel
+ * travels across the segment. A distance that swings 24 MMD units between keys
+ * carries 2.4e-3 units of it, which at a rig scale of 20 is 0.06 px.
  *
- * Tightening them buys nothing: past here the error is the three decimals, not
- * the dropped keys.
+ * An epsilon below that floor does not decimate at all — it TRACKS THE NOISE,
+ * spending a key every couple of frames for the length of the track. Measurably
+ * so: a 21-key distance channel came out at 237 keys, and a roll that is flat
+ * for most of the shot at 113. Above the floor the decimation works again and
+ * the same channels fall back to 26 and 21.
+ *
+ * What that costs is 0.06 px on a 1080p comp — a tenth of a pixel, at worst, on
+ * a property no compositor can see move. Tightening below the floor buys no
+ * accuracy at all; it only spends the keys the file already carried.
  */
-const EPS_POS = 5e-4
-const EPS_ROT = 5e-4
-const EPS_ZOOM = 5e-4
+const EPS_POS = 3e-3
+const EPS_ROT = 3e-3
+const EPS_ZOOM = 3e-3
 
 /**
  * Write the script.
@@ -195,6 +201,14 @@ const EPS_ZOOM = 5e-4
 export function aeScript(input: AeScriptInput): string {
   const { width, height, fps, frames, camera, cast, scale } = input
   const duration = frames / fps
+  // THE COMP'S ORIGIN IS ITS TOP-LEFT CORNER, and every position below is
+  // measured from it. MMD2AE centres the shot instead — its rig is built around
+  // the middle of the frame — so the same numbers land in the same place only
+  // once the half-width/half-height is added. It is the reason an uncentred
+  // export reads as a framing problem rather than a maths one: the whole scene
+  // sits a half-frame up and to the left, and every move within it is correct.
+  const ox = width / 2
+  const oy = height / 2
   const out: string[] = []
   const w = (s: string) => out.push(s)
 
@@ -256,13 +270,14 @@ export function aeScript(input: AeScriptInput): string {
     w("")
   }
 
-  // Y IS FLIPPED, here and on every position below. AE's y axis points down the
-  // screen and MMD's points up, and this is the one place the two spaces
-  // disagree — get it wrong and the shot is upside down in a way that looks like
-  // a rotation bug.
+  // Y IS FLIPPED, here and on every position below, and the result is CENTRED.
+  // AE's y axis points down the screen and MMD's points up, and this is the one
+  // place the two spaces disagree — get it wrong and the shot is upside down in a
+  // way that looks like a rotation bug. The flip happens BEFORE the centring, so
+  // the y offset is added to an already-flipped value.
   channel(
     "layNully.position",
-    camera.map((s) => [s.target[0] * scale, -s.target[1] * scale, s.target[2] * scale]),
+    camera.map((s) => [s.target[0] * scale + ox, -s.target[1] * scale + oy, s.target[2] * scale]),
     EPS_POS * scale,
     true,
   )
@@ -293,9 +308,12 @@ export function aeScript(input: AeScriptInput): string {
     w(`${v}.name        = ${JSON.stringify(member.name)};`)
     w(`${v}.threeDLayer = true;`)
     w(`${v}.anchorPoint.setValue( [ 0.0, 0.0, 0.0 ] );`)
+    // The camera's own flip and centring, unchanged: a null for a character is a
+    // point in the same MMD space the camera's target lives in, so it has to be
+    // mapped the same way or the two sit a half-frame apart.
     channel(
       `${v}.position`,
-      member.samples.map((s) => [s.position[0] * scale, -s.position[1] * scale, s.position[2] * scale]),
+      member.samples.map((s) => [s.position[0] * scale + ox, -s.position[1] * scale + oy, s.position[2] * scale]),
       EPS_POS * scale,
       true,
     )

@@ -24,15 +24,14 @@ import { applyTimelineFrame, type SceneTimeline } from "./timeline"
 /**
  * MMD units to AE pixels.
  *
- * A free parameter — scale the camera and everything it looks at by the same
+ * Free in principle — scale the camera and everything it looks at by the same
  * number and the projection is unchanged, because the lens comes from the comp's
- * height rather than from the world. It is 1 because that is what MMD2AE writes:
- * its dialog offers a VMD file, a comp size, a pixel aspect and a rate, and
- * nothing else, so an AE project built around it reads one MMD unit as one AE
- * pixel. A rig at any other scale is correct and still will not line up beside
- * the nulls a decade of those projects already contain.
+ * height rather than from the world — and NOT free in practice. MMD2AE has
+ * written 20 for a decade, so a project built around it reads one MMD unit as
+ * twenty AE pixels; a rig at any other scale is arithmetically correct and still
+ * will not line up beside the nulls those projects already contain.
  */
-const AE_SCALE = 1
+const AE_SCALE = 20
 
 export type ExportAudioSource = "music" | "none"
 
