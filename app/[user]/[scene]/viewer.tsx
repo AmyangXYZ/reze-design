@@ -31,6 +31,7 @@ import { resolveSceneRefs, resolveSceneRefsSync } from "@/lib/resolve-refs"
 import { useSession } from "@/lib/auth-client"
 import { useI18n, useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
 
 type ViewerProps = {
   doc: SceneDoc
@@ -72,7 +73,7 @@ function PublishedAt({ iso }: { iso: string }) {
   const { locale } = useI18n()
   const inBrowser = useSyncExternalStore(noSubscription, () => true, () => false)
   return (
-    <time dateTime={iso} className="mt-0.5 block font-mono text-[11px] text-white/40 tabular-nums">
+    <time dateTime={iso} className="tabular-nums">
       {inBrowser ? new Date(iso).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" }) : iso.slice(0, 10)}
     </time>
   )
@@ -208,43 +209,55 @@ export function SceneViewer(props: ViewerProps) {
           and one right edge. It was top-4/right-4, four pixels off in both,
           which reads as a slip rather than a difference. Mobile keeps its
           bottom-left home above the transport. */}
-      <div className="absolute bottom-16 left-4 w-[min(10.5rem,44vw)] overflow-hidden rounded-xl bg-zinc-950/50 backdrop-blur-md md:top-3 md:right-3 md:bottom-auto md:left-auto md:w-60">
-        {/* Desktop header: the two actions, pushed apart, over the panel they act on. */}
-        <div className="hidden items-center justify-between gap-2 border-b border-white/10 px-3 py-2.5 md:flex">
-          {/* An empty slot when display only, so the like keeps its right edge. */}
-          {props.displayOnly ? (
-            <span />
-          ) : (
-            <button
-              onClick={() => void openInEditor()}
-              disabled={forking}
-              className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md bg-blue-400 px-3 text-xs font-medium text-white transition-colors hover:bg-blue-300 disabled:cursor-default disabled:opacity-60"
-            >
-              <GitFork className="size-3.5" />
-              {t.share.fork}
-            </button>
-          )}
-          <LikeButton like={like} compact />
-        </div>
-        {/* Everything, always: crediting only counts if people can read it without
-            knowing to ask. Long text scrolls inside the panel. */}
-        <div className="max-h-[50dvh] w-full overflow-y-auto px-2.5 py-2 md:max-h-[calc(100dvh-7rem)] md:px-3 md:py-2.5">
-          <div className="truncate text-sm font-semibold tracking-tight text-white">{props.title}</div>
-          <Link
-            href={`/${props.author}`}
-            className="block w-fit max-w-full truncate font-mono text-xs text-white/55 transition-colors hover:text-white hover:underline"
-          >
-            @{props.author}
-          </Link>
-          <PublishedAt iso={props.publishedAt} />
+      {/* The gallery inspector's order, so a scene reads the same in both
+          places: what it is, who and when, the caption, the 借物表 — then what
+          you can do with it, in a footer. Display only drops the button from
+          that footer and nothing else, so the two cases are one card.
+          Editor chrome: bg-surface without blur (it floats over the canvas,
+          which a blur would re-sample every frame), two text colours. */}
+      <div className="absolute bottom-16 left-4 flex w-[min(10.5rem,44vw)] flex-col overflow-hidden rounded-surface border border-line-strong bg-surface md:top-3 md:right-3 md:bottom-auto md:left-auto md:w-64">
+        {/* Everything, always: crediting only counts if people can read it
+            without knowing to ask. Long text scrolls DOWN inside the panel and
+            wraps anywhere — a pasted URL is one unbroken word, and without that
+            it pushed the card sideways into a horizontal scrollbar. */}
+        <div className="max-h-[50dvh] min-h-0 overflow-x-hidden overflow-y-auto px-3 py-2.5 [overflow-wrap:anywhere] md:max-h-[calc(100dvh-7rem)]">
+          <div className="truncate text-sm font-semibold tracking-tight text-foreground">{props.title}</div>
+          <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
+            <Link href={`/${props.author}`} className="transition-colors hover:text-foreground hover:underline">
+              @{props.author}
+            </Link>
+            {" · "}
+            <PublishedAt iso={props.publishedAt} />
+          </div>
           {props.description && (
-            <p className="mt-1 whitespace-pre-wrap text-xs leading-snug text-white/75">{props.description}</p>
+            <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-foreground">{props.description}</p>
           )}
           {props.credits && (
-            <div className="mt-2 border-t border-white/10 pt-2">
-              <div className="text-[10px] font-medium tracking-[0.14em] text-white/40 uppercase">{t.share.credits}</div>
-              <p className="mt-1 whitespace-pre-wrap text-xs leading-snug text-white/70">{props.credits}</p>
+            <div className="mt-2.5 border-t border-line pt-2">
+              {/* A label at reading size: tracking and uppercase only pulled 借物表
+                  apart, and at 10px it read as a footnote. */}
+              <div className="text-xs font-medium text-muted-foreground">
+                {t.share.credits}
+              </div>
+              <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">{props.credits}</p>
             </div>
+          )}
+        </div>
+        {/* Desktop footer. The like keeps its left place either way; the fork
+            sits right, and a display-only scene simply has none. Mobile keeps
+            its standalone like rail instead (below). */}
+        <div className="hidden h-8 shrink-0 items-center justify-between gap-2 border-t border-line px-3 md:flex">
+          <LikeButton like={like} compact />
+          {!props.displayOnly && (
+            <Button
+              size="xs"
+              onClick={() => void openInEditor()}
+              disabled={forking}
+              className="bg-blue-400 font-medium text-white hover:bg-blue-300"
+            >
+              <GitFork />
+              {t.share.fork}
+            </Button>
           )}
         </div>
       </div>
@@ -293,13 +306,17 @@ function LikeButton({ like, compact, className }: { like: LikeState; compact?: b
   const t = useT()
   return (
     <div className={cn("flex items-center gap-1.5", className)}>
-      <button
+      <Button
+        variant="ghost"
         onClick={() => void like.toggle()}
-        disabled={!like.canLike}
+        // Not `disabled`: signed out, the title has to stay hoverable to say why.
+        aria-disabled={!like.canLike}
         title={like.canLike ? undefined : t.library.signInToLike}
         className={cn(
-          "flex items-center justify-center transition-transform",
-          like.canLike ? "cursor-pointer hover:scale-110 active:scale-90" : "opacity-60",
+          // has-[>svg]:px-0 too: the default size pads any button holding an
+          // icon by 12px, which p-0 does not reach and which indented the heart.
+          "size-auto p-0 transition-transform hover:bg-transparent dark:hover:bg-transparent has-[>svg]:px-0",
+          like.canLike ? "cursor-pointer hover:scale-110 active:scale-90" : "cursor-default",
         )}
       >
         {/* Bare glyph, no button chrome — a drop shadow is enough to hold it
@@ -307,14 +324,14 @@ function LikeButton({ like, compact, className }: { like: LikeState; compact?: b
         <Heart
           className={cn(
             "text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)] transition-colors",
-            // In the card header it sits beside a button; on the mobile rail it is
+            // In the card footer it sits beside a button; on the mobile rail it is
             // the only thing there and needs the presence.
-            compact ? "size-5" : "size-7",
+            compact ? "size-[18px]" : "size-7",
             like.liked && "fill-red-400 text-red-400",
           )}
         />
-      </button>
-      <span className={cn("font-semibold text-white tabular-nums drop-shadow", compact ? "text-xs" : "text-sm")}>
+      </Button>
+      <span className={cn("font-semibold text-foreground tabular-nums drop-shadow", compact ? "text-xs" : "text-sm")}>
         {like.count}
       </span>
     </div>
