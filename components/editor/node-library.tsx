@@ -43,7 +43,8 @@ import { useDrafts } from "@/hooks/use-drafts"
 import { noteItemPublished, useLibraryStats } from "@/hooks/use-library-stats"
 import { useZOrder } from "@/hooks/use-z-order"
 import { PublishButton } from "@/components/editor/publish-button"
-import { useT } from "@/lib/i18n"
+import { builtinDescription, builtinName, builtinSearchText } from "@/lib/builtin-text"
+import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 
@@ -98,7 +99,7 @@ export function NodeLibrary(props: LibraryProps) {
 
 function LibraryContent({ groups, targetId, onTargetChange, targetLabel, currentGraphName, usedNames = [], onApply, onRenamed, onEdit, onOpenChange, initialFacet, freshDraftId }: LibraryProps) {
   const onClose = () => onOpenChange(false)
-  const t = useT()
+  const { t, locale } = useI18n()
   // Desktop-style stacking: clicking a library raises it over any editor.
   // Radix would close on Escape whatever is stacked above it; the z-order
   // stack closes only the topmost surface.
@@ -140,7 +141,11 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
     },
     [statFor],
   )
-  const browse = useLibraryBrowse(ROWS, numbers, { initialFacet })
+  // Built-in names and descriptions are chrome and translate; the library ranks,
+  // searches and sorts on what the reader sees, and answers to either language.
+  const displayName = useCallback((r: (typeof ROWS)[number]) => builtinName("graph", r, locale), [locale])
+  const searchText = useCallback((r: (typeof ROWS)[number]) => builtinSearchText("graph", r), [])
+  const browse = useLibraryBrowse(ROWS, numbers, { initialFacet, displayName, searchText })
   const [renamingId, setRenamingId] = useState<string | null>(null)
   // The name someone typed that is already in use. Rename REFUSES rather than
   // silently saving under "… 2": a suffix you did not ask for is how a library
@@ -344,6 +349,7 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
             onActivate={(r) => onEdit(r.id, r.name, r.payload.graph)}
             meta={meta}
             numbers={numbers}
+            displayName={displayName}
             wrap={wrap}
             usedLabel={t.rail.used}
             empty={browse.query ? t.library.noMatch(browse.query) : t.rail.yoursEmpty}
@@ -369,7 +375,7 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
                 </button>
               </div>
               <div className="min-h-0 p-3">
-                <div className="truncate text-sm font-semibold select-text">{selected.name}</div>
+                <div className="truncate text-sm font-semibold select-text">{displayName(selected)}</div>
                 <div className="mt-1 flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
                   <AuthorAvatar name={builtinAuthor(selected.id, selected.author)} className="size-3.5" />
                   <AuthorLink name={builtinAuthor(selected.id, selected.author)} draft={itemState(selected) === "draft"} className="truncate select-text" />
@@ -377,7 +383,7 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
                   {publishedOn(selected.createdAt) && <span className="shrink-0">· {publishedOn(selected.createdAt)}</span>}
                 </div>
                 {selected.description && (
-                  <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground select-text">{selected.description}</p>
+                  <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground select-text">{builtinDescription("graph", selected, locale)}</p>
                 )}
                 <LibraryTags tags={selected.tags} />
                 <LibraryItemStats

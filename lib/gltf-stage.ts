@@ -181,7 +181,7 @@ type RezeScene = {
   /** An environment image, or a flat colour, with the strength it is lit at. */
   world?: { format?: string; base64?: string; color?: number[]; strength?: number } | null
   /** What the scene was authored under: Blender's names for the transform. */
-  view?: { transform?: string; look?: string; exposure?: number } | null
+  view?: { transform?: string; look?: string; exposure?: number; contrast?: number } | null
   /** The game's colour grade as the cube its pipeline bakes: size³ texels,
    *  8-bit sRGB, red fastest — see tools/stages/unity_grading.py. */
   grading?: { size?: number; format?: string; base64?: string } | null
@@ -200,6 +200,9 @@ type FogLayerM = { color: number[]; amount: number; distance: number[]; height: 
 /** Blender's view transform names as the app's nearest: its film curves as
  *  ACES and Neutral, Standard as no curve at all. */
 const VIEW_TRANSFORM: Record<string, "soft" | "neutral" | "aces" | "none"> = {
+  // the game's own final curve (unity_to_glb.game_view), at the scene's contrast
+  AG: "soft",
+  ACES: "aces",
   AgX: "neutral",
   Filmic: "aces",
   Standard: "none",
@@ -755,7 +758,7 @@ export function glbToStage(buffer: ArrayBuffer, glbPath: string): GlbStage {
   }
   const view = sceneExtras.view
   if (view?.transform && VIEW_TRANSFORM[view.transform]) {
-    rig.view = { transform: VIEW_TRANSFORM[view.transform], exposure: view.exposure ?? 0 }
+    rig.view = { transform: VIEW_TRANSFORM[view.transform], exposure: view.exposure ?? 0, ...(typeof view.contrast === "number" ? { contrast: view.contrast } : {}) }
     if (view.look && view.look !== "None" && !/^AgX - Base$|^Filmic - Medium High Contrast$/.test(view.look)) notes.push(`view look "${view.look}" is not one the app has; the transform is applied without it`)
   }
   // AND ITS GRADE, carried in the rig as the cube itself: it is small (12 KB

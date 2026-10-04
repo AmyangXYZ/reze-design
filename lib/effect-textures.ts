@@ -10,6 +10,8 @@
 // again after a reload: the source comes back from the document, the pictures
 // from the stage's own files.
 
+import effects from "@/content/effects.json"
+
 type EffectTexture = { source: ImageBitmap; srgb: boolean } | null
 
 const byWgsl = new Map<string, EffectTexture[]>()
@@ -32,10 +34,55 @@ export function subscribeEffectTextures(cb: () => void): () => void {
   return () => listeners.delete(cb)
 }
 
-/** The pictures registered for an effect's source, in slot order, if any. */
-export function effectTexturesFor(wgsl: string): EffectTexture[] | undefined {
-  return byWgsl.get(wgsl)
+// A BUILT-IN THAT DRAWS PICTURES carries them in its entry (content/effects.json,
+// `payload.textures`, data URIs: Sakura Drift's petal is the game's own), so it
+// needs no stage to bring them. They load the first time the effect asks, and
+// the version bump installs it again with them, as a stage's do.
+type PictureSpec = { url: string; srgb?: boolean } | null
+const builtinPictures = new Map<string, PictureSpec[]>(
+  (effects as { payload?: { wgsl?: unknown; textures?: unknown } }[])
+    .filter((e) => typeof e.payload?.wgsl === "string" && Array.isArray(e.payload.textures))
+    .map((e) => [e.payload!.wgsl as string, e.payload!.textures as PictureSpec[]]),
+)
+const loading = new Set<string>()
+
+function startBuiltin(wgsl: string): void {
+  const specs = builtinPictures.get(wgsl)
+  if (!specs || loading.has(wgsl) || typeof createImageBitmap !== "function") return
+  loading.add(wgsl)
+  void loadBuiltinPictures(wgsl, specs)
 }
+
+async function loadBuiltinPictures(wgsl: string, specs: PictureSpec[]): Promise<void> {
+  const textures = await Promise.all(
+    specs.map(async (spec): Promise<EffectTexture> => {
+      if (!spec?.url) return null
+      try {
+        const blob = await (await fetch(spec.url)).blob()
+        return { source: await createImageBitmap(blob), srgb: spec.srgb !== false }
+      } catch {
+        return null
+      }
+    }),
+  )
+  byWgsl.set(wgsl, textures)
+  version++
+  for (const cb of listeners) cb()
+}
+
+/** The pictures registered for an effect's source, in slot order, if any. A
+ *  built-in's start loading here, and arrive with the next version. */
+export function effectTexturesFor(wgsl: string): EffectTexture[] | undefined {
+  const known = byWgsl.get(wgsl)
+  if (known) return known
+  startBuiltin(wgsl)
+  return undefined
+}
+
+// AT ONCE, in the browser: an install that runs before its pictures have
+// decoded goes out white and waits for the version bump to rebind, so loading
+// them up front (Sakura Drift's 43 KB petal) makes the first install the right one.
+if (typeof window !== "undefined") for (const wgsl of builtinPictures.keys()) startBuiltin(wgsl)
 
 /**
  * Decode the particle pictures a stage names in its `<Name>.lights.json` and

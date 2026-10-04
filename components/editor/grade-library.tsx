@@ -46,7 +46,8 @@ import { PublishButton } from "@/components/editor/publish-button"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useReport } from "@/hooks/use-report"
-import { useT } from "@/lib/i18n"
+import { builtinDescription, builtinName, builtinSearchText } from "@/lib/builtin-text"
+import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 type Props = {
@@ -75,7 +76,7 @@ export function GradeLibrary(props: Props) {
 }
 
 function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRenamed, onEdit }: Props) {
-  const t = useT()
+  const { t, locale } = useI18n()
   // Desktop-style stacking: clicking a library raises it over any editor.
   // Radix would close on Escape whatever is stacked above it; the z-order
   // stack closes only the topmost surface.
@@ -91,7 +92,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
 
   // Built-in names are UI chrome and translate by id; descriptions are AUTHOR
   // text and stay as written, exactly as the effects library already shows them.
-  const nameOf = (g: GradeItem) => t.scene.gradePresets[g.name as keyof typeof t.scene.gradePresets] ?? g.name
+  const nameOf = (g: GradeItem) => builtinName("grade", g, locale)
 
   const { drafts, update: updateDraft, remove: removeDraft } = useDrafts<GradeItem>("grade")
   // Drafts first: what you're working on is what you came back for.
@@ -113,8 +114,9 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
   // Built-in names are chrome and translate, so the library must rank, search
   // and sort on what the reader actually sees.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const displayName = useCallback((g: GradeItem) => nameOf(g), [t])
-  const browse = useLibraryBrowse(all, numbers, { initialFacet, displayName })
+  const displayName = useCallback((g: GradeItem) => nameOf(g), [locale])
+  const searchText = useCallback((g: GradeItem) => builtinSearchText("grade", g), [])
+  const browse = useLibraryBrowse(all, numbers, { initialFacet, displayName, searchText })
   const [renamingId, setRenamingId] = useState<string | null>(null)
   // A typed name that is already in use — see the graph library's commitRename.
   const [renameError, setRenameError] = useState<string | null>(null)
@@ -365,7 +367,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                   {publishedOn(selected.createdAt) && <span className="shrink-0">· {publishedOn(selected.createdAt)}</span>}
                 </div>
                 {selected.description && (
-                  <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground select-text">{selected.description}</p>
+                  <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground select-text">{builtinDescription("grade", selected, locale)}</p>
                 )}
                 <LibraryTags tags={selected.tags} />
                 <LibraryItemStats

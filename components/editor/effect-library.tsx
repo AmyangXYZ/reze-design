@@ -54,7 +54,8 @@ import { useDrafts } from "@/hooks/use-drafts"
 import { noteItemPublished, useLibraryStats } from "@/hooks/use-library-stats"
 import { useZOrder } from "@/hooks/use-z-order"
 import { PublishButton } from "@/components/editor/publish-button"
-import { useT } from "@/lib/i18n"
+import { builtinDescription, builtinName, builtinSearchText } from "@/lib/builtin-text"
+import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 type LibraryProps = {
@@ -94,7 +95,7 @@ const seedDraft = (selected: EffectItem | null, applied: AppliedEffect[]): Appli
   selected ? ({ ...(appliedById(applied, selected.id) ?? applyDefaults(selected)) }) : null
 
 function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove, onRenamed, onEdit }: LibraryProps) {
-  const t = useT()
+  const { t, locale } = useI18n()
   // Desktop-style stacking: clicking a library raises it over any editor.
   // Radix would close on Escape whatever is stacked above it; the z-order
   // stack closes only the topmost surface.
@@ -136,7 +137,11 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
     },
     [statFor],
   )
-  const browse = useLibraryBrowse(all, numbers, { initialFacet })
+  // Built-in names and descriptions are chrome and translate; the library ranks,
+  // searches and sorts on what the reader sees, and answers to either language.
+  const displayName = useCallback((e: EffectItem) => builtinName("effect", e, locale), [locale])
+  const searchText = useCallback((e: EffectItem) => builtinSearchText("effect", e), [])
+  const browse = useLibraryBrowse(all, numbers, { initialFacet, displayName, searchText })
   const [renamingId, setRenamingId] = useState<string | null>(null)
   // A typed name that is already in use — see the graph library's commitRename.
   const [renameError, setRenameError] = useState<string | null>(null)
@@ -332,6 +337,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
               onActivate={(e) => onEdit?.(seedDraft(e, applied)!)}
               meta={meta}
               numbers={numbers}
+              displayName={displayName}
               wrap={wrap}
               usedLabel={t.rail.used}
               empty={browse.query ? t.library.noMatch(browse.query) : t.rail.yoursEmpty}
@@ -359,14 +365,14 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                   </button>
                 </div>
                 <div className="min-h-0 p-3">
-                  <div className="truncate text-sm font-semibold select-text">{selected.name}</div>
+                  <div className="truncate text-sm font-semibold select-text">{displayName(selected)}</div>
                   <div className="mt-1 flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
                     <AuthorAvatar name={builtinAuthor(selected.id, selected.author)} className="size-3.5" />
                     <AuthorLink name={builtinAuthor(selected.id, selected.author)} draft={itemState(selected) === "draft"} className="truncate select-text" />
                     {/* When it went public, the same fact the gallery's panel shows. */}
                     {publishedOn(selected.createdAt) && <span className="shrink-0">· {publishedOn(selected.createdAt)}</span>}
                   </div>
-                  <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground select-text">{selected.description}</p>
+                  <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground select-text">{builtinDescription("effect", selected, locale)}</p>
                   <LibraryTags tags={selected.tags} />
                   <LibraryItemStats
                     likeCount={statFor(selected.id).likeCount}

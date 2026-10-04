@@ -14,6 +14,7 @@
 import { memo, useEffect, useRef } from "react"
 import { EFFECT_MATH_API, PARTICLE_STRUCT_WGSL } from "reze-engine"
 import { cn } from "@/lib/utils"
+import { effectTexturesFor } from "@/lib/effect-textures"
 
 /** Same detection the engine does at install time — `fn` and the name. */
 const definesBackground = (wgsl: string) => /\bfn\s+background\s*\(/.test(wgsl)
@@ -777,11 +778,43 @@ const hosted = (wgsl: string) => paramsBlock(wgsl) + stripDirectives(wgsl)
  * respawns a dead particle from particleInit and steps a live one, and the draw
  * is six vertices per instance with the billboard basis taken from the view.
  */
+/**
+ * rzTexture as the engine gives it (reze-engine shaders/texture-api.ts): the
+ * pictures in the render half, where sampling is allowed; stubs returning zero
+ * in the compute half, so one effect file compiles in both. Every card's render
+ * module declares all four slots and binds white where an effect has none.
+ */
+const TEXTURE_STUBS = /* wgsl */ `
+fn rzTexture(i: u32, uv: vec2f) -> vec4f { return vec4f(0.0); }
+fn rzTextureLod(i: u32, uv: vec2f, lod: f32) -> vec4f { return vec4f(0.0); }
+`
+const TEXTURE_API = /* wgsl */ `
+@group(0) @binding(2) var _rzTex0: texture_2d<f32>;
+@group(0) @binding(3) var _rzTex1: texture_2d<f32>;
+@group(0) @binding(4) var _rzTex2: texture_2d<f32>;
+@group(0) @binding(5) var _rzTex3: texture_2d<f32>;
+@group(0) @binding(6) var _rzTexSampler: sampler;
+fn rzTexture(i: u32, uv: vec2f) -> vec4f {
+  let s0 = textureSample(_rzTex0, _rzTexSampler, uv);
+  let s1 = textureSample(_rzTex1, _rzTexSampler, uv);
+  let s2 = textureSample(_rzTex2, _rzTexSampler, uv);
+  let s3 = textureSample(_rzTex3, _rzTexSampler, uv);
+  return select(select(select(s0, s1, i == 1u), s2, i == 2u), s3, i == 3u);
+}
+fn rzTextureLod(i: u32, uv: vec2f, lod: f32) -> vec4f {
+  let s0 = textureSampleLevel(_rzTex0, _rzTexSampler, uv, lod);
+  let s1 = textureSampleLevel(_rzTex1, _rzTexSampler, uv, lod);
+  let s2 = textureSampleLevel(_rzTex2, _rzTexSampler, uv, lod);
+  let s3 = textureSampleLevel(_rzTex3, _rzTexSampler, uv, lod);
+  return select(select(select(s0, s1, i == 1u), s2, i == 2u), s3, i == 3u);
+}
+`
+
 const PARTICLE_COMPUTE = (wgsl: string) =>
   PREVIEW_WORLD.replace("USER_CODE", hosted(wgsl)) +
   /* wgsl */ `
 @group(0) @binding(1) var<storage, read_write> particles: array<Particle>;
-
+${TEXTURE_STUBS}
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
   let i = gid.x;
@@ -809,7 +842,7 @@ const PARTICLE_RENDER = (wgsl: string) =>
   `\nconst PV_BLOOM: f32 = ${blooms(wgsl) ? "1.0" : "0.0"};\n` +
   /* wgsl */ `
 @group(0) @binding(1) var<storage, read> particles: array<Particle>;
-
+${TEXTURE_API}
 struct PVOut {
   @builtin(position) pos: vec4f,
   @location(0) uv: vec2f,
@@ -980,6 +1013,8 @@ type ParticleState = {
   count: number
   frame: number
   additive: boolean
+  /** Drawn with the white stand-in while the effect's pictures load. */
+  awaitingPictures: boolean
 }
 
 type Entry = {
@@ -1155,6 +1190,8 @@ async function getDevice(): Promise<GPUDevice | null> {
         entries: [
           { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
           { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+          ...[0, 1, 2, 3].map((k) => ({ binding: 2 + k, visibility: GPUShaderStage.FRAGMENT, texture: {} })),
+          { binding: 6, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
         ],
       })
       void d.lost.then(() => {
@@ -1251,14 +1288,69 @@ function makeParticles(d: GPUDevice, wgsl: string): ParticleState {
     { binding: 0, resource: { buffer: uniformBuffer! } },
     { binding: 1, resource: { buffer: pool } },
   ]
+  const pictures = pictureViews(d, wgsl)
   return {
     pool,
     compute: d.createBindGroup({ layout: particleComputeLayout!, entries }),
-    render: d.createBindGroup({ layout: particleRenderLayout!, entries }),
+    render: renderGroup(d, pool, pictures.views),
     count,
     frame: 0,
     additive: additive(wgsl),
+    awaitingPictures: pictures.waiting,
   }
+}
+
+function renderGroup(d: GPUDevice, pool: GPUBuffer, views: GPUTextureView[]): GPUBindGroup {
+  return d.createBindGroup({
+    layout: particleRenderLayout!,
+    entries: [
+      { binding: 0, resource: { buffer: uniformBuffer! } },
+      { binding: 1, resource: { buffer: pool } },
+      ...views.map((v, k) => ({ binding: 2 + k, resource: v })),
+      { binding: 6, resource: pictureSampler(d) },
+    ],
+  })
+}
+
+/**
+ * THE EFFECT'S PICTURES (#textures), as the scene would hand them: a converted
+ * particle system draws the game's own (Sakura Drift's petal), from the same
+ * registry the scene's install reads (lib/effect-textures.ts). A slot with no
+ * picture reads white, the engine's rule; `waiting` while a built-in's are still
+ * decoding, so the card rebinds when they land.
+ */
+const pictureCache = new Map<string, GPUTextureView[]>()
+let whiteView: GPUTextureView | null = null
+let sampler: GPUSampler | null = null
+function pictureSampler(d: GPUDevice): GPUSampler {
+  return (sampler ??= d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "repeat", addressModeV: "repeat" }))
+}
+function white(d: GPUDevice): GPUTextureView {
+  if (whiteView) return whiteView
+  const t = d.createTexture({ size: [1, 1], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+  d.queue.writeTexture({ texture: t }, new Uint8Array([255, 255, 255, 255]), { bytesPerRow: 4 }, [1, 1])
+  return (whiteView = t.createView())
+}
+function pictureViews(d: GPUDevice, wgsl: string): { views: GPUTextureView[]; waiting: boolean } {
+  const stand = [0, 1, 2, 3].map(() => white(d))
+  if (!/^[ \t]*#textures[ \t]+\d/m.test(wgsl)) return { views: stand, waiting: false }
+  const cached = pictureCache.get(wgsl)
+  if (cached) return { views: cached, waiting: false }
+  const pictures = effectTexturesFor(wgsl)
+  if (!pictures) return { views: stand, waiting: true }
+  const views = stand.map((w, k) => {
+    const pic = pictures[k]
+    if (!pic) return w
+    const t = d.createTexture({
+      size: [pic.source.width, pic.source.height],
+      format: pic.srgb ? "rgba8unorm-srgb" : "rgba8unorm",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+    })
+    d.queue.copyExternalImageToTexture({ source: pic.source }, { texture: t }, [pic.source.width, pic.source.height])
+    return t.createView()
+  })
+  pictureCache.set(wgsl, views)
+  return { views, waiting: false }
 }
 
 function frame(now: number) {
@@ -1336,6 +1428,13 @@ function frame(now: number) {
         rp.draw(6, 47 * Math.max(1, trailSlots(e.wgsl)))
       }
       if (pair && e.particles) {
+        if (e.particles.awaitingPictures) {
+          const pictures = pictureViews(d, e.wgsl)
+          if (!pictures.waiting) {
+            e.particles.render = renderGroup(d, e.particles.pool, pictures.views)
+            e.particles.awaitingPictures = false
+          }
+        }
         rp.setPipeline(pair.render)
         rp.setBindGroup(0, e.particles.render)
         rp.draw(6, e.particles.count)

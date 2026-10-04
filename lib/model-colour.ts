@@ -263,15 +263,5 @@ export async function castColour(source: CastColourSource): Promise<CastPaletteI
       : colourlessLight >= colourlessDark
         ? "silver"
         : "slate"
-
-  if (process.env.NODE_ENV === "development") {
-    const total = colourless + masses.reduce((a, b) => a + b, 0)
-    const pct = (n: number) => `${((n / (total || 1)) * 100).toFixed(1)}%`
-    const table = FAMILIES.map((f, i) => ({ id: f.id, m: masses[i] }))
-      .filter(({ m }) => m > total * 0.001)
-      .sort((a, b) => b.m - a.m)
-      .map(({ id, m }) => `${id} ${pct(m)}`)
-      .join(" · ")
-  }
   return verdict
 }

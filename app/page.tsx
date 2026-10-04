@@ -130,7 +130,7 @@ import { timelineOf, type VisibilityWindow } from "@/lib/timeline"
 import { FPS } from "@/lib/clip"
 import { ClipEditor, type ClipEditKind } from "@/context/clip-editor"
 import { primeClipDensity, useAudioPeaks } from "@/hooks/use-lane-graphs"
-import { useEngine, type EngineModelInfo } from "@/hooks/use-engine"
+import { useEngine } from "@/hooks/use-engine"
 import { useRenderFraming } from "@/hooks/use-render-framing"
 import { useSceneCast, useSceneSync } from "@/hooks/use-scene-sync"
 import { seedMusic, useSceneMedia, type BgSlot } from "@/hooks/use-scene-media"
@@ -168,6 +168,7 @@ import { effectRef, gradeRef, graphRef, unpublishedUses } from "@/lib/refs"
 import { ShareSceneDialog, type ScenePublishSource } from "@/components/editor/share-scene"
 import { clearLocalBundle, loadCastPalette, loadLocalBundle, saveCastPalette, saveLocalBundle } from "@/lib/asset-store"
 import { dictionaries, LOCALES, LOCALE_LABELS, useI18n, useT, type Dictionary, type Locale } from "@/lib/i18n"
+import { builtinName, localGroupLabel } from "@/lib/builtin-text"
 import { type BundleFile, bundleFileOf, expandUploadFiles, holdBundle, openZip, releaseBundle } from "@/lib/uploads"
 import { GRADE_PRESETS, gradeSpec, NEUTRAL_SPEC, NEW_GRADE_SPEC, recallIntensity, rememberIntensity } from "@/lib/grade"
 import {
@@ -238,7 +239,7 @@ import { carryGlbStage, convertGlbUploads, glbStageOf, glbStyleGroups, stagePbrG
 import { texturesToWebp } from "@/lib/texture-webp"
 import { readRayMmd, type RayStage } from "@/lib/ray-mmd"
 import { loadMaterialMaps, setMaterialMaps } from "@/lib/material-maps"
-import { loadParticleTextures } from "@/lib/effect-textures"
+import { effectTexturesFor, loadParticleTextures } from "@/lib/effect-textures"
 import { findSkies, isStageOwnSky, skyThumbnail, type SkyCandidate } from "@/lib/stage-skies"
 import { GpuErrorNotice } from "@/components/gpu-error-notice"
 import { toast } from "sonner"
@@ -2098,8 +2099,13 @@ const NO_COOKIE = "__none"
 const memosOf = (materials: { name: string; memo?: string }[]): Record<string, string> =>
   Object.fromEntries(materials.filter((m) => m.memo).map((m) => [m.name, m.memo!]))
 
+/** Where a lamp is at half strength, as a fraction of its radius. The shader's
+ *  falloff is (1 - t²)², so this is the root of 1 - sqrt(0.5) — a number worth
+ *  deriving once rather than eyeballing, since it is what the inner ring means. */
+const HALF_POWER = Math.sqrt(1 - Math.SQRT1_2)
+
 export default function Lab() {
-  const t = useT()
+  const { t, locale: uiLocale } = useI18n()
   // The dock's tables in the reader's language. Rebuilt only when the locale
   // does — the ids inside them never move, so everything keyed on an id
   // (recents, go-to, the control lookup) is untouched by a language switch.
@@ -2267,10 +2273,11 @@ export default function Lab() {
   const lyricsInput = useRef<HTMLInputElement | null>(null)
   // Which model the next .vmd pick lands on, set before the dialog opens.
   const animTarget = useRef<string | null>(null)
-  const pickAnimation = (id: string) => {
+  // A callback, not a plain function: it writes a ref, which only a handler may.
+  const pickAnimation = useCallback((id: string) => {
     animTarget.current = id
     vmdInput.current?.click()
-  }
+  }, [])
   const removeAnimation = (id: string) => {
     stopAnimation(id)
     setAnimByModel((prev) => {
@@ -2349,39 +2356,6 @@ export default function Lab() {
       })
   }, [])
 
-  /** A cast member's own clips: the motion, and the morph that dresses it.
-   *  One definition for both layouts — tabbed and single — so the two cannot
-   *  drift into disagreeing about what a character's clips are. */
-  const castClipRows = (m: EngineModelInfo) => (
-    <>
-      <ClipRow
-        icon={Footprints}
-        clip={animByModel[m.id]?.name ?? null}
-        empty={t.lab.uploadAnimation}
-        kind={t.lab.kinds.motion}
-        of={displayName(m.file)}
-        onPick={() => pickAnimation(m.id)}
-        onRemove={() => removeAnimation(m.id)}
-        onEdit={() => editClip(m.id, "motion")}
-        onDownload={() => downloadClip(animByModel[m.id]?.src, animByModel[m.id]?.name ?? "motion.vmd")}
-      />
-      {/* Always, like motion and camera. It used to appear only once a scene
-          already had one, which made the morph the single clip kind you had to
-          already know about in order to find — the group's + was its only door.
-          An empty row IS the invite, and it costs one row. */}
-      <ClipRow
-        icon={Smile}
-        clip={morphByModel[m.id]?.name ?? null}
-        empty={t.lab.uploadMorph}
-        kind={t.lab.kinds.morph}
-        of={displayName(m.file)}
-        onPick={() => pickMorph(m.id)}
-        onRemove={() => removeMorph(m.id)}
-        onEdit={() => editClip(m.id, "morph")}
-        onDownload={() => downloadClip(morphByModel[m.id]?.src, morphByModel[m.id]?.name ?? "morphs.vmd")}
-      />
-    </>
-  )
 
   // The document's clips go on through the shared loader (hooks/use-scene-clips)
   // — the same one a published scene plays through, for EVERY document: a swap
@@ -2863,7 +2837,7 @@ export default function Lab() {
     sceneFiles.score = null
     sceneFiles.lyrics = null
     setMusicClip({ name: file.name, url: URL.createObjectURL(file) })
-  }, [])
+  }, [setMusicClip])
   const removeMusic = () => {
     sceneFiles.audio = null
     sceneFiles.score = null
@@ -3019,9 +2993,10 @@ export default function Lab() {
   /** Patch one applied effect's timing, dials or targets, by uid. */
   const patchEffect = useCallback(
     (uid: string, patch: Partial<Pick<AppliedEffect, "influence" | "window" | "params" | "models">>) => {
-      setBgEffects((list) => list.map((e) => (e.uid === uid ? { ...e, ...patch } : e)))
+      // Patches rows that already carry uids, so the raw setter: no stamping needed.
+      setBgEffectsState((list) => list.map((e) => (e.uid === uid ? { ...e, ...patch } : e)))
     },
-    [setBgEffects],
+    [],
   )
 
   /**
@@ -3045,7 +3020,7 @@ export default function Lab() {
    *  lets a retuned built-in still reach every scene that left it alone. */
   const setEffectParam = useCallback(
     (uid: string, name: string, value: EffectParamValue | undefined) => {
-      setBgEffects((list) =>
+      setBgEffectsState((list) =>
         list.map((e) => {
           if (e.uid !== uid) return e
           const next = { ...(e.params ?? {}) }
@@ -3055,7 +3030,7 @@ export default function Lab() {
         }),
       )
     },
-    [setBgEffects],
+    [],
   )
 
   /** Every dial back to what the shader declared. One write rather than one per
@@ -3064,9 +3039,9 @@ export default function Lab() {
    *  document briefly holding a half-reset effect. */
   const resetEffectParams = useCallback(
     (uid: string) => {
-      setBgEffects((list) => list.map((e) => (e.uid === uid ? { ...e, params: undefined } : e)))
+      setBgEffectsState((list) => list.map((e) => (e.uid === uid ? { ...e, params: undefined } : e)))
     },
-    [setBgEffects],
+    [],
   )
 
   // ONE slot for the three libraries — see useBrowseSurface. They were three
@@ -3126,9 +3101,12 @@ export default function Lab() {
   // A built-in grade's name is its ID in the document and a TRANSLATION on
   // screen — the same split main uses. Drafts and community grades are user
   // strings, so they show exactly as authored.
-  const gradeLabel = useCallback(
-    (name: string) => t.scene.gradePresets[name as keyof typeof t.scene.gradePresets] ?? name,
-    [t],
+  const gradeLabel = useCallback((name: string) => builtinName("grade", { name }, uiLocale), [uiLocale])
+  // An applied effect's shown name: a built-in's translates, anything else is
+  // its author's (an effect is a built-in when the library ships one by that name).
+  const effectLabel = useCallback(
+    (name: string) => (EFFECTS.some((x) => x.name === name) ? builtinName("effect", { name }, uiLocale) : name),
+    [uiLocale],
   )
   const pickGrade = useCallback(
     // The pin and the spec belong to the grade that WAS chosen, and `patch`
@@ -3417,10 +3395,6 @@ export default function Lab() {
     onEffectSurface: setEffectSurface,
   })
 
-  /** Where a lamp is at half strength, as a fraction of its radius. The shader's
-   *  falloff is (1 - t²)², so this is the root of 1 - sqrt(0.5) — a number worth
-   *  deriving once rather than eyeballing, since it is what the inner ring means. */
-  const HALF_POWER = Math.sqrt(1 - Math.SQRT1_2)
 
   /** Whether the lamps are what you are working on — what both the markers and
    *  the overlay layer appear with. One expression, so the two cannot disagree
@@ -3518,7 +3492,7 @@ export default function Lab() {
         null,
       ).map((e) => ({
         id: e.name,
-        label: e.name,
+        label: e.owner === "local" ? e.name : builtinName("effect", e, uiLocale),
         section: e.owner === "local" ? ("local" as const) : ("builtin" as const),
       })),
       ...communityQuickPickItems(communityEffects),
@@ -3537,7 +3511,7 @@ export default function Lab() {
       out = out.map((i) => (i.id === applied.name ? { ...i, hint: t.scene.edited } : i))
     }
     return out
-  }, [effectDrafts, bgEffects, communityEffects, t])
+  }, [effectDrafts, bgEffects, communityEffects, t, uiLocale])
 
   /** The row a pick should REPLACE, or null when a pick means "add". Set by a
    *  row's replace button; both doors onto the list read it, so replacing works
@@ -3549,8 +3523,10 @@ export default function Lab() {
       // can click off, which is also what spares the list a permanent "None"
       // row at the top. With several applied it is per effect, so this is now
       // membership rather than replacement.
+      // The raw setter, stamping where a row is new: setBgEffects is what the
+      // compiler cannot keep a callback memoized around (see onEffects below).
       if (replaceTarget === null && bgEffects.some((e) => e.name === name)) {
-        setBgEffects((list) => list.filter((e) => e.name !== name))
+        setBgEffectsState((list) => list.filter((e) => e.name !== name))
         return
       }
       // APPENDED, so a newly picked effect lands on top of what is already
@@ -3558,11 +3534,11 @@ export default function Lab() {
       // is where that gets said.
       //
       const add = (e: AppliedEffect) =>
-        setBgEffects((list) => {
-          if (replaceTarget === null) return [...list, e]
+        setBgEffectsState((list) => {
+          if (replaceTarget === null) return stampEffectUids([...list, e])
           const next = [...list]
           next[replaceTarget] = e
-          return next
+          return stampEffectUids(next)
         })
       if (replaceTarget !== null) setReplaceTarget(null)
       // Drafts and community rows carry their own shader — they apply by value.
@@ -3576,7 +3552,7 @@ export default function Lab() {
       const def = EFFECTS.find((e) => e.name === name)
       if (def) add(applyDefaults(def))
     },
-    [effectDrafts, communityEffects, bgEffects, replaceTarget, engineRef, masterId],
+    [effectDrafts, communityEffects, bgEffects, replaceTarget],
   )
   /**
    * Swap the effect at one position for another, by name.
@@ -3596,7 +3572,7 @@ export default function Lab() {
           ? applyDefaults(def)
           : null
       if (!next) return
-      setBgEffects((list) => list.map((e, k) => (k === index ? next : e)))
+      setBgEffectsState((list) => stampEffectUids(list.map((e, k) => (k === index ? next : e))))
     },
     [effectDrafts, communityEffects],
   )
@@ -3715,7 +3691,11 @@ export default function Lab() {
       // Stamped BEFORE installing, so the dials the install reports are filed
       // under the uid the row will carry — a draft opened fresh has none yet.
       const next = stampEffectUids(mergeEffect(base, { ...subject, wgsl }))
-      const rs = await engine.setEffects(next.map((e) => ({ wgsl: e.wgsl, params: effectParams(e.wgsl, e.params) })))
+      // with their pictures, as the sync pass installs them: this install is
+      // adopted as what is on screen, so one without them stays without them
+      const rs = await engine.setEffects(
+        next.map((e) => ({ wgsl: e.wgsl, params: effectParams(e.wgsl, e.params), textures: effectTexturesFor(e.wgsl) })),
+      )
       const at = next.findIndex((e) => e.id === subject.id)
       // The subject's own result. Another layer failing is not this edit's
       // error to report, and reporting it would blame the panel you are typing
@@ -3733,7 +3713,7 @@ export default function Lab() {
       }
       return r
     },
-    [engineRef, adoptInstall, t],
+    [engineRef, adoptInstall, t, setBgEffects],
   )
   // Memoized (unlike the grade editor's opener) because the command palette runs
   // it: a plain function in runCommand's dependency array is something the
@@ -3788,7 +3768,7 @@ export default function Lab() {
     // new effect) goes through the dialog.
     if (isDraft("effect", effectEditor.subject.id)) {
       const engine = engineRef.current
-      const r = engine ? await engine.setEffect(code) : { ok: false }
+      const r = engine ? await engine.setEffect(code, undefined, effectTexturesFor(code)) : { ok: false }
       if (r.ok) {
         noteAppliedWgsl(code)
         const { id, name } = effectEditor.subject
@@ -3820,7 +3800,7 @@ export default function Lab() {
     // every future pick. Compiling IS applying, which is also what save wants.
     const isExisting = isDraft("effect", subject.id)
     const engine = engineRef.current
-    const r = engine ? await engine.setEffect(code) : { ok: false, diagnostics: [t.lab.engineNotReady] }
+    const r = engine ? await engine.setEffect(code, undefined, effectTexturesFor(code)) : { ok: false, diagnostics: [t.lab.engineNotReady] }
     if (!r.ok) return r.diagnostics[0] ?? t.lab.compileFailed
     noteAppliedWgsl(code)
     const keep = isExisting ? subject.id : undefined
@@ -3931,7 +3911,7 @@ export default function Lab() {
   } | null>(null)
   // A plain function: the React Compiler memoizes this file, and a hand-written
   // useCallback here is one it reports it cannot preserve — which makes it skip
-  // optimising the component around it. Same reason castClipRows is plain.
+  // optimising the component around it.
   const editClip = (modelId: string, kind: ClipEditKind) => {
     setEditTarget({ modelId, kind })
     setTimelineOpen(true)
@@ -4077,7 +4057,7 @@ export default function Lab() {
   const openExport = useCallback(() => {
     setExportOpen(true)
     setExportRaise((n) => n + 1)
-  }, [])
+  }, [setExportOpen])
   /**
    * Uploaded this session and not styled yet.
    *
@@ -4106,8 +4086,8 @@ export default function Lab() {
       setEditTarget((t) => t ?? { modelId: editingModelId, kind: editingKind })
     }
     setInspectedId(null)
-  }, [timelineUnfolded, editingModelId, editingKind])
-  const closeExport = useCallback(() => setExportOpen(false), [])
+  }, [timelineUnfolded, editingModelId, editingKind, setEditTarget, setInspectedId])
+  const closeExport = useCallback(() => setExportOpen(false), [setExportOpen])
   // One panel in the right column, and the column decides — see use-dock-slot.
   // The pairwise clears that used to live in the two openers below are gone with
   // it: three panels is where writing the rule per pair stops working.
@@ -4127,7 +4107,7 @@ export default function Lab() {
       // You came and looked — the suggestion has been taken.
       noteStyled(id)
     },
-    [inspectedId, noteStyled],
+    [inspectedId, noteStyled, setInspectedId],
   )
   const inspectedGroups = useMemo(
     () => (inspectedId ? (groupsByModel[inspectedId] ?? []) : []),
@@ -5087,7 +5067,7 @@ export default function Lab() {
         // AND THE VIEW IT WAS AUTHORED UNDER: a scene setting, not a claim —
         // the transform and exposure the author looked at it through.
         const view = rig?.view
-        if (view) setSettings((s2) => ({ ...s2, view: { ...s2.view, transform: view.transform, exposure: view.exposure } }))
+        if (view) setSettings((s2) => ({ ...s2, view: { ...s2.view, transform: view.transform, exposure: view.exposure, contrast: view.contrast } }))
         // AND THE GRADE IT WAS GRADED WITH, which leaves with it.
         const stageGrade = rig?.grade
         setSettings((s2) => ({ ...s2, stageGrade: stageGrade ? { ...stageGrade, stage: id } : undefined }))
@@ -5753,7 +5733,7 @@ export default function Lab() {
       clearTimeout(timer)
       if (idle && typeof cancelIdleCallback === "function") cancelIdleCallback(idle)
     }
-  }, [ready, forkPending, scene, sceneName, camera, settings, bgEffects, lights, groupsByModel, models])
+  }, [ready, forkPending, scene, sceneName, camera, settings, documentEffects, lights, groupsByModel, models])
 
   // What changes the BYTES: the set of files the scene points at. Placement and
   // switches are not on this list — they change the doc, never the bundle, and
@@ -7299,10 +7279,10 @@ export default function Lab() {
         // The library picks its own target, so it opens from anywhere — the
         // group row, the command palette, the stack — without a group having
         // been chosen first.
-        groups={inspectedGroups.map((g) => ({ id: g.id, label: groupLabel(g) }))}
+        groups={inspectedGroups.map((g) => ({ id: g.id, label: localGroupLabel(groupLabel(g), uiLocale) }))}
         targetId={libGroup?.id ?? null}
         onTargetChange={(id) => openBrowse({ kind: "graph", groupId: id }, libraryFacet)}
-        targetLabel={libGroup ? groupLabel(libGroup) : null}
+        targetLabel={libGroup ? localGroupLabel(groupLabel(libGroup), uiLocale) : null}
         currentGraphName={libGroup?.graph.name ?? null}
         usedNames={usedLookNames}
         onRenamed={renameGroupLooks}
@@ -7750,7 +7730,38 @@ export default function Lab() {
                 </div>
               )}
               {clipModel ? (
-                castClipRows(clipModel)
+                // A cast member's own clips: the motion, and the morph that
+                // dresses it. Inline rather than a render helper — a helper
+                // called during render that closes over the file pickers (refs)
+                // reads them during render as far as the compiler can tell.
+                <>
+                  <ClipRow
+                    icon={Footprints}
+                    clip={animByModel[clipModel.id]?.name ?? null}
+                    empty={t.lab.uploadAnimation}
+                    kind={t.lab.kinds.motion}
+                    of={displayName(clipModel.file)}
+                    onPick={() => pickAnimation(clipModel.id)}
+                    onRemove={() => removeAnimation(clipModel.id)}
+                    onEdit={() => editClip(clipModel.id, "motion")}
+                    onDownload={() => downloadClip(animByModel[clipModel.id]?.src, animByModel[clipModel.id]?.name ?? "motion.vmd")}
+                  />
+                  {/* Always, like motion and camera. It used to appear only once a scene
+                      already had one, which made the morph the single clip kind you had to
+                      already know about in order to find — the group's + was its only door.
+                      An empty row IS the invite, and it costs one row. */}
+                  <ClipRow
+                    icon={Smile}
+                    clip={morphByModel[clipModel.id]?.name ?? null}
+                    empty={t.lab.uploadMorph}
+                    kind={t.lab.kinds.morph}
+                    of={displayName(clipModel.file)}
+                    onPick={() => pickMorph(clipModel.id)}
+                    onRemove={() => removeMorph(clipModel.id)}
+                    onEdit={() => editClip(clipModel.id, "morph")}
+                    onDownload={() => downloadClip(morphByModel[clipModel.id]?.src, morphByModel[clipModel.id]?.name ?? "morphs.vmd")}
+                  />
+                </>
               ) : pendingCast > 0 ? (
                 // Inert until its model lands: it is holding the row's height,
                 // not offering an upload there is nothing to attach to.
@@ -8312,13 +8323,13 @@ export default function Lab() {
                                   // list can go back to being just a list.
                                   <button
                                     onClick={() => setSelectedEffect((cur) => (cur === e.uid ? null : (e.uid ?? null)))}
-                                    title={e.name}
+                                    title={effectLabel(e.name)}
                                     className={cn(
                                       "flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-xs transition-colors",
                                       selectedEffect === e.uid ? "text-blue-400" : "hover:text-foreground",
                                     )}
                                   >
-                                    <span className="min-w-0 truncate">{e.name}</span>
+                                    <span className="min-w-0 truncate">{effectLabel(e.name)}</span>
                                   </button>
                                 }
                                 actions={
@@ -8350,6 +8361,7 @@ export default function Lab() {
                                         when the shortlist has not got it. */}
                                     <QuickPick
                                       value={e.name}
+                                      label={effectLabel(e.name)}
                                       items={effectItems}
                                       onPick={(name) => replaceEffectAt(i, name)}
                                       onBrowse={() => {
@@ -10040,7 +10052,10 @@ export default function Lab() {
                           ? null
                           : {
                               effects: bgEffects,
-                              onEffects: setBgEffects,
+                              // A wrapper, not the setter itself: handed into
+                              // an object, the compiler counts the setter as
+                              // mutable and drops every callback that uses it.
+                              onEffects: (next: SetStateAction<AppliedEffect[]>) => setBgEffects(next),
                               selectedEffect,
                               onSelectEffect: setSelectedEffect,
                             }

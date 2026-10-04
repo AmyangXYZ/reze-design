@@ -2,7 +2,7 @@
 
 // The whole i18n layer in one file
 
-import { createContext, useCallback, useContext, useEffect, useState } from "react"
+import { createContext, useCallback, useContext, useSyncExternalStore } from "react"
 import { storageKey } from "@/lib/storage"
 
 export const LOCALES = ["en", "zh"] as const
@@ -225,14 +225,6 @@ const en = {
     highlights: "Highlights",
     contrast: "Contrast",
     saturation: "Saturation",
-    gradePresets: {
-      Neutral: "Neutral",
-      Divine: "Divine",
-      Sakura: "Sakura",
-      Moonlit: "Moonlit",
-      Cyberpunk: "Cyberpunk",
-      Bloody: "Bloody",
-    },
     ground: "Ground",
     gridLines: "Grid lines",
     physics: "Physics",
@@ -1214,14 +1206,6 @@ const zh: Dictionary = {
     highlights: "亮部",
     contrast: "对比度",
     saturation: "饱和度",
-    gradePresets: {
-      Neutral: "中性",
-      Divine: "神圣",
-      Sakura: "樱色",
-      Moonlit: "月光",
-      Cyberpunk: "赛博朋克",
-      Bloody: "血色",
-    },
     ground: "地面",
     gridLines: "网格线",
     physics: "物理",
@@ -1955,6 +1939,22 @@ function detectLocale(): Locale {
   return "en"
 }
 
+// The chosen locale lives outside React: detected once on first client read,
+// replaced by `setLocale`. Read through useSyncExternalStore so the server and
+// hydration render use "en" and the client switches right after, with no
+// setState-in-effect round trip.
+let current: Locale | null = null
+const listeners = new Set<() => void>()
+const subscribe = (fn: () => void) => {
+  listeners.add(fn)
+  return () => {
+    listeners.delete(fn)
+  }
+}
+const getSnapshot = (): Locale => (current ??= detectLocale())
+// SSR/first render is "en" to match `<html lang="en">` (no hydration flash)
+const getServerSnapshot = (): Locale => "en"
+
 type I18nContextValue = {
   locale: Locale
   setLocale: (locale: Locale) => void
@@ -1965,17 +1965,13 @@ type I18nContextValue = {
 const I18nContext = createContext<I18nContextValue | null>(null)
 
 export function I18nProvider({ children }: { children: React.ReactNode }) {
-  // SSR/first render is "en" to match `<html lang="en">` (no hydration flash)
-  const [locale, setLocaleState] = useState<Locale>("en")
-
-  useEffect(() => {
-    setLocaleState(detectLocale())
-  }, [])
+  const locale = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
 
   // Deliberately NOT syncing `document.documentElement.lang` to the UI locale
 
   const setLocale = useCallback((next: Locale) => {
-    setLocaleState(next)
+    current = next
+    listeners.forEach((fn) => fn())
     try {
       window.localStorage.setItem(STORAGE_KEY, next)
     } catch {

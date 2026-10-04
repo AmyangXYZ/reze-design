@@ -24,7 +24,7 @@
 import { readdir, readFile, writeFile, unlink } from "node:fs/promises"
 import { join } from "node:path"
 import { readPmxDocument, writePmxDocument } from "reze-engine"
-import { CONVERT, FLOOR, toWebp, retargetTextures } from "./lib/webp-texture.mjs"
+import { CONVERT, toWebp, retargetTextures } from "./lib/webp-texture.mjs"
 
 const WRITE = process.argv.includes("--write")
 const DIR = process.argv.slice(2).find((a) => !a.startsWith("--"))

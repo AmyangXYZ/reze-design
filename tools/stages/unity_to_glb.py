@@ -41,7 +41,7 @@ from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from unity_grading import grading as stage_grading  # noqa: E402
+from unity_grading import grading as stage_grading, resolve as resolve_volumes, volume_stack  # noqa: E402
 from unity_effect_bake import BASIC_EFFECT_SHADERS, _linear_to_srgb, _srgb_to_linear, bake as bake_effect, bake_basic, bake_detailed, live_effect, repeats_across, tong_add_effect, bake_fresnel  # noqa: E402
 from unity_lights import gamma_to_linear  # noqa: E402
 from unity_probe import probe_to_equirect  # noqa: E402
@@ -174,6 +174,23 @@ def cube_rgbm(asset_path, width=512):
     Image.fromarray(np.round(enc * 255.0).astype(np.uint8), "RGBA").save(buf, "PNG")
     _CUBES[asset_path] = base64.b64encode(buf.getvalue()).decode("ascii")
     return _CUBES[asset_path]
+
+
+def game_view(scene, proj, look, notes):
+    """The game's own final curve for the stage (Hidden/SimPipeline/Final), as
+    the app's view: (1 − e^(−exposure·x))^contrast is the app's "AG" curve
+    with exposure folded into stops (2.5 is the curve's own), unless the
+    scene's ColorAdjustments switch the Final to ACES (exposure = 2^postExposure).
+    PostProcessSetting (volume-resolved) over SceneSetting, as AGSimPostFX reads them."""
+    vol = resolve_volumes(volume_stack(scene, proj, []))
+    post = vol.get("PostProcessSetting", {})
+    if vol.get("ColorAdjustments", {}).get("mode", 0) == 1:
+        return {"transform": "ACES", "exposure": float(vol["ColorAdjustments"].get("postExposure", 0.0))}
+    exposure = float(post.get("exporsure", look.get("exposure", 2.5)) or 2.5)
+    contrast = float(post.get("contrast", look.get("contrast", 1.4)) or 1.4)
+    if not look.get("tonemapping", True):
+        notes.append("the scene turns its tone curve off; drawn with the curve anyway")
+    return {"transform": "AG", "exposure": round(math.log2(max(exposure, 1e-4) / 2.5), 4), "contrast": round(contrast, 4)}
 
 
 def game_globals(project_root, scene_path):
@@ -666,9 +683,16 @@ def build_dir_for(out_glb, name):
     return os.path.join(os.path.dirname(os.path.abspath(out_glb)), "build", name.lower())
 
 
-def prepare(project_root, scene_path, out_glb, name, png_root=None):
+# --include-off: what the scene file switches off is kept anyway
+INCLUDE_OFF = False
+
+
+def prepare(project_root, scene_path, out_glb, name, png_root=None, origin=None):
     proj = Project(project_root)
     scene = Scene(os.path.join(project_root, scene_path))
+    # A scene the game parks far out (its UI scenes: X100 stands at x = 500)
+    # is read with the cast's own spot at the origin (Scene.set_origin)
+    origin_at = scene.set_origin(origin) if origin else None
     # SimSceneTint: the scene-wide multiply the game's water (and PBR) end on. A
     # GLOBAL colour, which Unity does not convert (only material colours go gamma
     # -> linear on upload): the shader reads the number as set, as the manifest
@@ -749,6 +773,8 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
                 BACKDROP_EFFECTS.add(mat["name"])
 
     notes = []
+    if origin_at:
+        notes.append(f"stood at the origin: {origin} was at {tuple(round(v, 3) for v in origin_at)} in the game")
     fallbacks = scene.lod_fallback_renderers()
     switched_off, dropped_lods, unreadable, helpers = [], 0, [], []
     per_material = {}
@@ -762,7 +788,8 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
             continue
         if not scene.active_in_hierarchy(r["object"]) and not wears_sky(r):
             switched_off.append(r["name"])
-            continue
+            if not INCLUDE_OFF:
+                continue
         if r["id"] in fallbacks:
             dropped_lods += 1
             continue
@@ -1219,7 +1246,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
     grade = stage_grading(scene, proj, look, notes)
 
     if switched_off:
-        notes.append(f"{len(switched_off)} renderers the game switches off, left out: {', '.join(sorted(set(switched_off)))}")
+        notes.append(f"{len(switched_off)} renderers the game switches off, {'kept anyway (--include-off)' if INCLUDE_OFF else 'left out'}: {', '.join(sorted(set(switched_off)))}")
     if dropped_lods:
         notes.append(f"{dropped_lods} LOD fallback renderers dropped (level 0 kept)")
     if unreadable:
@@ -1263,6 +1290,7 @@ def prepare(project_root, scene_path, out_glb, name, png_root=None):
         "fill": fill,
         "world": world,
         "grading": grade,
+        "view": game_view(scene, proj, look, notes),
         "ambient": ambient,
         "fog": fog,
         "groundShadow": ground_shadow,
@@ -1281,6 +1309,9 @@ def main():
     ap.add_argument("--out", required=True, help="the stage file, e.g. stages/X323.glb; the build goes to stages/build/x323/")
     ap.add_argument("--name", required=True)
     ap.add_argument("--png-root", default=None, help="decoded textures; default <project>/../_png_textures")
+    ap.add_argument("--include-off", action="store_true",
+                    help="keep what the scene file switches off: a UI scene's code switches parts of it on per page (X100)")
+    ap.add_argument("--origin", default=None, help="a GameObject to stand at the origin (a UI scene's cast spot: X100's 'position')")
     ap.add_argument("--prepare-only", action="store_true")
     ap.add_argument("--png", action="store_true", help="keep Blender's PNG textures (default: WebP q90, see glb_webp.py)")
     args = ap.parse_args()
@@ -1288,7 +1319,9 @@ def main():
         raise SystemExit("--out is the stage file itself, e.g. stages/X323.glb")
     png_root = args.png_root or os.path.join(os.path.dirname(os.path.abspath(args.project)), "_png_textures")
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
-    build, scene_json = prepare(args.project, args.scene, args.out, args.name, png_root)
+    global INCLUDE_OFF
+    INCLUDE_OFF = args.include_off
+    build, scene_json = prepare(args.project, args.scene, args.out, args.name, png_root, args.origin)
     grade = f"{scene_json['grading']['size']}^3" if scene_json["grading"] else "none"
     print(f"[unity] {len(scene_json['materials'])} materials, {len(scene_json['lamps'])} lamps, sun {'yes' if scene_json['sun'] else 'no'}, world {'yes' if scene_json['world'] else 'no'}, grade {grade} -> {build}")
     for n in scene_json["notes"]:

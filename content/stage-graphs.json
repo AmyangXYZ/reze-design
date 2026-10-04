@@ -4,7 +4,7 @@
   "kind": "graph",
   "name": "Lit",
   "author": "frost",
-  "description": "The game's stage model itself (UE4 mobile BRDF): albedo, its own normal map (image 0) and packed property map (image 1: metal, roughness, occlusion, glow). Every stage look is this with other defaults.",
+  "description": "The game's base stage material. Image 0: normal map; image 1: property map (metal, roughness, occlusion, glow).",
   "tags": [
    "stage",
    "pbr",
@@ -277,7 +277,7 @@
   "kind": "graph",
   "name": "Wood",
   "author": "frost",
-  "description": "Furniture, floors and doors: roughness 0.46, occlusion 0.94 — the median of the game's 16 wood materials.",
+  "description": "Wood: furniture, floors and doors.",
   "tags": [
    "stage",
    "wood"
@@ -548,7 +548,7 @@
   "kind": "graph",
   "name": "Tile",
   "author": "frost",
-  "description": "Tile, brick and trim: roughness 0.53, occlusion 0.91 — the game's 10 masonry materials.",
+  "description": "Tile, brick and trim.",
   "tags": [
    "stage",
    "tile",
@@ -821,7 +821,7 @@
   "kind": "graph",
   "name": "Stone",
   "author": "frost",
-  "description": "Stone, concrete, rock and soil: roughness 0.57, occlusion 0.89 — the game's 19 terrain materials.",
+  "description": "Stone, concrete, rock and soil.",
   "tags": [
    "stage",
    "stone",
@@ -1094,7 +1094,7 @@
   "kind": "graph",
   "name": "Plaster",
   "author": "frost",
-  "description": "Walls, pillars and roofs: metal 0.1, roughness 0.52, occlusion 0.88 — the game's 21 building materials.",
+  "description": "Walls, pillars and roofs.",
   "tags": [
    "stage",
    "plaster",
@@ -1367,7 +1367,7 @@
   "kind": "graph",
   "name": "Metal",
   "author": "frost",
-  "description": "Whole-surface metal: metal 1, roughness 0.29 — the game's fully metal materials. Its colour is the texture's; its look is the reflection probe.",
+  "description": "Fully metal surfaces; the look comes from the reflections.",
   "tags": [
    "stage",
    "metal"
@@ -1638,7 +1638,7 @@
   "kind": "graph",
   "name": "Lacquer",
   "author": "frost",
-  "description": "Varnish, lacquer and plastic: roughness 0.16 — the game's glossy prop family (Props_object_557).",
+  "description": "Glossy varnish, lacquer and plastic.",
   "tags": [
    "stage",
    "lacquer",
@@ -1911,7 +1911,7 @@
   "kind": "graph",
   "name": "Fabric",
   "author": "frost",
-  "description": "Cloth, sofas, carpets: roughness 0.6, occlusion 0.87 — the game's fabric materials (0.41–0.80). Leather, rubber and paper wear it too: the game has no data for them.",
+  "description": "Cloth, sofas and carpets; also leather, rubber and paper.",
   "tags": [
    "stage",
    "fabric"
@@ -2182,7 +2182,7 @@
   "kind": "graph",
   "name": "Neon",
   "author": "frost",
-  "description": "Signs, bulbs and lit shades: the game's emission mask — the texel becomes its own colour × 2.5, unlit (the median of its 38 emissive materials). With a property map, its alpha is the mask.",
+  "description": "Glowing signs, bulbs and lampshades. With a property map, its alpha is the glow mask.",
   "tags": [
    "stage",
    "emission"
@@ -2465,7 +2465,7 @@
   "kind": "graph",
   "name": "Stage Surface",
   "author": "frost",
-  "description": "A converted stage's own surfaces on the game's model: metal, roughness and occlusion as the converter packed them into each material, its normal map and property map where it brought them. One look for a whole set, varying per material.",
+  "description": "A converted stage's own surfaces, each material as the converter set it.",
   "tags": [
    "stage",
    "pbr"
@@ -2819,7 +2819,7 @@
   "kind": "graph",
   "name": "Glass",
   "author": "frost",
-  "description": "Window panes on the game's premultiplied glass: the pane fades by its own transparency while its reflection of the stage stays — metal 0.2 tints it, roughness 0.05.",
+  "description": "Window glass: see-through, keeping its reflection.",
   "tags": [
    "stage",
    "glass"
@@ -3066,7 +3066,7 @@
   "kind": "graph",
   "name": "Glass Shell",
   "author": "frost",
-  "description": "A reflecting shell of glass, unlit — the game's Scene/Transparent: the stage's reflection box-projected, a fresnel that rises to the shininess at grazing angles, and edges more opaque than the face (the bar's window, X324_boli_01b).",
+  "description": "A see-through glass shell that reflects the stage, more opaque at the edges.",
   "tags": [
    "stage",
    "glass"
@@ -3648,7 +3648,7 @@
   "kind": "graph",
   "name": "Bottle Glass",
   "author": "frost",
-  "description": "Bottles and decanters, unlit — the game's BottleGlass: a dark body that turns to its refraction colour toward the rim, plus a reflection, see-through at the face (the game's decanter Props_decor_down_006_a).",
+  "description": "Bottles and decanters: dark glass that brightens toward the rim.",
   "tags": [
    "stage",
    "glass",
@@ -4050,7 +4050,7 @@
   "kind": "graph",
   "name": "Water",
   "author": "frost",
-  "description": "Open water — the game's Ripplet: two layers of its own ripple map (image 0) drifting in world space, the stage's reflection with a fresnel from 0.008 to 0.94, the sun's and the lamps' glints, and a deep blue body (X309's lagoon).",
+  "description": "Open water with drifting ripples, reflections and glints. Image 0: ripple map.",
   "tags": [
    "stage",
    "water"
@@ -5426,7 +5426,7 @@
   "kind": "graph",
   "name": "Foliage",
   "author": "frost",
-  "description": "Leaves, grass and hedges — the game's Plant: its colour graded top to bottom by the leaf's facing, shade from the vertex alpha, light through the leaf from behind and a bright rim, no shine. Alpha-tested so a leaf card keeps a crisp edge.",
+  "description": "Leaves, grass and hedges, lit through from behind, with crisp edges.",
   "tags": [
    "stage",
    "plant"
@@ -6642,7 +6642,7 @@
   "kind": "graph",
   "name": "Terrain",
   "author": "frost",
-  "description": "Ground painted from layers — the game's two-layer splat (Standard_PBR_2): the material's texture is the control map, images 0 and 1 the layers' colours and 2 and 3 their normals, each layer tiled as a whole (X309's beach: ×80 and ×30).",
+  "description": "Ground blended from two texture layers. The material's texture is the blend mask; images 0 and 1 are the layers' colours, 2 and 3 their normals.",
   "tags": [
    "stage",
    "terrain"

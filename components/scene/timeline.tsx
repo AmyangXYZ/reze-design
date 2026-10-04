@@ -25,7 +25,7 @@ import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { useT } from "@/lib/i18n"
-import { useClipActions, useClipEngine, useClipSelector, usePlayhead, usePlayheadFrameRef, type SelectedKeyframe } from "@/context/clip-editor"
+import { useClipActions, useClipDocRef, useClipEngine, useClipSelector, usePlayhead, usePlayheadFrameRef, type SelectedKeyframe } from "@/context/clip-editor"
 import { useClipOps } from "@/hooks/use-clip-ops"
 import type { AnimationClip, BoneKeyframe, CameraKeyframe, MorphKeyframe } from "reze-engine"
 import { bezierInterpolate, Quat } from "reze-engine"
@@ -648,9 +648,13 @@ function TimelineCanvas({
     onClearSelectionProp()
   }, [onClearSelectionProp])
   /** Latest frame for the draw closure to read — keeps `currentFrame` out of
-   *  the `draw` useCallback deps so playback ticks don't re-run layout effects. */
+   *  the `draw` useCallback deps so playback ticks don't re-run layout effects.
+   *  Synced after every commit, not during render: declared before the paint
+   *  effect below, so it has landed by the time that effect draws. */
   const frameRef = useRef(currentFrame)
-  frameRef.current = currentFrame
+  useLayoutEffect(() => {
+    frameRef.current = currentFrame
+  })
   const sizeRef = useRef({ w: 0, h: 0, dpr: 0 })
   /** Offscreen cache: ruler + grid + curves + dopesheet. Repainted only when
    *  non-currentFrame deps change, so playback ticks just blit + draw the playhead. */
@@ -1580,7 +1584,9 @@ function TimelineCanvas({
     // dict.lab.timeline, because the canvas PAINTS its own empty states — a
     // language change has to repaint them, and nothing else here would.
   }, [clip, pxPerFrame, yZoom, scrollX, selectedBone, selectedMorph, cameraTrack, frameCount, audioPeaks, audioDuration, visibleBones, selectedKeyframes, tab, blank, parentHolds, getDopeFrames, dict.lab.timeline])
-  drawRef2.current = draw
+  useLayoutEffect(() => {
+    drawRef2.current = draw
+  }, [draw])
 
   // Layout-phase paint: `useEffect`+nested rAF ran after browser paint → playhead lagged 1–2 frames behind transport.
   // `currentFrame` is in deps (not in `draw`'s deps) so scrubbing + throttled
@@ -1726,7 +1732,7 @@ function TimelineCanvas({
       const f = Math.round((mx - ox) / pxPerFrame)
       return { zone: "curve-empty" as const, frame: Math.max(0, Math.min(frameCount, f)) }
     },
-    [blank, parentHolds, clip, pxPerFrame, yZoom, scrollX, selectedBone, selectedMorph, cameraTrack, frameCount, audioPeaks, tab, getDopeFrames],
+    [blank, parentHolds, clip, pxPerFrame, yZoom, scrollX, selectedBone, selectedMorph, cameraTrack, frameCount, tab, getDopeFrames],
   )
 
   const onMouseDown = useCallback(
@@ -2522,6 +2528,10 @@ export function Timeline({
   const cameraSelected = useClipSelector((s) => s.cameraSelected)
   const parentSelected = useClipSelector((s) => s.parentSelected)
   const { commit, commitCamera, setSelectedKeyframes } = useClipActions()
+  // Non-subscribing read of the same document, for the drag path below: it
+  // retags the live selection entries in place, which must not go through the
+  // render-time `selectedKeyframes` snapshot (a hook value is frozen to React).
+  const clipDoc = useClipDocRef()
   const selectionKind: SelectionKind = blank
     ? "none"
     : parentSelected
@@ -2577,14 +2587,17 @@ export function Timeline({
   // only mounts <Timeline> once boot has fully resolved (see `studioReady`),
   // so `initialView` is already final here, not a later patch.
   const [pxPerFrame, setPxPerFrame] = useState(() => initialView?.pxPerFrame ?? 4)
-  const pxRef = useRef(pxPerFrame)
-  pxRef.current = pxPerFrame
   const [yZoom, setYZoom] = useState(() => initialView?.yZoom ?? 1)
-  const yZoomRef = useRef(yZoom)
-  yZoomRef.current = yZoom
   const [scrollX, setScrollX] = useState(() => initialView?.scrollX ?? 0)
-  const scrollXRef = useRef(0)
-  scrollXRef.current = scrollX
+  // Mirrors for the wheel handler, the per-tick page-turn and the effects
+  // below, synced after every commit rather than during render. A layout
+  // effect, so they are current before any passive effect or rAF tick reads them.
+  const pxRef = useRef(pxPerFrame)
+  const scrollXRef = useRef(scrollX)
+  useLayoutEffect(() => {
+    pxRef.current = pxPerFrame
+    scrollXRef.current = scrollX
+  })
   const timelineAreaRef = useRef<HTMLDivElement>(null)
   const lanesApi = useRef<EffectLanesApi | null>(null)
   const [trackWidth, setTrackWidth] = useState(0)
@@ -2766,13 +2779,15 @@ export function Timeline({
   const frameFieldRef = useRef<HTMLInputElement>(null)
   const thumbElRef = useRef<HTMLDivElement>(null)
   const fcRef = useRef(fc)
-  fcRef.current = fc
   const trackWidthRef = useRef(trackWidth)
-  trackWidthRef.current = trackWidth
   // Whether the scene is actually MOVING, which is not the same as whether this
   // callback is being invoked — see the guard below.
   const playingRef = useRef(playing)
-  playingRef.current = playing
+  useLayoutEffect(() => {
+    fcRef.current = fc
+    trackWidthRef.current = trackWidth
+    playingRef.current = playing
+  })
   useEffect(() => {
     if (!playheadDrawRef) return
     playheadDrawRef.current = (frame: number) => {
@@ -2961,14 +2976,14 @@ export function Timeline({
         clip.morphTracks.get(morph)?.sort((a, b) => a.frame - b.frame)
       }
       for (const kf of cameraRefs) kf.frame = clamped
-      for (const s of selectedKeyframes) {
+      for (const s of clipDoc.getState().selectedKeyframes) {
         if (s.type === "dope" && s.frame === fromFrame) (s as { frame: number }).frame = clamped
       }
       dragTouchedRef.current = true
       dragRedrawRef.current?.()
       followDrag(clamped, cameraRefs.length > 0 ? "camera" : "clip")
     },
-    [clip, selectedKeyframes, followDrag],
+    [clip, clipDoc, followDrag],
   )
 
   const onMoveDopeColumns = useCallback(
@@ -3080,7 +3095,7 @@ export function Timeline({
         const ch = ALL_CHANNELS.find((c) => c.key === chKey)
         if (ch) ch.set(kfRef, ch.get(kfRef) + dv)
       }
-      for (const s of selectedKeyframes) {
+      for (const s of clipDoc.getState().selectedKeyframes) {
         if (s.bone === bone && s.channel === chKey && s.frame === fromFrame) {
           ;(s as { frame: number }).frame = clamped
         }
@@ -3089,7 +3104,7 @@ export function Timeline({
       dragRedrawRef.current?.()
       followDrag(clamped, "clip")
     },
-    [clip, selectedKeyframes, followDrag],
+    [clip, clipDoc, followDrag],
   )
 
   const onMoveMorphKeyframe = useCallback(
@@ -3111,14 +3126,14 @@ export function Timeline({
         track.sort((a, b) => a.frame - b.frame)
       }
       if (dw) kf.weight = Math.max(0, Math.min(1, kf.weight + dw))
-      for (const s of selectedKeyframes) {
+      for (const s of clipDoc.getState().selectedKeyframes) {
         if (s.morph === morph && s.frame === fromFrame) (s as { frame: number }).frame = clamped
       }
       dragTouchedRef.current = true
       dragRedrawRef.current?.()
       followDrag(clamped, "clip")
     },
-    [clip, selectedKeyframes, followDrag],
+    [clip, clipDoc, followDrag],
   )
 
   /** Live camera edit: mutate the keyframe in place (the engine is handed the
@@ -3136,14 +3151,14 @@ export function Timeline({
       const fromFrame = kf.frame
       if (clamped !== fromFrame) kf.frame = clamped
       if (dv) ch.set(kf, ch.get(kf) + dv)
-      for (const sk of selectedKeyframes) {
+      for (const sk of clipDoc.getState().selectedKeyframes) {
         if (sk.channel === channelKey && sk.frame === fromFrame) (sk as { frame: number }).frame = clamped
       }
       dragTouchedRef.current = true
       dragRedrawRef.current?.()
       followDrag(clamped, "camera")
     },
-    [cameraTrack, selectedKeyframes, followDrag],
+    [cameraTrack, clipDoc, followDrag],
   )
 
   const clearSelection = useCallback(() => {

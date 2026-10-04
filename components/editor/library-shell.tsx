@@ -47,13 +47,16 @@ export type BrowseItem = {
 
 /** Name, maker or tag. Inlined rather than borrowed from lib/library, which
  *  types its argument as a full LibraryItem. */
-function matchesQuery(i: BrowseItem, query: string, displayName?: string): boolean {
+function matchesQuery(i: BrowseItem, query: string, displayName?: string, extra?: string): boolean {
   const q = query.trim().toLowerCase()
   if (!q) return true
   return (
     (displayName ?? i.name).toLowerCase().includes(q) ||
+    // The stored name too: a built-in shown in Chinese still answers to English.
+    i.name.toLowerCase().includes(q) ||
     i.author.toLowerCase().includes(q) ||
-    i.tags.some((x) => x.toLowerCase().includes(q))
+    i.tags.some((x) => x.toLowerCase().includes(q)) ||
+    (extra?.toLowerCase().includes(q) ?? false)
   )
 }
 
@@ -249,6 +252,8 @@ export function useLibraryBrowse<T extends BrowseItem>(
   opts: {
     initialFacet?: BrowseFacet
     displayName?: (item: T) => string
+    /** More text the search answers to — a built-in's other-language name and tags. */
+    searchText?: (item: T) => string
     /** Facet counts over the WHOLE corpus, when the client holds only a page. */
     counts?: { all: number; yours: number; liked: number }
     /** Tag counts over the whole corpus, same reason. */
@@ -258,7 +263,7 @@ export function useLibraryBrowse<T extends BrowseItem>(
     onFacetChange?: (facet: BrowseFacet) => void
   } = {},
 ) {
-  const { initialFacet = "all", displayName, counts: givenCounts, tagCounts, onFacetChange } = opts
+  const { initialFacet = "all", displayName, searchText, counts: givenCounts, tagCounts, onFacetChange } = opts
   const [query, setQuery] = useState("")
   const [facet, setFacetState] = useState<BrowseFacet>(initialFacet)
   const setFacet = useCallback(
@@ -302,7 +307,7 @@ export function useLibraryBrowse<T extends BrowseItem>(
         matchesFacet(i) &&
         (!tag || i.tags.includes(tag)) &&
         (!maker || i.author === maker) &&
-        matchesQuery(i, query, displayName?.(i)),
+        matchesQuery(i, query, displayName?.(i), searchText?.(i)),
     )
     const value = (i: T): string | number => {
       switch (sort) {
@@ -331,7 +336,7 @@ export function useLibraryBrowse<T extends BrowseItem>(
       const bn = displayName?.(b) ?? b.name
       return an.localeCompare(bn)
     })
-  }, [items, matchesFacet, tag, maker, query, displayName, sort, dir, numbers])
+  }, [items, matchesFacet, tag, maker, query, displayName, searchText, sort, dir, numbers])
 
   /** Counts run over the WHOLE library, never the filtered view — a rail whose
    *  numbers shrank as you narrowed it would be a rail you cannot navigate by. */

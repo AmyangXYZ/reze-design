@@ -233,7 +233,7 @@ export function ClipBridge({
     }
     raf = requestAnimationFrame(check)
     return () => cancelAnimationFrame(raf)
-  }, [editingModelId, engineRef, replaceClip, setRig, replaceCameraTrack, setCurrentFrame, propClipName, propFrames])
+  }, [editingModelId, engineRef, frameRef, replaceClip, setRig, replaceCameraTrack, setCurrentFrame, propClipName, propFrames])
 
   // ─── COMMIT ─────────────────────────────────────────────────────────────
   // Watches `editRevision`, which only a real edit bumps — NOT `revision`,

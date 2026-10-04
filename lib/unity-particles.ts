@@ -236,10 +236,18 @@ function oneShotEvents(s: ParticleSpec, rate: number): number[] | null {
   return out.length ? out : null
 }
 
+/** One emitter's frame, baked: its origin, and the two point offsets the stage's
+ *  point pair would give it (z: its +Y as long as its size scale; x: as long as
+ *  its shape scale), in engine units. */
+export type BakedEmitter = { o: [number, number, number]; z: [number, number, number]; x: [number, number, number] }
+
 /** The effect's WGSL for one kind of system, emitting from `emitters` point pairs.
  *  `world` is one of the game's units in engine units — the scale gravity pulls
- *  in, where everything else scales with its own emitter. */
-export function particleEffectWgsl(cls: ParticleClass, world: number): string {
+ *  in, where everything else scales with its own emitter. With `baked`, the
+ *  emitters are those frames, fixed, instead of a model's points: a built-in
+ *  effect that has no stage to stand on (the X343 sakura). `sizeScale` grows the
+ *  particles alone — not their speed or spread, which scaling the emitter would. */
+export function particleEffectWgsl(cls: ParticleClass, world: number, baked?: BakedEmitter[], sizeScale = 1): string {
   const s = cls.spec
   // Two of the game's shaders draw particles: Effect_Common (most of them) and
   // the plain additive Tong_jichu_Add. The spawn and flight are the same; only
@@ -583,7 +591,7 @@ fn rzEmitterStart(e: u32) -> f32 {
     : ""
   const emitHead = emitted
     ? `
-  let ne = max(rzPointCount() / 2u, 1u);
+  let ne = max(rzEmitterCount(), 1u);
   let slot = id / ne;
   let now = rzTime() - rzEmitterStart(id % ne);
   var born = -1.0;
@@ -610,9 +618,23 @@ fn particlePivot(p: Particle, id: u32) -> vec2f {
 }`
       : ""
 
+  // WHERE THE EMITTERS ARE: a model's point pairs (head, and tip - head), or the
+  // baked frames as constants; the rest of the effect reads them one way
+  const vecOf = (v: number[]) => `vec3f(${v.map((x) => f(x)).join(", ")})`
+  const emitterSource = baked
+    ? `const RZ_EMITTERS = array<array<vec3f, 3>, ${baked.length}>(
+${baked.map((e) => `  array<vec3f, 3>(${vecOf(e.o)}, ${vecOf(e.z)}, ${vecOf(e.x)}),`).join("\n")}
+);
+fn rzEmitterCount() -> u32 { return ${baked.length}u; }
+fn rzEmitterFrame(i: u32) -> array<vec3f, 3> { var t = RZ_EMITTERS; return t[i]; }`
+    : `fn rzEmitterCount() -> u32 { return rzPointCount() / 2u; }
+fn rzEmitterFrame(i: u32) -> array<vec3f, 3> {
+  let zp = rzPoint(i * 2u);
+  let xp = rzPoint(i * 2u + 1u);
+  return array<vec3f, 3>(zp.pos, zp.tip - zp.pos, xp.tip - xp.pos);
+}`
   return `#particles ${pool}
-#points ${cls.prefix}
-#textures 4
+${baked ? "" : `#points ${cls.prefix}\n`}#textures 4
 #bloom
 ${additive ? "#blend additive\n" : ""}${cls.overlay ? "#depth always\n" : ""}
 // ${cls.name}: generated from the game's particle system and its material
@@ -635,16 +657,15 @@ ${decls.join("\n")}
 // The emitter's frame from its two points: origin, its axes, and how many engine
 // units one of the game's units is at its size scale and at its shape scale.
 struct Emitter { o: vec3f, x: vec3f, y: vec3f, z: vec3f, unit: f32, shapeUnit: f32 }
+${emitterSource}
 fn emitter(id: u32) -> Emitter {
   var e: Emitter;
-  let n = rzPointCount() / 2u;
+  let n = rzEmitterCount();
   if (n == 0u) { return e; }
-  let k = (id % n) * 2u;
-  let zp = rzPoint(k);
-  let xp = rzPoint(k + 1u);
-  let z = zp.tip - zp.pos;
-  let x = xp.tip - xp.pos;
-  e.o = zp.pos;
+  let fr = rzEmitterFrame(id % n);
+  let z = fr[1];
+  let x = fr[2];
+  e.o = fr[0];
   e.unit = length(z);
   e.shapeUnit = length(x);
   e.z = z / max(e.unit, 1e-6);
@@ -655,12 +676,12 @@ fn emitter(id: u32) -> Emitter {
 
 ${emitDecl}fn particleInit(id: u32, ${emitted ? "seed0" : "seed"}: f32) -> Particle {
   var p: Particle;
-  if (rzPointCount() < 2u) { return p; }${emitHead}
+  if (rzEmitterCount() == 0u) { return p; }${emitHead}
   let e = emitter(id);
   let r0 = rzHash13(seed + f32(id) * 0.371);
   let r1 = rzHash13(seed * 1.93 + f32(id) * 0.113);
   let rb = rzHash13(seed * 3.17 + f32(id) * 0.557);
-  p.seed = fract(r0.z * 7.31 + r1.z);${drifts ? "\n  p.seed = p.seed + f32(id % max(rzPointCount() / 2u, 1u));" : ""}
+  p.seed = fract(r0.z * 7.31 + r1.z);${drifts ? "\n  p.seed = p.seed + f32(id % max(rzEmitterCount(), 1u));" : ""}
   let rs = rzHash13(p.seed * 5.3 + 0.21);
   ${shapeCode}
   let sm = ${shapeMatrix(sh.rotation)};${shapeTransform}
@@ -677,7 +698,7 @@ ${emitDecl}fn particleInit(id: u32, ${emitted ? "seed0" : "seed"}: f32) -> Parti
     : "// staggered on the first spawn, so a scene does not open on every particle born at once\n  p.age = select(0.0, r1.y * p.life, rzTime() < p.life);"}
   let rc = rzHash13(p.seed * 11.7 + 0.5);
   let t = 0.0;
-  p.size = 0.5 * max(${sizeX} * (${solX}), ${sizeY} * (${solY})) * e.unit;
+  p.size = 0.5 * max(${sizeX} * (${solX}), ${sizeY} * (${solY})) * e.unit${sizeScale !== 1 ? ` * ${f(sizeScale)}` : ""};
   ${stretched && s.renderer.pivot[1] ? `p.pos = p.pos + vec3f(0.0, ${f(-s.renderer.pivot[1])} * max(${sizeX}, ${sizeY}) * e.unit, 0.0);` : ""}
   // THE EMITTER'S SCALE rides in a field the engine ignores for this particle:
   // a square card's stretch (anything at or below 1 is square), a stretched
@@ -716,7 +737,7 @@ fn particleStep(p: Particle, dt: f32) -> Particle {
   q.pos = q.pos + q.vel * dt;${driftCode}
   ${stretched ? "" : `q.rot = q.rot + (${rol}) * dt;`}
   // size over life, against the start size this particle drew
-  q.size = 0.5 * max(${sizeX} * (${solX}), ${sizeY} * (${solY})) * unit;
+  q.size = 0.5 * max(${sizeX} * (${solX}), ${sizeY} * (${solY})) * unit${sizeScale !== 1 ? ` * ${f(sizeScale)}` : ""};
   ${stretched ? `q.stretch = max(${f(s.renderer.lengthScale)} + ${f(s.renderer.velocityScale)} * length(q.vel) / max(2.0 * q.size, 1e-4), 1.0001);` : ""}
   return q;
 }

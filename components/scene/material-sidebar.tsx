@@ -23,7 +23,8 @@ import { communityQuickPickItems, quickPickItems, type GraphItem } from "@/lib/l
 import { useCommunity } from "@/hooks/use-community"
 import { useDrafts } from "@/hooks/use-drafts"
 import type { MaterialRow } from "@/hooks/use-engine"
-import { useT } from "@/lib/i18n"
+import { builtinName, localGroupLabel } from "@/lib/builtin-text"
+import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 const UNGROUPED = "\0ungrouped" // sentinel collapse-key / drop-target id for "no group"
@@ -87,7 +88,10 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   dense?: boolean
   /** Discard hand-made grouping and re-derive it from the scene document. */
 }) {
-  const t = useT()
+  const { t, locale } = useI18n()
+  // A default group's label and a built-in graph's name translate on screen;
+  // what is stored stays English (lib/builtin-text).
+  const shownLabel = (g: StyleGroup) => localGroupLabel(groupLabel(g), locale)
   // On touch devices HTML5-draggable rows swallow swipes (drag starts instead of
   // scroll). Read at init — this panel only ever renders inside a mounted dock.
   const [coarse] = useState(() => typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches)
@@ -117,12 +121,12 @@ export const MaterialsPanel = memo(function MaterialsPanel({
     () => [
       ...quickPickItems(GRAPH_LIBRARY, graphDrafts, null).map((e) => ({
         id: e.name,
-        label: e.name,
+        label: e.owner === "local" ? e.name : builtinName("graph", e, locale),
         section: e.owner === "local" ? ("local" as const) : ("builtin" as const),
       })),
       ...communityQuickPickItems(communityGraphs),
     ],
-    [graphDrafts, communityGraphs],
+    [graphDrafts, communityGraphs, locale],
   )
   // A group reads `edited` only when its graph actually DIFFERS from the library
   // entry it came from. Compared without `name`, which the group rewrites to the
@@ -163,8 +167,9 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   // Display order: alphabetical by name.
   const libraryTarget = groups.some((g) => g.id === activeGroupId) ? activeGroupId : null
   const ordered = useMemo(
-    () => [...groups].sort((a, b) => groupLabel(a).localeCompare(groupLabel(b), undefined, { sensitivity: "base" })),
-    [groups],
+    () => [...groups].sort((a, b) => shownLabel(a).localeCompare(shownLabel(b), undefined, { sensitivity: "base" })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [groups, locale],
   )
 
   const toggleCollapse = (id: string) =>
@@ -347,11 +352,12 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                       {renaming === g.id ? (
                         <Input
                           ref={renameRef}
-                          defaultValue={groupLabel(g)}
+                          defaultValue={shownLabel(g)}
                           className="h-5 min-w-0 flex-1 border-white/10 bg-white/5 px-1 text-xs font-medium md:text-xs"
                           onClick={(e) => e.stopPropagation()}
                           onBlur={(e) => {
-                            onRenameGroup(g.id, e.target.value)
+                            // Left as shown, a translated default keeps its stored English.
+                            if (e.target.value !== shownLabel(g)) onRenameGroup(g.id, e.target.value)
                             setRenaming(null)
                           }}
                           onKeyDown={(e) => {
@@ -366,7 +372,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                             isActive ? "text-blue-400" : "text-foreground",
                           )}
                         >
-                          {groupLabel(g)}
+                          {shownLabel(g)}
                         </span>
                       )}
 
@@ -378,7 +384,13 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                       >
                         <QuickPick
                           value={g.graph.name}
-                          label={g.graph.name === ENGINE_DEFAULT_GRAPH ? t.materials.defaultGraph : undefined}
+                          label={
+                            g.graph.name === ENGINE_DEFAULT_GRAPH
+                              ? t.materials.defaultGraph
+                              : GRAPH_LIBRARY.some((e) => e.name === g.graph.name)
+                                ? builtinName("graph", g.graph, locale)
+                                : undefined
+                          }
                           items={itemsForGroup(g)}
                           onPick={(name) => onPickGraph(g.id, name)}
                           onBrowse={onOpenLibrary ? () => onOpenLibrary(g.id) : undefined}
@@ -481,7 +493,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                         .filter((g) => g.id !== menuTarget.groupId)
                         .map((g) => (
                           <ContextMenuItem key={g.id} onSelect={() => onMoveMaterial(menuTarget.name, g.id)}>
-                            {groupLabel(g)}
+                            {shownLabel(g)}
                           </ContextMenuItem>
                         ))}
                       {menuTarget.groupId && (

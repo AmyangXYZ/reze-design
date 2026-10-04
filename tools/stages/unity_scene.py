@@ -99,6 +99,26 @@ class Scene:
         text = open(path, encoding="utf-8", errors="replace").read()
         self.docs = {fid: (cls, body) for cls, fid, body in documents(text)}
         self._world = {}
+        # Where the scene's own origin is taken to be, subtracted from every
+        # root (set_origin): the game parks its UI scenes far out — X100, the
+        # character page, stands at x = 500 — and a stage is read with its
+        # cast's spot at the origin.
+        self.origin = (0.0, 0.0, 0.0)
+
+    def set_origin(self, name):
+        """Put the GameObject called `name` at the origin. Returns its old world position."""
+        for fid, (cls, body) in self.docs.items():
+            m = re.search(r"^\s*m_Name: (.+)$", body, re.M)
+            if cls == 1 and m and m.group(1).strip() == name:
+                t = self.transform_of(fid)
+                if t:
+                    self.origin = (0.0, 0.0, 0.0)
+                    self._world = {}
+                    at = self.world_position(t)
+                    self.origin = at
+                    self._world = {}
+                    return at
+        raise ValueError(f"no GameObject named {name!r} to stand the origin on")
 
     def _transform(self, fid):
         cls, body = self.docs.get(fid, (None, None))
@@ -124,6 +144,8 @@ class Scene:
         if t is None:
             return (0.0, 0.0, 0.0)
         p = t["pos"]
+        if not (t["parent"] and t["parent"] in self.docs):
+            p = tuple(p[i] - self.origin[i] for i in range(3))
         if t["parent"] and t["parent"] in self.docs:
             m = quat_matrix(self._transform(t["parent"])["rot"])
             s = self._transform(t["parent"])["scale"]
@@ -165,7 +187,7 @@ class Scene:
             p = t["pos"]
             moved = tuple(pt[r] + sum(pm[r][c] * p[c] for c in range(3)) for r in range(3))
             return composed, moved
-        return local, t["pos"]
+        return local, tuple(t["pos"][i] - self.origin[i] for i in range(3))
 
     def transform_of(self, game_object_id):
         for fid, (cls, body) in self.docs.items():

@@ -4,7 +4,7 @@
   "kind": "graph",
   "name": "AG Body",
   "author": "amyang-xyz",
-  "description": "Gentle skin — a soft diffuse ramp with smooth terminators. Aether Gazer / 仿深空之眼 · 小绿毛猫",
+  "description": "Aether Gazer–style skin with a soft, smooth shadow edge. Look by 小绿毛猫.",
   "tags": [
    "aether-gazer",
    "ag",
@@ -77,7 +77,7 @@
       "id": "emission3",
       "type": "vector_math/scale",
       "inputs": {
-       "scale": 4
+       "scale": 3.2
       }
      },
      {
@@ -689,7 +689,7 @@
   "kind": "graph",
   "name": "AG Eye",
   "author": "amyang-xyz",
-  "description": "Bright, saturated iris. Pairs with the Eye render class so it reads through hair. Aether Gazer / 仿深空之眼 · 小绿毛猫",
+  "description": "Bright, saturated eyes that stay visible through hair. Look by 小绿毛猫.",
   "tags": [
    "aether-gazer",
    "ag",
@@ -936,7 +936,7 @@
   "kind": "graph",
   "name": "AG Face",
   "author": "amyang-xyz",
-  "description": "Face ramp tuned to keep harsh nose and brow shadows off the cheek. Aether Gazer / 仿深空之眼 · 小绿毛猫",
+  "description": "Face shading that keeps hard nose and brow shadows off the cheeks. Look by 小绿毛猫.",
   "tags": [
    "aether-gazer",
    "ag",
@@ -1009,7 +1009,7 @@
       "id": "emission3",
       "type": "vector_math/scale",
       "inputs": {
-       "scale": 2.5
+       "scale": 2.0
       }
      },
      {
@@ -1709,7 +1709,7 @@
   "kind": "graph",
   "name": "AG Hair",
   "author": "amyang-xyz",
-  "description": "Anisotropic hair with soft NPR banding and a warm rim. Aether Gazer / 仿深空之眼 · 小绿毛猫",
+  "description": "Hair with soft toon bands, a highlight streak and a warm rim light. Look by 小绿毛猫.",
   "tags": [
    "aether-gazer",
    "ag",
@@ -2178,7 +2178,7 @@
   "kind": "graph",
   "name": "AG Metal",
   "author": "amyang-xyz",
-  "description": "Sharp anisotropic highlights over a dark base — jewellery and hardware. Aether Gazer / 仿深空之眼 · 小绿毛猫",
+  "description": "Sharp highlights on a dark base, for jewellery and hardware. Look by 小绿毛猫.",
   "tags": [
    "aether-gazer",
    "ag",
@@ -2268,7 +2268,7 @@
       "id": "npr_emit",
       "type": "vector_math/scale",
       "inputs": {
-       "scale": 8.100000381469727
+       "scale": 6.48
       }
      },
      {
@@ -2583,7 +2583,7 @@
   "kind": "graph",
   "name": "AG Rough Cloth",
   "author": "amyang-xyz",
-  "description": "Matte fabric: broad diffuse, almost no spec. Cotton and wool. Aether Gazer / 仿深空之眼 · 小绿毛猫",
+  "description": "Matte fabric with almost no shine, like cotton or wool. Look by 小绿毛猫.",
   "tags": [
    "aether-gazer",
    "ag",
@@ -2674,7 +2674,7 @@
       "id": "npr_emit",
       "type": "vector_math/scale",
       "inputs": {
-       "scale": 18.200000762939453
+       "scale": 14.56
       }
      },
      {
@@ -3011,7 +3011,7 @@
   "kind": "graph",
   "name": "AG Smooth Cloth",
   "author": "amyang-xyz",
-  "description": "A tight, clean sheen — satin, leather, coated surfaces. Aether Gazer / 仿深空之眼 · 小绿毛猫",
+  "description": "Fabric with a clean, tight sheen, like satin or leather. Look by 小绿毛猫.",
   "tags": [
    "aether-gazer",
    "ag",
@@ -3102,7 +3102,7 @@
       "id": "npr_emit",
       "type": "vector_math/scale",
       "inputs": {
-       "scale": 18.200000762939453
+       "scale": 14.56
       }
      },
      {
@@ -3367,7 +3367,7 @@
   "kind": "graph",
   "name": "AG Stockings",
   "author": "amyang-xyz",
-  "description": "Semi-sheer weave on hashed alpha, stable at grazing angles. Aether Gazer / 仿深空之眼 · 小绿毛猫",
+  "description": "Semi-sheer stockings that stay stable at grazing angles. Look by 小绿毛猫.",
   "tags": [
    "aether-gazer",
    "ag",
@@ -3657,7 +3657,7 @@
   "kind": "graph",
   "name": "WuWa Body",
   "author": "amyang-xyz",
-  "description": "Skin: a wide, soft terminator over a shadow that warms as it turns. Wuthering Waves / 仿鸣潮 · 三一七片的谎言",
+  "description": "Wuthering Waves–style skin: a wide, soft shadow edge that warms in shadow. Look by 三一七片的谎言.",
   "tags": [
    "wuthering-waves",
    "wuwa",
@@ -4069,7 +4069,7 @@
   "kind": "graph",
   "name": "WuWa Cloth",
   "author": "amyang-xyz",
-  "description": "Costume cloth: a tighter terminator than skin, cooler shadow, more saturation. Wuthering Waves / 仿鸣潮 · 三一七片的谎言",
+  "description": "Costume fabric: a firmer shadow edge than skin, cooler and more saturated. Look by 三一七片的谎言.",
   "tags": [
    "wuthering-waves",
    "wuwa",
@@ -4481,7 +4481,7 @@
   "kind": "graph",
   "name": "WuWa Hair",
   "author": "amyang-xyz",
-  "description": "Hair: the hardest terminator of the set, sphere map carried strong for the streak. Wuthering Waves / 仿鸣潮 · 三一七片的谎言",
+  "description": "Hair with the sharpest shadow edge in the set and a strong highlight streak. Look by 三一七片的谎言.",
   "tags": [
    "wuthering-waves",
    "wuwa",
@@ -4893,7 +4893,7 @@
   "kind": "graph",
   "name": "WuWa Face",
   "author": "amyang-xyz",
-  "description": "Face: the widest, softest band, so brow and nose stay clean without a face SDF. Wuthering Waves / 仿鸣潮 · 三一七片的谎言",
+  "description": "The softest shading in the set, so the nose and brows stay clean. Look by 三一七片的谎言.",
   "tags": [
    "wuthering-waves",
    "wuwa",
@@ -5305,7 +5305,7 @@
   "kind": "graph",
   "name": "WuWa Metal",
   "author": "amyang-xyz",
-  "description": "Jewellery and hardware: a near-hard step, heavy sphere highlight, strong rim. Wuthering Waves / 仿鸣潮 · 三一七片的谎言",
+  "description": "Jewellery and hardware: a near-hard shadow step, strong highlight and rim. Look by 三一七片的谎言.",
   "tags": [
    "wuthering-waves",
    "wuwa",
@@ -5717,7 +5717,7 @@
   "kind": "graph",
   "name": "WuWa Eye",
   "author": "amyang-xyz",
-  "description": "Bright iris with a lifted value, so eyes read through overlapping hair. Wuthering Waves / 仿鸣潮 · 三一七片的谎言",
+  "description": "Bright eyes that stay visible through hair. Look by 三一七片的谎言.",
   "tags": [
    "wuthering-waves",
    "wuwa",
@@ -6129,7 +6129,7 @@
   "kind": "graph",
   "name": "ZZZ Body",
   "author": "amyang-xyz",
-  "description": "Skin: a hard, high terminator — the lit half warm, the shadow drained rather than darkened. Zenless Zone Zero / 仿绝区零 · 世界的歌",
+  "description": "Zenless Zone Zero–style skin: a hard shadow edge, warm light, desaturated shadow. Look by 世界的歌.",
   "tags": [
    "zenless-zone-zero",
    "zzz",
@@ -6408,7 +6408,7 @@
   "kind": "graph",
   "name": "ZZZ Face",
   "author": "amyang-xyz",
-  "description": "More colour carried into shadow than the body, and a rosier lit tint, so a turning cheek reads as turning. Zenless Zone Zero / 仿绝区零 · 世界的歌",
+  "description": "Face with rosier light and more colour in shadow than the body. Look by 世界的歌.",
   "tags": [
    "zenless-zone-zero",
    "zzz",
@@ -6687,7 +6687,7 @@
   "kind": "graph",
   "name": "ZZZ Hair",
   "author": "amyang-xyz",
-  "description": "Texture untouched in light, seven tenths value in shadow, no tint either side. Zenless Zone Zero / 仿绝区零 · 世界的歌",
+  "description": "Hair at its texture colour in light and 70% brightness in shadow, untinted. Look by 世界的歌.",
   "tags": [
    "zenless-zone-zero",
    "zzz",
@@ -6983,7 +6983,7 @@
   "kind": "graph",
   "name": "ZZZ Eye",
   "author": "amyang-xyz",
-  "description": "The iris banded like the costume rather than lit like skin — three tones, hard steps. Zenless Zone Zero / 仿绝区零 · 世界的歌",
+  "description": "Eyes in three hard-stepped tones, like the costume. Look by 世界的歌.",
   "tags": [
    "zenless-zone-zero",
    "zzz",
@@ -7324,7 +7324,7 @@
   "kind": "graph",
   "name": "ZZZ Metal",
   "author": "amyang-xyz",
-  "description": "Hardware and ornaments on the three-tone step — the hardest banding in the pack. Zenless Zone Zero / 仿绝区零 · 世界的歌",
+  "description": "Hardware and ornaments in three hard tones, the sharpest banding in the set. Look by 世界的歌.",
   "tags": [
    "zenless-zone-zero",
    "zzz",
@@ -7665,7 +7665,7 @@
   "kind": "graph",
   "name": "ZZZ Cloth",
   "author": "amyang-xyz",
-  "description": "Costume cloth on the three-tone step, over a base lifted so the weave survives the shadow tint. Zenless Zone Zero / 仿绝区零 · 世界的歌",
+  "description": "Costume fabric in three hard tones, keeping the weave visible in shadow. Look by 世界的歌.",
   "tags": [
    "zenless-zone-zero",
    "zzz",
@@ -8006,7 +8006,7 @@
   "kind": "graph",
   "name": "HSR Body",
   "author": "amyang-xyz",
-  "description": "A near-white warm ramp over a hard tone curve — the contrast is in the curve, not the shadow. Honkai: Star Rail / 仿崩坏：星穹铁道",
+  "description": "Honkai: Star Rail–style skin: a near-white warm shadow with a punchy tone curve.",
   "tags": [
    "honkai-star-rail",
    "hsr",
@@ -8477,7 +8477,7 @@
   "kind": "graph",
   "name": "HSR Face",
   "author": "amyang-xyz",
-  "description": "The widest terminator in the set, because a hard band with no SDF map puts a line across a cheek. Honkai: Star Rail / 仿崩坏：星穹铁道",
+  "description": "The softest shadow edge in the set, so no line crosses the cheek.",
   "tags": [
    "honkai-star-rail",
    "hsr",
@@ -9034,7 +9034,7 @@
   "kind": "graph",
   "name": "HSR Hair",
   "author": "amyang-xyz",
-  "description": "Pink shadow and the sharpest sphere highlight; HSR hair reads by its specular, not its terminator. Honkai: Star Rail / 仿崩坏：星穹铁道",
+  "description": "Hair with a pink shadow and a sharp highlight.",
   "tags": [
    "honkai-star-rail",
    "hsr",
@@ -9505,7 +9505,7 @@
   "kind": "graph",
   "name": "HSR Cloth",
   "author": "amyang-xyz",
-  "description": "The mauve ramp and the deepest curve — cloth is where this look's contrast lives. Honkai: Star Rail / 仿崩坏：星穹铁道",
+  "description": "Fabric with a mauve shadow and the strongest contrast in the set.",
   "tags": [
    "honkai-star-rail",
    "hsr",
@@ -9976,7 +9976,7 @@
   "kind": "graph",
   "name": "HSR Metal",
   "author": "amyang-xyz",
-  "description": "Cool ramp, hard band, strong sphere highlight and a bright rim. Honkai: Star Rail / 仿崩坏：星穹铁道",
+  "description": "Cool metal with a hard edge, strong highlight and bright rim.",
   "tags": [
    "honkai-star-rail",
    "hsr",
@@ -10447,7 +10447,7 @@
   "kind": "graph",
   "name": "HSR Eye",
   "author": "amyang-xyz",
-  "description": "Barely shaded on purpose, so an eye stays bright through the terminator instead of falling into the face's shadow. Honkai: Star Rail / 仿崩坏：星穹铁道",
+  "description": "Barely shaded eyes that stay bright in the face's shadow.",
   "tags": [
    "honkai-star-rail",
    "hsr",
@@ -10918,7 +10918,7 @@
   "kind": "graph",
   "name": "Doll Body",
   "author": "amyang-xyz",
-  "description": "ray-mmd's skin: Lambert plus Penner's red terminator band and the sky's scatter, edges that glow where light passes through, an oily sheen, then a wide screen-space scattering blur. 硅胶娃娃 / 次表面 / ray-mmd",
+  "description": "Soft, translucent doll skin with an oily sheen. Based on ray-mmd's skin.",
   "tags": [
    "doll",
    "娃娃",
@@ -12027,7 +12027,7 @@
   "kind": "graph",
   "name": "Doll Face",
   "author": "amyang-xyz",
-  "description": "ray-mmd's skin on the face, through the same scattering blur. 硅胶娃娃 / 次表面 / ray-mmd",
+  "description": "The same doll skin for faces. Based on ray-mmd's skin.",
   "tags": [
    "doll",
    "娃娃",
@@ -13136,7 +13136,7 @@
   "kind": "graph",
   "name": "Doll Hair",
   "author": "amyang-xyz",
-  "description": "Neutral soft wrap with a tight gloss, so dark hair reads by its sheen. 硅胶娃娃",
+  "description": "Soft hair with a tight gloss, so dark hair shows its sheen.",
   "tags": [
    "doll",
    "娃娃",
@@ -13602,7 +13602,7 @@
   "kind": "graph",
   "name": "Doll Cloth",
   "author": "amyang-xyz",
-  "description": "Fabric with a faintly warm wrap and a matte gloss, so it stays fabric beside the skin. 硅胶娃娃",
+  "description": "Matte fabric with a faint warmth, distinct from the skin.",
   "tags": [
    "doll",
    "娃娃",
@@ -14068,7 +14068,7 @@
   "kind": "graph",
   "name": "Doll Metal",
   "author": "amyang-xyz",
-  "description": "Hardware reflecting in its own colour over a little soft diffuse. 硅胶娃娃",
+  "description": "Metal that reflects in its own colour.",
   "tags": [
    "doll",
    "娃娃",
@@ -14538,7 +14538,7 @@
   "kind": "graph",
   "name": "Doll Eye",
   "author": "amyang-xyz",
-  "description": "Barely shaded, with a wet gloss. 硅胶娃娃",
+  "description": "Barely shaded eyes with a wet gloss.",
   "tags": [
    "doll",
    "娃娃",

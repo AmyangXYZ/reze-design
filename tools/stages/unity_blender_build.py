@@ -304,7 +304,9 @@ scene["reze"] = {
         # looking as the .blend renders it rather than under whatever the scene
         # was already on — the same field export_stage.py writes for a .blend
         # built by hand.
-        "view": {"transform": "Filmic", "look": "None", "exposure": 0.6},
+        # the game's own final curve (unity_to_glb.game_view): "AG" is the app's
+        # soft curve at the scene's contrast, exposure in stops from its 2.5
+        "view": scene_json.get("view") or {"transform": "AG", "exposure": 0.0, "contrast": 1.4},
         # The game's colour grade, as the LUT its pipeline bakes from the
         # volume stack (see unity_grading.py). Applied after the view.
         "notes": scene_json["notes"],
@@ -322,9 +324,9 @@ scene["reze"] = {
         **({"groundShadow": scene_json["groundShadow"]} if scene_json.get("groundShadow") else {}),
 }
 
-# Viewed as the app views it — Filmic at +0.6 stops — so the .blend and the
-# stage agree on the picture. The game's own curve, exposure 2.4 and contrast
-# 1.35, is neither Blender's nor the app's.
+# The .blend is viewed under Filmic at +0.6 stops, the nearest Blender has to
+# the game's curve, for looking at it in Blender only. The stage itself carries
+# the game's own curve in extras.reze.view (unity_to_glb.game_view).
 scene.view_settings.view_transform = "Filmic"
 scene.view_settings.look = "None"
 scene.view_settings.exposure = 0.6

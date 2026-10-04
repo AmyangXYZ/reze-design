@@ -2,7 +2,7 @@
 
 // Blender-style node card: input sockets down the left, outputs down the right.
 
-import { createContext, memo, useContext, useRef, useState } from "react"
+import { createContext, memo, useContext, useState } from "react"
 import { Handle, Position, useReactFlow, type NodeProps } from "@xyflow/react"
 import { Input } from "@/components/ui/input"
 import { NODE_REGISTRY } from "reze-engine"
@@ -43,11 +43,12 @@ const NUM_FIELD =
 // A number input that edits smoothly
 function NumberField({ value, onCommit, className }: { value: number; onCommit: (n: number) => void; className?: string }) {
   const [text, setText] = useState(() => String(round4(value)))
-  const last = useRef(value)
-  const focused = useRef(false)
+  // State, not refs: both are read during render to decide the re-sync below
+  const [last, setLast] = useState(value)
+  const [focused, setFocused] = useState(false)
   // Only re-sync the text from an OUTSIDE change (reset/preview) and only while NOT editing.
-  if (!focused.current && value !== last.current) {
-    last.current = value
+  if (!focused && value !== last) {
+    setLast(value)
     setText(String(round4(value)))
   }
   return (
@@ -55,7 +56,7 @@ function NumberField({ value, onCommit, className }: { value: number; onCommit: 
       type="text"
       inputMode="decimal"
       value={text}
-      onFocus={() => (focused.current = true)}
+      onFocus={() => setFocused(true)}
       onChange={(e) => {
         const raw = e.target.value
         setText(raw)
@@ -63,8 +64,8 @@ function NumberField({ value, onCommit, className }: { value: number; onCommit: 
         if (raw.trim() !== "" && Number.isFinite(n)) onCommit(n)
       }}
       onBlur={() => {
-        focused.current = false
-        last.current = value
+        setFocused(false)
+        setLast(value)
         setText(String(round4(value)))
       }}
       onDoubleClick={(e) => e.stopPropagation()}

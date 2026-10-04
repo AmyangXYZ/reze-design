@@ -520,7 +520,7 @@ export function useEngine(
     try {
       onPhase?.("styling")
       await engine.autoStyleGroups(id)
-      groups = withSpecialGroups(await restyled(engine, id, engine.getStyleGroups(id)))
+      groups = withSpecialGroups(await restyled(engine, id, engine.getStyleGroups(id)), { character: true })
     } finally {
       // Whatever happened to the styling, the model comes back: an unstyled
       // model is a look to fix, an invisible one is a model you cannot find.
@@ -900,7 +900,8 @@ export function useEngine(
       prev.map((s) => {
         if (s.id !== id) return s
         if (sun) return { ...s, sun }
-        const { sun: _gone, ...rest } = s
+        const rest = { ...s }
+        delete rest.sun
         return rest
       }),
     )
@@ -997,7 +998,7 @@ export function useEngine(
         : undefined
       // Uploaded models have no curated map — auto-group from name hints alone.
       await engine.autoStyleGroups(id)
-      const groups = withSpecialGroups(await restyled(engine, id, engine.getStyleGroups(id)))
+      const groups = withSpecialGroups(await restyled(engine, id, engine.getStyleGroups(id)), { character: true })
       setModels((prev) =>
         prev.map((m) =>
           m.id === targetId
@@ -1352,7 +1353,8 @@ export function useEngine(
       prev.map((m) => (m.id === modelId ? { ...m, materials: m.materials.map((x) => ({ ...x, visible: true })) } : m)),
     )
     const next = groups ?? (await restyled(engine, modelId, engine.getStyleGroups(modelId)))
-    setGroupsByModel((prev) => ({ ...prev, [modelId]: withSpecialGroups(next) }))
+    const character = !stagesRef.current.some((x) => x.id === modelId) && !propsRef.current.some((x) => x.id === modelId)
+    setGroupsByModel((prev) => ({ ...prev, [modelId]: withSpecialGroups(next, { character }) }))
   }, [])
 
   /** Take the game stage down. Its files leave the bundle on the next repack,

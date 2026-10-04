@@ -11,7 +11,8 @@
 import { Heart } from "lucide-react"
 import { type ReactNode } from "react"
 import { Button } from "@/components/ui/button"
-import { useT } from "@/lib/i18n"
+import { tagLabel } from "@/lib/builtin-text"
+import { useI18n, useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 /**
@@ -170,7 +171,7 @@ export function RailTags({
   tag: string | null
   onTagChange: (tag: string | null) => void
 }) {
-  const t = useT()
+  const { t, locale } = useI18n()
   const tally = new Map<string, number>()
   for (const i of items ?? []) for (const x of i.tags) tally.set(x, (tally.get(x) ?? 0) + 1)
   // Frequency first — that is the information — then SHORTEST first within equal
@@ -203,7 +204,7 @@ export function RailTags({
                   on ? "ring-1 ring-white/50 brightness-125" : "opacity-75 hover:opacity-100",
                 )}
               >
-                <span className="max-w-28 truncate font-medium">{name}</span>
+                <span className="max-w-28 truncate font-medium">{tagLabel(name, locale)}</span>
                 <span className="font-mono text-[10px] font-medium opacity-70">{n}</span>
               </button>
             )
@@ -216,6 +217,7 @@ export function RailTags({
 
 /** Tag chips as the item's own metadata — the detail panel's, not the rail's. */
 export function LibraryTags({ tags, lead }: { tags: string[]; lead?: ReactNode }) {
+  const { locale } = useI18n()
   if (tags.length === 0 && !lead) return null
   return (
     <div className="mt-2 flex flex-wrap gap-1">
@@ -224,7 +226,7 @@ export function LibraryTags({ tags, lead }: { tags: string[]; lead?: ReactNode }
       {lead}
       {tags.map((tag) => (
         <span key={tag} className={cn("rounded border px-1.5 py-0.5 text-[11px]", tagHue(tag))}>
-          {tag}
+          {tagLabel(tag, locale)}
         </span>
       ))}
     </div>

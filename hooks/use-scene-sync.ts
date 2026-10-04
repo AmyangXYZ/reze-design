@@ -243,7 +243,7 @@ export function useSceneSync({
     }
     // Before the grade, which is what the engine applies it to.
     if (!p || p.settings.view !== view) {
-      engine.setViewTransformOptions({ transform: view.transform, exposure: view.exposure })
+      engine.setViewTransformOptions({ transform: view.transform, exposure: view.exposure, contrast: view.contrast ?? 1.4 })
     }
     // The stage's own ambient, while the stage's own world is the world.
     const ambientSH = settings.stageAmbient && world.stage?.id === settings.stageAmbient.stage ? settings.stageAmbient.sh : null

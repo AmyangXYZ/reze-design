@@ -111,7 +111,9 @@ export function FloatingPanel({
     if (d) onRectChange(latest.current)
     drag.current = null
   }
-  const begin = (mode: Mode) => (e: React.PointerEvent) => {
+  // A plain handler, not a curried begin(mode) => handler: calling that during render to build
+  // each strip's handler counts as reading the drag refs during render.
+  const begin = (mode: Mode, e: React.PointerEvent) => {
     if (fullscreen) return
     e.preventDefault()
     drag.current = { mode, sx: e.clientX, sy: e.clientY, start: { ...rect } }
@@ -126,7 +128,7 @@ export function FloatingPanel({
     // Drag from anywhere inside a [data-drag-handle] region (e.g.
     if (!t.closest("[data-drag-handle]")) return
     if (t.closest("button, a, input, textarea, select, [role='button'], [data-no-drag]")) return
-    begin("move")(e)
+    begin("move", e)
   }
 
   const style = fullscreen
@@ -157,14 +159,14 @@ export function FloatingPanel({
       {children}
       {!fullscreen && (
         <>
-          <div className={cn(edge, "inset-x-0 top-0 h-1.5 cursor-ns-resize")} onPointerDown={begin("n")} />
-          <div className={cn(edge, "inset-x-0 bottom-0 h-1.5 cursor-ns-resize")} onPointerDown={begin("s")} />
-          <div className={cn(edge, "inset-y-0 left-0 w-1.5 cursor-ew-resize")} onPointerDown={begin("w")} />
-          <div className={cn(edge, "inset-y-0 right-0 w-1.5 cursor-ew-resize")} onPointerDown={begin("e")} />
-          <div className={cn(edge, "top-0 left-0 size-3 cursor-nwse-resize")} onPointerDown={begin("nw")} />
-          <div className={cn(edge, "top-0 right-0 size-3 cursor-nesw-resize")} onPointerDown={begin("ne")} />
-          <div className={cn(edge, "bottom-0 left-0 size-3 cursor-nesw-resize")} onPointerDown={begin("sw")} />
-          <div className={cn(edge, "bottom-0 right-0 size-3 cursor-nwse-resize")} onPointerDown={begin("se")} />
+          <div className={cn(edge, "inset-x-0 top-0 h-1.5 cursor-ns-resize")} onPointerDown={(e) => begin("n", e)} />
+          <div className={cn(edge, "inset-x-0 bottom-0 h-1.5 cursor-ns-resize")} onPointerDown={(e) => begin("s", e)} />
+          <div className={cn(edge, "inset-y-0 left-0 w-1.5 cursor-ew-resize")} onPointerDown={(e) => begin("w", e)} />
+          <div className={cn(edge, "inset-y-0 right-0 w-1.5 cursor-ew-resize")} onPointerDown={(e) => begin("e", e)} />
+          <div className={cn(edge, "top-0 left-0 size-3 cursor-nwse-resize")} onPointerDown={(e) => begin("nw", e)} />
+          <div className={cn(edge, "top-0 right-0 size-3 cursor-nesw-resize")} onPointerDown={(e) => begin("ne", e)} />
+          <div className={cn(edge, "bottom-0 left-0 size-3 cursor-nesw-resize")} onPointerDown={(e) => begin("sw", e)} />
+          <div className={cn(edge, "bottom-0 right-0 size-3 cursor-nwse-resize")} onPointerDown={(e) => begin("se", e)} />
         </>
       )}
     </div>,

@@ -124,6 +124,22 @@ const SPECIAL_GROUPS: { id: string; label: string; renderClass: RenderClass; pre
   { id: "eye", label: "Eye", renderClass: "eye", preset: "eye" },
   { id: "hair", label: "Hair", renderClass: "hair", preset: "hair" },
 ]
+
+// Every role a character's look covers, seeded as a group whether or not one of
+// her materials matched it: assigning is then a drag onto a group that is already
+// there, not making one first. Ids are the engine's preset ids, so a group the
+// auto-grouping did make is never doubled; stockings keep the engine preset's
+// hashed alpha, so a sheer weave dropped in draws as it would have auto-grouped.
+const CHARACTER_GROUPS: { id: string; label: string; renderClass: RenderClass; alphaMode?: "hashed" }[] = [
+  { id: "body", label: "Body", renderClass: "auto" },
+  { id: "face", label: "Face", renderClass: "auto" },
+  { id: "hair", label: "Hair", renderClass: "hair" },
+  { id: "eye", label: "Eye", renderClass: "eye" },
+  { id: "cloth_smooth", label: "Smooth Cloth", renderClass: "auto" },
+  { id: "cloth_rough", label: "Rough Cloth", renderClass: "auto" },
+  { id: "stockings", label: "Stockings", renderClass: "auto", alphaMode: "hashed" },
+  { id: "metal", label: "Metal", renderClass: "auto" },
+]
 export function infoFor(
   id: string,
   file: string,
@@ -539,6 +555,7 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
     const info = infoFor(entry.model.id, entry.model.file, model, hidden, castPlacement, entry.visibility)
     const modelGroups = withSpecialGroups(
       docGroups ?? (await restyled(engine, entry.model.id, engine.getStyleGroups(entry.model.id))),
+      { character: !entry.stage && !entry.prop },
     )
     infos.push(info)
     groups[entry.model.id] = modelGroups
@@ -703,12 +720,30 @@ export async function restyled(engine: Engine, modelId: string, list: StyleGroup
   return next
 }
 
-export function withSpecialGroups(list: StyleGroup[]): StyleGroup[] {
+export function withSpecialGroups(list: StyleGroup[], opts?: { character?: boolean }): StyleGroup[] {
   // Seeded in the preferred style too. These are empty drop targets, so they
   // render nothing either way — but a scene switched to another style that still
   // showed its pinned Eye and Hair groups wearing the default set's names would
   // be telling the user something untrue about what they are about to drop into.
   const pack = loadLookPref()
+  if (opts?.character) {
+    const has = (c: (typeof CHARACTER_GROUPS)[number]) =>
+      list.some((g) => g.id === c.id || graphRole(g.graph) === c.id || (c.renderClass !== "auto" && g.renderClass === c.renderClass))
+    const seeds = CHARACTER_GROUPS.filter((c) => !has(c) && SLOT_GRAPHS[c.id as keyof typeof SLOT_GRAPHS]).map(
+      (c): StyleGroup => {
+        const base = SLOT_GRAPHS[c.id as keyof typeof SLOT_GRAPHS]!
+        return {
+          id: c.id,
+          label: c.label,
+          materials: [],
+          graph: structuredClone(packGraph(pack, c.id) ?? base),
+          renderClass: c.renderClass,
+          ...(c.alphaMode ? { alphaMode: c.alphaMode } : {}),
+        }
+      },
+    )
+    return named([...list, ...seeds])
+  }
   const seeds = SPECIAL_GROUPS.filter((s) => !list.some((g) => (g.renderClass ?? "auto") === s.renderClass)).map(
     (s): StyleGroup => {
       const base = SLOT_GRAPHS[s.preset]!

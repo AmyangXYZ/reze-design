@@ -366,11 +366,12 @@ export function HexField({
   className?: string
 }) {
   // Controlled text so the preview refreshes live while typing
+  // State, not refs: both are read during render to decide the re-sync below
   const [text, setText] = useState(value)
-  const last = useRef(value)
-  const focused = useRef(false)
-  if (!focused.current && value !== last.current) {
-    last.current = value
+  const [last, setLast] = useState(value)
+  const [focused, setFocused] = useState(false)
+  if (!focused && value !== last) {
+    setLast(value)
     setText(value)
   }
   return (
@@ -381,10 +382,10 @@ export function HexField({
         "h-7 w-28 rounded-md border border-white/10 bg-black/30 px-2 font-mono text-xs outline-none focus:border-blue-400/50",
         className,
       )}
-      onFocus={() => (focused.current = true)}
+      onFocus={() => setFocused(true)}
       onBlur={() => {
-        focused.current = false
-        last.current = value
+        setFocused(false)
+        setLast(value)
         setText(value)
       }}
       onChange={(e) => {

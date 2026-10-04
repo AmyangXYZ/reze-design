@@ -4,7 +4,7 @@
     "kind": "grade",
     "name": "Neutral",
     "author": "amyang-xyz",
-    "description": "No grade at all — the render exactly as the engine tonemapped it.",
+    "description": "No color grade.",
     "tags": [
       "neutral",
       "clean"
@@ -33,7 +33,7 @@
     "kind": "grade",
     "name": "Bloody",
     "author": "amyang-xyz",
-    "description": "Horror-anime blood wash: blacks go true black, reds run the whole range.",
+    "description": "Deep blacks and intense reds, for horror.",
     "tags": [
       "red",
       "crimson",
@@ -67,7 +67,7 @@
     "kind": "grade",
     "name": "Cyberpunk",
     "author": "amyang-xyz",
-    "description": "Teal shadows against magenta mids, saturation past cinematic. Deliberately no amber.",
+    "description": "Teal shadows and magenta midtones, highly saturated.",
     "tags": [
       "night",
       "neon",
@@ -100,7 +100,7 @@
     "kind": "grade",
     "name": "Divine",
     "author": "amyang-xyz",
-    "description": "Holy light: deep amber shadows climbing through gold to a white radiance.",
+    "description": "Warm amber shadows rising to gold and white.",
     "tags": [
       "gold",
       "warm",
@@ -134,7 +134,7 @@
     "kind": "grade",
     "name": "Moonlit",
     "author": "amyang-xyz",
-    "description": "Drowned in blue — navy shadows that never crush, highlights bright enough to read.",
+    "description": "Cool blue night tones that keep highlights readable.",
     "tags": [
       "night",
       "cool",
@@ -168,7 +168,7 @@
     "kind": "grade",
     "name": "Sakura",
     "author": "amyang-xyz",
-    "description": "A gentle rose wash through shadows and mids, highlights left clean.",
+    "description": "A soft pink tint, with clean highlights.",
     "tags": [
       "pink",
       "soft",

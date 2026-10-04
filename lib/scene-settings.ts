@@ -109,7 +109,8 @@ export type SceneSettings = {
    * expects. A preset authored against one and viewed under another is a
    * different look.
    */
-  view: { transform: ViewTransform; exposure: number }
+  /** `contrast` is the soft curve's power (the game's SceneSetting._contrast); absent is the engine's 1.4. */
+  view: { transform: ViewTransform; exposure: number; contrast?: number }
   /**
    * Sensor grain over the rendered scene, 0–1.
    */
@@ -257,11 +258,13 @@ export const DEFAULT_VIEW: SceneSettings["view"] = { transform: "soft", exposure
 export const LEGACY_VIEW: SceneSettings["view"] = { transform: "aces", exposure: 0.6 }
 
 /** A stored view block as today's: the transform renamed, an unknown one the default. */
-export function viewFrom(v: { transform?: unknown; exposure?: unknown } | undefined, fallback: SceneSettings["view"]): SceneSettings["view"] {
+export function viewFrom(v: { transform?: unknown; exposure?: unknown; contrast?: unknown } | undefined, fallback: SceneSettings["view"]): SceneSettings["view"] {
   if (!v) return fallback
+  const contrast = typeof v.contrast === "number" && Number.isFinite(v.contrast) && v.contrast > 0 ? v.contrast : fallback.contrast
   return {
     transform: viewTransformFrom(v.transform) ?? fallback.transform,
     exposure: typeof v.exposure === "number" && Number.isFinite(v.exposure) ? v.exposure : fallback.exposure,
+    ...(contrast !== undefined ? { contrast } : {}),
   }
 }
 
