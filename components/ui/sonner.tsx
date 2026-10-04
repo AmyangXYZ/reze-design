@@ -31,8 +31,13 @@ const Toaster = ({ ...props }: ToasterProps) => {
         info: <InfoIcon className="size-4" />,
         warning: <TriangleAlertIcon className="size-4" />,
         error: <OctagonXIcon className="size-4" />,
-        loading: <Loader2Icon className="size-4 animate-spin" />,
+        loading: <Loader2Icon className="block size-4 animate-spin" />,
       }}
+      // The loader box Sonner wraps a custom spinner in centres itself with
+      // translate(-50%, -50%). Left to an inline SVG it took the line's height,
+      // landed on a half pixel, and the spinner wobbled about a fractional centre
+      // instead of turning in place. Sized to the icon, it sits on whole pixels.
+      toastOptions={{ ...props.toastOptions, classNames: { ...props.toastOptions?.classNames, loader: "size-4" } }}
       style={
         {
           "--normal-bg": "var(--color-surface-raised)",
