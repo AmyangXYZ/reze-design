@@ -16,6 +16,12 @@ import { asBuiltins, type EffectItem } from "@/lib/library"
 import type { EffectWindow } from "@/lib/effect-schedule"
 
 /** What a scene stores when an effect is applied */
+
+/** The tag of an effect that draws only on a converted game stage — it stands
+ *  on the stage's bones (wicks, splashes) and shows nothing without them. The
+ *  library and the picker list these after everything else. */
+export const STAGE_BOUND_TAG = "needs-stage-bones"
+
 export type AppliedEffect = {
   /** WHICH LIBRARY ENTRY this is — shared by every copy of it in the scene.
    *  What a tick in the picker and a pin in the document are about. */

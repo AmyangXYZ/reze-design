@@ -193,6 +193,7 @@ import {
   NEW_EFFECT_TEMPLATE,
   type AppliedEffect,
   type EffectSurface,
+  STAGE_BOUND_TAG,
 } from "@/lib/effects"
 import { BACKDROP_VIDEO_RE, probeBackdrop } from "@/lib/backdrop"
 import { useMediaBackdrop } from "@/hooks/use-media-backdrop"
@@ -3487,7 +3488,12 @@ export default function Lab() {
     const items = [
       // By name, matching the effect library's own ordering — see the grade list.
       ...quickPickItems(
-        [...EFFECTS].sort((a, b) => a.name.localeCompare(b.name)),
+        // the stage-bound ones (they draw only on a converted game stage) last
+        [...EFFECTS].sort(
+          (a, b) =>
+            Number(a.tags.includes(STAGE_BOUND_TAG)) - Number(b.tags.includes(STAGE_BOUND_TAG)) ||
+            a.name.localeCompare(b.name),
+        ),
         effectDrafts,
         null,
       ).map((e) => ({

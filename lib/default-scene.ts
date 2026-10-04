@@ -54,15 +54,18 @@ export const USE_DEFAULT_SCENE = YES.includes((process.env.NEXT_PUBLIC_USE_DEFAU
  * Upload with `scripts/r2-upload-demo.mjs` — see its header.
  */
 const DEMO = "https://assets.reze.one/demo/demo-cat"
+// The motion lives under `animations-gz`: stored gzipped (Content-Encoding:
+// gzip, unpacked by the browser), since a VMD goes out as
+// application/octet-stream, which Cloudflare never compresses.
 // The cast, shared by every site rather than copied into each one's folder.
 //
-// `-2` because her textures are now WebP and the path is the version. She
+// `reze-webp` because her textures are now WebP and the path is the version. She
 // shipped as 16.3MB of PNG, which is most of what a first-time visitor
 // downloads before anything appears, and a private window — having no cache to
 // spare it — paid that on every open. The same 13 maps are 1.9MB re-encoded
 // (scripts/model-textures-to-webp.mjs), with every pixel anything can sample
 // bit-identical on the two that carry real transparency.
-const MODEL = "https://assets.reze.one/demo/reze-2"
+const MODEL = "https://assets.reze.one/demo/reze-webp"
 
 const DEMO_SCENE_DOC: SceneDoc = {
   version: 1,
@@ -79,8 +82,8 @@ const DEMO_SCENE_DOC: SceneDoc = {
         // 29 seconds, and it opens on the downbeat — no standing around at the
         // top of the take, which is the part a visitor watches before deciding
         // whether to stay.
-        animation: `${DEMO}/animations/Demo.vmd`,
-        morph: `${DEMO}/animations/Demo_morph.vmd`,
+        animation: `${DEMO}/animations-gz/Demo.vmd`,
+        morph: `${DEMO}/animations-gz/Demo_morph.vmd`,
         materials: {
           groups: [
             { label: "Body", materials: ["skin"], graph: "AG Body" },

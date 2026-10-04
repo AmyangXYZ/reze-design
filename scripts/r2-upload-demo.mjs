@@ -5,6 +5,7 @@
 //   node --env-file=.env.local scripts/r2-upload-demo.mjs <dir> <site> --write
 //   … --only models/A,x.vmd    only these paths (a folder, or one file)
 //   … --skip .onnx,hkx/        drop any path containing one of these
+//   … --gzip                   store .vmd/.pmx/.pmd/.vpd/.lrc gzipped
 //
 // One bucket serves every site, so <site> keeps each one's demo its own: a site
 // can change or drop its model without reaching into another's. An asset two
@@ -18,12 +19,22 @@
 // Objects are versioned by PATH, which is what lets them carry a one-year
 // immutable cache header: rename, never overwrite in place. Overwriting a key
 // leaves every browser that already has it serving the old bytes for a year.
+//
+// --gzip: Cloudflare compresses only the content types it knows, and the MMD
+// formats go out as application/octet-stream — so a VMD, mostly repeated
+// keyframe fields, crosses the wire at full size (IRIS OUT.vmd: 1.97MB, 0.54MB
+// gzipped). Stored gzipped with Content-Encoding: gzip, the browser unpacks it
+// on the way in and fetch() hands the engine the same bytes. A gzipped copy is
+// new bytes, so it goes to a new path like any other change.
 import { readFile, stat } from "node:fs/promises"
+import { gzipSync } from "node:zlib"
 import { glob } from "node:fs/promises"
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3"
 
 const { R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET, R2_PUBLIC_BASE_URL } = process.env
 const WRITE = process.argv.includes("--write")
+const GZIP = process.argv.includes("--gzip")
+const PACKED = [".vmd", ".pmx", ".pmd", ".vpd", ".lrc"]
 const [DIR, SITE] = process.argv.slice(2).filter((a) => !a.startsWith("--"))
 const listArg = (name) => {
   const i = process.argv.indexOf(name)
@@ -71,26 +82,29 @@ for await (const p of glob(`${root}/**/*`)) {
   // macOS hands back decomposed filenames (NFD) while git stores and source
   // code spells them composed (NFC). R2 keys are byte-exact, so a Hangul or
   // kana name uploaded as read from disk would never match the URL the app
-  // asks for.
-  const rel = p.slice(root.length + 1).normalize("NFC")
+  // asks for. Windows hands back backslashes, and a key's separator is "/".
+  const rel = p.slice(root.length + 1).replace(/\\/g, "/").normalize("NFC")
   // Dotfiles are the tool droppings — .DS_Store rides along in every folder.
   if (rel.split("/").some((seg) => seg.startsWith("."))) continue
   // Match a whole path segment, so `models/A` never sweeps in `models/A2`.
   if (ONLY.length && !ONLY.some((o) => rel === o || rel.startsWith(`${o}/`))) continue
   if (SKIP.some((x) => rel.includes(x))) continue
-  paths.push(p)
+  paths.push({ path: p, rel })
 }
-paths.sort()
+paths.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))
 
 let total = 0
 let n = 0
-for (const path of paths) {
+for (const { path, rel } of paths) {
   // The glob yields directories too, and only a stat tells them apart now that
   // an unknown extension is uploaded rather than skipped.
   if (!(await stat(path)).isFile()) continue
-  const type = TYPES[path.slice(path.lastIndexOf(".")).toLowerCase()] ?? "application/octet-stream"
-  const body = await readFile(path)
-  const key = `demo/${SITE}/${path.slice(root.length + 1).normalize("NFC")}`
+  const ext = path.slice(path.lastIndexOf(".")).toLowerCase()
+  const raw = await readFile(path)
+  const packed = GZIP && PACKED.includes(ext)
+  const body = packed ? gzipSync(raw, { level: 9 }) : raw
+  const type = TYPES[ext] ?? "application/octet-stream"
+  const key = `demo/${SITE}/${rel}`
   total += body.byteLength
   n++
   if (!WRITE) {
@@ -98,7 +112,7 @@ for (const path of paths) {
     continue
   }
   await s3.send(
-    new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, Body: body, ContentType: type, CacheControl: IMMUTABLE }),
+    new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, Body: body, ContentType: type, CacheControl: IMMUTABLE, ...(packed && { ContentEncoding: "gzip" }) }),
   )
   console.log(`✓  ${(body.byteLength / 1e6).toFixed(2).padStart(6)} MB  ${key}`)
 }

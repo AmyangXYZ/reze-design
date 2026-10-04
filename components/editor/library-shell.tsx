@@ -13,6 +13,7 @@
 // Provenance is still reachable — the rail filters by maker — it just stopped
 // being the structure.
 
+import { STAGE_BOUND_TAG } from "@/lib/effects"
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react"
 import { Check, ChevronDown, Globe, Heart, LayoutGrid, List, Lock, PenLine, Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
@@ -327,6 +328,10 @@ export function useLibraryBrowse<T extends BrowseItem>(
       // reachable without the sort you picked stopping at the boundary.
       const d = Number(itemState(b) === "draft") - Number(itemState(a) === "draft")
       if (d) return d
+      // Behind everything else, in any ordering: what draws only on a converted
+      // game stage (its bones) — on its own it shows nothing.
+      const k = Number(a.tags.includes(STAGE_BOUND_TAG)) - Number(b.tags.includes(STAGE_BOUND_TAG))
+      if (k) return k
       const x = value(a), y = value(b)
       const cmp = text ? String(x).localeCompare(String(y)) : (x as number) - (y as number)
       if (cmp !== 0) return cmp * dir
