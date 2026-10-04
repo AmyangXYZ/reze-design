@@ -183,7 +183,8 @@ const DEMO_SCENE_DOC: SceneDoc = {
     grade: { preset: "Neutral", intensity: 1 },
     ground: { enabled: true, color: "#c800de", size: 160, opacity: 0.48, grid: "#fafaf9", gridEnabled: true, fade: { start: 0.2, end: 1 } },
     physics: DEFAULT_PHYSICS,
-    eyes: DEFAULT_EYES,
+    // Her eyes follow the camera: the first thing a visitor sees should look back.
+    eyes: { enabled: true },
   },
 }
 
