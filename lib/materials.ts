@@ -179,10 +179,10 @@ export function sameGraphLook(a: ShaderGraph | undefined, b: ShaderGraph | undef
 // and every surface reads fully lit, ramp untouched. Its world is not a backdrop
 // preference; it is the other half of the ramp.
 
-export type LookPack = "ag" | "wuwa" | "zzz" | "hsr" | "doll"
+export type LookPack = "ag" | "wuwa" | "zzz" | "hsr"
 
 /** Menu order — declared, not derived, because it is a curated shelf. */
-export const LOOK_PACK_ORDER: LookPack[] = ["ag", "wuwa", "zzz", "hsr", "doll"]
+export const LOOK_PACK_ORDER: LookPack[] = ["ag", "wuwa", "zzz", "hsr"]
 
 export const LOOK_PACKS: Record<
   LookPack,
@@ -238,21 +238,6 @@ export const LOOK_PACKS: Record<
   // ramps barely darken, so ambient decides less about the terminator here than
   // it does there and can afford to carry more of the fill.
   hsr: { tag: "honkai-star-rail", transform: "aces", exposure: 0.35, world: { color: "#6a6a6a", strength: 1 } },
-  // The 硅胶娃娃 look lives in its fill: a warm near-white world strong enough that
-  // shadow keeps about half of lit, which is what makes the body read as one soft
-  // volume. The world also drives the Principled gloss's reflection, so its warmth
-  // is the sheen's colour. The bloom is the glow the look is known for.
-  //
-  // No tone curve, because a filmic per-channel curve squeezes skin's red
-  // hardest: a (245,205,190) texel in full sun landed at (215,189,178), dim and
-  // grey-green.
-  doll: {
-    tag: "doll",
-    transform: "none",
-    exposure: 0,
-    world: { color: "#ffeef0", strength: 0.5 },
-    light: { bloom: { enabled: true, threshold: 0.9, scatter: 0.8, intensity: 1, color: "#ffe4e4" } },
-  },
 }
 
 // Roles a pack may not cover. WuWa and ZZZ have one cloth look where AG has

@@ -40,12 +40,6 @@ const GRAPHS: Record<string, Zh> = {
   "HSR Cloth": { name: "星穹铁道·布料", description: "布料：淡紫色阴影，本套中对比最强。" },
   "HSR Metal": { name: "星穹铁道·金属", description: "冷色金属：硬边、强高光和明亮的边缘光。" },
   "HSR Eye": { name: "星穹铁道·眼睛", description: "几乎不受阴影影响的眼睛，在脸部阴影中依然明亮。" },
-  "Doll Body": { name: "娃娃·身体", description: "柔软通透的娃娃皮肤，带油润光泽。基于 ray-mmd 的皮肤。" },
-  "Doll Face": { name: "娃娃·脸部", description: "用于脸部的同款娃娃皮肤。基于 ray-mmd 的皮肤。" },
-  "Doll Hair": { name: "娃娃·头发", description: "柔和的头发，带紧致光泽，深色头发也能看出光感。" },
-  "Doll Cloth": { name: "娃娃·布料", description: "略带暖意的哑光布料，与皮肤区分开。" },
-  "Doll Metal": { name: "娃娃·金属", description: "反射自身颜色的金属。" },
-  "Doll Eye": { name: "娃娃·眼睛", description: "几乎无阴影、带湿润光泽的眼睛。" },
   // Stage looks.
   Lit: { name: "基础光照", description: "游戏的基础场景材质。图像 0：法线贴图；图像 1：属性贴图（金属度、粗糙度、遮蔽、发光）。" },
   Wood: { name: "木材", description: "木材：家具、地板和门。" },
@@ -131,7 +125,7 @@ const GRADES: Record<string, Zh> = {
 const TAGS: Record<string, string> = {
   "aether-gazer": "深空之眼", "wuthering-waves": "鸣潮", "zenless-zone-zero": "绝区零", "honkai-star-rail": "星穹铁道",
   ag: "AG", wuwa: "WuWa", zzz: "ZZZ", hsr: "HSR", npr: "NPR", pbr: "PBR", midi: "MIDI",
-  anime: "二次元", doll: "娃娃", skin: "皮肤", soft: "柔和",
+  anime: "二次元", soft: "柔和",
   body: "身体", face: "脸部", hair: "头发", eye: "眼睛", eyes: "眼睛", metal: "金属",
   cloth_smooth: "光滑布料", cloth_rough: "粗糙布料", stockings: "丝袜",
   stage: "场景", maps: "贴图", wood: "木材", tile: "瓷砖", brick: "砖", stone: "石材", concrete: "混凝土",
