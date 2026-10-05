@@ -52,6 +52,9 @@ export type SceneSlotsInput = {
    *  session. */
   midi: { name: string | null; booted: AssetRef | null }
   lyrics: { name: string | null; booted: AssetRef | null }
+  /** The scene's own footstep sound, the same shape. Optional: a caller that
+   *  has no such slot collects a scene without one. */
+  footstep?: { name: string | null; booted: AssetRef | null }
   /** The background image, whichever slot it came from. */
   background: { kind: "backdrop" | "skybox"; name: string; file: File } | null
   /** The HDRI. Independent of `background` — that one is what you see and this
@@ -70,6 +73,7 @@ export type SceneSlots = {
   audio: AssetRef | null
   midi: AssetRef | null
   lyrics: AssetRef | null
+  footstep: AssetRef | null
   background: SceneBackground
   hdri: AssetRef | null
   planes: ScenePlane[]
@@ -245,9 +249,13 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
   // one travels as its URL. Nothing is inferred from the audio's filename, so a
   // picked file keeps the name you gave it and "this scene has no lyrics" is
   // something the document can say rather than something a reader infers.
-  const companionOf = (slot: { name: string | null; booted: AssetRef | null }, file: File | null): AssetRef | null => {
+  const companionOf = (
+    slot: { name: string | null; booted: AssetRef | null },
+    file: File | null,
+    prefix = "audio",
+  ): AssetRef | null => {
     if (slot.name && file) {
-      const path = packPath("audio", file.name)
+      const path = packPath(prefix, file.name)
       if (!entries.some((e) => e.path === path)) entries.push({ path, file })
       return { name: slot.name, url: path }
     }
@@ -259,6 +267,8 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
   }
   const midi = companionOf(input.midi, sceneFiles.score)
   const lyrics = companionOf(input.lyrics, sceneFiles.lyrics)
+  // Its own prefix: a step called the same as the track must not land on it.
+  const footstep = input.footstep ? companionOf(input.footstep, sceneFiles.footstep, "footstep") : null
   let background: SceneBackground = null
   if (input.background) {
     const path = packPath(input.background.kind, input.background.name)
@@ -331,5 +341,5 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
     )
   }
 
-  return { entries: unique, models: liveModels, cameraAnimation, audio, midi, lyrics, background, hdri, planes, nativeStage, hidden }
+  return { entries: unique, models: liveModels, cameraAnimation, audio, midi, lyrics, footstep, background, hdri, planes, nativeStage, hidden }
 }

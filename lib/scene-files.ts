@@ -25,6 +25,8 @@ export const sceneFiles = {
    *  worked for the site's own tracks. */
   score: null as File | null,
   lyrics: null as File | null,
+  /** The scene's own footstep sound, when it has one (lib/footsteps.ts). */
+  footstep: null as File | null,
   camera: null as File | null,
   /** Media planes, keyed by model id — the picture each card is made of. */
   planes: new Map<string, File>(),

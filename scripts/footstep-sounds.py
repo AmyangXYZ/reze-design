@@ -1,10 +1,9 @@
-"""Cut the stamp sound lib/stamps.ts plays, into public/stamps/heels.wav.
+"""Cut the Boots footsteps lib/footsteps.ts plays, into public/footsteps/boots.wav.
 
-    python scripts/stamp-sounds.py
+    python scripts/footstep-sounds.py
 
-A RECORDING, cut from a CC0 sound on Freesound (credit and licence in
-public/stamps/README.md). The file is a SPRITE: SLOT-second slots, one take per
-slot, softest take first — the layout lib/stamps.ts reads. A take is one whole
+A RECORDING, cut from a CC0 sound on Freesound. The file is a SPRITE:
+SLOT-second slots, one take per slot, softest take first — the layout lib/footsteps.ts reads. A take is one whole
 footstep lifted out of a longer recording of someone walking in heels.
 
 LEFT ALONE, as far as possible. The first sets were cut hard — the brightest
@@ -23,15 +22,15 @@ quarter of a second or more. So a take now:
         the TIMBRE of a soft or a hard step
 
 The takes all come from one recording — same shoes, floor, room and
-microphone — so a row of stamps sounds like one dancer. They were chosen by
-measurement, not by ear (analysis/stamps/sounds/pick.py): at least 45dB over
+microphone — so a row of footsteps sounds like one dancer. They were chosen by
+measurement, not by ear (analysis/footsteps/sounds/pick.py): at least 45dB over
 the recording's noise, and a SINGLE contact, with nothing within 20dB of it for
 0.4s after. That last rule is why there is no set from the best-sounding wooden
 floors tried: a walking step in heels is heel then sole a tenth of a second
-apart, and played under a stamp that is two sounds for one landing.
+apart, and played under a footstep that is two sounds for one landing.
 
 Downloads go through Freesound's preview files (OGG; the WAV originals need a
-login) into analysis/stamps/sounds/, and decoding through the ffmpeg that
+login) into analysis/footsteps/sounds/, and decoding through the ffmpeg that
 imageio-ffmpeg ships.
 """
 
@@ -43,10 +42,10 @@ import wave
 import numpy as np
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CACHE = os.path.join(ROOT, "analysis", "stamps", "sounds")
-OUT = os.path.join(ROOT, "public", "stamps")
+CACHE = os.path.join(ROOT, "analysis", "footsteps", "sounds")
+OUT = os.path.join(ROOT, "public", "footsteps")
 SR = 48000
-SLOT = 0.45  # seconds per take; lib/stamps.ts has the same number
+SLOT = 0.45  # seconds per take; lib/footsteps.ts has the same number
 LEN = 0.42  # seconds of each take kept
 FADE = 0.12  # seconds at its end that are faded out
 PRE = 0.002
@@ -55,7 +54,7 @@ PRE = 0.002
 SETS = {
     # Heels, slow pace, on a hard floor — studio-quiet (70dB over its noise),
     # tight, with a short clean tail.
-    "heels": (
+    "boots": (
         "https://cdn.freesound.org/previews/218/218294_1480854-hq.ogg",
         [3.480, 4.823, 26.235, 24.929, 1.297, 28.694, 31.238],
     ),

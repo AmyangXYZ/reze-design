@@ -30,6 +30,7 @@ import {
   type ExportProgress,
   type ExportTarget,
 } from "@/lib/video-export"
+import type { FootstepSource } from "@/lib/footsteps"
 import { isCompositingBackground, type ExportBackground } from "@/lib/export-background"
 import type { SceneTimeline } from "@/lib/timeline"
 import { formatBytes } from "@/lib/png-sequence"
@@ -187,7 +188,7 @@ export const RenderPanel = memo(function RenderPanel({
   backgroundColor,
   musicUrl,
   musicVolume,
-  stamps,
+  footsteps,
   audioSource,
   onAudioSourceChange,
   background,
@@ -220,9 +221,9 @@ export const RenderPanel = memo(function RenderPanel({
   musicUrl: string | null
   /** The scene's music level — the file is written at the level the preview played. */
   musicVolume?: number
-  /** Stamp sounds when the scene has them on, null when off — the file has
+  /** Footstep sounds when the scene has them on, null when off — the file has
    *  them wherever the preview played them. */
-  stamps?: { volume: number } | null
+  footsteps?: { source: FootstepSource; volume: number } | null
   /** Lifted to the page: also routes live audio (music element / backdrop video). */
   /** Optional as a pair: a host that omits them hides the audio row, and the
    *  export derives the source itself — music when a track is loaded, silence
@@ -552,7 +553,7 @@ export const RenderPanel = memo(function RenderPanel({
           fps: VIDEO_FPS,
           bitrate: rate,
           codec: hevc ? "hevc" : "h264",
-          audioSource: audioSource ?? (musicUrl || stamps ? "music" : "none"),
+          audioSource: audioSource ?? (musicUrl || footsteps ? "music" : "none"),
           watermark: compositing ? false : watermark,
           background,
           target,
@@ -561,7 +562,7 @@ export const RenderPanel = memo(function RenderPanel({
         backgroundColor,
         musicUrl,
         musicVolume,
-        stamps,
+        footsteps,
         fileStream,
         directory,
         planes,
@@ -752,7 +753,7 @@ export const RenderPanel = memo(function RenderPanel({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="music" disabled={!musicUrl && !stamps}>
+                <SelectItem value="music" disabled={!musicUrl && !footsteps}>
                   {t.render.audioMusic}
                 </SelectItem>
                 <SelectItem value="none">

@@ -12,6 +12,7 @@ import {
   DEFAULT_OUTLINE,
   DEFAULT_EYES, DEFAULT_PHYSICS,
   LEGACY_VIEW,
+  audioFrom,
   bloomFrom,
   viewFrom,
   viewTransformFrom,
@@ -144,6 +145,9 @@ export type SceneAssets = {
    *  audio's filename. Null is a real answer: this scene has none. */
   midi: AssetRef | null
   lyrics: AssetRef | null
+  /** The footstep sound the author uploaded, when the scene uses its own
+   *  rather than a built-in one (settings.audio.footstepsSound = "custom"). */
+  footstep: AssetRef | null
   background: SceneBackground
   /**
    * The HDRI world — what LIGHTS the scene.
@@ -489,6 +493,8 @@ export type SceneAssetsDoc = {
    */
   midi?: string | null
   lyrics?: string | null
+  /** The scene's own footstep sound, by path. Absent means none. */
+  footstep?: string | null
   /** Two slots, as in the Assets panel. Mutually exclusive at runtime — the
    *  editor holds one piece of media and a slot name, so filling either
    *  replaces whichever was there. Read in this order.
@@ -762,6 +768,7 @@ export function parseAssetsDoc(a: SceneAssetsDoc): SceneAssets {
     // naming them: "no lyrics" stops being a thing the reader has to infer.
     midi: a.midi ? assetFromPath(a.midi) : null,
     lyrics: a.lyrics ? assetFromPath(a.lyrics) : null,
+    footstep: a.footstep ? assetFromPath(a.footstep) : null,
     // Absent parses to null, which is also what a scene with no HDRI writes —
     // so "this scene lights itself with a flat world" is something the document
     // says rather than something a reader infers.
@@ -808,6 +815,8 @@ export function assetsDocOf(a: SceneAssets): SceneAssetsDoc {
     audio: a.audio?.url ?? null,
     midi: a.midi?.url ?? null,
     lyrics: a.lyrics?.url ?? null,
+    // Written only when there is one, like the cards below.
+    ...(a.footstep ? { footstep: a.footstep.url } : {}),
     hdri: a.hdri?.url ?? null,
     backdrop: a.background?.kind === "backdrop" ? a.background.asset.url : null,
     skybox: a.background?.kind === "skybox" ? a.background.asset.url : null,
@@ -929,7 +938,7 @@ export function parseSceneDoc(
         bloom: bloomFrom(settings.bloom as Partial<Record<string, unknown>> | undefined),
         // And for the music level: absent means the track was authored playing
         // at full, which is what DEFAULT_AUDIO restates.
-        audio: { ...DEFAULT_AUDIO, ...settings.audio },
+        audio: { ...DEFAULT_AUDIO, ...audioFrom(settings.audio) },
         // `enabled` joined the ground block in 0.6.10. Every document written
         // before it HAS a ground and says nothing about the matter, so absent
         // means on — read as false it would take the floor out from under every
@@ -1222,6 +1231,7 @@ export function serializeSceneDoc(
     audio: AssetRef | null
     midi: AssetRef | null
     lyrics: AssetRef | null
+    footstep?: AssetRef | null
     background: SceneBackground
     hdri: AssetRef | null
     planes: ScenePlane[]
@@ -1268,6 +1278,7 @@ export function serializeSceneDoc(
         audio: live.audio,
         midi: live.midi,
         lyrics: live.lyrics,
+        footstep: live.footstep ?? null,
         background: live.background,
         hdri: live.hdri,
         planes: live.planes,
@@ -1598,7 +1609,7 @@ function restored(base: Scene): Scene {
         dof: { ...base.state.settings.dof, ...settingsBase.dof },
         outline: { ...base.state.settings.outline, ...settingsBase.outline },
         view: viewFrom({ ...base.state.settings.view, ...settingsBase.view }, base.state.settings.view),
-        audio: { ...base.state.settings.audio, ...settingsBase.audio },
+        audio: { ...base.state.settings.audio, ...audioFrom(settingsBase.audio) },
         grain: { ...base.state.settings.grain, ...settingsBase.grain },
         background: { ...base.state.settings.background, ...settingsBase.background },
         grade: { ...base.state.settings.grade, ...settingsBase.grade },

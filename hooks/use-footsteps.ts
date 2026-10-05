@@ -1,10 +1,10 @@
 "use client"
 
-// Stamp sounds, played — see lib/stamps.ts for how a landing is found.
+// Footstep sounds, played — see lib/footsteps.ts for how a landing is found.
 //
 // Two jobs on one frame tick. ANALYSIS: each character's clip is traced a few
 // milliseconds at a time, ahead of the playhead, and again whenever the clip
-// is replaced or edited. PLAYBACK: the stamps found so far are scheduled on
+// is replaced or edited. PLAYBACK: the footsteps found so far are scheduled on
 // the AudioContext's clock a quarter of a second ahead of the playhead.
 //
 // SCHEDULED, NOT TRIGGERED. A sound started when its frame is drawn is already
@@ -17,25 +17,33 @@
 // JUMP: what was scheduled and has not started is cancelled and the list is
 // entered again from the new time.
 //
-// A SLOW FRAME LOOP MUST NOT DROP STAMPS. At six frames a second a tick comes
+// A SLOW FRAME LOOP MUST NOT DROP FOOTSTEPS. At six frames a second a tick comes
 // every 170ms and now and then much later, so both the look-ahead and what
 // counts as a jump stretch with the slowest recent frame — found by running
 // this against a heavy scene, where a fixed quarter second let a full stomp
-// fall between two ticks. And a stamp that is found a few milliseconds late is
+// fall between two ticks. And a footstep that is found a few milliseconds late is
 // played at once rather than skipped.
 //
 // NO LATENCY COMPENSATION, deliberately. The music plays through the same
-// device with the same output delay, and a stamp that kept time with the
+// device with the same output delay, and a footstep that kept time with the
 // picture by leaving the music's beat would be the worse mistake of the two.
 
 import { useEffect, useRef, type RefObject } from "react"
 import { FPS, type Engine, type Model } from "reze-engine"
-import { STAMP_SPRITE, StampAnalysis, knownStamps, stampVoice, type Stamp } from "@/lib/stamps"
+import {
+  FootstepAnalysis,
+  builtinFootstepSource,
+  knownFootsteps,
+  footstepSoundOf,
+  footstepVoice,
+  type Footstep,
+  type FootstepSource,
+} from "@/lib/footsteps"
 import { visibilityAt, type VisibilityWindow } from "@/lib/timeline/visibility"
 
-const AHEAD = 0.25 // seconds of stamps scheduled at a time, plus two slow frames
+const AHEAD = 0.25 // seconds of footsteps scheduled at a time, plus two slow frames
 const JUMP = 0.05 // seconds the clip may move against the audio clock before it is a jump
-const LATE = 0.04 // seconds late a stamp may be and still play, now
+const LATE = 0.04 // seconds late a footstep may be and still play, now
 const WINDOW = 20 // ticks the offset is the largest of
 const FRAMES = 12 // ticks the slowest recent frame is taken over
 // Analysis per tick: a share of the frame, so a slow device still traces
@@ -47,17 +55,18 @@ const BUDGET_MAX = 60 // ms
 
 interface Voice {
   model: Model
-  stamps: Stamp[]
+  footsteps: Footstep[]
   /** Clip time minus audio time, recent ticks, newest last. */
   offsets: number[]
   next: number
   queued: Set<{ src: AudioBufferSourceNode; when: number }>
 }
 
-export function useStamps({
+export function useFootsteps({
   engineRef,
   ids,
   enabled,
+  source,
   volume,
   lanes,
   disabled = false,
@@ -66,13 +75,15 @@ export function useStamps({
   /** The characters whose feet are heard — the animated cast. */
   ids: string[]
   enabled: boolean
+  /** The sound: a built-in sprite, or the scene's uploaded step. */
+  source: FootstepSource | null
   /** 0–1. */
   volume: number
   /** Who is on stage when (the scene timeline's visibility): a character that
    *  is off stage makes no sound. */
   lanes?: Record<string, VisibilityWindow[]>
   /** True while exporting: the render owns the clock, and the file gets its
-   *  stamps mixed in (lib/video-export). */
+   *  footsteps mixed in (lib/video-export). */
   disabled?: boolean
 }) {
   const live = useRef({ volume, lanes, disabled })
@@ -84,7 +95,8 @@ export function useStamps({
   const key = ids.join("|")
 
   useEffect(() => {
-    if (!enabled || !key) return
+    if (!enabled || !key || !source) return
+    const { url, sliced } = source
     const cast = key.split("|")
     const ctx = new AudioContext({ latencyHint: "interactive" })
     const out = ctx.createGain()
@@ -92,16 +104,16 @@ export function useStamps({
     out.connect(ctx.destination)
     master.current = out
     let sprite: AudioBuffer | null = null
-    void fetch(STAMP_SPRITE)
+    void fetch(url)
       .then((r) => r.arrayBuffer())
       .then((b) => ctx.decodeAudioData(b))
       .then((b) => (sprite = b))
-      .catch((e) => console.error("[stamps] sound failed to load", e))
+      .catch((e) => console.error("[footsteps] sound failed to load", e))
 
     const voices = new Map<string, Voice>()
-    const jobs = new Map<string, StampAnalysis>()
+    const jobs = new Map<string, FootstepAnalysis>()
     /** Stops what a voice has scheduled — all of it, or only what has not
-     *  started, so a stamp already sounding is never cut off. */
+     *  started, so a footstep already sounding is never cut off. */
     const cancel = (v: Voice, all: boolean) => {
       for (const q of v.queued) {
         if (!all && q.when <= ctx.currentTime) continue
@@ -136,24 +148,24 @@ export function useStamps({
         const p = model.getAnimationProgress()
 
         // The finished list, or what an analysis under way has found so far.
-        let stamps = knownStamps(model)
-        if (stamps) jobs.delete(id)
+        let footsteps = knownFootsteps(model)
+        if (footsteps) jobs.delete(id)
         else if (p.animationName && p.duration > 0) {
           let job = jobs.get(id)
           if (!job || job.model !== model || !job.current) {
-            job = new StampAnalysis(model, engine.getIKEnabled())
+            job = new FootstepAnalysis(model, engine.getIKEnabled())
             jobs.set(id, job)
           }
-          stamps = job.stamps
+          footsteps = job.footsteps
         }
-        if (!stamps) continue
+        if (!footsteps) continue
 
         let v = voices.get(id)
-        if (!v || v.model !== model || v.stamps !== stamps) {
+        if (!v || v.model !== model || v.footsteps !== footsteps) {
           // A new list (the analysis grew, or the clip changed): keep what is
           // already sounding, and enter the new one at the playhead below.
           if (v) cancel(v, false)
-          v = { model, stamps, offsets: [], next: 0, queued: v?.queued ?? new Set() }
+          v = { model, footsteps, offsets: [], next: 0, queued: v?.queued ?? new Set() }
           voices.set(id, v)
         }
         if (!p.playing || disabled || !sprite) {
@@ -173,19 +185,19 @@ export function useStamps({
           cancel(v, false)
           v.offsets = [offset]
           v.next = 0
-          while (v.next < stamps.length && stamps[v.next].time < p.current) v.next++
+          while (v.next < footsteps.length && footsteps[v.next].time < p.current) v.next++
         } else {
           v.offsets.push(offset)
           if (v.offsets.length > WINDOW) v.offsets.shift()
         }
         const clipToAudio = Math.max(...v.offsets)
         const horizon = now + clipToAudio + AHEAD + 2 * slow
-        for (; v.next < stamps.length && stamps[v.next].time <= horizon; v.next++) {
-          const s = stamps[v.next]
+        for (; v.next < footsteps.length && footsteps[v.next].time <= horizon; v.next++) {
+          const s = footsteps[v.next]
           if (lanes?.[id] && !visibilityAt(lanes[id], s.time * FPS).visible) continue
           const when = s.time - clipToAudio
           if (when < now - LATE) continue
-          const voice = stampVoice(s, sprite.duration)
+          const voice = footstepVoice(s, sprite.duration, sliced)
           const src = ctx.createBufferSource()
           src.buffer = sprite
           const gain = ctx.createGain()
@@ -216,5 +228,33 @@ export function useStamps({
       master.current = null
       void ctx.close()
     }
-  }, [engineRef, key, enabled])
+  }, [engineRef, key, enabled, source])
+}
+
+/**
+ * The sound a scene's footsteps play: the built-in one its settings name, or —
+ * when they name "custom" and the scene has its upload — that file. An upload
+ * that is missing (a scene whose bundle never carried it) falls back to the
+ * default rather than to silence.
+ */
+export function useFootstepSource(sound: unknown, file: File | null): FootstepSource {
+  const name = footstepSoundOf(sound)
+  if (name === "custom") return file ? { url: fileUrl(file), sliced: false } : builtinFootstepSource("heel")
+  return builtinFootstepSource(name)
+}
+
+/**
+ * One object URL per uploaded File, for as long as the File lives. Not revoked
+ * in an effect's cleanup: React runs a cleanup and the effect again on a dev
+ * remount, which revoked a URL the player was still about to fetch. A step is
+ * at most a megabyte and there is one per upload, so keeping them costs little.
+ */
+const urls = new WeakMap<File, string>()
+function fileUrl(file: File): string {
+  let u = urls.get(file)
+  if (!u) {
+    u = URL.createObjectURL(file)
+    urls.set(file, u)
+  }
+  return u
 }

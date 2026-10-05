@@ -14,7 +14,7 @@ import { graphLibraryName } from "@/lib/refs"
 import { graphRole, packGraph } from "@/lib/materials"
 import { loadLookPref } from "@/lib/look-pref"
 import { idbBundleId, modelPmxUrl, type AssetRef, type Scene, type SceneAttach, type SceneCamera, type SceneParentKey, type SceneStageTransform, type StageSun } from "@/lib/scene"
-import { type BundleFile, heldBundle, openZip, readBundleFiles } from "@/lib/uploads"
+import { type BundleFile, heldBundle, mimeForPath, openZip, readBundleFiles } from "@/lib/uploads"
 import { loadLocalBundle } from "@/lib/asset-store"
 import { sceneFiles } from "@/lib/scene-files"
 import { clearMaterialMaps, loadMaterialMaps, withMaterialMaps } from "@/lib/material-maps"
@@ -1091,6 +1091,33 @@ export async function loadMidiFor(
     onLoaded?.(ref.name)
   } catch {
     // Not there, or will not parse. Either way the scene plays without it.
+  }
+}
+
+/**
+ * The scene's own footstep sound, out of its bundle or from where the document
+ * says it is — kept as a File, so a save packs it again and the player plays
+ * it. Nothing here decodes it: the player does, and a file that will not decode
+ * is a scene that plays the built-in sound's silence, not one that fails.
+ */
+export async function loadFootstepFor(
+  ref: AssetRef | null,
+  cancelled: () => boolean,
+  bundleFiles: BundleFile[] | null,
+  onLoaded: (file: File | null) => void,
+): Promise<void> {
+  sceneFiles.footstep = null
+  onLoaded(null)
+  if (!ref) return
+  try {
+    const packed = bundleFiles?.find((f) => f.name === ref.url) ?? null
+    const bytes = packed ? await packed.arrayBuffer() : await fetchAsset(ref.url)
+    if (!bytes || cancelled()) return
+    const file = new File([bytes], ref.name, { type: mimeForPath(ref.name) })
+    sceneFiles.footstep = file
+    onLoaded(file)
+  } catch {
+    // Not there: the scene plays without it.
   }
 }
 

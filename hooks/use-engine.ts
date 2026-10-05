@@ -21,6 +21,7 @@ import {
   infoFor,
   loadLyricsFor,
   loadMidiFor,
+  loadFootstepFor,
   loadSceneInto,
   
   placeProp,
@@ -114,6 +115,8 @@ export function useEngine(
    *  and when a file is picked by hand, so the rows show either. */
   const [midiClip, setMidiClip] = useState<string | null>(null)
   const [lyricsClip, setLyricsClip] = useState<string | null>(null)
+  /** The scene's own footstep sound, when it has one. */
+  const [footstepFile, setFootstepFile] = useState<File | null>(null)
   /** The song, and which slice of it the atlas currently holds. */
   const lyricPage = useRef<{ lines: LyricLine[]; from: number; to: number; heightPx: number } | null>(null)
   // The asset bundle is unzipped. Everything that resolves out of it — clips,
@@ -351,6 +354,7 @@ export function useEngine(
         // or not either exists.
         void loadMidiFor(scene.assets.midi, engine, stale, bundleRef.current, setMidiClip)
         void loadLyricsFor(scene.assets.lyrics, engine, stale, canvasRef.current?.height ?? 0, bundleRef.current, setLyricsClip)
+        void loadFootstepFor(scene.assets.footstep, stale, bundleRef.current, setFootstepFile)
         const { infos, groups: groupsMap } = loaded
         setModels(infos)
         setStages(loaded.stageList)
@@ -1273,6 +1277,17 @@ export function useEngine(
     setLyricsClip(null)
   }, [])
 
+  /** The scene's own footstep sound: kept as given, checked by the caller
+   *  (lib/footsteps checkFootstepFile) before it gets here. */
+  const installFootstepFile = useCallback((file: File) => {
+    sceneFiles.footstep = file
+    setFootstepFile(file)
+  }, [])
+  const clearFootstep = useCallback(() => {
+    sceneFiles.footstep = null
+    setFootstepFile(null)
+  }, [])
+
   /** A file out of the scene's asset bundle, by its bundle-relative path — read out
    *  of its zip now, if it is still in one. */
   const bundleFile = useCallback(async (path: string): Promise<File | null> => {
@@ -1415,6 +1430,7 @@ export function useEngine(
       sceneFiles.audio = null
       sceneFiles.score = null
       sceneFiles.lyrics = null
+      sceneFiles.footstep = null
       sceneFiles.camera = null
       // Cards go with them, and they own more than bytes: a decoder, a playing
       // element and an object URL each. Left standing, the outgoing scene's
@@ -1449,6 +1465,7 @@ export function useEngine(
       bundleRef.current = loaded.bundle
       void loadMidiFor(scene.assets.midi, engine, stale, bundleRef.current, setMidiClip)
       void loadLyricsFor(scene.assets.lyrics, engine, stale, canvasRef.current?.height ?? 0, bundleRef.current, setLyricsClip)
+      void loadFootstepFor(scene.assets.footstep, stale, bundleRef.current, setFootstepFile)
       sceneRef.current = scene
       setModels(loaded.infos)
       setStages(loaded.stageList)
@@ -1588,6 +1605,9 @@ export function useEngine(
     installLyricsFile,
     midiClip,
     lyricsClip,
+    footstepFile,
+    installFootstepFile,
+    clearFootstep,
     rasterLyricsAt,
     syncLyricsTo,
     clearMidi,

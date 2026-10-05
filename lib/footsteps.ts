@@ -1,9 +1,9 @@
-// Stamp sounds — a foot that lands on the floor makes a sound.
+// Footstep sounds — a foot that lands on the floor makes a sound.
 //
 // MEASURED FROM THE MESH, ANALYSED AHEAD. The clip is posed frame by frame and
 // only the SOLES are skinned on the CPU (traceSoles); the landings are then
-// found in that trace as a whole (detectStamps), and played by scheduling each
-// one on the audio clock ahead of time (hooks/use-stamps). Two earlier
+// found in that trace as a whole (detectFootsteps), and played by scheduling each
+// one on the audio clock ahead of time (hooks/use-footsteps). Two earlier
 // versions are why:
 //
 //   足ＩＫ's height is where the ankle is TOLD to go — higher on tiptoe, in
@@ -232,7 +232,7 @@ const MERGE = 0.16 // seconds: heel and toe of one foot are one landing
 const BOTH = 0.03 // seconds: both feet are one landing
 const QUIET = 0.08 // a level under this is not played
 
-export interface Stamp {
+export interface Footstep {
   /** Seconds into the clip. */
   time: number
   /** 0 left, 1 right, 2 both together. */
@@ -317,13 +317,13 @@ function levelOf(drop: number, speed: number): number {
 }
 
 /** Every landing in frames [from, to) of a trace, in time order. */
-export function detectStamps(trace: SoleTrace, from = 0, to = trace.parts[0].length): Stamp[] {
+export function detectFootsteps(trace: SoleTrace, from = 0, to = trace.parts[0].length): Footstep[] {
   const { fps } = trace
   const parts = trace.parts.map((p) => p.subarray(from, to))
   const start = from / fps
-  const feet: Stamp[] = []
+  const feet: Footstep[] = []
   for (const foot of [0, 1] as const) {
-    const found: Stamp[] = []
+    const found: Footstep[] = []
     for (const part of [0, 1]) {
       const y = parts[foot * 2 + part]
       const other = parts[foot * 2 + 1 - part]
@@ -337,14 +337,14 @@ export function detectStamps(trace: SoleTrace, from = 0, to = trace.parts[0].len
       }
     }
     found.sort((a, b) => a.time - b.time)
-    let last: Stamp | null = null
+    let last: Footstep | null = null
     for (const s of found) {
       if (last && s.time - last.time < MERGE) last.level = Math.max(last.level, s.level)
       else feet.push((last = s))
     }
   }
   feet.sort((a, b) => a.time - b.time)
-  const out: Stamp[] = []
+  const out: Footstep[] = []
   for (const s of feet) {
     const last = out[out.length - 1]
     if (last && s.time - last.time < BOTH && last.foot !== s.foot) {
@@ -362,7 +362,7 @@ export function detectStamps(trace: SoleTrace, from = 0, to = trace.parts[0].len
 // back, a published scene that plays on arrival would dance its first half
 // minute in silence. So the trace starts just behind the playhead and runs
 // forward from there (several times faster than the clip plays), wrapping to
-// the start, and the stamps of what HAS been traced are available at once.
+// the start, and the footsteps of what HAS been traced are available at once.
 // Scrub somewhere untraced and it goes there next. When every frame is in, the
 // whole trace is detected once more as one piece and kept for the clip.
 
@@ -381,19 +381,19 @@ function clipOf(model: Model): object | null {
   return name ? model.getClip(name) : null
 }
 
-const analysed = new WeakMap<Model, { clip: object; stamps: Stamp[] }>()
+const analysed = new WeakMap<Model, { clip: object; footsteps: Footstep[] }>()
 
-/** The finished stamps for the clip this model is showing, or null. */
-export function knownStamps(model: Model): Stamp[] | null {
+/** The finished footsteps for the clip this model is showing, or null. */
+export function knownFootsteps(model: Model): Footstep[] | null {
   const hit = analysed.get(model)
-  return hit && hit.clip === clipOf(model) ? hit.stamps : null
+  return hit && hit.clip === clipOf(model) ? hit.footsteps : null
 }
 
 /** One model's analysis, a slice at a time. */
-export class StampAnalysis {
+export class FootstepAnalysis {
   readonly clip: object | null
-  /** The stamps found so far, in time order — a NEW array each time it grows. */
-  stamps: Stamp[] = []
+  /** The footsteps found so far, in time order — a NEW array each time it grows. */
+  footsteps: Footstep[] = []
   private probe: SoleProbe | null
   private trace: SoleTrace | null = null
   private done: Uint8Array | null = null
@@ -415,14 +415,14 @@ export class StampAnalysis {
 
   /**
    * Traces for up to `budgetMs`, from the playhead on. True once the whole
-   * clip is done and its stamps are kept (knownStamps). Does nothing while
+   * clip is done and its footsteps are kept (knownFootsteps). Does nothing while
    * the pose is being edited by hand: seeking would take the edit away.
    */
   step(budgetMs: number): boolean {
     const { model, probe, clip } = this
     if (!clip) return false
     if (!probe) {
-      analysed.set(model, { clip, stamps: [] })
+      analysed.set(model, { clip, footsteps: [] })
       return true
     }
     if (model.isClipApplySuspended()) return false
@@ -448,14 +448,14 @@ export class StampAnalysis {
     this.left -= reached - from
     this.fresh += reached - from
     if (this.left === 0) {
-      this.stamps = detectStamps(trace)
-      analysed.set(model, { clip, stamps: this.stamps })
+      this.footsteps = detectFootsteps(trace)
+      analysed.set(model, { clip, footsteps: this.footsteps })
       return true
     }
     if (this.fresh >= REFRESH * TRACE_FPS) {
       this.fresh = 0
       // Each traced run on its own: a landing cannot be read across a gap.
-      const found: Stamp[] = []
+      const found: Footstep[] = []
       for (let a = 0; a < total; ) {
         if (!done[a]) {
           a++
@@ -464,51 +464,80 @@ export class StampAnalysis {
         let b = a
         while (b < total && done[b]) b++
         const trusted = b === total ? Infinity : b / TRACE_FPS - EDGE
-        for (const s of detectStamps(trace, a, b)) if (s.time <= trusted) found.push(s)
+        for (const s of detectFootsteps(trace, a, b)) if (s.time <= trusted) found.push(s)
         a = b
       }
-      this.stamps = found
+      this.footsteps = found
     }
     return false
   }
 }
 
-/** The stamps for the clip a model is showing, found now if not yet known. */
-export function stampsNow(model: Model, ik: boolean): Stamp[] {
-  const known = knownStamps(model)
+/** The footsteps for the clip a model is showing, found now if not yet known. */
+export function footstepsNow(model: Model, ik: boolean): Footstep[] {
+  const known = knownFootsteps(model)
   if (known) return known
   // An edit in progress holds the pose; the export that calls this has
   // nothing to wait for, and seeking is what it is about to do anyway.
   model.setClipApplySuspended(false)
-  const job = new StampAnalysis(model, ik)
+  const job = new FootstepAnalysis(model, ik)
   // Two runs at most: playhead to the end, then the start to the playhead.
   for (let i = 0; i < 3 && !job.step(Infinity); i++);
-  return knownStamps(model) ?? []
+  return knownFootsteps(model) ?? []
 }
 
 // ── Sound ───────────────────────────────────────────────────────────────────
 //
-// RECORDED, NOT SYNTHESIZED, and several takes of the same shoe on the same
-// floor rather than one sample repeated: synthesized hits were tried twice and
-// sounded it, and one take played a hundred times is a machine. They are one
-// sprite — SLOT-second slots, softest take first — of whole footsteps with
-// their own decay, cut from a CC0 recording (public/stamps/README.md;
-// scripts/stamp-sounds.py says why they are left as they were recorded).
+// RECORDED, NOT SYNTHESIZED: synthesized hits were tried twice and sounded it.
+// Two built in, chosen per scene, and the scene's own upload:
 //
-// A stamp's level picks BOTH the take (a hard landing uses a take that was hit
-// hard: brighter, not just louder) and the gain, over RANGE_DB — wide on
-// purpose, see "HOW HARD" above. The choice depends only on the stamp itself,
-// never on chance, so an export sounds like the preview.
+//   heel   one step in heels, the default
+//   boots  seven takes of a harder shoe from one CC0 recording, softest first,
+//          so a hard landing uses a take that was hit hard — brighter, not
+//          just louder (scripts/footstep-sounds.py cuts them)
+//   custom a file the author uploads, assumed to be one clean step, played
+//          whole: it has no slots to choose between
+//
+// A BUILT-IN FILE IS A SPRITE of SLOT-second slots, one take per slot. A new
+// sound gets a new FILE NAME rather than new bytes under the old one: the page
+// loads a sound once and keeps it, so a replaced file under the same name went
+// on playing the old one until a hard reload.
+//
+// A footstep's level sets the gain over RANGE_DB — wide on purpose, see "HOW
+// HARD" above — and, in a sprite, the take. The choice depends only on the
+// footstep itself, never on chance, so an export sounds like the preview.
 
-/** The sprite: heels, seven takes. */
-export const STAMP_SPRITE = "/stamps/heels.wav"
+export const FOOTSTEP_SOUNDS = ["heel", "boots"] as const
+export type BuiltinFootstepSound = (typeof FOOTSTEP_SOUNDS)[number]
+export type FootstepSound = BuiltinFootstepSound | "custom"
+
+/** The sound a document names, or the default when it names none — or one
+ *  that no longer exists, which a scene saved against an earlier list may. */
+export function footstepSoundOf(name: unknown): FootstepSound {
+  return name === "custom" ? "custom" : (FOOTSTEP_SOUNDS.find((s) => s === name) ?? FOOTSTEP_SOUNDS[0])
+}
+
+/** Where a footstep's sound comes from: a file, and whether it is a sprite of
+ *  SLOT-second takes or one step to be played whole. */
+export interface FootstepSource {
+  url: string
+  sliced: boolean
+}
+
+export function builtinFootstepSource(sound: BuiltinFootstepSound): FootstepSource {
+  return { url: `/footsteps/${sound}.wav`, sliced: true }
+}
+
+/** An uploaded step: no bigger, and no longer, than this. */
+export const CUSTOM_FOOTSTEP_MAX_BYTES = 1024 * 1024
+export const CUSTOM_FOOTSTEP_MAX_SECONDS = 2
 
 const SLOT = 0.45 // seconds per take in a sprite
-const RANGE_DB = 22 // the softest stamp plays this far under the hardest
-const PAN = 0.15 // how far left or right of centre one foot's stamp sits
+const RANGE_DB = 22 // the softest footstep plays this far under the hardest
+const PAN = 0.15 // how far left or right of centre one foot's footstep sits
 
-export interface StampVoice {
-  /** Where in the sprite the take starts, and how long it is, in seconds. */
+export interface FootstepVoice {
+  /** Where in the file the take starts, and how long it is, in seconds. */
   offset: number
   length: number
   gain: number
@@ -516,52 +545,69 @@ export interface StampVoice {
   pan: number
 }
 
-/** How a stamp is played from a sprite `seconds` long. */
-export function stampVoice(stamp: Stamp, seconds: number): StampVoice {
+/** How a footstep is played from a file `seconds` long. */
+export function footstepVoice(footstep: Footstep, seconds: number, sliced = true): FootstepVoice {
+  const gain = 10 ** ((RANGE_DB * (footstep.level - 1)) / 20)
+  const pan = footstep.foot === 0 ? -PAN : footstep.foot === 1 ? PAN : 0
+  if (!sliced) return { offset: 0, length: seconds, gain, pan }
   const takes = Math.max(1, Math.round(seconds / SLOT))
   // The take for this level, or one either side of it, so that two landings
   // alike in level are not the same recording twice.
-  const wander = (Math.floor(stamp.time * 1000) % 3) - 1
-  const take = Math.max(0, Math.min(takes - 1, Math.round(stamp.level * (takes - 1)) + wander))
-  return {
-    offset: take * SLOT,
-    length: SLOT,
-    gain: 10 ** ((RANGE_DB * (stamp.level - 1)) / 20),
-    pan: stamp.foot === 0 ? -PAN : stamp.foot === 1 ? PAN : 0,
+  const wander = (Math.floor(footstep.time * 1000) % 3) - 1
+  const take = Math.max(0, Math.min(takes - 1, Math.round(footstep.level * (takes - 1)) + wander))
+  return { offset: take * SLOT, length: SLOT, gain, pan }
+}
+
+/**
+ * Checks an upload is a sound this can play: decodable by the browser (any
+ * format it reads — wav, mp3, m4a, ogg, flac, the audio of an mp4) and inside
+ * the limits. Returns its length in seconds, or why it was refused.
+ */
+export async function checkFootstepFile(
+  file: File,
+): Promise<{ seconds: number; error?: undefined } | { error: "size" | "length" | "decode" }> {
+  if (file.size > CUSTOM_FOOTSTEP_MAX_BYTES) return { error: "size" }
+  try {
+    const buffer = await new OfflineAudioContext(1, 1, 48000).decodeAudioData(await file.arrayBuffer())
+    if (buffer.duration > CUSTOM_FOOTSTEP_MAX_SECONDS) return { error: "length" }
+    return { seconds: buffer.duration }
+  } catch {
+    return { error: "decode" }
   }
 }
 
 /**
- * Stamps mixed into an export's audio — onto the music when there is some, or
+ * Footsteps mixed into an export's audio — onto the music when there is some, or
  * into silence `duration` seconds long when there is not. The export covers
- * the clip from `start` seconds on; stamps outside it are dropped.
+ * the clip from `start` seconds on; footsteps outside it are dropped.
  */
-export async function mixStamps(
+export async function mixFootsteps(
   music: AudioBuffer | null,
-  stamps: Stamp[],
+  footsteps: Footstep[],
   start: number,
   duration: number,
+  source: FootstepSource,
   volume: number,
 ): Promise<AudioBuffer> {
   const rate = music?.sampleRate ?? 48000
-  // Decoded by a context at the track's rate, so the sprite arrives resampled.
-  const sprite = await new OfflineAudioContext(1, 1, rate).decodeAudioData(
-    await (await fetch(STAMP_SPRITE)).arrayBuffer(),
+  // Decoded by a context at the track's rate, so the sound arrives resampled.
+  const sound = await new OfflineAudioContext(1, 1, rate).decodeAudioData(
+    await (await fetch(source.url)).arrayBuffer(),
   )
-  const src = sprite.getChannelData(0)
   const length = music?.length ?? Math.max(1, Math.ceil(duration * rate))
   const out = new AudioBuffer({ length, numberOfChannels: 2, sampleRate: rate })
   for (let c = 0; c < 2; c++) {
     const dst = out.getChannelData(c)
     if (music) dst.set(music.getChannelData(Math.min(c, music.numberOfChannels - 1)))
-    for (const stamp of stamps) {
-      const v = stampVoice(stamp, sprite.duration)
+    const src = sound.getChannelData(Math.min(c, sound.numberOfChannels - 1))
+    for (const footstep of footsteps) {
+      const v = footstepVoice(footstep, sound.duration, source.sliced)
       // Equal-power pan, as the preview's StereoPannerNode does it for mono.
       const angle = ((v.pan + 1) * Math.PI) / 4
       const g = v.gain * volume * (c === 0 ? Math.cos(angle) : Math.sin(angle))
       const from = Math.round(v.offset * rate)
       const count = Math.min(Math.round(v.length * rate), src.length - from)
-      const at = Math.round((stamp.time - start) * rate)
+      const at = Math.round((footstep.time - start) * rate)
       if (at < 0) continue
       for (let i = 0; i < count && at + i < length; i++) dst[at + i] += src[from + i] * g
     }

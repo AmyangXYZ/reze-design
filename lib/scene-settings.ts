@@ -2,6 +2,7 @@
 
 import { Vec3 } from "reze-engine"
 import type { GradeSettings } from "@/lib/grade"
+import type { FootstepSound } from "@/lib/footsteps"
 
 /** What a stage that set a light remembers: which stage, and the light it
  *  replaced. Deleting that stage puts `before` back; any edit to the light drops
@@ -143,11 +144,13 @@ export type SceneSettings = {
    */
   audio: {
     volume: number
-    /** Stamp sounds from the cast's feet (lib/stamps.ts): on, and their level
-     *  0–1. Optional — a document from before they existed has neither, which
-     *  is off. */
-    stamps?: boolean
-    stampsVolume?: number
+    /** Footsteps from the cast's feet (lib/footsteps.ts): on, which sound, and
+     *  their level 0–1. Optional — a document from before they existed has
+     *  none, which is off; no sound named is the default one. "custom" is the
+     *  scene's own upload, assets.footstep. */
+    footsteps?: boolean
+    footstepsSound?: FootstepSound
+    footstepsVolume?: number
   }
   ground: {
     color: string
@@ -278,6 +281,24 @@ export function viewFrom(v: { transform?: unknown; exposure?: unknown; contrast?
 /** The bloom a new scene starts with: the game's (threshold 0.7, scatter 0.8 — its 0.77,
  *  white, intensity 1). */
 export const DEFAULT_BLOOM: SceneSettings["bloom"] = { enabled: true, threshold: 0.7, scatter: 0.8, intensity: 1, color: "#ffffff" }
+
+/**
+ * The audio block as today's. Footsteps shipped for a day as `stamps` and
+ * `stampsVolume`; a scene saved then reads back with them on, at its level,
+ * under the names they have now.
+ */
+export function audioFrom(raw: unknown): Partial<SceneSettings["audio"]> {
+  if (!raw || typeof raw !== "object") return {}
+  const { stamps, stampsVolume, ...rest } = raw as Partial<SceneSettings["audio"]> & {
+    stamps?: boolean
+    stampsVolume?: number
+  }
+  return {
+    ...(stamps !== undefined ? { footsteps: stamps } : {}),
+    ...(stampsVolume !== undefined ? { footstepsVolume: stampsVolume } : {}),
+    ...rest,
+  }
+}
 
 /** A stored bloom block as today's. The old Blender fields (knee, radius) are
  *  dropped; what is missing comes from the default. */

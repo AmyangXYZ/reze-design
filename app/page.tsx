@@ -71,6 +71,7 @@ import {
   Workflow,
   Upload,
   Sparkles,
+  SportShoe,
   WandSparkles,
   X,
   Hand,
@@ -119,7 +120,8 @@ import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { Slider } from "@/components/ui/slider"
 import { ColorField } from "@/components/color-picker"
 import { useAudioClock, useTrackAudio } from "@/hooks/use-audio-clock"
-import { useStamps } from "@/hooks/use-stamps"
+import { useFootstepSource, useFootsteps } from "@/hooks/use-footsteps"
+import { CUSTOM_FOOTSTEP_MAX_BYTES, CUSTOM_FOOTSTEP_MAX_SECONDS, FOOTSTEP_SOUNDS, checkFootstepFile, footstepSoundOf } from "@/lib/footsteps"
 import { Dopesheet } from "@/components/scene/dopesheet"
 import { ClipBridge } from "@/components/scene/clip-bridge"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -991,12 +993,12 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       keywords: ["lip", "lyrics", "mouth", "sync", "vmd", "口型", "歌词", "口パク", "リップシンク"],
     },
     {
-      id: "stamps",
+      id: "footsteps",
       repeatable: true,
       section: "command",
-      icon: Footprints,
-      label: l.stampSounds,
-      altLabels: [alt.stampSounds],
+      icon: SportShoe,
+      label: l.footsteps,
+      altLabels: [alt.footsteps],
       keywords: ["stamp", "stomp", "step", "foot", "heel", "tap", "sound", "sfx", "踩脚", "脚步", "音效", "足音"],
     },
     {
@@ -1611,6 +1613,7 @@ function ClipRow({
   onDownload,
   volume,
   onVolume,
+  menu,
 }: {
   icon: ComponentType<{ className?: string }>
   /** Loaded clip name, or null. */
@@ -1636,6 +1639,8 @@ function ClipRow({
    *  nothing to sound. */
   volume?: number
   onVolume?: (v: number) => void
+  /** Settings for what the row plays, behind a gear — the footsteps' sound. */
+  menu?: { label: string; items: { key: string; label: string; checked?: boolean; onPick: () => void }[] }
 }) {
   const t = useT()
   // Deleting a clip asks first. Not window.confirm — see ConfirmDialog.
@@ -1643,10 +1648,11 @@ function ClipRow({
   // The level's popover hangs off a button that hover alone would hide the
   // moment the pointer reaches the slider — see CastLine's `revealed`.
   const [volumeOpen, setVolumeOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
   // Four fit the wide reserve; three fit the narrow one. Counted rather than
   // inferred from which optional props are present, so a row that gains a
   // control cannot silently outgrow the space its name is kept clear of.
-  const actionCount = 1 + (onPick ? 1 : 0) + (onEdit ? 1 : 0) + (onDownload ? 1 : 0) + (onVolume ? 1 : 0)
+  const actionCount = 1 + (onPick ? 1 : 0) + (onEdit ? 1 : 0) + (onDownload ? 1 : 0) + (onVolume ? 1 : 0) + (menu ? 1 : 0)
   const Speaker = (volume ?? 1) <= 0 ? VolumeX : (volume ?? 1) < 0.5 ? Volume1 : Volume2
   return (
     // The ROW is the anchor, not the speaker inside it: the level opens as a
@@ -1670,7 +1676,7 @@ function ClipRow({
               // Reserved so a long filename ends clear of the buttons rather than
               // running under them. Four controls where there are four.
               reserve={actionCount >= 4 ? "pr-[6rem]" : "pr-[4.5rem]"}
-              revealed={volumeOpen}
+              revealed={volumeOpen || menuOpen}
               text={
                 clip ? (
                   <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={clipLabel(clip)}>
@@ -1702,6 +1708,10 @@ function ClipRow({
                       same act on two kinds of thing, and they were drawn a size
                       apart. */}
                   {onEdit && <CastAction icon={PenLine} label={t.lab.aria.edit(kind, of)} onClick={onEdit} />}
+                  {/* Left of the level: what plays, then how loud. */}
+                  {menu && (
+                    <AttachMenu icon={Settings} label={menu.label} items={menu.items} onOpenChange={setMenuOpen} inRow />
+                  )}
                   {/* Beside the edit, because that is what it is: the one thing
                       about a track this app can change without touching the file.
                       The glyph carries the level — crossed at silence, one arc
@@ -2005,6 +2015,9 @@ function AttachMenu({
   label,
   items,
   disabled,
+  icon = Plus,
+  onOpenChange,
+  inRow,
 }: {
   label: string
   items: {
@@ -2012,18 +2025,34 @@ function AttachMenu({
     label: string
     onPick: () => void
     disabled?: boolean
+    /** The current choice, where the list is a choice rather than actions. */
+    checked?: boolean
   }[]
+  /** The button's glyph: + where the list adds things, a gear where it sets one. */
+  icon?: ComponentType<{ className?: string }>
+  /** Told when the list opens and closes — a row that shows its controls only
+   *  on hover keeps them up while this is open. */
+  onOpenChange?: (open: boolean) => void
+  /** Among a row's own controls rather than at a group header's edge: no
+   *  margin, so it keeps the row's spacing. */
+  inRow?: boolean
   /** Nothing here can act before the engine exists — every installer behind
    *  these rows needs it. Gated with the same flag Cast's + uses, so the three
    *  become live together instead of one of them offering an action that
    *  silently does nothing. */
   disabled?: boolean
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpenState] = useState(false)
+  const setOpen = (next: boolean | ((o: boolean) => boolean)) =>
+    setOpenState((o) => {
+      const v = typeof next === "function" ? next(o) : next
+      onOpenChange?.(v)
+      return v
+    })
   if (disabled || items.length === 0) {
     return (
-      <span className="-mr-1 flex items-center">
-        <CastAction icon={Plus} label={label} onClick={() => {}} disabled />
+      <span className={cn("flex items-center", !inRow && "-mr-1")}>
+        <CastAction icon={icon} label={label} onClick={() => {}} disabled />
       </span>
     )
   }
@@ -2032,8 +2061,8 @@ function AttachMenu({
       {/* Anchor rather than Trigger: CastAction stops click propagation, because
           it lives in rows that select on click — a Trigger would never see it. */}
       <PopoverAnchor asChild>
-        <span className="-mr-1 flex items-center">
-          <CastAction icon={Plus} label={label} onClick={() => setOpen((o) => !o)} />
+        <span className={cn("flex items-center", !inRow && "-mr-1")}>
+          <CastAction icon={icon} label={label} onClick={() => setOpen((o) => !o)} />
         </span>
       </PopoverAnchor>
       <PopoverContent
@@ -2046,13 +2075,14 @@ function AttachMenu({
             <button
               key={i.key}
               disabled={i.disabled}
-              className="block w-full cursor-pointer truncate rounded-lg px-2 py-1.5 text-left text-xs text-muted-foreground disabled:pointer-events-none disabled:opacity-40 transition-colors hover:bg-white/5 hover:text-foreground"
+              className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-muted-foreground disabled:pointer-events-none disabled:opacity-40 transition-colors hover:bg-white/5 hover:text-foreground"
               onClick={() => {
                 setOpen(false)
                 i.onPick()
               }}
             >
-              {i.label}
+              <span className="min-w-0 flex-1 truncate">{i.label}</span>
+              {i.checked && <Check className="size-3.5 shrink-0 text-blue-400" />}
             </button>
           ))}
         </ChoiceList>
@@ -2202,6 +2232,9 @@ export default function Lab() {
     syncLyricsTo,
     clearMidi,
     clearLyrics,
+    footstepFile,
+    installFootstepFile,
+    clearFootstep,
     error,
     groupsByModel,
     addModelFromFiles,
@@ -2285,6 +2318,7 @@ export default function Lab() {
   const vmdInput = useRef<HTMLInputElement | null>(null)
   const morphInput = useRef<HTMLInputElement | null>(null)
   const midiInput = useRef<HTMLInputElement | null>(null)
+  const footstepInput = useRef<HTMLInputElement | null>(null)
   const lyricsInput = useRef<HTMLInputElement | null>(null)
   // Which model the next .vmd pick lands on, set before the dialog opens.
   const animTarget = useRef<string | null>(null)
@@ -3975,23 +4009,26 @@ export default function Lab() {
    */
   const timeline = useMemo(() => timelineOf({ models, props, effects: bgEffects }), [models, props, bgEffects])
   /**
-   * Stamp sounds: a foot that lands is heard (lib/stamps.ts). A switch in the
+   * Footstep sounds: a foot that lands is heard (lib/footsteps.ts). A switch in the
    * scene's audio settings rather than a file — the landings are found from
    * whatever each character is dancing, again whenever that changes, so there
    * is nothing to regenerate and nothing to go stale. Riding the settings is
    * also what carries it into the draft, the bundle and a published scene.
    */
-  const stampsOn = audio.stamps === true
-  const stampsVolume = audio.stampsVolume ?? 1
-  const stampIds = useMemo(
+  const footstepsOn = audio.footsteps === true
+  const footstepsVolume = audio.footstepsVolume ?? 1
+  const footstepsSound = footstepSoundOf(audio.footstepsSound)
+  const footstepsSource = useFootstepSource(audio.footstepsSound, footstepFile)
+  const footstepIds = useMemo(
     () => models.filter((m) => !stageIds.has(m.id) && animByModel[m.id]).map((m) => m.id),
     [models, stageIds, animByModel],
   )
-  useStamps({
+  useFootsteps({
     engineRef,
-    ids: stampIds,
-    enabled: stampsOn && ready,
-    volume: stampsVolume,
+    ids: footstepIds,
+    enabled: footstepsOn && ready,
+    source: footstepsSource,
+    volume: footstepsVolume,
     lanes: timeline.visibility,
     disabled: framing.exporting,
   })
@@ -5876,6 +5913,8 @@ export default function Lab() {
         camera: { name: cameraClip, booted: scene.assets.cameraAnimation },
         audio: { name: musicClip?.name ?? null, url: musicClip?.url ?? null },
         midi: { name: midiClip, booted: scene.assets.midi },
+        // Kept whichever sound is chosen, so switching back finds it.
+        footstep: { name: footstepFile?.name ?? null, booted: scene.assets.footstep },
         lyrics: { name: lyricsClip, booted: scene.assets.lyrics },
         // The HDRI, from its own slot. It packs beside the background rather
         // than instead of it — one lights, the other shows.
@@ -5918,6 +5957,7 @@ export default function Lab() {
       cameraClip,
       musicClip,
       midiClip,
+      footstepFile,
       lyricsClip,
       bgImage,
       hdri,
@@ -5964,6 +6004,7 @@ export default function Lab() {
             audio: slots.audio,
             midi: slots.midi,
             lyrics: slots.lyrics,
+            footstep: slots.footstep,
             background: slots.background,
             hdri: slots.hdri,
             // The cards. Listing these fields by hand is exactly how the
@@ -6032,6 +6073,7 @@ export default function Lab() {
     // reset that looks like it did nothing. This is the document speaking.
     clearMidi()
     clearLyrics()
+    clearFootstep()
     setCameraClip(next.assets.cameraAnimation?.name ?? null)
     // The outgoing clip's URL is revoked by useSceneMedia's effect once this
     // one is committed — never inside an updater, which React may run twice.
@@ -6242,6 +6284,7 @@ export default function Lab() {
         audio: slots.audio,
         midi: slots.midi,
         lyrics: slots.lyrics,
+        footstep: slots.footstep,
         background: slots.background,
         hdri: slots.hdri,
         bundle,
@@ -6506,7 +6549,7 @@ export default function Lab() {
         const target = primaryId
         if (target && lyricsClip) void generateLipSync(target)
         else if (target) lyricsInput.current?.click()
-      } else if (item.id === "stamps") patch("audio", { stamps: true })
+      } else if (item.id === "footsteps") patch("audio", { footsteps: true })
       else if (item.id === "camera") gotoSection("camera")
       else if (item.id === "scene-new") cmdRef.current.newScene()
       else if (item.id === "scene-reset") cmdRef.current.resetSceneDefaults()
@@ -7203,6 +7246,34 @@ export default function Lab() {
         }}
       />
 
+      {/* Any sound the browser decodes — the audio of a video included, as the
+          music takes it — within the limits lib/footsteps sets. */}
+      <input
+        ref={footstepInput}
+        type="file"
+        accept="audio/*,video/mp4,video/quicktime,video/webm,.m4a,.mp3,.wav,.ogg,.opus,.flac,.aac,.mp4,.mov"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          e.target.value = ""
+          if (!file) return
+          void checkFootstepFile(file).then((r) => {
+            if (r.error) {
+              const why =
+                r.error === "size"
+                  ? t.lab.footstepRefused.size(CUSTOM_FOOTSTEP_MAX_BYTES / (1024 * 1024))
+                  : r.error === "length"
+                    ? t.lab.footstepRefused.length(CUSTOM_FOOTSTEP_MAX_SECONDS)
+                    : t.lab.footstepRefused.decode
+              toast.error(file.name, { description: why })
+              return
+            }
+            installFootstepFile(file)
+            patch("audio", { footstepsSound: "custom" })
+          })
+        }}
+      />
+
       <input
         ref={lyricsInput}
         type="file"
@@ -7869,10 +7940,10 @@ export default function Lab() {
                         ]),
                     // Last: the files first, then the one thing made here.
                     {
-                      key: "stamps",
-                      label: t.lab.stampSounds,
-                      disabled: stampsOn || stampIds.length === 0,
-                      onPick: () => patch("audio", { stamps: true }),
+                      key: "footsteps",
+                      label: t.lab.footsteps,
+                      disabled: footstepsOn || footstepIds.length === 0,
+                      onPick: () => patch("audio", { footsteps: true }),
                     },
                   ]}
                 />
@@ -7908,17 +7979,41 @@ export default function Lab() {
                   onRemove={clearLyrics}
                 />
               )}
-              {stampsOn && (
+              {footstepsOn && (
                 // One sound and no file behind it, so there is nothing to
                 // upload: the row is here for the level and the off.
                 <ClipRow
-                  icon={Footprints}
-                  clip={t.lab.stampSounds}
-                  empty={t.lab.stampSounds}
-                  kind={t.lab.kinds.stamps}
-                  onRemove={() => patch("audio", { stamps: false })}
-                  volume={stampsVolume}
-                  onVolume={(v) => patch("audio", { stampsVolume: v })}
+                  icon={SportShoe}
+                  clip={t.lab.footsteps}
+                  empty={t.lab.footsteps}
+                  kind={t.lab.kinds.footsteps}
+                  menu={{
+                    label: t.lab.footstepSoundMenu,
+                    items: [
+                      ...FOOTSTEP_SOUNDS.map((s) => ({
+                        key: s,
+                        label: t.lab.footstepSound[s],
+                        checked: footstepsSound === s,
+                        onPick: () => patch("audio", { footstepsSound: s }),
+                      })),
+                      // The scene's own, once it has one: switching to a
+                      // built-in keeps it, so it can be switched back to.
+                      ...(footstepFile
+                        ? [
+                            {
+                              key: "custom",
+                              label: footstepFile.name,
+                              checked: footstepsSound === "custom",
+                              onPick: () => patch("audio", { footstepsSound: "custom" }),
+                            },
+                          ]
+                        : []),
+                      { key: "upload", label: t.lab.footstepUpload, onPick: () => footstepInput.current?.click() },
+                    ],
+                  }}
+                  onRemove={() => patch("audio", { footsteps: false })}
+                  volume={footstepsVolume}
+                  onVolume={(v) => patch("audio", { footstepsVolume: v })}
                 />
               )}
             </StackGroup>
@@ -9863,7 +9958,7 @@ export default function Lab() {
               backgroundColor={settings.background.color}
               musicUrl={musicClip?.url ?? null}
               musicVolume={audio.volume}
-              stamps={stampsOn ? { volume: stampsVolume } : null}
+              footsteps={footstepsOn ? { source: footstepsSource, volume: footstepsVolume } : null}
               background={framing.background}
               onBackgroundChange={framing.setBackground}
               onExportingChange={(v) => {

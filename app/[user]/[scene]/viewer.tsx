@@ -17,7 +17,7 @@ import { useSceneCast, useSceneSync } from "@/hooks/use-scene-sync"
 import { useSceneMedia } from "@/hooks/use-scene-media"
 import { useSceneClips } from "@/hooks/use-scene-clips"
 import { useAudioClock, useTrackAudio } from "@/hooks/use-audio-clock"
-import { useStamps } from "@/hooks/use-stamps"
+import { useFootstepSource, useFootsteps } from "@/hooks/use-footsteps"
 import { useMediaBackdrop } from "@/hooks/use-media-backdrop"
 import { SceneBackdrop } from "@/components/scene/scene-backdrop"
 import { specOf } from "@/lib/grade"
@@ -438,6 +438,7 @@ function SceneStage({
     loadMorphFile,
     loadMorphUrl,
     syncLyricsTo,
+    footstepFile,
   } = useEngine(scene)
   // Published upward so Fork can hand the unzipped assets to the editor. A ref,
   // not state: nothing renders differently for it, and the getter is stable.
@@ -547,13 +548,15 @@ function SceneStage({
     autoplay: true,
   })
   useTrackAudio({ engineRef, audioRef: audioElRef, ready, url: audioSrc, volume: scene.state.settings.audio.volume })
-  // Stamp sounds, when the author turned them on — the same hook the editor
-  // runs, found from the same clips.
-  useStamps({
+  // Footstep sounds, when the author turned them on — the same hooks the editor
+  // runs, found from the same clips, playing the sound the scene chose.
+  const footstepsSource = useFootstepSource(scene.state.settings.audio.footstepsSound, footstepFile)
+  useFootsteps({
     engineRef,
     ids: animated,
-    enabled: scene.state.settings.audio.stamps === true && ready,
-    volume: scene.state.settings.audio.stampsVolume ?? 1,
+    enabled: scene.state.settings.audio.footsteps === true && ready,
+    source: footstepsSource,
+    volume: scene.state.settings.audio.footstepsVolume ?? 1,
     lanes: timeline.visibility,
   })
 
