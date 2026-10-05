@@ -92,7 +92,7 @@ const EFFECTS: Record<string, Zh> = {
   "CRT Glitch": { name: "CRT 故障", description: "整个画面变成老式 CRT 电视，带扫描线、雪花和故障。" },
   "8-Bit": { name: "8 位像素", description: "整个画面变成 8 位像素画。" },
   "Holo Card": { name: "全息卡", description: "画面显示在旋转的全息卡牌上。" },
-  "Stained Glass": { name: "彩色玻璃", description: "画面嵌进教堂的彩色玻璃窗，沙特尔蓝与宝石红，每个角色各占一扇窗。" },
+  "Stained Glass": { name: "彩色玻璃", description: "角色化作教堂彩色玻璃窗上的人物，在三扇窗之间跳跃。" },
   "Laser Eyes": { name: "激光眼", description: "从眼睛射出的激光，会击中并灼烧场景。" },
   "Laser Stare": { name: "激光凝视", description: "发出红光的眼睛，不发射激光。" },
   Mirror: { name: "镜子", description: "可放置在场景中的真实镜子。" },
