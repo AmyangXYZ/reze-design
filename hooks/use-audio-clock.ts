@@ -189,6 +189,25 @@ export function useAudioClock({
      * for the next frame to try again, which keeps the retry loop this relies on.
      */
     let playPending = false
+    /**
+     * Coming back to the window. A hidden page gets no frames, but the engine
+     * advances by wall time, so the first frame back is one big jump — and the
+     * re-stamp below for a jump is a seek on a PLAYING element, which lands
+     * tens of ms late while the motion keeps going. Free-run never corrects
+     * after that, so the lag stayed until the next manual seek: the "music is
+     * behind after switching windows" report. So for a short while after
+     * returning, re-stamp whenever the element has settled off the clock —
+     * a few tries, each landing closer, then left alone again.
+     */
+    let resyncFrames = 0
+    let resyncTries = 0
+    const onReturn = () => {
+      if (document.visibilityState !== "visible") return
+      resyncFrames = 90
+      resyncTries = 3
+    }
+    document.addEventListener("visibilitychange", onReturn)
+    window.addEventListener("focus", onReturn)
     const onPlaying = () => {
       if (!stampArmed) return
       stampArmed = false
@@ -260,6 +279,13 @@ export function useAudioClock({
           if ((!wasPlaying && Math.abs(audio.currentTime - p.current) > 0.15) || (!audio.seeking && jumped)) {
             audio.currentTime = p.current
             stampArmed = true
+          }
+          if (resyncFrames > 0) {
+            resyncFrames--
+            if (resyncTries > 0 && !audio.seeking && !audio.paused && Math.abs(audio.currentTime - p.current) > 0.06) {
+              audio.currentTime = p.current
+              resyncTries--
+            }
           }
           // A track SHORTER than the clip ends part-way through and leaves the
           // element paused. Seeking it back to 0 when the motion loops does not
@@ -334,6 +360,8 @@ export function useAudioClock({
     return () => {
       cancelAnimationFrame(raf)
       audio.removeEventListener("playing", onPlaying)
+      document.removeEventListener("visibilitychange", onReturn)
+      window.removeEventListener("focus", onReturn)
       window.removeEventListener("pointerdown", warm)
       window.removeEventListener("keydown", warm)
     }
