@@ -187,6 +187,7 @@ export const RenderPanel = memo(function RenderPanel({
   backgroundColor,
   musicUrl,
   musicVolume,
+  stamps,
   audioSource,
   onAudioSourceChange,
   background,
@@ -219,6 +220,9 @@ export const RenderPanel = memo(function RenderPanel({
   musicUrl: string | null
   /** The scene's music level — the file is written at the level the preview played. */
   musicVolume?: number
+  /** Stamp sounds when the scene has them on, null when off — the file has
+   *  them wherever the preview played them. */
+  stamps?: { volume: number } | null
   /** Lifted to the page: also routes live audio (music element / backdrop video). */
   /** Optional as a pair: a host that omits them hides the audio row, and the
    *  export derives the source itself — music when a track is loaded, silence
@@ -548,7 +552,7 @@ export const RenderPanel = memo(function RenderPanel({
           fps: VIDEO_FPS,
           bitrate: rate,
           codec: hevc ? "hevc" : "h264",
-          audioSource: audioSource ?? (musicUrl ? "music" : "none"),
+          audioSource: audioSource ?? (musicUrl || stamps ? "music" : "none"),
           watermark: compositing ? false : watermark,
           background,
           target,
@@ -557,6 +561,7 @@ export const RenderPanel = memo(function RenderPanel({
         backgroundColor,
         musicUrl,
         musicVolume,
+        stamps,
         fileStream,
         directory,
         planes,
@@ -747,7 +752,7 @@ export const RenderPanel = memo(function RenderPanel({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="music" disabled={!musicUrl}>
+                <SelectItem value="music" disabled={!musicUrl && !stamps}>
                   {t.render.audioMusic}
                 </SelectItem>
                 <SelectItem value="none">

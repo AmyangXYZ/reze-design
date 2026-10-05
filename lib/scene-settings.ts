@@ -141,7 +141,14 @@ export type SceneSettings = {
    * exported file all read this one number. A viewer turning their own speakers
    * down is a different act, and their system already has that control.
    */
-  audio: { volume: number }
+  audio: {
+    volume: number
+    /** Stamp sounds from the cast's feet (lib/stamps.ts): on, and their level
+     *  0–1. Optional — a document from before they existed has neither, which
+     *  is off. */
+    stamps?: boolean
+    stampsVolume?: number
+  }
   ground: {
     color: string
     /** Side length of the (square) ground plane in world units — the model is ~18 units tall. */

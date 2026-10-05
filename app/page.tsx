@@ -119,6 +119,7 @@ import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { Slider } from "@/components/ui/slider"
 import { ColorField } from "@/components/color-picker"
 import { useAudioClock, useTrackAudio } from "@/hooks/use-audio-clock"
+import { useStamps } from "@/hooks/use-stamps"
 import { Dopesheet } from "@/components/scene/dopesheet"
 import { ClipBridge } from "@/components/scene/clip-bridge"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -988,6 +989,15 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       label: l.lipSyncFromLyrics,
       altLabels: [alt.lipSyncFromLyrics],
       keywords: ["lip", "lyrics", "mouth", "sync", "vmd", "口型", "歌词", "口パク", "リップシンク"],
+    },
+    {
+      id: "stamps",
+      repeatable: true,
+      section: "command",
+      icon: Footprints,
+      label: l.stampSounds,
+      altLabels: [alt.stampSounds],
+      keywords: ["stamp", "stomp", "step", "foot", "heel", "tap", "sound", "sfx", "踩脚", "脚步", "音效", "足音"],
     },
     {
       id: "upload-stage",
@@ -3960,6 +3970,27 @@ export default function Lab() {
    * the prop setters), through the same module's push.
    */
   const timeline = useMemo(() => timelineOf({ models, props, effects: bgEffects }), [models, props, bgEffects])
+  /**
+   * Stamp sounds: a foot that lands is heard (lib/stamps.ts). A switch in the
+   * scene's audio settings rather than a file — the landings are found from
+   * whatever each character is dancing, again whenever that changes, so there
+   * is nothing to regenerate and nothing to go stale. Riding the settings is
+   * also what carries it into the draft, the bundle and a published scene.
+   */
+  const stampsOn = audio.stamps === true
+  const stampsVolume = audio.stampsVolume ?? 1
+  const stampIds = useMemo(
+    () => models.filter((m) => !stageIds.has(m.id) && animByModel[m.id]).map((m) => m.id),
+    [models, stageIds, animByModel],
+  )
+  useStamps({
+    engineRef,
+    ids: stampIds,
+    enabled: stampsOn && ready,
+    volume: stampsVolume,
+    lanes: timeline.visibility,
+    disabled: framing.exporting,
+  })
   /** Which model's lane is picked, for the row highlight. */
   const [selectedVisibility, setSelectedVisibility] = useState<string | null>(null)
   /** The cast as an effect can be aimed at it: the id the document stores and the
@@ -6471,7 +6502,8 @@ export default function Lab() {
         const target = primaryId
         if (target && lyricsClip) void generateLipSync(target)
         else if (target) lyricsInput.current?.click()
-      } else if (item.id === "camera") gotoSection("camera")
+      } else if (item.id === "stamps") patch("audio", { stamps: true })
+      else if (item.id === "camera") gotoSection("camera")
       else if (item.id === "scene-new") cmdRef.current.newScene()
       else if (item.id === "scene-reset") cmdRef.current.resetSceneDefaults()
       else if (item.id === "scene-export") void cmdRef.current.exportScene()
@@ -7831,6 +7863,13 @@ export default function Lab() {
                             onPick: () => lyricsInput.current?.click(),
                           },
                         ]),
+                    // Last: the files first, then the one thing made here.
+                    {
+                      key: "stamps",
+                      label: t.lab.stampSounds,
+                      disabled: stampsOn || stampIds.length === 0,
+                      onPick: () => patch("audio", { stamps: true }),
+                    },
                   ]}
                 />
               }
@@ -7863,6 +7902,20 @@ export default function Lab() {
                   kind={t.lab.kinds.lyrics}
                   onPick={() => lyricsInput.current?.click()}
                   onRemove={clearLyrics}
+                />
+              )}
+              {stampsOn && (
+                // One sound and no file behind it, so picking the name has
+                // nothing to open: the row is here for the level and the off.
+                <ClipRow
+                  icon={Footprints}
+                  clip={t.lab.stampSounds}
+                  empty={t.lab.stampSounds}
+                  kind={t.lab.kinds.stamps}
+                  onPick={() => {}}
+                  onRemove={() => patch("audio", { stamps: false })}
+                  volume={stampsVolume}
+                  onVolume={(v) => patch("audio", { stampsVolume: v })}
                 />
               )}
             </StackGroup>
@@ -9807,6 +9860,7 @@ export default function Lab() {
               backgroundColor={settings.background.color}
               musicUrl={musicClip?.url ?? null}
               musicVolume={audio.volume}
+              stamps={stampsOn ? { volume: stampsVolume } : null}
               background={framing.background}
               onBackgroundChange={framing.setBackground}
               onExportingChange={(v) => {

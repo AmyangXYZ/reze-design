@@ -17,6 +17,8 @@ import type { Engine } from "reze-engine"
 import { coverCrop, openAnimatedImage, type BackdropKind, type BackdropMedia } from "./backdrop"
 import { GREEN, isCompositingBackground, type ExportBackground } from "./export-background"
 import { PngSequenceWriter } from "./png-sequence"
+import { mixStamps, stampsNow, type Stamp } from "./stamps"
+import { visibilityAt } from "./timeline/visibility"
 import { aeScript, type CastSample, type ShotSample } from "./ae-script"
 import { FPS } from "./clip"
 import { applyTimelineFrame, type SceneTimeline } from "./timeline"
@@ -747,6 +749,9 @@ export async function exportVideo(opts: {
   /** The scene's music level, amplitude 0–1. The file gets the level the
    *  preview played at. */
   musicVolume?: number
+  /** Stamp sounds, when the scene has them on — mixed into the file's audio
+   *  as the preview plays them (lib/stamps.ts). */
+  stamps?: { volume: number } | null
   /** File System Access API writable — muxed targets. */
   fileStream?: FileSystemWritableFileStream
   /** Destination folder — PNG sequence target. */
@@ -830,6 +835,24 @@ export async function exportVideo(opts: {
   let sink: FrameSink | null = null
 
   try {
+    // Stamps, BEFORE the sink: the muxer takes the whole audio track up front.
+    // Each character's are the ones the preview found for its clip — traced
+    // now if the preview never got to it, with the render loop already
+    // stopped; the seek to the start below puts every clock back.
+    if (target !== "png" && settings.audioSource === "music" && opts.stamps) {
+      const lanes = opts.timeline?.visibility
+      const placed: Stamp[] = []
+      ;[modelName, ...(opts.extraModelNames ?? [])].forEach((id) => {
+        const m = engine.getModel(id)
+        if (!m) return
+        for (const stamp of stampsNow(m, engine.getIKEnabled())) {
+          if (stamp.time >= startTime + duration) break
+          if (lanes?.[id] && !visibilityAt(lanes[id], stamp.time * FPS).visible) continue
+          placed.push(stamp)
+        }
+      })
+      audioBuffer = await mixStamps(audioBuffer, placed, startTime, duration, opts.stamps.volume)
+    }
     // Before the sink: a source canvas has to be at output size when the
     // encoder reads its dimensions off the first frame.
     engine.setRenderSize(width, height)

@@ -17,6 +17,7 @@ import { useSceneCast, useSceneSync } from "@/hooks/use-scene-sync"
 import { useSceneMedia } from "@/hooks/use-scene-media"
 import { useSceneClips } from "@/hooks/use-scene-clips"
 import { useAudioClock, useTrackAudio } from "@/hooks/use-audio-clock"
+import { useStamps } from "@/hooks/use-stamps"
 import { useMediaBackdrop } from "@/hooks/use-media-backdrop"
 import { SceneBackdrop } from "@/components/scene/scene-backdrop"
 import { specOf } from "@/lib/grade"
@@ -546,6 +547,15 @@ function SceneStage({
     autoplay: true,
   })
   useTrackAudio({ engineRef, audioRef: audioElRef, ready, url: audioSrc, volume: scene.state.settings.audio.volume })
+  // Stamp sounds, when the author turned them on — the same hook the editor
+  // runs, found from the same clips.
+  useStamps({
+    engineRef,
+    ids: animated,
+    enabled: scene.state.settings.audio.stamps === true && ready,
+    volume: scene.state.settings.audio.stampsVolume ?? 1,
+    lanes: timeline.visibility,
+  })
 
   return (
     // A fragment: the page above owns <main> and the chrome, so nothing here has
