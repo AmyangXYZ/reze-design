@@ -101,7 +101,7 @@ const EFFECTS: Record<string, Zh> = {
   Gojo: { name: "五条悟", description: "蓝色和红色光球环绕角色，合成紫色光球后爆发。" },
   "World Slash": { name: "世界斩", description: "一道斩击在角色腰部将画面一分为二。" },
   "Hand Threads": { name: "手部丝线", description: "从双手腕拖出的光丝。" },
-  "Field of Flowers": { name: "花海", description: "会被脚踩弯的草地花海。" },
+  "Field of Flowers": { name: "花田", description: "变出花田的魔法。" },
   "Hand Blossoms": { name: "手中花", description: "从双手飘出的花朵。" },
   "Finger Shapes": { name: "手势", description: "在比心、取景框等手势周围出现霓虹轮廓。" },
   "Candle Flames (wick bones)": { name: "烛火（烛芯骨骼）", description: "在烛芯骨骼（名称以 flame 开头）上显示跳动的火焰。需要带烛芯骨骼的场景。" },
