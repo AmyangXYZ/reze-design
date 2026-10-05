@@ -1622,7 +1622,9 @@ function ClipRow({
   /** Whose clip, when several rows share a kind — aria only; the eye matches
    *  rows to the cast by order, the way the timeline lanes do. */
   of?: string
-  onPick: () => void
+  /** Put a file in the slot. Absent on a row with no file behind it — the
+   *  footsteps — and the upload control goes with it. */
+  onPick?: () => void
   onRemove: () => void
   /** Open this clip in the timeline editor. Absent on rows there is nothing to
    *  edit in — music, and anything the editor cannot key. */
@@ -1644,7 +1646,7 @@ function ClipRow({
   // Four fit the wide reserve; three fit the narrow one. Counted rather than
   // inferred from which optional props are present, so a row that gains a
   // control cannot silently outgrow the space its name is kept clear of.
-  const actionCount = 2 + (onEdit ? 1 : 0) + (onDownload ? 1 : 0) + (onVolume ? 1 : 0)
+  const actionCount = 1 + (onPick ? 1 : 0) + (onEdit ? 1 : 0) + (onDownload ? 1 : 0) + (onVolume ? 1 : 0)
   const Speaker = (volume ?? 1) <= 0 ? VolumeX : (volume ?? 1) < 0.5 ? Volume1 : Volume2
   return (
     // The ROW is the anchor, not the speaker inside it: the level opens as a
@@ -1675,7 +1677,7 @@ function ClipRow({
                     {clipLabel(clip)}
                   </span>
                 ) : (
-                  <UploadInvite label={empty} onClick={onPick} aria={t.lab.aria.upload(kind, of)} />
+                  <UploadInvite label={empty} onClick={onPick ?? (() => {})} aria={t.lab.aria.upload(kind, of)} />
                 )
               }
               actions={
@@ -1684,15 +1686,17 @@ function ClipRow({
                       file here is what an empty row is FOR, editing needs one, and
                       deleting ends it. Fixed in every state so the control under
                       the cursor does not move as a scene fills in. */}
-                  <CastAction
-                    icon={Upload}
-                    // A step up from size-3: the Upload mark sits inside its own
-                    // padding, so at the size the row's other glyphs use it reads
-                    // as the smallest thing in a row where it is the primary act.
-                    iconClass="size-3.5"
-                    label={clip ? t.lab.aria.replace(kind, of) : t.lab.aria.upload(kind, of)}
-                    onClick={onPick}
-                  />
+                  {onPick && (
+                    <CastAction
+                      icon={Upload}
+                      // A step up from size-3: the Upload mark sits inside its own
+                      // padding, so at the size the row's other glyphs use it reads
+                      // as the smallest thing in a row where it is the primary act.
+                      iconClass="size-3.5"
+                      label={clip ? t.lab.aria.replace(kind, of) : t.lab.aria.upload(kind, of)}
+                      onClick={onPick}
+                    />
+                  )}
                   {/* No iconClass — the same PenLine at the same size as the one on
                       an effect row. Editing a clip and editing an effect are the
                       same act on two kinds of thing, and they were drawn a size
@@ -7905,14 +7909,13 @@ export default function Lab() {
                 />
               )}
               {stampsOn && (
-                // One sound and no file behind it, so picking the name has
-                // nothing to open: the row is here for the level and the off.
+                // One sound and no file behind it, so there is nothing to
+                // upload: the row is here for the level and the off.
                 <ClipRow
                   icon={Footprints}
                   clip={t.lab.stampSounds}
                   empty={t.lab.stampSounds}
                   kind={t.lab.kinds.stamps}
-                  onPick={() => {}}
                   onRemove={() => patch("audio", { stamps: false })}
                   volume={stampsVolume}
                   onVolume={(v) => patch("audio", { stampsVolume: v })}
