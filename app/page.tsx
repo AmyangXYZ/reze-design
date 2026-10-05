@@ -10003,7 +10003,9 @@ export default function Lab() {
         >
           <span className="size-2 animate-pulse rounded-full bg-red-500" />
           {t.lab.exporting}
-          {exportPct !== null ? ` ${exportPct}%` : "…"}
+          {/* Four characters wide in figures of one width, so the pill holds
+              still from 0% to 100%. */}
+          <span className="min-w-[4ch] text-right tabular-nums">{exportPct !== null ? `${exportPct}%` : "…"}</span>
         </button>
       )}
 
