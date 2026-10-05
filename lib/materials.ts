@@ -1,4 +1,4 @@
-import type { SceneSettings } from "@/lib/scene-settings"
+import { DEFAULT_BLOOM, DEFAULT_VIEW, type SceneSettings } from "@/lib/scene-settings"
 import { NODE_REGISTRY, type MaterialPreset, type ShaderGraph } from "reze-engine"
 import graphs from "@/content/graphs.json"
 import stageGraphs from "@/content/stage-graphs.json"
@@ -207,8 +207,18 @@ export const LOOK_PACKS: Record<
     }
   }
 > = {
-  // ACES, which took over from Filmic: the same rolled-off highlights.
-  ag: { tag: "aether-gazer", transform: "aces", exposure: 0.6, world: { color: "#ed6aff", strength: 0.66 } },
+  // The default scene's own staging: the game's curve at exposure 0 over the
+  // magenta world, its key, and the game's bloom in the demo's pink.
+  ag: {
+    tag: "aether-gazer",
+    transform: DEFAULT_VIEW.transform,
+    exposure: DEFAULT_VIEW.exposure,
+    world: { color: "#ed6aff", strength: 0.66 },
+    light: {
+      sun: { color: "#ffffff", strength: 0.64, azimuth: 205, elevation: 21 },
+      bloom: { ...DEFAULT_BLOOM, color: "#ffc9c9" },
+    },
+  },
   wuwa: { tag: "wuthering-waves", transform: "none", exposure: 0, world: { color: "#fdf2f8", strength: 0.36 } },
   // As set by hand in a scene (2026-09-08): no tone curve (then "standard") at 0.2 over
   // a warm pink world at 0.62, lit by a 2.0 sun from behind and a little above,
