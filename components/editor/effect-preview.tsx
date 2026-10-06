@@ -15,6 +15,7 @@ import { memo, useEffect, useRef } from "react"
 import { EFFECT_MATH_API, PARTICLE_STRUCT_WGSL } from "reze-engine"
 import { cn } from "@/lib/utils"
 import { effectTexturesFor } from "@/lib/effect-textures"
+import { previewHasCast } from "@/lib/effects"
 
 /** Same detection the engine does at install time — `fn` and the name. */
 const definesBackground = (wgsl: string) => /\bfn\s+background\s*\(/.test(wgsl)
@@ -288,6 +289,10 @@ fn rzTrail(subject: i32, slot: i32, i: i32) -> vec4f {
 // can be antialiased across one pixel and a rim can sit at a true offset from
 // the outline rather than at whichever pixel the step landed on.
 const PV_ID: u32 = 7u;
+/** False on a card that shows no cast (lib/effects previewHasCast): no body
+ *  drawn, no ids, and the silhouette infinitely far — every reader agrees
+ *  there is nobody, because they all read pvBodyMask or the distance. */
+const PV_CAST: bool = PV_CAST_VALUE;
 
 /** A joint in the same space, so the anchors and the silhouette cannot
  *  disagree about where the subject is. */
@@ -311,6 +316,7 @@ fn pvFigure(uv: vec2f) -> f32 {
 /** Coverage, antialiased across ONE PIXEL — which is what makes the edge clean
  *  at a card's resolution instead of a staircase for a rim to follow. */
 fn pvBodyMask(uv: vec2f) -> f32 {
+  if (!PV_CAST) { return 0.0; }
   let px = 1.0 / max(u.res.y, 1.0);
   return 1.0 - smoothstep(-px, px, pvFigure(uv));
 }
@@ -538,6 +544,7 @@ fn rzBackground() -> vec4f { return vec4f(0.075, 0.06, 0.1, 1.0); }
  * that guards on d >= 0 has to see the same negative here.
  */
 fn rzCastDistance(uv: vec2f) -> f32 {
+  if (!PV_CAST) { return 1.0e6; }
   return max(-0.5, pvFigure(uv) * u.res.y / pvCardScale());
 }
 
@@ -811,7 +818,7 @@ fn rzTextureLod(i: u32, uv: vec2f, lod: f32) -> vec4f {
 `
 
 const PARTICLE_COMPUTE = (wgsl: string) =>
-  PREVIEW_WORLD.replace("USER_CODE", hosted(wgsl)) +
+  previewWorld(wgsl) +
   /* wgsl */ `
 @group(0) @binding(1) var<storage, read_write> particles: array<Particle>;
 ${TEXTURE_STUBS}
@@ -834,7 +841,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 `
 
 const PARTICLE_RENDER = (wgsl: string) =>
-  PREVIEW_WORLD.replace("USER_CODE", hosted(wgsl)) +
+  previewWorld(wgsl) +
   // Whether this pool would reach the bloom pyramid in the scene. The card has
   // no bloom pass, so an effect authored around one — HDR cores meant to grow a
   // halo — drew as small dim dots and looked worse than an effect that never
@@ -927,7 +934,7 @@ struct PVOut {
  * is this preview's, the ribbon drawn along it is the author's.
  */
 const TRAIL_RENDER = (wgsl: string) =>
-  PREVIEW_WORLD.replace("USER_CODE", hosted(wgsl)) +
+  previewWorld(wgsl) +
   // ONE ribbon, whatever the effect declares. Two hands' worth of short arcs
   // read as tangle at 118 pixels; slot 0 rides the equator, so a single ribbon
   // is one big legible sweep — which is what a card is for.
@@ -997,8 +1004,13 @@ struct TVOut {
 }
 `
 
+/** The world an effect compiles against, with its code and whether its card has a cast. */
+function previewWorld(wgsl: string): string {
+  return PREVIEW_WORLD.replace("USER_CODE", hosted(wgsl)).replace("PV_CAST_VALUE", String(previewHasCast(wgsl)))
+}
+
 function previewShader(wgsl: string): string {
-  return (PREVIEW_WORLD.replace("USER_CODE", hosted(wgsl)) + FIELD_TAIL)
+  return (previewWorld(wgsl) + FIELD_TAIL)
     .replace("BACKGROUND_CALL", definesBackground(wgsl) ? BACKGROUND_CALL : "")
     .replace("FOREGROUND_CALL", definesForeground(wgsl) ? FOREGROUND_CALL : "")
 }

@@ -351,3 +351,19 @@ fn noise2(p: vec2f) -> f32 {
 `
 
 export const EFFECTS = asBuiltins<EffectItem>(effects as Omit<EffectItem, "owner">[])
+
+// A CARD WITHOUT THE STAND-IN, by the effect's source — `payload.preview.cast`
+// false in its entry. The preview puts one sphere on every card so an effect
+// that reads the cast has somebody to read, but an effect that cuts the cast
+// INTO something — Stained Glass leads her into its windows — draws that sphere
+// as a hole in the glass, and its card is better as the windows alone. Keyed by
+// source, as effect-textures keys a built-in's pictures, so an applied copy of
+// the built-in previews the same way.
+const NO_CAST_PREVIEW = new Set(
+  (effects as { payload?: { wgsl?: unknown; preview?: { cast?: unknown } } }[])
+    .filter((e) => typeof e.payload?.wgsl === "string" && e.payload.preview?.cast === false)
+    .map((e) => e.payload!.wgsl as string),
+)
+
+/** Does this effect's card show the stand-in cast? */
+export const previewHasCast = (wgsl: string) => !NO_CAST_PREVIEW.has(wgsl)
