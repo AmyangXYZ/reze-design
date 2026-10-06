@@ -359,9 +359,9 @@ function Hero({ handle, scene, ...rest }: { handle: string; scene: ProfileScene 
           </div>
           <h2 className="mt-1 truncate text-lg font-semibold tracking-tight text-white">{scene.name}</h2>
           <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-white/75 tabular-nums">
-            <span className="flex items-center gap-1.5">
-              <Heart className="size-4" />
-              {scene.likeCount}
+            <span className="flex items-center gap-1.5 leading-none">
+              <Heart className="size-4 shrink-0" />
+              <span className="leading-none">{scene.likeCount}</span>
             </span>
             <When iso={scene.createdAt} />
           </div>
@@ -399,9 +399,9 @@ function SceneCard({ handle, scene, ...rest }: { handle: string; scene: ProfileS
           </span>
         )}
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-3 bg-gradient-to-t from-black/70 to-transparent px-3 pt-10 pb-2.5 text-sm text-white tabular-nums opacity-0 transition-opacity duration-200 group-hover:opacity-100 [@media(hover:none)]:opacity-100">
-          <span className="flex items-center gap-1">
-            <Heart className="size-3.5" />
-            {scene.likeCount}
+          <span className="flex items-center gap-1 leading-none">
+            <Heart className="size-3.5 shrink-0" />
+            <span className="leading-none">{scene.likeCount}</span>
           </span>
         </div>
       </div>
@@ -420,9 +420,9 @@ function PresetCard({ item, children }: { item: Published; children: React.React
       <div className="relative aspect-[16/10] overflow-hidden rounded-surface bg-zinc-900">{children}</div>
       <div className="mt-2.5 flex items-baseline justify-between gap-2">
         <div className="min-w-0 truncate text-sm text-foreground">{item.name}</div>
-        <span className="flex shrink-0 items-center gap-1 text-sm text-muted-foreground tabular-nums">
-          <Heart className="size-3.5" />
-          {item.likeCount}
+        <span className="flex shrink-0 items-center gap-1 self-center text-sm leading-none text-muted-foreground tabular-nums">
+          <Heart className="size-3.5 shrink-0" />
+          <span className="leading-none">{item.likeCount}</span>
         </span>
       </div>
     </div>

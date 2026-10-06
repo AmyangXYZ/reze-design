@@ -402,7 +402,7 @@ function LikeButton({ like, compact, className }: { like: LikeState; compact?: b
           )}
         />
       </Button>
-      <span className={cn("font-semibold text-foreground tabular-nums drop-shadow", compact ? "text-xs" : "text-sm")}>
+      <span className={cn("leading-none font-semibold text-foreground tabular-nums drop-shadow", compact ? "text-xs" : "text-sm")}>
         {like.count}
       </span>
     </div>

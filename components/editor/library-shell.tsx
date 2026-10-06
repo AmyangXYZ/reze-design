@@ -861,9 +861,12 @@ export function LibraryResults<T extends BrowseItem>({
                 <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
                   <AuthorAvatar name={builtinAuthor(id(item), item.author)} className="size-3.5" />
                   <AuthorLink name={builtinAuthor(id(item), item.author)} draft={st === "draft"} className="min-w-0 truncate" />
-                  <span className="ml-auto flex shrink-0 items-center gap-0.5 tabular-nums">
-                    <Heart className="size-3" />
-                    {numbers(id(item)).likes}
+                  {/* leading-none, and the count in its own span — see LibraryStats: a bare
+                      text node is as tall as the inherited line-height, and
+                      centring the heart against that box leaves the digits low. */}
+                  <span className="ml-auto flex shrink-0 items-center gap-1 leading-none tabular-nums">
+                    <Heart className="size-3 shrink-0" />
+                    <span className="leading-none">{numbers(id(item)).likes}</span>
                   </span>
                 </div>
               </div>
