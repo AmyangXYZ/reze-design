@@ -252,7 +252,7 @@ function EditorBody({
   }, [busy, code, onCompile])
 
   const noop = () => {}
-  const wgslScope = useUndoScope("wgsl", { undo: noop, redo: noop })
+  const wgslScope = useUndoScope("wgsl", { undo: noop, redo: noop }, { claim: true })
 
   return (
     // Claims the undo scope without registering handlers: the code lives in a real

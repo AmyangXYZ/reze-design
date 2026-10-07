@@ -445,7 +445,7 @@ export function GraphEditor({
 
   // Undo reaches this editor only while the user is working inside it — the scope
   // props go on the root below.
-  const undoScope = useUndoScope("graph", { undo, redo }, { enabled: open })
+  const undoScope = useUndoScope("graph", { undo, redo }, { enabled: open, claim: true })
 
   // ⇧D duplicates the current selection (Blender's shortcut).
   useEffect(() => {

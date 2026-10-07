@@ -187,6 +187,8 @@ import { useCommunity } from "@/hooks/use-community"
 import { communityItems, preloadCommunity } from "@/lib/community-store"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useSession } from "@/lib/auth-client"
+import { useSceneHistory } from "@/hooks/use-scene-history"
+import type { SceneSnapshot } from "@/lib/scene-history"
 import { freeName } from "@/lib/names"
 import {
   applyDefaults,
@@ -5748,6 +5750,40 @@ export default function Lab() {
     [commands, valuesShown, t, cast.length, timelineRoom, timelineUnfolded],
   )
 
+  // ── Undo / redo for the scene's configuration ──
+  //
+  // The same slice autosave writes, watched by lib/scene-history: settings,
+  // camera, effects, lamps, style groups, hidden materials. ⌘Z reaches it when
+  // no open editor (timeline, graph, WGSL) holds the key.
+  const hiddenByModel = useMemo(
+    () => Object.fromEntries(models.map((m) => [m.id, m.materials.filter((mat) => !mat.visible).map((mat) => mat.name)])),
+    [models],
+  )
+  const historySnapshot = useMemo<SceneSnapshot>(
+    () => ({ settings, camera, effects: documentEffects, lights, groups: groupsByModel, hidden: hiddenByModel }),
+    [settings, camera, documentEffects, lights, groupsByModel, hiddenByModel],
+  )
+  useSceneHistory({
+    scene,
+    active: ready && !forkPending,
+    snapshot: historySnapshot,
+    castKey: models.map((m) => m.id).join("|"),
+    modelName: (id) => models.find((m) => m.id === id)?.file ?? id,
+    restore: (target, current) => {
+      if (target.settings !== current.settings) setSettings(target.settings)
+      if (target.camera !== current.camera) changeCamera(target.camera)
+      if (target.effects !== current.effects) setBgEffectsState(target.effects)
+      if (target.lights !== current.lights) setLightsState(target.lights)
+      // Only models still in the scene: one removed since cannot take its groups back.
+      for (const m of models) {
+        const groups = target.groups[m.id]
+        if (groups && groups !== current.groups[m.id]) void applyGroups(m.id, groups)
+        const want = new Set(target.hidden[m.id] ?? [])
+        for (const mat of m.materials) if (mat.visible === want.has(mat.name)) toggleVisible(m.id, mat.name)
+      }
+    },
+  })
+
   // ── Persistence ──
   //
   // Two halves, the shipped editor's own: saveSceneState stores how the scene
@@ -10057,7 +10093,7 @@ export default function Lab() {
           {/* ⌘Z over keyframe edits. Headless, and scoped by DOM: the timeline
               and the properties dock tag their roots, so the keystroke reaches
               this only while the user is working in one of them. */}
-          <ClipHistory />
+          <ClipHistory open={timelineUnfolded} />
           {/* An edit becomes one of the scene's own files — the same slot an
               upload fills, so persistence, export and publish all carry it
               without knowing an editor exists. */}

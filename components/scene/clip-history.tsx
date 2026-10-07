@@ -72,7 +72,8 @@ const MAX_BYTES = 64 * 1024 * 1024
 
 type Step = { patches: ClipPatch[]; bytes: number }
 
-export function ClipHistory() {
+/** `open`: the timeline editor is showing, so ⌘Z is its even before a click. */
+export function ClipHistory({ open = false }: { open?: boolean }) {
   const editRevision = useClipSelector((s) => s.editRevision)
   const clipRevision = useClipSelector((s) => s.clipRevision)
   const cameraRevision = useClipSelector((s) => s.cameraRevision)
@@ -210,6 +211,7 @@ export function ClipHistory() {
     // Nothing loaded, nothing to take back — and an enabled scope with an empty
     // stack would swallow ⌘Z from whatever the user is actually in.
     enabled: clip != null || cameraTrack.length > 0,
+    claim: open,
   })
 
   return null

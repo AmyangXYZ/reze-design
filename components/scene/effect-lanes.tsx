@@ -271,7 +271,7 @@ export function EffectLanes<T extends LaneRow>({
     setSelected(new Set())
     apply(reapply(effectsRef.current, step.after, step.before))
   }, [apply])
-  useUndoScope(UNDO_SCOPE, { undo, redo }, { enabled: visible })
+  useUndoScope(UNDO_SCOPE, { undo, redo }, { enabled: visible, claim: true })
 
   // ── Gestures ────────────────────────────────────────────────────────────
   const targetsExcept = (except: string): number[] => {

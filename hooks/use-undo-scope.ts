@@ -8,6 +8,12 @@
 // `data-undo-scope` and ONE listener asks the DOM who should handle the key —
 // focus first, then whatever the user last clicked into. The DOM already knows
 // where the user is; nothing has to track it.
+//
+// One more claim on the key: an open editor (the timeline, a shader graph, the
+// WGSL editor) CLAIMS it the moment it opens, before anyone clicks into it —
+// opening an editor is saying "this is what I am working on". Between a claim
+// and a click, the more recent one wins. The page's own state, the fallback,
+// only hears ⌘Z when no editor is open.
 
 import { useEffect, useRef } from "react"
 
@@ -19,6 +25,10 @@ let fallbackScope: string | null = null
 /** Last scope the user clicked into; `document.activeElement` is <body> for the
  *  non-focusable divs most of this UI is built from. */
 let lastScope: string | null = null
+let lastScopeAt = 0
+/** Open editors holding the key, by when they opened. */
+const CLAIMS = new Map<string, number>()
+let clock = 0
 let installed = false
 
 const scopeOf = (el: Element | null): string | null =>
@@ -32,7 +42,10 @@ function install() {
     "pointerdown",
     (e) => {
       const s = scopeOf(e.target as Element)
-      if (s) lastScope = s
+      if (s) {
+        lastScope = s
+        lastScopeAt = ++clock
+      }
     },
     true,
   )
@@ -43,13 +56,26 @@ function install() {
     // Text fields keep their native undo — the WGSL editor is a real <textarea>,
     // and hijacking it would make code editing worse, not better.
     if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el.isContentEditable) return
-    const id = scopeOf(document.activeElement) ?? lastScope ?? fallbackScope
+    const id = scopeOf(document.activeElement) ?? recentScope() ?? fallbackScope
     const handlers = id ? REGISTRY.get(id) : undefined
     if (!handlers) return
     e.preventDefault()
     if (e.shiftKey) handlers.current.redo()
     else handlers.current.undo()
   })
+}
+
+/** The last-clicked scope or the latest claim, whichever came later. */
+function recentScope(): string | null {
+  let best = lastScope && REGISTRY.has(lastScope) ? lastScope : null
+  let at = best ? lastScopeAt : -1
+  for (const [id, when] of CLAIMS) {
+    if (when > at && REGISTRY.has(id)) {
+      best = id
+      at = when
+    }
+  }
+  return best
 }
 
 /**
@@ -59,10 +85,13 @@ function install() {
 export function useUndoScope(
   id: string,
   handlers: UndoHandlers,
-  opts?: { enabled?: boolean; fallback?: boolean },
+  /** `claim`: while true, this scope holds ⌘Z without being clicked into first —
+   *  for an editor that is open. */
+  opts?: { enabled?: boolean; fallback?: boolean; claim?: boolean },
 ): { "data-undo-scope"?: string } {
   const enabled = opts?.enabled ?? true
   const isFallback = opts?.fallback ?? false
+  const claim = (opts?.claim ?? false) && enabled
   // Handlers change identity every render; the listener reads through this ref so
   // it never calls a stale closure.
   const ref = useRef(handlers)
@@ -82,6 +111,18 @@ export function useUndoScope(
       if (fallbackScope === id) fallbackScope = null
     }
   }, [id, enabled, isFallback])
+
+  useEffect(() => {
+    if (!claim) return
+    CLAIMS.set(id, ++clock)
+    return () => {
+      CLAIMS.delete(id)
+      // Closing an editor hands the key back, even when a click made it the
+      // last scope: a scope that stays registered after its editor closes (the
+      // timeline's, alive while a clip is loaded) must not keep it.
+      if (lastScope === id) lastScope = null
+    }
+  }, [id, claim])
 
   return enabled ? { "data-undo-scope": id } : {}
 }
