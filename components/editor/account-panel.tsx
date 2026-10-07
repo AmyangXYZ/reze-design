@@ -7,8 +7,7 @@
 // store no password hashes at all.
 
 import { useEffect, useState, type ReactNode } from "react"
-import { ArrowUpRight, CircleUserRound, GalleryThumbnails, Heart, House, LogOut, Palette, Sparkles, WandSparkles, Workflow } from "lucide-react"
-import { PremiumFrame, PremiumMark } from "@/components/premium-badge"
+import { ArrowUpRight, CircleUserRound, Gem, GalleryThumbnails, Heart, House, LogOut, Palette, Sparkles, WandSparkles, Workflow } from "lucide-react"
 import { UserAvatar } from "@/components/user-avatar"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -443,18 +442,7 @@ export function AccountButton({
       {/* A shade larger than the outline icon — a photo needs more area than a
           line drawing to read at this size, without filling the whole button. */}
       {session ? (
-        <span className="relative flex">
-          {premium && (
-            <span className="absolute -inset-[3.5px]">
-              <PremiumFrame className="size-full" />
-            </span>
-          )}
-          <UserAvatar
-            name={handle}
-            image={session.user.image}
-            className={cn("relative text-[9px]", asHeader ? "size-6.5" : "size-5.5")}
-          />
-        </span>
+        <UserAvatar name={handle} image={session.user.image} className={cn("text-[9px]", asHeader ? "size-6.5" : "size-5.5")} />
       ) : (
         <CircleUserRound className={asHeader ? "size-5" : "size-4"} />
       )}
@@ -499,17 +487,24 @@ export function AccountButton({
         // No backdrop-blur: this floats over the 3D canvas, which is animating
         // exactly while the menu is open. Same reason, same tokens as the
         // dock's own popovers. See AGENTS.md.
-        className="w-60 rounded-surface border-line-strong bg-surface-raised p-0 shadow-float"
+        // 16rem: the width of the whole top-right cluster it hangs from, so its
+        // left edge meets the palette pill's.
+        className="w-[16rem] rounded-surface border-line-strong bg-surface-raised p-0 shadow-float"
       >
         <div className="flex items-center gap-2.5 px-3 py-3">
           <UserAvatar name={handle} image={session.user.image} className="size-9 text-xs" />
           <div className="min-w-0 flex-1 text-left">
-            <div className="flex min-w-0 items-center gap-1 font-mono text-xs font-medium">
-              <span className="truncate">{handle}</span>
-              {premium && <PremiumMark />}
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate font-mono text-xs font-medium">{handle}</span>
+              {/* The version chip's shape, filled in Reze's violet: the plan, shown to its holder. */}
+              {premium && (
+                <span className="inline-flex h-4 shrink-0 items-center gap-0.5 rounded-full border border-violet-300 bg-reze pr-1.5 pl-1 text-[10px] leading-none font-semibold tracking-wide text-white">
+                  <Gem className="size-2.5" strokeWidth={2.5} />
+                  {t.premium.label}
+                </span>
+              )}
             </div>
             <div className="truncate text-[11px] text-muted-foreground">{session.user.email}</div>
-            {premium && <div className="mt-0.5 text-[11px] font-medium text-premium">{t.premium.label}</div>}
           </div>
         </div>
         {session.user.username && !session.user.usernameChangedAt && (

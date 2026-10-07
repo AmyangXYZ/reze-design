@@ -1,7 +1,7 @@
 "use client"
 
 // Every account's picture, in one style: the photo, or initials on the name's
-// swatch. Premium is marked beside the name, not here (PremiumMark).
+// swatch.
 
 import { tagSwatch } from "@/components/editor/library-rail"
 import { cn } from "@/lib/utils"

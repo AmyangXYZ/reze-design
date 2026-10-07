@@ -635,7 +635,7 @@ function OperationsSection({
             className={row}
             disabled={!canSimplify}
             onClick={onSimplify}
-            title={simplifyTitle ?? t.lab.timeline.simplifyHint}
+            tooltip={simplifyTitle ?? t.lab.timeline.simplifyHint}
           >
             {t.lab.timeline.simplify}
           </Button>
@@ -646,7 +646,7 @@ function OperationsSection({
             className={destructiveRow}
             disabled={!canClear}
             onClick={onClear}
-            title={t.lab.timeline.clearHint}
+            tooltip={t.lab.timeline.clearHint}
           >
             {t.lab.timeline.clear}
           </Button>

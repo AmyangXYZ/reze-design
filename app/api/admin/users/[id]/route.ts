@@ -26,13 +26,10 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
   }
 
   // ── Plan ───────────────────────────────────────────────────────────────────
-  // Premium is invitation-only for now: granted and lifted here, by hand. The
-  // badge shows on cached pages, so they refresh like a rename does.
+  // Premium is invitation-only for now: granted and lifted here, by hand.
   if (plan !== undefined) {
     if (plan !== "free" && plan !== "premium") return NextResponse.json({ error: "invalid" }, { status: 400 })
     await db.update(user).set({ plan }).where(eq(user.id, id))
-    refreshEveryItem()
-    refreshMakerPages(await handleOf(id))
     return NextResponse.json({ id, plan })
   }
 

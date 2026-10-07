@@ -273,10 +273,10 @@
   --color-line: oklch(1 0 0 / 0.06);
   --color-line-strong: oklch(1 0 0 / 0.12);
 
-  /* Premium accounts: violet-400, the palette's nearest to Reze's hair lifted
-     to read on this ground. A brand mark — the seal and the avatar frame —
-     outside the three interaction accents. */
-  --color-premium: oklch(70.2% 0.183 293.541); /* = violet-400 */
+  /* Reze's violet: violet-400, the palette's nearest to her hair lifted to read
+     on this ground. The Premium line in the account menu — a brand mark, outside
+     the three interaction accents. */
+  --color-reze: oklch(70.2% 0.183 293.541); /* = violet-400 */
 
   --radius-surface: 12px;
   --radius-interior: 8px;

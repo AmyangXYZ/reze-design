@@ -56,9 +56,8 @@ export type GalleryScene = {
   nsfw?: boolean
   /** Its author asked that it be watched, not opened in the editor. */
   displayOnly?: boolean
-  /** The author's account picture and plan, for their avatar. */
+  /** The author's account picture, for their avatar. */
   authorImage?: string | null
-  authorPlan?: string | null
 }
 
 /**
@@ -695,11 +694,7 @@ function GalleryContent({
                     image={selected.authorImage}
                     className="size-4"
                   />
-                  <AuthorLink
-                    name={selected.author}
-                    premium={selected.authorPlan === "premium"}
-                    className="truncate select-text"
-                  />
+                  <AuthorLink name={selected.author} className="truncate select-text" />
                   <span className="shrink-0">· {publishedOn(selected.createdAt)}</span>
                 </div>
                 {selected.description && (

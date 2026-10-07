@@ -6,7 +6,7 @@
 
 import { useEffect, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Ban, BadgeCheck, PenLine, RotateCcw, Trash2 } from "lucide-react"
+import { Ban, Gem, PenLine, RotateCcw, Trash2 } from "lucide-react"
 import { authClient } from "@/lib/auth-client"
 
 
@@ -76,31 +76,39 @@ export function RenameUser({ id, username, isSelf }: { id: string; username: str
   )
 }
 
-/** Premium is invitation-only: granted and lifted here, yourself included. */
-export function PlanToggle({ id, premium, isSelf }: { id: string; premium: boolean; isSelf: boolean }) {
+/** A toggle that PATCHes one field on an account and, for your own, re-reads the
+ *  session past its 5-minute cookie cache so the change shows at once. */
+function useAccountToggle(id: string, isSelf: boolean) {
   const { run, disabled } = useAction()
+  const toggle = (body: Record<string, unknown>, question: string) => {
+    if (!confirm(question)) return
+    void run(`/api/admin/users/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }).then(async (ok) => {
+      if (!ok || !isSelf) return
+      await authClient.getSession({ query: { disableCookieCache: true } })
+      window.location.reload()
+    })
+  }
+  return { toggle, disabled }
+}
+
+/** Premium is invitation-only for now: granted and lifted here, yourself included. */
+export function PlanToggle({ id, premium, isSelf }: { id: string; premium: boolean; isSelf: boolean }) {
+  const { toggle, disabled } = useAccountToggle(id, isSelf)
   return (
     <button
       disabled={disabled}
-      onClick={() => {
-        if (!confirm(premium ? "Lift premium from this account?" : "Grant premium to this account?")) return
-        void run(`/api/admin/users/${id}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ plan: premium ? "free" : "premium" }),
-        }).then(async (ok) => {
-          // The session's cookie cache holds the plan for up to 5 minutes; your
-          // own badge should not wait for it. Re-read past the cache, then reload.
-          if (!ok || !isSelf) return
-          await authClient.getSession({ query: { disableCookieCache: true } })
-          window.location.reload()
-        })
-      }}
+      onClick={() =>
+        toggle({ plan: premium ? "free" : "premium" }, premium ? "Lift Premium from this account?" : "Grant Premium to this account?")
+      }
       className={`${iconBtn} ${premium ? "text-blue-400 hover:bg-blue-500/10" : "text-muted-foreground hover:bg-white/5 hover:text-foreground"}`}
-      aria-label={premium ? "Lift premium" : "Grant premium"}
-      title={premium ? "Premium · click to lift" : "Grant premium"}
+      aria-label={premium ? "Lift Premium" : "Grant Premium"}
+      title={premium ? "Premium · click to lift" : "Grant Premium"}
     >
-      <BadgeCheck className="size-3.5" />
+      <Gem className="size-3.5" />
     </button>
   )
 }

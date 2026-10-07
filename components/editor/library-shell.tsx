@@ -21,9 +21,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import type { LibraryFacet, LibraryKind, LibraryOwner } from "@/lib/library"
 import { RailRow, RailSection, RailTags } from "@/components/editor/library-rail"
-import { authorImage, builtinAuthor, isPremiumAuthor } from "@/lib/community-store"
+import { authorImage, builtinAuthor } from "@/lib/community-store"
 import { UserAvatar } from "@/components/user-avatar"
-import { PremiumMark } from "@/components/premium-badge"
 import Link from "next/link"
 import { ContextMenuItem, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger } from "@/components/ui/context-menu"
 import { storageKey } from "@/lib/storage"
@@ -46,13 +45,7 @@ export type BrowseItem = {
   mine?: boolean
   createdAt?: string
   visibility?: "public" | "private"
-  /** The author's plan, on rows the server sent (presets and scenes alike).
-   *  Absent on built-ins, which fall back to the library's own record. */
-  authorPlan?: string | null
 }
-
-/** Whether the row's author is premium: the row's own plan when it carries one. */
-const authorPremium = (i: BrowseItem) => (i.authorPlan == null ? undefined : i.authorPlan === "premium")
 
 /** Name, maker or tag. Inlined rather than borrowed from lib/library, which
  *  types its argument as a full LibraryItem. */
@@ -402,47 +395,24 @@ export function AuthorAvatar({
  * A maker's name, with their page one click away — in a new tab, so the library
  * and the scene behind it stay where they are. A draft's author has no page, so a
  * draft's name stays text. The link keeps its clicks and keys to itself: it sits
- * in cards that select on click and on Enter. A premium maker's name is
- * followed by the seal.
+ * in cards that select on click and on Enter.
  */
-export function AuthorLink({
-  name,
-  draft = false,
-  premium,
-  className,
-}: {
-  name: string
-  draft?: boolean
-  /** Given by rows that carry their own plan (the gallery); otherwise the library's. */
-  premium?: boolean
-  className?: string
-}) {
-  const seal = (premium ?? isPremiumAuthor(name)) && <PremiumMark />
-  if (draft) {
-    return (
-      <span className="inline-flex min-w-0 items-center gap-1">
-        <span className={className}>{name}</span>
-        {seal}
-      </span>
-    )
-  }
+export function AuthorLink({ name, draft = false, className }: { name: string; draft?: boolean; className?: string }) {
+  if (draft) return <span className={className}>{name}</span>
   const keep = (e: React.SyntheticEvent) => e.stopPropagation()
   return (
-    <span className="inline-flex min-w-0 items-center gap-1">
-      <Link
-        href={`/${name}`}
-        target="_blank"
-        rel="noopener"
-        prefetch={false}
-        onClick={keep}
-        onDoubleClick={keep}
-        onKeyDown={keep}
-        className={cn("underline-offset-2 transition-colors hover:text-foreground hover:underline", className)}
-      >
-        {name}
-      </Link>
-      {seal}
-    </span>
+    <Link
+      href={`/${name}`}
+      target="_blank"
+      rel="noopener"
+      prefetch={false}
+      onClick={keep}
+      onDoubleClick={keep}
+      onKeyDown={keep}
+      className={cn("underline-offset-2 transition-colors hover:text-foreground hover:underline", className)}
+    >
+      {name}
+    </Link>
   )
 }
 
@@ -820,7 +790,6 @@ export function LibraryResults<T extends BrowseItem>({
                   <AuthorLink
                     name={builtinAuthor(id(item), item.author)}
                     draft={st === "draft"}
-                    premium={authorPremium(item)}
                     className="truncate"
                   />
                 </span>
@@ -890,7 +859,6 @@ export function LibraryResults<T extends BrowseItem>({
                   <AuthorLink
                     name={builtinAuthor(id(item), item.author)}
                     draft={st === "draft"}
-                    premium={authorPremium(item)}
                     className="min-w-0 truncate"
                   />
                   {/* leading-none, and the count in its own span — see LibraryStats: a bare

@@ -248,9 +248,8 @@ async function galleryPage(
       nsfw: schema.libraryItems.nsfw,
       // So the detail panel can say a scene is watch-only before it is opened.
       displayOnly: schema.libraryItems.displayOnly,
-      // The author's avatar and plan, as the presets carry them.
+      // The author's avatar, as the presets carry it.
       authorImage: user.image,
-      authorPlan: user.plan,
       // Selected so the cursor can be stated in the same terms the rows were
       // ranked by. Stripped from the response below — it is paging machinery,
       // not something a card shows.
@@ -332,8 +331,6 @@ async function presetRows(where: ReturnType<typeof and>) {
       // than a string. Joined here because `author` is denormalised onto the row
       // and an image is the one thing about a person that is not.
       authorImage: user.image,
-      // So the avatar can wear the premium ring.
-      authorPlan: user.plan,
     })
     .from(schema.libraryItems)
     .leftJoin(user, eq(schema.libraryItems.ownerId, user.id))

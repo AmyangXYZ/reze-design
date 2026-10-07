@@ -7677,6 +7677,7 @@ export default function Lab() {
                 variant="ghost"
                 size="icon"
                 asChild
+                tooltip="GitHub"
                 className="size-7 shrink-0 rounded-lg text-foreground hover:bg-white/5 hover:text-foreground"
               >
                 <a href={REPO_URL} target="_blank" rel="noreferrer" aria-label="GitHub">

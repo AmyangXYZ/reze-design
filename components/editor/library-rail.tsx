@@ -289,7 +289,7 @@ export function LibraryLike({ likeCount, liked, canLike, onToggle }: LikeProps) 
       variant="ghost"
       size="sm"
       disabled={!canLike}
-      title={canLike ? undefined : t.library.signInToLike}
+      tooltip={canLike ? undefined : t.library.signInToLike}
       aria-pressed={liked}
       onClick={(e) => {
         // The surface underneath may select; the heart must not also select it.

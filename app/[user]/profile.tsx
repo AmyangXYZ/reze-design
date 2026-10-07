@@ -24,7 +24,6 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { PremiumMark } from "@/components/premium-badge"
 import { UserAvatar } from "@/components/user-avatar"
 import { EffectPreview } from "@/components/editor/effect-preview"
 import { GradePreview } from "@/components/editor/grade-preview"
@@ -58,7 +57,6 @@ type Manage = { pin: (scene: ProfileScene, on: boolean) => void; remove: (scene:
 export function Profile({
   handle,
   image,
-  premium,
   joined,
   scenes: initialScenes,
   effects,
@@ -67,7 +65,6 @@ export function Profile({
 }: {
   handle: string
   image: string | null
-  premium: boolean
   joined: string
   scenes: ProfileScene[]
   effects: ProfileEffect[]
@@ -165,10 +162,7 @@ export function Profile({
             className="size-14 text-sm sm:size-16"
           />
           <div className="min-w-0">
-            <div className="flex min-w-0 items-center gap-1.5 text-lg">
-              <h1 className="truncate font-semibold tracking-tight text-foreground">@{handle}</h1>
-              {premium && <PremiumMark />}
-            </div>
+            <h1 className="truncate text-lg font-semibold tracking-tight text-foreground">@{handle}</h1>
             <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground tabular-nums">
               <span>{t.profile.scenes(scenes.length)}</span>
               <span aria-hidden>·</span>

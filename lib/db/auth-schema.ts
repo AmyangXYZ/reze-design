@@ -20,8 +20,8 @@ export const user = pgTable("user", {
   banned: boolean("banned").default(false).notNull(),
   bannedAt: timestamp("banned_at"),
   banReason: text("ban_reason"),
-  /** "free" or "premium". Premium is granted by hand from /admin — invited
-   *  creators — and is what the premium badge and the AI panel read. */
+  /** "free" or "premium". Granted by hand from /admin for now; shown to the
+   *  account itself in its menu, and what the AI panel reads. */
   plan: text("plan").$type<Plan>().default("free").notNull(),
   image: text("image"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

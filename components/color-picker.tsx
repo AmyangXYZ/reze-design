@@ -84,7 +84,7 @@ function Swatch({ hex, onPick, label, className }: { hex: string; onPick: (hex: 
     <Button
       variant="ghost"
       aria-label={label ?? hex}
-      title={label ? `${label} ${hex}` : hex}
+      tooltip={label ? `${label} ${hex}` : hex}
       className={cn(
         // A PALETTE CELL'S SIZE, not a stretch to the column: the first tab's
         // cells are ~36×20 with a hairline ring, and swatches that grew to fill
@@ -283,7 +283,7 @@ function ChannelPicker({
               <Button
                 variant="ghost"
                 aria-label={tc.backTo(original)}
-                title={tc.backTo(original)}
+                tooltip={tc.backTo(original)}
                 className="h-full flex-1 rounded-none p-0"
                 style={{ background: original }}
                 onClick={() => pick(original)}
@@ -291,7 +291,7 @@ function ChannelPicker({
               <div className="h-full flex-1" style={{ background: value }} />
             </div>
             {EyeDropper && (
-              <Button variant="ghost" size="icon-xs" aria-label={tc.eyedropper} title={tc.eyedropper} onClick={sample}>
+              <Button variant="ghost" size="icon-xs" aria-label={tc.eyedropper} tooltip={tc.eyedropper} onClick={sample}>
                 <Pipette />
               </Button>
             )}
