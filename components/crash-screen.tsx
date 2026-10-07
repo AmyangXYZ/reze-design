@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react"
 import { Button } from "@/components/ui/button"
 import { buildReport, collectStorage, type StorageSnapshot } from "@/lib/crash-log"
+import { storageKey } from "@/lib/storage"
 import { cn } from "@/lib/utils"
 
 const ISSUES_URL = "https://github.com/AmyangXYZ/reze-design/issues/new"
@@ -35,8 +36,8 @@ const COPY = {
     reportHint: "Copy the report first — paste it into the issue.",
     resetTitle: "Still broken after a reload?",
     resetBlurb:
-      "Clear the scene this browser has saved and start from the default one. Published scenes and anything you have shared are not affected.",
-    reset: "Clear saved scene",
+      "Clear what this browser has saved — the scene, cached files and settings — and start from the default scene. Your drafts, published scenes and anything you have shared are kept.",
+    reset: "Reset local data",
     confirm: "Clear it — this cannot be undone",
     cancel: "Cancel",
     clearing: "Clearing…",
@@ -53,8 +54,8 @@ const COPY = {
     report: "提交问题",
     reportHint: "请先复制报告，再粘贴到问题里。",
     resetTitle: "刷新后仍然打不开？",
-    resetBlurb: "清除浏览器保存的本地场景，从默认场景重新开始。已发布和已分享的场景不受影响。",
-    reset: "清除本地场景",
+    resetBlurb: "清除浏览器保存的场景、缓存文件和设置，从默认场景重新开始。草稿、已发布和已分享的场景都会保留。",
+    reset: "重置本地数据",
     confirm: "确认清除——无法撤销",
     cancel: "取消",
     clearing: "清除中…",
@@ -72,7 +73,7 @@ const COPY = {
 const NEVER_CHANGES = () => () => {}
 const readLocale = (): "en" | "zh" => {
   try {
-    const saved = window.localStorage.getItem("reze-design.locale")
+    const saved = window.localStorage.getItem(storageKey("locale"))
     if (saved === "zh" || saved === "en") return saved
   } catch {
     // private mode — fall through to the browser's language
@@ -83,9 +84,42 @@ function useCrashLocale(): "en" | "zh" {
   return useSyncExternalStore(NEVER_CHANGES, readLocale, () => "en")
 }
 
-/** Everything a reload reads back. Cleared together or not at all — a half-cleared
- *  scene (state without its assets) boots into exactly the confusion this escapes. */
-const SCENE_KEYS = ["reze-design.sceneState.3", "reze-design.sceneAssets.1", "reze-design.fork"]
+/** localStorage the reset keeps: drafts are unpublished work that exists nowhere
+ *  else, and the locale is what this page is reading. Every other `reze-design.*`
+ *  key goes, so the reset reaches whatever a reload reads back. */
+const KEPT_KEYS = new Set([storageKey("drafts"), storageKey("locale")])
+/** The asset store's database. Its contents are a cache of the scene and rebuild. */
+const IDB_NAME = "reze-design"
+
+/** Delete the database outright. A connection the crashed app still holds blocks the
+ *  delete until the reload closes it, so a blocked delete counts as done. */
+function deleteDatabase(): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.deleteDatabase(IDB_NAME)
+      req.onsuccess = req.onerror = req.onblocked = () => resolve()
+    } catch {
+      resolve()
+    }
+  })
+}
+
+/** A chunk that 404s means this tab is running a build the server has replaced.
+ *  One reload fetches the current build; the guard stops a loop when the chunk is
+ *  missing from the current build too. */
+const CHUNK_RELOAD_KEY = "reze-design.chunk-reload"
+function reloadOnceForChunk(error: Error): boolean {
+  if (error.name !== "ChunkLoadError") return false
+  try {
+    const last = Number(window.sessionStorage.getItem(CHUNK_RELOAD_KEY) ?? 0)
+    if (Date.now() - last < 30_000) return false
+    window.sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now()))
+  } catch {
+    return false
+  }
+  window.location.reload()
+  return true
+}
 
 export function CrashScreen({
   error,
@@ -107,6 +141,7 @@ export function CrashScreen({
     // Into the console too: a reporter who opens devtools instead of pressing
     // copy should find the same thing, not a blank log behind a polite page.
     if (error) console.error("[reze] render crashed:", error)
+    if (error && reloadOnceForChunk(error)) return
     void collectStorage().then(setStorage)
   }, [error])
 
@@ -126,19 +161,15 @@ export function CrashScreen({
 
   const clearScene = useCallback(async () => {
     setClearing(true)
-    for (const key of SCENE_KEYS) {
-      try {
-        window.localStorage.removeItem(key)
-      } catch {
-        // nothing to do — the reload below is still worth attempting
-      }
-    }
     try {
-      const { clearLocalBundle } = await import("@/lib/asset-store")
-      await clearLocalBundle()
+      const keys = Object.keys(window.localStorage)
+      for (const key of keys) {
+        if (key.startsWith("reze-design.") && !KEPT_KEYS.has(key)) window.localStorage.removeItem(key)
+      }
     } catch {
-      // the doc pointing at it is already gone, which is what boot reads
+      // nothing to do — the reload below is still worth attempting
     }
+    await deleteDatabase()
     window.location.reload()
   }, [])
 
