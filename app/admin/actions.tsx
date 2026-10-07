@@ -6,7 +6,7 @@
 
 import { useEffect, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Ban, Gem, PenLine, RotateCcw, Trash2 } from "lucide-react"
+import { Ban, PenLine, RotateCcw, Sparkle, Trash2 } from "lucide-react"
 import { authClient } from "@/lib/auth-client"
 
 
@@ -108,7 +108,7 @@ export function PlanToggle({ id, premium, isSelf }: { id: string; premium: boole
       aria-label={premium ? "Lift Premium" : "Grant Premium"}
       title={premium ? "Premium · click to lift" : "Grant Premium"}
     >
-      <Gem className="size-3.5" />
+      <Sparkle className="size-3.5" />
     </button>
   )
 }
