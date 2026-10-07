@@ -1,6 +1,8 @@
 import { relations } from "drizzle-orm";
 import { pgTable, text, timestamp, boolean, index } from "drizzle-orm/pg-core";
 
+export type Plan = "free" | "premium";
+
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -18,6 +20,9 @@ export const user = pgTable("user", {
   banned: boolean("banned").default(false).notNull(),
   bannedAt: timestamp("banned_at"),
   banReason: text("ban_reason"),
+  /** "free" or "premium". Premium is granted by hand from /admin — invited
+   *  creators — and is what the premium badge and the AI panel read. */
+  plan: text("plan").$type<Plan>().default("free").notNull(),
   image: text("image"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")

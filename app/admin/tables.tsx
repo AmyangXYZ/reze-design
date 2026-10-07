@@ -7,7 +7,7 @@
 
 import { useState } from "react"
 import { Check, Copy } from "lucide-react"
-import { AssetTable, ItemControls, RenameUser, UserControls } from "./actions"
+import { AssetTable, ItemControls, PlanToggle, RenameUser, UserControls } from "./actions"
 import { DataTable, type Column } from "./data-table"
 import { KINDS, type KindKey } from "./kinds"
 
@@ -33,6 +33,7 @@ export type UserRow = {
   banned: boolean
   bannedAt: string | null
   banReason: string | null
+  plan: "free" | "premium"
   emailVerified: boolean
   providers: string
   createdAt: string
@@ -250,7 +251,12 @@ export function UserTable({ users, selfId }: { users: UserRow[]; selfId: string 
     {
       key: "actions",
       header: "Actions",
-      cell: (u) => <UserControls id={u.id} banned={u.banned} isSelf={u.id === selfId} />,
+      cell: (u) => (
+        <div className="flex items-center gap-2">
+          <PlanToggle id={u.id} premium={u.plan === "premium"} isSelf={u.id === selfId} />
+          <UserControls id={u.id} banned={u.banned} isSelf={u.id === selfId} />
+        </div>
+      ),
     },
   ]
 

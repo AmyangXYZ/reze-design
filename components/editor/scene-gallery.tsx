@@ -22,6 +22,7 @@ import {
   type BrowseFacet,
   type CardMeta,
   publishedOn,
+  AuthorAvatar,
   AuthorLink,
 } from "@/components/editor/library-shell"
 import { useLibraryStats } from "@/hooks/use-library-stats"
@@ -55,6 +56,9 @@ export type GalleryScene = {
   nsfw?: boolean
   /** Its author asked that it be watched, not opened in the editor. */
   displayOnly?: boolean
+  /** The author's account picture and plan, for their avatar. */
+  authorImage?: string | null
+  authorPlan?: string | null
 }
 
 /**
@@ -685,8 +689,18 @@ function GalleryContent({
               </div>
               <div className="min-h-0 p-3">
                 <div className="truncate text-sm font-semibold select-text">{selected.name}</div>
-                <div className="mt-0.5 font-mono text-[13px] text-muted-foreground/70">
-                  <AuthorLink name={selected.author} className="select-text" /> · {publishedOn(selected.createdAt)}
+                <div className="mt-1 flex min-w-0 items-center gap-1.5 font-mono text-[13px] text-muted-foreground/70">
+                  <AuthorAvatar
+                    name={selected.author}
+                    image={selected.authorImage}
+                    className="size-4"
+                  />
+                  <AuthorLink
+                    name={selected.author}
+                    premium={selected.authorPlan === "premium"}
+                    className="truncate select-text"
+                  />
+                  <span className="shrink-0">· {publishedOn(selected.createdAt)}</span>
                 </div>
                 {selected.description && (
                   <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground select-text">{selected.description}</p>

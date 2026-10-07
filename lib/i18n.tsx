@@ -98,6 +98,9 @@ const en = {
     deleteConfirm: "Its link stops working, for everyone who has it.",
     manual: "How it works",
   },
+  premium: {
+    label: "Premium",
+  },
   profile: {
     scenes: (n: number) => `${n} ${n === 1 ? "scene" : "scenes"}`,
     likes: (n: number) => `${n} ${n === 1 ? "like" : "likes"}`,
@@ -1109,6 +1112,9 @@ const zh: Dictionary = {
     deleteTitle: "删除场景",
     deleteConfirm: "它的链接将对所有人失效。",
     manual: "使用说明",
+  },
+  premium: {
+    label: "高级会员",
   },
   profile: {
     scenes: (n: number) => `${n} 个场景`,

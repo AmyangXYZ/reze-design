@@ -18,10 +18,22 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
   if (!admin) return NextResponse.json({ error: "not found" }, { status: 404 })
   const { id } = await ctx.params
 
-  const { banned, reason, username } = ((await request.json().catch(() => ({}))) ?? {}) as {
+  const { banned, reason, username, plan } = ((await request.json().catch(() => ({}))) ?? {}) as {
     banned?: unknown
     reason?: unknown
     username?: unknown
+    plan?: unknown
+  }
+
+  // ── Plan ───────────────────────────────────────────────────────────────────
+  // Premium is invitation-only for now: granted and lifted here, by hand. The
+  // badge shows on cached pages, so they refresh like a rename does.
+  if (plan !== undefined) {
+    if (plan !== "free" && plan !== "premium") return NextResponse.json({ error: "invalid" }, { status: 400 })
+    await db.update(user).set({ plan }).where(eq(user.id, id))
+    refreshEveryItem()
+    refreshMakerPages(await handleOf(id))
+    return NextResponse.json({ id, plan })
   }
 
   // ── Rename ─────────────────────────────────────────────────────────────────

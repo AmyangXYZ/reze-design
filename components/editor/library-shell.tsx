@@ -20,8 +20,10 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import type { LibraryFacet, LibraryKind, LibraryOwner } from "@/lib/library"
-import { RailRow, RailSection, RailTags, tagSwatch } from "@/components/editor/library-rail"
-import { authorImage, builtinAuthor } from "@/lib/community-store"
+import { RailRow, RailSection, RailTags } from "@/components/editor/library-rail"
+import { authorImage, builtinAuthor, isPremiumAuthor } from "@/lib/community-store"
+import { UserAvatar } from "@/components/user-avatar"
+import { PremiumMark } from "@/components/premium-badge"
 import Link from "next/link"
 import { ContextMenuItem, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger } from "@/components/ui/context-menu"
 import { storageKey } from "@/lib/storage"
@@ -44,7 +46,13 @@ export type BrowseItem = {
   mine?: boolean
   createdAt?: string
   visibility?: "public" | "private"
+  /** The author's plan, on rows the server sent (presets and scenes alike).
+   *  Absent on built-ins, which fall back to the library's own record. */
+  authorPlan?: string | null
 }
+
+/** Whether the row's author is premium: the row's own plan when it carries one. */
+const authorPremium = (i: BrowseItem) => (i.authorPlan == null ? undefined : i.authorPlan === "premium")
 
 /** Name, maker or tag. Inlined rather than borrowed from lib/library, which
  *  types its argument as a full LibraryItem. */
@@ -377,53 +385,67 @@ const STATE_ICON: Record<ItemState, typeof Lock> = { draft: PenLine, private: Lo
 /** A maker's account picture, or their initials when the account has none and
  *  when there is no database to ask. The image is the account's own — the same
  *  one the account menu shows for you. */
-export function AuthorAvatar({ name, className }: { name: string; className?: string }) {
-  const src = authorImage(name)
-  if (src) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={src} alt="" className={cn("size-4 shrink-0 rounded-full object-cover", className)} />
-  }
-  return (
-    <span
-      className={cn(
-        "flex size-4 shrink-0 items-center justify-center rounded-full font-mono text-[8px] font-semibold",
-        tagSwatch(name),
-        className,
-      )}
-    >
-      {initials(name)}
-    </span>
-  )
+export function AuthorAvatar({
+  name,
+  image,
+  className,
+}: {
+  name: string
+  /** Given by rows that carry their own (the gallery); otherwise the library's. */
+  image?: string | null
+  className?: string
+}) {
+  return <UserAvatar name={name} image={image ?? authorImage(name)} className={className} />
 }
 
 /**
  * A maker's name, with their page one click away — in a new tab, so the library
  * and the scene behind it stay where they are. A draft's author has no page, so a
  * draft's name stays text. The link keeps its clicks and keys to itself: it sits
- * in cards that select on click and on Enter.
+ * in cards that select on click and on Enter. A premium maker's name is
+ * followed by the seal.
  */
-export function AuthorLink({ name, draft = false, className }: { name: string; draft?: boolean; className?: string }) {
-  if (draft) return <span className={className}>{name}</span>
+export function AuthorLink({
+  name,
+  draft = false,
+  premium,
+  className,
+}: {
+  name: string
+  draft?: boolean
+  /** Given by rows that carry their own plan (the gallery); otherwise the library's. */
+  premium?: boolean
+  className?: string
+}) {
+  const seal = (premium ?? isPremiumAuthor(name)) && <PremiumMark />
+  if (draft) {
+    return (
+      <span className="inline-flex min-w-0 items-center gap-1">
+        <span className={className}>{name}</span>
+        {seal}
+      </span>
+    )
+  }
   const keep = (e: React.SyntheticEvent) => e.stopPropagation()
   return (
-    <Link
-      href={`/${name}`}
-      target="_blank"
-      rel="noopener"
-      prefetch={false}
-      onClick={keep}
-      onDoubleClick={keep}
-      onKeyDown={keep}
-      className={cn("underline-offset-2 transition-colors hover:text-foreground hover:underline", className)}
-    >
-      {name}
-    </Link>
+    <span className="inline-flex min-w-0 items-center gap-1">
+      <Link
+        href={`/${name}`}
+        target="_blank"
+        rel="noopener"
+        prefetch={false}
+        onClick={keep}
+        onDoubleClick={keep}
+        onKeyDown={keep}
+        className={cn("underline-offset-2 transition-colors hover:text-foreground hover:underline", className)}
+      >
+        {name}
+      </Link>
+      {seal}
+    </span>
   )
 }
 
-/** Initials for a maker chip. Handles are latin; CJK display names are not, so
- *  the range is kept wide enough not to render an empty circle. */
-const initials = (n: string) => (n.match(/[a-zA-Z0-9一-鿿]/g) ?? []).slice(0, 2).join("").toUpperCase()
 
 /**
  * The rail: what to look at, never where it came from.
@@ -795,7 +817,12 @@ export function LibraryResults<T extends BrowseItem>({
                 <span className="min-w-0 truncate text-xs">{card.nameNode ?? label(item)}</span>
                 <span className={cn("flex min-w-0 items-center gap-1.5 font-mono text-[11px] transition-colors", cell)}>
                   <AuthorAvatar name={builtinAuthor(id(item), item.author)} className="size-3.5" />
-                  <AuthorLink name={builtinAuthor(id(item), item.author)} draft={st === "draft"} className="truncate" />
+                  <AuthorLink
+                    name={builtinAuthor(id(item), item.author)}
+                    draft={st === "draft"}
+                    premium={authorPremium(item)}
+                    className="truncate"
+                  />
                 </span>
                 <span className={cn("flex items-center gap-1 truncate font-mono text-[11px] transition-colors", cell)}>
                   <Icon className="size-2.5 shrink-0" />
@@ -860,7 +887,12 @@ export function LibraryResults<T extends BrowseItem>({
                 </div>
                 <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
                   <AuthorAvatar name={builtinAuthor(id(item), item.author)} className="size-3.5" />
-                  <AuthorLink name={builtinAuthor(id(item), item.author)} draft={st === "draft"} className="min-w-0 truncate" />
+                  <AuthorLink
+                    name={builtinAuthor(id(item), item.author)}
+                    draft={st === "draft"}
+                    premium={authorPremium(item)}
+                    className="min-w-0 truncate"
+                  />
                   {/* leading-none, and the count in its own span — see LibraryStats: a bare
                       text node is as tall as the inherited line-height, and
                       centring the heart against that box leaves the digits low. */}

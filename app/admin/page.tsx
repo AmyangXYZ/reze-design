@@ -37,6 +37,7 @@ export default async function AdminPage() {
         banned: user.banned,
         bannedAt: user.bannedAt,
         banReason: user.banReason,
+        plan: user.plan,
         emailVerified: user.emailVerified,
         createdAt: user.createdAt,
         // One email can arrive via both providers once linking fires.

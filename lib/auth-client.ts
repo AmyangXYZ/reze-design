@@ -12,6 +12,8 @@ export const authClient = createAuthClient({
         username: { type: "string", required: false },
         // Null until the user picks their own handle; set once, then permanent.
         usernameChangedAt: { type: "date", required: false },
+        // "free" | "premium", granted from /admin.
+        plan: { type: "string", required: false },
       },
     }),
     emailOTPClient(),

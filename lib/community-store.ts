@@ -29,7 +29,7 @@ import type { LibraryItem, LibraryKind } from "@/lib/library"
 
 /** `authorImage` is the account's avatar; `createdAt` and `visibility` ride on
  *  the envelope itself. */
-export type CommunityItem = LibraryItem & { mine: boolean; authorImage?: string | null }
+export type CommunityItem = LibraryItem & { mine: boolean; authorImage?: string | null; authorPlan?: string | null }
 
 const BUILTIN_IDS: Partial<Record<LibraryKind, Set<string>>> = {
   grade: new Set(GRADE_PRESETS.map((i) => i.id)),
@@ -57,6 +57,8 @@ const builtinAuthors = new Map<string, string>()
 // carries one, built-in mirrors included, so a rail that groups by maker can
 // show the person without each library threading an image through its own list.
 const authorImages = new Map<string, string>()
+// Premium authors, by name — same reason: the avatar wears the ring wherever it is.
+const premiumAuthors = new Set<string>()
 // Bundled items the signed-in user owns. Built-ins are simply presets authored by
 // the admin account, so for THAT account they belong under "Yours" like anything
 // else they published — the bundle just can't know who is asking.
@@ -87,6 +89,7 @@ export function load(force = false): Promise<CommunityItem[]> {
       for (const i of rows) {
         if (BUILTIN_IDS[i.kind]?.has(i.id)) builtinAuthors.set(i.id, i.author)
         if (i.authorImage) authorImages.set(i.author, i.authorImage)
+        if (i.authorPlan === "premium") premiumAuthors.add(i.author)
       }
       cache = rows.filter((i) => !BUILTIN_IDS[i.kind]?.has(i.id))
       settled = true
@@ -137,6 +140,11 @@ export function builtinAuthor(id: string, fallback: string): string {
  *  database, and the caller falls back to initials. */
 export function authorImage(name: string): string | null {
   return authorImages.get(name) ?? null
+}
+
+/** Whether an author holds premium, once the library has been fetched. */
+export function isPremiumAuthor(name: string): boolean {
+  return premiumAuthors.has(name)
 }
 
 /** Refresh the rows when they are older than a minute; otherwise answer with

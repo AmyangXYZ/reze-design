@@ -8,6 +8,8 @@
 
 import { useEffect, useState, type ReactNode } from "react"
 import { ArrowUpRight, CircleUserRound, GalleryThumbnails, Heart, House, LogOut, Palette, Sparkles, WandSparkles, Workflow } from "lucide-react"
+import { PremiumFrame, PremiumMark } from "@/components/premium-badge"
+import { UserAvatar } from "@/components/user-avatar"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -429,7 +431,8 @@ export function AccountButton({
     if (session && !cached) void fetchMe()
   }, [session])
 
-  const avatar = session?.user.image
+  const handle = session?.user.username ?? session?.user.name ?? ""
+  const premium = session?.user.plan === "premium"
   const trigger = (
     <Button
       variant="ghost"
@@ -439,9 +442,19 @@ export function AccountButton({
     >
       {/* A shade larger than the outline icon — a photo needs more area than a
           line drawing to read at this size, without filling the whole button. */}
-      {avatar ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={avatar} alt="" className={cn("rounded-full object-cover", asHeader ? "size-6.5" : "size-5.5")} />
+      {session ? (
+        <span className="relative flex">
+          {premium && (
+            <span className="absolute -inset-[3.5px]">
+              <PremiumFrame className="size-full" />
+            </span>
+          )}
+          <UserAvatar
+            name={handle}
+            image={session.user.image}
+            className={cn("relative text-[9px]", asHeader ? "size-6.5" : "size-5.5")}
+          />
+        </span>
       ) : (
         <CircleUserRound className={asHeader ? "size-5" : "size-4"} />
       )}
@@ -489,15 +502,14 @@ export function AccountButton({
         className="w-60 rounded-surface border-line-strong bg-surface-raised p-0 shadow-float"
       >
         <div className="flex items-center gap-2.5 px-3 py-3">
-          {session.user.image ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={session.user.image} alt="" className="size-9 shrink-0 rounded-full" />
-          ) : (
-            <span className="size-9 shrink-0 rounded-full bg-white/10" />
-          )}
+          <UserAvatar name={handle} image={session.user.image} className="size-9 text-xs" />
           <div className="min-w-0 flex-1 text-left">
-            <div className="truncate font-mono text-xs font-medium">{session.user.username ?? session.user.name}</div>
+            <div className="flex min-w-0 items-center gap-1 font-mono text-xs font-medium">
+              <span className="truncate">{handle}</span>
+              {premium && <PremiumMark />}
+            </div>
             <div className="truncate text-[11px] text-muted-foreground">{session.user.email}</div>
+            {premium && <div className="mt-0.5 text-[11px] font-medium text-premium">{t.premium.label}</div>}
           </div>
         </div>
         {session.user.username && !session.user.usernameChangedAt && (

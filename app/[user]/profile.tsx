@@ -24,10 +24,11 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { PremiumMark } from "@/components/premium-badge"
+import { UserAvatar } from "@/components/user-avatar"
 import { EffectPreview } from "@/components/editor/effect-preview"
 import { GradePreview } from "@/components/editor/grade-preview"
 import { GraphMinimap } from "@/components/editor/graph-minimap"
-import { tagSwatch } from "@/components/editor/library-rail"
 import { useReport } from "@/hooks/use-report"
 import { useSession } from "@/lib/auth-client"
 import { useI18n, useT } from "@/lib/i18n"
@@ -48,8 +49,6 @@ const SCENE_GRID = "grid grid-cols-1 gap-x-4 gap-y-8 sm:grid-cols-2 lg:grid-cols
 /** Presets, smaller and more of them. */
 const PRESET_GRID = "grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
 
-/** Initials for an account with no picture, latin or CJK. */
-const initials = (n: string) => (n.match(/[a-zA-Z0-9一-鿿]/g) ?? []).slice(0, 2).join("").toUpperCase()
 
 type TabKey = "scenes" | "effects" | "graphs" | "grades"
 
@@ -59,6 +58,7 @@ type Manage = { pin: (scene: ProfileScene, on: boolean) => void; remove: (scene:
 export function Profile({
   handle,
   image,
+  premium,
   joined,
   scenes: initialScenes,
   effects,
@@ -67,6 +67,7 @@ export function Profile({
 }: {
   handle: string
   image: string | null
+  premium: boolean
   joined: string
   scenes: ProfileScene[]
   effects: ProfileEffect[]
@@ -158,21 +159,16 @@ export function Profile({
 
       <div className="px-5 pb-32 sm:px-10 sm:pb-40 lg:px-20 xl:px-28 2xl:px-40">
         <header className="flex items-center gap-4 pt-6 pb-8 sm:pt-10 sm:pb-10">
-          {image ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={image} alt="" className="size-14 shrink-0 rounded-full object-cover sm:size-16" />
-          ) : (
-            <span
-              className={cn(
-                "flex size-14 shrink-0 items-center justify-center rounded-full font-mono text-sm font-semibold sm:size-16",
-                tagSwatch(handle),
-              )}
-            >
-              {initials(handle)}
-            </span>
-          )}
+          <UserAvatar
+            name={handle}
+            image={image}
+            className="size-14 text-sm sm:size-16"
+          />
           <div className="min-w-0">
-            <h1 className="truncate text-lg font-semibold tracking-tight text-foreground">@{handle}</h1>
+            <div className="flex min-w-0 items-center gap-1.5 text-lg">
+              <h1 className="truncate font-semibold tracking-tight text-foreground">@{handle}</h1>
+              {premium && <PremiumMark />}
+            </div>
             <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground tabular-nums">
               <span>{t.profile.scenes(scenes.length)}</span>
               <span aria-hidden>·</span>

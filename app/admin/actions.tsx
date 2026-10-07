@@ -6,7 +6,8 @@
 
 import { useEffect, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Ban, PenLine, RotateCcw, Trash2 } from "lucide-react"
+import { Ban, BadgeCheck, PenLine, RotateCcw, Trash2 } from "lucide-react"
+import { authClient } from "@/lib/auth-client"
 
 
 function useAction() {
@@ -71,6 +72,35 @@ export function RenameUser({ id, username, isSelf }: { id: string; username: str
       aria-label="Rename handle"
     >
       <PenLine className="size-3.5" />
+    </button>
+  )
+}
+
+/** Premium is invitation-only: granted and lifted here, yourself included. */
+export function PlanToggle({ id, premium, isSelf }: { id: string; premium: boolean; isSelf: boolean }) {
+  const { run, disabled } = useAction()
+  return (
+    <button
+      disabled={disabled}
+      onClick={() => {
+        if (!confirm(premium ? "Lift premium from this account?" : "Grant premium to this account?")) return
+        void run(`/api/admin/users/${id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ plan: premium ? "free" : "premium" }),
+        }).then(async (ok) => {
+          // The session's cookie cache holds the plan for up to 5 minutes; your
+          // own badge should not wait for it. Re-read past the cache, then reload.
+          if (!ok || !isSelf) return
+          await authClient.getSession({ query: { disableCookieCache: true } })
+          window.location.reload()
+        })
+      }}
+      className={`${iconBtn} ${premium ? "text-blue-400 hover:bg-blue-500/10" : "text-muted-foreground hover:bg-white/5 hover:text-foreground"}`}
+      aria-label={premium ? "Lift premium" : "Grant premium"}
+      title={premium ? "Premium · click to lift" : "Grant premium"}
+    >
+      <BadgeCheck className="size-3.5" />
     </button>
   )
 }

@@ -30,7 +30,7 @@ const load = cache(async (handle: string) => {
   // is answered without asking the database.
   if (!hasDatabase || validate(handle) !== null) return null
   const [owner] = await db
-    .select({ id: user.id, handle: user.username, image: user.image, createdAt: user.createdAt, banned: user.banned })
+    .select({ id: user.id, handle: user.username, image: user.image, createdAt: user.createdAt, banned: user.banned, plan: user.plan })
     .from(user)
     .where(eq(user.username, handle))
     .limit(1)
@@ -82,6 +82,7 @@ const load = cache(async (handle: string) => {
   return {
     handle: owner.handle,
     image: owner.image,
+    premium: owner.plan === "premium",
     joined: owner.createdAt.toISOString(),
     scenes: scenes.map(({ posterKey, featuredAt, createdAt, ...s }) => ({
       ...s,

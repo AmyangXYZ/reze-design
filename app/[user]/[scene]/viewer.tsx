@@ -4,6 +4,7 @@
 // editing. Assets come out of the scene's zip (models, motions, audio) — which is
 // why publishing bundles them in the first place.
 
+import { PremiumMark } from "@/components/premium-badge"
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
@@ -39,6 +40,8 @@ type ViewerProps = {
   sceneId: string
   title: string
   author: string
+  /** The author holds premium: their handle wears the premium seal. */
+  premium?: boolean
   description: string
   /** 借物表 — who the model, motion and music came from. Required at publish, so
    *  it should be readable here rather than only enforced there. */
@@ -232,6 +235,7 @@ export function SceneViewer(props: ViewerProps) {
             <Link href={`/${props.author}`} className="transition-colors hover:text-foreground hover:underline">
               @{props.author}
             </Link>
+            {props.premium && <PremiumMark className="ml-1 align-[-0.2em]" />}
             {" · "}
             <PublishedAt iso={props.publishedAt} />
           </div>

@@ -110,6 +110,8 @@ export const auth = betterAuth({
   user: {
     additionalFields: {
       banned: { type: "boolean", required: false, input: false },
+      // Granted from /admin only — never accepted from the client.
+      plan: { type: "string", required: false, input: false },
       usernameChangedAt: { type: "date", required: false, input: false },
       // Assigned by the hook below, never accepted from the client — claiming a
       // handle goes through /api/username so it can be validated and checked.

@@ -38,6 +38,7 @@ const sceneRow = (id: string) =>
           ownerId: schema.libraryItems.ownerId,
           kind: schema.libraryItems.kind,
           handle: user.username,
+          authorPlan: user.plan,
         })
         .from(schema.libraryItems)
         .leftJoin(user, eq(schema.libraryItems.ownerId, user.id))
@@ -102,6 +103,7 @@ export default async function ScenePage({ params }: { params: Promise<{ user: st
       sceneId={row.id}
       title={row.name}
       author={row.handle ?? row.author}
+      premium={row.authorPlan === "premium"}
       description={row.description}
       credits={row.credits}
       likeCount={row.likeCount}
