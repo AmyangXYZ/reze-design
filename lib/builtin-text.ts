@@ -94,6 +94,7 @@ const EFFECTS: Record<string, Zh> = {
   Mosaic: { name: "马赛克", description: "胸口和胯部的马赛克。" },
   "Holo Card": { name: "全息卡", description: "画面显示在旋转的全息卡牌上。" },
   "Stained Glass": { name: "彩色玻璃", description: "角色化作教堂彩色玻璃窗上的人物，在三扇窗之间跳跃。" },
+  "Red Rain": { name: "红雨", description: "角色化作红色短划组成的轮廓，在红雨中顺风飘散，脚下是一片水洼。" },
   "Laser Eyes": { name: "激光眼", description: "从眼睛射出的激光，会击中并灼烧场景。" },
   "Laser Stare": { name: "激光凝视", description: "发出红光的眼睛，不发射激光。" },
   Mirror: { name: "镜子", description: "可放置在场景中的真实镜子。" },
