@@ -14,6 +14,7 @@ const base = (): SceneSnapshot =>
     lights: [],
     groups: { m1: [] },
     hidden: { m1: [] },
+    visibility: {},
   }) as unknown as SceneSnapshot
 
 const withSetting = (s: SceneSnapshot, key: string, value: unknown): SceneSnapshot => ({

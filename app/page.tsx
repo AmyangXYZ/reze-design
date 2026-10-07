@@ -188,6 +188,7 @@ import { communityItems, preloadCommunity } from "@/lib/community-store"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useSession } from "@/lib/auth-client"
 import { useSceneHistory } from "@/hooks/use-scene-history"
+import { useSceneTools } from "@/hooks/use-scene-tools"
 import type { SceneSnapshot } from "@/lib/scene-history"
 import { freeName } from "@/lib/names"
 import {
@@ -5759,9 +5760,21 @@ export default function Lab() {
     () => Object.fromEntries(models.map((m) => [m.id, m.materials.filter((mat) => !mat.visible).map((mat) => mat.name)])),
     [models],
   )
+  const visibilityByModel = useMemo(
+    () => Object.fromEntries(models.filter((m) => m.visibility?.length).map((m) => [m.id, m.visibility ?? []])),
+    [models],
+  )
   const historySnapshot = useMemo<SceneSnapshot>(
-    () => ({ settings, camera, effects: documentEffects, lights, groups: groupsByModel, hidden: hiddenByModel }),
-    [settings, camera, documentEffects, lights, groupsByModel, hiddenByModel],
+    () => ({
+      settings,
+      camera,
+      effects: documentEffects,
+      lights,
+      groups: groupsByModel,
+      hidden: hiddenByModel,
+      visibility: visibilityByModel,
+    }),
+    [settings, camera, documentEffects, lights, groupsByModel, hiddenByModel, visibilityByModel],
   )
   useSceneHistory({
     scene,
@@ -5780,8 +5793,87 @@ export default function Lab() {
         if (groups && groups !== current.groups[m.id]) void applyGroups(m.id, groups)
         const want = new Set(target.hidden[m.id] ?? [])
         for (const mat of m.materials) if (mat.visible === want.has(mat.name)) toggleVisible(m.id, mat.name)
+        const lane = target.visibility[m.id] ?? []
+        if (JSON.stringify(lane) !== JSON.stringify(current.visibility[m.id] ?? [])) setCastVisibility(m.id, lane)
       }
     },
+  })
+
+  // ── The agent's hands on the scene (lib/ai/scene-tools) ──
+  //
+  // Live handles into the same paths a person edits through: the settings
+  // patcher, the camera applier, the transport's scrub. What an agent changes
+  // syncs, saves and undoes like a hand edit.
+  useSceneTools({
+    engine: () => engineRef.current,
+    canvas: () => canvasRef.current,
+    settings,
+    patchSettings: (section, part) => patch(section, part as Partial<SceneSettings[typeof section]>),
+    camera,
+    setCamera: changeCamera,
+    cast: cast.map((m) => ({ id: m.id, name: displayName(m.file) })),
+    stageCount: stageIds.size,
+    groups: groupsByModel,
+    hidden: hiddenByModel,
+    effects: documentEffects,
+    effectLibrary: [...EFFECTS, ...communityEffects, ...effectDrafts].map((e) => ({
+      id: e.id,
+      name: e.name,
+      description: e.description ?? "",
+      wgsl: e.payload.wgsl,
+    })),
+    addEffect: (effect) => {
+      // Minted here rather than by the setter, so the agent gets the id back.
+      const uid = newSceneId()
+      setBgEffectsState((list) => stampEffectUids([...list, { ...effect, uid }]))
+      return uid
+    },
+    patchEffect,
+    removeEffect: (uid) => setBgEffectsState((list) => list.filter((e) => e.uid !== uid)),
+    lamps: lights,
+    setLamps: (update) => setLightsState(update),
+    newLampId: newLightId,
+    cameraTarget: camera.follow ? TARGET_DEFAULT : camera.target,
+    lanes: laneModels.map((m) => ({
+      id: m.id,
+      name: displayName(m.file),
+      kind: cast.some((c) => c.id === m.id) ? ("character" as const) : ("prop" as const),
+      visibility: m.visibility ?? [],
+    })),
+    setVisibility: (id, windows) => setCastVisibility(id, windows),
+    shaderLibrary: [...GRAPH_LIBRARY, ...communityItems("graph"), ...loadDrafts().graph].map((g) => ({
+      name: g.name,
+      about: g.description ?? "",
+    })),
+    assignShader: (modelId, groupId, shader) => {
+      const entry = [...loadDrafts().graph, ...communityItems("graph"), ...GRAPH_LIBRARY].find(
+        (e) => e.name.toLowerCase() === shader.toLowerCase(),
+      ) as GraphItem | undefined
+      if (!entry) return `no shader named "${shader}" — see list_shaders`
+      const list = groupsByModel[modelId] ?? []
+      const group = list.find((g) => g.id === groupId)
+      if (!group) return `no group "${groupId}"`
+      const updated: StyleGroup = { ...group, graph: { ...entry.payload.graph, name: entry.name } }
+      // The materials panel's own split: grouped materials recompile through
+      // upsert, an empty group just records the choice.
+      if (updated.materials.length) void upsertGroup(modelId, updated)
+      else void applyGroups(modelId, list.map((g) => (g.id === groupId ? updated : g)))
+      return null
+    },
+    applyLookPack,
+    musicUrl: musicClip?.url ?? null,
+    time: () => (masterId ? (engineRef.current?.getModel(masterId)?.getAnimationProgress().current ?? 0) : 0),
+    duration: animDuration,
+    seek: (seconds) => {
+      const scrub = scrubRef.current
+      if (!scrub) return
+      scrub.begin()
+      scrub.to(seconds)
+      scrub.end()
+    },
+    backdrop: bgImage && bgImage.slot !== "dome" ? bgImage : null,
+    backgroundColor: settings.background.color,
+    aspect: framing.activeFrame?.aspect ?? 16 / 9,
   })
 
   // ── Persistence ──

@@ -1,7 +1,8 @@
 // Undo and redo for the scene's configuration — one commit layer, whoever edits.
 //
-// What it covers is the document's LOOK: settings, camera, effects, lamps, style
-// groups and hidden materials. Not the clips (they have their own history, in
+// What it covers is the document's configuration: settings, camera, effects
+// (their clips included), lamps (their keys included), style groups, hidden
+// materials and who is on stage when. Not the clips (they have their own history, in
 // clip-history.tsx) and not the assets (a model or a stage is added or removed,
 // not undone).
 //
@@ -20,6 +21,7 @@
 import type { StyleGroup } from "reze-engine"
 import type { AppliedEffect } from "@/lib/effects"
 import type { SceneCamera, SceneLight } from "@/lib/scene"
+import type { VisibilityWindow } from "@/lib/timeline"
 import type { SceneSettings } from "@/lib/scene-settings"
 
 export type SceneSnapshot = {
@@ -30,6 +32,8 @@ export type SceneSnapshot = {
   groups: Record<string, StyleGroup[]>
   /** Hidden material names, per model id. */
   hidden: Record<string, string[]>
+  /** When each model is on stage — its visibility clips, per model id. */
+  visibility: Record<string, VisibilityWindow[]>
 }
 
 export type HistoryStep = {
@@ -65,6 +69,9 @@ export function changedParts(a: SceneSnapshot, b: SceneSnapshot): string[] {
   for (const id of new Set([...Object.keys(a.hidden), ...Object.keys(b.hidden)])) {
     if (!same(a.hidden[id] ?? [], b.hidden[id] ?? [])) parts.push(`hidden.${id}`)
   }
+  for (const id of new Set([...Object.keys(a.visibility), ...Object.keys(b.visibility)])) {
+    if (!same(a.visibility[id] ?? [], b.visibility[id] ?? [])) parts.push(`visibility.${id}`)
+  }
   return parts
 }
 
@@ -87,7 +94,8 @@ export function labelFor(parts: string[], modelName: (id: string) => string = (i
     const rest = p.slice(dot + 1)
     if (head === "settings") return rest.charAt(0).toUpperCase() + rest.slice(1)
     if (head === "groups") return `${modelName(rest)} materials`
-    if (head === "hidden") return `${modelName(rest)} visibility`
+    if (head === "hidden") return `${modelName(rest)} hidden materials`
+    if (head === "visibility") return `${modelName(rest)} on stage`
     return p
   })
   const unique = [...new Set(names)]

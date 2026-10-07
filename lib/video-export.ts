@@ -13,7 +13,7 @@ import {
   WebMOutputFormat,
   Output,
 } from "mediabunny"
-import type { Engine } from "reze-engine"
+import { Vec3, type Engine } from "reze-engine"
 import { coverCrop, openAnimatedImage, type BackdropKind, type BackdropMedia } from "./backdrop"
 import { GREEN, isCompositingBackground, type ExportBackground } from "./export-background"
 import { PngSequenceWriter } from "./png-sequence"
@@ -577,6 +577,110 @@ export async function captureStill(opts: {
   const blob = await new Promise<Blob | null>((resolve) => composite.toBlob(resolve, "image/png"))
   if (!blob) throw new Error("Canvas produced no image")
   return blob
+}
+
+/** A camera to render one view from, in the orbit's own terms — what the scene
+ *  document stores and what an agent reasons in. */
+export type CaptureView = {
+  alpha: number
+  beta: number
+  distance: number
+  target: [number, number, number]
+  fov?: number
+  roll?: number
+}
+
+export type CapturedFrame = {
+  /** Encoded for sending — JPEG unless asked otherwise. */
+  blob: Blob
+  /** The same pixels, for measuring. */
+  pixels: ImageData
+}
+
+/**
+ * Small stills for looking at a scene — an agent comparing a look, or trying
+ * angles before choosing one.
+ *
+ * Each view is rendered at the given size over the scene's background, the way
+ * captureStill composites, and read back while the render loop is stopped. A
+ * view with a camera is shot through a temporary pose override: orbit, bone
+ * follow and any camera track are never touched, and whatever held the camera
+ * before holds it again afterwards. `null` is the camera as it is.
+ *
+ * Nothing between a renderFrame and its readback awaits — the WebGPU canvas
+ * only holds a frame until the task ends.
+ */
+export async function captureViews(opts: {
+  engine: Engine
+  canvas: HTMLCanvasElement
+  width: number
+  height: number
+  backdrop: BackdropMedia | null
+  backgroundColor: string
+  atTime?: number
+  views: (CaptureView | null)[]
+  type?: "image/jpeg" | "image/webp" | "image/png"
+  quality?: number
+}): Promise<CapturedFrame[]> {
+  const { engine, canvas, width, height, backdrop, backgroundColor, views } = opts
+  const type = opts.type ?? "image/jpeg"
+  const quality = opts.quality ?? 0.85
+
+  const bgFrames = backdrop
+    ? await openBackdrop(backdrop, { width, height, startTime: Math.max(0, opts.atTime ?? 0), fps: 1, total: 1 })
+    : null
+  const bgFrame = bgFrames ? await bgFrames.next() : null
+  bgFrames?.close()
+
+  const composite = document.createElement("canvas")
+  composite.width = width
+  composite.height = height
+  const ctx = composite.getContext("2d", { willReadFrequently: true })!
+  ctx.imageSmoothingQuality = "high"
+
+  const prevW = canvas.width
+  const prevH = canvas.height
+  const prevPose = engine.getCameraPoseOverride()
+  // The orbit's own fov, put back when the override releases — unless a camera
+  // track is driving, which animates its own.
+  const prevFov = engine.getCameraFov()
+  const trackDriving = engine.getCameraClip().length > 0 && engine.isCameraVmdEnabled()
+
+  const out: CapturedFrame[] = []
+  engine.stopRenderLoop()
+  engine.setRenderSize(width, height)
+  try {
+    for (const view of views) {
+      if (view) {
+        // Camera.getPose's own mapping, inverted: an orbit's alpha/beta are the
+        // shot's yaw and pitch, and its distance is negative behind the target.
+        engine.setCameraPose({
+          target: new Vec3(view.target[0], view.target[1], view.target[2]),
+          rotation: new Vec3(view.beta - Math.PI / 2, -view.alpha, view.roll ?? 0),
+          distance: -view.distance,
+          fov: view.fov ?? prevFov,
+        })
+      } else {
+        engine.setCameraPose(prevPose)
+      }
+      engine.renderFrame(0)
+      paintBase(ctx, "scene", backgroundColor, width, height)
+      if (bgFrame) ctx.drawImage(bgFrame, 0, 0, width, height)
+      ctx.drawImage(canvas, 0, 0, width, height)
+      const pixels = ctx.getImageData(0, 0, width, height)
+      // The composite is a 2D canvas and keeps its pixels; awaiting here is safe.
+      const blob = await new Promise<Blob | null>((resolve) => composite.toBlob(resolve, type, quality))
+      if (!blob) throw new Error("Canvas produced no image")
+      out.push({ blob, pixels })
+    }
+  } finally {
+    engine.setCameraPose(prevPose)
+    if (!prevPose && !trackDriving) engine.setCameraFov(prevFov)
+    engine.setRenderSize(prevW, prevH)
+    engine.renderFrame(0)
+    engine.runRenderLoop()
+  }
+  return out
 }
 
 /** Decode the music track and slice [startTime, startTime + exportDuration] out */
