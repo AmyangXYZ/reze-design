@@ -222,6 +222,7 @@ export function collectSceneSlots(input: SceneSlotsInput): SceneSlots {
       // piece of timing that belongs to ANY model — a costume is a cast member,
       // and a prop can be made to appear on cue just as well.
       ...(m.visibility?.length ? { visibility: m.visibility } : {}),
+      ...(m.castShadow === false ? { castShadow: false as const } : {}),
       ...(look ? { look } : {}),
       ...(origin ? { origin } : {}),
     }

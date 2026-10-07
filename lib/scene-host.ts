@@ -553,6 +553,10 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
     const hidden = scene.state.hidden?.[entry.model.id] ?? []
     for (const name of hidden) engine.toggleMaterialVisible(entry.model.id, name)
     const info = infoFor(entry.model.id, entry.model.file, model, hidden, castPlacement, entry.visibility)
+    if (entry.castShadow === false) {
+      engine.setModelCastShadow(entry.model.id, false)
+      info.castShadow = false
+    }
     const modelGroups = withSpecialGroups(
       docGroups ?? (await restyled(engine, entry.model.id, engine.getStyleGroups(entry.model.id))),
       { character: !entry.stage && !entry.prop },
@@ -805,6 +809,8 @@ export type EngineModelInfo = {
    * through the next motion they attach.
    */
   spawnGuess?: boolean
+  /** Left out of the sun's shadow — see SceneModel.castShadow. */
+  castShadow?: false
   /** Every bone's name, in rig order — what a prop's bone picker lists. Kept
    *  here rather than read off the live model in render, which the row cannot
    *  do without reaching into a ref. */

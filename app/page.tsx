@@ -1815,9 +1815,11 @@ function CastMemberRow({
   scale,
   rotation,
   spawnGuess,
+  castShadow,
   onPosition,
   onScale,
   onRotation,
+  onCastShadow,
   onReset,
   onReplace,
   onRemove,
@@ -1841,9 +1843,12 @@ function CastMemberRow({
   /** The position above is the app's own spawn offset, not a placement anyone
    *  chose — so the panel has not been "touched" by it. */
   spawnGuess?: boolean
+  /** Whether the sun's shadow includes them. */
+  castShadow: boolean
   onPosition: (position: [number, number, number]) => void
   onScale: (scale: number) => void
   onRotation: (rotation: [number, number, number]) => void
+  onCastShadow: (on: boolean) => void
   /** Back to where the model rests: origin, unturned, life size. */
   onReset: () => void
   onReplace: () => void
@@ -1988,6 +1993,10 @@ function CastMemberRow({
             fmt={(v) => `${v.toFixed(0)}°`}
           />
         ))}
+        <div className="mt-1.5 flex items-center justify-between">
+          <span className="text-[11px]">{t.lab.ctl.shadow}</span>
+          <Switch size="sm" checked={castShadow} onCheckedChange={onCastShadow} />
+        </div>
       </PopoverContent>
     </Popover>
   )
@@ -2254,6 +2263,7 @@ export default function Lab() {
     setCastPosition,
     setCastRotation,
     setCastScale,
+    setCastShadow,
     planes,
     addPlaneFromFile,
     tickPlanes,
@@ -7749,9 +7759,11 @@ export default function Lab() {
                   scale={m.scale}
                   rotation={m.rotation}
                   spawnGuess={m.spawnGuess}
+                  castShadow={m.castShadow !== false}
                   onPosition={(position) => setCastPosition(m.id, position)}
                   onScale={(v) => setCastScale(m.id, v)}
                   onRotation={(rotation) => setCastRotation(m.id, rotation)}
+                  onCastShadow={(on) => setCastShadow(m.id, on)}
                   onReset={() => {
                     setCastScale(m.id, 1)
                     setCastRotation(m.id, [0, 0, 0])

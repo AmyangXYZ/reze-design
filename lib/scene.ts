@@ -121,6 +121,8 @@ export type SceneModel = {
   /** The stretches this model is on stage for. Absent means throughout, which
    *  is the answer every scene written before this gave. See lib/timeline/visibility. */
   visibility?: VisibilityWindow[]
+  /** Left out of the sun's shadow. Absent = casts, as its PMX materials say. */
+  castShadow?: false
   /** Bundle path to a look.json: the game's own materials for this model, drawn
    *  by its translated shaders. See lib/unity-native. */
   look?: string
@@ -452,6 +454,8 @@ export type SceneModelDoc = {
   morphs?: Record<string, number>
   /** The stretches this model is on stage for. Absent = on stage throughout. */
   visibility?: VisibilityWindow[]
+  /** Left out of the sun's shadow. Absent = casts. */
+  castShadow?: false
   /** Path to a look.json — the game's own materials for this model. */
   look?: string
   /** The tag of the scene patch it came in with. See SceneModel.origin. */
@@ -704,7 +708,7 @@ const roleOf = (g: StyleGroup): StyleGroupDoc["role"] =>
 function stageFieldsOf(
   m: Pick<
     SceneModel,
-    "stage" | "prop" | "sun" | "attach" | "parentKeys" | "transform" | "morphs" | "visibility" | "look" | "origin"
+    "stage" | "prop" | "sun" | "attach" | "parentKeys" | "transform" | "morphs" | "visibility" | "castShadow" | "look" | "origin"
   >,
 ) {
   const sun = m.sun
@@ -722,6 +726,7 @@ function stageFieldsOf(
     ...(m.morphs && Object.keys(m.morphs).length > 0 ? { morphs: m.morphs } : {}),
     // An empty lane is the same as no lane: on stage throughout.
     ...visibilityFieldOf(m.visibility),
+    ...(m.castShadow === false ? { castShadow: false as const } : {}),
     // Here with the rest because it has the same three sites to survive.
     ...(typeof m.look === "string" && m.look ? { look: m.look } : {}),
     // And what brought it, for the next patch with the same tag to find.

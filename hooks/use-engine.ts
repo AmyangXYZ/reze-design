@@ -951,6 +951,21 @@ export function useEngine(
     setModels((prev) => prev.map((m) => (m.id === id ? { ...m, rotation } : m)))
   }, [])
 
+  /** Whether a cast member casts a shadow. Off is the only state written: on is
+   *  what every model does, as its PMX materials say. */
+  const setCastShadow = useCallback((id: string, on: boolean) => {
+    engineRef.current?.setModelCastShadow(id, on)
+    setModels((prev) =>
+      prev.map((m) => {
+        if (m.id !== id) return m
+        if (!on) return { ...m, castShadow: false as const }
+        const rest = { ...m }
+        delete rest.castShadow
+        return rest
+      }),
+    )
+  }, [])
+
   /**
    * The stretches a model is on stage for — its lane on the timeline. Any model:
    * a cast member's costume change, or a prop that is only there for a stretch.
@@ -1572,6 +1587,7 @@ export function useEngine(
     setCastPosition,
     setCastScale,
     setCastRotation,
+    setCastShadow,
     setCastVisibility,
     planes,
     addPlaneFromFile,
