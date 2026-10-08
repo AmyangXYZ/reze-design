@@ -186,14 +186,14 @@ export async function runAgent(opts: {
     // Their own key: the browser calls the service itself.
     if (opts.via) {
       try {
-        const [{ routeOf }, { AGENT_SYSTEM, AGENT_TOOLS, TEXT_ONLY_NOTE }] = await Promise.all([import("@/lib/ai/providers"), import("@/lib/ai/agent-context")])
+        const [{ routeOf }, { AGENT_SYSTEM, AGENT_TOOLS, TEXT_ONLY_NOTE, modelNote }] = await Promise.all([import("@/lib/ai/providers"), import("@/lib/ai/agent-context")])
         const route = routeOf(opts.via)
         if ("error" in route) return { ok: false, error: route.error, retryable: false }
         const seeing = opts.via.vision !== false
         await route.provider.turn({
           target: route.target,
           messages: sendable(messages, seeing ? KEEP_PICTURES : 0),
-          system: seeing ? AGENT_SYSTEM : AGENT_SYSTEM + TEXT_ONLY_NOTE,
+          system: (seeing ? AGENT_SYSTEM : AGENT_SYSTEM + TEXT_ONLY_NOTE) + modelNote(route.target.model),
           tools: AGENT_TOOLS,
           send: handle,
           signal: opts.signal,

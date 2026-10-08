@@ -6,6 +6,7 @@
 // timeline's own lanes use, so it plays, exports, saves and undoes like a hand
 // edit.
 
+import { builtinName } from "@/lib/builtin-text"
 import type { EffectParamValue } from "reze-engine"
 import { parseDirectives } from "reze-engine"
 import type { AppliedEffect } from "@/lib/effects"
@@ -185,8 +186,11 @@ export const TIMELINE_TOOLS: SceneTool[] = [
     run: async (_args, h) => ({
       data: h.effectLibrary.map((e) => {
         const d = parseDirectives(e.wgsl).directives
+        const zh = builtinName("effect", e, "zh")
         return {
           name: e.name,
+          // The name a Chinese-speaking user sees and types; pass `name`.
+          ...(zh !== e.name ? { zh } : {}),
           about: e.description,
           ...(d.duration > 0 ? { seconds: Math.round(d.duration * 100) / 100 } : {}),
           dials: d.params.map((p) => ({

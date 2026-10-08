@@ -22,6 +22,7 @@ export function AgentTabs({
   onSelect,
   onClose,
   onNew,
+  canAdd,
   text,
 }: {
   tabs: ConversationTab[]
@@ -31,6 +32,8 @@ export function AgentTabs({
   onSelect: (id: string) => void
   onClose: (id: string) => void
   onNew: () => void
+  /** Off while the open conversation is still empty — it already is a new one. */
+  canAdd: boolean
   text: AgentTabsText
 }) {
   const strip = useRef<HTMLDivElement>(null)
@@ -127,6 +130,7 @@ export function AgentTabs({
         aria-label={text.newChat}
         tooltip={text.newChat}
         onClick={onNew}
+        disabled={!canAdd}
         className="size-5 shrink-0 rounded-chip text-muted-foreground hover:bg-white/10 hover:text-foreground"
       >
         <Plus className="size-3.5" />

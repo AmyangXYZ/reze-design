@@ -12,6 +12,7 @@
 import type { SceneSettings } from "@/lib/scene-settings"
 import { VIEW_TRANSFORMS } from "@/lib/scene-settings"
 import { GRADE_PRESETS } from "@/lib/grade"
+import { builtinName } from "@/lib/builtin-text"
 
 export type FieldSpec =
   | { kind: "number"; min: number; max: number; about: string }
@@ -73,7 +74,10 @@ export const SETTINGS_FIELDS: Record<string, { about: string; fields: Record<str
       preset: {
         kind: "enum",
         values: GRADE_PRESETS.map((g) => g.name),
-        about: "Built-in grade by name.",
+        about: `Built-in grade by name. As a Chinese-speaking user calls them: ${GRADE_PRESETS.map((g) => [g.name, builtinName("grade", g, "zh")] as const)
+          .filter(([en, zh]) => zh !== en)
+          .map(([en, zh]) => `${zh} = ${en}`)
+          .join(", ")}.`,
       },
       intensity: { kind: "number", min: 0, max: 1, about: "How much of the grade applies." },
     },

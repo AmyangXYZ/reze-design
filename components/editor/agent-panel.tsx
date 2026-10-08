@@ -293,6 +293,7 @@ export function AgentPanel({
   notice,
   usage,
   conversationId,
+  open,
   onRetry,
   onNewChat,
   onSend,
@@ -316,6 +317,9 @@ export function AgentPanel({
   /** The open conversation: the token count counts up within one, and
    *  shows another's figure as it is. */
   conversationId?: string | null
+  /** The panel is showing: opening it, or another tab, puts the cursor in
+   *  the input. */
+  open?: boolean
   onRetry: () => void
   onNewChat: () => void
   onSend: (text: string, refs: ReferenceImage[]) => void
@@ -329,6 +333,14 @@ export function AgentPanel({
   const [preparing, setPreparing] = useState(0)
   const [dragging, setDragging] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
+  const input = useRef<HTMLTextAreaElement>(null)
+  // Ready to type the moment the panel opens or a tab is opened. A frame
+  // later, once the panel has turned visible: an invisible field takes no focus.
+  useEffect(() => {
+    if (!open || onSetup) return
+    const id = requestAnimationFrame(() => input.current?.focus({ preventScroll: true }))
+    return () => cancelAnimationFrame(id)
+  }, [open, conversationId, onSetup])
   const [now, setNow] = useState(() => Date.now())
   const scroller = useRef<HTMLDivElement>(null)
   const lines = linesOf(messages, thumbs)
@@ -535,6 +547,7 @@ export function AgentPanel({
               <Prompt />
             </span>
             <Textarea
+              ref={input}
               disabled={!!onSetup}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}

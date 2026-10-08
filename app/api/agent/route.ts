@@ -12,7 +12,7 @@
 // Wire format: newline-delimited JSON, one AgentStreamEvent per line.
 
 import { gate, overLimit, type Gate } from "@/lib/ai/gate"
-import { AGENT_SYSTEM, AGENT_TOOLS } from "@/lib/ai/agent-context"
+import { AGENT_SYSTEM, AGENT_TOOLS, modelNote } from "@/lib/ai/agent-context"
 import type { AgentMessage, AgentStreamEvent } from "@/lib/ai/agent-loop"
 import { TurnError } from "@/lib/ai/providers/types"
 import { premiumRoute, type Route } from "@/lib/ai/premium"
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
     async start(controller) {
       const send = (e: AgentStreamEvent) => controller.enqueue(encoder.encode(`${JSON.stringify(e)}\n`))
       try {
-        await route.provider.turn({ target: route.target, messages, system: AGENT_SYSTEM, tools: AGENT_TOOLS, send, signal: request.signal })
+        await route.provider.turn({ target: route.target, messages, system: AGENT_SYSTEM + modelNote(route.target.model), tools: AGENT_TOOLS, send, signal: request.signal })
       } catch (e) {
         if (!request.signal.aborted) send({ type: "error", message: e instanceof Error ? e.message : String(e), retryable: e instanceof TurnError && e.retryable })
       } finally {

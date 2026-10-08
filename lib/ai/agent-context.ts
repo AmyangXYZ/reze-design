@@ -16,6 +16,12 @@ export const AGENT_SYSTEM = `${AGENT_SYSTEM_PROMPT}
 The look settings you can change (set_settings), what each does and its range:
 ${describeSettings()}`
 
+/** The model's own name, last in the instructions — so "which model are
+ *  you" has an answer. Constant per model, so each model's cached prefix holds. */
+export const modelNote = (model: string) => `
+
+You are running as ${model}.`
+
 /** Added for a model that reads text only. */
 export const TEXT_ONLY_NOTE = `
 

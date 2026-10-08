@@ -10240,6 +10240,7 @@ export default function Lab() {
             onSelect={(id) => void agent.switchTo(id)}
             onClose={(id) => void agent.closeTab(id)}
             onNew={() => void agent.newTab()}
+            canAdd={agent.messages.length > 0}
             text={t.lab.agent}
           />
           <AgentPanel
@@ -10254,6 +10255,7 @@ export default function Lab() {
             notice={agent.notice}
             usage={agent.usage}
             conversationId={agent.activeId}
+            open={agentOpen}
             onRetry={() => void agent.retry()}
             onNewChat={() => void agent.newTab()}
             onSend={(text, refs) => void agent.send(text, refs)}
