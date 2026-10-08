@@ -165,8 +165,11 @@ export async function runAgent(opts: {
   const messages = [...opts.history]
   const max = opts.maxRounds ?? MAX_ROUNDS
   const publish = () => opts.onProgress({ type: "history", messages: [...messages] })
-  // Changed the scene since the last look; and whether it has been asked to look.
-  let unseen = false
+  // Changes made since the last look, and whether it has been asked to look.
+  // One change is a direct edit — a value set as asked — and finishing on it
+  // costs nothing to trust. Two or more unseen is where a weaker model goes
+  // wrong without knowing, so that run looks before it finishes.
+  let unseen = 0
   let nudged = false
 
   /** One request to the model. A failure says whether trying again could help:
@@ -252,7 +255,7 @@ export async function runAgent(opts: {
     const calls = reply.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use")
     if (calls.length === 0) {
       // Finished without looking at what it changed: ask once to check.
-      if (unseen && !nudged && round + 1 < max) {
+      if (unseen >= 2 && !nudged && round + 1 < max) {
         nudged = true
         messages.push({
           role: "user",
@@ -286,8 +289,8 @@ export async function runAgent(opts: {
       opts.onProgress({ type: "tool", name: call.name, input })
       const result = await opts.runTool(call.name, input)
       const block = toolResultBlock(call.id, result)
-      if (!block.is_error && CHANGES.has(call.name)) unseen = true
-      if (!block.is_error && LOOKS.has(call.name)) unseen = false
+      if (!block.is_error && CHANGES.has(call.name)) unseen++
+      if (!block.is_error && LOOKS.has(call.name)) unseen = 0
       opts.onProgress({ type: "tool-done", name: call.name, ok: !block.is_error })
       results.push(block)
     }

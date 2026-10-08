@@ -184,9 +184,21 @@ await test("a refusal that retrying cannot fix is not retried", async () => {
   assert.equal(calls, 1)
 })
 
-await test("changing the scene and finishing unseen gets one nudge to look", async () => {
+await test("one direct change finishes without being sent back to look", async () => {
   const { fetchImpl, bodies } = scripted([
     { content: [toolUse("a", "set_settings", { patch: {} })], stopReason: "tool_use" },
+    { content: [text("Done.")], stopReason: "end_turn" },
+  ])
+  const out = await withFetch(fetchImpl, () =>
+    runAgent({ history: [user("x")], runTool: async () => ({ data: {} }), onProgress: () => {}, signal: new AbortController().signal }),
+  )
+  assert.equal(out.ended, "done")
+  assert.equal(bodies.length, 2)
+})
+
+await test("two or more changes finishing unseen get one nudge to look", async () => {
+  const { fetchImpl, bodies } = scripted([
+    { content: [toolUse("a", "set_settings", { patch: {} }), toolUse("a2", "set_grade", {})], stopReason: "tool_use" },
     { content: [text("Done.")], stopReason: "end_turn" },
     { content: [toolUse("b", "capture")], stopReason: "tool_use" },
     { content: [text("Checked, done.")], stopReason: "end_turn" },
@@ -196,7 +208,7 @@ await test("changing the scene and finishing unseen gets one nudge to look", asy
     runAgent({ history: [user("x")], runTool: async (n) => (ran.push(n), { data: {} }), onProgress: () => {}, signal: new AbortController().signal }),
   )
   assert.equal(out.ended, "done")
-  assert.deepEqual(ran, ["set_settings", "capture"])
+  assert.deepEqual(ran, ["set_settings", "set_grade", "capture"])
   assert.equal(bodies.length, 4)
   assert.ok(JSON.stringify(bodies[2].at(-1)).includes(LOOP_NOTE), "the third request carries the nudge")
 })
