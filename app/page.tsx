@@ -73,6 +73,7 @@ import {
   Sparkles,
   SportShoe,
   WandSparkles,
+  Astroid,
   X,
   Hand,
   Shapes,
@@ -189,6 +190,8 @@ import { useDrafts } from "@/hooks/use-drafts"
 import { useSession } from "@/lib/auth-client"
 import { useSceneHistory } from "@/hooks/use-scene-history"
 import { useSceneTools } from "@/hooks/use-scene-tools"
+import { useAgent } from "@/hooks/use-agent"
+import { AgentPanel } from "@/components/editor/agent-panel"
 import type { SceneSnapshot } from "@/lib/scene-history"
 import { freeName } from "@/lib/names"
 import {
@@ -863,6 +866,14 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       label: l.cmd.gradeLib,
       altLabels: [alt.cmd.gradeLib],
       keywords: ["color", "browse", "调色", "库"],
+    },
+    {
+      id: "agent",
+      section: "command",
+      icon: Astroid,
+      label: l.cmd.agent,
+      altLabels: [alt.cmd.agent],
+      keywords: ["ai", "agent", "assistant", "claude", "polish", "light", "look", "助手", "智能"],
     },
     {
       id: "export",
@@ -2563,6 +2574,14 @@ export default function Lab() {
   //
   const framing = useRenderFraming()
   const [exportOpen, setExportOpen] = useState(false)
+  // The art director: a side panel, canvas live — you watch it work.
+  const [agentOpen, setAgentOpen] = useState(false)
+  const [agentRaise, setAgentRaise] = useState(0)
+  const agentZ = useZOrder(agentRaise, agentOpen ? () => setAgentOpen(false) : undefined)
+  const openAgent = useCallback(() => {
+    setAgentOpen(true)
+    setAgentRaise((n) => n + 1)
+  }, [setAgentOpen, setAgentRaise])
   /**
    * Bumped every time a right panel is SUMMONED, which is what raises it.
    *
@@ -3128,6 +3147,16 @@ export default function Lab() {
   // never leaves this device until it is published, and publishing is where an
   // account becomes the answer.
   const { data: authSession } = useSession()
+  // The art director is Premium's: its door, its command and its dock exist
+  // only for the account that holds it.
+  // In development, ?premium in the address shows it without a Premium
+  // account — for checking the UI in a browser that is not signed in. The
+  // AI's door is drawn only once `mounted`, so reading the URL here cannot
+  // disagree with the server's render.
+  const [devPremium] = useState(
+    () => process.env.NODE_ENV === "development" && typeof window !== "undefined" && new URLSearchParams(window.location.search).has("premium"),
+  )
+  const premium = authSession?.user.plan === "premium" || devPremium
   const authorName = authSession?.user.username ?? t.effectLibrary.you
   // Fetch the published rows BEFORE a library is opened, not when one is. Keyed
   // on the account so it runs twice on a cold signed-in load — once anonymous,
@@ -5710,6 +5739,7 @@ export default function Lab() {
           // The camera belongs to the SCENE, so it needs no cast; a motion and
           // an expression belong to a character.
           if (c.id === "edit-motion" || c.id === "edit-morph") return timelineRoom && cast.length > 0
+          if (c.id === "agent") return premium
           return true
         })
         .map((c) => {
@@ -5748,7 +5778,7 @@ export default function Lab() {
           const value = DOCK_CONTROLS.find((x) => `ctl-${x.id}` === c.id)?.value?.(valuesShown)
           return value ? { ...c, value } : c
         }),
-    [commands, valuesShown, t, cast.length, timelineRoom, timelineUnfolded],
+    [commands, valuesShown, t, cast.length, timelineRoom, timelineUnfolded, premium],
   )
 
   // ── Undo / redo for the scene's configuration ──
@@ -5776,7 +5806,7 @@ export default function Lab() {
     }),
     [settings, camera, documentEffects, lights, groupsByModel, hiddenByModel, visibilityByModel],
   )
-  useSceneHistory({
+  const sceneHistory = useSceneHistory({
     scene,
     active: ready && !forkPending,
     snapshot: historySnapshot,
@@ -5804,7 +5834,7 @@ export default function Lab() {
   // Live handles into the same paths a person edits through: the settings
   // patcher, the camera applier, the transport's scrub. What an agent changes
   // syncs, saves and undoes like a hand edit.
-  useSceneTools({
+  const sceneTools = useSceneTools({
     engine: () => engineRef.current,
     canvas: () => canvasRef.current,
     settings,
@@ -5860,6 +5890,20 @@ export default function Lab() {
       else void applyGroups(modelId, list.map((g) => (g.id === groupId ? updated : g)))
       return null
     },
+    setGroupGraph: async (modelId, groupId, graph) => {
+      const list = groupsByModel[modelId] ?? []
+      const group = list.find((g) => g.id === groupId)
+      if (!group) return `no group "${groupId}"`
+      const updated: StyleGroup = { ...group, graph }
+      if (!updated.materials.length) {
+        await applyGroups(modelId, list.map((g) => (g.id === groupId ? updated : g)))
+        return null
+      }
+      // Awaited, so a graph that does not compile is reported rather than
+      // leaving the old shading on screen with no word why.
+      const r = await upsertGroup(modelId, updated)
+      return r.ok ? null : r.diagnostics.map((d) => d.message).join("; ") || "the shader did not compile"
+    },
     applyLookPack,
     musicUrl: musicClip?.url ?? null,
     time: () => (masterId ? (engineRef.current?.getModel(masterId)?.getAnimationProgress().current ?? 0) : 0),
@@ -5874,7 +5918,18 @@ export default function Lab() {
     backdrop: bgImage && bgImage.slot !== "dome" ? bgImage : null,
     backgroundColor: settings.background.color,
     aspect: framing.activeFrame?.aspect ?? 16 / 9,
+    defaults: {
+      settings: DEFAULT_SCENE.state.settings,
+      camera: DEFAULT_SCENE.state.camera,
+      effects: DEFAULT_SCENE.state.backgroundEffects,
+      lamps: DEFAULT_SCENE.state.lights,
+    },
+    replaceEffects: (list) => setBgEffectsState(stampEffectUids(list)),
   })
+
+  // The art director runs those tools in a loop (lib/ai/agent-loop); each
+  // request it takes is one step in the scene's undo history.
+  const agent = useAgent({ scene, runTool: sceneTools.run, begin: sceneHistory.begin, end: sceneHistory.end })
 
   // ── Persistence ──
   //
@@ -6665,6 +6720,7 @@ export default function Lab() {
       // Real commands, by id — the registry will own this table; until then the
       // page is the registry.
       if (item.id === "export" || item.id === "capture") openExport()
+      else if (item.id === "agent") openAgent()
       else if (item.id === "add-model") {
         // The refs directly, not pickModel: a plain function in the dep
         // array is something the compiler cannot keep memoized.
@@ -6805,6 +6861,7 @@ export default function Lab() {
       patch,
       setLangOpen,
       openExport,
+      openAgent,
       openGraphLibrary,
       openBrowse,
       openGallery,
@@ -10048,6 +10105,76 @@ export default function Lab() {
               onPickGraph={inspectPickGraph}
             />
           </div>
+        </Surface>
+      )}
+
+      {/* ── Art director's door ──
+          A pillar on the right edge, vertically centred: the right column's own
+          entry, where the dock it opens will stand. Drawn BEFORE the right
+          panels and with no z-index of its own, so the materials or export
+          panel, when open, simply covers it. While its own dock is open it
+          fades into the dock rather than vanishing, and comes back out of it
+          on close — the dock grows from this spot (see below), so the two read
+          as one thing opening and folding away. */}
+      {mounted && premium && (
+        <Button
+          variant="ghost"
+          onClick={openAgent}
+          aria-label={t.lab.agent.title}
+          tabIndex={agentOpen ? -1 : undefined}
+          aria-hidden={agentOpen || undefined}
+          className={cn(
+            PILL,
+            // The mark and "AI" on one line, in the same type as the editor's
+            // other labelled pill (the export one): 13px, foreground.
+            "pointer-events-auto absolute top-1/2 right-3 flex h-10 -translate-y-1/2 items-center gap-2 px-4 text-[13px] font-medium text-foreground hover:bg-white/5",
+            "transition-[opacity,scale,visibility,background-color,color] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
+            agentOpen && "invisible scale-110 opacity-0",
+          )}
+        >
+          <Astroid className="size-4" />
+          <span>{t.lab.agent.title}</span>
+        </Button>
+      )}
+
+      {/* ── Art director ──
+          MOUNTED while closed, like export: closing the panel mid-request must
+          not lose the conversation or the run. No scrim — you watch the canvas
+          change while it works. Premium only, like its door. */}
+      {mounted && premium && (
+        <Surface
+          placement="side"
+          className={cn(
+            // One height whatever the conversation holds — a dock that grew
+            // with every message would move its own input box.
+            "top-[3.75rem] bottom-auto h-[calc(100%-7.75rem)]",
+            // Grows out of the pillar: scaled from the right edge's middle,
+            // which is where the pillar stands, and folds back into it.
+            "origin-right transition-[opacity,scale,translate,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
+            !agentOpen && "invisible translate-x-2 scale-x-[0.2] scale-y-[0.1] opacity-0",
+          )}
+          style={{ zIndex: agentZ.z }}
+          onPointerDownCapture={agentZ.onPointerDownCapture}
+          onFocusCapture={agentZ.onFocusCapture}
+        >
+          <div className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 py-2.5">
+            <Astroid className="size-4 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate text-xs font-medium">{t.lab.agent.title}</span>
+            <CastAction icon={RotateCcw} label={t.lab.agent.newChat} onClick={agent.reset} disabled={agent.busy || agent.messages.length === 0} />
+            <CastAction icon={X} label={t.lab.agent.close} onClick={() => setAgentOpen(false)} />
+          </div>
+          <AgentPanel
+            messages={agent.messages}
+            thumbs={agent.thumbs}
+            live={agent.live}
+            busy={agent.busy}
+            run={agent.run}
+            outcome={agent.outcome}
+            error={agent.error}
+            onSend={(text, refs) => void agent.send(text, refs)}
+            onStop={agent.stop}
+            text={t.lab.agent}
+          />
         </Surface>
       )}
 

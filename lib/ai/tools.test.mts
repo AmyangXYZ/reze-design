@@ -16,6 +16,20 @@ import { EFFECTS } from "@/lib/effects"
 import type { SceneLight } from "@/lib/scene"
 import type { AppliedEffect } from "@/lib/effects"
 import type { VisibilityWindow } from "@/lib/timeline"
+import { installCrashLog } from "@/lib/crash-log"
+
+/** A graph with one wired input and two literal ones — enough to tell a
+ *  tunable value from a socket another node feeds. */
+const BODY_GRAPH = {
+  version: 1,
+  name: "AG Body",
+  nodes: [
+    { id: "lam", type: "lambert" },
+    { id: "toon", type: "ramp_cardinal", inputs: { pos0: 0.25, pos1: 0.35 } },
+  ],
+  links: [{ from: { node: "lam", socket: "fac" }, to: { node: "toon", socket: "fac" } }],
+  output: { node: "toon", socket: "color" },
+}
 
 let failures = 0
 async function test(name: string, fn: () => void | Promise<void>) {
@@ -54,7 +68,7 @@ function fake(over: Partial<SceneToolHandles> = {}) {
     groups: {
       m1: [
         { id: "hair", label: "Hair", materials: ["h"], graph: { name: "AG Hair" } },
-        { id: "body", label: "Body", materials: ["b"], graph: { name: "AG Body" } },
+        { id: "body", label: "Body", materials: ["b"], graph: BODY_GRAPH },
       ],
     } as unknown as SceneToolHandles["groups"],
     hidden: {},
@@ -92,6 +106,7 @@ function fake(over: Partial<SceneToolHandles> = {}) {
     },
     shaderLibrary: [{ name: "AG Hair", about: "" }, { name: "WuWa Hair", about: "" }],
     assignShader: (m, g, s) => (calls.push({ fn: "assignShader", args: [m, g, s] }), s === "Nope" ? "no shader" : null),
+    setGroupGraph: async (m, g, graph) => (calls.push({ fn: "setGroupGraph", args: [m, g, graph] }), null),
     applyLookPack: rec("applyLookPack"),
     musicUrl: null,
     time: () => 0,
@@ -100,6 +115,16 @@ function fake(over: Partial<SceneToolHandles> = {}) {
     backdrop: null,
     backgroundColor: "#000000",
     aspect: 16 / 9,
+    defaults: {
+      settings: { sun: { strength: 1.5 }, bloom: { intensity: 0.2 } } as unknown as SceneToolHandles["settings"],
+      camera: { distance: 40, alpha: Math.PI, beta: 1.2, fov: 0.8, target: [0, 10, 0] },
+      effects: [],
+      lamps: [],
+    },
+    replaceEffects: (list) => {
+      state.effects = list
+      calls.push({ fn: "replaceEffects", args: [list] })
+    },
     ...over,
   }
   return { h, calls, state }
@@ -386,6 +411,66 @@ await test("capture with no engine is an error, not a throw", async () => {
   const { h } = fake()
   const r = await runSceneTool("capture", {}, h)
   assert.match((r.data as { error: string }).error, /not ready/)
+})
+
+await test("a group's shader lists its literal inputs and not its wired ones", async () => {
+  const { h } = fake()
+  const r = await runSceneTool("get_shader_inputs", { group: "body" }, h)
+  const toon = (r.data as { nodes: { node: string; inputs: Record<string, unknown> }[] }).nodes.find((n) => n.node === "toon")
+  assert.ok(toon, "the ramp is tunable")
+  assert.equal(toon.inputs.pos0, 0.25)
+  assert.ok(!("fac" in toon.inputs), "fac is wired from the lambert, not a value to turn")
+})
+
+await test("tuning a shader writes the node input and nothing else", async () => {
+  const { h, calls } = fake()
+  const r = await runSceneTool("set_shader_inputs", { group: "Body", changes: [{ node: "toon", socket: "pos0", value: 0.4 }] }, h)
+  assert.ok(!("error" in (r.data as object)), JSON.stringify(r.data))
+  const [, group, graph] = call(calls, "setGroupGraph")[0].args as [string, string, typeof BODY_GRAPH]
+  assert.equal(group, "body")
+  assert.equal(graph.nodes.find((n) => n.id === "toon")!.inputs!.pos0, 0.4)
+  assert.equal(graph.nodes.find((n) => n.id === "toon")!.inputs!.pos1, 0.35)
+  assert.equal(BODY_GRAPH.nodes[1].inputs!.pos0, 0.25, "the original graph is not mutated")
+})
+
+await test("a shader change of the wrong shape or to a wired socket is refused", async () => {
+  const { h, calls } = fake()
+  const shape = await runSceneTool("set_shader_inputs", { group: "body", changes: [{ node: "toon", socket: "pos0", value: [1, 1, 1] }] }, h)
+  assert.match((shape.data as { error: string }).error, /takes a number/)
+  const wired = await runSceneTool("set_shader_inputs", { group: "body", changes: [{ node: "toon", socket: "fac", value: 1 }] }, h)
+  assert.match((wired.data as { error: string }).error, /not a value that can be changed/)
+  assert.equal(call(calls, "setGroupGraph").length, 0)
+})
+
+await test("errors logged while a tool runs come back with its result", async () => {
+  // The log hooks console.error, and only in a page: a stub window for it.
+  const g = globalThis as { window?: unknown }
+  g.window = { addEventListener: () => {} }
+  installCrashLog()
+  delete g.window
+  const { h } = fake({ setCamera: () => console.error("GPU validation: bad bind group (expected in this test)") })
+  const r = await runSceneTool("set_camera", { yaw: 10 }, h)
+  assert.deepEqual((r.data as { console?: string[] }).console, ["error: GPU validation: bad bind group (expected in this test)"])
+})
+
+await test("reset_to_default puts the look, camera, effects and lamps back", async () => {
+  const { h, calls, state } = fake()
+  state.effects = [{ uid: "x", name: "Red Rain" } as AppliedEffect]
+  const r = await runSceneTool("reset_to_default", {}, h)
+  assert.ok(!("error" in (r.data as object)), JSON.stringify(r.data))
+  const sections = call(calls, "patchSettings").map((c) => c.args[0])
+  assert.deepEqual(sections, ["sun", "bloom"], "only sections the default has")
+  assert.equal((call(calls, "setCamera")[0].args[0] as { distance: number }).distance, 40)
+  assert.deepEqual(state.effects, [])
+})
+
+await test("reset_to_default can take one part, and refuses parts it does not know", async () => {
+  const { h, calls } = fake()
+  await runSceneTool("reset_to_default", { parts: ["camera"] }, h)
+  assert.equal(call(calls, "patchSettings").length, 0)
+  assert.equal(call(calls, "setCamera").length, 1)
+  const bad = await runSceneTool("reset_to_default", { parts: ["cast"] }, h)
+  assert.match((bad.data as { error: string }).error, /unknown part cast/)
 })
 
 await test("an unknown tool and a throwing tool both come back as errors", async () => {

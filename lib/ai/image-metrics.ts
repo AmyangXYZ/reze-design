@@ -25,7 +25,7 @@ export type FrameMetrics = {
 const toLin = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
 
 /** sRGB bytes → Oklab. */
-function oklab(r8: number, g8: number, b8: number): [number, number, number] {
+export function oklab(r8: number, g8: number, b8: number): [number, number, number] {
   const r = toLin(r8 / 255)
   const g = toLin(g8 / 255)
   const b = toLin(b8 / 255)
@@ -39,7 +39,7 @@ function oklab(r8: number, g8: number, b8: number): [number, number, number] {
   ]
 }
 
-const hex = (r: number, g: number, b: number) =>
+export const hex = (r: number, g: number, b: number) =>
   `#${[r, g, b].map((v) => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, "0")).join("")}`
 
 const round = (v: number, d = 3) => Math.round(v * 10 ** d) / 10 ** d

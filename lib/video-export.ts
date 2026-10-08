@@ -13,7 +13,7 @@ import {
   WebMOutputFormat,
   Output,
 } from "mediabunny"
-import { Vec3, type Engine } from "reze-engine"
+import { Vec3, type Engine, type SceneAovs } from "reze-engine"
 import { coverCrop, openAnimatedImage, type BackdropKind, type BackdropMedia } from "./backdrop"
 import { GREEN, isCompositingBackground, type ExportBackground } from "./export-background"
 import { PngSequenceWriter } from "./png-sequence"
@@ -595,6 +595,9 @@ export type CapturedFrame = {
   blob: Blob
   /** The same pixels, for measuring. */
   pixels: ImageData
+  /** The frame as numbers — ids, linear colour, depth, light — when asked for
+   *  with `aovs` and the device keeps an id attachment; else null. */
+  aovs: SceneAovs | null
 }
 
 /**
@@ -621,6 +624,8 @@ export async function captureViews(opts: {
   views: (CaptureView | null)[]
   type?: "image/jpeg" | "image/webp" | "image/png"
   quality?: number
+  /** Read each frame back as numbers too (Engine.readAovs). */
+  aovs?: boolean
 }): Promise<CapturedFrame[]> {
   const { engine, canvas, width, height, backdrop, backgroundColor, views } = opts
   const type = opts.type ?? "image/jpeg"
@@ -649,14 +654,20 @@ export async function captureViews(opts: {
   const out: CapturedFrame[] = []
   engine.stopRenderLoop()
   engine.setRenderSize(width, height)
+  const aovs = Boolean(opts.aovs) && engine.setAovCapture(true)
   try {
     for (const view of views) {
       if (view) {
-        // Camera.getPose's own mapping, inverted: an orbit's alpha/beta are the
-        // shot's yaw and pitch, and its distance is negative behind the target.
+        // The orbit as an MMD pose: pitch beta - π/2, and yaw π - alpha — NOT
+        // Camera.getPose's -alpha, which agrees only side-on and puts every
+        // other shot on the opposite side of the character (a "front" trial
+        // view rendered her back). Checked by solving the pose's eye
+        // (Camera.vmdEye) against the orbit's (Camera.getPosition) over a grid
+        // of angles: this mapping matches exactly, -alpha is off by up to the
+        // whole diameter. Distance is negative: the pose sits behind its target.
         engine.setCameraPose({
           target: new Vec3(view.target[0], view.target[1], view.target[2]),
-          rotation: new Vec3(view.beta - Math.PI / 2, -view.alpha, view.roll ?? 0),
+          rotation: new Vec3(view.beta - Math.PI / 2, Math.PI - view.alpha, view.roll ?? 0),
           distance: -view.distance,
           fov: view.fov ?? prevFov,
         })
@@ -668,12 +679,15 @@ export async function captureViews(opts: {
       if (bgFrame) ctx.drawImage(bgFrame, 0, 0, width, height)
       ctx.drawImage(canvas, 0, 0, width, height)
       const pixels = ctx.getImageData(0, 0, width, height)
+      // Read before anything renders again: it is this frame's ids and depth.
+      const frameAovs = aovs ? await engine.readAovs() : null
       // The composite is a 2D canvas and keeps its pixels; awaiting here is safe.
       const blob = await new Promise<Blob | null>((resolve) => composite.toBlob(resolve, type, quality))
       if (!blob) throw new Error("Canvas produced no image")
-      out.push({ blob, pixels })
+      out.push({ blob, pixels, aovs: frameAovs })
     }
   } finally {
+    if (aovs) engine.setAovCapture(false)
     engine.setCameraPose(prevPose)
     if (!prevPose && !trackDriving) engine.setCameraFov(prevFov)
     engine.setRenderSize(prevW, prevH)

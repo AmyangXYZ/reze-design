@@ -10,6 +10,31 @@
   }
 }
 
+/* The AI's working mark (AstroidSpinner): a quarter turn — the astroid's own
+   symmetry, so the loop is seamless — swelling between cusps. */
+@keyframes astroid-turn {
+  0% {
+    transform: rotate(0deg) scale(0.85);
+  }
+  50% {
+    transform: rotate(45deg) scale(1.1);
+  }
+  100% {
+    transform: rotate(90deg) scale(0.85);
+  }
+}
+
+/* A highlight sweeping across text that is working — the AI's status line.
+   Between the two text colours only: muted, with foreground passing over. */
+@keyframes text-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

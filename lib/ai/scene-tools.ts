@@ -19,10 +19,12 @@ import type { LookPack } from "@/lib/materials"
 import { LOOK_TOOLS } from "@/lib/ai/look-tools"
 import { TIMELINE_TOOLS } from "@/lib/ai/timeline-tools"
 import type { SceneSettings } from "@/lib/scene-settings"
-import { captureViews, type CaptureView } from "@/lib/video-export"
+import type { CaptureView } from "@/lib/video-export"
 import { recentLogs } from "@/lib/crash-log"
 import { checkSettingsPatch, describeSettings, readableSettings } from "@/lib/ai/settings-schema"
-import { measureFrame, type FrameMetrics } from "@/lib/ai/image-metrics"
+import type { FrameMetrics } from "@/lib/ai/image-metrics"
+import type { ShaderGraph } from "reze-engine"
+import { SEEING_TOOLS, captureMeasured, frameData, imagesOf } from "@/lib/ai/seeing-tools"
 import { ANGLES, FIGURE_BONES, SHOTS, frameShot, type Angle, type Figure, type Shot } from "@/lib/ai/framing"
 
 export type SceneToolHandles = {
@@ -59,6 +61,9 @@ export type SceneToolHandles = {
   shaderLibrary: { name: string; about: string }[]
   /** Put a library shader on a group; returns an error to report, or null. */
   assignShader: (modelId: string, groupId: string, shader: string) => string | null
+  /** Replace a group's shader graph (its values tuned) and wait for it to
+   *  compile; resolves to an error to report, or null. */
+  setGroupGraph: (modelId: string, groupId: string, graph: ShaderGraph) => Promise<string | null>
   applyLookPack: (pack: LookPack) => void
   musicUrl: string | null
   /** Scene time in seconds, and its length. */
@@ -70,7 +75,18 @@ export type SceneToolHandles = {
   backgroundColor: string
   /** The aspect the scene is framed at (export width / height). */
   aspect: number
+  /** The built-in default scene's look, camera, effects and lamps — what
+   *  "back to default" means. Its cast, motion and music are not here: those
+   *  are the user's content, not the look. */
+  defaults: { settings: SceneSettings; camera: SceneCamera; effects: AppliedEffect[]; lamps: SceneLight[] }
+  /** Replace the whole effect list (uids minted where missing). */
+  replaceEffects: (effects: AppliedEffect[]) => void
 }
+
+/** The settings sections that make up the look — what reset_to_default puts
+ *  back. Not audio (the user's mix) and not the stage's own claims. */
+const LOOK_SECTIONS = ["world", "sun", "fill", "bloom", "dof", "outline", "background", "view", "grain", "grade", "ground", "eyes"] as const
+const RESET_PARTS = ["look", "camera", "effects", "lamps"] as const
 
 export type ToolImage = { dataUrl: string; label: string; metrics: FrameMetrics }
 
@@ -130,7 +146,7 @@ function cameraIn(args: Record<string, unknown>, base: SceneCamera): SceneCamera
 }
 
 /** Where a character's head, chest, hips and feet are now, in world space. */
-function figureOf(engine: Engine, id: string): Figure | null {
+export function figureOf(engine: Engine, id: string): Figure | null {
   const model = engine.getModel(id)
   if (!model) return null
   const at = model.position
@@ -154,22 +170,7 @@ function figureOf(engine: Engine, id: string): Figure | null {
   return { head, chest, hips, feet: feet ?? [hips[0], 0, hips[2]] }
 }
 
-const blobToDataUrl = (blob: Blob) =>
-  new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(blob)
-  })
-
-/** The capture size for a frame's aspect: the long side at `long` pixels. */
-function captureSize(aspect: number, long: number) {
-  return aspect >= 1
-    ? { width: long, height: Math.round(long / aspect) }
-    : { width: Math.round(long * aspect), height: long }
-}
-
-function subjectId(h: SceneToolHandles, subject: unknown): string | null {
+export function subjectId(h: SceneToolHandles, subject: unknown): string | null {
   if (typeof subject === "string") {
     const hit = h.cast.find((c) => c.id === subject || c.name.toLowerCase() === subject.toLowerCase())
     if (hit) return hit.id
@@ -250,6 +251,42 @@ const CORE_TOOLS: SceneTool[] = [
     },
   },
   {
+    name: "reset_to_default",
+    description:
+      "Put parts of the scene back to the editor's built-in default: `look` (sun, world light, bloom, tone, grade, outline, background, ground…), `camera`, `effects`, `lamps`. Omit `parts` for all four. The characters, their motion and the music stay — this resets how the scene looks, not what is in it. The user can undo it like any change.",
+    parameters: {
+      type: "object",
+      properties: { parts: { type: "array", items: { type: "string", enum: RESET_PARTS } } },
+    },
+    run: async (args, h) => {
+      const asked = Array.isArray(args.parts) && args.parts.length ? (args.parts as string[]) : [...RESET_PARTS]
+      const unknown = asked.filter((p) => !(RESET_PARTS as readonly string[]).includes(p))
+      if (unknown.length) return { data: { error: `unknown part ${unknown.join(", ")} — parts are ${RESET_PARTS.join(", ")}` } }
+      const d = h.defaults
+      const reset: string[] = []
+      if (asked.includes("look")) {
+        for (const section of LOOK_SECTIONS) {
+          const value = d.settings[section as keyof SceneSettings]
+          if (value && typeof value === "object") h.patchSettings(section as keyof SceneSettings, value as Record<string, unknown>)
+        }
+        reset.push("look")
+      }
+      if (asked.includes("camera")) {
+        h.setCamera(d.camera)
+        reset.push("camera")
+      }
+      if (asked.includes("effects")) {
+        h.replaceEffects(d.effects)
+        reset.push(`effects (${d.effects.map((e) => e.name).join(", ") || "none"})`)
+      }
+      if (asked.includes("lamps")) {
+        h.setLamps(() => d.lamps)
+        reset.push(`lamps (${d.lamps.length})`)
+      }
+      return { data: { reset } }
+    },
+  },
+  {
     name: "set_camera",
     description:
       "Set the scene's camera exactly — the angle it is published and exported with. Pass only what changes. Prefer frame_shot to compose by shot; use this to fine-tune after looking.",
@@ -282,21 +319,20 @@ const CORE_TOOLS: SceneTool[] = [
   {
     name: "capture",
     description:
-      "Look at the scene: renders small stills and measures them (luminance percentiles, clipping, saturation, shadow and highlight tint, palette). With no views, the camera as it is. With `shots` or `views`, try other angles WITHOUT moving the scene's camera — use it to compare framings before choosing one.",
+      "Look at the scene: renders small stills and measures them — the whole frame (luminance, clipping, saturation, tint, palette) and BY REGION: each character, each of her material groups (face, hair, skin, clothes…) and the background, with where it sits in the frame and whether it is cut off, its brightness in stops from mid-grey (the scene's light before tone mapping and before effects drawn over the frame — `look` is what is actually shown), the light reaching it (in the sun, in a cast shadow, turned away; sun vs lamps vs ambient), its depth, and how far each character stands out from the background. With no views, the camera as it is. With `shots` or `views`, try other angles WITHOUT moving the scene's camera; several come back as one labelled contact sheet.",
     parameters: {
       type: "object",
       properties: {
         shots: { type: "array", items: SHOT_SCHEMA, maxItems: 4, description: "Shots to try." },
         views: { type: "array", items: { type: "object", properties: CAMERA_PARAMS }, maxItems: 4, description: "Exact cameras to try." },
         size: { type: "number", description: "Long side in pixels, 256–768; default 512." },
+        separate: { type: "boolean", description: "Several views as separate images instead of one contact sheet." },
       },
     },
     run: async (args, h) => {
       const engine = h.engine()
-      const canvas = h.canvas()
-      if (!engine || !canvas) return { data: { error: "the scene is not ready" } }
+      if (!engine) return { data: { error: "the scene is not ready" } }
       const long = Math.min(768, Math.max(256, typeof args.size === "number" ? args.size : 512))
-      const { width, height } = captureSize(h.aspect, long)
 
       const requests: { label: string; view: CaptureView | null }[] = []
       const fov = h.camera.fov ?? Math.PI / 4
@@ -313,29 +349,14 @@ const CORE_TOOLS: SceneTool[] = [
         })
       }
       if (requests.length === 0) requests.push({ label: "current camera", view: null })
+      // Several views are told apart by letter on the sheet.
+      if (requests.length > 1) requests.forEach((r, i) => (r.label = `${String.fromCharCode(65 + i)}: ${r.label}`))
 
-      const frames = await captureViews({
-        engine,
-        canvas,
-        width,
-        height,
-        backdrop: h.backdrop,
-        backgroundColor: h.backgroundColor,
-        atTime: h.time(),
-        views: requests.map((r) => r.view),
-      })
-      const images: ToolImage[] = []
-      for (let i = 0; i < frames.length; i++) {
-        const f = frames[i]
-        images.push({
-          dataUrl: await blobToDataUrl(f.blob),
-          label: requests[i].label,
-          metrics: measureFrame(f.pixels.data, f.pixels.width, f.pixels.height),
-        })
-      }
+      const measured = await captureMeasured(h, requests, long)
+      if ("error" in measured) return { data: measured }
       return {
-        data: images.map((im, i) => ({ image: i + 1, label: im.label, metrics: im.metrics })),
-        images,
+        data: { views: measured.map(frameData), exposure: measured[0]?.frame.aovs?.exposure ?? null },
+        images: await imagesOf(measured, args.separate !== true),
       }
     },
   },
@@ -360,16 +381,32 @@ const CORE_TOOLS: SceneTool[] = [
 ]
 
 /** Every tool, in the order the agent reads them. */
-export const SCENE_TOOLS: SceneTool[] = [...CORE_TOOLS, ...LOOK_TOOLS, ...TIMELINE_TOOLS]
+export const SCENE_TOOLS: SceneTool[] = [...CORE_TOOLS, ...SEEING_TOOLS, ...LOOK_TOOLS, ...TIMELINE_TOOLS]
 
 /** Run a tool by name; an unknown name or a throw comes back as an error for
  *  the model to read, never as an exception through the loop. */
 export async function runSceneTool(name: string, args: Record<string, unknown>, handles: SceneToolHandles): Promise<ToolResult> {
   const tool = SCENE_TOOLS.find((t) => t.name === name)
   if (!tool) return { data: { error: `no tool named ${name}` } }
+  // By time, not count: the log is a bounded ring, so once full its length
+  // stops moving while entries still arrive.
+  const since = Date.now()
+  let result: ToolResult
   try {
-    return await tool.run(args ?? {}, handles)
+    result = await tool.run(args ?? {}, handles)
   } catch (e) {
-    return { data: { error: e instanceof Error ? e.message : String(e) } }
+    result = { data: { error: e instanceof Error ? e.message : String(e) } }
   }
+  // Anything the editor or the GPU complained about while the tool ran rides
+  // back with its result: the model should not have to think to look.
+  const raised = recentLogs()
+    .filter((l) => l.at >= since)
+    .slice(-8)
+    .map((l) => `${l.level}: ${l.text}`)
+  if (raised.length && result.data && typeof result.data === "object" && !Array.isArray(result.data)) {
+    result = { ...result, data: { ...(result.data as Record<string, unknown>), console: raised } }
+  } else if (raised.length) {
+    result = { ...result, data: { result: result.data, console: raised } }
+  }
+  return result
 }

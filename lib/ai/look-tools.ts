@@ -6,7 +6,8 @@
 import type { GradeSpec, Range } from "@/lib/grade"
 import { specOf } from "@/lib/grade"
 import { LOOK_PACKS, LOOK_PACK_ORDER, type LookPack } from "@/lib/materials"
-import type { SceneTool } from "@/lib/ai/scene-tools"
+import { NODE_REGISTRY, type ShaderGraph, type StyleGroup } from "reze-engine"
+import type { SceneTool, SceneToolHandles } from "@/lib/ai/scene-tools"
 
 const clamp = (v: unknown, lo: number, hi: number, d: number) =>
   typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d
@@ -30,6 +31,71 @@ const RANGE_SCHEMA = {
     amount: { type: "number", description: "0–1, how strongly. 0.1–0.3 is a grade; above 0.5 is a filter." },
     lightness: { type: "number", description: "0–1, 0.5 untouched; below crushes this range darker, above lifts it." },
   },
+}
+
+/** A character and one of her groups from the agent's words, or what is wrong. */
+function groupOf(h: SceneToolHandles, character: unknown, group: unknown): { id: string; name: string; group: StyleGroup } | { error: string } {
+  const c = h.cast.find((m) => m.id === character || m.name.toLowerCase() === String(character ?? "").toLowerCase()) ?? h.cast[0]
+  if (!c) return { error: "no character" }
+  const g = String(group ?? "").toLowerCase()
+  const found = (h.groups[c.id] ?? []).find((x) => x.id.toLowerCase() === g || (x.label ?? "").toLowerCase() === g)
+  if (!found) return { error: `no group "${group}" on ${c.name} — groups are ${(h.groups[c.id] ?? []).map((x) => x.id).join(", ")}` }
+  return { id: c.id, name: c.name, group: found }
+}
+
+type SocketValue = number | number[]
+const r4 = (v: number) => Math.round(v * 1e4) / 1e4
+
+/**
+ * A graph's values that can be turned: every input a node takes as a literal —
+ * not wired from another node, and not one that only means something wired.
+ * These are the numbers the graph editor's fields show: a ramp's positions and
+ * colours, a rim's strength, a tint.
+ */
+export function tunableInputs(graph: ShaderGraph): { node: string; type: string; inputs: Record<string, SocketValue> }[] {
+  const wired = new Set(graph.links.map((l) => `${l.to.node}.${l.to.socket}`))
+  const out: { node: string; type: string; inputs: Record<string, SocketValue> }[] = []
+  for (const node of graph.nodes) {
+    const spec = NODE_REGISTRY[node.type]
+    if (!spec) continue
+    const inputs: Record<string, SocketValue> = {}
+    for (const [socket, input] of Object.entries(spec.inputs)) {
+      if (input.requiresLink || wired.has(`${node.id}.${socket}`)) continue
+      const v = node.inputs?.[socket] ?? input.default
+      if (typeof v === "number") inputs[socket] = r4(v)
+      else if (Array.isArray(v)) inputs[socket] = v.map(r4)
+    }
+    if (Object.keys(inputs).length) out.push({ node: node.id, type: node.type, inputs })
+  }
+  return out
+}
+
+/** The graph with `changes` written into its nodes' literal inputs, or the
+ *  first change that does not fit. */
+export function tuneGraph(
+  graph: ShaderGraph,
+  changes: unknown,
+): { graph: ShaderGraph; applied: { node: string; socket: string; value: SocketValue }[] } | { error: string } {
+  if (!Array.isArray(changes) || changes.length === 0) return { error: "changes must be a list of { node, socket, value }" }
+  const tunable = new Map(tunableInputs(graph).map((t) => [t.node, t.inputs]))
+  const nodes = graph.nodes.map((n) => ({ ...n, inputs: { ...(n.inputs ?? {}) } }))
+  const applied: { node: string; socket: string; value: SocketValue }[] = []
+  for (const c of changes as { node?: unknown; socket?: unknown; value?: unknown }[]) {
+    const node = String(c?.node ?? "")
+    const socket = String(c?.socket ?? "")
+    const now = tunable.get(node)?.[socket]
+    if (now === undefined) return { error: `${node}.${socket} is not a value that can be changed — see get_shader_inputs` }
+    const v = c.value
+    const fits =
+      typeof now === "number"
+        ? typeof v === "number" && Number.isFinite(v)
+        : Array.isArray(v) && v.length === now.length && v.every((x) => typeof x === "number" && Number.isFinite(x))
+    if (!fits) return { error: `${node}.${socket} takes ${typeof now === "number" ? "a number" : `${now.length} numbers`}` }
+    const target = nodes.find((n) => n.id === node)!
+    target.inputs[socket] = v as never
+    applied.push({ node, socket, value: v as SocketValue })
+  }
+  return { graph: { ...graph, nodes }, applied }
 }
 
 export const LOOK_TOOLS: SceneTool[] = [
@@ -98,14 +164,61 @@ export const LOOK_TOOLS: SceneTool[] = [
       required: ["group", "shader"],
     },
     run: async (args, h) => {
-      const c =
-        h.cast.find((m) => m.id === args.character || m.name.toLowerCase() === String(args.character ?? "").toLowerCase()) ?? h.cast[0]
-      if (!c) return { data: { error: "no character" } }
-      const g = String(args.group ?? "").toLowerCase()
-      const group = (h.groups[c.id] ?? []).find((x) => x.id.toLowerCase() === g || (x.label ?? "").toLowerCase() === g)
-      if (!group) return { data: { error: `no group "${args.group}" on ${c.name} — groups are ${(h.groups[c.id] ?? []).map((x) => x.id).join(", ")}` } }
-      const error = h.assignShader(c.id, group.id, String(args.shader ?? ""))
-      return { data: error ? { error } : { character: c.name, group: group.id, shader: args.shader } }
+      const found = groupOf(h, args.character, args.group)
+      if ("error" in found) return { data: found }
+      const error = h.assignShader(found.id, found.group.id, String(args.shader ?? ""))
+      return { data: error ? { error } : { character: found.name, group: found.group.id, shader: args.shader } }
+    },
+  },
+  {
+    name: "get_shader_inputs",
+    description:
+      "The values inside one group's shader that can be tuned — each node (ramp, rim, tint, specular…) with its literal inputs: shadow ramp positions and colours, strengths, tints. Read before set_shader_inputs. Colours are linear [r, g, b] or [r, g, b, a].",
+    parameters: {
+      type: "object",
+      properties: {
+        character: { type: "string", description: "Character name or id." },
+        group: { type: "string", description: "Group id or name, as get_scene lists them." },
+      },
+      required: ["group"],
+    },
+    run: async (args, h) => {
+      const found = groupOf(h, args.character, args.group)
+      if ("error" in found) return { data: found }
+      return { data: { character: found.name, group: found.group.id, shader: found.group.graph.name ?? null, nodes: tunableInputs(found.group.graph) } }
+    },
+  },
+  {
+    name: "set_shader_inputs",
+    description:
+      "Tune one group's shader without swapping it: set node inputs by node id and socket, as get_shader_inputs lists them — e.g. move a toon ramp's edge, warm a shadow colour, strengthen a rim. Like editing the values in the graph editor; it lands in undo.",
+    parameters: {
+      type: "object",
+      properties: {
+        character: { type: "string", description: "Character name or id." },
+        group: { type: "string", description: "Group id or name." },
+        changes: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              node: { type: "string" },
+              socket: { type: "string" },
+              value: { description: "A number, or [r, g, b] / [r, g, b, a] for a colour: the shape the input already has." },
+            },
+            required: ["node", "socket", "value"],
+          },
+        },
+      },
+      required: ["group", "changes"],
+    },
+    run: async (args, h) => {
+      const found = groupOf(h, args.character, args.group)
+      if ("error" in found) return { data: found }
+      const tuned = tuneGraph(found.group.graph, args.changes)
+      if ("error" in tuned) return { data: tuned }
+      const error = await h.setGroupGraph(found.id, found.group.id, tuned.graph)
+      return { data: error ? { error } : { character: found.name, group: found.group.id, applied: tuned.applied } }
     },
   },
   {

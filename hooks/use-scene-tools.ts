@@ -21,10 +21,17 @@ export function useSceneTools(handles: SceneToolHandles) {
     ref.current = handles
   })
 
-  const run = useCallback(
-    (name: string, args: Record<string, unknown> = {}): Promise<ToolResult> => runSceneTool(name, args, ref.current),
-    [],
-  )
+  // A tool's change reaches the handles only after React renders and the
+  // effect above refreshes the ref. Run back to back, the next tool would read
+  // the scene from BEFORE this one — an effect just added that update_effect
+  // cannot find, a second grade built on the first's starting point. So every
+  // run waits out a render before handing back: whoever calls next sees the
+  // scene this one left.
+  const run = useCallback(async (name: string, args: Record<string, unknown> = {}): Promise<ToolResult> => {
+    const result = await runSceneTool(name, args, ref.current)
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    return result
+  }, [])
 
   useEffect(() => {
     if (process.env.NODE_ENV !== "development") return
