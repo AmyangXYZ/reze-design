@@ -11,6 +11,7 @@
 - **MMD, played the way MMD plays it** — PMX and VMD with IK, morphs and rigid-body physics for hair and cloth, several characters at once.
 - **Stages, PMX or GLB** — a classic PMX stage folder, or a single `.glb` from Blender that brings its lamps, sun and world and is lit the way Blender lit it.
 - **Rendering styles** — game looks ported as node graphs and applied in one click, such as *Aether Gazer*, *Wuthering Waves*, *Zenless Zone Zero* and *Honkai: Star Rail*. Build your own in the graph editor and publish it.
+- **AI art director** — describe a look, a light or a shot, or drop in a reference image, and an agent in the editor changes the scene with the editor's own controls: light, grade, camera, shader values, effects, lamps and timing. It looks at its own work before it finishes, and writes new WGSL effects and shader graphs when the library has nothing that fits. Bring your own key — Claude, OpenAI, Gemini, DeepSeek, Qwen, Grok, OpenRouter, or a local model — and requests go straight from your browser to the service.
 - **Material shader graphs** — a Blender-style node editor, compiled to WGSL as you work.
 - **Scene effects** — live-coded WGSL effects that hold the scene's depth, so rain and petals pass behind the character. They run GPU particles, emit real lights, and react to the bones, the song and the lyrics.
 - **Animation timeline and curve editor** — grab a bone in the viewport, drag it, and the pose is keyed. Saves as VMD any MMD tool can read.
@@ -18,7 +19,7 @@
 - **Lighting and grading** — sun, lamps, HDR worlds and bloom, with ASC CDL colour wheels on top.
 - **Video export** — 60 fps mp4 up to 4K at 4× MSAA, with green-screen and alpha modes. Rendered frame by frame, so nothing drops and the music lands on the same frame every time.
 - **Publishing** — a permanent URL that plays the scene itself: anyone can orbit the camera while it runs, or take a copy into their own editor.
-- **Nothing lost** — everything saves as you work, locally; nothing reaches a server unless you publish.
+- **Nothing lost** — everything saves as you work, locally; nothing reaches a server unless you publish or ask the AI.
 
 Built on [reze-engine](https://github.com/AmyangXYZ/reze-engine), a WebGPU engine made for MMD with zero third-party dependencies.
 
