@@ -172,7 +172,7 @@ await test("stage-owned and unlisted blocks cannot be patched", () => {
   assert.equal(Object.keys(c.apply).length, 0)
 })
 
-await test("describe_settings lists every section with ranges", () => {
+await test("the settings reference lists every section with ranges", () => {
   const text = describeSettings()
   assert.match(text, /sun — /)
   assert.match(text, /strength \(0–2\)/)

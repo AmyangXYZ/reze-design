@@ -168,7 +168,7 @@ export const TIMELINE_TOOLS: SceneTool[] = [
   {
     name: "get_music",
     description:
-      "The song's timing: duration, tempo, every beat and downbeat, the hardest hits, and loudness sections (quiet/medium/loud — the loud ones are usually choruses). Read before placing anything in time.",
+      "The song's timing: duration, tempo, every beat and downbeat, the hardest hits, and loudness sections (quiet/medium/loud — the loud ones are usually choruses). Read before placing anything in time. Detected downbeats can be off by a beat, so anchor big moments to the hits and section changes rather than to bar counts.",
     parameters: { type: "object", properties: {} },
     run: async (_args, h) => {
       if (!h.musicUrl) return { data: { error: "the scene has no music" } }

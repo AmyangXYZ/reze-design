@@ -142,7 +142,7 @@ export const LOOK_TOOLS: SceneTool[] = [
   {
     name: "list_shaders",
     description:
-      "The material shaders that can go on a character's groups: built-ins by game style (AG = Aether Gazer, WuWa = Wuthering Waves, ZZZ = Zenless Zone Zero, HSR = Honkai Star Rail) and community ones, with what each is for. Also the whole-scene look packs.",
+      "The material shaders that can go on a character's groups — the built-ins by look pack and the community ones, with what each is for — and the whole-scene look packs.",
     parameters: { type: "object", properties: {} },
     run: async (_args, h) => ({
       data: {
@@ -224,7 +224,7 @@ export const LOOK_TOOLS: SceneTool[] = [
   {
     name: "apply_look_pack",
     description:
-      "Switch the whole scene to a game's rendering style: every character's groups take that style's shader for their role, and the tone transform and world light come with it. The sun stays. The biggest single change of look — try it first when a reference is clearly one game's style.",
+      "Switch the whole scene to a rendering style: every character's groups take that style's shader for their role, and the style's tone transform and world light come with it — and, for the styles that define them, its sun and bloom. The biggest single change of look — try it first when a reference is clearly one style.",
     parameters: {
       type: "object",
       properties: { pack: { type: "string", enum: LOOK_PACK_ORDER } },

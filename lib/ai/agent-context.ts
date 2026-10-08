@@ -9,8 +9,8 @@ import { describeSettings } from "@/lib/ai/settings-schema"
 export const AGENT_TOOLS = SCENE_TOOLS.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters }))
 
 /** The instructions, with the look settings' reference built in: it never
- *  changes, so it belongs in the cached prefix rather than costing a round
- *  (describe_settings) at the start of every conversation. */
+ *  changes, so it belongs in the cached prefix rather than costing a round at
+ *  the start of every conversation. */
 export const AGENT_SYSTEM = `${AGENT_SYSTEM_PROMPT}
 
 The look settings you can change (set_settings), what each does and its range:

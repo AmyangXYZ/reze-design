@@ -21,7 +21,7 @@ import { TIMELINE_TOOLS } from "@/lib/ai/timeline-tools"
 import type { SceneSettings } from "@/lib/scene-settings"
 import type { CaptureView } from "@/lib/video-export"
 import { recentLogs } from "@/lib/crash-log"
-import { checkSettingsPatch, describeSettings, readableSettings } from "@/lib/ai/settings-schema"
+import { checkSettingsPatch, readableSettings } from "@/lib/ai/settings-schema"
 import type { FrameMetrics } from "@/lib/ai/image-metrics"
 import type { ShaderGraph } from "reze-engine"
 import { SEEING_TOOLS, captureMeasured, frameData, imagesOf } from "@/lib/ai/seeing-tools"
@@ -209,7 +209,7 @@ const CORE_TOOLS: SceneTool[] = [
   {
     name: "get_scene",
     description:
-      "Read the scene: every look setting you can change (with current values), the camera, the characters and their material groups, effects, and the timeline. Call this first.",
+      "Read the scene: every look setting you can change (with current values), the camera, the characters and their material groups, effects, and the timeline. Each request already arrives with this; call it only for fresh state partway through a run.",
     parameters: { type: "object", properties: {} },
     run: async (_args, h) => ({
       data: {
@@ -239,18 +239,12 @@ const CORE_TOOLS: SceneTool[] = [
     }),
   },
   {
-    name: "describe_settings",
-    description: "Every look setting you can change, what it does, and its allowed range. Read once before changing settings.",
-    parameters: { type: "object", properties: {} },
-    run: async () => ({ data: describeSettings() }),
-  },
-  {
     name: "set_settings",
     description:
       "Change look settings. Pass only the sections and fields to change, e.g. { sun: { strength: 1.2, elevation: 20 }, bloom: { intensity: 0.6 } }. Values outside a field's range are clamped and reported.",
     parameters: {
       type: "object",
-      properties: { patch: { type: "object", description: "Sections of fields, as describe_settings lists them." } },
+      properties: { patch: { type: "object", description: "Sections of fields, as the settings reference in your instructions lists them." } },
       required: ["patch"],
     },
     run: async (args, h) => {
@@ -304,7 +298,7 @@ const CORE_TOOLS: SceneTool[] = [
   {
     name: "set_camera",
     description:
-      "Set the scene's camera exactly — the angle it is published and exported with. Pass only what changes. Prefer frame_shot to compose by shot; use this to fine-tune after looking.",
+      "Set the scene's camera exactly — the angle it is published and exported with. Pass only what changes. Prefer frame_shot to compose by shot; use this to fine-tune after looking. Distance and fov are different choices: the same size of figure from far with a narrow fov flattens her and shows less background, from close with a wide one exaggerates depth. Leave headroom, and room on the side she faces or moves toward.",
     parameters: { type: "object", properties: CAMERA_PARAMS },
     run: async (args, h) => {
       const next = cameraIn(args, h.camera)

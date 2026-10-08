@@ -67,8 +67,6 @@ export function summarizeStep(name: string, input: Record<string, unknown>, data
       const effects = Array.isArray(d.effects) ? d.effects.length : 0
       return { title: "Read the scene", detail: [list(chars), plural(effects, "effect"), plural(Number(d.lamps) || 0, "lamp")].filter(Boolean).join(" · ") }
     }
-    case "describe_settings":
-      return { title: "Read the look controls" }
     case "set_settings": {
       const f = fields(d.applied)
       const clamped = Array.isArray(d.clamped) && d.clamped.length ? ` (${plural(d.clamped.length, "value")} clamped to range)` : ""
@@ -179,7 +177,6 @@ export function doingOf(name: string | null): string | null {
   if (!name) return null
   const map: Record<string, string> = {
     get_scene: "Reading the scene",
-    describe_settings: "Reading the controls",
     set_settings: "Adjusting the look",
     set_grade: "Grading the colour",
     set_camera: "Moving the camera",
