@@ -7,8 +7,24 @@
 // queries already run from the US to Singapore.
 
 import { useMemo, useState, type ReactNode } from "react"
-import { ChevronDown, ChevronUp } from "lucide-react"
+import { ChevronDown, ChevronRight, ChevronUp } from "lucide-react"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
+
+/** A section that starts closed. Its content mounts on open, so whatever it
+ *  fetches is fetched then — and fetched fresh on every reopen. */
+export function LazySection({ title, count, children }: { title: string; count?: number; children: ReactNode }) {
+  return (
+    <Collapsible className="mt-10">
+      <CollapsibleTrigger className="group flex cursor-pointer items-center gap-1.5 text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase transition-colors hover:text-foreground">
+        <ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90" />
+        {title}
+        {count !== undefined && ` · ${count}`}
+      </CollapsibleTrigger>
+      <CollapsibleContent>{children}</CollapsibleContent>
+    </Collapsible>
+  )
+}
 
 export type Column<T> = {
   key: string
@@ -32,7 +48,7 @@ export function DataTable<T>({
   initialSort?: { key: string; desc?: boolean }
 }) {
   const [sort, setSort] = useState(initialSort ?? null)
-  const [page, setPage] = useState(0)
+  const [rawPage, setPage] = useState(0)
 
   const sorted = useMemo(() => {
     if (!sort) return rows
@@ -50,6 +66,8 @@ export function DataTable<T>({
   }, [rows, columns, sort])
 
   const pages = Math.ceil(sorted.length / PAGE)
+  // A filter can shrink the rows out from under the current page.
+  const page = Math.min(rawPage, Math.max(pages - 1, 0))
   const visible = sorted.slice(page * PAGE, page * PAGE + PAGE)
 
   if (rows.length === 0)

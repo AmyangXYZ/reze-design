@@ -10,10 +10,10 @@ import { notFound } from "next/navigation"
 import { headers } from "next/headers"
 import { desc, sql } from "drizzle-orm"
 import { requireAdmin } from "@/lib/admin"
-import { authorStats, sceneUsage, siteStats } from "@/lib/db/stats"
+import { authorStats, siteStats } from "@/lib/db/stats"
 import { db, schema } from "@/lib/db"
 import { user } from "@/lib/db/auth-schema"
-import { AssetTable, ItemTables, UserTable, type ItemRow, type UserRow } from "./tables"
+import { AssetTable, ItemTables, UserTable, type UserRow } from "./tables"
 import { KINDS, type KindKey } from "./kinds"
 
 export const dynamic = "force-dynamic"
@@ -25,8 +25,12 @@ export default async function AdminPage() {
   // 404, not 403 — a non-admin shouldn't learn the page is here.
   if (!session) notFound()
 
-  const [rawItems, rawUsers, stats, usage, authors] = await Promise.all([
-    db.select().from(schema.libraryItems).orderBy(desc(schema.libraryItems.createdAt)),
+  // Item rows load per kind when their section opens; the page only counts them.
+  const [kindCounts, rawUsers, stats, authors] = await Promise.all([
+    db
+      .select({ kind: schema.libraryItems.kind, n: sql<number>`count(*)::int` })
+      .from(schema.libraryItems)
+      .groupBy(schema.libraryItems.kind),
     db
       .select({
         id: user.id,
@@ -47,21 +51,12 @@ export default async function AdminPage() {
       .from(user)
       .orderBy(desc(user.createdAt)),
     siteStats(),
-    sceneUsage(),
     authorStats(),
   ])
 
-  const items: ItemRow[] = rawItems.map((i) => ({
-    id: i.id,
-    kind: i.kind,
-    name: i.name,
-    author: i.author,
-    likeCount: i.likeCount,
-    visibility: i.visibility,
-    createdAt: i.createdAt.toISOString(),
-    usedInScenes: usage.get(i.id) ?? 0,
-    exportedIn: i.exportCount,
-  }))
+  const counts = Object.fromEntries(
+    KINDS.map((k) => [k.kind, kindCounts.find((c) => c.kind === k.kind)?.n ?? 0]),
+  ) as Record<KindKey, number>
 
   const users: UserRow[] = rawUsers.map((u) => {
     const a = authors.get(u.id)
@@ -115,12 +110,9 @@ export default async function AdminPage() {
         <UserTable users={users} selfId={session.user.id} />
       </section>
 
-      <ItemTables items={items} />
+      <ItemTables counts={counts} />
 
-      <section className="mt-12">
-        <h2 className="text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">Stored objects</h2>
-        <AssetTable />
-      </section>
+      <AssetTable />
     </main>
   )
 }

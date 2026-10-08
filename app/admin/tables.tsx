@@ -5,10 +5,11 @@
 // `cell` and `sort` are functions, and functions can't cross the server/client
 // boundary — the page does auth and queries, then hands over plain data.
 
-import { useState } from "react"
-import { Check, Copy } from "lucide-react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { Check, Copy, Search } from "lucide-react"
+import { Input } from "@/components/ui/input"
 import { AssetTable, ItemControls, PlanToggle, RenameUser, UserControls } from "./actions"
-import { DataTable, type Column } from "./data-table"
+import { DataTable, LazySection, type Column } from "./data-table"
 import { KINDS, type KindKey } from "./kinds"
 
 
@@ -81,8 +82,55 @@ function SceneUrl({ author, id }: { author: string; id: string }) {
   )
 }
 
-export function ItemTables({ items }: { items: ItemRow[] }) {
-  const columns = (kind: string): Column<ItemRow>[] => [
+export function ItemTables({ counts }: { counts: Record<KindKey, number> }) {
+  return (
+    <>
+      {KINDS.map((k) => (
+        <LazySection key={k.kind} title={k.label} count={counts[k.kind]}>
+          <ItemSection kind={k.kind} label={k.label} />
+        </LazySection>
+      ))}
+    </>
+  )
+}
+
+/** Mounts when its section opens, and fetches that one kind then. */
+function ItemSection({ kind, label }: { kind: KindKey; label: string }) {
+  const [rows, setRows] = useState<ItemRow[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = useCallback(
+    () =>
+      fetch(`/api/admin/items?kind=${kind}`)
+        .then(async (r) => {
+          const d = (await r.json()) as { items?: ItemRow[]; error?: string }
+          if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`)
+          setRows(d.items ?? [])
+        })
+        .catch((e: Error) => setError(e.message)),
+    [kind],
+  )
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const columns = useMemo(() => itemColumns(kind, () => void load()), [kind, load])
+
+  if (error) return <p className="mt-3 text-xs text-red-400 select-text">{error}</p>
+  if (rows === null) return <p className="mt-3 text-xs text-muted-foreground">Loading…</p>
+  return (
+    <DataTable
+      rows={rows}
+      columns={columns}
+      empty={`No ${label.toLowerCase()} yet.`}
+      initialSort={{ key: "created", desc: true }}
+    />
+  )
+}
+
+function itemColumns(kind: string, reload: () => void): Column<ItemRow>[] {
+  return [
     {
       key: "name",
       header: "Name",
@@ -142,33 +190,24 @@ export function ItemTables({ items }: { items: ItemRow[] }) {
     {
       key: "actions",
       header: "Actions",
-      cell: (r) => <ItemControls id={r.id} />,
+      cell: (r) => <ItemControls id={r.id} onDeleted={reload} />,
     },
   ]
-
-  return (
-    <>
-      {KINDS.map((k) => {
-        const rows = items.filter((i) => i.kind === k.kind)
-        return (
-          <section key={k.kind} className="mt-10">
-            <h2 className="text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-              {k.label} · {rows.length}
-            </h2>
-            <DataTable
-              rows={rows}
-              columns={columns(k.kind)}
-              empty={`No ${k.label.toLowerCase()} yet.`}
-              initialSort={{ key: "created", desc: true }}
-            />
-          </section>
-        )
-      })}
-    </>
-  )
 }
 
 export function UserTable({ users, selfId }: { users: UserRow[]; selfId: string }) {
+  const [query, setQuery] = useState("")
+  const q = query.trim().toLowerCase()
+  const shown = useMemo(
+    () =>
+      q
+        ? users.filter((u) =>
+            [u.username, u.name, u.email, u.providers, u.id].some((f) => f?.toLowerCase().includes(q)),
+          )
+        : users,
+    [users, q],
+  )
+
   const columns: Column<UserRow>[] = [
     {
       key: "handle",
@@ -260,7 +299,25 @@ export function UserTable({ users, selfId }: { users: UserRow[]; selfId: string 
     },
   ]
 
-  return <DataTable rows={users} columns={columns} empty="No accounts yet." initialSort={{ key: "joined", desc: true }} />
+  return (
+    <>
+      <div className="relative mt-3 w-72">
+        <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search handle, name, email or id"
+          className="h-8 pl-8 text-xs md:text-xs"
+        />
+      </div>
+      <DataTable
+        rows={shown}
+        columns={columns}
+        empty={q ? "No accounts match." : "No accounts yet."}
+        initialSort={{ key: "joined", desc: true }}
+      />
+    </>
+  )
 }
 
 export { AssetTable }

@@ -8,6 +8,7 @@ import { useEffect, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Ban, PenLine, RotateCcw, Sparkle, Trash2 } from "lucide-react"
 import { authClient } from "@/lib/auth-client"
+import { LazySection } from "./data-table"
 
 
 function useAction() {
@@ -33,14 +34,17 @@ const iconBtn = "flex size-7 cursor-pointer items-center justify-center rounded-
 
 // Moderation is deletion — by the author, or here by an admin. No visibility
 // states to shepherd; published means public until someone removes it.
-export function ItemControls({ id }: { id: string }) {
+export function ItemControls({ id, onDeleted }: { id: string; onDeleted: () => void }) {
   const { run, disabled } = useAction()
   return (
     <div className="flex items-center gap-2">
       <button
         disabled={disabled}
         // Publishing is reversible; deleting is not.
-        onClick={() => confirm("Delete this item permanently?") && void run(`/api/library/${id}`, { method: "DELETE" })}
+        onClick={() =>
+          confirm("Delete this item permanently?") &&
+          void run(`/api/library/${id}`, { method: "DELETE" }).then((ok) => ok && onDeleted())
+        }
         className={`${iconBtn} text-muted-foreground hover:bg-red-500/10 hover:text-red-400`}
         aria-label="Delete item"
       >
@@ -168,8 +172,16 @@ type Asset = { key: string; size: number; modified: string | null }
 const size = (n: number) =>
   n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 ** 2).toFixed(1)} MB`
 
-/** Fetched client-side: the bucket is a live listing, not something we mirror. */
+/** Fetched client-side, on open: the bucket is a live listing, not something we mirror. */
 export function AssetTable() {
+  return (
+    <LazySection title="Stored objects">
+      <AssetList />
+    </LazySection>
+  )
+}
+
+function AssetList() {
   const [assets, setAssets] = useState<Asset[] | null>(null)
   const [truncated, setTruncated] = useState(false)
   const [busy, setBusy] = useState(false)
