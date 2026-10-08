@@ -5991,6 +5991,7 @@ export default function Lab() {
   // request it takes is one step in the scene's undo history.
   const aiSettings = useAiSettings()
   const aiActive = resolveActive(aiSettings, premium)
+  const [aiMenuOpen, setAiMenuOpen] = useState(false)
   const agent = useAgent({ scene, via: viaOf(aiSettings, aiActive), ready: aiActive !== null, runTool: sceneTools.run, begin: sceneHistory.begin, end: sceneHistory.end })
 
   // ── Persistence ──
@@ -10226,6 +10227,8 @@ export default function Lab() {
               settings={aiSettings}
               active={aiActive}
               premium={premium}
+              open={aiMenuOpen}
+              onOpenChange={setAiMenuOpen}
               text={t.lab.agent.settings}
             />
             <CastAction icon={X} label={t.lab.agent.close} onClick={() => setAgentOpen(false)} />
@@ -10246,6 +10249,7 @@ export default function Lab() {
             // The run shows in its own tab; elsewhere it only locks the send.
             busy={agent.busy && agent.activeId === agent.runningId}
             locked={agent.busy && agent.activeId !== agent.runningId}
+            onSetup={aiActive ? undefined : () => setAiMenuOpen(true)}
             run={agent.run}
             notice={agent.notice}
             lastRun={agent.lastRun}

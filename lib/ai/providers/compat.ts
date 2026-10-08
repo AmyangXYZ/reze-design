@@ -57,8 +57,22 @@ async function refusal(res: Response): Promise<TurnError> {
 }
 
 /** A fetch that failed to reach the service at all. */
-const unreachable = (e: unknown, target: Omit<Target, "model">) =>
-  new TurnError(`connection to the model failed: ${new URL(target.baseURL).host} — ${e instanceof Error ? e.message : String(e)}`, true)
+/** A fetch that failed to reach the service at all. A server on this
+ *  machine fails for one of two reasons the browser will not name — its
+ *  permission to reach the local network, or the server's own CORS — so the
+ *  message names them. */
+function unreachable(e: unknown, target: Omit<Target, "model">) {
+  const { host, hostname } = new URL(target.baseURL)
+  const why = e instanceof Error ? e.message : String(e)
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]") {
+    return new TurnError(
+      `could not reach ${host} (${why}). Allow this site to access your local network in the browser's site settings, ` +
+        `and let the server accept it: Ollama with OLLAMA_ORIGINS=${location.origin}, LM Studio with Enable CORS.`,
+      false,
+    )
+  }
+  return new TurnError(`connection to the model failed: ${host} — ${why}`, true)
+}
 
 /** The data lines of a server-sent event stream, parsed. */
 async function* events(res: Response): AsyncGenerator<Record<string, unknown>> {

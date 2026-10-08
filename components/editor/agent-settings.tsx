@@ -93,17 +93,32 @@ const FIELD = "h-7 rounded-chip px-2 text-xs md:text-xs"
 type View = { kind: "list" } | { kind: "add" } | { kind: "models"; connection: string }
 
 /** The gear in the panel header: services, keys and models. */
-export function AgentMenu({ settings, active, premium, text }: { settings: AiSettings; active: Active | null; premium: boolean; text: AgentSettingsText }) {
+export function AgentMenu({
+  settings,
+  active,
+  premium,
+  open,
+  onOpenChange,
+  text,
+}: {
+  settings: AiSettings
+  active: Active | null
+  premium: boolean
+  /** Controlled, so the panel's "Add a model" can open it too. */
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  text: AgentSettingsText
+}) {
   // The content mounts on open, so every open starts on the list.
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
         <Button variant="ghost" size="icon" aria-label={text.menu} className="size-5 shrink-0 rounded-chip text-muted-foreground hover:bg-white/10 hover:text-foreground">
           <Settings className="size-3.5" />
         </Button>
       </PopoverTrigger>
       {/* The left dock's popovers, to the pixel: radius, surface, edge, shadow. */}
-      <PopoverContent align="end" className="w-80 rounded-surface border-line-strong bg-surface-raised p-2 shadow-float" onCloseAutoFocus={(e) => e.preventDefault()}>
+      <PopoverContent align="end" className="w-64 rounded-surface border-line-strong bg-surface-raised p-2 shadow-float" onCloseAutoFocus={(e) => e.preventDefault()}>
         <MenuBody settings={settings} active={active} premium={premium} text={text} />
       </PopoverContent>
     </Popover>

@@ -39,6 +39,7 @@ export type AgentPanelText = {
   retry: string
   continue: string
   newChat: string
+  setup: string
   usage: { tokens: (total: string) => string; detail: (input: string, cached: string | null, output: string) => string; none: string }
 }
 
@@ -238,6 +239,7 @@ export function AgentPanel({
   live,
   busy,
   locked,
+  onSetup,
   run,
   notice,
   lastRun,
@@ -253,6 +255,8 @@ export function AgentPanel({
   busy: boolean
   /** A request is running in another tab: one at a time, so sending waits. */
   locked?: boolean
+  /** No model to ask yet: the input is off, and this opens the place to add one. */
+  onSetup?: () => void
   run: AgentRun | null
   /** How the last run ended, when it did not simply finish. */
   notice: Notice | null
@@ -301,7 +305,7 @@ export function AgentPanel({
   }, [lines.length, live.text, live.tool, live.thinking])
 
   const submit = () => {
-    if (busy || locked || preparing || (!draft.trim() && !refs.length)) return
+    if (busy || locked || onSetup || preparing || (!draft.trim() && !refs.length)) return
     onSend(draft, refs)
     setDraft("")
     setRefs([])
@@ -384,7 +388,7 @@ export function AgentPanel({
             {thought && !live.tool && !live.text && <p className="line-clamp-2 text-muted-foreground">{thought}</p>}
           </Row>
         )}
-        {!busy && notice && (
+        {!busy && notice && !onSetup && (
           // How it ended, in words, and the one thing that helps. A fault is
           // amber; a stop the person (or the step limit) chose is not.
           <Row
@@ -417,6 +421,17 @@ export function AgentPanel({
           sits on, so what you type and what you sent look like one thing.
           Attached pictures ride above the line; the picture button, send and
           stop are small marks at its end. Enter sends, Shift+Enter breaks. */}
+      {/* Before there is any model to ask: what to do and the button that does
+          it, right above the input it unlocks. */}
+      {onSetup && (
+        // An empty conversation: in the middle of the panel. One with history:
+        // just above the input, clear of the messages.
+        <div className={cn("flex justify-center", lines.length === 0 ? "pointer-events-none absolute inset-0 items-center pb-12 [&>*]:pointer-events-auto" : "shrink-0 px-4 pb-2")}>
+          <Button size="xs" onClick={onSetup} className="h-7 w-fit rounded-chip px-3 text-xs font-medium">
+            {text.setup}
+          </Button>
+        </div>
+      )}
       {/* The request's tokens, in one place: live while it runs, the final
           count after — a line of its own above the input, so the chat ends
           above it rather than running underneath. */}
@@ -463,6 +478,7 @@ export function AgentPanel({
               <Prompt />
             </span>
             <Textarea
+              disabled={!!onSetup}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onPaste={(e) => {
@@ -501,7 +517,7 @@ export function AgentPanel({
               size="icon-xs"
               variant="ghost"
               onClick={() => fileInput.current?.click()}
-              disabled={busy}
+              disabled={busy || !!onSetup}
               tooltip={text.attach}
               aria-label={text.attach}
               className="size-5 shrink-0 text-muted-foreground hover:bg-transparent hover:text-foreground"
@@ -524,7 +540,7 @@ export function AgentPanel({
                 size="icon-xs"
                 variant="ghost"
                 onClick={submit}
-                disabled={locked || preparing > 0 || (!draft.trim() && !refs.length)}
+                disabled={locked || !!onSetup || preparing > 0 || (!draft.trim() && !refs.length)}
                 tooltip={text.send}
                 aria-label={text.send}
                 // The prompt mark, the picture and send are one size and one
