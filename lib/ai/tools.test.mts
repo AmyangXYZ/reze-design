@@ -17,6 +17,11 @@ import type { SceneLight } from "@/lib/scene"
 import type { AppliedEffect } from "@/lib/effects"
 import type { VisibilityWindow } from "@/lib/timeline"
 import { installCrashLog } from "@/lib/crash-log"
+import { guardLoops } from "./wgsl-guard"
+import GRAPHS from "@/content/graphs.json"
+
+/** A real built-in graph, so the compile in write_shader is the real check. */
+const REAL_GRAPH = (GRAPHS as { name: string; payload: { graph: Record<string, unknown> } }[])[0].payload.graph
 
 /** A graph with one wired input and two literal ones — enough to tell a
  *  tunable value from a socket another node feeds. */
@@ -125,6 +130,14 @@ function fake(over: Partial<SceneToolHandles> = {}) {
       state.effects = list
       calls.push({ fn: "replaceEffects", args: [list] })
     },
+    authorEffect: async (name, wgsl, replace) => {
+      calls.push({ fn: "authorEffect", args: [name, wgsl, replace] })
+      return wgsl.includes("BROKEN")
+        ? { ok: false, diagnostics: ["3:5 error: unresolved identifier 'BROKEN'"] }
+        : { ok: true, diagnostics: [], name, uid: "u9", params: [{ name: "SPEED", kind: "float", value: 1 }] }
+    },
+    graphSource: (name) => (name.toLowerCase() === "real" ? (REAL_GRAPH as never) : null),
+    saveGraphDraft: (name, graph) => (calls.push({ fn: "saveGraphDraft", args: [name, graph] }), name),
     ...over,
   }
   return { h, calls, state }
@@ -471,6 +484,68 @@ await test("reset_to_default can take one part, and refuses parts it does not kn
   assert.equal(call(calls, "setCamera").length, 1)
   const bad = await runSceneTool("reset_to_default", { parts: ["cast"] }, h)
   assert.match((bad.data as { error: string }).error, /unknown part cast/)
+})
+
+// ── writing effects and shaders ─────────────────────────────────────────────
+
+await test("the loop guard refuses what can run away and allows what cannot", () => {
+  assert.equal(guardLoops("fn f() { while (true) { } }").length, 1)
+  assert.equal(guardLoops("fn f() { loop { break; } }").length, 1)
+  assert.equal(guardLoops("fn f() { for (var i = 0; i < 100000; i++) {} }").length, 1)
+  assert.equal(guardLoops("fn f() { for (var i = 0u; i < n; i++) {} }").length, 1, "an unknown bound is refused")
+  assert.deepEqual(guardLoops("fn f() { for (var i = 0; i < 64; i++) {} }"), [])
+  assert.deepEqual(guardLoops("fn f() { for (var i = 0u; i < rzLightCount(); i++) {} }"), [])
+  assert.deepEqual(guardLoops("fn f() { for (var i = 0; i < i32(params.STEPS); i++) {} }"), [])
+  assert.deepEqual(guardLoops(["// while (true) in a comment", "/* loop { */ fn f() {}"].join("\n")), [], "comments are not code")
+})
+
+await test("write_effect refuses a runaway loop before it reaches the GPU", async () => {
+  const { h, calls } = fake()
+  const r = await runSceneTool("write_effect", { name: "Spin", wgsl: "fn foreground(ray: vec3f, uv: vec2f, time: f32, depth: f32) -> vec4f { loop { } }" }, h)
+  assert.match((r.data as { error: string }).error, /refused before compiling/)
+  assert.equal(call(calls, "authorEffect").length, 0)
+})
+
+await test("write_effect hands compiler errors back, and a good one is saved", async () => {
+  const { h } = fake()
+  const bad = await runSceneTool("write_effect", { name: "Glow", wgsl: "fn foreground(ray: vec3f, uv: vec2f, time: f32, depth: f32) -> vec4f { return BROKEN; }" }, h)
+  assert.match(JSON.stringify(bad.data), /unresolved identifier/)
+  const good = await runSceneTool("write_effect", { name: "Glow", wgsl: ["#param float SPEED 1 0 4", "fn foreground(ray: vec3f, uv: vec2f, time: f32, depth: f32) -> vec4f { return vec4f(0.0); }"].join("\n") }, h)
+  assert.equal((good.data as { saved: string }).saved, "Glow")
+})
+
+await test("write_effect catches an unknown directive without compiling", async () => {
+  const { h, calls } = fake()
+  const r = await runSceneTool("write_effect", { name: "X", wgsl: ["#sparkle 3", "fn foreground(ray: vec3f, uv: vec2f, time: f32, depth: f32) -> vec4f { return vec4f(0.0); }"].join("\n") }, h)
+  assert.match((r.data as { error: string }).error, /directive/)
+  assert.equal(call(calls, "authorEffect").length, 0)
+})
+
+await test("write_shader compiles a real graph, saves it and puts it on the group", async () => {
+  const { h, calls } = fake()
+  const r = await runSceneTool("write_shader", { name: "My Body", graph: REAL_GRAPH, group: "body" }, h)
+  assert.equal((r.data as { saved: string }).saved, "My Body", JSON.stringify(r.data))
+  assert.equal(call(calls, "saveGraphDraft").length, 1)
+  const [, group, graph] = call(calls, "setGroupGraph")[0].args as [string, string, { name: string }]
+  assert.equal(group, "body")
+  assert.equal(graph.name, "My Body")
+})
+
+await test("write_shader refuses a graph the compiler rejects, and saves nothing", async () => {
+  const { h, calls } = fake()
+  const broken = { nodes: [{ id: "x", type: "no_such_node" }], links: [], output: { node: "x", socket: "color" } }
+  const r = await runSceneTool("write_shader", { name: "Bad", graph: broken, group: "body" }, h)
+  assert.match((r.data as { error: string }).error, /did not compile/)
+  assert.ok((r.data as { diagnostics: string[] }).diagnostics.length > 0)
+  assert.equal(call(calls, "saveGraphDraft").length, 0)
+})
+
+await test("the guides are the manual's own sections", async () => {
+  const { h } = fake()
+  const fx = (await runSceneTool("read_authoring_guide", { topic: "effects" }, h)).data as { guide: string }
+  const gr = (await runSceneTool("read_authoring_guide", { topic: "graphs" }, h)).data as { guide: string }
+  assert.match(fx.guide, /#param/)
+  assert.match(gr.guide, /Appendix D/)
 })
 
 await test("an unknown tool and a throwing tool both come back as errors", async () => {

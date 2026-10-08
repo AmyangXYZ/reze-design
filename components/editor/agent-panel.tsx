@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils"
 import { LOOP_NOTE, type AgentMessage } from "@/lib/ai/agent-loop"
 import { THINKING_VERBS, doingOf, summarizeStep, type StepSummary } from "@/lib/ai/agent-summary"
 import type { AgentLive, AgentRun } from "@/hooks/use-agent"
+import type { Notice, NoticeKind } from "@/lib/ai/agent-notice"
 
 export type AgentPanelText = {
   empty: string
@@ -31,9 +32,11 @@ export type AgentPanelText = {
   thinking: string
   attach: string
   removeImage: string
-  signIn: string
-  premium: string
-  ended: { stopped: string; limit: string; refused: string; error: string }
+  notices: Record<NoticeKind, string>
+  kept: string
+  retry: string
+  continue: string
+  newChat: string
 }
 
 type Line =
@@ -71,7 +74,13 @@ function linesOf(messages: AgentMessage[], thumbs: Record<number, string[]>): Li
         if (blocks.some((x) => x.type === "tool_result")) continue
         // Nor are a reference image's measurements, or the loop's own notes
         // (the scene it attached, a nudge to look): those are for the model.
-        if (b.text.startsWith("Reference image") || b.text.startsWith(LOOP_NOTE)) continue
+        if (b.text.startsWith("Reference image") || b.text.startsWith(LOOP_NOTE)) {
+          // A nudge to look again sends the model back to work after it had
+          // already answered; the answer it gives after looking replaces that
+          // one, so the first is dropped rather than shown twice.
+          if (blocks.length === 1) while (out.length && out[out.length - 1].kind === "reply") out.pop()
+          continue
+        }
         out.push({ kind: "user", text: b.text, images: thumbs[mi] })
       } else if (b.type === "text" && b.text.trim()) out.push({ kind: "reply", text: b.text })
       else if (b.type === "thinking" && b.thinking.trim()) out.push({ kind: "note", text: b.thinking.trim() })
@@ -215,8 +224,9 @@ export function AgentPanel({
   live,
   busy,
   run,
-  outcome,
-  error,
+  notice,
+  onRetry,
+  onNewChat,
   onSend,
   onStop,
   text,
@@ -226,8 +236,10 @@ export function AgentPanel({
   live: AgentLive
   busy: boolean
   run: AgentRun | null
-  outcome: "done" | "stopped" | "limit" | "refused" | "error" | null
-  error: string | null
+  /** How the last run ended, when it did not simply finish. */
+  notice: Notice | null
+  onRetry: () => void
+  onNewChat: () => void
   onSend: (text: string, refs: ReferenceImage[]) => void
   onStop: () => void
   text: AgentPanelText
@@ -345,13 +357,32 @@ export function AgentPanel({
             {thought && !live.tool && !live.text && <p className="line-clamp-2 text-muted-foreground">{thought}</p>}
           </Row>
         )}
-        {!busy && outcome && outcome !== "done" && (
-          <Row>
-            <p className={outcome === "error" || outcome === "refused" ? "text-amber-400" : "text-muted-foreground"}>
-              {/* The route's two refusals are about the account, not a fault:
-                  said as what to do, not as an error code. */}
-              {error === "unauthenticated" ? text.signIn : error === "premium" ? text.premium : `${text.ended[outcome]}${error ? ` — ${error}` : ""}`}
-            </p>
+        {!busy && notice && (
+          // How it ended, in words, and the one thing that helps. A fault is
+          // amber; a stop the person (or the step limit) chose is not.
+          <Row
+            mark={
+              <span
+                className={cn(
+                  "size-1.5 rounded-full",
+                  ["stopped", "stoppedScene", "limit"].includes(notice.kind) ? "bg-muted-foreground" : "bg-amber-400",
+                )}
+              />
+            }
+          >
+            <p className={["stopped", "stoppedScene", "limit"].includes(notice.kind) ? "text-muted-foreground" : "text-amber-400"}>{text.notices[notice.kind]}</p>
+            {notice.kept && <p className="text-muted-foreground">{text.kept}</p>}
+            {notice.detail && <p className="line-clamp-2 break-words text-muted-foreground">{notice.detail}</p>}
+            {notice.action && (
+              <Button
+                size="xs"
+                variant="ghost"
+                onClick={notice.action === "newChat" ? onNewChat : onRetry}
+                className="mt-1.5 h-6 rounded-chip border border-line-strong px-2 text-xs text-foreground hover:bg-white/5"
+              >
+                {notice.action === "retry" ? text.retry : notice.action === "continue" ? text.continue : text.newChat}
+              </Button>
+            )}
           </Row>
         )}
       </div>

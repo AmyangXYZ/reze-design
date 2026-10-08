@@ -111,6 +111,7 @@ try {
     if (name === "__eval") {
       // An agent request can run for minutes.
       const v = await evaluate(`(async () => { ${args} })()`, 900000)
+      writeFileSync(join(out, `${String(i).padStart(2, "0")}-eval.json`), JSON.stringify(v, null, 2) ?? "undefined")
       console.log(`${String(i).padStart(2, "0")}-eval: ${JSON.stringify(v)?.slice(0, 300)}`)
       continue
     }

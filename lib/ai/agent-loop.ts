@@ -53,7 +53,7 @@ const ATTEMPTS = 3
 
 /** Tools that change the scene, and tools that look at it. A run that changed
  *  it after its last look is asked to look once before it finishes. */
-const CHANGES = new Set([
+export const CHANGES = new Set([
   "set_settings", "set_grade", "set_camera", "frame_shot", "assign_shader", "apply_look_pack", "set_shader_inputs",
   "add_effect", "update_effect", "remove_effect", "add_lamp", "update_lamp", "remove_lamp", "set_visibility", "reset_to_default",
 ])

@@ -25,6 +25,7 @@ import { checkSettingsPatch, describeSettings, readableSettings } from "@/lib/ai
 import type { FrameMetrics } from "@/lib/ai/image-metrics"
 import type { ShaderGraph } from "reze-engine"
 import { SEEING_TOOLS, captureMeasured, frameData, imagesOf } from "@/lib/ai/seeing-tools"
+import { AUTHOR_TOOLS } from "@/lib/ai/author-tools"
 import { ANGLES, FIGURE_BONES, SHOTS, frameShot, type Angle, type Figure, type Shot } from "@/lib/ai/framing"
 
 export type SceneToolHandles = {
@@ -81,6 +82,20 @@ export type SceneToolHandles = {
   defaults: { settings: SceneSettings; camera: SceneCamera; effects: AppliedEffect[]; lamps: SceneLight[] }
   /** Replace the whole effect list (uids minted where missing). */
   replaceEffects: (effects: AppliedEffect[]) => void
+  /** Compile a new or rewritten effect against the whole scene, as the effect
+   *  editor's ⌘Enter does. On success it is saved as a draft and worn —
+   *  in place of `replace` (a scene effect's id or name) when given. On
+   *  failure the scene is put back and the diagnostics come home. */
+  authorEffect: (
+    name: string,
+    wgsl: string,
+    replace?: string,
+  ) => Promise<{ ok: boolean; diagnostics: string[]; name?: string; uid?: string; params?: { name: string; kind: string; value: unknown; min?: number; max?: number }[]; duration?: number }>
+  /** A library shader's whole graph, by name — drafts, community, built-ins. */
+  graphSource: (name: string) => ShaderGraph | null
+  /** Save a graph as a draft: a draft of that name is updated, any other name
+   *  gets a fresh one. Returns the name it was saved under. */
+  saveGraphDraft: (name: string, graph: ShaderGraph) => string
 }
 
 /** The settings sections that make up the look — what reset_to_default puts
@@ -381,7 +396,7 @@ const CORE_TOOLS: SceneTool[] = [
 ]
 
 /** Every tool, in the order the agent reads them. */
-export const SCENE_TOOLS: SceneTool[] = [...CORE_TOOLS, ...SEEING_TOOLS, ...LOOK_TOOLS, ...TIMELINE_TOOLS]
+export const SCENE_TOOLS: SceneTool[] = [...CORE_TOOLS, ...SEEING_TOOLS, ...LOOK_TOOLS, ...TIMELINE_TOOLS, ...AUTHOR_TOOLS]
 
 /** Run a tool by name; an unknown name or a throw comes back as an error for
  *  the model to read, never as an exception through the loop. */

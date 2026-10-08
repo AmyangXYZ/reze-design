@@ -14,7 +14,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { ToolResult } from "@/lib/ai/scene-tools"
-import { LOOP_NOTE, filesIn, runAgent, settle, type AgentMessage, type AgentOutcome } from "@/lib/ai/agent-loop"
+import { CHANGES, LOOP_NOTE, filesIn, runAgent, settle, type AgentMessage } from "@/lib/ai/agent-loop"
+import { noticeOf, type Notice } from "@/lib/ai/agent-notice"
 import { storageKey } from "@/lib/storage"
 import { referenceBlocks, type ReferenceImage } from "@/lib/ai/reference-image"
 
@@ -37,14 +38,18 @@ export type AgentRun = { startedAt: number; steps: number }
 const STORE = storageKey("agent.conversation")
 type Saved = { messages: AgentMessage[]; thumbs: Record<number, string[]> }
 
-function load(): Saved {
+/** The saved conversation — and whether the page closed on a run, which
+ *  settle() had to answer for and the panel should say. */
+function load(): Saved & { interrupted: boolean } {
   try {
     const raw = typeof window !== "undefined" ? window.localStorage.getItem(STORE) : null
-    if (!raw) return { messages: [], thumbs: {} }
+    if (!raw) return { messages: [], thumbs: {}, interrupted: false }
     const saved = JSON.parse(raw) as Saved
-    return { messages: settle(Array.isArray(saved.messages) ? saved.messages : []), thumbs: saved.thumbs ?? {} }
+    const stored = Array.isArray(saved.messages) ? saved.messages : []
+    const messages = settle(stored)
+    return { messages, thumbs: saved.thumbs ?? {}, interrupted: messages.length > stored.length }
   } catch {
-    return { messages: [], thumbs: {} }
+    return { messages: [], thumbs: {}, interrupted: false }
   }
 }
 
@@ -87,15 +92,25 @@ export function useAgent({
   // they live in the history as uploaded file ids, which the tab cannot show;
   // this keeps the pictures the person attached for the transcript.
   const [thumbs, setThumbs] = useState<Record<number, string[]>>(initial.thumbs)
-  const [outcome, setOutcome] = useState<AgentOutcome["ended"] | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  // How the last run ended, said plainly (lib/ai/agent-notice). A page that
+  // closed mid-run is said on the next load.
+  const [notice, setNotice] = useState<Notice | null>(() => (initial.interrupted ? noticeOf("interrupted", null, null) : null))
   const abort = useRef<AbortController | null>(null)
+  // Who stopped the run: the person, or a scene being opened.
+  const stoppedBy = useRef<"user" | "scene" | null>(null)
   const history = useRef<AgentMessage[]>(initial.messages)
 
-  // Saved as it changes, a beat after — not on every streamed token.
+  // Saved as it changes, a beat after — not on every streamed token — and at
+  // once when the page goes away, so closing the tab the moment a run ends
+  // does not lose its last steps to the debounce.
   useEffect(() => {
-    const id = setTimeout(() => save({ messages, thumbs }), 400)
-    return () => clearTimeout(id)
+    const flush = () => save({ messages, thumbs })
+    const id = setTimeout(flush, 400)
+    window.addEventListener("pagehide", flush)
+    return () => {
+      clearTimeout(id)
+      window.removeEventListener("pagehide", flush)
+    }
   }, [messages, thumbs])
 
   const forget = useCallback((list: AgentMessage[]) => {
@@ -111,43 +126,29 @@ export function useAgent({
   useEffect(() => {
     if (runFor.current === scene) return
     runFor.current = scene
-    abort.current?.abort()
+    if (!abort.current) return
+    stoppedBy.current = "scene"
+    abort.current.abort()
   }, [scene])
 
-  const send = useCallback(
-    async (text: string, refs: ReferenceImage[] = []) => {
-      // A picture with no words asks for its look.
-      const request = text.trim() || (refs.length ? "Make the scene follow this reference image's style." : "")
-      if (!request || abort.current) return
+  /** Run the loop from `from` — a history ending in a user turn: a new
+   *  request, or one to try again. One run is one undo step. */
+  const go = useCallback(
+    async (from: AgentMessage[], label: string) => {
       const controller = new AbortController()
       abort.current = controller
-      const at = history.current.length
-      // The scene as it stands rides with every request, so the model starts
-      // from the truth instead of spending its first round asking for it.
-      const now = await runTool("get_scene", {}).catch(() => null)
-      const start: AgentMessage[] = [
-        ...history.current,
-        {
-          role: "user",
-          content: [
-            ...referenceBlocks(refs),
-            { type: "text", text: request },
-            ...(now ? [{ type: "text" as const, text: `${LOOP_NOTE}The scene as it stands now (get_scene): ${JSON.stringify(now.data)}` }] : []),
-          ],
-        },
-      ]
-      if (refs.length) setThumbs((t) => ({ ...t, [at]: refs.map((r) => r.dataUrl) }))
-      history.current = start
-      setMessages(start)
+      stoppedBy.current = null
+      history.current = from
+      setMessages(from)
       setBusy(true)
-      setOutcome(null)
-      setError(null)
+      setNotice(null)
       setLive(IDLE)
       setRun({ startedAt: Date.now(), steps: 0 })
-      begin(request.length > 40 ? `${request.slice(0, 40)}…` : request)
+      let changed = false
+      begin(label.length > 40 ? `${label.slice(0, 40)}…` : label)
       try {
         const out = await runAgent({
-          history: start,
+          history: from,
           runTool,
           signal: controller.signal,
           onProgress: (p) => {
@@ -161,6 +162,7 @@ export function useAgent({
             else if (p.type === "tool") setLive((l) => ({ ...l, tool: p.name, retrying: false }))
             else if (p.type === "retry") setLive((l) => ({ ...l, retrying: true }))
             else if (p.type === "tool-done") {
+              if (p.ok && CHANGES.has(p.name)) changed = true
               setLive((l) => ({ ...l, tool: null }))
               setRun((r) => (r ? { ...r, steps: r.steps + 1 } : r))
             }
@@ -168,8 +170,9 @@ export function useAgent({
         })
         history.current = out.messages
         setMessages(out.messages)
-        setOutcome(out.ended)
-        setError(out.error ?? null)
+        const n = noticeOf(out.ended, out.error ?? null, stoppedBy.current)
+        // "Changes made so far are kept" only when there were some.
+        setNotice(n ? { ...n, kept: n.kept && changed } : null)
       } finally {
         end()
         abort.current = null
@@ -181,7 +184,60 @@ export function useAgent({
     [runTool, begin, end],
   )
 
-  const stop = useCallback(() => abort.current?.abort(), [])
+  const send = useCallback(
+    async (text: string, refs: ReferenceImage[] = []) => {
+      // A picture with no words asks for its look.
+      const request = text.trim() || (refs.length ? "Make the scene follow this reference image's style." : "")
+      if (!request || abort.current) return
+      const at = history.current.length
+      // The scene as it stands rides with every request, so the model starts
+      // from the truth instead of spending its first round asking for it.
+      const now = await runTool("get_scene", {}).catch(() => null)
+      if (refs.length) setThumbs((t) => ({ ...t, [at]: refs.map((r) => r.dataUrl) }))
+      await go(
+        [
+          ...history.current,
+          {
+            role: "user",
+            content: [
+              ...referenceBlocks(refs),
+              { type: "text", text: request },
+              ...(now ? [{ type: "text" as const, text: `${LOOP_NOTE}The scene as it stands now (get_scene): ${JSON.stringify(now.data)}` }] : []),
+            ],
+          },
+        ],
+        request,
+      )
+    },
+    [runTool, go],
+  )
+
+  /** The notice's own action: try the failed request again from where it
+   *  stopped, or carry on past the step limit. */
+  const retry = useCallback(async () => {
+    if (abort.current) return
+    const h = history.current
+    const last = h[h.length - 1]
+    // Where it stopped mid-request the history ends on our side: send it again.
+    if (last?.role === "user") return go(h, "AI: try again")
+    // Where the model had the last word, ask it to carry on.
+    return go([...h, { role: "user", content: [{ type: "text", text: `${LOOP_NOTE}Continue where you left off.` }] }], "AI: continue")
+  }, [go])
+
+  const stop = useCallback(() => {
+    if (!abort.current) return
+    stoppedBy.current = "user"
+    abort.current.abort()
+  }, [])
+
+  const reset = useCallback(() => {
+    abort.current?.abort()
+    forget(history.current)
+    history.current = []
+    setMessages([])
+    setThumbs({})
+    setNotice(null)
+  }, [forget])
 
   // In development the director is on window.rezeAgent, like the tools on
   // rezeTools: an eval script (or a headless browser that is not signed in to
@@ -195,22 +251,13 @@ export function useAgent({
         return history.current
       },
       stop,
+      reset,
       messages: () => history.current,
     }
     return () => {
       delete w.rezeAgent
     }
-  }, [send, stop])
+  }, [send, stop, reset])
 
-  const reset = useCallback(() => {
-    abort.current?.abort()
-    forget(history.current)
-    history.current = []
-    setMessages([])
-    setThumbs({})
-    setOutcome(null)
-    setError(null)
-  }, [forget])
-
-  return { messages, thumbs, live, busy, run, outcome, error, send, stop, reset }
+  return { messages, thumbs, live, busy, run, notice, send, retry, stop, reset }
 }

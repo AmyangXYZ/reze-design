@@ -5925,6 +5925,64 @@ export default function Lab() {
       lamps: DEFAULT_SCENE.state.lights,
     },
     replaceEffects: (list) => setBgEffectsState(stampEffectUids(list)),
+    authorEffect: async (wanted, wgsl, replaceRef) => {
+      const engine = engineRef.current
+      if (!engine) return { ok: false, diagnostics: [t.lab.engineNotReady] }
+      // The editor narrows the scene to its own subject while open; writing
+      // under it would fight the person's edit.
+      if (effectEditor) return { ok: false, diagnostics: ["the effect editor is open — close it before the AI writes effects"] }
+      const base = documentEffects
+      const ref = replaceRef?.toLowerCase()
+      const target = ref ? base.find((e) => e.uid === replaceRef || e.name.toLowerCase() === ref) : undefined
+      // Tried under a temporary id, so a failure leaves no trace in drafts.
+      // A replacement keeps the original's timing, level and cast — not its
+      // dial values, which belonged to the old code.
+      const tempId = `ai-${newSceneId()}`
+      const trial: AppliedEffect = target
+        ? { id: tempId, name: wanted, wgsl, uid: target.uid, influence: target.influence, window: target.window, models: target.models, stage: target.stage }
+        : { id: tempId, name: wanted, wgsl }
+      const next = stampEffectUids(target ? supersedeEffect(base, target.id, trial) : mergeEffect(base, trial))
+      const install = (list: AppliedEffect[]) =>
+        engine.setEffects(list.map((e) => ({ wgsl: e.wgsl, params: effectParams(e.wgsl, e.params), textures: effectTexturesFor(e.wgsl) })))
+      const rs = await install(next)
+      const at = next.findIndex((e) => e.id === tempId)
+      const r = rs[at]
+      if (!r?.ok) {
+        // Put back what the scene was wearing.
+        adoptInstall(base, await install(base))
+        return { ok: false, diagnostics: r?.diagnostics?.length ? r.diagnostics : [t.lab.compileFailed] }
+      }
+      // Saved: a draft of the user's rewritten in place, anything else a new one.
+      const keep = target && isDraft("effect", target.id) ? target : undefined
+      const name = keep ? keep.name : freeEffectName(wanted)
+      let id = keep?.id
+      if (keep) updateDraft("effect", keep.id, { payload: { wgsl } })
+      else id = createDraft("effect", { name, payload: { wgsl }, author: authorName }).id
+      const final = next.map((e) => (e.id === tempId ? { ...e, id: id!, name } : e))
+      adoptInstall(final, rs)
+      setBgEffects(final)
+      return {
+        ok: true,
+        diagnostics: r.diagnostics,
+        name,
+        uid: final[at].uid,
+        params: r.params,
+        duration: r.duration,
+      }
+    },
+    graphSource: (name) => {
+      const key = name.toLowerCase()
+      const hit = [...loadDrafts().graph, ...communityItems("graph"), ...GRAPH_LIBRARY].find((g) => g.name.toLowerCase() === key) as GraphItem | undefined
+      return hit ? { ...hit.payload.graph, name: hit.name } : null
+    },
+    saveGraphDraft: (wanted, graph) => {
+      const keep = draftGraphNamed(wanted)
+      const name = keep?.name ?? freeGraphName(wanted)
+      const named = { ...graph, name }
+      if (keep) updateDraft("graph", keep.id, { payload: { graph: named } })
+      else createDraft("graph", { name, payload: { graph: named }, author: authorName })
+      return name
+    },
   })
 
   // The art director runs those tools in a loop (lib/ai/agent-loop); each
@@ -10169,8 +10227,9 @@ export default function Lab() {
             live={agent.live}
             busy={agent.busy}
             run={agent.run}
-            outcome={agent.outcome}
-            error={agent.error}
+            notice={agent.notice}
+            onRetry={() => void agent.retry()}
+            onNewChat={agent.reset}
             onSend={(text, refs) => void agent.send(text, refs)}
             onStop={agent.stop}
             text={t.lab.agent}

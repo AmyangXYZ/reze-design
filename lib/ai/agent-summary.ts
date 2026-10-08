@@ -146,6 +146,20 @@ export function summarizeStep(name: string, input: Record<string, unknown>, data
       return { title: `Changed the lamp ${d.name ?? input.lamp}` }
     case "remove_lamp":
       return { title: `Removed the lamp ${d.removed ?? input.lamp}` }
+    case "read_authoring_guide":
+      return { title: `Read the ${input.topic === "graphs" ? "shader graph" : "effects"} guide` }
+    case "read_effect_source":
+      return { title: `Read the code of ${d.name ?? input.effect}` }
+    case "write_effect": {
+      if (d.saved) return { title: `Wrote the effect ${d.saved}`, detail: Array.isArray(d.dials) && d.dials.length ? `dials: ${list((d.dials as { name: string }[]).map((p) => p.name), 5)}` : "saved to your drafts" }
+      const problems = (Array.isArray(d.diagnostics) ? d.diagnostics : Array.isArray(d.problems) ? d.problems : []) as string[]
+      return { title: `Wrote ${input.name} — it needs fixing`, detail: problems[0] ?? String(d.error ?? ""), failed: true }
+    }
+    case "read_shader_graph":
+      return { title: `Read the ${input.shader ?? input.group} shader graph`, detail: d.graph ? plural(((d.graph as { nodes?: unknown[] }).nodes ?? []).length, "node") : undefined }
+    case "write_shader":
+      if (d.saved) return { title: `Wrote the shader ${d.saved}`, detail: `on ${d.character} · ${d.group}` }
+      return { title: `Wrote ${input.name} — it needs fixing`, detail: Array.isArray(d.diagnostics) ? String(d.diagnostics[0]) : String(d.error ?? ""), failed: true }
     case "get_visibility":
       return { title: "Checked who is on stage" }
     case "set_visibility":
@@ -192,6 +206,11 @@ export function doingOf(name: string | null): string | null {
     update_lamp: "Adjusting a lamp",
     remove_lamp: "Removing a lamp",
     get_visibility: "Checking the stage",
+    read_authoring_guide: "Reading the guide",
+    read_effect_source: "Reading effect code",
+    write_effect: "Writing an effect",
+    read_shader_graph: "Reading a shader graph",
+    write_shader: "Writing a shader",
     set_visibility: "Staging the cast",
   }
   return map[name] ?? titleOf(name)
