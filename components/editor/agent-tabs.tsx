@@ -4,7 +4,7 @@
 // request names it, × deletes it, + starts another. A run belongs to the tab
 // it started in, so while one is going the others hold still.
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Plus, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -34,6 +34,30 @@ export function AgentTabs({
   text: AgentTabsText
 }) {
   const strip = useRef<HTMLDivElement>(null)
+  // Which edges have tabs past them: each such edge fades, the way a browser's
+  // tab strip says "more this way" instead of ending on a clean cut.
+  const [more, setMore] = useState({ left: false, right: false })
+  useEffect(() => {
+    const el = strip.current
+    if (!el) return
+    const read = () => {
+      const max = el.scrollWidth - el.clientWidth
+      setMore({ left: el.scrollLeft > 1, right: el.scrollLeft < max - 1 })
+    }
+    read()
+    el.addEventListener("scroll", read, { passive: true })
+    const ro = new ResizeObserver(read)
+    ro.observe(el)
+    return () => {
+      el.removeEventListener("scroll", read)
+      ro.disconnect()
+    }
+  }, [tabs.length])
+  const fade = 16
+  const mask =
+    more.left || more.right
+      ? `linear-gradient(to right, ${more.left ? "transparent" : "black"}, black ${more.left ? fade : 0}px, black calc(100% - ${more.right ? fade : 0}px), ${more.right ? "transparent" : "black"})`
+      : undefined
 
   // As an editor's tabs behave: no scrollbar, the wheel scrolls the row
   // sideways, and the open tab is always brought into view.
@@ -57,7 +81,11 @@ export function AgentTabs({
       <Tabs value={activeId ?? undefined} onValueChange={onSelect} className="min-w-0 flex-1">
         {/* As a browser's tabs: they share the row, shrinking toward a floor
             before the row starts to scroll. */}
-        <TabsList ref={strip} className="no-scrollbar h-auto w-full justify-start gap-1 overflow-x-auto overflow-y-hidden rounded-none bg-transparent p-0">
+        <TabsList
+          ref={strip}
+          className="no-scrollbar h-auto w-full justify-start gap-1 overflow-x-auto overflow-y-hidden rounded-none bg-transparent p-0"
+          style={mask ? { maskImage: mask, WebkitMaskImage: mask } : undefined}
+        >
           {tabs.map((t) => {
             const open = t.id === activeId
             const working = t.id === runningId
