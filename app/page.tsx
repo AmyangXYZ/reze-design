@@ -193,6 +193,7 @@ import { useSceneTools } from "@/hooks/use-scene-tools"
 import { useAgent } from "@/hooks/use-agent"
 import { AgentPanel } from "@/components/editor/agent-panel"
 import { AgentMenu } from "@/components/editor/agent-settings"
+import { AgentTabs } from "@/components/editor/agent-tabs"
 import { resolveActive, useAiSettings, viaOf } from "@/lib/ai/connections"
 import type { SceneSnapshot } from "@/lib/scene-history"
 import { freeName } from "@/lib/names"
@@ -10227,9 +10228,17 @@ export default function Lab() {
               premium={premium}
               text={t.lab.agent.settings}
             />
-            <CastAction icon={RotateCcw} label={t.lab.agent.newChat} onClick={agent.reset} disabled={agent.busy || agent.messages.length === 0} />
             <CastAction icon={X} label={t.lab.agent.close} onClick={() => setAgentOpen(false)} />
           </div>
+          <AgentTabs
+            tabs={agent.tabs}
+            activeId={agent.activeId}
+            busy={agent.busy}
+            onSelect={(id) => void agent.switchTo(id)}
+            onClose={(id) => void agent.closeTab(id)}
+            onNew={() => void agent.newTab()}
+            text={t.lab.agent}
+          />
           <AgentPanel
             messages={agent.messages}
             thumbs={agent.thumbs}
@@ -10238,7 +10247,7 @@ export default function Lab() {
             run={agent.run}
             notice={agent.notice}
             onRetry={() => void agent.retry()}
-            onNewChat={agent.reset}
+            onNewChat={() => void agent.newTab()}
             onSend={(text, refs) => void agent.send(text, refs)}
             onStop={agent.stop}
             text={t.lab.agent}

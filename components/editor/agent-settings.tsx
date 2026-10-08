@@ -1,6 +1,6 @@
 "use client"
 
-// Which model the AI uses, and with whose key: the ☰ in the AI panel's
+// Which model the AI uses, and with whose key: the gear in the AI panel's
 // header (lib/ai/connections holds the settings). A service, its key, the
 // models wanted from it, and the one in use. Every model is verified when
 // it is added (one tiny request: does the key work, does it see a picture,
@@ -8,7 +8,7 @@
 // without saying so.
 
 import { useEffect, useMemo, useState, type ReactNode } from "react"
-import { ArrowLeft, Check, ExternalLink, Menu, Plus, RotateCw, Trash2, X } from "lucide-react"
+import { ArrowLeft, Check, ExternalLink, Plus, RotateCw, Settings, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -92,14 +92,14 @@ const FIELD = "h-7 rounded-chip px-2 text-xs md:text-xs"
 
 type View = { kind: "list" } | { kind: "add" } | { kind: "models"; connection: string }
 
-/** The ☰ in the panel header: services, keys and models. */
+/** The gear in the panel header: services, keys and models. */
 export function AgentMenu({ settings, active, premium, text }: { settings: AiSettings; active: Active | null; premium: boolean; text: AgentSettingsText }) {
   // The content mounts on open, so every open starts on the list.
   return (
     <Popover>
       <PopoverTrigger asChild>
         <Button variant="ghost" size="icon" aria-label={text.menu} className="size-5 shrink-0 rounded-chip text-muted-foreground hover:bg-white/10 hover:text-foreground">
-          <Menu className="size-3.5" />
+          <Settings className="size-3.5" />
         </Button>
       </PopoverTrigger>
       {/* The left dock's popovers, to the pixel: radius, surface, edge, shadow. */}

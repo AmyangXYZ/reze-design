@@ -1,23 +1,31 @@
 "use client"
 
-// The art director's conversation, for the panel: the history, what is
-// happening right now, and send / stop / start over.
+// The art director's conversations, for the panel: tabs of them, the open
+// one's history, what is happening right now, and send / stop.
 //
 // One request is one undo step — the scene's history is told when a run starts
 // and ends, so ⌘Z takes back everything the director did for that request at
 // once rather than one tool at a time.
 //
-// The conversation is SAVED in this browser (IndexedDB) and survives a reload
-// and a change of scene; only New conversation clears it. Opening another scene does stop a
-// run in progress — its tools would be acting on the wrong scene — but keeps
-// what was said.
+// Every conversation is SAVED in this browser (IndexedDB) and survives a
+// reload and a change of scene; closing its tab deletes it. Opening another
+// scene does stop a run in progress — its tools would be acting on the wrong
+// scene — but keeps what was said. A run belongs to the conversation it
+// started in, so tabs hold still while one is going.
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { ToolResult } from "@/lib/ai/scene-tools"
 import { CHANGES, LOOP_NOTE, filesIn, runAgent, settle, type AgentMessage } from "@/lib/ai/agent-loop"
 import { noticeOf, type Notice } from "@/lib/ai/agent-notice"
 import { referenceBlocks, type ReferenceImage } from "@/lib/ai/reference-image"
-import { loadConversation, saveConversation } from "@/lib/ai/conversation-store"
+import {
+  deleteConversation,
+  loadConversation,
+  loadIndex,
+  saveConversation,
+  saveIndex,
+  type ConversationTab,
+} from "@/lib/ai/conversation-store"
 import { deleteOwnFiles } from "@/lib/ai/connections"
 import type { Via } from "@/lib/ai/providers/presets"
 
@@ -36,6 +44,9 @@ const IDLE: AgentLive = { text: "", thinking: "", tool: null, retrying: false }
 
 /** The run as a whole, for the spinner: when it started, steps finished. */
 export type AgentRun = { startedAt: number; steps: number }
+
+/** A tab's title: the first request, shortened. */
+const titleOf = (request: string) => (request.length > 32 ? `${request.slice(0, 32).trimEnd()}…` : request)
 
 export function useAgent({
   scene,
@@ -80,35 +91,79 @@ export function useAgent({
   // Nothing is saved until the saved conversation has been read, or the empty
   // first render would overwrite it.
   const [loaded, setLoaded] = useState(false)
+  const [tabs, setTabs] = useState<ConversationTab[]>([])
+  const [activeId, setActiveId] = useState<string | null>(null)
+  // The open conversation's id where callbacks read it, never stale.
+  const active = useRef<string | null>(null)
+  // What this round has streamed so far, outside React state, so a page that
+  // closes mid-round can still write it down.
+  const partial = useRef({ text: "", thinking: "" })
+  const running = useRef(false)
 
-  // The saved conversation, made whole: a page closed mid-run left tool calls
-  // unanswered, which settle() answers — and the panel says so.
+  /** Show one saved conversation, made whole: a page closed mid-run left
+   *  tool calls unanswered, which settle() answers — and the panel says so. */
+  const show = useCallback(async (id: string) => {
+    active.current = id
+    setActiveId(id)
+    const saved = await loadConversation(id)
+    const settled = saved ? settle(saved.messages) : []
+    history.current = settled
+    setMessages(settled)
+    setThumbs(saved?.thumbs ?? {})
+    setNotice(saved && (saved.running || settled.length > saved.messages.length) ? noticeOf("interrupted", null, null) : null)
+  }, [])
+
+  const writeIndex = useCallback((next: ConversationTab[], id: string | null) => {
+    setTabs(next)
+    void saveIndex({ tabs: next, active: id })
+  }, [])
+
+  // The tabs, and the one that was open. A first visit gets one empty tab.
   useEffect(() => {
-    void loadConversation().then((saved) => {
-      if (saved && !history.current.length) {
-        const settled = settle(saved.messages)
-        history.current = settled
-        setMessages(settled)
-        setThumbs(saved.thumbs)
-        if (settled.length > saved.messages.length) setNotice(noticeOf("interrupted", null, null))
+    void loadIndex().then(async (index) => {
+      let list = index.tabs
+      let id = index.active && list.some((t) => t.id === index.active) ? index.active : (list[list.length - 1]?.id ?? null)
+      if (!id) {
+        id = crypto.randomUUID()
+        list = [{ id, title: "" }]
       }
+      writeIndex(list, id)
+      await show(id)
       setLoaded(true)
     })
-  }, [])
+  }, [show, writeIndex])
 
   // Saved as it changes, a beat after — not on every streamed token — and at
   // once when the page goes away, so closing the tab the moment a run ends
   // does not lose its last steps to the debounce.
   useEffect(() => {
-    if (!loaded) return
-    const flush = () => void saveConversation({ messages, thumbs })
-    const id = setTimeout(flush, 400)
-    window.addEventListener("pagehide", flush)
+    if (!loaded || !activeId) return
+    const conv = activeId
+    const id = setTimeout(() => void saveConversation(conv, { messages, thumbs, running: busy }), 400)
+    // Closing mid-round: what streamed so far goes down as a cut-off reply, so
+    // the reload shows it and Try again carries on from there.
+    const onHide = () => {
+      const { text, thinking } = partial.current
+      const cut: AgentMessage[] =
+        running.current && (text.trim() || thinking.trim())
+          ? [{ role: "assistant", content: [...(thinking.trim() ? [{ type: "thinking" as const, thinking, signature: "" }] : []), ...(text.trim() ? [{ type: "text" as const, text }] : [])] }]
+          : []
+      void saveConversation(conv, { messages: [...history.current, ...cut], thumbs, running: running.current })
+    }
+    window.addEventListener("pagehide", onHide)
     return () => {
       clearTimeout(id)
-      window.removeEventListener("pagehide", flush)
+      window.removeEventListener("pagehide", onHide)
     }
-  }, [messages, thumbs, loaded])
+  }, [messages, thumbs, loaded, busy, activeId])
+
+  // A run lives in this page: leaving ends it. Ask first, while one is going.
+  useEffect(() => {
+    if (!busy) return
+    const guard = (e: BeforeUnloadEvent) => e.preventDefault()
+    window.addEventListener("beforeunload", guard)
+    return () => window.removeEventListener("beforeunload", guard)
+  }, [busy])
 
   const forget = useCallback((list: AgentMessage[]) => {
     const files = filesIn(list)
@@ -141,6 +196,11 @@ export function useAgent({
       history.current = from
       setMessages(from)
       setBusy(true)
+      running.current = true
+      partial.current = { text: "", thinking: "" }
+      // At once, not on the debounce: the request is the one thing a reload
+      // must never lose.
+      if (active.current) void saveConversation(active.current, { messages: from, thumbs, running: true })
       setNotice(null)
       setLive(IDLE)
       setRun({ startedAt: Date.now(), steps: 0 })
@@ -158,8 +218,14 @@ export function useAgent({
               setMessages(p.messages)
               // A new round's stream starts clean.
               setLive(IDLE)
-            } else if (p.type === "text") setLive((l) => ({ ...l, text: l.text + p.text, tool: null }))
-            else if (p.type === "thinking") setLive((l) => ({ ...l, thinking: l.thinking + p.text }))
+              partial.current = { text: "", thinking: "" }
+            } else if (p.type === "text") {
+              partial.current.text += p.text
+              setLive((l) => ({ ...l, text: l.text + p.text, tool: null }))
+            } else if (p.type === "thinking") {
+              partial.current.thinking += p.text
+              setLive((l) => ({ ...l, thinking: l.thinking + p.text }))
+            }
             else if (p.type === "tool") setLive((l) => ({ ...l, tool: p.name, retrying: false }))
             else if (p.type === "retry") setLive((l) => ({ ...l, retrying: true }))
             else if (p.type === "tool-done") {
@@ -175,6 +241,7 @@ export function useAgent({
         // "Changes made so far are kept" only when there were some.
         setNotice(n ? { ...n, kept: n.kept && changed } : null)
       } finally {
+        running.current = false
         end()
         abort.current = null
         setBusy(false)
@@ -182,7 +249,7 @@ export function useAgent({
         setLive(IDLE)
       }
     },
-    [runTool, begin, end],
+    [runTool, begin, end, thumbs],
   )
 
   const send = useCallback(
@@ -194,6 +261,9 @@ export function useAgent({
       // A picture would reach a model that cannot see it; say so, send nothing.
       if (refs.length && viaRef.current?.vision === false) return setNotice({ kind: "textOnly", kept: false })
       const at = history.current.length
+      // The first request names its tab.
+      const id = active.current
+      if (id && !tabs.find((t) => t.id === id)?.title) writeIndex(tabs.map((t) => (t.id === id ? { ...t, title: titleOf(request) } : t)), id)
       // The scene as it stands rides with every request, so the model starts
       // from the truth instead of spending its first round asking for it.
       const now = await runTool("get_scene", {}).catch(() => null)
@@ -213,7 +283,7 @@ export function useAgent({
         request,
       )
     },
-    [runTool, go, ready],
+    [runTool, go, ready, tabs, writeIndex],
   )
 
   /** The notice's own action: try the failed request again from where it
@@ -234,14 +304,51 @@ export function useAgent({
     abort.current.abort()
   }, [])
 
-  const reset = useCallback(() => {
-    abort.current?.abort()
-    forget(history.current)
-    history.current = []
-    setMessages([])
-    setThumbs({})
-    setNotice(null)
-  }, [forget])
+  /** Open another tab. Never while a run is going: it writes to its own. */
+  const switchTo = useCallback(
+    async (id: string) => {
+      if (abort.current || id === active.current) return
+      if (active.current) await saveConversation(active.current, { messages: history.current, thumbs, running: false })
+      writeIndex(tabs, id)
+      await show(id)
+    },
+    [tabs, thumbs, show, writeIndex],
+  )
+
+  /** A new, empty conversation in a tab of its own — unless the open one is
+   *  still empty, which already is that. */
+  const newTab = useCallback(async () => {
+    if (abort.current) return
+    if (!history.current.length && active.current) return
+    if (active.current) await saveConversation(active.current, { messages: history.current, thumbs, running: false })
+    const id = crypto.randomUUID()
+    writeIndex([...tabs, { id, title: "" }], id)
+    await show(id)
+  }, [tabs, thumbs, show, writeIndex])
+
+  /** Close a tab: the conversation, and what it uploaded, are deleted. */
+  const closeTab = useCallback(
+    async (id: string) => {
+      if (abort.current && id === active.current) return
+      if (id === active.current) forget(history.current)
+      else void loadConversation(id).then((c) => c && forget(c.messages))
+      void deleteConversation(id)
+      const at = tabs.findIndex((t) => t.id === id)
+      const rest = tabs.filter((t) => t.id !== id)
+      if (id !== active.current) return writeIndex(rest, active.current)
+      // The open tab closed: its neighbour opens, or a fresh one if it was the last.
+      const next = rest[Math.min(at, rest.length - 1)]?.id
+      if (next) {
+        writeIndex(rest, next)
+        await show(next)
+      } else {
+        const fresh = crypto.randomUUID()
+        writeIndex([{ id: fresh, title: "" }], fresh)
+        await show(fresh)
+      }
+    },
+    [tabs, forget, show, writeIndex],
+  )
 
   // In development the director is on window.rezeAgent, like the tools on
   // rezeTools: an eval script (or a headless browser that is not signed in to
@@ -255,13 +362,13 @@ export function useAgent({
         return history.current
       },
       stop,
-      reset,
+      newTab,
       messages: () => history.current,
     }
     return () => {
       delete w.rezeAgent
     }
-  }, [send, stop, reset])
+  }, [send, stop, newTab])
 
-  return { messages, thumbs, live, busy, run, notice, send, retry, stop, reset }
+  return { tabs, activeId, switchTo, newTab, closeTab, messages, thumbs, live, busy, run, notice, send, retry, stop }
 }

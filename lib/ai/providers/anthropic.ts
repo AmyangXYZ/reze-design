@@ -45,7 +45,13 @@ function ownHistory(messages: AgentMessage[]): AgentMessage[] {
     if (b.type === "tool_result" && Array.isArray(b.content)) return [{ ...b, content: b.content.flatMap((x) => fix(x as Block)) as typeof b.content }]
     return [b]
   }
-  return messages.map((m) => (typeof m.content === "string" ? m : { ...m, content: m.content.flatMap(fix) }))
+  return messages.map((m) => {
+    if (typeof m.content === "string") return m
+    const content = m.content.flatMap(fix)
+    // A reply cut off by a closed page may hold only reasoning, which is
+    // stripped above; the API refuses an empty turn.
+    return { ...m, content: content.length ? content : [{ type: "text" as const, text: "(interrupted)" }] }
+  })
 }
 
 /** The newest message with every inline image uploaded and referenced by id. */

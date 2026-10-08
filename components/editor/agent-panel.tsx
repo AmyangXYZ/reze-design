@@ -110,7 +110,7 @@ const elapsed = (ms: number) => {
 function Row({ mark, children, className }: { mark?: ReactNode; children: ReactNode; className?: string }) {
   return (
     <div className={cn("flex gap-1.5", className)}>
-      <span className="flex h-5 w-3 shrink-0 items-center justify-center">{mark}</span>
+      <span className="flex h-[18px] w-3 shrink-0 items-center justify-center">{mark}</span>
       <div className="min-w-0 flex-1">{children}</div>
     </div>
   )
@@ -207,13 +207,24 @@ function Reply({ text }: { text: string }) {
 
 /** Its reasoning between steps: muted, two lines until opened. */
 function Note({ text }: { text: string }) {
+  const [open, setOpen] = useState(false)
   return (
-    <Collapsible>
+    // Reasoning belongs to what follows it: a little closer than other lines.
+    <Collapsible open={open} onOpenChange={setOpen} className="-mb-0.5">
       <Row mark={<AstroidSpinner still className="size-3 text-muted-foreground" />}>
-        <CollapsibleTrigger className="group w-full cursor-pointer text-left text-muted-foreground hover:text-foreground">
-          <span className="line-clamp-2 whitespace-pre-wrap group-data-[state=open]:hidden">{inline(text)}</span>
+        <CollapsibleTrigger className="w-full cursor-pointer text-left text-muted-foreground hover:text-foreground data-[state=open]:hidden">
+          <span className="line-clamp-2 whitespace-pre-wrap">{inline(text)}</span>
         </CollapsibleTrigger>
-        <CollapsibleContent className="whitespace-pre-wrap text-muted-foreground">{inline(text)}</CollapsibleContent>
+        {/* Opened, a click folds it back — unless that click ended a text
+            selection, which is someone copying the reasoning. */}
+        <CollapsibleContent
+          className="cursor-pointer whitespace-pre-wrap text-muted-foreground"
+          onClick={() => {
+            if (!window.getSelection()?.toString()) setOpen(false)
+          }}
+        >
+          {inline(text)}
+        </CollapsibleContent>
       </Row>
     </Collapsible>
   )
@@ -311,7 +322,7 @@ export function AgentPanel({
         void attach(e.dataTransfer.files)
       }}
     >
-      <div ref={scroller} className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-2.5 pt-3 pb-5 leading-5 select-text">
+      <div ref={scroller} className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-4 pt-0 pb-5 leading-[18px] select-text">
         {lines.length === 0 && !busy && <p className="text-muted-foreground">{text.empty}</p>}
         {lines.map((l, i) =>
           l.kind === "user" ? (
@@ -321,7 +332,7 @@ export function AgentPanel({
             <Row
               key={i}
               mark={<Prompt />}
-              className={cn("-mx-1.5 rounded-interior bg-white/[0.06] px-1.5 py-1.5", i > 0 && "mt-4")}
+              className={cn("-mx-1.5 rounded-interior bg-white/[0.06] px-1.5 py-1", i > 0 && "mt-4")}
             >
               {l.images?.length ? (
                 <div className="mb-1.5 flex flex-wrap gap-1.5">
@@ -397,7 +408,7 @@ export function AgentPanel({
           sits on, so what you type and what you sent look like one thing.
           Attached pictures ride above the line; the picture button, send and
           stop are small marks at its end. Enter sends, Shift+Enter breaks. */}
-      <div className="shrink-0 border-t border-line p-1.5">
+      <div className="shrink-0 border-t border-line px-2.5 py-1.5">
         <div className="rounded-interior bg-white/[0.06] px-1.5 py-1 ring-blue-400 focus-within:ring-1">
           {(refs.length > 0 || preparing > 0) && (
             <div className="mb-1.5 flex flex-wrap gap-1.5 pl-[18px]">
