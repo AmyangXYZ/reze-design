@@ -258,8 +258,15 @@ function AddConnection({ text, onBack, onAdded }: { text: AgentSettingsText; onB
       <div className="mt-1.5 space-y-1.5">
         {provider === "custom" && <Input value={baseURL} onChange={(e) => setBaseURL(e.target.value)} placeholder={text.baseURL} className={FIELD} />}
         <Input
-          type="password"
+          // Masked as text, not a password field: a browser offers to save
+          // whatever is typed into one, and a key is not a site password.
+          type="text"
           autoComplete="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          data-1p-ignore
+          data-lpignore="true"
+          data-form-type="other"
           value={key}
           onChange={(e) => setKey(e.target.value)}
           onKeyDown={(e) => {
@@ -267,7 +274,7 @@ function AddConnection({ text, onBack, onAdded }: { text: AgentSettingsText; onB
             e.stopPropagation()
           }}
           placeholder={text.key}
-          className={cn(FIELD, "font-mono")}
+          className={cn(FIELD, "font-mono [-webkit-text-security:disc]")}
         />
         {error && <p className="line-clamp-3 px-2 text-[11px] break-words text-amber-400 select-text">{error}</p>}
         {/* The link and the button on one 28px line, the link's text on the
