@@ -1,4 +1,5 @@
-// GPT, through OpenAI's Responses API. Server only.
+// GPT, through OpenAI's Responses API — from this server for Premium, from
+// the person's own browser for their own key.
 //
 // The Responses API rather than Chat Completions because the GPT-6 models take
 // function tools only there. The conversation arrives in the shared shape
@@ -23,7 +24,7 @@
 import OpenAI, { toFile } from "openai"
 import type Anthropic from "@anthropic-ai/sdk"
 import type { AgentMessage } from "@/lib/ai/agent-loop"
-import { TurnError, type Provider, type Target, type TurnArgs } from "@/lib/ai/providers/types"
+import { TurnError, bytesOf, type Provider, type Target, type TurnArgs } from "@/lib/ai/providers/types"
 /** Captures whose pictures are sent; earlier ones are mentioned, not shown. */
 const KEEP_CAPTURES = 3
 
@@ -31,7 +32,10 @@ type Block = Anthropic.Beta.BetaContentBlockParam
 type Input = OpenAI.Responses.ResponseInputItem
 type ImageSource = { type: string; data?: string; media_type?: string; file_id?: string; url?: string }
 
-const client = (target: Omit<Target, "model">) => new OpenAI({ apiKey: target.key, baseURL: target.baseURL })
+// No retries here: the loop retries a failed round itself.
+// No retries here: the loop retries a failed round itself. In a browser the
+// key is the person's own, sent from their own page.
+const client = (target: Omit<Target, "model">) => new OpenAI({ apiKey: target.key, baseURL: target.baseURL, maxRetries: 0, dangerouslyAllowBrowser: true })
 
 function imagePart(source: ImageSource): OpenAI.Responses.ResponseInputImage | null {
   if (source.type === "base64" && source.data) return { type: "input_image", detail: "auto", image_url: `data:${source.media_type ?? "image/jpeg"};base64,${source.data}` }
@@ -124,7 +128,7 @@ async function uploadImages(c: OpenAI, message: AgentMessage): Promise<AgentMess
     if (b.type === "image" && b.source.type === "base64") {
       const ext = b.source.media_type.split("/")[1] ?? "jpeg"
       const file = await c.files.create({
-        file: await toFile(Buffer.from(b.source.data, "base64"), `capture.${ext}`, { type: b.source.media_type }),
+        file: await toFile(bytesOf(b.source.data), `capture.${ext}`, { type: b.source.media_type }),
         purpose: "vision",
       })
       return { type: "image", source: { type: "file", file_id: file.id } }

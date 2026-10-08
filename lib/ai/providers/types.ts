@@ -27,6 +27,9 @@ export class TurnError extends Error {
   }
 }
 
+/** A base64 string's bytes, in a browser or on the server alike. */
+export const bytesOf = (base64: string) => Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+
 /** Where one turn goes: whose key, which model, which server. */
 export type Target = { key: string; model: string; baseURL: string }
 

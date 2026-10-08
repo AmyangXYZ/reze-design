@@ -5990,7 +5990,7 @@ export default function Lab() {
   // request it takes is one step in the scene's undo history.
   const aiSettings = useAiSettings()
   const aiActive = resolveActive(aiSettings, premium)
-  const agent = useAgent({ scene, via: viaOf(aiSettings, aiActive), runTool: sceneTools.run, begin: sceneHistory.begin, end: sceneHistory.end })
+  const agent = useAgent({ scene, via: viaOf(aiSettings, aiActive), ready: aiActive !== null, runTool: sceneTools.run, begin: sceneHistory.begin, end: sceneHistory.end })
 
   // ── Persistence ──
   //

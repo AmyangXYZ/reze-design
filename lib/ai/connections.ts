@@ -3,10 +3,10 @@
 // The person's own AI connections: which services they connected, with which
 // key, which of those services' models they use, and the one in use now.
 //
-// Kept in THIS BROWSER only. A key is sent with each request and passes
-// through the server, which never stores it — so there is no copy anywhere
-// else to lose or leak, and a cleared browser simply means making a new key at
-// the provider (the menu links straight to the page for it).
+// Kept in THIS BROWSER only, and used from here: every request on a person's
+// own key goes from their browser straight to the service, over their own
+// network. No copy of a key exists anywhere else — a cleared browser simply
+// means making a new key at the service (the menu links to the page for it).
 
 import { useSyncExternalStore } from "react"
 import { storageKey } from "@/lib/storage"
@@ -95,7 +95,13 @@ export function connectionLabel(c: Connection): string {
   return `${name} ··${c.key.slice(-4)}`
 }
 
-/** Ask the server to verify one model of a connection, and record the verdict. */
+/** The providers, loaded the first time a person's own connection is used —
+ *  they are not part of the editor's first load. */
+const providers = () => import("@/lib/ai/providers")
+
+const viaOfConnection = (c: Connection, model = ""): Via => ({ provider: c.provider, key: c.key, model, ...(c.baseURL ? { baseURL: c.baseURL } : {}) })
+
+/** Verify one model of a connection, and record the verdict. */
 export async function verifyModel(connectionId: string, model: string) {
   const setEntry = (entry: ModelEntry) =>
     updateAi((s) => ({
@@ -107,24 +113,25 @@ export async function verifyModel(connectionId: string, model: string) {
   const c = read().connections.find((x) => x.id === connectionId)
   if (!c) return
   setEntry({ id: model, verdict: "checking" })
-  try {
-    const res = await fetch("/api/agent/test", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ via: { provider: c.provider, key: c.key, model, ...(c.baseURL ? { baseURL: c.baseURL } : {}) } }),
-    })
-    const out = (await res.json().catch(() => ({}))) as { verdict?: Verdict; error?: string }
-    setEntry({ id: model, verdict: res.ok ? (out.verdict ?? "error") : "error", ...(out.error ? { error: out.error } : {}) })
-  } catch (e) {
-    setEntry({ id: model, verdict: "error", error: e instanceof Error ? e.message : String(e) })
-  }
+  const [{ routeOf }, { verify }] = await Promise.all([providers(), import("@/lib/ai/verify")])
+  const route = routeOf(viaOfConnection(c, model))
+  if ("error" in route) return setEntry({ id: model, verdict: "error", error: route.error })
+  const out = await verify(route)
+  setEntry({ id: model, verdict: out.verdict, ...(out.error ? { error: out.error } : {}) })
 }
 
-/** The models a key can use, from the provider itself. Throws the server's
+/** The models a key can use, from the service itself. Throws the service's
  *  words when the key is refused. */
 export async function listModels(via: Omit<Via, "model">): Promise<string[]> {
-  const res = await fetch("/api/agent/models", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ via }) })
-  const out = (await res.json().catch(() => ({}))) as { models?: string[]; error?: string }
-  if (!res.ok) throw new Error(out.error ?? `HTTP ${res.status}`)
-  return out.models ?? []
+  const { routeOf } = await providers()
+  const route = routeOf(via, false)
+  if ("error" in route) throw new Error(route.error)
+  return [...new Set(await route.provider.models(route.target))].sort()
+}
+
+/** Delete what a cleared conversation uploaded to the person's own service. */
+export async function deleteOwnFiles(via: Via, ids: string[]) {
+  const { routeOf } = await providers()
+  const route = routeOf(via)
+  if (!("error" in route)) await route.provider.deleteFiles(route.target, ids)
 }

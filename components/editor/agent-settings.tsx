@@ -81,11 +81,7 @@ function Line({
 function Verdict({ entry, text }: { entry: ModelEntry; text: AgentSettingsText }) {
   if (entry.verdict === "checking") return <AstroidSpinner className="size-3 shrink-0 text-muted-foreground" />
   if (entry.verdict === "ready") return null
-  return (
-    <span title={entry.error} className="shrink-0 text-[11px] text-amber-400 select-text">
-      {text.verdicts[entry.verdict]}
-    </span>
-  )
+  return <span className="shrink-0 text-[11px] text-amber-400">{text.verdicts[entry.verdict]}</span>
 }
 
 const iconButton = "size-5 shrink-0 rounded-chip text-muted-foreground hover:bg-white/10 hover:text-foreground"
@@ -96,17 +92,7 @@ const FIELD = "h-7 rounded-chip px-2 text-xs md:text-xs"
 type View = { kind: "list" } | { kind: "add" } | { kind: "models"; connection: string }
 
 /** The ☰ in the panel header: services, keys and models. */
-export function AgentMenu({
-  settings,
-  active,
-  premium,
-  text,
-}: {
-  settings: AiSettings
-  active: Active | null
-  premium: boolean
-  text: AgentSettingsText
-}) {
+export function AgentMenu({ settings, active, premium, text }: { settings: AiSettings; active: Active | null; premium: boolean; text: AgentSettingsText }) {
   // The content mounts on open, so every open starts on the list.
   return (
     <Popover>
@@ -115,7 +101,8 @@ export function AgentMenu({
           <Menu className="size-3.5" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 p-1" onCloseAutoFocus={(e) => e.preventDefault()}>
+      {/* The left dock's popovers, to the pixel: radius, surface, edge, shadow. */}
+      <PopoverContent align="end" className="w-80 rounded-surface border-line-strong bg-surface-raised p-2 shadow-float" onCloseAutoFocus={(e) => e.preventDefault()}>
         <MenuBody settings={settings} active={active} premium={premium} text={text} />
       </PopoverContent>
     </Popover>
@@ -158,33 +145,38 @@ function MenuBody({ settings, active, premium, text }: { settings: AiSettings; a
             </Button>
           </div>
           {c.models.map((m) => (
-            <Line
-              key={m.id}
-              selected={isActive(active, c.id, m.id)}
-              onClick={() => choose({ connection: c.id, model: m.id })}
-              trailing={
-                <>
-                  <Verdict entry={m} text={text} />
-                  {m.verdict !== "checking" && m.verdict !== "ready" && (
-                    <Button variant="ghost" size="icon" aria-label={text.verify} tooltip={text.verify} onClick={() => void verifyModel(c.id, m.id)} className={iconButton}>
-                      <RotateCw className="size-3" />
+            <div key={m.id}>
+              <Line
+                selected={isActive(active, c.id, m.id)}
+                onClick={() => choose({ connection: c.id, model: m.id })}
+                trailing={
+                  <>
+                    <Verdict entry={m} text={text} />
+                    {m.verdict !== "checking" && m.verdict !== "ready" && (
+                      <Button variant="ghost" size="icon" aria-label={text.verify} tooltip={text.verify} onClick={() => void verifyModel(c.id, m.id)} className={iconButton}>
+                        <RotateCw className="size-3" />
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={text.removeModel}
+                      tooltip={text.removeModel}
+                      onClick={() => removeModel(c, m.id)}
+                      className={cn(iconButton, "opacity-0 group-hover:opacity-100 focus-visible:opacity-100")}
+                    >
+                      <X className="size-3" />
                     </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={text.removeModel}
-                    tooltip={text.removeModel}
-                    onClick={() => removeModel(c, m.id)}
-                    className={cn(iconButton, "opacity-0 group-hover:opacity-100 focus-visible:opacity-100")}
-                  >
-                    <X className="size-3" />
-                  </Button>
-                </>
-              }
-            >
-              {m.id}
-            </Line>
+                  </>
+                }
+              >
+                {m.id}
+              </Line>
+              {/* What the service said, word for word — copyable, the way to debug it. */}
+              {m.error && m.verdict !== "ready" && m.verdict !== "checking" && (
+                <p className="line-clamp-3 pr-2 pb-1 pl-7 text-[11px] break-words text-amber-400 select-text">{m.error}</p>
+              )}
+            </div>
           ))}
           <Line mark={<Plus className="size-3 text-muted-foreground" />} onClick={() => setView({ kind: "models", connection: c.id })}>
             <span className="text-muted-foreground">{text.addModel}</span>

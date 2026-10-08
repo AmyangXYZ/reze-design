@@ -37,29 +37,8 @@ export const PRESETS: Preset[] = [
 
 export const presetOf = (id: string): Preset | undefined => PRESETS.find((p) => p.id === id)
 
-/** What verifying a connection found (app/api/agent/test). */
+/** What verifying a connection found (lib/ai/verify). */
 export type Verdict = "ready" | "noVision" | "noTools" | "error"
 
 /** A person's own connection, as a request carries it. */
 export type Via = { provider: ProviderId; key: string; model: string; baseURL?: string }
-
-/**
- * A custom server address our server may call: https, and a public host name.
- * The request leaves from our server, so an address inside its network — a
- * loopback, a private range, a metadata endpoint — must never be reachable
- * through it.
- */
-export function publicBaseURL(raw: string): string | null {
-  let u: URL
-  try {
-    u = new URL(raw)
-  } catch {
-    return null
-  }
-  if (u.protocol !== "https:") return null
-  const host = u.hostname.toLowerCase()
-  // IP literals (v4 dotted, v6 bracketed) and names that only resolve inside a network.
-  if (/^[\d.]+$/.test(host) || host.startsWith("[") || host === "localhost") return null
-  if (/\.(local|localhost|internal|lan|home|corp)$/.test(host) || !host.includes(".")) return null
-  return u.toString().replace(/\/+$/, "")
-}

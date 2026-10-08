@@ -1,4 +1,5 @@
-// Claude, through the Anthropic Messages API. Server only.
+// Claude, through the Anthropic Messages API — from this server for Premium,
+// from the person's own browser for their own key.
 //
 // The conversation's own shape is Anthropic's, so this is nearly a pass-
 // through. What it adds: images uploaded once to the Files API (the history
@@ -9,13 +10,15 @@
 
 import Anthropic, { toFile } from "@anthropic-ai/sdk"
 import type { AgentMessage } from "@/lib/ai/agent-loop"
-import { TurnError, type Provider, type Target, type TurnArgs } from "@/lib/ai/providers/types"
+import { TurnError, bytesOf, type Provider, type Target, type TurnArgs } from "@/lib/ai/providers/types"
 
 /** The client for a key, naming a workspace when it is this server's own
  *  organisation-wide key that needs it said (ANTHROPIC_WORKSPACE_ID). */
 function client(target: Omit<Target, "model">): Anthropic {
   const workspace = target.key === process.env.ANTHROPIC_API_KEY ? process.env.ANTHROPIC_WORKSPACE_ID : undefined
-  return new Anthropic({ apiKey: target.key, baseURL: target.baseURL, ...(workspace ? { defaultHeaders: { "anthropic-workspace-id": workspace } } : {}) })
+  // No retries here: the loop retries a failed round itself. In a browser
+  // the key is the person's own, sent from their own page.
+  return new Anthropic({ apiKey: target.key, baseURL: target.baseURL, maxRetries: 0, dangerouslyAllowBrowser: true, ...(workspace ? { defaultHeaders: { "anthropic-workspace-id": workspace } } : {}) })
 }
 
 type Block = Anthropic.Beta.BetaContentBlockParam
@@ -44,7 +47,7 @@ async function uploadImages(c: Anthropic, message: AgentMessage): Promise<AgentM
     if (b.type === "image" && b.source.type === "base64") {
       const ext = b.source.media_type.split("/")[1] ?? "jpeg"
       const file = await c.files.upload({
-        file: await toFile(Buffer.from(b.source.data, "base64"), `capture.${ext}`, { type: b.source.media_type }),
+        file: await toFile(bytesOf(b.source.data), `capture.${ext}`, { type: b.source.media_type }),
       })
       return { type: "image", source: { type: "file", file_id: file.id } }
     }

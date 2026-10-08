@@ -18,12 +18,10 @@ export function overLimit(user: string): boolean {
 
 export type Gate = { ok: true; user: string; premium: boolean } | { ok: false; status: number; error: string }
 
-/** Signed in — enough for your own connection; Premium on top for this
- *  server's key. Signing in is asked even for your own key because the
- *  request runs on this server, which must not be an open relay. A local dev
- *  server lets the developer through when it has no database, or when
- *  AGENT_DEV_OPEN=1 (for driving the editor headless); neither applies to a
- *  production build. */
+/** Signed in, and whether on Premium — the only use of this server's key. A
+ *  local dev server lets the developer through when it has no database, or
+ *  when AGENT_DEV_OPEN=1 (for driving the editor headless); neither applies
+ *  to a production build. */
 export async function gate(request: Request): Promise<Gate> {
   if (process.env.NODE_ENV === "development" && process.env.AGENT_DEV_OPEN === "1") return { ok: true, user: "dev", premium: true }
   if (!hasDatabase) {

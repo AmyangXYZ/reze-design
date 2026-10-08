@@ -6,7 +6,9 @@
 // with no one in between; it ends when the model stops asking for tools, when
 // the user presses stop, or at a round limit that makes it wrap up.
 //
-// The model is reached through /api/agent, one call per round. The history
+// The model is reached once per round: on the person's own key, straight from
+// this browser (lib/ai/providers, over their own network); on Premium,
+// through /api/agent, which holds this server's key. The history
 // here is APPEND-ONLY: every reply is kept exactly as it came back (thinking
 // included) and nothing earlier is ever rewritten — the model's reasoning is
 // bound to the history it was produced against. The one replacement is the
@@ -20,6 +22,7 @@
 import type Anthropic from "@anthropic-ai/sdk"
 import type { ToolResult } from "@/lib/ai/scene-tools"
 import type { Via } from "@/lib/ai/providers/presets"
+import { TurnError } from "@/lib/ai/providers/types"
 
 export type AgentMessage = Anthropic.Beta.BetaMessageParam
 
@@ -142,7 +145,8 @@ export async function runAgent(opts: {
   runTool: (name: string, input: Record<string, unknown>) => Promise<ToolResult>
   onProgress: (p: AgentProgress) => void
   signal: AbortSignal
-  /** The person's own connection; absent means Premium. */
+  /** The person's own connection, called from this browser; absent means
+   *  Premium, through the server. */
   via?: Via | null
   endpoint?: string
   maxRounds?: number
@@ -158,12 +162,35 @@ export async function runAgent(opts: {
    *  the network, a busy or failing provider, a stream cut short — yes; a
    *  refused or malformed request — no. */
   const ask = async (): Promise<Round> => {
+    let done = null as Round | null
+    const handle = (e: AgentStreamEvent) => {
+      if (e.type === "sent") {
+        messages[messages.length - 1] = e.message
+        publish()
+      } else if (e.type === "text" || e.type === "thinking") opts.onProgress(e)
+      else if (e.type === "message") done = { ok: true, reply: e }
+      else if (e.type === "error") done = { ok: false, error: e.message, retryable: e.retryable === true }
+    }
+
+    // Their own key: the browser calls the service itself.
+    if (opts.via) {
+      try {
+        const [{ routeOf }, { AGENT_SYSTEM, AGENT_TOOLS }] = await Promise.all([import("@/lib/ai/providers"), import("@/lib/ai/agent-context")])
+        const route = routeOf(opts.via)
+        if ("error" in route) return { ok: false, error: route.error, retryable: false }
+        await route.provider.turn({ target: route.target, messages: sendable(messages), system: AGENT_SYSTEM, tools: AGENT_TOOLS, send: handle, signal: opts.signal })
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e), retryable: e instanceof TurnError ? e.retryable : true }
+      }
+      return done ?? { ok: false, error: "the reply was cut off", retryable: true }
+    }
+
     let res: Response
     try {
       res = await fetch(opts.endpoint ?? "/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: sendable(messages), ...(opts.via ? { via: opts.via } : {}) }),
+        body: JSON.stringify({ messages: sendable(messages) }),
         signal: opts.signal,
       })
     } catch (e) {
@@ -175,12 +202,8 @@ export async function runAgent(opts: {
     }
     try {
       for await (const e of lines(res)) {
-        if (e.type === "sent") {
-          messages[messages.length - 1] = e.message
-          publish()
-        } else if (e.type === "text" || e.type === "thinking") opts.onProgress(e)
-        else if (e.type === "message") return { ok: true, reply: e }
-        else if (e.type === "error") return { ok: false, error: e.message, retryable: e.retryable === true }
+        handle(e)
+        if (done) return done
       }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e), retryable: true }

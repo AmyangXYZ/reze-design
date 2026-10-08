@@ -18,6 +18,7 @@ import { CHANGES, LOOP_NOTE, filesIn, runAgent, settle, type AgentMessage } from
 import { noticeOf, type Notice } from "@/lib/ai/agent-notice"
 import { referenceBlocks, type ReferenceImage } from "@/lib/ai/reference-image"
 import { loadConversation, saveConversation } from "@/lib/ai/conversation-store"
+import { deleteOwnFiles } from "@/lib/ai/connections"
 import type { Via } from "@/lib/ai/providers/presets"
 
 export type AgentLive = {
@@ -39,6 +40,7 @@ export type AgentRun = { startedAt: number; steps: number }
 export function useAgent({
   scene,
   via,
+  ready,
   runTool,
   begin,
   end,
@@ -48,6 +50,9 @@ export function useAgent({
   /** The person's own connection, or null for Premium. Read when a run
    *  starts: switching mid-run takes effect on the next request. */
   via: Via | null
+  /** A model to ask: the person's own, or Premium. Without one a request
+   *  says to add a model rather than asking anyone. */
+  ready: boolean
   runTool: (name: string, input: Record<string, unknown>) => Promise<ToolResult>
   /** Group the run's changes into one undo step. */
   begin: (label?: string) => void
@@ -107,10 +112,10 @@ export function useAgent({
 
   const forget = useCallback((list: AgentMessage[]) => {
     const files = filesIn(list)
-    if (files.length) {
-      const body = JSON.stringify({ files, ...(viaRef.current ? { via: viaRef.current } : {}) })
-      void fetch("/api/agent", { method: "DELETE", headers: { "Content-Type": "application/json" }, body }).catch(() => null)
-    }
+    if (!files.length) return
+    // Uploaded by whichever key the conversation used last.
+    if (viaRef.current) void deleteOwnFiles(viaRef.current, files).catch(() => null)
+    else void fetch("/api/agent", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ files }) }).catch(() => null)
   }, [])
 
   // A different scene stops a run in progress (its tools would act on the new
@@ -185,6 +190,7 @@ export function useAgent({
       // A picture with no words asks for its look.
       const request = text.trim() || (refs.length ? "Make the scene follow this reference image's style." : "")
       if (!request || abort.current) return
+      if (!ready) return setNotice(noticeOf("error", "premium", null))
       const at = history.current.length
       // The scene as it stands rides with every request, so the model starts
       // from the truth instead of spending its first round asking for it.
@@ -205,7 +211,7 @@ export function useAgent({
         request,
       )
     },
-    [runTool, go],
+    [runTool, go, ready],
   )
 
   /** The notice's own action: try the failed request again from where it

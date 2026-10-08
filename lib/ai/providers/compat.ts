@@ -1,5 +1,7 @@
 // Every other model, through the Chat Completions API that Gemini, DeepSeek,
-// Qwen, Grok, OpenRouter and most self-hosted servers speak. Server only.
+// Qwen, Grok, OpenRouter and self-hosted servers (Ollama, LM Studio) speak.
+// Runs in the person's own browser, with their own key, from their own
+// network.
 //
 // The conversation arrives in the shared shape (Anthropic's blocks — see
 // ./types) and is translated on the way out:
@@ -15,10 +17,14 @@
 //
 // and the reply on the way back: content → text, tool_calls → tool_use, the
 // streamed reasoning → a thinking block. No file uploads: pictures travel as
-// data URLs, and the browser stops re-sending all but the latest few
+// data URLs, and the loop stops re-sending all but the latest few
 // (lib/ai/agent-loop), which keeps every request small.
+//
+// Plain fetch rather than an SDK: a browser asks the service's permission
+// (CORS) for every header a request carries, and some services allow only
+// authorization and content-type — an SDK's own headers would be refused.
 
-import OpenAI from "openai"
+import type OpenAI from "openai"
 import type Anthropic from "@anthropic-ai/sdk"
 import type { AgentMessage } from "@/lib/ai/agent-loop"
 import { TurnError, type Provider, type Target, type TurnArgs } from "@/lib/ai/providers/types"
@@ -29,7 +35,45 @@ type Part = OpenAI.Chat.ChatCompletionContentPart
 type ImageSource = { type: string; data?: string; media_type?: string; url?: string }
 type Detail = Record<string, unknown>
 
-const client = (target: Omit<Target, "model">) => new OpenAI({ apiKey: target.key, baseURL: target.baseURL })
+/** The two headers every service allows; a keyless local server gets one. */
+const headers = (target: Omit<Target, "model">): Record<string, string> => ({
+  "Content-Type": "application/json",
+  ...(target.key ? { Authorization: `Bearer ${target.key}` } : {}),
+})
+
+/** A refused request as a TurnError: busy and failing servers are worth
+ *  another try, a refused key or request is not. */
+async function refusal(res: Response): Promise<TurnError> {
+  const body = (await res.json().catch(() => null)) as { error?: { message?: string } | string; message?: string } | null
+  const said = typeof body?.error === "string" ? body.error : (body?.error?.message ?? body?.message ?? res.statusText)
+  if (res.status === 429) return new TurnError("the model is busy — try again in a moment", true)
+  return new TurnError(`model error ${res.status}: ${said}`, res.status >= 500 || res.status === 408 || res.status === 409)
+}
+
+/** A fetch that failed to reach the service at all. */
+const unreachable = (e: unknown, target: Omit<Target, "model">) =>
+  new TurnError(`connection to the model failed: ${new URL(target.baseURL).host} — ${e instanceof Error ? e.message : String(e)}`, true)
+
+/** The data lines of a server-sent event stream, parsed. */
+async function* events(res: Response): AsyncGenerator<Record<string, unknown>> {
+  const reader = res.body!.getReader()
+  const decoder = new TextDecoder()
+  let buf = ""
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    let nl: number
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim()
+      buf = buf.slice(nl + 1)
+      if (!line.startsWith("data:")) continue
+      const data = line.slice(5).trim()
+      if (data === "[DONE]") return
+      yield JSON.parse(data) as Record<string, unknown>
+    }
+  }
+}
 
 const UNAVAILABLE = "(An earlier image, not available to this model.)"
 
@@ -106,32 +150,42 @@ type Delta = {
 }
 
 async function turn({ target, messages, system, tools, send, signal }: TurnArgs): Promise<void> {
-  const c = client(target)
   // Nothing to upload: the newest message goes as it is.
   send({ type: "sent", message: messages[messages.length - 1] })
   const openrouter = target.baseURL.startsWith("https://openrouter.ai/")
+  let res: Response
   try {
-    const stream = await c.chat.completions.create(
-      {
+    res = await fetch(`${target.baseURL}/chat/completions`, {
+      method: "POST",
+      headers: headers(target),
+      signal,
+      body: JSON.stringify({
         model: target.model,
         messages: toMessages(system, messages),
-        tools: tools.map((t) => ({ type: "function" as const, function: { name: t.name, description: t.description, parameters: t.parameters } })),
+        tools: tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } })),
         stream: true,
         // OpenRouter's own fields: reasoning at the models' default effort, and
-        // Claude's prefix cached (the other providers cache on their own).
+        // Claude's prefix cached (the other services cache on their own).
         ...(openrouter ? { reasoning: { effort: "medium" }, ...(target.model.startsWith("anthropic/") ? { cache_control: { type: "ephemeral" } } : {}) } : {}),
-      } as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
-      { signal },
-    )
-    let text = ""
-    let thinking = ""
-    const details: Detail[] = []
-    const calls: { id: string; name: string; args: string }[] = []
-    let finish: string | null = null
-    for await (const chunk of stream) {
-      const choice = chunk.choices?.[0]
+      }),
+    })
+  } catch (e) {
+    if (signal.aborted) throw e
+    throw unreachable(e, target)
+  }
+  if (!res.ok || !res.body) throw await refusal(res)
+
+  let text = ""
+  let thinking = ""
+  const details: Detail[] = []
+  const calls: { id: string; name: string; args: string }[] = []
+  let finish: string | null = null
+  try {
+    for await (const chunk of events(res)) {
+      if (chunk.error) throw new TurnError(`model error: ${JSON.stringify(chunk.error)}`, true)
+      const choice = (chunk.choices as { delta?: Delta; finish_reason?: string | null }[] | undefined)?.[0]
       if (!choice) continue
-      const d = choice.delta as Delta
+      const d = choice.delta ?? {}
       if (d.content) {
         text += d.content
         send({ type: "text", text: d.content })
@@ -154,31 +208,28 @@ async function turn({ target, messages, system, tools, send, signal }: TurnArgs)
       }
       if (choice.finish_reason) finish = choice.finish_reason
     }
-
-    const content: Anthropic.Beta.BetaContentBlock[] = []
-    if (thinking.trim() || details.length) {
-      content.push({ type: "thinking", thinking: thinking.trim(), signature: "", ...(details.length ? { reasoning_details: details } : {}) } as Anthropic.Beta.BetaContentBlock)
-    }
-    if (text) content.push({ type: "text", text, citations: null } as Anthropic.Beta.BetaContentBlock)
-    const made = calls.filter((x) => x?.name)
-    for (const [i, call] of made.entries()) {
-      let input: unknown = {}
-      try {
-        input = JSON.parse(call.args || "{}")
-      } catch {
-        input = {}
-      }
-      content.push({ type: "tool_use", id: call.id || `call_${Date.now()}_${i}`, name: call.name, input } as Anthropic.Beta.BetaContentBlock)
-    }
-    const stopReason = finish === "length" ? "max_tokens" : finish === "content_filter" ? "refusal" : made.length ? "tool_use" : "end_turn"
-    send({ type: "message", content, stopReason, usage: null })
   } catch (e) {
-    if (e instanceof TurnError) throw e
-    if (e instanceof OpenAI.RateLimitError) throw new TurnError("the model is busy — try again in a moment", true)
-    if (e instanceof OpenAI.APIConnectionError) throw new TurnError(`connection to the model failed: ${e.message}`, true)
-    if (e instanceof OpenAI.APIError) throw new TurnError(`model error ${e.status ?? ""}: ${e.message}`, (e.status ?? 500) >= 500 || e.status === 408 || e.status === 409)
-    throw new TurnError(e instanceof Error ? e.message : String(e), false)
+    if (e instanceof TurnError || signal.aborted) throw e
+    throw new TurnError(`the reply was cut off: ${e instanceof Error ? e.message : String(e)}`, true)
   }
+
+  const content: Anthropic.Beta.BetaContentBlock[] = []
+  if (thinking.trim() || details.length) {
+    content.push({ type: "thinking", thinking: thinking.trim(), signature: "", ...(details.length ? { reasoning_details: details } : {}) } as Anthropic.Beta.BetaContentBlock)
+  }
+  if (text) content.push({ type: "text", text, citations: null } as Anthropic.Beta.BetaContentBlock)
+  const made = calls.filter((x) => x?.name)
+  for (const [i, call] of made.entries()) {
+    let input: unknown = {}
+    try {
+      input = JSON.parse(call.args || "{}")
+    } catch {
+      input = {}
+    }
+    content.push({ type: "tool_use", id: call.id || `call_${Date.now()}_${i}`, name: call.name, input } as Anthropic.Beta.BetaContentBlock)
+  }
+  const stopReason = finish === "length" ? "max_tokens" : finish === "content_filter" ? "refusal" : made.length ? "tool_use" : "end_turn"
+  send({ type: "message", content, stopReason, usage: null })
 }
 
 type ListedModel = { id: string; architecture?: { input_modalities?: string[] }; supported_parameters?: string[] }
@@ -191,16 +242,20 @@ export const compatProvider: Provider = {
   api: "compat",
   turn,
   models: async (target) => {
-    const ids: string[] = []
-    for await (const m of client(target).models.list()) {
-      const x = m as unknown as ListedModel
-      // OpenRouter says what each model takes: only those that see and call tools.
-      if (x.architecture?.input_modalities && !x.architecture.input_modalities.includes("image")) continue
-      if (x.supported_parameters && !x.supported_parameters.includes("tools")) continue
-      if (NOT_CHAT.test(x.id)) continue
-      ids.push(x.id)
+    let res: Response
+    try {
+      res = await fetch(`${target.baseURL}/models`, { headers: headers(target) })
+    } catch (e) {
+      throw unreachable(e, target)
     }
-    return ids
+    if (!res.ok) throw await refusal(res)
+    const body = (await res.json()) as { data?: ListedModel[] }
+    return (body.data ?? []).flatMap((x) => {
+      // OpenRouter says what each model takes: only those that see and call tools.
+      if (x.architecture?.input_modalities && !x.architecture.input_modalities.includes("image")) return []
+      if (x.supported_parameters && !x.supported_parameters.includes("tools")) return []
+      return NOT_CHAT.test(x.id) ? [] : [x.id]
+    })
   },
   deleteFiles: async () => {},
 }
