@@ -7,8 +7,8 @@
 // and ends, so ⌘Z takes back everything the director did for that request at
 // once rather than one tool at a time.
 //
-// The conversation is SAVED in this browser and survives a reload and a change
-// of scene; only New conversation clears it. Opening another scene does stop a
+// The conversation is SAVED in this browser (IndexedDB) and survives a reload
+// and a change of scene; only New conversation clears it. Opening another scene does stop a
 // run in progress — its tools would be acting on the wrong scene — but keeps
 // what was said.
 
@@ -16,8 +16,9 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import type { ToolResult } from "@/lib/ai/scene-tools"
 import { CHANGES, LOOP_NOTE, filesIn, runAgent, settle, type AgentMessage } from "@/lib/ai/agent-loop"
 import { noticeOf, type Notice } from "@/lib/ai/agent-notice"
-import { storageKey } from "@/lib/storage"
 import { referenceBlocks, type ReferenceImage } from "@/lib/ai/reference-image"
+import { loadConversation, saveConversation } from "@/lib/ai/conversation-store"
+import type { Via } from "@/lib/ai/providers/presets"
 
 export type AgentLive = {
   /** The reply as it streams, this round. */
@@ -35,87 +36,81 @@ const IDLE: AgentLive = { text: "", thinking: "", tool: null, retrying: false }
 /** The run as a whole, for the spinner: when it started, steps finished. */
 export type AgentRun = { startedAt: number; steps: number }
 
-const STORE = storageKey("agent.conversation")
-type Saved = { messages: AgentMessage[]; thumbs: Record<number, string[]> }
-
-/** The saved conversation — and whether the page closed on a run, which
- *  settle() had to answer for and the panel should say. */
-function load(): Saved & { interrupted: boolean } {
-  try {
-    const raw = typeof window !== "undefined" ? window.localStorage.getItem(STORE) : null
-    if (!raw) return { messages: [], thumbs: {}, interrupted: false }
-    const saved = JSON.parse(raw) as Saved
-    const stored = Array.isArray(saved.messages) ? saved.messages : []
-    const messages = settle(stored)
-    return { messages, thumbs: saved.thumbs ?? {}, interrupted: messages.length > stored.length }
-  } catch {
-    return { messages: [], thumbs: {}, interrupted: false }
-  }
-}
-
-/** Write the conversation; if the browser's storage is full, try again
- *  without the attached pictures (the history itself is what matters). */
-function save(saved: Saved) {
-  try {
-    if (!saved.messages.length) window.localStorage.removeItem(STORE)
-    else window.localStorage.setItem(STORE, JSON.stringify(saved))
-  } catch {
-    try {
-      window.localStorage.setItem(STORE, JSON.stringify({ messages: saved.messages, thumbs: {} }))
-    } catch {
-      /* storage blocked or full — the conversation lives for this tab only */
-    }
-  }
-}
-
 export function useAgent({
   scene,
+  via,
   runTool,
   begin,
   end,
 }: {
   /** The open scene's identity: a new one stops a run in progress. */
   scene: unknown
+  /** The person's own connection, or null for Premium. Read when a run
+   *  starts: switching mid-run takes effect on the next request. */
+  via: Via | null
   runTool: (name: string, input: Record<string, unknown>) => Promise<ToolResult>
   /** Group the run's changes into one undo step. */
   begin: (label?: string) => void
   end: () => void
 }) {
-  // Read once, on first render. The panel is drawn only after mount, so this
-  // cannot disagree with the server's render.
-  const [initial] = useState(load)
-  const [messages, setMessages] = useState<AgentMessage[]>(initial.messages)
+  const [messages, setMessages] = useState<AgentMessage[]>([])
   const [live, setLive] = useState<AgentLive>(IDLE)
   const [busy, setBusy] = useState(false)
   const [run, setRun] = useState<AgentRun | null>(null)
   // Reference images by the index of the message that carried them. Once sent
   // they live in the history as uploaded file ids, which the tab cannot show;
   // this keeps the pictures the person attached for the transcript.
-  const [thumbs, setThumbs] = useState<Record<number, string[]>>(initial.thumbs)
+  const [thumbs, setThumbs] = useState<Record<number, string[]>>({})
   // How the last run ended, said plainly (lib/ai/agent-notice). A page that
   // closed mid-run is said on the next load.
-  const [notice, setNotice] = useState<Notice | null>(() => (initial.interrupted ? noticeOf("interrupted", null, null) : null))
+  const [notice, setNotice] = useState<Notice | null>(null)
   const abort = useRef<AbortController | null>(null)
   // Who stopped the run: the person, or a scene being opened.
   const stoppedBy = useRef<"user" | "scene" | null>(null)
-  const history = useRef<AgentMessage[]>(initial.messages)
+  const history = useRef<AgentMessage[]>([])
+  const viaRef = useRef(via)
+  useEffect(() => {
+    viaRef.current = via
+  }, [via])
+  // Nothing is saved until the saved conversation has been read, or the empty
+  // first render would overwrite it.
+  const [loaded, setLoaded] = useState(false)
+
+  // The saved conversation, made whole: a page closed mid-run left tool calls
+  // unanswered, which settle() answers — and the panel says so.
+  useEffect(() => {
+    void loadConversation().then((saved) => {
+      if (saved && !history.current.length) {
+        const settled = settle(saved.messages)
+        history.current = settled
+        setMessages(settled)
+        setThumbs(saved.thumbs)
+        if (settled.length > saved.messages.length) setNotice(noticeOf("interrupted", null, null))
+      }
+      setLoaded(true)
+    })
+  }, [])
 
   // Saved as it changes, a beat after — not on every streamed token — and at
   // once when the page goes away, so closing the tab the moment a run ends
   // does not lose its last steps to the debounce.
   useEffect(() => {
-    const flush = () => save({ messages, thumbs })
+    if (!loaded) return
+    const flush = () => void saveConversation({ messages, thumbs })
     const id = setTimeout(flush, 400)
     window.addEventListener("pagehide", flush)
     return () => {
       clearTimeout(id)
       window.removeEventListener("pagehide", flush)
     }
-  }, [messages, thumbs])
+  }, [messages, thumbs, loaded])
 
   const forget = useCallback((list: AgentMessage[]) => {
     const files = filesIn(list)
-    if (files.length) void fetch("/api/agent", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ files }) }).catch(() => null)
+    if (files.length) {
+      const body = JSON.stringify({ files, ...(viaRef.current ? { via: viaRef.current } : {}) })
+      void fetch("/api/agent", { method: "DELETE", headers: { "Content-Type": "application/json" }, body }).catch(() => null)
+    }
   }, [])
 
   // A different scene stops a run in progress (its tools would act on the new
@@ -149,6 +144,7 @@ export function useAgent({
       try {
         const out = await runAgent({
           history: from,
+          via: viaRef.current,
           runTool,
           signal: controller.signal,
           onProgress: (p) => {

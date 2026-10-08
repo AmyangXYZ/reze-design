@@ -192,6 +192,8 @@ import { useSceneHistory } from "@/hooks/use-scene-history"
 import { useSceneTools } from "@/hooks/use-scene-tools"
 import { useAgent } from "@/hooks/use-agent"
 import { AgentPanel } from "@/components/editor/agent-panel"
+import { AgentMenu } from "@/components/editor/agent-settings"
+import { resolveActive, useAiSettings, viaOf } from "@/lib/ai/connections"
 import type { SceneSnapshot } from "@/lib/scene-history"
 import { freeName } from "@/lib/names"
 import {
@@ -3147,12 +3149,12 @@ export default function Lab() {
   // never leaves this device until it is published, and publishing is where an
   // account becomes the answer.
   const { data: authSession } = useSession()
-  // The art director is Premium's: its door, its command and its dock exist
-  // only for the account that holds it.
-  // In development, ?premium in the address shows it without a Premium
-  // account — for checking the UI in a browser that is not signed in. The
-  // AI's door is drawn only once `mounted`, so reading the URL here cannot
-  // disagree with the server's render.
+  // The art director is open to everyone: each person brings their own key
+  // (lib/ai/connections), and Premium adds this server's. Using it asks for
+  // an account, which the panel says on the first request.
+  // In development, ?premium in the address gives Premium in a browser that
+  // is not signed in. Read only once `mounted`, so the URL cannot disagree
+  // with the server's render.
   const [devPremium] = useState(
     () => process.env.NODE_ENV === "development" && typeof window !== "undefined" && new URLSearchParams(window.location.search).has("premium"),
   )
@@ -5739,7 +5741,6 @@ export default function Lab() {
           // The camera belongs to the SCENE, so it needs no cast; a motion and
           // an expression belong to a character.
           if (c.id === "edit-motion" || c.id === "edit-morph") return timelineRoom && cast.length > 0
-          if (c.id === "agent") return premium
           return true
         })
         .map((c) => {
@@ -5778,7 +5779,7 @@ export default function Lab() {
           const value = DOCK_CONTROLS.find((x) => `ctl-${x.id}` === c.id)?.value?.(valuesShown)
           return value ? { ...c, value } : c
         }),
-    [commands, valuesShown, t, cast.length, timelineRoom, timelineUnfolded, premium],
+    [commands, valuesShown, t, cast.length, timelineRoom, timelineUnfolded],
   )
 
   // ── Undo / redo for the scene's configuration ──
@@ -5987,7 +5988,9 @@ export default function Lab() {
 
   // The art director runs those tools in a loop (lib/ai/agent-loop); each
   // request it takes is one step in the scene's undo history.
-  const agent = useAgent({ scene, runTool: sceneTools.run, begin: sceneHistory.begin, end: sceneHistory.end })
+  const aiSettings = useAiSettings()
+  const aiActive = resolveActive(aiSettings, premium)
+  const agent = useAgent({ scene, via: viaOf(aiSettings, aiActive), runTool: sceneTools.run, begin: sceneHistory.begin, end: sceneHistory.end })
 
   // ── Persistence ──
   //
@@ -10174,7 +10177,7 @@ export default function Lab() {
           fades into the dock rather than vanishing, and comes back out of it
           on close — the dock grows from this spot (see below), so the two read
           as one thing opening and folding away. */}
-      {mounted && premium && (
+      {mounted && (
         <Button
           variant="ghost"
           onClick={openAgent}
@@ -10198,8 +10201,8 @@ export default function Lab() {
       {/* ── Art director ──
           MOUNTED while closed, like export: closing the panel mid-request must
           not lose the conversation or the run. No scrim — you watch the canvas
-          change while it works. Premium only, like its door. */}
-      {mounted && premium && (
+          change while it works. */}
+      {mounted && (
         <Surface
           placement="side"
           className={cn(
@@ -10218,6 +10221,12 @@ export default function Lab() {
           <div className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 py-2.5">
             <Astroid className="size-4 shrink-0 text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate text-xs font-medium">{t.lab.agent.title}</span>
+            <AgentMenu
+              settings={aiSettings}
+              active={aiActive}
+              premium={premium}
+              text={t.lab.agent.settings}
+            />
             <CastAction icon={RotateCcw} label={t.lab.agent.newChat} onClick={agent.reset} disabled={agent.busy || agent.messages.length === 0} />
             <CastAction icon={X} label={t.lab.agent.close} onClick={() => setAgentOpen(false)} />
           </div>

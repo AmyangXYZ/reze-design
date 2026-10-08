@@ -13,6 +13,7 @@
 // end_turn, max_tokens, refusal — which is what the loop reads.
 
 import type { AgentMessage, AgentStreamEvent } from "@/lib/ai/agent-loop"
+import type { Api } from "@/lib/ai/providers/presets"
 
 /** A failed turn, saying whether the same request could succeed if tried
  *  again — the provider busy, overloaded or failing, the connection dropped —
@@ -26,7 +27,11 @@ export class TurnError extends Error {
   }
 }
 
+/** Where one turn goes: whose key, which model, which server. */
+export type Target = { key: string; model: string; baseURL: string }
+
 export type TurnArgs = {
+  target: Target
   messages: AgentMessage[]
   system: string
   tools: { name: string; description: string; parameters: Record<string, unknown> }[]
@@ -35,10 +40,10 @@ export type TurnArgs = {
 }
 
 export type Provider = {
-  name: "anthropic" | "openai"
-  /** The environment variable its key lives in. */
-  keyEnv: string
+  api: Api
   turn: (args: TurnArgs) => Promise<void>
+  /** The models this key can use, by id. */
+  models: (target: Omit<Target, "model">) => Promise<string[]>
   /** Delete uploaded files by id — a conversation the user cleared. */
-  deleteFiles: (ids: string[]) => Promise<void>
+  deleteFiles: (target: Omit<Target, "model">, ids: string[]) => Promise<void>
 }

@@ -16,7 +16,8 @@ export type NoticeKind =
   | "limit" // the step limit for one request
   | "refused" // the model declined
   | "signIn"
-  | "premium"
+  | "premium" // no model set up, and no Premium
+  | "badKey" // the service refused the person's key
   | "rateLimited" // our own per-minute guard
   | "busy" // the provider is overloaded or rate-limiting
   | "network" // the connection dropped, or the reply was cut off
@@ -54,7 +55,8 @@ export function errorKind(error: string): NoticeKind {
   if (e === "premium") return "premium"
   if (e === "slow down" || e.includes("http 429")) return "rateLimited"
   if (e === "too large" || e.includes("http 413")) return "tooLarge"
-  if (e.includes("has no") && e.includes("api_key")) return "notSetUp"
+  if (e.includes("has no ai key")) return "notSetUp"
+  if (/model error 40[13]/.test(e) || e === "no key") return "badKey"
   if (e.includes("busy") || e.includes("overloaded") || /model error 5\d\d/.test(e) || /model error 429/.test(e)) return "busy"
   if (e.includes("connection") || e.includes("failed to fetch") || e.includes("networkerror") || e.includes("cut off") || e.includes("network")) return "network"
   if (/model error 4\d\d/.test(e)) return "broken"
@@ -69,7 +71,7 @@ export function noticeOf(ended: AgentOutcome["ended"] | "interrupted" | null, er
     kind,
     action: ACTION[kind],
     // Account and setup refusals happen before anything ran.
-    kept: !["signIn", "premium", "notSetUp", "rateLimited", "tooLarge"].includes(kind),
+    kept: !["signIn", "premium", "badKey", "notSetUp", "rateLimited", "tooLarge"].includes(kind),
     // The raw message only where our words are general.
     ...(kind === "unknown" || kind === "broken" ? { detail: error ?? undefined } : {}),
   }

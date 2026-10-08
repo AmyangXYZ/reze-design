@@ -9,18 +9,33 @@
 
 import Anthropic, { toFile } from "@anthropic-ai/sdk"
 import type { AgentMessage } from "@/lib/ai/agent-loop"
-import { TurnError, type Provider, type TurnArgs } from "@/lib/ai/providers/types"
+import { TurnError, type Provider, type Target, type TurnArgs } from "@/lib/ai/providers/types"
 
-const MODEL = process.env.AGENT_ANTHROPIC_MODEL || "claude-opus-5-5"
-
-/** The client, naming a workspace when the key is an organisation-wide one
- *  that needs it said (ANTHROPIC_WORKSPACE_ID); a workspace key needs nothing. */
-function client(): Anthropic {
-  const workspace = process.env.ANTHROPIC_WORKSPACE_ID
-  return new Anthropic(workspace ? { defaultHeaders: { "anthropic-workspace-id": workspace } } : {})
+/** The client for a key, naming a workspace when it is this server's own
+ *  organisation-wide key that needs it said (ANTHROPIC_WORKSPACE_ID). */
+function client(target: Omit<Target, "model">): Anthropic {
+  const workspace = target.key === process.env.ANTHROPIC_API_KEY ? process.env.ANTHROPIC_WORKSPACE_ID : undefined
+  return new Anthropic({ apiKey: target.key, baseURL: target.baseURL, ...(workspace ? { defaultHeaders: { "anthropic-workspace-id": workspace } } : {}) })
 }
 
 type Block = Anthropic.Beta.BetaContentBlockParam
+
+/**
+ * A history another model wrote, made sendable here: its reasoning carries no
+ * Anthropic signature (the API refuses an unsigned thinking block), and its
+ * pictures were uploaded somewhere this key cannot read. Ours pass untouched.
+ */
+function ownHistory(messages: AgentMessage[]): AgentMessage[] {
+  const fix = (b: Block): Block[] => {
+    if (b.type === "thinking" && !b.signature) return []
+    if (b.type === "image" && b.source.type === "file" && !b.source.file_id.startsWith("file_")) {
+      return [{ type: "text", text: "(An earlier image, not available to this model.)" }]
+    }
+    if (b.type === "tool_result" && Array.isArray(b.content)) return [{ ...b, content: b.content.flatMap((x) => fix(x as Block)) as typeof b.content }]
+    return [b]
+  }
+  return messages.map((m) => (typeof m.content === "string" ? m : { ...m, content: m.content.flatMap(fix) }))
+}
 
 /** The newest message with every inline image uploaded and referenced by id. */
 async function uploadImages(c: Anthropic, message: AgentMessage): Promise<AgentMessage> {
@@ -41,18 +56,18 @@ async function uploadImages(c: Anthropic, message: AgentMessage): Promise<AgentM
   return { ...message, content: await Promise.all(message.content.map(upload)) }
 }
 
-async function turn({ messages, system, tools, send, signal }: TurnArgs): Promise<void> {
-  const c = client()
+async function turn({ target, messages, system, tools, send, signal }: TurnArgs): Promise<void> {
+  const c = client(target)
   const last = await uploadImages(c, messages[messages.length - 1])
   send({ type: "sent", message: last })
   try {
     const reply = c.beta.messages.stream(
       {
-        model: MODEL,
+        model: target.model,
         max_tokens: 32000,
         system: [{ type: "text", text: system }],
         tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters as Anthropic.Beta.BetaTool.InputSchema })),
-        messages: [...messages.slice(0, -1), last],
+        messages: ownHistory([...messages.slice(0, -1), last]),
         // Summaries of the reasoning, so the panel shows progress while the
         // model works out what to do.
         thinking: { type: "adaptive", display: "summarized" },
@@ -99,11 +114,15 @@ async function turn({ messages, system, tools, send, signal }: TurnArgs): Promis
 }
 
 export const anthropicProvider: Provider = {
-  name: "anthropic",
-  keyEnv: "ANTHROPIC_API_KEY",
+  api: "anthropic",
   turn,
-  deleteFiles: async (ids) => {
-    const c = client()
+  models: async (target) => {
+    const ids: string[] = []
+    for await (const m of client(target).models.list({ limit: 100 })) ids.push(m.id)
+    return ids
+  },
+  deleteFiles: async (target, ids) => {
+    const c = client(target)
     await Promise.all(ids.map((id) => c.files.delete(id).catch(() => null)))
   },
 }

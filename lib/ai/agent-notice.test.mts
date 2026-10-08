@@ -41,7 +41,9 @@ await test("every message the server and the loop send lands on a plain kind", (
     ["slow down", "rateLimited"],
     ["HTTP 429", "rateLimited"],
     ["too large", "tooLarge"],
-    ["the server has no OPENAI_API_KEY", "notSetUp"],
+    ["the server has no AI key", "notSetUp"],
+    ["model error 401: Incorrect API key provided", "badKey"],
+    ["model error 403: permission denied", "badKey"],
     ["the model is busy — try again in a moment", "busy"],
     ["model error 529: overloaded", "busy"],
     ["model error 500: internal", "busy"],
@@ -58,7 +60,8 @@ await test("faults that a second try can fix offer one; account and setup refusa
   assert.equal(noticeOf("error", "the model is busy", null)?.action, "retry")
   assert.equal(noticeOf("error", "Failed to fetch", null)?.action, "retry")
   assert.equal(noticeOf("error", "premium", null)?.action, undefined)
-  assert.equal(noticeOf("error", "the server has no OPENAI_API_KEY", null)?.action, undefined)
+  assert.equal(noticeOf("error", "the server has no AI key", null)?.action, undefined)
+  assert.equal(noticeOf("error", "model error 401: bad key", null)?.action, undefined)
   assert.equal(noticeOf("error", "model error 400: bad", null)?.action, "newChat")
 })
 

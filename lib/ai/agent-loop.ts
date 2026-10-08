@@ -12,9 +12,14 @@
 // bound to the history it was produced against. The one replacement is the
 // newest message, swapped for the copy the server actually sent (images
 // uploaded and referenced by id) before anything follows it.
+//
+// What is SENT is a copy with the older pictures left out (see sendable):
+// providers with no file uploads keep pictures inline, and re-sending every
+// capture every round would grow each request without end.
 
 import type Anthropic from "@anthropic-ai/sdk"
 import type { ToolResult } from "@/lib/ai/scene-tools"
+import type { Via } from "@/lib/ai/providers/presets"
 
 export type AgentMessage = Anthropic.Beta.BetaMessageParam
 
@@ -83,6 +88,31 @@ export function toolResultBlock(id: string, result: ToolResult): Anthropic.Beta.
   return { type: "tool_result", tool_use_id: id, content, ...(data && typeof data === "object" && "error" in data ? { is_error: true } : {}) }
 }
 
+/** Messages whose inline pictures are re-sent; earlier ones are mentioned. */
+const KEEP_PICTURES = 3
+
+/**
+ * The history as sent: inline (base64) pictures only in the latest few
+ * messages that have any; earlier ones become a line saying they were seen.
+ * Uploaded pictures are references, small enough to always go.
+ */
+export function sendable(messages: AgentMessage[]): AgentMessage[] {
+  type B = Anthropic.Beta.BetaContentBlockParam
+  const inline = (b: unknown): boolean => {
+    const x = b as { type?: string; source?: { type?: string }; content?: unknown }
+    return (x.type === "image" && x.source?.type === "base64") || (Array.isArray(x.content) && x.content.some(inline))
+  }
+  const withPictures = messages.flatMap((m, i) => (Array.isArray(m.content) && m.content.some(inline) ? [i] : []))
+  const keep = new Set(withPictures.slice(-KEEP_PICTURES))
+  const drop = (b: B): B =>
+    b.type === "image" && b.source.type === "base64"
+      ? { type: "text", text: "(An earlier image, not re-sent; you saw it then.)" }
+      : b.type === "tool_result" && Array.isArray(b.content)
+        ? { ...b, content: b.content.map((x) => drop(x as B)) as typeof b.content }
+        : b
+  return messages.map((m, i) => (keep.has(i) || typeof m.content === "string" ? m : { ...m, content: m.content.map(drop) }))
+}
+
 /** Read an NDJSON response line by line. */
 async function* lines(res: Response): AsyncGenerator<AgentStreamEvent> {
   const reader = res.body!.getReader()
@@ -112,6 +142,8 @@ export async function runAgent(opts: {
   runTool: (name: string, input: Record<string, unknown>) => Promise<ToolResult>
   onProgress: (p: AgentProgress) => void
   signal: AbortSignal
+  /** The person's own connection; absent means Premium. */
+  via?: Via | null
   endpoint?: string
   maxRounds?: number
 }): Promise<AgentOutcome> {
@@ -131,7 +163,7 @@ export async function runAgent(opts: {
       res = await fetch(opts.endpoint ?? "/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages }),
+        body: JSON.stringify({ messages: sendable(messages), ...(opts.via ? { via: opts.via } : {}) }),
         signal: opts.signal,
       })
     } catch (e) {

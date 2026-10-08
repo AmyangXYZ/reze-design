@@ -23,9 +23,7 @@
 import OpenAI, { toFile } from "openai"
 import type Anthropic from "@anthropic-ai/sdk"
 import type { AgentMessage } from "@/lib/ai/agent-loop"
-import { TurnError, type Provider, type TurnArgs } from "@/lib/ai/providers/types"
-
-const MODEL = process.env.AGENT_OPENAI_MODEL || "gpt-6.1-sol"
+import { TurnError, type Provider, type Target, type TurnArgs } from "@/lib/ai/providers/types"
 /** Captures whose pictures are sent; earlier ones are mentioned, not shown. */
 const KEEP_CAPTURES = 3
 
@@ -33,11 +31,12 @@ type Block = Anthropic.Beta.BetaContentBlockParam
 type Input = OpenAI.Responses.ResponseInputItem
 type ImageSource = { type: string; data?: string; media_type?: string; file_id?: string; url?: string }
 
-const client = () => new OpenAI()
+const client = (target: Omit<Target, "model">) => new OpenAI({ apiKey: target.key, baseURL: target.baseURL })
 
 function imagePart(source: ImageSource): OpenAI.Responses.ResponseInputImage | null {
   if (source.type === "base64" && source.data) return { type: "input_image", detail: "auto", image_url: `data:${source.media_type ?? "image/jpeg"};base64,${source.data}` }
-  if (source.type === "file" && source.file_id) return { type: "input_image", detail: "auto", file_id: source.file_id }
+  // OpenAI's own uploads are file-…; another provider's id means nothing here.
+  if (source.type === "file" && source.file_id?.startsWith("file-")) return { type: "input_image", detail: "auto", file_id: source.file_id }
   if (source.type === "url" && source.url) return { type: "input_image", detail: "auto", image_url: source.url }
   return null
 }
@@ -138,14 +137,14 @@ async function uploadImages(c: OpenAI, message: AgentMessage): Promise<AgentMess
   return { ...message, content: await Promise.all(message.content.map(upload)) }
 }
 
-async function turn({ messages, system, tools, send, signal }: TurnArgs): Promise<void> {
-  const c = client()
+async function turn({ target, messages, system, tools, send, signal }: TurnArgs): Promise<void> {
+  const c = client(target)
   const last = await uploadImages(c, messages[messages.length - 1])
   send({ type: "sent", message: last })
   try {
     const stream = await c.responses.create(
       {
-        model: MODEL,
+        model: target.model,
         instructions: system,
         input: toInput([...messages.slice(0, -1), last]),
         tools: tools.map((t) => ({ type: "function" as const, name: t.name, description: t.description, parameters: t.parameters, strict: false })),
@@ -181,11 +180,16 @@ async function turn({ messages, system, tools, send, signal }: TurnArgs): Promis
 }
 
 export const openaiProvider: Provider = {
-  name: "openai",
-  keyEnv: "OPENAI_API_KEY",
+  api: "openai",
   turn,
-  deleteFiles: async (ids) => {
-    const c = client()
+  models: async (target) => {
+    const ids: string[] = []
+    for await (const m of client(target).models.list()) ids.push(m.id)
+    // The list holds every model the key can reach; the agent needs one that talks.
+    return ids.filter((id) => /^(gpt|o\d|chatgpt)/.test(id) && !/tts|transcribe|audio|realtime|search|image|embedding/.test(id))
+  },
+  deleteFiles: async (target, ids) => {
+    const c = client(target)
     await Promise.all(ids.map((id) => c.files.delete(id).catch(() => null)))
   },
 }
