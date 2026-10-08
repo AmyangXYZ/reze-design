@@ -311,7 +311,7 @@ export function AgentPanel({
         void attach(e.dataTransfer.files)
       }}
     >
-      <div ref={scroller} className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-2.5 pt-3 pb-5 leading-5">
+      <div ref={scroller} className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-2.5 pt-3 pb-5 leading-5 select-text">
         {lines.length === 0 && !busy && <p className="text-muted-foreground">{text.empty}</p>}
         {lines.map((l, i) =>
           l.kind === "user" ? (
