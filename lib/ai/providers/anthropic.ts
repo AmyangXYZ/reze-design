@@ -2,11 +2,12 @@
 // from the person's own browser for their own key.
 //
 // The conversation's own shape is Anthropic's, so this is nearly a pass-
-// through. What it adds: images uploaded once to the Files API (the history
-// the browser re-sends stays small and is never rewritten, which preserved
-// thinking needs), summarized adaptive thinking for the progress line, the
-// whole prefix cached, stale tool results cleared server-side in a long
-// session, and a fallback model when a request is declined.
+// through. What it adds: on the server, images uploaded once to the Files
+// API (the history the browser re-sends stays small and is never rewritten,
+// which preserved thinking needs); summarized adaptive thinking for the
+// progress line, the whole prefix cached, stale tool results cleared
+// server-side in a long session, and a fallback model when a request is
+// declined.
 
 import Anthropic, { toFile } from "@anthropic-ai/sdk"
 import type { AgentMessage } from "@/lib/ai/agent-loop"
@@ -61,7 +62,10 @@ async function uploadImages(c: Anthropic, message: AgentMessage): Promise<AgentM
 
 async function turn({ target, messages, system, tools, send, signal }: TurnArgs): Promise<void> {
   const c = client(target)
-  const last = await uploadImages(c, messages[messages.length - 1])
+  // Anthropic's file store refuses requests from a web page (no CORS), so
+  // in the person's browser pictures go inline — the loop re-sends only the
+  // latest few. On this server (Premium) each is uploaded once.
+  const last = typeof window === "undefined" ? await uploadImages(c, messages[messages.length - 1]) : messages[messages.length - 1]
   send({ type: "sent", message: last })
   try {
     const reply = c.beta.messages.stream(
