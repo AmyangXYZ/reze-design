@@ -15,8 +15,9 @@ export type SavedConversation = {
   thumbs: Record<number, string[]>
   /** A run was going when this was written: read back, it was cut off. */
   running?: boolean
-  /** The last request's tokens; null where the service did not say. */
-  lastRun?: Usage | null
+  /** Every request's tokens in this conversation, added up: undefined
+   *  before any, null where requests ran but none reported. */
+  usage?: Usage | null
 }
 
 export type ConversationTab = { id: string; title: string }
@@ -74,7 +75,7 @@ export async function loadConversation(id: string): Promise<SavedConversation | 
   try {
     const saved = (await run("readonly", (s) => s.get(id))) as SavedConversation | undefined
     return saved && Array.isArray(saved.messages)
-      ? { messages: saved.messages, thumbs: saved.thumbs ?? {}, running: saved.running === true, lastRun: saved.lastRun }
+      ? { messages: saved.messages, thumbs: saved.thumbs ?? {}, running: saved.running === true, usage: saved.usage }
       : null
   } catch {
     return null

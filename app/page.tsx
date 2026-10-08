@@ -10252,7 +10252,8 @@ export default function Lab() {
             onSetup={aiActive ? undefined : () => setAiMenuOpen(true)}
             run={agent.run}
             notice={agent.notice}
-            lastRun={agent.lastRun}
+            usage={agent.usage}
+            conversationId={agent.activeId}
             onRetry={() => void agent.retry()}
             onNewChat={() => void agent.newTab()}
             onSend={(text, refs) => void agent.send(text, refs)}

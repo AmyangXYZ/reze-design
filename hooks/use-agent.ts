@@ -80,9 +80,15 @@ export function useAgent({
   // How the last run ended, said plainly (lib/ai/agent-notice). A page that
   // closed mid-run is said on the next load.
   const [notice, setNotice] = useState<Notice | null>(null)
-  // The last request's tokens — undefined before any, null where the service
-  // did not report them. For the person's own information; nothing leaves.
-  const [lastRun, setLastRun] = useState<Usage | null | undefined>(undefined)
+  // The open conversation's tokens, added up over every request — undefined
+  // before any, null where none was reported. It only grows; a new tab starts
+  // it. For the person's own information; nothing leaves.
+  const [usage, setUsageState] = useState<Usage | null | undefined>(undefined)
+  const usageRef = useRef<Usage | null | undefined>(undefined)
+  const setUsage = useCallback((u: Usage | null | undefined) => {
+    usageRef.current = u
+    setUsageState(u)
+  }, [])
   const abort = useRef<AbortController | null>(null)
   // Who stopped the run: the person, or a scene being opened.
   const stoppedBy = useRef<"user" | "scene" | null>(null)
@@ -108,7 +114,7 @@ export function useAgent({
   const runConv = useRef<string | null>(null)
   const runHistory = useRef<AgentMessage[]>([])
   const runThumbs = useRef<Record<number, string[]>>({})
-  const runSpent = useRef<Usage | null>(null)
+  const runTotal = useRef<Usage | null | undefined>(undefined)
   const [runningId, setRunningId] = useState<string | null>(null)
   const viewingRun = () => runConv.current !== null && runConv.current === active.current
 
@@ -116,24 +122,28 @@ export function useAgent({
    *  tool calls unanswered, which settle() answers — and the panel says so. */
   const show = useCallback(async (id: string) => {
     active.current = id
-    setActiveId(id)
     // Back to the tab whose run is going: its live state, not the last save.
     if (id === runConv.current) {
+      setActiveId(id)
       history.current = runHistory.current
       setMessages(runHistory.current)
       setThumbs(runThumbs.current)
-      setLastRun(runSpent.current ?? undefined)
+      setUsage(runTotal.current)
       setNotice(null)
       return
     }
     const saved = await loadConversation(id)
+    // The id goes up with the conversation's own state, in one render: set
+    // before the load, the panel would show this tab with the last one's
+    // figures for a moment (and count from them).
+    setActiveId(id)
     const settled = saved ? settle(saved.messages) : []
     history.current = settled
     setMessages(settled)
     setThumbs(saved?.thumbs ?? {})
-    setLastRun(saved?.lastRun)
+    setUsage(saved?.usage)
     setNotice(saved && (saved.running || settled.length > saved.messages.length) ? noticeOf("interrupted", null, null) : null)
-  }, [])
+  }, [setUsage])
 
   const writeIndex = useCallback((next: ConversationTab[], id: string | null) => {
     setTabs(next)
@@ -163,12 +173,12 @@ export function useAgent({
     const conv = activeId
     // The run's own conversation is the run's to save.
     const id = setTimeout(() => {
-      if (conv !== runConv.current) void saveConversation(conv, { messages, thumbs, running: false, lastRun })
+      if (conv !== runConv.current) void saveConversation(conv, { messages, thumbs, running: false, usage })
     }, 400)
     // Closing mid-round: what streamed so far goes down as a cut-off reply in
     // the run's conversation, so the reload shows it and Try again carries on.
     const onHide = () => {
-      if (conv !== runConv.current) void saveConversation(conv, { messages: history.current, thumbs, running: false, lastRun })
+      if (conv !== runConv.current) void saveConversation(conv, { messages: history.current, thumbs, running: false, usage })
       const rc = runConv.current
       if (!rc || !running.current) return
       const { text, thinking } = partial.current
@@ -176,14 +186,14 @@ export function useAgent({
         text.trim() || thinking.trim()
           ? [{ role: "assistant", content: [...(thinking.trim() ? [{ type: "thinking" as const, thinking, signature: "" }] : []), ...(text.trim() ? [{ type: "text" as const, text }] : [])] }]
           : []
-      void saveConversation(rc, { messages: [...runHistory.current, ...cut], thumbs: runThumbs.current, running: true, lastRun: runSpent.current })
+      void saveConversation(rc, { messages: [...runHistory.current, ...cut], thumbs: runThumbs.current, running: true, usage: runTotal.current })
     }
     window.addEventListener("pagehide", onHide)
     return () => {
       clearTimeout(id)
       window.removeEventListener("pagehide", onHide)
     }
-  }, [messages, thumbs, loaded, activeId, lastRun])
+  }, [messages, thumbs, loaded, activeId, usage])
 
   const forget = useCallback((list: AgentMessage[]) => {
     const files = filesIn(list)
@@ -219,7 +229,9 @@ export function useAgent({
       setRunningId(conv)
       runHistory.current = from
       runThumbs.current = pictures
-      runSpent.current = null
+      // What the conversation had spent before this request; the run adds to it.
+      const base = usageRef.current
+      runTotal.current = base
       history.current = from
       setMessages(from)
       setThumbs(pictures)
@@ -234,7 +246,6 @@ export function useAgent({
       setRun({ startedAt: Date.now(), steps: 0 })
       let changed = false
       let spent: Usage | null = null
-      setLastRun(undefined)
       begin(label.length > 40 ? `${label.slice(0, 40)}…` : label)
       try {
         const out = await runAgent({
@@ -253,7 +264,7 @@ export function useAgent({
                 setMessages(p.messages)
               } else {
                 // Watched from another tab: its conversation still keeps up.
-                void saveConversation(conv, { messages: p.messages, thumbs: runThumbs.current, running: true, lastRun: spent })
+                void saveConversation(conv, { messages: p.messages, thumbs: runThumbs.current, running: true, usage: runTotal.current })
               }
             } else if (p.type === "text") {
               partial.current.text += p.text
@@ -267,8 +278,8 @@ export function useAgent({
             else if (p.type === "usage") {
               // Live: the line grows with each round instead of waiting for the end.
               spent = addUsage(spent, p.usage)
-              runSpent.current = spent
-              if (viewingRun()) setLastRun(spent)
+              runTotal.current = addUsage(base ?? null, spent)
+              if (viewingRun()) setUsage(runTotal.current)
             }
             else if (p.type === "tool-done") {
               if (p.ok && CHANGES.has(p.name)) changed = true
@@ -278,14 +289,17 @@ export function useAgent({
           },
         })
         runHistory.current = out.messages
-        void saveConversation(conv, { messages: out.messages, thumbs: runThumbs.current, running: false, lastRun: spent })
+        // Requests ran: a total, or null where none of them reported one.
+        const total = spent ? addUsage(base ?? null, spent) : (base ?? null)
+        runTotal.current = total
+        void saveConversation(conv, { messages: out.messages, thumbs: runThumbs.current, running: false, usage: total })
         if (viewingRun()) {
           history.current = out.messages
           setMessages(out.messages)
           const n = noticeOf(out.ended, out.error ?? null, stoppedBy.current)
           // "Changes made so far are kept" only when there were some.
           setNotice(n ? { ...n, kept: n.kept && changed } : null)
-          setLastRun(spent)
+          setUsage(total)
         }
       } finally {
         running.current = false
@@ -298,7 +312,7 @@ export function useAgent({
         setLive(IDLE)
       }
     },
-    [runTool, begin, end],
+    [runTool, begin, end, setUsage],
   )
 
   const send = useCallback(
@@ -358,22 +372,22 @@ export function useAgent({
   const switchTo = useCallback(
     async (id: string) => {
       if (id === active.current) return
-      if (active.current && active.current !== runConv.current) await saveConversation(active.current, { messages: history.current, thumbs, running: false, lastRun })
+      if (active.current && active.current !== runConv.current) await saveConversation(active.current, { messages: history.current, thumbs, running: false, usage })
       writeIndex(tabs, id)
       await show(id)
     },
-    [tabs, thumbs, lastRun, show, writeIndex],
+    [tabs, thumbs, usage, show, writeIndex],
   )
 
   /** A new, empty conversation in a tab of its own — unless the open one is
    *  still empty, which already is that. */
   const newTab = useCallback(async () => {
     if (!history.current.length && active.current) return
-    if (active.current && active.current !== runConv.current) await saveConversation(active.current, { messages: history.current, thumbs, running: false, lastRun })
+    if (active.current && active.current !== runConv.current) await saveConversation(active.current, { messages: history.current, thumbs, running: false, usage })
     const id = crypto.randomUUID()
     writeIndex([...tabs, { id, title: "" }], id)
     await show(id)
-  }, [tabs, thumbs, lastRun, show, writeIndex])
+  }, [tabs, thumbs, usage, show, writeIndex])
 
   /** Close a tab: the conversation, and what it uploaded, are deleted. */
   const closeTab = useCallback(
@@ -420,5 +434,5 @@ export function useAgent({
     }
   }, [send, stop, newTab])
 
-  return { tabs, activeId, runningId, switchTo, newTab, closeTab, messages, thumbs, live, busy, run, notice, lastRun, send, retry, stop }
+  return { tabs, activeId, runningId, switchTo, newTab, closeTab, messages, thumbs, live, busy, run, notice, usage, send, retry, stop }
 }

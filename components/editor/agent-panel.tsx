@@ -188,14 +188,26 @@ function Reply({ text }: { text: string }) {
     <div className="space-y-1.5">
       {blocks.map((b, i) =>
         b.kind === "ul" || b.kind === "ol" ? (
-          <ul key={i} className="space-y-0.5">
-            {b.items.map((item, k) => (
-              <li key={k} className="flex gap-2">
-                <span className="shrink-0 text-muted-foreground tabular-nums">{b.kind === "ul" ? "–" : `${k + 1}.`}</span>
-                <span className="min-w-0">{inline(item)}</span>
-              </li>
-            ))}
-          </ul>
+          // Real list markers: drawn in the margin and left out of a copy, so
+          // copied bullets come out as lines rather than a dash on a line of its own.
+          (() => {
+            const List = b.kind === "ul" ? "ul" : "ol"
+            return (
+              <List
+                key={i}
+                // The markers hang in the transcript's mark column (12px + the
+                // 6px gap), so a list's text keeps every other line's left edge.
+                className={cn("-ml-[18px] space-y-0.5 pl-[18px] marker:text-muted-foreground", b.kind === "ol" && "list-decimal")}
+                style={b.kind === "ul" ? { listStyleType: '"– "' } : undefined}
+              >
+                {b.items.map((item, k) => (
+                  <li key={k} className="pl-0.5">
+                    {inline(item)}
+                  </li>
+                ))}
+              </List>
+            )
+          })()
         ) : b.kind === "h" ? (
           <p key={i} className="font-semibold">
             {inline(b.text)}
@@ -209,6 +221,43 @@ function Reply({ text }: { text: string }) {
 }
 
 /** Its reasoning between steps: muted, two lines until opened. */
+/**
+ * A number that counts to its new value instead of jumping — the token count
+ * moves once a round, and a ticker reads as progress where a jump reads as a
+ * glitch. Ease-out over 1s; immediate under reduced motion, and on the
+ * first value it is given.
+ */
+function useCountUp(target: number): number {
+  const [shown, setShown] = useState(target)
+  const from = useRef(target)
+  useEffect(() => {
+    const start = from.current
+    if (start === target || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      from.current = target
+      setShown(target)
+      return
+    }
+    const t0 = performance.now()
+    let raf = 0
+    const step = (now: number) => {
+      const k = Math.min(1, (now - t0) / 1000)
+      const v = Math.round(start + (target - start) * (1 - (1 - k) ** 3))
+      from.current = v
+      setShown(v)
+      if (k < 1) raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf)
+  }, [target])
+  return shown
+}
+
+/** The request's token total, counting up as rounds add to it. */
+function TokenCount({ total, label }: { total: number; label: (n: string) => string }) {
+  const shown = useCountUp(total)
+  return <>{label(formatTokens(shown))}</>
+}
+
 function Note({ text }: { text: string }) {
   const [open, setOpen] = useState(false)
   return (
@@ -242,7 +291,8 @@ export function AgentPanel({
   onSetup,
   run,
   notice,
-  lastRun,
+  usage,
+  conversationId,
   onRetry,
   onNewChat,
   onSend,
@@ -260,9 +310,12 @@ export function AgentPanel({
   run: AgentRun | null
   /** How the last run ended, when it did not simply finish. */
   notice: Notice | null
-  /** The last request's tokens: undefined before any, null where the service
-   *  did not report them. Shown, never sent anywhere. */
-  lastRun?: Usage | null
+  /** The conversation's tokens so far, every request added up: undefined
+   *  before any, null where none was reported. Shown, never sent anywhere. */
+  usage?: Usage | null
+  /** The open conversation: the token count counts up within one, and
+   *  shows another's figure as it is. */
+  conversationId?: string | null
   onRetry: () => void
   onNewChat: () => void
   onSend: (text: string, refs: ReferenceImage[]) => void
@@ -335,7 +388,7 @@ export function AgentPanel({
         void attach(e.dataTransfer.files)
       }}
     >
-      <div ref={scroller} className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-4 pt-0 pb-5 leading-[18px] select-text">
+      <div ref={scroller} className="no-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-4 pt-0 pb-5 leading-[18px] select-text">
         {lines.length === 0 && !busy && <p className="text-muted-foreground">{text.empty}</p>}
         {lines.map((l, i) =>
           l.kind === "user" ? (
@@ -358,7 +411,9 @@ export function AgentPanel({
               <div className="font-medium whitespace-pre-wrap">{l.text}</div>
             </Row>
           ) : l.kind === "reply" ? (
-            <Row key={i} mark={<span className="size-1.5 rounded-full bg-foreground" />}>
+            // A reply that opens with a list is marked by its first dash; the dot
+            // would be a second marker beside it.
+            <Row key={i} mark={/^\s*(?:[-*•]|\d+[.)])\s/.test(l.text) ? undefined : <span className="size-1.5 rounded-full bg-foreground" />}>
               <Reply text={l.text} />
             </Row>
           ) : l.kind === "note" ? (
@@ -435,14 +490,16 @@ export function AgentPanel({
       {/* The request's tokens, in one place: live while it runs, the final
           count after — a line of its own above the input, so the chat ends
           above it rather than running underneath. */}
-      {lastRun !== undefined && (
+      {usage !== undefined && (
         <div className="flex shrink-0 items-end justify-end px-4 pb-1 text-[11px] leading-4 text-muted-foreground tabular-nums">
-          {lastRun ? (
+          {usage ? (
             <Tooltip>
               <TooltipTrigger asChild>
-                <span>{text.usage.tokens(formatTokens(lastRun.input + lastRun.output))}</span>
+                <span>
+                  <TokenCount key={conversationId ?? ""} total={usage.input + usage.output} label={text.usage.tokens} />
+                </span>
               </TooltipTrigger>
-              <TooltipContent className="tabular-nums">{text.usage.detail(...usageParts(lastRun))}</TooltipContent>
+              <TooltipContent className="tabular-nums">{text.usage.detail(...usageParts(usage))}</TooltipContent>
             </Tooltip>
           ) : (
             text.usage.none
