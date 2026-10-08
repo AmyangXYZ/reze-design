@@ -10,7 +10,7 @@
 // makes the model wrap up at the round limit.
 
 import assert from "node:assert/strict"
-import { runAgent, filesIn, settle, toolResultBlock, type AgentMessage, type AgentStreamEvent } from "./agent-loop"
+import { runAgent, filesIn, settle, toolResultBlock, LOOP_NOTE, type AgentMessage, type AgentStreamEvent } from "./agent-loop"
 import type { ToolResult } from "./scene-tools"
 
 let failures = 0
@@ -159,6 +159,57 @@ await test("a server error ends the run with its message", async () => {
   )
   assert.equal(out.ended, "error")
   assert.equal(out.error, "premium")
+})
+
+await test("a transient failure is retried, and the run carries on", async () => {
+  const { fetchImpl } = scripted([{ content: [text("ok")], stopReason: "end_turn" }])
+  let calls = 0
+  const flaky = async (url: string, init: { body: string }) => (++calls === 1 ? new Response(JSON.stringify({ error: "bad gateway" }), { status: 502 }) : fetchImpl(url, init))
+  const retries: string[] = []
+  const out = await withFetch(flaky, () =>
+    runAgent({ history: [user("x")], runTool: async () => ({ data: {} }), onProgress: (p) => p.type === "retry" && retries.push(p.reason), signal: new AbortController().signal }),
+  )
+  assert.equal(out.ended, "done")
+  assert.equal(calls, 2)
+  assert.deepEqual(retries, ["bad gateway"])
+})
+
+await test("a refusal that retrying cannot fix is not retried", async () => {
+  let calls = 0
+  const f = async () => (calls++, new Response(JSON.stringify({ error: "premium" }), { status: 403 }))
+  const out = await withFetch(f, () =>
+    runAgent({ history: [user("x")], runTool: async () => ({ data: {} }), onProgress: () => {}, signal: new AbortController().signal }),
+  )
+  assert.equal(out.ended, "error")
+  assert.equal(calls, 1)
+})
+
+await test("changing the scene and finishing unseen gets one nudge to look", async () => {
+  const { fetchImpl, bodies } = scripted([
+    { content: [toolUse("a", "set_settings", { patch: {} })], stopReason: "tool_use" },
+    { content: [text("Done.")], stopReason: "end_turn" },
+    { content: [toolUse("b", "capture")], stopReason: "tool_use" },
+    { content: [text("Checked, done.")], stopReason: "end_turn" },
+  ])
+  const ran: string[] = []
+  const out = await withFetch(fetchImpl, () =>
+    runAgent({ history: [user("x")], runTool: async (n) => (ran.push(n), { data: {} }), onProgress: () => {}, signal: new AbortController().signal }),
+  )
+  assert.equal(out.ended, "done")
+  assert.deepEqual(ran, ["set_settings", "capture"])
+  assert.equal(bodies.length, 4)
+  assert.ok(JSON.stringify(bodies[2].at(-1)).includes(LOOP_NOTE), "the third request carries the nudge")
+})
+
+await test("a run that only looked, or looked last, is not nudged", async () => {
+  const { fetchImpl, bodies } = scripted([
+    { content: [toolUse("a", "set_settings", { patch: {} }), toolUse("b", "capture")], stopReason: "tool_use" },
+    { content: [text("Done.")], stopReason: "end_turn" },
+  ])
+  await withFetch(fetchImpl, () =>
+    runAgent({ history: [user("x")], runTool: async () => ({ data: {} }), onProgress: () => {}, signal: new AbortController().signal }),
+  )
+  assert.equal(bodies.length, 2)
 })
 
 await test("a tool result carries its data, its images, and is_error on an error", () => {

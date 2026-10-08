@@ -9,7 +9,7 @@
 
 import Anthropic, { toFile } from "@anthropic-ai/sdk"
 import type { AgentMessage } from "@/lib/ai/agent-loop"
-import type { Provider, TurnArgs } from "@/lib/ai/providers/types"
+import { TurnError, type Provider, type TurnArgs } from "@/lib/ai/providers/types"
 
 const MODEL = process.env.AGENT_ANTHROPIC_MODEL || "claude-opus-5-5"
 
@@ -91,15 +91,10 @@ async function turn({ messages, system, tools, send, signal }: TurnArgs): Promis
     const final = await reply.finalMessage()
     send({ type: "message", content: final.content, stopReason: final.stop_reason, usage: final.usage })
   } catch (e) {
-    throw new Error(
-      e instanceof Anthropic.RateLimitError
-        ? "the model is busy — try again in a moment"
-        : e instanceof Anthropic.APIError
-          ? `model error ${e.status ?? ""}: ${e.message}`
-          : e instanceof Error
-            ? e.message
-            : String(e),
-    )
+    if (e instanceof Anthropic.RateLimitError) throw new TurnError("the model is busy — try again in a moment", true)
+    if (e instanceof Anthropic.APIConnectionError) throw new TurnError(`connection to the model failed: ${e.message}`, true)
+    if (e instanceof Anthropic.APIError) throw new TurnError(`model error ${e.status ?? ""}: ${e.message}`, (e.status ?? 500) >= 500 || e.status === 408 || e.status === 409)
+    throw new TurnError(e instanceof Error ? e.message : String(e), false)
   }
 }
 

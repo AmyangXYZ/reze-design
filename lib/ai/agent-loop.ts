@@ -25,7 +25,7 @@ export type AgentStreamEvent =
   | { type: "thinking"; text: string }
   | { type: "tool"; name: string }
   | { type: "message"; content: Anthropic.Beta.BetaContentBlock[]; stopReason: string | null; usage: unknown }
-  | { type: "error"; message: string }
+  | { type: "error"; message: string; retryable?: boolean }
 
 /** What the loop tells the panel as it goes. */
 export type AgentProgress =
@@ -34,11 +34,41 @@ export type AgentProgress =
   | { type: "tool"; name: string; input: unknown }
   | { type: "tool-done"; name: string; ok: boolean }
   | { type: "history"; messages: AgentMessage[] }
+  | { type: "retry"; attempt: number; reason: string }
 
 export type AgentOutcome = { messages: AgentMessage[]; ended: "done" | "stopped" | "limit" | "refused" | "error"; error?: string }
 
 /** Rounds before the loop tells the model to wrap up. */
 export const MAX_ROUNDS = 24
+
+/** How a note FROM THE LOOP starts — the scene it attaches to a request, the
+ *  wrap-up at the round limit, the nudge to look before finishing. They ride
+ *  in user turns because that is where the API takes them, and the panel
+ *  leaves them out because they are not the person's words. */
+export const LOOP_NOTE = "[reze] "
+
+/** Tries per round when the failure is the network's or the provider's
+ *  moment, not the request's. */
+const ATTEMPTS = 3
+
+/** Tools that change the scene, and tools that look at it. A run that changed
+ *  it after its last look is asked to look once before it finishes. */
+const CHANGES = new Set([
+  "set_settings", "set_grade", "set_camera", "frame_shot", "assign_shader", "apply_look_pack", "set_shader_inputs",
+  "add_effect", "update_effect", "remove_effect", "add_lamp", "update_lamp", "remove_lamp", "set_visibility", "reset_to_default",
+])
+const LOOKS = new Set(["capture", "filmstrip"])
+
+/** Wait, unless stopped first. */
+const pause = (ms: number, signal: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    const t = setTimeout(resolve, ms)
+    signal.addEventListener("abort", () => (clearTimeout(t), resolve()), { once: true })
+  })
+
+type Round =
+  | { ok: true; reply: Extract<AgentStreamEvent, { type: "message" }> }
+  | { ok: false; error: string; retryable: boolean }
 
 /** A tool's result as the model reads it: the data as JSON, then its images. */
 export function toolResultBlock(id: string, result: ToolResult): Anthropic.Beta.BetaToolResultBlockParam {
@@ -88,9 +118,14 @@ export async function runAgent(opts: {
   const messages = [...opts.history]
   const max = opts.maxRounds ?? MAX_ROUNDS
   const publish = () => opts.onProgress({ type: "history", messages: [...messages] })
+  // Changed the scene since the last look; and whether it has been asked to look.
+  let unseen = false
+  let nudged = false
 
-  for (let round = 0; ; round++) {
-    if (opts.signal.aborted) return { messages, ended: "stopped" }
+  /** One request to the model. A failure says whether trying again could help:
+   *  the network, a busy or failing provider, a stream cut short — yes; a
+   *  refused or malformed request — no. */
+  const ask = async (): Promise<Round> => {
     let res: Response
     try {
       res = await fetch(opts.endpoint ?? "/api/agent", {
@@ -100,29 +135,39 @@ export async function runAgent(opts: {
         signal: opts.signal,
       })
     } catch (e) {
-      if (opts.signal.aborted) return { messages, ended: "stopped" }
-      return { messages, ended: "error", error: e instanceof Error ? e.message : String(e) }
+      return { ok: false, error: e instanceof Error ? e.message : String(e), retryable: true }
     }
     if (!res.ok || !res.body) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string }
-      return { messages, ended: "error", error: body.error ?? `HTTP ${res.status}` }
+      const body = (await res.json().catch(() => ({}))) as { error?: string; retryable?: boolean }
+      return { ok: false, error: body.error ?? `HTTP ${res.status}`, retryable: body.retryable ?? [429, 502, 504].includes(res.status) }
     }
-
-    let reply: Extract<AgentStreamEvent, { type: "message" }> | null = null
     try {
       for await (const e of lines(res)) {
         if (e.type === "sent") {
           messages[messages.length - 1] = e.message
           publish()
         } else if (e.type === "text" || e.type === "thinking") opts.onProgress(e)
-        else if (e.type === "message") reply = e
-        else if (e.type === "error") return { messages, ended: "error", error: e.message }
+        else if (e.type === "message") return { ok: true, reply: e }
+        else if (e.type === "error") return { ok: false, error: e.message, retryable: e.retryable === true }
       }
     } catch (e) {
-      if (opts.signal.aborted) return { messages, ended: "stopped" }
-      return { messages, ended: "error", error: e instanceof Error ? e.message : String(e) }
+      return { ok: false, error: e instanceof Error ? e.message : String(e), retryable: true }
     }
-    if (!reply) return { messages, ended: opts.signal.aborted ? "stopped" : "error", error: "the reply was cut off" }
+    return { ok: false, error: "the reply was cut off", retryable: true }
+  }
+
+  for (let round = 0; ; round++) {
+    if (opts.signal.aborted) return { messages, ended: "stopped" }
+    let got = await ask()
+    for (let attempt = 1; !got.ok && got.retryable && attempt < ATTEMPTS && !opts.signal.aborted; attempt++) {
+      opts.onProgress({ type: "retry", attempt, reason: got.error })
+      await pause(1500 * 2 ** (attempt - 1), opts.signal)
+      if (opts.signal.aborted) break
+      got = await ask()
+    }
+    if (opts.signal.aborted) return { messages, ended: "stopped" }
+    if (!got.ok) return { messages, ended: "error", error: got.error }
+    const reply = got.reply
 
     messages.push({ role: "assistant", content: reply.content as Anthropic.Beta.BetaContentBlockParam[] })
     publish()
@@ -130,7 +175,19 @@ export async function runAgent(opts: {
     if (reply.stopReason === "pause_turn") continue
 
     const calls = reply.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use")
-    if (calls.length === 0) return { messages, ended: "done" }
+    if (calls.length === 0) {
+      // Finished without looking at what it changed: ask once to check.
+      if (unseen && !nudged && round + 1 < max) {
+        nudged = true
+        messages.push({
+          role: "user",
+          content: [{ type: "text", text: `${LOOP_NOTE}You changed the scene after your last look at it. Capture once, check the result against the request and fix anything off, then finish with your reply.` }],
+        })
+        publish()
+        continue
+      }
+      return { messages, ended: "done" }
+    }
     // A call cut off at the token limit may parse as a smaller valid one;
     // never run it.
     if (reply.stopReason === "max_tokens") {
@@ -154,11 +211,13 @@ export async function runAgent(opts: {
       opts.onProgress({ type: "tool", name: call.name, input })
       const result = await opts.runTool(call.name, input)
       const block = toolResultBlock(call.id, result)
+      if (!block.is_error && CHANGES.has(call.name)) unseen = true
+      if (!block.is_error && LOOKS.has(call.name)) unseen = false
       opts.onProgress({ type: "tool-done", name: call.name, ok: !block.is_error })
       results.push(block)
     }
     if (round + 1 >= max && !opts.signal.aborted) {
-      results.push({ type: "text", text: "That is the last round for this request. Do not call more tools: say what you changed, where it stands, and what is left." })
+      results.push({ type: "text", text: `${LOOP_NOTE}That is the last round for this request. Do not call more tools: say what you changed, where it stands, and what is left.` })
     }
     messages.push({ role: "user", content: results })
     publish()

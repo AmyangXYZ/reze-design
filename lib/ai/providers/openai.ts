@@ -23,7 +23,7 @@
 import OpenAI, { toFile } from "openai"
 import type Anthropic from "@anthropic-ai/sdk"
 import type { AgentMessage } from "@/lib/ai/agent-loop"
-import type { Provider, TurnArgs } from "@/lib/ai/providers/types"
+import { TurnError, type Provider, type TurnArgs } from "@/lib/ai/providers/types"
 
 const MODEL = process.env.AGENT_OPENAI_MODEL || "gpt-6.1-sol"
 /** Captures whose pictures are sent; earlier ones are mentioned, not shown. */
@@ -165,22 +165,18 @@ async function turn({ messages, system, tools, send, signal }: TurnArgs): Promis
       else if (event.type === "response.reasoning_summary_text.delta") send({ type: "thinking", text: event.delta })
       else if (event.type === "response.reasoning_summary_part.done") send({ type: "thinking", text: "\n\n" })
       else if (event.type === "response.completed" || event.type === "response.incomplete") final = event.response
-      else if (event.type === "response.failed") throw new Error(event.response.error?.message ?? "the model failed")
-      else if (event.type === "error") throw new Error(event.message)
+      else if (event.type === "response.failed") throw new TurnError(event.response.error?.message ?? "the model failed", true)
+      else if (event.type === "error") throw new TurnError(event.message, true)
     }
-    if (!final) throw new Error("the reply was cut off")
+    if (!final) throw new TurnError("the reply was cut off", true)
     const { content, stopReason } = fromResponse(final)
     send({ type: "message", content, stopReason, usage: final.usage })
   } catch (e) {
-    throw new Error(
-      e instanceof OpenAI.RateLimitError
-        ? "the model is busy — try again in a moment"
-        : e instanceof OpenAI.APIError
-          ? `model error ${e.status ?? ""}: ${e.message}`
-          : e instanceof Error
-            ? e.message
-            : String(e),
-    )
+    if (e instanceof TurnError) throw e
+    if (e instanceof OpenAI.RateLimitError) throw new TurnError("the model is busy — try again in a moment", true)
+    if (e instanceof OpenAI.APIConnectionError) throw new TurnError(`connection to the model failed: ${e.message}`, true)
+    if (e instanceof OpenAI.APIError) throw new TurnError(`model error ${e.status ?? ""}: ${e.message}`, (e.status ?? 500) >= 500 || e.status === 408 || e.status === 409)
+    throw new TurnError(e instanceof Error ? e.message : String(e), false)
   }
 }
 

@@ -18,7 +18,8 @@ import { hasDatabase } from "@/lib/db"
 import { AGENT_SYSTEM_PROMPT } from "@/lib/ai/agent-prompt"
 import { SCENE_TOOLS } from "@/lib/ai/scene-tools"
 import type { AgentMessage, AgentStreamEvent } from "@/lib/ai/agent-loop"
-import type { Provider } from "@/lib/ai/providers/types"
+import { TurnError, type Provider } from "@/lib/ai/providers/types"
+import { describeSettings } from "@/lib/ai/settings-schema"
 import { anthropicProvider } from "@/lib/ai/providers/anthropic"
 import { openaiProvider } from "@/lib/ai/providers/openai"
 
@@ -32,6 +33,14 @@ const PER_MINUTE = 40
 const MAX_BODY = 8 * 1024 * 1024
 
 const TOOLS = SCENE_TOOLS.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters }))
+
+/** The instructions, with the look settings' reference built in: it never
+ *  changes, so it belongs in the cached prefix rather than costing a round
+ *  (describe_settings) at the start of every conversation. */
+const SYSTEM = `${AGENT_SYSTEM_PROMPT}
+
+The look settings you can change (set_settings), what each does and its range:
+${describeSettings()}`
 
 /** Claude locally, GPT deployed — unless AGENT_PROVIDER says otherwise. */
 function provider(): Provider {
@@ -72,7 +81,7 @@ export async function POST(request: Request) {
   const p = provider()
   if (!process.env[p.keyEnv]) return Response.json({ error: `the server has no ${p.keyEnv}` }, { status: 503 })
   if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY) return Response.json({ error: "too large" }, { status: 413 })
-  if (overLimit(g.user)) return Response.json({ error: "slow down" }, { status: 429 })
+  if (overLimit(g.user)) return Response.json({ error: "slow down", retryable: true }, { status: 429 })
 
   let messages: AgentMessage[]
   try {
@@ -88,9 +97,9 @@ export async function POST(request: Request) {
     async start(controller) {
       const send = (e: AgentStreamEvent) => controller.enqueue(encoder.encode(`${JSON.stringify(e)}\n`))
       try {
-        await p.turn({ messages, system: AGENT_SYSTEM_PROMPT, tools: TOOLS, send, signal: request.signal })
+        await p.turn({ messages, system: SYSTEM, tools: TOOLS, send, signal: request.signal })
       } catch (e) {
-        if (!request.signal.aborted) send({ type: "error", message: e instanceof Error ? e.message : String(e) })
+        if (!request.signal.aborted) send({ type: "error", message: e instanceof Error ? e.message : String(e), retryable: e instanceof TurnError && e.retryable })
       } finally {
         controller.close()
       }

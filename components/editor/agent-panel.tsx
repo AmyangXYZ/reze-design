@@ -20,7 +20,7 @@ import { prepareReference, type ReferenceImage } from "@/lib/ai/reference-image"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { AstroidSpinner } from "@/components/editor/astroid-spinner"
 import { cn } from "@/lib/utils"
-import type { AgentMessage } from "@/lib/ai/agent-loop"
+import { LOOP_NOTE, type AgentMessage } from "@/lib/ai/agent-loop"
 import { THINKING_VERBS, doingOf, summarizeStep, type StepSummary } from "@/lib/ai/agent-summary"
 import type { AgentLive, AgentRun } from "@/hooks/use-agent"
 
@@ -69,8 +69,9 @@ function linesOf(messages: AgentMessage[], thumbs: Record<number, string[]>): Li
       if (b.type === "text" && m.role === "user") {
         // The loop's own wrap-up note rides in a user turn; it is not theirs.
         if (blocks.some((x) => x.type === "tool_result")) continue
-        // Nor are a reference image's measurements: those are for the model.
-        if (b.text.startsWith("Reference image")) continue
+        // Nor are a reference image's measurements, or the loop's own notes
+        // (the scene it attached, a nudge to look): those are for the model.
+        if (b.text.startsWith("Reference image") || b.text.startsWith(LOOP_NOTE)) continue
         out.push({ kind: "user", text: b.text, images: thumbs[mi] })
       } else if (b.type === "text" && b.text.trim()) out.push({ kind: "reply", text: b.text })
       else if (b.type === "thinking" && b.thinking.trim()) out.push({ kind: "note", text: b.thinking.trim() })
@@ -270,7 +271,7 @@ export function AgentPanel({
   // What the status line says: the tool at work, else writing, else a
   // thinking word that changes every few seconds so a long think moves.
   const since = run ? Math.max(0, now - run.startedAt) : 0
-  const verb = doingOf(live.tool) ?? (live.text ? "Writing" : THINKING_VERBS[Math.floor(since / 4000) % THINKING_VERBS.length])
+  const verb = live.retrying ? "Reconnecting" : (doingOf(live.tool) ?? (live.text ? "Writing" : THINKING_VERBS[Math.floor(since / 4000) % THINKING_VERBS.length]))
   // The latest line of reasoning, while it is still forming.
   const thought = live.thinking.trim().split("\n").filter(Boolean).pop() ?? ""
 

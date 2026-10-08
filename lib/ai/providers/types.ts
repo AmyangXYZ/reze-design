@@ -14,6 +14,18 @@
 
 import type { AgentMessage, AgentStreamEvent } from "@/lib/ai/agent-loop"
 
+/** A failed turn, saying whether the same request could succeed if tried
+ *  again — the provider busy, overloaded or failing, the connection dropped —
+ *  or not (a refused key, a malformed request). The loop retries the first. */
+export class TurnError extends Error {
+  constructor(
+    message: string,
+    readonly retryable: boolean,
+  ) {
+    super(message)
+  }
+}
+
 export type TurnArgs = {
   messages: AgentMessage[]
   system: string

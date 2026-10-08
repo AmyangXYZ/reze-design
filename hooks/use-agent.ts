@@ -14,7 +14,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { ToolResult } from "@/lib/ai/scene-tools"
-import { filesIn, runAgent, settle, type AgentMessage, type AgentOutcome } from "@/lib/ai/agent-loop"
+import { LOOP_NOTE, filesIn, runAgent, settle, type AgentMessage, type AgentOutcome } from "@/lib/ai/agent-loop"
 import { storageKey } from "@/lib/storage"
 import { referenceBlocks, type ReferenceImage } from "@/lib/ai/reference-image"
 
@@ -25,9 +25,11 @@ export type AgentLive = {
   thinking: string
   /** The tool running now. */
   tool: string | null
+  /** Set while a failed request waits to be tried again. */
+  retrying: boolean
 }
 
-const IDLE: AgentLive = { text: "", thinking: "", tool: null }
+const IDLE: AgentLive = { text: "", thinking: "", tool: null, retrying: false }
 
 /** The run as a whole, for the spinner: when it started, steps finished. */
 export type AgentRun = { startedAt: number; steps: number }
@@ -120,9 +122,19 @@ export function useAgent({
       const controller = new AbortController()
       abort.current = controller
       const at = history.current.length
+      // The scene as it stands rides with every request, so the model starts
+      // from the truth instead of spending its first round asking for it.
+      const now = await runTool("get_scene", {}).catch(() => null)
       const start: AgentMessage[] = [
         ...history.current,
-        { role: "user", content: [...referenceBlocks(refs), { type: "text", text: request }] },
+        {
+          role: "user",
+          content: [
+            ...referenceBlocks(refs),
+            { type: "text", text: request },
+            ...(now ? [{ type: "text" as const, text: `${LOOP_NOTE}The scene as it stands now (get_scene): ${JSON.stringify(now.data)}` }] : []),
+          ],
+        },
       ]
       if (refs.length) setThumbs((t) => ({ ...t, [at]: refs.map((r) => r.dataUrl) }))
       history.current = start
@@ -146,7 +158,8 @@ export function useAgent({
               setLive(IDLE)
             } else if (p.type === "text") setLive((l) => ({ ...l, text: l.text + p.text, tool: null }))
             else if (p.type === "thinking") setLive((l) => ({ ...l, thinking: l.thinking + p.text }))
-            else if (p.type === "tool") setLive((l) => ({ ...l, tool: p.name }))
+            else if (p.type === "tool") setLive((l) => ({ ...l, tool: p.name, retrying: false }))
+            else if (p.type === "retry") setLive((l) => ({ ...l, retrying: true }))
             else if (p.type === "tool-done") {
               setLive((l) => ({ ...l, tool: null }))
               setRun((r) => (r ? { ...r, steps: r.steps + 1 } : r))
