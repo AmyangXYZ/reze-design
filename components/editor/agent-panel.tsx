@@ -16,6 +16,7 @@ import { Square, ArrowUp, ImagePlus, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
+import { Skeleton } from "@/components/ui/skeleton"
 import { prepareReference, type ReferenceImage } from "@/lib/ai/reference-image"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { AstroidSpinner } from "@/components/editor/astroid-spinner"
@@ -246,6 +247,9 @@ export function AgentPanel({
 }) {
   const [draft, setDraft] = useState("")
   const [refs, setRefs] = useState<ReferenceImage[]>([])
+  // Pictures still being prepared (resized and measured): each holds a
+  // placeholder where its thumbnail will land, and sending waits for them.
+  const [preparing, setPreparing] = useState(0)
   const [dragging, setDragging] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const [now, setNow] = useState(() => Date.now())
@@ -256,7 +260,10 @@ export function AgentPanel({
   const attach = async (files: Iterable<File>) => {
     const images = [...files].filter((f) => f.type.startsWith("image/"))
     if (!images.length) return
-    const prepared = await Promise.all(images.slice(0, 4).map((f) => prepareReference(f).catch(() => null)))
+    const batch = images.slice(0, 4)
+    setPreparing((n) => n + batch.length)
+    const prepared = await Promise.all(batch.map((f) => prepareReference(f).catch(() => null)))
+    setPreparing((n) => n - batch.length)
     setRefs((r) => [...r, ...prepared.filter((x): x is ReferenceImage => x !== null)].slice(0, 4))
   }
 
@@ -274,7 +281,7 @@ export function AgentPanel({
   }, [lines.length, live.text, live.tool, live.thinking])
 
   const submit = () => {
-    if (busy || (!draft.trim() && !refs.length)) return
+    if (busy || preparing || (!draft.trim() && !refs.length)) return
     onSend(draft, refs)
     setDraft("")
     setRefs([])
@@ -392,7 +399,7 @@ export function AgentPanel({
           stop are small marks at its end. Enter sends, Shift+Enter breaks. */}
       <div className="shrink-0 border-t border-line p-1.5">
         <div className="rounded-interior bg-white/[0.06] px-1.5 py-1 ring-blue-400 focus-within:ring-1">
-          {refs.length > 0 && (
+          {(refs.length > 0 || preparing > 0) && (
             <div className="mb-1.5 flex flex-wrap gap-1.5 pl-[18px]">
               {refs.map((r, k) => (
                 <div key={k} className="relative">
@@ -408,6 +415,9 @@ export function AgentPanel({
                     <X className="size-2.5" />
                   </Button>
                 </div>
+              ))}
+              {Array.from({ length: preparing }, (_, k) => (
+                <Skeleton key={`p${k}`} className="size-10 rounded-chip border border-line" />
               ))}
             </div>
           )}
@@ -477,7 +487,7 @@ export function AgentPanel({
                 size="icon-xs"
                 variant="ghost"
                 onClick={submit}
-                disabled={!draft.trim() && !refs.length}
+                disabled={preparing > 0 || (!draft.trim() && !refs.length)}
                 tooltip={text.send}
                 aria-label={text.send}
                 // The prompt mark, the picture and send are one size and one
