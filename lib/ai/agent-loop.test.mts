@@ -43,7 +43,7 @@ function scripted(replies: Reply[], opts: { upload?: boolean } = {}) {
     const events: AgentStreamEvent[] = [
       { type: "sent", message: sentCopy as AgentMessage },
       { type: "text", text: "…" },
-      { type: "message", content: reply.content as never, stopReason: reply.stopReason, usage: {} },
+      { type: "message", content: reply.content as never, stopReason: reply.stopReason, usage: null },
     ]
     return new Response(events.map((e) => JSON.stringify(e)).join("\n") + "\n", { status: 200 })
   }

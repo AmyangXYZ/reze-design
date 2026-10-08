@@ -10233,7 +10233,7 @@ export default function Lab() {
           <AgentTabs
             tabs={agent.tabs}
             activeId={agent.activeId}
-            busy={agent.busy}
+            runningId={agent.runningId}
             onSelect={(id) => void agent.switchTo(id)}
             onClose={(id) => void agent.closeTab(id)}
             onNew={() => void agent.newTab()}
@@ -10243,9 +10243,12 @@ export default function Lab() {
             messages={agent.messages}
             thumbs={agent.thumbs}
             live={agent.live}
-            busy={agent.busy}
+            // The run shows in its own tab; elsewhere it only locks the send.
+            busy={agent.busy && agent.activeId === agent.runningId}
+            locked={agent.busy && agent.activeId !== agent.runningId}
             run={agent.run}
             notice={agent.notice}
+            lastRun={agent.lastRun}
             onRetry={() => void agent.retry()}
             onNewChat={() => void agent.newTab()}
             onSend={(text, refs) => void agent.send(text, refs)}

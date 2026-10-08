@@ -173,7 +173,13 @@ async function turn({ target, messages, system, tools, send, signal }: TurnArgs)
     }
     if (!final) throw new TurnError("the reply was cut off", true)
     const { content, stopReason } = fromResponse(final)
-    send({ type: "message", content, stopReason, usage: final.usage })
+    const u = final.usage
+    send({
+      type: "message",
+      content,
+      stopReason,
+      usage: u ? { input: u.input_tokens, output: u.output_tokens, cached: u.input_tokens_details?.cached_tokens ?? 0 } : null,
+    })
   } catch (e) {
     if (e instanceof TurnError) throw e
     if (e instanceof OpenAI.RateLimitError) throw new TurnError("the model is busy — try again in a moment", true)

@@ -26,13 +26,21 @@ import { TurnError } from "@/lib/ai/providers/types"
 
 export type AgentMessage = Anthropic.Beta.BetaMessageParam
 
+/** Tokens one reply took, the same shape whichever service answered: all of
+ *  the input (cached included), the part of it served from the cache, and the
+ *  output. Null where the service did not say. */
+export type Usage = { input: number; output: number; cached: number }
+
+export const addUsage = (a: Usage | null, b: Usage | null): Usage | null =>
+  !a ? b : !b ? a : { input: a.input + b.input, output: a.output + b.output, cached: a.cached + b.cached }
+
 /** One line of /api/agent's stream. */
 export type AgentStreamEvent =
   | { type: "sent"; message: AgentMessage }
   | { type: "text"; text: string }
   | { type: "thinking"; text: string }
   | { type: "tool"; name: string }
-  | { type: "message"; content: Anthropic.Beta.BetaContentBlock[]; stopReason: string | null; usage: unknown }
+  | { type: "message"; content: Anthropic.Beta.BetaContentBlock[]; stopReason: string | null; usage: Usage | null }
   | { type: "error"; message: string; retryable?: boolean }
 
 /** What the loop tells the panel as it goes. */
@@ -43,6 +51,7 @@ export type AgentProgress =
   | { type: "tool-done"; name: string; ok: boolean }
   | { type: "history"; messages: AgentMessage[] }
   | { type: "retry"; attempt: number; reason: string }
+  | { type: "usage"; usage: Usage | null }
 
 export type AgentOutcome = { messages: AgentMessage[]; ended: "done" | "stopped" | "limit" | "refused" | "error"; error?: string }
 
@@ -233,6 +242,7 @@ export async function runAgent(opts: {
     if (opts.signal.aborted) return { messages, ended: "stopped" }
     if (!got.ok) return { messages, ended: "error", error: got.error }
     const reply = got.reply
+    opts.onProgress({ type: "usage", usage: reply.usage })
 
     messages.push({ role: "assistant", content: reply.content as Anthropic.Beta.BetaContentBlockParam[] })
     publish()

@@ -32,7 +32,7 @@
 
 import type OpenAI from "openai"
 import type Anthropic from "@anthropic-ai/sdk"
-import type { AgentMessage } from "@/lib/ai/agent-loop"
+import type { AgentMessage, Usage } from "@/lib/ai/agent-loop"
 import { TurnError, type Provider, type Target, type TurnArgs } from "@/lib/ai/providers/types"
 
 type Block = Anthropic.Beta.BetaContentBlockParam
@@ -95,11 +95,23 @@ function imagePart(source: ImageSource): Part {
 const FOREIGN_SIGNATURE = { google: { thought_signature: "skip_thought_signature_validator" } }
 
 /** Where a request goes, for the services that need something of their own. */
-export type Quirks = { gemini?: boolean; deepseek?: boolean }
+export type Quirks = { gemini?: boolean; deepseek?: boolean; usage?: boolean }
+
+/** The services that document stream_options.include_usage. Elsewhere the
+ *  field is not sent at all: a server that rejects unknown fields would fail
+ *  the request over a number shown for information. */
+const REPORTS_USAGE = new Set([
+  "api.deepseek.com",
+  "dashscope.aliyuncs.com",
+  "dashscope-intl.aliyuncs.com",
+  "api.x.ai",
+  "openrouter.ai",
+  "api.openai.com",
+])
 
 export const quirksOf = (baseURL: string): Quirks => {
   const host = new URL(baseURL).host
-  return { gemini: host === "generativelanguage.googleapis.com", deepseek: host === "api.deepseek.com" }
+  return { gemini: host === "generativelanguage.googleapis.com", deepseek: host === "api.deepseek.com", usage: REPORTS_USAGE.has(host) }
 }
 
 /** The shared history as Chat Completions messages. */
@@ -187,6 +199,7 @@ async function turn({ target, messages, system, tools, send, signal }: TurnArgs)
         messages: toMessages(system, messages, quirks),
         tools: tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } })),
         stream: true,
+        ...(quirks.usage ? { stream_options: { include_usage: true } } : {}),
         // OpenRouter's own fields: reasoning at the models' default effort, and
         // Claude's prefix cached (the other services cache on their own).
         ...(openrouter ? { reasoning: { effort: "medium" }, ...(target.model.startsWith("anthropic/") ? { cache_control: { type: "ephemeral" } } : {}) } : {}),
@@ -205,9 +218,17 @@ async function turn({ target, messages, system, tools, send, signal }: TurnArgs)
   const details: Detail[] = []
   const calls: { id: string; name: string; args: string; extra?: unknown }[] = []
   let finish: string | null = null
+  let usage: Usage | null = null
   try {
     for await (const chunk of events(res)) {
       if (chunk.error) throw new TurnError(`model error: ${JSON.stringify(chunk.error)}`, true)
+      // The usage chunk comes last, with no choices.
+      const u = chunk.usage as
+        | { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number }; prompt_cache_hit_tokens?: number }
+        | undefined
+      if (u && typeof u.prompt_tokens === "number") {
+        usage = { input: u.prompt_tokens, output: u.completion_tokens ?? 0, cached: u.prompt_tokens_details?.cached_tokens ?? u.prompt_cache_hit_tokens ?? 0 }
+      }
       const choice = (chunk.choices as { delta?: Delta; finish_reason?: string | null }[] | undefined)?.[0]
       if (!choice) continue
       const d = choice.delta ?? {}
@@ -262,7 +283,7 @@ async function turn({ target, messages, system, tools, send, signal }: TurnArgs)
     } as Anthropic.Beta.BetaContentBlock)
   }
   const stopReason = finish === "length" ? "max_tokens" : finish === "content_filter" ? "refusal" : made.length ? "tool_use" : "end_turn"
-  send({ type: "message", content, stopReason, usage: null })
+  send({ type: "message", content, stopReason, usage })
 }
 
 type ListedModel = { id: string; architecture?: { input_modalities?: string[] }; supported_parameters?: string[] }

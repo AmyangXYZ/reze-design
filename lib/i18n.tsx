@@ -541,6 +541,11 @@ const en = {
       close: "Close AI",
       newChat: "New conversation",
       closeTab: "Close conversation",
+      usage: {
+        tokens: (total: string) => `${total} tokens`,
+        detail: (input: string, cached: string | null, output: string) => `${input} in${cached ? ` (${cached} cached)` : ""} · ${output} out`,
+        none: "This service didn’t report token usage.",
+      },
       empty: "Design the scene together — describe a mood, a light or a shot, or drop in a reference image.",
       send: "Send",
       stop: "Stop",
@@ -1580,6 +1585,11 @@ const zh: Dictionary = {
       close: "关闭 AI",
       newChat: "新对话",
       closeTab: "关闭对话",
+      usage: {
+        tokens: (total: string) => `${total} tokens`,
+        detail: (input: string, cached: string | null, output: string) => `输入 ${input}${cached ? `（缓存 ${cached}）` : ""} · 输出 ${output}`,
+        none: "该服务未报告用量。",
+      },
       empty: "一起设计场景——描述想要的氛围、光线或镜头，也可以拖入一张参考图。",
       send: "发送",
       stop: "停止",

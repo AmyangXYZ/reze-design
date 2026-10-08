@@ -21,8 +21,9 @@ import { prepareReference, type ReferenceImage } from "@/lib/ai/reference-image"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { AstroidSpinner } from "@/components/editor/astroid-spinner"
 import { cn } from "@/lib/utils"
-import { LOOP_NOTE, type AgentMessage } from "@/lib/ai/agent-loop"
-import { THINKING_VERBS, doingOf, summarizeStep, type StepSummary } from "@/lib/ai/agent-summary"
+import { LOOP_NOTE, type AgentMessage, type Usage } from "@/lib/ai/agent-loop"
+import { THINKING_VERBS, doingOf, formatTokens, summarizeStep, usageParts, type StepSummary } from "@/lib/ai/agent-summary"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { AgentLive, AgentRun } from "@/hooks/use-agent"
 import type { Notice, NoticeKind } from "@/lib/ai/agent-notice"
 
@@ -38,6 +39,7 @@ export type AgentPanelText = {
   retry: string
   continue: string
   newChat: string
+  usage: { tokens: (total: string) => string; detail: (input: string, cached: string | null, output: string) => string; none: string }
 }
 
 type Line =
@@ -235,8 +237,10 @@ export function AgentPanel({
   thumbs,
   live,
   busy,
+  locked,
   run,
   notice,
+  lastRun,
   onRetry,
   onNewChat,
   onSend,
@@ -247,9 +251,14 @@ export function AgentPanel({
   thumbs: Record<number, string[]>
   live: AgentLive
   busy: boolean
+  /** A request is running in another tab: one at a time, so sending waits. */
+  locked?: boolean
   run: AgentRun | null
   /** How the last run ended, when it did not simply finish. */
   notice: Notice | null
+  /** The last request's tokens: undefined before any, null where the service
+   *  did not report them. Shown, never sent anywhere. */
+  lastRun?: Usage | null
   onRetry: () => void
   onNewChat: () => void
   onSend: (text: string, refs: ReferenceImage[]) => void
@@ -292,7 +301,7 @@ export function AgentPanel({
   }, [lines.length, live.text, live.tool, live.thinking])
 
   const submit = () => {
-    if (busy || preparing || (!draft.trim() && !refs.length)) return
+    if (busy || locked || preparing || (!draft.trim() && !refs.length)) return
     onSend(draft, refs)
     setDraft("")
     setRefs([])
@@ -408,6 +417,23 @@ export function AgentPanel({
           sits on, so what you type and what you sent look like one thing.
           Attached pictures ride above the line; the picture button, send and
           stop are small marks at its end. Enter sends, Shift+Enter breaks. */}
+      {/* The request's tokens, in one place: live while it runs, the final
+          count after — a line of its own above the input, so the chat ends
+          above it rather than running underneath. */}
+      {lastRun !== undefined && (
+        <div className="flex shrink-0 items-end justify-end px-4 pb-1 text-[11px] leading-4 text-muted-foreground tabular-nums">
+          {lastRun ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>{text.usage.tokens(formatTokens(lastRun.input + lastRun.output))}</span>
+              </TooltipTrigger>
+              <TooltipContent className="tabular-nums">{text.usage.detail(...usageParts(lastRun))}</TooltipContent>
+            </Tooltip>
+          ) : (
+            text.usage.none
+          )}
+        </div>
+      )}
       <div className="shrink-0 border-t border-line px-2.5 py-1.5">
         <div className="rounded-interior bg-white/[0.06] px-1.5 py-1 ring-blue-400 focus-within:ring-1">
           {(refs.length > 0 || preparing > 0) && (
@@ -498,7 +524,7 @@ export function AgentPanel({
                 size="icon-xs"
                 variant="ghost"
                 onClick={submit}
-                disabled={preparing > 0 || (!draft.trim() && !refs.length)}
+                disabled={locked || preparing > 0 || (!draft.trim() && !refs.length)}
                 tooltip={text.send}
                 aria-label={text.send}
                 // The prompt mark, the picture and send are one size and one

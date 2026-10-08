@@ -216,3 +216,17 @@ export function doingOf(name: string | null): string | null {
 /** While the model thinks between steps: rotated, so a long think does not
  *  sit on one word. */
 export const THINKING_VERBS = ["Thinking", "Considering", "Squinting at the frame", "Weighing options", "Mixing light", "Composing", "Pondering"]
+
+/** A usage's input / cached / output, formatted, for a detail line. */
+export const usageParts = (u: { input: number; output: number; cached: number }): [string, string | null, string] => [
+  formatTokens(u.input),
+  u.cached ? formatTokens(u.cached) : null,
+  formatTokens(u.output),
+]
+
+/** Tokens as the panel shows them: 950, 18.2k, 1.4M. */
+export function formatTokens(n: number): string {
+  if (n < 1000) return String(n)
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`
+  return `${(n / 1_000_000).toFixed(1)}M`
+}

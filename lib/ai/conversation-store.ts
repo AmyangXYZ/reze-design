@@ -8,13 +8,15 @@
 // Every failure resolves quietly — a conversation that cannot be saved still
 // works for this tab.
 
-import type { AgentMessage } from "@/lib/ai/agent-loop"
+import type { AgentMessage, Usage } from "@/lib/ai/agent-loop"
 
 export type SavedConversation = {
   messages: AgentMessage[]
   thumbs: Record<number, string[]>
   /** A run was going when this was written: read back, it was cut off. */
   running?: boolean
+  /** The last request's tokens; null where the service did not say. */
+  lastRun?: Usage | null
 }
 
 export type ConversationTab = { id: string; title: string }
@@ -71,7 +73,9 @@ export async function saveIndex(index: ConversationIndex): Promise<void> {
 export async function loadConversation(id: string): Promise<SavedConversation | null> {
   try {
     const saved = (await run("readonly", (s) => s.get(id))) as SavedConversation | undefined
-    return saved && Array.isArray(saved.messages) ? { messages: saved.messages, thumbs: saved.thumbs ?? {}, running: saved.running === true } : null
+    return saved && Array.isArray(saved.messages)
+      ? { messages: saved.messages, thumbs: saved.thumbs ?? {}, running: saved.running === true, lastRun: saved.lastRun }
+      : null
   } catch {
     return null
   }
