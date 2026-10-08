@@ -28,6 +28,7 @@ import {
 } from "@/lib/ai/conversation-store"
 import { deleteOwnFiles } from "@/lib/ai/connections"
 import type { Via } from "@/lib/ai/providers/presets"
+import type { HistoryStep, SceneSnapshot } from "@/lib/scene-history"
 
 export type AgentLive = {
   /** The reply as it streams, this round. */
@@ -55,6 +56,7 @@ export function useAgent({
   runTool,
   begin,
   end,
+  jump,
 }: {
   /** The open scene's identity: a new one stops a run in progress. */
   scene: unknown
@@ -67,7 +69,10 @@ export function useAgent({
   runTool: (name: string, input: Record<string, unknown>) => Promise<ToolResult>
   /** Group the run's changes into one undo step. */
   begin: (label?: string) => void
-  end: () => void
+  /** Close the run's undo step, returning it when anything changed. */
+  end: () => HistoryStep | null
+  /** Put the scene at a remembered point, as an undoable step. */
+  jump: (target: SceneSnapshot, label: string) => void
 }) {
   const [messages, setMessages] = useState<AgentMessage[]>([])
   const [live, setLive] = useState<AgentLive>(IDLE)
@@ -116,6 +121,11 @@ export function useAgent({
   const runThumbs = useRef<Record<number, string[]>>({})
   const runTotal = useRef<Usage | null | undefined>(undefined)
   const [runningId, setRunningId] = useState<string | null>(null)
+  // The last finished request that changed the scene: where it started from,
+  // where it left it, and whether it is currently taken back. One per tab —
+  // the next request replaces it. For this session only: the scene history
+  // it lives in starts over when a scene opens.
+  const [checkpoints, setCheckpoints] = useState<Record<string, { before: SceneSnapshot; after: SceneSnapshot; undone: boolean }>>({})
   const viewingRun = () => runConv.current !== null && runConv.current === active.current
 
   /** Show one saved conversation, made whole: a page closed mid-run left
@@ -305,7 +315,13 @@ export function useAgent({
         running.current = false
         runConv.current = null
         setRunningId(null)
-        end()
+        const step = end()
+        setCheckpoints((all) => {
+          const next = { ...all }
+          if (step) next[conv] = { before: step.before, after: step.after, undone: false }
+          else delete next[conv]
+          return next
+        })
         abort.current = null
         setBusy(false)
         setRun(null)
@@ -367,6 +383,23 @@ export function useAgent({
     stoppedBy.current = "user"
     abort.current.abort()
   }, [])
+
+  /** Take back, or put back, what the open tab's last request changed. */
+  const checkpoint = activeId ? checkpoints[activeId] : undefined
+  const undoRun = useCallback(() => {
+    const id = active.current
+    const c = id ? checkpoints[id] : undefined
+    if (!id || !c || c.undone || abort.current) return
+    jump(c.before, "AI: undo")
+    setCheckpoints((all) => ({ ...all, [id]: { ...c, undone: true } }))
+  }, [checkpoints, jump])
+  const redoRun = useCallback(() => {
+    const id = active.current
+    const c = id ? checkpoints[id] : undefined
+    if (!id || !c || !c.undone || abort.current) return
+    jump(c.after, "AI: redo")
+    setCheckpoints((all) => ({ ...all, [id]: { ...c, undone: false } }))
+  }, [checkpoints, jump])
 
   /** Open another tab — a run going in this one carries on in its own. */
   const switchTo = useCallback(
@@ -434,5 +467,5 @@ export function useAgent({
     }
   }, [send, stop, newTab])
 
-  return { tabs, activeId, runningId, switchTo, newTab, closeTab, messages, thumbs, live, busy, run, notice, usage, send, retry, stop }
+  return { tabs, activeId, runningId, switchTo, newTab, closeTab, messages, thumbs, live, busy, run, notice, usage, checkpoint, undoRun, redoRun, send, retry, stop }
 }

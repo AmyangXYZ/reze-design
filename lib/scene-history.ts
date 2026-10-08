@@ -188,6 +188,22 @@ export class SceneHistory {
     return step
   }
 
+  /**
+   * Go straight to `target` as one step of its own — undo comes back to here.
+   * For putting the scene back to a remembered point (before an AI request)
+   * that may lie behind other steps: a plain undo could only take the last.
+   * Returns the snapshot to apply, or null when nothing would change.
+   */
+  jump(target: SceneSnapshot, label: string): SceneSnapshot | null {
+    if (this.open || !this.base) return null
+    const parts = changedParts(this.base, target)
+    if (parts.length === 0) return null
+    this.future = []
+    this.push({ label, parts, before: this.base, after: target, at: -Infinity })
+    this.base = target
+    return target
+  }
+
   get inTransaction(): boolean {
     return this.open !== null
   }

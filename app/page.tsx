@@ -5992,7 +5992,7 @@ export default function Lab() {
   const aiSettings = useAiSettings()
   const aiActive = resolveActive(aiSettings, premium)
   const [aiMenuOpen, setAiMenuOpen] = useState(false)
-  const agent = useAgent({ scene, via: viaOf(aiSettings, aiActive), ready: aiActive !== null, runTool: sceneTools.run, begin: sceneHistory.begin, end: sceneHistory.end })
+  const agent = useAgent({ scene, via: viaOf(aiSettings, aiActive), ready: aiActive !== null, runTool: sceneTools.run, begin: sceneHistory.begin, end: sceneHistory.end, jump: sceneHistory.jump })
 
   // ── Persistence ──
   //
@@ -10256,6 +10256,9 @@ export default function Lab() {
             usage={agent.usage}
             conversationId={agent.activeId}
             open={agentOpen}
+            checkpoint={agent.checkpoint}
+            onUndo={agent.undoRun}
+            onRedo={agent.redoRun}
             onRetry={() => void agent.retry()}
             onNewChat={() => void agent.newTab()}
             onSend={(text, refs) => void agent.send(text, refs)}

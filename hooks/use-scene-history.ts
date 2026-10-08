@@ -104,6 +104,8 @@ export function useSceneHistory({
     undoLabel: history.peekUndo()?.label ?? null,
     redoLabel: history.peekRedo()?.label ?? null,
     /** Several changes as one step, for a caller that makes them in a batch. */
+    /** Put the scene at a remembered point, as an undoable step. */
+    jump: (target: SceneSnapshot, label: string) => apply(history.jump(target, label)),
     begin: (label?: string) => history.begin(label ?? null),
     end: () => history.end(),
     version,

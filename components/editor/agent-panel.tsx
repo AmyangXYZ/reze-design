@@ -12,7 +12,7 @@
 // canvas changes beside it; the panel has no scrim for that reason.
 
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { Square, ArrowUp, ImagePlus, X } from "lucide-react"
+import { Square, ArrowUp, ImagePlus, X, Undo2, Redo2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
@@ -40,6 +40,8 @@ export type AgentPanelText = {
   continue: string
   newChat: string
   setup: string
+  undo: string
+  redo: string
   usage: { tokens: (total: string) => string; detail: (input: string, cached: string | null, output: string) => string; none: string }
 }
 
@@ -294,6 +296,9 @@ export function AgentPanel({
   usage,
   conversationId,
   open,
+  checkpoint,
+  onUndo,
+  onRedo,
   onRetry,
   onNewChat,
   onSend,
@@ -320,6 +325,10 @@ export function AgentPanel({
   /** The panel is showing: opening it, or another tab, puts the cursor in
    *  the input. */
   open?: boolean
+  /** The last request changed the scene: whether that is taken back now. */
+  checkpoint?: { undone: boolean }
+  onUndo?: () => void
+  onRedo?: () => void
   onRetry: () => void
   onNewChat: () => void
   onSend: (text: string, refs: ReferenceImage[]) => void
@@ -491,6 +500,21 @@ export function AgentPanel({
                 {notice.action === "retry" ? text.retry : notice.action === "continue" ? text.continue : text.newChat}
               </Button>
             )}
+          </Row>
+        )}
+        {!busy && checkpoint && (
+          // What the last request did to the scene, one click from undone —
+          // and back. Both land in ⌘Z like any change.
+          <Row>
+            <Button
+              size="xs"
+              variant="ghost"
+              onClick={checkpoint.undone ? onRedo : onUndo}
+              className="h-6 gap-1 rounded-chip border border-line-strong px-2 text-xs text-foreground hover:bg-white/5"
+            >
+              {checkpoint.undone ? <Redo2 className="size-3" /> : <Undo2 className="size-3" />}
+              {checkpoint.undone ? text.redo : text.undo}
+            </Button>
           </Row>
         )}
       </div>

@@ -33,6 +33,27 @@ function test(name: string, fn: () => void) {
   }
 }
 
+test("jump goes back past later steps as one step of its own, and undo returns", () => {
+  const h = new SceneHistory()
+  const a = base()
+  h.observe(a, 0)
+  // An AI request, then the person's own edit after it.
+  h.begin("AI: warmer")
+  const b = withSetting(a, "sun", { strength: 1.4 })
+  h.observe(b, 10)
+  const step = h.end()!
+  const c = withSetting(b, "bloom", { intensity: 0.5 })
+  h.observe(c, 10_000)
+  // Back to before the request, though another step lies on top of it.
+  assert.deepEqual(h.jump(step.before, "AI: undo"), a)
+  assert.equal(h.peekUndo()?.label, "AI: undo")
+  // ⌘Z takes the jump back, to where the person was.
+  assert.deepEqual(h.undo(), c)
+  assert.deepEqual(h.redo(), a)
+  // A jump to where the scene already is changes nothing and records nothing.
+  assert.equal(h.jump(a, "AI: undo"), null)
+})
+
 test("the first observe is the baseline, not a step", () => {
   const h = new SceneHistory()
   assert.equal(h.observe(base(), 0), null)

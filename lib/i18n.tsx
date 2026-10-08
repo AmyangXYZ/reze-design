@@ -542,6 +542,8 @@ const en = {
       newChat: "New conversation",
       closeTab: "Close conversation",
       setup: "Add your AI API key to start",
+      undo: "Undo",
+      redo: "Redo",
       usage: {
         tokens: (total: string) => `${total} tokens`,
         detail: (input: string, cached: string | null, output: string) => `${input} in${cached ? ` (${cached} cached)` : ""} · ${output} out`,
@@ -1587,6 +1589,8 @@ const zh: Dictionary = {
       newChat: "新对话",
       closeTab: "关闭对话",
       setup: "添加你的 AI API 密钥即可开始",
+      undo: "撤销",
+      redo: "重做",
       usage: {
         tokens: (total: string) => `${total} tokens`,
         detail: (input: string, cached: string | null, output: string) => `输入 ${input}${cached ? `（缓存 ${cached}）` : ""} · 输出 ${output}`,
