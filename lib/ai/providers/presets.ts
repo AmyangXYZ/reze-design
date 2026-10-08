@@ -38,7 +38,14 @@ export const PRESETS: Preset[] = [
 export const presetOf = (id: string): Preset | undefined => PRESETS.find((p) => p.id === id)
 
 /** What verifying a connection found (lib/ai/verify). */
-export type Verdict = "ready" | "noVision" | "noTools" | "error"
+export type Verdict = "ready" | "textOnly" | "noVision" | "noTools" | "error"
 
 /** A person's own connection, as a request carries it. */
-export type Via = { provider: ProviderId; key: string; model: string; baseURL?: string }
+export type Via = {
+  provider: ProviderId
+  key: string
+  model: string
+  baseURL?: string
+  /** False for a model that reads text only: no pictures are sent to it. */
+  vision?: false
+}

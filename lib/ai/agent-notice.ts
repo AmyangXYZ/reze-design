@@ -18,6 +18,7 @@ export type NoticeKind =
   | "signIn"
   | "premium" // no model set up, and no Premium
   | "badKey" // the service refused the person's key
+  | "textOnly" // a picture attached for a model that reads text only
   | "rateLimited" // our own per-minute guard
   | "busy" // the provider is overloaded or rate-limiting
   | "network" // the connection dropped, or the reply was cut off
@@ -71,7 +72,7 @@ export function noticeOf(ended: AgentOutcome["ended"] | "interrupted" | null, er
     kind,
     action: ACTION[kind],
     // Account and setup refusals happen before anything ran.
-    kept: !["signIn", "premium", "badKey", "notSetUp", "rateLimited", "tooLarge"].includes(kind),
+    kept: !["signIn", "premium", "badKey", "textOnly", "notSetUp", "rateLimited", "tooLarge"].includes(kind),
     // The raw message only where our words are general.
     ...(kind === "unknown" || kind === "broken" ? { detail: error ?? undefined } : {}),
   }

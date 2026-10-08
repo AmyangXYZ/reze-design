@@ -73,9 +73,12 @@ export function resolveActive(s: AiSettings, premium: boolean): Active | null {
   if (a?.connection === "premium" && premium) return a
   if (a && "model" in a && s.connections.some((c) => c.id === a.connection && c.models.some((m) => m.id === a.model))) return a
   if (premium) return { connection: "premium" }
-  for (const c of s.connections) {
-    const m = c.models.find((x) => x.verdict === "ready")
-    if (m) return { connection: c.id, model: m.id }
+  // A model that sees first; one that reads text only still does the work.
+  for (const verdict of ["ready", "textOnly"]) {
+    for (const c of s.connections) {
+      const m = c.models.find((x) => x.verdict === verdict)
+      if (m) return { connection: c.id, model: m.id }
+    }
   }
   return null
 }
@@ -85,7 +88,8 @@ export function viaOf(s: AiSettings, active: Active | null): Via | null {
   if (!active || !("model" in active)) return null
   const c = s.connections.find((x) => x.id === active.connection)
   if (!c) return null
-  return { provider: c.provider, key: c.key, model: active.model, ...(c.baseURL ? { baseURL: c.baseURL } : {}) }
+  const textOnly = c.models.find((m) => m.id === active.model)?.verdict === "textOnly"
+  return { provider: c.provider, key: c.key, model: active.model, ...(c.baseURL ? { baseURL: c.baseURL } : {}), ...(textOnly ? { vision: false as const } : {}) }
 }
 
 /** What a connection is called in a list: its service, and the key's last

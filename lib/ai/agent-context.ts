@@ -15,3 +15,8 @@ export const AGENT_SYSTEM = `${AGENT_SYSTEM_PROMPT}
 
 The look settings you can change (set_settings), what each does and its range:
 ${describeSettings()}`
+
+/** Added for a model that reads text only. */
+export const TEXT_ONLY_NOTE = `
+
+You cannot see images in this conversation: captures and reference images reach you only as the numbers and notes the tools report. Judge the scene from those measurements, and say plainly when only looking at it would settle something.`

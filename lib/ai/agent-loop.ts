@@ -97,23 +97,25 @@ const KEEP_PICTURES = 3
 /**
  * The history as sent: inline (base64) pictures only in the latest few
  * messages that have any; earlier ones become a line saying they were seen.
- * Uploaded pictures are references, small enough to always go.
+ * Uploaded pictures are references, small enough to always go. A model that
+ * reads text only (`keep` 0) is sent no picture at all.
  */
-export function sendable(messages: AgentMessage[]): AgentMessage[] {
+export function sendable(messages: AgentMessage[], keep = KEEP_PICTURES): AgentMessage[] {
   type B = Anthropic.Beta.BetaContentBlockParam
   const inline = (b: unknown): boolean => {
     const x = b as { type?: string; source?: { type?: string }; content?: unknown }
     return (x.type === "image" && x.source?.type === "base64") || (Array.isArray(x.content) && x.content.some(inline))
   }
   const withPictures = messages.flatMap((m, i) => (Array.isArray(m.content) && m.content.some(inline) ? [i] : []))
-  const keep = new Set(withPictures.slice(-KEEP_PICTURES))
+  const kept = new Set(keep ? withPictures.slice(-keep) : [])
+  const note = keep ? "(An earlier image, not re-sent; you saw it then.)" : "(An image, not shown: this model reads text only.)"
   const drop = (b: B): B =>
-    b.type === "image" && b.source.type === "base64"
-      ? { type: "text", text: "(An earlier image, not re-sent; you saw it then.)" }
+    (b.type === "image" && b.source.type === "base64") || (!keep && b.type === "image")
+      ? { type: "text", text: note }
       : b.type === "tool_result" && Array.isArray(b.content)
         ? { ...b, content: b.content.map((x) => drop(x as B)) as typeof b.content }
         : b
-  return messages.map((m, i) => (keep.has(i) || typeof m.content === "string" ? m : { ...m, content: m.content.map(drop) }))
+  return messages.map((m, i) => (kept.has(i) || typeof m.content === "string" ? m : { ...m, content: m.content.map(drop) }))
 }
 
 /** Read an NDJSON response line by line. */
@@ -175,10 +177,18 @@ export async function runAgent(opts: {
     // Their own key: the browser calls the service itself.
     if (opts.via) {
       try {
-        const [{ routeOf }, { AGENT_SYSTEM, AGENT_TOOLS }] = await Promise.all([import("@/lib/ai/providers"), import("@/lib/ai/agent-context")])
+        const [{ routeOf }, { AGENT_SYSTEM, AGENT_TOOLS, TEXT_ONLY_NOTE }] = await Promise.all([import("@/lib/ai/providers"), import("@/lib/ai/agent-context")])
         const route = routeOf(opts.via)
         if ("error" in route) return { ok: false, error: route.error, retryable: false }
-        await route.provider.turn({ target: route.target, messages: sendable(messages), system: AGENT_SYSTEM, tools: AGENT_TOOLS, send: handle, signal: opts.signal })
+        const seeing = opts.via.vision !== false
+        await route.provider.turn({
+          target: route.target,
+          messages: sendable(messages, seeing ? KEEP_PICTURES : 0),
+          system: seeing ? AGENT_SYSTEM : AGENT_SYSTEM + TEXT_ONLY_NOTE,
+          tools: AGENT_TOOLS,
+          send: handle,
+          signal: opts.signal,
+        })
       } catch (e) {
         return { ok: false, error: e instanceof Error ? e.message : String(e), retryable: e instanceof TurnError ? e.retryable : true }
       }

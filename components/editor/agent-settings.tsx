@@ -36,7 +36,7 @@ export type AgentSettingsText = {
   searchAll: (n: number) => string
   useModel: (id: string) => string
   checking: string
-  verdicts: { noVision: string; noTools: string; error: string }
+  verdicts: { textOnly: string; noVision: string; noTools: string; error: string }
   keyNote: string
 }
 
@@ -81,7 +81,8 @@ function Line({
 function Verdict({ entry, text }: { entry: ModelEntry; text: AgentSettingsText }) {
   if (entry.verdict === "checking") return <AstroidSpinner className="size-3 shrink-0 text-muted-foreground" />
   if (entry.verdict === "ready") return null
-  return <span className="shrink-0 text-[11px] text-amber-400">{text.verdicts[entry.verdict]}</span>
+  // Text only still works — a note, not a warning.
+  return <span className={cn("shrink-0 text-[11px]", entry.verdict === "textOnly" ? "text-muted-foreground" : "text-amber-400")}>{text.verdicts[entry.verdict]}</span>
 }
 
 const iconButton = "size-5 shrink-0 rounded-chip text-muted-foreground hover:bg-white/10 hover:text-foreground"
@@ -152,7 +153,7 @@ function MenuBody({ settings, active, premium, text }: { settings: AiSettings; a
                 trailing={
                   <>
                     <Verdict entry={m} text={text} />
-                    {m.verdict !== "checking" && m.verdict !== "ready" && (
+                    {m.verdict !== "checking" && m.verdict !== "ready" && m.verdict !== "textOnly" && (
                       <Button variant="ghost" size="icon" aria-label={text.verify} tooltip={text.verify} onClick={() => void verifyModel(c.id, m.id)} className={iconButton}>
                         <RotateCw className="size-3" />
                       </Button>
@@ -173,7 +174,7 @@ function MenuBody({ settings, active, premium, text }: { settings: AiSettings; a
                 {m.id}
               </Line>
               {/* What the service said, word for word — copyable, the way to debug it. */}
-              {m.error && m.verdict !== "ready" && m.verdict !== "checking" && (
+              {m.error && m.verdict !== "ready" && m.verdict !== "checking" && m.verdict !== "textOnly" && (
                 <p className="line-clamp-3 pr-2 pb-1 pl-7 text-[11px] break-words text-amber-400 select-text">{m.error}</p>
               )}
             </div>

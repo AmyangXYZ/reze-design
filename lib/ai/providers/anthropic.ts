@@ -26,12 +26,19 @@ type Block = Anthropic.Beta.BetaContentBlockParam
 
 /**
  * A history another model wrote, made sendable here: its reasoning carries no
- * Anthropic signature (the API refuses an unsigned thinking block), and its
- * pictures were uploaded somewhere this key cannot read. Ours pass untouched.
+ * Anthropic signature (the API refuses an unsigned thinking block), its tool
+ * calls may carry another service's fields, and its pictures were uploaded
+ * somewhere this key cannot read. Ours pass untouched.
  */
 function ownHistory(messages: AgentMessage[]): AgentMessage[] {
   const fix = (b: Block): Block[] => {
     if (b.type === "thinking" && !b.signature) return []
+    // Gemini's thought signature rides on its tool calls; the API here takes no extra fields.
+    if (b.type === "tool_use" && "extra_content" in b) {
+      const call = { ...b } as typeof b & { extra_content?: unknown }
+      delete call.extra_content
+      return [call]
+    }
     if (b.type === "image" && b.source.type === "file" && !b.source.file_id.startsWith("file_")) {
       return [{ type: "text", text: "(An earlier image, not available to this model.)" }]
     }

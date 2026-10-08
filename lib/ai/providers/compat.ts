@@ -13,7 +13,13 @@
 //   assistant text            → the assistant message's content
 //   tool_use                  → its tool_calls
 //   thinking                  → its reasoning_details, where the model gave
-//                               some (OpenRouter asks for them back unchanged)
+//                               some (OpenRouter asks for them back unchanged),
+//                               and for DeepSeek its reasoning_content
+//
+// Two services refuse a history that lost what they handed out: Gemini wants
+// each tool call's thought signature back (extra_content.google), DeepSeek
+// every earlier reply's reasoning_content once tools are in play — both
+// answer 400 without. Each is kept on its block and returned as it came.
 //
 // and the reply on the way back: content → text, tool_calls → tool_use, the
 // streamed reasoning → a thinking block. No file uploads: pictures travel as
@@ -84,22 +90,38 @@ function imagePart(source: ImageSource): Part {
   return { type: "text", text: UNAVAILABLE }
 }
 
+/** What Gemini accepts on a tool call it did not make itself — one another
+ *  model made, earlier in a conversation that switched. */
+const FOREIGN_SIGNATURE = { google: { thought_signature: "skip_thought_signature_validator" } }
+
+/** Where a request goes, for the services that need something of their own. */
+export type Quirks = { gemini?: boolean; deepseek?: boolean }
+
+export const quirksOf = (baseURL: string): Quirks => {
+  const host = new URL(baseURL).host
+  return { gemini: host === "generativelanguage.googleapis.com", deepseek: host === "api.deepseek.com" }
+}
+
 /** The shared history as Chat Completions messages. */
-export function toMessages(system: string, messages: AgentMessage[]): Msg[] {
+export function toMessages(system: string, messages: AgentMessage[], quirks: Quirks = {}): Msg[] {
   const out: Msg[] = [{ role: "system", content: system }]
   for (const m of messages) {
     const blocks: Block[] = typeof m.content === "string" ? [{ type: "text", text: m.content }] : m.content
     if (m.role === "assistant") {
       const text = blocks.flatMap((b) => (b.type === "text" && b.text.trim() ? [b.text] : [])).join("\n\n")
-      const calls = blocks.flatMap((b) =>
-        b.type === "tool_use" ? [{ id: b.id, type: "function" as const, function: { name: b.name, arguments: JSON.stringify(b.input ?? {}) } }] : [],
-      )
+      const calls = blocks.flatMap((b) => {
+        if (b.type !== "tool_use") return []
+        const extra = (b as { extra_content?: unknown }).extra_content ?? (quirks.gemini ? FOREIGN_SIGNATURE : undefined)
+        return [{ id: b.id, type: "function" as const, function: { name: b.name, arguments: JSON.stringify(b.input ?? {}) }, ...(extra ? { extra_content: extra } : {}) }]
+      })
       const details = blocks.flatMap((b) => (b.type === "thinking" ? ((b as { reasoning_details?: Detail[] }).reasoning_details ?? []) : []))
+      const reasoning = blocks.flatMap((b) => (b.type === "thinking" && b.thinking ? [b.thinking] : [])).join("")
       out.push({
         role: "assistant",
         content: text || null,
         ...(calls.length ? { tool_calls: calls } : {}),
         ...(details.length ? { reasoning_details: details } : {}),
+        ...(quirks.deepseek ? { reasoning_content: reasoning } : {}),
       } as Msg)
       continue
     }
@@ -146,13 +168,14 @@ type Delta = {
   reasoning?: string | null
   reasoning_content?: string | null
   reasoning_details?: Detail[]
-  tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string } }[]
+  tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string }; extra_content?: unknown }[]
 }
 
 async function turn({ target, messages, system, tools, send, signal }: TurnArgs): Promise<void> {
   // Nothing to upload: the newest message goes as it is.
   send({ type: "sent", message: messages[messages.length - 1] })
   const openrouter = target.baseURL.startsWith("https://openrouter.ai/")
+  const quirks = quirksOf(target.baseURL)
   let res: Response
   try {
     res = await fetch(`${target.baseURL}/chat/completions`, {
@@ -161,12 +184,14 @@ async function turn({ target, messages, system, tools, send, signal }: TurnArgs)
       signal,
       body: JSON.stringify({
         model: target.model,
-        messages: toMessages(system, messages),
+        messages: toMessages(system, messages, quirks),
         tools: tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } })),
         stream: true,
         // OpenRouter's own fields: reasoning at the models' default effort, and
         // Claude's prefix cached (the other services cache on their own).
         ...(openrouter ? { reasoning: { effort: "medium" }, ...(target.model.startsWith("anthropic/") ? { cache_control: { type: "ephemeral" } } : {}) } : {}),
+        // DeepSeek stops early by default; a written shader needs the room.
+        ...(quirks.deepseek ? { max_tokens: 32000 } : {}),
       }),
     })
   } catch (e) {
@@ -178,7 +203,7 @@ async function turn({ target, messages, system, tools, send, signal }: TurnArgs)
   let text = ""
   let thinking = ""
   const details: Detail[] = []
-  const calls: { id: string; name: string; args: string }[] = []
+  const calls: { id: string; name: string; args: string; extra?: unknown }[] = []
   let finish: string | null = null
   try {
     for await (const chunk of events(res)) {
@@ -205,6 +230,7 @@ async function turn({ target, messages, system, tools, send, signal }: TurnArgs)
           send({ type: "tool", name: tc.function.name })
         }
         if (tc.function?.arguments) calls[i].args += tc.function.arguments
+        if (tc.extra_content) calls[i].extra = tc.extra_content
       }
       if (choice.finish_reason) finish = choice.finish_reason
     }
@@ -215,7 +241,8 @@ async function turn({ target, messages, system, tools, send, signal }: TurnArgs)
 
   const content: Anthropic.Beta.BetaContentBlock[] = []
   if (thinking.trim() || details.length) {
-    content.push({ type: "thinking", thinking: thinking.trim(), signature: "", ...(details.length ? { reasoning_details: details } : {}) } as Anthropic.Beta.BetaContentBlock)
+    // Kept as it came: DeepSeek is handed it back exactly.
+    content.push({ type: "thinking", thinking, signature: "", ...(details.length ? { reasoning_details: details } : {}) } as Anthropic.Beta.BetaContentBlock)
   }
   if (text) content.push({ type: "text", text, citations: null } as Anthropic.Beta.BetaContentBlock)
   const made = calls.filter((x) => x?.name)
@@ -226,7 +253,13 @@ async function turn({ target, messages, system, tools, send, signal }: TurnArgs)
     } catch {
       input = {}
     }
-    content.push({ type: "tool_use", id: call.id || `call_${Date.now()}_${i}`, name: call.name, input } as Anthropic.Beta.BetaContentBlock)
+    content.push({
+      type: "tool_use",
+      id: call.id || `call_${Date.now()}_${i}`,
+      name: call.name,
+      input,
+      ...(call.extra ? { extra_content: call.extra } : {}),
+    } as Anthropic.Beta.BetaContentBlock)
   }
   const stopReason = finish === "length" ? "max_tokens" : finish === "content_filter" ? "refusal" : made.length ? "tool_use" : "end_turn"
   send({ type: "message", content, stopReason, usage: null })

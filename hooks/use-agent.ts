@@ -191,6 +191,8 @@ export function useAgent({
       const request = text.trim() || (refs.length ? "Make the scene follow this reference image's style." : "")
       if (!request || abort.current) return
       if (!ready) return setNotice(noticeOf("error", "premium", null))
+      // A picture would reach a model that cannot see it; say so, send nothing.
+      if (refs.length && viaRef.current?.vision === false) return setNotice({ kind: "textOnly", kept: false })
       const at = history.current.length
       // The scene as it stands rides with every request, so the model starts
       // from the truth instead of spending its first round asking for it.
