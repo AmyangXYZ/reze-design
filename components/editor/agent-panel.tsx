@@ -334,12 +334,22 @@ export function AgentPanel({
   const [dragging, setDragging] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const input = useRef<HTMLTextAreaElement>(null)
-  // Ready to type the moment the panel opens or a tab is opened. A frame
-  // later, once the panel has turned visible: an invisible field takes no focus.
+  // Ready to type the moment the panel opens or a tab is opened. The panel
+  // fades in with visibility in its transition, and a field still hidden at
+  // the transition's first frame refuses focus without a word — so try each
+  // frame until it takes, for as long as the opening runs (~300ms).
   useEffect(() => {
     if (!open || onSetup) return
-    const id = requestAnimationFrame(() => input.current?.focus({ preventScroll: true }))
-    return () => cancelAnimationFrame(id)
+    let raf = 0
+    let tries = 0
+    const attempt = () => {
+      const el = input.current
+      if (!el) return
+      el.focus({ preventScroll: true })
+      if (document.activeElement !== el && ++tries < 20) raf = requestAnimationFrame(attempt)
+    }
+    raf = requestAnimationFrame(attempt)
+    return () => cancelAnimationFrame(raf)
   }, [open, conversationId, onSetup])
   const [now, setNow] = useState(() => Date.now())
   const scroller = useRef<HTMLDivElement>(null)
