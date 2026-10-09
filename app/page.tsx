@@ -217,7 +217,7 @@ import { castPaletteKey, castSourceFor } from "@/lib/cast-source"
 import { NEUTRAL_PALETTE, type CastPaletteId } from "@/lib/cast-palette"
 import { relFilePath, sceneFiles } from "@/lib/scene-files"
 import { cancelDraftWrites, createDraft, isDraft, loadDrafts, updateDraft, updateDraftSoon } from "@/lib/drafts"
-import { DEFAULT_LOOK, saveLookPref } from "@/lib/look-pref"
+import { DEFAULT_LOOK, loadLookPref, saveLookPref } from "@/lib/look-pref"
 import { clearForkTarget, forkTarget } from "@/lib/fork"
 import {
   activeLookPack,
@@ -232,7 +232,8 @@ import {
   SLOT_GRAPHS,
   type LookPack,
 } from "@/lib/materials"
-import { shaderLookFor, stageLookFor, stageStyleGroups, SURFACE_LOOKS } from "@/lib/stage-style"
+import { shaderLookFor, stageLookFor, SURFACE_LOOKS } from "@/lib/stage-style"
+import { autoStyleModel } from "@/lib/auto-style"
 import {
   compileGraph,
   DEFAULT_GRAPH,
@@ -2164,9 +2165,6 @@ const NO_COOKIE = "__none"
  *  into. A scalar setting is set outright. */
 /** Each material's PMX memo, keyed by name — what a converted stage says its
  *  materials were. Empty for a hand-authored model, which claims nothing. */
-const memosOf = (materials: { name: string; memo?: string }[]): Record<string, string> =>
-  Object.fromEntries(materials.filter((m) => m.memo).map((m) => [m.name, m.memo!]))
-
 /** Where a lamp is at half strength, as a fraction of its radius. The shader's
  *  falloff is (1 - t²)², so this is the root of 1 - sqrt(0.5) — a number worth
  *  deriving once rather than eyeballing, since it is what the inner ring means. */
@@ -4718,24 +4716,24 @@ export default function Lab() {
   }
 
   /**
-   * Classify a stage's materials into style groups and apply them.
+   * Classify a stage's materials into style groups and apply them — the same
+   * classifier every model takes (lib/auto-style).
    *
    * Read from the ENGINE rather than from `models`: a stage that arrived a
    * moment ago is still a queued state update here, and the list this needs is
    * already sitting on the loaded model.
    *
    * Silent when nothing matches — a stage whose materials are named Material1..9
-   * gets no groups and no notice, which is the same thing the engine's own
-   * refusal to auto-group scenery says.
+   * gets no groups and no notice: unclaimed materials stay on the neutral
+   * default, for every model alike.
    */
   /** False when the model has no materials YET — the caller must not record the
    *  stage as classified, or the one render that was too early becomes final. */
   const autoStyleStage = useCallback(
     (id: string) => {
-      const loaded = engineRef.current?.getModel(id)?.getMaterials() ?? []
-      const names = loaded.map((m) => m.name)
-      if (names.length === 0) return false
-      const next = stageStyleGroups(names, groupsByModel[id] ?? [], memosOf(loaded))
+      const model = engineRef.current?.getModel(id)
+      if (!model || model.getMaterials().length === 0) return false
+      const next = autoStyleModel(model, groupsByModel[id] ?? [], loadLookPref())
       if (next) void applyGroups(id, next)
       return true
     },
@@ -4746,10 +4744,9 @@ export default function Lab() {
    * A stage classifies itself, once, the moment it has materials — uploaded now
    * or restored from a document written before this existed.
    *
-   * Quiet and automatic, the way a MODEL is: the engine auto-groups a character
-   * on load and nobody presses a button for it. This is the same act for
-   * scenery, held out of the engine only because a keyword table is taste and
-   * must never reach the render classes.
+   * Quiet and automatic, the way every model is styled on load. The load path
+   * runs the same classifier; this is the safety net for a stage whose
+   * materials were not on the engine yet when it did.
    *
    * Skips a stage that already carries a real grouping — the document said so,
    * or you did — where "real" means a group with materials in it, since a fresh
@@ -4763,10 +4760,10 @@ export default function Lab() {
     // same id again — and a set that only ever grew then skipped it as already
     // classified. That is the "auto style only works after a page refresh"
     // report: the refresh was clearing this set, nothing more.
-    // Props take the same table: a mic is metal and a fan is cloth or wood,
-    // which is what the stage table knows, and the character hints the engine
-    // refuses to run on scenery would be just as wrong on a sword.
-    const scenery = [...stages, ...props]
+    // Stages only. A prop is styled as a character is (see addPropFromFiles):
+    // it is often one — a second figure, a pet — and a sword's "metal" or a
+    // fan's "cloth" are what the character hints already know.
+    const scenery = stages
     const live = new Set(scenery.map((s) => s.id))
     for (const id of [...styled.current]) if (!live.has(id)) styled.current.delete(id)
     // Same forgetting for the sky claim. Whoever removed the stage takes its sky
@@ -4786,7 +4783,7 @@ export default function Lab() {
       }
       if (autoStyleStage(stage.id)) styled.current.add(stage.id)
     }
-  }, [ready, stages, props, groupsByModel, autoStyleStage, engineRef])
+  }, [ready, stages, groupsByModel, autoStyleStage, engineRef])
 
   /**
    * The styling an upload kicked off, so its toast can wait for the LOOKS.
@@ -4802,13 +4799,12 @@ export default function Lab() {
   /**
    * Scenery converted from a .x arrives looking the way MMD drew it: what MMD
    * showed at full brightness goes Unlit, and everything else goes through the
-   * stage table. Both land in one set, so this is complete whether or not the
+   * auto-style classifier (lib/auto-style). Both land in one set, so this is complete whether or not the
    * automatic pass above got there first.
    */
   const styleAccessory = useCallback(
     (id: string, pmx: File) => {
       const materials = engineRef.current?.getModel(id)?.getMaterials() ?? []
-      const names = materials.map((m) => m.name)
       // A HAND-AUTHORED PMX SAYS IT TOO. The .x rule reads the conversion's own
       // record; a stage written as a PMX states the same thing in its material
       // table, and a painted light shaft or a dome gradient shaded like a wall
@@ -4852,7 +4848,7 @@ export default function Lab() {
         // No painted sheet in this one, but the keyword and shader tables still
         // have something to say. This used to return, leaving the stage to the
         // auto-style effect — which is the thing that must not run now.
-        const table = stageStyleGroups(names, glowGroups, memosOf(materials)) ?? (glowGroups.length ? glowGroups : null)
+        const table = autoStyleModel(engineRef.current?.getModel(id), glowGroups, loadLookPref()) ?? (glowGroups.length ? glowGroups : null)
         if (table) void applyGroups(id, table)
         return
       }
@@ -4870,24 +4866,22 @@ export default function Lab() {
         // 74% loses a random quarter of itself and reads as television static.
       }
       styled.current.add(id)
-      stylingPending.current = applyGroups(id, stageStyleGroups(names, [group, ...glowGroups], memosOf(materials)) ?? [group, ...glowGroups])
+      stylingPending.current = applyGroups(id, autoStyleModel(engineRef.current?.getModel(id), [group, ...glowGroups], loadLookPref()) ?? [group, ...glowGroups])
     },
     [engineRef, applyGroups],
   )
 
   /**
    * Scenery that arrived with ray-mmd presets wears them: their looks and maps,
-   * and the materials its .emd hid stay hidden. The stage table styles whatever
+   * and the materials its .emd hid stay hidden. The auto-style classifier styles whatever
    * the presets left alone, in the same set.
    */
   const applyRayMmd = useCallback(
     (id: string, ray: RayStage) => {
       setMaterialMaps(id, ray.maps)
       for (const name of ray.hidden) toggleVisible(id, name)
-      const loaded = engineRef.current?.getModel(id)?.getMaterials() ?? []
-      const names = loaded.map((m) => m.name)
       styled.current.add(id)
-      stylingPending.current = applyGroups(id, stageStyleGroups(names, ray.groups, memosOf(loaded)) ?? ray.groups)
+      stylingPending.current = applyGroups(id, autoStyleModel(engineRef.current?.getModel(id), ray.groups, loadLookPref()) ?? ray.groups)
     },
     [engineRef, applyGroups, toggleVisible],
   )

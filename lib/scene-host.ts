@@ -13,6 +13,7 @@ import { SLOT_GRAPHS, libraryGraph } from "@/lib/materials"
 import { graphLibraryName } from "@/lib/refs"
 import { graphRole, packGraph } from "@/lib/materials"
 import { loadLookPref } from "@/lib/look-pref"
+import { CHARACTER_GROUPS, autoStyleModel, modelIsFigure } from "@/lib/auto-style"
 import { idbBundleId, modelPmxUrl, type AssetRef, type Scene, type SceneAttach, type SceneCamera, type SceneParentKey, type SceneStageTransform, type StageSun } from "@/lib/scene"
 import { type BundleFile, heldBundle, mimeForPath, openZip, readBundleFiles } from "@/lib/uploads"
 import { loadLocalBundle } from "@/lib/asset-store"
@@ -130,16 +131,6 @@ const SPECIAL_GROUPS: { id: string; label: string; renderClass: RenderClass; pre
 // there, not making one first. Ids are the engine's preset ids, so a group the
 // auto-grouping did make is never doubled; stockings keep the engine preset's
 // hashed alpha, so a sheer weave dropped in draws as it would have auto-grouped.
-const CHARACTER_GROUPS: { id: string; label: string; renderClass: RenderClass; alphaMode?: "hashed" }[] = [
-  { id: "body", label: "Body", renderClass: "auto" },
-  { id: "face", label: "Face", renderClass: "auto" },
-  { id: "hair", label: "Hair", renderClass: "hair" },
-  { id: "eye", label: "Eye", renderClass: "eye" },
-  { id: "cloth_smooth", label: "Smooth Cloth", renderClass: "auto" },
-  { id: "cloth_rough", label: "Rough Cloth", renderClass: "auto" },
-  { id: "stockings", label: "Stockings", renderClass: "auto", alphaMode: "hashed" },
-  { id: "metal", label: "Metal", renderClass: "auto" },
-]
 export function infoFor(
   id: string,
   file: string,
@@ -527,13 +518,12 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
           ),
         ),
       )
-    } else if (!entry.stage) {
-      // Never auto-group a stage: resolvePreset matches material names by
-      // substring against character hints, and the hair/eye presets carry a
-      // renderClass — a chance hit would put a wall in the hair pass or have it
-      // write the eye stencil. Ungrouped is the honest default for scenery.
-      await engine.autoStyleGroups(entry.model.id)
     }
+    // Anything the document did not group is auto-styled — every model by the
+    // same rule (lib/auto-style): a figure's parts only where there is a head,
+    // so a wall can never land in the hair pass, and a material's look wherever
+    // its name or its shader says what it is made of.
+    const autoGroups = docGroups ? null : await autoStyleOnEngine(engine, entry.model.id, engine.getStyleGroups(entry.model.id))
     if (stale()) return null
     // The game's own materials, over the groups: the ones a look names are
     // drawn by the game's shaders from here on, the rest keep their graphs.
@@ -558,8 +548,10 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
       info.castShadow = false
     }
     const modelGroups = withSpecialGroups(
-      docGroups ?? (await restyled(engine, entry.model.id, engine.getStyleGroups(entry.model.id))),
-      { character: !entry.stage && !entry.prop },
+      docGroups ?? autoGroups ?? [],
+      // The character seeds go to whatever has a head — a prop that is a second
+      // figure included, a stage never — the same test that gates the roles.
+      { character: isFigureModel(engine, entry.model.id) },
     )
     infos.push(info)
     groups[entry.model.id] = modelGroups
@@ -690,29 +682,20 @@ export function named(list: StyleGroup[]): StyleGroup[] {
 }
 
 /**
- * Dress freshly auto-derived groups in the browser's preferred style.
+ * Auto-style a model on the engine: lib/auto-style's one classifier over its
+ * materials, the role groups in the preferred pack, applied and reported.
  *
- * The engine's auto-grouping fills a model with the engine's own presets, which
- * are the Aether Gazer set. Someone who switched the scene to another style and
- * then loads a second character should get that character in the same style,
- * not in the one they switched away from.
- *
- * Only for AUTO-derived groups. A document's own groups are the user's saved
- * work and are never restyled — the preference answers "what should a NEW model
- * look like", not "what should every scene look like".
- *
- * A no-op when the preference is already what the engine produced, so the common
- * case costs no second compile.
+ * The preferred pack, so a second character loaded into a scene switched to
+ * another style arrives in that style. Only for groups derived HERE: a
+ * document's own groups are the user's saved work and are never restyled.
+ * Returns the full set — `existing` with the new groups folded in, or
+ * `existing` untouched when nothing matched.
  */
-export async function restyled(engine: Engine, modelId: string, list: StyleGroup[]): Promise<StyleGroup[]> {
-  const pack = loadLookPref()
-  const next = list.map((g) => {
-    const graph = packGraph(pack, graphRole(g.graph))
-    return graph ? { ...g, graph: structuredClone(graph) } : g
-  })
-  if (next.every((g, i) => g === list[i])) return list
+export async function autoStyleOnEngine(engine: Engine, modelId: string, existing: StyleGroup[]): Promise<StyleGroup[]> {
+  const next = autoStyleModel(engine.getModel(modelId), existing, loadLookPref())
+  if (!next) return existing
   reportGroups(
-    "restyle",
+    "auto-style",
     await engine.applyStyleGroups(
       modelId,
       withMaterialMaps(
@@ -722,6 +705,12 @@ export async function restyled(engine: Engine, modelId: string, list: StyleGroup
     ),
   )
   return next
+}
+
+/** Whether a loaded model is a figure: it has a head. Decides the character
+ *  seeds, as it decides the figure roles. */
+export function isFigureModel(engine: Engine, modelId: string): boolean {
+  return modelIsFigure(engine.getModel(modelId))
 }
 
 export function withSpecialGroups(list: StyleGroup[], opts?: { character?: boolean }): StyleGroup[] {

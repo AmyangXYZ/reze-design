@@ -3,7 +3,7 @@
 //   npx esbuild lib/stage-style.test.mts --bundle --platform=node --format=esm --outfile=$TEMP/x.mjs && node $TEMP/x.mjs
 import assert from "node:assert/strict"
 import { compileGraph } from "reze-engine"
-import { LOOK_STATE, SHADER_LOOKS, STAGE_MATERIAL_RULES, STAGE_SURFACE, lookFor, stageStyleGroups } from "./stage-style"
+import { LOOK_STATE, SHADER_LOOKS, STAGE_MATERIAL_RULES, STAGE_SURFACE, lookFor } from "./stage-style"
 import { libraryGraph } from "./materials"
 
 // Every look the tables name is a library entry, and it compiles.
@@ -35,16 +35,6 @@ assert.equal(lookFor("Terrain_X340_001a", "SimPipeline/Scene/Transparent"), "Gla
 assert.equal(lookFor("X309_terrain", "SimPipeline/PBR/Standard_PBR_2"), "Terrain")
 assert.equal(lookFor("X309_water", "SimPipeline/Scene/Ripplet"), "Water")
 
-const groups = stageStyleGroups(
-  ["Tile_brick_034", "Tile_glass_029", "Terrain_X340_001a", "wood_floor"],
-  [],
-  { Tile_brick_034: "SimPipeline/PBR/Standard", Tile_glass_029: "SimPipeline/PBR/Standard", Terrain_X340_001a: "SimPipeline/Scene/Transparent" },
-)!
-const byLabel = Object.fromEntries(groups.map((g) => [g.label, g]))
-assert.deepEqual(byLabel[STAGE_SURFACE].materials, ["Tile_brick_034"])
-assert.equal(byLabel.Glass.blend, "premultiplied")
-assert.equal(byLabel["Glass Shell"].id, "stage-glass-shell")
-assert.deepEqual(byLabel.Wood.materials, ["wood_floor"])
-for (const g of groups) assert.match(g.id, /^[a-z0-9_-]+$/)
+// Grouping a whole stage is lib/auto-style.test.mts.
 
 console.log("stage-style: ok")

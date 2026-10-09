@@ -1,19 +1,13 @@
-// Auto style-groups for a STAGE, from its material names.
+// What materials are made of, from their names and shaders — the MATERIAL half
+// of auto-styling (lib/auto-style has the classifier every model takes).
 //
-// The engine deliberately refuses to auto-group scenery: `resolvePreset` matches
-// material names against CHARACTER hints (hair / eye / 髪 / 肌), and the hair and
-// eye presets carry a renderClass — so a chance hit does not merely pick an odd
-// look, it draws a wall in the hair pass or has it write the eye stencil.
-// Ungrouped is the honest default there.
-//
-// This is the other half: a table that knows what stage materials are called, so
-// a PMX stage arrives wearing tile, wood and glass instead of one flat default.
-// It is app-side on purpose — a keyword table is taste, it will be edited often,
-// and it must never be able to reach the engine's render classes.
+// A table that knows what stage materials are called, so a model arrives
+// wearing tile, wood and glass instead of one flat default. It is app-side on
+// purpose: a keyword table is taste, it will be edited often, and none of its
+// looks carries a render class.
 
 import type { StyleGroup } from "reze-engine"
 import { fold } from "@/lib/command-search"
-import { libraryGraph } from "@/lib/materials"
 
 /**
  * Material name → the look it means, in the three languages MMD stages are
@@ -137,86 +131,4 @@ export function lookFor(material: string, memo: string): string | null {
 export function stageLookFor(material: string): string | null {
   const name = fold(material)
   return STAGE_MATERIAL_RULES.find((r) => r.keywords.some((k) => name.includes(fold(k))))?.graph ?? null
-}
-
-/**
- * Style groups for a stage, folded into whatever it already has.
- *
- * Only UNGROUPED materials are classified, so running this twice is safe and
- * running it after hand-grouping cannot undo the hand work: a material already
- * in a group is left exactly where it was put. Names nothing recognises stay
- * ungrouped rather than being swept into a bucket — the materials panel lists
- * them, which is a better answer than a wrong look.
- *
- * Returns null when nothing changed, so a caller can skip a recompile it does
- * not need.
- */
-export function stageStyleGroups(
-  materials: string[],
-  existing: StyleGroup[],
-  /** Each material's PMX memo, when the model carries one. */
-  memos: Record<string, string> = {},
-): StyleGroup[] | null {
-  // Never touch the pinned character groups even if a stage somehow has them:
-  // they carry render classes, and this table knows nothing about those.
-  const base = existing.filter((g) => g.renderClass !== "eye" && g.renderClass !== "hair")
-  const grouped = new Set(base.flatMap((g) => g.materials))
-  const byLook = new Map<string, string[]>()
-  for (const material of materials) {
-    if (grouped.has(material)) continue
-    const look = lookFor(material, memos[material] ?? "")
-    if (!look) continue
-    byLook.set(look, [...(byLook.get(look) ?? []), material])
-  }
-  // EVERYTHING ELSE, IN ONE GROUP — but only where the model can back it up.
-  //
-  // A converted stage is mostly props: Props_object_337, Props_sofa_006,
-  // X323_chair_001. No keyword classifies those and their shader is the same
-  // Standard every wall uses, so three quarters of an interior fell through to
-  // the neutral default and a fabric sofa, a polished floor and a steel counter
-  // all rendered at roughness 0.5 with no metal. Their real values ride in the
-  // PMX specular the converter packed, and Stage Surface reads them — so one
-  // group covers a whole set and still varies per material.
-  //
-  // Gated on the MEMO, which only a converted stage has. A hand-authored PMX's
-  // specular is whatever its exporter wrote, usually black, and black here
-  // would read as metal 0 roughness 0: a mirror where a cotton curtain was.
-  const unclaimed = materials.filter((m) => !grouped.has(m) && !lookFor(m, memos[m] ?? ""))
-  const surfaced = unclaimed.filter((m) => (memos[m] ?? "").length > 0)
-  if (surfaced.length) byLook.set(STAGE_SURFACE, surfaced)
-
-  if (byLook.size === 0) return null
-
-  const next = [...base]
-  const taken = new Set(next.map((g) => g.id))
-  let changed = base.length !== existing.length
-  for (const [look, names] of byLook) {
-    const graph = libraryGraph(look)
-    if (!graph) continue
-    // A second pass merges into the group it made the first time, found by the
-    // label it gave it — the same rule the library uses to say what a look is.
-    const i = next.findIndex((g) => (g.label ?? g.id) === look)
-    if (i >= 0) {
-      const merged = [...new Set([...next[i].materials, ...names])]
-      if (merged.length === next[i].materials.length) continue
-      next[i] = { ...next[i], materials: merged }
-      changed = true
-      continue
-    }
-    // Ids are /^[a-z0-9_-]+$/: "Glass Shell" is stage-glass-shell.
-    const slug = look.toLowerCase().replace(/[^a-z0-9]+/g, "-")
-    let id = `stage-${slug}`
-    for (let n = 2; taken.has(id); n++) id = `stage-${slug}-${n}`
-    taken.add(id)
-    next.push({
-      id,
-      label: look,
-      materials: names,
-      graph: structuredClone(graph),
-      renderClass: "auto",
-      ...LOOK_STATE[look],
-    })
-    changed = true
-  }
-  return changed ? next : null
 }

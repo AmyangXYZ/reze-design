@@ -33,7 +33,9 @@ const BODY_GRAPH = {
     { id: "lam", type: "lambert" },
     { id: "toon", type: "ramp_cardinal", inputs: { pos0: 0.25, pos1: 0.35 } },
   ],
-  links: [{ from: { node: "lam", socket: "fac" }, to: { node: "toon", socket: "fac" } }],
+  // lambert's outputs are color and value — a real link, so the graph compiles
+  // (set_shader_inputs compiles a tune before it saves it as a draft).
+  links: [{ from: { node: "lam", socket: "value" }, to: { node: "toon", socket: "fac" } }],
   output: { node: "toon", socket: "color" },
 }
 

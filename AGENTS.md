@@ -122,6 +122,25 @@ else travels inline. Two consequences:
   and `authorEffect`. When updating a draft in place, find it by `nameKey`.
   New names come from `freeName` (`lib/names.ts`).
 
+# Auto-styling
+
+Every model is auto-styled by ONE classifier, `lib/auto-style.ts`, whatever slot
+it was uploaded into. The test that matters is the model, not the slot: **does
+it have a head bone** (`isFigure`)?
+- A figure gets its parts first (eye, face, hair, skin, socks, stockings,
+  metal, cloth), on the current style pack's graphs. Hair and eye carry render
+  classes. Then what its materials are made of (glass, wood…).
+- Anything without a head gets the material table first (`lib/stage-style.ts`),
+  then Stage Surface for converted materials, then only the safe material roles
+  (cloth, metal, socks, stockings). It never gets hair, eye, face or skin, so a
+  wall can never be drawn in the hair pass.
+- Unclaimed materials stay ungrouped, on the neutral default. Grouped materials
+  are never touched.
+
+Apply it through `autoStyleOnEngine` (`lib/scene-host.ts`). Character drop
+targets (`withSpecialGroups`) follow `isFigureModel`. Don't call the engine's
+`autoStyleGroups`: it can't be told to skip the figure roles.
+
 # The AI art director
 
 - Tools live in `lib/ai/*-tools.ts` and run in the browser against the

@@ -149,8 +149,8 @@ const TAGS: Record<string, string> = {
   romantic: "浪漫",
 }
 
-// A character's default groups (scene-host CHARACTER_GROUPS and the engine's
-// auto-groups), by their stored English label.
+// A character's default groups (lib/auto-style CHARACTER_GROUPS), by their
+// stored English label.
 const GROUP_LABELS: Record<string, string> = {
   Body: "身体", Face: "脸部", Hair: "头发", Eye: "眼睛",
   "Smooth Cloth": "光滑布料", "Rough Cloth": "粗糙布料", Stockings: "丝袜", Metal: "金属",
