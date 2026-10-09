@@ -568,7 +568,7 @@ function GalleryContent({
     preview: s.poster ? (
       <SceneCover src={s.poster} nsfw={s.nsfw} loading="lazy" className="h-full w-full" />
     ) : (
-      <div className="flex h-full items-center justify-center bg-zinc-900 text-2xs text-muted-foreground">
+      <div className="flex h-full items-center justify-center bg-white/5 text-2xs text-muted-foreground">
         {t.gallery.noPoster}
       </div>
     ),
@@ -675,7 +675,7 @@ function GalleryContent({
                 <button
                   type="button"
                   onClick={() => openScene(selected)}
-                  className="block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-chip border border-line-strong bg-zinc-900"
+                  className="block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-chip border border-line-strong bg-white/5"
                 >
                   {selected.poster ? (
                     <SceneCover src={selected.poster} nsfw={selected.nsfw} className="h-full w-full" />
@@ -730,7 +730,7 @@ function GalleryContent({
                 <Button
                   asChild
                   size="sm"
-                  className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-300"
+                  className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-400/90"
                 >
                   {/* A real link: plain click navigates in this tab, cmd-click
                       still gets a new one for anyone who wants it. */}

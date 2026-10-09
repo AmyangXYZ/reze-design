@@ -299,7 +299,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
         {onOpenLibrary && (
         <button
           onClick={() => onOpenLibrary(libraryTarget)}
-          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-chip bg-white py-1 pr-1.5 pl-2 text-xs font-medium text-zinc-900 transition-colors hover:bg-white/90 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-white"
+          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-chip bg-white py-1 pr-1.5 pl-2 text-xs font-medium text-zinc-950 transition-colors hover:bg-white/90 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-white"
         >
           <Workflow className="size-3.5" />
           {t.lab.cmd.graphLib}
@@ -403,7 +403,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
 
                 {/* ── Children (indent guide) ── */}
                 {open && (
-                  <div className="ml-[10px] border-l border-white/[0.06] pl-1">
+                  <div className="ml-[10px] border-l border-line pl-1">
                     {sortedNames(g.materials).map((name, i) => {
                       const m = byName.get(name)
                       return m ? materialRow(m, g.id, name + "#" + i) : null
@@ -449,7 +449,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                 </span>
               </div>
               {!collapsed.has(UNGROUPED) && (
-                <div className="ml-[10px] border-l border-white/[0.06] pl-1">{ungrouped.map((m, i) => materialRow(m, null, m.name + "#" + i))}</div>
+                <div className="ml-[10px] border-l border-line pl-1">{ungrouped.map((m, i) => materialRow(m, null, m.name + "#" + i))}</div>
               )}
             </div>
           )}

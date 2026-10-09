@@ -429,7 +429,7 @@ export function AgentPanel({
             <Row
               key={i}
               mark={<Prompt />}
-              className={cn("-mx-1.5 rounded-interior bg-white/[0.06] px-1.5 py-1", i > 0 && "mt-4")}
+              className={cn("-mx-1.5 rounded-interior bg-white/5 px-1.5 py-1", i > 0 && "mt-4")}
             >
               {l.images?.length ? (
                 <div className="mb-1.5 flex flex-wrap gap-1.5">
@@ -553,7 +553,7 @@ export function AgentPanel({
         </div>
       )}
       <div className="shrink-0 border-t border-line px-2.5 py-1.5">
-        <div className="rounded-interior bg-white/[0.06] px-1.5 py-1 ring-blue-400 focus-within:ring-1">
+        <div className="rounded-interior bg-white/5 px-1.5 py-1 ring-blue-400 focus-within:ring-1">
           {(refs.length > 0 || preparing > 0) && (
             <div className="mb-1.5 flex flex-wrap gap-1.5 pl-[18px]">
               {refs.map((r, k) => (
@@ -650,7 +650,7 @@ export function AgentPanel({
                 // The prompt mark, the picture and send are one size and one
                 // weight; send is told apart by colour alone — blue once there
                 // is something to send.
-                className="size-5 shrink-0 text-blue-400 hover:bg-transparent hover:text-blue-300 disabled:text-muted-foreground"
+                className="size-5 shrink-0 text-blue-400 hover:bg-transparent hover:text-blue-400 disabled:text-muted-foreground"
               >
                 <ArrowUp className="size-3.5" />
               </Button>

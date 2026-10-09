@@ -77,7 +77,7 @@ export function SaveCloseDialog({
             >
               {t.library.discard}
             </Button>
-            <Button type="submit" disabled={busy} className="h-8 flex-1 bg-blue-400 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-50">
+            <Button type="submit" disabled={busy} className="h-8 flex-1 bg-blue-400 text-xs font-medium text-white hover:bg-blue-400/90 disabled:opacity-50">
               {t.library.save}
             </Button>
           </div>

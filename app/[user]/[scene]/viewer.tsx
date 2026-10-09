@@ -146,7 +146,7 @@ export function SceneViewer(props: ViewerProps) {
   }
 
   return (
-    <main className="fixed inset-0 overflow-hidden bg-zinc-950 select-none">
+    <main className="fixed inset-0 overflow-hidden bg-background select-none">
       {/* The scene, under the chrome — its own component so `useEngine` never
           runs conditionally. Until it exists there is a pill, and the text
           around it is already readable. */}
@@ -303,7 +303,7 @@ export function SceneViewer(props: ViewerProps) {
               size="xs"
               onClick={() => void openInEditor()}
               disabled={forking}
-              className="bg-blue-400 font-medium text-white hover:bg-blue-300"
+              className="bg-blue-400 font-medium text-white hover:bg-blue-400/90"
             >
               <GitFork />
               {t.share.fork}

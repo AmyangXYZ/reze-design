@@ -140,7 +140,7 @@ export function Profile({
   }
 
   return (
-    <main className="min-h-dvh bg-zinc-950">
+    <main className="min-h-dvh bg-background">
       {/* The editor's brand pill at the editor's own origin, top-3/left-3, so the
           mark sits on the same pixels on every page it appears on. */}
       <div className="px-3 pt-3">
@@ -185,7 +185,7 @@ export function Profile({
           <Tabs ref={tabsRef} value={tab} onValueChange={switchTab} className="mt-10">
             {/* Sticky, so the other shelves stay in reach down a long wall. Only
                 the open tab is mounted, so effects run only while they are shown. */}
-            <div className="sticky top-0 z-10 border-b border-line bg-zinc-950">
+            <div className="sticky top-0 z-10 border-b border-line bg-background">
               <TabsList className="h-auto gap-6 rounded-none bg-transparent p-0">
                 {tabs.map((x) => (
                   <TabsTrigger
@@ -331,7 +331,7 @@ function Hero({ handle, scene, ...rest }: { handle: string; scene: ProfileScene 
       {...rest}
       href={`/${handle}/${scene.id}`}
       prefetch={false}
-      className="group relative block aspect-video overflow-hidden rounded-surface bg-zinc-900 outline-none focus-visible:ring-2 focus-visible:ring-blue-400 sm:aspect-[21/9]"
+      className="group relative block aspect-video overflow-hidden rounded-surface bg-white/5 outline-none focus-visible:ring-2 focus-visible:ring-blue-400 sm:aspect-[21/9]"
     >
       {scene.poster ? (
         <SceneCover src={scene.poster} nsfw={scene.nsfw} className="absolute inset-0 h-full w-full" />
@@ -380,7 +380,7 @@ function SceneCard({ handle, scene, ...rest }: { handle: string; scene: ProfileS
       prefetch={false}
       className="group block outline-none"
     >
-      <div className="relative aspect-video overflow-hidden rounded-surface bg-zinc-900 group-focus-visible:ring-2 group-focus-visible:ring-blue-400">
+      <div className="relative aspect-video overflow-hidden rounded-surface bg-white/5 group-focus-visible:ring-2 group-focus-visible:ring-blue-400">
         {scene.poster ? (
           <SceneCover src={scene.poster} nsfw={scene.nsfw} loading="lazy" className="absolute inset-0 h-full w-full" />
         ) : (
@@ -407,7 +407,7 @@ function SceneCard({ handle, scene, ...rest }: { handle: string; scene: ProfileS
 function PresetCard({ item, children }: { item: Published; children: React.ReactNode }) {
   return (
     <div title={item.description || undefined}>
-      <div className="relative aspect-[16/10] overflow-hidden rounded-surface bg-zinc-900">{children}</div>
+      <div className="relative aspect-[16/10] overflow-hidden rounded-surface bg-white/5">{children}</div>
       <div className="mt-2.5 flex items-baseline justify-between gap-2">
         <div className="min-w-0 truncate text-sm text-foreground">{item.name}</div>
         <span className="flex shrink-0 items-center gap-1 self-center text-sm leading-none text-muted-foreground tabular-nums">

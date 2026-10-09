@@ -315,7 +315,7 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
         onFocusCapture={onFocusCapture}
         className={LIBRARY_SHELL}
     >
-      <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-line bg-zinc-950 px-4 py-2 text-left">
+      <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-line bg-surface-raised px-4 py-2 text-left">
         <DialogTitle className="flex shrink-0 items-center gap-2 text-sm font-medium">
           <Workflow className="size-4 text-blue-400" />
           {t.library.title}
@@ -365,7 +365,7 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
                 <button
                   type="button"
                   onClick={() => onEdit(selected.id, selected.name, selected.payload.graph)}
-                  className="group/prev relative block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-chip border border-line-strong bg-zinc-900/60 text-zinc-200"
+                  className="group/prev relative block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-chip border border-line-strong bg-white/5 text-foreground"
                 >
                   <GraphMinimap graph={selected.payload.graph} className="h-full w-full p-2" />
                   <div className="absolute inset-0 flex items-center justify-center gap-1.5 bg-surface text-xs font-medium text-foreground opacity-0 transition-opacity group-hover/prev:opacity-100">
@@ -440,7 +440,7 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
                   size="sm"
                   disabled={!targetId}
                   onClick={() => onApply(selected.payload.graph, selected.name)}
-                  className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-40"
+                  className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-400/90 disabled:opacity-40"
                 >
                   <Check className="size-3.5 shrink-0" />
                   <span className="truncate">

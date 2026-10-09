@@ -114,7 +114,7 @@ export function PublishButton({
     <Button
       size="sm"
       disabled={!signedIn}
-      className={cn("h-7 gap-1.5 rounded-chip bg-white px-3 text-xs font-medium text-zinc-900 hover:bg-white/90 disabled:opacity-40", className)}
+      className={cn("h-7 gap-1.5 rounded-chip bg-white px-3 text-xs font-medium text-zinc-950 hover:bg-white/90 disabled:opacity-40", className)}
     >
       {published ? <Check className="size-3.5" /> : <Share2 className="size-3.5" />}
       {published ? t.gradeLibrary.publishDone : t.gradeLibrary.publish}
@@ -203,7 +203,7 @@ export function PublishButton({
             <Button
               type="submit"
               disabled={publishing || !!clash || !name.trim() || !description.trim() || tags.length === 0}
-              className="h-9 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-50"
+              className="h-9 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-400/90 disabled:opacity-50"
             >
               {publishing ? t.account.working : t.gradeLibrary.publish}
             </Button>

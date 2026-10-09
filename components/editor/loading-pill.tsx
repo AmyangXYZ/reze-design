@@ -21,7 +21,7 @@ export function LoadingPill({ label }: { label?: string }) {
           movement instead of the words. `tabular-nums` makes every digit the
           same width; useLoadingLabel pads the volatile numbers so their digit
           COUNT cannot change the width either. */}
-      <div className="flex max-w-[90vw] items-center justify-center gap-2.5 rounded-full border border-line-strong bg-zinc-950/90 px-4 py-2 text-xs text-muted-foreground tabular-nums">
+      <div className="flex max-w-[90vw] items-center justify-center gap-2.5 rounded-full border border-line-strong bg-surface-raised px-4 py-2 text-xs text-muted-foreground tabular-nums">
         <span className="size-2 shrink-0 animate-pulse rounded-full bg-blue-400" />
         <span className="truncate">{label ?? t.editor.loadingScene}</span>
       </div>

@@ -336,7 +336,7 @@ function EditorBody({
           onClick={() => void compile()}
           disabled={busy}
           title="⌘/Ctrl + Enter"
-          className="h-7 bg-blue-400 px-3 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-50"
+          className="h-7 bg-blue-400 px-3 text-xs font-medium text-white hover:bg-blue-400/90 disabled:opacity-50"
         >
           {t.effectLibrary.compile}
         </Button>

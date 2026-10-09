@@ -496,15 +496,15 @@ function ShareSceneForm({
                 if (rows.length === 0) return null
                 return (
                   <div key={reason} className="rounded-interior border border-amber-400/30 bg-amber-400/10 p-2.5">
-                    <p className="text-xs font-medium text-amber-300">
+                    <p className="text-xs font-medium text-amber-400">
                       {reason === "missing" ? t.share.unpublishedTitle : t.share.privateUseTitle}
                     </p>
-                    <p className="mt-0.5 text-2xs leading-snug text-amber-200/70">
+                    <p className="mt-0.5 text-2xs leading-snug text-amber-400">
                       {reason === "missing" ? t.share.unpublishedBlurb : t.share.privateUseBlurb}
                     </p>
                     <ul className="mt-1.5 space-y-0.5">
                       {rows.map((u) => (
-                        <li key={`${u.kind}:${u.name}`} className="font-mono text-2xs text-amber-200/90">
+                        <li key={`${u.kind}:${u.name}`} className="font-mono text-2xs text-amber-400">
                           {t.share.unpublishedKind[u.kind as "graph" | "grade" | "effect"]} · {u.name}
                         </li>
                       ))}
@@ -601,7 +601,7 @@ function ShareSceneForm({
             <label className="block">
               <span className="text-xs text-muted-foreground">{t.share.credits}</span>
               {/* The one thing in this dialog a publisher must actually read. */}
-              <p className="mt-0.5 text-xs leading-snug text-amber-200/90">{t.share.creditsWhy}</p>
+              <p className="mt-0.5 text-xs leading-snug text-amber-400">{t.share.creditsWhy}</p>
               <Textarea
                 value={credits}
                 onChange={(e) => setCredits(e.target.value)}
@@ -636,7 +636,7 @@ function ShareSceneForm({
             </div>
             <div className={PUBLISH_FOOT}>
             {error && (
-              <div className="rounded-interior bg-red-500/10 px-2.5 py-2 text-2xs leading-relaxed break-words text-red-400">
+              <div className="rounded-interior bg-red-400/10 px-2.5 py-2 text-2xs leading-relaxed break-words text-red-400">
                 {error}
               </div>
             )}
@@ -654,7 +654,7 @@ function ShareSceneForm({
                 // re-publishing to fix a stage does not mean re-framing a shot.
                 (!poster && !updatesId)
               }
-              className="h-9 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-50"
+              className="h-9 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-400/90 disabled:opacity-50"
             >
               {busy ? (
                 <>

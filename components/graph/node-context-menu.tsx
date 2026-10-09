@@ -65,7 +65,7 @@ export function NodeContextMenu({
     <div
       ref={ref}
       style={{ left: pos.left, top: pos.top, opacity: pos.ready ? 1 : 0 }}
-      className="fixed z-50 w-44 rounded-surface border border-line-strong bg-zinc-950/90 p-1 shadow-float backdrop-blur-xs"
+      className="fixed z-50 w-44 rounded-surface border border-line-strong bg-surface-raised p-1 shadow-float backdrop-blur-xs"
       onContextMenu={(e) => e.preventDefault()}
     >
       {actions.map((a, i) =>

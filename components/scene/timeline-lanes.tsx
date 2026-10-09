@@ -113,7 +113,7 @@ function LaneBlock({
     <span
       className={cn(
         "absolute inset-y-0 left-0 flex items-center overflow-hidden rounded-interior border text-xs whitespace-nowrap",
-        empty ? "border-line bg-white/[0.06]" : "border-blue-400/50 bg-blue-400/25 text-foreground",
+        empty ? "border-line bg-white/5" : "border-blue-400/50 bg-blue-400/25 text-foreground",
       )}
       style={{ width: span && span > 0 ? `max(0.75rem, ${Math.min(1, span) * 100}%)` : "100%" }}
     >
@@ -122,7 +122,7 @@ function LaneBlock({
           block harder to identify to show something you can read at a glance
           anyway. */}
       {graph && graph.length > 0 && (
-        <span className="absolute inset-0 text-blue-300/45">
+        <span className="absolute inset-0 text-blue-400/45">
           <LaneGraph values={graph} mirrored={mirrored} />
         </span>
       )}

@@ -38,7 +38,7 @@ function fmtLiteral(v: number | number[]): string {
 
 // Shared inline number-field styling (float literal + vector components).
 const NUM_FIELD =
-  "nodrag h-4.5 rounded-chip border-zinc-700 bg-zinc-950/80 px-1 py-0 text-right !text-2xs tabular-nums shadow-none focus-visible:ring-1 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+  "nodrag h-4.5 rounded-chip border-line-strong bg-surface-raised px-1 py-0 text-right !text-2xs tabular-nums shadow-none focus-visible:ring-1 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 
 // A number input that edits smoothly
 function NumberField({ value, onCommit, className }: { value: number; onCommit: (n: number) => void; className?: string }) {
@@ -144,10 +144,14 @@ export const RezeNode = memo(function RezeNode({ id, data, selected }: NodeProps
 
   return (
     <div
-      // Preview is shown as a pink ring (the "previewing …" pill already names
-      className={`rounded-chip border bg-zinc-900/95 text-zinc-200 shadow-lg min-w-44 text-xs ${
-        selected ? "border-pink-400" : isOutput ? "border-blue-400" : "border-zinc-700"
-      }${isPreview ? " ring-2 ring-pink-500/80" : ""}`}
+      // Blue is the one "selected / active" colour, so a selected node takes a
+      // blue border and the previewed one a blue outer ring — two shapes, one
+      // meaning. The output node is marked by a brighter neutral edge rather
+      // than an accent. The card's fill stays zinc-900: it is canvas content
+      // that has to stand off the dark canvas, which no chrome token does.
+      className={`rounded-chip border bg-zinc-900/95 text-foreground shadow-lg min-w-44 text-xs ${
+        selected ? "border-blue-400" : isOutput ? "border-muted-foreground" : "border-line-strong"
+      }${isPreview ? " ring-2 ring-blue-400/60" : ""}`}
     >
       <div
         className="flex items-center gap-2 px-2 py-1 rounded-t-chip font-medium text-xs"
@@ -175,7 +179,7 @@ export const RezeNode = memo(function RezeNode({ id, data, selected }: NodeProps
               }
             }}
             // field-sizing keeps the box hugging the text (in place, ~label-sized) instead of stretching
-            className="nodrag rounded-chip border border-zinc-600 bg-zinc-950 px-1 text-xs text-zinc-100 outline-none [field-sizing:content] min-w-[2ch]"
+            className="nodrag rounded-chip border border-line-strong bg-surface-raised px-1 text-xs text-foreground outline-none [field-sizing:content] min-w-[2ch]"
           />
         ) : (
           <span
@@ -190,7 +194,7 @@ export const RezeNode = memo(function RezeNode({ id, data, selected }: NodeProps
           </span>
         )}
         {/* Friendly (localized) node name — mirrors the Add-node palette. */}
-        <span className="text-zinc-500 font-normal">{t.nodeLabel[graphNode.type] ?? graphNode.type}</span>
+        <span className="text-muted-foreground font-normal">{t.nodeLabel[graphNode.type] ?? graphNode.type}</span>
         {isOutput && (
           <span className="ml-auto rounded-chip bg-blue-400/20 px-1 text-2xs font-semibold tracking-wide text-blue-300">
             OUT
@@ -200,7 +204,7 @@ export const RezeNode = memo(function RezeNode({ id, data, selected }: NodeProps
       <div className="py-1">
         {outputs.map(([name, type]) => (
           <div key={`out-${name}`} className="relative flex justify-end items-center px-2 h-5.5">
-            <span className="text-zinc-400">{t.socket[name] ?? name}</span>
+            <span className="text-muted-foreground">{t.socket[name] ?? name}</span>
             <Handle
               type="source"
               position={Position.Right}
@@ -224,7 +228,7 @@ export const RezeNode = memo(function RezeNode({ id, data, selected }: NodeProps
                   id={name}
                   style={{ background: SOCKET_COLORS[type] ?? "#fff", width: 8, height: 8 }}
                 />
-                <span className="text-zinc-400">{t.socket[name] ?? name}</span>
+                <span className="text-muted-foreground">{t.socket[name] ?? name}</span>
                 {!linked && type === "float" && typeof literal === "number" && (
                   <NumberField value={literal} onCommit={(n) => setInput(name, n)} className={`${NUM_FIELD} ml-auto w-16`} />
                 )}
@@ -241,7 +245,7 @@ export const RezeNode = memo(function RezeNode({ id, data, selected }: NodeProps
                   <VectorSocketInput value={asRgb(literal)} onChange={(v) => setInput(name, v)} />
                 )}
                 {!linked && !showVector && type !== "float" && type !== "color" && type !== "vec4" && literal !== undefined && (
-                  <span className="ml-auto text-zinc-500 tabular-nums">{fmtLiteral(literal)}</span>
+                  <span className="ml-auto text-muted-foreground tabular-nums">{fmtLiteral(literal)}</span>
                 )}
               </div>
             </div>

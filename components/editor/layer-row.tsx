@@ -64,7 +64,7 @@ export function LayerRow({
             the body appears, and the summary is about to be redundant anyway. */}
         {swatch ? (
           <span className={cn("ml-auto flex items-center gap-1.5", open && "opacity-0")}>
-            <span className="size-4 shrink-0 rounded-chip ring-1 ring-white/15" style={{ background: swatch }} />
+            <span className="size-4 shrink-0 rounded-chip ring-1 ring-line-strong" style={{ background: swatch }} />
             <span className="font-mono text-xs text-muted-foreground">{swatch.toLowerCase()}</span>
           </span>
         ) : (

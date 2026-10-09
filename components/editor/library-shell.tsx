@@ -544,7 +544,7 @@ export function LibraryToolbar<T extends BrowseItem>({
             aria-label={d === "grid" ? t.rail.grid : t.rail.list}
             onClick={() => setDensity(d)}
             className={cn(
-              "flex size-[18px] cursor-pointer items-center justify-center rounded-[4px] transition-colors",
+              "flex size-[18px] cursor-pointer items-center justify-center rounded-chip transition-colors",
               density === d ? "bg-blue-400/15 text-blue-400" : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
             )}
           >
@@ -576,7 +576,7 @@ function SortHeader({
       type="button"
       onClick={() => onSort(k)}
       className={cn(
-        "-mx-1 flex items-center gap-0.5 rounded-[4px] px-1 py-0.5 font-mono text-2xs tracking-[0.1em] whitespace-nowrap uppercase transition-colors hover:bg-white/5",
+        "-mx-1 flex items-center gap-0.5 rounded-chip px-1 py-0.5 font-mono text-2xs tracking-[0.1em] whitespace-nowrap uppercase transition-colors hover:bg-white/5",
         right && "justify-end",
         active ? "text-blue-400" : "text-muted-foreground hover:text-foreground",
       )}
@@ -783,7 +783,7 @@ export function LibraryResults<T extends BrowseItem>({
                       : "hover:bg-white/5",
                 )}
               >
-                <div className="h-[19px] w-[30px] overflow-hidden rounded-[4px] border border-line-strong">{card.preview}</div>
+                <div className="h-[19px] w-[30px] overflow-hidden rounded-chip border border-line-strong">{card.preview}</div>
                 <span className="min-w-0 truncate text-xs">{card.nameNode ?? label(item)}</span>
                 <span className={cn("flex min-w-0 items-center gap-1.5 font-mono text-2xs transition-colors", cell)}>
                   <AuthorAvatar name={builtinAuthor(id(item), item.author)} className="size-3.5" />
@@ -839,12 +839,12 @@ export function LibraryResults<T extends BrowseItem>({
               >
                 {m.preview}
                 {m.applied ? (
-                  <span className="absolute top-1 left-1 flex items-center gap-1 rounded-[4px] border border-blue-400/50 bg-zinc-950/85 px-1 py-px font-mono text-2xs text-blue-400">
+                  <span className="absolute top-1 left-1 flex items-center gap-1 rounded-chip border border-blue-400/50 bg-surface-raised px-1 py-px font-mono text-2xs text-blue-400">
                     <Check className="size-2.5" />
                     {t.effectLibrary.applied}
                   </span>
                 ) : st !== "public" ? (
-                  <span className="absolute top-1 left-1 flex items-center gap-1 rounded-[4px] border border-line-strong bg-zinc-950/85 px-1 py-px font-mono text-2xs text-muted-foreground">
+                  <span className="absolute top-1 left-1 flex items-center gap-1 rounded-chip border border-line-strong bg-surface-raised px-1 py-px font-mono text-2xs text-muted-foreground">
                     <Icon className="size-2.5" />
                     {t.rail.states[st]}
                   </span>

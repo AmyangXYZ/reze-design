@@ -296,7 +296,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
         onFocusCapture={onFocusCapture}
         className={LIBRARY_SHELL}
     >
-      <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-line bg-zinc-950 px-4 py-2 text-left">
+      <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-line bg-surface-raised px-4 py-2 text-left">
         <DialogTitle className="flex shrink-0 items-center gap-2 text-sm font-medium">
           <Palette className="size-4 text-blue-400" />
           {t.scene.grade}
@@ -406,7 +406,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                 <Button
                   size="sm"
                   onClick={apply}
-                  className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-300"
+                  className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-400/90"
                 >
                   <Check className="size-3.5" />
                   {t.gradeLibrary.apply}

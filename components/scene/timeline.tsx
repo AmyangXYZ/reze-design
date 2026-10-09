@@ -3278,7 +3278,7 @@ export function Timeline({
             setCurrentFrame(f)
           }}
         />
-        <div className="mx-0.5 flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-chip border border-line bg-white/[0.06] px-1 py-px font-mono text-2xs tabular-nums text-muted-foreground">
+        <div className="mx-0.5 flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-chip border border-line bg-white/5 px-1 py-px font-mono text-2xs tabular-nums text-muted-foreground">
           <span>F</span>
           <input
             type="text"
@@ -3375,7 +3375,7 @@ export function Timeline({
                 // pinned to its active state, dark: variant included.
                 active
                   ? t.color
-                    ? "text-[#0f0f12] hover:text-[#0f0f12] hover:opacity-90 dark:hover:bg-transparent"
+                    ? "text-zinc-950 hover:text-zinc-950 hover:opacity-90 dark:hover:bg-transparent"
                     // The aggregate tabs (Rotation / Translation / Target) and
                     // Weight carry no hue of their own, so they cannot use the
                     // solid-fill treatment the axis tabs get from `t.color`.

@@ -66,7 +66,7 @@ export function ColorWheel({
   return (
     <div className="flex min-w-0 flex-1 flex-col items-center gap-3">
       <div className="flex w-full items-baseline justify-between gap-1 px-0.5">
-        <span className="truncate text-2xs font-medium text-zinc-200">{label}</span>
+        <span className="truncate text-2xs font-medium text-foreground">{label}</span>
         {/* Numbers alongside the instrument */}
         <span className="shrink-0 font-mono text-2xs text-muted-foreground tabular-nums">
           {neutral ? "—" : `${Math.round(hue)}° ${Math.round(sat * 100)}%`}
@@ -82,7 +82,7 @@ export function ColorWheel({
         aria-valuemax={100}
         tabIndex={0}
         // Full brightness always: dimming made sense in the dock, where three wheels competed
-        className="relative shrink-0 cursor-crosshair touch-none rounded-full ring-1 ring-white/10"
+        className="relative shrink-0 cursor-crosshair touch-none rounded-full ring-1 ring-line-strong"
         style={{ width: size, height: size, background: WHEEL_BG }}
         onPointerDown={(e) => {
           e.currentTarget.setPointerCapture(e.pointerId)
@@ -116,7 +116,7 @@ export function ColorWheel({
         // A proper swatch CELL, the same shape as the colour picker's — and the hex under
         // it is the field, so a colour from a reference frame or a palette goes in directly.
         <div className="flex flex-col items-center gap-1">
-          <div className="h-6 w-16 rounded-chip ring-1 ring-white/10" style={{ backgroundColor: resolved }} />
+          <div className="h-6 w-16 rounded-chip ring-1 ring-line-strong" style={{ backgroundColor: resolved }} />
           <HexField
             value={resolved}
             onChange={(hex) => {

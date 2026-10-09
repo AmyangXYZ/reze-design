@@ -826,7 +826,7 @@ export const RenderPanel = memo(function RenderPanel({
               size="sm"
               disabled={!canRender}
               onClick={() => void start()}
-              className="h-8 flex-1 gap-1.5 rounded-l-none bg-blue-400 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-40"
+              className="h-8 flex-1 gap-1.5 rounded-l-none bg-blue-400 text-xs font-medium text-white hover:bg-blue-400/90 disabled:opacity-40"
             >
               <Clapperboard className="size-3.5" />
               {t.render.renderVideo}
@@ -842,7 +842,7 @@ export const RenderPanel = memo(function RenderPanel({
               // button you may urgently want should look like. Red because
               // stopping throws the render away: the encoded frames are gone,
               // not paused.
-              className="h-8 flex-1 gap-1.5 rounded-l-none bg-red-500 text-xs font-medium text-white hover:bg-red-400"
+              className="h-8 flex-1 gap-1.5 rounded-l-none bg-red-400 text-xs font-medium text-white hover:bg-red-400"
             >
               <Square className="size-3.5" />
               {t.render.cancel}
@@ -892,7 +892,7 @@ export const RenderPanel = memo(function RenderPanel({
             {/* Amber, like the credits note in the publish dialog: the same kind of
                 line, the one thing beside a control that has to actually be read
                 before the control is touched. */}
-            <p className="mt-0.5 text-2xs leading-snug text-amber-200/90">
+            <p className="mt-0.5 text-2xs leading-snug text-amber-400">
               {t.render.shareStatsNote}{" "}
               {/* Both halves of the answer: what is collected, and what it has
                   added up to. The second is why anyone would say yes. */}

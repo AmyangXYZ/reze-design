@@ -321,7 +321,7 @@ export function HandleDialog() {
         <DialogDescription className="mt-1 text-xs leading-snug text-muted-foreground">
           {t.account.handleHint}
         </DialogDescription>
-        <p className="mt-1.5 text-xs leading-snug text-amber-200/90">{t.account.handleOnce}</p>
+        <p className="mt-1.5 text-xs leading-snug text-amber-400">{t.account.handleOnce}</p>
         {session?.user.username && <HandleField current={session.user.username} />}
       </DialogContent>
     </Dialog>
@@ -394,7 +394,7 @@ function HandleField({ current }: { current: string }) {
           type="submit"
           size="sm"
           disabled={!valid || state === "saving"}
-          className="h-7 shrink-0 bg-blue-400 px-2 text-xs text-white hover:bg-blue-300 disabled:opacity-40"
+          className="h-7 shrink-0 bg-blue-400 px-2 text-xs text-white hover:bg-blue-400/90 disabled:opacity-40"
         >
           {t.account.handleSave}
         </Button>
@@ -517,7 +517,7 @@ export function AccountButton({
             size="sm"
             variant="ghost"
             onClick={() => void signOut()}
-            className="h-8 w-full gap-1.5 border border-red-500/25 bg-red-500/10 text-xs text-red-400 hover:bg-red-500/20 hover:text-red-300"
+            className="h-8 w-full gap-1.5 border border-red-400/25 bg-red-400/10 text-xs text-red-400 hover:bg-red-400/20 hover:text-red-400"
           >
             <LogOut className="size-3.5" />
             {t.account.signOut}

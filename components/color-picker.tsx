@@ -92,7 +92,7 @@ function Swatch({ hex, onPick, label, className }: { hex: string; onPick: (hex: 
         // them packs left instead of resizing with the dialog. Corners inline,
         // below the variant's, so the merge cannot keep the button's.
         SWATCH,
-        "p-0 ring-1 ring-white/10 transition-transform duration-75 hover:z-10 hover:scale-115",
+        "p-0 ring-1 ring-line-strong transition-transform duration-75 hover:z-10 hover:scale-115",
         className,
       )}
       style={{ background: hex, borderRadius: "var(--radius-xs)" }}
@@ -246,7 +246,7 @@ function ChannelPicker({
           aria-label={tc.field}
           aria-valuenow={Math.round(hsv.s * 100)}
           aria-valuetext={tc.fieldValue(Math.round(hsv.s * 100), Math.round(hsv.v * 100))}
-          className="relative aspect-square cursor-crosshair touch-none rounded-interior ring-1 ring-white/10 outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+          className="relative aspect-square cursor-crosshair touch-none rounded-interior ring-1 ring-line-strong outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
           style={{ background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, ${hueHex})` }}
           onPointerDown={(e) => {
             e.currentTarget.setPointerCapture(e.pointerId)
@@ -279,7 +279,7 @@ function ChannelPicker({
           {/* Before and after, as Photoshop shows them: the left half is what
               you opened with, and clicking it puts that back. */}
           <div className="flex items-center gap-2">
-            <div className="flex h-6 min-w-0 flex-1 overflow-hidden rounded-chip ring-1 ring-white/10">
+            <div className="flex h-6 min-w-0 flex-1 overflow-hidden rounded-chip ring-1 ring-line-strong">
               <Button
                 variant="ghost"
                 aria-label={tc.backTo(original)}
@@ -423,7 +423,7 @@ export function ColorField({
         aria-label={tc.open}
       >
         <span
-          className="size-4 shrink-0 rounded-chip ring-1 ring-white/15 transition-transform group-hover:scale-110"
+          className="size-4 shrink-0 rounded-chip ring-1 ring-line-strong transition-transform group-hover:scale-110"
           style={{ background: value }}
         />
         <span className="font-mono text-xs text-muted-foreground underline-offset-2 group-hover:text-foreground group-hover:underline">
@@ -483,7 +483,7 @@ export function ColorPickerDialog({
         <DialogContent
           // Don't autofocus the first swatch on open
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="gap-3 rounded-surface border-line-strong bg-zinc-950 sm:max-w-2xl"
+          className="gap-3 rounded-surface border-line-strong bg-surface-raised sm:max-w-2xl"
         >
           <Tabs
             value={tab}
@@ -549,7 +549,7 @@ export function ColorPickerDialog({
                             "h-5 w-full cursor-pointer rounded-chip transition-transform duration-75 ease-out hover:z-10 hover:scale-115",
                             active === hex.toLowerCase()
                               ? "z-10 ring-2 ring-blue-400 ring-offset-1 ring-offset-zinc-950"
-                              : "ring-1 ring-white/10",
+                              : "ring-1 ring-line-strong",
                           )}
                           style={{ background: hex }}
                           onClick={() => {
@@ -577,7 +577,7 @@ export function ColorPickerDialog({
                 {(hover?.hex ?? value).toLowerCase()}
               </span>
               <span
-                className="size-6 rounded-chip ring-1 ring-white/15"
+                className="size-6 rounded-chip ring-1 ring-line-strong"
                 style={{ background: hover?.hex ?? value }}
               />
             </div>

@@ -102,7 +102,7 @@ export function AddNodeMenu({
     <div
       ref={ref}
       style={{ left: pos.left, top: pos.top, opacity: pos.ready ? 1 : 0 }}
-      className="fixed z-50 flex max-h-[360px] w-56 flex-col overflow-hidden rounded-surface border border-line-strong bg-zinc-950/90 shadow-float backdrop-blur-xs"
+      className="fixed z-50 flex max-h-[360px] w-56 flex-col overflow-hidden rounded-surface border border-line-strong bg-surface-raised shadow-float backdrop-blur-xs"
       onContextMenu={(e) => e.preventDefault()}
     >
       <div className="shrink-0 border-b border-line p-1.5">

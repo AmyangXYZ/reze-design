@@ -154,7 +154,7 @@ function EditorBody({
         {/* ── Controls column ── */}
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3">
           {importError && (
-            <div className="mb-2 rounded-chip border border-red-400/30 bg-red-500/10 px-2 py-1 text-2xs text-red-300">
+            <div className="mb-2 rounded-chip border border-red-400/30 bg-red-400/10 px-2 py-1 text-2xs text-red-400">
               {importError}
             </div>
           )}
@@ -211,7 +211,7 @@ function EditorBody({
         </div>
         {/* Preview column, on the RIGHT */}
         <div className="flex min-w-0 flex-[0_0_42%] flex-col border-l border-line p-3">
-          <div className="min-h-0 flex-1 overflow-hidden rounded-chip border border-line-strong bg-zinc-900">
+          <div className="min-h-0 flex-1 overflow-hidden rounded-chip border border-line-strong bg-white/5">
             <GradePreview spec={spec} />
           </div>
         </div>

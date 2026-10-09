@@ -1892,7 +1892,7 @@ function CastMemberRow({
           // Not a button: materials open from the palette alone, so a whole-row
           // click target would promise an edit surface the row does not own. The
           // tint still marks which model the open panel is editing.
-          className={cn("flex h-8 items-center gap-2.5 px-4 transition-colors", inspected && "bg-white/[0.06]")}
+          className={cn("flex h-8 items-center gap-2.5 px-4 transition-colors", inspected && "bg-white/5")}
         >
           <span className="shrink-0 font-mono text-xs text-muted-foreground">{slot}</span>
           {palette ? <CastSwatch palette={palette} /> : <Skeleton className="size-5 shrink-0 rounded-interior" />}
@@ -7037,7 +7037,7 @@ export default function Lab() {
           <div
             className={cn(
               "absolute rounded-chip border",
-              framing.exporting ? "border-red-500/90" : "border-amber-400/80",
+              framing.exporting ? "border-red-400/90" : "border-amber-400/80",
             )}
             style={{
               left: frameRect.x,
@@ -7174,7 +7174,7 @@ export default function Lab() {
               {/* A key cap, so it should read as one: fixed height, centred, and the
               two glyphs spaced by a real gap rather than letter-spacing — which
               adds its space AFTER the K and pushes the pair off-centre. */}
-              <kbd className="ml-auto inline-flex h-4 min-w-[1.375rem] shrink-0 items-center justify-center gap-[3px] rounded-chip border border-white/15 bg-white/[0.06] px-1 font-mono text-2xs leading-none text-muted-foreground">
+              <kbd className="ml-auto inline-flex h-4 min-w-[1.375rem] shrink-0 items-center justify-center gap-[3px] rounded-chip border border-line-strong bg-white/5 px-1 font-mono text-2xs leading-none text-muted-foreground">
                 <span className="text-2xs">⌘</span>
                 <span>K</span>
               </kbd>
@@ -7193,7 +7193,7 @@ export default function Lab() {
                 // beside it — that is the only flex-1 in a cluster fixed at
                 // 16rem — so the pair still measures exactly what it did, with
                 // more of it spent on the control that has words to show.
-                className="h-7 shrink-0 rounded-interior bg-blue-400 px-2 text-xs font-medium text-white hover:bg-blue-300"
+                className="h-7 shrink-0 rounded-interior bg-blue-400 px-2 text-xs font-medium text-white hover:bg-blue-400/90"
               >
                 {t.lab.share}
               </Button>
@@ -7301,7 +7301,7 @@ export default function Lab() {
                 )}
               >
                 {t.brand.styles[pack]}
-                {pack === activePack && <Check className="size-3.5 shrink-0 text-pink-400" />}
+                {pack === activePack && <Check className="size-3.5 shrink-0 text-blue-400" />}
               </button>
             ))}
           </ChoiceList>
@@ -8693,7 +8693,7 @@ export default function Lab() {
                             the shortlist has not got it. */}
                         <button
                           onClick={() => openBrowse({ kind: "effect" })}
-                          className="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-chip bg-white px-2 py-1 text-xs font-medium text-zinc-900 transition-colors hover:bg-white/90"
+                          className="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-chip bg-white px-2 py-1 text-xs font-medium text-zinc-950 transition-colors hover:bg-white/90"
                         >
                           <Sparkles className="size-3.5 shrink-0" />
                           <span className="truncate">{t.lab.cmd.effectLib}</span>
@@ -9661,7 +9661,7 @@ export default function Lab() {
                         <div className="mt-2.5 flex justify-center">
                           <button
                             onClick={() => openBrowse({ kind: "grade" })}
-                            className="flex shrink-0 cursor-pointer items-center gap-1 rounded-chip bg-white px-2 py-1 text-xs font-medium text-zinc-900 transition-colors hover:bg-white/90"
+                            className="flex shrink-0 cursor-pointer items-center gap-1 rounded-chip bg-white px-2 py-1 text-xs font-medium text-zinc-950 transition-colors hover:bg-white/90"
                           >
                             <Palette className="size-3.5" />
                             {t.lab.cmd.gradeLib}
@@ -10372,7 +10372,7 @@ export default function Lab() {
             "absolute right-3 bottom-3 flex h-10 cursor-pointer items-center gap-2 px-4 text-sm text-foreground",
           )}
         >
-          <span className="size-2 animate-pulse rounded-full bg-red-500" />
+          <span className="size-2 animate-pulse rounded-full bg-red-400" />
           {t.lab.exporting}
           {/* Four characters wide in figures of one width, so the pill holds
               still from 0% to 100%. */}
