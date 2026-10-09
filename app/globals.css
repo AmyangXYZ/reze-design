@@ -286,17 +286,17 @@
      pays a few frames of its 300ms is the cheaper loss. If the fold ever has
      to be perfectly smooth, drop the blur HERE and raise L to compensate
      (0.178 at 0.92 alpha read the same); do not re-litigate it per surface. */
-  --color-surface: oklch(0.141 0.005 285.823 / 0.7);
+  --color-surface: var(--chrome-surface);
   /* Anything stacked ON the ground: a menu over a panel, a dialog over both. */
-  --color-surface-raised: oklch(0.141 0.005 285.823 / 0.95);
+  --color-surface-raised: var(--chrome-surface-raised);
   /* The dim behind a centred, scrimmed surface. */
   --color-scrim: oklch(0.12 0.008 260 / 0.55);
 
   /* Two edges, not seven. `line` divides things inside one surface; `strong`
      bounds the surface itself. A prior review called unclear borders out
      specifically, so neither goes below 6%. */
-  --color-line: oklch(1 0 0 / 0.06);
-  --color-line-strong: oklch(1 0 0 / 0.12);
+  --color-line: var(--chrome-line);
+  --color-line-strong: var(--chrome-line-strong);
 
   /* Reze's violet: violet-400, the palette's nearest to her hair lifted to read
      on this ground. The Premium line in the account menu — a brand mark, outside
@@ -306,4 +306,41 @@
   --radius-surface: 12px;
   --radius-interior: 8px;
   --radius-chip: 6px;
+}
+
+/* The chrome's surface and edge colours, as variables so a page can restyle
+   them in its own scope. These are the editor's values, unchanged. */
+:root {
+  --chrome-surface: oklch(0.141 0.005 285.823 / 0.7);
+  --chrome-surface-raised: oklch(0.141 0.005 285.823 / 0.95);
+  --chrome-line: oklch(1 0 0 / 0.06);
+  --chrome-line-strong: oklch(1 0 0 / 0.12);
+}
+
+/* The admin page, in light: the shadcn light values (as :root states them)
+   and a light ground for the chrome tokens, inside this element only. The
+   html element stays .dark, so the editor and everything else is untouched. */
+.admin-light {
+  color-scheme: light;
+  --background: oklch(0.985 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.955 0 0);
+  --muted-foreground: oklch(0.5 0 0);
+  --accent: oklch(0.94 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --border: oklch(0.9 0 0);
+  --input: oklch(0.88 0 0);
+  --ring: oklch(0.708 0 0);
+  --chrome-surface: oklch(1 0 0);
+  --chrome-surface-raised: oklch(1 0 0);
+  --chrome-line: oklch(0 0 0 / 0.08);
+  --chrome-line-strong: oklch(0 0 0 / 0.14);
 }

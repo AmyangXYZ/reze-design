@@ -11,7 +11,7 @@ import { authClient } from "@/lib/auth-client"
 import { LazySection } from "./data-table"
 
 
-function useAction() {
+export function useAction() {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [busy, setBusy] = useState(false)
@@ -45,7 +45,7 @@ export function ItemControls({ id, onDeleted }: { id: string; onDeleted: () => v
           confirm("Delete this item permanently?") &&
           void run(`/api/library/${id}`, { method: "DELETE" }).then((ok) => ok && onDeleted())
         }
-        className={`${iconBtn} text-muted-foreground hover:bg-red-500/10 hover:text-red-400`}
+        className={`${iconBtn} text-muted-foreground hover:bg-red-500/10 hover:text-red-600`}
         aria-label="Delete item"
       >
         <Trash2 className="size-3.5" />
@@ -72,7 +72,7 @@ export function RenameUser({ id, username, isSelf }: { id: string; username: str
           if (ok && isSelf) window.location.reload()
         })
       }}
-      className={`${iconBtn} text-muted-foreground hover:bg-white/5 hover:text-foreground`}
+      className={`${iconBtn} text-muted-foreground hover:bg-accent hover:text-foreground`}
       aria-label="Rename handle"
     >
       <PenLine className="size-3.5" />
@@ -108,7 +108,7 @@ export function PlanToggle({ id, premium, isSelf }: { id: string; premium: boole
       onClick={() =>
         toggle({ plan: premium ? "free" : "premium" }, premium ? "Lift Premium from this account?" : "Grant Premium to this account?")
       }
-      className={`${iconBtn} ${premium ? "text-blue-400 hover:bg-blue-500/10" : "text-muted-foreground hover:bg-white/5 hover:text-foreground"}`}
+      className={`${iconBtn} ${premium ? "text-blue-600 hover:bg-blue-500/10" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
       aria-label={premium ? "Lift Premium" : "Grant Premium"}
       title={premium ? "Premium · click to lift" : "Grant Premium"}
     >
@@ -122,7 +122,7 @@ export function UserControls({ id, banned, isSelf }: { id: string; banned: boole
   // The API refuses these on your own account too; this just avoids offering them.
   if (isSelf) {
     return (
-      <span className="rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-muted-foreground/60">you</span>
+      <span className="rounded border border-line-strong px-1.5 py-0.5 text-[11px] text-muted-foreground/60">you</span>
     )
   }
 
@@ -147,7 +147,7 @@ export function UserControls({ id, banned, isSelf }: { id: string; banned: boole
             body: JSON.stringify({ banned: true, reason }),
           })
         }}
-        className={`${iconBtn} ${banned ? "text-amber-400 hover:bg-amber-500/10" : "text-muted-foreground hover:bg-amber-500/10 hover:text-amber-400"}`}
+        className={`${iconBtn} ${banned ? "text-amber-600 hover:bg-amber-500/10" : "text-muted-foreground hover:bg-amber-500/10 hover:text-amber-600"}`}
         aria-label={banned ? "Lift suspension" : "Suspend account"}
       >
         {banned ? <RotateCcw className="size-3.5" /> : <Ban className="size-3.5" />}
@@ -158,7 +158,7 @@ export function UserControls({ id, banned, isSelf }: { id: string; banned: boole
           confirm("Delete this account? Their published items stay, with no owner.") &&
           void run(`/api/admin/users/${id}`, { method: "DELETE" })
         }
-        className={`${iconBtn} text-muted-foreground hover:bg-red-500/10 hover:text-red-400`}
+        className={`${iconBtn} text-muted-foreground hover:bg-red-500/10 hover:text-red-600`}
         aria-label="Delete account"
       >
         <Trash2 className="size-3.5" />
@@ -181,7 +181,7 @@ export function AssetTable() {
   )
 }
 
-function AssetList() {
+export function AssetList() {
   const [assets, setAssets] = useState<Asset[] | null>(null)
   const [truncated, setTruncated] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -199,20 +199,20 @@ function AssetList() {
     void load()
   }, [])
 
-  if (assets === null) return <p className="mt-3 text-xs text-muted-foreground">Loading…</p>
-  if (assets.length === 0) return <p className="mt-3 text-xs text-muted-foreground">Nothing stored yet.</p>
+  if (assets === null) return <p className="mt-3 text-[13px] text-muted-foreground">Loading…</p>
+  if (assets.length === 0) return <p className="mt-3 text-[13px] text-muted-foreground">Nothing stored yet.</p>
 
   const total = assets.reduce((a, o) => a + o.size, 0)
 
   return (
     <>
-      <p className="mt-1 text-xs text-muted-foreground">
+      <p className="mt-1 text-[13px] text-muted-foreground">
         {assets.length} objects · {size(total)}
         {truncated && " · first 500 shown"}
       </p>
-      <table className="mt-3 w-full text-xs">
+      <table className="mt-3 w-full text-[13px]">
         <thead className="text-muted-foreground">
-          <tr className="border-b border-white/10 text-left">
+          <tr className="border-b border-line-strong text-left">
             <th className="py-2 font-medium">Key</th>
             <th className="py-2 font-medium">Size</th>
             <th className="py-2 font-medium">Modified (ET)</th>
@@ -221,7 +221,7 @@ function AssetList() {
         </thead>
         <tbody>
           {assets.map((o) => (
-            <tr key={o.key} className="border-b border-white/5">
+            <tr key={o.key} className="border-b border-line">
               <td className="max-w-md truncate py-2 pr-3 font-mono">{o.key}</td>
               <td className="py-2 pr-3 font-mono text-muted-foreground">{size(o.size)}</td>
               <td className="py-2 pr-3 font-mono text-muted-foreground">
@@ -253,7 +253,7 @@ function AssetList() {
                       await load()
                       setBusy(false)
                     }}
-                    className={`${iconBtn} text-muted-foreground hover:bg-red-500/10 hover:text-red-400`}
+                    className={`${iconBtn} text-muted-foreground hover:bg-red-500/10 hover:text-red-600`}
                     aria-label="Delete object"
                   >
                     <Trash2 className="size-3.5" />

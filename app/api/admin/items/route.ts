@@ -1,12 +1,13 @@
-// One kind of library item for the admin page, fetched when its section opens.
+// Library items for the admin page, fetched when a view opens: one kind
+// (?kind=), or everything one account published (?owner=).
 
 import { NextResponse } from "next/server"
-import { desc, eq } from "drizzle-orm"
+import { and, desc, eq } from "drizzle-orm"
 import { requireAdmin } from "@/lib/admin"
 import { hasDatabase, db, schema } from "@/lib/db"
 import { sceneUsage } from "@/lib/db/stats"
 import { KINDS } from "@/app/admin/kinds"
-import type { ItemRow } from "@/app/admin/tables"
+import type { ItemRow } from "@/app/admin/types"
 
 export const dynamic = "force-dynamic"
 
@@ -15,16 +16,16 @@ export async function GET(request: Request) {
   // sign in as, so the honest answer is that this deployment cannot do it.
   if (!hasDatabase) return NextResponse.json({ error: "no database on this deployment" }, { status: 503 })
   if (!(await requireAdmin(request.headers))) return NextResponse.json({ error: "not found" }, { status: 404 })
-  const param = new URL(request.url).searchParams.get("kind")
+  const params = new URL(request.url).searchParams
+  const param = params.get("kind")
+  const owner = params.get("owner")
   const kind = KINDS.find((k) => k.kind === param)?.kind
-  if (!kind) return NextResponse.json({ error: "invalid kind" }, { status: 400 })
+  if (!kind && !owner) return NextResponse.json({ error: "invalid kind" }, { status: 400 })
+  const t = schema.libraryItems
+  const where = kind && owner ? and(eq(t.kind, kind), eq(t.ownerId, owner)) : kind ? eq(t.kind, kind) : eq(t.ownerId, owner!)
 
   const [rows, usage] = await Promise.all([
-    db
-      .select()
-      .from(schema.libraryItems)
-      .where(eq(schema.libraryItems.kind, kind))
-      .orderBy(desc(schema.libraryItems.createdAt)),
+    db.select().from(t).where(where).orderBy(desc(t.createdAt)),
     // Nothing references a scene, so its usage would always be zero.
     kind === "scene" ? new Map<string, number>() : sceneUsage(),
   ])
@@ -39,6 +40,8 @@ export async function GET(request: Request) {
     createdAt: i.createdAt.toISOString(),
     usedInScenes: usage.get(i.id) ?? 0,
     exportedIn: i.exportCount,
+    description: i.description,
+    poster: i.posterKey && process.env.R2_PUBLIC_BASE_URL ? `${process.env.R2_PUBLIC_BASE_URL}/${i.posterKey}` : null,
   }))
   return NextResponse.json({ items })
 }

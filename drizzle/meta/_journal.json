@@ -141,6 +141,13 @@
       "when": 1791407656471,
       "tag": "0019_secret_slayback",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791517205693,
+      "tag": "0020_worthless_sentinel",
+      "breakpoints": true
     }
   ]
 }

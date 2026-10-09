@@ -16,6 +16,27 @@ import { AGENT_SYSTEM, AGENT_TOOLS, modelNote } from "@/lib/ai/agent-context"
 import type { AgentMessage, AgentStreamEvent } from "@/lib/ai/agent-loop"
 import { TurnError } from "@/lib/ai/providers/types"
 import { premiumRoute, type Route } from "@/lib/ai/premium"
+import { hasDatabase, db, schema } from "@/lib/db"
+import type { Usage } from "@/lib/ai/agent-loop"
+
+/** A Premium turn's tokens, for the admin page's usage view. Never in the
+ *  way of the reply: a failed write is logged and dropped. The local
+ *  developer ("dev") is no account, so there is no one to file it under. */
+async function record(user: string, model: string, usage: Usage | null) {
+  if (!usage || !hasDatabase || user === "dev") return
+  try {
+    await db.insert(schema.aiUsage).values({
+      id: crypto.randomUUID(),
+      userId: user,
+      model,
+      inputTokens: usage.input,
+      cachedTokens: usage.cached,
+      outputTokens: usage.output,
+    })
+  } catch (e) {
+    console.warn("[ai] usage not recorded:", e instanceof Error ? e.message : e)
+  }
+}
 
 export const maxDuration = 300
 
@@ -49,9 +70,14 @@ export async function POST(request: Request) {
   const encoder = new TextEncoder()
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (e: AgentStreamEvent) => controller.enqueue(encoder.encode(`${JSON.stringify(e)}\n`))
+      let usage: Usage | null = null
+      const send = (e: AgentStreamEvent) => {
+        if (e.type === "message") usage = e.usage
+        controller.enqueue(encoder.encode(`${JSON.stringify(e)}\n`))
+      }
       try {
         await route.provider.turn({ target: route.target, messages, system: AGENT_SYSTEM + modelNote(route.target.model), tools: AGENT_TOOLS, send, signal: request.signal })
+        await record(g.user, route.target.model, usage)
       } catch (e) {
         if (!request.signal.aborted) send({ type: "error", message: e instanceof Error ? e.message : String(e), retryable: e instanceof TurnError && e.retryable })
       } finally {

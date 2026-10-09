@@ -259,3 +259,35 @@ export const exportStats = pgTable(
     index("export_stats_day_idx").on(t.day),
   ],
 )
+
+/**
+ * One row per Premium request to the AI — a turn on THIS server's key, which
+ * is the only AI use this server pays for and the only one it sees. (A
+ * person's own key goes from their browser straight to the service.)
+ *
+ * Tokens in the AI's one shape (lib/ai/agent-loop Usage, as every provider
+ * reports it): all of the input — cached included — the part of it served
+ * from the cache, which is billed at a fraction, and the output. A request is
+ * many turns, so many rows.
+ *
+ * Deleted with the account: it is usage, not content anyone keeps.
+ */
+export const aiUsage = pgTable(
+  "ai_usage",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    at: timestamp("at").notNull().defaultNow(),
+    model: text("model").notNull(),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    cachedTokens: integer("cached_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+  },
+  (t) => [
+    // Every question is "over some period", overall or for one person.
+    index("ai_usage_at_idx").on(t.at),
+    index("ai_usage_user_at_idx").on(t.userId, t.at),
+  ],
+)

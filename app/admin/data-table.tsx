@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils"
 export function LazySection({ title, count, children }: { title: string; count?: number; children: ReactNode }) {
   return (
     <Collapsible className="mt-10">
-      <CollapsibleTrigger className="group flex cursor-pointer items-center gap-1.5 text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase transition-colors hover:text-foreground">
+      <CollapsibleTrigger className="group flex cursor-pointer items-center gap-1.5 text-[13px] font-semibold tracking-[0.08em] text-muted-foreground uppercase transition-colors hover:text-foreground">
         <ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90" />
         {title}
         {count !== undefined && ` · ${count}`}
@@ -71,14 +71,14 @@ export function DataTable<T>({
   const visible = sorted.slice(page * PAGE, page * PAGE + PAGE)
 
   if (rows.length === 0)
-    return <p className="mt-3 text-xs text-muted-foreground">{empty}</p>
+    return <p className="mt-3 text-[13px] text-muted-foreground">{empty}</p>
 
   return (
     <>
       <div className="mt-3 overflow-x-auto">
-        <table className="w-full min-w-max table-auto text-xs">
+        <table className="w-full min-w-max table-auto text-[13px]">
           <thead className="text-muted-foreground">
-            <tr className="border-b border-white/10 text-left">
+            <tr className="border-b border-line text-left">
               {columns.map((c) => {
                 const active = sort?.key === c.key
                 return (
@@ -121,7 +121,7 @@ export function DataTable<T>({
           </thead>
           <tbody>
             {visible.map((row, i) => (
-              <tr key={i} className="border-b border-white/5">
+              <tr key={i} className="border-b border-line">
                 {columns.map((c) => (
                   <td
                     key={c.key}
@@ -136,7 +136,7 @@ export function DataTable<T>({
         </table>
       </div>
       {pages > 1 && (
-        <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
+        <div className="mt-2 flex items-center gap-3 text-[13px] text-muted-foreground">
           <button
             disabled={page === 0}
             onClick={() => setPage((p) => p - 1)}
