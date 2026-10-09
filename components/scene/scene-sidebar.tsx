@@ -196,7 +196,7 @@ export function Section({
 }) {
   // Full-bleed hairline between sections (-mx cancels the panel padding).
   return (
-    <div className="-mx-4 mt-3 border-t border-white/10 px-4 pt-2.5 first:mt-0 first:border-t-0 first:pt-0">
+    <div className="-mx-4 mt-3 border-t border-line px-4 pt-2.5 first:mt-0 first:border-t-0 first:pt-0">
       <div className="mb-1.5 flex items-center justify-between">
         <div className="text-xs font-medium tracking-[0.14em] text-muted-foreground uppercase">{title}</div>
         {action}

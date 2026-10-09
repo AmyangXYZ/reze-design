@@ -68,7 +68,7 @@ export function EditorHeader({
     <header
       data-drag-handle
       className={cn(
-        "relative flex shrink-0 items-center gap-2 border-b border-white/10 bg-zinc-950 py-1 pr-2 pl-3",
+        "relative flex shrink-0 items-center gap-2 border-b border-line bg-zinc-950 py-1 pr-2 pl-3",
         !fullscreen && "cursor-grab active:cursor-grabbing",
       )}
     >

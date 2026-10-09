@@ -702,7 +702,7 @@ export function GraphEditor({
         // Solid (opaque, no backdrop)
         className={cn(
           // border-b (not a separate <Separator>) so the divider is part of the solid header's box
-          "relative flex shrink-0 items-center gap-2 border-b border-white/10 bg-zinc-950 pt-1 pb-1 pr-2 pl-3",
+          "relative flex shrink-0 items-center gap-2 border-b border-line bg-zinc-950 pt-1 pb-1 pr-2 pl-3",
           // Filling the screen, there is nowhere to drag TO — the same rule the
           // shared EditorHeader follows, so the grab cursor never promises a
           // move the panel will refuse.
@@ -880,9 +880,9 @@ export function GraphEditor({
               {previewId && (
                 <div className="absolute top-2 right-2 z-10 rounded-md bg-pink-600/90 px-2.5 py-1 text-xs">
                   {t.graph.previewing(previewId)}
-                  <button className="ml-2 cursor-pointer underline" onClick={() => setPreviewId(null)}>
+                  <Button variant="link" className="ml-2 h-auto cursor-pointer p-0 text-xs text-foreground underline" onClick={() => setPreviewId(null)}>
                     {t.graph.exit}
-                  </button>
+                  </Button>
                 </div>
               )}
 
@@ -982,7 +982,7 @@ export function GraphEditor({
               <ResizableHandle className="bg-white/5" />
               <ResizablePanel defaultSize="30" minSize="15">
                 <div className="flex h-full flex-col">
-                  <h3 className="shrink-0 border-b border-white/10 px-3 py-1.5 text-xs tracking-wide text-zinc-500 uppercase">
+                  <h3 className="shrink-0 border-b border-line px-3 py-1.5 text-xs tracking-wide text-zinc-500 uppercase">
                     Generated WGSL · fs body
                   </h3>
                   <div className="flex-1 cursor-text overflow-auto select-text">

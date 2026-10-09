@@ -49,7 +49,7 @@ export function TagsInput({
   return (
     <div
       className={cn(
-        "mt-0.5 flex min-h-8 flex-wrap content-start items-start gap-1.5 rounded-md border border-white/10 bg-white/5 px-2 py-1.5 focus-within:border-blue-400/50",
+        "mt-0.5 flex min-h-8 flex-wrap content-start items-start gap-1.5 rounded-md border border-line-strong bg-white/5 px-2 py-1.5 focus-within:border-blue-400/50",
         className,
       )}
     >
@@ -90,7 +90,7 @@ export function TagsInput({
         onBlur={() => commit(draft)}
         maxLength={MAX_TAG_LENGTH}
         placeholder={value.length === 0 ? placeholder : undefined}
-        className="h-5 min-w-16 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/50"
+        className="h-5 min-w-16 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
       />
       )}
     </div>

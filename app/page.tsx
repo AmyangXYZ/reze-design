@@ -263,7 +263,7 @@ import { storageKey } from "@/lib/storage"
 
 /** Floating chrome — the 0.3.x chrome's `floating`, taken through the surface
  *  token so the pills and the panel cannot drift apart. */
-const PILL = "rounded-xl border border-white/10 bg-surface shadow-float backdrop-blur-xs"
+const PILL = "rounded-surface border border-line-strong bg-surface shadow-float backdrop-blur-xs"
 
 /** The iOS sheet curve — decelerating, no overshoot. Width, height and radius
  *  all ride it so the transport reads as ONE surface changing shape rather than
@@ -2090,7 +2090,7 @@ function AttachMenu({
       <PopoverContent
         align="end"
         sideOffset={6}
-        className="w-44 rounded-xl border-white/10 bg-zinc-950/95 p-1 shadow-float backdrop-blur-xs"
+        className="w-44 rounded-surface border-line-strong bg-zinc-950/95 p-1 shadow-float backdrop-blur-xs"
       >
         <ChoiceList>
           {items.map((i) => (
@@ -7200,7 +7200,7 @@ export default function Lab() {
           // answer the dialog just finished asking you for.
           onOpenAutoFocus={(e) => e.preventDefault()}
           className={cn(
-            "rounded-xl border-line-strong bg-surface-raised backdrop-blur-xs",
+            "rounded-surface border-line-strong bg-surface-raised backdrop-blur-xs",
             shownUpload?.kind === "sky" ? "sm:max-w-2xl" : "max-w-sm",
           )}
         >
@@ -7264,7 +7264,7 @@ export default function Lab() {
       <Dialog open={styleOpen} onOpenChange={setStyleOpen}>
         <DialogContent
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="max-w-sm rounded-xl border-line-strong bg-surface-raised backdrop-blur-xs"
+          className="max-w-sm rounded-surface border-line-strong bg-surface-raised backdrop-blur-xs"
         >
           <DialogHeader>
             <DialogTitle className="text-sm">{t.brand.style}</DialogTitle>
@@ -7298,7 +7298,7 @@ export default function Lab() {
       <Dialog open={langOpen} onOpenChange={setLangOpen}>
         <DialogContent
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="max-w-sm rounded-xl border-line-strong bg-surface-raised backdrop-blur-xs"
+          className="max-w-sm rounded-surface border-line-strong bg-surface-raised backdrop-blur-xs"
         >
           <DialogHeader>
             {/* Both languages in the title, so the dialog identifies itself to
@@ -8665,10 +8665,10 @@ export default function Lab() {
                           onBrowse={() => openBrowse({ kind: "effect" })}
                           placeholder={t.lab.ctl.none}
                           trigger={
-                            <button className="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground ring-1 ring-line-strong transition-colors hover:text-blue-400 hover:ring-blue-400/50">
+                            <Button variant="ghost" size="xs" className="flex-1 cursor-pointer text-muted-foreground ring-1 ring-line-strong hover:bg-transparent hover:text-blue-400 hover:ring-blue-400/50 dark:hover:bg-transparent">
                               <Plus className="size-3.5 shrink-0" />
                               <span className="truncate">{t.lab.ctl.selectEffect}</span>
-                            </button>
+                            </Button>
                           }
                         />
                         {/* The library keeps the white pill every library door

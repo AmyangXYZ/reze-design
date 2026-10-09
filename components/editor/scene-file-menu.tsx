@@ -133,7 +133,7 @@ export function SceneFileMenu({ trigger, onNew, onGallery, onExport, onImport, o
             act and should not read as the fifth thing you can do to your own
             document. Last, where a menu keeps the way out. */}
         {onGallery && (
-          <div className="mt-1 border-t border-white/10 pt-1">
+          <div className="mt-1 border-t border-line pt-1">
             <Row icon={GalleryThumbnails} label={t.gallery.door} onClick={run(onGallery)} />
           </div>
         )}

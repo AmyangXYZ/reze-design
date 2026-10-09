@@ -611,7 +611,7 @@ function GalleryContent({
       style={{ zIndex: z }}
       className={LIBRARY_SHELL}
     >
-      <DialogHeader className="flex-row items-center gap-2 space-y-0 border-b border-white/10 px-3 py-2">
+      <DialogHeader className="flex-row items-center gap-2 space-y-0 border-b border-line px-3 py-2">
         <DialogTitle className="flex shrink-0 items-center gap-2 text-[13px] font-medium">
           <GalleryThumbnails className="size-4 text-blue-400" />
           {t.gallery.title}
@@ -668,19 +668,19 @@ function GalleryContent({
           />
         </div>
 
-        <div className="flex w-[17rem] shrink-0 flex-col overflow-y-auto border-l border-white/10 sm:w-[20rem]">
+        <div className="flex w-[17rem] shrink-0 flex-col overflow-y-auto border-l border-line sm:w-[20rem]">
           {selected ? (
             <>
               <div className="p-3 pb-0">
                 <button
                   type="button"
                   onClick={() => openScene(selected)}
-                  className="block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-md border border-white/10 bg-zinc-900"
+                  className="block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-md border border-line-strong bg-zinc-900"
                 >
                   {selected.poster ? (
                     <SceneCover src={selected.poster} nsfw={selected.nsfw} className="h-full w-full" />
                   ) : (
-                    <span className="flex h-full items-center justify-center text-[11px] text-muted-foreground/40">
+                    <span className="flex h-full items-center justify-center text-[11px] text-muted-foreground">
                       {t.gallery.noPoster}
                     </span>
                   )}
@@ -688,7 +688,7 @@ function GalleryContent({
               </div>
               <div className="min-h-0 p-3">
                 <div className="truncate text-sm font-semibold select-text">{selected.name}</div>
-                <div className="mt-1 flex min-w-0 items-center gap-1.5 font-mono text-[13px] text-muted-foreground/70">
+                <div className="mt-1 flex min-w-0 items-center gap-1.5 font-mono text-[13px] text-muted-foreground">
                   <AuthorAvatar
                     name={selected.author}
                     image={selected.authorImage}
@@ -704,8 +704,8 @@ function GalleryContent({
                 {/* Who made the model, the motion and the music — the thing the
                     community actually asks to see before anyone reuses anything. */}
                 {selected.credits && (
-                  <div className="mt-3 border-t border-white/10 pt-2.5">
-                    <div className="text-[11px] font-medium tracking-[0.14em] text-muted-foreground/60 uppercase">
+                  <div className="mt-3 border-t border-line pt-2.5">
+                    <div className="text-[11px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
                       {t.share.credits}
                     </div>
                     {/* The 借物表 is the one block here people copy verbatim, to
@@ -726,7 +726,7 @@ function GalleryContent({
                   />
                 </div>
               </div>
-              <div className="mt-auto shrink-0 border-t border-white/10 p-3">
+              <div className="mt-auto shrink-0 border-t border-line p-3">
                 <Button
                   asChild
                   size="sm"

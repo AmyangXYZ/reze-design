@@ -167,7 +167,7 @@ export function SceneViewer(props: ViewerProps) {
         // a size-7 well in. Built from padding instead, this box came out 42 tall
         // and put the mark one pixel lower — a step you see the moment you open a
         // scene from the editor, which is the one journey this pill exists for.
-        className="absolute top-3 left-3 flex h-10 items-center gap-1.5 rounded-xl border border-transparent pr-1.5 pl-2"
+        className="absolute top-3 left-3 flex h-10 items-center gap-1.5 rounded-surface border border-transparent pr-1.5 pl-2"
       >
         {/* The editor's trigger exactly — the mark is the menu, not the pill —
             so the panel opens on the same pixels on both pages. */}
@@ -188,7 +188,7 @@ export function SceneViewer(props: ViewerProps) {
               router.push("/")
             }}
           />
-          <div className="mt-1 border-t border-white/10 pt-1">
+          <div className="mt-1 border-t border-line pt-1">
             <MenuRow
               icon={GalleryThumbnails}
               label={t.gallery.door}

@@ -102,27 +102,27 @@ export function AddNodeMenu({
     <div
       ref={ref}
       style={{ left: pos.left, top: pos.top, opacity: pos.ready ? 1 : 0 }}
-      className="fixed z-50 flex max-h-[360px] w-56 flex-col overflow-hidden rounded-xl border border-white/10 bg-zinc-950/90 shadow-float backdrop-blur-xs"
+      className="fixed z-50 flex max-h-[360px] w-56 flex-col overflow-hidden rounded-surface border border-line-strong bg-zinc-950/90 shadow-float backdrop-blur-xs"
       onContextMenu={(e) => e.preventDefault()}
     >
-      <div className="shrink-0 border-b border-white/10 p-1.5">
+      <div className="shrink-0 border-b border-line p-1.5">
         <input
           ref={inputRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}
           placeholder={accept ? t.graph.connectTo : t.graph.addNode}
-          className="h-7 w-full rounded-md bg-white/5 px-2 text-xs text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-400/40"
+          className="h-7 w-full rounded-md bg-white/5 px-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-400/40"
         />
       </div>
       <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto p-1">
         {flat.length === 0 && (
-          <div className="px-2 py-3 text-center text-xs text-muted-foreground/60">{t.graph.noMatchingNodes}</div>
+          <div className="px-2 py-3 text-center text-xs text-muted-foreground">{t.graph.noMatchingNodes}</div>
         )}
         {groups.map((g) => (
           <div key={g.category || "results"}>
             {g.category && (
-              <div className="px-2 pt-1.5 pb-0.5 text-[10px] font-medium tracking-wide text-muted-foreground/50 uppercase">
+              <div className="px-2 pt-1.5 pb-0.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
                 {t.nodeCategory[g.category] ?? g.category}
               </div>
             )}
@@ -137,7 +137,7 @@ export function AddNodeMenu({
                   onClick={() => pick(item)}
                   className={cn(
                     "flex w-full items-center rounded-md px-2 py-1 text-left text-xs transition-colors",
-                    on ? "bg-blue-400/[0.12] text-blue-400" : "text-foreground/90 hover:bg-white/5",
+                    on ? "bg-blue-400/[0.12] text-blue-400" : "text-foreground hover:bg-white/5",
                   )}
                 >
                   {t.nodeLabel[item.type] ?? item.label}

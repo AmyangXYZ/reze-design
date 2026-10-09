@@ -379,7 +379,7 @@ export function HexField({
       value={text}
       spellCheck={false}
       className={cn(
-        "h-7 w-28 rounded-md border border-white/10 bg-black/30 px-2 font-mono text-xs outline-none focus:border-blue-400/50",
+        "h-7 w-28 rounded-md border border-line-strong bg-black/30 px-2 font-mono text-xs outline-none focus:border-blue-400/50",
         className,
       )}
       onFocus={() => setFocused(true)}
@@ -483,7 +483,7 @@ export function ColorPickerDialog({
         <DialogContent
           // Don't autofocus the first swatch on open
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="gap-3 rounded-xl border-white/10 bg-zinc-950 sm:max-w-2xl"
+          className="gap-3 rounded-surface border-line-strong bg-zinc-950 sm:max-w-2xl"
         >
           <Tabs
             value={tab}
@@ -567,7 +567,7 @@ export function ColorPickerDialog({
           </div>
           </Tabs>
 
-          <div className="flex items-center gap-2 border-t border-white/10 pt-3">
+          <div className="flex items-center gap-2 border-t border-line pt-3">
             <span className="text-xs text-muted-foreground">{tc.customHex}</span>
             <HexField value={value} onChange={onChange} />
             {/* Right side previews the hovered swatch (name + hex + chip) */}

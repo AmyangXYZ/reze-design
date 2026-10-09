@@ -225,7 +225,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
         onMouseEnter={() => onHover(m.name)}
         onMouseLeave={() => onHover(null)}
       >
-        <Circle className="size-1.5 shrink-0 fill-current text-muted-foreground/60" />
+        <Circle className="size-1.5 shrink-0 fill-current text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground group-hover/row:text-foreground">{m.name}</span>
         <button
           className={cn("shrink-0 text-muted-foreground hover:text-foreground", m.visible && "opacity-0 group-hover/row:opacity-100")}
@@ -258,7 +258,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                 "max-w-full truncate rounded-md border px-2 py-0.5 text-[11px] transition-colors",
                 m.active
                   ? "border-blue-400/40 bg-blue-400/10 text-foreground"
-                  : "border-white/10 text-muted-foreground hover:bg-white/5 hover:text-foreground",
+                  : "border-line-strong text-muted-foreground hover:bg-white/5 hover:text-foreground",
               )}
               title={m.file}
             >
@@ -353,7 +353,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                         <Input
                           ref={renameRef}
                           defaultValue={shownLabel(g)}
-                          className="h-5 min-w-0 flex-1 border-white/10 bg-white/5 px-1 text-xs font-medium md:text-xs"
+                          className="h-5 min-w-0 flex-1 border-line-strong bg-white/5 px-1 text-xs font-medium md:text-xs"
                           onClick={(e) => e.stopPropagation()}
                           onBlur={(e) => {
                             // Left as shown, a translated default keeps its stored English.
@@ -409,7 +409,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                       return m ? materialRow(m, g.id, name + "#" + i) : null
                     })}
                     {g.materials.length === 0 && (
-                      <div className="px-2 py-1 pl-3 text-xs text-muted-foreground/60 italic">{t.materials.dragHere}</div>
+                      <div className="px-2 py-1 pl-3 text-xs text-muted-foreground italic">{t.materials.dragHere}</div>
                     )}
                   </div>
                 )}

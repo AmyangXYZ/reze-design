@@ -120,7 +120,7 @@ export function PublishButton({
         onOpenAutoFocus={(e) => e.preventDefault()}
         onCloseAutoFocus={(e) => e.preventDefault()}
         aria-describedby={undefined}
-        className="w-[26rem] border-white/10 bg-zinc-950/95 p-5 sm:max-w-[26rem]"
+        className="w-[26rem] border-line-strong bg-zinc-950/95 p-5 sm:max-w-[26rem]"
       >
         <DialogTitle className="text-sm font-medium">{t.library.publishPreset}</DialogTitle>
         <form
@@ -141,7 +141,7 @@ export function PublishButton({
               onChange={(e) => setName(e.target.value)}
               maxLength={60}
               className={cn(
-                "mt-1 h-9 border-white/10 bg-white/5 text-sm md:text-sm",
+                "mt-1 h-9 border-line-strong bg-white/5 text-sm md:text-sm",
                 clash && "border-red-400/60",
               )}
             />
@@ -155,7 +155,7 @@ export function PublishButton({
               maxLength={500}
               rows={3}
               placeholder={t.library.publishDescriptionHint}
-              className="mt-1 w-full resize-none rounded-md border border-white/10 bg-white/5 px-2.5 py-2 text-sm outline-none placeholder:text-muted-foreground/50 focus:border-blue-400/50"
+              className="mt-1 w-full resize-none rounded-md border border-line-strong bg-white/5 px-2.5 py-2 text-sm outline-none placeholder:text-muted-foreground focus:border-blue-400/50"
             />
           </label>
           <label className="block">

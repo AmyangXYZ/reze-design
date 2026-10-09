@@ -162,7 +162,7 @@ const parseClock = (text: string): number | null => {
 }
 
 const rangeInputCls =
-  "h-6 w-14 rounded-md border border-white/10 bg-white/5 px-1 text-center text-xs tabular-nums outline-none transition-colors hover:bg-white/10 focus:border-blue-400/50 placeholder:text-muted-foreground/50 disabled:opacity-50"
+  "h-6 w-14 rounded-md border border-line-strong bg-white/5 px-1 text-center text-xs tabular-nums outline-none transition-colors hover:bg-white/10 focus:border-blue-400/50 placeholder:text-muted-foreground disabled:opacity-50"
 
 /** The part of FileSystemFileHandle this panel uses. */
 type SaveHandle = {
@@ -725,7 +725,7 @@ export const RenderPanel = memo(function RenderPanel({
                 disabled={exporting}
                 className={rangeInputCls}
               />
-              <span className="text-xs text-muted-foreground/60">–</span>
+              <span className="text-xs text-muted-foreground">–</span>
               <input
                 value={rangeEnd}
                 onChange={(e) => setRangeEnd(e.target.value)}

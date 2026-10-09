@@ -58,7 +58,7 @@ export function GradeEditorPanel({
       minW={520}
       minH={330}
       // z-50 like the other editors: above the docks and the non-modal library.
-      className="overflow-hidden rounded-xl border border-white/10 bg-zinc-950/95 shadow-float"
+      className="overflow-hidden rounded-surface border border-line-strong bg-zinc-950/95 shadow-float"
     >
       <EditorBody key={sessionId} subject={subject} origin={origin} onChange={onChange} onClose={onClose} />
     </FloatingPanel>
@@ -188,7 +188,7 @@ function EditorBody({
             ))}
           </div>
 
-          <div className="mt-4 border-t border-white/10 pt-3">
+          <div className="mt-4 border-t border-line pt-3">
             <SliderRow
               label={t.scene.contrast}
               value={spec.contrast}
@@ -210,8 +210,8 @@ function EditorBody({
           </div>
         </div>
         {/* Preview column, on the RIGHT */}
-        <div className="flex min-w-0 flex-[0_0_42%] flex-col border-l border-white/10 p-3">
-          <div className="min-h-0 flex-1 overflow-hidden rounded-md border border-white/10 bg-zinc-900">
+        <div className="flex min-w-0 flex-[0_0_42%] flex-col border-l border-line p-3">
+          <div className="min-h-0 flex-1 overflow-hidden rounded-md border border-line-strong bg-zinc-900">
             <GradePreview spec={spec} />
           </div>
         </div>

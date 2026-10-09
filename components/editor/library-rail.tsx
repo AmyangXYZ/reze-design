@@ -48,7 +48,7 @@ export const LIBRARY_SHELL =
   // instead. `top` positions the dialog's CENTRE (it is translated -50%), so
   // 48.5 - 87/2 leaves 5dvh above and 8dvh below — the same clearance the
   // transport had at 84dvh centred, which is the number that was tuned for it.
-  "flex h-[87dvh] max-h-[87dvh] top-[48.5dvh] w-[90vw] max-w-5xl flex-col gap-0 overflow-hidden border-white/10 bg-zinc-950/95 p-0 sm:max-w-5xl " +
+  "flex h-[87dvh] max-h-[87dvh] top-[48.5dvh] w-[90vw] max-w-5xl flex-col gap-0 overflow-hidden border-line-strong bg-zinc-950/95 p-0 sm:max-w-5xl " +
   "data-[state=closed]:animate-none data-[state=closed]:fade-out-100 data-[state=closed]:zoom-out-100 " +
   "data-[state=open]:animate-none data-[state=open]:fade-in-100 data-[state=open]:zoom-in-100"
 
@@ -114,7 +114,7 @@ export function tagHue(tag: string): string {
 
 export function RailSection({ title, className, children }: { title: string; className?: string; children: ReactNode }) {
   return (
-    <div className={cn("flex min-h-0 flex-col first:border-t-0 first:pt-0 [&+&]:mt-2 [&+&]:border-t [&+&]:border-white/10 [&+&]:pt-2", className)}>
+    <div className={cn("flex min-h-0 flex-col first:border-t-0 first:pt-0 [&+&]:mt-2 [&+&]:border-t [&+&]:border-line [&+&]:pt-2", className)}>
       <div className="px-2 py-1.5 text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
         {title}
       </div>
@@ -149,7 +149,7 @@ export function RailRow({
       {leading}
       <span className="min-w-0 flex-1 truncate text-left">{label}</span>
       {count !== undefined && (
-        <span className={cn("font-mono text-[11px]", active ? "text-blue-400/80" : "text-muted-foreground/60")}>
+        <span className={cn("font-mono text-[11px]", active ? "text-blue-400" : "text-muted-foreground")}>
           {count}
         </span>
       )}

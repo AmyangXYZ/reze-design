@@ -403,7 +403,7 @@ function ShareSceneForm({
       onEscapeKeyDown={(e) => busy && e.preventDefault()}
       onInteractOutside={(e) => busy && e.preventDefault()}
       aria-describedby={undefined}
-      className="grid w-[34rem] gap-0 border-white/10 bg-zinc-950/95 p-5 sm:max-w-[34rem]"
+      className="grid w-[34rem] gap-0 border-line-strong bg-zinc-950/95 p-5 sm:max-w-[34rem]"
     >
         <DialogTitle className="flex items-center gap-2 text-sm font-medium">
           <Globe className="size-4 text-blue-400" />
@@ -446,7 +446,7 @@ function ShareSceneForm({
         {step === "done" && shareUrl ? (
           <div className="mt-1 min-w-0 space-y-3">
             <div className="flex min-w-0 items-center gap-2">
-              <div className="min-w-0 flex-1 truncate rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 font-mono text-xs">
+              <div className="min-w-0 flex-1 truncate rounded-lg border border-line-strong bg-white/5 px-2.5 py-1.5 font-mono text-xs">
                 {shareUrl}
               </div>
               <Button
@@ -467,7 +467,7 @@ function ShareSceneForm({
               asChild
               size="sm"
               variant="ghost"
-              className="h-8 w-full border border-white/10 text-xs font-medium hover:bg-white/5"
+              className="h-8 w-full border border-line-strong text-xs font-medium hover:bg-white/5"
             >
               {/* This tab, client-side. The scene is published — the editor has
                   nothing left to lose — and a second tab would mean a second live
@@ -510,7 +510,7 @@ function ShareSceneForm({
                     value={sceneName}
                     onChange={(e) => onRename(e.target.value)}
                     maxLength={60}
-                    className="mt-0.5 h-8 border-white/10 bg-white/5 text-xs md:text-xs"
+                    className="mt-0.5 h-8 border-line-strong bg-white/5 text-xs md:text-xs"
                   />
                 </label>
                 <label className="flex min-h-0 flex-1 flex-col">
@@ -520,7 +520,7 @@ function ShareSceneForm({
                     onChange={(e) => setDescription(e.target.value)}
                     maxLength={500}
                     placeholder={t.library.publishDescriptionHint}
-                    className="mt-0.5 min-h-0 flex-1 resize-none rounded-md border border-white/10 bg-white/5 px-2.5 py-2 text-xs leading-relaxed outline-none placeholder:text-muted-foreground/50 focus:border-blue-400/50"
+                    className="mt-0.5 min-h-0 flex-1 resize-none rounded-md border border-line-strong bg-white/5 px-2.5 py-2 text-xs leading-relaxed outline-none placeholder:text-muted-foreground focus:border-blue-400/50"
                   />
                 </label>
               </div>
@@ -555,7 +555,7 @@ function ShareSceneForm({
                 <button
                   type="button"
                   onClick={() => posterInputRef.current?.click()}
-                  className="mt-0.5 block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-md border border-white/10 bg-white/5 transition-colors hover:border-white/25"
+                  className="mt-0.5 block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-md border border-line-strong bg-white/5 transition-colors hover:border-white/25"
                 >
                   {(posterUrl ?? updatesPoster) ? (
                     // Any shape is fine: the card crops to fill, so authors aren't
@@ -566,7 +566,7 @@ function ShareSceneForm({
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={posterUrl ?? updatesPoster!} alt="" className="h-full w-full object-cover" />
                   ) : (
-                    <span className="flex h-full flex-col items-center justify-center gap-1 text-muted-foreground/60">
+                    <span className="flex h-full flex-col items-center justify-center gap-1 text-muted-foreground">
                       <ImagePlus className="size-4" />
                       <span className="text-[11px]">{t.share.thumbnailPick}</span>
                     </span>
@@ -594,7 +594,7 @@ function ShareSceneForm({
                 maxLength={4000}
                 rows={4}
                 placeholder={t.share.creditsHint}
-                className="mt-1 w-full resize-none rounded-md border border-white/10 bg-white/5 px-2.5 py-2 text-xs leading-relaxed outline-none placeholder:text-muted-foreground/50 focus:border-blue-400/50"
+                className="mt-1 w-full resize-none rounded-md border border-line-strong bg-white/5 px-2.5 py-2 text-xs leading-relaxed outline-none placeholder:text-muted-foreground focus:border-blue-400/50"
               />
             </label>
             {/* Its own row, apart from the tags: tags are how a scene is found,

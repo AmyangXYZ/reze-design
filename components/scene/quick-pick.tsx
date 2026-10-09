@@ -122,7 +122,7 @@ export function QuickPick({
         // list running the full window. The fallback in the var() matters — the
         // variable is only set when collision detection runs, and without it the
         // whole max-height declaration would be dropped as invalid.
-        className="flex max-h-[min(28rem,var(--radix-popover-content-available-height,28rem))] w-44 flex-col rounded-xl border-white/10 bg-zinc-950/95 p-1 shadow-float backdrop-blur-xs"
+        className="flex max-h-[min(28rem,var(--radix-popover-content-available-height,28rem))] w-44 flex-col rounded-surface border-line-strong bg-zinc-950/95 p-1 shadow-float backdrop-blur-xs"
         // Returning focus to the trigger draws a stuck ring on the value text, and
         // grabbing it on open leaves the first row ringed and flashing on close.
         onCloseAutoFocus={(e) => e.preventDefault()}
@@ -175,7 +175,7 @@ export function QuickPick({
             <ScrollArea bars className="max-h-[3.5rem]">{local.map(row)}</ScrollArea>
           </div>
         )}
-        <div className={cn("flex min-h-0 flex-col", local.length > 0 && "mt-1 border-t border-white/10 pt-1")}>
+        <div className={cn("flex min-h-0 flex-col", local.length > 0 && "mt-1 border-t border-line pt-1")}>
           <ScrollArea bars className="max-h-[14rem]">
             {published.length ? (
               published.map(row)
@@ -186,7 +186,7 @@ export function QuickPick({
         </div>
 
         {(onEdit || onBrowse) && (
-        <div className="mt-1 shrink-0 border-t border-white/10 pt-1">
+        <div className="mt-1 shrink-0 border-t border-line pt-1">
           {onEdit && (
             <button
               onClick={() => {

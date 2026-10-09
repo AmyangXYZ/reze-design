@@ -315,7 +315,7 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
         onFocusCapture={onFocusCapture}
         className={LIBRARY_SHELL}
     >
-      <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-white/10 bg-zinc-950 px-4 py-2 text-left">
+      <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-line bg-zinc-950 px-4 py-2 text-left">
         <DialogTitle className="flex shrink-0 items-center gap-2 text-[13px] font-medium">
           <Workflow className="size-4 text-blue-400" />
           {t.library.title}
@@ -357,7 +357,7 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
         </div>
 
         {/* ── Inspector: preview (= fork-&-edit) · meta · Apply pinned ── */}
-        <div className="flex w-[15rem] shrink-0 flex-col overflow-y-auto border-l border-white/10 sm:w-[17rem]">
+        <div className="flex w-[15rem] shrink-0 flex-col overflow-y-auto border-l border-line sm:w-[17rem]">
           {selected ? (
             <>
               <div className="p-3 pb-0">
@@ -365,7 +365,7 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
                 <button
                   type="button"
                   onClick={() => onEdit(selected.id, selected.name, selected.payload.graph)}
-                  className="group/prev relative block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-md border border-white/10 bg-zinc-900/60 text-zinc-200"
+                  className="group/prev relative block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-md border border-line-strong bg-zinc-900/60 text-zinc-200"
                 >
                   <GraphMinimap graph={selected.payload.graph} className="h-full w-full p-2" />
                   <div className="absolute inset-0 flex items-center justify-center gap-1.5 bg-zinc-950/70 text-xs font-medium text-foreground opacity-0 transition-opacity group-hover/prev:opacity-100">
@@ -395,7 +395,7 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
                   onToggle={() => void toggleLike(selected.id)}
                 />
               </div>
-              <div className="mt-auto shrink-0 space-y-1.5 border-t border-white/10 p-3">
+              <div className="mt-auto shrink-0 space-y-1.5 border-t border-line p-3">
                 {selected.owner === "local" && (
                   <PublishButton
                     kind="graph"

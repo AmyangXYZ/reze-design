@@ -144,7 +144,7 @@ export function Profile({
       {/* The editor's brand pill at the editor's own origin, top-3/left-3, so the
           mark sits on the same pixels on every page it appears on. */}
       <div className="px-3 pt-3">
-        <Link href="/" className="group flex h-10 w-fit items-center gap-1.5 rounded-xl border border-transparent pr-1.5 pl-2">
+        <Link href="/" className="group flex h-10 w-fit items-center gap-1.5 rounded-surface border border-transparent pr-1.5 pl-2">
           <span className="flex size-7 items-center justify-center text-pink-400" aria-hidden>
             <WandSparkles className="size-4.5" />
           </span>

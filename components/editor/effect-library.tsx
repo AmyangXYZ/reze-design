@@ -298,7 +298,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
         onFocusCapture={onFocusCapture}
         className={LIBRARY_SHELL}
       >
-        <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-white/10 bg-zinc-950 px-4 py-2 text-left">
+        <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-line bg-zinc-950 px-4 py-2 text-left">
           <DialogTitle className="flex shrink-0 items-center gap-2 text-[13px] font-medium">
             <Sparkles className="size-4 text-blue-400" />
             {t.effectLibrary.title}
@@ -345,7 +345,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
           </div>
 
           {/* Inspector: preview · meta · params · Apply (pinned, but the column scrolls */}
-          <div className="flex w-[15rem] shrink-0 flex-col overflow-y-auto border-l border-white/10 sm:w-[17rem]">
+          <div className="flex w-[15rem] shrink-0 flex-col overflow-y-auto border-l border-line sm:w-[17rem]">
             {selected && draft ? (
               <>
                 <div className="p-3 pb-0">
@@ -354,7 +354,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                     type="button"
                     disabled={!onEdit}
                     onClick={() => onEdit?.(draft)}
-                    className="group/prev relative block aspect-[16/10] w-full overflow-hidden rounded-md border border-white/10"
+                    className="group/prev relative block aspect-[16/10] w-full overflow-hidden rounded-md border border-line-strong"
                   >
                     {/* The draft's code, not the def's — a forked/edited effect previews as forked. */}
                     <EffectPreview wgsl={draft.wgsl} />
@@ -385,7 +385,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                 </div>
 
                 {/* Pinned action: red destructive Remove when applied (the counterpart of the blue Apply) */}
-                <div className="mt-auto shrink-0 space-y-1.5 border-t border-white/10 p-3">
+                <div className="mt-auto shrink-0 space-y-1.5 border-t border-line p-3">
                 {selected.owner === "local" && (
                   <PublishButton
                     kind="effect"
@@ -412,7 +412,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                       size="sm"
                       variant="outline"
                       onClick={() => selected && onRemove(selected.id)}
-                      className="h-8 w-full border-white/10 bg-white/5 text-xs font-medium hover:bg-white/10"
+                      className="h-8 w-full border-line-strong bg-white/5 text-xs font-medium hover:bg-white/10"
                     >
                       <X className="size-3.5" />
                       {t.effectLibrary.remove}
