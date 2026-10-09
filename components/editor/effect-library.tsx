@@ -32,6 +32,7 @@ import {
   type CardMeta,
   AuthorAvatar,
   VisibilityMenu,
+  useMakePublic,
   publishedOn,
   AuthorLink,
   itemState,
@@ -149,6 +150,8 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   // Which row a delete is being confirmed for. A draft and a published row ask
   // different questions — one is local, the other is other people's scenes — so
   // the kind travels with the id rather than being re-derived when it opens.
+  // Private → public is permanent, so it asks first (useMakePublic).
+  const makePublic = useMakePublic()
   const [confirming, setConfirming] = useState<{ id: string; draft: boolean } | null>(null)
   const commitRename = (item: EffectItem, raw: string) => {
     const wanted = normalizeName(raw)
@@ -206,7 +209,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
           autoFocus
           defaultValue={e.name}
           className={cn(
-            "h-5 min-w-0 flex-1 border-line-strong bg-white/5 px-1 text-[13px] md:text-[13px]",
+            "h-5 min-w-0 flex-1 border-line-strong bg-white/5 px-1 text-xs md:text-xs",
             renameError && "border-red-400/60",
           )}
           onClick={(ev) => ev.stopPropagation()}
@@ -256,15 +259,17 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
           {!isDraft && mine && (
             <VisibilityMenu
               current={e.visibility ?? "public"}
-              onChange={(next) => {
-                void fetch(`/api/library/${e.id}`, {
-                  method: "PATCH",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ visibility: next }),
-                }).then(async (res) => {
-                  if (await report(Promise.resolve(res), t.library.madePublic)) setCommunityVisibility(e.id, next)
+              onMakePublic={() =>
+                makePublic.ask(() => {
+                  void fetch(`/api/library/${e.id}`, {
+                    method: "PATCH",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ visibility: "public" }),
+                  }).then(async (res) => {
+                    if (await report(Promise.resolve(res), t.library.madePublic)) setCommunityVisibility(e.id, "public")
+                  })
                 })
-              }}
+              }
             />
           )}
           {!isDraft && mine && (
@@ -298,8 +303,8 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
         onFocusCapture={onFocusCapture}
         className={LIBRARY_SHELL}
       >
-        <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-white/10 bg-zinc-950 px-4 py-2 text-left">
-          <DialogTitle className="flex shrink-0 items-center gap-2 text-[13px] font-medium">
+        <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-line bg-surface-raised px-4 py-2 text-left">
+          <DialogTitle className="flex shrink-0 items-center gap-2 text-sm font-medium">
             <Sparkles className="size-4 text-blue-400" />
             {t.effectLibrary.title}
           </DialogTitle>
@@ -307,15 +312,15 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
           {/* Creation lives in the header. Just "New": the dialog's own title
               already says what kind of thing this makes. */}
           {onEdit && (
-            <button
+            <Button variant="bare"
               onClick={startNew}
-              className="flex h-6 shrink-0 items-center gap-1 rounded-chip border border-line-strong bg-white/5 px-2 text-[11px] font-medium transition-colors hover:bg-white/10"
+              className="flex h-6 shrink-0 items-center gap-1 rounded-chip border border-line-strong bg-white/5 px-2 text-2xs font-medium transition-colors hover:bg-white/10"
             >
               <Plus className="size-3" />
               {t.library.new}
-            </button>
+            </Button>
           )}
-          <DialogClose className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
+          <DialogClose className="flex size-6 shrink-0 items-center justify-center rounded-chip text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
             <X className="size-3.5" />
             <span className="sr-only">{t.library.close}</span>
           </DialogClose>
@@ -345,34 +350,34 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
           </div>
 
           {/* Inspector: preview · meta · params · Apply (pinned, but the column scrolls */}
-          <div className="flex w-[15rem] shrink-0 flex-col overflow-y-auto border-l border-white/10 sm:w-[17rem]">
+          <div className="flex w-[15rem] shrink-0 flex-col overflow-y-auto border-l border-line sm:w-[17rem]">
             {selected && draft ? (
               <>
                 <div className="p-3 pb-0">
                   {/* The preview IS the edit affordance, exactly like the graph library */}
-                  <button
+                  <Button variant="bare"
                     type="button"
                     disabled={!onEdit}
                     onClick={() => onEdit?.(draft)}
-                    className="group/prev relative block aspect-[16/10] w-full overflow-hidden rounded-md border border-white/10"
+                    className="group/prev relative block aspect-[16/10] w-full overflow-hidden rounded-chip border border-line-strong"
                   >
                     {/* The draft's code, not the def's — a forked/edited effect previews as forked. */}
                     <EffectPreview wgsl={draft.wgsl} />
-                    <div className="absolute inset-0 flex items-center justify-center gap-1.5 bg-zinc-950/70 text-xs font-medium text-foreground opacity-0 transition-opacity group-hover/prev:opacity-100">
+                    <div className="absolute inset-0 flex items-center justify-center gap-1.5 bg-surface text-xs font-medium text-foreground opacity-0 transition-opacity group-hover/prev:opacity-100">
                       <SquarePen className="size-4" />
                       {t.effectLibrary.editShader}
                     </div>
-                  </button>
+                  </Button>
                 </div>
                 <div className="min-h-0 p-3">
                   <div className="truncate text-sm font-semibold select-text">{displayName(selected)}</div>
-                  <div className="mt-1 flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+                  <div className="mt-1 flex items-center gap-1.5 font-mono text-2xs text-muted-foreground">
                     <AuthorAvatar name={builtinAuthor(selected.id, selected.author)} className="size-3.5" />
                     <AuthorLink name={builtinAuthor(selected.id, selected.author)} draft={itemState(selected) === "draft"} className="truncate select-text" />
                     {/* When it went public, the same fact the gallery's panel shows. */}
                     {publishedOn(selected.createdAt) && <span className="shrink-0">· {publishedOn(selected.createdAt)}</span>}
                   </div>
-                  <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground select-text">{builtinDescription("effect", selected, locale)}</p>
+                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground select-text">{builtinDescription("effect", selected, locale)}</p>
                   <LibraryTags tags={selected.tags} />
                   <LibraryItemStats
                     likeCount={statFor(selected.id).likeCount}
@@ -385,7 +390,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                 </div>
 
                 {/* Pinned action: red destructive Remove when applied (the counterpart of the blue Apply) */}
-                <div className="mt-auto shrink-0 space-y-1.5 border-t border-white/10 p-3">
+                <div className="mt-auto shrink-0 space-y-1.5 border-t border-line p-3">
                 {selected.owner === "local" && (
                   <PublishButton
                     kind="effect"
@@ -412,7 +417,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                       size="sm"
                       variant="outline"
                       onClick={() => selected && onRemove(selected.id)}
-                      className="h-8 w-full border-white/10 bg-white/5 text-xs font-medium hover:bg-white/10"
+                      className="h-8 w-full border-line-strong bg-white/5 text-xs font-medium hover:bg-white/10"
                     >
                       <X className="size-3.5" />
                       {t.effectLibrary.remove}
@@ -424,7 +429,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                         onApply(draft)
                         onOpenChange(false) // show the scene — it IS the result
                       }}
-                      className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-300"
+                      className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-400/90"
                     >
                       <Check className="size-3.5" />
                       {t.effectLibrary.apply}
@@ -439,6 +444,8 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
             )}
           </div>
         </div>
+
+        {makePublic.dialog}
 
         <ConfirmDialog
           open={confirming !== null}

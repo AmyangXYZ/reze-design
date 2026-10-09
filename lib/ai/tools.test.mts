@@ -13,6 +13,7 @@ import { runSceneTool, type SceneToolHandles } from "./scene-tools"
 import { checkSettingsPatch, describeSettings } from "./settings-schema"
 import { frameShot, type Figure } from "./framing"
 import { EFFECTS } from "@/lib/effects"
+import { sameGradeLook } from "@/lib/grade"
 import type { SceneLight } from "@/lib/scene"
 import type { AppliedEffect } from "@/lib/effects"
 import type { VisibilityWindow } from "@/lib/timeline"
@@ -138,6 +139,7 @@ function fake(over: Partial<SceneToolHandles> = {}) {
     },
     graphSource: (name) => (name.toLowerCase() === "real" ? (REAL_GRAPH as never) : null),
     saveGraphDraft: (name, graph) => (calls.push({ fn: "saveGraphDraft", args: [name, graph] }), name),
+    saveGradeDraft: (spec, name) => (calls.push({ fn: "saveGradeDraft", args: [spec, name] }), name ?? "AI Grade"),
     ...over,
   }
   return { h, calls, state }
@@ -206,10 +208,18 @@ await test("set_grade builds a custom spec over the current grade, clamped", asy
   const { h, calls } = fake()
   await runSceneTool("set_grade", { shadows: { hue: 570, amount: 3 }, contrast: 9 }, h)
   const [, part] = call(calls, "patchSettings")[0].args as [string, { preset: string; spec: { shadows: number[]; contrast: number } }]
-  assert.equal(part.preset, "Custom")
+  assert.equal(part.preset, "AI Grade", "worn under the draft it was saved as")
+  assert.deepEqual(call(calls, "saveGradeDraft")[0].args[0], part.spec, "the draft holds what is worn")
   assert.equal(part.spec.shadows[0], 210, "hue wraps into 0–360")
   assert.equal(part.spec.shadows[1], 1, "amount clamps to 1")
   assert.equal(part.spec.contrast, 1.6)
+})
+
+await test("a grade matches its published copy whatever order jsonb gives its keys", async () => {
+  const ai = { shadows: [210, 0.18, 0.5] as const, midtones: [0, 0] as const, highlights: [35, 0.18] as const, contrast: 1.05, saturation: 1.05 }
+  const fromDb = JSON.parse('{"shadows":[210,0.18],"contrast":1.05,"midtones":[0,0,0.5],"highlights":[35,0.18],"saturation":1.05}')
+  assert.ok(sameGradeLook(ai, fromDb), "reordered keys and a defaulted lightness are the same grade")
+  assert.ok(!sameGradeLook(ai, { ...fromDb, contrast: 1.1 }), "a real difference still differs")
 })
 
 // ── camera ─────────────────────────────────────────────────────────────────
@@ -444,6 +454,26 @@ await test("tuning a shader writes the node input and nothing else", async () =>
   assert.equal(graph.nodes.find((n) => n.id === "toon")!.inputs!.pos0, 0.4)
   assert.equal(graph.nodes.find((n) => n.id === "toon")!.inputs!.pos1, 0.35)
   assert.equal(BODY_GRAPH.nodes[1].inputs!.pos0, 0.25, "the original graph is not mutated")
+})
+
+await test("a tuned shader is saved as a draft and worn under its name", async () => {
+  const drafts: { fn: string; args: unknown[] }[] = []
+  // A built-in's name is taken, so the draft comes back suffixed.
+  const { h, calls } = fake({ saveGraphDraft: (name, graph) => (drafts.push({ fn: "saveGraphDraft", args: [name, graph] }), `${name} 2`) })
+  const r = await runSceneTool("set_shader_inputs", { group: "Body", changes: [{ node: "toon", socket: "pos0", value: 0.4 }] }, h)
+  assert.equal((r.data as { saved?: string }).saved, "AG Body 2")
+  const [wanted, saved] = call(drafts, "saveGraphDraft")[0].args as [string, typeof BODY_GRAPH]
+  assert.equal(wanted, "AG Body", "asks for the name it wore, so a draft of that name updates in place")
+  assert.equal(saved.nodes.find((n) => n.id === "toon")!.inputs!.pos0, 0.4)
+  const [, , worn] = call(calls, "setGroupGraph")[0].args as [string, string, typeof BODY_GRAPH]
+  assert.equal(worn.name, "AG Body 2", "the group and the library agree on the name")
+})
+
+await test("a shader tune that changes nothing saves no draft", async () => {
+  const { h, calls } = fake()
+  await runSceneTool("set_shader_inputs", { group: "Body", changes: [{ node: "toon", socket: "pos0", value: 0.25 }] }, h)
+  assert.equal(call(calls, "saveGraphDraft").length, 0)
+  assert.equal(call(calls, "setGroupGraph").length, 1)
 })
 
 await test("a shader change of the wrong shape or to a wired socket is refused", async () => {

@@ -49,7 +49,7 @@ export function CastSwatch({
           edge instead of being framed by it. The single brighter pixel along
           the top edge is the one machined detail — an edge catching light,
           which is as far as the shine goes. */}
-      <span className="absolute inset-0 rounded-interior shadow-[inset_0_1px_0_rgb(255_255_255/0.28)] ring-1 ring-white/15 ring-inset" />
+      <span className="absolute inset-0 rounded-interior shadow-[inset_0_1px_0_rgb(255_255_255/0.28)] ring-1 ring-line-strong ring-inset" />
     </span>
   )
 }

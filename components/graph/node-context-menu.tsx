@@ -2,6 +2,7 @@
 
 // Right-click-a-node actions menu (Blender's node context menu).
 
+import { Button } from "@/components/ui/button"
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { Check } from "lucide-react"
@@ -65,14 +66,14 @@ export function NodeContextMenu({
     <div
       ref={ref}
       style={{ left: pos.left, top: pos.top, opacity: pos.ready ? 1 : 0 }}
-      className="fixed z-50 w-44 rounded-xl border border-white/10 bg-zinc-950/90 p-1 shadow-float backdrop-blur-xs"
+      className="fixed z-50 w-44 rounded-surface border border-line-strong bg-surface-raised p-1 shadow-float backdrop-blur-xs"
       onContextMenu={(e) => e.preventDefault()}
     >
       {actions.map((a, i) =>
         a === "separator" ? (
           <div key={`sep-${i}`} className="my-1 h-px bg-white/10" />
         ) : (
-          <button
+          <Button variant="bare"
             key={a.label}
             disabled={a.disabled}
             onClick={() => {
@@ -80,18 +81,18 @@ export function NodeContextMenu({
               onClose()
             }}
             className={cn(
-              "flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors",
+              "flex w-full items-center gap-2 rounded-chip px-2 py-1 text-left text-xs transition-colors",
               a.disabled
-                ? "cursor-default text-muted-foreground/40"
+                ? "cursor-default text-muted-foreground"
                 : a.danger
                   ? "text-red-400 hover:bg-red-400/10"
-                  : "text-foreground/90 hover:bg-white/5",
+                  : "text-foreground hover:bg-white/5",
             )}
           >
             {a.checked ? <Check className="size-3 shrink-0 text-blue-400" /> : <span className="size-3 shrink-0" />}
             <span className="flex-1">{a.label}</span>
-            {a.shortcut && <span className="text-[10px] text-muted-foreground/50">{a.shortcut}</span>}
-          </button>
+            {a.shortcut && <span className="text-2xs text-muted-foreground">{a.shortcut}</span>}
+          </Button>
         ),
       )}
     </div>,

@@ -21,6 +21,7 @@ import {
   type CardMeta,
   AuthorAvatar,
   VisibilityMenu,
+  useMakePublic,
   publishedOn,
   AuthorLink,
   itemState,
@@ -154,6 +155,8 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
   const report = useReport()
   /** Which row a delete is being confirmed for, and whether it is a local
    *  draft or a published row — the two ask different questions. */
+  // Private → public is permanent, so it asks first (useMakePublic).
+  const makePublic = useMakePublic()
   const [confirming, setConfirming] = useState<{ id: string; draft: boolean } | null>(null)
   const commitRename = (item: GraphItem, raw: string) => {
     const wanted = normalizeName(raw)
@@ -217,7 +220,7 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
           autoFocus
           defaultValue={r.name}
           className={cn(
-            "h-5 min-w-0 flex-1 border-line-strong bg-white/5 px-1 text-[13px] md:text-[13px]",
+            "h-5 min-w-0 flex-1 border-line-strong bg-white/5 px-1 text-xs md:text-xs",
             renameError && "border-red-400/60",
           )}
           onClick={(ev) => ev.stopPropagation()}
@@ -273,15 +276,17 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
           {!isDraft && mine && (
             <VisibilityMenu
               current={r.visibility ?? "public"}
-              onChange={(next) => {
-                void fetch(`/api/library/${r.id}`, {
-                  method: "PATCH",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ visibility: next }),
-                }).then(async (res) => {
-                  if (await report(Promise.resolve(res), t.library.madePublic)) setCommunityVisibility(r.id, next)
+              onMakePublic={() =>
+                makePublic.ask(() => {
+                  void fetch(`/api/library/${r.id}`, {
+                    method: "PATCH",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ visibility: "public" }),
+                  }).then(async (res) => {
+                    if (await report(Promise.resolve(res), t.library.madePublic)) setCommunityVisibility(r.id, "public")
+                  })
                 })
-              }}
+              }
             />
           )}
           {!isDraft && mine && (
@@ -315,21 +320,21 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
         onFocusCapture={onFocusCapture}
         className={LIBRARY_SHELL}
     >
-      <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-white/10 bg-zinc-950 px-4 py-2 text-left">
-        <DialogTitle className="flex shrink-0 items-center gap-2 text-[13px] font-medium">
+      <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-line bg-surface-raised px-4 py-2 text-left">
+        <DialogTitle className="flex shrink-0 items-center gap-2 text-sm font-medium">
           <Workflow className="size-4 text-blue-400" />
           {t.library.title}
         </DialogTitle>
         <LibraryToolbar browse={browse} usedLabel={t.rail.used} />
         {/* Creation lives in the header. Just "New": the title says the kind. */}
-        <button
+        <Button variant="bare"
           onClick={() => onEdit("", t.library.newGraph, structuredClone(DEFAULT_GRAPH))}
-          className="flex h-6 shrink-0 items-center gap-1 rounded-chip border border-line-strong bg-white/5 px-2 text-[11px] font-medium transition-colors hover:bg-white/10"
+          className="flex h-6 shrink-0 items-center gap-1 rounded-chip border border-line-strong bg-white/5 px-2 text-2xs font-medium transition-colors hover:bg-white/10"
         >
           <Plus className="size-3" />
           {t.library.new}
-        </button>
-        <DialogClose className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
+        </Button>
+        <DialogClose className="flex size-6 shrink-0 items-center justify-center rounded-chip text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
           <X className="size-3.5" />
           <span className="sr-only">{t.library.close}</span>
         </DialogClose>
@@ -357,33 +362,33 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
         </div>
 
         {/* ── Inspector: preview (= fork-&-edit) · meta · Apply pinned ── */}
-        <div className="flex w-[15rem] shrink-0 flex-col overflow-y-auto border-l border-white/10 sm:w-[17rem]">
+        <div className="flex w-[15rem] shrink-0 flex-col overflow-y-auto border-l border-line sm:w-[17rem]">
           {selected ? (
             <>
               <div className="p-3 pb-0">
                 {/* The preview IS the edit affordance */}
-                <button
+                <Button variant="bare"
                   type="button"
                   onClick={() => onEdit(selected.id, selected.name, selected.payload.graph)}
-                  className="group/prev relative block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-md border border-white/10 bg-zinc-900/60 text-zinc-200"
+                  className="group/prev relative block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-chip border border-line-strong bg-white/5 text-foreground"
                 >
                   <GraphMinimap graph={selected.payload.graph} className="h-full w-full p-2" />
-                  <div className="absolute inset-0 flex items-center justify-center gap-1.5 bg-zinc-950/70 text-xs font-medium text-foreground opacity-0 transition-opacity group-hover/prev:opacity-100">
+                  <div className="absolute inset-0 flex items-center justify-center gap-1.5 bg-surface text-xs font-medium text-foreground opacity-0 transition-opacity group-hover/prev:opacity-100">
                     <SquarePen className="size-4" />
                     {t.library.editGraph}
                   </div>
-                </button>
+                </Button>
               </div>
               <div className="min-h-0 p-3">
                 <div className="truncate text-sm font-semibold select-text">{displayName(selected)}</div>
-                <div className="mt-1 flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+                <div className="mt-1 flex items-center gap-1.5 font-mono text-2xs text-muted-foreground">
                   <AuthorAvatar name={builtinAuthor(selected.id, selected.author)} className="size-3.5" />
                   <AuthorLink name={builtinAuthor(selected.id, selected.author)} draft={itemState(selected) === "draft"} className="truncate select-text" />
                   {/* When it went public, the same fact the gallery's panel shows. */}
                   {publishedOn(selected.createdAt) && <span className="shrink-0">· {publishedOn(selected.createdAt)}</span>}
                 </div>
                 {selected.description && (
-                  <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground select-text">{builtinDescription("graph", selected, locale)}</p>
+                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground select-text">{builtinDescription("graph", selected, locale)}</p>
                 )}
                 <LibraryTags tags={selected.tags} />
                 <LibraryItemStats
@@ -395,7 +400,7 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
                   onToggle={() => void toggleLike(selected.id)}
                 />
               </div>
-              <div className="mt-auto shrink-0 space-y-1.5 border-t border-white/10 p-3">
+              <div className="mt-auto shrink-0 space-y-1.5 border-t border-line p-3">
                 {selected.owner === "local" && (
                   <PublishButton
                     kind="graph"
@@ -440,7 +445,7 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
                   size="sm"
                   disabled={!targetId}
                   onClick={() => onApply(selected.payload.graph, selected.name)}
-                  className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-40"
+                  className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-400/90 disabled:opacity-40"
                 >
                   <Check className="size-3.5 shrink-0" />
                   <span className="truncate">
@@ -456,6 +461,7 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
           )}
         </div>
       </div>
+      {makePublic.dialog}
       <ConfirmDialog
         open={confirming !== null}
         onOpenChange={(o) => !o && setConfirming(null)}

@@ -8,6 +8,7 @@
 // a chevron decorating the scene name, which read as a rename affordance and put file
 // chrome on the document's identity row.
 
+import { Button } from "@/components/ui/button"
 import { useRef, useState, type ReactNode } from "react"
 import { ArrowDownToLine, ArrowUpFromLine, FilePlus2, GalleryThumbnails, RotateCcw } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -23,14 +24,14 @@ export function Row({
   onClick: () => void
 }) {
   return (
-    <button
+    <Button variant="bare"
       type="button"
       onClick={onClick}
-      className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+      className="flex w-full cursor-pointer items-center gap-2 rounded-chip px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
     >
       <Icon className="size-3 shrink-0" />
       {label}
-    </button>
+    </Button>
   )
 }
 
@@ -70,13 +71,13 @@ export function LogoMenu({
           opened — and a tip that only repeats the aria-label buys nothing on a
           control this prominent. The label stays for screen readers. */}
       <PopoverTrigger asChild>
-        <button
+        <Button variant="bare"
           type="button"
           aria-label={t.sceneFile.label}
-          className="cursor-pointer rounded-md outline-none transition-colors hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="cursor-pointer rounded-chip outline-none transition-colors hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-ring/50"
         >
           {trigger}
-        </button>
+        </Button>
       </PopoverTrigger>
       {/* Radix returns focus to the trigger on close, and a programmatic focus counts
           as keyboard focus — so the logo kept its focus ring after every use. Same
@@ -133,7 +134,7 @@ export function SceneFileMenu({ trigger, onNew, onGallery, onExport, onImport, o
             act and should not read as the fifth thing you can do to your own
             document. Last, where a menu keeps the way out. */}
         {onGallery && (
-          <div className="mt-1 border-t border-white/10 pt-1">
+          <div className="mt-1 border-t border-line pt-1">
             <Row icon={GalleryThumbnails} label={t.gallery.door} onClick={run(onGallery)} />
           </div>
         )}

@@ -74,7 +74,7 @@ export function DisplayOnlyTag({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center truncate rounded-full bg-white/10 px-2 py-0.5 text-[11px] leading-none font-medium text-foreground",
+        "inline-flex items-center truncate rounded-full bg-white/10 px-2 py-0.5 text-2xs leading-none font-medium text-foreground",
         className,
       )}
     >
@@ -568,7 +568,7 @@ function GalleryContent({
     preview: s.poster ? (
       <SceneCover src={s.poster} nsfw={s.nsfw} loading="lazy" className="h-full w-full" />
     ) : (
-      <div className="flex h-full items-center justify-center bg-zinc-900 text-[10px] text-muted-foreground">
+      <div className="flex h-full items-center justify-center bg-white/5 text-2xs text-muted-foreground">
         {t.gallery.noPoster}
       </div>
     ),
@@ -611,18 +611,18 @@ function GalleryContent({
       style={{ zIndex: z }}
       className={LIBRARY_SHELL}
     >
-      <DialogHeader className="flex-row items-center gap-2 space-y-0 border-b border-white/10 px-3 py-2">
-        <DialogTitle className="flex shrink-0 items-center gap-2 text-[13px] font-medium">
+      <DialogHeader className="flex-row items-center gap-2 space-y-0 border-b border-line px-3 py-2">
+        <DialogTitle className="flex shrink-0 items-center gap-2 text-sm font-medium">
           <GalleryThumbnails className="size-4 text-blue-400" />
           {t.gallery.title}
         </DialogTitle>
         <LibraryToolbar browse={browse} />
         {/* One switch for every flagged cover, remembered by this browser. */}
-        <label className="ml-3 flex h-6 shrink-0 cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
+        <label className="ml-3 flex h-6 shrink-0 cursor-pointer items-center gap-1.5 text-2xs text-muted-foreground">
           {t.nsfw.toggle}
           <Switch size="sm" checked={nsfwShown} onCheckedChange={setShowNsfw} />
         </label>
-        <DialogClose className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
+        <DialogClose className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-chip text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
           <X className="size-3.5" />
           <span className="sr-only">{t.library.close}</span>
         </DialogClose>
@@ -650,45 +650,45 @@ function GalleryContent({
             footer={
               <>
                 {loading && rows.length > 0 && (
-                  <div className="flex items-center justify-center gap-2 py-6 text-[11px] text-muted-foreground">
+                  <div className="flex items-center justify-center gap-2 py-6 text-2xs text-muted-foreground">
                     <Loader2 className="size-3.5 animate-spin" />
                     {t.gallery.loading}
                   </div>
                 )}
                 {!loading && cursor && (
-                  <button
+                  <Button variant="bare"
                     onClick={loadMore}
-                    className="w-full cursor-pointer py-3 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                    className="w-full cursor-pointer py-3 text-2xs text-muted-foreground transition-colors hover:text-foreground"
                   >
                     {t.gallery.more}
-                  </button>
+                  </Button>
                 )}
               </>
             }
           />
         </div>
 
-        <div className="flex w-[17rem] shrink-0 flex-col overflow-y-auto border-l border-white/10 sm:w-[20rem]">
+        <div className="flex w-[17rem] shrink-0 flex-col overflow-y-auto border-l border-line sm:w-[20rem]">
           {selected ? (
             <>
               <div className="p-3 pb-0">
-                <button
+                <Button variant="bare"
                   type="button"
                   onClick={() => openScene(selected)}
-                  className="block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-md border border-white/10 bg-zinc-900"
+                  className="block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-chip border border-line-strong bg-white/5"
                 >
                   {selected.poster ? (
                     <SceneCover src={selected.poster} nsfw={selected.nsfw} className="h-full w-full" />
                   ) : (
-                    <span className="flex h-full items-center justify-center text-[11px] text-muted-foreground/40">
+                    <span className="flex h-full items-center justify-center text-2xs text-muted-foreground">
                       {t.gallery.noPoster}
                     </span>
                   )}
-                </button>
+                </Button>
               </div>
               <div className="min-h-0 p-3">
                 <div className="truncate text-sm font-semibold select-text">{selected.name}</div>
-                <div className="mt-1 flex min-w-0 items-center gap-1.5 font-mono text-[13px] text-muted-foreground/70">
+                <div className="mt-1 flex min-w-0 items-center gap-1.5 font-mono text-xs text-muted-foreground">
                   <AuthorAvatar
                     name={selected.author}
                     image={selected.authorImage}
@@ -698,19 +698,19 @@ function GalleryContent({
                   <span className="shrink-0">· {publishedOn(selected.createdAt)}</span>
                 </div>
                 {selected.description && (
-                  <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground select-text">{selected.description}</p>
+                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground select-text">{selected.description}</p>
                 )}
                 <LibraryTags tags={selected.tags} lead={selected.displayOnly ? <DisplayOnlyTag /> : undefined} />
                 {/* Who made the model, the motion and the music — the thing the
                     community actually asks to see before anyone reuses anything. */}
                 {selected.credits && (
-                  <div className="mt-3 border-t border-white/10 pt-2.5">
-                    <div className="text-[11px] font-medium tracking-[0.14em] text-muted-foreground/60 uppercase">
+                  <div className="mt-3 border-t border-line pt-2.5">
+                    <div className="text-2xs font-medium tracking-[0.14em] text-muted-foreground uppercase">
                       {t.share.credits}
                     </div>
                     {/* The 借物表 is the one block here people copy verbatim, to
                         carry the same names into their own credits. */}
-                    <p className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap text-[13px] leading-relaxed text-muted-foreground select-text">
+                    <p className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground select-text">
                       {selected.credits}
                     </p>
                   </div>
@@ -726,11 +726,11 @@ function GalleryContent({
                   />
                 </div>
               </div>
-              <div className="mt-auto shrink-0 border-t border-white/10 p-3">
+              <div className="mt-auto shrink-0 border-t border-line p-3">
                 <Button
                   asChild
                   size="sm"
-                  className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-300"
+                  className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-400/90"
                 >
                   {/* A real link: plain click navigates in this tab, cmd-click
                       still gets a new one for anyone who wants it. */}

@@ -702,7 +702,7 @@ export function GraphEditor({
         // Solid (opaque, no backdrop)
         className={cn(
           // border-b (not a separate <Separator>) so the divider is part of the solid header's box
-          "relative flex shrink-0 items-center gap-2 border-b border-white/10 bg-zinc-950 pt-1 pb-1 pr-2 pl-3",
+          "relative flex shrink-0 items-center gap-2 border-b border-line bg-surface-raised pt-1 pb-1 pr-2 pl-3",
           // Filling the screen, there is nowhere to drag TO — the same rule the
           // shared EditorHeader follows, so the grab cursor never promises a
           // move the panel will refuse.
@@ -712,13 +712,13 @@ export function GraphEditor({
         <Workflow
           className={cn(
             "size-3.5",
-            applyState === "error" ? "text-red-400" : "text-zinc-400",
+            applyState === "error" ? "text-red-400" : "text-muted-foreground",
             applyState === "compiling" && "animate-pulse",
           )}
         />
-        <span className="min-w-0 truncate text-xs font-medium text-zinc-200">{slotLabel}</span>
+        <span className="min-w-0 truncate text-xs font-medium text-foreground">{slotLabel}</span>
         {!fullscreen && (
-          <span className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-zinc-600">
+          <span className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-muted-foreground">
             <Grip className="size-4" />
           </span>
         )}
@@ -729,7 +729,7 @@ export function GraphEditor({
               <Button
                 variant="ghost"
                 size="icon"
-                className={cn("size-6", showWgsl ? "text-pink-300 hover:text-pink-200" : "text-zinc-400 hover:text-zinc-100")}
+                className={cn("size-6", showWgsl ? "text-blue-400" : "text-muted-foreground hover:text-foreground")}
                 onClick={() => setShowWgsl((v) => !v)}
               >
                 <Code className="size-3.5" />
@@ -739,7 +739,7 @@ export function GraphEditor({
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="size-6 text-zinc-400 hover:text-zinc-100" onClick={() => loadGraph(presetGraph)}>
+              <Button variant="ghost" size="icon" className="size-6 text-muted-foreground hover:text-foreground" onClick={() => loadGraph(presetGraph)}>
                 <RotateCcw className="size-3.5" />
               </Button>
             </TooltipTrigger>
@@ -747,7 +747,7 @@ export function GraphEditor({
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="size-6 text-zinc-400 hover:text-zinc-100" onClick={exportGraph}>
+              <Button variant="ghost" size="icon" className="size-6 text-muted-foreground hover:text-foreground" onClick={exportGraph}>
                 <Download className="size-3.5" />
               </Button>
             </TooltipTrigger>
@@ -758,7 +758,7 @@ export function GraphEditor({
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-6 text-zinc-400 hover:text-zinc-100"
+                className="size-6 text-muted-foreground hover:text-foreground"
                 onClick={() => fileInputRef.current?.click()}
               >
                 <Upload className="size-3.5" />
@@ -792,7 +792,7 @@ export function GraphEditor({
                 size="icon"
                 disabled={!dirty || !engineReady}
                 onClick={() => void applyNow()}
-                className={cn("size-6", dirty ? "text-blue-400 hover:text-blue-300" : "text-zinc-400 hover:text-zinc-100")}
+                className={cn("size-6", dirty ? "text-blue-400 hover:text-blue-400" : "text-muted-foreground hover:text-foreground")}
               >
                 <Check className="size-3.5" />
               </Button>
@@ -808,7 +808,7 @@ export function GraphEditor({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-6 text-zinc-400 hover:text-zinc-100"
+                  className="size-6 text-muted-foreground hover:text-foreground"
                   onClick={onToggleFullscreen}
                 >
                   {fullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
@@ -824,7 +824,7 @@ export function GraphEditor({
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-6 text-zinc-400 hover:text-zinc-100"
+                className="size-6 text-muted-foreground hover:text-foreground"
                 onClick={() => void requestClose()}
               >
                 <X className="size-3.5" />
@@ -878,22 +878,22 @@ export function GraphEditor({
               )}
 
               {previewId && (
-                <div className="absolute top-2 right-2 z-10 rounded-md bg-pink-600/90 px-2.5 py-1 text-xs">
+                <div className="absolute top-2 right-2 z-10 rounded-chip bg-blue-400 px-2.5 py-1 text-xs text-white">
                   {t.graph.previewing(previewId)}
-                  <button className="ml-2 cursor-pointer underline" onClick={() => setPreviewId(null)}>
+                  <Button variant="link" className="ml-2 h-auto cursor-pointer p-0 text-xs text-foreground underline" onClick={() => setPreviewId(null)}>
                     {t.graph.exit}
-                  </button>
+                  </Button>
                 </div>
               )}
 
               {diagnostics.length > 0 && (
-                <div className="absolute bottom-2 left-1/2 z-10 max-w-[70%] -translate-x-1/2 space-y-0.5 rounded-md border border-zinc-700 bg-zinc-900/95 px-3 py-2 text-xs">
+                <div className="absolute bottom-2 left-1/2 z-10 max-w-[70%] -translate-x-1/2 space-y-0.5 rounded-chip border border-line-strong bg-surface-raised px-3 py-2 text-xs">
                   {errors.length > 0 && (
                     <div className="font-medium text-red-400">{errors.length} error(s) — previous look kept</div>
                   )}
                   {diagnostics.map((d, i) => (
                     <div key={i} className={d.severity === "error" ? "text-red-400" : "text-amber-400"}>
-                      {d.nodeId && <span className="text-zinc-500">[{d.nodeId}] </span>}
+                      {d.nodeId && <span className="text-muted-foreground">[{d.nodeId}] </span>}
                       {d.message}
                     </div>
                   ))}
@@ -982,11 +982,11 @@ export function GraphEditor({
               <ResizableHandle className="bg-white/5" />
               <ResizablePanel defaultSize="30" minSize="15">
                 <div className="flex h-full flex-col">
-                  <h3 className="shrink-0 border-b border-white/10 px-3 py-1.5 text-xs tracking-wide text-zinc-500 uppercase">
+                  <h3 className="shrink-0 border-b border-line px-3 py-1.5 text-xs tracking-wide text-muted-foreground uppercase">
                     Generated WGSL · fs body
                   </h3>
                   <div className="flex-1 cursor-text overflow-auto select-text">
-                    {fsBody ? <WgslView code={fsBody} /> : <p className="p-3 text-zinc-600">—</p>}
+                    {fsBody ? <WgslView code={fsBody} /> : <p className="p-3 text-muted-foreground">—</p>}
                   </div>
                 </div>
               </ResizablePanel>

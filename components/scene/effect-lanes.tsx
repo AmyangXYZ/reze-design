@@ -636,7 +636,7 @@ export function EffectLanes<T extends LaneRow>({
                         style={{ width: `${Math.min(100, ((w.blendOut ?? 0) / length) * 100)}%` }}
                       />
                     )}
-                    <span className="pointer-events-none relative min-w-0 truncate text-[10px] leading-none text-foreground">
+                    <span className="pointer-events-none relative min-w-0 truncate text-2xs leading-none text-foreground">
                       {effect.name}
                     </span>
                     <span

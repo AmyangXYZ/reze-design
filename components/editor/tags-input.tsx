@@ -10,6 +10,8 @@
 // cannot hold a phrase cannot hold that. Few, short, single words stay useful for
 // finding things and stay useless for shouting.
 
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { useState } from "react"
 import { X } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -49,28 +51,28 @@ export function TagsInput({
   return (
     <div
       className={cn(
-        "mt-0.5 flex min-h-8 flex-wrap content-start items-start gap-1.5 rounded-md border border-white/10 bg-white/5 px-2 py-1.5 focus-within:border-blue-400/50",
+        "mt-0.5 flex min-h-8 flex-wrap content-start items-start gap-1.5 rounded-chip border border-line-strong bg-white/5 px-2 py-1.5 focus-within:border-blue-400/50",
         className,
       )}
     >
       {value.map((tag) => (
         <span
           key={tag}
-          className="flex items-center gap-1 rounded bg-white/10 py-0.5 pr-1 pl-1.5 text-xs text-foreground"
+          className="flex items-center gap-1 rounded-chip bg-white/10 py-0.5 pr-1 pl-1.5 text-xs text-foreground"
         >
           {tag}
-          <button
+          <Button variant="bare"
             type="button"
             aria-label={`Remove ${tag}`}
             onClick={() => onChange(value.filter((x) => x !== tag))}
             className="cursor-pointer text-muted-foreground transition-colors hover:text-red-400"
           >
             <X className="size-3" />
-          </button>
+          </Button>
         </span>
       ))}
       {value.length < max && (
-      <input
+      <Input variant="bare"
         value={draft}
         onChange={(e) => {
           // Typing a comma is the same gesture as Enter.
@@ -90,7 +92,7 @@ export function TagsInput({
         onBlur={() => commit(draft)}
         maxLength={MAX_TAG_LENGTH}
         placeholder={value.length === 0 ? placeholder : undefined}
-        className="h-5 min-w-16 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/50"
+        className="h-5 min-w-16 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
       />
       )}
     </div>

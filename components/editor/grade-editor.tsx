@@ -58,7 +58,7 @@ export function GradeEditorPanel({
       minW={520}
       minH={330}
       // z-50 like the other editors: above the docks and the non-modal library.
-      className="overflow-hidden rounded-xl border border-white/10 bg-zinc-950/95 shadow-float"
+      className="overflow-hidden rounded-surface border border-line-strong bg-surface-raised shadow-float"
     >
       <EditorBody key={sessionId} subject={subject} origin={origin} onChange={onChange} onClose={onClose} />
     </FloatingPanel>
@@ -154,7 +154,7 @@ function EditorBody({
         {/* ── Controls column ── */}
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3">
           {importError && (
-            <div className="mb-2 rounded border border-red-400/30 bg-red-500/10 px-2 py-1 text-[11px] text-red-300">
+            <div className="mb-2 rounded-chip border border-red-400/30 bg-red-400/10 px-2 py-1 text-2xs text-red-400">
               {importError}
             </div>
           )}
@@ -188,7 +188,7 @@ function EditorBody({
             ))}
           </div>
 
-          <div className="mt-4 border-t border-white/10 pt-3">
+          <div className="mt-4 border-t border-line pt-3">
             <SliderRow
               label={t.scene.contrast}
               value={spec.contrast}
@@ -210,8 +210,8 @@ function EditorBody({
           </div>
         </div>
         {/* Preview column, on the RIGHT */}
-        <div className="flex min-w-0 flex-[0_0_42%] flex-col border-l border-white/10 p-3">
-          <div className="min-h-0 flex-1 overflow-hidden rounded-md border border-white/10 bg-zinc-900">
+        <div className="flex min-w-0 flex-[0_0_42%] flex-col border-l border-line p-3">
+          <div className="min-h-0 flex-1 overflow-hidden rounded-chip border border-line-strong bg-white/5">
             <GradePreview spec={spec} />
           </div>
         </div>

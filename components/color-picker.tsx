@@ -2,6 +2,7 @@
 
 // THE color control for the app: a chip (click → picker dialog) + read-only hex label.
 
+import { Input } from "@/components/ui/input"
 import { useRef, useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Pipette } from "lucide-react"
@@ -92,7 +93,7 @@ function Swatch({ hex, onPick, label, className }: { hex: string; onPick: (hex: 
         // them packs left instead of resizing with the dialog. Corners inline,
         // below the variant's, so the merge cannot keep the button's.
         SWATCH,
-        "p-0 ring-1 ring-white/10 transition-transform duration-75 hover:z-10 hover:scale-115",
+        "p-0 ring-1 ring-line-strong transition-transform duration-75 hover:z-10 hover:scale-115",
         className,
       )}
       style={{ background: hex, borderRadius: "var(--radius-xs)" }}
@@ -246,7 +247,7 @@ function ChannelPicker({
           aria-label={tc.field}
           aria-valuenow={Math.round(hsv.s * 100)}
           aria-valuetext={tc.fieldValue(Math.round(hsv.s * 100), Math.round(hsv.v * 100))}
-          className="relative aspect-square cursor-crosshair touch-none rounded-interior ring-1 ring-white/10 outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+          className="relative aspect-square cursor-crosshair touch-none rounded-interior ring-1 ring-line-strong outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
           style={{ background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, ${hueHex})` }}
           onPointerDown={(e) => {
             e.currentTarget.setPointerCapture(e.pointerId)
@@ -279,7 +280,7 @@ function ChannelPicker({
           {/* Before and after, as Photoshop shows them: the left half is what
               you opened with, and clicking it puts that back. */}
           <div className="flex items-center gap-2">
-            <div className="flex h-6 min-w-0 flex-1 overflow-hidden rounded-chip ring-1 ring-white/10">
+            <div className="flex h-6 min-w-0 flex-1 overflow-hidden rounded-chip ring-1 ring-line-strong">
               <Button
                 variant="ghost"
                 aria-label={tc.backTo(original)}
@@ -346,7 +347,7 @@ function ChannelPicker({
             recent[i] ? (
               <Swatch key={i} hex={recent[i]} onPick={pick} />
             ) : (
-              <div key={i} className={cn(SWATCH, "rounded-xs border border-dashed border-line")} />
+              <div key={i} className={cn(SWATCH, "rounded-chip border border-dashed border-line")} />
             ),
           )}
         </div>
@@ -375,11 +376,11 @@ export function HexField({
     setText(value)
   }
   return (
-    <input
+    <Input variant="bare"
       value={text}
       spellCheck={false}
       className={cn(
-        "h-7 w-28 rounded-md border border-white/10 bg-black/30 px-2 font-mono text-xs outline-none focus:border-blue-400/50",
+        "h-7 w-28 rounded-chip border border-line-strong bg-black/30 px-2 font-mono text-xs outline-none focus:border-blue-400/50",
         className,
       )}
       onFocus={() => setFocused(true)}
@@ -416,20 +417,20 @@ export function ColorField({
   return (
     <>
       {/* One button — hovering either the swatch or the hex triggers both effects. */}
-      <button
+      <Button variant="bare"
         className="group flex cursor-pointer items-center gap-1.5 disabled:pointer-events-none disabled:opacity-40"
         onClick={() => setOpen(true)}
         disabled={disabled}
         aria-label={tc.open}
       >
         <span
-          className="size-4 shrink-0 rounded-md ring-1 ring-white/15 transition-transform group-hover:scale-110"
+          className="size-4 shrink-0 rounded-chip ring-1 ring-line-strong transition-transform group-hover:scale-110"
           style={{ background: value }}
         />
         <span className="font-mono text-xs text-muted-foreground underline-offset-2 group-hover:text-foreground group-hover:underline">
           {active}
         </span>
-      </button>
+      </Button>
 
       <ColorPickerDialog open={open} onOpenChange={setOpen} value={value} onChange={onChange} />
     </>
@@ -483,7 +484,7 @@ export function ColorPickerDialog({
         <DialogContent
           // Don't autofocus the first swatch on open
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="gap-3 rounded-xl border-white/10 bg-zinc-950 sm:max-w-2xl"
+          className="gap-3 rounded-surface border-line-strong bg-surface-raised sm:max-w-2xl"
         >
           <Tabs
             value={tab}
@@ -541,15 +542,15 @@ export function ColorPickerDialog({
                     <div key={hue} className={cn(GRID, "items-center")}>
                       <span className="truncate text-xs text-muted-foreground">{cap(hue)}</span>
                       {row.map(({ name, hex }) => (
-                        <button
+                        <Button variant="bare"
                           key={name}
                           data-name={name}
                           data-hex={hex}
                           className={cn(
-                            "h-5 w-full cursor-pointer rounded-xs transition-transform duration-75 ease-out hover:z-10 hover:scale-115",
+                            "h-5 w-full cursor-pointer rounded-chip transition-transform duration-75 ease-out hover:z-10 hover:scale-115",
                             active === hex.toLowerCase()
                               ? "z-10 ring-2 ring-blue-400 ring-offset-1 ring-offset-zinc-950"
-                              : "ring-1 ring-white/10",
+                              : "ring-1 ring-line-strong",
                           )}
                           style={{ background: hex }}
                           onClick={() => {
@@ -567,7 +568,7 @@ export function ColorPickerDialog({
           </div>
           </Tabs>
 
-          <div className="flex items-center gap-2 border-t border-white/10 pt-3">
+          <div className="flex items-center gap-2 border-t border-line pt-3">
             <span className="text-xs text-muted-foreground">{tc.customHex}</span>
             <HexField value={value} onChange={onChange} />
             {/* Right side previews the hovered swatch (name + hex + chip) */}
@@ -577,7 +578,7 @@ export function ColorPickerDialog({
                 {(hover?.hex ?? value).toLowerCase()}
               </span>
               <span
-                className="size-6 rounded-md ring-1 ring-white/15"
+                className="size-6 rounded-chip ring-1 ring-line-strong"
                 style={{ background: hover?.hex ?? value }}
               />
             </div>

@@ -10,8 +10,19 @@ import { Check, Copy, ExternalLink, GalleryThumbnails, Globe, ImagePlus, Loader2
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { TagsInput } from "@/components/editor/tags-input"
+import {
+  PUBLISH_BODY,
+  PUBLISH_CLOSE,
+  PUBLISH_DIALOG,
+  PUBLISH_FOOT,
+  PUBLISH_FORM,
+  PUBLISH_HEAD,
+  PUBLISH_INPUT,
+  PUBLISH_TEXTAREA,
+} from "@/components/editor/publish-button"
 import { VisibilityPicker, type Visibility } from "@/components/editor/library-shell"
 import { noteScenePublished, type GalleryScene } from "@/components/editor/scene-gallery"
 import { buildZip, type BundleEntry } from "@/lib/bundle"
@@ -403,50 +414,23 @@ function ShareSceneForm({
       onEscapeKeyDown={(e) => busy && e.preventDefault()}
       onInteractOutside={(e) => busy && e.preventDefault()}
       aria-describedby={undefined}
-      className="grid w-[34rem] gap-0 border-white/10 bg-zinc-950/95 p-5 sm:max-w-[34rem]"
+      className={PUBLISH_DIALOG + " w-[34rem] sm:max-w-[34rem]"}
+      closeClassName={PUBLISH_CLOSE}
     >
-        <DialogTitle className="flex items-center gap-2 text-sm font-medium">
-          <Globe className="size-4 text-blue-400" />
-          {updatesId ? t.share.updateScene : t.share.title}
-        </DialogTitle>
-        {updatesId && (
-          <p className="mt-1 text-xs leading-snug text-muted-foreground">{t.share.updateBlurb}</p>
-        )}
-
-        {/* Shown before the form rather than on submit: discovering a block after
-            writing a description, choosing tags and picking a thumbnail is the
-            worst moment to learn about it. */}
-        {/* TWO blocks, because the two have different fixes: one asks you to
-            publish something, the other to change what you already published
-            — or to publish this scene privately instead. One list saying
-            "publish these first" would be wrong advice for half of it. */}
-        {step !== "done" &&
-          (["missing", "private"] as const).map((reason) => {
-            const rows = blocking.filter((u) => u.reason === reason)
-            if (rows.length === 0) return null
-            return (
-              <div key={reason} className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 p-2.5">
-                <p className="text-xs font-medium text-amber-300">
-                  {reason === "missing" ? t.share.unpublishedTitle : t.share.privateUseTitle}
-                </p>
-                <p className="mt-0.5 text-[11px] leading-snug text-amber-200/70">
-                  {reason === "missing" ? t.share.unpublishedBlurb : t.share.privateUseBlurb}
-                </p>
-                <ul className="mt-1.5 space-y-0.5">
-                  {rows.map((u) => (
-                    <li key={`${u.kind}:${u.name}`} className="font-mono text-[11px] text-amber-200/90">
-                      {t.share.unpublishedKind[u.kind as "graph" | "grade" | "effect"]} · {u.name}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )
-          })}
+        <div className={PUBLISH_HEAD}>
+          <DialogTitle className="flex h-5 items-center gap-2 text-sm font-medium">
+            <Globe className="size-4 text-blue-400" />
+            {updatesId ? t.share.updateScene : t.share.title}
+          </DialogTitle>
+          {updatesId && (
+            <p className="mt-1 text-xs leading-snug text-muted-foreground">{t.share.updateBlurb}</p>
+          )}
+        </div>
 
         {step === "done" && shareUrl ? (
-          <div className="mt-1 min-w-0 space-y-3">
+          <div className="min-h-0 min-w-0 space-y-3 overflow-y-auto px-4 pt-4 pb-4">
             <div className="flex min-w-0 items-center gap-2">
-              <div className="min-w-0 flex-1 truncate rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 font-mono text-xs">
+              <div className="min-w-0 flex-1 truncate rounded-interior border border-line-strong bg-white/5 px-2.5 py-1.5 font-mono text-xs">
                 {shareUrl}
               </div>
               <Button
@@ -467,7 +451,7 @@ function ShareSceneForm({
               asChild
               size="sm"
               variant="ghost"
-              className="h-8 w-full border border-white/10 text-xs font-medium hover:bg-white/5"
+              className="h-8 w-full border border-line-strong text-xs font-medium hover:bg-white/5"
             >
               {/* This tab, client-side. The scene is published — the editor has
                   nothing left to lose — and a second tab would mean a second live
@@ -488,7 +472,7 @@ function ShareSceneForm({
           </div>
         ) : (
           <form
-            className="mt-4 flex flex-col gap-3.5"
+            className={PUBLISH_FORM}
             onSubmit={(e) => {
               e.preventDefault()
               void publish()
@@ -499,6 +483,35 @@ function ShareSceneForm({
               if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "TEXTAREA") e.preventDefault()
             }}
           >
+            <div className={PUBLISH_BODY}>
+            {/* Shown before the form rather than on submit: discovering a block after
+                writing a description, choosing tags and picking a thumbnail is the
+                worst moment to learn about it. */}
+            {/* TWO blocks, because the two have different fixes: one asks you to
+                publish something, the other to change what you already published
+                — or to publish this scene privately instead. One list saying
+                "publish these first" would be wrong advice for half of it. */}
+            {(["missing", "private"] as const).map((reason) => {
+                const rows = blocking.filter((u) => u.reason === reason)
+                if (rows.length === 0) return null
+                return (
+                  <div key={reason} className="rounded-interior border border-amber-400/30 bg-amber-400/10 p-2.5">
+                    <p className="text-xs font-medium text-amber-400">
+                      {reason === "missing" ? t.share.unpublishedTitle : t.share.privateUseTitle}
+                    </p>
+                    <p className="mt-0.5 text-2xs leading-snug text-amber-400">
+                      {reason === "missing" ? t.share.unpublishedBlurb : t.share.privateUseBlurb}
+                    </p>
+                    <ul className="mt-1.5 space-y-0.5">
+                      {rows.map((u) => (
+                        <li key={`${u.kind}:${u.name}`} className="font-mono text-2xs text-amber-400">
+                          {t.share.unpublishedKind[u.kind as "graph" | "grade" | "effect"]} · {u.name}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )
+              })}
             {/* Name and description beside the image, with the description
                 stretching to meet its bottom edge — pinning two short fields to
                 opposite ends left a hole in the middle instead. */}
@@ -510,24 +523,24 @@ function ShareSceneForm({
                     value={sceneName}
                     onChange={(e) => onRename(e.target.value)}
                     maxLength={60}
-                    className="mt-0.5 h-8 border-white/10 bg-white/5 text-xs md:text-xs"
+                    className={PUBLISH_INPUT}
                   />
                 </label>
                 <label className="flex min-h-0 flex-1 flex-col">
                   <span className="text-xs text-muted-foreground">{t.library.publishDescription}</span>
-                  <textarea
+                  <Textarea
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     maxLength={500}
                     placeholder={t.library.publishDescriptionHint}
-                    className="mt-0.5 min-h-0 flex-1 resize-none rounded-md border border-white/10 bg-white/5 px-2.5 py-2 text-xs leading-relaxed outline-none placeholder:text-muted-foreground/50 focus:border-blue-400/50"
+                    className={PUBLISH_TEXTAREA + " min-h-0 flex-1 [field-sizing:fixed]"}
                   />
                 </label>
               </div>
               <label className="block">
                 <span className="text-xs text-muted-foreground">{t.share.thumbnail}</span>
                 {updatesId && !poster && updatesPoster && (
-                  <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">{t.share.coverKept}</span>
+                  <span className="mt-0.5 block text-2xs leading-snug text-muted-foreground">{t.share.coverKept}</span>
                 )}
                 <input
                   ref={posterInputRef}
@@ -552,10 +565,11 @@ function ShareSceneForm({
                 />
                 {/* The preview IS the control — a separate button beside it was two
                     affordances for one action. */}
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
                   onClick={() => posterInputRef.current?.click()}
-                  className="mt-0.5 block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-md border border-white/10 bg-white/5 transition-colors hover:border-white/25"
+                  className="mt-0.5 block h-auto aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-interior border border-line-strong bg-white/5 p-0 font-normal transition-colors hover:border-white/25 hover:bg-white/5 dark:hover:bg-white/5"
                 >
                   {(posterUrl ?? updatesPoster) ? (
                     // Any shape is fine: the card crops to fill, so authors aren't
@@ -566,19 +580,19 @@ function ShareSceneForm({
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={posterUrl ?? updatesPoster!} alt="" className="h-full w-full object-cover" />
                   ) : (
-                    <span className="flex h-full flex-col items-center justify-center gap-1 text-muted-foreground/60">
+                    <span className="flex h-full flex-col items-center justify-center gap-1 text-muted-foreground">
                       <ImagePlus className="size-4" />
-                      <span className="text-[11px]">{t.share.thumbnailPick}</span>
+                      <span className="text-2xs">{t.share.thumbnailPick}</span>
                     </span>
                   )}
-                </button>
+                </Button>
               </label>
             </div>
             <label className="block">
               <span className="flex items-baseline justify-between gap-2">
                 <span className="text-xs text-muted-foreground">{t.library.publishTags}</span>
                 {/* The cap, stated. Five was already enforced silently. */}
-                <span className="text-[10px] tabular-nums text-muted-foreground">
+                <span className="text-2xs tabular-nums text-muted-foreground">
                   {tags.length}/{MAX_TAGS}
                 </span>
               </span>
@@ -587,14 +601,14 @@ function ShareSceneForm({
             <label className="block">
               <span className="text-xs text-muted-foreground">{t.share.credits}</span>
               {/* The one thing in this dialog a publisher must actually read. */}
-              <p className="mt-0.5 text-xs leading-snug text-amber-200/90">{t.share.creditsWhy}</p>
-              <textarea
+              <p className="mt-0.5 text-xs leading-snug text-amber-400">{t.share.creditsWhy}</p>
+              <Textarea
                 value={credits}
                 onChange={(e) => setCredits(e.target.value)}
                 maxLength={4000}
                 rows={4}
                 placeholder={t.share.creditsHint}
-                className="mt-1 w-full resize-none rounded-md border border-white/10 bg-white/5 px-2.5 py-2 text-xs leading-relaxed outline-none placeholder:text-muted-foreground/50 focus:border-blue-400/50"
+                className={PUBLISH_TEXTAREA + " mt-1 min-h-[5.5rem] max-h-48"}
               />
             </label>
             {/* Its own row, apart from the tags: tags are how a scene is found,
@@ -619,8 +633,10 @@ function ShareSceneForm({
                 disabled={visibility !== "public"}
               />
             </label>
+            </div>
+            <div className={PUBLISH_FOOT}>
             {error && (
-              <div className="rounded-md bg-red-500/10 px-2.5 py-2 text-[11px] leading-relaxed break-words text-red-400">
+              <div className="rounded-interior bg-red-400/10 px-2.5 py-2 text-2xs leading-relaxed break-words text-red-400">
                 {error}
               </div>
             )}
@@ -638,7 +654,7 @@ function ShareSceneForm({
                 // re-publishing to fix a stage does not mean re-framing a shot.
                 (!poster && !updatesId)
               }
-              className="mt-1.5 h-9 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-50"
+              className="h-9 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-400/90 disabled:opacity-50"
             >
               {busy ? (
                 <>
@@ -651,6 +667,7 @@ function ShareSceneForm({
                 t.share.signIn
               )}
             </Button>
+            </div>
           </form>
         )}
     </DialogContent>

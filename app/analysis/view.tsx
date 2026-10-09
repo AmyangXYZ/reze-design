@@ -34,7 +34,7 @@ type Stack = { key: string; label: string; a: number; b: number }
 function Tile({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-interior border border-line bg-surface-raised p-3">
-      <div className="text-[11px] tracking-wide text-muted-foreground uppercase">{label}</div>
+      <div className="text-2xs tracking-wide text-muted-foreground uppercase">{label}</div>
       <div className="mt-1 font-mono text-xl text-foreground tabular-nums">{value}</div>
     </div>
   )
@@ -138,12 +138,12 @@ function Ranks({
                   // the panel's title. Right-aligning tidied the numerals against
                   // each other and put every one of them out of line with the
                   // heading directly above.
-                  <span className="w-5 shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums">
+                  <span className="w-5 shrink-0 font-mono text-2xs text-muted-foreground tabular-nums">
                     {i + 1}
                   </span>
                 )}
                 <span className="min-w-0 flex-1 truncate text-xs text-foreground">{r.label}</span>
-                <span className="shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums">
+                <span className="shrink-0 font-mono text-2xs text-muted-foreground tabular-nums">
                   {share
                     ? `${Math.round((r.a / share) * 100)}%`
                     : [r.a > 0 && videos(r.a), r.b > 0 && scenes(r.b)].filter(Boolean).join(" · ")}
@@ -160,7 +160,7 @@ function Ranks({
                 {/* Same size as the row's other numbers, heavier: this is the
                     figure the bar beside it draws, and weight picks it out of a
                     column without changing the rhythm of the list. */}
-                <span className="shrink-0 font-mono text-[11px] font-semibold text-foreground tabular-nums">
+                <span className="shrink-0 font-mono text-2xs font-semibold text-foreground tabular-nums">
                   {share ? videos(r.a) : r.a + r.b}
                 </span>
               </div>
@@ -195,7 +195,7 @@ const itemStack = (r: ItemRank): Stack => ({ key: r.id, label: r.name, a: r.expo
 
 function Legend({ exports, scenes }: { exports: string; scenes: string }) {
   return (
-    <div className="mt-3 flex items-center gap-4 text-[11px] text-muted-foreground">
+    <div className="mt-3 flex items-center gap-4 text-2xs text-muted-foreground">
       {[
         [SERIES.exports, exports],
         [SERIES.scenes, scenes],

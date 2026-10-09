@@ -15,6 +15,7 @@
 // label already says what it does, and the target is what changes between
 // invocations.
 
+import { Button } from "@/components/ui/button"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Search } from "lucide-react"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
@@ -175,7 +176,7 @@ export function CommandPalette({
               {g.items.map((item, k) => {
                 const i = g.start + k
                 return (
-                  <button
+                  <Button variant="bare"
                     key={item.id}
                     data-active={i === active}
                     onMouseMove={() => setActive(i)}
@@ -205,7 +206,7 @@ export function CommandPalette({
                         {item.value ?? item.hint}
                       </span>
                     )}
-                  </button>
+                  </Button>
                 )
               })}
             </div>

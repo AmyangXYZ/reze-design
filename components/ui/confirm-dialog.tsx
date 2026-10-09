@@ -29,6 +29,7 @@ export function ConfirmDialog({
   confirmLabel,
   cancelLabel,
   onConfirm,
+  tone = "destructive",
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -37,6 +38,10 @@ export function ConfirmDialog({
   confirmLabel: string
   cancelLabel: string
   onConfirm: () => void
+  /** `destructive` (red) when confirming removes something; `accent` (blue) for
+   *  a step that is permanent without removing anything, such as making an
+   *  item public. Red keeps its one meaning. */
+  tone?: "destructive" | "accent"
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -55,9 +60,10 @@ export function ConfirmDialog({
               reserved for "this removes something", which is exactly what is
               being asked about. */}
           <Button
-            variant="destructive"
+            variant={tone === "destructive" ? "destructive" : "default"}
             size="sm"
             autoFocus
+            className={tone === "accent" ? "bg-blue-400 text-white hover:bg-blue-400/90" : undefined}
             onClick={() => {
               onOpenChange(false)
               onConfirm()

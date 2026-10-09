@@ -2,6 +2,7 @@
 
 // Right dock · Render tab — where a finished scene becomes an exported video.
 
+import { Input } from "@/components/ui/input"
 import { memo, useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react"
 import type { Engine } from "reze-engine"
 import { toast } from "sonner"
@@ -162,7 +163,7 @@ const parseClock = (text: string): number | null => {
 }
 
 const rangeInputCls =
-  "h-6 w-14 rounded-md border border-white/10 bg-white/5 px-1 text-center text-xs tabular-nums outline-none transition-colors hover:bg-white/10 focus:border-blue-400/50 placeholder:text-muted-foreground/50 disabled:opacity-50"
+  "h-6 w-14 rounded-chip border border-line-strong bg-white/5 px-1 text-center text-xs tabular-nums outline-none transition-colors hover:bg-white/10 focus:border-blue-400/50 placeholder:text-muted-foreground disabled:opacity-50"
 
 /** The part of FileSystemFileHandle this panel uses. */
 type SaveHandle = {
@@ -714,7 +715,7 @@ export const RenderPanel = memo(function RenderPanel({
           {/* Segment to export — blank boxes = the whole clip. */}
           <Row label={t.render.range}>
             <div className="flex items-center gap-1">
-              <input
+              <Input variant="bare"
                 value={rangeStart}
                 onChange={(e) => setRangeStart(e.target.value)}
                 onBlur={() => {
@@ -725,8 +726,8 @@ export const RenderPanel = memo(function RenderPanel({
                 disabled={exporting}
                 className={rangeInputCls}
               />
-              <span className="text-xs text-muted-foreground/60">–</span>
-              <input
+              <span className="text-xs text-muted-foreground">–</span>
+              <Input variant="bare"
                 value={rangeEnd}
                 onChange={(e) => setRangeEnd(e.target.value)}
                 onBlur={() => {
@@ -826,7 +827,7 @@ export const RenderPanel = memo(function RenderPanel({
               size="sm"
               disabled={!canRender}
               onClick={() => void start()}
-              className="h-8 flex-1 gap-1.5 rounded-l-none bg-blue-400 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-40"
+              className="h-8 flex-1 gap-1.5 rounded-l-none bg-blue-400 text-xs font-medium text-white hover:bg-blue-400/90 disabled:opacity-40"
             >
               <Clapperboard className="size-3.5" />
               {t.render.renderVideo}
@@ -842,7 +843,7 @@ export const RenderPanel = memo(function RenderPanel({
               // button you may urgently want should look like. Red because
               // stopping throws the render away: the encoded frames are gone,
               // not paused.
-              className="h-8 flex-1 gap-1.5 rounded-l-none bg-red-500 text-xs font-medium text-white hover:bg-red-400"
+              className="h-8 flex-1 gap-1.5 rounded-l-none bg-red-400 text-xs font-medium text-white hover:bg-red-400"
             >
               <Square className="size-3.5" />
               {t.render.cancel}
@@ -892,15 +893,15 @@ export const RenderPanel = memo(function RenderPanel({
             {/* Amber, like the credits note in the publish dialog: the same kind of
                 line, the one thing beside a control that has to actually be read
                 before the control is touched. */}
-            <p className="mt-0.5 text-[11px] leading-snug text-amber-200/90">
+            <p className="mt-0.5 text-2xs leading-snug text-amber-400">
               {t.render.shareStatsNote}{" "}
               {/* Both halves of the answer: what is collected, and what it has
                   added up to. The second is why anyone would say yes. */}
-              <a href="/privacy" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-amber-100">
+              <a href="/privacy" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-foreground">
                 {t.render.shareStatsLink}
               </a>
               {" · "}
-              <a href="/analysis" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-amber-100">
+              <a href="/analysis" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-foreground">
                 {t.render.shareStatsSeeLink}
               </a>
             </p>

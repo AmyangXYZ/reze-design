@@ -3,7 +3,7 @@
 // The one chrome surface, in four placements.
 //
 // Every panel, dialog and popover in the editor is the same skin — zinc-950
-// ground, a visible white/10 hairline, shadow-float, 10px radius. What differs
+// ground, a line-strong hairline, shadow-float, the surface radius. What differs
 // is where it sits and whether it takes the screen. Writing that skin per
 // component is how five surfaces end up with four different border opacities,
 // so it lives here once and placement is a prop.
@@ -14,8 +14,9 @@
 //   NO SCRIM   = watch the canvas while you work       (materials, editors,
 //                                                       libraries)
 //
-// Corner radii follow the approved scale: 10 for the surface, 6 for anything
-// inside it, 4 for chips. Smaller reads as more professional; 12+ does not.
+// Corner radii follow the token scale in globals.css: rounded-surface (12) for
+// the surface, rounded-interior (8) for anything inside it, rounded-chip (6)
+// for chips.
 
 import type { ReactNode } from "react"
 import { cn } from "@/lib/utils"

@@ -1,5 +1,6 @@
 "use client"
 
+import { Button } from "@/components/ui/button"
 import { useRef, useState, useEffect, useCallback, useMemo, memo } from "react"
 import { ChevronRight } from "lucide-react"
 import { BONE_GROUPS } from "@/lib/animation"
@@ -43,11 +44,11 @@ const GroupRow = memo(function GroupRow({
 }) {
   const dict = useT()
   return (
-    <button
+    <Button variant="bare"
       type="button"
       onClick={onClick}
       className={cn(
-        "flex h-full w-full items-center gap-0 border-l-2 pl-1 pr-1.5 text-left text-[10px] font-medium leading-none text-muted-foreground",
+        "flex h-full w-full items-center gap-0 border-l-2 pl-1 pr-1.5 text-left text-2xs font-medium leading-none text-muted-foreground",
         isSelected
           ? "border-blue-400 bg-white/[0.03] text-blue-400 hover:bg-white/[0.05]"
           : "border-transparent hover:bg-white/[0.03]",
@@ -68,8 +69,8 @@ const GroupRow = memo(function GroupRow({
           sometimes ends in a number. Parentheses rather than the rows'
           brackets: this counts bones the group CONTAINS, theirs counts keys the
           clip HAS, and two different facts should not wear one notation. */}
-      <span className="ml-auto shrink-0 pl-1 tabular-nums text-[9px]">({boneCount})</span>
-    </button>
+      <span className="ml-auto shrink-0 pl-1 tabular-nums text-2xs">({boneCount})</span>
+    </Button>
   )
 })
 
@@ -85,11 +86,11 @@ const BoneRow = memo(function BoneRow({
   onClick: () => void
 }) {
   return (
-    <button
+    <Button variant="bare"
       type="button"
       onClick={onClick}
       className={cn(
-        "flex h-full w-full items-center gap-1 pl-2 pr-1.5 text-left font-mono text-[10px] font-normal leading-none",
+        "flex h-full w-full items-center gap-1 pl-2 pr-1.5 text-left font-mono text-2xs font-normal leading-none",
         isActive
           ? "bg-blue-400/[0.08] text-blue-400 hover:bg-blue-400/12"
           : "text-muted-foreground hover:bg-white/[0.03]",
@@ -102,11 +103,11 @@ const BoneRow = memo(function BoneRow({
     >
       <span className="min-w-0 flex-1 truncate">{name}</span>
       {kfCount > 0 && (
-        <span className={cn("ml-auto shrink-0 pl-1 tabular-nums text-[9px]", isActive ? "text-blue-400" : "text-muted-foreground")}>
+        <span className={cn("ml-auto shrink-0 pl-1 tabular-nums text-2xs", isActive ? "text-blue-400" : "text-muted-foreground")}>
           [{kfCount}]
         </span>
       )}
-    </button>
+    </Button>
   )
 })
 

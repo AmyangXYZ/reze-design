@@ -16,6 +16,7 @@
 // you are using. This is the extension instead: one box, owned in one place.
 // The 0.3.x chrome carried a second copy of this box; it went with that chrome.
 
+import { Input } from "@/components/ui/input"
 import { useState } from "react"
 import { cn } from "@/lib/utils"
 
@@ -44,7 +45,7 @@ export function SceneName({
 
   if (editing) {
     return (
-      <input
+      <Input variant="bare"
         autoFocus
         defaultValue={name}
         onFocus={(e) => e.currentTarget.select()}

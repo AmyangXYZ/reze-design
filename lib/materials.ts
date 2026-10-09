@@ -67,8 +67,8 @@ export const SLOT_GRAPHS = Object.fromEntries(
  *  use-community builds its built-in name set from GRAPH_LIBRARY at module
  *  scope, so reaching back into it from here is a cycle, and materials is still
  *  initialising when community reads from it. Community graphs need no entry
- *  anyway — they travel as pins, and an EDITED one is an orphan that
- *  adoptOrphanGraphs takes a local copy of. */
+ *  anyway — they travel as pins, and an EDITED one is saved as a local draft
+ *  by whatever edited it (the graph editor's save, the AI's tools). */
 export function libraryGraph(name: string): GraphItem["payload"]["graph"] | undefined {
   return GRAPH_LIBRARY.find((g) => g.name === name)?.payload.graph
 }

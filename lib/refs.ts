@@ -8,7 +8,7 @@
 
 import { DEFAULT_GRAPH, UNLIT_GRAPH, type ShaderGraph } from "reze-engine"
 import { EFFECTS } from "@/lib/effects"
-import { GRADE_PRESETS, type GradeSpec } from "@/lib/grade"
+import { GRADE_PRESETS, sameGradeLook, type GradeSpec } from "@/lib/grade"
 import { GRAPH_LIBRARY, sameGraphLook } from "@/lib/materials"
 import { stageLightSheetGraph, stagePbrGraph, stageSheetGraph } from "@/lib/gltf-stage"
 import { communityItems } from "@/lib/community-store"
@@ -49,9 +49,10 @@ export function effectRef(wgsl: string): ItemRef | undefined {
   return pin(effectMatch(wgsl))
 }
 
+// By value, like graphs: a published payload's keys come back from jsonb in
+// another order, so comparing JSON text never matched a scene's own copy.
 function gradeMatch(spec: GradeSpec): GradeItem | undefined {
-  const json = JSON.stringify(spec)
-  return candidates<GradeItem>("grade", GRADE_PRESETS).find((i) => JSON.stringify(i.payload.spec) === json)
+  return candidates<GradeItem>("grade", GRADE_PRESETS).find((i) => sameGradeLook(i.payload.spec, spec))
 }
 
 export function gradeRef(spec: GradeSpec): ItemRef | undefined {

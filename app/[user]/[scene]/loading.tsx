@@ -10,7 +10,7 @@ import { LoadingPill } from "@/components/editor/loading-pill"
 
 export default function Loading() {
   return (
-    <main className="fixed inset-0 bg-zinc-950">
+    <main className="fixed inset-0 bg-background">
       <LoadingPill />
     </main>
   )

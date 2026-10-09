@@ -16,6 +16,7 @@
 // One collapse toggle instead — collapsed IS the view state, so "what a share
 // link renders" stops being a mode anybody has to maintain.
 
+import { Input } from "@/components/ui/input"
 import { LIGHT_COOKIES, type LightCookie } from "@/lib/light-cookies"
 import {
   useCallback,
@@ -174,7 +175,7 @@ import { clearLocalBundle, loadCastPalette, loadLocalBundle, saveCastPalette, sa
 import { dictionaries, LOCALES, LOCALE_LABELS, useI18n, useT, type Dictionary, type Locale } from "@/lib/i18n"
 import { builtinName, localGroupLabel } from "@/lib/builtin-text"
 import { type BundleFile, bundleFileOf, expandUploadFiles, holdBundle, openZip, releaseBundle } from "@/lib/uploads"
-import { GRADE_PRESETS, gradeSpec, NEUTRAL_SPEC, NEW_GRADE_SPEC, recallIntensity, rememberIntensity } from "@/lib/grade"
+import { GRADE_PRESETS, gradeSpec, NEUTRAL_SPEC, sameGradeLook, NEW_GRADE_SPEC, recallIntensity, rememberIntensity } from "@/lib/grade"
 import {
   communityQuickPickItems,
   nameKey,
@@ -263,7 +264,7 @@ import { storageKey } from "@/lib/storage"
 
 /** Floating chrome — the 0.3.x chrome's `floating`, taken through the surface
  *  token so the pills and the panel cannot drift apart. */
-const PILL = "rounded-xl border border-white/10 bg-surface shadow-float backdrop-blur-xs"
+const PILL = "rounded-surface border border-line-strong bg-surface shadow-float backdrop-blur-xs"
 
 /** The iOS sheet curve — decelerating, no overshoot. Width, height and radius
  *  all ride it so the transport reads as ONE surface changing shape rather than
@@ -420,7 +421,7 @@ function SizeRow({
   onHeight: (v: number) => void
 }) {
   const box = (value: number, commit: (v: number) => void, key: string) => (
-    <input
+    <Input variant="bare"
       key={key}
       // The live value while not editing; a draft is local to the input, so
       // there is nothing to reconcile when the other box moves this one.
@@ -450,7 +451,7 @@ function SizeRow({
       <span className="w-16 shrink-0 truncate text-xs">{label}</span>
       <div className="ml-auto flex shrink-0 items-center gap-1">
         {box(width, onWidth, `w${width.toFixed(1)}`)}
-        <span className="text-[11px] text-muted-foreground">×</span>
+        <span className="text-2xs text-muted-foreground">×</span>
         {box(height, onHeight, `h${height.toFixed(1)}`)}
       </div>
     </div>
@@ -1517,7 +1518,7 @@ function UploadInvite({
   className?: string
 }) {
   return (
-    <button
+    <Button variant="bare"
       onClick={(e) => {
         e.stopPropagation()
         onClick()
@@ -1529,7 +1530,7 @@ function UploadInvite({
       )}
     >
       {label}
-    </button>
+    </Button>
   )
 }
 
@@ -1892,7 +1893,7 @@ function CastMemberRow({
           // Not a button: materials open from the palette alone, so a whole-row
           // click target would promise an edit surface the row does not own. The
           // tint still marks which model the open panel is editing.
-          className={cn("flex h-8 items-center gap-2.5 px-4 transition-colors", inspected && "bg-white/[0.06]")}
+          className={cn("flex h-8 items-center gap-2.5 px-4 transition-colors", inspected && "bg-white/5")}
         >
           <span className="shrink-0 font-mono text-xs text-muted-foreground">{slot}</span>
           {palette ? <CastSwatch palette={palette} /> : <Skeleton className="size-5 shrink-0 rounded-interior" />}
@@ -1941,13 +1942,13 @@ function CastMemberRow({
             popovers that read alike must behave alike, or the one you learn
             second teaches you nothing. */}
         <div className="mb-1 flex items-center justify-between gap-2 pl-0.5">
-          <span className="truncate text-[11px] text-muted-foreground">{t.lab.ctl.transform}</span>
+          <span className="truncate text-2xs text-muted-foreground">{t.lab.ctl.transform}</span>
           <Button
             size="sm"
             variant="ghost"
             disabled={!touched}
             onClick={onReset}
-            className="-mr-1 h-6 gap-1 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+            className="-mr-1 h-6 gap-1 px-1.5 text-2xs text-muted-foreground hover:text-foreground"
           >
             <RotateCcw className="size-3" />
             {t.lab.ctl.resetParams}
@@ -2011,7 +2012,7 @@ function CastMemberRow({
           />
         ))}
         <div className="mt-1.5 flex items-center justify-between">
-          <span className="text-[11px]">{t.lab.ctl.shadow}</span>
+          <span className="text-2xs">{t.lab.ctl.shadow}</span>
           <Switch size="sm" checked={castShadow} onCheckedChange={onCastShadow} />
         </div>
       </PopoverContent>
@@ -2090,14 +2091,14 @@ function AttachMenu({
       <PopoverContent
         align="end"
         sideOffset={6}
-        className="w-44 rounded-xl border-white/10 bg-zinc-950/95 p-1 shadow-float backdrop-blur-xs"
+        className="w-44 rounded-surface border-line-strong bg-surface-raised p-1 shadow-float backdrop-blur-xs"
       >
         <ChoiceList>
           {items.map((i) => (
-            <button
+            <Button variant="bare"
               key={i.key}
               disabled={i.disabled}
-              className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-muted-foreground disabled:pointer-events-none disabled:opacity-40 transition-colors hover:bg-white/5 hover:text-foreground"
+              className="flex w-full cursor-pointer items-center gap-2 rounded-interior px-2 py-1.5 text-left text-xs text-muted-foreground disabled:pointer-events-none disabled:opacity-40 transition-colors hover:bg-white/5 hover:text-foreground"
               onClick={() => {
                 setOpen(false)
                 i.onPick()
@@ -2105,7 +2106,7 @@ function AttachMenu({
             >
               <span className="min-w-0 flex-1 truncate">{i.label}</span>
               {i.checked && <Check className="size-3.5 shrink-0 text-blue-400" />}
-            </button>
+            </Button>
           ))}
         </ChoiceList>
       </PopoverContent>
@@ -2116,7 +2117,7 @@ function AttachMenu({
 function CastRowSkeleton({ slot }: { slot: number }) {
   return (
     <div className="flex h-8 items-center gap-2.5 px-4">
-      <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{slot}</span>
+      <span className="shrink-0 font-mono text-2xs text-muted-foreground">{slot}</span>
       <Skeleton className="size-5 shrink-0 rounded-interior" />
       {/* ONE line, because the row it stands in for is one line: the motion
           moved to the Clips group, and a two-line skeleton resolving into a
@@ -3246,7 +3247,7 @@ export default function Lab() {
     ]
     const preset = settings.grade.preset
     const source = gradeSpec(preset, [...gradeDrafts, ...communityGrades])
-    if (JSON.stringify(appliedGradeSpec) === JSON.stringify(source)) return items
+    if (sameGradeLook(appliedGradeSpec, source)) return items
     const known = items.some((i) => i.id === preset)
     const withOwn = known ? items : [...items, { id: preset, label: preset, section: "local" as const }]
     return withOwn.map((i) => (i.id === preset ? { ...i, hint: t.scene.edited } : i))
@@ -5985,6 +5986,19 @@ export default function Lab() {
       else createDraft("graph", { name, payload: { graph: named }, author: authorName })
       return name
     },
+    saveGradeDraft: (spec, wanted) => {
+      // The scene's grade when it is already one of the user's drafts — the AI
+      // refining its own grade, or one the user picked — so twenty adjustments
+      // leave one draft, not twenty.
+      const keep = loadDrafts().grade.find((d) => nameKey(d.name) === nameKey(settings.grade.preset))
+      if (keep) {
+        updateDraft("grade", keep.id, { payload: { spec } })
+        return keep.name
+      }
+      const name = freeGradeName(wanted?.trim() || "AI Grade")
+      createDraft("grade", { name, payload: { spec }, author: authorName })
+      return name
+    },
   })
 
   // The art director runs those tools in a loop (lib/ai/agent-loop); each
@@ -7023,8 +7037,8 @@ export default function Lab() {
           {/* Capture-tool convention: amber = framed (composing), red = recording. */}
           <div
             className={cn(
-              "absolute rounded-sm border",
-              framing.exporting ? "border-red-500/90" : "border-amber-400/80",
+              "absolute rounded-chip border",
+              framing.exporting ? "border-red-400/90" : "border-amber-400/80",
             )}
             style={{
               left: frameRect.x,
@@ -7100,7 +7114,7 @@ export default function Lab() {
                 size="icon"
                 onClick={() => setDockExpanded(true)}
                 aria-label={t.lab.expandPanel}
-                className="ml-auto size-7 shrink-0 rounded-lg text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                className="ml-auto size-7 shrink-0 rounded-interior text-muted-foreground hover:bg-white/5 hover:text-foreground"
               >
                 <ChevronDown className="size-4" />
               </Button>
@@ -7161,8 +7175,8 @@ export default function Lab() {
               {/* A key cap, so it should read as one: fixed height, centred, and the
               two glyphs spaced by a real gap rather than letter-spacing — which
               adds its space AFTER the K and pushes the pair off-centre. */}
-              <kbd className="ml-auto inline-flex h-4 min-w-[1.375rem] shrink-0 items-center justify-center gap-[3px] rounded-md border border-white/15 bg-white/[0.06] px-1 font-mono text-[10px] leading-none text-muted-foreground">
-                <span className="text-[11px]">⌘</span>
+              <kbd className="ml-auto inline-flex h-4 min-w-[1.375rem] shrink-0 items-center justify-center gap-[3px] rounded-chip border border-line-strong bg-white/5 px-1 font-mono text-2xs leading-none text-muted-foreground">
+                <span className="text-2xs">⌘</span>
                 <span>K</span>
               </kbd>
             </Button>
@@ -7180,7 +7194,7 @@ export default function Lab() {
                 // beside it — that is the only flex-1 in a cluster fixed at
                 // 16rem — so the pair still measures exactly what it did, with
                 // more of it spent on the control that has words to show.
-                className="h-7 shrink-0 rounded-lg bg-blue-400 px-2 text-xs font-medium text-white hover:bg-blue-300"
+                className="h-7 shrink-0 rounded-interior bg-blue-400 px-2 text-xs font-medium text-white hover:bg-blue-400/90"
               >
                 {t.lab.share}
               </Button>
@@ -7200,7 +7214,7 @@ export default function Lab() {
           // answer the dialog just finished asking you for.
           onOpenAutoFocus={(e) => e.preventDefault()}
           className={cn(
-            "rounded-xl border-line-strong bg-surface-raised backdrop-blur-xs",
+            "rounded-surface border-line-strong bg-surface-raised backdrop-blur-xs",
             shownUpload?.kind === "sky" ? "sm:max-w-2xl" : "max-w-sm",
           )}
         >
@@ -7236,9 +7250,9 @@ export default function Lab() {
           ) : shownUpload?.kind === "pick" ? (
             <ChoiceList className="max-h-64 overflow-y-auto overscroll-contain">
               {shownUpload.paths.map((path) => (
-                <button
+                <Button variant="bare"
                   key={path}
-                  className="block w-full cursor-pointer truncate rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-white/5 hover:text-foreground"
+                  className="block w-full cursor-pointer truncate rounded-interior px-3 py-2 text-left text-sm transition-colors hover:bg-white/5 hover:text-foreground"
                   onClick={() => {
                     const pmx = shownUpload.files.find((f) => relFilePath(f) === path)
                     if (pmx) void loadPicked(shownUpload.files, pmx, shownUpload.target)
@@ -7249,7 +7263,7 @@ export default function Lab() {
                   title={path}
                 >
                   {pmxLabel(path, shownUpload.paths)}
-                </button>
+                </Button>
               ))}
             </ChoiceList>
           ) : (
@@ -7264,14 +7278,14 @@ export default function Lab() {
       <Dialog open={styleOpen} onOpenChange={setStyleOpen}>
         <DialogContent
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="max-w-sm rounded-xl border-line-strong bg-surface-raised backdrop-blur-xs"
+          className="max-w-sm rounded-surface border-line-strong bg-surface-raised backdrop-blur-xs"
         >
           <DialogHeader>
             <DialogTitle className="text-sm">{t.brand.style}</DialogTitle>
           </DialogHeader>
           <ChoiceList>
             {LOOK_PACK_ORDER.map((pack) => (
-              <button
+              <Button variant="bare"
                 key={pack}
                 data-current={pack === activePack}
                 onClick={() => {
@@ -7283,13 +7297,13 @@ export default function Lab() {
                   applyLookPack(pack)
                 }}
                 className={cn(
-                  "flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-white/5",
+                  "flex w-full cursor-pointer items-center justify-between rounded-interior px-3 py-2 text-left text-sm transition-colors hover:bg-white/5",
                   pack === activePack ? "text-foreground" : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 {t.brand.styles[pack]}
-                {pack === activePack && <Check className="size-3.5 shrink-0 text-pink-400" />}
-              </button>
+                {pack === activePack && <Check className="size-3.5 shrink-0 text-blue-400" />}
+              </Button>
             ))}
           </ChoiceList>
         </DialogContent>
@@ -7298,7 +7312,7 @@ export default function Lab() {
       <Dialog open={langOpen} onOpenChange={setLangOpen}>
         <DialogContent
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="max-w-sm rounded-xl border-line-strong bg-surface-raised backdrop-blur-xs"
+          className="max-w-sm rounded-surface border-line-strong bg-surface-raised backdrop-blur-xs"
         >
           <DialogHeader>
             {/* Both languages in the title, so the dialog identifies itself to
@@ -7307,7 +7321,7 @@ export default function Lab() {
           </DialogHeader>
           <ChoiceList>
             {LOCALES.map((code) => (
-              <button
+              <Button variant="bare"
                 key={code}
                 data-current={code === locale}
                 onClick={() => {
@@ -7320,13 +7334,13 @@ export default function Lab() {
                   setLangOpen(false)
                 }}
                 className={cn(
-                  "flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-white/5",
+                  "flex w-full cursor-pointer items-center justify-between rounded-interior px-3 py-2 text-left text-sm transition-colors hover:bg-white/5",
                   code === locale ? "text-foreground" : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 {LOCALE_LABELS[code]}
                 {code === locale && <Check className="size-3.5 text-blue-400" />}
-              </button>
+              </Button>
             ))}
           </ChoiceList>
         </DialogContent>
@@ -7912,7 +7926,7 @@ export default function Lab() {
                   a build stamp rather than as a word. The tracking goes with
                   the proportional face — a mono figure already carries its own
                   spacing, and adding more only loosens the chip. */}
-              <span className="shrink-0 rounded-full bg-blue-400/15 px-1.5 py-0.5 font-mono text-[10px] leading-none font-medium text-blue-400">
+              <span className="shrink-0 rounded-full bg-blue-400/15 px-1.5 py-0.5 font-mono text-2xs leading-none font-medium text-blue-400">
                 {VERSION_LABEL}
               </span>
               {/* The repository, and through its README the manuals — which is
@@ -7926,7 +7940,7 @@ export default function Lab() {
                 size="icon"
                 asChild
                 tooltip="GitHub"
-                className="size-7 shrink-0 rounded-lg text-foreground hover:bg-white/5 hover:text-foreground"
+                className="size-7 shrink-0 rounded-interior text-foreground hover:bg-white/5 hover:text-foreground"
               >
                 <a href={REPO_URL} target="_blank" rel="noreferrer" aria-label="GitHub">
                   <GithubMark className="size-4" />
@@ -7939,7 +7953,7 @@ export default function Lab() {
                 size="icon"
                 onClick={() => setDockExpanded(false)}
                 aria-label={t.lab.collapsePanel}
-                className="ml-auto size-7 shrink-0 rounded-lg text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                className="ml-auto size-7 shrink-0 rounded-interior text-muted-foreground hover:bg-white/5 hover:text-foreground"
               >
                 <ChevronUp className="size-4" />
               </Button>
@@ -8080,7 +8094,7 @@ export default function Lab() {
               {cast.length > 1 && (
                 <div className="flex flex-wrap gap-1 px-4 pb-1.5">
                   {cast.map((m, slot) => (
-                    <button
+                    <Button variant="bare"
                       key={m.id}
                       aria-pressed={m.id === clipModel?.id}
                       onClick={() => setClipTab(m.id)}
@@ -8095,7 +8109,7 @@ export default function Lab() {
                       <span className="truncate" title={displayName(m.file)}>
                         {displayName(m.file)}
                       </span>
-                    </button>
+                    </Button>
                   ))}
                 </div>
               )}
@@ -8665,10 +8679,10 @@ export default function Lab() {
                           onBrowse={() => openBrowse({ kind: "effect" })}
                           placeholder={t.lab.ctl.none}
                           trigger={
-                            <button className="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground ring-1 ring-line-strong transition-colors hover:text-blue-400 hover:ring-blue-400/50">
+                            <Button variant="ghost" size="xs" className="flex-1 cursor-pointer text-muted-foreground ring-1 ring-line-strong hover:bg-transparent hover:text-blue-400 hover:ring-blue-400/50 dark:hover:bg-transparent">
                               <Plus className="size-3.5 shrink-0" />
                               <span className="truncate">{t.lab.ctl.selectEffect}</span>
-                            </button>
+                            </Button>
                           }
                         />
                         {/* The library keeps the white pill every library door
@@ -8678,13 +8692,13 @@ export default function Lab() {
                             place. It sits second: adding from the shortlist is
                             the common move, the library is where you go when
                             the shortlist has not got it. */}
-                        <button
+                        <Button variant="bare"
                           onClick={() => openBrowse({ kind: "effect" })}
-                          className="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-md bg-white px-2 py-1 text-xs font-medium text-zinc-900 transition-colors hover:bg-white/90"
+                          className="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-chip bg-white px-2 py-1 text-xs font-medium text-zinc-950 transition-colors hover:bg-white/90"
                         >
                           <Sparkles className="size-3.5 shrink-0" />
                           <span className="truncate">{t.lab.cmd.effectLib}</span>
-                        </button>
+                        </Button>
                       </div>
                       {/* Every applied effect gets a row, from the first one:
                           the row is where an effect is edited, swapped and
@@ -8735,7 +8749,7 @@ export default function Lab() {
                                   // the controls sit under the set of them.
                                   // Clicking the open one closes it, so the
                                   // list can go back to being just a list.
-                                  <button
+                                  <Button variant="bare"
                                     onClick={() => setSelectedEffect((cur) => (cur === e.uid ? null : (e.uid ?? null)))}
                                     title={effectLabel(e.name)}
                                     className={cn(
@@ -8744,7 +8758,7 @@ export default function Lab() {
                                     )}
                                   >
                                     <span className="min-w-0 truncate">{effectLabel(e.name)}</span>
-                                  </button>
+                                  </Button>
                                 }
                                 actions={
                                   <>
@@ -8784,7 +8798,7 @@ export default function Lab() {
                                       }}
                                       placeholder={t.lab.ctl.none}
                                       trigger={
-                                        <button
+                                        <Button variant="bare"
                                           aria-label={t.lab.aria.replaceEffect(e.name)}
                                           // stopPropagation for the same reason
                                           // CastAction does it: the row selects
@@ -8796,7 +8810,7 @@ export default function Lab() {
                                           className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-chip text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
                                         >
                                           <RefreshCw className="size-3.5" />
-                                        </button>
+                                        </Button>
                                       }
                                     />
                                     <CastAction
@@ -8933,13 +8947,13 @@ export default function Lab() {
                                     "pr-1",
                                   )}
                                 >
-                                  <button
+                                  <Button variant="bare"
                                     onClick={() => setSelectedPlane(plane.id)}
                                     title={plane.file}
                                     className="min-w-0 flex-1 cursor-pointer truncate text-left"
                                   >
                                     {plane.file}
-                                  </button>
+                                  </Button>
                                   {/* On every chip, not only the selected one:
                                       removing a card you are not editing should
                                       not require selecting it first. */}
@@ -8957,14 +8971,14 @@ export default function Lab() {
                                 of the cards, and sitting at the same distance
                                 as they sit from each other read as one. Dashed
                                 like the empty-state invite it replaces. */}
-                            <button
+                            <Button variant="bare"
                               onClick={() => planeInput.current?.click()}
                               aria-label={t.lab.uploadPlane}
                               title={t.lab.uploadPlane}
                               className="ml-1.5 flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-chip border border-dashed border-line-strong text-muted-foreground transition-colors hover:border-blue-400/60 hover:text-blue-400"
                             >
                               <Plus className="size-3.5" />
-                            </button>
+                            </Button>
                           </div>
                           {/* The selected card's own controls. `?? planes[0]`
                               so the section is never a row of chips with
@@ -9092,13 +9106,13 @@ export default function Lab() {
                                         "pr-1",
                                       )}
                                     >
-                                      <button
+                                      <Button variant="bare"
                                         onClick={() => setSelectedProp(prop.id)}
                                         title={prop.file}
                                         className="min-w-0 flex-1 cursor-pointer truncate text-left"
                                       >
                                         {displayName(prop.file)}
-                                      </button>
+                                      </Button>
                                       <CastAction
                                         icon={X}
                                         danger
@@ -9109,7 +9123,7 @@ export default function Lab() {
                                     </span>
                                   )
                                 })}
-                                <button
+                                <Button variant="bare"
                                   onClick={() => {
                                     modelTarget.current = { mode: "prop" }
                                     folderInput.current?.click()
@@ -9119,7 +9133,7 @@ export default function Lab() {
                                   className="ml-1.5 flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-chip border border-dashed border-line-strong text-muted-foreground transition-colors hover:border-blue-400/60 hover:text-blue-400"
                                 >
                                   <Plus className="size-3.5" />
-                                </button>
+                                </Button>
                               </div>
                               {(() => {
                                 const prop = shownProp
@@ -9141,7 +9155,7 @@ export default function Lab() {
                                           setPropAttach(prop.id, v === NO_PARENT ? null : { model: v, bone: defaultBoneFor(v) })
                                         }
                                       >
-                                        <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] text-[11px] data-[size=sm]:h-4">
+                                        <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] text-2xs data-[size=sm]:h-4">
                                           <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -9164,7 +9178,7 @@ export default function Lab() {
                                         disabled={!att}
                                         onValueChange={(v) => att && setPropAttach(prop.id, { model: att.model, bone: v })}
                                       >
-                                        <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] text-[11px] data-[size=sm]:h-4">
+                                        <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] text-2xs data-[size=sm]:h-4">
                                           <SelectValue placeholder={t.lab.ctl.none} />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -9362,7 +9376,7 @@ export default function Lab() {
                                       <CastLine
                                         revealed={open}
                                         text={
-                                          <button
+                                          <Button variant="bare"
                                             onClick={() => setLampOpen((cur) => (cur === l.id ? null : l.id))}
                                             title={l.name}
                                             className={cn(
@@ -9384,7 +9398,7 @@ export default function Lab() {
                                               style={{ background: l.color, opacity: off ? 0.3 : 1 }}
                                             />
                                             <span className="min-w-0 truncate">{l.name}</span>
-                                          </button>
+                                          </Button>
                                         }
                                         actions={
                                           <>
@@ -9420,7 +9434,7 @@ export default function Lab() {
                                         gears on two rows opening two rhythms is
                                         two idioms. */}
                                     <div className="flex items-center justify-between">
-                                      <span className="text-[11px]">{t.lab.lamp.on}</span>
+                                      <span className="text-2xs">{t.lab.lamp.on}</span>
                                       <Switch
                                         size="sm"
                                         checked={!off}
@@ -9445,7 +9459,7 @@ export default function Lab() {
                                           looking. None takes the picture away
                                           and leaves the cone. */}
                                       <div className="mt-2.5 flex items-center gap-2 first:mt-0">
-                                        <span className="w-[4.75rem] shrink-0 truncate text-[11px]">{t.lab.ctl.pattern}</span>
+                                        <span className="w-[4.75rem] shrink-0 truncate text-2xs">{t.lab.ctl.pattern}</span>
                                         <Select
                                           value={l.cookie ?? NO_COOKIE}
                                           onValueChange={(v) => {
@@ -9459,7 +9473,7 @@ export default function Lab() {
                                             patchLight(l.id, { cookie, aim, angle: l.angle ?? 50 })
                                           }}
                                         >
-                                          <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] text-[11px] data-[size=sm]:h-4">
+                                          <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] text-2xs data-[size=sm]:h-4">
                                             <SelectValue />
                                           </SelectTrigger>
                                           <SelectContent>
@@ -9646,13 +9660,13 @@ export default function Lab() {
                             telling them apart, and a door you identify by where
                             you are standing is one you can open by mistake. */}
                         <div className="mt-2.5 flex justify-center">
-                          <button
+                          <Button variant="bare"
                             onClick={() => openBrowse({ kind: "grade" })}
-                            className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white px-2 py-1 text-xs font-medium text-zinc-900 transition-colors hover:bg-white/90"
+                            className="flex shrink-0 cursor-pointer items-center gap-1 rounded-chip bg-white px-2 py-1 text-xs font-medium text-zinc-950 transition-colors hover:bg-white/90"
                           >
                             <Palette className="size-3.5" />
                             {t.lab.cmd.gradeLib}
-                          </button>
+                          </Button>
                         </div>
                       </TabsContent>
                       <TabsContent value="tone">
@@ -9929,7 +9943,7 @@ export default function Lab() {
                               disabled={!camera.follow || !!cameraClip}
                               onValueChange={(v) => camera.follow && changeCamera({ ...camera, follow: v })}
                             >
-                              <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] text-[11px] data-[size=sm]:h-4">
+                              <SelectTrigger size="sm" className="ml-auto max-w-[9.5rem] text-2xs data-[size=sm]:h-4">
                                 <SelectValue placeholder={t.lab.ctl.none} />
                               </SelectTrigger>
                               <SelectContent>
@@ -10190,7 +10204,7 @@ export default function Lab() {
             PILL,
             // The mark and "AI" on one line, in the same type as the editor's
             // other labelled pill (the export one): 13px, foreground.
-            "pointer-events-auto absolute top-1/2 right-3 flex h-10 -translate-y-1/2 items-center gap-2 px-4 text-[13px] font-medium text-foreground hover:bg-white/5",
+            "pointer-events-auto absolute top-1/2 right-3 flex h-10 -translate-y-1/2 items-center gap-2 px-4 text-sm font-medium text-foreground hover:bg-white/5",
             "transition-[opacity,scale,visibility,background-color,color] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
             agentOpen && "invisible scale-110 opacity-0",
           )}
@@ -10352,19 +10366,19 @@ export default function Lab() {
           reopens; no cancel here — destructive actions stay in the panel they
           belong to, and the pill simply vanishes when the download lands. */}
       {framing.exporting && !exportOpen && (
-        <button
+        <Button variant="bare"
           onClick={() => setExportOpen(true)}
           className={cn(
             PILL,
-            "absolute right-3 bottom-3 flex h-10 cursor-pointer items-center gap-2 px-4 text-[13px] text-foreground",
+            "absolute right-3 bottom-3 flex h-10 cursor-pointer items-center gap-2 px-4 text-sm text-foreground",
           )}
         >
-          <span className="size-2 animate-pulse rounded-full bg-red-500" />
+          <span className="size-2 animate-pulse rounded-full bg-red-400" />
           {t.lab.exporting}
           {/* Four characters wide in figures of one width, so the pill holds
               still from 0% to 100%. */}
           <span className="min-w-[4ch] text-right tabular-nums">{exportPct !== null ? `${exportPct}%` : "…"}</span>
-        </button>
+        </Button>
       )}
 
       {/* ── Transport ──

@@ -152,7 +152,7 @@ function ObjectTrackList({
     <div className={TRACK_COLUMN}>
       <div className="shrink-0 border-b border-line p-1">
         <Select value={objectId ?? undefined} onValueChange={(id) => onObject?.(id)} disabled={objects.length === 0}>
-          <SelectTrigger size="sm" className="w-full min-w-0 text-[11px] data-[size=sm]:h-5">
+          <SelectTrigger size="sm" className="w-full min-w-0 text-2xs data-[size=sm]:h-5">
             <SelectValue placeholder={t.lab.ctl.none} />
           </SelectTrigger>
           <SelectContent>
@@ -215,7 +215,7 @@ function VisibilityTrackList({
   return (
     <div className={TRACK_COLUMN}>
       {rows.length === 0 ? (
-        <div className="min-h-0 flex-1 px-2 text-[10px] leading-5 text-muted-foreground">{t.lab.ctl.none}</div>
+        <div className="min-h-0 flex-1 px-2 text-2xs leading-5 text-muted-foreground">{t.lab.ctl.none}</div>
       ) : (
         <div
           className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:none]"
@@ -273,7 +273,7 @@ function EffectTrackList({
   return (
     <div className={TRACK_COLUMN}>
       {rows.length === 0 ? (
-        <div className="min-h-0 flex-1 px-2 text-[10px] leading-5 text-muted-foreground">{t.lab.timeline.noEffects}</div>
+        <div className="min-h-0 flex-1 px-2 text-2xs leading-5 text-muted-foreground">{t.lab.timeline.noEffects}</div>
       ) : (
         <div
           className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:none]"
@@ -317,7 +317,7 @@ function TrackRow({
       variant="ghost"
       onClick={onClick}
       className={cn(
-        "h-5 w-full justify-start gap-1 rounded-none px-2 text-left text-[10px] font-normal leading-none transition-none",
+        "h-5 w-full justify-start gap-1 rounded-none px-2 text-left text-2xs font-normal leading-none transition-none",
         mono && "font-mono",
         active
           ? "bg-blue-400/[0.08] text-blue-400 hover:bg-blue-400/12 hover:text-blue-400 dark:hover:bg-blue-400/12"
@@ -326,7 +326,7 @@ function TrackRow({
       )}
     >
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {count > 0 && <span className="shrink-0 text-[9px] tabular-nums">[{count}]</span>}
+      {count > 0 && <span className="shrink-0 text-2xs tabular-nums">[{count}]</span>}
     </Button>
   )
 }

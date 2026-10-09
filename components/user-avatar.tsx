@@ -27,7 +27,7 @@ export function UserAvatar({
   return (
     <span
       className={cn(
-        "flex size-4 shrink-0 items-center justify-center rounded-full font-mono text-[8px] font-semibold",
+        "flex size-4 shrink-0 items-center justify-center rounded-full font-mono text-2xs font-semibold",
         tagSwatch(name),
         className,
       )}

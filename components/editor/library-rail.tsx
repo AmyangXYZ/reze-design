@@ -48,7 +48,7 @@ export const LIBRARY_SHELL =
   // instead. `top` positions the dialog's CENTRE (it is translated -50%), so
   // 48.5 - 87/2 leaves 5dvh above and 8dvh below — the same clearance the
   // transport had at 84dvh centred, which is the number that was tuned for it.
-  "flex h-[87dvh] max-h-[87dvh] top-[48.5dvh] w-[90vw] max-w-5xl flex-col gap-0 overflow-hidden border-white/10 bg-zinc-950/95 p-0 sm:max-w-5xl " +
+  "flex h-[87dvh] max-h-[87dvh] top-[48.5dvh] w-[90vw] max-w-5xl flex-col gap-0 overflow-hidden border-line-strong bg-surface-raised p-0 sm:max-w-5xl " +
   "data-[state=closed]:animate-none data-[state=closed]:fade-out-100 data-[state=closed]:zoom-out-100 " +
   "data-[state=open]:animate-none data-[state=open]:fade-in-100 data-[state=open]:zoom-in-100"
 
@@ -78,7 +78,7 @@ export function ShelfCount({ n }: { n: number }) {
 const TAG_SWATCHES = [
   "bg-rose-400/25 text-rose-200",
   "bg-orange-400/25 text-orange-200",
-  "bg-amber-400/25 text-amber-200",
+  "bg-amber-400/25 text-amber-400",
   "bg-emerald-400/25 text-emerald-200",
   "bg-teal-400/25 text-teal-200",
   "bg-sky-400/25 text-sky-200",
@@ -90,7 +90,7 @@ const TAG_SWATCHES = [
 const TAG_HUES = [
   "border-rose-400/30 bg-rose-400/10 text-rose-300",
   "border-orange-400/30 bg-orange-400/10 text-orange-300",
-  "border-amber-400/30 bg-amber-400/10 text-amber-300",
+  "border-amber-400/30 bg-amber-400/10 text-amber-400",
   "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
   "border-teal-400/30 bg-teal-400/10 text-teal-300",
   "border-sky-400/30 bg-sky-400/10 text-sky-300",
@@ -114,7 +114,7 @@ export function tagHue(tag: string): string {
 
 export function RailSection({ title, className, children }: { title: string; className?: string; children: ReactNode }) {
   return (
-    <div className={cn("flex min-h-0 flex-col first:border-t-0 first:pt-0 [&+&]:mt-2 [&+&]:border-t [&+&]:border-white/10 [&+&]:pt-2", className)}>
+    <div className={cn("flex min-h-0 flex-col first:border-t-0 first:pt-0 [&+&]:mt-2 [&+&]:border-t [&+&]:border-line [&+&]:pt-2", className)}>
       <div className="px-2 py-1.5 text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
         {title}
       </div>
@@ -139,21 +139,21 @@ export function RailRow({
   leading?: ReactNode
 }) {
   return (
-    <button
+    <Button variant="bare"
       onClick={onClick}
       className={cn(
-        "flex h-7 shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-[11px] transition-colors",
+        "flex h-7 shrink-0 cursor-pointer items-center gap-2 rounded-chip px-2 text-2xs transition-colors",
         active ? "bg-blue-400/15 font-medium text-blue-400" : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
       )}
     >
       {leading}
       <span className="min-w-0 flex-1 truncate text-left">{label}</span>
       {count !== undefined && (
-        <span className={cn("font-mono text-[11px]", active ? "text-blue-400/80" : "text-muted-foreground/60")}>
+        <span className={cn("font-mono text-2xs", active ? "text-blue-400" : "text-muted-foreground")}>
           {count}
         </span>
       )}
-    </button>
+    </Button>
   )
 }
 
@@ -195,18 +195,18 @@ export function RailTags({
           {sorted.map(([name, n]) => {
             const on = tag === name
             return (
-              <button
+              <Button variant="bare"
                 key={name}
                 onClick={() => onTagChange(on ? null : name)}
                 className={cn(
-                  "flex cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-[color,background-color,border-color,box-shadow,opacity]",
+                  "flex cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 text-2xs font-medium transition-[color,background-color,border-color,box-shadow,opacity]",
                   tagHue(name),
                   on ? "ring-1 ring-white/50 brightness-125" : "opacity-75 hover:opacity-100",
                 )}
               >
                 <span className="max-w-28 truncate font-medium">{tagLabel(name, locale)}</span>
-                <span className="font-mono text-[10px] font-medium opacity-70">{n}</span>
-              </button>
+                <span className="font-mono text-2xs font-medium opacity-70">{n}</span>
+              </Button>
             )
           })}
         </div>
@@ -225,7 +225,7 @@ export function LibraryTags({ tags, lead }: { tags: string[]; lead?: ReactNode }
           it (Display only), first in the same row. */}
       {lead}
       {tags.map((tag) => (
-        <span key={tag} className={cn("rounded border px-1.5 py-0.5 text-[11px]", tagHue(tag))}>
+        <span key={tag} className={cn("rounded-chip border px-1.5 py-0.5 text-2xs", tagHue(tag))}>
           {tagLabel(tag, locale)}
         </span>
       ))}
@@ -256,7 +256,7 @@ export function LibraryStats({ likeCount, liked }: { likeCount: number; liked: b
         // items-center centred a 12px glyph against a text box half again its
         // height and the number sat visibly low. Tight leading makes the box the
         // glyphs, and then centring is centring.
-        "flex shrink-0 items-center gap-1 font-mono text-[11px] leading-none",
+        "flex shrink-0 items-center gap-1 font-mono text-2xs leading-none",
         liked ? "text-red-400" : "text-muted-foreground",
       )}
     >
@@ -362,7 +362,7 @@ export function LibraryItemStats({
           one scene makes several. Adding them would hide the comparison this is
           for — an item with few scenes and many exports is used constantly and
           shared elsewhere, which is the thing worth seeing. */}
-      <span className="min-w-0 flex-1 text-[11px] leading-tight text-muted-foreground">
+      <span className="min-w-0 flex-1 text-2xs leading-tight text-muted-foreground">
         {t.library.usedInScenes(scenes)} · {t.library.usedInExports(exports)}
       </span>
       <LibraryLike likeCount={likeCount} liked={liked} canLike={canLike} onToggle={onToggle} />

@@ -154,7 +154,7 @@ function inline(text: string): ReactNode[] {
   for (let m = re.exec(text); m; m = re.exec(text)) {
     if (m.index > at) out.push(text.slice(at, m.index))
     if (m[1]) out.push(<strong key={m.index} className="font-semibold">{m[1]}</strong>)
-    else if (m[2]) out.push(<code key={m.index} className="rounded-chip border border-line px-1 font-mono text-[11px]">{m[2]}</code>)
+    else if (m[2]) out.push(<code key={m.index} className="rounded-chip border border-line px-1 font-mono text-2xs">{m[2]}</code>)
     else out.push(<em key={m.index}>{m[3]}</em>)
     at = m.index + m[0].length
   }
@@ -429,7 +429,7 @@ export function AgentPanel({
             <Row
               key={i}
               mark={<Prompt />}
-              className={cn("-mx-1.5 rounded-interior bg-white/[0.06] px-1.5 py-1", i > 0 && "mt-4")}
+              className={cn("-mx-1.5 rounded-interior bg-white/5 px-1.5 py-1", i > 0 && "mt-4")}
             >
               {l.images?.length ? (
                 <div className="mb-1.5 flex flex-wrap gap-1.5">
@@ -537,7 +537,7 @@ export function AgentPanel({
           count after — a line of its own above the input, so the chat ends
           above it rather than running underneath. */}
       {usage !== undefined && (
-        <div className="flex shrink-0 items-end justify-end px-4 pb-1 text-[11px] leading-4 text-muted-foreground tabular-nums">
+        <div className="flex shrink-0 items-end justify-end px-4 pb-1 text-2xs leading-4 text-muted-foreground tabular-nums">
           {usage ? (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -553,7 +553,7 @@ export function AgentPanel({
         </div>
       )}
       <div className="shrink-0 border-t border-line px-2.5 py-1.5">
-        <div className="rounded-interior bg-white/[0.06] px-1.5 py-1 ring-blue-400 focus-within:ring-1">
+        <div className="rounded-interior bg-white/5 px-1.5 py-1 ring-blue-400 focus-within:ring-1">
           {(refs.length > 0 || preparing > 0) && (
             <div className="mb-1.5 flex flex-wrap gap-1.5 pl-[18px]">
               {refs.map((r, k) => (
@@ -650,7 +650,7 @@ export function AgentPanel({
                 // The prompt mark, the picture and send are one size and one
                 // weight; send is told apart by colour alone — blue once there
                 // is something to send.
-                className="size-5 shrink-0 text-blue-400 hover:bg-transparent hover:text-blue-300 disabled:text-muted-foreground"
+                className="size-5 shrink-0 text-blue-400 hover:bg-transparent hover:text-blue-400 disabled:text-muted-foreground"
               >
                 <ArrowUp className="size-3.5" />
               </Button>

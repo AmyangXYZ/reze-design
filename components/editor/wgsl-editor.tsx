@@ -167,7 +167,7 @@ export function WgslEditorPanel({
       minW={420}
       minH={280}
       // z-50 like the graph editor
-      className="overflow-hidden rounded-xl border border-white/10 bg-zinc-950/95 shadow-float"
+      className="overflow-hidden rounded-surface border border-line-strong bg-surface-raised shadow-float"
     >
       <EditorBody
         key={sessionId}
@@ -274,7 +274,7 @@ function EditorBody({
         <div className="flex min-h-full w-max min-w-full">
           <div
             aria-hidden
-            className="sticky left-0 z-10 w-11 shrink-0 border-r border-white/5 bg-[#131318] pr-2.5 text-right text-muted-foreground/35 select-none"
+            className="sticky left-0 z-10 w-11 shrink-0 border-r border-line bg-[#131318] pr-2.5 text-right text-muted-foreground select-none"
             style={{ ...CODE_STYLE, paddingTop: 12, paddingBottom: 12 }}
           >
             {Array.from({ length: lineCount }, (_, i) => (
@@ -288,6 +288,7 @@ function EditorBody({
               ))}
             </div>
             {/* overflow-hidden + box ≥ content ⇒ the textarea never scrolls itself */}
+            {/* eslint-disable-next-line no-restricted-syntax -- a transparent native layer over the highlighted code; any primitive styling would show */}
             <textarea
               value={code}
               onChange={(e) => {
@@ -315,10 +316,10 @@ function EditorBody({
       </div>
 
       {/* One status row: errors (or the ok note) sit left of the Compile button. */}
-      <div className="flex shrink-0 items-center gap-3 border-t border-white/10 px-3 py-2">
+      <div className="flex shrink-0 items-center gap-3 border-t border-line px-3 py-2">
         {result && !result.ok && (
           <span
-            className="min-w-0 flex-1 truncate text-[11px] text-red-400"
+            className="min-w-0 flex-1 truncate text-2xs text-red-400"
             title={result.diagnostics.join("\n")}
             style={{ fontFamily: CODE_FONT }}
           >
@@ -326,7 +327,7 @@ function EditorBody({
           </span>
         )}
         {result?.ok && (
-          <span className="min-w-0 truncate text-[11px] text-muted-foreground" style={{ fontFamily: CODE_FONT }}>
+          <span className="min-w-0 truncate text-2xs text-muted-foreground" style={{ fontFamily: CODE_FONT }}>
             {t.effectLibrary.appliedOk}
           </span>
         )}
@@ -336,7 +337,7 @@ function EditorBody({
           onClick={() => void compile()}
           disabled={busy}
           title="⌘/Ctrl + Enter"
-          className="h-7 bg-blue-400 px-3 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-50"
+          className="h-7 bg-blue-400 px-3 text-xs font-medium text-white hover:bg-blue-400/90 disabled:opacity-50"
         >
           {t.effectLibrary.compile}
         </Button>

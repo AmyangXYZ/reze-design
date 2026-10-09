@@ -76,7 +76,7 @@ function SignInForm() {
       {available.includes("email") && (
         <>
           {social.length > 0 && (
-            <div className="flex items-center gap-3 py-1 text-[11px] text-muted-foreground">
+            <div className="flex items-center gap-3 py-1 text-2xs text-muted-foreground">
               <span className="h-px flex-1 bg-line" />
               {t.account.or}
               <span className="h-px flex-1 bg-line" />
@@ -144,7 +144,7 @@ function EmailCodeForm() {
     >
       {sentTo ? (
         <>
-          <p className="text-[11px] leading-relaxed text-muted-foreground">{t.account.codeSentTo(sentTo)}</p>
+          <p className="text-2xs leading-relaxed text-muted-foreground">{t.account.codeSentTo(sentTo)}</p>
           <Input
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
@@ -158,10 +158,10 @@ function EmailCodeForm() {
             {busy ? t.account.working : t.account.verifyCode}
           </Button>
           <div className="flex justify-between">
-            <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => setSentTo(null)} className="h-7 px-1 text-[11px] text-muted-foreground">
+            <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => setSentTo(null)} className="h-7 px-1 text-2xs text-muted-foreground">
               {t.account.otherEmail}
             </Button>
-            <Button type="button" variant="ghost" size="sm" disabled={busy || wait > 0} onClick={() => void send(sentTo)} className="h-7 px-1 text-[11px] text-muted-foreground tabular-nums">
+            <Button type="button" variant="ghost" size="sm" disabled={busy || wait > 0} onClick={() => void send(sentTo)} className="h-7 px-1 text-2xs text-muted-foreground tabular-nums">
               {wait > 0 ? `${t.account.sendAgain} (${wait})` : t.account.sendAgain}
             </Button>
           </div>
@@ -181,7 +181,7 @@ function EmailCodeForm() {
           </Button>
         </>
       )}
-      {error && <p className="select-text text-[11px] text-amber-400">{error}</p>}
+      {error && <p className="select-text text-2xs text-amber-400">{error}</p>}
     </form>
   )
 }
@@ -254,36 +254,36 @@ function Portfolio({
             className="flex w-full items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-white/5"
           >
             <House className="size-4 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{t.account.profile}</span>
+            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{t.account.profile}</span>
             <ArrowUpRight className="size-3.5 shrink-0 text-muted-foreground" />
           </Link>
         </PopoverClose>
       )}
       {cells.map((c) => (
         <PopoverClose key={c.key} asChild>
-          <button
+          <Button variant="bare"
             type="button"
             onClick={c.onClick}
             className="flex w-full cursor-pointer items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-white/5"
           >
             <c.icon className="size-4 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{c.label}</span>
-            <span className="shrink-0 font-mono text-[13px] text-foreground">{n(stats?.[c.key])}</span>
-          </button>
+            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{c.label}</span>
+            <span className="shrink-0 font-mono text-xs text-foreground">{n(stats?.[c.key])}</span>
+          </Button>
         </PopoverClose>
       ))}
       {/* Every library has a Liked shelf and nothing in the product opened one.
           Scenes, because that is where likes mostly land and the gallery is the
           surface that can page them. */}
       <PopoverClose asChild>
-        <button
+        <Button variant="bare"
           type="button"
           onClick={() => onOpenLibrary?.("scene", "liked")}
           className="flex w-full cursor-pointer items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-white/5"
         >
           <Heart className="size-4 shrink-0 text-muted-foreground" />
-          <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{t.account.youLiked}</span>
-        </button>
+          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{t.account.youLiked}</span>
+        </Button>
       </PopoverClose>
       {/* LIKES EARNED IS A FACT, NOT A DOOR. It totals across all four kinds, so
           there is no one shelf it could open — and a row that looks like the
@@ -291,8 +291,8 @@ function Portfolio({
           as a number. Its own block, under a rule, is what says so. */}
       <div className="flex items-center gap-2.5 border-t border-line px-4 py-2">
         <Heart className="size-4 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{t.account.likesEarned}</span>
-        <span className="shrink-0 font-mono text-[13px] text-foreground">{n(stats?.likes)}</span>
+        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{t.account.likesEarned}</span>
+        <span className="shrink-0 font-mono text-xs text-foreground">{n(stats?.likes)}</span>
       </div>
     </div>
   )
@@ -321,7 +321,7 @@ export function HandleDialog() {
         <DialogDescription className="mt-1 text-xs leading-snug text-muted-foreground">
           {t.account.handleHint}
         </DialogDescription>
-        <p className="mt-1.5 text-xs leading-snug text-amber-200/90">{t.account.handleOnce}</p>
+        <p className="mt-1.5 text-xs leading-snug text-amber-400">{t.account.handleOnce}</p>
         {session?.user.username && <HandleField current={session.user.username} />}
       </DialogContent>
     </Dialog>
@@ -394,13 +394,13 @@ function HandleField({ current }: { current: string }) {
           type="submit"
           size="sm"
           disabled={!valid || state === "saving"}
-          className="h-7 shrink-0 bg-blue-400 px-2 text-xs text-white hover:bg-blue-300 disabled:opacity-40"
+          className="h-7 shrink-0 bg-blue-400 px-2 text-xs text-white hover:bg-blue-400/90 disabled:opacity-40"
         >
           {t.account.handleSave}
         </Button>
       </form>
       {message && (
-        <div className={cn("mt-1 text-[11px]", state === "saved" ? "text-blue-400" : "text-red-400")}>{message}</div>
+        <div className={cn("mt-1 text-2xs", state === "saved" ? "text-blue-400" : "text-red-400")}>{message}</div>
       )}
     </div>
   )
@@ -436,13 +436,13 @@ export function AccountButton({
     <Button
       variant="ghost"
       size="icon"
-      className={cn("rounded-md hover:bg-white/5 hover:text-foreground", asHeader ? "size-8" : "size-7")}
+      className={cn("rounded-chip hover:bg-white/5 hover:text-foreground", asHeader ? "size-8" : "size-7")}
       aria-label={t.account.label}
     >
       {/* A shade larger than the outline icon — a photo needs more area than a
           line drawing to read at this size, without filling the whole button. */}
       {session ? (
-        <UserAvatar name={handle} image={session.user.image} className={cn("text-[9px]", asHeader ? "size-6.5" : "size-5.5")} />
+        <UserAvatar name={handle} image={session.user.image} className={cn("text-2xs", asHeader ? "size-6.5" : "size-5.5")} />
       ) : (
         <CircleUserRound className={asHeader ? "size-5" : "size-4"} />
       )}
@@ -484,9 +484,8 @@ export function AccountButton({
         sideOffset={8}
         // Opening the menu is not a request to rename yourself.
         onOpenAutoFocus={(e) => e.preventDefault()}
-        // No backdrop-blur: this floats over the 3D canvas, which is animating
-        // exactly while the menu is open. Same reason, same tokens as the
-        // dock's own popovers. See AGENTS.md.
+        // No backdrop-blur: bg-surface-raised is near-opaque, so a blur behind
+        // it would cost frames over the animating canvas and show nothing.
         // 16rem: the width of the whole top-right cluster it hangs from, so its
         // left edge meets the palette pill's.
         className="w-[16rem] rounded-surface border-line-strong bg-surface-raised p-0 shadow-float"
@@ -498,13 +497,13 @@ export function AccountButton({
               <span className="truncate font-mono text-xs font-medium">{handle}</span>
               {/* The version chip's shape, filled in Reze's violet: the plan, shown to its holder. */}
               {premium && (
-                <span className="inline-flex h-4 shrink-0 items-center gap-0.5 rounded-full border border-violet-300 bg-reze pr-1.5 pl-1 text-[10px] leading-none font-semibold tracking-wide text-white">
+                <span className="inline-flex h-4 shrink-0 items-center gap-0.5 rounded-full border border-violet-300 bg-reze pr-1.5 pl-1 text-2xs leading-none font-semibold tracking-wide text-white">
                   <Sparkle className="size-2.5" strokeWidth={2.5} />
                   {t.premium.label}
                 </span>
               )}
             </div>
-            <div className="truncate text-[11px] text-muted-foreground">{session.user.email}</div>
+            <div className="truncate text-2xs text-muted-foreground">{session.user.email}</div>
           </div>
         </div>
         {session.user.username && !session.user.usernameChangedAt && (
@@ -518,7 +517,7 @@ export function AccountButton({
             size="sm"
             variant="ghost"
             onClick={() => void signOut()}
-            className="h-8 w-full gap-1.5 border border-red-500/25 bg-red-500/10 text-xs text-red-400 hover:bg-red-500/20 hover:text-red-300"
+            className="h-8 w-full gap-1.5 border border-red-400/25 bg-red-400/10 text-xs text-red-400 hover:bg-red-400/20 hover:text-red-400"
           >
             <LogOut className="size-3.5" />
             {t.account.signOut}

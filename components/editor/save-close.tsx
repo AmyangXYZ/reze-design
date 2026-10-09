@@ -40,7 +40,7 @@ export function SaveCloseDialog({
       <DialogContent
         onOpenAutoFocus={(e) => e.preventDefault()}
         onCloseAutoFocus={(e) => e.preventDefault()}
-        className="w-[22rem] border-white/10 bg-zinc-950/95 p-5 sm:max-w-[22rem]"
+        className="w-[22rem] border-line-strong bg-surface-raised p-5 sm:max-w-[22rem]"
       >
         <DialogTitle className="text-sm font-medium">{t.library.saveChanges}</DialogTitle>
         <DialogDescription className="text-xs text-muted-foreground">{t.library.saveChangesBlurb}</DialogDescription>
@@ -60,11 +60,11 @@ export function SaveCloseDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
               maxLength={60}
-              className="h-8 border-white/10 bg-white/5 text-xs"
+              className="h-8 border-line-strong bg-white/5 text-xs"
             />
           )}
           {error && (
-            <p className="max-h-16 overflow-y-auto font-mono text-[11px] leading-relaxed break-all text-red-400">
+            <p className="max-h-16 overflow-y-auto font-mono text-2xs leading-relaxed break-all text-red-400">
               {error}
             </p>
           )}
@@ -77,7 +77,7 @@ export function SaveCloseDialog({
             >
               {t.library.discard}
             </Button>
-            <Button type="submit" disabled={busy} className="h-8 flex-1 bg-blue-400 text-xs font-medium text-white hover:bg-blue-300 disabled:opacity-50">
+            <Button type="submit" disabled={busy} className="h-8 flex-1 bg-blue-400 text-xs font-medium text-white hover:bg-blue-400/90 disabled:opacity-50">
               {t.library.save}
             </Button>
           </div>

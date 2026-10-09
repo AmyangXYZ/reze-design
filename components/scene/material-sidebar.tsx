@@ -218,16 +218,16 @@ export const MaterialsPanel = memo(function MaterialsPanel({
         onDragEnd={endDrag}
         onContextMenu={() => setMenuTarget({ kind: "material", name: m.name, groupId: currentGroupId })}
         className={cn(
-          "group/row flex h-6 cursor-grab items-center gap-1.5 rounded pr-0.5 pl-1 transition-colors hover:bg-white/[0.05] active:cursor-grabbing",
+          "group/row flex h-6 cursor-grab items-center gap-1.5 rounded-chip pr-0.5 pl-1 transition-colors hover:bg-white/[0.05] active:cursor-grabbing",
           !m.visible && "opacity-45",
           dragMat === m.name && "opacity-40",
         )}
         onMouseEnter={() => onHover(m.name)}
         onMouseLeave={() => onHover(null)}
       >
-        <Circle className="size-1.5 shrink-0 fill-current text-muted-foreground/60" />
+        <Circle className="size-1.5 shrink-0 fill-current text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground group-hover/row:text-foreground">{m.name}</span>
-        <button
+        <Button variant="bare"
           className={cn("shrink-0 text-muted-foreground hover:text-foreground", m.visible && "opacity-0 group-hover/row:opacity-100")}
           onClick={(e) => {
             e.stopPropagation()
@@ -240,7 +240,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
           }}
         >
           {m.visible ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
-        </button>
+        </Button>
       </div>
     )
   }
@@ -251,19 +251,19 @@ export const MaterialsPanel = memo(function MaterialsPanel({
       {modelTabs.length > 1 && (
         <div className={cn("flex flex-wrap gap-1 px-4", dense ? "pt-2" : "pt-3.5")}>
           {modelTabs.map((m) => (
-            <button
+            <Button variant="bare"
               key={m.id}
               onClick={() => onSelectModel(m.id)}
               className={cn(
-                "max-w-full truncate rounded-md border px-2 py-0.5 text-[11px] transition-colors",
+                "max-w-full truncate rounded-chip border px-2 py-0.5 text-2xs transition-colors",
                 m.active
                   ? "border-blue-400/40 bg-blue-400/10 text-foreground"
-                  : "border-white/10 text-muted-foreground hover:bg-white/5 hover:text-foreground",
+                  : "border-line-strong text-muted-foreground hover:bg-white/5 hover:text-foreground",
               )}
               title={m.file}
             >
               {m.file.replace(/\.pmx$/i, "")}
-            </button>
+            </Button>
           ))}
         </div>
       )}
@@ -297,13 +297,13 @@ export const MaterialsPanel = memo(function MaterialsPanel({
         {/* Library at the right end, matching Grade and Background. Last to give up
             room: the label is what tells the three doors apart. */}
         {onOpenLibrary && (
-        <button
+        <Button variant="bare"
           onClick={() => onOpenLibrary(libraryTarget)}
-          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white py-1 pr-1.5 pl-2 text-xs font-medium text-zinc-900 transition-colors hover:bg-white/90 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-white"
+          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-chip bg-white py-1 pr-1.5 pl-2 text-xs font-medium text-zinc-950 transition-colors hover:bg-white/90 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-white"
         >
           <Workflow className="size-3.5" />
           {t.lab.cmd.graphLib}
-        </button>
+        </Button>
         )}
       </div>
 
@@ -328,18 +328,18 @@ export const MaterialsPanel = memo(function MaterialsPanel({
             const isActive = activeGroupId === g.id
             const isDrop = dropTarget === g.id
             return (
-              <div key={g.id} className={cn("rounded", isDrop && "ring-1 ring-blue-400/50 ring-inset")} {...dropZone(g.id, g.id)}>
+              <div key={g.id} className={cn("rounded-chip", isDrop && "ring-1 ring-blue-400/50 ring-inset")} {...dropZone(g.id, g.id)}>
                 {/* Group row — single-click selects/deselects; chevron toggles collapse */}
                 <div
                   data-ctx="row"
                   className={cn(
-                    "group/hdr flex h-6 cursor-pointer items-center gap-1 rounded pr-0.5 transition-colors",
+                    "group/hdr flex h-6 cursor-pointer items-center gap-1 rounded-chip pr-0.5 transition-colors",
                     isActive ? "bg-blue-400/[0.1]" : "hover:bg-white/[0.04]",
                   )}
                   onClick={() => toggleCollapse(g.id)}
                   onContextMenu={() => setMenuTarget({ kind: "group", id: g.id })}
                 >
-                      <button
+                      <Button variant="bare"
                         className="flex h-full shrink-0 items-center px-0.5 text-muted-foreground hover:text-foreground"
                         onClick={(e) => {
                           e.stopPropagation() // chevron only collapses; don't toggle selection
@@ -347,13 +347,13 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                         }}
                       >
                         {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-                      </button>
+                      </Button>
 
                       {renaming === g.id ? (
                         <Input
                           ref={renameRef}
                           defaultValue={shownLabel(g)}
-                          className="h-5 min-w-0 flex-1 border-white/10 bg-white/5 px-1 text-xs font-medium md:text-xs"
+                          className="h-5 min-w-0 flex-1 border-line-strong bg-white/5 px-1 text-xs font-medium md:text-xs"
                           onClick={(e) => e.stopPropagation()}
                           onBlur={(e) => {
                             // Left as shown, a translated default keeps its stored English.
@@ -403,13 +403,13 @@ export const MaterialsPanel = memo(function MaterialsPanel({
 
                 {/* ── Children (indent guide) ── */}
                 {open && (
-                  <div className="ml-[10px] border-l border-white/[0.06] pl-1">
+                  <div className="ml-[10px] border-l border-line pl-1">
                     {sortedNames(g.materials).map((name, i) => {
                       const m = byName.get(name)
                       return m ? materialRow(m, g.id, name + "#" + i) : null
                     })}
                     {g.materials.length === 0 && (
-                      <div className="px-2 py-1 pl-3 text-xs text-muted-foreground/60 italic">{t.materials.dragHere}</div>
+                      <div className="px-2 py-1 pl-3 text-xs text-muted-foreground italic">{t.materials.dragHere}</div>
                     )}
                   </div>
                 )}
@@ -420,17 +420,17 @@ export const MaterialsPanel = memo(function MaterialsPanel({
           {/* ── Ungrouped section ── */}
           {ungrouped.length > 0 && (
             <div
-              className={cn("mt-0.5 rounded", dropTarget === UNGROUPED && "ring-1 ring-blue-400/50 ring-inset")}
+              className={cn("mt-0.5 rounded-chip", dropTarget === UNGROUPED && "ring-1 ring-blue-400/50 ring-inset")}
               {...dropZone(UNGROUPED, null)}
             >
               <div
                 className={cn(
-                  "group/hdr flex h-6 cursor-pointer items-center gap-1 rounded pr-0.5 transition-colors",
+                  "group/hdr flex h-6 cursor-pointer items-center gap-1 rounded-chip pr-0.5 transition-colors",
                   "hover:bg-white/[0.04]",
                 )}
                 onClick={() => toggleCollapse(UNGROUPED)}
               >
-                <button
+                <Button variant="bare"
                   className="flex h-full shrink-0 items-center px-0.5 text-muted-foreground hover:text-foreground"
                   onClick={(e) => {
                     e.stopPropagation()
@@ -438,7 +438,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                   }}
                 >
                   {collapsed.has(UNGROUPED) ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" />}
-                </button>
+                </Button>
                 <span
                   className={cn(
                     "min-w-0 flex-1 truncate text-xs font-medium",
@@ -449,7 +449,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                 </span>
               </div>
               {!collapsed.has(UNGROUPED) && (
-                <div className="ml-[10px] border-l border-white/[0.06] pl-1">{ungrouped.map((m, i) => materialRow(m, null, m.name + "#" + i))}</div>
+                <div className="ml-[10px] border-l border-line pl-1">{ungrouped.map((m, i) => materialRow(m, null, m.name + "#" + i))}</div>
               )}
             </div>
           )}

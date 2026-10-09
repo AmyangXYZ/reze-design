@@ -13,6 +13,7 @@
 // Provenance is still reachable — the rail filters by maker — it just stopped
 // being the structure.
 
+import { Button } from "@/components/ui/button"
 import { STAGE_BOUND_TAG } from "@/lib/effects"
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react"
 import { Check, ChevronDown, Globe, Heart, LayoutGrid, List, Lock, PenLine, Search } from "lucide-react"
@@ -24,7 +25,8 @@ import { RailRow, RailSection, RailTags } from "@/components/editor/library-rail
 import { authorImage, builtinAuthor } from "@/lib/community-store"
 import { UserAvatar } from "@/components/user-avatar"
 import Link from "next/link"
-import { ContextMenuItem, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger } from "@/components/ui/context-menu"
+import { ContextMenuItem } from "@/components/ui/context-menu"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { storageKey } from "@/lib/storage"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -437,20 +439,20 @@ export function LibraryRailFilters<T extends BrowseItem>({ browse }: { browse: B
           <RailRow label={t.rail.liked} count={counts.liked} active={facet === "liked"} onClick={() => setFacet("liked")} />
           {/* Always rendered. A control that appears when it becomes relevant
               moves everything under it, and the rail is a thing you aim at. */}
-          <button
+          <Button variant="bare"
             type="button"
             onClick={clear}
             aria-hidden={!filtered}
             tabIndex={filtered ? 0 : -1}
             className={cn(
-              "mt-0.5 ml-2 text-left text-[11px] underline underline-offset-2 transition-colors",
+              "mt-0.5 ml-2 text-left text-2xs underline underline-offset-2 transition-colors",
               filtered
                 ? "cursor-pointer text-muted-foreground hover:text-foreground"
                 : "pointer-events-none text-transparent",
             )}
           >
             {t.rail.clearFilters}
-          </button>
+          </Button>
         </div>
       </RailSection>
 
@@ -515,7 +517,7 @@ export function LibraryToolbar<T extends BrowseItem>({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t.rail.search}
-          className="h-6 border-line-strong bg-white/5 pl-7 text-[11px] md:text-[11px]"
+          className="h-6 border-line-strong bg-white/5 pl-7 text-2xs md:text-2xs"
         />
       </div>
 
@@ -524,32 +526,32 @@ export function LibraryToolbar<T extends BrowseItem>({
       <Select value={sort} onValueChange={(v) => chooseSort(v as SortKey)}>
         <SelectTrigger
           aria-label={t.rail.sort}
-          className="w-24 shrink-0 justify-between border-line-strong bg-white/5 px-2 text-[11px]"
+          className="w-24 shrink-0 justify-between border-line-strong bg-white/5 px-2 text-2xs"
         >
           <SelectValue />
         </SelectTrigger>
         <SelectContent position="popper" align="end" className="min-w-24">
           {options.map(([k, label]) => (
-            <SelectItem key={k} value={k} className="text-[11px]">{label}</SelectItem>
+            <SelectItem key={k} value={k} className="text-2xs">{label}</SelectItem>
           ))}
         </SelectContent>
       </Select>
 
       <div className="flex h-6 shrink-0 items-center gap-0.5 rounded-chip border border-line-strong bg-white/5 p-0.5">
         {([["grid", LayoutGrid], ["list", List]] as const).map(([d, Icon]) => (
-          <button
+          <Button variant="bare"
             key={d}
             type="button"
             aria-pressed={density === d}
             aria-label={d === "grid" ? t.rail.grid : t.rail.list}
             onClick={() => setDensity(d)}
             className={cn(
-              "flex size-[18px] cursor-pointer items-center justify-center rounded-[4px] transition-colors",
+              "flex size-[18px] cursor-pointer items-center justify-center rounded-chip transition-colors",
               density === d ? "bg-blue-400/15 text-blue-400" : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
             )}
           >
             <Icon className="size-3" />
-          </button>
+          </Button>
         ))}
       </div>
     </>
@@ -572,11 +574,11 @@ function SortHeader({
 }: { k: SortKey; sort: SortKey; dir: 1 | -1; onSort: (k: SortKey) => void; right?: boolean; children: React.ReactNode }) {
   const active = sort === k
   return (
-    <button
+    <Button variant="bare"
       type="button"
       onClick={() => onSort(k)}
       className={cn(
-        "-mx-1 flex items-center gap-0.5 rounded-[4px] px-1 py-0.5 font-mono text-[10px] tracking-[0.1em] whitespace-nowrap uppercase transition-colors hover:bg-white/5",
+        "-mx-1 flex items-center gap-0.5 rounded-chip px-1 py-0.5 font-mono text-2xs tracking-[0.1em] whitespace-nowrap uppercase transition-colors hover:bg-white/5",
         right && "justify-end",
         active ? "text-blue-400" : "text-muted-foreground hover:text-foreground",
       )}
@@ -585,7 +587,7 @@ function SortHeader({
       <ChevronDown
         className={cn("size-2 shrink-0 transition-opacity", active ? "opacity-100" : "opacity-0", dir === 1 && "rotate-180")}
       />
-    </button>
+    </Button>
   )
 }
 
@@ -627,7 +629,7 @@ export function VisibilityPicker({
           const Icon = VISIBILITY_ICON[v]
           const disabled = !canBecome(v, current)
           return (
-            <button
+            <Button variant="bare"
               key={v}
               type="button"
               disabled={disabled}
@@ -641,42 +643,55 @@ export function VisibilityPicker({
             >
               <Icon className="size-3.5" />
               {label[v]}
-            </button>
+            </Button>
           )
         })}
       </div>
       {locked && (
-        <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">{t.library.visLocked}</p>
+        <p className="mt-1.5 text-2xs leading-relaxed text-muted-foreground">{t.library.visLocked}</p>
       )}
     </div>
   )
 }
 
-/** The visibility submenu every library hangs off a card you own. */
-export function VisibilityMenu({
-  current, onChange,
-}: { current: Visibility; onChange: (v: Visibility) => void }) {
+/**
+ * The one visibility move there is — private to public — asked first, because
+ * it is permanent (see the rule above).
+ *
+ * A hook, not state inside the menu: the context menu unmounts the moment it
+ * closes, and would take a dialog it owned with it. The library renders
+ * `dialog` at its root, beside its delete confirmation.
+ */
+export function useMakePublic() {
   const t = useT()
-  const { label } = useVisibilityLabels()
+  const [pending, setPending] = useState<(() => void) | null>(null)
+  const ask = useCallback((go: () => void) => setPending(() => go), [])
+  const dialog = (
+    <ConfirmDialog
+      open={pending !== null}
+      onOpenChange={(o) => !o && setPending(null)}
+      title={t.library.makePublicTitle}
+      body={t.library.makePublicConfirm}
+      confirmLabel={t.library.makePublicLabel}
+      cancelLabel={t.library.cancel}
+      tone="accent"
+      onConfirm={() => pending?.()}
+    />
+  )
+  return { ask, dialog }
+}
+
+/** What a card you own offers about visibility: "Make public…" while it is
+ *  private, and nothing once it is public — there is no move left, and a
+ *  submenu of two greyed-out choices said so less clearly than its absence. */
+export function VisibilityMenu({ current, onMakePublic }: { current: Visibility; onMakePublic: () => void }) {
+  const t = useT()
+  if (current !== "private") return null
   return (
-    <ContextMenuSub>
-      <ContextMenuSubTrigger>{t.library.visibility}</ContextMenuSubTrigger>
-      <ContextMenuSubContent className="w-36">
-        {VISIBILITIES.map((v) => {
-          const Icon = VISIBILITY_ICON[v]
-          return (
-            <ContextMenuItem
-              key={v}
-              disabled={!canBecome(v, current) || v === current}
-              onSelect={() => onChange(v)}
-            >
-              <Icon className={cn("size-3.5", v === current && "text-blue-400")} />
-              {label[v]}
-            </ContextMenuItem>
-          )
-        })}
-      </ContextMenuSubContent>
-    </ContextMenuSub>
+    <ContextMenuItem onSelect={onMakePublic}>
+      <Globe className="size-3.5" />
+      {t.library.makePublic}
+    </ContextMenuItem>
   )
 }
 
@@ -715,7 +730,7 @@ export function LibraryResults<T extends BrowseItem>({
   if (rows.length === 0) {
     return (
       <div className="flex flex-1 flex-col">
-        <div className="flex flex-1 items-center justify-center p-10 text-center text-[13px] text-muted-foreground">{empty}</div>
+        <div className="flex flex-1 items-center justify-center p-10 text-center text-xs text-muted-foreground">{empty}</div>
         {footer}
       </div>
     )
@@ -732,7 +747,7 @@ export function LibraryResults<T extends BrowseItem>({
     return (
       <ScrollArea className="min-h-0 flex-1">
         <div className="px-2 pb-5">
-          <div className={cn(cols, "sticky top-0 z-10 border-b border-line bg-zinc-950/95 px-1.5 py-1.5")}>
+          <div className={cn(cols, "sticky top-0 z-10 border-b border-line bg-surface-raised px-1.5 py-1.5")}>
             <span />
             {th("name", t.rail.name)}
             {th("maker", t.rail.makers)}
@@ -783,9 +798,9 @@ export function LibraryResults<T extends BrowseItem>({
                       : "hover:bg-white/5",
                 )}
               >
-                <div className="h-[19px] w-[30px] overflow-hidden rounded-[4px] border border-line-strong">{card.preview}</div>
+                <div className="h-[19px] w-[30px] overflow-hidden rounded-chip border border-line-strong">{card.preview}</div>
                 <span className="min-w-0 truncate text-xs">{card.nameNode ?? label(item)}</span>
-                <span className={cn("flex min-w-0 items-center gap-1.5 font-mono text-[11px] transition-colors", cell)}>
+                <span className={cn("flex min-w-0 items-center gap-1.5 font-mono text-2xs transition-colors", cell)}>
                   <AuthorAvatar name={builtinAuthor(id(item), item.author)} className="size-3.5" />
                   <AuthorLink
                     name={builtinAuthor(id(item), item.author)}
@@ -793,14 +808,14 @@ export function LibraryResults<T extends BrowseItem>({
                     className="truncate"
                   />
                 </span>
-                <span className={cn("flex items-center gap-1 truncate font-mono text-[11px] transition-colors", cell)}>
+                <span className={cn("flex items-center gap-1 truncate font-mono text-2xs transition-colors", cell)}>
                   <Icon className="size-2.5 shrink-0" />
                   {t.rail.states[st]}
                 </span>
-                <span className={cn("font-mono text-[11px] tabular-nums transition-colors", cell)}>{publishedShort(item.createdAt)}</span>
-                <span className={cn("text-right font-mono text-[11px] tabular-nums transition-colors", cell)}>{n.likes}</span>
+                <span className={cn("font-mono text-2xs tabular-nums transition-colors", cell)}>{publishedShort(item.createdAt)}</span>
+                <span className={cn("text-right font-mono text-2xs tabular-nums transition-colors", cell)}>{n.likes}</span>
                 {usedLabel && (
-                  <span className={cn("text-right font-mono text-[11px] tabular-nums transition-colors", cell)}>{n.uses}</span>
+                  <span className={cn("text-right font-mono text-2xs tabular-nums transition-colors", cell)}>{n.uses}</span>
                 )}
               </div>
             )
@@ -839,12 +854,12 @@ export function LibraryResults<T extends BrowseItem>({
               >
                 {m.preview}
                 {m.applied ? (
-                  <span className="absolute top-1 left-1 flex items-center gap-1 rounded-[4px] border border-blue-400/50 bg-zinc-950/85 px-1 py-px font-mono text-[10px] text-blue-400">
+                  <span className="absolute top-1 left-1 flex items-center gap-1 rounded-chip border border-blue-400/50 bg-surface-raised px-1 py-px font-mono text-2xs text-blue-400">
                     <Check className="size-2.5" />
                     {t.effectLibrary.applied}
                   </span>
                 ) : st !== "public" ? (
-                  <span className="absolute top-1 left-1 flex items-center gap-1 rounded-[4px] border border-line-strong bg-zinc-950/85 px-1 py-px font-mono text-[10px] text-muted-foreground">
+                  <span className="absolute top-1 left-1 flex items-center gap-1 rounded-chip border border-line-strong bg-surface-raised px-1 py-px font-mono text-2xs text-muted-foreground">
                     <Icon className="size-2.5" />
                     {t.rail.states[st]}
                   </span>
@@ -854,7 +869,7 @@ export function LibraryResults<T extends BrowseItem>({
                 <div className={cn("truncate text-xs leading-tight", (selectedId === id(item) || m.applied) && "text-blue-400")}>
                   {m.nameNode ?? label(item)}
                 </div>
-                <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+                <div className="mt-0.5 flex items-center gap-1.5 font-mono text-2xs text-muted-foreground">
                   <AuthorAvatar name={builtinAuthor(id(item), item.author)} className="size-3.5" />
                   <AuthorLink
                     name={builtinAuthor(id(item), item.author)}

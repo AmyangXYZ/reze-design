@@ -1,5 +1,6 @@
 "use client"
 
+import { Input } from "@/components/ui/input"
 import {
   useState,
   useRef,
@@ -368,7 +369,7 @@ function TransportFrameSlider({
           disabled ? "pointer-events-none opacity-15" : "cursor-grab",
         )}
       >
-        <div className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 rounded-[1px] bg-border" />
+        <div className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-border" />
         <div
           ref={thumbRef}
           className="pointer-events-none absolute top-1/2 size-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[1.5px] border-muted-foreground bg-secondary box-border"
@@ -477,7 +478,7 @@ function ZoomRuler({
         }}
         className="relative h-4 w-12 shrink-0 cursor-grab touch-none"
       >
-        <div className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 rounded-[1px] bg-border" />
+        <div className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-border" />
         <div
           className="pointer-events-none absolute top-1/2 size-[7px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[1.5px] border-muted-foreground bg-transparent box-border"
           style={{ left: `${pct}%` }}
@@ -3278,9 +3279,9 @@ export function Timeline({
             setCurrentFrame(f)
           }}
         />
-        <div className="mx-0.5 flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-chip border border-line bg-white/[0.06] px-1 py-px font-mono text-[9px] tabular-nums text-muted-foreground">
+        <div className="mx-0.5 flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-chip border border-line bg-white/5 px-1 py-px font-mono text-2xs tabular-nums text-muted-foreground">
           <span>F</span>
-          <input
+          <Input variant="bare"
             type="text"
             inputMode="numeric"
             ref={frameFieldRef}
@@ -3301,13 +3302,13 @@ export function Timeline({
               if (e.key === "Enter") (e.target as HTMLInputElement).blur()
             }}
             className={cn(
-              "h-4 w-8 min-w-0 rounded border border-transparent bg-transparent px-0.5 text-right text-[9px] tabular-nums outline-none",
+              "h-4 w-8 min-w-0 rounded-chip border border-transparent bg-transparent px-0.5 text-right text-2xs tabular-nums outline-none",
               "focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/30",
               !clip && "pointer-events-none opacity-40",
             )}
           />
           <span className="opacity-40">/</span>
-          <input
+          <Input variant="bare"
             type="text"
             inputMode="numeric"
             aria-label={dict.lab.timeline.endFrame}
@@ -3326,7 +3327,7 @@ export function Timeline({
               if (e.key === "Enter") (e.target as HTMLInputElement).blur()
             }}
             className={cn(
-              "h-4 w-8 min-w-0 rounded border border-transparent bg-transparent px-0.5 text-right text-[9px] tabular-nums outline-none",
+              "h-4 w-8 min-w-0 rounded-chip border border-transparent bg-transparent px-0.5 text-right text-2xs tabular-nums outline-none",
               "focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/30",
               !clip && "pointer-events-none opacity-40",
             )}
@@ -3357,7 +3358,7 @@ export function Timeline({
               size="sm"
               onClick={() => setTab(t.key)}
               className={cn(
-                "h-5 max-h-5 min-h-5 shrink-0 overflow-hidden rounded-md px-1.5 font-mono text-[10px]",
+                "h-5 max-h-5 min-h-5 shrink-0 overflow-hidden rounded-chip px-1.5 font-mono text-2xs",
                 "focus-visible:outline-none focus-visible:ring-0",
                 // The Button base ships `transition-all`, which fades the fill
                 // in over ~150ms. That was invisible while the active chip was
@@ -3375,7 +3376,7 @@ export function Timeline({
                 // pinned to its active state, dark: variant included.
                 active
                   ? t.color
-                    ? "text-[#0f0f12] hover:text-[#0f0f12] hover:opacity-90 dark:hover:bg-transparent"
+                    ? "text-zinc-950 hover:text-zinc-950 hover:opacity-90 dark:hover:bg-transparent"
                     // The aggregate tabs (Rotation / Translation / Target) and
                     // Weight carry no hue of their own, so they cannot use the
                     // solid-fill treatment the axis tabs get from `t.color`.

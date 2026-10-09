@@ -146,7 +146,7 @@ export function SceneViewer(props: ViewerProps) {
   }
 
   return (
-    <main className="fixed inset-0 overflow-hidden bg-zinc-950 select-none">
+    <main className="fixed inset-0 overflow-hidden bg-background select-none">
       {/* The scene, under the chrome — its own component so `useEngine` never
           runs conditionally. Until it exists there is a pill, and the text
           around it is already readable. */}
@@ -167,7 +167,7 @@ export function SceneViewer(props: ViewerProps) {
         // a size-7 well in. Built from padding instead, this box came out 42 tall
         // and put the mark one pixel lower — a step you see the moment you open a
         // scene from the editor, which is the one journey this pill exists for.
-        className="absolute top-3 left-3 flex h-10 items-center gap-1.5 rounded-xl border border-transparent pr-1.5 pl-2"
+        className="absolute top-3 left-3 flex h-10 items-center gap-1.5 rounded-surface border border-transparent pr-1.5 pl-2"
       >
         {/* The editor's trigger exactly — the mark is the menu, not the pill —
             so the panel opens on the same pixels on both pages. */}
@@ -188,7 +188,7 @@ export function SceneViewer(props: ViewerProps) {
               router.push("/")
             }}
           />
-          <div className="mt-1 border-t border-white/10 pt-1">
+          <div className="mt-1 border-t border-line pt-1">
             <MenuRow
               icon={GalleryThumbnails}
               label={t.gallery.door}
@@ -228,7 +228,7 @@ export function SceneViewer(props: ViewerProps) {
             it pushed the card sideways into a horizontal scrollbar. */}
         <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-2.5 [overflow-wrap:anywhere]">
           <div className="truncate text-sm font-semibold tracking-tight text-foreground">{props.title}</div>
-          <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
+          <div className="mt-0.5 truncate font-mono text-2xs text-muted-foreground">
             <Link href={`/${props.author}`} className="transition-colors hover:text-foreground hover:underline">
               @{props.author}
             </Link>
@@ -303,7 +303,7 @@ export function SceneViewer(props: ViewerProps) {
               size="xs"
               onClick={() => void openInEditor()}
               disabled={forking}
-              className="bg-blue-400 font-medium text-white hover:bg-blue-300"
+              className="bg-blue-400 font-medium text-white hover:bg-blue-400/90"
             >
               <GitFork />
               {t.share.fork}

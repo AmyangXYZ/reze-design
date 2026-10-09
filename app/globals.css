@@ -273,7 +273,9 @@
      amber-400  warning — the thing still works, but read this
      red-400    destructive — this removes something
 
-   RADII: 12px surface · 8px interior · 6px chip.
+   TYPE: 2xs (11) · xs (12) · sm (14) · base (16) — see --text-2xs below.
+
+   RADII: 12px surface · 8px interior · 6px chip, and rounded-full for pills.
    ───────────────────────────────────────────────────────────────────────── */
 @theme inline {
   /* Chrome ground — the recipe the shipped docks use: zinc-950/70 behind a
@@ -302,6 +304,12 @@
      on this ground. The Premium line in the account menu — a brand mark, outside
      the three interaction accents. */
   --color-reze: oklch(70.2% 0.183 293.541); /* = violet-400 */
+
+  /* TYPE: four sizes — 2xs (11) captions, counters, chips · xs (12) the
+     chrome's body · sm (14) titles · base (16) page headings. 2xs is the one
+     the default scale lacks; it carries no line height of its own, exactly as
+     the text-[11px] it replaced, so it sits in whatever line it is set in. */
+  --text-2xs: 11px;
 
   --radius-surface: 12px;
   --radius-interior: 8px;
