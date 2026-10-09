@@ -656,12 +656,12 @@ function GalleryContent({
                   </div>
                 )}
                 {!loading && cursor && (
-                  <button
+                  <Button variant="bare"
                     onClick={loadMore}
                     className="w-full cursor-pointer py-3 text-2xs text-muted-foreground transition-colors hover:text-foreground"
                   >
                     {t.gallery.more}
-                  </button>
+                  </Button>
                 )}
               </>
             }
@@ -672,7 +672,7 @@ function GalleryContent({
           {selected ? (
             <>
               <div className="p-3 pb-0">
-                <button
+                <Button variant="bare"
                   type="button"
                   onClick={() => openScene(selected)}
                   className="block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-chip border border-line-strong bg-white/5"
@@ -684,7 +684,7 @@ function GalleryContent({
                       {t.gallery.noPoster}
                     </span>
                   )}
-                </button>
+                </Button>
               </div>
               <div className="min-h-0 p-3">
                 <div className="truncate text-sm font-semibold select-text">{selected.name}</div>

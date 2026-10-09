@@ -22,6 +22,7 @@
 // Only one row is open at a time — enforced by the caller, since the stack owns
 // which — so presets-then-parameters inside a row costs no ambient noise.
 
+import { Button } from "@/components/ui/button"
 import type { ComponentType, ReactNode } from "react"
 import { cn } from "@/lib/utils"
 
@@ -50,7 +51,7 @@ export function LayerRow({
 }) {
   return (
     <div id={domId} className="border-t border-line first:border-t-0">
-      <button
+      <Button variant="bare"
         onClick={onToggle}
         aria-expanded={open}
         className={cn(
@@ -79,7 +80,7 @@ export function LayerRow({
             {summary}
           </span>
         )}
-      </button>
+      </Button>
       {/* Symmetric padding, and pt has to MATCH pb rather than being the tighter
           value that felt right in isolation. An open header carries a tint, so
           its own py-2.5 reads as part of the header block and not as space below
@@ -118,7 +119,7 @@ export function PresetChips({
   return (
     <div className="mb-2.5 flex flex-wrap gap-1.5">
       {options.map((o) => (
-        <button
+        <Button variant="bare"
           key={o}
           aria-pressed={o === value}
           onClick={() => onPick(o)}
@@ -131,7 +132,7 @@ export function PresetChips({
           )}
         >
           {o}
-        </button>
+        </Button>
       ))}
     </div>
   )

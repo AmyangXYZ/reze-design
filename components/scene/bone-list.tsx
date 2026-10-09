@@ -1,5 +1,6 @@
 "use client"
 
+import { Button } from "@/components/ui/button"
 import { useRef, useState, useEffect, useCallback, useMemo, memo } from "react"
 import { ChevronRight } from "lucide-react"
 import { BONE_GROUPS } from "@/lib/animation"
@@ -43,7 +44,7 @@ const GroupRow = memo(function GroupRow({
 }) {
   const dict = useT()
   return (
-    <button
+    <Button variant="bare"
       type="button"
       onClick={onClick}
       className={cn(
@@ -69,7 +70,7 @@ const GroupRow = memo(function GroupRow({
           brackets: this counts bones the group CONTAINS, theirs counts keys the
           clip HAS, and two different facts should not wear one notation. */}
       <span className="ml-auto shrink-0 pl-1 tabular-nums text-2xs">({boneCount})</span>
-    </button>
+    </Button>
   )
 })
 
@@ -85,7 +86,7 @@ const BoneRow = memo(function BoneRow({
   onClick: () => void
 }) {
   return (
-    <button
+    <Button variant="bare"
       type="button"
       onClick={onClick}
       className={cn(
@@ -106,7 +107,7 @@ const BoneRow = memo(function BoneRow({
           [{kfCount}]
         </span>
       )}
-    </button>
+    </Button>
   )
 })
 

@@ -1,5 +1,6 @@
 "use client"
 
+import { Button } from "@/components/ui/button"
 import { memo } from "react"
 import { cn } from "@/lib/utils"
 import type { AnimationClip } from "reze-engine"
@@ -22,7 +23,7 @@ export const MorphList = memo(function MorphList({ morphNames, clip, selectedMor
             const kfCount = clip?.morphTracks.get(name)?.length ?? 0
             const isActive = selectedMorph === name
             return (
-              <button
+              <Button variant="bare"
                 key={name}
                 type="button"
                 onClick={() => onSelectMorph(name)}
@@ -42,7 +43,7 @@ export const MorphList = memo(function MorphList({ morphNames, clip, selectedMor
                     [{kfCount}]
                   </span>
                 )}
-              </button>
+              </Button>
             )
           })
         )}

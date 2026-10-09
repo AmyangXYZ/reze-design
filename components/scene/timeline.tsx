@@ -1,5 +1,6 @@
 "use client"
 
+import { Input } from "@/components/ui/input"
 import {
   useState,
   useRef,
@@ -3280,7 +3281,7 @@ export function Timeline({
         />
         <div className="mx-0.5 flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-chip border border-line bg-white/5 px-1 py-px font-mono text-2xs tabular-nums text-muted-foreground">
           <span>F</span>
-          <input
+          <Input variant="bare"
             type="text"
             inputMode="numeric"
             ref={frameFieldRef}
@@ -3307,7 +3308,7 @@ export function Timeline({
             )}
           />
           <span className="opacity-40">/</span>
-          <input
+          <Input variant="bare"
             type="text"
             inputMode="numeric"
             aria-label={dict.lab.timeline.endFrame}

@@ -2,6 +2,7 @@
 
 // Right dock · Render tab — where a finished scene becomes an exported video.
 
+import { Input } from "@/components/ui/input"
 import { memo, useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react"
 import type { Engine } from "reze-engine"
 import { toast } from "sonner"
@@ -714,7 +715,7 @@ export const RenderPanel = memo(function RenderPanel({
           {/* Segment to export — blank boxes = the whole clip. */}
           <Row label={t.render.range}>
             <div className="flex items-center gap-1">
-              <input
+              <Input variant="bare"
                 value={rangeStart}
                 onChange={(e) => setRangeStart(e.target.value)}
                 onBlur={() => {
@@ -726,7 +727,7 @@ export const RenderPanel = memo(function RenderPanel({
                 className={rangeInputCls}
               />
               <span className="text-xs text-muted-foreground">–</span>
-              <input
+              <Input variant="bare"
                 value={rangeEnd}
                 onChange={(e) => setRangeEnd(e.target.value)}
                 onBlur={() => {

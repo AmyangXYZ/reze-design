@@ -303,13 +303,13 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
         </DialogTitle>
         <LibraryToolbar browse={browse} usedLabel={t.rail.used} />
         {onEdit && (
-          <button
+          <Button variant="bare"
             onClick={startNew}
             className="flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-chip border border-line-strong bg-white/5 px-2 text-2xs font-medium transition-colors hover:bg-white/10"
           >
             <Plus className="size-3" />
             {t.library.new}
-          </button>
+          </Button>
         )}
         <DialogClose className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-chip text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
           <X className="size-3.5" />
@@ -344,7 +344,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
             <>
               <div className="p-3 pb-0">
                 {/* The preview IS the edit affordance, exactly like the other two libraries */}
-                <button
+                <Button variant="bare"
                   type="button"
                   disabled={!onEdit}
                   onClick={() => startEdit(selected)}
@@ -355,7 +355,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                     <SquarePen className="size-4" />
                     {t.gradeLibrary.edit}
                   </div>
-                </button>
+                </Button>
               </div>
 
               <div className="min-h-0 p-3">

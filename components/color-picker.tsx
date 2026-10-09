@@ -2,6 +2,7 @@
 
 // THE color control for the app: a chip (click → picker dialog) + read-only hex label.
 
+import { Input } from "@/components/ui/input"
 import { useRef, useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Pipette } from "lucide-react"
@@ -375,7 +376,7 @@ export function HexField({
     setText(value)
   }
   return (
-    <input
+    <Input variant="bare"
       value={text}
       spellCheck={false}
       className={cn(
@@ -416,7 +417,7 @@ export function ColorField({
   return (
     <>
       {/* One button — hovering either the swatch or the hex triggers both effects. */}
-      <button
+      <Button variant="bare"
         className="group flex cursor-pointer items-center gap-1.5 disabled:pointer-events-none disabled:opacity-40"
         onClick={() => setOpen(true)}
         disabled={disabled}
@@ -429,7 +430,7 @@ export function ColorField({
         <span className="font-mono text-xs text-muted-foreground underline-offset-2 group-hover:text-foreground group-hover:underline">
           {active}
         </span>
-      </button>
+      </Button>
 
       <ColorPickerDialog open={open} onOpenChange={setOpen} value={value} onChange={onChange} />
     </>
@@ -541,7 +542,7 @@ export function ColorPickerDialog({
                     <div key={hue} className={cn(GRID, "items-center")}>
                       <span className="truncate text-xs text-muted-foreground">{cap(hue)}</span>
                       {row.map(({ name, hex }) => (
-                        <button
+                        <Button variant="bare"
                           key={name}
                           data-name={name}
                           data-hex={hex}

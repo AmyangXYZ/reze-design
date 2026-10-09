@@ -139,7 +139,7 @@ export function RailRow({
   leading?: ReactNode
 }) {
   return (
-    <button
+    <Button variant="bare"
       onClick={onClick}
       className={cn(
         "flex h-7 shrink-0 cursor-pointer items-center gap-2 rounded-chip px-2 text-2xs transition-colors",
@@ -153,7 +153,7 @@ export function RailRow({
           {count}
         </span>
       )}
-    </button>
+    </Button>
   )
 }
 
@@ -195,7 +195,7 @@ export function RailTags({
           {sorted.map(([name, n]) => {
             const on = tag === name
             return (
-              <button
+              <Button variant="bare"
                 key={name}
                 onClick={() => onTagChange(on ? null : name)}
                 className={cn(
@@ -206,7 +206,7 @@ export function RailTags({
               >
                 <span className="max-w-28 truncate font-medium">{tagLabel(name, locale)}</span>
                 <span className="font-mono text-2xs font-medium opacity-70">{n}</span>
-              </button>
+              </Button>
             )
           })}
         </div>

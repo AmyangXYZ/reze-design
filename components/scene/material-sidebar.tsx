@@ -227,7 +227,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
       >
         <Circle className="size-1.5 shrink-0 fill-current text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground group-hover/row:text-foreground">{m.name}</span>
-        <button
+        <Button variant="bare"
           className={cn("shrink-0 text-muted-foreground hover:text-foreground", m.visible && "opacity-0 group-hover/row:opacity-100")}
           onClick={(e) => {
             e.stopPropagation()
@@ -240,7 +240,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
           }}
         >
           {m.visible ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
-        </button>
+        </Button>
       </div>
     )
   }
@@ -251,7 +251,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
       {modelTabs.length > 1 && (
         <div className={cn("flex flex-wrap gap-1 px-4", dense ? "pt-2" : "pt-3.5")}>
           {modelTabs.map((m) => (
-            <button
+            <Button variant="bare"
               key={m.id}
               onClick={() => onSelectModel(m.id)}
               className={cn(
@@ -263,7 +263,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
               title={m.file}
             >
               {m.file.replace(/\.pmx$/i, "")}
-            </button>
+            </Button>
           ))}
         </div>
       )}
@@ -297,13 +297,13 @@ export const MaterialsPanel = memo(function MaterialsPanel({
         {/* Library at the right end, matching Grade and Background. Last to give up
             room: the label is what tells the three doors apart. */}
         {onOpenLibrary && (
-        <button
+        <Button variant="bare"
           onClick={() => onOpenLibrary(libraryTarget)}
           className="flex shrink-0 cursor-pointer items-center gap-1 rounded-chip bg-white py-1 pr-1.5 pl-2 text-xs font-medium text-zinc-950 transition-colors hover:bg-white/90 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-white"
         >
           <Workflow className="size-3.5" />
           {t.lab.cmd.graphLib}
-        </button>
+        </Button>
         )}
       </div>
 
@@ -339,7 +339,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                   onClick={() => toggleCollapse(g.id)}
                   onContextMenu={() => setMenuTarget({ kind: "group", id: g.id })}
                 >
-                      <button
+                      <Button variant="bare"
                         className="flex h-full shrink-0 items-center px-0.5 text-muted-foreground hover:text-foreground"
                         onClick={(e) => {
                           e.stopPropagation() // chevron only collapses; don't toggle selection
@@ -347,7 +347,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                         }}
                       >
                         {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-                      </button>
+                      </Button>
 
                       {renaming === g.id ? (
                         <Input
@@ -430,7 +430,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                 )}
                 onClick={() => toggleCollapse(UNGROUPED)}
               >
-                <button
+                <Button variant="bare"
                   className="flex h-full shrink-0 items-center px-0.5 text-muted-foreground hover:text-foreground"
                   onClick={(e) => {
                     e.stopPropagation()
@@ -438,7 +438,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                   }}
                 >
                   {collapsed.has(UNGROUPED) ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" />}
-                </button>
+                </Button>
                 <span
                   className={cn(
                     "min-w-0 flex-1 truncate text-xs font-medium",

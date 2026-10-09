@@ -16,6 +16,7 @@
 // One collapse toggle instead — collapsed IS the view state, so "what a share
 // link renders" stops being a mode anybody has to maintain.
 
+import { Input } from "@/components/ui/input"
 import { LIGHT_COOKIES, type LightCookie } from "@/lib/light-cookies"
 import {
   useCallback,
@@ -420,7 +421,7 @@ function SizeRow({
   onHeight: (v: number) => void
 }) {
   const box = (value: number, commit: (v: number) => void, key: string) => (
-    <input
+    <Input variant="bare"
       key={key}
       // The live value while not editing; a draft is local to the input, so
       // there is nothing to reconcile when the other box moves this one.
@@ -1517,7 +1518,7 @@ function UploadInvite({
   className?: string
 }) {
   return (
-    <button
+    <Button variant="bare"
       onClick={(e) => {
         e.stopPropagation()
         onClick()
@@ -1529,7 +1530,7 @@ function UploadInvite({
       )}
     >
       {label}
-    </button>
+    </Button>
   )
 }
 
@@ -2094,7 +2095,7 @@ function AttachMenu({
       >
         <ChoiceList>
           {items.map((i) => (
-            <button
+            <Button variant="bare"
               key={i.key}
               disabled={i.disabled}
               className="flex w-full cursor-pointer items-center gap-2 rounded-interior px-2 py-1.5 text-left text-xs text-muted-foreground disabled:pointer-events-none disabled:opacity-40 transition-colors hover:bg-white/5 hover:text-foreground"
@@ -2105,7 +2106,7 @@ function AttachMenu({
             >
               <span className="min-w-0 flex-1 truncate">{i.label}</span>
               {i.checked && <Check className="size-3.5 shrink-0 text-blue-400" />}
-            </button>
+            </Button>
           ))}
         </ChoiceList>
       </PopoverContent>
@@ -7249,7 +7250,7 @@ export default function Lab() {
           ) : shownUpload?.kind === "pick" ? (
             <ChoiceList className="max-h-64 overflow-y-auto overscroll-contain">
               {shownUpload.paths.map((path) => (
-                <button
+                <Button variant="bare"
                   key={path}
                   className="block w-full cursor-pointer truncate rounded-interior px-3 py-2 text-left text-sm transition-colors hover:bg-white/5 hover:text-foreground"
                   onClick={() => {
@@ -7262,7 +7263,7 @@ export default function Lab() {
                   title={path}
                 >
                   {pmxLabel(path, shownUpload.paths)}
-                </button>
+                </Button>
               ))}
             </ChoiceList>
           ) : (
@@ -7284,7 +7285,7 @@ export default function Lab() {
           </DialogHeader>
           <ChoiceList>
             {LOOK_PACK_ORDER.map((pack) => (
-              <button
+              <Button variant="bare"
                 key={pack}
                 data-current={pack === activePack}
                 onClick={() => {
@@ -7302,7 +7303,7 @@ export default function Lab() {
               >
                 {t.brand.styles[pack]}
                 {pack === activePack && <Check className="size-3.5 shrink-0 text-blue-400" />}
-              </button>
+              </Button>
             ))}
           </ChoiceList>
         </DialogContent>
@@ -7320,7 +7321,7 @@ export default function Lab() {
           </DialogHeader>
           <ChoiceList>
             {LOCALES.map((code) => (
-              <button
+              <Button variant="bare"
                 key={code}
                 data-current={code === locale}
                 onClick={() => {
@@ -7339,7 +7340,7 @@ export default function Lab() {
               >
                 {LOCALE_LABELS[code]}
                 {code === locale && <Check className="size-3.5 text-blue-400" />}
-              </button>
+              </Button>
             ))}
           </ChoiceList>
         </DialogContent>
@@ -8093,7 +8094,7 @@ export default function Lab() {
               {cast.length > 1 && (
                 <div className="flex flex-wrap gap-1 px-4 pb-1.5">
                   {cast.map((m, slot) => (
-                    <button
+                    <Button variant="bare"
                       key={m.id}
                       aria-pressed={m.id === clipModel?.id}
                       onClick={() => setClipTab(m.id)}
@@ -8108,7 +8109,7 @@ export default function Lab() {
                       <span className="truncate" title={displayName(m.file)}>
                         {displayName(m.file)}
                       </span>
-                    </button>
+                    </Button>
                   ))}
                 </div>
               )}
@@ -8691,13 +8692,13 @@ export default function Lab() {
                             place. It sits second: adding from the shortlist is
                             the common move, the library is where you go when
                             the shortlist has not got it. */}
-                        <button
+                        <Button variant="bare"
                           onClick={() => openBrowse({ kind: "effect" })}
                           className="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-chip bg-white px-2 py-1 text-xs font-medium text-zinc-950 transition-colors hover:bg-white/90"
                         >
                           <Sparkles className="size-3.5 shrink-0" />
                           <span className="truncate">{t.lab.cmd.effectLib}</span>
-                        </button>
+                        </Button>
                       </div>
                       {/* Every applied effect gets a row, from the first one:
                           the row is where an effect is edited, swapped and
@@ -8748,7 +8749,7 @@ export default function Lab() {
                                   // the controls sit under the set of them.
                                   // Clicking the open one closes it, so the
                                   // list can go back to being just a list.
-                                  <button
+                                  <Button variant="bare"
                                     onClick={() => setSelectedEffect((cur) => (cur === e.uid ? null : (e.uid ?? null)))}
                                     title={effectLabel(e.name)}
                                     className={cn(
@@ -8757,7 +8758,7 @@ export default function Lab() {
                                     )}
                                   >
                                     <span className="min-w-0 truncate">{effectLabel(e.name)}</span>
-                                  </button>
+                                  </Button>
                                 }
                                 actions={
                                   <>
@@ -8797,7 +8798,7 @@ export default function Lab() {
                                       }}
                                       placeholder={t.lab.ctl.none}
                                       trigger={
-                                        <button
+                                        <Button variant="bare"
                                           aria-label={t.lab.aria.replaceEffect(e.name)}
                                           // stopPropagation for the same reason
                                           // CastAction does it: the row selects
@@ -8809,7 +8810,7 @@ export default function Lab() {
                                           className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-chip text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
                                         >
                                           <RefreshCw className="size-3.5" />
-                                        </button>
+                                        </Button>
                                       }
                                     />
                                     <CastAction
@@ -8946,13 +8947,13 @@ export default function Lab() {
                                     "pr-1",
                                   )}
                                 >
-                                  <button
+                                  <Button variant="bare"
                                     onClick={() => setSelectedPlane(plane.id)}
                                     title={plane.file}
                                     className="min-w-0 flex-1 cursor-pointer truncate text-left"
                                   >
                                     {plane.file}
-                                  </button>
+                                  </Button>
                                   {/* On every chip, not only the selected one:
                                       removing a card you are not editing should
                                       not require selecting it first. */}
@@ -8970,14 +8971,14 @@ export default function Lab() {
                                 of the cards, and sitting at the same distance
                                 as they sit from each other read as one. Dashed
                                 like the empty-state invite it replaces. */}
-                            <button
+                            <Button variant="bare"
                               onClick={() => planeInput.current?.click()}
                               aria-label={t.lab.uploadPlane}
                               title={t.lab.uploadPlane}
                               className="ml-1.5 flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-chip border border-dashed border-line-strong text-muted-foreground transition-colors hover:border-blue-400/60 hover:text-blue-400"
                             >
                               <Plus className="size-3.5" />
-                            </button>
+                            </Button>
                           </div>
                           {/* The selected card's own controls. `?? planes[0]`
                               so the section is never a row of chips with
@@ -9105,13 +9106,13 @@ export default function Lab() {
                                         "pr-1",
                                       )}
                                     >
-                                      <button
+                                      <Button variant="bare"
                                         onClick={() => setSelectedProp(prop.id)}
                                         title={prop.file}
                                         className="min-w-0 flex-1 cursor-pointer truncate text-left"
                                       >
                                         {displayName(prop.file)}
-                                      </button>
+                                      </Button>
                                       <CastAction
                                         icon={X}
                                         danger
@@ -9122,7 +9123,7 @@ export default function Lab() {
                                     </span>
                                   )
                                 })}
-                                <button
+                                <Button variant="bare"
                                   onClick={() => {
                                     modelTarget.current = { mode: "prop" }
                                     folderInput.current?.click()
@@ -9132,7 +9133,7 @@ export default function Lab() {
                                   className="ml-1.5 flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-chip border border-dashed border-line-strong text-muted-foreground transition-colors hover:border-blue-400/60 hover:text-blue-400"
                                 >
                                   <Plus className="size-3.5" />
-                                </button>
+                                </Button>
                               </div>
                               {(() => {
                                 const prop = shownProp
@@ -9375,7 +9376,7 @@ export default function Lab() {
                                       <CastLine
                                         revealed={open}
                                         text={
-                                          <button
+                                          <Button variant="bare"
                                             onClick={() => setLampOpen((cur) => (cur === l.id ? null : l.id))}
                                             title={l.name}
                                             className={cn(
@@ -9397,7 +9398,7 @@ export default function Lab() {
                                               style={{ background: l.color, opacity: off ? 0.3 : 1 }}
                                             />
                                             <span className="min-w-0 truncate">{l.name}</span>
-                                          </button>
+                                          </Button>
                                         }
                                         actions={
                                           <>
@@ -9659,13 +9660,13 @@ export default function Lab() {
                             telling them apart, and a door you identify by where
                             you are standing is one you can open by mistake. */}
                         <div className="mt-2.5 flex justify-center">
-                          <button
+                          <Button variant="bare"
                             onClick={() => openBrowse({ kind: "grade" })}
                             className="flex shrink-0 cursor-pointer items-center gap-1 rounded-chip bg-white px-2 py-1 text-xs font-medium text-zinc-950 transition-colors hover:bg-white/90"
                           >
                             <Palette className="size-3.5" />
                             {t.lab.cmd.gradeLib}
-                          </button>
+                          </Button>
                         </div>
                       </TabsContent>
                       <TabsContent value="tone">
@@ -10365,7 +10366,7 @@ export default function Lab() {
           reopens; no cancel here — destructive actions stay in the panel they
           belong to, and the pill simply vanishes when the download lands. */}
       {framing.exporting && !exportOpen && (
-        <button
+        <Button variant="bare"
           onClick={() => setExportOpen(true)}
           className={cn(
             PILL,
@@ -10377,7 +10378,7 @@ export default function Lab() {
           {/* Four characters wide in figures of one width, so the pill holds
               still from 0% to 100%. */}
           <span className="min-w-[4ch] text-right tabular-nums">{exportPct !== null ? `${exportPct}%` : "…"}</span>
-        </button>
+        </Button>
       )}
 
       {/* ── Transport ──

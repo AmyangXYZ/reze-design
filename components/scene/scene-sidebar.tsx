@@ -4,6 +4,7 @@
 // heading, a colour row. The panel that used to live here went with the 0.4.0
 // chrome — these are what the dock's rows are built from.
 
+import { Input } from "@/components/ui/input"
 import { useState } from "react"
 import { Slider } from "@/components/ui/slider"
 import { ColorField } from "@/components/color-picker"
@@ -108,7 +109,7 @@ export function SliderRow({
           The same input in both states cannot drift: read-only it shows the
           formatted value, editable it shows the raw draft, and only the border
           colour and readOnly change. */}
-      <input
+      <Input variant="bare"
         readOnly={!editing}
         value={editing ? draft : String(fmt ? fmt(value) : value)}
         title={editing ? undefined : t.scene.typeValue}

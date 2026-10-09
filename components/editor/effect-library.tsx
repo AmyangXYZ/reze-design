@@ -307,13 +307,13 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
           {/* Creation lives in the header. Just "New": the dialog's own title
               already says what kind of thing this makes. */}
           {onEdit && (
-            <button
+            <Button variant="bare"
               onClick={startNew}
               className="flex h-6 shrink-0 items-center gap-1 rounded-chip border border-line-strong bg-white/5 px-2 text-2xs font-medium transition-colors hover:bg-white/10"
             >
               <Plus className="size-3" />
               {t.library.new}
-            </button>
+            </Button>
           )}
           <DialogClose className="flex size-6 shrink-0 items-center justify-center rounded-chip text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
             <X className="size-3.5" />
@@ -350,7 +350,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
               <>
                 <div className="p-3 pb-0">
                   {/* The preview IS the edit affordance, exactly like the graph library */}
-                  <button
+                  <Button variant="bare"
                     type="button"
                     disabled={!onEdit}
                     onClick={() => onEdit?.(draft)}
@@ -362,7 +362,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                       <SquarePen className="size-4" />
                       {t.effectLibrary.editShader}
                     </div>
-                  </button>
+                  </Button>
                 </div>
                 <div className="min-h-0 p-3">
                   <div className="truncate text-sm font-semibold select-text">{displayName(selected)}</div>

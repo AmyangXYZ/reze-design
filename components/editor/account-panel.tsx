@@ -261,7 +261,7 @@ function Portfolio({
       )}
       {cells.map((c) => (
         <PopoverClose key={c.key} asChild>
-          <button
+          <Button variant="bare"
             type="button"
             onClick={c.onClick}
             className="flex w-full cursor-pointer items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-white/5"
@@ -269,21 +269,21 @@ function Portfolio({
             <c.icon className="size-4 shrink-0 text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{c.label}</span>
             <span className="shrink-0 font-mono text-xs text-foreground">{n(stats?.[c.key])}</span>
-          </button>
+          </Button>
         </PopoverClose>
       ))}
       {/* Every library has a Liked shelf and nothing in the product opened one.
           Scenes, because that is where likes mostly land and the gallery is the
           surface that can page them. */}
       <PopoverClose asChild>
-        <button
+        <Button variant="bare"
           type="button"
           onClick={() => onOpenLibrary?.("scene", "liked")}
           className="flex w-full cursor-pointer items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-white/5"
         >
           <Heart className="size-4 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{t.account.youLiked}</span>
-        </button>
+        </Button>
       </PopoverClose>
       {/* LIKES EARNED IS A FACT, NOT A DOOR. It totals across all four kinds, so
           there is no one shelf it could open — and a row that looks like the

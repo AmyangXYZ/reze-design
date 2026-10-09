@@ -2,6 +2,7 @@
 
 // Right-click-a-node actions menu (Blender's node context menu).
 
+import { Button } from "@/components/ui/button"
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { Check } from "lucide-react"
@@ -72,7 +73,7 @@ export function NodeContextMenu({
         a === "separator" ? (
           <div key={`sep-${i}`} className="my-1 h-px bg-white/10" />
         ) : (
-          <button
+          <Button variant="bare"
             key={a.label}
             disabled={a.disabled}
             onClick={() => {
@@ -91,7 +92,7 @@ export function NodeContextMenu({
             {a.checked ? <Check className="size-3 shrink-0 text-blue-400" /> : <span className="size-3 shrink-0" />}
             <span className="flex-1">{a.label}</span>
             {a.shortcut && <span className="text-2xs text-muted-foreground">{a.shortcut}</span>}
-          </button>
+          </Button>
         ),
       )}
     </div>,

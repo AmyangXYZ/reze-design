@@ -2,6 +2,7 @@
 
 // Quick-switch list behind a section's blue value text.
 
+import { Button } from "@/components/ui/button"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { Check } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -77,7 +78,7 @@ export function QuickPick({
   const published = items.filter((i) => i.section !== "local")
   const local = items.filter((i) => i.section === "local")
   const row = (i: QuickPickItem) => (
-    <button
+    <Button variant="bare"
       key={i.id}
       ref={isOn(i.id) ? activeRow : undefined}
       onClick={() => onPick(i.id)}
@@ -89,7 +90,7 @@ export function QuickPick({
       <span className="min-w-0 flex-1 truncate">{i.label}</span>
       {i.hint && <span className="shrink-0 font-mono text-2xs text-muted-foreground">{i.hint}</span>}
       {isOn(i.id) && <Check className="size-3.5 shrink-0" />}
-    </button>
+    </Button>
   )
   // Blue whenever something is APPLIED — membership when the caller tracks a
   // set, a single value otherwise.
@@ -98,7 +99,7 @@ export function QuickPick({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         {trigger ?? (
-          <button
+          <Button variant="bare"
             className={cn(
               "min-w-0 cursor-pointer truncate text-xs underline decoration-current/40 underline-offset-2 transition-colors hover:decoration-current",
               anyOn ? "text-blue-400" : "text-muted-foreground",
@@ -107,7 +108,7 @@ export function QuickPick({
             {/* `||`, not `??`: an empty label is as good as none, and falling
                 through to the placeholder keeps the trigger clickable. */}
             {label || current?.label || placeholder}
-          </button>
+          </Button>
         )}
       </PopoverTrigger>
       <PopoverContent
@@ -188,7 +189,7 @@ export function QuickPick({
         {(onEdit || onBrowse) && (
         <div className="mt-1 shrink-0 border-t border-line pt-1">
           {onEdit && (
-            <button
+            <Button variant="bare"
               onClick={() => {
                 setOpen(false)
                 onEdit()
@@ -196,10 +197,10 @@ export function QuickPick({
               className="w-full cursor-pointer rounded-interior px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
             >
               {editLabel ?? t.materials.editGraph}
-            </button>
+            </Button>
           )}
           {onBrowse && (
-            <button
+            <Button variant="bare"
               onClick={() => {
                 setOpen(false)
                 onBrowse()
@@ -207,7 +208,7 @@ export function QuickPick({
               className="w-full cursor-pointer rounded-interior px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
             >
               {t.scene.browseAll}
-            </button>
+            </Button>
           )}
         </div>
         )}

@@ -322,13 +322,13 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
         </DialogTitle>
         <LibraryToolbar browse={browse} usedLabel={t.rail.used} />
         {/* Creation lives in the header. Just "New": the title says the kind. */}
-        <button
+        <Button variant="bare"
           onClick={() => onEdit("", t.library.newGraph, structuredClone(DEFAULT_GRAPH))}
           className="flex h-6 shrink-0 items-center gap-1 rounded-chip border border-line-strong bg-white/5 px-2 text-2xs font-medium transition-colors hover:bg-white/10"
         >
           <Plus className="size-3" />
           {t.library.new}
-        </button>
+        </Button>
         <DialogClose className="flex size-6 shrink-0 items-center justify-center rounded-chip text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
           <X className="size-3.5" />
           <span className="sr-only">{t.library.close}</span>
@@ -362,7 +362,7 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
             <>
               <div className="p-3 pb-0">
                 {/* The preview IS the edit affordance */}
-                <button
+                <Button variant="bare"
                   type="button"
                   onClick={() => onEdit(selected.id, selected.name, selected.payload.graph)}
                   className="group/prev relative block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-chip border border-line-strong bg-white/5 text-foreground"
@@ -372,7 +372,7 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
                     <SquarePen className="size-4" />
                     {t.library.editGraph}
                   </div>
-                </button>
+                </Button>
               </div>
               <div className="min-h-0 p-3">
                 <div className="truncate text-sm font-semibold select-text">{displayName(selected)}</div>

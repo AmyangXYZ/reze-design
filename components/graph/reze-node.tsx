@@ -2,6 +2,7 @@
 
 // Blender-style node card: input sockets down the left, outputs down the right.
 
+import { Button } from "@/components/ui/button"
 import { createContext, memo, useContext, useState } from "react"
 import { Handle, Position, useReactFlow, type NodeProps } from "@xyflow/react"
 import { Input } from "@/components/ui/input"
@@ -81,7 +82,7 @@ function ColorSocketButton({ rgb, onChange }: { rgb: [number, number, number]; o
   const hex = linearVec3ToHex({ x: rgb[0], y: rgb[1], z: rgb[2] })
   return (
     <>
-      <button
+      <Button variant="bare"
         type="button"
         aria-label={t.graph.pickColor}
         onClick={() => setOpen(true)}
@@ -160,7 +161,7 @@ export const RezeNode = memo(function RezeNode({ id, data, selected }: NodeProps
       >
         {/* The id is the node's name (Blender-nickname style) — double-click to rename. */}
         {editing ? (
-          <input
+          <Input variant="bare"
             autoFocus
             defaultValue={graphNode.id}
             onFocus={(e) => e.currentTarget.select()}

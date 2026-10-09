@@ -2,6 +2,8 @@
 
 // Blender-style "Add node" search palette, opened by right-clicking the graph canvas.
 
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { NODE_CATALOG, type CatalogItem } from "@/lib/node-catalog"
@@ -106,7 +108,7 @@ export function AddNodeMenu({
       onContextMenu={(e) => e.preventDefault()}
     >
       <div className="shrink-0 border-b border-line p-1.5">
-        <input
+        <Input variant="bare"
           ref={inputRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -130,7 +132,7 @@ export function AddNodeMenu({
               idx++
               const on = idx === active
               return (
-                <button
+                <Button variant="bare"
                   key={item.type}
                   data-active={on}
                   onMouseEnter={() => setActive(flat.indexOf(item))}
@@ -141,7 +143,7 @@ export function AddNodeMenu({
                   )}
                 >
                   {t.nodeLabel[item.type] ?? item.label}
-                </button>
+                </Button>
               )
             })}
           </div>

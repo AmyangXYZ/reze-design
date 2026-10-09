@@ -13,6 +13,7 @@
 // Provenance is still reachable — the rail filters by maker — it just stopped
 // being the structure.
 
+import { Button } from "@/components/ui/button"
 import { STAGE_BOUND_TAG } from "@/lib/effects"
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react"
 import { Check, ChevronDown, Globe, Heart, LayoutGrid, List, Lock, PenLine, Search } from "lucide-react"
@@ -437,7 +438,7 @@ export function LibraryRailFilters<T extends BrowseItem>({ browse }: { browse: B
           <RailRow label={t.rail.liked} count={counts.liked} active={facet === "liked"} onClick={() => setFacet("liked")} />
           {/* Always rendered. A control that appears when it becomes relevant
               moves everything under it, and the rail is a thing you aim at. */}
-          <button
+          <Button variant="bare"
             type="button"
             onClick={clear}
             aria-hidden={!filtered}
@@ -450,7 +451,7 @@ export function LibraryRailFilters<T extends BrowseItem>({ browse }: { browse: B
             )}
           >
             {t.rail.clearFilters}
-          </button>
+          </Button>
         </div>
       </RailSection>
 
@@ -537,7 +538,7 @@ export function LibraryToolbar<T extends BrowseItem>({
 
       <div className="flex h-6 shrink-0 items-center gap-0.5 rounded-chip border border-line-strong bg-white/5 p-0.5">
         {([["grid", LayoutGrid], ["list", List]] as const).map(([d, Icon]) => (
-          <button
+          <Button variant="bare"
             key={d}
             type="button"
             aria-pressed={density === d}
@@ -549,7 +550,7 @@ export function LibraryToolbar<T extends BrowseItem>({
             )}
           >
             <Icon className="size-3" />
-          </button>
+          </Button>
         ))}
       </div>
     </>
@@ -572,7 +573,7 @@ function SortHeader({
 }: { k: SortKey; sort: SortKey; dir: 1 | -1; onSort: (k: SortKey) => void; right?: boolean; children: React.ReactNode }) {
   const active = sort === k
   return (
-    <button
+    <Button variant="bare"
       type="button"
       onClick={() => onSort(k)}
       className={cn(
@@ -585,7 +586,7 @@ function SortHeader({
       <ChevronDown
         className={cn("size-2 shrink-0 transition-opacity", active ? "opacity-100" : "opacity-0", dir === 1 && "rotate-180")}
       />
-    </button>
+    </Button>
   )
 }
 
@@ -627,7 +628,7 @@ export function VisibilityPicker({
           const Icon = VISIBILITY_ICON[v]
           const disabled = !canBecome(v, current)
           return (
-            <button
+            <Button variant="bare"
               key={v}
               type="button"
               disabled={disabled}
@@ -641,7 +642,7 @@ export function VisibilityPicker({
             >
               <Icon className="size-3.5" />
               {label[v]}
-            </button>
+            </Button>
           )
         })}
       </div>
