@@ -642,7 +642,9 @@ export function useEngine(
     let groups: StyleGroup[]
     try {
       await engine.autoStyleGroups(id)
-      groups = withSpecialGroups(await restyled(engine, id, engine.getStyleGroups(id)))
+      // The character's own seeds too: a prop is often another figure, and its
+      // hair and eyes want the same drop targets a cast member's do.
+      groups = withSpecialGroups(await restyled(engine, id, engine.getStyleGroups(id)), { character: true })
     } finally {
       engine.setModelTransform(id, { visible: true })
     }
@@ -1383,7 +1385,8 @@ export function useEngine(
       prev.map((m) => (m.id === modelId ? { ...m, materials: m.materials.map((x) => ({ ...x, visible: true })) } : m)),
     )
     const next = groups ?? (await restyled(engine, modelId, engine.getStyleGroups(modelId)))
-    const character = !stagesRef.current.some((x) => x.id === modelId) && !propsRef.current.some((x) => x.id === modelId)
+    // Props reset as characters do; only a stage keeps its own table.
+    const character = !stagesRef.current.some((x) => x.id === modelId)
     setGroupsByModel((prev) => ({ ...prev, [modelId]: withSpecialGroups(next, { character }) }))
   }, [])
 

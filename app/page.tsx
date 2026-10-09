@@ -4763,10 +4763,10 @@ export default function Lab() {
     // same id again — and a set that only ever grew then skipped it as already
     // classified. That is the "auto style only works after a page refresh"
     // report: the refresh was clearing this set, nothing more.
-    // Props take the same table: a mic is metal and a fan is cloth or wood,
-    // which is what the stage table knows, and the character hints the engine
-    // refuses to run on scenery would be just as wrong on a sword.
-    const scenery = [...stages, ...props]
+    // Stages only. A prop is styled as a character is (see addPropFromFiles):
+    // it is often one — a second figure, a pet — and a sword's "metal" or a
+    // fan's "cloth" are what the character hints already know.
+    const scenery = stages
     const live = new Set(scenery.map((s) => s.id))
     for (const id of [...styled.current]) if (!live.has(id)) styled.current.delete(id)
     // Same forgetting for the sky claim. Whoever removed the stage takes its sky
@@ -4786,7 +4786,7 @@ export default function Lab() {
       }
       if (autoStyleStage(stage.id)) styled.current.add(stage.id)
     }
-  }, [ready, stages, props, groupsByModel, autoStyleStage, engineRef])
+  }, [ready, stages, groupsByModel, autoStyleStage, engineRef])
 
   /**
    * The styling an upload kicked off, so its toast can wait for the LOOKS.

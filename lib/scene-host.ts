@@ -559,7 +559,10 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
     }
     const modelGroups = withSpecialGroups(
       docGroups ?? (await restyled(engine, entry.model.id, engine.getStyleGroups(entry.model.id))),
-      { character: !entry.stage && !entry.prop },
+      // A prop is styled as a character: it is often one — a second figure, a
+      // pet, a plushie — and a sword's "metal" or a fan's "cloth" are what the
+      // character hints already know. Only a stage keeps its own table.
+      { character: !entry.stage },
     )
     infos.push(info)
     groups[entry.model.id] = modelGroups
