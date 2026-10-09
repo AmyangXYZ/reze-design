@@ -897,11 +897,11 @@ export const RenderPanel = memo(function RenderPanel({
               {t.render.shareStatsNote}{" "}
               {/* Both halves of the answer: what is collected, and what it has
                   added up to. The second is why anyone would say yes. */}
-              <a href="/privacy" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-amber-100">
+              <a href="/privacy" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-foreground">
                 {t.render.shareStatsLink}
               </a>
               {" · "}
-              <a href="/analysis" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-amber-100">
+              <a href="/analysis" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-foreground">
                 {t.render.shareStatsSeeLink}
               </a>
             </p>

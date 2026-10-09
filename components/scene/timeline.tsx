@@ -369,7 +369,7 @@ function TransportFrameSlider({
           disabled ? "pointer-events-none opacity-15" : "cursor-grab",
         )}
       >
-        <div className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 rounded-[1px] bg-border" />
+        <div className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-border" />
         <div
           ref={thumbRef}
           className="pointer-events-none absolute top-1/2 size-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[1.5px] border-muted-foreground bg-secondary box-border"
@@ -478,7 +478,7 @@ function ZoomRuler({
         }}
         className="relative h-4 w-12 shrink-0 cursor-grab touch-none"
       >
-        <div className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 rounded-[1px] bg-border" />
+        <div className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-border" />
         <div
           className="pointer-events-none absolute top-1/2 size-[7px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[1.5px] border-muted-foreground bg-transparent box-border"
           style={{ left: `${pct}%` }}

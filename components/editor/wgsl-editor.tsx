@@ -288,6 +288,7 @@ function EditorBody({
               ))}
             </div>
             {/* overflow-hidden + box ≥ content ⇒ the textarea never scrolls itself */}
+            {/* eslint-disable-next-line no-restricted-syntax -- a transparent native layer over the highlighted code; any primitive styling would show */}
             <textarea
               value={code}
               onChange={(e) => {

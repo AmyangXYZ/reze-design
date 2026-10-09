@@ -101,6 +101,7 @@ export function ColorWheel({
       </div>
 
       {/* Lightness rail — horizontal, because a vertical one beside the wheel fought the column */}
+      {/* eslint-disable-next-line no-restricted-syntax -- a native range: its keyboard and drag behaviour is the control */}
       <input
         type="range"
         aria-label={`${label} lightness`}

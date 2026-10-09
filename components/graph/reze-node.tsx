@@ -197,7 +197,7 @@ export const RezeNode = memo(function RezeNode({ id, data, selected }: NodeProps
         {/* Friendly (localized) node name — mirrors the Add-node palette. */}
         <span className="text-muted-foreground font-normal">{t.nodeLabel[graphNode.type] ?? graphNode.type}</span>
         {isOutput && (
-          <span className="ml-auto rounded-chip bg-blue-400/20 px-1 text-2xs font-semibold tracking-wide text-blue-300">
+          <span className="ml-auto rounded-chip bg-white/10 px-1 text-2xs font-semibold tracking-wide text-muted-foreground">
             OUT
           </span>
         )}
