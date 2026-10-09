@@ -23,13 +23,14 @@ anything stacked on it. `border-line` divides inside a surface,
 `border-line-strong` bounds the surface. Nothing dimmer — a past review called
 unclear borders out by name.
 
-**Radii: `rounded-surface` (10) · `rounded-interior` (6) · `rounded-chip` (4).**
-Avoid 12+; smaller reads as more professional.
+**Radii: `rounded-surface` (12) · `rounded-interior` (8) · `rounded-chip` (6).**
+Reach for the token, never `rounded-xl`/`rounded-lg` at a call site — the value
+lives in `app/globals.css` and changes there.
 
-**No `backdrop-blur` on chrome that floats over the 3D canvas.** It re-samples
-the viewport every frame the scene animates, which is precisely when the chrome
-is open. `bg-surface` is opaque enough without it. Blur is fine over something
-static.
+**The chrome skin carries `backdrop-blur-xs`** (`SKIN` in
+`components/editor/surface.tsx`). Its cost over a live canvas was measured and
+accepted; the decision is recorded on `--color-surface` in `app/globals.css`.
+If the blur ever has to go, drop it there, not per surface.
 
 **Never a raw `<button>`, `<input>` or `<textarea>`.** Use the `components/ui`
 primitives — they carry the focus handling, disabled states and sizing, and

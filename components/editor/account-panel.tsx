@@ -484,9 +484,8 @@ export function AccountButton({
         sideOffset={8}
         // Opening the menu is not a request to rename yourself.
         onOpenAutoFocus={(e) => e.preventDefault()}
-        // No backdrop-blur: this floats over the 3D canvas, which is animating
-        // exactly while the menu is open. Same reason, same tokens as the
-        // dock's own popovers. See AGENTS.md.
+        // No backdrop-blur: bg-surface-raised is near-opaque, so a blur behind
+        // it would cost frames over the animating canvas and show nothing.
         // 16rem: the width of the whole top-right cluster it hangs from, so its
         // left edge meets the palette pill's.
         className="w-[16rem] rounded-surface border-line-strong bg-surface-raised p-0 shadow-float"
