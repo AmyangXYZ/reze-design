@@ -3,6 +3,7 @@ import { notFound, permanentRedirect } from "next/navigation"
 import { headers } from "next/headers"
 import { unstable_cache } from "next/cache"
 import { auth } from "@/lib/auth"
+import { isAdminEmail } from "@/lib/admin"
 import { eq } from "drizzle-orm"
 import { db, hasDatabase, schema } from "@/lib/db"
 import { user } from "@/lib/db/auth-schema"
@@ -56,11 +57,13 @@ const load = cache(async (id: string) => {
   if (!hasDatabase) return null
   const row = await sceneRow(id)
   if (!row || row.kind !== "scene") return null
-  // Private is the author's alone. A stranger holding the link gets the same
-  // not-found a nonexistent id gets — never a 403, which would confirm it.
+  // Private is the author's, and an admin's to inspect. A stranger holding the
+  // link gets the same not-found a nonexistent id gets — never a 403, which
+  // would confirm it.
   if (row.visibility === "private") {
     const session = await auth.api.getSession({ headers: await headers() })
-    if (!session || row.ownerId !== session.user.id) return null
+    const admin = !!session?.user.emailVerified && isAdminEmail(session.user.email)
+    if (!session || (row.ownerId !== session.user.id && !admin)) return null
   }
 
   return row

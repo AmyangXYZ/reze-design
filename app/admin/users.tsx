@@ -4,7 +4,7 @@
 // AI costs for them — and the account panel, where an admin acts on one.
 
 import { useEffect, useMemo, useState } from "react"
-import { Search, X } from "lucide-react"
+import { ExternalLink, Search, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -274,6 +274,13 @@ function AccountPanel({ user: u, isSelf, onClose }: { user: UserRow; isSelf: boo
                       <span className="capitalize">{i.kind}</span> · {i.likeCount} likes · {i.visibility} · {date(i.createdAt)}
                     </div>
                   </div>
+                  {i.kind === "scene" && (
+                    <Button size="icon-xs" variant="ghost" asChild tooltip="Open the scene page" className="text-muted-foreground hover:bg-accent hover:text-foreground">
+                      <a href={`/${i.author}/${i.id}`} target="_blank" rel="noreferrer" aria-label="Open the scene page">
+                        <ExternalLink className="size-3.5" />
+                      </a>
+                    </Button>
+                  )}
                   <DeleteItemAction id={i.id} name={i.name} variant="icon" onDone={() => setNonce((n) => n + 1)} />
                 </li>
               ))}
