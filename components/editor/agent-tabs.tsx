@@ -80,7 +80,7 @@ export function AgentTabs({
   }, [activeId, tabs.length])
 
   return (
-    <div className="flex shrink-0 items-center gap-1.5 py-1.5 pr-4 pl-2.5">
+    <div className="flex shrink-0 items-center gap-1.5 pt-1.5 pb-2.5 pr-4 pl-2.5">
       <Tabs value={activeId ?? undefined} onValueChange={onSelect} className="min-w-0 flex-1">
         {/* As a browser's tabs: they share the row, shrinking toward a floor
             before the row starts to scroll. */}

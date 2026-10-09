@@ -13,6 +13,7 @@
 //   await rezeTools.run("capture", { shots: [{ shot: "closeup", angle: "front" }] })
 
 import { useCallback, useEffect, useRef } from "react"
+import { afterRender } from "@/lib/ai/after-render"
 import { SCENE_TOOLS, runSceneTool, type SceneToolHandles, type ToolResult } from "@/lib/ai/scene-tools"
 
 export function useSceneTools(handles: SceneToolHandles) {
@@ -29,7 +30,7 @@ export function useSceneTools(handles: SceneToolHandles) {
   // scene this one left.
   const run = useCallback(async (name: string, args: Record<string, unknown> = {}): Promise<ToolResult> => {
     const result = await runSceneTool(name, args, ref.current)
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    await afterRender()
     return result
   }, [])
 

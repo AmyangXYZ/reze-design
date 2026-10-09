@@ -115,6 +115,15 @@ try {
       console.log(`${String(i).padStart(2, "0")}-eval: ${JSON.stringify(v)?.slice(0, 300)}`)
       continue
     }
+    // Minimise or restore the browser window — what switching away does to
+    // the page: document.visibilityState becomes "hidden", frames stop.
+    if (name === "__window") {
+      const { windowId } = (await send("Browser.getWindowForTarget", { targetId: target.id })).result
+      await send("Browser.setWindowBounds", { windowId, bounds: { windowState: args } })
+      await sleep(500)
+      console.log(`${String(i).padStart(2, "0")}-window ${args}: ${await evaluate("document.visibilityState")}`)
+      continue
+    }
     if (name === "__screenshot") {
       const shot = await send("Page.captureScreenshot", { format: "png" })
       writeFileSync(join(out, `${String(i).padStart(2, "0")}-${args || "screen"}.png`), Buffer.from(shot.result.data, "base64"))

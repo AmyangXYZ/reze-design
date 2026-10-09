@@ -26,6 +26,7 @@ import type { FrameMetrics } from "@/lib/ai/image-metrics"
 import type { ShaderGraph } from "reze-engine"
 import { SEEING_TOOLS, captureMeasured, frameData, imagesOf } from "@/lib/ai/seeing-tools"
 import { AUTHOR_TOOLS } from "@/lib/ai/author-tools"
+import { afterRender } from "@/lib/ai/after-render"
 import { ANGLES, FIGURE_BONES, SHOTS, frameShot, type Angle, type Figure, type Shot } from "@/lib/ai/framing"
 
 export type SceneToolHandles = {
@@ -377,7 +378,7 @@ const CORE_TOOLS: SceneTool[] = [
       const t = Math.min(h.duration || 0, Math.max(0, typeof args.seconds === "number" ? args.seconds : 0))
       h.seek(t)
       // Let a frame pass so the pose and physics have landed before a capture.
-      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+      await afterRender()
       return { data: { time: r2(t) } }
     },
   },

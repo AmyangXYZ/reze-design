@@ -16,6 +16,7 @@ import { contactSheet } from "@/lib/ai/sheet"
 import { primeAudioAnalysis } from "@/lib/audio-analysis"
 import { summarizeMusic } from "@/lib/ai/music"
 import { oklab } from "@/lib/ai/image-metrics"
+import { afterRender } from "@/lib/ai/after-render"
 import { figureOf, subjectId, type SceneTool, type SceneToolHandles, type ToolImage } from "@/lib/ai/scene-tools"
 
 const r2 = (v: number) => Math.round(v * 100) / 100
@@ -328,7 +329,7 @@ export const SEEING_TOOLS: SceneTool[] = [
       try {
         for (const m of moments) {
           h.seek(m.time)
-          await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+          await afterRender()
           const shot = await captureMeasured(h, [{ label: m.label, view: null }], 384)
           if ("error" in shot) return { data: shot }
           measured.push(shot[0])
