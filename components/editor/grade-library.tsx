@@ -195,7 +195,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
           autoFocus
           defaultValue={g.name}
           className={cn(
-            "h-5 min-w-0 flex-1 border-line-strong bg-white/5 px-1 text-[13px] md:text-[13px]",
+            "h-5 min-w-0 flex-1 border-line-strong bg-white/5 px-1 text-xs md:text-xs",
             renameError && "border-red-400/60",
           )}
           onClick={(ev) => ev.stopPropagation()}
@@ -297,7 +297,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
         className={LIBRARY_SHELL}
     >
       <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-line bg-zinc-950 px-4 py-2 text-left">
-        <DialogTitle className="flex shrink-0 items-center gap-2 text-[13px] font-medium">
+        <DialogTitle className="flex shrink-0 items-center gap-2 text-sm font-medium">
           <Palette className="size-4 text-blue-400" />
           {t.scene.grade}
         </DialogTitle>
@@ -305,13 +305,13 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
         {onEdit && (
           <button
             onClick={startNew}
-            className="flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-chip border border-line-strong bg-white/5 px-2 text-[11px] font-medium transition-colors hover:bg-white/10"
+            className="flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-chip border border-line-strong bg-white/5 px-2 text-2xs font-medium transition-colors hover:bg-white/10"
           >
             <Plus className="size-3" />
             {t.library.new}
           </button>
         )}
-        <DialogClose className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
+        <DialogClose className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-chip text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
           <X className="size-3.5" />
           <span className="sr-only">{t.library.close}</span>
         </DialogClose>
@@ -348,10 +348,10 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                   type="button"
                   disabled={!onEdit}
                   onClick={() => startEdit(selected)}
-                  className="group/prev relative block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-md border border-line-strong"
+                  className="group/prev relative block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-chip border border-line-strong"
                 >
                   <GradePreview spec={shownSpec} />
-                  <div className="absolute inset-0 flex items-center justify-center gap-1.5 bg-zinc-950/70 text-xs font-medium text-foreground opacity-0 transition-opacity group-hover/prev:opacity-100">
+                  <div className="absolute inset-0 flex items-center justify-center gap-1.5 bg-surface text-xs font-medium text-foreground opacity-0 transition-opacity group-hover/prev:opacity-100">
                     <SquarePen className="size-4" />
                     {t.gradeLibrary.edit}
                   </div>
@@ -360,14 +360,14 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
 
               <div className="min-h-0 p-3">
                 <div className="truncate text-sm font-semibold select-text">{nameOf(selected)}</div>
-                <div className="mt-1 flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+                <div className="mt-1 flex items-center gap-1.5 font-mono text-2xs text-muted-foreground">
                   <AuthorAvatar name={builtinAuthor(selected.id, selected.author)} className="size-3.5" />
                   <AuthorLink name={builtinAuthor(selected.id, selected.author)} draft={itemState(selected) === "draft"} className="truncate select-text" />
                   {/* When it went public, the same fact the gallery's panel shows. */}
                   {publishedOn(selected.createdAt) && <span className="shrink-0">· {publishedOn(selected.createdAt)}</span>}
                 </div>
                 {selected.description && (
-                  <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground select-text">{builtinDescription("grade", selected, locale)}</p>
+                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground select-text">{builtinDescription("grade", selected, locale)}</p>
                 )}
                 <LibraryTags tags={selected.tags} />
                 <LibraryItemStats

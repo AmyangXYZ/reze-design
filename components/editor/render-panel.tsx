@@ -162,7 +162,7 @@ const parseClock = (text: string): number | null => {
 }
 
 const rangeInputCls =
-  "h-6 w-14 rounded-md border border-line-strong bg-white/5 px-1 text-center text-xs tabular-nums outline-none transition-colors hover:bg-white/10 focus:border-blue-400/50 placeholder:text-muted-foreground disabled:opacity-50"
+  "h-6 w-14 rounded-chip border border-line-strong bg-white/5 px-1 text-center text-xs tabular-nums outline-none transition-colors hover:bg-white/10 focus:border-blue-400/50 placeholder:text-muted-foreground disabled:opacity-50"
 
 /** The part of FileSystemFileHandle this panel uses. */
 type SaveHandle = {
@@ -892,7 +892,7 @@ export const RenderPanel = memo(function RenderPanel({
             {/* Amber, like the credits note in the publish dialog: the same kind of
                 line, the one thing beside a control that has to actually be read
                 before the control is touched. */}
-            <p className="mt-0.5 text-[11px] leading-snug text-amber-200/90">
+            <p className="mt-0.5 text-2xs leading-snug text-amber-200/90">
               {t.render.shareStatsNote}{" "}
               {/* Both halves of the answer: what is collected, and what it has
                   added up to. The second is why anyone would say yes. */}

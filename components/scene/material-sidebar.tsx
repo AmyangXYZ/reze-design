@@ -218,7 +218,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
         onDragEnd={endDrag}
         onContextMenu={() => setMenuTarget({ kind: "material", name: m.name, groupId: currentGroupId })}
         className={cn(
-          "group/row flex h-6 cursor-grab items-center gap-1.5 rounded pr-0.5 pl-1 transition-colors hover:bg-white/[0.05] active:cursor-grabbing",
+          "group/row flex h-6 cursor-grab items-center gap-1.5 rounded-chip pr-0.5 pl-1 transition-colors hover:bg-white/[0.05] active:cursor-grabbing",
           !m.visible && "opacity-45",
           dragMat === m.name && "opacity-40",
         )}
@@ -255,7 +255,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
               key={m.id}
               onClick={() => onSelectModel(m.id)}
               className={cn(
-                "max-w-full truncate rounded-md border px-2 py-0.5 text-[11px] transition-colors",
+                "max-w-full truncate rounded-chip border px-2 py-0.5 text-2xs transition-colors",
                 m.active
                   ? "border-blue-400/40 bg-blue-400/10 text-foreground"
                   : "border-line-strong text-muted-foreground hover:bg-white/5 hover:text-foreground",
@@ -299,7 +299,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
         {onOpenLibrary && (
         <button
           onClick={() => onOpenLibrary(libraryTarget)}
-          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white py-1 pr-1.5 pl-2 text-xs font-medium text-zinc-900 transition-colors hover:bg-white/90 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-white"
+          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-chip bg-white py-1 pr-1.5 pl-2 text-xs font-medium text-zinc-900 transition-colors hover:bg-white/90 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-white"
         >
           <Workflow className="size-3.5" />
           {t.lab.cmd.graphLib}
@@ -328,12 +328,12 @@ export const MaterialsPanel = memo(function MaterialsPanel({
             const isActive = activeGroupId === g.id
             const isDrop = dropTarget === g.id
             return (
-              <div key={g.id} className={cn("rounded", isDrop && "ring-1 ring-blue-400/50 ring-inset")} {...dropZone(g.id, g.id)}>
+              <div key={g.id} className={cn("rounded-chip", isDrop && "ring-1 ring-blue-400/50 ring-inset")} {...dropZone(g.id, g.id)}>
                 {/* Group row — single-click selects/deselects; chevron toggles collapse */}
                 <div
                   data-ctx="row"
                   className={cn(
-                    "group/hdr flex h-6 cursor-pointer items-center gap-1 rounded pr-0.5 transition-colors",
+                    "group/hdr flex h-6 cursor-pointer items-center gap-1 rounded-chip pr-0.5 transition-colors",
                     isActive ? "bg-blue-400/[0.1]" : "hover:bg-white/[0.04]",
                   )}
                   onClick={() => toggleCollapse(g.id)}
@@ -420,12 +420,12 @@ export const MaterialsPanel = memo(function MaterialsPanel({
           {/* ── Ungrouped section ── */}
           {ungrouped.length > 0 && (
             <div
-              className={cn("mt-0.5 rounded", dropTarget === UNGROUPED && "ring-1 ring-blue-400/50 ring-inset")}
+              className={cn("mt-0.5 rounded-chip", dropTarget === UNGROUPED && "ring-1 ring-blue-400/50 ring-inset")}
               {...dropZone(UNGROUPED, null)}
             >
               <div
                 className={cn(
-                  "group/hdr flex h-6 cursor-pointer items-center gap-1 rounded pr-0.5 transition-colors",
+                  "group/hdr flex h-6 cursor-pointer items-center gap-1 rounded-chip pr-0.5 transition-colors",
                   "hover:bg-white/[0.04]",
                 )}
                 onClick={() => toggleCollapse(UNGROUPED)}

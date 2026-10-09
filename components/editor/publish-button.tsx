@@ -114,7 +114,7 @@ export function PublishButton({
     <Button
       size="sm"
       disabled={!signedIn}
-      className={cn("h-7 gap-1.5 rounded-md bg-white px-3 text-xs font-medium text-zinc-900 hover:bg-white/90 disabled:opacity-40", className)}
+      className={cn("h-7 gap-1.5 rounded-chip bg-white px-3 text-xs font-medium text-zinc-900 hover:bg-white/90 disabled:opacity-40", className)}
     >
       {published ? <Check className="size-3.5" /> : <Share2 className="size-3.5" />}
       {published ? t.gradeLibrary.publishDone : t.gradeLibrary.publish}
@@ -173,7 +173,7 @@ export function PublishButton({
                 maxLength={60}
                 className={cn(PUBLISH_INPUT, clash && "border-red-400/60")}
               />
-              {clash && <p className="mt-1 text-[11px] text-red-400">{t.library.nameTakenBy(clash)}</p>}
+              {clash && <p className="mt-1 text-2xs text-red-400">{t.library.nameTakenBy(clash)}</p>}
             </label>
             <label className="block">
               <span className="text-xs text-muted-foreground">{t.library.publishDescription}</span>
@@ -189,7 +189,7 @@ export function PublishButton({
             <label className="block">
               <span className="flex items-baseline justify-between gap-2">
                 <span className="text-xs text-muted-foreground">{t.library.publishTags}</span>
-                <span className="text-[10px] tabular-nums text-muted-foreground">
+                <span className="text-2xs tabular-nums text-muted-foreground">
                   {tags.length}/{MAX_TAGS}
                 </span>
               </span>
@@ -198,8 +198,8 @@ export function PublishButton({
             <VisibilityPicker value={visibility} onChange={setVisibility} current={currentVisibility} />
           </div>
           <div className={PUBLISH_FOOT}>
-            {failed && <div className="text-[11px] text-red-400">{t.gradeLibrary.publishFailed}</div>}
-            {nameTaken && <div className="text-[11px] text-red-400">{t.library.nameTaken}</div>}
+            {failed && <div className="text-2xs text-red-400">{t.gradeLibrary.publishFailed}</div>}
+            {nameTaken && <div className="text-2xs text-red-400">{t.library.nameTaken}</div>}
             <Button
               type="submit"
               disabled={publishing || !!clash || !name.trim() || !description.trim() || tags.length === 0}

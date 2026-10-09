@@ -80,7 +80,7 @@ export function NodeContextMenu({
               onClose()
             }}
             className={cn(
-              "flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors",
+              "flex w-full items-center gap-2 rounded-chip px-2 py-1 text-left text-xs transition-colors",
               a.disabled
                 ? "cursor-default text-muted-foreground"
                 : a.danger
@@ -90,7 +90,7 @@ export function NodeContextMenu({
           >
             {a.checked ? <Check className="size-3 shrink-0 text-blue-400" /> : <span className="size-3 shrink-0" />}
             <span className="flex-1">{a.label}</span>
-            {a.shortcut && <span className="text-[10px] text-muted-foreground">{a.shortcut}</span>}
+            {a.shortcut && <span className="text-2xs text-muted-foreground">{a.shortcut}</span>}
           </button>
         ),
       )}

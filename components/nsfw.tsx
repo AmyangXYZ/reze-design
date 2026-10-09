@@ -35,7 +35,7 @@ export function SceneCover({
       />
       {hidden && (
         <span className="absolute inset-0 flex items-center justify-center">
-          <span className="rounded-chip border border-amber-400/40 bg-surface px-1.5 py-0.5 font-mono text-[10px] font-medium tracking-wider text-amber-400">
+          <span className="rounded-chip border border-amber-400/40 bg-surface px-1.5 py-0.5 font-mono text-2xs font-medium tracking-wider text-amber-400">
             {t.nsfw.label}
           </span>
         </span>

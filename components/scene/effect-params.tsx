@@ -115,7 +115,7 @@ export function EffectParams({
           {/* pl-1.5, the row's own padding: the heading and the names share one
               left edge, so the section reads as a list with a label rather than
               as a label with a list indented under it. */}
-          <div className="mb-1 truncate pl-1.5 text-[11px] text-muted-foreground">{t.lab.ctl.onModels}</div>
+          <div className="mb-1 truncate pl-1.5 text-2xs text-muted-foreground">{t.lab.ctl.onModels}</div>
           <div className="flex flex-col">
             {cast.map((m) => (
               <Button
@@ -154,13 +154,13 @@ export function EffectParams({
         // footer would land at a different height for every effect, under the
         // pointer that just opened it.
         <div className="mb-1 flex items-center justify-between gap-2 pl-0.5">
-          <span className="truncate text-[11px] text-muted-foreground">{t.lab.ctl.params}</span>
+          <span className="truncate text-2xs text-muted-foreground">{t.lab.ctl.params}</span>
           <Button
             size="sm"
             variant="ghost"
             disabled={!touched}
             onClick={onReset}
-            className="-mr-1 h-6 gap-1 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+            className="-mr-1 h-6 gap-1 px-1.5 text-2xs text-muted-foreground hover:text-foreground"
           >
             <RotateCcw className="size-3" />
             {t.lab.ctl.resetParams}

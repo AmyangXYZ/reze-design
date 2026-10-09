@@ -568,7 +568,7 @@ export const AnimPlayer = memo(function AnimPlayer({
         // The fold animates THROUGH the blur, which measurably costs frames —
         // the decision to keep it anyway (visual consistency with the shipped
         // chrome) is recorded on --color-surface in globals.css.
-        "border border-line-strong bg-zinc-950/70 shadow-float backdrop-blur-xs",
+        "border border-line-strong bg-surface shadow-float backdrop-blur-xs",
         // ONE radius in both states, and deliberately not rounded-full.
         //
         // rounded-full is 9999px that the browser CLAMPS to half the box. It

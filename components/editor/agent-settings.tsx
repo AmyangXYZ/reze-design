@@ -82,7 +82,7 @@ function Verdict({ entry, text }: { entry: ModelEntry; text: AgentSettingsText }
   if (entry.verdict === "checking") return <AstroidSpinner className="size-3 shrink-0 text-muted-foreground" />
   if (entry.verdict === "ready") return null
   // Text only still works — a note, not a warning.
-  return <span className={cn("shrink-0 text-[11px]", entry.verdict === "textOnly" ? "text-muted-foreground" : "text-amber-400")}>{text.verdicts[entry.verdict]}</span>
+  return <span className={cn("shrink-0 text-2xs", entry.verdict === "textOnly" ? "text-muted-foreground" : "text-amber-400")}>{text.verdicts[entry.verdict]}</span>
 }
 
 const iconButton = "size-5 shrink-0 rounded-chip text-muted-foreground hover:bg-white/10 hover:text-foreground"
@@ -155,7 +155,7 @@ function MenuBody({ settings, active, premium, text }: { settings: AiSettings; a
       {settings.connections.map((c) => (
         <div key={c.id} className="mt-1 border-t border-line pt-1 first:mt-0 first:border-0 first:pt-0">
           <div className="flex items-center gap-1 pr-1">
-            <p className="min-w-0 flex-1 truncate px-2 py-1 text-[11px] text-muted-foreground">{connectionLabel(c)}</p>
+            <p className="min-w-0 flex-1 truncate px-2 py-1 text-2xs text-muted-foreground">{connectionLabel(c)}</p>
             <Button variant="ghost" size="icon" aria-label={text.remove} tooltip={text.remove} onClick={() => removeConnection(c)} className={cn(iconButton, "hover:text-red-400")}>
               <Trash2 className="size-3" />
             </Button>
@@ -190,7 +190,7 @@ function MenuBody({ settings, active, premium, text }: { settings: AiSettings; a
               </Line>
               {/* What the service said, word for word — copyable, the way to debug it. */}
               {m.error && m.verdict !== "ready" && m.verdict !== "checking" && m.verdict !== "textOnly" && (
-                <p className="line-clamp-3 pr-2 pb-1 pl-7 text-[11px] break-words text-amber-400 select-text">{m.error}</p>
+                <p className="line-clamp-3 pr-2 pb-1 pl-7 text-2xs break-words text-amber-400 select-text">{m.error}</p>
               )}
             </div>
           ))}
@@ -204,7 +204,7 @@ function MenuBody({ settings, active, premium, text }: { settings: AiSettings; a
           {text.addConnection}
         </Line>
       </div>
-      <p className="px-2 pt-1 pb-1.5 text-[11px] leading-4 text-muted-foreground">{text.keyNote}</p>
+      <p className="px-2 pt-1 pb-1.5 text-2xs leading-4 text-muted-foreground">{text.keyNote}</p>
     </div>
   )
 }
@@ -292,7 +292,7 @@ function AddConnection({ text, onBack, onAdded }: { text: AgentSettingsText; onB
           placeholder={text.key}
           className={cn(FIELD, "font-mono [-webkit-text-security:disc]")}
         />
-        {error && <p className="line-clamp-3 px-2 text-[11px] break-words text-amber-400 select-text">{error}</p>}
+        {error && <p className="line-clamp-3 px-2 text-2xs break-words text-amber-400 select-text">{error}</p>}
         {/* The link and the button on one 28px line, the link's text on the
             fields' left edge. */}
         <div className="flex items-center gap-2">
@@ -366,7 +366,7 @@ function AddModel({ connection, text, onBack }: { connection: Connection; text: 
       </div>
       <div className="max-h-72 overflow-y-auto">
         {error ? (
-          <p className="px-2 py-1 text-[11px] break-words text-amber-400 select-text">{error}</p>
+          <p className="px-2 py-1 text-2xs break-words text-amber-400 select-text">{error}</p>
         ) : models === null ? (
           <p className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground">
             <AstroidSpinner className="size-3" />
@@ -374,7 +374,7 @@ function AddModel({ connection, text, onBack }: { connection: Connection; text: 
           </p>
         ) : (
           <>
-            {!q && shown.length > 0 && <p className="px-2 pt-1 pb-0.5 text-[11px] text-muted-foreground">{text.recommended}</p>}
+            {!q && shown.length > 0 && <p className="px-2 pt-1 pb-0.5 text-2xs text-muted-foreground">{text.recommended}</p>}
             {shown.map((m) => (
               <Line key={m} selected={have.has(m)} onClick={() => add(m)}>
                 {m}
@@ -386,7 +386,7 @@ function AddModel({ connection, text, onBack }: { connection: Connection; text: 
               </Line>
             )}
             {q && !shown.length && !custom && <p className="px-2 py-1 text-xs text-muted-foreground">{text.none}</p>}
-            {!q && <p className="px-2 pt-1 pb-0.5 text-[11px] text-muted-foreground">{text.searchAll(models.length)}</p>}
+            {!q && <p className="px-2 pt-1 pb-0.5 text-2xs text-muted-foreground">{text.searchAll(models.length)}</p>}
           </>
         )}
       </div>

@@ -878,7 +878,7 @@ export function GraphEditor({
               )}
 
               {previewId && (
-                <div className="absolute top-2 right-2 z-10 rounded-md bg-pink-600/90 px-2.5 py-1 text-xs">
+                <div className="absolute top-2 right-2 z-10 rounded-chip bg-pink-600/90 px-2.5 py-1 text-xs">
                   {t.graph.previewing(previewId)}
                   <Button variant="link" className="ml-2 h-auto cursor-pointer p-0 text-xs text-foreground underline" onClick={() => setPreviewId(null)}>
                     {t.graph.exit}
@@ -887,7 +887,7 @@ export function GraphEditor({
               )}
 
               {diagnostics.length > 0 && (
-                <div className="absolute bottom-2 left-1/2 z-10 max-w-[70%] -translate-x-1/2 space-y-0.5 rounded-md border border-zinc-700 bg-zinc-900/95 px-3 py-2 text-xs">
+                <div className="absolute bottom-2 left-1/2 z-10 max-w-[70%] -translate-x-1/2 space-y-0.5 rounded-chip border border-zinc-700 bg-zinc-900/95 px-3 py-2 text-xs">
                   {errors.length > 0 && (
                     <div className="font-medium text-red-400">{errors.length} error(s) — previous look kept</div>
                   )}

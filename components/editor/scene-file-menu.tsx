@@ -26,7 +26,7 @@ export function Row({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+      className="flex w-full cursor-pointer items-center gap-2 rounded-chip px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
     >
       <Icon className="size-3 shrink-0" />
       {label}
@@ -73,7 +73,7 @@ export function LogoMenu({
         <button
           type="button"
           aria-label={t.sceneFile.label}
-          className="cursor-pointer rounded-md outline-none transition-colors hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="cursor-pointer rounded-chip outline-none transition-colors hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-ring/50"
         >
           {trigger}
         </button>

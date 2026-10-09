@@ -228,7 +228,7 @@ export function SceneViewer(props: ViewerProps) {
             it pushed the card sideways into a horizontal scrollbar. */}
         <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-2.5 [overflow-wrap:anywhere]">
           <div className="truncate text-sm font-semibold tracking-tight text-foreground">{props.title}</div>
-          <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
+          <div className="mt-0.5 truncate font-mono text-2xs text-muted-foreground">
             <Link href={`/${props.author}`} className="transition-colors hover:text-foreground hover:underline">
               @{props.author}
             </Link>

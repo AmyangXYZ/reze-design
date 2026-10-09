@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils"
  *  the plane row's size boxes are the same control in a different arrangement,
  *  and a second definition of it would drift on the first tweak. */
 export const VALUE_BOX =
-  "block h-4 w-10 shrink-0 rounded border bg-transparent p-0 text-right text-[11px] leading-4 tabular-nums"
+  "block h-4 w-10 shrink-0 rounded-chip border bg-transparent p-0 text-right text-2xs leading-4 tabular-nums"
 
 export function SliderRow({
   label,
@@ -87,7 +87,7 @@ export function SliderRow({
     >
       {/* w-16 fits the longest label ("Saturation"); dense rows carry an axis
           and a word, and w-10 is what "Pos X" needs. */}
-      <span className={cn("shrink-0 truncate", dense ? "text-[11px]" : "text-xs", labelClass ?? (dense ? "w-10" : "w-16"))}>
+      <span className={cn("shrink-0 truncate", dense ? "text-2xs" : "text-xs", labelClass ?? (dense ? "w-10" : "w-16"))}>
         {label}
       </span>
       <Slider
@@ -128,7 +128,7 @@ export function SliderRow({
         className={cn(
           VALUE_BOX,
           "outline-none",
-          dense && "w-8 text-[10px]",
+          dense && "w-8 text-2xs",
           editing
             ? "border-blue-400/50 bg-white/5 text-foreground"
             : "cursor-text border-transparent text-muted-foreground select-none",
@@ -223,7 +223,7 @@ export function ColorRow({
 }) {
   return (
     <div className={cn("flex items-center justify-between first:mt-0", dense ? "mt-1.5 gap-1.5" : "mt-2.5")}>
-      <span className={cn("shrink-0 truncate", dense ? "text-[11px]" : "text-xs", labelClass)}>{label}</span>
+      <span className={cn("shrink-0 truncate", dense ? "text-2xs" : "text-xs", labelClass)}>{label}</span>
       <ColorField value={value} onChange={onChange} />
     </div>
   )

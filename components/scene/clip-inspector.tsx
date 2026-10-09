@@ -140,11 +140,11 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
  *  runs a step below the left dock's chip — but only one step. At 9px these
  *  were smaller than anything else in the panel, which made the one control
  *  that says WHICH curve you are editing the hardest thing in it to read. */
-const TAB = "h-auto min-h-0 rounded-chip border px-1.5 py-0.5 text-[10px] font-medium transition-colors"
+const TAB = "h-auto min-h-0 rounded-chip border px-1.5 py-0.5 text-2xs font-medium transition-colors"
 /** A preset badge. Same family, same size — it is a target you press
  *  repeatedly, and its column is 72px wide, which "Slow Out" clears at 10px
  *  with room to spare. */
-const CHIP = "h-auto min-h-0 rounded-chip border px-1 py-1 text-[10px] font-medium leading-none transition-colors"
+const CHIP = "h-auto min-h-0 rounded-chip border px-1 py-1 text-2xs font-medium leading-none transition-colors"
 const CHIP_ON = "border-blue-400/40 bg-blue-400/15 text-blue-400 hover:bg-blue-400/15 hover:text-blue-400"
 const CHIP_OFF = "border-line-strong text-muted-foreground hover:border-white/25 hover:text-foreground"
 
@@ -389,7 +389,7 @@ function PlayheadFrameLabel({ frameCount }: { frameCount: number | null }) {
     // letter, a number, another number — when it is one reading. Tightened to a
     // single unit, with the F kept a hair off the digits so it still reads as a
     // label rather than as a leading glyph of the number.
-    <span className="shrink-0 font-mono text-[10px] tracking-tight tabular-nums text-muted-foreground">
+    <span className="shrink-0 font-mono text-2xs tracking-tight tabular-nums text-muted-foreground">
       F&thinsp;{Math.round(live)}
       {frameCount != null ? `/${frameCount}` : ""}
     </span>
@@ -521,7 +521,7 @@ function GizmoRow() {
   const { setGizmoVisible } = useClipActions()
   return (
     <div className="flex items-center gap-1.5">
-      <span className="w-9 shrink-0 text-[10px] tracking-wider text-muted-foreground uppercase">
+      <span className="w-9 shrink-0 text-2xs tracking-wider text-muted-foreground uppercase">
         {t.lab.timeline.gizmo}
       </span>
       <Button
@@ -532,7 +532,7 @@ function GizmoRow() {
         onClick={() => setGizmoVisible((v) => !v)}
         title={gizmoVisible ? t.lab.timeline.gizmoHideHint : t.lab.timeline.gizmoShowHint}
         className={cn(
-          "h-5 flex-1 rounded-chip border px-1 text-[10px]",
+          "h-5 flex-1 rounded-chip border px-1 text-2xs",
           gizmoVisible
             ? "border-blue-400/30 bg-blue-400/[0.12] text-blue-400 hover:bg-blue-400/20 hover:text-blue-400"
             : "border-line-strong bg-surface-raised text-muted-foreground hover:text-foreground",
@@ -591,7 +591,7 @@ function OperationsSection({
   // tokens the editor actually themes. Ghost + those tokens is what makes an
   // operations chip look like it belongs to this panel, not a default.
   const row =
-    "h-5 flex-1 rounded-chip border border-line-strong bg-surface-raised px-1 text-[10px] text-muted-foreground hover:text-foreground"
+    "h-5 flex-1 rounded-chip border border-line-strong bg-surface-raised px-1 text-2xs text-muted-foreground hover:text-foreground"
   // Delete / Cut / Clear remove something — the one accent AGENTS.md reserves
   // for exactly that, so a destructive chip reads as different in kind from
   // Insert/Copy/Paste/Simplify, not just a different label in the same gray.
@@ -600,7 +600,7 @@ function OperationsSection({
     <Group title={t.lab.timeline.operations}>
       <div className="space-y-1.5">
         <div className="flex items-center gap-1.5">
-          <span className="w-9 shrink-0 text-[10px] tracking-wider text-muted-foreground uppercase">
+          <span className="w-9 shrink-0 text-2xs tracking-wider text-muted-foreground uppercase">
             {t.lab.timeline.key}
           </span>
           <Button type="button" variant="ghost" size="xs" className={row} disabled={!canInsert} onClick={onInsert}>
@@ -611,7 +611,7 @@ function OperationsSection({
           </Button>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="w-9 shrink-0 text-[10px] tracking-wider text-muted-foreground uppercase">
+          <span className="w-9 shrink-0 text-2xs tracking-wider text-muted-foreground uppercase">
             {t.lab.timeline.sel}
           </span>
           <Button type="button" variant="ghost" size="xs" className={row} disabled={!canCopy} onClick={onCopy}>
@@ -625,7 +625,7 @@ function OperationsSection({
           </Button>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="w-9 shrink-0 text-[10px] tracking-wider text-muted-foreground uppercase">
+          <span className="w-9 shrink-0 text-2xs tracking-wider text-muted-foreground uppercase">
             {t.lab.timeline.track}
           </span>
           <Button
@@ -744,7 +744,7 @@ function LiveBoneSliders({
               />
             ))
           ) : (
-            <div className="text-[10px] text-muted-foreground">—</div>
+            <div className="text-2xs text-muted-foreground">—</div>
           )}
         </div>
       </Group>
@@ -770,7 +770,7 @@ function LiveBoneSliders({
               />
             ))
           ) : (
-            <div className="text-[10px] text-muted-foreground">—</div>
+            <div className="text-2xs text-muted-foreground">—</div>
           )}
         </div>
       </Group>
@@ -1465,7 +1465,7 @@ const TO_POSITION = "__position"
 const THROW_ORDER: ThrowStyle[] = ["pass", "toss", "lob"]
 const ROW = "mt-2.5 flex items-center gap-2 first:mt-0"
 const ROW_LABEL = "w-16 shrink-0 truncate text-xs"
-const ROW_SELECT = "ml-auto max-w-[9.5rem] text-[11px] data-[size=sm]:h-5"
+const ROW_SELECT = "ml-auto max-w-[9.5rem] text-2xs data-[size=sm]:h-5"
 const withAxis = (v: [number, number, number], axis: number, x: number): [number, number, number] =>
   [axis === 0 ? x : v[0], axis === 1 ? x : v[1], axis === 2 ? x : v[2]]
 

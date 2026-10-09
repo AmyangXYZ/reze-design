@@ -346,7 +346,7 @@ function ChannelPicker({
             recent[i] ? (
               <Swatch key={i} hex={recent[i]} onPick={pick} />
             ) : (
-              <div key={i} className={cn(SWATCH, "rounded-xs border border-dashed border-line")} />
+              <div key={i} className={cn(SWATCH, "rounded-chip border border-dashed border-line")} />
             ),
           )}
         </div>
@@ -379,7 +379,7 @@ export function HexField({
       value={text}
       spellCheck={false}
       className={cn(
-        "h-7 w-28 rounded-md border border-line-strong bg-black/30 px-2 font-mono text-xs outline-none focus:border-blue-400/50",
+        "h-7 w-28 rounded-chip border border-line-strong bg-black/30 px-2 font-mono text-xs outline-none focus:border-blue-400/50",
         className,
       )}
       onFocus={() => setFocused(true)}
@@ -423,7 +423,7 @@ export function ColorField({
         aria-label={tc.open}
       >
         <span
-          className="size-4 shrink-0 rounded-md ring-1 ring-white/15 transition-transform group-hover:scale-110"
+          className="size-4 shrink-0 rounded-chip ring-1 ring-white/15 transition-transform group-hover:scale-110"
           style={{ background: value }}
         />
         <span className="font-mono text-xs text-muted-foreground underline-offset-2 group-hover:text-foreground group-hover:underline">
@@ -546,7 +546,7 @@ export function ColorPickerDialog({
                           data-name={name}
                           data-hex={hex}
                           className={cn(
-                            "h-5 w-full cursor-pointer rounded-xs transition-transform duration-75 ease-out hover:z-10 hover:scale-115",
+                            "h-5 w-full cursor-pointer rounded-chip transition-transform duration-75 ease-out hover:z-10 hover:scale-115",
                             active === hex.toLowerCase()
                               ? "z-10 ring-2 ring-blue-400 ring-offset-1 ring-offset-zinc-950"
                               : "ring-1 ring-white/10",
@@ -577,7 +577,7 @@ export function ColorPickerDialog({
                 {(hover?.hex ?? value).toLowerCase()}
               </span>
               <span
-                className="size-6 rounded-md ring-1 ring-white/15"
+                className="size-6 rounded-chip ring-1 ring-white/15"
                 style={{ background: hover?.hex ?? value }}
               />
             </div>

@@ -82,12 +82,12 @@ export function QuickPick({
       ref={isOn(i.id) ? activeRow : undefined}
       onClick={() => onPick(i.id)}
       className={cn(
-        "flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors hover:bg-white/5",
+        "flex w-full cursor-pointer items-center gap-2 rounded-interior px-2 py-1.5 text-left text-xs transition-colors hover:bg-white/5",
         isOn(i.id) ? "text-blue-400" : "text-muted-foreground hover:text-foreground",
       )}
     >
       <span className="min-w-0 flex-1 truncate">{i.label}</span>
-      {i.hint && <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{i.hint}</span>}
+      {i.hint && <span className="shrink-0 font-mono text-2xs text-muted-foreground">{i.hint}</span>}
       {isOn(i.id) && <Check className="size-3.5 shrink-0" />}
     </button>
   )
@@ -122,7 +122,7 @@ export function QuickPick({
         // list running the full window. The fallback in the var() matters — the
         // variable is only set when collision detection runs, and without it the
         // whole max-height declaration would be dropped as invalid.
-        className="flex max-h-[min(28rem,var(--radix-popover-content-available-height,28rem))] w-44 flex-col rounded-surface border-line-strong bg-zinc-950/95 p-1 shadow-float backdrop-blur-xs"
+        className="flex max-h-[min(28rem,var(--radix-popover-content-available-height,28rem))] w-44 flex-col rounded-surface border-line-strong bg-surface-raised p-1 shadow-float backdrop-blur-xs"
         // Returning focus to the trigger draws a stuck ring on the value text, and
         // grabbing it on open leaves the first row ringed and flashing on close.
         onCloseAutoFocus={(e) => e.preventDefault()}
@@ -193,7 +193,7 @@ export function QuickPick({
                 setOpen(false)
                 onEdit()
               }}
-              className="w-full cursor-pointer rounded-lg px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+              className="w-full cursor-pointer rounded-interior px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
             >
               {editLabel ?? t.materials.editGraph}
             </button>
@@ -204,7 +204,7 @@ export function QuickPick({
                 setOpen(false)
                 onBrowse()
               }}
-              className="w-full cursor-pointer rounded-lg px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+              className="w-full cursor-pointer rounded-interior px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
             >
               {t.scene.browseAll}
             </button>

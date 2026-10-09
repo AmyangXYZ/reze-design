@@ -38,7 +38,7 @@ function fmtLiteral(v: number | number[]): string {
 
 // Shared inline number-field styling (float literal + vector components).
 const NUM_FIELD =
-  "nodrag h-4.5 rounded-sm border-zinc-700 bg-zinc-950/80 px-1 py-0 text-right !text-[11px] tabular-nums shadow-none focus-visible:ring-1 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+  "nodrag h-4.5 rounded-chip border-zinc-700 bg-zinc-950/80 px-1 py-0 text-right !text-2xs tabular-nums shadow-none focus-visible:ring-1 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 
 // A number input that edits smoothly
 function NumberField({ value, onCommit, className }: { value: number; onCommit: (n: number) => void; className?: string }) {
@@ -86,7 +86,7 @@ function ColorSocketButton({ rgb, onChange }: { rgb: [number, number, number]; o
         aria-label={t.graph.pickColor}
         onClick={() => setOpen(true)}
         onDoubleClick={(e) => e.stopPropagation()}
-        className="nodrag ml-auto h-4.5 w-9 shrink-0 rounded-sm ring-1 ring-white/20"
+        className="nodrag ml-auto h-4.5 w-9 shrink-0 rounded-chip ring-1 ring-white/20"
         style={{ background: hex }}
       />
       <ColorPickerDialog
@@ -145,12 +145,12 @@ export const RezeNode = memo(function RezeNode({ id, data, selected }: NodeProps
   return (
     <div
       // Preview is shown as a pink ring (the "previewing …" pill already names
-      className={`rounded-md border bg-zinc-900/95 text-zinc-200 shadow-lg min-w-44 text-xs ${
+      className={`rounded-chip border bg-zinc-900/95 text-zinc-200 shadow-lg min-w-44 text-xs ${
         selected ? "border-pink-400" : isOutput ? "border-blue-400" : "border-zinc-700"
       }${isPreview ? " ring-2 ring-pink-500/80" : ""}`}
     >
       <div
-        className="flex items-center gap-2 px-2 py-1 rounded-t-md font-medium text-xs"
+        className="flex items-center gap-2 px-2 py-1 rounded-t-chip font-medium text-xs"
         // Category-tinted header with a colored underline — the family cue.
         style={{ backgroundColor: `${accent}26`, boxShadow: `inset 0 -1.5px 0 ${accent}59` }}
       >
@@ -175,7 +175,7 @@ export const RezeNode = memo(function RezeNode({ id, data, selected }: NodeProps
               }
             }}
             // field-sizing keeps the box hugging the text (in place, ~label-sized) instead of stretching
-            className="nodrag rounded-sm border border-zinc-600 bg-zinc-950 px-1 text-xs text-zinc-100 outline-none [field-sizing:content] min-w-[2ch]"
+            className="nodrag rounded-chip border border-zinc-600 bg-zinc-950 px-1 text-xs text-zinc-100 outline-none [field-sizing:content] min-w-[2ch]"
           />
         ) : (
           <span
@@ -192,7 +192,7 @@ export const RezeNode = memo(function RezeNode({ id, data, selected }: NodeProps
         {/* Friendly (localized) node name — mirrors the Add-node palette. */}
         <span className="text-zinc-500 font-normal">{t.nodeLabel[graphNode.type] ?? graphNode.type}</span>
         {isOutput && (
-          <span className="ml-auto rounded-sm bg-blue-400/20 px-1 text-[9px] font-semibold tracking-wide text-blue-300">
+          <span className="ml-auto rounded-chip bg-blue-400/20 px-1 text-2xs font-semibold tracking-wide text-blue-300">
             OUT
           </span>
         )}

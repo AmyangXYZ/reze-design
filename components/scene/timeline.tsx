@@ -3278,7 +3278,7 @@ export function Timeline({
             setCurrentFrame(f)
           }}
         />
-        <div className="mx-0.5 flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-chip border border-line bg-white/[0.06] px-1 py-px font-mono text-[9px] tabular-nums text-muted-foreground">
+        <div className="mx-0.5 flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-chip border border-line bg-white/[0.06] px-1 py-px font-mono text-2xs tabular-nums text-muted-foreground">
           <span>F</span>
           <input
             type="text"
@@ -3301,7 +3301,7 @@ export function Timeline({
               if (e.key === "Enter") (e.target as HTMLInputElement).blur()
             }}
             className={cn(
-              "h-4 w-8 min-w-0 rounded border border-transparent bg-transparent px-0.5 text-right text-[9px] tabular-nums outline-none",
+              "h-4 w-8 min-w-0 rounded-chip border border-transparent bg-transparent px-0.5 text-right text-2xs tabular-nums outline-none",
               "focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/30",
               !clip && "pointer-events-none opacity-40",
             )}
@@ -3326,7 +3326,7 @@ export function Timeline({
               if (e.key === "Enter") (e.target as HTMLInputElement).blur()
             }}
             className={cn(
-              "h-4 w-8 min-w-0 rounded border border-transparent bg-transparent px-0.5 text-right text-[9px] tabular-nums outline-none",
+              "h-4 w-8 min-w-0 rounded-chip border border-transparent bg-transparent px-0.5 text-right text-2xs tabular-nums outline-none",
               "focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/30",
               !clip && "pointer-events-none opacity-40",
             )}
@@ -3357,7 +3357,7 @@ export function Timeline({
               size="sm"
               onClick={() => setTab(t.key)}
               className={cn(
-                "h-5 max-h-5 min-h-5 shrink-0 overflow-hidden rounded-md px-1.5 font-mono text-[10px]",
+                "h-5 max-h-5 min-h-5 shrink-0 overflow-hidden rounded-chip px-1.5 font-mono text-2xs",
                 "focus-visible:outline-none focus-visible:ring-0",
                 // The Button base ships `transition-all`, which fades the fill
                 // in over ~150ms. That was invisible while the active chip was

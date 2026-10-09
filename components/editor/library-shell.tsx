@@ -443,7 +443,7 @@ export function LibraryRailFilters<T extends BrowseItem>({ browse }: { browse: B
             aria-hidden={!filtered}
             tabIndex={filtered ? 0 : -1}
             className={cn(
-              "mt-0.5 ml-2 text-left text-[11px] underline underline-offset-2 transition-colors",
+              "mt-0.5 ml-2 text-left text-2xs underline underline-offset-2 transition-colors",
               filtered
                 ? "cursor-pointer text-muted-foreground hover:text-foreground"
                 : "pointer-events-none text-transparent",
@@ -515,7 +515,7 @@ export function LibraryToolbar<T extends BrowseItem>({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t.rail.search}
-          className="h-6 border-line-strong bg-white/5 pl-7 text-[11px] md:text-[11px]"
+          className="h-6 border-line-strong bg-white/5 pl-7 text-2xs md:text-2xs"
         />
       </div>
 
@@ -524,13 +524,13 @@ export function LibraryToolbar<T extends BrowseItem>({
       <Select value={sort} onValueChange={(v) => chooseSort(v as SortKey)}>
         <SelectTrigger
           aria-label={t.rail.sort}
-          className="w-24 shrink-0 justify-between border-line-strong bg-white/5 px-2 text-[11px]"
+          className="w-24 shrink-0 justify-between border-line-strong bg-white/5 px-2 text-2xs"
         >
           <SelectValue />
         </SelectTrigger>
         <SelectContent position="popper" align="end" className="min-w-24">
           {options.map(([k, label]) => (
-            <SelectItem key={k} value={k} className="text-[11px]">{label}</SelectItem>
+            <SelectItem key={k} value={k} className="text-2xs">{label}</SelectItem>
           ))}
         </SelectContent>
       </Select>
@@ -576,7 +576,7 @@ function SortHeader({
       type="button"
       onClick={() => onSort(k)}
       className={cn(
-        "-mx-1 flex items-center gap-0.5 rounded-[4px] px-1 py-0.5 font-mono text-[10px] tracking-[0.1em] whitespace-nowrap uppercase transition-colors hover:bg-white/5",
+        "-mx-1 flex items-center gap-0.5 rounded-[4px] px-1 py-0.5 font-mono text-2xs tracking-[0.1em] whitespace-nowrap uppercase transition-colors hover:bg-white/5",
         right && "justify-end",
         active ? "text-blue-400" : "text-muted-foreground hover:text-foreground",
       )}
@@ -646,7 +646,7 @@ export function VisibilityPicker({
         })}
       </div>
       {locked && (
-        <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">{t.library.visLocked}</p>
+        <p className="mt-1.5 text-2xs leading-relaxed text-muted-foreground">{t.library.visLocked}</p>
       )}
     </div>
   )
@@ -715,7 +715,7 @@ export function LibraryResults<T extends BrowseItem>({
   if (rows.length === 0) {
     return (
       <div className="flex flex-1 flex-col">
-        <div className="flex flex-1 items-center justify-center p-10 text-center text-[13px] text-muted-foreground">{empty}</div>
+        <div className="flex flex-1 items-center justify-center p-10 text-center text-xs text-muted-foreground">{empty}</div>
         {footer}
       </div>
     )
@@ -732,7 +732,7 @@ export function LibraryResults<T extends BrowseItem>({
     return (
       <ScrollArea className="min-h-0 flex-1">
         <div className="px-2 pb-5">
-          <div className={cn(cols, "sticky top-0 z-10 border-b border-line bg-zinc-950/95 px-1.5 py-1.5")}>
+          <div className={cn(cols, "sticky top-0 z-10 border-b border-line bg-surface-raised px-1.5 py-1.5")}>
             <span />
             {th("name", t.rail.name)}
             {th("maker", t.rail.makers)}
@@ -785,7 +785,7 @@ export function LibraryResults<T extends BrowseItem>({
               >
                 <div className="h-[19px] w-[30px] overflow-hidden rounded-[4px] border border-line-strong">{card.preview}</div>
                 <span className="min-w-0 truncate text-xs">{card.nameNode ?? label(item)}</span>
-                <span className={cn("flex min-w-0 items-center gap-1.5 font-mono text-[11px] transition-colors", cell)}>
+                <span className={cn("flex min-w-0 items-center gap-1.5 font-mono text-2xs transition-colors", cell)}>
                   <AuthorAvatar name={builtinAuthor(id(item), item.author)} className="size-3.5" />
                   <AuthorLink
                     name={builtinAuthor(id(item), item.author)}
@@ -793,14 +793,14 @@ export function LibraryResults<T extends BrowseItem>({
                     className="truncate"
                   />
                 </span>
-                <span className={cn("flex items-center gap-1 truncate font-mono text-[11px] transition-colors", cell)}>
+                <span className={cn("flex items-center gap-1 truncate font-mono text-2xs transition-colors", cell)}>
                   <Icon className="size-2.5 shrink-0" />
                   {t.rail.states[st]}
                 </span>
-                <span className={cn("font-mono text-[11px] tabular-nums transition-colors", cell)}>{publishedShort(item.createdAt)}</span>
-                <span className={cn("text-right font-mono text-[11px] tabular-nums transition-colors", cell)}>{n.likes}</span>
+                <span className={cn("font-mono text-2xs tabular-nums transition-colors", cell)}>{publishedShort(item.createdAt)}</span>
+                <span className={cn("text-right font-mono text-2xs tabular-nums transition-colors", cell)}>{n.likes}</span>
                 {usedLabel && (
-                  <span className={cn("text-right font-mono text-[11px] tabular-nums transition-colors", cell)}>{n.uses}</span>
+                  <span className={cn("text-right font-mono text-2xs tabular-nums transition-colors", cell)}>{n.uses}</span>
                 )}
               </div>
             )
@@ -839,12 +839,12 @@ export function LibraryResults<T extends BrowseItem>({
               >
                 {m.preview}
                 {m.applied ? (
-                  <span className="absolute top-1 left-1 flex items-center gap-1 rounded-[4px] border border-blue-400/50 bg-zinc-950/85 px-1 py-px font-mono text-[10px] text-blue-400">
+                  <span className="absolute top-1 left-1 flex items-center gap-1 rounded-[4px] border border-blue-400/50 bg-zinc-950/85 px-1 py-px font-mono text-2xs text-blue-400">
                     <Check className="size-2.5" />
                     {t.effectLibrary.applied}
                   </span>
                 ) : st !== "public" ? (
-                  <span className="absolute top-1 left-1 flex items-center gap-1 rounded-[4px] border border-line-strong bg-zinc-950/85 px-1 py-px font-mono text-[10px] text-muted-foreground">
+                  <span className="absolute top-1 left-1 flex items-center gap-1 rounded-[4px] border border-line-strong bg-zinc-950/85 px-1 py-px font-mono text-2xs text-muted-foreground">
                     <Icon className="size-2.5" />
                     {t.rail.states[st]}
                   </span>
@@ -854,7 +854,7 @@ export function LibraryResults<T extends BrowseItem>({
                 <div className={cn("truncate text-xs leading-tight", (selectedId === id(item) || m.applied) && "text-blue-400")}>
                   {m.nameNode ?? label(item)}
                 </div>
-                <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+                <div className="mt-0.5 flex items-center gap-1.5 font-mono text-2xs text-muted-foreground">
                   <AuthorAvatar name={builtinAuthor(id(item), item.author)} className="size-3.5" />
                   <AuthorLink
                     name={builtinAuthor(id(item), item.author)}

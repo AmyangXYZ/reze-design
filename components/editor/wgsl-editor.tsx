@@ -167,7 +167,7 @@ export function WgslEditorPanel({
       minW={420}
       minH={280}
       // z-50 like the graph editor
-      className="overflow-hidden rounded-surface border border-line-strong bg-zinc-950/95 shadow-float"
+      className="overflow-hidden rounded-surface border border-line-strong bg-surface-raised shadow-float"
     >
       <EditorBody
         key={sessionId}
@@ -318,7 +318,7 @@ function EditorBody({
       <div className="flex shrink-0 items-center gap-3 border-t border-line px-3 py-2">
         {result && !result.ok && (
           <span
-            className="min-w-0 flex-1 truncate text-[11px] text-red-400"
+            className="min-w-0 flex-1 truncate text-2xs text-red-400"
             title={result.diagnostics.join("\n")}
             style={{ fontFamily: CODE_FONT }}
           >
@@ -326,7 +326,7 @@ function EditorBody({
           </span>
         )}
         {result?.ok && (
-          <span className="min-w-0 truncate text-[11px] text-muted-foreground" style={{ fontFamily: CODE_FONT }}>
+          <span className="min-w-0 truncate text-2xs text-muted-foreground" style={{ fontFamily: CODE_FONT }}>
             {t.effectLibrary.appliedOk}
           </span>
         )}

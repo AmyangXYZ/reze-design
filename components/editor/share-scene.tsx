@@ -499,12 +499,12 @@ function ShareSceneForm({
                     <p className="text-xs font-medium text-amber-300">
                       {reason === "missing" ? t.share.unpublishedTitle : t.share.privateUseTitle}
                     </p>
-                    <p className="mt-0.5 text-[11px] leading-snug text-amber-200/70">
+                    <p className="mt-0.5 text-2xs leading-snug text-amber-200/70">
                       {reason === "missing" ? t.share.unpublishedBlurb : t.share.privateUseBlurb}
                     </p>
                     <ul className="mt-1.5 space-y-0.5">
                       {rows.map((u) => (
-                        <li key={`${u.kind}:${u.name}`} className="font-mono text-[11px] text-amber-200/90">
+                        <li key={`${u.kind}:${u.name}`} className="font-mono text-2xs text-amber-200/90">
                           {t.share.unpublishedKind[u.kind as "graph" | "grade" | "effect"]} · {u.name}
                         </li>
                       ))}
@@ -540,7 +540,7 @@ function ShareSceneForm({
               <label className="block">
                 <span className="text-xs text-muted-foreground">{t.share.thumbnail}</span>
                 {updatesId && !poster && updatesPoster && (
-                  <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">{t.share.coverKept}</span>
+                  <span className="mt-0.5 block text-2xs leading-snug text-muted-foreground">{t.share.coverKept}</span>
                 )}
                 <input
                   ref={posterInputRef}
@@ -582,7 +582,7 @@ function ShareSceneForm({
                   ) : (
                     <span className="flex h-full flex-col items-center justify-center gap-1 text-muted-foreground">
                       <ImagePlus className="size-4" />
-                      <span className="text-[11px]">{t.share.thumbnailPick}</span>
+                      <span className="text-2xs">{t.share.thumbnailPick}</span>
                     </span>
                   )}
                 </Button>
@@ -592,7 +592,7 @@ function ShareSceneForm({
               <span className="flex items-baseline justify-between gap-2">
                 <span className="text-xs text-muted-foreground">{t.library.publishTags}</span>
                 {/* The cap, stated. Five was already enforced silently. */}
-                <span className="text-[10px] tabular-nums text-muted-foreground">
+                <span className="text-2xs tabular-nums text-muted-foreground">
                   {tags.length}/{MAX_TAGS}
                 </span>
               </span>
@@ -636,7 +636,7 @@ function ShareSceneForm({
             </div>
             <div className={PUBLISH_FOOT}>
             {error && (
-              <div className="rounded-interior bg-red-500/10 px-2.5 py-2 text-[11px] leading-relaxed break-words text-red-400">
+              <div className="rounded-interior bg-red-500/10 px-2.5 py-2 text-2xs leading-relaxed break-words text-red-400">
                 {error}
               </div>
             )}

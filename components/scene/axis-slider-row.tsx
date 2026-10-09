@@ -161,7 +161,7 @@ export const AxisSliderRow = memo(function AxisSliderRow({
         // explicitly because the Input primitive paints `dark:bg-input/30` —
         // a base-layer `bg-*` cannot cancel a dark-layer one, so both survive
         // the merge and the dark one wins.
-        className="h-5 w-13 shrink-0 rounded-chip border-line bg-white/[0.04] px-1 py-0 text-right font-mono text-[10px] tabular-nums shadow-none focus-visible:border-blue-400/50 focus-visible:ring-0 md:text-[10px] dark:bg-white/[0.04] dark:focus-visible:bg-white/[0.07]"
+        className="h-5 w-13 shrink-0 rounded-chip border-line bg-white/[0.04] px-1 py-0 text-right font-mono text-2xs tabular-nums shadow-none focus-visible:border-blue-400/50 focus-visible:ring-0 md:text-2xs dark:bg-white/[0.04] dark:focus-visible:bg-white/[0.07]"
         style={{ color }}
         value={draft ?? (Number.isFinite(shown) ? shown.toFixed(decimals) : "")}
         onFocus={(e) => {

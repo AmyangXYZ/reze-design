@@ -62,7 +62,7 @@ function Lane({ label, note, children }: { label: string; note?: string; childre
           className="pointer-events-none absolute top-1/2 flex -translate-y-1/2 items-center justify-end"
           style={{ right: "1rem", width: "max(0px, calc(var(--track-right, 1rem) - 1.5rem))" }}
         >
-          <span className="truncate text-[11px] text-muted-foreground" title={note}>
+          <span className="truncate text-2xs text-muted-foreground" title={note}>
             {note}
           </span>
         </span>

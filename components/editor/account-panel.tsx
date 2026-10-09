@@ -76,7 +76,7 @@ function SignInForm() {
       {available.includes("email") && (
         <>
           {social.length > 0 && (
-            <div className="flex items-center gap-3 py-1 text-[11px] text-muted-foreground">
+            <div className="flex items-center gap-3 py-1 text-2xs text-muted-foreground">
               <span className="h-px flex-1 bg-line" />
               {t.account.or}
               <span className="h-px flex-1 bg-line" />
@@ -144,7 +144,7 @@ function EmailCodeForm() {
     >
       {sentTo ? (
         <>
-          <p className="text-[11px] leading-relaxed text-muted-foreground">{t.account.codeSentTo(sentTo)}</p>
+          <p className="text-2xs leading-relaxed text-muted-foreground">{t.account.codeSentTo(sentTo)}</p>
           <Input
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
@@ -158,10 +158,10 @@ function EmailCodeForm() {
             {busy ? t.account.working : t.account.verifyCode}
           </Button>
           <div className="flex justify-between">
-            <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => setSentTo(null)} className="h-7 px-1 text-[11px] text-muted-foreground">
+            <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => setSentTo(null)} className="h-7 px-1 text-2xs text-muted-foreground">
               {t.account.otherEmail}
             </Button>
-            <Button type="button" variant="ghost" size="sm" disabled={busy || wait > 0} onClick={() => void send(sentTo)} className="h-7 px-1 text-[11px] text-muted-foreground tabular-nums">
+            <Button type="button" variant="ghost" size="sm" disabled={busy || wait > 0} onClick={() => void send(sentTo)} className="h-7 px-1 text-2xs text-muted-foreground tabular-nums">
               {wait > 0 ? `${t.account.sendAgain} (${wait})` : t.account.sendAgain}
             </Button>
           </div>
@@ -181,7 +181,7 @@ function EmailCodeForm() {
           </Button>
         </>
       )}
-      {error && <p className="select-text text-[11px] text-amber-400">{error}</p>}
+      {error && <p className="select-text text-2xs text-amber-400">{error}</p>}
     </form>
   )
 }
@@ -254,7 +254,7 @@ function Portfolio({
             className="flex w-full items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-white/5"
           >
             <House className="size-4 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{t.account.profile}</span>
+            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{t.account.profile}</span>
             <ArrowUpRight className="size-3.5 shrink-0 text-muted-foreground" />
           </Link>
         </PopoverClose>
@@ -267,8 +267,8 @@ function Portfolio({
             className="flex w-full cursor-pointer items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-white/5"
           >
             <c.icon className="size-4 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{c.label}</span>
-            <span className="shrink-0 font-mono text-[13px] text-foreground">{n(stats?.[c.key])}</span>
+            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{c.label}</span>
+            <span className="shrink-0 font-mono text-xs text-foreground">{n(stats?.[c.key])}</span>
           </button>
         </PopoverClose>
       ))}
@@ -282,7 +282,7 @@ function Portfolio({
           className="flex w-full cursor-pointer items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-white/5"
         >
           <Heart className="size-4 shrink-0 text-muted-foreground" />
-          <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{t.account.youLiked}</span>
+          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{t.account.youLiked}</span>
         </button>
       </PopoverClose>
       {/* LIKES EARNED IS A FACT, NOT A DOOR. It totals across all four kinds, so
@@ -291,8 +291,8 @@ function Portfolio({
           as a number. Its own block, under a rule, is what says so. */}
       <div className="flex items-center gap-2.5 border-t border-line px-4 py-2">
         <Heart className="size-4 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{t.account.likesEarned}</span>
-        <span className="shrink-0 font-mono text-[13px] text-foreground">{n(stats?.likes)}</span>
+        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{t.account.likesEarned}</span>
+        <span className="shrink-0 font-mono text-xs text-foreground">{n(stats?.likes)}</span>
       </div>
     </div>
   )
@@ -400,7 +400,7 @@ function HandleField({ current }: { current: string }) {
         </Button>
       </form>
       {message && (
-        <div className={cn("mt-1 text-[11px]", state === "saved" ? "text-blue-400" : "text-red-400")}>{message}</div>
+        <div className={cn("mt-1 text-2xs", state === "saved" ? "text-blue-400" : "text-red-400")}>{message}</div>
       )}
     </div>
   )
@@ -436,13 +436,13 @@ export function AccountButton({
     <Button
       variant="ghost"
       size="icon"
-      className={cn("rounded-md hover:bg-white/5 hover:text-foreground", asHeader ? "size-8" : "size-7")}
+      className={cn("rounded-chip hover:bg-white/5 hover:text-foreground", asHeader ? "size-8" : "size-7")}
       aria-label={t.account.label}
     >
       {/* A shade larger than the outline icon — a photo needs more area than a
           line drawing to read at this size, without filling the whole button. */}
       {session ? (
-        <UserAvatar name={handle} image={session.user.image} className={cn("text-[9px]", asHeader ? "size-6.5" : "size-5.5")} />
+        <UserAvatar name={handle} image={session.user.image} className={cn("text-2xs", asHeader ? "size-6.5" : "size-5.5")} />
       ) : (
         <CircleUserRound className={asHeader ? "size-5" : "size-4"} />
       )}
@@ -497,13 +497,13 @@ export function AccountButton({
               <span className="truncate font-mono text-xs font-medium">{handle}</span>
               {/* The version chip's shape, filled in Reze's violet: the plan, shown to its holder. */}
               {premium && (
-                <span className="inline-flex h-4 shrink-0 items-center gap-0.5 rounded-full border border-violet-300 bg-reze pr-1.5 pl-1 text-[10px] leading-none font-semibold tracking-wide text-white">
+                <span className="inline-flex h-4 shrink-0 items-center gap-0.5 rounded-full border border-violet-300 bg-reze pr-1.5 pl-1 text-2xs leading-none font-semibold tracking-wide text-white">
                   <Sparkle className="size-2.5" strokeWidth={2.5} />
                   {t.premium.label}
                 </span>
               )}
             </div>
-            <div className="truncate text-[11px] text-muted-foreground">{session.user.email}</div>
+            <div className="truncate text-2xs text-muted-foreground">{session.user.email}</div>
           </div>
         </div>
         {session.user.username && !session.user.usernameChangedAt && (

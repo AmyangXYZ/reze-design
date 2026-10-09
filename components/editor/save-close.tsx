@@ -40,7 +40,7 @@ export function SaveCloseDialog({
       <DialogContent
         onOpenAutoFocus={(e) => e.preventDefault()}
         onCloseAutoFocus={(e) => e.preventDefault()}
-        className="w-[22rem] border-line-strong bg-zinc-950/95 p-5 sm:max-w-[22rem]"
+        className="w-[22rem] border-line-strong bg-surface-raised p-5 sm:max-w-[22rem]"
       >
         <DialogTitle className="text-sm font-medium">{t.library.saveChanges}</DialogTitle>
         <DialogDescription className="text-xs text-muted-foreground">{t.library.saveChangesBlurb}</DialogDescription>
@@ -64,7 +64,7 @@ export function SaveCloseDialog({
             />
           )}
           {error && (
-            <p className="max-h-16 overflow-y-auto font-mono text-[11px] leading-relaxed break-all text-red-400">
+            <p className="max-h-16 overflow-y-auto font-mono text-2xs leading-relaxed break-all text-red-400">
               {error}
             </p>
           )}

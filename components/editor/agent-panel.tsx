@@ -154,7 +154,7 @@ function inline(text: string): ReactNode[] {
   for (let m = re.exec(text); m; m = re.exec(text)) {
     if (m.index > at) out.push(text.slice(at, m.index))
     if (m[1]) out.push(<strong key={m.index} className="font-semibold">{m[1]}</strong>)
-    else if (m[2]) out.push(<code key={m.index} className="rounded-chip border border-line px-1 font-mono text-[11px]">{m[2]}</code>)
+    else if (m[2]) out.push(<code key={m.index} className="rounded-chip border border-line px-1 font-mono text-2xs">{m[2]}</code>)
     else out.push(<em key={m.index}>{m[3]}</em>)
     at = m.index + m[0].length
   }
@@ -537,7 +537,7 @@ export function AgentPanel({
           count after — a line of its own above the input, so the chat ends
           above it rather than running underneath. */}
       {usage !== undefined && (
-        <div className="flex shrink-0 items-end justify-end px-4 pb-1 text-[11px] leading-4 text-muted-foreground tabular-nums">
+        <div className="flex shrink-0 items-end justify-end px-4 pb-1 text-2xs leading-4 text-muted-foreground tabular-nums">
           {usage ? (
             <Tooltip>
               <TooltipTrigger asChild>

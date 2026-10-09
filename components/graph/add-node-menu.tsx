@@ -112,7 +112,7 @@ export function AddNodeMenu({
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}
           placeholder={accept ? t.graph.connectTo : t.graph.addNode}
-          className="h-7 w-full rounded-md bg-white/5 px-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-400/40"
+          className="h-7 w-full rounded-chip bg-white/5 px-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-400/40"
         />
       </div>
       <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto p-1">
@@ -122,7 +122,7 @@ export function AddNodeMenu({
         {groups.map((g) => (
           <div key={g.category || "results"}>
             {g.category && (
-              <div className="px-2 pt-1.5 pb-0.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+              <div className="px-2 pt-1.5 pb-0.5 text-2xs font-medium tracking-wide text-muted-foreground uppercase">
                 {t.nodeCategory[g.category] ?? g.category}
               </div>
             )}
@@ -136,7 +136,7 @@ export function AddNodeMenu({
                   onMouseEnter={() => setActive(flat.indexOf(item))}
                   onClick={() => pick(item)}
                   className={cn(
-                    "flex w-full items-center rounded-md px-2 py-1 text-left text-xs transition-colors",
+                    "flex w-full items-center rounded-chip px-2 py-1 text-left text-xs transition-colors",
                     on ? "bg-blue-400/[0.12] text-blue-400" : "text-foreground hover:bg-white/5",
                   )}
                 >
