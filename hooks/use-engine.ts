@@ -27,7 +27,8 @@ import {
   placeProp,
   preparePlaneMedia,
   reportGroups,
-  restyled,
+  autoStyleOnEngine,
+  isFigureModel,
   spawnOffsetX,
   stageTransformToEngine,
   trimToMotion,
@@ -523,8 +524,7 @@ export function useEngine(
     let groups: StyleGroup[]
     try {
       onPhase?.("styling")
-      await engine.autoStyleGroups(id)
-      groups = withSpecialGroups(await restyled(engine, id, engine.getStyleGroups(id)), { character: true })
+      groups = withSpecialGroups(await autoStyleOnEngine(engine, id, engine.getStyleGroups(id)), { character: isFigureModel(engine, id) })
     } finally {
       // Whatever happened to the styling, the model comes back: an unstyled
       // model is a look to fix, an invisible one is a model you cannot find.
@@ -641,10 +641,9 @@ export function useEngine(
     engine.setModelTransform(id, { visible: false })
     let groups: StyleGroup[]
     try {
-      await engine.autoStyleGroups(id)
-      // The character's own seeds too: a prop is often another figure, and its
-      // hair and eyes want the same drop targets a cast member's do.
-      groups = withSpecialGroups(await restyled(engine, id, engine.getStyleGroups(id)), { character: true })
+      // The one classifier every model takes (lib/auto-style): a prop that is a
+      // second figure gets a figure's groups and seeds, a sword its metal.
+      groups = withSpecialGroups(await autoStyleOnEngine(engine, id, engine.getStyleGroups(id)), { character: isFigureModel(engine, id) })
     } finally {
       engine.setModelTransform(id, { visible: true })
     }
@@ -1017,9 +1016,8 @@ export function useEngine(
       const at: [number, number, number] | undefined = transform
         ? [transform.position.x, transform.position.y, transform.position.z]
         : undefined
-      // Uploaded models have no curated map — auto-group from name hints alone.
-      await engine.autoStyleGroups(id)
-      const groups = withSpecialGroups(await restyled(engine, id, engine.getStyleGroups(id)), { character: true })
+      // Uploaded models have no curated map — auto-styled from names alone.
+      const groups = withSpecialGroups(await autoStyleOnEngine(engine, id, engine.getStyleGroups(id)), { character: isFigureModel(engine, id) })
       setModels((prev) =>
         prev.map((m) =>
           m.id === targetId
@@ -1372,22 +1370,27 @@ export function useEngine(
   const resetStyleGroups = useCallback(async (modelId: string, groups?: StyleGroup[]) => {
     const engine = engineRef.current
     if (!engine) return
-    if (groups?.length)
+    let next: StyleGroup[]
+    if (groups?.length) {
       reportGroups(
         "reset",
         await engine.applyStyleGroups(modelId, withMaterialMaps(modelId, groups.filter((g) => g.materials.length > 0))),
       )
-    else await engine.autoStyleGroups(modelId)
+      next = groups
+    } else {
+      // From nothing: the old set comes off first, because the classifier
+      // only ever ADDS — a reset that matched nothing would otherwise leave
+      // the groups it was asked to clear.
+      reportGroups("reset", await engine.applyStyleGroups(modelId, []))
+      next = await autoStyleOnEngine(engine, modelId, [])
+    }
     for (const m of modelsRef.current.find((x) => x.id === modelId)?.materials ?? []) {
       if (!m.visible) engine.toggleMaterialVisible(modelId, m.name)
     }
     setModels((prev) =>
       prev.map((m) => (m.id === modelId ? { ...m, materials: m.materials.map((x) => ({ ...x, visible: true })) } : m)),
     )
-    const next = groups ?? (await restyled(engine, modelId, engine.getStyleGroups(modelId)))
-    // Props reset as characters do; only a stage keeps its own table.
-    const character = !stagesRef.current.some((x) => x.id === modelId)
-    setGroupsByModel((prev) => ({ ...prev, [modelId]: withSpecialGroups(next, { character }) }))
+    setGroupsByModel((prev) => ({ ...prev, [modelId]: withSpecialGroups(next, { character: isFigureModel(engine, modelId) }) }))
   }, [])
 
   /** Take the game stage down. Its files leave the bundle on the next repack,
