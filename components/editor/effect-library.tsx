@@ -32,6 +32,7 @@ import {
   type CardMeta,
   AuthorAvatar,
   VisibilityMenu,
+  useMakePublic,
   publishedOn,
   AuthorLink,
   itemState,
@@ -149,6 +150,8 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   // Which row a delete is being confirmed for. A draft and a published row ask
   // different questions — one is local, the other is other people's scenes — so
   // the kind travels with the id rather than being re-derived when it opens.
+  // Private → public is permanent, so it asks first (useMakePublic).
+  const makePublic = useMakePublic()
   const [confirming, setConfirming] = useState<{ id: string; draft: boolean } | null>(null)
   const commitRename = (item: EffectItem, raw: string) => {
     const wanted = normalizeName(raw)
@@ -256,15 +259,17 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
           {!isDraft && mine && (
             <VisibilityMenu
               current={e.visibility ?? "public"}
-              onChange={(next) => {
-                void fetch(`/api/library/${e.id}`, {
-                  method: "PATCH",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ visibility: next }),
-                }).then(async (res) => {
-                  if (await report(Promise.resolve(res), t.library.madePublic)) setCommunityVisibility(e.id, next)
+              onMakePublic={() =>
+                makePublic.ask(() => {
+                  void fetch(`/api/library/${e.id}`, {
+                    method: "PATCH",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ visibility: "public" }),
+                  }).then(async (res) => {
+                    if (await report(Promise.resolve(res), t.library.madePublic)) setCommunityVisibility(e.id, "public")
+                  })
                 })
-              }}
+              }
             />
           )}
           {!isDraft && mine && (
@@ -439,6 +444,8 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
             )}
           </div>
         </div>
+
+        {makePublic.dialog}
 
         <ConfirmDialog
           open={confirming !== null}

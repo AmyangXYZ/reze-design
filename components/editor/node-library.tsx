@@ -21,6 +21,7 @@ import {
   type CardMeta,
   AuthorAvatar,
   VisibilityMenu,
+  useMakePublic,
   publishedOn,
   AuthorLink,
   itemState,
@@ -154,6 +155,8 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
   const report = useReport()
   /** Which row a delete is being confirmed for, and whether it is a local
    *  draft or a published row — the two ask different questions. */
+  // Private → public is permanent, so it asks first (useMakePublic).
+  const makePublic = useMakePublic()
   const [confirming, setConfirming] = useState<{ id: string; draft: boolean } | null>(null)
   const commitRename = (item: GraphItem, raw: string) => {
     const wanted = normalizeName(raw)
@@ -273,15 +276,17 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
           {!isDraft && mine && (
             <VisibilityMenu
               current={r.visibility ?? "public"}
-              onChange={(next) => {
-                void fetch(`/api/library/${r.id}`, {
-                  method: "PATCH",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ visibility: next }),
-                }).then(async (res) => {
-                  if (await report(Promise.resolve(res), t.library.madePublic)) setCommunityVisibility(r.id, next)
+              onMakePublic={() =>
+                makePublic.ask(() => {
+                  void fetch(`/api/library/${r.id}`, {
+                    method: "PATCH",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ visibility: "public" }),
+                  }).then(async (res) => {
+                    if (await report(Promise.resolve(res), t.library.madePublic)) setCommunityVisibility(r.id, "public")
+                  })
                 })
-              }}
+              }
             />
           )}
           {!isDraft && mine && (
@@ -456,6 +461,7 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
           )}
         </div>
       </div>
+      {makePublic.dialog}
       <ConfirmDialog
         open={confirming !== null}
         onOpenChange={(o) => !o && setConfirming(null)}

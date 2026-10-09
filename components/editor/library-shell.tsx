@@ -25,7 +25,8 @@ import { RailRow, RailSection, RailTags } from "@/components/editor/library-rail
 import { authorImage, builtinAuthor } from "@/lib/community-store"
 import { UserAvatar } from "@/components/user-avatar"
 import Link from "next/link"
-import { ContextMenuItem, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger } from "@/components/ui/context-menu"
+import { ContextMenuItem } from "@/components/ui/context-menu"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { storageKey } from "@/lib/storage"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -653,31 +654,44 @@ export function VisibilityPicker({
   )
 }
 
-/** The visibility submenu every library hangs off a card you own. */
-export function VisibilityMenu({
-  current, onChange,
-}: { current: Visibility; onChange: (v: Visibility) => void }) {
+/**
+ * The one visibility move there is — private to public — asked first, because
+ * it is permanent (see the rule above).
+ *
+ * A hook, not state inside the menu: the context menu unmounts the moment it
+ * closes, and would take a dialog it owned with it. The library renders
+ * `dialog` at its root, beside its delete confirmation.
+ */
+export function useMakePublic() {
   const t = useT()
-  const { label } = useVisibilityLabels()
+  const [pending, setPending] = useState<(() => void) | null>(null)
+  const ask = useCallback((go: () => void) => setPending(() => go), [])
+  const dialog = (
+    <ConfirmDialog
+      open={pending !== null}
+      onOpenChange={(o) => !o && setPending(null)}
+      title={t.library.makePublicTitle}
+      body={t.library.makePublicConfirm}
+      confirmLabel={t.library.makePublicLabel}
+      cancelLabel={t.library.cancel}
+      tone="accent"
+      onConfirm={() => pending?.()}
+    />
+  )
+  return { ask, dialog }
+}
+
+/** What a card you own offers about visibility: "Make public…" while it is
+ *  private, and nothing once it is public — there is no move left, and a
+ *  submenu of two greyed-out choices said so less clearly than its absence. */
+export function VisibilityMenu({ current, onMakePublic }: { current: Visibility; onMakePublic: () => void }) {
+  const t = useT()
+  if (current !== "private") return null
   return (
-    <ContextMenuSub>
-      <ContextMenuSubTrigger>{t.library.visibility}</ContextMenuSubTrigger>
-      <ContextMenuSubContent className="w-36">
-        {VISIBILITIES.map((v) => {
-          const Icon = VISIBILITY_ICON[v]
-          return (
-            <ContextMenuItem
-              key={v}
-              disabled={!canBecome(v, current) || v === current}
-              onSelect={() => onChange(v)}
-            >
-              <Icon className={cn("size-3.5", v === current && "text-blue-400")} />
-              {label[v]}
-            </ContextMenuItem>
-          )
-        })}
-      </ContextMenuSubContent>
-    </ContextMenuSub>
+    <ContextMenuItem onSelect={onMakePublic}>
+      <Globe className="size-3.5" />
+      {t.library.makePublic}
+    </ContextMenuItem>
   )
 }
 
