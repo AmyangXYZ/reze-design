@@ -5985,6 +5985,19 @@ export default function Lab() {
       else createDraft("graph", { name, payload: { graph: named }, author: authorName })
       return name
     },
+    saveGradeDraft: (spec, wanted) => {
+      // The scene's grade when it is already one of the user's drafts — the AI
+      // refining its own grade, or one the user picked — so twenty adjustments
+      // leave one draft, not twenty.
+      const keep = loadDrafts().grade.find((d) => nameKey(d.name) === nameKey(settings.grade.preset))
+      if (keep) {
+        updateDraft("grade", keep.id, { payload: { spec } })
+        return keep.name
+      }
+      const name = freeGradeName(wanted?.trim() || "AI Grade")
+      createDraft("grade", { name, payload: { spec }, author: authorName })
+      return name
+    },
   })
 
   // The art director runs those tools in a loop (lib/ai/agent-loop); each

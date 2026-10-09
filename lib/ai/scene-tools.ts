@@ -24,6 +24,7 @@ import { recentLogs } from "@/lib/crash-log"
 import { checkSettingsPatch, readableSettings } from "@/lib/ai/settings-schema"
 import type { FrameMetrics } from "@/lib/ai/image-metrics"
 import type { ShaderGraph } from "reze-engine"
+import type { GradeSpec } from "@/lib/grade"
 import { SEEING_TOOLS, captureMeasured, frameData, imagesOf } from "@/lib/ai/seeing-tools"
 import { AUTHOR_TOOLS } from "@/lib/ai/author-tools"
 import { afterRender } from "@/lib/ai/after-render"
@@ -97,6 +98,10 @@ export type SceneToolHandles = {
   /** Save a graph as a draft: a draft of that name is updated, any other name
    *  gets a fresh one. Returns the name it was saved under. */
   saveGraphDraft: (name: string, graph: ShaderGraph) => string
+  /** Save a grade as a draft: the scene's grade is updated in place when it is
+   *  already one of the user's drafts, anything else gets a fresh one (`name`
+   *  the wish, suffixed if taken). Returns the name it was saved under. */
+  saveGradeDraft: (spec: GradeSpec, name?: string) => string
 }
 
 /** The settings sections that make up the look — what reset_to_default puts

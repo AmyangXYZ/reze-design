@@ -6,8 +6,10 @@
 import { builtinName, tagLabel } from "@/lib/builtin-text"
 import type { GradeSpec, Range } from "@/lib/grade"
 import { specOf } from "@/lib/grade"
-import { LOOK_PACKS, LOOK_PACK_ORDER, type LookPack } from "@/lib/materials"
-import { NODE_REGISTRY, type ShaderGraph, type StyleGroup } from "reze-engine"
+import { loadDrafts } from "@/lib/drafts"
+import type { GradeItem } from "@/lib/library"
+import { LOOK_PACKS, LOOK_PACK_ORDER, sameGraphLook, type LookPack } from "@/lib/materials"
+import { NODE_REGISTRY, compileGraph, type ShaderGraph, type StyleGroup } from "reze-engine"
 import type { SceneTool, SceneToolHandles } from "@/lib/ai/scene-tools"
 
 const clamp = (v: unknown, lo: number, hi: number, d: number) =>
@@ -103,7 +105,7 @@ export const LOOK_TOOLS: SceneTool[] = [
   {
     name: "set_grade",
     description:
-      "Grade colour by tonal range — the main tool for matching a reference's palette. Shadows, midtones and highlights each take a hue, an amount and a lightness; plus overall contrast and saturation. Pass only what changes; the rest keeps the current grade. Compare captures' shadow/highlight tint and luminance percentiles against the reference.",
+      "Grade colour by tonal range — the main tool for matching a reference's palette. Shadows, midtones and highlights each take a hue, an amount and a lightness; plus overall contrast and saturation. Pass only what changes; the rest keeps the current grade. Compare captures' shadow/highlight tint and luminance percentiles against the reference. The result is saved to the user's grade drafts and worn.",
     parameters: {
       type: "object",
       properties: {
@@ -113,10 +115,13 @@ export const LOOK_TOOLS: SceneTool[] = [
         contrast: { type: "number", description: "0.5–1.6; 1 untouched." },
         saturation: { type: "number", description: "0–2; 1 untouched, 0 black and white." },
         intensity: { type: "number", description: "0–1, how much of the grade applies." },
+        name: { type: "string", description: "What to call the grade in the user's library, e.g. \"Dusk Teal\". Only used the first time; later calls keep refining that same grade." },
       },
     },
     run: async (args, h) => {
-      const base = specOf(h.settings.grade)
+      // Against the drafts too: a grade picked from the user's own shelf is
+      // worn by name with no inline spec, and would otherwise read as Neutral.
+      const base = specOf(h.settings.grade, loadDrafts().grade as GradeItem[])
       const spec: GradeSpec = {
         shadows: rangeIn(args.shadows, base.shadows),
         midtones: rangeIn(args.midtones, base.midtones),
@@ -125,9 +130,14 @@ export const LOOK_TOOLS: SceneTool[] = [
         saturation: clamp(args.saturation, 0, 2, base.saturation),
       }
       const intensity = clamp(args.intensity, 0, 1, h.settings.grade.intensity)
-      h.patchSettings("grade", { preset: "Custom", spec, intensity, from: undefined })
+      // Saved as a draft and worn by that name, as the grade editor's save does:
+      // a look that lived only in the scene has no library row to publish, and
+      // the scene could never be published past it.
+      const name = h.saveGradeDraft(spec, typeof args.name === "string" ? args.name : undefined)
+      h.patchSettings("grade", { preset: name, spec, intensity, from: undefined })
       return {
         data: {
+          saved: name,
           grade: {
             shadows: rangeOut(spec.shadows),
             midtones: rangeOut(spec.midtones),
@@ -226,8 +236,23 @@ export const LOOK_TOOLS: SceneTool[] = [
       if ("error" in found) return { data: found }
       const tuned = tuneGraph(found.group.graph, args.changes)
       if ("error" in tuned) return { data: tuned }
-      const error = await h.setGroupGraph(found.id, found.group.id, tuned.graph)
-      return { data: error ? { error } : { character: found.name, group: found.group.id, applied: tuned.applied } }
+      // A tuned graph is no longer the library item it is named after, so it is
+      // saved as a draft and worn under that name — the graph editor's own save.
+      // Kept under its old name it blocked publishing as that item, which IS
+      // published, with no draft anywhere to publish instead. A group already
+      // wearing one of the user's drafts updates it in place. Checked to compile
+      // first, so a dud never reaches the library.
+      let graph = tuned.graph
+      let saved: string | undefined
+      if (!sameGraphLook(graph, found.group.graph)) {
+        const compiled = compileGraph(graph)
+        const errors = compiled.diagnostics.filter((d) => d.severity === "error")
+        if (!compiled.ok || errors.length) return { data: { error: "the tuned shader did not compile", diagnostics: errors.slice(0, 6).map((d) => d.message) } }
+        saved = h.saveGraphDraft(graph.name || "Shader", graph)
+        graph = { ...graph, name: saved }
+      }
+      const error = await h.setGroupGraph(found.id, found.group.id, graph)
+      return { data: error ? { error } : { character: found.name, group: found.group.id, applied: tuned.applied, ...(saved ? { saved } : {}) } }
     },
   },
   {
