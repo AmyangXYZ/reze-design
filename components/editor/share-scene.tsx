@@ -15,6 +15,7 @@ import { Switch } from "@/components/ui/switch"
 import { TagsInput } from "@/components/editor/tags-input"
 import {
   PUBLISH_BODY,
+  PUBLISH_CLOSE,
   PUBLISH_DIALOG,
   PUBLISH_FOOT,
   PUBLISH_FORM,
@@ -414,9 +415,10 @@ function ShareSceneForm({
       onInteractOutside={(e) => busy && e.preventDefault()}
       aria-describedby={undefined}
       className={PUBLISH_DIALOG + " w-[34rem] sm:max-w-[34rem]"}
+      closeClassName={PUBLISH_CLOSE}
     >
         <div className={PUBLISH_HEAD}>
-          <DialogTitle className="flex items-center gap-2 text-sm font-medium">
+          <DialogTitle className="flex h-5 items-center gap-2 text-sm font-medium">
             <Globe className="size-4 text-blue-400" />
             {updatesId ? t.share.updateScene : t.share.title}
           </DialogTitle>

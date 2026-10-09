@@ -51,10 +51,14 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  closeClassName,
   overlay = true,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
+  /** Where the close button sits, for a dialog whose header is not the default
+   *  p-6 — so the X lines up with that dialog's own title row. */
+  closeClassName?: string
   /** Render the dimming backdrop. Set false for a non-modal, coexisting panel. */
   overlay?: boolean
 }) {
@@ -73,7 +77,10 @@ function DialogContent({
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
-            className="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+            className={cn(
+              "absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+              closeClassName,
+            )}
           >
             <XIcon />
             <span className="sr-only">Close</span>
