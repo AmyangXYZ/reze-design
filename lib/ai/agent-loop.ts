@@ -127,6 +127,21 @@ export function sendable(messages: AgentMessage[], keep = KEEP_PICTURES): AgentM
   return messages.map((m, i) => (kept.has(i) || typeof m.content === "string" ? m : { ...m, content: m.content.map(drop) }))
 }
 
+/**
+ * The history a provider is sent. Claude is sent it WHOLE: its signed thinking
+ * is bound to the exact history it was produced against, and a rewritten
+ * earlier turn — an old picture swapped for a line of text — is refused
+ * outright for newer Anthropic accounts (a 400) and silently drops the
+ * reasoning for older ones, besides moving the cached prefix back every round.
+ * Its old results are cleared on Anthropic's side instead (context_management
+ * in providers/anthropic), which is not an edit. Everyone else carries no
+ * such binding and is sent the trimmed copy.
+ */
+export function historyFor(api: "anthropic" | "openai" | "compat", messages: AgentMessage[], seeing: boolean): AgentMessage[] {
+  if (api === "anthropic" && seeing) return messages
+  return sendable(messages, seeing ? KEEP_PICTURES : 0)
+}
+
 /** Read an NDJSON response line by line. */
 async function* lines(res: Response): AsyncGenerator<AgentStreamEvent> {
   const reader = res.body!.getReader()
@@ -195,7 +210,7 @@ export async function runAgent(opts: {
         const seeing = opts.via.vision !== false
         await route.provider.turn({
           target: route.target,
-          messages: sendable(messages, seeing ? KEEP_PICTURES : 0),
+          messages: historyFor(route.provider.api, messages, seeing),
           system: (seeing ? AGENT_SYSTEM : AGENT_SYSTEM + TEXT_ONLY_NOTE) + modelNote(route.target.model),
           tools: AGENT_TOOLS,
           send: handle,

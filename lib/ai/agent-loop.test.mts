@@ -10,7 +10,7 @@
 // makes the model wrap up at the round limit.
 
 import assert from "node:assert/strict"
-import { runAgent, filesIn, settle, toolResultBlock, LOOP_NOTE, type AgentMessage, type AgentStreamEvent } from "./agent-loop"
+import { runAgent, filesIn, settle, toolResultBlock, historyFor, LOOP_NOTE, type AgentMessage, type AgentStreamEvent } from "./agent-loop"
 import type { ToolResult } from "./scene-tools"
 
 let failures = 0
@@ -240,6 +240,27 @@ await test("a saved history cut off mid-run is answered, never rewritten", () =>
   const answers = fixed[2].content as { tool_use_id: string; is_error: boolean }[]
   assert.deepEqual(answers.map((a) => a.tool_use_id), ["a", "b"])
   assert.equal(settle(fixed).length, 3, "a whole history is left as it is")
+})
+
+await test("Claude is sent its history whole; other providers, the trimmed copy", () => {
+  // Five rounds, each answered with an inline capture, as on a person's own key.
+  const history: AgentMessage[] = [user("go")]
+  for (let k = 0; k < 5; k++) {
+    history.push({ role: "assistant", content: [{ type: "thinking", thinking: `t${k}`, signature: `sig${k}` }, toolUse(`c${k}`, "capture") as never] })
+    history.push({
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: `c${k}`, content: [{ type: "text", text: "{}" }, { type: "image", source: { type: "base64", media_type: "image/jpeg", data: `IMG${k}` } }] }],
+    })
+  }
+  const pictures = (h: AgentMessage[]) => (JSON.stringify(h).match(/IMG\d/g) ?? []).length
+  // Claude: every turn exactly as it was — no earlier turn rewritten, ever.
+  const claude = historyFor("anthropic", history, true)
+  assert.equal(JSON.stringify(claude), JSON.stringify(history))
+  // The others: only the latest few pictures go; the rest become a line.
+  assert.equal(pictures(historyFor("openai", history, true)), 3)
+  assert.equal(pictures(historyFor("compat", history, true)), 3)
+  // A model that reads text only gets no picture, whoever it is.
+  assert.equal(pictures(historyFor("anthropic", history, false)), 0)
 })
 
 await test("uploaded files are found for clean-up", () => {
