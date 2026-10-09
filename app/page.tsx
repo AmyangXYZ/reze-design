@@ -174,7 +174,7 @@ import { clearLocalBundle, loadCastPalette, loadLocalBundle, saveCastPalette, sa
 import { dictionaries, LOCALES, LOCALE_LABELS, useI18n, useT, type Dictionary, type Locale } from "@/lib/i18n"
 import { builtinName, localGroupLabel } from "@/lib/builtin-text"
 import { type BundleFile, bundleFileOf, expandUploadFiles, holdBundle, openZip, releaseBundle } from "@/lib/uploads"
-import { GRADE_PRESETS, gradeSpec, NEUTRAL_SPEC, NEW_GRADE_SPEC, recallIntensity, rememberIntensity } from "@/lib/grade"
+import { GRADE_PRESETS, gradeSpec, NEUTRAL_SPEC, sameGradeLook, NEW_GRADE_SPEC, recallIntensity, rememberIntensity } from "@/lib/grade"
 import {
   communityQuickPickItems,
   nameKey,
@@ -3246,7 +3246,7 @@ export default function Lab() {
     ]
     const preset = settings.grade.preset
     const source = gradeSpec(preset, [...gradeDrafts, ...communityGrades])
-    if (JSON.stringify(appliedGradeSpec) === JSON.stringify(source)) return items
+    if (sameGradeLook(appliedGradeSpec, source)) return items
     const known = items.some((i) => i.id === preset)
     const withOwn = known ? items : [...items, { id: preset, label: preset, section: "local" as const }]
     return withOwn.map((i) => (i.id === preset ? { ...i, hint: t.scene.edited } : i))

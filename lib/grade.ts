@@ -122,6 +122,25 @@ export function specOf(g: GradeSettings, drafts: GradeItem[] = []): GradeSpec {
   return g.spec ?? gradeSpec(g.preset, drafts)
 }
 
+/**
+ * Are two specs the same grade? Compared by VALUE, never by JSON text.
+ *
+ * A published payload comes back from Postgres jsonb, which stores object keys
+ * in its own order (shortest first), so the same grade stringifies differently
+ * before and after the round trip — and a scene wearing its own copy of a grade
+ * stopped recognising the published row it had just become. Fields in a fixed
+ * order, a missing lightness read as its 0.5 default, numbers at f32 — the
+ * precision the grade reaches the GPU at, as sameGraphLook does for graphs.
+ */
+export function sameGradeLook(a: GradeSpec, b: GradeSpec): boolean {
+  const f = Math.fround
+  const range = (r: Range) => [f(r[0]), f(r[1]), f(r[2] ?? 0.5)]
+  const canon = (s: GradeSpec) => [...range(s.shadows), ...range(s.midtones), ...range(s.highlights), f(s.contrast), f(s.saturation)]
+  const x = canon(a)
+  const y = canon(b)
+  return x.every((v, i) => v === y[i])
+}
+
 /** Resolve a grade name against the built-ins and the given drafts. Unresolvable
  *  names (a draft deleted, a scene from elsewhere) read as Neutral — visibly
  *  ungraded rather than wrongly graded. */

@@ -13,6 +13,7 @@ import { runSceneTool, type SceneToolHandles } from "./scene-tools"
 import { checkSettingsPatch, describeSettings } from "./settings-schema"
 import { frameShot, type Figure } from "./framing"
 import { EFFECTS } from "@/lib/effects"
+import { sameGradeLook } from "@/lib/grade"
 import type { SceneLight } from "@/lib/scene"
 import type { AppliedEffect } from "@/lib/effects"
 import type { VisibilityWindow } from "@/lib/timeline"
@@ -212,6 +213,13 @@ await test("set_grade builds a custom spec over the current grade, clamped", asy
   assert.equal(part.spec.shadows[0], 210, "hue wraps into 0–360")
   assert.equal(part.spec.shadows[1], 1, "amount clamps to 1")
   assert.equal(part.spec.contrast, 1.6)
+})
+
+await test("a grade matches its published copy whatever order jsonb gives its keys", async () => {
+  const ai = { shadows: [210, 0.18, 0.5] as const, midtones: [0, 0] as const, highlights: [35, 0.18] as const, contrast: 1.05, saturation: 1.05 }
+  const fromDb = JSON.parse('{"shadows":[210,0.18],"contrast":1.05,"midtones":[0,0,0.5],"highlights":[35,0.18],"saturation":1.05}')
+  assert.ok(sameGradeLook(ai, fromDb), "reordered keys and a defaulted lightness are the same grade")
+  assert.ok(!sameGradeLook(ai, { ...fromDb, contrast: 1.1 }), "a real difference still differs")
 })
 
 // ── camera ─────────────────────────────────────────────────────────────────
