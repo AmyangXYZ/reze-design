@@ -33,15 +33,15 @@ const MAX_TAGS = 5
 export const PUBLISH_DIALOG =
   "flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden rounded-surface border-line-strong bg-surface-raised p-0"
 /** Right padding clears the dialog's close button. */
-export const PUBLISH_HEAD = "shrink-0 px-5 pt-5 pr-12"
-/** The close button ON the title row: the header's 20px inset, in a 20px box
- *  with the X centred — the same box the titles state (h-5), so the two share a
- *  centre line. The primitive's default (16px in, a 16px box) sat off the
- *  title's centre and 4px outside the body's edge. */
-export const PUBLISH_CLOSE = "top-5 right-5 flex h-5 items-center"
+export const PUBLISH_HEAD = "shrink-0 px-4 pt-4 pr-11"
+/** The close button ON the title row. One 16px inset on every side of these
+ *  dialogs — top, sides, bottom — and the X in a 20px box with the icon
+ *  centred, the same box the titles state (h-5), so the X shares the title's
+ *  centre line and the body's right edge. */
+export const PUBLISH_CLOSE = "top-4 right-4 flex h-5 items-center"
 export const PUBLISH_FORM = "flex min-h-0 flex-1 flex-col"
-export const PUBLISH_BODY = "flex min-h-0 flex-col gap-3.5 overflow-y-auto px-5 pt-4 pb-1"
-export const PUBLISH_FOOT = "flex shrink-0 flex-col gap-2 px-5 pt-3 pb-5"
+export const PUBLISH_BODY = "flex min-h-0 flex-col gap-3.5 overflow-y-auto px-4 pt-4 pb-1"
+export const PUBLISH_FOOT = "flex shrink-0 flex-col gap-2 px-4 pt-3 pb-4"
 export const PUBLISH_INPUT = "mt-0.5 h-8 border-line-strong bg-white/5 text-xs md:text-xs"
 export const PUBLISH_TEXTAREA = "mt-0.5 max-h-40 border-line-strong bg-white/5 px-2.5 py-2 text-xs leading-relaxed md:text-xs"
 

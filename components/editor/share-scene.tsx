@@ -428,7 +428,7 @@ function ShareSceneForm({
         </div>
 
         {step === "done" && shareUrl ? (
-          <div className="min-h-0 min-w-0 space-y-3 overflow-y-auto px-5 pt-3 pb-5">
+          <div className="min-h-0 min-w-0 space-y-3 overflow-y-auto px-4 pt-4 pb-4">
             <div className="flex min-w-0 items-center gap-2">
               <div className="min-w-0 flex-1 truncate rounded-interior border border-line-strong bg-white/5 px-2.5 py-1.5 font-mono text-xs">
                 {shareUrl}
