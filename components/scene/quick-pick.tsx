@@ -3,8 +3,9 @@
 // Quick-switch list behind a section's blue value text.
 
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { Check } from "lucide-react"
+import { Check, Search } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { ShelfCount } from "@/components/editor/library-rail"
@@ -59,6 +60,8 @@ export function QuickPick({
   // leaving the list floating over it reads as a stuck menu. Picking a value
   // deliberately does NOT close, so several looks can be tried in a row.
   const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const searchRef = useRef<HTMLInputElement>(null)
   const current = items.find((i) => i.id === value)
   const isOn = (id: string) => (applied ? applied.includes(id) : id === value)
   // Scroll the applied row into view when the list opens. Each shelf scrolls on
@@ -72,11 +75,14 @@ export function QuickPick({
     const id = requestAnimationFrame(() => activeRow.current?.scrollIntoView({ block: "nearest" }))
     return () => cancelAnimationFrame(id)
   }, [open])
-  // Derived once: the rows and the number beside the heading come from the same
-  // list, which is the only way they cannot disagree.
-  // Published is published, whoever made it — the split the library dropped.
-  const published = items.filter((i) => i.section !== "local")
-  const local = items.filter((i) => i.section === "local")
+  // Matched against the label and the id, so a built-in is found by its
+  // English name in the Chinese UI as well as by the name on screen.
+  const needle = query.trim().toLowerCase()
+  const shown = needle
+    ? items.filter((i) => i.label.toLowerCase().includes(needle) || i.id.toLowerCase().includes(needle))
+    : items
+  const local = shown.filter((i) => i.section === "local")
+  const published = shown.filter((i) => i.section !== "local")
   const row = (i: QuickPickItem) => (
     <Button variant="bare"
       key={i.id}
@@ -96,7 +102,13 @@ export function QuickPick({
   // set, a single value otherwise.
   const anyOn = applied ? applied.length > 0 : value !== null && value !== ""
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (!next) setQuery("")
+      }}
+    >
       <PopoverTrigger asChild>
         {trigger ?? (
           <Button variant="bare"
@@ -114,76 +126,51 @@ export function QuickPick({
       <PopoverContent
         align="end"
         sideOffset={6}
-        // Wide enough for the longest built-in names — truncating
-        // the labels in a list whose whole job is naming things reads as broken.
-        //
-        // A flex column with a bounded height is what makes the pinned sections
-        // below pin: the height comes from Radix's own measurement of the gap to
-        // the viewport edge, capped at 28rem so a tall screen doesn't produce a
-        // list running the full window. The fallback in the var() matters — the
-        // variable is only set when collision detection runs, and without it the
-        // whole max-height declaration would be dropped as invalid.
-        className="flex max-h-[min(28rem,var(--radix-popover-content-available-height,28rem))] w-44 flex-col rounded-surface border-line-strong bg-surface-raised p-1 shadow-float backdrop-blur-xs"
-        // Returning focus to the trigger draws a stuck ring on the value text, and
-        // grabbing it on open leaves the first row ringed and flashing on close.
+        // Wide enough for the longest built-in names. The height comes from
+        // Radix's measurement of the gap to the viewport edge, capped at 32rem;
+        // the var() fallback matters, as the variable is only set once collision
+        // detection runs.
+        className="flex max-h-[min(32rem,var(--radix-popover-content-available-height,32rem))] w-44 flex-col rounded-surface border-line-strong bg-surface-raised p-1 shadow-float backdrop-blur-xs"
+        // Returning focus to the trigger draws a stuck ring on the value text.
         onCloseAutoFocus={(e) => e.preventDefault()}
-        onOpenAutoFocus={(e) => e.preventDefault()}
+        // Focus goes to the search, so typing filters straight away.
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          searchRef.current?.focus()
+        }}
       >
-        {/* Row height is 1.75rem — text-xs (a 1rem line box) inside py-1.5 — and
-            every cap below is a MULTIPLE of it: 10.5rem is six rows, 7rem is
-            four, 3.5rem is two.
-
-            The caps only hold because nothing here flexes. As flex-1 children
-            these sections grew into spare room and shrank when the popover was
-            tight, both in PIXELS — so a shelf ended up 163px or 174px tall and
-            drew a row with its bottom sliced off. Content-sized up to a whole
-            number of rows means a shelf is either exactly as tall as its rows or
-            exactly as tall as its cap, and never a fraction in between. The
-            popover itself takes the overflow in the rare case where all three
-            shelves are full at once.
-
-            Three compartments, same as the full libraries. Built-ins get the
-            deepest shelf because that list is fixed and learnable; Community is
-            shallower here only because the library exists for browsing it, and
-            Local is your own drafts on this device — a short list by nature.
-
-            Every header sits OUTSIDE its scroller, so it stays put while the rows
-            move under it: a heading that scrolls away leaves you reading a list
-            with no idea whose it is. Both headers always render, matching the
-            full libraries — an empty Community is the one place a quick switch
-            can suggest that publishing exists. Local stays conditional; an empty
-            one tells you nothing you did not know.
-
-            EACH SHELF SCROLLS ITSELF — there is no scroller around the group, so
-            a wheel over Local moves Local. That is what sets the caps: five rows,
-            three and two, which is what the 28rem ceiling has left once three
-            headers, two rules and the footer are paid for. Bigger caps and a
-            full popover would spill past its own rounded corner. The shelves
-            stay shrinkable for the viewport too short even for that. */}
-        {/* ONE list, and drafts pinned above it.
-            The three shelves came out of the library — a built-in is a preset
-            the admin account published, so splitting by provenance sorted by who
-            rather than by what — and a quick pick that still splits them is the
-            same list disagreeing with itself two clicks apart. Your own
-            unpublished work stays separate because it is not the same KIND of
-            thing: it exists only on this device. */}
-        {local.length > 0 && (
-          <div className="flex min-h-0 flex-col">
-            <div className="shrink-0 px-2 pt-1.5 pb-1 text-xs font-medium text-muted-foreground">
-              {t.rail.local}
-              <ShelfCount n={local.length} />
+        <div className="relative mb-1 shrink-0">
+          <Search className="pointer-events-none absolute top-1/2 left-2 size-3 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            ref={searchRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t.rail.search}
+            className="h-7 border-line-strong bg-white/5 pl-7 text-xs focus-visible:border-blue-400/50 focus-visible:ring-0 md:text-xs"
+          />
+        </div>
+        {/* Your drafts exist only on this device, so they sit apart, above the
+            one published list. Rows are 1.75rem (text-xs in py-1.5), so each cap
+            is a whole number of rows and never slices one in half. */}
+        <div className="flex min-h-0 flex-col overflow-y-auto">
+          {local.length > 0 && (
+            <div className="flex min-h-0 shrink-0 flex-col border-b border-line pb-1 mb-1">
+              <div className="shrink-0 px-2 pt-1.5 pb-1 text-xs font-medium text-muted-foreground">
+                {t.rail.local}
+                <ShelfCount n={local.length} />
+              </div>
+              <ScrollArea bars className="max-h-[3.5rem]">{local.map(row)}</ScrollArea>
             </div>
-            <ScrollArea bars className="max-h-[3.5rem]">{local.map(row)}</ScrollArea>
-          </div>
-        )}
-        <div className={cn("flex min-h-0 flex-col", local.length > 0 && "mt-1 border-t border-line pt-1")}>
-          <ScrollArea bars className="max-h-[14rem]">
-            {published.length ? (
-              published.map(row)
-            ) : (
-              <div className="px-2 py-1 text-xs text-muted-foreground">{t.rail.communityEmpty}</div>
-            )}
-          </ScrollArea>
+          )}
+          {published.length ? (
+            <ScrollArea bars className="max-h-[15.75rem] shrink-0">{published.map(row)}</ScrollArea>
+          ) : (
+            (!needle || local.length === 0) && (
+              <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                {needle ? t.rail.noMatches : t.rail.communityEmpty}
+              </div>
+            )
+          )}
         </div>
 
         {(onEdit || onBrowse) && (

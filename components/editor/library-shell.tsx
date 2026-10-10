@@ -517,7 +517,7 @@ export function LibraryToolbar<T extends BrowseItem>({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t.rail.search}
-          className="h-6 border-line-strong bg-white/5 pl-7 text-2xs md:text-2xs"
+          className="h-6 border-line-strong bg-white/5 pl-7 text-2xs focus-visible:border-blue-400/50 focus-visible:ring-0 md:text-2xs"
         />
       </div>
 
