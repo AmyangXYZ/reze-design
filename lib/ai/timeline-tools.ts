@@ -6,7 +6,7 @@
 // timeline's own lanes use, so it plays, exports, saves and undoes like a hand
 // edit.
 
-import { builtinName } from "@/lib/builtin-text"
+import { builtinName, builtinSearchText } from "@/lib/builtin-text"
 import type { EffectParamValue } from "reze-engine"
 import { parseDirectives } from "reze-engine"
 import type { AppliedEffect } from "@/lib/effects"
@@ -15,13 +15,19 @@ import type { SceneLight, SceneLightTrack } from "@/lib/scene"
 import type { VisibilityWindow } from "@/lib/timeline"
 import { FPS } from "@/lib/clip"
 import { primeAudioAnalysis } from "@/lib/audio-analysis"
-import { summarizeMusic } from "@/lib/ai/music"
+import { musicWindow, summarizeMusic } from "@/lib/ai/music"
 import type { SceneTool, SceneToolHandles } from "@/lib/ai/scene-tools"
 
 const toFrame = (s: number) => Math.max(0, Math.round(s * FPS))
 const toSec = (f: number) => Math.round((f / FPS) * 100) / 100
 const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined)
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
+
+/** A description's first sentence, at most 100 characters — the list's line. */
+function firstLine(text: string): string {
+  const s = /^.*?[.!?。！？](?=\s|$)/.exec(text.trim())?.[0] ?? text.trim()
+  return s.length > 100 ? `${s.slice(0, 99).trimEnd()}…` : s
+}
 
 /** A clip in the agent's seconds: when it starts, ends, and fades. */
 type ClipArg = { start?: unknown; end?: unknown; fadeIn?: unknown; fadeOut?: unknown }
@@ -78,7 +84,7 @@ function paramsIn(wgsl: string, args: unknown): { params: Record<string, EffectP
   for (const [name, value] of Object.entries(args as Record<string, unknown>)) {
     const d = decls.find((x) => x.name === name)
     if (!d) {
-      errors.push(`no dial "${name}" — dials are ${decls.map((x) => x.name).join(", ") || "none"}`)
+      errors.push(`no dial "${name}" — dials are ${decls.map((x) => x.name).join(", ") || "none"} (ranges: list_effects with names)`)
       continue
     }
     if (d.kind === "float") {
@@ -169,39 +175,58 @@ export const TIMELINE_TOOLS: SceneTool[] = [
   {
     name: "get_music",
     description:
-      "The song's timing: duration, tempo, every beat and downbeat, the hardest hits, and loudness sections (quiet/medium/loud — the loud ones are usually choruses). Read before placing anything in time. Detected downbeats can be off by a beat, so anchor big moments to the hits and section changes rather than to bar counts.",
-    parameters: { type: "object", properties: {} },
-    run: async (_args, h) => {
+      "The song's timing: duration, tempo (bpm), downbeats, the hardest hits, and loudness sections (quiet/medium/loud — the loud ones are usually choruses). Every beat comes with a window: pass from/to in seconds for the beats and downbeats inside it. Read before placing anything in time. Detected downbeats can be off by a beat, so anchor big moments to the hits and section changes rather than to bar counts.",
+    parameters: {
+      type: "object",
+      properties: {
+        from: { type: "number", description: "Seconds; with `to`, the beats in this window." },
+        to: { type: "number", description: "Seconds." },
+      },
+    },
+    run: async (args, h) => {
       if (!h.musicUrl) return { data: { error: "the scene has no music" } }
       const analysis = await primeAudioAnalysis(h.musicUrl)
       if (!analysis) return { data: { error: "the music could not be analysed" } }
-      return { data: summarizeMusic(analysis) }
+      return { data: musicWindow(summarizeMusic(analysis), num(args.from), num(args.to)) }
     },
   },
   {
     name: "list_effects",
     description:
-      "Effects that can be added: name, what it does, its dials (with ranges), and its natural length in seconds for one-shot effects (absent = ambient, runs as long as it is on).",
-    parameters: { type: "object", properties: {} },
-    run: async (_args, h) => ({
-      data: h.effectLibrary.map((e) => {
-        const d = parseDirectives(e.wgsl).directives
-        const zh = builtinName("effect", e, "zh")
-        return {
-          name: e.name,
-          // The name a Chinese-speaking user sees and types; pass `name`.
-          ...(zh !== e.name ? { zh } : {}),
-          about: e.description,
-          ...(d.duration > 0 ? { seconds: Math.round(d.duration * 100) / 100 } : {}),
-          dials: d.params.map((p) => ({
-            name: p.name,
-            kind: p.kind,
-            default: p.value,
-            ...(p.min !== undefined ? { min: p.min, max: p.max } : {}),
-          })),
-        }
-      }),
-    }),
+      "Effects that can be added: name, what it does in a line, its dial names, and its natural length in seconds for one-shot effects (absent = ambient, runs as long as it is on). `query` narrows the list by name, description or tag. `names` gives those effects in full — the whole description and each dial's kind, default and range; read them before setting dials.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Words to match, case-insensitive." },
+        names: { type: "array", items: { type: "string" }, description: "Effects to give in full." },
+      },
+    },
+    run: async (args, h) => {
+      const names = Array.isArray(args.names) ? (args.names as unknown[]).map((n) => String(n).toLowerCase()) : null
+      const q = typeof args.query === "string" ? args.query.trim().toLowerCase() : ""
+      const zhOf = (e: (typeof h.effectLibrary)[number]) => builtinName("effect", e, "zh")
+      const picked = h.effectLibrary.filter((e) =>
+        names
+          ? names.includes(e.name.toLowerCase())
+          : !q || [e.name, e.description, ...(e.tags ?? []), builtinSearchText("effect", e)].some((t) => t.toLowerCase().includes(q)),
+      )
+      return {
+        data: picked.map((e) => {
+          const d = parseDirectives(e.wgsl).directives
+          const zh = zhOf(e)
+          return {
+            name: e.name,
+            // The name a Chinese-speaking user sees and types; pass `name`.
+            ...(zh !== e.name ? { zh } : {}),
+            about: names ? e.description : firstLine(e.description),
+            ...(d.duration > 0 ? { seconds: Math.round(d.duration * 100) / 100 } : {}),
+            dials: names
+              ? d.params.map((p) => ({ name: p.name, kind: p.kind, default: p.value, ...(p.min !== undefined ? { min: p.min, max: p.max } : {}) }))
+              : d.params.map((p) => p.name),
+          }
+        }),
+      }
+    },
   },
   {
     name: "get_effects",
@@ -221,7 +246,7 @@ export const TIMELINE_TOOLS: SceneTool[] = [
   {
     name: "add_effect",
     description:
-      "Add an effect by name from list_effects. Optionally when it plays (clips, in seconds), how strongly (influence 0–1), its dials, and which characters it is on. Several copies of one effect are fine — each is its own.",
+      "Add an effect by name from list_effects. Optionally when it plays (clips, in seconds), how strongly (influence 0–1), its dials (defaults and ranges: list_effects with names), and which characters it is on. Several copies of one effect are fine — each is its own.",
     parameters: {
       type: "object",
       properties: {

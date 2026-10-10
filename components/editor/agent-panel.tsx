@@ -12,7 +12,7 @@
 // canvas changes beside it; the panel has no scrim for that reason.
 
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { Square, ArrowUp, ImagePlus, X, Undo2, Redo2 } from "lucide-react"
+import { Square, ArrowDown, ArrowUp, ImagePlus, X, Undo2, Redo2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
@@ -42,7 +42,9 @@ export type AgentPanelText = {
   setup: string
   undo: string
   redo: string
-  usage: { tokens: (total: string) => string; detail: (input: string, cached: string | null, output: string) => string; none: string }
+  worked: (steps: number) => string
+  latest: string
+  usage: { tokens: (total: string) => string; detail: (input: string, cached: string | null, output: string, written?: string | null) => string; none: string }
 }
 
 type Line =
@@ -284,6 +286,41 @@ function Note({ text }: { text: string }) {
   )
 }
 
+/** A finished request's working, folded to one line until opened. */
+function Fold({ label, children }: { label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <Row mark={<span className="size-1.5 rounded-full bg-muted-foreground" />}>
+        <CollapsibleTrigger className="cursor-pointer text-left text-muted-foreground hover:text-foreground">
+          {label}
+        </CollapsibleTrigger>
+      </Row>
+      <CollapsibleContent className="mt-2 space-y-2">{children}</CollapsibleContent>
+    </Collapsible>
+  )
+}
+
+/** The reasoning still forming: its newest line, or all of it once opened —
+ *  the same fold a finished note has, while the text keeps arriving. */
+function LiveThought({ latest, full }: { latest: string; full: string }) {
+  const [open, setOpen] = useState(false)
+  return open ? (
+    <p
+      className="cursor-pointer whitespace-pre-wrap text-muted-foreground"
+      onClick={() => {
+        if (!window.getSelection()?.toString()) setOpen(false)
+      }}
+    >
+      {inline(full)}
+    </p>
+  ) : (
+    <Button variant="bare" onClick={() => setOpen(true)} className="w-full cursor-pointer text-left text-muted-foreground hover:text-foreground">
+      <span className="line-clamp-2">{latest}</span>
+    </Button>
+  )
+}
+
 export function AgentPanel({
   messages,
   thumbs,
@@ -382,11 +419,37 @@ export function AgentPanel({
     return () => clearInterval(id)
   }, [busy])
 
-  // Follow the conversation as it grows.
+  // Follow the conversation as it grows — new text, a thought opening, an
+  // image landing — while you are at the bottom. Scrolled up to read, it
+  // leaves you there; a new request brings you back down.
+  const content = useRef<HTMLDivElement>(null)
+  const pinned = useRef(true)
+  // Scrolled up away from the bottom: a pill offers the way back.
+  const [away, setAway] = useState(false)
+  const toLatest = () => {
+    const el = scroller.current
+    if (!el) return
+    pinned.current = true
+    setAway(false)
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
+  }
   useEffect(() => {
     const el = scroller.current
+    const inner = content.current
+    if (!el || !inner) return
+    const follow = new ResizeObserver(() => {
+      if (pinned.current) el.scrollTop = el.scrollHeight
+    })
+    follow.observe(inner)
+    return () => follow.disconnect()
+  }, [])
+  const requests = lines.filter((l) => l.kind === "user").length
+  const lastRequest = [...lines].reverse().find((l) => l.kind === "user")?.text ?? ""
+  useEffect(() => {
+    pinned.current = true
+    const el = scroller.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [lines.length, live.text, live.tool, live.thinking])
+  }, [requests, conversationId])
 
   const submit = () => {
     if (busy || locked || onSetup || preparing || (!draft.trim() && !refs.length)) return
@@ -402,26 +465,7 @@ export function AgentPanel({
   // The latest line of reasoning, while it is still forming.
   const thought = live.thinking.trim().split("\n").filter(Boolean).pop() ?? ""
 
-  return (
-    <div
-      className={cn("relative flex min-h-0 flex-1 flex-col", dragging && "after:pointer-events-none after:absolute after:inset-1 after:rounded-interior after:border after:border-dashed after:border-blue-400")}
-      onDragOver={(e) => {
-        if (![...e.dataTransfer.items].some((i) => i.type.startsWith("image/"))) return
-        e.preventDefault()
-        setDragging(true)
-      }}
-      onDragLeave={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false)
-      }}
-      onDrop={(e) => {
-        e.preventDefault()
-        setDragging(false)
-        void attach(e.dataTransfer.files)
-      }}
-    >
-      <div ref={scroller} className="no-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-4 pt-0 pb-5 leading-[18px] select-text">
-        {lines.length === 0 && !busy && <p className="text-muted-foreground">{text.empty}</p>}
-        {lines.map((l, i) =>
+  const renderLine = (l: Line, i: number): ReactNode =>
           l.kind === "user" ? (
             // A request opens a turn: on its own tinted bar, the way a coding
             // agent sets the prompt apart from the work it set off — the
@@ -451,8 +495,73 @@ export function AgentPanel({
             <Note key={i} text={l.text} />
           ) : (
             <Step key={i} summary={l.summary} running={busy && !l.done} />
-          ),
-        )}
+          )
+
+  // A finished request folds its working — the steps and the reasoning
+  // between them — into one line, and keeps its answer in view, so a long
+  // conversation reads as requests and replies. The latest request stays open.
+  const requestAt = lines.flatMap((l, i) => (l.kind === "user" ? [i] : []))
+  const transcript: ReactNode[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i]
+    const next = requestAt.find((r) => r > i)
+    if (l.kind !== "user" || next === undefined) {
+      transcript.push(renderLine(l, i))
+      continue
+    }
+    transcript.push(renderLine(l, i))
+    const work: ReactNode[] = []
+    const answers: ReactNode[] = []
+    let steps = 0
+    for (let j = i + 1; j < next; j++) {
+      const x = lines[j]
+      if (x.kind === "step") steps++
+      ;(x.kind === "step" || x.kind === "note" ? work : answers).push(renderLine(x, j))
+    }
+    if (steps > 0) transcript.push(<Fold key={`fold-${i}`} label={text.worked(steps)}>{work}</Fold>)
+    else answers.unshift(...work)
+    transcript.push(...answers)
+    i = next - 1
+  }
+
+  return (
+    <div
+      className={cn("relative flex min-h-0 flex-1 flex-col", dragging && "after:pointer-events-none after:absolute after:inset-1 after:rounded-interior after:border after:border-dashed after:border-blue-400")}
+      // Esc stops a running request — before the panel's own Escape, which
+      // would close it.
+      onKeyDownCapture={(e) => {
+        if (e.key === "Escape" && busy) {
+          e.preventDefault()
+          e.stopPropagation()
+          onStop()
+        }
+      }}
+      onDragOver={(e) => {
+        if (![...e.dataTransfer.items].some((i) => i.type.startsWith("image/"))) return
+        e.preventDefault()
+        setDragging(true)
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false)
+      }}
+      onDrop={(e) => {
+        e.preventDefault()
+        setDragging(false)
+        void attach(e.dataTransfer.files)
+      }}
+    >
+      <div
+        ref={scroller}
+        onScroll={(e) => {
+          const el = e.currentTarget
+          pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
+          if (away === pinned.current) setAway(!pinned.current)
+        }}
+        className="no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-0 pb-5 leading-[18px] select-text"
+      >
+        <div ref={content} className="space-y-2">
+        {lines.length === 0 && !busy && <p className="text-muted-foreground">{text.empty}</p>}
+        {transcript}
         {busy && live.text && (
           <Row>
             <Reply text={live.text} />
@@ -471,7 +580,7 @@ export function AgentPanel({
                 {run && run.steps > 0 ? ` · ${run.steps} ${run.steps === 1 ? "step" : "steps"}` : ""}
               </span>
             </div>
-            {thought && !live.tool && !live.text && <p className="line-clamp-2 text-muted-foreground">{thought}</p>}
+            {thought && !live.tool && !live.text && <LiveThought latest={thought} full={live.thinking.trim()} />}
           </Row>
         )}
         {!busy && notice && !onSetup && (
@@ -517,7 +626,20 @@ export function AgentPanel({
             </Button>
           </Row>
         )}
+        </div>
       </div>
+      {away && (
+        <div className="relative h-0">
+          <Button
+            variant="bare"
+            onClick={toLatest}
+            className="absolute bottom-2 left-1/2 flex -translate-x-1/2 cursor-pointer items-center gap-1 rounded-full border border-line-strong bg-surface-raised px-2.5 py-1 text-xs text-muted-foreground shadow-float transition-colors hover:text-foreground"
+          >
+            <ArrowDown className="size-3" />
+            {text.latest}
+          </Button>
+        </div>
+      )}
       {/* The prompt: a command line on the same tinted bar a sent request
           sits on, so what you type and what you sent look like one thing.
           Attached pictures ride above the line; the picture button, send and
@@ -597,6 +719,11 @@ export function AgentPanel({
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault()
                   submit()
+                }
+                // ↑ in an empty field brings the last request back to edit.
+                if (e.key === "ArrowUp" && !draft && lastRequest) {
+                  e.preventDefault()
+                  setDraft(lastRequest)
                 }
                 // The editor's own shortcuts must not fire while typing here.
                 e.stopPropagation()

@@ -40,6 +40,9 @@ function graphIn(raw: unknown, name: string): ShaderGraph | string {
   return { ...g, version: 1, name } as ShaderGraph
 }
 
+/** Lines read_effect_source gives at once: most effects whole, the longest in two reads. */
+const SOURCE_LINES = 400
+
 export const AUTHOR_TOOLS: SceneTool[] = [
   {
     name: "read_authoring_guide",
@@ -51,14 +54,26 @@ export const AUTHOR_TOOLS: SceneTool[] = [
   {
     name: "read_effect_source",
     description:
-      "The WGSL of an effect — one in the scene (by id or name) or in the library (by name). The built-ins are commented with the mistake each avoids: start a new effect from the nearest one rather than from nothing.",
-    parameters: { type: "object", properties: { effect: { type: "string" } }, required: ["effect"] },
+      "The WGSL of an effect — one in the scene (by id or name) or in the library (by name). The built-ins are commented with the mistake each avoids: start a new effect from the nearest one rather than from nothing. Gives the first 400 lines and the total; `from`/`to` (1-based line numbers) read any other stretch.",
+    parameters: {
+      type: "object",
+      properties: {
+        effect: { type: "string" },
+        from: { type: "number", description: "First line, 1-based." },
+        to: { type: "number", description: "Last line, inclusive." },
+      },
+      required: ["effect"],
+    },
     run: async (args, h) => {
       const want = String(args.effect ?? "")
       const key = want.toLowerCase()
       const hit = h.effects.find((e) => e.uid === want || e.name.toLowerCase() === key) ?? h.effectLibrary.find((e) => e.name.toLowerCase() === key)
       if (!hit) return { data: { error: `no effect "${want}" — list_effects names the library` } }
-      return { data: { name: hit.name, wgsl: hit.wgsl } }
+      const all = hit.wgsl.split("\n")
+      const from = Math.max(1, Math.floor(Number(args.from) || 1))
+      const to = Math.min(all.length, Math.floor(Number(args.to) || from + SOURCE_LINES - 1))
+      const rest = to < all.length ? { note: `lines ${from}–${to} of ${all.length}; read on with from: ${to + 1}` } : {}
+      return { data: { name: hit.name, lines: all.length, wgsl: all.slice(from - 1, to).join("\n"), ...rest } }
     },
   },
   {

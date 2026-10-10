@@ -120,6 +120,20 @@ export function summarizeMusic(a: AudioAnalysis, maxHits = 24): MusicSummary {
   return { duration, bpm, beats, downbeats, hits, sections: sectionsOf(level, fps) }
 }
 
+/**
+ * The summary as get_music answers: sections, hits and downbeats are small and
+ * always go; every beat of a whole song is not, so beats come only inside a
+ * window (`from`–`to` seconds), which narrows the downbeats too. Without one,
+ * bpm stands in for the beat grid.
+ */
+export function musicWindow(s: MusicSummary, from?: number, to?: number): Omit<MusicSummary, "beats"> & { beats?: number[] } {
+  if (from === undefined && to === undefined) return { duration: s.duration, bpm: s.bpm, downbeats: s.downbeats, hits: s.hits, sections: s.sections }
+  const lo = from ?? 0
+  const hi = to ?? s.duration
+  const inside = (t: number) => t >= lo && t <= hi
+  return { ...s, beats: s.beats.filter(inside), downbeats: s.downbeats.filter(inside) }
+}
+
 /** Loudness sections: the level smoothed over two seconds, split where it
  *  crosses between thirds of its own range, short pieces merged into neighbours. */
 export function sectionsOf(level: Float32Array, fps: number): MusicSummary["sections"] {

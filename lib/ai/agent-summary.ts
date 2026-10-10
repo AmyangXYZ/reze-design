@@ -217,11 +217,12 @@ export function doingOf(name: string | null): string | null {
  *  sit on one word. */
 export const THINKING_VERBS = ["Thinking", "Considering", "Squinting at the frame", "Weighing options", "Mixing light", "Composing", "Pondering"]
 
-/** A usage's input / cached / output, formatted, for a detail line. */
-export const usageParts = (u: { input: number; output: number; cached: number }): [string, string | null, string] => [
+/** A usage's input / cached / output / cache writes, formatted, for a detail line. */
+export const usageParts = (u: { input: number; output: number; cached: number; cacheWrite?: number }): [string, string | null, string, string | null] => [
   formatTokens(u.input),
   u.cached ? formatTokens(u.cached) : null,
   formatTokens(u.output),
+  u.cacheWrite ? formatTokens(u.cacheWrite) : null,
 ]
 
 /** Tokens as the panel shows them: 950, 18.2k, 1.4M. */

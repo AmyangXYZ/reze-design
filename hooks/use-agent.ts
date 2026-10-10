@@ -46,6 +46,18 @@ const IDLE: AgentLive = { text: "", thinking: "", tool: null, retrying: false }
 /** The run as a whole, for the spinner: when it started, steps finished. */
 export type AgentRun = { startedAt: number; steps: number }
 
+const SNAPSHOT = "The scene as it stands now (get_scene): "
+
+/** The scene JSON last attached to a request in this conversation. */
+function lastSnapshot(messages: AgentMessage[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m.role !== "user" || typeof m.content === "string") continue
+    for (const b of m.content) if (b.type === "text" && b.text.startsWith(LOOP_NOTE + SNAPSHOT)) return b.text.slice((LOOP_NOTE + SNAPSHOT).length)
+  }
+  return null
+}
+
 /** A tab's title: the first request, shortened. */
 const titleOf = (request: string) => (request.length > 32 ? `${request.slice(0, 32).trimEnd()}…` : request)
 
@@ -344,8 +356,11 @@ export function useAgent({
       const id = active.current
       if (id && !tabs.find((t) => t.id === id)?.title) writeIndex(tabs.map((t) => (t.id === id ? { ...t, title: titleOf(request) } : t)), id)
       // The scene as it stands rides with every request, so the model starts
-      // from the truth instead of spending its first round asking for it.
+      // from the truth instead of spending its first round asking for it —
+      // in full only when it differs from the last one in this conversation.
       const now = await runTool("get_scene", {}).catch(() => null)
+      const snapshot = now ? JSON.stringify(now.data) : null
+      const sceneNote = snapshot === lastSnapshot(history.current) ? "The scene is unchanged since the last snapshot above." : `${SNAPSHOT}${snapshot}`
       const pictures = refs.length ? { ...thumbs, [at]: refs.map((r) => r.dataUrl) } : thumbs
       await go(
         [
@@ -355,7 +370,7 @@ export function useAgent({
             content: [
               ...referenceBlocks(refs),
               { type: "text", text: request },
-              ...(now ? [{ type: "text" as const, text: `${LOOP_NOTE}The scene as it stands now (get_scene): ${JSON.stringify(now.data)}` }] : []),
+              ...(snapshot ? [{ type: "text" as const, text: `${LOOP_NOTE}${sceneNote}` }] : []),
             ],
           },
         ],

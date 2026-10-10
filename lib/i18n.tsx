@@ -566,9 +566,14 @@ const en = {
       setup: "Add your AI API key to start",
       undo: "Undo",
       redo: "Redo",
+      worked: (steps: number) => `Worked · ${steps} ${steps === 1 ? "step" : "steps"}`,
+      latest: "Latest",
       usage: {
         tokens: (total: string) => `${total} tokens`,
-        detail: (input: string, cached: string | null, output: string) => `${input} in${cached ? ` (${cached} cached)` : ""} · ${output} out`,
+        detail: (input: string, cached: string | null, output: string, written: string | null = null) => {
+          const cache = [cached && `${cached} cached`, written && `${written} written`].filter(Boolean).join(", ")
+          return `${input} in${cache ? ` (${cache})` : ""} · ${output} out`
+        },
         none: "This service didn’t report token usage.",
       },
       empty: "Design the scene together — describe a mood, a light or a shot, or drop in a reference image.",
@@ -1635,9 +1640,14 @@ const zh: Dictionary = {
       setup: "添加你的 AI API 密钥即可开始",
       undo: "撤销",
       redo: "重做",
+      worked: (steps: number) => `已完成 · ${steps} 步`,
+      latest: "最新",
       usage: {
         tokens: (total: string) => `${total} tokens`,
-        detail: (input: string, cached: string | null, output: string) => `输入 ${input}${cached ? `（缓存 ${cached}）` : ""} · 输出 ${output}`,
+        detail: (input: string, cached: string | null, output: string, written: string | null = null) => {
+          const cache = [cached && `缓存 ${cached}`, written && `写入缓存 ${written}`].filter(Boolean).join("，")
+          return `输入 ${input}${cache ? `（${cache}）` : ""} · 输出 ${output}`
+        },
         none: "该服务未报告用量。",
       },
       empty: "一起设计场景——描述想要的氛围、光线或镜头，也可以拖入一张参考图。",

@@ -4,7 +4,7 @@
 //     --tsconfig=tsconfig.json --outfile=/tmp/mu.mjs && node /tmp/mu.mjs
 
 import assert from "node:assert/strict"
-import { summarizeMusic, tempoOf } from "./music"
+import { musicWindow, summarizeMusic, tempoOf } from "./music"
 
 const FPS = 60
 const BANDS = 2
@@ -50,6 +50,17 @@ test("the beat grid lands on the pulses", () => {
   const s = summarizeMusic(drawn(20, 120, 0.25, [0.5]))
   assert.ok(Math.abs(s.beats[0] - 0.25) < 0.05, `first beat ${s.beats[0]}`)
   assert.ok(Math.abs(s.beats[1] - s.beats[0] - 0.5) < 0.05)
+})
+
+test("beats come only inside a window", () => {
+  const s = summarizeMusic(drawn(30, 120, 0.25, [0.5]))
+  const whole = musicWindow(s)
+  assert.equal(whole.beats, undefined)
+  assert.equal(whole.downbeats.length, s.downbeats.length)
+  const w = musicWindow(s, 10, 12)
+  assert.ok(w.beats!.length >= 4 && w.beats!.every((t) => t >= 10 && t <= 12))
+  assert.ok(w.downbeats.every((t) => t >= 10 && t <= 12))
+  assert.equal(w.sections.length, s.sections.length)
 })
 
 test("downbeats are every fourth beat", () => {

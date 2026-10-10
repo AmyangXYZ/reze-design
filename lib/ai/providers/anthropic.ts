@@ -127,8 +127,9 @@ async function turn({ target, messages, system, tools, send, signal }: TurnArgs)
     const u = final.usage
     // Anthropic counts cache reads and writes apart from input_tokens.
     const cachedIn = u.cache_read_input_tokens ?? 0
-    const input = u.input_tokens + cachedIn + (u.cache_creation_input_tokens ?? 0)
-    send({ type: "message", content: final.content, stopReason: final.stop_reason, usage: { input, output: u.output_tokens, cached: cachedIn } })
+    const cacheWrite = u.cache_creation_input_tokens ?? 0
+    const input = u.input_tokens + cachedIn + cacheWrite
+    send({ type: "message", content: final.content, stopReason: final.stop_reason, usage: { input, output: u.output_tokens, cached: cachedIn, cacheWrite } })
   } catch (e) {
     if (e instanceof Anthropic.RateLimitError) throw new TurnError("the model is busy — try again in a moment", true)
     if (e instanceof Anthropic.APIConnectionError) throw new TurnError(`connection to the model failed: ${e.message}`, true)

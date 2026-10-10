@@ -27,12 +27,13 @@ import { TurnError } from "@/lib/ai/providers/types"
 export type AgentMessage = Anthropic.Beta.BetaMessageParam
 
 /** Tokens one reply took, the same shape whichever service answered: all of
- *  the input (cached included), the part of it served from the cache, and the
- *  output. Null where the service did not say. */
-export type Usage = { input: number; output: number; cached: number }
+ *  the input (cached and cache writes included), the part of it served from
+ *  the cache, the part written to it where the service bills writes apart,
+ *  and the output. Null where the service did not say. */
+export type Usage = { input: number; output: number; cached: number; cacheWrite?: number }
 
 export const addUsage = (a: Usage | null, b: Usage | null): Usage | null =>
-  !a ? b : !b ? a : { input: a.input + b.input, output: a.output + b.output, cached: a.cached + b.cached }
+  !a ? b : !b ? a : { input: a.input + b.input, output: a.output + b.output, cached: a.cached + b.cached, cacheWrite: (a.cacheWrite ?? 0) + (b.cacheWrite ?? 0) }
 
 /** One line of /api/agent's stream. */
 export type AgentStreamEvent =
@@ -63,6 +64,9 @@ export const MAX_ROUNDS = 24
  *  in user turns because that is where the API takes them, and the panel
  *  leaves them out because they are not the person's words. */
 export const LOOP_NOTE = "[reze] "
+
+/** The note on the last round's results. */
+const LAST_ROUND = `${LOOP_NOTE}That is the last round for this request. Do not call more tools: say what you changed, where it stands, and what is left.`
 
 /** Tries per round when the failure is the network's or the provider's
  *  moment, not the request's. */
@@ -104,27 +108,25 @@ export function toolResultBlock(id: string, result: ToolResult): Anthropic.Beta.
 const KEEP_PICTURES = 3
 
 /**
- * The history as sent: inline (base64) pictures only in the latest few
- * messages that have any; earlier ones become a line saying they were seen.
- * Uploaded pictures are references, small enough to always go. A model that
- * reads text only (`keep` 0) is sent no picture at all.
+ * The history as sent: inline (base64) pictures from tool results only in the
+ * latest few messages that have any; earlier ones become a line saying they
+ * were seen. The person's own reference pictures always go — they are the
+ * request. Uploaded pictures are references, small enough to always go. A
+ * model that reads text only (`keep` 0) is sent no picture at all.
  */
 export function sendable(messages: AgentMessage[], keep = KEEP_PICTURES): AgentMessage[] {
   type B = Anthropic.Beta.BetaContentBlockParam
-  const inline = (b: unknown): boolean => {
-    const x = b as { type?: string; source?: { type?: string }; content?: unknown }
-    return (x.type === "image" && x.source?.type === "base64") || (Array.isArray(x.content) && x.content.some(inline))
-  }
-  const withPictures = messages.flatMap((m, i) => (Array.isArray(m.content) && m.content.some(inline) ? [i] : []))
+  const capture = (b: B) => b.type === "tool_result" && Array.isArray(b.content) && b.content.some((x) => x.type === "image" && x.source.type === "base64")
+  const withPictures = messages.flatMap((m, i) => (Array.isArray(m.content) && m.content.some(capture) ? [i] : []))
   const kept = new Set(keep ? withPictures.slice(-keep) : [])
   const note = keep ? "(An earlier image, not re-sent; you saw it then.)" : "(An image, not shown: this model reads text only.)"
-  const drop = (b: B): B =>
-    (b.type === "image" && b.source.type === "base64") || (!keep && b.type === "image")
+  const drop = (b: B, inResult: boolean): B =>
+    b.type === "image" && (!keep || (inResult && b.source.type === "base64"))
       ? { type: "text", text: note }
       : b.type === "tool_result" && Array.isArray(b.content)
-        ? { ...b, content: b.content.map((x) => drop(x as B)) as typeof b.content }
+        ? { ...b, content: b.content.map((x) => drop(x as B, true)) as typeof b.content }
         : b
-  return messages.map((m, i) => (kept.has(i) || typeof m.content === "string" ? m : { ...m, content: m.content.map(drop) }))
+  return messages.map((m, i) => (kept.has(i) || typeof m.content === "string" ? m : { ...m, content: m.content.map((b) => drop(b, false)) }))
 }
 
 /**
@@ -186,6 +188,8 @@ export async function runAgent(opts: {
   // wrong without knowing, so that run looks before it finishes.
   let unseen = 0
   let nudged = false
+  // A text reply cut off at the token limit is continued once per request.
+  let continued = false
 
   /** One request to the model. A failure says whether trying again could help:
    *  the network, a busy or failing provider, a stream cut short — yes; a
@@ -265,10 +269,24 @@ export async function runAgent(opts: {
     messages.push({ role: "assistant", content: reply.content as Anthropic.Beta.BetaContentBlockParam[] })
     publish()
     if (reply.stopReason === "refusal") return { messages, ended: "refused" }
-    if (reply.stopReason === "pause_turn") continue
+    // Every call counts toward the limit. The one after the last round is the
+    // wrap-up: it may only answer, so nothing it asks for runs.
+    const wrapUp = round >= max
+    const lastNote: Anthropic.Beta.BetaTextBlockParam[] = round + 1 === max ? [{ type: "text", text: LAST_ROUND }] : []
+    if (reply.stopReason === "pause_turn") {
+      if (wrapUp) return { messages, ended: "limit" }
+      continue
+    }
 
     const calls = reply.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use")
     if (calls.length === 0) {
+      // A reply cut off at the token limit: ask once for the rest.
+      if (reply.stopReason === "max_tokens" && !continued && !wrapUp) {
+        continued = true
+        messages.push({ role: "user", content: [{ type: "text", text: `${LOOP_NOTE}Your reply was cut off — finish it in a few lines.` }, ...lastNote] })
+        publish()
+        continue
+      }
       // Finished without looking at what it changed: ask once to check.
       if (unseen >= 2 && !nudged && round + 1 < max) {
         nudged = true
@@ -281,13 +299,16 @@ export async function runAgent(opts: {
       }
       return { messages, ended: "done" }
     }
+    const unrun = (why: string) => calls.map((c) => ({ type: "tool_result" as const, tool_use_id: c.id, is_error: true, content: why }))
+    if (wrapUp) {
+      messages.push({ role: "user", content: unrun("Round limit reached — not run.") })
+      publish()
+      return { messages, ended: "limit" }
+    }
     // A call cut off at the token limit may parse as a smaller valid one;
     // never run it.
     if (reply.stopReason === "max_tokens") {
-      messages.push({
-        role: "user",
-        content: calls.map((c) => ({ type: "tool_result" as const, tool_use_id: c.id, is_error: true, content: "Your reply hit the length limit before this call was complete; it was not run." })),
-      })
+      messages.push({ role: "user", content: [...unrun("Your reply hit the length limit before this call was complete; it was not run."), ...lastNote] })
       publish()
       continue
     }
@@ -309,13 +330,10 @@ export async function runAgent(opts: {
       opts.onProgress({ type: "tool-done", name: call.name, ok: !block.is_error })
       results.push(block)
     }
-    if (round + 1 >= max && !opts.signal.aborted) {
-      results.push({ type: "text", text: `${LOOP_NOTE}That is the last round for this request. Do not call more tools: say what you changed, where it stands, and what is left.` })
-    }
+    if (!opts.signal.aborted) results.push(...lastNote)
     messages.push({ role: "user", content: results })
     publish()
     if (opts.signal.aborted) return { messages, ended: "stopped" }
-    if (round + 1 > max) return { messages, ended: "limit" }
   }
 }
 

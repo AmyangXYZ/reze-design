@@ -131,12 +131,38 @@ await test("stop mid-run answers every pending call and ends", async () => {
 await test("at the round limit the model is told to wrap up, then the loop ends", async () => {
   const forever = Array.from({ length: 5 }, (_, k) => ({ content: [toolUse(`t${k}`, "capture")], stopReason: "tool_use" }))
   const { fetchImpl, bodies } = scripted(forever)
+  let ran = 0
   const out = await withFetch(fetchImpl, () =>
-    runAgent({ history: [user("x")], runTool: async () => ({ data: {} }), onProgress: () => {}, signal: new AbortController().signal, maxRounds: 2 }),
+    runAgent({ history: [user("x")], runTool: async () => (ran++, { data: {} }), onProgress: () => {}, signal: new AbortController().signal, maxRounds: 2 }),
   )
   assert.equal(out.ended, "limit")
   const wrap = JSON.stringify(bodies[2])
   assert.match(wrap, /last round for this request/)
+  assert.equal(ran, 2, "the wrap-up call's tools are not run")
+  assert.match(JSON.stringify(out.messages[out.messages.length - 1]), /Round limit reached/)
+})
+
+await test("pauses and cut-off calls count toward the round limit", async () => {
+  const forever = Array.from({ length: 6 }, (_, k) => ({ content: [toolUse(`t${k}`, "capture")], stopReason: k % 2 ? "pause_turn" : "max_tokens" }))
+  const { fetchImpl, bodies } = scripted(forever)
+  const out = await withFetch(fetchImpl, () =>
+    runAgent({ history: [user("x")], runTool: async () => ({ data: {} }), onProgress: () => {}, signal: new AbortController().signal, maxRounds: 2 }),
+  )
+  assert.equal(out.ended, "limit")
+  assert.equal(bodies.length, 3)
+})
+
+await test("a text reply cut off at the token limit is continued once", async () => {
+  const { fetchImpl, bodies } = scripted([
+    { content: [text("Warmer, and the")], stopReason: "max_tokens" },
+    { content: [text("rim is cooler.")], stopReason: "max_tokens" },
+  ])
+  const out = await withFetch(fetchImpl, () =>
+    runAgent({ history: [user("x")], runTool: async () => ({ data: {} }), onProgress: () => {}, signal: new AbortController().signal }),
+  )
+  assert.equal(out.ended, "done")
+  assert.equal(bodies.length, 2)
+  assert.match(JSON.stringify(bodies[1]), /cut off/)
 })
 
 await test("a call cut off at the token limit is not run", async () => {
@@ -261,6 +287,21 @@ await test("Claude is sent its history whole; other providers, the trimmed copy"
   assert.equal(pictures(historyFor("compat", history, true)), 3)
   // A model that reads text only gets no picture, whoever it is.
   assert.equal(pictures(historyFor("anthropic", history, false)), 0)
+})
+
+await test("the person's reference picture is always re-sent", () => {
+  const history: AgentMessage[] = [{ role: "user", content: [{ type: "image", source: { type: "base64", media_type: "image/jpeg", data: "REF" } }, { type: "text", text: "like this" }] }]
+  for (let k = 0; k < 5; k++) {
+    history.push({ role: "assistant", content: [toolUse(`c${k}`, "capture") as never] })
+    history.push({
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: `c${k}`, content: [{ type: "text", text: "{}" }, { type: "image", source: { type: "base64", media_type: "image/jpeg", data: `IMG${k}` } }] }],
+    })
+  }
+  const sent = JSON.stringify(historyFor("compat", history, true))
+  assert.match(sent, /"REF"/)
+  assert.equal((sent.match(/IMG\d/g) ?? []).length, 3)
+  assert.doesNotMatch(JSON.stringify(historyFor("compat", history, false)), /"REF"/)
 })
 
 await test("uploaded files are found for clean-up", () => {

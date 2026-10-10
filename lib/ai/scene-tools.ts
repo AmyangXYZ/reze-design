@@ -47,7 +47,7 @@ export type SceneToolHandles = {
   hidden: Record<string, string[]>
   effects: AppliedEffect[]
   /** Effects that can be added: built-ins, community, your drafts. */
-  effectLibrary: { id: string; name: string; description: string; wgsl: string }[]
+  effectLibrary: { id: string; name: string; description: string; wgsl: string; tags?: string[] }[]
   /** Append a copy; returns its uid. */
   addEffect: (effect: AppliedEffect) => string
   patchEffect: (uid: string, part: Partial<AppliedEffect>) => void

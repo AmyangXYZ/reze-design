@@ -5909,6 +5909,7 @@ export default function Lab() {
       name: e.name,
       description: e.description ?? "",
       wgsl: e.payload.wgsl,
+      tags: e.tags,
     })),
     addEffect: (effect) => {
       // Minted here rather than by the setter, so the agent gets the id back.

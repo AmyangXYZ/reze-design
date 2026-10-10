@@ -83,7 +83,7 @@ function fake(over: Partial<SceneToolHandles> = {}) {
     get effects() {
       return state.effects
     },
-    effectLibrary: EFFECTS.map((e) => ({ id: e.id, name: e.name, description: e.description ?? "", wgsl: e.payload.wgsl })),
+    effectLibrary: EFFECTS.map((e) => ({ id: e.id, name: e.name, description: e.description ?? "", wgsl: e.payload.wgsl, tags: e.tags })),
     addEffect: (e) => {
       const uid = `u${state.effects.length + 1}`
       state.effects = [...state.effects, { ...e, uid }]
@@ -307,12 +307,34 @@ await test("apply_look_pack refuses an unknown pack", async () => {
 
 // ── effects ────────────────────────────────────────────────────────────────
 
-await test("list_effects reads every built-in's dials and lengths", async () => {
+await test("list_effects is a short line per built-in; names gives the full dials", async () => {
   const { h } = fake()
   const r = await runSceneTool("list_effects", {}, h)
-  const list = r.data as { name: string; dials: unknown[] }[]
+  const list = r.data as { name: string; about: string; dials: string[] }[]
   assert.equal(list.length, EFFECTS.length)
-  assert.ok(list.some((e) => e.dials.length > 0), "some built-in declares a dial")
+  assert.ok(list.every((e) => e.about.length <= 100), "one short line each")
+  const withDials = list.find((e) => e.dials.length > 0)!
+  assert.equal(typeof withDials.dials[0], "string", "dial names only")
+  const full = (await runSceneTool("list_effects", { names: [withDials.name.toUpperCase()] }, h)).data as { dials: { name: string; default: unknown }[] }[]
+  assert.equal(full.length, 1)
+  assert.equal(full[0].dials[0].name, withDials.dials[0])
+  assert.ok("default" in full[0].dials[0])
+  const found = (await runSceneTool("list_effects", { query: "SAKURA" }, h)).data as { name: string }[]
+  assert.ok(found.length > 0 && found.length < list.length && found.some((e) => e.name === "Sakura Drift"))
+})
+
+await test("read_effect_source reads a long effect in pieces", async () => {
+  const { h } = fake()
+  const longest = [...EFFECTS].sort((a, b) => b.payload.wgsl.split("\n").length - a.payload.wgsl.split("\n").length)[0]
+  const total = longest.payload.wgsl.split("\n").length
+  assert.ok(total > 400, "a built-in longer than one read")
+  const first = (await runSceneTool("read_effect_source", { effect: longest.name }, h)).data as { lines: number; wgsl: string; note?: string }
+  assert.equal(first.lines, total)
+  assert.equal(first.wgsl.split("\n").length, 400)
+  assert.match(first.note!, /from: 401/)
+  const rest = (await runSceneTool("read_effect_source", { effect: longest.name, from: 401, to: total }, h)).data as { wgsl: string; note?: string }
+  assert.equal(`${first.wgsl}\n${rest.wgsl}`, longest.payload.wgsl)
+  assert.equal(rest.note, undefined)
 })
 
 await test("add_effect turns seconds into 30fps clips with fades", async () => {

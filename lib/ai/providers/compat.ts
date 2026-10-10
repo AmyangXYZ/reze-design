@@ -238,10 +238,12 @@ async function turn({ target, messages, system, tools, send, signal }: TurnArgs)
       if (chunk.error) throw new TurnError(`model error: ${JSON.stringify(chunk.error)}`, true)
       // The usage chunk comes last, with no choices.
       const u = chunk.usage as
-        | { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number }; prompt_cache_hit_tokens?: number }
+        | { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number }; prompt_cache_hit_tokens?: number }
         | undefined
       if (u && typeof u.prompt_tokens === "number") {
-        usage = { input: u.prompt_tokens, output: u.completion_tokens ?? 0, cached: u.prompt_tokens_details?.cached_tokens ?? u.prompt_cache_hit_tokens ?? 0 }
+        // OpenRouter says what it wrote to Claude's cache.
+        const cacheWrite = u.prompt_tokens_details?.cache_write_tokens
+        usage = { input: u.prompt_tokens, output: u.completion_tokens ?? 0, cached: u.prompt_tokens_details?.cached_tokens ?? u.prompt_cache_hit_tokens ?? 0, ...(cacheWrite ? { cacheWrite } : {}) }
       }
       const choice = (chunk.choices as { delta?: Delta; finish_reason?: string | null }[] | undefined)?.[0]
       if (!choice) continue
