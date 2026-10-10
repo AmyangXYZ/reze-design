@@ -192,5 +192,36 @@
         "saturation": 1.08
       }
     }
+  },
+  {
+    "id": "63715565-3bca-436f-ab25-be1e04a8cb71",
+    "kind": "grade",
+    "name": "Vivid",
+    "author": "lbz",
+    "description": "Higher contrast and saturation.",
+    "tags": [
+      "saturated",
+      "contrast"
+    ],
+    "payload": {
+      "spec": {
+        "shadows": [
+          0,
+          0,
+          0.47
+        ],
+        "midtones": [
+          0,
+          0
+        ],
+        "highlights": [
+          0,
+          0,
+          0.5
+        ],
+        "contrast": 1.2,
+        "saturation": 1.4
+      }
+    }
   }
 ]

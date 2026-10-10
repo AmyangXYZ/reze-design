@@ -121,6 +121,7 @@ const GRADES: Record<string, Zh> = {
   Divine: { name: "神圣", description: "暖琥珀色阴影过渡到金色和白色高光。" },
   Moonlit: { name: "月光", description: "冷蓝色夜景色调，高光依然清晰。" },
   Sakura: { name: "樱色", description: "柔和的粉色调，高光保持干净。" },
+  Vivid: { name: "高饱和", description: "提高对比度和饱和度。" },
 }
 
 // The built-ins' tags. Abbreviations (AG, NPR, PBR, MIDI…) stay as they are;
@@ -145,7 +146,7 @@ const TAGS: Record<string, string> = {
   reflection: "反射", lineart: "线稿", toon: "卡通", manga: "漫画", glitch: "故障", transition: "转场",
   trail: "拖尾", grass: "草", hand: "手", flowers: "花", gesture: "手势", dance: "舞蹈", stars: "星星",
   "stop-motion": "定格动画", neutral: "中性", clean: "干净", red: "红色", crimson: "深红", horror: "恐怖",
-  saturated: "高饱和", warm: "暖色", divine: "神圣", cool: "冷色", blue: "蓝色", cyan: "青色", pink: "粉色",
+  saturated: "高饱和", contrast: "对比度", warm: "暖色", divine: "神圣", cool: "冷色", blue: "蓝色", cyan: "青色", pink: "粉色",
   romantic: "浪漫",
 }
 
