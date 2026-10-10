@@ -883,7 +883,7 @@ const en = {
       rot: (axis: string) => `Rot ${axis}`,
       preset: "Preset",
       shader: "Shader",
-      selectEffect: "Select effect",
+      addEffect: "Add effect",
       /** The trigger when a scene layers several. One is named; several are counted,
        *  because the list below is where they are read. */
       effectsN: (n: number) => `${n} effects`,
@@ -1878,7 +1878,7 @@ const zh: Dictionary = {
       rot: (axis: string) => `旋转 ${axis}`,
       preset: "预设",
       shader: "着色器",
-      selectEffect: "选择特效",
+      addEffect: "添加特效",
       effectsN: (n: number) => `${n} 个特效`,
       planesN: (n: number) => `${n} 个平面`,
       propsN: (n: number) => `${n} 个道具`,

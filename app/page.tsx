@@ -8657,43 +8657,22 @@ export default function Lab() {
                     // A list, not a value: the rows below are what the scene
                     // wears, and the control above them adds to it.
                     <>
-                      {/* The two doors, side by side and equal: the shortlist
-                          you add from, and the library you go to when the
-                          shortlist has not got it. Both are ACTIONS, so both
-                          wear a button's clothes — solid bordered, distinct
-                          from the rows they put things into. The picker still
-                          holds MEMBERSHIP: every applied effect ticks, and a
-                          ticked row clicks off. */}
-                      <div className="flex items-center gap-1.5">
-                        <QuickPick
-                          value={null}
-                          applied={bgEffects.map((e) => e.name)}
-                          items={effectItems}
-                          onPick={pickEffect}
-                          onBrowse={() => openBrowse({ kind: "effect" })}
-                          placeholder={t.lab.ctl.none}
-                          trigger={
-                            <Button variant="ghost" size="xs" className="flex-1 cursor-pointer text-muted-foreground ring-1 ring-line-strong hover:bg-transparent hover:text-blue-400 hover:ring-blue-400/50 dark:hover:bg-transparent">
-                              <Plus className="size-3.5 shrink-0" />
-                              <span className="truncate">{t.lab.ctl.selectEffect}</span>
-                            </Button>
-                          }
-                        />
-                        {/* The library keeps the white pill every library door
-                            in the app wears — the three doors are told apart by
-                            what they NAME, and a door that changed its clothes
-                            in one row would stop reading as the same kind of
-                            place. It sits second: adding from the shortlist is
-                            the common move, the library is where you go when
-                            the shortlist has not got it. */}
-                        <Button variant="bare"
-                          onClick={() => openBrowse({ kind: "effect" })}
-                          className="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-chip bg-white px-2 py-1 text-xs font-medium text-zinc-950 transition-colors hover:bg-white/90"
-                        >
-                          <Sparkles className="size-3.5 shrink-0" />
-                          <span className="truncate">{t.lab.cmd.effectLib}</span>
-                        </Button>
-                      </div>
+                      {/* Adding is the common move, so it leads, full width.
+                          The picker still holds MEMBERSHIP: every applied
+                          effect ticks, and a ticked row clicks off. */}
+                      <QuickPick
+                        value={null}
+                        applied={bgEffects.map((e) => e.name)}
+                        items={effectItems}
+                        onPick={pickEffect}
+                        placeholder={t.lab.ctl.none}
+                        trigger={
+                          <Button variant="ghost" size="xs" className="w-full cursor-pointer text-muted-foreground ring-1 ring-line-strong hover:bg-transparent hover:text-blue-400 hover:ring-blue-400/50 dark:hover:bg-transparent">
+                            <Plus className="size-3.5 shrink-0" />
+                            <span className="truncate">{t.lab.ctl.addEffect}</span>
+                          </Button>
+                        }
+                      />
                       {/* Every applied effect gets a row, from the first one:
                           the row is where an effect is edited, swapped and
                           removed, and a picker cannot hold three of those for
@@ -8880,6 +8859,17 @@ export default function Lab() {
                           </div>
                         )
                       })()}
+                      {/* The library door closes the section, as it does under
+                          Grade: add, then what the scene wears, then go deeper. */}
+                      <div className="mt-2.5 flex justify-center">
+                        <Button variant="bare"
+                          onClick={() => openBrowse({ kind: "effect" })}
+                          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-chip bg-white px-2 py-1 text-xs font-medium text-zinc-950 transition-colors hover:bg-white/90"
+                        >
+                          <Sparkles className="size-3.5" />
+                          {t.lab.cmd.effectLib}
+                        </Button>
+                      </div>
                     </>
                   ) : l.id === "object" ? (
                     <>
@@ -9603,12 +9593,8 @@ export default function Lab() {
                         </TabsTrigger>
                       </TabsList>
                       <TabsContent value="grade">
-                        {/* Main's own selection model, whole: quick-switch on the
-                            value text (built-ins · community · your drafts), the
-                            full library behind a Browse row at the BOTTOM of the
-                            body rather than on the section header — and no
-                            "Browse all…" inside the quick list, because a door
-                            two lines under another door is clutter. */}
+                        {/* Quick-switch on the value text; the full library is
+                            the door at the bottom of the body, and only there. */}
                         <div className="flex min-w-0 items-center justify-between gap-2">
                           <span className="shrink-0 text-xs">{t.lab.ctl.preset}</span>
                           <QuickPick
@@ -9626,7 +9612,6 @@ export default function Lab() {
                             // how a look gets made from nothing.
                             onEdit={editCurrentGrade}
                             editLabel={t.gradeLibrary.edit}
-                            onBrowse={() => openBrowse({ kind: "grade" })}
                             placeholder={gradeLabel(grade.preset)}
                           />
                         </div>
@@ -10150,7 +10135,9 @@ export default function Lab() {
             <span className="min-w-0 flex-1 truncate text-xs font-medium">{t.lab.editMaterials}</span>
             <CastAction icon={X} label={t.lab.closeMaterials} onClick={() => setInspectedId(null)} />
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          {/* A column, not a scroller: the panel's own group list scrolls, so
+              its model tabs and toolbar stay put above it. */}
+          <div className="flex min-h-0 flex-1 flex-col">
             <MaterialsPanel
               dense
               modelTabs={models.map((m) => ({

@@ -249,7 +249,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
     <>
       {/* ── Model strip (multi-model scenes): which model this panel edits ── */}
       {modelTabs.length > 1 && (
-        <div className={cn("flex flex-wrap gap-1 px-4", dense ? "pt-2" : "pt-3.5")}>
+        <div className={cn("flex shrink-0 flex-wrap gap-1 px-4", dense ? "pt-2" : "pt-3.5")}>
           {modelTabs.map((m) => (
             <Button variant="bare"
               key={m.id}
@@ -270,7 +270,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
       {/* ── Section toolbar (VSCode explorer header): create + library ── */}
       {/* Same px-4 gutter and 3.5 vertical rhythm as the Scene tab, so the two panels line up */}
       <div
-        className={cn("flex items-center gap-1 px-4", modelTabs.length > 1 ? "pt-1.5" : dense ? "pt-2" : "pt-3.5")}
+        className={cn("flex shrink-0 items-center gap-1 px-4", modelTabs.length > 1 ? "pt-1.5" : dense ? "pt-2" : "pt-3.5")}
       >
         {/* This row used to open with STYLE GROUPS in the Scene tab's uppercase and
             carry create as a bare icon beside it. The title cost more width than it
@@ -278,15 +278,13 @@ export const MaterialsPanel = memo(function MaterialsPanel({
             is a style group — and at the dock's reduced width it pushed the Library
             door off the right edge. Create takes its place and says the same noun,
             so the row lost a label rather than an action.
-            The negative margin cancels the button's own padding, keeping the text
-            on the px-4 gutter the rows and the Scene tab both sit on — which is why
-            the glyph trails the label rather than leading it: a leading icon would
-            put a symbol where every row below starts with a word. */}
+            Its inset matches the Library door's, so the two buttons sit on the
+            same gutter from either end. */}
         <Button
           variant="outline"
           size="xs"
           onClick={() => setRenaming(onCreateGroup())}
-          className="-ml-2 min-w-0 border-line-strong bg-surface-raised text-muted-foreground hover:bg-white/5 hover:text-foreground [&_svg:not([class*='size-'])]:size-3.5"
+          className="min-w-0 border-line-strong bg-surface-raised text-muted-foreground hover:bg-white/5 hover:text-foreground [&_svg:not([class*='size-'])]:size-3.5"
         >
           {/* First to give up room. Truncating a label whose glyph still says
               "folder, plus" costs less than pushing the Library door off-panel. */}
@@ -312,7 +310,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
         <ContextMenuTrigger asChild>
           <div
             className={cn(
-              "no-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pt-2",
+              "no-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 pt-2",
               dense ? "pb-2" : "pb-3.5",
             )}
             onMouseLeave={() => onHover(null)}
@@ -393,7 +391,6 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                           }
                           items={itemsForGroup(g)}
                           onPick={(name) => onPickGraph(g.id, name)}
-                          onBrowse={onOpenLibrary ? () => onOpenLibrary(g.id) : undefined}
                           onEdit={onEditGroupGraph ? () => onEditGroupGraph(g.id) : undefined}
                           placeholder={g.graph.name}
                         />
