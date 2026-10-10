@@ -78,8 +78,8 @@ export type BrowseFacet = LibraryFacet
 // likes, and other people's picks, each fading by half every two weeks. An
 // item the stats do not know yet (a draft, or before they load) scores on its
 // own date alone, which is where it would start anyway.
-function hotScore(item: BrowseItem, trend: number): number {
-  return Number.isNaN(trend) ? trendScore([publishedAt(item)]) : trend
+function hotScore(item: BrowseItem, trend: number | undefined): number {
+  return typeof trend === "number" && Number.isFinite(trend) ? trend : trendScore([publishedAt(item)])
 }
 
 /** When it was published. An undated draft is brand new; an undated built-in
