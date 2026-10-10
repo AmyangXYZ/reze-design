@@ -100,6 +100,7 @@ const EFFECTS: Record<string, Zh> = {
   Mirror: { name: "镜子", description: "可放置在场景中的真实镜子。" },
   "Line Art": { name: "线稿", description: "整个画面重绘为墨线线稿。参考 Dirnot 和小林呓的作品。" },
   Manga: { name: "漫画", description: "整个画面变成印刷漫画页，带墨线和网点。" },
+  "Manga Panels": { name: "漫画分镜", description: "画面变成一页漫画，随节拍一格一格读下去，每格是不同的镜头和漫画背景。" },
   Gojo: { name: "五条悟", description: "蓝色和红色光球环绕角色，合成紫色光球后爆发。" },
   "World Slash": { name: "世界斩", description: "一道斩击在角色腰部将画面一分为二。" },
   "Hand Threads": { name: "手部丝线", description: "从双手腕拖出的光丝。" },
