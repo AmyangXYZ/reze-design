@@ -7131,13 +7131,13 @@ export default function Lab() {
           stops a pill and a panel of different widths sitting on top of each
           other. */}
       {mounted && (
-        <div className="pointer-events-none absolute top-3 right-3 left-3 flex items-start gap-2">
+        <div className="pointer-events-none absolute top-3 right-3 left-3 flex items-start gap-2 compact:gap-1.5">
           {/* Same 17rem as the open panel: this is a DROPDOWN, not a sidebar —
             expanding only grows downward, so nothing ever shifts sideways. */}
           {/* On a phone the pill stays while the stack is open: the stack hangs
               below the top bar there, so the pill is its header. */}
           {(!expanded || compact) && (
-            <div className={cn(PILL, "pointer-events-auto flex h-10 w-[16rem] items-center gap-1.5 pr-1.5 pl-2 compact:w-auto compact:min-w-0 compact:flex-1")}>
+            <div className={cn(PILL, "pointer-events-auto flex h-10 w-[16rem] items-center gap-1.5 pr-1.5 pl-2 compact:w-auto compact:min-w-0 compact:flex-1 compact:gap-0.5 compact:pr-1 compact:pl-1")}>
               {/* The logo is the menu, in both of its homes — scene-file-menu.tsx
                   for why. The stack is not on screen here, so this pill's logo is
                   the only door to the file operations. */}
@@ -7156,19 +7156,23 @@ export default function Lab() {
               <span className="whitespace-nowrap pb-0.5 text-sm font-semibold tracking-tight text-foreground">
                 Reze Design
               </span>
-              {/* On a phone the brand and version stay in the bar, and the scene
-                  name moves into the open stack, where there is room for it. */}
-              <span className="hidden shrink-0 rounded-full bg-blue-400/15 px-1.5 py-0.5 font-mono text-2xs leading-none font-medium text-blue-400 compact:inline">
+              {/* The same row as the open stack's header, so nothing moves as you
+                  toggle; the scene name lives in the open stack. Tighter on a
+                  phone, where the row shares the bar with search and Share. */}
+              <span className="shrink-0 rounded-full bg-blue-400/15 px-1.5 py-0.5 font-mono text-2xs leading-none font-medium text-blue-400 compact:px-1">
                 {VERSION_LABEL}
               </span>
-              {/* Lands exactly where the version badge sits in the expanded header,
-                so the slot after the wordmark does not shift as you toggle. The
-                badge is gap-1.5 from the wordmark with px-1.5 inside and no
-                border; the name box carries a 1px transparent border (that is
-                what stops its text jumping when it becomes editable), so it
-                needs the same px-1.5 and one pixel back to put the two glyph
-                runs in the same place. */}
-              <SceneName name={sceneName} onRename={setSceneName} className="-ml-px min-w-0 flex-1 truncate px-1.5 compact:hidden" />
+              <Button
+                variant="ghost"
+                size="icon"
+                asChild
+                tooltip="GitHub"
+                className="size-7 shrink-0 rounded-interior text-foreground hover:bg-white/5 hover:text-foreground compact:size-6"
+              >
+                <a href={REPO_URL} target="_blank" rel="noreferrer" aria-label="GitHub">
+                  <GithubMark className="size-4" />
+                </a>
+              </Button>
               {/* Chevron, not a panel icon: it points where the content will go,
                 the same law as the timeline's toggle. */}
               <Button
@@ -7176,7 +7180,7 @@ export default function Lab() {
                 size="icon"
                 onClick={() => setDockExpanded(!expanded)}
                 aria-label={expanded ? t.lab.collapsePanel : t.lab.expandPanel}
-                className="ml-auto size-7 shrink-0 rounded-interior text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                className="ml-auto size-7 shrink-0 rounded-interior text-muted-foreground hover:bg-white/5 hover:text-foreground compact:size-6"
               >
                 {expanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
               </Button>
@@ -7248,7 +7252,7 @@ export default function Lab() {
             {/* The account menu hangs from this whole pill, right edges aligned. */}
             <AccountButton onOpenLibrary={openForAccount}>
               {(account) => (
-            <div className={cn(PILL, "pointer-events-auto flex h-10 shrink-0 items-center gap-2 px-1.5")}>
+            <div className={cn(PILL, "pointer-events-auto flex h-10 shrink-0 items-center gap-2 px-1.5 compact:gap-1 compact:px-1")}>
               {account}
               <Button
                 size="sm"
@@ -7258,9 +7262,13 @@ export default function Lab() {
                 // beside it — that is the only flex-1 in a cluster fixed at
                 // 16rem — so the pair still measures exactly what it did, with
                 // more of it spent on the control that has words to show.
-                className="h-7 shrink-0 rounded-interior bg-blue-400 px-2 text-xs font-medium text-white hover:bg-blue-400/90"
+                // The narrowest phones keep the button and lose the word: the
+                // brand row beside it cannot give up any more.
+                aria-label={t.lab.share}
+                className="h-7 shrink-0 rounded-interior bg-blue-400 px-2 text-xs font-medium text-white hover:bg-blue-400/90 max-[24rem]:w-7 max-[24rem]:px-0"
               >
-                {t.lab.share}
+                <Share2 className="hidden size-3.5 max-[24rem]:block" />
+                <span className="max-[24rem]:hidden">{t.lab.share}</span>
               </Button>
             </div>
               )}
