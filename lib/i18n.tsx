@@ -121,6 +121,9 @@ const en = {
   share: {
     label: "Share",
     fork: "Open in editor",
+    forkSignIn: "Sign in to open in the editor",
+    forkNotice:
+      "The models, motions and music in this scene belong to their creators. Use them for your own work only — don't redistribute, resell or use them commercially without the creators' permission.",
     backToEditor: "Back to editor",
     editScene: "Edit",
     /** A fork opens under its own name, so the original's is never quietly
@@ -1220,6 +1223,8 @@ const zh: Dictionary = {
   share: {
     label: "分享",
     fork: "在编辑器中打开",
+    forkSignIn: "登录后在编辑器中打开",
+    forkNotice: "场景中的模型、动作和音乐归其作者所有。仅限个人创作使用，未经作者许可，禁止转载、倒卖或商用。",
     backToEditor: "返回编辑器",
     editScene: "编辑",
     forkedName: (name: string) => `${name} - 复刻`,

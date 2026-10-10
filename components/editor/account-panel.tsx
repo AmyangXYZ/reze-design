@@ -307,6 +307,35 @@ function Portfolio({
  * it reappears next session, and the same field stays in the account menu until
  * the handle is claimed.
  */
+/** The sign-in dialog on its own, for a door that needs an account first. */
+export function SignInDialog({
+  open,
+  onOpenChange,
+  title,
+  blurb,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  title: string
+  blurb: string
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        onCloseAutoFocus={(e) => e.preventDefault()}
+        className="w-[21rem] gap-0 border-line-strong bg-surface-raised p-6 sm:max-w-[21rem]"
+      >
+        <div className="mb-5 text-center">
+          <WandSparkles className="mx-auto size-6 text-blue-400" />
+          <DialogTitle className="mt-3 text-base font-semibold">{title}</DialogTitle>
+          <DialogDescription className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{blurb}</DialogDescription>
+        </div>
+        <SignInForm />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function HandleDialog() {
   const t = useT()
   const { data: session } = useSession()

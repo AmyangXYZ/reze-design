@@ -30,6 +30,8 @@ import { setForkTarget } from "@/lib/fork"
 import { LoadingPill, useLoadingLabel } from "@/components/editor/loading-pill"
 import { resolveSceneRefs, resolveSceneRefsSync } from "@/lib/resolve-refs"
 import { useSession } from "@/lib/auth-client"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { SignInDialog } from "@/components/editor/account-panel"
 import { useI18n, useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -112,6 +114,18 @@ export function SceneViewer(props: ViewerProps) {
   // than sending it back to the network for a zip this tab already has.
   const bundleFilesRef = useRef<() => BundleFile[]>(() => [])
   const [forking, setForking] = useState(false)
+  // Opening someone's scene in the editor is where its files become yours to
+  // export, so it asks for an account and says whose files they are.
+  const { data: session } = useSession()
+  const [signInOpen, setSignInOpen] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  // Signing in by email code happens in place, and carries on to the editor.
+  const forkAfterSignIn = useRef(false)
+  const requestFork = () => {
+    if (session) return setConfirmOpen(true)
+    forkAfterSignIn.current = true
+    setSignInOpen(true)
+  }
   const [logoMenu, setLogoMenu] = useState(false)
   const [galleryOpen, setGalleryOpen] = useState(false)
 
@@ -144,6 +158,13 @@ export function SceneViewer(props: ViewerProps) {
       setForking(false)
     }
   }
+
+  useEffect(() => {
+    if (!session || !forkAfterSignIn.current) return
+    forkAfterSignIn.current = false
+    void openInEditor()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session])
 
   return (
     <main className="fixed inset-0 overflow-hidden bg-background select-none">
@@ -301,7 +322,7 @@ export function SceneViewer(props: ViewerProps) {
           ) : (
             <Button
               size="xs"
-              onClick={() => void openInEditor()}
+              onClick={requestFork}
               disabled={forking}
               className="bg-blue-400 font-medium text-white hover:bg-blue-400/90"
             >
@@ -315,6 +336,26 @@ export function SceneViewer(props: ViewerProps) {
       {/* Mobile keeps TikTok's standalone rail, thumb-reachable and clear of the
           transport; desktop shows it inside the card instead. */}
       <LikeButton like={like} className="absolute right-5 bottom-16 flex-col md:hidden" />
+
+      <SignInDialog
+        open={signInOpen && !session}
+        onOpenChange={(o) => {
+          setSignInOpen(o)
+          if (!o) forkAfterSignIn.current = false
+        }}
+        title={t.share.forkSignIn}
+        blurb={t.share.forkNotice}
+      />
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={t.share.fork}
+        body={t.share.forkNotice}
+        confirmLabel={t.share.fork}
+        cancelLabel={t.library.cancel}
+        tone="accent"
+        onConfirm={() => void openInEditor()}
+      />
     </main>
   )
 }
