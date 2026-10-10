@@ -159,7 +159,7 @@ export function QuickPick({
                 {t.rail.local}
                 <ShelfCount n={local.length} />
               </div>
-              <ScrollArea bars className="max-h-[3.5rem]">{local.map(row)}</ScrollArea>
+              <ScrollArea bars className="max-h-[5.25rem]">{local.map(row)}</ScrollArea>
             </div>
           )}
           {published.length ? (
