@@ -10,6 +10,7 @@
 // document's own `settings.background.effect` keeps its name — that shape is frozen
 // once scenes are in the wild, and it is still literally where the effect is layered.
 
+import { Stamp } from "@/components/stamp"
 import { useCallback, useMemo, useState } from "react"
 import { Check, Plus, Sparkles, SquarePen, X } from "lucide-react"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -35,7 +36,6 @@ import {
   AuthorAvatar,
   VisibilityMenu,
   useMakePublic,
-  publishedOn,
   AuthorLink,
   itemState,
 } from "@/components/editor/library-shell"
@@ -136,7 +136,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   const numbers = useCallback(
     (id: string) => {
       const s = statFor(id)
-      return { likes: s.likeCount, uses: s.scenes, liked: s.liked }
+      return { likes: s.likeCount, uses: s.scenes, liked: s.liked, trend: s.trend }
     },
     [statFor],
   )
@@ -382,7 +382,11 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                     <AuthorAvatar name={builtinAuthor(selected.id, selected.author)} className="size-3.5" />
                     <AuthorLink name={builtinAuthor(selected.id, selected.author)} draft={itemState(selected) === "draft"} className="truncate select-text" />
                     {/* When it went public, the same fact the gallery's panel shows. */}
-                    {publishedOn(selected.createdAt) && <span className="shrink-0">· {publishedOn(selected.createdAt)}</span>}
+                    {selected.createdAt && (
+                    <span className="shrink-0">
+                      · <Stamp iso={selected.createdAt} show="words" locale={locale} />
+                    </span>
+                  )}
                   </div>
                   <p className="mt-2 text-xs leading-relaxed text-muted-foreground select-text">{builtinDescription("effect", selected, locale)}</p>
                   <LibraryTags tags={selected.tags} />

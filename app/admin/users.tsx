@@ -3,6 +3,7 @@
 // People: who has an account, how they sign in, what they publish and what the
 // AI costs for them — and the account panel, where an admin acts on one.
 
+import { Stamp } from "@/components/stamp"
 import { useEffect, useMemo, useState } from "react"
 import { ExternalLink, Search, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -15,9 +16,6 @@ import { UsageView, tokens } from "./usage"
 
 type Filter = "all" | "premium" | "suspended"
 
-export const date = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-CA", { timeZone: "America/New_York" }) : "—")
-export const dateTime = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleString("en-CA", { timeZone: "America/New_York", dateStyle: "short", timeStyle: "short", hour12: false }) : "—"
 
 export function Avatar({ user, size = 7 }: { user: Pick<UserRow, "image" | "name">; size?: 7 | 10 }) {
   const box = size === 10 ? "size-10" : "size-7"
@@ -171,7 +169,7 @@ export function UsersView({ users, selfId }: { users: UserRow[]; selfId: string 
                     )}
                   </td>
                   <td className="px-3.5 py-2.5 font-mono">{u.aiTokens30 ? tokens(u.aiTokens30) : <span className="text-muted-foreground">—</span>}</td>
-                  <td className="px-3.5 py-2.5 font-mono text-muted-foreground">{date(u.createdAt)}</td>
+                  <td className="px-3.5 py-2.5 font-mono text-muted-foreground"><Stamp iso={u.createdAt} /></td>
                   {/* The row opens the panel; these act without opening it. */}
                   <td className="px-3.5 py-2.5" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end gap-0.5">
@@ -231,9 +229,9 @@ function AccountPanel({ user: u, isSelf, onClose }: { user: UserRow; isSelf: boo
       <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-4 text-[13px]">
         <section className="grid grid-cols-2 gap-x-4 gap-y-2">
           <Fact label="Plan" value={u.plan === "premium" ? "Premium" : "Free"} />
-          <Fact label="Status" value={u.banned ? `Suspended ${date(u.bannedAt)}${u.banReason ? ` — ${u.banReason}` : ""}` : "Active"} />
+          <Fact label="Status" value={u.banned ? <>Suspended <Stamp iso={u.bannedAt} />{u.banReason ? ` — ${u.banReason}` : ""}</> : "Active"} />
           <Fact label="Signs in with" value={u.providers.join(", ") || "—"} />
-          <Fact label="Joined" value={dateTime(u.createdAt)} />
+          <Fact label="Joined" value={<Stamp iso={u.createdAt} />} />
           <Fact label="Account id" value={u.id} mono />
         </section>
 
@@ -271,7 +269,7 @@ function AccountPanel({ user: u, isSelf, onClose }: { user: UserRow; isSelf: boo
                   <div className="min-w-0 flex-1">
                     <div className="truncate">{i.name}</div>
                     <div className="text-muted-foreground">
-                      <span className="capitalize">{i.kind}</span> · {i.likeCount} likes · {i.visibility} · {date(i.createdAt)}
+                      <span className="capitalize">{i.kind}</span> · {i.likeCount} likes · {i.visibility} · <Stamp iso={i.createdAt} />
                     </div>
                   </div>
                   {i.kind === "scene" && (
@@ -296,11 +294,11 @@ function Heading({ children }: { children: React.ReactNode }) {
   return <h3 className="text-xs font-semibold tracking-[0.06em] text-muted-foreground uppercase">{children}</h3>
 }
 
-function Fact({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function Fact({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
   return (
     <div className="min-w-0">
       <div className="text-muted-foreground">{label}</div>
-      <div className={cn("truncate", mono && "font-mono text-xs")} title={value}>
+      <div className={cn("truncate", mono && "font-mono text-xs")} title={typeof value === "string" ? value : undefined}>
         {value}
       </div>
     </div>

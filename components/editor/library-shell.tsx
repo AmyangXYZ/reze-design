@@ -13,6 +13,8 @@
 // Provenance is still reachable — the rail filters by maker — it just stopped
 // being the structure.
 
+import { trendScore } from "@/lib/trend"
+import { Stamp } from "@/components/stamp"
 import { Button } from "@/components/ui/button"
 import { STAGE_BOUND_TAG } from "@/lib/effects"
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react"
@@ -72,67 +74,23 @@ export type BrowseFacet = LibraryFacet
 
 // ── Ranking ──────────────────────────────────────────────────────────────────
 //
-// Reddit's hot: log10 of the score plus a linear term in age. The FORMULA is
-// Reddit's; the CONSTANT is not, and that is the whole design decision here.
-//
-// Reddit divides seconds by 45000, so one day of age is worth roughly two orders
-// of magnitude of votes. That is right for a front page, where the job is to
-// clear yesterday out, and wrong for a library, where the job is to hand you the
-// thirty effects that work. Applied literally it would bury every built-in under
-// anything published this week.
-//
-// HOT_AGE_DAYS is therefore how many days of age cost one order of magnitude of
-// likes. NEW_BOOST is the extra weight a fresh publish carries, decaying linearly
-// to nothing across NEW_WINDOW_DAYS — a real window at the top for new work,
-// bounded so it never permanently outranks what people actually use.
-const HOT_AGE_DAYS = 180
-const NEW_WINDOW_DAYS = 21
-const NEW_BOOST = 0.75
-/** Built-ins carry no date. They are the oldest rows in any library, and this is
- *  far enough past NEW_WINDOW_DAYS that the boost is zero either way. */
-const UNDATED_AGE_DAYS = 400
-
-const DAY = 86_400_000
-
-function ageDays(item: BrowseItem): number {
-  if (!item.createdAt) return UNDATED_AGE_DAYS
-  const t = Date.parse(item.createdAt)
-  return Number.isNaN(t) ? UNDATED_AGE_DAYS : Math.max(0, (Date.now() - t) / DAY)
+// Trending is lib/trend.ts's score, computed with the stats: the publish, the
+// likes, and other people's picks, each fading by half every two weeks. An
+// item the stats do not know yet (a draft, or before they load) scores on its
+// own date alone, which is where it would start anyway.
+function hotScore(item: BrowseItem, trend: number): number {
+  return Number.isNaN(trend) ? trendScore([publishedAt(item)]) : trend
 }
 
-function hotScore(item: BrowseItem, likes: number): number {
-  const age = ageDays(item)
-  // `likes + 1`, not a floor of 1: log10 of either 0 or 1 like is zero, so the
-  // FIRST like — the one that most changes what a piece deserves — counted for
-  // nothing, and at counts of nought to a handful that left `hot` a function of
-  // age alone. Which is to say: the same list as `new`. One like is now worth
-  // 0.30, some 54 days of age.
-  return (
-    Math.log10(likes + 1) -
-    age / HOT_AGE_DAYS +
-    NEW_BOOST * Math.max(0, 1 - age / NEW_WINDOW_DAYS)
-  )
+/** When it was published. An undated draft is brand new; an undated built-in
+ *  is the oldest thing there is. */
+function publishedAt(item: BrowseItem): number {
+  const t = item.createdAt ? Date.parse(item.createdAt) : NaN
+  return Number.isNaN(t) ? (item.owner === "local" ? Date.now() : 0) : t
 }
 
 /** A draft is unpublished, so it has no visibility of its own — it is the state
  *  BEFORE one. Ordered as the least public thing there is. */
-// Two formats, because a column is SCANNED and a panel is READ. In a column the
-// dates stack, so they are ISO and tabular and line up digit under digit; in the
-// panel there is one of them and it can be a date in words.
-export function publishedShort(iso?: string): string {
-  if (!iso) return "—"
-  const d = new Date(iso)
-  return Number.isNaN(d.valueOf()) ? "—" : d.toISOString().slice(0, 10)
-}
-
-export function publishedOn(iso?: string): string | null {
-  if (!iso) return null
-  const d = new Date(iso)
-  return Number.isNaN(d.valueOf())
-    ? null
-    : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
-}
-
 export type ItemState = "draft" | "private" | "public"
 export const itemState = (i: BrowseItem): ItemState =>
   i.owner === "local" ? "draft" : (i.visibility ?? "public")
@@ -147,7 +105,7 @@ const TEXT_SORTS = new Set<SortKey>(["name", "maker"])
 
 /** Likes and usage come from the stats snapshot, and so does whether YOU liked
  *  it — that is per-viewer, so it can never live on the item. */
-export type ItemNumbers = { likes: number; uses: number; liked: boolean }
+export type ItemNumbers = { likes: number; uses: number; liked: boolean; trend: number }
 
 /** Count a facet's values across the whole library, commonest first. */
 function tally<T>(items: T[], pick: (i: T) => string[]): [string, number][] {
@@ -316,8 +274,8 @@ export function useLibraryBrowse<T extends BrowseItem>(
     )
     const value = (i: T): string | number => {
       switch (sort) {
-        case "hot": return hotScore(i, numbers(i.id).likes)
-        case "new": return -ageDays(i)
+        case "hot": return hotScore(i, numbers(i.id).trend)
+        case "new": return publishedAt(i)
         case "name": return displayName?.(i) ?? i.name
         case "maker": return i.author
         case "state": return STATE_RANK[itemState(i)]
@@ -603,9 +561,9 @@ export function LibraryBack({ onClick }: { onClick: () => void }) {
 // Three across on a phone: two filled the screen with a handful of cards.
 const GRID =
   "grid content-start gap-2.5 px-3.5 pt-2 pb-6 [grid-template-columns:repeat(auto-fill,minmax(118px,1fr))] compact:gap-2 compact:px-3 compact:[grid-template-columns:repeat(auto-fill,minmax(96px,1fr))]"
-const COLS = "grid items-center gap-2 [grid-template-columns:30px_minmax(0,1.4fr)_minmax(0,1.3fr)_64px_78px_46px_50px]"
+const COLS = "grid items-center gap-2 [grid-template-columns:30px_minmax(0,1.4fr)_minmax(0,1.3fr)_64px_108px_46px_50px]"
 /** The same columns for a kind with no second number. */
-const COLS_NO_USED = "grid items-center gap-2 [grid-template-columns:30px_minmax(0,1.4fr)_minmax(0,1.3fr)_64px_78px_46px]"
+const COLS_NO_USED = "grid items-center gap-2 [grid-template-columns:30px_minmax(0,1.4fr)_minmax(0,1.3fr)_64px_108px_46px]"
 
 /** A sortable column heading. One click sorts by it, a second reverses. */
 function SortHeader({
@@ -854,7 +812,7 @@ export function LibraryResults<T extends BrowseItem>({
                   <Icon className="size-2.5 shrink-0" />
                   {t.rail.states[st]}
                 </span>
-                <span className={cn("font-mono text-2xs tabular-nums transition-colors", cell)}>{publishedShort(item.createdAt)}</span>
+                <Stamp iso={item.createdAt} className={cn("font-mono text-2xs tabular-nums transition-colors", cell)} />
                 <span className={cn("text-right font-mono text-2xs tabular-nums transition-colors", cell)}>{n.likes}</span>
                 {usedLabel && (
                   <span className={cn("text-right font-mono text-2xs tabular-nums transition-colors", cell)}>{n.uses}</span>

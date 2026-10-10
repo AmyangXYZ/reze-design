@@ -11,11 +11,13 @@
 // records what it uses by id. A draft simply has no row on the server yet, which
 // is why its heart is inert rather than a special case here.
 
+import { trendScore } from "@/lib/trend"
 import { useCallback, useEffect, useState } from "react"
 
-export type ItemStats = { likeCount: number; liked: boolean; scenes: number; exports: number }
+/** `trend` is lib/trend.ts's score; NaN until the stats have loaded. */
+export type ItemStats = { likeCount: number; liked: boolean; scenes: number; exports: number; trend: number }
 
-const EMPTY: ItemStats = { likeCount: 0, liked: false, scenes: 0, exports: 0 }
+const EMPTY: ItemStats = { likeCount: 0, liked: false, scenes: 0, exports: 0, trend: NaN }
 
 type Snapshot = { stats: Record<string, ItemStats>; signedIn: boolean }
 let cache: Snapshot | null = null
@@ -50,7 +52,7 @@ export function prefetchLibraryStats(): void {
  *  without an entry there is nothing to like, and the count reads as dead. */
 export function noteItemPublished(id: string): void {
   const snap = (cache ??= { stats: {}, signedIn: true })
-  snap.stats[id] = { likeCount: 0, liked: false, scenes: 0, exports: 0 }
+  snap.stats[id] = { likeCount: 0, liked: false, scenes: 0, exports: 0, trend: trendScore([Date.now()]) }
   for (const l of listeners) l()
 }
 

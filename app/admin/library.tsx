@@ -3,6 +3,7 @@
 // What people published: scenes as a wall of posters, effects, grades and
 // shader graphs as tables. Each kind loads when its view opens.
 
+import { Stamp } from "@/components/stamp"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Check, Copy, ExternalLink, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -11,7 +12,6 @@ import { cn } from "@/lib/utils"
 import type { KindKey } from "./kinds"
 import type { ItemRow } from "./types"
 import { DeleteItemAction } from "./user-actions"
-import { date } from "./users"
 
 function useItems(kind: KindKey) {
   const [rows, setRows] = useState<ItemRow[] | null>(null)
@@ -120,7 +120,7 @@ export function ScenesView() {
                   <div className="truncate text-muted-foreground">
                     @{s.author} · {s.likeCount} likes · {s.visibility}
                   </div>
-                  <div className="font-mono text-muted-foreground">{date(s.createdAt)}</div>
+                  <Stamp iso={s.createdAt} className="block font-mono text-muted-foreground" />
                 </div>
                 <div className="flex shrink-0 gap-0.5">
                   <Button size="icon-xs" variant="ghost" asChild tooltip="Open the public page" className="text-muted-foreground hover:bg-accent hover:text-foreground">
@@ -178,7 +178,7 @@ export function ItemsView({ kind, noun }: { kind: Exclude<KindKey, "scene">; nou
                 <td className="px-3.5 py-2.5 font-mono text-muted-foreground">{r.usedInScenes}</td>
                 <td className="px-3.5 py-2.5 font-mono text-muted-foreground">{r.exportedIn}</td>
                 <td className="px-3.5 py-2.5 text-muted-foreground">{r.visibility}</td>
-                <td className="px-3.5 py-2.5 font-mono text-muted-foreground">{date(r.createdAt)}</td>
+                <td className="px-3.5 py-2.5 font-mono text-muted-foreground"><Stamp iso={r.createdAt} /></td>
                 <td className="px-3.5 py-2.5 text-right">
                   <DeleteItemAction id={r.id} name={r.name} variant="icon" onDone={() => void reload()} />
                 </td>

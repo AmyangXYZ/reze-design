@@ -6,6 +6,7 @@
 // (?view=users), so a reload or a shared link opens where you were. Every view
 // but the overview and accounts loads its own data when opened.
 
+import { Stamp } from "@/components/stamp"
 import { useCallback, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { BarChart3, Clapperboard, HardDrive, LayoutDashboard, Palette, Sparkles, Users, Workflow } from "lucide-react"
@@ -16,7 +17,7 @@ import type { KindKey } from "./kinds"
 import { ItemsView, ScenesView } from "./library"
 import type { UserRow } from "./types"
 import { UsageView } from "./usage"
-import { Avatar, UsersView, date } from "./users"
+import { Avatar, UsersView } from "./users"
 
 const VIEWS = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -167,7 +168,7 @@ function Overview({ users, counts, stats, go }: { users: UserRow[]; counts: Reco
                   <div className="truncate">{u.name}</div>
                   <div className="truncate font-mono text-muted-foreground">{u.username ? `@${u.username}` : u.email}</div>
                 </div>
-                <span className="font-mono text-muted-foreground">{date(u.createdAt)}</span>
+                <Stamp iso={u.createdAt} className="font-mono text-muted-foreground" />
               </li>
             ))}
           </ul>

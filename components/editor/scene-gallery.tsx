@@ -7,6 +7,7 @@
 // Opening one IS a navigation, though — a scene is a whole document, and the
 // address bar should say which one you are looking at.
 
+import { Stamp } from "@/components/stamp"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -23,7 +24,6 @@ import {
   useLibraryDetail,
   type BrowseFacet,
   type CardMeta,
-  publishedOn,
   AuthorAvatar,
   AuthorLink,
 } from "@/components/editor/library-shell"
@@ -474,6 +474,7 @@ function GalleryContent({
         likes: known(id) ? statFor(id).likeCount : (row?.likeCount ?? 0),
         uses: 0,
         liked: statFor(id).liked,
+        trend: statFor(id).trend,
       }
     },
     [byId, known, statFor],
@@ -702,7 +703,9 @@ function GalleryContent({
                     className="size-4"
                   />
                   <AuthorLink name={selected.author} className="truncate select-text" />
-                  <span className="shrink-0">· {publishedOn(selected.createdAt)}</span>
+                  <span className="shrink-0">
+                    · <Stamp iso={selected.createdAt} show="words" />
+                  </span>
                 </div>
                 {selected.description && (
                   <p className="mt-2 text-xs leading-relaxed text-muted-foreground select-text">{selected.description}</p>

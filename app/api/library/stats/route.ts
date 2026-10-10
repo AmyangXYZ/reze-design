@@ -19,8 +19,9 @@ import { alias } from "drizzle-orm/pg-core"
 import { auth } from "@/lib/auth"
 import { hasDatabase, db, schema } from "@/lib/db"
 import { LIBRARY_TAG } from "@/lib/public-pages"
+import { isDefaultLook, trendScore } from "@/lib/trend"
 
-export type ItemStats = { likeCount: number; liked: boolean; scenes: number; exports: number }
+export type ItemStats = { likeCount: number; liked: boolean; scenes: number; exports: number; trend: number }
 
 export async function GET(request: Request) {
   // No database configured: an honest empty answer, not a 500 the client has to
@@ -49,10 +50,14 @@ const sharedStats = unstable_cache(
   async () => {
     // The scene side of scene_uses, so one table can be joined to itself.
     const scenes = alias(schema.libraryItems, "scenes")
-    const [items, usage] = await Promise.all([
+    const [items, usage, likes, picks] = await Promise.all([
       db
         .select({
           id: schema.libraryItems.id,
+          kind: schema.libraryItems.kind,
+          name: schema.libraryItems.name,
+          tags: schema.libraryItems.tags,
+          createdAt: schema.libraryItems.createdAt,
           likeCount: schema.libraryItems.likeCount,
           // Counted, not joined: export_stats has no scene id to group by — see the
           // table. The counter on the item IS the aggregate, which is also what
@@ -76,10 +81,41 @@ const sharedStats = unstable_cache(
         // keeps "used in N scenes" true after a scene is taken down.
         .where(and(eq(scenes.visibility, "public"), isNull(scenes.deletedAt)))
         .groupBy(schema.sceneUses.itemId),
+      // The events lib/trend.ts sums: every like, and every pick — someone
+      // else publishing a scene that wears the item, once per person, at their
+      // latest such scene. Your own scenes wearing your own look are no pick.
+      db.select({ itemId: schema.likes.itemId, at: schema.likes.createdAt }).from(schema.likes),
+      db
+        .select({ itemId: schema.sceneUses.itemId, at: sql<string>`max(${scenes.createdAt})` })
+        .from(schema.sceneUses)
+        .innerJoin(scenes, eq(scenes.id, schema.sceneUses.sceneId))
+        .innerJoin(schema.libraryItems, eq(schema.libraryItems.id, schema.sceneUses.itemId))
+        .where(
+          and(
+            eq(scenes.visibility, "public"),
+            isNull(scenes.deletedAt),
+            sql`${scenes.ownerId} is distinct from ${schema.libraryItems.ownerId}`,
+          ),
+        )
+        .groupBy(schema.sceneUses.itemId, scenes.ownerId),
     ])
     const scenesUsing = new Map(usage.map((u) => [u.itemId, u.n]))
+    const events = new Map<string, number[]>()
+    const push = (id: string, at: Date | string) => events.set(id, [...(events.get(id) ?? []), new Date(at).getTime()])
+    for (const l of likes) push(l.itemId, l.at)
+    const byId = new Map(items.map((i) => [i.id, i]))
+    for (const p of picks) {
+      const i = byId.get(p.itemId)
+      if (i && !isDefaultLook(i.kind, i.name, i.tags)) push(p.itemId, p.at)
+    }
     const out: Record<string, Omit<ItemStats, "liked">> = {}
-    for (const i of items) out[i.id] = { likeCount: i.likeCount, scenes: scenesUsing.get(i.id) ?? 0, exports: i.exportCount }
+    for (const i of items)
+      out[i.id] = {
+        likeCount: i.likeCount,
+        scenes: scenesUsing.get(i.id) ?? 0,
+        exports: i.exportCount,
+        trend: trendScore([i.createdAt.getTime(), ...(events.get(i.id) ?? [])]),
+      }
     return out
   },
   ["library-stats"],

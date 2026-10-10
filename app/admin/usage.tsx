@@ -8,6 +8,7 @@
 // this page's near-white — worst colour-blind separation 9.1),
 // everyone else folds into one grey "Other". Never a seventh hue.
 
+import { Stamp } from "@/components/stamp"
 import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -254,7 +255,7 @@ function UsageTable({ users, colorOf }: { users: UsageUser[]; colorOf: Map<strin
               <td className="px-3.5 py-2.5 font-mono text-muted-foreground">{tokens(u.output)}</td>
               <td className="px-3.5 py-2.5 font-mono text-muted-foreground">{u.turns}</td>
               <td className="px-3.5 py-2.5 text-muted-foreground">{u.models.join(", ")}</td>
-              <td className="px-3.5 py-2.5 font-mono text-muted-foreground">{new Date(u.last).toLocaleDateString("en-CA")}</td>
+              <td className="px-3.5 py-2.5 font-mono text-muted-foreground"><Stamp iso={u.last} /></td>
             </tr>
           ))}
         </tbody>

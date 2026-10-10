@@ -2,6 +2,7 @@
 
 // Shader-graph library — the shared library shell (facet rail · thumbnail grid · slim inspector).
 
+import { Stamp } from "@/components/stamp"
 import { useCallback, useMemo, useState } from "react"
 import { DEFAULT_GRAPH, type ShaderGraph } from "reze-engine"
 import { Check, Plus, SquarePen, Workflow, X } from "lucide-react"
@@ -24,7 +25,6 @@ import {
   AuthorAvatar,
   VisibilityMenu,
   useMakePublic,
-  publishedOn,
   AuthorLink,
   itemState,
 } from "@/components/editor/library-shell"
@@ -142,7 +142,7 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
   const numbers = useCallback(
     (id: string) => {
       const st = statFor(id)
-      return { likes: st.likeCount, uses: st.scenes, liked: st.liked }
+      return { likes: st.likeCount, uses: st.scenes, liked: st.liked, trend: st.trend }
     },
     [statFor],
   )
@@ -406,7 +406,11 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
                   <AuthorAvatar name={builtinAuthor(selected.id, selected.author)} className="size-3.5" />
                   <AuthorLink name={builtinAuthor(selected.id, selected.author)} draft={itemState(selected) === "draft"} className="truncate select-text" />
                   {/* When it went public, the same fact the gallery's panel shows. */}
-                  {publishedOn(selected.createdAt) && <span className="shrink-0">· {publishedOn(selected.createdAt)}</span>}
+                  {selected.createdAt && (
+                    <span className="shrink-0">
+                      · <Stamp iso={selected.createdAt} show="words" locale={locale} />
+                    </span>
+                  )}
                 </div>
                 {selected.description && (
                   <p className="mt-2 text-xs leading-relaxed text-muted-foreground select-text">{builtinDescription("graph", selected, locale)}</p>

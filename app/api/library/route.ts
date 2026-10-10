@@ -6,11 +6,12 @@
 
 import { NextResponse } from "next/server"
 import { unstable_cache } from "next/cache"
-import { and, desc, eq, inArray, isNull, lt, ne, sql } from "drizzle-orm"
+import { and, desc, eq, inArray, isNull, lt, ne, sql, type SQL } from "drizzle-orm"
 import { auth } from "@/lib/auth"
 import { hasDatabase, db, schema } from "@/lib/db"
 import { user } from "@/lib/db/auth-schema"
 import { nameClash } from "@/lib/db/names"
+import { TREND_EPOCH, TREND_HALF_LIFE } from "@/lib/trend"
 import { LIBRARY_TAG, refreshLibrary, refreshMakerPages } from "@/lib/public-pages"
 import { normalizeName, withGraphName, type LibraryKind } from "@/lib/library"
 import type { Visibility } from "@/lib/db/schema"
@@ -211,22 +212,15 @@ async function galleryPage(
   limit: number,
   shelf: { facet: "yours" | "liked"; viewerId: string } | null,
 ) {
-  // Reddit's ordering: a young post with a few likes outranks an old one with
-  // the same, and the gap closes as both age.
-  //
-  // TUNED FOR THIS SITE'S VOLUME, which is the whole reason the divisor is not
-  // Reddit's 45000. At that figure a day of age is worth 1.92 and `log` is
-  // base 10, so a scene needed ~83 likes to outrank one published a day later
-  // — true to the original, and at counts of nought to a handful it made every
-  // like a rounding error and collapsed `hot` into `new`. The two orderings
-  // were the same list, which is what "sorting does not work" looked like.
-  // At 450000 a day is worth 0.192 and a single like clears it.
-  //
-  // `+ 1` inside the log, not outside a floor of 1: `greatest(likes, 1) + 1`
-  // scores nought likes and one like identically, so the first like — the one
-  // that most changes what a scene deserves — counted for nothing.
-  const hot = sql<number>`log(${schema.libraryItems.likeCount} + 1)
-    + extract(epoch from ${schema.libraryItems.createdAt}) / 450000`
+  // Trending is lib/trend.ts's score — the publish and every like, each halving
+  // every TREND_HALF_LIFE — summed in SQL so the gallery pages by it. On the
+  // fixed epoch the value is a constant between events, which is what lets it
+  // be the cursor and sit in the cache.
+  const units = (at: SQL) => sql`(extract(epoch from ${at}) * 1000 - ${TREND_EPOCH}) / ${TREND_HALF_LIFE}`
+  const hot = sql<number>`ln(
+    power(2::float8, ${units(sql`${schema.libraryItems.createdAt}`)})
+    + coalesce((select sum(power(2::float8, ${units(sql`l.created_at`)})) from likes l where l.item_id = ${schema.libraryItems.id}), 0)
+  ) / ln(2)`
   const order = sort === "new" ? desc(schema.libraryItems.createdAt) : sort === "top" ? desc(schema.libraryItems.likeCount) : desc(hot)
 
   const selection = db

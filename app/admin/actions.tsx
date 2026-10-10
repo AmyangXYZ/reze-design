@@ -4,6 +4,7 @@
 // mutations need the client, and each one refreshes the server component
 // afterwards so the table shows what the database says rather than a local guess.
 
+import { Stamp } from "@/components/stamp"
 import { useEffect, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Ban, PenLine, RotateCcw, Sparkle, Trash2 } from "lucide-react"
@@ -225,18 +226,7 @@ export function AssetList() {
               <td className="max-w-md truncate py-2 pr-3 font-mono">{o.key}</td>
               <td className="py-2 pr-3 font-mono text-muted-foreground">{size(o.size)}</td>
               <td className="py-2 pr-3 font-mono text-muted-foreground">
-                {o.modified
-                  ? new Date(o.modified).toLocaleString("en-CA", {
-                      timeZone: "America/New_York",
-                      year: "numeric",
-                      month: "2-digit",
-                      day: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      second: "2-digit",
-                      hour12: false,
-                    })
-                  : "—"}
+                <Stamp iso={o.modified} />
               </td>
               <td className="py-2">
                 <div className="flex">
