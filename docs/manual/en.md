@@ -28,9 +28,10 @@ reference for grades, WGSL scene effects and material node graphs.
   - [1.10 Physics](#110-physics)
   - [1.11 Timeline](#111-timeline)
   - [1.12 Lyrics, lip sync and MIDI](#112-lyrics-lip-sync-and-midi)
-  - [1.13 Export](#113-export)
-  - [1.14 Publishing and the library](#114-publishing-and-the-library)
-  - [1.15 When something goes wrong](#115-when-something-goes-wrong)
+  - [1.13 The AI art director](#113-the-ai-art-director)
+  - [1.14 Export](#114-export)
+  - [1.15 Publishing and the library](#115-publishing-and-the-library)
+  - [1.16 When something goes wrong](#116-when-something-goes-wrong)
 - [2. Authoring](#2-authoring)
   - [2.1 The rendering model](#21-the-rendering-model)
   - [2.2 Colour grades](#22-colour-grades)
@@ -79,14 +80,42 @@ then the scene rows **Camera**, **Environment**, **Light**, **Effect**, **Post**
 **Physics** and **Objects**. The timeline sits under the viewport. **⌘K** (Ctrl+K)
 opens the command palette, which reaches every action and setting by name.
 
-The logo menu holds **New scene**, **Export scene** (one `.zip` with the scene and
+The pill at the top left carries the logo, the version and a link to GitHub. The
+logo menu holds **New scene**, **Export scene** (one `.zip` with the scene and
 every asset), **Import scene** and **Reset to default scene**.
+
+**⌘Z / ⇧⌘Z** (Ctrl+Z / Ctrl+Shift+Z) undo and redo changes to the scene's
+configuration: settings, camera, effects, lamps, style groups, hidden materials
+and visibility. A slider drag is one step. While the timeline, a shader graph or
+the WGSL editor is open, ⌘Z undoes inside that editor.
+
+Every colour control opens one colour dialog, with two tabs: **Palette**, and
+**Picker** — a saturation and value field, sliders, **Pick from screen**, tints
+and shades, harmonies and recent colours.
+
+### Phones and tablets
+
+On a phone-width screen (under 640 px) the top bar holds the brand pill,
+**Search…** and **Share**. The stack, the side panels and the libraries open
+below it, full width, one at a time: opening one closes the other, and closing
+a panel brings the stack back. Export frames the shot in the space under its
+panel.
+
+On a touch screen, phone or tablet:
+
+- Row actions are always shown, at finger size, and the stack starts folded.
+- Models and stages upload as a `.zip` of their folder.
+- The look editors (shader graph, WGSL, grade) and the timeline are for
+  desktop. On touch you pick, apply, swap and tune looks from the quick lists,
+  the libraries and each effect's dials.
+- Libraries show three cards across; a card opens its details, and **Back**
+  returns to the grid.
 
 ## 1.2 Cast, motion and music
 
 | Slot | Accepts |
 | --- | --- |
-| Model (**Cast → Add model**) | A folder holding a `.pmx`; zips inside it are unpacked. Several models can share a scene |
+| Model (**Cast → Add model**) | A folder holding a `.pmx` (a `.zip` of it on touch screens); zips inside it are unpacked. Several models can share a scene |
 | Motion, Morph (**Clips**, per model) | `.vmd`. Morph replaces the motion's own face track |
 | Camera (**Clips**) | `.vmd` camera motion, scene-wide |
 | Music | mp3, m4a, aac, wav, ogg, opus, flac |
@@ -101,14 +130,24 @@ differ, feet slide; a model closer in build to the one the motion was made for
 fixes it. Hair and skirts are simulated and settle after a seek; exports render a
 warm-up first, so the settling never reaches the file.
 
+Each model's gear holds its **Transform** — scale, position and rotation, with
+**Reset** — and **Shadow**: switch it off to leave that model out of the sun's
+shadow.
+
+**Footsteps** (**Music → +**) plays a step each time a foot lands, traced from
+the posed characters and as loud as the landing. The row's gear picks the sound:
+**Heels**, **Boots**, or **Upload sound…** for the scene's own, one short sound
+of up to 1 MB and 2 seconds. Footsteps are mixed into exported video and play
+in the published scene.
+
 ## 1.3 Stage
 
 **Environment → Stage** loads one stage per scene, as either:
 
-- **PMX folder** — a classic MMD stage. `.x` accessories convert to PMX on
-  upload, ray-mmd `.fx`/`.emd` material files apply their materials, a
-  `<name>.lights.json` beside the PMX brings its lamps, sun, world, grade and
-  effects, and a `<name>.hdr` becomes the World light.
+- **PMX folder** (**PMX zip** on touch screens) — a classic MMD stage. `.x`
+  accessories convert to PMX on upload, ray-mmd `.fx`/`.emd` material files
+  apply their materials, a `<name>.lights.json` beside the PMX brings its lamps,
+  sun, world, grade and effects, and a `<name>.hdr` becomes the World light.
 - **GLB file** — a stage exported from Blender, carrying its geometry, maps,
   lamps, sun and world. It is lit the way Blender lit it: inverse-square lamps,
   the same sun, glossy floors that take the lamps' highlights. Game stages come
@@ -159,7 +198,8 @@ distance, angles and target; **Focus** adds depth of field.
 
 **Follow** binds the camera to a bone (the centre by default), so a motion that
 travels stays in frame; the target then reads as an offset. A loaded camera
-motion drives the view; the transport bar switches between it and free orbit
+motion drives the view, and FOV, distance and **Offset X/Y/Z** shift it while its
+angles stay its own; the transport bar switches between it and free orbit
 without stopping playback. **Eyes on camera** in the transport bar turns the
 cast's eyes toward the lens.
 
@@ -172,35 +212,56 @@ light its ramps are tuned for (ZZZ also brings a sun and bloom). Your background
 outline, grade and ground stay where you put them. The choice is remembered for
 the next model you load.
 
-**Style groups.** A model's materials are sorted on load into groups — hair,
-eyes, skin, cloth — and each group uses one shader graph. The **Materials** panel
-lets you move materials between groups, hide one, create a group, or change its
-graph. A group marked **edited** carries its own copy of the graph; picking a
-look again is how a group takes a retuned built-in.
+**Style groups.** A model's materials are sorted on load into groups, and each
+group uses one shader graph. One classifier sorts every model, whatever slot it
+came in through. A model with a head bone is a figure: its parts come first —
+eyes, face, hair, skin, socks, stockings, metal, cloth — on the current
+rendering style's graphs, then what its materials are made of (glass, wood…).
+Anything else gets the material looks first, then cloth, metal, socks and
+stockings only. Materials nothing claims stay ungrouped, on the neutral default.
+The **Materials** panel lets you move materials between groups, hide one, create
+a group, or change its graph. A group marked **edited** carries its own copy of
+the graph; picking a look again is how a group takes a retuned built-in.
+
+**Quick lists.** A look's value — a grade, a group's graph, **Add effect** —
+opens a quick list: a search field on top, your drafts on this device first,
+then the built-in and published looks. Picking leaves the list open, so you can
+try several in a row. Each library has one door, the white button: **Grade
+library** under Grade, **Effect library** under Effect, **Graph library** in the
+Materials panel.
 
 **Post** holds four tabs:
 
-- **Grade** — *Neutral*, *Bloody*, *Cyberpunk*, *Divine*, *Moonlit*, *Sakura*, or
-  anything from the library, with an intensity remembered per preset.
+- **Grade** — *Neutral*, *Bloody*, *Cyberpunk*, *Divine*, *Moonlit*, *Sakura*,
+  *Vivid*, or anything from the library, with an intensity remembered per
+  preset.
 - **Tone** — Standard, Filmic or AgX, and exposure.
 - **Bloom** — intensity, threshold and radius. Intensity 0 skips the pass.
-- **Outline** — the MMD edge line, on or off.
+- **Outline** — the MMD edge line, on or off, its **Width** (a multiple of each
+  model's own, up to 5) and **Override color**, one colour for every line.
 
 Writing your own grade or graph is [Section 2](#2-authoring).
 
 ## 1.8 Effects
 
-**Effect** applies scene effects: rain, petals, fireworks, ribbons on the hands,
-stage lights, lyrics on screen, film looks and more. Pick one from the shortlist
-or open the **Effect library**. Several run at once, in list order.
+**Effect** applies scene effects: rain, petals, fireworks, a field of flowers,
+stained-glass windows, ribbons on the hands, stage lights, lyrics on screen,
+film looks and more. **Add effect** on top opens the quick list; every effect in
+the scene is ticked there, and clicking a ticked one takes it off. Each applied
+effect is a row, and several run at once, in list order. The **Effect library**
+button closes the section.
 
-Each applied effect has:
+Each row has:
 
-- **Influence** — its strength.
-- **Parameters** (the gear) — the dials the effect declares, with reset.
+- **Edit** (the pen) — opens it in the WGSL editor as your own copy.
+- **Parameters** (the gear) — the dials the effect declares, applied as you
+  move them, with **Reset**.
 - **On models** (the gear, with more than one model) — which characters it
   follows. A hand ribbon aimed at one dancer follows only her.
-- **Edit shader** — opens it in the WGSL editor as your own copy.
+- **Replace** (the arrows) — the same quick list, swapping this effect in place.
+- **Remove** (the ×).
+
+Click an effect's name for its **Influence**, its strength.
 
 When an effect plays is set on the timeline's **Effect** lanes (§1.11).
 
@@ -257,7 +318,48 @@ An `.lrc` beside the music does two things.
 
 A `.mid` gives effects the notes — *Note Fall* draws them as a piano roll.
 
-## 1.13 Export
+## 1.13 The AI art director
+
+The **AI art director** works on the scene with you. Describe a mood, a light or
+a shot, or drop in a reference image; it reads the scene, changes it, and looks
+at the frame before it answers. It sets light, post, environment and camera,
+frames the shot, times effects and lamps to the song, takes cast
+members on and off stage, and assigns and tunes the looks on style groups. It
+also makes new looks — a grade, a tuned shader graph, a WGSL effect — and saves
+each to your drafts, so the scene can still be published. Publishing, sharing
+and exporting stay your clicks.
+
+Open it with the **AI** button on the right edge, or **AI art director** in the
+command palette. The canvas stays in view while it works.
+
+- **Conversations** sit in tabs; **+** starts a new one. A request keeps running
+  in its own tab while you read another, or with the panel closed, one request
+  at a time. Conversations are kept in this browser and survive a reload;
+  closing a tab deletes it.
+- **Reference images** — up to four per request, from the picture button, a
+  paste or a drop. An image sent with no words asks for its look.
+- **Undo** / **Redo** under the last answer take back, or put back, everything
+  that request changed. ⌘Z reaches it too, as one step.
+- **Tokens** — the conversation's total sits above the input; hover it for
+  input, cached and output.
+- **Stop** ends a request; changes made before it are kept.
+
+**Models and keys** (the gear in the panel header) picks the model.
+
+- **Add a service** — Claude, OpenAI, Gemini, DeepSeek, Qwen, 通义千问, Grok,
+  OpenRouter, or **Custom**: any server speaking the OpenAI Chat Completions API
+  at an address you give, such as Ollama or LM Studio on your own machine (let
+  it accept the site: `OLLAMA_ORIGINS` for Ollama, **Enable CORS** in LM
+  Studio). **Get a key** opens the service's key page.
+- **Add model** lists the service's recommended models; typing searches all of
+  them. Each model is checked as it is added. One marked **Text only** works
+  without reference images.
+- Your key stays in this browser, and every request on it goes from your
+  browser straight to the service.
+- **Premium** — on an account with the Premium plan, the top entry runs on
+  Reze Design's own key, with nothing to set up.
+
+## 1.14 Export
 
 **Render** sets the output, aspect (16:9, 9:16, 2.39:1, 1:1, 4:3), quality (up to
 4K) and an optional range. While it is open, the viewport shows the frame that
@@ -269,6 +371,10 @@ will be recorded.
 | Green screen · MP4 | Pure `#00FF00` background, for keying |
 | Alpha · PNG sequence | Transparent frames (Chrome: needs a folder) |
 | Alpha · WebM | Transparent video |
+
+**Bitrate** is the standard rate or double it, shown in Mbps at the chosen size
+(50 or 100 at 4K). **Codec** is H.264 or HEVC for MP4. HEVC is offered where the
+browser can encode it at that size, and encodes at the standard rate.
 
 Export renders frame by frame, offline, at 4× MSAA: a slow machine makes the same
 file, just more slowly, and the music lands on the same frame every time. On
@@ -284,7 +390,7 @@ who made it. The totals are public at
 [reze.design/analysis](https://reze.design/analysis);
 [reze.design/privacy](https://reze.design/privacy) lists exactly what is sent.
 
-## 1.14 Publishing and the library
+## 1.15 Publishing and the library
 
 **Accounts.** Sign in with Google, GitHub, or a six-digit code sent to your email.
 One email is one account however you sign in. On first sign-in you pick your
@@ -310,6 +416,10 @@ republishing (**Update**) keeps its views and likes. Grades, effects and graphs
 the scene uses must be published first, and a public scene cannot use private
 ones.
 
+A public scene can also be **Display only**: others watch, orbit and like it,
+and its page has no **Open in editor**. The gallery and the scene page mark it,
+and your own **Edit** still opens it. Switch it either way when you update.
+
 **The library** holds grades, shader graphs, effects and scenes — built-in,
 community and your own — filtered by All, Local, Community, Built-in, Yours and
 Liked.
@@ -319,7 +429,7 @@ Liked.
 (named `… - fork`), with its credits. Each maker has a page at
 `reze.design/<name>` listing their scenes, effects, graphs and grades.
 
-## 1.15 When something goes wrong
+## 1.16 When something goes wrong
 
 | Symptom | Cause |
 | --- | --- |
@@ -659,8 +769,10 @@ Every built-in is commented with the mistake it avoids.
 | *Stage Lights* | Volumetric beams marched through their own cylinder |
 | *Gojo* · *World Slash* | Hits with `#duration`; a filter over the frame |
 | *Laser Eyes* · *Laser Stare* | `rzSubject().gaze`, lights on the face |
-| *Sticker Outline* · *Holy Light* · *Bloody Ash* | `rzCastDistance` — outlines and rims off the silhouette |
+| *Sticker Outline* · *Holy Light* · *Bloody Ash* · *Red Rain* | `rzCastDistance` — outlines and rims off the silhouette |
 | *Holo Card* | `rzSceneFrame` — a filter carrying every other effect |
+| *Stained Glass* | `rzSceneFrame` with `rzCastDistance` — the cast redrawn as leaded glass |
+| *Mosaic* | `#anchor` points through `rzProject`; a filter over part of the frame |
 | *CRT Glitch* · *Line Art* · *Manga* · *8-Bit* | Rereading the frame; *8-Bit* uses `rzObjectAt` |
 | *Mirror* | `#mirror` |
 | *Waveform* | The audio interface |
@@ -675,7 +787,7 @@ Every built-in is commented with the mistake it avoids.
 
 A shader graph defines how one style group responds to light: Blender-style
 nodes with typed sockets, compiled to WGSL and applied live. From **Materials**,
-click a group's graph, **Browse all…**, then **Edit graph**.
+click a group's graph and choose **Edit graph**, or open the **Graph library**.
 
 ### The built-in sets
 
@@ -835,7 +947,8 @@ Grades, effects and graphs share one lifecycle.
   discard it (the scene returns to what it was).
 - **Publishing** makes a draft a library item under your name, **public** or
   **private**. A private item is visible only to you; a public one cannot be
-  made private again. Names are unique per author per kind.
+  made private again. To publish a private item, right-click its library card,
+  choose **Make public…** and confirm. Names are unique per author per kind.
 - **Publishing over your own item replaces it**, and scenes that reference it by
   id follow: retune your grade or effect and scenes using it retune too.
 - **Graphs are the exception.** A style group keeps its own copy of the graph, so
@@ -858,6 +971,8 @@ Grades, effects and graphs share one lifecycle.
 | Post → Grade | preset, intensity | 0–1, remembered per preset |
 | Post → Tone | Standard / Filmic / AgX, exposure | — |
 | Post → Bloom | intensity, threshold, radius | 0 = off |
+| Post → Outline | on, width, override color | width 0–5 |
+| Cast → gear | scale, position, rotation, shadow | 0.05–10×, ±50, ±180° |
 | Environment → Ground | show, colour, opacity, size, height, fade, grid lines | opacity 0–1 |
 | Environment → Stage | PMX folder / GLB file, scale, position | 0.05–10×, ±50 |
 | Camera → Lens | follow + bone, FOV, distance, azimuth, elevation, target | — |
@@ -871,6 +986,8 @@ Grades, effects and graphs share one lifecycle.
 | Output | Scene · MP4, Green screen · MP4, Alpha · PNG sequence, Alpha · WebM |
 | Aspect | 16:9, 9:16, 2.39:1, 1:1, 4:3 |
 | Quality | 1080p, 1440p, 4K |
+| Bitrate | standard, double |
+| Codec | H.264, HEVC (MP4) |
 | Range | `m:ss` – `m:ss`, blank = whole clip |
 | Audio | Music track, None |
 | Watermark | on / off |

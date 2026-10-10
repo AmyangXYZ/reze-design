@@ -880,7 +880,7 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       icon: Astroid,
       label: l.cmd.agent,
       altLabels: [alt.cmd.agent],
-      keywords: ["ai", "agent", "assistant", "claude", "polish", "light", "look", "助手", "智能"],
+      keywords: ["ai", "agent", "assistant", "art director", "claude", "polish", "light", "look", "助手", "智能", "美术"],
     },
     {
       id: "export",
@@ -10292,7 +10292,7 @@ export default function Lab() {
           )}
         >
           <Astroid className="size-4" />
-          <span>{t.lab.agent.title}</span>
+          <span>{t.lab.agent.short}</span>
         </Button>
       )}
 

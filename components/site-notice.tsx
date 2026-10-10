@@ -7,6 +7,8 @@ import { useNotice } from "@/lib/device"
 import { useT } from "@/lib/i18n"
 
 const HOME = "https://reze.design"
+const REPO = "https://github.com/AmyangXYZ/reze-design"
+const ISSUES = `${REPO}/issues`
 
 export function SiteNotice() {
   const t = useT()
@@ -23,24 +25,45 @@ export function SiteNotice() {
   return (
     <>
       <Dialog open={!dismissed} onOpenChange={(o) => !o && setDismissed(true)}>
-        <DialogContent showCloseButton={false} className="sm:max-w-xs">
-          <DialogHeader>
+        <DialogContent showCloseButton={false} className="sm:max-w-sm">
+          <DialogHeader className="text-left">
             <DialogTitle className="text-sm">{t.notice.title}</DialogTitle>
-            <DialogDescription className="text-xs">{t.notice.body}</DialogDescription>
+            <DialogDescription asChild>
+              <div className="space-y-2 text-xs leading-relaxed">
+                <p>{t.notice.body}</p>
+                <p>
+                  {t.notice.report}
+                  <a href={ISSUES} target="_blank" rel="noreferrer" className="text-blue-400 underline underline-offset-2">
+                    {t.notice.issues}
+                  </a>
+                  {t.notice.reportEnd}
+                  <br />
+                  {t.notice.reportOther}
+                </p>
+                <p className="flex flex-col gap-0.5 font-mono text-2xs">
+                  <a href={HOME} target="_blank" rel="noreferrer" className="text-blue-400 underline underline-offset-2">
+                    reze.design
+                  </a>
+                  <a href={REPO} target="_blank" rel="noreferrer" className="text-blue-400 underline underline-offset-2">
+                    github.com/AmyangXYZ/reze-design
+                  </a>
+                </p>
+              </div>
+            </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="ghost" size="sm" onClick={() => setDismissed(true)}>
-              {t.notice.dismiss}
-            </Button>
-            <Button asChild size="sm" className="bg-blue-400 text-white hover:bg-blue-400/90">
+            <Button asChild variant="ghost" size="sm">
               <a href={HOME} target="_blank" rel="noreferrer">
                 {t.notice.open}
               </a>
             </Button>
+            <Button size="sm" className="bg-blue-400 text-white hover:bg-blue-400/90" onClick={() => setDismissed(true)}>
+              {t.notice.dismiss}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <Badge label={t.notice.title} />
+      <Badge label={t.notice.badge} />
     </>
   )
 }
