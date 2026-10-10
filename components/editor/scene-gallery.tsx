@@ -15,10 +15,12 @@ import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@
 import { Button } from "@/components/ui/button"
 import { LIBRARY_SHELL, LibraryLike, LibraryTags } from "@/components/editor/library-rail"
 import {
+  LibraryBack,
   LibraryRailFilters,
   LibraryResults,
   LibraryToolbar,
   useLibraryBrowse,
+  useLibraryDetail,
   type BrowseFacet,
   type CardMeta,
   publishedOn,
@@ -501,6 +503,7 @@ function GalleryContent({
     tagCounts: tags,
     onFacetChange,
   })
+  const detail = useLibraryDetail()
 
   const loadMore = () => {
     if (!cursor) return
@@ -614,11 +617,13 @@ function GalleryContent({
       <DialogHeader className="flex-row items-center gap-2 space-y-0 border-b border-line px-3 py-2">
         <DialogTitle className="flex shrink-0 items-center gap-2 text-sm font-medium">
           <GalleryThumbnails className="size-4 text-blue-400" />
-          {t.gallery.title}
+          {/* The icon alone on a phone: the posters say what this is, and the
+              word would cost the search its room. */}
+          <span className="compact:sr-only">{t.gallery.title}</span>
         </DialogTitle>
         <LibraryToolbar browse={browse} />
         {/* One switch for every flagged cover, remembered by this browser. */}
-        <label className="ml-3 flex h-6 shrink-0 cursor-pointer items-center gap-1.5 text-2xs text-muted-foreground">
+        <label className="ml-3 flex h-6 shrink-0 cursor-pointer items-center gap-1.5 text-2xs text-muted-foreground compact:ml-0">
           {t.nsfw.toggle}
           <Switch size="sm" checked={nsfwShown} onCheckedChange={setShowNsfw} />
         </label>
@@ -633,12 +638,13 @@ function GalleryContent({
 
         {/* ONE ranked list, the same grid the presets use. Scenes were the last
             library with their own cards, their own sort and their own rail. */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", detail.results)}>
           <LibraryResults
             browse={browse}
             selectedId={selected?.id ?? null}
             onSelect={(s) => {
               setSelectedId(s.id)
+              detail.show()
               // Warms the RSC payload so opening is a paint, not a fetch.
               router.prefetch(sceneHref(s))
             }}
@@ -668,7 +674,8 @@ function GalleryContent({
           />
         </div>
 
-        <div className="flex w-[17rem] shrink-0 flex-col overflow-y-auto border-l border-line sm:w-[20rem]">
+        <div className={cn("flex w-[17rem] shrink-0 flex-col overflow-y-auto border-l border-line sm:w-[20rem]", detail.detail)}>
+          <LibraryBack onClick={detail.hide} />
           {selected ? (
             <>
               <div className="p-3 pb-0">

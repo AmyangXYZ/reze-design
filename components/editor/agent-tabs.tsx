@@ -114,7 +114,7 @@ export function AgentTabs({
                   disabled={working}
                   className={cn(
                     "absolute right-0.5 size-4 rounded-chip text-muted-foreground hover:bg-white/10 hover:text-foreground",
-                    open ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+                    open ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
                   )}
                 >
                   <X className="size-3" />

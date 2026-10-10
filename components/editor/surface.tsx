@@ -38,6 +38,15 @@ export type SurfacePlacement =
   /** Bottom-centred strip. Transport, and jobs that are running. */
   | "sheet"
 
+/**
+ * Where a panel goes on a phone: below the top bar, full width, and short of
+ * the transport, so the canvas stays in view under it. The stack and every
+ * side panel share this one place, and the column lets one in at a time
+ * (use-dock-slot). Variant classes, so they win over a call site's own insets.
+ */
+export const COMPACT_SHEET =
+  "compact:top-[3.75rem] compact:right-3 compact:left-3 compact:bottom-auto compact:w-auto compact:max-h-[60dvh]"
+
 const PLACEMENT: Record<SurfacePlacement, string> = {
   center: "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-surface",
   // Insets rather than full height: the surface floats over the canvas, it does
@@ -59,7 +68,7 @@ const PLACEMENT: Record<SurfacePlacement, string> = {
   // the wordmark and the chips — rather than the rule being restated on every
   // span. Primitives that carry their own size (Button, Input) still win, and
   // are overridden per instance.
-  side: "absolute top-3 right-3 bottom-3 w-[16rem] rounded-surface flex flex-col text-xs",
+  side: `absolute top-3 right-3 bottom-3 w-[16rem] rounded-surface flex flex-col text-xs ${COMPACT_SHEET}`,
   float: "absolute rounded-surface flex flex-col",
   sheet: "absolute bottom-3 left-1/2 -translate-x-1/2 rounded-surface",
 }

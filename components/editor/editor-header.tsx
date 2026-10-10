@@ -75,7 +75,7 @@ export function EditorHeader({
       <Icon className={cn("size-3.5 shrink-0 text-muted-foreground", iconClassName)} />
       <span className="min-w-0 truncate text-xs font-medium text-foreground">{title}</span>
       {!fullscreen && (
-        <span className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-muted-foreground">
+        <span className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-muted-foreground compact:hidden">
           <Grip className="size-4" />
         </span>
       )}

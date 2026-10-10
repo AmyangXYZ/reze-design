@@ -24,10 +24,12 @@ import {
 import { EffectPreview } from "@/components/editor/effect-preview"
 import { LIBRARY_SHELL, LibraryItemStats, LibraryTags } from "@/components/editor/library-rail"
 import {
+  LibraryBack,
   LibraryRailFilters,
   LibraryResults,
   LibraryToolbar,
   useLibraryBrowse,
+  useLibraryDetail,
   type BrowseFacet,
   type CardMeta,
   AuthorAvatar,
@@ -143,6 +145,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   const displayName = useCallback((e: EffectItem) => builtinName("effect", e, locale), [locale])
   const searchText = useCallback((e: EffectItem) => builtinSearchText("effect", e), [])
   const browse = useLibraryBrowse(all, numbers, { initialFacet, displayName, searchText })
+  const detail = useLibraryDetail()
   const [renamingId, setRenamingId] = useState<string | null>(null)
   // A typed name that is already in use — see the graph library's commitRename.
   const [renameError, setRenameError] = useState<string | null>(null)
@@ -303,7 +306,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
         onFocusCapture={onFocusCapture}
         className={LIBRARY_SHELL}
       >
-        <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-line bg-surface-raised px-4 py-2 text-left">
+        <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-line bg-surface-raised px-4 py-2 text-left compact:gap-2 compact:px-3">
           <DialogTitle className="flex shrink-0 items-center gap-2 text-sm font-medium">
             <Sparkles className="size-4 text-blue-400" />
             {t.effectLibrary.title}
@@ -334,11 +337,14 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
               by who rather than by what, and it put community work below the
               fold. The rail still filters by maker, which is where provenance
               belongs. */}
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden", detail.results)}>
             <LibraryResults
               browse={browse}
               selectedId={selectedId}
-              onSelect={(e) => setSelectedId(e.id)}
+              onSelect={(e) => {
+                setSelectedId(e.id)
+                detail.show()
+              }}
               onActivate={(e) => onEdit?.(seedDraft(e, applied)!)}
               meta={meta}
               numbers={numbers}
@@ -350,7 +356,8 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
           </div>
 
           {/* Inspector: preview · meta · params · Apply (pinned, but the column scrolls */}
-          <div className="flex w-[15rem] shrink-0 flex-col overflow-y-auto border-l border-line sm:w-[17rem]">
+          <div className={cn("flex w-[15rem] shrink-0 flex-col overflow-y-auto border-l border-line sm:w-[17rem]", detail.detail)}>
+            <LibraryBack onClick={detail.hide} />
             {selected && draft ? (
               <>
                 <div className="p-3 pb-0">

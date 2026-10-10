@@ -26,6 +26,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
       // right edge, so this is the corner where a box of text covers nothing
       // anyone is reading.
       position="bottom-right"
+      // On a phone Sonner runs toasts full width; this lifts them clear of the
+      // transport, on the chrome's 12px gutter.
+      mobileOffset={{ bottom: "4rem", left: "0.75rem", right: "0.75rem" }}
       icons={{
         success: <CircleCheckIcon className="size-4" />,
         info: <InfoIcon className="size-4" />,

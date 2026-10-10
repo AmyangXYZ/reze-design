@@ -2,6 +2,9 @@
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
+/* A phone-width screen: layout changes (what fits beside what). Whether the
+   pointer is a finger is the separate pointer-coarse: variant. */
+@custom-variant compact (@media (width < 40rem));
 
 @keyframes panel-in {
   from {

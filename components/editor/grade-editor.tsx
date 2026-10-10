@@ -57,8 +57,11 @@ export function GradeEditorPanel({
       onEscape={onClose}
       minW={520}
       minH={330}
+      fit
       // z-50 like the other editors: above the docks and the non-modal library.
-      className="overflow-hidden rounded-surface border border-line-strong bg-surface-raised shadow-float"
+      // A flex column on a phone, so the body can shrink to the sheet's cap and
+      // scroll its controls.
+      className="overflow-hidden rounded-surface border border-line-strong bg-surface-raised shadow-float compact:flex compact:flex-col"
     >
       <EditorBody key={sessionId} subject={subject} origin={origin} onChange={onChange} onClose={onClose} />
     </FloatingPanel>
@@ -118,7 +121,7 @@ function EditorBody({
   const { scopeProps } = useHistory(subject, onChange, { scope: "grade" })
 
   return (
-    <div className="flex h-full flex-col" {...scopeProps}>
+    <div className="flex h-full min-h-0 flex-col" {...scopeProps}>
       <EditorHeader
         icon={Palette}
         iconClassName="text-blue-400"
@@ -209,8 +212,9 @@ function EditorBody({
             />
           </div>
         </div>
-        {/* Preview column, on the RIGHT */}
-        <div className="flex min-w-0 flex-[0_0_42%] flex-col border-l border-line p-3">
+        {/* Preview column, on the RIGHT. Not on a phone: the canvas under the
+            panel is the preview there. */}
+        <div className="flex min-w-0 flex-[0_0_42%] flex-col border-l border-line p-3 compact:hidden">
           <div className="min-h-0 flex-1 overflow-hidden rounded-chip border border-line-strong bg-white/5">
             <GradePreview spec={spec} />
           </div>

@@ -261,6 +261,12 @@ const en = {
     untitled: "Untitled grade",
     edit: "Edit grade",
   },
+  notice: {
+    title: "Unofficial version",
+    body: "This app is not made or maintained by Reze Design or AmyangXYZ. The official Reze Design is at reze.design.",
+    open: "Open reze.design",
+    dismiss: "Continue",
+  },
   rail: {
     browse: "Browse",
     tags: "Tags",
@@ -401,8 +407,10 @@ const en = {
   },
   library: {
     title: "Shader graph library",
+    shortTitle: "Shader graphs",
     searchPlaceholder: "Search graphs, tags, authors…",
     close: "Close",
+    back: "Back",
     current: "current",
     usedInScenes: (n: number) => `Used in ${n} ${n === 1 ? "scene" : "scenes"}`,
     usedInExports: (n: number) => `${n} ${n === 1 ? "export" : "exports"}`,
@@ -629,6 +637,7 @@ const en = {
     uploadLyrics: "Upload lyrics",
     uploadStageFolder: "PMX folder",
     uploadStageGlb: "GLB file",
+    uploadStageZip: "PMX zip",
     uploadStagePmx: "Upload stage (PMX / GLB)",
     uploadPropPmx: "Upload prop PMX",
     rayConverting: (done: number, total: number) => `Converting ray-mmd maps ${done}/${total}`,
@@ -1325,6 +1334,12 @@ const zh: Dictionary = {
     untitled: "未命名调色",
     edit: "编辑调色",
   },
+  notice: {
+    title: "非官方版本",
+    body: "此应用并非由 Reze Design 或 AmyangXYZ 制作或维护。Reze Design 官方网站为 reze.design。",
+    open: "打开 reze.design",
+    dismiss: "继续",
+  },
   rail: {
     browse: "浏览",
     tags: "标签",
@@ -1458,8 +1473,10 @@ const zh: Dictionary = {
   },
   library: {
     title: "着色器图库",
+    shortTitle: "着色器图",
     searchPlaceholder: "搜索图、包、作者…",
     close: "关闭",
+    back: "返回",
     current: "使用中",
     usedInScenes: (n: number) => `${n} 个场景在用`,
     usedInExports: (n: number) => `${n} 次导出`,
@@ -1677,6 +1694,7 @@ const zh: Dictionary = {
     uploadLyrics: "上传歌词",
     uploadStageFolder: "PMX 文件夹",
     uploadStageGlb: "GLB 文件",
+    uploadStageZip: "PMX 压缩包",
     uploadStagePmx: "上传舞台（PMX / GLB）",
     uploadPropPmx: "上传道具 PMX",
     rayConverting: (done: number, total: number) => `正在转换 ray-mmd 贴图 ${done}/${total}`,

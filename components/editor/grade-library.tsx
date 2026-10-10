@@ -16,10 +16,12 @@ import {
 } from "@/lib/grade"
 import { LIBRARY_SHELL, LibraryItemStats, LibraryTags } from "@/components/editor/library-rail"
 import {
+  LibraryBack,
   LibraryRailFilters,
   LibraryResults,
   LibraryToolbar,
   useLibraryBrowse,
+  useLibraryDetail,
   type BrowseFacet,
   type CardMeta,
   AuthorAvatar,
@@ -167,7 +169,11 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
   const inUse = (g: GradeItem) => g.owner === "local" && nameKey(g.name) === nameKey(grade.preset)
 
   // Browsing never touches the scene
-  const select = (g: GradeItem) => setSelectedId(g.name)
+  const detail = useLibraryDetail()
+  const select = (g: GradeItem) => {
+    setSelectedId(g.name)
+    detail.show()
+  }
 
   const apply = () => {
     onApplyPreset(selected.name)
@@ -301,7 +307,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
         onFocusCapture={onFocusCapture}
         className={LIBRARY_SHELL}
     >
-      <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-line bg-surface-raised px-4 py-2 text-left">
+      <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-line bg-surface-raised px-4 py-2 text-left compact:gap-2 compact:px-3">
         <DialogTitle className="flex shrink-0 items-center gap-2 text-sm font-medium">
           <Palette className="size-4 text-blue-400" />
           {t.scene.grade}
@@ -328,7 +334,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
         {/* ONE ranked list. No shelves: a built-in is a preset the admin
             account published, so splitting the grid by provenance sorted by who
             rather than by what. The rail still filters by maker. */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden", detail.results)}>
           <LibraryResults
             browse={browse}
             selectedId={selected?.id ?? null}
@@ -344,7 +350,8 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
         </div>
 
         {/* ── Inspector, doubling as the editor for user grades ── */}
-        <div className="flex w-[15rem] shrink-0 flex-col overflow-y-auto border-l border-line sm:w-[17rem]">
+        <div className={cn("flex w-[15rem] shrink-0 flex-col overflow-y-auto border-l border-line sm:w-[17rem]", detail.detail)}>
+          <LibraryBack onClick={detail.hide} />
           {selected && shownSpec && (
             <>
               <div className="p-3 pb-0">

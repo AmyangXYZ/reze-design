@@ -143,7 +143,7 @@ export function CommandPalette({
       <DialogContent
         showCloseButton={false}
         // Top of the window, not the middle — centring reads as an alert.
-        className="top-[14%] max-w-[29rem] translate-y-0 gap-0 overflow-hidden rounded-surface border-line-strong bg-surface p-0 shadow-float backdrop-blur-xs"
+        className="top-[14%] max-w-[29rem] translate-y-0 compact:top-[3.75rem] gap-0 overflow-hidden rounded-surface border-line-strong bg-surface p-0 shadow-float backdrop-blur-xs"
         onKeyDown={onKeyDown}
       >
         <DialogTitle className="sr-only">{label.title}</DialogTitle>

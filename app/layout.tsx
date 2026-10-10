@@ -1,3 +1,4 @@
+import { SiteNotice } from "@/components/site-notice"
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -85,6 +86,7 @@ export default function RootLayout({
               and the publish dialog. Mounted beside the tree rather than inside
               it so a toast survives the surface that raised it closing. */}
           <Toaster />
+          <SiteNotice />
         </I18nProvider>
         <Analytics/>
       </body>

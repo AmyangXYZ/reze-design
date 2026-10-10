@@ -228,7 +228,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
         <Circle className="size-1.5 shrink-0 fill-current text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground group-hover/row:text-foreground">{m.name}</span>
         <Button variant="bare"
-          className={cn("shrink-0 text-muted-foreground hover:text-foreground", m.visible && "opacity-0 group-hover/row:opacity-100")}
+          className={cn("shrink-0 text-muted-foreground hover:text-foreground", m.visible && "opacity-0 group-hover/row:opacity-100 pointer-coarse:opacity-100")}
           onClick={(e) => {
             e.stopPropagation()
             onToggleVisible(m.name)

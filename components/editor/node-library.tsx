@@ -13,10 +13,12 @@ import { GraphMinimap } from "@/components/editor/graph-minimap"
 import { GRAPH_LIBRARY } from "@/lib/materials"
 import { LIBRARY_SHELL, LibraryItemStats, LibraryTags } from "@/components/editor/library-rail"
 import {
+  LibraryBack,
   LibraryRailFilters,
   LibraryResults,
   LibraryToolbar,
   useLibraryBrowse,
+  useLibraryDetail,
   type BrowseFacet,
   type CardMeta,
   AuthorAvatar,
@@ -66,7 +68,9 @@ type LibraryProps = {
   /** Display name of the group Apply targets — null when opened with none. */
   targetLabel: string | null
   /** Open the standalone graph editor — a library act, never gated on a group. */
-  onEdit: (id: string, name: string, graph: ShaderGraph) => void
+  /** Absent where the node editor is not offered (touch): the library still
+   *  browses and applies. */
+  onEdit?: (id: string, name: string, graph: ShaderGraph) => void
   /** The group's currently-applied shader graph (pre-selected + tagged "current"). */
   currentGraphName: string | null
   /** Every look this scene is wearing, across all models. A draft one of them is
@@ -147,6 +151,7 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
   const displayName = useCallback((r: (typeof ROWS)[number]) => builtinName("graph", r, locale), [locale])
   const searchText = useCallback((r: (typeof ROWS)[number]) => builtinSearchText("graph", r), [])
   const browse = useLibraryBrowse(ROWS, numbers, { initialFacet, displayName, searchText })
+  const detail = useLibraryDetail()
   const [renamingId, setRenamingId] = useState<string | null>(null)
   // The name someone typed that is already in use. Rename REFUSES rather than
   // silently saving under "… 2": a suffix you did not ask for is how a library
@@ -248,7 +253,9 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
         <div>{node}</div>
       </ContextMenuTrigger>
         <ContextMenuContent className="w-40">
-          <ContextMenuItem onSelect={() => onEdit(r.id, r.name, r.payload.graph)}>{t.library.editGraph}</ContextMenuItem>
+          {onEdit && (
+            <ContextMenuItem onSelect={() => onEdit(r.id, r.name, r.payload.graph)}>{t.library.editGraph}</ContextMenuItem>
+          )}
           {isDraft && (
             <ContextMenuItem
               onSelect={() => {
@@ -320,13 +327,16 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
         onFocusCapture={onFocusCapture}
         className={LIBRARY_SHELL}
     >
-      <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-line bg-surface-raised px-4 py-2 text-left">
+      <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-line bg-surface-raised px-4 py-2 text-left compact:gap-2 compact:px-3">
         <DialogTitle className="flex shrink-0 items-center gap-2 text-sm font-medium">
           <Workflow className="size-4 text-blue-400" />
-          {t.library.title}
+          {/* The kind alone on a phone, where the full title leaves search no room. */}
+          <span className="compact:hidden">{t.library.title}</span>
+          <span className="hidden compact:inline">{t.library.shortTitle}</span>
         </DialogTitle>
         <LibraryToolbar browse={browse} usedLabel={t.rail.used} />
         {/* Creation lives in the header. Just "New": the title says the kind. */}
+        {onEdit && (
         <Button variant="bare"
           onClick={() => onEdit("", t.library.newGraph, structuredClone(DEFAULT_GRAPH))}
           className="flex h-6 shrink-0 items-center gap-1 rounded-chip border border-line-strong bg-white/5 px-2 text-2xs font-medium transition-colors hover:bg-white/10"
@@ -334,6 +344,7 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
           <Plus className="size-3" />
           {t.library.new}
         </Button>
+        )}
         <DialogClose className="flex size-6 shrink-0 items-center justify-center rounded-chip text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
           <X className="size-3.5" />
           <span className="sr-only">{t.library.close}</span>
@@ -346,12 +357,15 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
         {/* ONE ranked list. No shelves: a built-in is a preset the admin
             account published, so splitting the grid by provenance sorted by who
             rather than by what. The rail still filters by maker. */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden", detail.results)}>
           <LibraryResults
             browse={browse}
             selectedId={selectedId}
-            onSelect={(r) => setSelectedId(r.id)}
-            onActivate={(r) => onEdit(r.id, r.name, r.payload.graph)}
+            onSelect={(r) => {
+              setSelectedId(r.id)
+              detail.show()
+            }}
+            onActivate={onEdit && ((r) => onEdit(r.id, r.name, r.payload.graph))}
             meta={meta}
             numbers={numbers}
             displayName={displayName}
@@ -362,11 +376,13 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
         </div>
 
         {/* ── Inspector: preview (= fork-&-edit) · meta · Apply pinned ── */}
-        <div className="flex w-[15rem] shrink-0 flex-col overflow-y-auto border-l border-line sm:w-[17rem]">
+        <div className={cn("flex w-[15rem] shrink-0 flex-col overflow-y-auto border-l border-line sm:w-[17rem]", detail.detail)}>
+          <LibraryBack onClick={detail.hide} />
           {selected ? (
             <>
               <div className="p-3 pb-0">
-                {/* The preview IS the edit affordance */}
+                {/* The preview IS the edit affordance, where there is an editor */}
+                {onEdit ? (
                 <Button variant="bare"
                   type="button"
                   onClick={() => onEdit(selected.id, selected.name, selected.payload.graph)}
@@ -378,6 +394,11 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
                     {t.library.editGraph}
                   </div>
                 </Button>
+                ) : (
+                  <div className="aspect-[16/10] w-full overflow-hidden rounded-chip border border-line-strong bg-white/5">
+                    <GraphMinimap graph={selected.payload.graph} className="h-full w-full p-2" />
+                  </div>
+                )}
               </div>
               <div className="min-h-0 p-3">
                 <div className="truncate text-sm font-semibold select-text">{displayName(selected)}</div>

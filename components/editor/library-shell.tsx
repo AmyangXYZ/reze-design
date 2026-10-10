@@ -16,7 +16,7 @@
 import { Button } from "@/components/ui/button"
 import { STAGE_BOUND_TAG } from "@/lib/effects"
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react"
-import { Check, ChevronDown, Globe, Heart, LayoutGrid, List, Lock, PenLine, Search } from "lucide-react"
+import { Check, ChevronDown, ChevronLeft, Globe, Heart, LayoutGrid, List, Lock, PenLine, Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -29,6 +29,7 @@ import { ContextMenuItem } from "@/components/ui/context-menu"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { storageKey } from "@/lib/storage"
 import { useT } from "@/lib/i18n"
+import { useCompact } from "@/lib/device"
 import { cn } from "@/lib/utils"
 
 /** What browsing needs of a row, and no more. Deliberately NOT `LibraryItem`:
@@ -511,7 +512,7 @@ export function LibraryToolbar<T extends BrowseItem>({
       {/* Every control in this header is one height and one type size. The
           search is the only one that grows, and it stops well short of the
           title. */}
-      <div className="relative ml-auto w-32 max-w-[24%]">
+      <div className="relative ml-auto w-32 max-w-[24%] compact:w-auto compact:max-w-none compact:min-w-22 compact:flex-1">
         <Search className="pointer-events-none absolute top-1/2 left-2 size-3 -translate-y-1/2 text-muted-foreground" />
         <Input
           value={query}
@@ -526,7 +527,7 @@ export function LibraryToolbar<T extends BrowseItem>({
       <Select value={sort} onValueChange={(v) => chooseSort(v as SortKey)}>
         <SelectTrigger
           aria-label={t.rail.sort}
-          className="w-24 shrink-0 justify-between border-line-strong bg-white/5 px-2 text-2xs"
+          className="w-24 shrink-0 justify-between border-line-strong bg-white/5 px-2 text-2xs compact:w-20"
         >
           <SelectValue />
         </SelectTrigger>
@@ -537,7 +538,8 @@ export function LibraryToolbar<T extends BrowseItem>({
         </SelectContent>
       </Select>
 
-      <div className="flex h-6 shrink-0 items-center gap-0.5 rounded-chip border border-line-strong bg-white/5 p-0.5">
+      {/* No list on a phone: its seven columns need a desktop's width. */}
+      <div className="flex h-6 shrink-0 items-center gap-0.5 rounded-chip border border-line-strong bg-white/5 p-0.5 compact:hidden">
         {([["grid", LayoutGrid], ["list", List]] as const).map(([d, Icon]) => (
           <Button variant="bare"
             key={d}
@@ -558,12 +560,49 @@ export function LibraryToolbar<T extends BrowseItem>({
   )
 }
 
+// ── Detail on a phone ────────────────────────────────────────────────────────
+//
+// A phone has no room for the inspector beside the grid, so there it REPLACES
+// the grid: picking a card opens it, Back returns. Its own flag rather than the
+// selection, because every library keeps something selected (the applied look,
+// the top effect) and would otherwise open on a detail nobody asked for.
+// Desktop never reads the flag: every class it sets is compact-only.
+
+export function useLibraryDetail() {
+  const [open, setOpen] = useState(false)
+  return {
+    show: () => setOpen(true),
+    hide: () => setOpen(false),
+    /** On the results column. */
+    results: open ? "compact:hidden" : "",
+    /** On the inspector column. */
+    detail: cn("compact:w-auto compact:flex-1 compact:border-l-0", !open && "compact:hidden"),
+  }
+}
+
+/** The top of the inspector on a phone: back to the grid. */
+export function LibraryBack({ onClick }: { onClick: () => void }) {
+  const t = useT()
+  return (
+    <Button variant="bare"
+      type="button"
+      onClick={onClick}
+      className="mx-1.5 mt-1.5 hidden h-8 shrink-0 items-center gap-1 self-start rounded-chip px-1.5 text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground compact:flex"
+    >
+      <ChevronLeft className="size-4" />
+      {t.library.back}
+    </Button>
+  )
+}
+
 // ── Results ──────────────────────────────────────────────────────────────────
 
 /** One card size for every kind. A scene poster is not a bigger idea than an
  *  effect, and a grid whose track width changes per kind is four grids again.
  *  The count follows the width, so a card never shrinks to satisfy a number. */
-const GRID = "grid content-start gap-2.5 px-3.5 pt-2 pb-6 [grid-template-columns:repeat(auto-fill,minmax(118px,1fr))]"
+// Three across on a phone: two filled the screen with a handful of cards.
+const GRID =
+  "grid content-start gap-2.5 px-3.5 pt-2 pb-6 [grid-template-columns:repeat(auto-fill,minmax(118px,1fr))] compact:gap-2 compact:px-3 compact:[grid-template-columns:repeat(auto-fill,minmax(96px,1fr))]"
 const COLS = "grid items-center gap-2 [grid-template-columns:30px_minmax(0,1.4fr)_minmax(0,1.3fr)_64px_78px_46px_50px]"
 /** The same columns for a kind with no second number. */
 const COLS_NO_USED = "grid items-center gap-2 [grid-template-columns:30px_minmax(0,1.4fr)_minmax(0,1.3fr)_64px_78px_46px]"
@@ -725,7 +764,10 @@ export function LibraryResults<T extends BrowseItem>({
   browse, selectedId, onSelect, onActivate, meta, numbers, displayName, wrap, usedLabel, empty, footer,
 }: ResultsProps<T>) {
   const t = useT()
-  const { rows, density, sort, dir, setSort } = browse
+  const compact = useCompact()
+  const { rows, sort, dir, setSort } = browse
+  // A list chosen on a desktop is remembered; a phone still gets the grid.
+  const density = compact ? "grid" : browse.density
 
   if (rows.length === 0) {
     return (

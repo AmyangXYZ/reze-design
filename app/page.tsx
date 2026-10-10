@@ -79,6 +79,7 @@ import {
   Hand,
   Shapes,
   Eye,
+  Search,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -97,7 +98,7 @@ import { CommandPalette } from "@/components/editor/command-palette"
 import { RECENT_DEPTH, type PaletteItem, type SceneGap } from "@/lib/command-search"
 import { SceneFileMenu } from "@/components/editor/scene-file-menu"
 import { SceneName } from "@/components/editor/scene-name"
-import { Surface } from "@/components/editor/surface"
+import { COMPACT_SHEET, Surface } from "@/components/editor/surface"
 import { LayerRow, StackGroup } from "@/components/editor/layer-row"
 import {
   ColorRow,
@@ -136,6 +137,7 @@ import { FPS } from "@/lib/clip"
 import { ClipEditor, type ClipEditKind } from "@/context/clip-editor"
 import { primeClipDensity, useAudioPeaks } from "@/hooks/use-lane-graphs"
 import { useEngine } from "@/hooks/use-engine"
+import { isTouch, useCompact, useTouch } from "@/lib/device"
 import { useRenderFraming } from "@/hooks/use-render-framing"
 import { useSceneCast, useSceneSync } from "@/hooks/use-scene-sync"
 import { seedMusic, useSceneMedia, type BgSlot } from "@/hooks/use-scene-media"
@@ -1442,17 +1444,21 @@ function CastLine({
 }) {
   return (
     // -mx-1 px-1: the highlight breathes past the text without moving it.
-    <span className="group relative -mx-1 flex h-5 items-center rounded-interior px-1 transition-colors hover:bg-white/[0.05]">
+    // On touch there is no hover to reveal anything, so the actions stand in
+    // the row beside the text at finger size, and the text truncates before
+    // them instead of fading under them.
+    <span className="group relative -mx-1 flex h-5 items-center rounded-interior px-1 transition-colors hover:bg-white/[0.05] pointer-coarse:h-7">
       {/* The reserve ends a long name clear of the button zone entirely — the
           buttons appear on empty reserve, never on text, so the row's own
           highlight is all the hover needs. (Graded dims and edge fades were
           tried on top and deleted: with a real reserve there is nothing left
           for them to fix.) */}
-      <span className={cn("flex min-w-0 flex-1 items-center", reserve)}>{text}</span>
+      <span className={cn("flex min-w-0 flex-1 items-center", reserve, "pointer-coarse:pr-1")}>{text}</span>
       <span
         className={cn(
           "absolute inset-y-0 right-0.5 flex items-center gap-0.5 transition-opacity duration-200 group-hover:opacity-100 focus-within:opacity-100",
           revealed ? "opacity-100" : "opacity-0",
+          "pointer-coarse:static pointer-coarse:shrink-0 pointer-coarse:opacity-100",
         )}
       >
         {actions}
@@ -1586,6 +1592,7 @@ function CastAction({
       className={cn(
         "shrink-0 rounded-chip text-muted-foreground hover:bg-white/10",
         compact ? "size-4" : "size-5",
+        "pointer-coarse:size-6",
         danger ? "hover:text-red-400" : "hover:text-foreground",
       )}
     >
@@ -1658,6 +1665,9 @@ function ClipRow({
   menu?: { label: string; items: { key: string; label: string; checked?: boolean; onPick: () => void }[] }
 }) {
   const t = useT()
+  // On touch the actions are always on screen, so an empty slot shows none:
+  // its own invite is the upload, and the rest would be disabled.
+  const touch = useTouch()
   // Deleting a clip asks first. Not window.confirm — see ConfirmDialog.
   const [confirming, setConfirming] = useState(false)
   // The level's popover hangs off a button that hover alone would hide the
@@ -1702,6 +1712,7 @@ function ClipRow({
                 )
               }
               actions={
+                touch && !clip ? null : (
                 <>
                   {/* Upload, edit, delete — the order the row is used in. Putting a
                       file here is what an empty row is FOR, editing needs one, and
@@ -1760,6 +1771,7 @@ function ClipRow({
                     onClick={() => setConfirming(true)}
                   />
                 </>
+                )
               }
             />
           </span>
@@ -1933,7 +1945,7 @@ function CastMemberRow({
         align="end"
         side="bottom"
         sideOffset={2}
-        className="w-56 rounded-surface border-line-strong bg-surface-raised p-2 shadow-float"
+        className="max-h-[var(--radix-popover-content-available-height,32rem)] w-56 overflow-y-auto overscroll-contain rounded-surface border-line-strong bg-surface-raised p-2 shadow-float"
         // Focus stays on the gear rather than being taken by the first slider,
         // which would open the panel with a ring already on it.
         onOpenAutoFocus={(e) => e.preventDefault()}
@@ -2576,6 +2588,11 @@ export default function Lab() {
   //
   const framing = useRenderFraming()
   const [exportOpen, setExportOpen] = useState(false)
+  // Layout and hit size, asked separately — lib/device.ts. On touch none of
+  // the look editors (node graph, WGSL, grade) is offered, as the timeline is
+  // not: a phone picks and tunes looks, it does not author them.
+  const compact = useCompact()
+  const touch = useTouch()
   // The art director: a side panel, canvas live — you watch it work.
   const [agentOpen, setAgentOpen] = useState(false)
   const [agentRaise, setAgentRaise] = useState(0)
@@ -2624,18 +2641,27 @@ export default function Lab() {
   const frameRect =
     framing.activeFrame && framing.frameVp
       ? (() => {
-          const va = framing.frameVp.w / framing.frameVp.h
+          // On a phone the export panel hangs over the top of the screen, so
+          // the frame takes the band between the panel's furthest reach (the
+          // sheet's 3.75rem + 60dvh, see COMPACT_SHEET) and the transport.
+          // A fixed band rather than the panel's measured edge, so the frame
+          // does not move as the panel's own lines come and go.
+          const vw = framing.frameVp.w
+          const rem = 16
+          const top = compact && exportOpen ? 3.75 * rem + 0.6 * framing.frameVp.h + 0.5 * rem : 0
+          const bottom = compact && exportOpen ? framing.frameVp.h - 4.25 * rem : framing.frameVp.h
+          const vh = bottom - top
+          const va = vw / vh
           const a = framing.activeFrame.aspect
-          // Within a hair of the window's own shape, take the whole window:
+          // Within a hair of the band's own shape, take the whole band:
           // shrinking the canvas by a percent to honour a rounding difference
           // costs pixels and buys nothing anybody can see.
-          if (a <= va * FRAME_ASPECT_TOL && a >= va / FRAME_ASPECT_TOL)
-            return { x: 0, y: 0, w: framing.frameVp.w, h: framing.frameVp.h }
-          const w = a < va ? framing.frameVp.h * a : framing.frameVp.w
-          const h = a < va ? framing.frameVp.h : framing.frameVp.w / a
+          if (a <= va * FRAME_ASPECT_TOL && a >= va / FRAME_ASPECT_TOL) return { x: 0, y: top, w: vw, h: vh }
+          const w = a < va ? vh * a : vw
+          const h = a < va ? vh : vw / a
           return {
-            x: (framing.frameVp.w - w) / 2,
-            y: (framing.frameVp.h - h) / 2,
+            x: (vw - w) / 2,
+            y: top + (vh - h) / 2,
             w,
             h,
           }
@@ -3952,11 +3978,16 @@ export default function Lab() {
     } catch {
       // private mode — fall through to the device default
     }
-    return !window.matchMedia("(pointer: coarse)").matches
+    return !isTouch()
   })
+  /** Set when a phone panel pushed the stack away, so closing it brings the
+   *  stack back. */
+  const dockReturns = useRef(false)
   /** The dock's only way in or out, so the preference cannot be written by one
    *  caller and skipped by another. */
   const setDockExpanded = useCallback((next: boolean) => {
+    // Your own toggle outranks a pending hand-back (see the dock's slot below).
+    dockReturns.current = false
     setExpanded(next)
     try {
       window.localStorage.setItem(DOCK_OPEN_KEY, next ? "1" : "0")
@@ -4211,6 +4242,36 @@ export default function Lab() {
   // it: three panels is where writing the rule per pair stops working.
   useDockSlot("materials", inspectedId !== null, closeMaterials)
   useDockSlot("export", exportOpen, closeExport)
+  // On a phone the stack and the right-hand panels open in the same place, so
+  // they share the column too. A panel that pushes the stack away hands it back
+  // when it closes: you went to materials FROM the stack, and closing them
+  // should land you where you were.
+  useDockSlot("dock", compact && expanded, () => {
+    dockReturns.current = true
+    setExpanded(false)
+  })
+  useDockSlot("agent", compact && agentOpen, () => setAgentOpen(false))
+  // Through the editor's own close, so unsaved work is still asked about.
+  useDockSlot("grade", compact && gradeEditor !== null, requestCloseGradeEditor)
+  // The libraries and the gallery fill the screen on a phone, so they take
+  // their turn too: whatever opened last is the one on screen.
+  const browseOpen = !!graphLib || gradeLibOpen || effectLibOpen || galleryOpen
+  useDockSlot("browse", compact && browseOpen, closeBrowse)
+  useEffect(() => {
+    if (
+      !expanded &&
+      dockReturns.current &&
+      compact &&
+      inspectedId === null &&
+      !exportOpen &&
+      !agentOpen &&
+      gradeEditor === null &&
+      !browseOpen
+    ) {
+      dockReturns.current = false
+      setExpanded(true)
+    }
+  }, [compact, expanded, inspectedId, exportOpen, agentOpen, gradeEditor, browseOpen])
 
   const openMaterials = useCallback(
     (id: string | null) => {
@@ -4686,13 +4747,12 @@ export default function Lab() {
   // One path, so the two can never drift.
   type ModelTarget = { mode: "add" } | { mode: "replace"; id: string } | { mode: "stage" } | { mode: "prop" }
   const modelTarget = useRef<ModelTarget>({ mode: "add" })
-  // Folder only. A zip needs a SECOND input, because an input carrying
-  // `webkitdirectory` can only pick a directory — and offering both made add and
-  // replace disagree about what an upload is, which no label repairs. One shape
-  // everywhere. (The shipped editor does support zips, and must, since mobile
-  // has no directory picker at all — that is a decision to make with the mobile
-  // layout, not by bolting a second button onto this row.)
+  // A folder with a mouse, a zip on touch — phones have no directory picker.
+  // One shape per device, so add and replace always agree about what an upload
+  // is. An input carrying `webkitdirectory` can only pick a directory, hence two
+  // elements.
   const folderInput = useRef<HTMLInputElement>(null)
+  const zipInput = useRef<HTMLInputElement>(null)
   /** A GLB stage is ONE file, so it gets an input that takes one — and an input
    *  carrying `webkitdirectory` can only take a directory, which is why this is
    *  a second element rather than a second accept. Picking the folder instead
@@ -4706,7 +4766,7 @@ export default function Lab() {
 
   const pickModel = (target: ModelTarget) => {
     modelTarget.current = target
-    folderInput.current?.click()
+    ;(isTouch() ? zipInput : folderInput).current?.click()
   }
 
   /** The same upload, from the one file a Blender stage is. */
@@ -5737,6 +5797,7 @@ export default function Lab() {
           // The camera belongs to the SCENE, so it needs no cast; a motion and
           // an expression belong to a character.
           if (c.id === "edit-motion" || c.id === "edit-morph") return timelineRoom && cast.length > 0
+          if (c.id === "graph-new" || c.id === "wgsl-new" || c.id === "grade-new") return !touch
           return true
         })
         .map((c) => {
@@ -5775,7 +5836,7 @@ export default function Lab() {
           const value = DOCK_CONTROLS.find((x) => `ctl-${x.id}` === c.id)?.value?.(valuesShown)
           return value ? { ...c, value } : c
         }),
-    [commands, valuesShown, t, cast.length, timelineRoom, timelineUnfolded],
+    [commands, valuesShown, t, cast.length, timelineRoom, timelineUnfolded, touch],
   )
 
   // ── Undo / redo for the scene's configuration ──
@@ -7073,8 +7134,10 @@ export default function Lab() {
         <div className="pointer-events-none absolute top-3 right-3 left-3 flex items-start gap-2">
           {/* Same 17rem as the open panel: this is a DROPDOWN, not a sidebar —
             expanding only grows downward, so nothing ever shifts sideways. */}
-          {!expanded && (
-            <div className={cn(PILL, "pointer-events-auto flex h-10 w-[16rem] items-center gap-1.5 pr-1.5 pl-2")}>
+          {/* On a phone the pill stays while the stack is open: the stack hangs
+              below the top bar there, so the pill is its header. */}
+          {(!expanded || compact) && (
+            <div className={cn(PILL, "pointer-events-auto flex h-10 w-[16rem] items-center gap-1.5 pr-1.5 pl-2 compact:w-auto compact:min-w-0 compact:flex-1")}>
               {/* The logo is the menu, in both of its homes — scene-file-menu.tsx
                   for why. The stack is not on screen here, so this pill's logo is
                   the only door to the file operations. */}
@@ -7093,6 +7156,11 @@ export default function Lab() {
               <span className="whitespace-nowrap pb-0.5 text-sm font-semibold tracking-tight text-foreground">
                 Reze Design
               </span>
+              {/* On a phone the brand and version stay in the bar, and the scene
+                  name moves into the open stack, where there is room for it. */}
+              <span className="hidden shrink-0 rounded-full bg-blue-400/15 px-1.5 py-0.5 font-mono text-2xs leading-none font-medium text-blue-400 compact:inline">
+                {VERSION_LABEL}
+              </span>
               {/* Lands exactly where the version badge sits in the expanded header,
                 so the slot after the wordmark does not shift as you toggle. The
                 badge is gap-1.5 from the wordmark with px-1.5 inside and no
@@ -7100,17 +7168,17 @@ export default function Lab() {
                 what stops its text jumping when it becomes editable), so it
                 needs the same px-1.5 and one pixel back to put the two glyph
                 runs in the same place. */}
-              <SceneName name={sceneName} onRename={setSceneName} className="-ml-px min-w-0 flex-1 truncate px-1.5" />
+              <SceneName name={sceneName} onRename={setSceneName} className="-ml-px min-w-0 flex-1 truncate px-1.5 compact:hidden" />
               {/* Chevron, not a panel icon: it points where the content will go,
                 the same law as the timeline's toggle. */}
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => setDockExpanded(true)}
-                aria-label={t.lab.expandPanel}
+                onClick={() => setDockExpanded(!expanded)}
+                aria-label={expanded ? t.lab.collapsePanel : t.lab.expandPanel}
                 className="ml-auto size-7 shrink-0 rounded-interior text-muted-foreground hover:bg-white/5 hover:text-foreground"
               >
-                <ChevronDown className="size-4" />
+                {expanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
               </Button>
             </div>
           )}
@@ -7134,7 +7202,7 @@ export default function Lab() {
               heights agreed only while every pill happened to hold size-7
               children — one control with a different variant height and they
               silently disagree, which is exactly what happened here. */}
-          <div className="ml-auto flex w-[16rem] items-start gap-2">
+          <div className="ml-auto flex w-[16rem] shrink-0 items-start gap-2 compact:w-auto">
             {/* The palette needs a visible door — keyboard-only would hide it
                 from exactly the people most likely to miss it, and it is the
                 only route on touch. The button IS the pill: a wrapper around a
@@ -7142,6 +7210,7 @@ export default function Lab() {
             <Button
               variant="ghost"
               onClick={openPalette}
+              aria-label={t.lab.searchCommands}
               className={cn(
                 PILL,
                 // Left-aligned, so the word starts in the same place whatever
@@ -7157,7 +7226,7 @@ export default function Lab() {
                 //
                 // A door named for what is behind it, and what is behind it is
                 // a search field. The ⌘K cap beside it says the rest.
-                "pointer-events-auto h-10 min-w-0 flex-1 justify-start gap-2 px-3 text-xs font-medium text-muted-foreground hover:bg-white/5 hover:text-foreground",
+                "pointer-events-auto h-10 min-w-0 flex-1 justify-start gap-2 px-3 text-xs font-medium text-muted-foreground hover:bg-white/5 hover:text-foreground compact:w-10 compact:flex-none compact:justify-center compact:px-0",
               )}
             >
               {/* min-w-0 + truncate, because this is the only shrinkable thing
@@ -7165,11 +7234,12 @@ export default function Lab() {
                   own min-content, the row cannot fit 16rem, and the whole
                   cluster is pushed past the right edge — which is exactly what
                   narrowing the docks from 18rem exposed. */}
-              <span className="min-w-0 truncate">{t.lab.searchCommands}</span>
+              <Search className="hidden size-4 compact:block" />
+              <span className="min-w-0 truncate compact:hidden">{t.lab.searchCommands}</span>
               {/* A key cap, so it should read as one: fixed height, centred, and the
               two glyphs spaced by a real gap rather than letter-spacing — which
               adds its space AFTER the K and pushes the pair off-centre. */}
-              <kbd className="ml-auto inline-flex h-4 min-w-[1.375rem] shrink-0 items-center justify-center gap-[3px] rounded-chip border border-line-strong bg-white/5 px-1 font-mono text-2xs leading-none text-muted-foreground">
+              <kbd className="ml-auto inline-flex h-4 compact:hidden pointer-coarse:hidden min-w-[1.375rem] shrink-0 items-center justify-center gap-[3px] rounded-chip border border-line-strong bg-white/5 px-1 font-mono text-2xs leading-none text-muted-foreground">
                 <span className="text-2xs">⌘</span>
                 <span>K</span>
               </kbd>
@@ -7362,6 +7432,17 @@ export default function Lab() {
         // @ts-expect-error — non-standard, and the only way to pick a directory.
         webkitdirectory=""
         directory=""
+        className="hidden"
+        onChange={(e) => {
+          void onModelPicked(Array.from(e.target.files ?? []))
+          e.target.value = ""
+        }}
+      />
+
+      <input
+        ref={zipInput}
+        type="file"
+        accept=".zip,application/zip"
         className="hidden"
         onChange={(e) => {
           void onModelPicked(Array.from(e.target.files ?? []))
@@ -7608,7 +7689,7 @@ export default function Lab() {
         onRenamed={(oldName, newName) =>
           setSettings((s2) => (s2.grade.preset === oldName ? { ...s2, grade: { ...s2.grade, preset: newName } } : s2))
         }
-        onEdit={openGradeEditor}
+        onEdit={touch ? undefined : openGradeEditor}
       />
 
       <EffectLibrary
@@ -7634,7 +7715,7 @@ export default function Lab() {
         onRenamed={(oldName, newName) =>
           setBgEffects((list) => list.map((e) => (e.name === oldName ? { ...e, name: newName } : e)))
         }
-        onEdit={openEffectEditor}
+        onEdit={touch ? undefined : openEffectEditor}
       />
 
       {/* ── Shader-graph library ──
@@ -7662,7 +7743,7 @@ export default function Lab() {
         usedNames={usedLookNames}
         onRenamed={renameGroupLooks}
         onApply={applyGraphLibrary}
-        onEdit={openGraphLibEdit}
+        onEdit={touch ? undefined : openGraphLibEdit}
       />
 
       {/* ── Node editor ──
@@ -7883,7 +7964,15 @@ export default function Lab() {
           // 5.5rem reserve cleared a transport that CENTRED under the dock; the
           // timeline's side insets ended that overlap, so the reserve was only
           // clipping rows short — a half-visible Physics row at the bottom edge.
-          className={cn("top-3 left-3 flex max-h-[calc(100%-1.5rem)] w-[16rem] flex-col overflow-hidden text-xs")}
+          // On a phone it hangs below the top bar at full width, and stops short
+          // of the transport so the canvas stays in view under it.
+          className={cn(
+            "top-3 left-3 flex max-h-[calc(100%-1.5rem)] w-[16rem] flex-col overflow-hidden text-xs",
+            COMPACT_SHEET,
+            // The stack and the agent are where a phone spends its time, so they
+            // run down to the transport rather than stopping at the sheet's cap.
+            "compact:max-h-[calc(100dvh-8rem)]",
+          )}
           style={{ zIndex: dockZ.z }}
           onPointerDownCapture={dockZ.onPointerDownCapture}
           onFocusCapture={dockZ.onFocusCapture}
@@ -7902,7 +7991,7 @@ export default function Lab() {
               py-1.5 pl-2, same size-7 logo slot. The slot is what sets the row
               height, so the wordmark lands on the SAME baseline whether the
               panel is open or closed and nothing shifts as you toggle. */}
-            <div className="flex items-center gap-1.5 py-1.5 pr-1.5 pl-2">
+            <div className="flex items-center gap-1.5 py-1.5 pr-1.5 pl-2 compact:hidden">
               <SceneFileMenu
                 onNew={newScene}
                 onGallery={openGallery}
@@ -7957,7 +8046,7 @@ export default function Lab() {
                 its height match the collapsed pill, so it can only be cancelled
                 from here. The extra 2px eats into that row's leading, which it
                 has to spare: the wordmark is text-sm in a size-7 slot. */}
-            <div className="-mt-2 flex min-w-0 items-center pl-[calc(0.5rem+1.75rem+0.375rem)]">
+            <div className="-mt-2 flex min-w-0 items-center pl-[calc(0.5rem+1.75rem+0.375rem)] compact:mt-0 compact:px-4 compact:pt-3">
               {/* -ml-1 cancels the name box's own px-1, so the text still starts
                   exactly under the wordmark while the box keeps the padding its
                   editing state needs. */}
@@ -8121,7 +8210,7 @@ export default function Lab() {
                     of={displayName(clipModel.file)}
                     onPick={() => pickAnimation(clipModel.id)}
                     onRemove={() => removeAnimation(clipModel.id)}
-                    onEdit={() => editClip(clipModel.id, "motion")}
+                    onEdit={timelineRoom ? () => editClip(clipModel.id, "motion") : undefined}
                     onDownload={() => downloadClip(animByModel[clipModel.id]?.src, animByModel[clipModel.id]?.name ?? "motion.vmd")}
                   />
                   {/* Always, like motion and camera. It used to appear only once a scene
@@ -8136,7 +8225,7 @@ export default function Lab() {
                     of={displayName(clipModel.file)}
                     onPick={() => pickMorph(clipModel.id)}
                     onRemove={() => removeMorph(clipModel.id)}
-                    onEdit={() => editClip(clipModel.id, "morph")}
+                    onEdit={timelineRoom ? () => editClip(clipModel.id, "morph") : undefined}
                     onDownload={() => downloadClip(morphByModel[clipModel.id]?.src, morphByModel[clipModel.id]?.name ?? "morphs.vmd")}
                   />
                 </>
@@ -8171,7 +8260,7 @@ export default function Lab() {
                 // format keeps them in separate files for the same reason — but
                 // the editor still needs a model to hang a clock off, so it
                 // rides whichever cast member is already being edited.
-                onEdit={() => editClip(editTarget?.modelId ?? inspectedId ?? cast[0]?.id ?? "", "camera")}
+                onEdit={timelineRoom ? () => editClip(editTarget?.modelId ?? inspectedId ?? cast[0]?.id ?? "", "camera") : undefined}
               />
             </StackGroup>
 
@@ -8459,7 +8548,7 @@ export default function Lab() {
                             onClick={() => pickModel({ mode: "stage" })}
                             className="h-8 flex-1 rounded-interior rounded-r-none border border-r-0 border-dashed border-line-strong text-xs font-normal text-muted-foreground hover:border-blue-400/50 hover:bg-transparent hover:text-blue-400"
                           >
-                            {t.lab.uploadStageFolder}
+                            {touch ? t.lab.uploadStageZip : t.lab.uploadStageFolder}
                           </Button>
                           <Button
                             variant="ghost"
@@ -8735,11 +8824,13 @@ export default function Lab() {
                                 }
                                 actions={
                                   <>
-                                    <CastAction
-                                      icon={PenLine}
-                                      label={t.lab.aria.editEffect(e.name)}
-                                      onClick={() => openEffectEditor(e)}
-                                    />
+                                    {!touch && (
+                                      <CastAction
+                                        icon={PenLine}
+                                        label={t.lab.aria.editEffect(e.name)}
+                                        onClick={() => openEffectEditor(e)}
+                                      />
+                                    )}
                                     {/* On EVERY row, disabled where there is
                                         nothing to turn: a control that appears
                                         only on some rows moves the other three
@@ -8780,7 +8871,7 @@ export default function Lab() {
                                           // rather than reusing it — Radix needs
                                           // a trigger that forwards a ref.
                                           onClick={(ev) => ev.stopPropagation()}
-                                          className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-chip text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
+                                          className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-chip text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground pointer-coarse:size-6"
                                         >
                                           <RefreshCw className="size-3.5" />
                                         </Button>
@@ -8810,7 +8901,7 @@ export default function Lab() {
                                   // The model row's own panel, to the pixel: same width, same
                                   // radius, same padding. Two gears on two rows opening two
                                   // sizes of panel is two idioms.
-                                  className="w-56 rounded-surface border-line-strong bg-surface-raised p-2 shadow-float"
+                                  className="max-h-[var(--radix-popover-content-available-height,32rem)] w-56 overflow-y-auto overscroll-contain rounded-surface border-line-strong bg-surface-raised p-2 shadow-float"
                                   onOpenAutoFocus={(ev) => ev.preventDefault()}
                                 >
                                   <EffectParams
@@ -9410,7 +9501,7 @@ export default function Lab() {
                                     side="bottom"
                                     sideOffset={2}
                                     // The effect row's own panel, to the pixel.
-                                    className="w-56 rounded-surface border-line-strong bg-surface-raised p-2 shadow-float"
+                                    className="max-h-[var(--radix-popover-content-available-height,32rem)] w-56 overflow-y-auto overscroll-contain rounded-surface border-line-strong bg-surface-raised p-2 shadow-float"
                                     onOpenAutoFocus={(ev) => ev.preventDefault()}
                                   >
                                     {/* The effect panel's own metrics: dense
@@ -9610,7 +9701,7 @@ export default function Lab() {
                             // Always available: a scene is always wearing SOME
                             // grade, Neutral included, and editing Neutral is
                             // how a look gets made from nothing.
-                            onEdit={editCurrentGrade}
+                            onEdit={touch ? undefined : editCurrentGrade}
                             editLabel={t.gradeLibrary.edit}
                             placeholder={gradeLabel(grade.preset)}
                           />
@@ -10158,7 +10249,7 @@ export default function Lab() {
               onCreateGroup={inspectCreateGroup}
               onRenameGroup={inspectRenameGroup}
               onDeleteGroup={inspectDeleteGroup}
-              onEditGroupGraph={editGroupGraph}
+              onEditGroupGraph={touch ? undefined : editGroupGraph}
               onMoveMaterial={inspectMoveMaterial}
               onPickGraph={inspectPickGraph}
             />
@@ -10188,6 +10279,8 @@ export default function Lab() {
             "pointer-events-auto absolute top-1/2 right-3 flex h-10 -translate-y-1/2 items-center gap-2 px-4 text-sm font-medium text-foreground hover:bg-white/5",
             "transition-[opacity,scale,visibility,background-color,color] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
             agentOpen && "invisible scale-110 opacity-0",
+            // On a phone every panel opens over the band the pillar stands in.
+            compact && (expanded || inspectedId !== null || exportOpen || gradeEditor !== null || browseOpen) && "invisible opacity-0",
           )}
         >
           <Astroid className="size-4" />
@@ -10205,7 +10298,7 @@ export default function Lab() {
           className={cn(
             // One height whatever the conversation holds — a dock that grew
             // with every message would move its own input box.
-            "top-[3.75rem] bottom-auto h-[calc(100%-7.75rem)]",
+            "top-[3.75rem] bottom-auto h-[calc(100%-7.75rem)] compact:h-[calc(100dvh-8rem)] compact:max-h-none",
             // Grows out of the pillar: scaled from the right edge's middle,
             // which is where the pillar stands, and folds back into it.
             "origin-right transition-[opacity,scale,translate,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
@@ -10351,7 +10444,7 @@ export default function Lab() {
           onClick={() => setExportOpen(true)}
           className={cn(
             PILL,
-            "absolute right-3 bottom-3 flex h-10 cursor-pointer items-center gap-2 px-4 text-sm text-foreground",
+            "absolute right-3 bottom-3 flex h-10 cursor-pointer items-center gap-2 px-4 text-sm text-foreground compact:bottom-16",
           )}
         >
           <span className="size-2 animate-pulse rounded-full bg-red-400" />

@@ -50,7 +50,10 @@ export const LIBRARY_SHELL =
   // transport had at 84dvh centred, which is the number that was tuned for it.
   "flex h-[87dvh] max-h-[87dvh] top-[48.5dvh] w-[90vw] max-w-5xl flex-col gap-0 overflow-hidden border-line-strong bg-surface-raised p-0 sm:max-w-5xl " +
   "data-[state=closed]:animate-none data-[state=closed]:fade-out-100 data-[state=closed]:zoom-out-100 " +
-  "data-[state=open]:animate-none data-[state=open]:fade-in-100 data-[state=open]:zoom-in-100"
+  "data-[state=open]:animate-none data-[state=open]:fade-in-100 data-[state=open]:zoom-in-100 " +
+  // A phone: the panel place (below the top bar, full width) down to just above
+  // the transport, untranslated so the insets are the edges.
+  "compact:top-[3.75rem] compact:right-3 compact:bottom-16 compact:left-3 compact:h-auto compact:max-h-none compact:w-auto compact:max-w-none compact:translate-x-0 compact:translate-y-0"
 
 /**
  * How many are on this shelf, right after the word that names it.
