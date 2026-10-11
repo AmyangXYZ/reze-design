@@ -20,7 +20,8 @@ import { CopyObjectCommand, HeadObjectCommand, ListObjectsV2Command, S3Client } 
 const { R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET } = process.env
 const WRITE = process.argv.includes("--write")
 
-// Kept in step with app/api/upload/route.ts by hand — two constants, one string.
+// Kept in step with lib/bundle-owner.ts by hand — two constants, one string.
+// Publishing applies it itself now (cacheImmutably); this catches the rest.
 const IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable"
 
 const s3 = new S3Client({

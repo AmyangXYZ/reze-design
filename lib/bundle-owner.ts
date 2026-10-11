@@ -1,6 +1,6 @@
 import "server-only"
 import { createHmac, randomBytes } from "node:crypto"
-import { DeleteObjectCommand, S3Client } from "@aws-sdk/client-s3"
+import { CopyObjectCommand, DeleteObjectCommand, S3Client } from "@aws-sdk/client-s3"
 
 // Where a scene's bundle lives in storage, and whose it is.
 //
@@ -30,6 +30,57 @@ export const newBundleKey = (userId: string): string => `b/${ownerTag(userId)}/$
 export const ownsBundleKey = (userId: string, key: string): boolean =>
   key.startsWith(`b/${ownerTag(userId)}/`) || key.startsWith(`scenes/${userId}/`)
 
+const r2 = () =>
+  new S3Client({
+    region: "auto",
+    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId: process.env.R2_ACCESS_KEY_ID!, secretAccessKey: process.env.R2_SECRET_ACCESS_KEY! },
+  })
+
+// Kept in step with scripts/r2-backfill-cache.mjs by hand — one string.
+const IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable"
+
+const contentTypeFor = (key: string) => {
+  if (key.endsWith(".zip")) return "application/zip"
+  if (key.endsWith(".bin")) return "application/octet-stream"
+  if (key.endsWith(".png")) return "image/png"
+  if (key.endsWith(".jpg") || key.endsWith(".jpeg")) return "image/jpeg"
+  return "image/webp"
+}
+
+/**
+ * Give a just-published object the cache header it could not upload with.
+ *
+ * Published objects are immutable — every publish mints a new key — so they
+ * want `immutable` for a year. The presigned PUT cannot carry it (see
+ * app/api/upload/route.ts: a signed cache-control fails the bucket's CORS
+ * preflight), and without it Cloudflare BYPASSES its cache for the object, so
+ * every viewer pulled 30–200MB straight from the bucket and every revisit paid
+ * for it again. scripts/r2-backfill-cache.mjs did this by hand, and new
+ * publishes went uncached between runs; this does it at publish time.
+ *
+ * R2 has no in-place metadata edit: a copy onto itself with REPLACE, which is
+ * why the content type is restated. Best effort — a failure leaves the object
+ * uncached exactly as before, never a broken publish, and the backfill script
+ * still catches it.
+ */
+export async function cacheImmutably(key: string): Promise<void> {
+  try {
+    await r2().send(
+      new CopyObjectCommand({
+        Bucket: process.env.R2_BUCKET,
+        Key: key,
+        CopySource: `${process.env.R2_BUCKET}/${encodeURIComponent(key).replace(/%2F/g, "/")}`,
+        MetadataDirective: "REPLACE",
+        CacheControl: IMMUTABLE_CACHE_CONTROL,
+        ContentType: contentTypeFor(key),
+      }),
+    )
+  } catch (e) {
+    console.error("[publish] could not set the cache header", key, e)
+  }
+}
+
 /**
  * Remove a bundle a republish has replaced. Every publish uploads a fresh one,
  * so without this each correction left its predecessor in storage forever.
@@ -45,12 +96,7 @@ export const ownsBundleKey = (userId: string, key: string): boolean =>
 export async function deleteReplacedBundle(key: string): Promise<void> {
   if (!/^b\/[^/]+\/[^/]+\.bin$/.test(key) && !/^scenes\/[^/]+\/[^/]+\/assets\.zip$/.test(key)) return
   try {
-    const s3 = new S3Client({
-      region: "auto",
-      endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-      credentials: { accessKeyId: process.env.R2_ACCESS_KEY_ID!, secretAccessKey: process.env.R2_SECRET_ACCESS_KEY! },
-    })
-    await s3.send(new DeleteObjectCommand({ Bucket: process.env.R2_BUCKET, Key: key }))
+    await r2().send(new DeleteObjectCommand({ Bucket: process.env.R2_BUCKET, Key: key }))
   } catch (e) {
     console.error("[publish] could not delete replaced bundle", key, e)
   }

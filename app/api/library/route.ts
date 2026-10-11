@@ -4,7 +4,7 @@
 // someone publishes, which is also the moment content acquires an owner, a
 // stable id and a name under which others will see it.
 
-import { NextResponse } from "next/server"
+import { NextResponse, after } from "next/server"
 import { unstable_cache } from "next/cache"
 import { and, desc, eq, inArray, isNull, lt, ne, sql, type SQL } from "drizzle-orm"
 import { auth } from "@/lib/auth"
@@ -15,7 +15,7 @@ import { TREND_EPOCH, TREND_HALF_LIFE } from "@/lib/trend"
 import { LIBRARY_TAG, refreshLibrary, refreshMakerPages } from "@/lib/public-pages"
 import { normalizeName, withGraphName, type LibraryKind } from "@/lib/library"
 import type { Visibility } from "@/lib/db/schema"
-import { deleteReplacedBundle, ownsBundleKey } from "@/lib/bundle-owner"
+import { cacheImmutably, deleteReplacedBundle, ownsBundleKey } from "@/lib/bundle-owner"
 
 const KINDS: LibraryKind[] = ["grade", "graph", "effect", "scene"]
 const MAX_NAME = 60
@@ -545,6 +545,15 @@ export async function POST(request: Request) {
     if (replacing?.bundleKey && hasBundle && replacing.bundleKey !== bundleKey) {
       await deleteReplacedBundle(replacing.bundleKey)
     }
+    // The cache header the upload could not carry (lib/bundle-owner), after the
+    // response: a server-side copy of a 200MB bundle is seconds the publisher
+    // need not wait for. Only this publish's own uploads — the bundle passed the
+    // owner check above, and a poster lives in the publisher's own folder.
+    const fresh = [
+      hasBundle ? (bundleKey as string) : null,
+      hasPoster && (posterKey as string).startsWith(`scenes/${session.user.id}/`) ? (posterKey as string) : null,
+    ].filter((k): k is string => k !== null)
+    if (fresh.length) after(() => Promise.all(fresh.map(cacheImmutably)))
     // Shaped like a gallery card so the client can drop it straight into the
     // list it just joined, instead of re-reading the whole page to learn one row.
     return NextResponse.json(
