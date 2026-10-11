@@ -47,8 +47,8 @@ const row = (id: string, name: string, extra: object = {}) => ({
 })
 const builtin = EFFECTS[0]
 let publicRows = [row("p1", "Theirs"), row("p2", "Mine, public"), row(builtin.id, builtin.name)]
-let ownRows = [{ ...row("p2", "Mine, public"), mine: true }, { ...row("v1", "Mine, private", { visibility: "private" }), mine: true }]
-let liked = ["p1"]
+const ownRows = [{ ...row("p2", "Mine, public"), mine: true }, { ...row("v1", "Mine, private", { visibility: "private" }), mine: true }]
+const liked = ["p1"]
 let down = false
 globalThis.fetch = (async (url: string) => {
   if (down) throw new TypeError("Failed to fetch")

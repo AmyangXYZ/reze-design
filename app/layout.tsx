@@ -1,4 +1,6 @@
 import { SiteNotice } from "@/components/site-notice"
+import { BootGuardScript } from "@/components/boot-guard"
+import { BootSlowNote } from "@/components/boot-note"
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -67,6 +69,11 @@ export default function RootLayout({
       translate="no"
       className={`dark notranslate ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        {/* Before any of the app's code: recovers a page whose chunks did not
+            arrive, and says so when the connection is slow (boot-guard). */}
+        <BootGuardScript />
+      </head>
       <body
         className="min-h-full flex flex-col text-foreground"
         // The colour this build boots into — the demo's, or the empty scene's,
@@ -88,6 +95,7 @@ export default function RootLayout({
           <Toaster />
           <SiteNotice />
         </I18nProvider>
+        <BootSlowNote />
         <Analytics/>
       </body>
     </html>
