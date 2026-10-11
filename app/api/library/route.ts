@@ -6,7 +6,7 @@
 
 import { NextResponse, after } from "next/server"
 import { unstable_cache } from "next/cache"
-import { and, desc, eq, inArray, isNull, lt, ne, sql, type SQL } from "drizzle-orm"
+import { and, desc, eq, inArray, isNull, lt, sql, type SQL } from "drizzle-orm"
 import { auth } from "@/lib/auth"
 import { hasDatabase, db, schema } from "@/lib/db"
 import { user } from "@/lib/db/auth-schema"
@@ -16,6 +16,8 @@ import { LIBRARY_TAG, refreshLibrary, refreshMakerPages } from "@/lib/public-pag
 import { normalizeName, withGraphName, type LibraryKind } from "@/lib/library"
 import type { Visibility } from "@/lib/db/schema"
 import { cacheImmutably, deleteReplacedBundle, ownsBundleKey } from "@/lib/bundle-owner"
+import { presetRows } from "@/lib/library-rows"
+import { publicJson } from "@/lib/cdn"
 
 const KINDS: LibraryKind[] = ["grade", "graph", "effect", "scene"]
 const MAX_NAME = 60
@@ -98,7 +100,7 @@ export async function GET(request: Request) {
     // Tag counts across EVERY public scene, not the page in front of you: tags are
     // a way of browsing the whole gallery, so they must not shrink when you narrow
     // it to your own or to what you liked.
-    if (url.searchParams.get("counts") === "tags") return NextResponse.json({ tags: await galleryTags() })
+    if (url.searchParams.get("counts") === "tags") return publicJson({ tags: await galleryTags() })
 
     // Facet counts for the rail, over the WHOLE gallery rather than the page in
     // front of you — a rail that counted the loaded window would climb as you
@@ -142,29 +144,19 @@ export async function GET(request: Request) {
 
     // The public pages are cached for everyone; only the personal facets read a
     // session, and those go to the database.
-    if (!facet) return NextResponse.json(await publicGalleryPage(sort, before, limit))
+    if (!facet) return publicJson(await publicGalleryPage(sort, before, limit))
     const viewer = await auth.api.getSession({ headers: request.headers })
     if (!viewer || (facet !== "yours" && facet !== "liked")) return NextResponse.json({ scenes: [], nextCursor: null })
     return NextResponse.json(await galleryPage(sort, before, limit, { facet, viewerId: viewer.user.id }))
   }
 
-  // The presets: every public row, cached for everyone, plus your own private
-  // ones read live — your private presets belong in YOUR library, badged, or
-  // "private" would mean "lost".
-  const session = await auth.api.getSession({ headers: request.headers })
-  const [shared, own] = await Promise.all([
-    publicPresets(),
-    session
-      ? presetRows(and(eq(schema.libraryItems.visibility, "private"), eq(schema.libraryItems.ownerId, session.user.id)))
-      : Promise.resolve([]),
-  ])
-  // Newest first, which is also the order a client with no sort of its own
-  // renders. The date travels with the row: the library ranks by it, so the
-  // ordering here is a sensible default rather than the only signal.
-  const items = [...shared, ...own]
-    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))
-    .map(({ ownerId, ...r }) => ({ ...r, owner: "user" as const, mine: !!session && ownerId === session.user.id }))
-  return NextResponse.json({ items })
+  // The presets: every public row, the same for everyone, so cached at the CDN
+  // (lib/cdn) and never reading a session. Your own rows, private ones among
+  // them, and what you liked come from /api/library/mine, which the client
+  // merges in. Newest first: the library ranks by date, so this is a sensible
+  // default rather than the only signal.
+  const items = (await publicPresets()).map((r) => ({ ...r, owner: "user" as const }))
+  return publicJson({ items })
 }
 
 const PUBLISHED_SCENE = and(
@@ -305,32 +297,6 @@ async function galleryPage(
     // Keyset, not offset: rows shift under an offset as people publish.
     nextCursor: scenes.length > limit && last ? cursorOf(last) : null,
   }
-}
-
-/** Preset rows (scenes have the gallery) matching `where`, newest first. */
-async function presetRows(where: ReturnType<typeof and>) {
-  const rows = await db
-    .select({
-      id: schema.libraryItems.id,
-      kind: schema.libraryItems.kind,
-      name: schema.libraryItems.name,
-      author: schema.libraryItems.author,
-      description: schema.libraryItems.description,
-      tags: schema.libraryItems.tags,
-      payload: schema.libraryItems.payload,
-      ownerId: schema.libraryItems.ownerId,
-      createdAt: schema.libraryItems.createdAt,
-      visibility: schema.libraryItems.visibility,
-      // The author's avatar, so a library can show WHO made something rather
-      // than a string. Joined here because `author` is denormalised onto the row
-      // and an image is the one thing about a person that is not.
-      authorImage: user.image,
-    })
-    .from(schema.libraryItems)
-    .leftJoin(user, eq(schema.libraryItems.ownerId, user.id))
-    .where(and(ne(schema.libraryItems.kind, "scene"), where))
-    .orderBy(desc(schema.libraryItems.createdAt))
-  return rows.map(({ createdAt, ...r }) => ({ ...r, createdAt: createdAt.toISOString() }))
 }
 
 /** Every public preset, cached like the gallery. */

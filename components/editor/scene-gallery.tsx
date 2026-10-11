@@ -15,6 +15,9 @@ import { GalleryThumbnails, Loader2, X } from "lucide-react"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { LIBRARY_DETAIL_BODY, LIBRARY_SHELL, LibraryLike, LibraryTags } from "@/components/editor/library-rail"
+import { fetchJson, retryLater, retrySettled } from "@/lib/net"
+import { usePollWhileOpen } from "@/hooks/use-poll-while-open"
+import { readSaved, writeSaved } from "@/lib/saved"
 import {
   LibraryBack,
   LibraryRailFilters,
@@ -137,6 +140,28 @@ export type FacetCounts = Record<View, number>
 let facetCounts: FacetCounts | null = null
 let facetsInflight: Promise<FacetCounts> | null = null
 
+// The public shelf's first window and the tag cloud, saved in this browser
+// (lib/saved), so the gallery opens full on a cold start and on a route that
+// cannot reach the server, then refreshes underneath. Only the public reads:
+// your shelves are personal, and a stale "liked" would be a wrong one.
+const SAVED_PAGE = "gallery.all.v1"
+const SAVED_TAGS = "gallery.tags.v1"
+let hydrated = false
+/** Read the saved shelf and cloud once, applying each only if the network has
+ *  not answered first; an open gallery repaints through `announce`. */
+function hydrateSaved() {
+  if (hydrated) return
+  hydrated = true
+  void readSaved<Page>(SAVED_PAGE).then((page) => {
+    if (!page?.scenes || pages.has("all")) return
+    pages.set("all", page)
+    announce()
+  })
+  void readSaved<[string, number][]>(SAVED_TAGS).then((tags) => {
+    if (tags && !tagCounts) tagCounts = tags
+  })
+}
+
 /**
  * How a view is ranked.
  *
@@ -155,9 +180,7 @@ async function firstPage(v: View): Promise<Page> {
   const params = new URLSearchParams({ kind: "scene", sort: sortFor(v) })
   // Only a narrowing needs a session; `all` stays one public query.
   if (isFacet(v)) params.set("facet", v)
-  const res = await fetch(`/api/library?${params}`)
-  if (!res.ok) throw new Error(String(res.status))
-  return (await res.json()) as Page
+  return fetchJson<Page>(`/api/library?${params}`)
 }
 
 /** Fresh window on top, anything already paged past kept below it and deduped:
@@ -176,10 +199,12 @@ function merge(old: Page | undefined, fresh: Page): Page {
 /** The first page of a view, merged into what we already had. Shared with anyone
  *  already waiting on the same view. */
 function loadPage(v: View): Promise<Page> {
+  hydrateSaved()
   const held = inflight.get(v)
   if (held) return held
   const req = firstPage(v)
     .then((fresh) => {
+      if (v === "all") writeSaved(SAVED_PAGE, fresh)
       const merged = merge(pages.get(v), fresh)
       pages.set(v, merged)
       inflight.delete(v)
@@ -194,10 +219,10 @@ function loadPage(v: View): Promise<Page> {
 }
 
 function loadTags(): Promise<[string, number][]> {
-  tagsInflight ??= fetch("/api/library?kind=scene&counts=tags")
-    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-    .then((d: { tags: { tag: string; n: number }[] }) => {
+  tagsInflight ??= fetchJson<{ tags: { tag: string; n: number }[] }>("/api/library?kind=scene&counts=tags")
+    .then((d) => {
       tagCounts = d.tags.map((x) => [x.tag, x.n] as [string, number])
+      writeSaved(SAVED_TAGS, tagCounts)
       tagsInflight = null
       return tagCounts
     })
@@ -232,9 +257,8 @@ function cachedFallback(v: View, username: string | null | undefined): GallerySc
 }
 
 function loadFacetCounts(): Promise<FacetCounts> {
-  facetsInflight ??= fetch("/api/library?kind=scene&counts=facets")
-    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-    .then((d: FacetCounts) => {
+  facetsInflight ??= fetchJson<FacetCounts>("/api/library?kind=scene&counts=facets")
+    .then((d) => {
       facetCounts = d
       facetsInflight = null
       return d
@@ -249,7 +273,9 @@ function loadFacetCounts(): Promise<FacetCounts> {
 /** Warm the default view and the tag cloud while the page is idle, so opening the
  *  gallery is a render rather than a wait. */
 export function prefetchGallery(signedIn = false): void {
-  if (!pages.has("all")) void loadPage("all").catch(() => {})
+  hydrateSaved()
+  // Always asked, saved copy or not: the saved one is to paint with, not to keep.
+  void loadPage("all").catch(() => {})
   if (!tagCounts) void loadTags().catch(() => {})
   if (!facetCounts) void loadFacetCounts().catch(() => {})
   // The two personal shelves, and the reason this takes an argument at all.
@@ -337,9 +363,12 @@ function GalleryContent({
   const [view, setView] = useState<View>(opensOn)
   // Seeded from the view this opened ON, not from the default one: an entrance
   // that means "show me mine" would otherwise paint the whole gallery first.
-  const [scenes, setScenes] = useState<GalleryScene[]>(
-    () => pages.get(opensOn)?.scenes ?? cachedFallback(opensOn, session?.user.username),
-  )
+  const [scenes, setScenes] = useState<GalleryScene[]>(() => {
+    // Mounted on open, so in the browser; a saved shelf read now repaints
+    // through the relay below when it arrives.
+    hydrateSaved()
+    return pages.get(opensOn)?.scenes ?? cachedFallback(opensOn, session?.user.username)
+  })
   const [cursor, setCursor] = useState<number | null>(() => pages.get(view)?.nextCursor ?? null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const nsfwShown = useShowNsfw()
@@ -364,16 +393,21 @@ function GalleryContent({
   const [cacheV, setCacheV] = useState(0)
   const [loading, setLoading] = useState(() => !pages.has(view) && scenes.length === 0)
   const [failed, setFailed] = useState(false)
+  /** Bumped to ask for the view again after a failure (lib/net retryLater). */
+  const [attempt, setAttempt] = useState(0)
 
   // Cached rows paint immediately and the refresh lands underneath them, so
   // reopening the gallery or changing how you browse is never a blank wait.
   useEffect(() => {
     let stale = false
+    let cancelRetry = () => {}
     loadPage(view)
       .then((page) => {
+        retrySettled(`gallery:${view}`)
         if (stale) return
         setScenes(page.scenes)
         setCursor(page.nextCursor)
+        setFailed(false)
         setLoading(false)
       })
       .catch(() => {
@@ -381,11 +415,20 @@ function GalleryContent({
         // Only an empty grid is a failure; stale rows are better than an apology.
         setFailed(!pages.has(view))
         setLoading(false)
+        // Either way, keep asking while the gallery is open.
+        cancelRetry = retryLater(`gallery:${view}`, () => setAttempt((n) => n + 1))
       })
     return () => {
       stale = true
+      cancelRetry()
     }
-  }, [view])
+  }, [view, attempt])
+  // While open, a public shelf picks up new scenes; the fresh window merges in
+  // on top (see merge), so nothing moves under the reader. Not "yours" and
+  // "liked": those read the database, and only change when you do something.
+  usePollWhileOpen(() => {
+    if (!isFacet(view)) setAttempt((n) => n + 1)
+  })
 
   // Repaint when something patches the cache underneath an open gallery.
   useEffect(() => {
@@ -511,9 +554,8 @@ function GalleryContent({
     setLoading(true)
     const params = new URLSearchParams({ kind: "scene", sort: sortFor(view), before: String(cursor) })
     if (isFacet(view)) params.set("facet", view)
-    fetch(`/api/library?${params}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((page: Page) => {
+    fetchJson<Page>(`/api/library?${params}`)
+      .then((page) => {
         // Into the cache as well as the view: pages read once shouldn't be re-read
         // the next time the gallery opens.
         const held = pages.get(view)
@@ -641,6 +683,7 @@ function GalleryContent({
             library with their own cards, their own sort and their own rail. */}
         <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", detail.results)}>
           <LibraryResults
+            watch={["gallery:", "library-stats"]}
             browse={browse}
             selectedId={selected?.id ?? null}
             onSelect={(s) => {

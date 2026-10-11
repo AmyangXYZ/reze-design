@@ -33,6 +33,7 @@ import { storageKey } from "@/lib/storage"
 import { useT } from "@/lib/i18n"
 import { useCompact } from "@/lib/device"
 import { cn } from "@/lib/utils"
+import { failingVersion, isFailing, retryNow, watchFailing } from "@/lib/net"
 
 /** What browsing needs of a row, and no more. Deliberately NOT `LibraryItem`:
  *  presets carry a payload and scenes do not, and the grid never looks at one.
@@ -555,6 +556,27 @@ export function LibraryBack({ onClick }: { onClick: () => void }) {
 
 // ── Results ──────────────────────────────────────────────────────────────────
 
+/**
+ * One line, only while a load behind the list is failing: the rows above are
+ * the saved copy, and it is being retried. Nothing while things work, nothing
+ * during the in-request retries (lib/net fetchJson) that cover most blips, and
+ * it goes away by itself when a retry lands. Amber, the chrome's "it still
+ * works, but read this". Retry asks now instead of at the next wait.
+ */
+function OfflineLine({ watch, empty }: { watch: readonly string[]; empty?: boolean }) {
+  const t = useT()
+  return (
+    <div className="flex items-center justify-center gap-1.5 px-3 py-3 text-2xs text-muted-foreground">
+      <span className="size-1.5 shrink-0 rounded-full bg-amber-400" />
+      {/* With nothing saved to show, it says what it is doing instead. */}
+      <span>{empty ? t.library.offlineEmpty : t.library.offline}</span>
+      <Button variant="bare" onClick={() => retryNow(watch)} className="text-foreground hover:underline">
+        {t.library.retry}
+      </Button>
+    </div>
+  )
+}
+
 /** One card size for every kind. A scene poster is not a bigger idea than an
  *  effect, and a grid whose track width changes per kind is four grids again.
  *  The count follows the width, so a card never shrinks to satisfy a number. */
@@ -716,11 +738,23 @@ type ResultsProps<T extends BrowseItem> = {
   empty: React.ReactNode
   /** Below the rows, inside the same scroller: paging, spinners, errors. */
   footer?: React.ReactNode
+  /** The loads behind this list (lib/net keys, by prefix). While one is
+   *  failing, a single quiet line under the rows says so. */
+  watch?: readonly string[]
 }
 
 export function LibraryResults<T extends BrowseItem>({
-  browse, selectedId, onSelect, onActivate, meta, numbers, displayName, wrap, usedLabel, empty, footer,
+  browse, selectedId, onSelect, onActivate, meta, numbers, displayName, wrap, usedLabel, empty, footer: rowsFooter, watch,
 }: ResultsProps<T>) {
+  useSyncExternalStore(watchFailing, failingVersion, failingVersion)
+  const offline = !!watch && isFailing(watch)
+  const footer =
+    rowsFooter || offline ? (
+      <>
+        {rowsFooter}
+        {offline && <OfflineLine watch={watch} />}
+      </>
+    ) : null
   const t = useT()
   const compact = useCompact()
   const { rows, sort, dir, setSort } = browse
@@ -730,8 +764,16 @@ export function LibraryResults<T extends BrowseItem>({
   if (rows.length === 0) {
     return (
       <div className="flex flex-1 flex-col">
-        <div className="flex flex-1 items-center justify-center p-10 text-center text-xs text-muted-foreground">{empty}</div>
-        {footer}
+        {/* Failing with nothing to show: the line takes the empty state's
+            place, rather than a "no results" that is not true. */}
+        {offline ? (
+          <div className="flex flex-1 items-center justify-center p-10">
+            <OfflineLine watch={watch} empty />
+          </div>
+        ) : (
+          <div className="flex flex-1 items-center justify-center p-10 text-center text-xs text-muted-foreground">{empty}</div>
+        )}
+        {rowsFooter}
       </div>
     )
   }

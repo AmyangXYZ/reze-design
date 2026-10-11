@@ -339,6 +339,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
               belongs. */}
           <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden", detail.results)}>
             <LibraryResults
+              watch={["community", "library-stats"]}
               browse={browse}
               selectedId={selectedId}
               onSelect={(e) => {

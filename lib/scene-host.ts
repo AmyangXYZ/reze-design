@@ -283,6 +283,110 @@ export class BundleDownloadError extends Error {
   }
 }
 
+/** How long a download may go without a byte before it counts as dropped. A
+ *  lossy route often stalls instead of erroring, and a stalled read never ends. */
+const BUNDLE_STALL_MS = 20_000
+/** Fresh connections per download: the first, and the retries and resumes after it. */
+const BUNDLE_CONNECTIONS = 8
+
+/**
+ * Download a published bundle, resuming where a dropped connection left off.
+ *
+ * One request for 30–200MB is exactly what a lossy route into Cloudflare
+ * cannot finish (see lib/net.ts), and a drop at 80% used to start the whole
+ * thing over, or fail it. Now a drop, or a stall with no bytes for 20s, asks
+ * for the rest with `Range: bytes=<received>-` and carries on; the bucket's
+ * CORS rules allow the header and Cloudflare answers 206 from cache or from R2.
+ * Bundle keys are immutable, so the rest is always of the same file. A server
+ * that ignores the range answers 200 with the whole file, which starts over
+ * rather than splicing two copies.
+ *
+ * Null when `stale()` turns true part-way: the caller has moved on.
+ *
+ * Exported for lib/net.test.mts, which also shortens `stallMs`.
+ */
+export async function downloadBundle(
+  url: string,
+  stale: () => boolean,
+  onBytes?: (p: BundleProgress | null) => void,
+  stallMs = BUNDLE_STALL_MS,
+): Promise<Blob | null> {
+  const chunks: BlobPart[] = []
+  let received = 0
+  let total = 0
+  const started = performance.now()
+  let painted = 0
+  let lastStatus: number | null = null
+  for (let connection = 0; connection < BUNDLE_CONNECTIONS; connection++) {
+    if (connection > 0) {
+      // 0.5s, 1s, 2s… capped at 8s: long enough for a congested link to clear.
+      await new Promise((r) => setTimeout(r, Math.min(8_000, 500 * 2 ** (connection - 1))))
+      if (stale()) return null
+    }
+    const abort = new AbortController()
+    let watchdog = setTimeout(() => abort.abort(), stallMs)
+    const kick = () => {
+      clearTimeout(watchdog)
+      watchdog = setTimeout(() => abort.abort(), stallMs)
+    }
+    try {
+      const res = await fetch(url, {
+        signal: abort.signal,
+        headers: received > 0 ? { range: `bytes=${received}-` } : undefined,
+      })
+      lastStatus = res.status
+      if (res.status === 200 && received > 0) {
+        // The range was ignored: this is the whole file again.
+        chunks.length = 0
+        received = 0
+      } else if (!res.ok) {
+        // An answer, not a drop. A 5xx may pass; anything else will not.
+        if (res.status >= 500 || res.status === 408 || res.status === 429) continue
+        throw new BundleDownloadError({ status: res.status, received: 0, total: 0 })
+      }
+      if (received === 0) total = Number(res.headers.get("content-length")) || 0
+      if (!res.body) {
+        const blob = await res.blob()
+        chunks.push(blob)
+        received += blob.size
+      } else {
+        const reader = res.body.getReader()
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) break
+          kick()
+          chunks.push(value as unknown as BlobPart)
+          received += value.byteLength
+          // Four updates a second. The number is being read by a human, and a
+          // per-chunk setState on a 165MB download is thousands of renders.
+          const now = performance.now()
+          if (onBytes && now - painted > 250) {
+            painted = now
+            onBytes({ received, total, bytesPerSecond: received / Math.max(0.001, (now - started) / 1000) })
+          }
+          if (stale()) {
+            abort.abort()
+            return null
+          }
+        }
+      }
+      // Ended early without an error is a drop too: ask for the rest.
+      if (total > 0 && received < total) continue
+      return new Blob(chunks)
+    } catch (e) {
+      if (e instanceof BundleDownloadError) throw e
+      // A network error, or the watchdog's abort: try again from `received`.
+    } finally {
+      clearTimeout(watchdog)
+    }
+  }
+  throw new BundleDownloadError({
+    status: lastStatus !== null && lastStatus >= 500 && received === 0 ? lastStatus : null,
+    received,
+    total,
+  })
+}
+
 export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean, progress: LoadProgress = {}) {
   const { onStage, onBundle, onModel, onBytes, onStyling, onNativeStage } = progress
   const s = scene.state.settings
@@ -338,48 +442,17 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
     // An import this tab opened already (lib/uploads holdBundle).
     bundle = held
   } else if (scene.assets.bundle) {
-    const res = await fetch(scene.assets.bundle).catch(() => {
-      throw new BundleDownloadError({ status: null, received: 0, total: 0 })
-    })
-    if (!res.ok) throw new BundleDownloadError({ status: res.status, received: 0, total: 0 })
-    // Read the body in chunks rather than awaiting .blob(), so the wait can be
-    // reported. This is the dominant cost of opening someone else's scene —
-    // measured at 5.5s of a 6.1s open for a 165MB bundle — and an unmoving
-    // "loading…" for that long is indistinguishable from a hang.
-    const total = Number(res.headers.get("content-length")) || 0
-    let blob: Blob
-    if (res.body && onBytes) {
-      const reader = res.body.getReader()
-      const chunks: BlobPart[] = []
-      let received = 0
-      const started = performance.now()
-      let painted = 0
-      for (;;) {
-        const { done, value } = await reader.read().catch(() => {
-          throw new BundleDownloadError({ status: null, received, total })
-        })
-        if (done) break
-        chunks.push(value as unknown as BlobPart)
-        received += value.byteLength
-        // Four updates a second. The number is being read by a human, and a
-        // per-chunk setState on a 165MB download is thousands of renders.
-        const now = performance.now()
-        if (now - painted > 250) {
-          painted = now
-          onBytes({ received, total, bytesPerSecond: received / Math.max(0.001, (now - started) / 1000) })
-        }
-        if (stale()) return null
-      }
-      blob = new Blob(chunks)
-    } else {
-      blob = await res.blob().catch(() => {
-        throw new BundleDownloadError({ status: null, received: 0, total })
-      })
-    }
+    // Reported in chunks rather than awaited whole, so the wait can be shown.
+    // This is the dominant cost of opening someone else's scene — measured at
+    // 5.5s of a 6.1s open for a 165MB bundle — and an unmoving "loading…" for
+    // that long is indistinguishable from a hang.
+    const downloaded = await downloadBundle(scene.assets.bundle, stale, onBytes)
+    if (!downloaded) return null
+    let blob: Blob = downloaded
     // Not null: the wait is not over, it has changed kind — briefly now that
     // only the zip's directory is read — and reporting "no download" here would
     // send the pill back to the name it uses before one has started.
-    onBytes?.({ received: blob.size, total: total || blob.size, bytesPerSecond: 0, done: true })
+    onBytes?.({ received: blob.size, total: blob.size, bytesPerSecond: 0, done: true })
     // A sealed bundle (lib/bundle-cipher) opens back into its zip first; one
     // published before sealing — or by a tab that predates it — is a plain zip.
     blob = await bundleZip(blob, scene.assets.bundle)

@@ -336,6 +336,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
             rather than by what. The rail still filters by maker. */}
         <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden", detail.results)}>
           <LibraryResults
+            watch={["community", "library-stats"]}
             browse={browse}
             selectedId={selected?.id ?? null}
             onSelect={select}

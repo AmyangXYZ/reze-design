@@ -10,6 +10,7 @@ import { GRADE_PRESETS } from "@/lib/grade"
 import { GRAPH_LIBRARY } from "@/lib/materials"
 import type { ItemRef, SceneDoc } from "@/lib/scene"
 import { sceneRefs } from "@/lib/scene"
+import { fetchJson } from "@/lib/net"
 
 type Payload = { graph?: ShaderGraph; wgsl?: string; spec?: unknown }
 
@@ -55,17 +56,12 @@ export async function resolveSceneRefs(doc: SceneDoc): Promise<(ref: ItemRef) =>
 
   if (missing.length > 0) {
     try {
-      const res = await fetch("/api/library/resolve", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ refs: missing }),
-      })
-      if (res.ok) {
-        const { payloads } = (await res.json()) as {
-          payloads?: Record<string, { payload: Payload; name: string }>
-        }
-        for (const [key, v] of Object.entries(payloads ?? {})) remote.set(key, { ...v.payload, name: v.name })
-      }
+      // A lookup, so retrying the POST is safe (lib/net).
+      const { payloads } = await fetchJson<{ payloads?: Record<string, { payload: Payload; name: string }> }>(
+        "/api/library/resolve",
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ refs: missing }) },
+      )
+      for (const [key, v] of Object.entries(payloads ?? {})) remote.set(key, { ...v.payload, name: v.name })
     } catch {
       // Unresolved pins render as the engine default — degraded, never broken.
     }

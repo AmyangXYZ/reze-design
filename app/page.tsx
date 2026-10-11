@@ -189,6 +189,7 @@ import {
 } from "@/lib/library"
 import { useCommunity } from "@/hooks/use-community"
 import { communityItems, preloadCommunity } from "@/lib/community-store"
+import { syncMine } from "@/lib/mine-store"
 import { useDrafts } from "@/hooks/use-drafts"
 import { useSession } from "@/lib/auth-client"
 import { useSceneHistory } from "@/hooks/use-scene-history"
@@ -260,6 +261,7 @@ import { effectTexturesFor, loadParticleTextures } from "@/lib/effect-textures"
 import { findSkies, isStageOwnSky, skyThumbnail, type SkyCandidate } from "@/lib/stage-skies"
 import { GpuErrorNotice } from "@/components/gpu-error-notice"
 import { toast } from "sonner"
+import { fetchJson } from "@/lib/net"
 import { lipSyncVmdFile } from "@/lib/lipsync"
 import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, hexToLinearVec3, windFreqFromSlider, windSliderFromFreq, sceneOwned, NO_FILL, VIEW_TRANSFORMS, type SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
@@ -3187,14 +3189,15 @@ export default function Lab() {
   )
   const premium = authSession?.user.plan === "premium" || devPremium
   const authorName = authSession?.user.username ?? t.effectLibrary.you
-  // Fetch the published rows BEFORE a library is opened, not when one is. Keyed
-  // on the account so it runs twice on a cold signed-in load — once anonymous,
-  // once as you — because the private rows only exist in the second answer, and
-  // waiting for the session to settle would leave a signed-out reader waiting
-  // on an auth round trip for a list that never needed one.
+  // Fetch the published rows BEFORE a library is opened, not when one is.
+  // Everyone's rows need no session, so they start at once; yours (private
+  // ones, your hearts) follow the account in lib/mine-store and merge in.
   const sessionUserId = authSession?.user.id ?? null
   useEffect(() => {
-    preloadCommunity(true)
+    preloadCommunity()
+  }, [])
+  useEffect(() => {
+    syncMine(sessionUserId)
   }, [sessionUserId])
   // The grade editor is a floating SCRATCHPAD, the shipped editor's own:
   // `subject` is the working copy — live on the render, written nowhere. Only
@@ -6475,9 +6478,7 @@ export default function Lab() {
     forkDone.current = true
     void (async () => {
       try {
-        const res = await fetch(`/api/library/${handoff.scene}`)
-        if (!res.ok) throw new Error(String(res.status))
-        const { item } = (await res.json()) as {
+        const { item } = await fetchJson<{
           item: {
             name: string
             payload: { doc: SceneDoc }
@@ -6488,7 +6489,7 @@ export default function Lab() {
             nsfw?: boolean
             displayOnly?: boolean
           }
-        }
+        }>(`/api/library/${handoff.scene}`)
         // Watch, don't fork — unless it is the author reopening their own.
         if (item.displayOnly && !handoff.edit) {
           setUpload({ kind: "notice", message: t.share.displayOnlyRefused })

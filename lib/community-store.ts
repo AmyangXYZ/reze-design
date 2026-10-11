@@ -26,6 +26,9 @@ import { EFFECTS } from "@/lib/effects"
 import { GRADE_PRESETS } from "@/lib/grade"
 import { GRAPH_LIBRARY } from "@/lib/materials"
 import type { LibraryItem, LibraryKind } from "@/lib/library"
+import { fetchJson, retryLater, retrySettled } from "@/lib/net"
+import { readSaved, writeSaved } from "@/lib/saved"
+import { editMine, mineRows, subscribeMine } from "@/lib/mine-store"
 
 /** `authorImage` is the account's avatar; `createdAt` and `visibility` ride on
  *  the envelope itself. */
@@ -43,7 +46,8 @@ let inflight: Promise<CommunityItem[]> | null = null
 // Has a fetch ever SUCCEEDED? Distinct from "cache is empty": until the rows
 // land, every published item looks like it does not exist, and code that
 // decides what is unpublished has to wait rather than guess. A failed fetch
-// leaves this false — unknown is not the same as none.
+// leaves this false — unknown is not the same as none — and so does a saved
+// copy (lib/saved), which is good enough to browse and not to decide with.
 export let settled = false
 /** When the rows last landed, so a library opening refreshes a stale copy
  *  without every surface mounted at boot fetching the same list again. */
@@ -62,42 +66,79 @@ const authorImages = new Map<string, string>()
 // else they published — the bundle just can't know who is asking.
 let mineIds = new Set<string>()
 
-// Which request is the current one. A FORCED load always starts a fresh fetch,
-// and that is the whole reason this exists: signing in fires one while the
-// anonymous fetch is very likely still in the air, and joining that in-flight
-// request would answer the authenticated question with the public answer — no
-// private rows, and nothing to trigger another attempt until a library opened.
-// Only the newest response is allowed to write the cache, so the two cannot
-// land out of order and leave the older one winning.
+type PublicRow = Omit<CommunityItem, "mine">
+const SAVED = "community.v1"
+/** Everyone's rows, from /api/library (or the saved copy until it answers).
+ *  Null until either has been read. */
+let publicRows: PublicRow[] | null = null
+let hydrating = false
+
+/**
+ * The cache is ONE merge: everyone's rows plus yours (lib/mine-store), yours
+ * winning, built-ins left out (the repo is their authority), newest first.
+ * Rebuilt whenever either side changes, so neither can overwrite the other.
+ */
+function rebuild() {
+  const own = mineRows()
+  mineIds = new Set(own.map((i) => i.id))
+  const byId = new Map<string, CommunityItem>()
+  for (const r of publicRows ?? []) byId.set(r.id, { ...r, mine: mineIds.has(r.id) })
+  for (const r of own) byId.set(r.id, r)
+  for (const i of byId.values()) {
+    if (BUILTIN_IDS[i.kind]?.has(i.id)) builtinAuthors.set(i.id, i.author)
+    if (i.authorImage) authorImages.set(i.author, i.authorImage)
+  }
+  cache =
+    publicRows === null && own.length === 0
+      ? null
+      : [...byId.values()]
+          .filter((i) => !BUILTIN_IDS[i.kind]?.has(i.id))
+          .sort((a, b) => ((a.createdAt ?? "") < (b.createdAt ?? "") ? 1 : (a.createdAt ?? "") > (b.createdAt ?? "") ? -1 : 0))
+  for (const l of listeners) l()
+}
+subscribeMine(rebuild)
+
+// Which request is the current one. Only the newest response may write the
+// rows, so two in flight (a library opening while the boot fetch is still out)
+// cannot land out of order and leave the older one winning.
 let generation = 0
 
 /** @internal */
 export function load(force = false): Promise<CommunityItem[]> {
-  if (cache && !force) return Promise.resolve(cache)
+  if (cache && settled && !force) return Promise.resolve(cache)
   if (inflight && !force) return inflight
+  // First call in this tab: paint the saved copy while the network answers.
+  // Here rather than at import, so the server render and the first client
+  // render agree (both empty) and the saved rows arrive like any update. Only
+  // if the network has not answered first: saved is never newer.
+  if (publicRows === null && !hydrating) {
+    hydrating = true
+    void readSaved<{ items: PublicRow[] }>(SAVED).then((saved) => {
+      if (publicRows !== null || !saved?.items) return
+      publicRows = saved.items
+      rebuild()
+    })
+  }
   const gen = ++generation
-  const run = fetch("/api/library")
-    .then((r) => r.json())
-    .then((d: { items?: CommunityItem[] }) => {
-      // Superseded while this was in flight — a newer answer is authoritative,
-      // and writing this one over it would put the public list back.
+  const run = fetchJson<{ items?: PublicRow[] }>("/api/library")
+    .then((d) => {
       if (gen !== generation) return cache ?? []
-      const rows = d.items ?? []
-      mineIds = new Set(rows.filter((i) => i.mine).map((i) => i.id))
-      for (const i of rows) {
-        if (BUILTIN_IDS[i.kind]?.has(i.id)) builtinAuthors.set(i.id, i.author)
-        if (i.authorImage) authorImages.set(i.author, i.authorImage)
-      }
-      cache = rows.filter((i) => !BUILTIN_IDS[i.kind]?.has(i.id))
+      publicRows = d.items ?? []
+      writeSaved(SAVED, { items: publicRows })
       settled = true
       loadedAt = Date.now()
       inflight = null
-      for (const l of listeners) l()
-      return cache
+      retrySettled("community")
+      rebuild()
+      return cache ?? []
     })
     .catch(() => {
-      // Offline still browses builtins and drafts; community just stays empty.
-      if (gen === generation) inflight = null
+      // The saved copy, builtins and drafts still browse; the line in the
+      // library says so, and lib/net keeps asking until the route recovers.
+      if (gen === generation) {
+        inflight = null
+        retryLater("community", () => void load(true))
+      }
       return cache ?? []
     })
   inflight = run
@@ -109,15 +150,12 @@ export function load(force = false): Promise<CommunityItem[]> {
  *
  * The libraries used to fetch on OPEN, so the first one opened in a session
  * rendered from an empty cache: built-ins and drafts painted, then the
- * published rows — your private ones among them — arrived a round trip to
- * Singapore later and the ranking visibly re-sorted under the pointer.
- *
- * Called once at startup and again when a session appears, because WHICH rows
- * come back depends on who is asking: the list is public-only until the server
- * knows you, and your private items are exactly what the second call adds.
+ * published rows arrived a round trip to Singapore later and the ranking
+ * visibly re-sorted under the pointer. Your own rows are lib/mine-store's,
+ * which follows the session.
  */
-export function preloadCommunity(force = false): void {
-  void load(force)
+export function preloadCommunity(): void {
+  void load()
 }
 
 /** Does the signed-in user own this bundled item? Matched by uuid, which the
@@ -151,28 +189,31 @@ export function communityItems(kind: LibraryKind): CommunityItem[] {
   return (cache ?? []).filter((i) => i.kind === kind)
 }
 
+// The writes below are always to YOUR items (only an owner can rename,
+// re-scope, delete or publish), so they edit your rows and, for the public
+// ones, everyone's copy too; the merge then carries them into the cache.
+
 /** Reflect a rename the server accepted. */
 export function renameCommunityItem(id: string, name: string) {
-  cache = (cache ?? []).map((i) => (i.id === id ? { ...i, name } : i))
-  for (const l of listeners) l()
+  publicRows = publicRows?.map((i) => (i.id === id ? { ...i, name } : i)) ?? null
+  editMine((rows) => rows.map((i) => (i.id === id ? { ...i, name } : i)))
 }
 
 /** Reflect a visibility change the server accepted. */
 export function setCommunityVisibility(id: string, visibility: "public" | "private") {
-  cache = (cache ?? []).map((i) => (i.id === id ? { ...i, visibility } : i))
-  for (const l of listeners) l()
+  publicRows = publicRows?.map((i) => (i.id === id ? { ...i, visibility } : i)) ?? null
+  editMine((rows) => rows.map((i) => (i.id === id ? { ...i, visibility } : i)))
 }
 
 /** Drop a row the server just deleted, without waiting for a refetch. */
 export function removeCommunityItem(id: string) {
-  cache = (cache ?? []).filter((i) => i.id !== id)
-  for (const l of listeners) l()
+  publicRows = publicRows?.filter((i) => i.id !== id) ?? null
+  editMine((rows) => rows.filter((i) => i.id !== id))
 }
 
 /** Merge a JUST-published row so the library shows it before any refetch. */
 export function addCommunityItem(item: LibraryItem) {
-  cache = [...(cache ?? []), { ...item, owner: "user", mine: true }]
-  for (const l of listeners) l()
+  editMine((rows) => [...rows.filter((i) => i.id !== item.id), { ...item, owner: "user", mine: true }])
 }
 
 /** @internal */

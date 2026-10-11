@@ -1,5 +1,5 @@
-// Per-item social stats for the libraries: like count, whether you liked it, and
-// how many published scenes use it.
+// Per-item social stats for the libraries: like count, exports, and how many
+// published scenes use it. Whether YOU liked it is /api/library/mine.
 //
 // One request for the whole library rather than one per card — a grid of twenty
 // items should not make twenty round trips, especially to Singapore.
@@ -16,32 +16,21 @@ import { NextResponse } from "next/server"
 import { unstable_cache } from "next/cache"
 import { and, eq, isNull, sql } from "drizzle-orm"
 import { alias } from "drizzle-orm/pg-core"
-import { auth } from "@/lib/auth"
 import { hasDatabase, db, schema } from "@/lib/db"
 import { LIBRARY_TAG } from "@/lib/public-pages"
+import { publicJson } from "@/lib/cdn"
 import { isDefaultLook, trendScore } from "@/lib/trend"
 
-export type ItemStats = { likeCount: number; liked: boolean; scenes: number; exports: number; trend: number }
+/** Everyone's counts for an item. Whether you liked it is /api/library/mine. */
+export type SharedStats = { likeCount: number; scenes: number; exports: number; trend: number }
 
-export async function GET(request: Request) {
+export async function GET() {
   // No database configured: an honest empty answer, not a 500 the client has to
   // interpret. See lib/db — running without one is supported.
-  if (!hasDatabase) return NextResponse.json({ stats: {}, signedIn: false })
-
-  // The counts are everyone's and cached; only which ones YOU liked is read live,
-  // and only when someone is signed in.
-  const session = await auth.api.getSession({ headers: request.headers })
-  const [shared, mine] = await Promise.all([
-    sharedStats(),
-    session
-      ? db.select({ itemId: schema.likes.itemId }).from(schema.likes).where(eq(schema.likes.userId, session.user.id))
-      : Promise.resolve([] as { itemId: string }[]),
-  ])
-
-  const liked = new Set(mine.map((m) => m.itemId))
-  const stats: Record<string, ItemStats> = {}
-  for (const [id, s] of Object.entries(shared)) stats[id] = { ...s, liked: liked.has(id) }
-  return NextResponse.json({ stats, signedIn: !!session })
+  if (!hasDatabase) return NextResponse.json({ stats: {} })
+  // Everyone's counts, the same for everyone, so cached at the CDN (lib/cdn).
+  // Which ones YOU liked is personal and comes from /api/library/mine.
+  return publicJson({ stats: await sharedStats() })
 }
 
 /** Every item's counts, cached until a write marks the library stale
@@ -108,7 +97,7 @@ const sharedStats = unstable_cache(
       const i = byId.get(p.itemId)
       if (i && !isDefaultLook(i.kind, i.name, i.tags)) push(p.itemId, p.at)
     }
-    const out: Record<string, Omit<ItemStats, "liked">> = {}
+    const out: Record<string, SharedStats> = {}
     for (const i of items)
       out[i.id] = {
         likeCount: i.likeCount,
