@@ -14,7 +14,7 @@ import { useRouter } from "next/navigation"
 import { GalleryThumbnails, Loader2, X } from "lucide-react"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { LIBRARY_SHELL, LibraryLike, LibraryTags } from "@/components/editor/library-rail"
+import { LIBRARY_DETAIL_BODY, LIBRARY_SHELL, LibraryLike, LibraryTags } from "@/components/editor/library-rail"
 import {
   LibraryBack,
   LibraryRailFilters,
@@ -694,7 +694,7 @@ function GalleryContent({
                   )}
                 </Button>
               </div>
-              <div className="min-h-0 p-3">
+              <div className={LIBRARY_DETAIL_BODY}>
                 <div className="truncate text-sm font-semibold select-text">{selected.name}</div>
                 <div className="mt-1 flex min-w-0 items-center gap-1.5 font-mono text-xs text-muted-foreground">
                   <AuthorAvatar

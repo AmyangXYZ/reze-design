@@ -56,6 +56,17 @@ export const LIBRARY_SHELL =
   "compact:top-[3.75rem] compact:right-3 compact:bottom-16 compact:left-3 compact:h-auto compact:max-h-none compact:w-auto compact:max-w-none compact:translate-x-0 compact:translate-y-0"
 
 /**
+ * The inspector's text block: name, author, description, tags, numbers.
+ *
+ * It takes the height between the preview and the pinned action footer, and
+ * scrolls inside it. It was `min-h-0` alone, which let the column shrink it
+ * below its text with nothing to clip it, so on a phone a long description
+ * painted straight over the footer and its Open / Apply button. Wrapping
+ * anywhere keeps a pasted URL from pushing it sideways.
+ */
+export const LIBRARY_DETAIL_BODY = "min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 [overflow-wrap:anywhere]"
+
+/**
  * How many are on this shelf, right after the word that names it.
  *
  * Beside the label rather than at the right edge: it is part of what the heading

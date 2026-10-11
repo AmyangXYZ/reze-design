@@ -23,7 +23,7 @@ import {
   type AppliedEffect,
 } from "@/lib/effects"
 import { EffectPreview } from "@/components/editor/effect-preview"
-import { LIBRARY_SHELL, LibraryItemStats, LibraryTags } from "@/components/editor/library-rail"
+import { LIBRARY_DETAIL_BODY, LIBRARY_SHELL, LibraryItemStats, LibraryTags } from "@/components/editor/library-rail"
 import {
   LibraryBack,
   LibraryRailFilters,
@@ -376,7 +376,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                     </div>
                   </Button>
                 </div>
-                <div className="min-h-0 p-3">
+                <div className={LIBRARY_DETAIL_BODY}>
                   <div className="truncate text-sm font-semibold select-text">{displayName(selected)}</div>
                   <div className="mt-1 flex items-center gap-1.5 font-mono text-2xs text-muted-foreground">
                     <AuthorAvatar name={builtinAuthor(selected.id, selected.author)} className="size-3.5" />

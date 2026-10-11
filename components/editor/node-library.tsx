@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input"
 import { GraphMinimap } from "@/components/editor/graph-minimap"
 import { GRAPH_LIBRARY } from "@/lib/materials"
-import { LIBRARY_SHELL, LibraryItemStats, LibraryTags } from "@/components/editor/library-rail"
+import { LIBRARY_DETAIL_BODY, LIBRARY_SHELL, LibraryItemStats, LibraryTags } from "@/components/editor/library-rail"
 import {
   LibraryBack,
   LibraryRailFilters,
@@ -400,7 +400,7 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
                   </div>
                 )}
               </div>
-              <div className="min-h-0 p-3">
+              <div className={LIBRARY_DETAIL_BODY}>
                 <div className="truncate text-sm font-semibold select-text">{displayName(selected)}</div>
                 <div className="mt-1 flex items-center gap-1.5 font-mono text-2xs text-muted-foreground">
                   <AuthorAvatar name={builtinAuthor(selected.id, selected.author)} className="size-3.5" />
