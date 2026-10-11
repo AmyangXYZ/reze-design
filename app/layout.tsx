@@ -1,7 +1,7 @@
 import { SiteNotice } from "@/components/site-notice"
 import { BootGuardScript } from "@/components/boot-guard"
 import { BootSlowNote } from "@/components/boot-note"
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
@@ -47,6 +47,18 @@ export const metadata: Metadata = {
   // the wild by a zh user, whose browser had every reason to offer it — `lang`
   // stays "en" while the UI renders Chinese.
   other: { google: "notranslate" },
+};
+
+// Phones: no zoom-in when a field is focused. Safari zooms on any input whose
+// text is under 16px, and the editor's fields are 12px (text-xs, the chrome's
+// body size); the zoom then strands the panel half off screen. maximumScale
+// stops it without bending the type scale. userScalable is left alone on
+// purpose: iOS still lets a person pinch-zoom (Safari ignores the cap for
+// pinching), and nothing here should take that away from someone who needs it.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
 };
 
 export default function RootLayout({
