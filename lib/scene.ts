@@ -10,7 +10,7 @@ import {
   DEFAULT_DOF,
   DEFAULT_GRAIN,
   DEFAULT_OUTLINE,
-  DEFAULT_EYES, DEFAULT_PHYSICS,
+  DEFAULT_EYES, DEFAULT_JELLY, DEFAULT_PHYSICS,
   LEGACY_VIEW,
   audioFrom,
   bloomFrom,
@@ -530,9 +530,11 @@ export type SceneAssetsDoc = {
  * effect sits inside `background` exactly where the UI puts it, at the same level
  * as the grade rather than floating outside the settings.
  */
-export type SceneSettingsDoc = Omit<SceneSettings, "background" | "eyes"> & {
+export type SceneSettingsDoc = Omit<SceneSettings, "background" | "eyes" | "jelly"> & {
   /** Absent in documents from before the toggle existed; read as off. */
   eyes?: SceneSettings["eyes"]
+  /** Likewise. */
+  jelly?: SceneSettings["jelly"]
   camera: SceneCamera
   background: SceneSettings["background"] & {
     /**
@@ -929,6 +931,7 @@ export function parseSceneDoc(
         ...settings,
         physics: { ...DEFAULT_PHYSICS, ...settings.physics },
         eyes: { ...DEFAULT_EYES, ...settings.eyes },
+        jelly: { ...DEFAULT_JELLY, ...settings.jelly },
         // Same merge, same reason: a document written before the 0.4.0 chrome
         // carries neither block, and spreading an absent one is a no-op that
         // leaves the defaults — no blur, no outlines, exactly how it looked.
@@ -1621,6 +1624,7 @@ function restored(base: Scene): Scene {
         ground: { ...base.state.settings.ground, ...settingsBase.ground },
         physics: { ...base.state.settings.physics, ...settingsBase.physics },
         eyes: { ...base.state.settings.eyes, ...settingsBase.eyes },
+        jelly: { ...base.state.settings.jelly, ...settingsBase.jelly },
         stageGrade: stageGradeFromDoc(settingsBase.stageGrade ?? base.state.settings.stageGrade),
         stageAmbient: stageAmbientFromDoc(settingsBase.stageAmbient ?? base.state.settings.stageAmbient),
         stageFog: stageFogFromDoc(settingsBase.stageFog ?? base.state.settings.stageFog),

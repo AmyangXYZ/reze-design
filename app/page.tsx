@@ -1283,6 +1283,16 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       altLabels: [alt.cmd.eyesOn, l.cmd.eyesOff, alt.cmd.eyesOff],
       keywords: ["eyes", "gaze", "look at camera", "eye contact", "eyeline", "眼神", "视线", "目线", "看镜头", "眼睛"],
     },
+    // Jelly eyes: palette-only, like eyes on camera above.
+    {
+      id: "jelly",
+      repeatable: true,
+      section: "command",
+      icon: Eye,
+      label: l.cmd.jellyOn,
+      altLabels: [alt.cmd.jellyOn, l.cmd.jellyOff, alt.cmd.jellyOff],
+      keywords: ["jelly", "wobble", "bounce", "squash", "duang", "eyes", "果冻", "果冻眼", "眼睛", "ゼリー"],
+    },
     // Re-seed the cloth and hair solver.
     //
     // Palette-only, and it earns that by being a REPAIR rather than a setting:
@@ -5818,6 +5828,11 @@ export default function Lab() {
               ...c,
               label: valuesShown.settings.eyes.enabled ? t.lab.cmd.eyesOff : t.lab.cmd.eyesOn,
             }
+          if (c.id === "jelly")
+            return {
+              ...c,
+              label: valuesShown.settings.jelly.enabled ? t.lab.cmd.jellyOff : t.lab.cmd.jellyOn,
+            }
           // Same rule as outline: say what pressing it WILL do.
           if (c.id === "timeline")
             return {
@@ -6949,6 +6964,7 @@ export default function Lab() {
       else if (item.id === "grade-lib") openBrowse({ kind: "grade" })
       else if (item.id === "outline") patch("outline", { enabled: !outlineRef.current })
       else if (item.id === "eyes") setSettings((s2) => ({ ...s2, eyes: { enabled: !s2.eyes.enabled } }))
+      else if (item.id === "jelly") setSettings((s2) => ({ ...s2, jelly: { enabled: !s2.jelly.enabled } }))
       // Nothing to undo and nothing to store: the bodies are re-seeded onto the
       // pose they are already in, and the next frame simulates forward from
       // there. Running it when nothing is wrong costs one settle and changes

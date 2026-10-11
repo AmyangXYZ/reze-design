@@ -9,7 +9,7 @@ import {
   DEFAULT_DOF,
   DEFAULT_GRAIN,
   DEFAULT_OUTLINE,
-  DEFAULT_EYES, DEFAULT_PHYSICS,
+  DEFAULT_EYES, DEFAULT_JELLY, DEFAULT_PHYSICS,
   DEFAULT_VIEW,
   DEFAULT_BLOOM,
 } from "@/lib/scene-settings"
@@ -188,6 +188,7 @@ const DEMO_SCENE_DOC: SceneDoc = {
     physics: DEFAULT_PHYSICS,
     // Her eyes follow the camera: the first thing a visitor sees should look back.
     eyes: { enabled: true },
+    jelly: DEFAULT_JELLY,
   },
 }
 
@@ -228,6 +229,7 @@ export const EMPTY_SCENE_DOC: SceneDoc = {
     ground: { enabled: true, color: "#3a3a3d", size: 160, opacity: 0.42, grid: "#fafaf9", gridEnabled: true, fade: { start: 0.2, end: 1 } },
     physics: DEFAULT_PHYSICS,
     eyes: DEFAULT_EYES,
+    jelly: DEFAULT_JELLY,
   },
 }
 

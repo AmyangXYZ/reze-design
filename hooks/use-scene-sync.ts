@@ -515,6 +515,15 @@ export function useSceneSync({
     for (const id of castIds) engine.setEyeTracking(id, settings.eyes.enabled ? {} : null)
   }, [engineRef, ready, castIds, settings.eyes])
 
+  // ── Jelly eyes ──
+  //
+  // Same shape as the eyes above: per cast model, again as models land.
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine || !ready) return
+    for (const id of castIds) engine.setModelJellyEyes(id, settings.jelly.enabled ? {} : null)
+  }, [engineRef, ready, castIds, settings.jelly])
+
   // ── The cast takes the sky flat ──
   //
   // What reze-engine 0.63 did with setModelFlatSky, on the primitive 0.64 kept:

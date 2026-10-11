@@ -231,6 +231,14 @@ export type SceneSettings = {
   eyes: {
     enabled: boolean
   }
+  /**
+   * Jelly eyes (果冻眼). Live in the engine (Engine.setModelJellyEyes): the
+   * irises squash on a blink and swell as she moves, then wobble back. A toggle,
+   * reached from the palette only; the engine owns how much they give.
+   */
+  jelly: {
+    enabled: boolean
+  }
 }
 
 /** Same story as DEFAULT_PHYSICS, one section over: both blocks arrived with the
@@ -338,6 +346,9 @@ export const DEFAULT_PHYSICS: SceneSettings["physics"] = {
 /** What a document without an eyes block gets: off, since every scene before
  *  the toggle existed was authored with the eyes the motion gave them. */
 export const DEFAULT_EYES: SceneSettings["eyes"] = { enabled: false }
+
+/** Same for jelly eyes: every scene before them had still ones. */
+export const DEFAULT_JELLY: SceneSettings["jelly"] = { enabled: false }
 
 /** Frequency range, in Hz. Shared so the slider, the stored value and the
  *  variation derived from them cannot drift apart. */
