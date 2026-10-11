@@ -15,14 +15,17 @@
 // newest message, swapped for the copy the server actually sent (images
 // uploaded and referenced by id) before anything follows it.
 //
-// What is SENT is a copy with the older pictures left out (see sendable):
-// providers with no file uploads keep pictures inline, and re-sending every
-// capture every round would grow each request without end.
+// What is SENT is a copy with the older pictures left out and the older text
+// condensed (see sendable, compact): providers with no file uploads keep
+// pictures inline, and re-sending every capture, every tool result and every
+// scene snapshot every round grew each request without end — 70k tokens a
+// call for the heaviest Premium users, almost all of it re-read history.
 
 import type Anthropic from "@anthropic-ai/sdk"
 import type { ToolResult } from "@/lib/ai/scene-tools"
 import type { Via } from "@/lib/ai/providers/presets"
 import { TurnError } from "@/lib/ai/providers/types"
+import { summarizeStep } from "@/lib/ai/agent-summary"
 
 export type AgentMessage = Anthropic.Beta.BetaMessageParam
 
@@ -56,14 +59,19 @@ export type AgentProgress =
 
 export type AgentOutcome = { messages: AgentMessage[]; ended: "done" | "stopped" | "limit" | "refused" | "error"; error?: string }
 
-/** Rounds before the loop tells the model to wrap up. */
-export const MAX_ROUNDS = 24
+/** Rounds before the loop tells the model to wrap up. Twelve covers change,
+ *  look, fix and look again several times over; 24 let one request run to
+ *  well over a million tokens of re-read history. */
+export const MAX_ROUNDS = 12
 
 /** How a note FROM THE LOOP starts — the scene it attaches to a request, the
  *  wrap-up at the round limit, the nudge to look before finishing. They ride
  *  in user turns because that is where the API takes them, and the panel
  *  leaves them out because they are not the person's words. */
 export const LOOP_NOTE = "[reze] "
+
+/** How the scene snapshot a request carries begins (hooks/use-agent). */
+export const SNAPSHOT = "The scene as it stands now (get_scene): "
 
 /** The note on the last round's results. */
 const LAST_ROUND = `${LOOP_NOTE}That is the last round for this request. Do not call more tools: say what you changed, where it stands, and what is left.`
@@ -107,14 +115,113 @@ export function toolResultBlock(id: string, result: ToolResult): Anthropic.Beta.
 /** Messages whose inline pictures are re-sent; earlier ones are mentioned. */
 const KEEP_PICTURES = 3
 
+/** Rounds of the current request whose tool results go in full. */
+const FULL_ROUNDS = 3
+/** A string in an earlier request's tool call longer than this — a whole
+ *  effect's WGSL, a shader graph — goes as its opening and its length. */
+const LONG_INPUT = 600
+
+/** A user message carrying the person's own words — a request — rather than
+ *  only tool results or the loop's own notes. */
+const isRequest = (m: AgentMessage) =>
+  m.role === "user" &&
+  (typeof m.content === "string" || m.content.some((b) => b.type === "text" && !b.text.startsWith(LOOP_NOTE)))
+
 /**
- * The history as sent: inline (base64) pictures from tool results only in the
- * latest few messages that have any; earlier ones become a line saying they
- * were seen. The person's own reference pictures always go — they are the
- * request. Uploaded pictures are references, small enough to always go. A
- * model that reads text only (`keep` 0) is sent no picture at all.
+ * The text a model has already read and acted on, condensed. Pictures are not
+ * touched here (they keep their own window and full quality: what the model
+ * SEES decides how good its work is), and neither is anything it said.
+ *
+ * - Scene snapshots: only the newest goes. Each request attaches one, and
+ *   the older ones describe a scene that no longer exists.
+ * - Tool results: in full for the last few rounds of the current request,
+ *   as their one-line summary (lib/ai/agent-summary, what the panel shows)
+ *   before that. The model can call the tool again for the full data.
+ * - Tool calls from earlier requests: long strings (code it wrote) shortened.
+ *
+ * Deterministic, so a message once condensed reads the same every round and
+ * the prefix before the newest rounds stays in the provider's prompt cache.
  */
-export function sendable(messages: AgentMessage[], keep = KEEP_PICTURES): AgentMessage[] {
+export function compact(messages: AgentMessage[]): AgentMessage[] {
+  type B = Anthropic.Beta.BetaContentBlockParam
+  const calls = new Map<string, { name: string; input: Record<string, unknown> }>()
+  for (const m of messages)
+    if (m.role === "assistant" && Array.isArray(m.content))
+      for (const b of m.content) if (b.type === "tool_use") calls.set(b.id, { name: b.name, input: (b.input ?? {}) as Record<string, unknown> })
+
+  let request = -1
+  messages.forEach((m, i) => {
+    if (isRequest(m)) request = i
+  })
+  const withResults = messages.flatMap((m, i) =>
+    i > request && Array.isArray(m.content) && m.content.some((b) => b.type === "tool_result") ? [i] : [],
+  )
+  const full = new Set(withResults.slice(-FULL_ROUNDS))
+  let snapshot = -1
+  messages.forEach((m, i) => {
+    if (Array.isArray(m.content) && m.content.some((b) => b.type === "text" && b.text.startsWith(LOOP_NOTE + SNAPSHOT))) snapshot = i
+  })
+
+  const condensed = (id: string, text: string): string => {
+    const call = calls.get(id)
+    if (!call) return text.length > LONG_INPUT ? `${text.slice(0, 200)}… (earlier result, condensed)` : text
+    let data: unknown
+    try {
+      data = JSON.parse(text)
+    } catch {
+      data = { error: text.length > 300 ? `${text.slice(0, 300)}…` : text }
+    }
+    const { title, detail } = summarizeStep(call.name, call.input, data)
+    return `Earlier result, condensed — ${title}${detail ? `: ${detail}` : ""}. Call ${call.name} again for the full data.`
+  }
+  const shorten = (v: unknown): unknown =>
+    typeof v === "string"
+      ? v.length > LONG_INPUT
+        ? `${v.slice(0, 160)}… (${v.length} characters, sent in full earlier)`
+        : v
+      : Array.isArray(v)
+        ? v.map(shorten)
+        : v && typeof v === "object"
+          ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, shorten(x)]))
+          : v
+
+  return messages.map((m, i) => {
+    if (typeof m.content === "string") return m
+    if (m.role === "assistant") {
+      if (i > request) return m
+      return { ...m, content: m.content.map((b) => (b.type === "tool_use" ? { ...b, input: shorten(b.input) } : b)) as B[] }
+    }
+    const keepResults = full.has(i)
+    const content = m.content.map((b): B => {
+      if (b.type === "text" && i !== snapshot && b.text.startsWith(LOOP_NOTE + SNAPSHOT))
+        return { type: "text", text: `${LOOP_NOTE}(An earlier scene snapshot, superseded by a later one.)` }
+      if (b.type !== "tool_result" || keepResults) return b
+      if (typeof b.content === "string") return { ...b, content: condensed(b.tool_use_id, b.content) }
+      if (!Array.isArray(b.content)) return b
+      // The data is the first text block (toolResultBlock). Image labels and
+      // pictures after it are left for sendable's picture window.
+      let first = true
+      const inner = b.content.map((x) => {
+        if (x.type !== "text" || !first) return x
+        first = false
+        return { ...x, text: condensed(b.tool_use_id, x.text) }
+      })
+      return { ...b, content: inner }
+    })
+    return { ...m, content }
+  })
+}
+
+/**
+ * The history as sent: condensed (compact), then inline (base64) pictures
+ * from tool results only in the latest few messages that have any; earlier
+ * ones become a line saying they were seen. The person's own reference
+ * pictures always go — they are the request. Uploaded pictures are
+ * references, small enough to always go. A model that reads text only
+ * (`keep` 0) is sent no picture at all.
+ */
+export function sendable(history: AgentMessage[], keep = KEEP_PICTURES): AgentMessage[] {
+  const messages = compact(history)
   type B = Anthropic.Beta.BetaContentBlockParam
   const capture = (b: B) => b.type === "tool_result" && Array.isArray(b.content) && b.content.some((x) => x.type === "image" && x.source.type === "base64")
   const withPictures = messages.flatMap((m, i) => (Array.isArray(m.content) && m.content.some(capture) ? [i] : []))

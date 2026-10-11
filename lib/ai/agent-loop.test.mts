@@ -10,7 +10,7 @@
 // makes the model wrap up at the round limit.
 
 import assert from "node:assert/strict"
-import { runAgent, filesIn, settle, toolResultBlock, historyFor, LOOP_NOTE, type AgentMessage, type AgentStreamEvent } from "./agent-loop"
+import { runAgent, filesIn, settle, toolResultBlock, historyFor, compact, sendable, LOOP_NOTE, SNAPSHOT, type AgentMessage, type AgentStreamEvent } from "./agent-loop"
 import type { ToolResult } from "./scene-tools"
 
 let failures = 0
@@ -309,6 +309,115 @@ await test("uploaded files are found for clean-up", () => {
     { role: "user", content: [{ type: "tool_result", tool_use_id: "a", content: [{ type: "image", source: { type: "file", file_id: "file_1" } }] }] },
   ]
   assert.deepEqual(filesIn(m), ["file_1"])
+})
+
+// ── Compaction: what an earlier round costs to re-send ──
+
+/** A request: the person's words and the scene snapshot the hook attaches. */
+const request = (t: string, scene: string): AgentMessage => ({
+  role: "user",
+  content: [{ type: "text", text: t }, { type: "text", text: `${LOOP_NOTE}${SNAPSHOT}${scene}` }],
+})
+/** One round: the model calls `name`, the tool answers with `data` and maybe a picture. */
+function round(h: AgentMessage[], id: string, name: string, data: object, input: object = {}, picture = false) {
+  h.push({ role: "assistant", content: [toolUse(id, name, input) as never] })
+  h.push({
+    role: "user",
+    content: [
+      {
+        type: "tool_result",
+        tool_use_id: id,
+        content: [
+          { type: "text", text: JSON.stringify(data) },
+          ...(picture ? [{ type: "text" as const, text: "Image: frame" }, { type: "image" as const, source: { type: "base64" as const, media_type: "image/jpeg" as const, data: `PIC_${id}` } }] : []),
+        ],
+      },
+    ],
+  })
+}
+const resultText = (m: AgentMessage) => JSON.stringify(m.content)
+
+await test("the current request's last three rounds go in full, older ones as their summary", () => {
+  const h: AgentMessage[] = [request("brighter", "{}")]
+  for (let k = 0; k < 5; k++) round(h, `r${k}`, "set_settings", { applied: { sun: { strength: k } }, big: "x".repeat(2000) })
+  const sent = compact(h)
+  const results = sent.filter((m) => resultText(m).includes("tool_result"))
+  assert.equal(results.length, 5)
+  for (const m of results.slice(0, 2)) assert.match(resultText(m), /Earlier result, condensed — Adjusted the look: sun\.strength/)
+  for (const m of results.slice(2)) assert.match(resultText(m), /x{2000}/)
+})
+
+await test("an earlier request's results are condensed and its long tool inputs shortened", () => {
+  const wgsl = "fn background() -> vec4f { ".padEnd(5000, "/")
+  const h: AgentMessage[] = [request("make rain", "{}")]
+  round(h, "w", "write_effect", { saved: "Rain" }, { name: "Rain", wgsl })
+  h.push({ role: "assistant", content: [text("done")] as never })
+  h.push(request("now snow", "{}"))
+  round(h, "w2", "write_effect", { saved: "Snow" }, { name: "Snow", wgsl })
+  const sent = JSON.stringify(compact(h))
+  assert.match(sent, /Earlier result, condensed — Wrote the effect Rain/)
+  assert.match(sent, /5000 characters, sent in full earlier/)
+  // The current request's own call keeps its code: it may be about to edit it.
+  assert.equal((sent.match(/\/{4000}/g) ?? []).length, 1)
+})
+
+await test("only the newest scene snapshot is sent", () => {
+  const h: AgentMessage[] = [request("a", "SCENE_ONE"), { role: "assistant", content: [text("ok")] as never }, request("b", "SCENE_TWO")]
+  const sent = JSON.stringify(compact(h))
+  assert.doesNotMatch(sent, /SCENE_ONE/)
+  assert.match(sent, /SCENE_TWO/)
+  assert.match(sent, /earlier scene snapshot, superseded/)
+})
+
+await test("compaction leaves pictures alone; sendable still keeps the latest three", () => {
+  const h: AgentMessage[] = [request("look", "{}")]
+  for (let k = 0; k < 6; k++) round(h, `c${k}`, "capture", { views: [] }, {}, true)
+  assert.equal((JSON.stringify(compact(h)).match(/PIC_c\d/g) ?? []).length, 6)
+  assert.equal((JSON.stringify(sendable(h)).match(/PIC_c\d/g) ?? []).length, 3)
+})
+
+await test("a message once condensed reads the same every later round (the cache holds)", () => {
+  const h: AgentMessage[] = [request("go", "{}")]
+  const seen = new Map<number, string>()
+  for (let k = 0; k < 8; k++) {
+    round(h, `s${k}`, "probe_light", { reze: { "face (toward camera)": { sun: "lit", sources: [{ name: "sun", share: 0.8 }] } }, pad: "y".repeat(1000) })
+    compact(h).forEach((m, i) => {
+      const t = JSON.stringify(m)
+      if (!t.includes("Earlier result, condensed")) return
+      if (seen.has(i)) assert.equal(t, seen.get(i), `message ${i} changed after it was condensed`)
+      seen.set(i, t)
+    })
+  }
+  assert.ok(seen.size >= 4)
+})
+
+await test("a long session costs a fraction of what it did to re-send", () => {
+  // A heavy Premium session's shape: requests with a scene snapshot, each
+  // several rounds of reading, changing and looking. Sizes are the real tools'
+  // order of magnitude: a snapshot ~6k tokens, a capture's numbers ~2k.
+  const h: AgentMessage[] = []
+  let after = 0
+  for (let q = 0; q < 6; q++) {
+    h.push(request(`request ${q}`, JSON.stringify({ scene: "s".repeat(24000), q })))
+    for (let k = 0; k < 8; k++) {
+      if (k % 2) round(h, `q${q}c${k}`, "capture", { views: [{ label: "front", regions: "r".repeat(8000) }] }, {}, true)
+      else round(h, `q${q}s${k}`, "set_settings", { applied: { bloom: { intensity: k } }, echo: "e".repeat(1500) })
+      after += JSON.stringify(sendable(h)).length
+    }
+    h.push({ role: "assistant", content: [text("done")] as never })
+  }
+  // The same session re-sent whole each round, as before compaction:
+  const raw = (() => {
+    let total = 0
+    const g: AgentMessage[] = []
+    for (const m of h) {
+      g.push(m)
+      if (m.role === "user" && resultText(m).includes("tool_result")) total += JSON.stringify(g).length
+    }
+    return total
+  })()
+  console.log(`     chars re-sent over the session: ${raw.toLocaleString()} raw → ${after.toLocaleString()} (${(raw / after).toFixed(1)}× less)`)
+  assert.ok(raw / after > 3, `only ${(raw / after).toFixed(1)}×`)
 })
 
 if (failures) {

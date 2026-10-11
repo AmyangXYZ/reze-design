@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { ToolResult } from "@/lib/ai/scene-tools"
-import { CHANGES, LOOP_NOTE, addUsage, filesIn, runAgent, settle, type AgentMessage, type Usage } from "@/lib/ai/agent-loop"
+import { CHANGES, LOOP_NOTE, SNAPSHOT, addUsage, filesIn, runAgent, settle, type AgentMessage, type Usage } from "@/lib/ai/agent-loop"
 import { noticeOf, type Notice } from "@/lib/ai/agent-notice"
 import { referenceBlocks, type ReferenceImage } from "@/lib/ai/reference-image"
 import {
@@ -46,7 +46,7 @@ const IDLE: AgentLive = { text: "", thinking: "", tool: null, retrying: false }
 /** The run as a whole, for the spinner: when it started, steps finished. */
 export type AgentRun = { startedAt: number; steps: number }
 
-const SNAPSHOT = "The scene as it stands now (get_scene): "
+
 
 /** The scene JSON last attached to a request in this conversation. */
 function lastSnapshot(messages: AgentMessage[]): string | null {
