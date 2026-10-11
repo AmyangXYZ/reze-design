@@ -65,6 +65,7 @@ const EFFECTS: Record<string, Zh> = {
   Signature: { name: "签名", description: "REZE DESIGN 霓虹招牌，下方为黯灭小羊。" },
   "Shining Stars": { name: "闪耀星光", description: "随镜头移动的闪烁星空背景。" },
   "Floating Stars": { name: "漂浮星光", description: "围绕角色漂浮的发光光点。" },
+  "Candy Stars": { name: "糖果星光", description: "围绕角色漂浮的糖果色星星、圆点和闪光，中心明亮，带柔和光晕。" },
   Fireworks: { name: "烟花", description: "循环绽放的烟花。移植自 Gatomoi。" },
   "Hand Ribbon": { name: "手部丝带", description: "跟随双手轨迹的霓虹丝带，伴有火花。" },
   "Divine Ribbon": { name: "神圣丝带", description: "跟随双手轨迹的金色光点。" },
