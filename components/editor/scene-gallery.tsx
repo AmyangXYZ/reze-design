@@ -132,6 +132,11 @@ const announce = () => {
 /** Tag counts over the whole gallery — independent of how the list in front of
  *  you is narrowed. */
 let tagCounts: [string, number][] | null = null
+/** Public scenes per maker, over the whole gallery, from the same request. */
+let makerCounts: [string, number][] | null = null
+/** The counts came from the server this session, not only from the saved
+ *  copy — which is there to paint with, never a reason to skip the request. */
+let countsFresh = false
 let tagsInflight: Promise<[string, number][]> | null = null
 
 /** Rail counts, for the same reason and over the same whole: a rail counting the
@@ -145,7 +150,7 @@ let facetsInflight: Promise<FacetCounts> | null = null
 // cannot reach the server, then refreshes underneath. Only the public reads:
 // your shelves are personal, and a stale "liked" would be a wrong one.
 const SAVED_PAGE = "gallery.all.v1"
-const SAVED_TAGS = "gallery.tags.v1"
+const SAVED_TAGS = "gallery.tags.v2"
 let hydrated = false
 /** Read the saved shelf and cloud once, applying each only if the network has
  *  not answered first; an open gallery repaints through `announce`. */
@@ -157,8 +162,10 @@ function hydrateSaved() {
     pages.set("all", page)
     announce()
   })
-  void readSaved<[string, number][]>(SAVED_TAGS).then((tags) => {
-    if (tags && !tagCounts) tagCounts = tags
+  void readSaved<{ tags: [string, number][]; makers: [string, number][] }>(SAVED_TAGS).then((saved) => {
+    if (!saved || tagCounts) return
+    tagCounts = saved.tags
+    makerCounts = saved.makers
   })
 }
 
@@ -219,10 +226,14 @@ function loadPage(v: View): Promise<Page> {
 }
 
 function loadTags(): Promise<[string, number][]> {
-  tagsInflight ??= fetchJson<{ tags: { tag: string; n: number }[] }>("/api/library?kind=scene&counts=tags")
+  tagsInflight ??= fetchJson<{ tags: { tag: string; n: number }[]; makers?: { author: string; n: number }[] }>(
+    "/api/library?kind=scene&counts=tags",
+  )
     .then((d) => {
       tagCounts = d.tags.map((x) => [x.tag, x.n] as [string, number])
-      writeSaved(SAVED_TAGS, tagCounts)
+      makerCounts = (d.makers ?? []).map((x) => [x.author, x.n] as [string, number])
+      writeSaved(SAVED_TAGS, { tags: tagCounts, makers: makerCounts })
+      countsFresh = true
       tagsInflight = null
       return tagCounts
     })
@@ -276,7 +287,7 @@ export function prefetchGallery(signedIn = false): void {
   hydrateSaved()
   // Always asked, saved copy or not: the saved one is to paint with, not to keep.
   void loadPage("all").catch(() => {})
-  if (!tagCounts) void loadTags().catch(() => {})
+  if (!countsFresh) void loadTags().catch(() => {})
   if (!facetCounts) void loadFacetCounts().catch(() => {})
   // The two personal shelves, and the reason this takes an argument at all.
   // `GalleryContent` mounts on OPEN, so the "yours" page — the only source of
@@ -373,6 +384,7 @@ function GalleryContent({
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const nsfwShown = useShowNsfw()
   const [tags, setTags] = useState<[string, number][]>(() => tagCounts ?? [])
+  const [makers, setMakers] = useState<[string, number][] | null>(() => makerCounts)
   const [counts, setCounts] = useState<FacetCounts | null>(() => facetCounts)
   // Only when there is genuinely nothing to show. Rows sieved out of another
   // list are worth more than a spinner over an empty grid.
@@ -444,10 +456,14 @@ function GalleryContent({
   }, [view])
 
   useEffect(() => {
-    if (tagCounts) return
+    if (countsFresh) return
     let stale = false
     loadTags()
-      .then((counts) => !stale && setTags(counts))
+      .then((counts) => {
+        if (stale) return
+        setTags(counts)
+        setMakers(makerCounts)
+      })
       .catch(() => {})
     return () => {
       stale = true
@@ -545,6 +561,7 @@ function GalleryContent({
     // Counts and tags span the whole gallery; this client holds one page of it.
     counts: counts ?? undefined,
     tagCounts: tags,
+    makerCounts: makers ?? undefined,
     onFacetChange,
   })
   const detail = useLibraryDetail()

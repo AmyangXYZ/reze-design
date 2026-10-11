@@ -222,12 +222,15 @@ export function useLibraryBrowse<T extends BrowseItem>(
     counts?: { all: number; yours: number; liked: number }
     /** Tag counts over the whole corpus, same reason. */
     tagCounts?: [string, number][]
+    /** Makers over a whole catalogue the client holds one page of (the
+     *  gallery); otherwise tallied from `items`, which is everything. */
+    makerCounts?: [string, number][]
     /** Fired when the rail changes facet. The gallery fetches a page per facet
      *  and paints its cache here, in the event rather than in an effect. */
     onFacetChange?: (facet: BrowseFacet) => void
   } = {},
 ) {
-  const { initialFacet = "all", displayName, searchText, counts: givenCounts, tagCounts, onFacetChange } = opts
+  const { initialFacet = "all", displayName, searchText, counts: givenCounts, tagCounts, makerCounts, onFacetChange } = opts
   const [query, setQuery] = useState("")
   const [facet, setFacetState] = useState<BrowseFacet>(initialFacet)
   const setFacet = useCallback(
@@ -318,7 +321,7 @@ export function useLibraryBrowse<T extends BrowseItem>(
     [givenCounts, items, numbers],
   )
 
-  const makers = useMemo(() => tally(items, (i) => [i.author]), [items])
+  const makers = useMemo(() => makerCounts ?? tally(items, (i) => [i.author]), [makerCounts, items])
   const tags = useMemo(() => tagCounts ?? tally(items, (i) => i.tags), [tagCounts, items])
 
   const filtered = facet !== "all" || tag !== null || maker !== null

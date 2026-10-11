@@ -100,7 +100,10 @@ export async function GET(request: Request) {
     // Tag counts across EVERY public scene, not the page in front of you: tags are
     // a way of browsing the whole gallery, so they must not shrink when you narrow
     // it to your own or to what you liked.
-    if (url.searchParams.get("counts") === "tags") return publicJson({ tags: await galleryTags() })
+    // Makers ride along: the rail lists who published, and a count tallied from
+    // the loaded window would undercount everyone past the first page.
+    if (url.searchParams.get("counts") === "tags")
+      return publicJson({ tags: await galleryTags(), makers: await galleryMakers() })
 
     // Facet counts for the rail, over the WHOLE gallery rather than the page in
     // front of you — a rail that counted the loaded window would climb as you
@@ -177,6 +180,20 @@ const galleryTags = unstable_cache(
     return rows.sort((a, b) => b.n - a.n || a.tag.localeCompare(b.tag))
   },
   ["gallery-tags"],
+  { tags: [LIBRARY_TAG] },
+)
+
+/** Public scenes per maker, for the rail, cached like the tags. */
+const galleryMakers = unstable_cache(
+  async () => {
+    const rows = await db
+      .select({ author: schema.libraryItems.author, n: sql<number>`count(*)::int` })
+      .from(schema.libraryItems)
+      .where(PUBLISHED_SCENE)
+      .groupBy(schema.libraryItems.author)
+    return rows.sort((a, b) => b.n - a.n || a.author.localeCompare(b.author))
+  },
+  ["gallery-makers"],
   { tags: [LIBRARY_TAG] },
 )
 
