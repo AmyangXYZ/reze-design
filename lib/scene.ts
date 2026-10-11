@@ -266,6 +266,10 @@ export type SceneCamera = {
    *  Absent or null = a fixed point in the world, which is what every scene
    *  written before this does. */
   follow?: string | null
+  /** Under follow, the orbit also turns with her face (the head bone, whatever
+   *  bone the position rides), so the shot keeps its angle to her face. Absent = off: the camera holds its own
+   *  heading, as every scene before it did. */
+  followTurn?: boolean
   /**
    * The scene's adjustment to a loaded camera MOTION, added to every pose it
    * plays: `target` slides the shot (world units), `distance` pulls it back

@@ -10055,6 +10055,22 @@ export default function Lab() {
                               </SelectContent>
                             </Select>
                           </div>
+                          {/* Turning with her face: inert until follow is on,
+                              like the bone above, so the pane never grows. */}
+                          <div
+                            className={cn(
+                              "mt-2.5 flex items-center justify-between",
+                              cameraClip && "pointer-events-none opacity-40",
+                            )}
+                          >
+                            <span className="text-xs">{t.lab.ctl.followTurn}</span>
+                            <Switch
+                              size="sm"
+                              disabled={!camera.follow || !!cameraClip}
+                              checked={!!camera.follow && !!camera.followTurn}
+                              onCheckedChange={(on) => changeCamera({ ...camera, followTurn: on || undefined })}
+                            />
+                          </div>
                           {/* Degrees on the slider, radians in the document —
                               the same boundary conversion azimuth and elevation
                               make two rows down. A camera VMD animates fov

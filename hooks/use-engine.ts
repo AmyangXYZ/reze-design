@@ -1554,7 +1554,7 @@ export function useEngine(
     if (!engine || !c.follow) return
     const model = engine.getModel(modelId)
     if (!model) return
-    engine.setCameraFollow(model, c.follow, new Vec3(...c.target), 0.15)
+    engine.setCameraFollow(model, c.follow, new Vec3(...c.target), 0.15, !!c.followTurn)
   }, [])
 
   /** Instant adjust-tier: write one exposed param on a group's graph (no recompile). */

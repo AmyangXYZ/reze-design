@@ -197,7 +197,7 @@ export function applyCamera(engine: Engine, camera: SceneCamera, model: Model | 
     // Short exponential lag (Cinemachine-style aim damping): eases the frame
     // without letting the subject swim off-center — target-follow wants to be
     // much tighter than a position-follow would be.
-    engine.setCameraFollow(model, camera.follow, new Vec3(...camera.target), 0.15)
+    engine.setCameraFollow(model, camera.follow, new Vec3(...camera.target), 0.15, !!camera.followTurn)
   } else {
     engine.setCameraFollow(null)
     engine.setCameraTarget(new Vec3(...camera.target))
