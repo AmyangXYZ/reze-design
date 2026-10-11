@@ -23,7 +23,7 @@ import {
   loadMidiFor,
   loadFootstepFor,
   loadSceneInto,
-  
+  BundleDownloadError,
   placeProp,
   preparePlaneMedia,
   reportGroups,
@@ -37,6 +37,7 @@ import {
 import { type BundleFile, readBundleFile } from "@/lib/uploads"
 import type {
   BundleProgress,
+  DownloadFailure,
   EngineModelInfo,
   
   
@@ -57,6 +58,7 @@ import { clearEngineScene, setNativeStageInTurn, undress } from "@/lib/unity-nat
 // not a reason for every call site to learn a new path.
 export type {
   BundleProgress,
+  DownloadFailure,
   EngineModelInfo,
   LoadProgress,
   MaterialRow,
@@ -112,6 +114,9 @@ export function useEngine(
   // The stage (ground/camera/render loop) is live — models may still be loading.
   const [stageReady, setStageReady] = useState(false)
   const [bundleProgress, setBundleProgress] = useState<BundleProgress | null>(null)
+  /** Set beside `error` when the failure was the bundle's download, so the
+   *  hosts can say what that means rather than print the browser's words. */
+  const [downloadFailure, setDownloadFailure] = useState<DownloadFailure | null>(null)
   /** The track's companions by display name — set when the document's refs load
    *  and when a file is picked by hand, so the rows show either. */
   const [midiClip, setMidiClip] = useState<string | null>(null)
@@ -368,8 +373,12 @@ export function useEngine(
         setStyling(null)
         setReady(true)
         setError(null)
+        setDownloadFailure(null)
       } catch (e) {
-        if (!stale()) setError(e instanceof Error ? e.message : String(e))
+        if (!stale()) {
+          setError(e instanceof Error ? e.message : String(e))
+          setDownloadFailure(e instanceof BundleDownloadError ? e.failure : null)
+        }
       }
     }
     // The first load in the queue: a swap asked for during boot waits it out.
@@ -1497,10 +1506,14 @@ export function useEngine(
       setGroupsByModel(loaded.groups)
       applyCamera(engine, scene.state.camera, engine.getModel(firstCastId(scene.assets.models)))
       setError(null)
+      setDownloadFailure(null)
       return null
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
-      if (!stale()) setError(message)
+      if (!stale()) {
+        setError(message)
+        setDownloadFailure(e instanceof BundleDownloadError ? e.failure : null)
+      }
       return message
     } finally {
       settle()
@@ -1576,6 +1589,7 @@ export function useEngine(
     bundleProgress,
     bundleReady,
     error,
+    downloadFailure,
     models,
     stages,
     addStageFromFiles,

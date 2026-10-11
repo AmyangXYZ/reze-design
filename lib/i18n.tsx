@@ -184,6 +184,20 @@ const en = {
     loadingStage: (name: string, percent: string) => `Loading stage · ${name} · ${percent}%`,
     selectMaterial: "Select a material to edit its shader graph",
     engineError: (message: string) => `Engine: ${message}`,
+    /** A published scene's files failed to download (lib/scene-host BundleDownloadError). */
+    download: {
+      unreachableTitle: "Couldn't reach the scene's files",
+      unreachable:
+        "They're stored on assets.reze.one (Cloudflare), and your browser couldn't connect to it. Some networks, including many in mainland China, block it or make it very slow. Try again, or try another network or a VPN.",
+      droppedTitle: "The scene's files stopped downloading",
+      dropped: (received: string, total: string) =>
+        `The connection dropped after ${received} of ${total} MB. A scene downloads as one large file, so a slow or unstable connection to assets.reze.one (Cloudflare) can cut it off. This is a network problem, not a broken scene. Try again, or try another network or a VPN.`,
+      goneTitle: "This scene's files are gone",
+      gone: (status: number) => `The file host answered ${status}. The author may have deleted or republished this scene.`,
+      serverTitle: "The file host didn't answer",
+      server: (status: number) => `assets.reze.one answered ${status}. Try again in a minute.`,
+      retry: "Try again",
+    },
   },
   // Dock tab labels (ids stay fixed; only the display text is translated).
   tabs: {
@@ -1273,6 +1287,19 @@ const zh: Dictionary = {
     loadingStage: (name: string, percent: string) => `正在加载舞台 · ${name} · ${percent}%`,
     selectMaterial: "选择一个材质以编辑其外观",
     engineError: (message: string) => `引擎：${message}`,
+    download: {
+      unreachableTitle: "无法连接到场景文件",
+      unreachable:
+        "场景文件存放在 assets.reze.one（Cloudflare）上，你的浏览器无法连接到它。部分网络（包括中国大陆的许多网络）会屏蔽它或让它非常慢。请重试，或换一个网络、使用 VPN。",
+      droppedTitle: "场景文件下载中断",
+      dropped: (received: string, total: string) =>
+        `已下载 ${received} / ${total} MB 时连接断开。场景是作为一个大文件下载的，到 assets.reze.one（Cloudflare）的连接较慢或不稳定时容易中断。这是网络问题，不是场景损坏。请重试，或换一个网络、使用 VPN。`,
+      goneTitle: "该场景的文件已不存在",
+      gone: (status: number) => `文件服务器返回 ${status}。作者可能已删除或重新发布了这个场景。`,
+      serverTitle: "文件服务器没有响应",
+      server: (status: number) => `assets.reze.one 返回 ${status}。请稍后再试。`,
+      retry: "重试",
+    },
   },
   tabs: {
     materials: "材质",

@@ -27,7 +27,7 @@ import { timelineOf } from "@/lib/timeline"
 import { saveLocalBundle } from "@/lib/asset-store"
 import type { BundleFile } from "@/lib/uploads"
 import { setForkTarget } from "@/lib/fork"
-import { LoadingPill, useLoadingLabel } from "@/components/editor/loading-pill"
+import { LoadError, LoadingPill, useLoadingLabel } from "@/components/editor/loading-pill"
 import { resolveSceneRefs, resolveSceneRefsSync } from "@/lib/resolve-refs"
 import { useSession } from "@/lib/auth-client"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -456,7 +456,6 @@ function SceneStage({
   scene,
   bundleFilesRef,
 }: ViewerProps & { scene: Scene; bundleFilesRef: RefObject<() => BundleFile[]> }) {
-  const t = useT()
   const {
     canvasRef,
     engineRef,
@@ -468,6 +467,7 @@ function SceneStage({
     bundleReady,
     bundleProgress,
     error,
+    downloadFailure,
     models,
     bundleFile,
     bundleFiles,
@@ -617,11 +617,7 @@ function SceneStage({
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none object-contain" />
 
       {!ready && !error && <LoadingPill label={loadingLabel} />}
-      {error && (
-        <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-xs text-red-400">
-          {t.editor.engineError(error)}
-        </div>
-      )}
+      {error && <LoadError error={error} failure={downloadFailure} onRetry={() => window.location.reload()} />}
 
       {ready && models.length > 0 && (
         // Centred by a bounded row, not by a translate off the midpoint: an

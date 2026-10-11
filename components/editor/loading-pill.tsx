@@ -7,7 +7,8 @@
 // suggest they are different kinds of wait, which they are not.
 
 import { useMemo } from "react"
-import type { BundleProgress } from "@/hooks/use-engine"
+import type { BundleProgress, DownloadFailure } from "@/hooks/use-engine"
+import { Button } from "@/components/ui/button"
 import { useT } from "@/lib/i18n"
 import type { Scene } from "@/lib/scene"
 
@@ -24,6 +25,46 @@ export function LoadingPill({ label }: { label?: string }) {
       <div className="flex max-w-[90vw] items-center justify-center gap-2.5 rounded-full border border-line-strong bg-surface-raised px-4 py-2 text-xs text-muted-foreground tabular-nums">
         <span className="size-2 shrink-0 animate-pulse rounded-full bg-blue-400" />
         <span className="truncate">{label ?? t.editor.loadingScene}</span>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * A load that failed, said plainly. A failed bundle DOWNLOAD gets its own
+ * words: it is the network between the reader and assets.reze.one, not the
+ * scene and not the engine, and the browser's own report — "Failed to fetch" —
+ * told people neither. Anything else is still the engine's message.
+ */
+export function LoadError({ error, failure, onRetry }: { error: string; failure: DownloadFailure | null; onRetry?: () => void }) {
+  const t = useT()
+  const d = t.editor.download
+  if (!failure) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-xs text-red-400">
+        {t.editor.engineError(error)}
+      </div>
+    )
+  }
+  const { status, received, total } = failure
+  const [title, body] =
+    status === null
+      ? received > 0
+        ? [d.droppedTitle, d.dropped(mbNum(received), total > 0 ? mbNum(total) : "?")]
+        : [d.unreachableTitle, d.unreachable]
+      : status === 403 || status === 404 || status === 410
+        ? [d.goneTitle, d.gone(status)]
+        : [d.serverTitle, d.server(status)]
+  return (
+    <div className="absolute inset-0 z-30 flex items-center justify-center px-4">
+      <div className="flex max-w-md flex-col items-center gap-3 rounded-surface border border-line-strong bg-surface-raised p-4 text-center">
+        <div className="text-sm font-medium text-foreground">{title}</div>
+        <p className="text-xs text-muted-foreground">{body}</p>
+        {onRetry && (
+          <Button size="xs" variant="secondary" onClick={onRetry}>
+            {d.retry}
+          </Button>
+        )}
       </div>
     </div>
   )

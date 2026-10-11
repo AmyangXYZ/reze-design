@@ -116,7 +116,7 @@ import { GraphEditor } from "@/components/graph/graph-editor"
 import { WgslEditorPanel } from "@/components/editor/wgsl-editor"
 import { SaveCloseDialog } from "@/components/editor/save-close"
 import { FloatingPanel, type Rect } from "@/components/editor/floating-panel"
-import { LoadingPill, useLoadingLabel } from "@/components/editor/loading-pill"
+import { LoadError, LoadingPill, useLoadingLabel } from "@/components/editor/loading-pill"
 import { VERSION_LABEL } from "@/lib/version"
 import { ChoiceList } from "@/components/ui/choice-list"
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
@@ -2269,6 +2269,7 @@ export default function Lab() {
     installFootstepFile,
     clearFootstep,
     error,
+    downloadFailure,
     groupsByModel,
     addModelFromFiles,
     replaceModelFromFiles,
@@ -7078,11 +7079,14 @@ export default function Lab() {
           it ran. */}
       {(!ready || forkPending) && !error && <LoadingPill label={loadingLabel} />}
 
-      {error && (
-        <div className="absolute inset-0 grid place-items-center p-8 text-center text-xs text-muted-foreground">
-          {error}
-        </div>
-      )}
+      {error &&
+        (downloadFailure ? (
+          <LoadError error={error} failure={downloadFailure} />
+        ) : (
+          <div className="absolute inset-0 grid place-items-center p-8 text-center text-xs text-muted-foreground">
+            {error}
+          </div>
+        ))}
 
       {frameRect && (
         <div className="pointer-events-none absolute inset-0 z-10">

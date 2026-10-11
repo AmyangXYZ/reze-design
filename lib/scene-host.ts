@@ -259,6 +259,30 @@ export type NativeStageProgress = { name: string; done: number; total: number }
  */
 export type BundleProgress = { received: number; total: number; bytesPerSecond: number; done?: boolean }
 
+/** How a published scene's download failed: an HTTP answer (`status`), or the
+ *  connection itself — never reached, or cut off `received` bytes in. */
+export type DownloadFailure = { status: number | null; received: number; total: number }
+
+/**
+ * The bundle download failed. Its own type because it is the one load failure
+ * that is nobody's bug: the files sit on R2 behind assets.reze.one, a single
+ * download of 30–200MB, and a slow or filtered connection to Cloudflare drops it
+ * part-way. The browser reports that as a bare "Failed to fetch", which read as
+ * a broken engine to everyone who saw it. The hosts say what happened instead.
+ */
+export class BundleDownloadError extends Error {
+  readonly failure: DownloadFailure
+  constructor(failure: DownloadFailure) {
+    super(
+      failure.status !== null
+        ? `Can't fetch scene assets: ${failure.status}`
+        : `Scene assets stopped downloading after ${failure.received} of ${failure.total} bytes`,
+    )
+    this.name = "BundleDownloadError"
+    this.failure = failure
+  }
+}
+
 export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => boolean, progress: LoadProgress = {}) {
   const { onStage, onBundle, onModel, onBytes, onStyling, onNativeStage } = progress
   const s = scene.state.settings
@@ -314,8 +338,10 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
     // An import this tab opened already (lib/uploads holdBundle).
     bundle = held
   } else if (scene.assets.bundle) {
-    const res = await fetch(scene.assets.bundle)
-    if (!res.ok) throw new Error(`Can't fetch scene assets: ${res.status}`)
+    const res = await fetch(scene.assets.bundle).catch(() => {
+      throw new BundleDownloadError({ status: null, received: 0, total: 0 })
+    })
+    if (!res.ok) throw new BundleDownloadError({ status: res.status, received: 0, total: 0 })
     // Read the body in chunks rather than awaiting .blob(), so the wait can be
     // reported. This is the dominant cost of opening someone else's scene —
     // measured at 5.5s of a 6.1s open for a 165MB bundle — and an unmoving
@@ -329,7 +355,9 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
       const started = performance.now()
       let painted = 0
       for (;;) {
-        const { done, value } = await reader.read()
+        const { done, value } = await reader.read().catch(() => {
+          throw new BundleDownloadError({ status: null, received, total })
+        })
         if (done) break
         chunks.push(value as unknown as BlobPart)
         received += value.byteLength
@@ -344,7 +372,9 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
       }
       blob = new Blob(chunks)
     } else {
-      blob = await res.blob()
+      blob = await res.blob().catch(() => {
+        throw new BundleDownloadError({ status: null, received: 0, total })
+      })
     }
     // Not null: the wait is not over, it has changed kind — briefly now that
     // only the zip's directory is read — and reporting "no download" here would
