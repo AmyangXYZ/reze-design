@@ -73,8 +73,8 @@ const MODE_TARGET: Record<OutputMode, ExportTarget> = {
   "alpha-png": "png",
   "alpha-webm": "webm",
 }
-type Aspect = "16:9" | "9:16" | "2.39:1" | "1:1" | "4:3"
-const ASPECTS: Aspect[] = ["16:9", "9:16", "2.39:1", "1:1", "4:3"]
+type Aspect = "16:9" | "9:16" | "9:20" | "2.39:1" | "1:1" | "4:5" | "4:3"
+const ASPECTS: Aspect[] = ["16:9", "9:16", "9:20", "2.39:1", "1:1", "4:5", "4:3"]
 type Quality = "1080p" | "1440p" | "4k"
 // 1080p is the floor: below it a dance reads as a compression artefact, and
 // every platform these get shared to upscales anyway.
@@ -126,9 +126,18 @@ function writeExportPrefs(prefs: ExportPrefs): void {
 const DIMS: Record<Aspect, Record<Quality, [number, number]>> = {
   "16:9": { "1080p": [1920, 1080], "1440p": [2560, 1440], "4k": [3840, 2160] },
   "9:16": { "1080p": [1080, 1920], "1440p": [1440, 2560], "4k": [2160, 3840] },
+  // Full-screen phones: 1080×2400 and 1440×3200 are most Android screens, and
+  // an iPhone (19.5:9) or a Sony (21:9) shows it with hairline bars. Its 4K
+  // keeps the long edge at 3840, as 2.39:1 does: 2160 across would be
+  // 2160×4800, past the largest frame H.264 allows (level 5.2, 36,864
+  // macroblocks), and the export would fall to AV1 or fail.
+  "9:20": { "1080p": [1080, 2400], "1440p": [1440, 3200], "4k": [1728, 3840] },
   // Cinemascope (anamorphic ~2.39:1) — the movie-theater frame.
   "2.39:1": { "1080p": [1920, 804], "1440p": [2560, 1072], "4k": [3840, 1608] },
   "1:1": { "1080p": [1080, 1080], "1440p": [1440, 1440], "4k": [2160, 2160] },
+  // The feed portrait: Instagram's tallest post, and inside Xiaohongshu's
+  // 3:4 limit, so one file fits both uncropped.
+  "4:5": { "1080p": [1080, 1350], "1440p": [1440, 1800], "4k": [2160, 2700] },
   "4:3": { "1080p": [1440, 1080], "1440p": [1920, 1440], "4k": [2880, 2160] },
 }
 

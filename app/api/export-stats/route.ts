@@ -16,7 +16,7 @@ import { and, eq, inArray, sql } from "drizzle-orm"
 import { db, schema, hasDatabase } from "@/lib/db"
 import { MAX_EFFECTS, MAX_GRAPHS, MAX_MODELS } from "@/lib/export-stats"
 
-const ASPECTS = ["16:9", "9:16", "2.39:1", "1:1", "4:3"]
+const ASPECTS = ["16:9", "9:16", "9:20", "2.39:1", "1:1", "4:5", "4:3"]
 const QUALITIES = ["1080p", "1440p", "4k"]
 
 /** Nothing here is worth an error message. A client that gets this wrong is not
