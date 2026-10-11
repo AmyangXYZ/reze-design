@@ -237,19 +237,22 @@ export function sendable(history: AgentMessage[], keep = KEEP_PICTURES): AgentMe
 }
 
 /**
- * The history a provider is sent. Claude is sent it WHOLE: its signed thinking
- * is bound to the exact history it was produced against, and a rewritten
- * earlier turn — an old picture swapped for a line of text — is refused
- * outright for newer Anthropic accounts (a 400) and silently drops the
- * reasoning for older ones, besides moving the cached prefix back every round.
- * Its old results are cleared on Anthropic's side instead (context_management
- * in providers/anthropic), which is not an edit. Everyone else carries no
- * such binding and is sent the trimmed copy.
+ * The history a provider is sent: the same condensed copy for every model,
+ * Claude included. Claude used to be sent it whole, on the worry that its
+ * signed thinking binds the history it was produced against and that a
+ * rewritten earlier turn is refused. Tested against the API (2026-10-11,
+ * analysis/agent/claude-compact-check.mts): condensed tool results, a
+ * rewritten earlier tool input, and an earlier picture swapped for text, all
+ * beside signed thinking — each accepted. In case an account still refuses,
+ * the loop retries that one call with the history whole (see `ask`).
  */
-export function historyFor(api: "anthropic" | "openai" | "compat", messages: AgentMessage[], seeing: boolean): AgentMessage[] {
-  if (api === "anthropic" && seeing) return messages
+export function historyFor(_api: "anthropic" | "openai" | "compat", messages: AgentMessage[], seeing: boolean): AgentMessage[] {
   return sendable(messages, seeing ? KEEP_PICTURES : 0)
 }
+
+/** An Anthropic refusal of an edited history: its signed thinking no longer
+ *  matching what it was produced against. */
+const signatureRefusal = (error: string) => /signature|thinking/i.test(error) && /invalid|400|mismatch|modif/i.test(error)
 
 /** Read an NDJSON response line by line. */
 async function* lines(res: Response): AsyncGenerator<AgentStreamEvent> {
@@ -319,14 +322,29 @@ export async function runAgent(opts: {
         const route = routeOf(opts.via)
         if ("error" in route) return { ok: false, error: route.error, retryable: false }
         const seeing = opts.via.vision !== false
-        await route.provider.turn({
-          target: route.target,
-          messages: historyFor(route.provider.api, messages, seeing),
-          system: (seeing ? AGENT_SYSTEM : AGENT_SYSTEM + TEXT_ONLY_NOTE) + modelNote(route.target.model),
-          tools: AGENT_TOOLS,
-          send: handle,
-          signal: opts.signal,
-        })
+        const send = (history: AgentMessage[]) =>
+          route.provider.turn({
+            target: route.target,
+            messages: history,
+            system: (seeing ? AGENT_SYSTEM : AGENT_SYSTEM + TEXT_ONLY_NOTE) + modelNote(route.target.model),
+            tools: AGENT_TOOLS,
+            send: handle,
+            signal: opts.signal,
+          })
+        const refusedEdit = (error: string) => route.provider.api === "anthropic" && seeing && signatureRefusal(error)
+        try {
+          await send(historyFor(route.provider.api, messages, seeing))
+        } catch (e) {
+          if (!refusedEdit(e instanceof Error ? e.message : String(e))) throw e
+          done = null
+          await send(messages)
+        }
+        // A refusal reported in the stream rather than thrown: the same retry.
+        const failed = done as Round | null
+        if (failed && !failed.ok && refusedEdit(failed.error)) {
+          done = null
+          await send(messages)
+        }
       } catch (e) {
         return { ok: false, error: e instanceof Error ? e.message : String(e), retryable: e instanceof TurnError ? e.retryable : true }
       }

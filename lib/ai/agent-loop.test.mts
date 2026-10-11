@@ -268,7 +268,7 @@ await test("a saved history cut off mid-run is answered, never rewritten", () =>
   assert.equal(settle(fixed).length, 3, "a whole history is left as it is")
 })
 
-await test("Claude is sent its history whole; other providers, the trimmed copy", () => {
+await test("every provider, Claude included, is sent the same trimmed copy", () => {
   // Five rounds, each answered with an inline capture, as on a person's own key.
   const history: AgentMessage[] = [user("go")]
   for (let k = 0; k < 5; k++) {
@@ -279,10 +279,10 @@ await test("Claude is sent its history whole; other providers, the trimmed copy"
     })
   }
   const pictures = (h: AgentMessage[]) => (JSON.stringify(h).match(/IMG\d/g) ?? []).length
-  // Claude: every turn exactly as it was — no earlier turn rewritten, ever.
-  const claude = historyFor("anthropic", history, true)
-  assert.equal(JSON.stringify(claude), JSON.stringify(history))
-  // The others: only the latest few pictures go; the rest become a line.
+  // One pipeline: only the latest few pictures go, the rest become a line —
+  // Claude too (its signed thinking survives the edit; see historyFor).
+  assert.equal(pictures(historyFor("anthropic", history, true)), 3)
+  assert.equal(JSON.stringify(historyFor("anthropic", history, true)), JSON.stringify(historyFor("openai", history, true)))
   assert.equal(pictures(historyFor("openai", history, true)), 3)
   assert.equal(pictures(historyFor("compat", history, true)), 3)
   // A model that reads text only gets no picture, whoever it is.
