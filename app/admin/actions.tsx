@@ -7,8 +7,7 @@
 import { Stamp } from "@/components/stamp"
 import { useEffect, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Ban, PenLine, RotateCcw, Sparkle, Trash2 } from "lucide-react"
-import { authClient } from "@/lib/auth-client"
+import { Ban, PenLine, RotateCcw, Trash2 } from "lucide-react"
 import { LazySection } from "./data-table"
 
 
@@ -77,43 +76,6 @@ export function RenameUser({ id, username, isSelf }: { id: string; username: str
       aria-label="Rename handle"
     >
       <PenLine className="size-3.5" />
-    </button>
-  )
-}
-
-/** A toggle that PATCHes one field on an account and, for your own, re-reads the
- *  session past its 5-minute cookie cache so the change shows at once. */
-function useAccountToggle(id: string, isSelf: boolean) {
-  const { run, disabled } = useAction()
-  const toggle = (body: Record<string, unknown>, question: string) => {
-    if (!confirm(question)) return
-    void run(`/api/admin/users/${id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    }).then(async (ok) => {
-      if (!ok || !isSelf) return
-      await authClient.getSession({ query: { disableCookieCache: true } })
-      window.location.reload()
-    })
-  }
-  return { toggle, disabled }
-}
-
-/** Premium is invitation-only for now: granted and lifted here, yourself included. */
-export function PlanToggle({ id, premium, isSelf }: { id: string; premium: boolean; isSelf: boolean }) {
-  const { toggle, disabled } = useAccountToggle(id, isSelf)
-  return (
-    <button
-      disabled={disabled}
-      onClick={() =>
-        toggle({ plan: premium ? "free" : "premium" }, premium ? "Lift Premium from this account?" : "Grant Premium to this account?")
-      }
-      className={`${iconBtn} ${premium ? "text-blue-600 hover:bg-blue-500/10" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
-      aria-label={premium ? "Lift Premium" : "Grant Premium"}
-      title={premium ? "Premium · click to lift" : "Grant Premium"}
-    >
-      <Sparkle className="size-3.5" />
     </button>
   )
 }

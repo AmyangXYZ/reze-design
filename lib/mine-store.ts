@@ -11,7 +11,7 @@ import type { LibraryItem } from "@/lib/library"
 import { fetchJson, retryLater, retrySettled } from "@/lib/net"
 import { clearSaved, readSaved, writeSaved } from "@/lib/saved"
 
-export type MineRow = LibraryItem & { mine: true; authorImage?: string | null }
+export type MineRow = LibraryItem & { mine: true; authorImage?: string | null; authorVerified?: boolean }
 type Mine = { items: MineRow[]; liked: string[] }
 type SavedMine = Mine & { userId: string }
 

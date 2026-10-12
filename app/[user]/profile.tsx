@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/context-menu"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { UserAvatar } from "@/components/user-avatar"
+import { VerifiedPill } from "@/components/verified-badge"
 import { EffectPreview } from "@/components/editor/effect-preview"
 import { GradePreview } from "@/components/editor/grade-preview"
 import { GraphMinimap } from "@/components/editor/graph-minimap"
@@ -57,6 +58,7 @@ type Manage = { pin: (scene: ProfileScene, on: boolean) => void; remove: (scene:
 export function Profile({
   handle,
   image,
+  verified,
   joined,
   scenes: initialScenes,
   effects,
@@ -65,6 +67,8 @@ export function Profile({
 }: {
   handle: string
   image: string | null
+  /** A maker we vouch for: a check beside their handle. */
+  verified: boolean
   joined: string
   scenes: ProfileScene[]
   effects: ProfileEffect[]
@@ -162,7 +166,10 @@ export function Profile({
             className="size-14 text-sm sm:size-16"
           />
           <div className="min-w-0">
-            <h1 className="truncate text-lg font-semibold tracking-tight text-foreground">@{handle}</h1>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <h1 className="truncate text-lg font-semibold tracking-tight text-foreground">@{handle}</h1>
+              {verified && <VerifiedPill className="h-5 gap-1 pr-2 pl-1.5 text-xs [&>svg]:size-3" />}
+            </div>
             <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground tabular-nums">
               <span>{t.profile.scenes(scenes.length)}</span>
               <span aria-hidden>·</span>

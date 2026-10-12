@@ -148,6 +148,13 @@
       "when": 1791517205693,
       "tag": "0020_worthless_sentinel",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791771425588,
+      "tag": "0021_verified_makers",
+      "breakpoints": true
     }
   ]
 }

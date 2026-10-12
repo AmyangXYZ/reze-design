@@ -138,14 +138,14 @@ function Tile({ label, value, note, onClick }: { label: string; value: number | 
 }
 
 function Overview({ users, counts, stats, go }: { users: UserRow[]; counts: Record<KindKey, number>; stats: { publicItems: number; likes: number; newThisWeek: number }; go: (v: ViewId) => void }) {
-  const premium = users.filter((u) => u.plan === "premium").length
+  const verified = users.filter((u) => u.verified).length
   const suspended = users.filter((u) => u.banned).length
   const week = stats.newThisWeek
   return (
     <div className="space-y-8">
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
         <Tile label="Accounts" value={users.length} note={week ? `${week} this week` : null} onClick={() => go("users")} />
-        <Tile label="Premium" value={premium} onClick={() => go("users")} />
+        <Tile label="Verified" value={verified} onClick={() => go("users")} />
         <Tile label="Suspended" value={suspended} onClick={() => go("users")} />
         <Tile label="Scenes" value={counts.scene} onClick={() => go("scenes")} />
         <Tile label="Effects" value={counts.effect} onClick={() => go("effects")} />

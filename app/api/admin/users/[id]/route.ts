@@ -18,19 +18,22 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
   if (!admin) return NextResponse.json({ error: "not found" }, { status: 404 })
   const { id } = await ctx.params
 
-  const { banned, reason, username, plan } = ((await request.json().catch(() => ({}))) ?? {}) as {
+  const { banned, reason, username, verified } = ((await request.json().catch(() => ({}))) ?? {}) as {
     banned?: unknown
     reason?: unknown
     username?: unknown
-    plan?: unknown
+    verified?: unknown
   }
 
-  // ── Plan ───────────────────────────────────────────────────────────────────
-  // Premium is invitation-only for now: granted and lifted here, by hand.
-  if (plan !== undefined) {
-    if (plan !== "free" && plan !== "premium") return NextResponse.json({ error: "invalid" }, { status: 400 })
-    await db.update(user).set({ plan }).where(eq(user.id, id))
-    return NextResponse.json({ id, plan })
+  // ── Verified ───────────────────────────────────────────────────────────────
+  // A maker we vouch for, granted and lifted here by hand. The check rides on
+  // every listing and page their work appears on, so those caches go too.
+  if (verified !== undefined) {
+    if (typeof verified !== "boolean") return NextResponse.json({ error: "invalid" }, { status: 400 })
+    await db.update(user).set({ verified }).where(eq(user.id, id))
+    refreshEveryItem()
+    refreshMakerPages(await handleOf(id))
+    return NextResponse.json({ id, verified })
   }
 
   // ── Rename ─────────────────────────────────────────────────────────────────

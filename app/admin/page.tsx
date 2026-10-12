@@ -57,7 +57,7 @@ export default async function AdminPage() {
         banned: user.banned,
         bannedAt: user.bannedAt,
         banReason: user.banReason,
-        plan: user.plan,
+        verified: user.verified,
         emailVerified: user.emailVerified,
         createdAt: user.createdAt,
         // How they sign in. The outer row is named in full: a bare column here

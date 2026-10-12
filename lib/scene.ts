@@ -103,6 +103,10 @@ export type SceneModel = {
   /** Environment geometry — no motion slot, placed by `transform`, and it
    *  suppresses the ground. */
   stage?: boolean
+  /** A stage that is part of another (by model id): an accessory its folder
+   *  shipped beside the .pmx, a sky dome or an effect layer. It stands and
+   *  moves with that stage and leaves with it. Absent = a stage of its own. */
+  partOf?: string
   /** A prop — an object a character holds or wears. Placed by `transform`
    *  like a stage, but it keeps physics and outlines and leaves the ground
    *  alone. */
@@ -440,6 +444,8 @@ export type SceneModelDoc = {
   /** Environment model. Absent = a cast member, which is the old shape — so
    *  every scene written before stages existed still parses as it always did. */
   stage?: boolean
+  /** Part of another stage. See SceneModel.partOf. */
+  partOf?: string
   /** A prop. Placed by all three like a stage; see SceneModel.prop. */
   prop?: boolean
   /** A stage's own sun. See StageSun. */
@@ -714,12 +720,13 @@ const roleOf = (g: StyleGroup): StyleGroupDoc["role"] =>
 function stageFieldsOf(
   m: Pick<
     SceneModel,
-    "stage" | "prop" | "sun" | "attach" | "parentKeys" | "transform" | "morphs" | "visibility" | "castShadow" | "look" | "origin"
+    "stage" | "partOf" | "prop" | "sun" | "attach" | "parentKeys" | "transform" | "morphs" | "visibility" | "castShadow" | "look" | "origin"
   >,
 ) {
   const sun = m.sun
   return {
     ...(m.stage ? { stage: true as const } : {}),
+    ...(m.stage && typeof m.partOf === "string" && m.partOf ? { partOf: m.partOf } : {}),
     ...(m.prop ? { prop: true as const } : {}),
     // Checked in both directions: a document is a file on someone else's disk.
     ...(sun && typeof sun.color === "string" && /^#[0-9a-f]{6}$/i.test(sun.color) && Number.isFinite(sun.strength) && sun.strength >= 0

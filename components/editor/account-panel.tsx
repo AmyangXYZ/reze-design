@@ -7,8 +7,9 @@
 // store no password hashes at all.
 
 import { useEffect, useState, type ReactNode } from "react"
-import { ArrowUpRight, CircleUserRound, GalleryThumbnails, Heart, House, LogOut, Palette, Sparkle, Sparkles, WandSparkles, Workflow } from "lucide-react"
+import { ArrowUpRight, CircleUserRound, GalleryThumbnails, Heart, House, LogOut, Palette, Sparkles, WandSparkles, Workflow } from "lucide-react"
 import { UserAvatar } from "@/components/user-avatar"
+import { VerifiedPill } from "@/components/verified-badge"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -460,7 +461,7 @@ export function AccountButton({
   }, [session])
 
   const handle = session?.user.username ?? session?.user.name ?? ""
-  const premium = session?.user.plan === "premium"
+  const verified = session?.user.verified === true
   const trigger = (
     <Button
       variant="ghost"
@@ -524,13 +525,8 @@ export function AccountButton({
           <div className="min-w-0 flex-1 text-left">
             <div className="flex min-w-0 items-center gap-1.5">
               <span className="truncate font-mono text-xs font-medium">{handle}</span>
-              {/* The version chip's shape, filled in Reze's violet: the plan, shown to its holder. */}
-              {premium && (
-                <span className="inline-flex h-4 shrink-0 items-center gap-0.5 rounded-full border border-violet-300 bg-reze pr-1.5 pl-1 text-2xs leading-none font-semibold tracking-wide text-white">
-                  <Sparkle className="size-2.5" strokeWidth={2.5} />
-                  {t.premium.label}
-                </span>
-              )}
+              {/* The same check the holder's published work carries. */}
+              {verified && <VerifiedPill />}
             </div>
             <div className="truncate text-2xs text-muted-foreground">{session.user.email}</div>
           </div>

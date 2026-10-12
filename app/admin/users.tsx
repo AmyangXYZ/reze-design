@@ -11,10 +11,10 @@ import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { KINDS } from "./kinds"
 import type { ItemRow, UserRow } from "./types"
-import { DeleteAccountAction, DeleteItemAction, PlanAction, RenameAction, SuspendAction } from "./user-actions"
+import { DeleteAccountAction, DeleteItemAction, RenameAction, SuspendAction, VerifyAction } from "./user-actions"
 import { UsageView, tokens } from "./usage"
 
-type Filter = "all" | "premium" | "suspended"
+type Filter = "all" | "verified" | "suspended"
 
 
 export function Avatar({ user, size = 7 }: { user: Pick<UserRow, "image" | "name">; size?: 7 | 10 }) {
@@ -62,14 +62,14 @@ export function UsersView({ users, selfId }: { users: UserRow[]; selfId: string 
   const shown = useMemo(() => {
     const list = users.filter(
       (u) =>
-        (filter === "all" || (filter === "premium" ? u.plan === "premium" : u.banned)) &&
+        (filter === "all" || (filter === "verified" ? u.verified : u.banned)) &&
         (!q || [u.username, u.name, u.email, u.id, ...u.providers].some((f) => f?.toLowerCase().includes(q))),
     )
     const key = (u: UserRow) => (sort === "published" ? published(u).count : sort === "ai" ? u.aiTokens30 : Date.parse(u.createdAt))
     return [...list].sort((a, b) => key(b) - key(a))
   }, [users, q, filter, sort])
 
-  const counts = { all: users.length, premium: users.filter((u) => u.plan === "premium").length, suspended: users.filter((u) => u.banned).length }
+  const counts = { all: users.length, verified: users.filter((u) => u.verified).length, suspended: users.filter((u) => u.banned).length }
   const current = users.find((u) => u.id === open) ?? null
 
   return (
@@ -80,7 +80,7 @@ export function UsersView({ users, selfId }: { users: UserRow[]; selfId: string 
           <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, handle, email or id" className="h-8 pl-8 text-[13px] md:text-[13px]" />
         </div>
         <div className="flex gap-1" role="group" aria-label="Show">
-          {(["all", "premium", "suspended"] as const).map((f) => (
+          {(["all", "verified", "suspended"] as const).map((f) => (
             <Button
               key={f}
               size="xs"
@@ -149,7 +149,7 @@ export function UsersView({ users, selfId }: { users: UserRow[]; selfId: string 
                   </td>
                   <td className="px-3.5 py-2.5">
                     <div className="flex flex-wrap gap-1">
-                      {u.plan === "premium" ? <Pill tone="accent">Premium</Pill> : <Pill tone="muted">Free</Pill>}
+                      {u.verified && <Pill tone="accent">Verified</Pill>}
                       {u.banned && (
                         <Pill tone="warning" title={u.banReason ?? undefined}>
                           Suspended
@@ -173,7 +173,7 @@ export function UsersView({ users, selfId }: { users: UserRow[]; selfId: string 
                   {/* The row opens the panel; these act without opening it. */}
                   <td className="px-3.5 py-2.5" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end gap-0.5">
-                      <PlanAction id={u.id} premium={u.plan === "premium"} isSelf={isSelf} variant="icon" />
+                      <VerifyAction id={u.id} verified={u.verified} isSelf={isSelf} variant="icon" />
                       <SuspendAction id={u.id} banned={u.banned} isSelf={isSelf} variant="icon" />
                     </div>
                   </td>
@@ -228,7 +228,7 @@ function AccountPanel({ user: u, isSelf, onClose }: { user: UserRow; isSelf: boo
 
       <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-4 text-[13px]">
         <section className="grid grid-cols-2 gap-x-4 gap-y-2">
-          <Fact label="Plan" value={u.plan === "premium" ? "Premium" : "Free"} />
+          <Fact label="Verified" value={u.verified ? "Yes" : "No"} />
           <Fact label="Status" value={u.banned ? <>Suspended <Stamp iso={u.bannedAt} />{u.banReason ? ` — ${u.banReason}` : ""}</> : "Active"} />
           <Fact label="Signs in with" value={u.providers.join(", ") || "—"} />
           <Fact label="Joined" value={<Stamp iso={u.createdAt} />} />
@@ -238,7 +238,7 @@ function AccountPanel({ user: u, isSelf, onClose }: { user: UserRow; isSelf: boo
         <section className="space-y-2">
           <Heading>Account</Heading>
           <div className="flex flex-wrap gap-2">
-            <PlanAction id={u.id} premium={u.plan === "premium"} isSelf={isSelf} variant="labelled" />
+            <VerifyAction id={u.id} verified={u.verified} isSelf={isSelf} variant="labelled" />
             <RenameAction id={u.id} username={u.username} isSelf={isSelf} variant="labelled" />
             <SuspendAction id={u.id} banned={u.banned} isSelf={isSelf} variant="labelled" />
             <DeleteAccountAction id={u.id} isSelf={isSelf} variant="labelled" onDone={onClose} />

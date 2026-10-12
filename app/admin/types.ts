@@ -27,7 +27,8 @@ export type UserRow = {
   banned: boolean
   bannedAt: string | null
   banReason: string | null
-  plan: "free" | "premium"
+  /** Shown as a check beside their name on their published work. */
+  verified: boolean
   emailVerified: boolean
   /** How they sign in: github, google… */
   providers: string[]

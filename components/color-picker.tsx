@@ -23,8 +23,9 @@ import { cn } from "@/lib/utils"
 
 const SHADES = ["50", "100", "200", "300", "400", "500", "600", "700", "800", "900", "950"]
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
-// Cells stretch to fill the dialog width (label column + 11 equal columns).
-const GRID = "grid grid-cols-[3.75rem_repeat(11,minmax(0,1fr))] gap-x-3"
+// Cells stretch to fill the dialog width (label column + 11 equal columns),
+// packed tighter on a phone so the eleven still fit.
+const GRID = "grid grid-cols-[2.75rem_repeat(11,minmax(0,1fr))] gap-x-1 sm:grid-cols-[3.75rem_repeat(11,minmax(0,1fr))] sm:gap-x-3"
 
 // ── HSV, the model every 3D and photo app's picker is drawn in ──
 // h in degrees 0..360, s and v 0..1; rgb 0..255.
@@ -237,7 +238,9 @@ function ChannelPicker({
 
   return (
     <div className="flex flex-col gap-5 pr-1.5 pb-1.5">
-      <div className="grid grid-cols-[14rem_minmax(0,1fr)] gap-5">
+      {/* Field beside the sliders; stacked on a phone, where the two side by
+          side are wider than the screen. */}
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-[14rem_minmax(0,1fr)]">
         {/* Saturation across, value up, over the pure hue. Arrow keys nudge it
             for anyone not holding a mouse. */}
         <div
@@ -247,7 +250,7 @@ function ChannelPicker({
           aria-label={tc.field}
           aria-valuenow={Math.round(hsv.s * 100)}
           aria-valuetext={tc.fieldValue(Math.round(hsv.s * 100), Math.round(hsv.v * 100))}
-          className="relative aspect-square cursor-crosshair touch-none rounded-interior ring-1 ring-line-strong outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+          className="relative aspect-square w-full max-w-56 cursor-crosshair touch-none justify-self-center rounded-interior ring-1 ring-line-strong outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
           style={{ background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, ${hueHex})` }}
           onPointerDown={(e) => {
             e.currentTarget.setPointerCapture(e.pointerId)
@@ -276,7 +279,7 @@ function ChannelPicker({
           />
         </div>
 
-        <div className="flex flex-col justify-between">
+        <div className="flex flex-col justify-between gap-2">
           {/* Before and after, as Photoshop shows them: the left half is what
               you opened with, and clicking it puts that back. */}
           <div className="flex items-center gap-2">
@@ -318,8 +321,9 @@ function ChannelPicker({
         </div>
       </div>
 
+      {/* Swatch rows wrap rather than run off a phone's edge. */}
       <Band label={tc.ramp}>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           {ramp.map((hex, i) => (
             <Swatch key={i} hex={hex} onPick={pick} className={cn(i === 4 && "z-10 ring-2 ring-blue-400 ring-offset-1 ring-offset-zinc-950")} />
           ))}
@@ -327,7 +331,7 @@ function ChannelPicker({
       </Band>
 
       <Band label={tc.harmony}>
-        <div className="flex gap-6">
+        <div className="flex flex-wrap gap-x-6 gap-y-2">
           {harmonies.map((g) => (
             <div key={g.label} className="flex min-w-0 flex-col gap-1">
               <div className="flex gap-1.5">
@@ -342,7 +346,7 @@ function ChannelPicker({
       </Band>
 
       <Band label={tc.recent}>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           {Array.from({ length: RECENT_COLORS }, (_, i) =>
             recent[i] ? (
               <Swatch key={i} hex={recent[i]} onPick={pick} />
@@ -513,7 +517,7 @@ export function ColorPickerDialog({
           <div className="grid">
           <div
             role="tabpanel"
-            className={cn("col-start-1 row-start-1 min-h-0", tab !== "picker" && "invisible")}
+            className={cn("col-start-1 row-start-1 max-h-[75vh] min-h-0 overflow-auto", tab !== "picker" && "invisible")}
           >
             <ChannelPicker value={value} onChange={onChange} original={original} recent={recent} />
           </div>
@@ -528,7 +532,7 @@ export function ColorPickerDialog({
               <div className={cn(GRID, "mb-1.5")}>
                 <span />
                 {SHADES.map((s) => (
-                  <span key={s} className="text-center text-xs text-muted-foreground tabular-nums">
+                  <span key={s} className="text-center text-2xs text-muted-foreground tabular-nums sm:text-xs">
                     {s}
                   </span>
                 ))}
@@ -569,11 +573,11 @@ export function ColorPickerDialog({
           </Tabs>
 
           <div className="flex items-center gap-2 border-t border-line pt-3">
-            <span className="text-xs text-muted-foreground">{tc.customHex}</span>
+            <span className="shrink-0 text-xs text-muted-foreground">{tc.customHex}</span>
             <HexField value={value} onChange={onChange} />
             {/* Right side previews the hovered swatch (name + hex + chip) */}
-            <div className="ml-auto flex items-center gap-2">
-              {hover && <span className="text-xs text-muted-foreground">{cap(hover.name)}</span>}
+            <div className="ml-auto flex min-w-0 items-center gap-2">
+              {hover && <span className="truncate text-xs text-muted-foreground">{cap(hover.name)}</span>}
               <span className="font-mono text-xs text-muted-foreground tabular-nums">
                 {(hover?.hex ?? value).toLowerCase()}
               </span>

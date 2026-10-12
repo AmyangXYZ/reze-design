@@ -24,8 +24,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import type { LibraryFacet, LibraryKind, LibraryOwner } from "@/lib/library"
 import { RailRow, RailSection, RailTags } from "@/components/editor/library-rail"
-import { authorImage, builtinAuthor } from "@/lib/community-store"
+import { authorImage, authorVerified, builtinAuthor } from "@/lib/community-store"
 import { UserAvatar } from "@/components/user-avatar"
+import { VerifiedBadge } from "@/components/verified-badge"
 import Link from "next/link"
 import { ContextMenuItem } from "@/components/ui/context-menu"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -365,19 +366,24 @@ export function AuthorAvatar({
 export function AuthorLink({ name, draft = false, className }: { name: string; draft?: boolean; className?: string }) {
   if (draft) return <span className={className}>{name}</span>
   const keep = (e: React.SyntheticEvent) => e.stopPropagation()
+  // The check sits beside the link, not in it, so a long name truncates and
+  // the check stays. Every caller lays the name out in a flex row.
   return (
-    <Link
-      href={`/${name}`}
-      target="_blank"
-      rel="noopener"
-      prefetch={false}
-      onClick={keep}
-      onDoubleClick={keep}
-      onKeyDown={keep}
-      className={cn("underline-offset-2 transition-colors hover:text-foreground hover:underline", className)}
-    >
-      {name}
-    </Link>
+    <>
+      <Link
+        href={`/${name}`}
+        target="_blank"
+        rel="noopener"
+        prefetch={false}
+        onClick={keep}
+        onDoubleClick={keep}
+        onKeyDown={keep}
+        className={cn("underline-offset-2 transition-colors hover:text-foreground hover:underline", className)}
+      >
+        {name}
+      </Link>
+      {authorVerified(name) && <VerifiedBadge />}
+    </>
   )
 }
 

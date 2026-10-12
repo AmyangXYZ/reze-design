@@ -1,5 +1,7 @@
-// One turn of the AI on Premium: the conversation in, the model's reply out,
-// streamed.
+// One turn of the AI on this server's key: the conversation in, the model's
+// reply out, streamed. Only under `next dev` since Premium ended (2026-10-11,
+// lib/ai/gate): the deployed site answers every request with "premium", and
+// the panel asks for the person's own key.
 //
 // The LOOP lives in the browser (lib/ai/agent-loop.ts), because the tools do:
 // they drive the engine and read the canvas, which exist only in the tab.

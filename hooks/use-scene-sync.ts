@@ -829,13 +829,18 @@ export function useSceneSync({
  */
 export function useSceneCast<M extends { id: string }>(
   models: M[],
-  stages: { id: string; sun?: { color: string; strength: number } | null }[],
+  stages: { id: string; partOf?: string; sun?: { color: string; strength: number } | null }[],
   props: { id: string }[],
 ) {
   const stageIds = useMemo(() => new Set([...stages.map((s) => s.id), ...props.map((p) => p.id)]), [stages, props])
   const cast = useMemo(() => models.filter((m) => !stageIds.has(m.id)), [models, stageIds])
   const castKey = cast.map((m) => m.id).join("\u0000")
   const castIds = useMemo(() => (castKey ? castKey.split("\u0000") : []), [castKey])
-  const stageSuns = useMemo(() => stages.map((s) => ({ id: s.id, sun: s.sun ?? null })), [stages])
+  // The first stage holds the scene's lighting, its sun included: a stage
+  // added beside it brings no daylight of its own.
+  const stageSuns = useMemo(() => {
+    const first = stages.find((s) => !s.partOf)
+    return first ? [{ id: first.id, sun: first.sun ?? null }] : []
+  }, [stages])
   return { stageIds, cast, castIds, stageSuns }
 }

@@ -101,6 +101,14 @@ function withId<T extends { id: string }>(list: T[], item: T): T[] {
   return at < 0 ? [...list, item] : list.map((x, n) => (n === at ? item : x))
 }
 
+/** `id` moved to position `at` (clamped), the rest in their order. */
+function movedTo<T extends { id: string }>(list: T[], id: string, at: number): T[] {
+  const item = list.find((x) => x.id === id)
+  if (!item || at < 0) return list
+  const rest = list.filter((x) => x.id !== id)
+  return [...rest.slice(0, at), item, ...rest.slice(at)]
+}
+
 export function useEngine(
   /** The scene to boot into — read ONCE (constructor options + first loadModel + addGround) */
   initialScene: Scene,
@@ -555,20 +563,22 @@ export function useEngine(
    * out of the cast: no motion slot, no spawn offset, placed by transform.
    */
   /**
-   * Load a stage model. `part` adds it to the stage already there — an
-   * accessory its folder ships beside the .pmx, a sky dome or an effect layer —
-   * instead of replacing it.
+   * Load a stage model. A scene holds as many stages as it is given — a room
+   * and a sky dome, two sets side by side — each placed on its own. `partOf`
+   * adds it as part of that stage instead: an accessory its folder ships
+   * beside the .pmx, a sky dome or an effect layer, standing where it stands.
+   *
+   * The same file again REPLACES the stage of that name, in its place in the
+   * list: it is the same stage, re-exported.
    */
-  const loadStageModel = async (files: File[] | FileList, pmxFile: File, part: boolean): Promise<string> => {
+  const loadStageModel = async (files: File[] | FileList, pmxFile: File, partOf: string | null): Promise<string> => {
     const engine = engineRef.current
     if (!engine) throw new Error("engine not ready")
-    // A scene holds ONE stage, so uploading another replaces it. Two stages mean
-    // two floors at y=0 with identical depth — they z-fight across the whole
-    // floor, flashing as the camera turns, and no amount of depth precision can
-    // separate surfaces that are exactly coplanar. There is also no sense in
-    // which a scene is standing in two places at once. The parts that came in
-    // its folder are the same stage, and arrive in its place.
-    const replaced = part ? [] : stagesRef.current
+    const sameName = partOf ? undefined : stagesRef.current.find((s) => !s.partOf && s.id === uniqueModelId(pmxFile.name, [s.id]))
+    // Its parts go with it; they come again from the folder.
+    const replaced = sameName ? stagesRef.current.filter((s) => s.id === sameName.id || s.partOf === sameName.id) : []
+    const stageAt = sameName ? stagesRef.current.indexOf(sameName) : -1
+    const modelAt = sameName ? modelsRef.current.findIndex((m) => m.id === sameName.id) : -1
     // Minted with the outgoing stages already gone. The list they are still in
     // updates a render later, and minting against it gave the same file a "-2"
     // here and its plain name on the next load — which is where the scene's work
@@ -606,31 +616,38 @@ export function useEngine(
     const hidden = (kept?.hidden ?? []).filter((n) => names.has(n))
     for (const name of hidden) engine.toggleMaterialVisible(id, name)
     for (const [morph, weight] of Object.entries(kept?.stage.morphs ?? {})) model.setMorphWeight(morph, weight)
-    setModels((prev) => withId(prev, infoFor(id, pmxBaseName(pmxFile.name), model, hidden)))
+    // A replacement takes the place of the stage it replaces, in both lists:
+    // the first stage is the one whose lighting the scene wears.
+    setModels((prev) => movedTo(withId(prev, infoFor(id, pmxBaseName(pmxFile.name), model, hidden)), id, modelAt))
     setGroupsByModel((prev) => ({ ...prev, [id]: groups }))
-    // A part starts where the stage stands, and moves with it from then on.
-    const transform = part
-      ? (stagesRef.current[0]?.transform ?? DEFAULT_STAGE_TRANSFORM)
+    // A part starts where its stage stands, and moves with it from then on.
+    const transform = partOf
+      ? (stagesRef.current.find((s) => s.id === partOf)?.transform ?? DEFAULT_STAGE_TRANSFORM)
       : (kept?.stage.transform ?? DEFAULT_STAGE_TRANSFORM)
-    if (part || kept) engine.setModelTransform(id, stageTransformToEngine(transform))
+    if (partOf || kept) engine.setModelTransform(id, stageTransformToEngine(transform))
     setStages((prev) =>
-      withId(prev, {
+      movedTo(
+        withId(prev, {
+          id,
+          file: pmxBaseName(pmxFile.name),
+          transform,
+          morphs: kept?.stage.morphs ?? {},
+          ...(kept?.stage.sun ? { sun: kept.stage.sun } : {}),
+          ...(partOf ? { partOf } : {}),
+        }),
         id,
-        file: pmxBaseName(pmxFile.name),
-        transform,
-        morphs: kept?.stage.morphs ?? {},
-        ...(kept?.stage.sun ? { sun: kept.stage.sun } : {}),
-      }),
+        stageAt,
+      ),
     )
     return id
   }
   const addStageFromFiles = useCallback(
-    (files: File[] | FileList, pmxFile: File) => loadStageModel(files, pmxFile, false),
+    (files: File[] | FileList, pmxFile: File) => loadStageModel(files, pmxFile, null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [removeModelById],
   )
   const addStagePartFromFiles = useCallback(
-    (files: File[] | FileList, pmxFile: File) => loadStageModel(files, pmxFile, true),
+    (files: File[] | FileList, pmxFile: File, partOf: string) => loadStageModel(files, pmxFile, partOf),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [removeModelById],
   )
@@ -898,14 +915,16 @@ export function useEngine(
     [],
   )
 
-  /** Place a stage. Position and rotation are absolute, scale is uniform. */
-  /** Place the stage. Its parts are the same set, so they move with it. */
+  /** Place a stage. Position and rotation are absolute, scale is uniform. Its
+   *  parts are the same set, so they move with it; other stages stay put. */
   const setStageTransform = useCallback((id: string, patch: Partial<StageTransform>) => {
     const current = stagesRef.current.find((s) => s.id === id)
     if (!current) return
+    const root = current.partOf ?? current.id
     const next = { ...current.transform, ...patch }
-    for (const s of stagesRef.current) engineRef.current?.setModelTransform(s.id, stageTransformToEngine(next))
-    setStages((prev) => prev.map((s) => ({ ...s, transform: next })))
+    const moves = (s: StageInfo) => s.id === root || s.partOf === root
+    for (const s of stagesRef.current) if (moves(s)) engineRef.current?.setModelTransform(s.id, stageTransformToEngine(next))
+    setStages((prev) => prev.map((s) => (moves(s) ? { ...s, transform: next } : s)))
   }, [])
 
   /** The sun a stage carries for itself — what its rig brought — or none. */

@@ -18,6 +18,7 @@ import { LIBRARY_DETAIL_BODY, LIBRARY_SHELL, LibraryLike, LibraryTags } from "@/
 import { fetchJson, retryLater, retrySettled } from "@/lib/net"
 import { usePollWhileOpen } from "@/hooks/use-poll-while-open"
 import { readSaved, writeSaved } from "@/lib/saved"
+import { noteVerified } from "@/lib/community-store"
 import {
   LibraryBack,
   LibraryRailFilters,
@@ -63,6 +64,8 @@ export type GalleryScene = {
   displayOnly?: boolean
   /** The author's account picture, for their avatar. */
   authorImage?: string | null
+  /** A maker we vouch for: a check beside their name. */
+  authorVerified?: boolean
 }
 
 /**
@@ -211,6 +214,7 @@ function loadPage(v: View): Promise<Page> {
   if (held) return held
   const req = firstPage(v)
     .then((fresh) => {
+      noteVerified(fresh.scenes)
       if (v === "all") writeSaved(SAVED_PAGE, fresh)
       const merged = merge(pages.get(v), fresh)
       pages.set(v, merged)
@@ -573,6 +577,7 @@ function GalleryContent({
     if (isFacet(view)) params.set("facet", view)
     fetchJson<Page>(`/api/library?${params}`)
       .then((page) => {
+        noteVerified(page.scenes)
         // Into the cache as well as the view: pages read once shouldn't be re-read
         // the next time the gallery opens.
         const held = pages.get(view)

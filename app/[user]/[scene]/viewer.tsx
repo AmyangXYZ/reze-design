@@ -35,12 +35,15 @@ import { SignInDialog } from "@/components/editor/account-panel"
 import { useI18n, useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { VerifiedBadge } from "@/components/verified-badge"
 
 type ViewerProps = {
   doc: SceneDoc
   sceneId: string
   title: string
   author: string
+  /** A maker we vouch for: a check beside their name. */
+  verified: boolean
   description: string
   /** 借物表 — who the model, motion and music came from. Required at publish, so
    *  it should be readable here rather than only enforced there. */
@@ -249,12 +252,15 @@ export function SceneViewer(props: ViewerProps) {
             it pushed the card sideways into a horizontal scrollbar. */}
         <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-2.5 [overflow-wrap:anywhere]">
           <div className="truncate text-sm font-semibold tracking-tight text-foreground">{props.title}</div>
-          <div className="mt-0.5 truncate font-mono text-2xs text-muted-foreground">
-            <Link href={`/${props.author}`} className="transition-colors hover:text-foreground hover:underline">
+          <div className="mt-0.5 flex min-w-0 items-center gap-1 font-mono text-2xs text-muted-foreground">
+            <Link href={`/${props.author}`} className="truncate transition-colors hover:text-foreground hover:underline">
               @{props.author}
             </Link>
-            {" · "}
-            <PublishedAt iso={props.publishedAt} />
+            {props.verified && <VerifiedBadge />}
+            <span className="shrink-0">
+              {"· "}
+              <PublishedAt iso={props.publishedAt} />
+            </span>
           </div>
           {props.description && (
             <>

@@ -550,7 +550,14 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
     if (entry.stage) {
       const tr = entry.transform ?? DEFAULT_STAGE_TRANSFORM
       const morphs = entry.morphs ?? {}
-      stageList.push({ id: entry.model.id, file: entry.model.file, transform: tr, morphs, ...(entry.sun ? { sun: entry.sun } : {}) })
+      stageList.push({
+        id: entry.model.id,
+        file: entry.model.file,
+        transform: tr,
+        morphs,
+        ...(entry.sun ? { sun: entry.sun } : {}),
+        ...(entry.partOf ? { partOf: entry.partOf } : {}),
+      })
       engine.setModelTransform(entry.model.id, { visible: false, ...stageTransformToEngine(tr) })
       // Switches are authored state, so they are restored before the first
       // visible frame rather than applied after the scene appears.
@@ -762,7 +769,7 @@ export async function loadSceneInto(engine: Engine, scene: Scene, stale: () => b
   // Again at the end, for the empty-scene case and because the first model may
   // have arrived before its follow bone existed.
   applyCamera(engine, scene.state.camera, engine.getModel(firstCastId(scene.assets.models)))
-  return { infos, groups, bundle, stageList, propList, planeList, restoredAnims, nativeStage }
+  return { infos, groups, bundle, stageList: withStageParts(stageList), propList, planeList, restoredAnims, nativeStage }
 }
 
 /**
@@ -1060,6 +1067,23 @@ export const DEFAULT_STAGE_TRANSFORM: StageTransform = {
   scale: 1,
 }
 
+/**
+ * A scene written while it could hold only one stage kept that stage's parts
+ * (the accessories its folder shipped) as plain stage entries after it, at
+ * its transform — every edit wrote the one transform to all of them. Read
+ * that way: with no entry naming a parent, and every stage standing exactly
+ * where the first does, the rest are the first's parts. Anything else is a
+ * set of stages of their own.
+ */
+export function withStageParts(list: StageInfo[]): StageInfo[] {
+  if (list.length < 2 || list.some((s) => s.partOf)) return list
+  const same = (a: StageTransform, b: StageTransform) =>
+    a.scale === b.scale && a.position.every((v, i) => v === b.position[i]) && a.rotation.every((v, i) => v === b.rotation[i])
+  const [first, ...rest] = list
+  if (!rest.every((s) => same(s.transform, first.transform))) return list
+  return [first, ...rest.map((s) => ({ ...s, partOf: first.id }))]
+}
+
 export type StageInfo = {
   id: string
   file: string
@@ -1072,6 +1096,8 @@ export type StageInfo = {
   morphs: Record<string, number>
   /** The sun it was lit by, in place of the scene's. See StageSun. */
   sun?: StageSun
+  /** The stage it is part of. See SceneModel.partOf. */
+  partOf?: string
 }
 
 /** A game stage package in the scene: the bundle folder the document names it

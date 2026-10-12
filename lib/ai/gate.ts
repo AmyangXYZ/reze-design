@@ -18,10 +18,11 @@ export function overLimit(user: string): boolean {
 
 export type Gate = { ok: true; user: string; premium: boolean } | { ok: false; status: number; error: string }
 
-/** Signed in, and whether on Premium — the only use of this server's key. A
- *  local dev server lets the developer through when it has no database, or
- *  when AGENT_DEV_OPEN=1 (for driving the editor headless); neither applies
- *  to a production build. */
+/** Signed in, and whether this server's key may be spent — only under
+ *  `next dev`, for the developer. Premium (everyone granted it, on the
+ *  deployed site) ended on 2026-10-11: the AI is each person's own key. A
+ *  local dev server also lets the developer through when it has no database,
+ *  or when AGENT_DEV_OPEN=1 (for driving the editor headless). */
 export async function gate(request: Request): Promise<Gate> {
   if (process.env.NODE_ENV === "development" && process.env.AGENT_DEV_OPEN === "1") return { ok: true, user: "dev", premium: true }
   if (!hasDatabase) {
@@ -29,6 +30,6 @@ export async function gate(request: Request): Promise<Gate> {
   }
   const session = await auth.api.getSession({ headers: request.headers })
   if (!session) return { ok: false, status: 401, error: "unauthenticated" }
-  return { ok: true, user: session.user.id, premium: (session.user as { plan?: string }).plan === "premium" }
+  return { ok: true, user: session.user.id, premium: process.env.NODE_ENV === "development" }
 }
 

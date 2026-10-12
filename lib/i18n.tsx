@@ -98,8 +98,8 @@ const en = {
     deleteConfirm: "Its link stops working, for everyone who has it.",
     manual: "How it works",
   },
-  premium: {
-    label: "Premium",
+  verified: {
+    label: "Verified Creator",
   },
   profile: {
     scenes: (n: number) => `${n} ${n === 1 ? "scene" : "scenes"}`,
@@ -550,6 +550,7 @@ const en = {
     cameraVmd: "That's a camera motion, not a character motion — load it under Camera.",
     emptyVmd: "That .vmd has no motion in it.",
     stageOverridesGround: "The stage overrides the ground while it is loaded.",
+    stageLighting: (name: string) => `Lighting comes from ${name}, the first stage.`,
     cameraDrivesView: "The camera motion drives the view. FOV, distance and target shift it.",
     /** The colour dialog (components/color-picker.tsx). */
     colorPicker: {
@@ -622,7 +623,8 @@ const en = {
       continue: "Continue",
       settings: {
         menu: "Models and keys",
-        premium: "Premium",
+        // Only under `next dev`: the developer's own server key.
+        premium: "This server (dev)",
         addConnection: "Add a service",
         addModel: "Add model",
         key: "API key",
@@ -1225,8 +1227,8 @@ const zh: Dictionary = {
     deleteConfirm: "它的链接将对所有人失效。",
     manual: "使用说明",
   },
-  premium: {
-    label: "高级会员",
+  verified: {
+    label: "认证创作者",
   },
   profile: {
     scenes: (n: number) => `${n} 个场景`,
@@ -1644,6 +1646,7 @@ const zh: Dictionary = {
     cameraVmd: "这是相机动作，不是角色动作 —— 请在「相机」中加载。",
     emptyVmd: "该 .vmd 中没有动作数据。",
     stageOverridesGround: "舞台加载后会覆盖地面。",
+    stageLighting: (name: string) => `灯光来自第一个舞台 ${name}。`,
     cameraDrivesView: "相机动作驱动视角，视场角、距离和目标可在其上偏移。",
     colorPicker: {
       title: "选择颜色",
@@ -1715,7 +1718,7 @@ const zh: Dictionary = {
       continue: "继续",
       settings: {
         menu: "模型与密钥",
-        premium: "Premium",
+        premium: "本机服务器（开发）",
         addConnection: "添加服务",
         addModel: "添加模型",
         key: "API 密钥",

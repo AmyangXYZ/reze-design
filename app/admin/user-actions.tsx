@@ -8,7 +8,7 @@
 // it, and icon buttons in a table row, where the tooltip says it. Both go
 // through the same endpoints as before (api/admin/users, api/library).
 
-import { Ban, PenLine, RotateCcw, Sparkle, Trash2, UserX } from "lucide-react"
+import { Ban, BadgeCheck, PenLine, RotateCcw, Trash2, UserX } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { authClient } from "@/lib/auth-client"
 import { cn } from "@/lib/utils"
@@ -22,8 +22,8 @@ const PATCH = (body: Record<string, unknown>): RequestInit => ({
 
 /** The words for each action: what it is called, and what it does. */
 export const ACTIONS = {
-  grant: { label: "Grant Premium", tip: "Give this account Premium: the AI on this server's key, with its usage counted here." },
-  remove: { label: "Remove Premium", tip: "Take Premium away. They keep everything they made; the AI then needs their own key." },
+  grant: { label: "Verify", tip: "Vouch for this maker: a violet check beside their name on everything they publish, so people know their work is good to learn from and use." },
+  remove: { label: "Remove verification", tip: "Take the check away. Their published work stays as it is." },
   suspend: { label: "Suspend account", tip: "They can't sign in and their maker page goes offline. What they published stays up. Reversible." },
   restore: { label: "Lift suspension", tip: "Let them sign in again and bring their maker page back." },
   rename: { label: "Change handle", tip: "Change their @handle. Their published items move to the new one; old links keep working." },
@@ -103,18 +103,18 @@ function useAccount(id: string, isSelf: boolean) {
   return { run, patch, disabled }
 }
 
-export function PlanAction({ id, premium, isSelf, variant }: { id: string; premium: boolean; isSelf: boolean; variant: Variant }) {
+export function VerifyAction({ id, verified, isSelf, variant }: { id: string; verified: boolean; isSelf: boolean; variant: Variant }) {
   const { patch, disabled } = useAccount(id, isSelf)
-  const a = premium ? ACTIONS.remove : ACTIONS.grant
+  const a = verified ? ACTIONS.remove : ACTIONS.grant
   return (
     <ActionButton
       variant={variant}
-      icon={Sparkle}
+      icon={BadgeCheck}
       label={a.label}
       tip={a.tip}
-      tone={premium ? "accent" : undefined}
+      tone={verified ? "accent" : undefined}
       disabled={disabled}
-      onClick={() => confirm(`${a.label}?\n\n${a.tip}`) && void patch({ plan: premium ? "free" : "premium" })}
+      onClick={() => confirm(`${a.label}?\n\n${a.tip}`) && void patch({ verified: !verified })}
     />
   )
 }

@@ -251,8 +251,9 @@ async function galleryPage(
       nsfw: schema.libraryItems.nsfw,
       // So the detail panel can say a scene is watch-only before it is opened.
       displayOnly: schema.libraryItems.displayOnly,
-      // The author's avatar, as the presets carry it.
+      // The author's avatar and check, as the presets carry them.
       authorImage: user.image,
+      authorVerified: user.verified,
       // Selected so the cursor can be stated in the same terms the rows were
       // ranked by. Stripped from the response below — it is paging machinery,
       // not something a card shows.

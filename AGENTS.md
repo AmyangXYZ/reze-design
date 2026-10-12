@@ -149,20 +149,24 @@ targets (`withSpecialGroups`) follow `isFigureModel`. Don't call the engine's
   render and waits a render between tool runs.
 - A new handle needs adding in three places: the type, `app/page.tsx` and the
   fake in `lib/ai/tools.test.mts`.
-- Premium turns go through `app/api/agent/route.ts`, which holds the server's
-  key. It is the only place `ai_usage` is recorded. A turn on the user's own
-  key calls the model from the browser and is not recorded.
-- `lib/ai/premium.ts`: under `next dev` the server's key is Anthropic's from
-  `.env.local`; in production it is OpenAI's. `AGENT_DEV_OPEN=1`, or no
+- The AI runs on each person's own key, called from the browser and not
+  recorded. Premium (the server's key for hand-picked accounts on the deployed
+  site) ended on 2026-10-11; there are no premium-only features or limits.
+- Under `next dev` only, `app/api/agent/route.ts` still offers the server's
+  key (`lib/ai/premium.ts`: Anthropic's from `.env.local`) to the developer.
+  It is the only place `ai_usage` is recorded. `AGENT_DEV_OPEN=1`, or no
   database, files dev turns under `"dev"`, which is not recorded.
+- **Verified** (`user.verified`, granted from /admin) marks a maker we vouch
+  for: a check in Reze's violet (`components/verified-badge.tsx`) beside
+  their name on their published work and their page.
 
 # Auth and admin
 
 - Sessions ride a 5-minute signed cookie cache (`lib/auth.ts`). Account fields
-  read from the session, including `plan` and `banned`, can be up to 5 minutes
+  read from the session, including `verified` and `banned`, can be up to 5 minutes
   stale for that user. An admin change to someone else reaches them when their
   cookie expires. Changes to your own account re-read the session with
-  `disableCookieCache` (`app/admin/actions.tsx`). A ban also blocks new
+  `disableCookieCache` (`app/admin/user-actions.tsx`). A ban also blocks new
   sign-ins (the `session.create` hook). It does not end sessions that already
   exist.
 - `/api/admin/refresh` clears the `unstable_cache` for library items and scene

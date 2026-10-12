@@ -30,9 +30,9 @@ import { fetchJson, retryLater, retrySettled } from "@/lib/net"
 import { readSaved, writeSaved } from "@/lib/saved"
 import { editMine, mineRows, subscribeMine } from "@/lib/mine-store"
 
-/** `authorImage` is the account's avatar; `createdAt` and `visibility` ride on
- *  the envelope itself. */
-export type CommunityItem = LibraryItem & { mine: boolean; authorImage?: string | null }
+/** `authorImage` is the account's avatar and `authorVerified` its check;
+ *  `createdAt` and `visibility` ride on the envelope itself. */
+export type CommunityItem = LibraryItem & { mine: boolean; authorImage?: string | null; authorVerified?: boolean }
 
 const BUILTIN_IDS: Partial<Record<LibraryKind, Set<string>>> = {
   grade: new Set(GRADE_PRESETS.map((i) => i.id)),
@@ -61,6 +61,18 @@ const builtinAuthors = new Map<string, string>()
 // carries one, built-in mirrors included, so a rail that groups by maker can
 // show the person without each library threading an image through its own list.
 const authorImages = new Map<string, string>()
+// The makers we vouch for, by name like the avatars: the newest answer any row
+// gave about each. Verified belongs to the MAKER, not the row — the gallery keeps
+// pages it read before a check was granted and refreshes only its first window,
+// and judging each card by its own row left some of one maker's cards without
+// it. A row without the field (a copy saved before it existed) says nothing.
+const verifiedAuthors = new Map<string, boolean>()
+
+/** Learn who is verified from rows fresh off the server — the libraries' here,
+ *  the gallery's from its pages. */
+export function noteVerified(rows: Iterable<{ author: string; authorVerified?: boolean }>) {
+  for (const r of rows) if (typeof r.authorVerified === "boolean") verifiedAuthors.set(r.author, r.authorVerified)
+}
 // Bundled items the signed-in user owns. Built-ins are simply presets authored by
 // the admin account, so for THAT account they belong under "Yours" like anything
 // else they published — the bundle just can't know who is asking.
@@ -88,6 +100,7 @@ function rebuild() {
     if (BUILTIN_IDS[i.kind]?.has(i.id)) builtinAuthors.set(i.id, i.author)
     if (i.authorImage) authorImages.set(i.author, i.authorImage)
   }
+  noteVerified(byId.values())
   cache =
     publicRows === null && own.length === 0
       ? null
@@ -175,6 +188,11 @@ export function builtinAuthor(id: string, fallback: string): string {
  *  database, and the caller falls back to initials. */
 export function authorImage(name: string): string | null {
   return authorImages.get(name) ?? null
+}
+
+/** Whether an author is a maker we vouch for, once the library has been fetched. */
+export function authorVerified(name: string): boolean {
+  return verifiedAuthors.get(name) === true
 }
 
 /** Refresh the rows when they are older than a minute; otherwise answer with

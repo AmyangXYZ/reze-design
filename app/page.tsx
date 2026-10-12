@@ -2774,6 +2774,8 @@ export default function Lab() {
   /** Which card's controls the section is showing. */
   const [selectedPlane, setSelectedPlane] = useState<string | null>(null)
   const [selectedProp, setSelectedProp] = useState<string | null>(null)
+  // The stage the Environment pane is showing, of the scene's several.
+  const [selectedStage, setSelectedStage] = useState<string | null>(null)
   const bgImageInput = useRef<HTMLInputElement | null>(null)
   /** Set before the picker opens: which of the three rows this upload fills.
    *  A ref because the click is now and a re-render is not. */
@@ -3017,7 +3019,10 @@ export default function Lab() {
   // a memory. Every session opens on the same, closed, posture.
   const [openRow, setOpenRow] = useState<string | null>(null)
 
-  const stage = stages[0] ?? null
+  // The stages of their own (a part stands and leaves with its stage), and the
+  // one the pane shows. The first holds the scene's lighting.
+  const stageRoots = stages.filter((s) => !s.partOf)
+  const stage = stageRoots.find((s) => s.id === selectedStage) ?? stageRoots[0] ?? null
   // What the environment IS, in the order it reads: a stage, a backdrop, or
   // the ground. The row's summary names it and opening the row lands on its
   // tab, so the two never disagree.
@@ -3026,7 +3031,9 @@ export default function Lab() {
     : bgImage
       ? "background"
       : "ground"
-  const stageSummary = stage ? displayName(stage.file) : (nativeStage?.name ?? t.lab.tabs[envTab])
+  const stageSummary = stageRoots.length
+    ? displayName(stageRoots[0].file) + (stageRoots.length > 1 ? ` +${stageRoots.length - 1}` : "")
+    : (nativeStage?.name ?? t.lab.tabs[envTab])
   // Controlled (not key-remounted): go-to deep-links need to land on a pane —
   // "Background" opens this row on its background tab. Where you left each one
   // is UI state, so it comes back from the same store the stack's own shape does.
@@ -3189,15 +3196,16 @@ export default function Lab() {
   // account becomes the answer.
   const { data: authSession } = useSession()
   // The art director is open to everyone: each person brings their own key
-  // (lib/ai/connections), and Premium adds this server's. Using it asks for
-  // an account, which the panel says on the first request.
-  // In development, ?premium in the address gives Premium in a browser that
-  // is not signed in. Read only once `mounted`, so the URL cannot disagree
-  // with the server's render.
+  // (lib/ai/connections). Under `next dev` this server's key is offered too,
+  // to a signed-in developer — Premium, which offered it on the deployed
+  // site, ended on 2026-10-11 (lib/ai/gate).
+  // In development, ?premium in the address offers it in a browser that is
+  // not signed in. Read only once `mounted`, so the URL cannot disagree with
+  // the server's render.
   const [devPremium] = useState(
     () => process.env.NODE_ENV === "development" && typeof window !== "undefined" && new URLSearchParams(window.location.search).has("premium"),
   )
-  const premium = authSession?.user.plan === "premium" || devPremium
+  const premium = process.env.NODE_ENV === "development" && (!!authSession || devPremium)
   const authorName = authSession?.user.username ?? t.effectLibrary.you
   // Fetch the published rows BEFORE a library is opened, not when one is.
   // Everyone's rows need no session, so they start at once; yours (private
@@ -4961,7 +4969,36 @@ export default function Lab() {
   )
 
   /** Load scenery, converting its ray-mmd presets first when it has them. */
-  const loadScenery = async (files: File[], pmx: File, add: (files: File[], pmx: File) => Promise<string>) => {
+  /** A stage's own world, into the World slot: the .hdr named for its PMX.
+   *  Only the stage whose lighting the scene wears installs it. */
+  const claimStageSky = async (id: string, files: File[], pmx: File) => {
+    const probe = files.find((f) => relFilePath(f) === relFilePath(pmx).replace(/\.pmx$/i, "") + ".hdr")
+    if (probe) {
+      try {
+        swapHdri(await probeBackdrop(probe))
+        setSettings((s2) => {
+          const own = sceneOwned(s2.world)
+          return { ...s2, world: { ...own, strength: 1, stage: { id, before: own } } }
+        })
+        // Noted, so removing the stage takes its sky with it. The World slot
+        // also SHOWS what is in it, so a deleted stage was leaving its own
+        // 1024x512 equirect standing as the backdrop — a blurry block of
+        // the room that is nobody's choice and reads as a broken texture.
+        stageHdri.current = id
+      } catch (e) {
+        console.warn(`[stage] the world it brought could not be read:`, e)
+      }
+    }
+  }
+
+  const loadScenery = async (
+    files: File[],
+    pmx: File,
+    add: (files: File[], pmx: File) => Promise<string>,
+    /** Whether this stage's world becomes the scene's — false for a stage
+     *  added beside the first, which keeps the lighting. */
+    ownsLighting = true,
+  ) => {
     const toastId = `ray-mmd:${relFilePath(pmx)}`
     try {
       const ray = await readRayMmd(files, pmx, (done, total) => {
@@ -5013,25 +5050,7 @@ export default function Lab() {
       // one's sky leaves a garden lit by a bar. The World row still holds
       // whatever is dropped on it afterwards, which is where a deliberate
       // choice goes.
-      {
-        const probe = files.find((f) => relFilePath(f) === relFilePath(pmx).replace(/\.pmx$/i, "") + ".hdr")
-        if (probe) {
-          try {
-            swapHdri(await probeBackdrop(probe))
-            setSettings((s2) => {
-              const own = sceneOwned(s2.world)
-              return { ...s2, world: { ...own, strength: 1, stage: { id, before: own } } }
-            })
-            // Noted, so removing the stage takes its sky with it. The World slot
-            // also SHOWS what is in it, so a deleted stage was leaving its own
-            // 1024x512 equirect standing as the backdrop — a blurry block of
-            // the room that is nobody's choice and reads as a broken texture.
-            stageHdri.current = id
-          } catch (e) {
-            console.warn(`[stage] the world it brought could not be read:`, e)
-          }
-        }
-      }
+      if (ownsLighting) await claimStageSky(id, files, pmx)
       // A glTF stage wears the looks its file says: Stage PBR over the maps it
       // brought, per emissive strength, and the app's own look where the file
       // names one.
@@ -5125,6 +5144,72 @@ export default function Lab() {
     if (stageHdri.current && ids.has(stageHdri.current)) stageHdri.current = null
   }
 
+  /**
+   * What a stage's rig sets for the whole scene, claimed for that stage: the
+   * sun's direction and shadow, the world it was lit under, the view, the
+   * grade, the ambient and the fog. Only the scene's first stage holds them;
+   * removing it hands them to the next.
+   */
+  const claimStageLighting = (id: string, rig: ReturnType<typeof stageLightsFromFile> | null) => {
+    const sun = rig?.sun
+    const shared = {
+      ...(sun?.azimuth !== undefined ? { azimuth: sun.azimuth } : {}),
+      ...(sun?.elevation !== undefined ? { elevation: sun.elevation } : {}),
+      ...(sun?.shadow !== undefined ? { shadow: sun.shadow } : {}),
+    }
+    if (Object.keys(shared).length) {
+      setSettings((s2) => {
+        const own = sceneOwned(s2.sun)
+        return { ...s2, sun: { ...own, ...shared, stage: { id, before: own } } }
+      })
+    }
+    // AND THE WORLD IT WAS LIT UNDER, when the rig states one. A flat
+    // colour takes the World slot the way its .hdr would: claimed, at the
+    // strength the file says, with any sky standing there put aside — a
+    // neon stage built in a black world is lit by its lamps and its glow.
+    // An .hdr beside the PMX was installed above; a strength here rescales
+    // that claim.
+    const world = rig?.world
+    if (world) {
+      if (world.color) swapHdri(null)
+      setSettings((s2) => {
+        const own = sceneOwned(s2.world)
+        return { ...s2, world: { ...own, ...(world.color ? { color: world.color } : {}), strength: world.strength, stage: { id, before: own } } }
+      })
+    }
+    // AND THE VIEW IT WAS AUTHORED UNDER: a scene setting, not a claim —
+    // the transform and exposure the author looked at it through.
+    const view = rig?.view
+    if (view) setSettings((s2) => ({ ...s2, view: { ...s2.view, transform: view.transform, exposure: view.exposure, contrast: view.contrast } }))
+    // AND THE GRADE IT WAS GRADED WITH, which leaves with it.
+    const stageGrade = rig?.grade
+    setSettings((s2) => ({ ...s2, stageGrade: stageGrade ? { ...stageGrade, stage: id } : undefined }))
+    // AND THE AMBIENT ITS SURFACES WERE LIT BY — drawn while its world stands.
+    const stageAmbient = rig?.ambient
+    setSettings((s2) => ({ ...s2, stageAmbient: stageAmbient ? { stage: id, sh: stageAmbient } : undefined }))
+    // AND ITS FOG, which leaves with it.
+    const stageFog = rig?.fog
+    setSettings((s2) => ({ ...s2, stageFog: stageFog ? { stage: id, fog: stageFog } : undefined }))
+  }
+
+  /** The next stage takes the lighting, from the rig and sky its files carry. */
+  const promoteStage = async (id: string) => {
+    const kept = sceneFiles.models.get(id)
+    if (!kept) return
+    const stem = relFilePath(kept.pmx).replace(/\.pmx$/i, "")
+    const rigFile = kept.files.find((f) => relFilePath(f) === stem + ".lights.json")
+    let rig: ReturnType<typeof stageLightsFromFile> | null = null
+    if (rigFile) {
+      try {
+        rig = stageLightsFromFile(await rigFile.text(), id)
+      } catch (e) {
+        console.warn(`[stage] the rig of the next stage could not be read:`, e)
+      }
+    }
+    await claimStageSky(id, kept.files, kept.pmx)
+    claimStageLighting(id, rig)
+  }
+
   /** Each point built-in leaves when the last model naming its points does. */
   const dropCandlesUnlessLit = (leaving: Set<string>) => {
     for (const pe of POINT_EFFECTS) {
@@ -5179,20 +5264,27 @@ export default function Lab() {
         const parts = isFromX(pmx) ? [] : files.filter(isFromX)
         // THE STAGE LEAVING FIRST: its lamps, its sun and its sky, and whether
         // it lit candles — read now, while its bones are still loaded.
-        const leaving = stages.map((s) => ({ id: s.id, file: s.file }))
-        const leavingLit = stages.some((s) => hasWicks(s.id))
+        // A scene holds several stages; the same file again replaces its own,
+        // with its parts.
+        const roots = stages.filter((s) => !s.partOf)
+        const same = roots.find((s) => s.file === (pmx.name.split("/").pop() || pmx.name))
+        const leaving = same ? stages.filter((s) => s.id === same.id || s.partOf === same.id).map((s) => ({ id: s.id, file: s.file })) : []
+        const leavingLit = leaving.some((s) => hasWicks(s.id))
         releaseStageRig(leaving, pmx.name)
-        // A scene holds one stage, and a game stage is one too: the upload
-        // replaces it the way it replaces a PMX one.
-        removeNativeStage()
+        // Its lighting becomes the scene's when it is the first stage: the only
+        // one, or the first one again.
+        const owns = roots.every((s) => s.id === same?.id) || roots[0]?.id === same?.id
+        // A game stage holds the lighting too, so the first PMX stage replaces it.
+        if (owns) removeNativeStage()
         const id = await loadScenery(
           files.filter((f) => !parts.includes(f)),
           pmx,
           addStageFromFiles,
+          owns,
         )
         toast.loading(t.lab.uploadPlacing, { id: toastId })
         for (const part of parts) {
-          const partId = await addStagePartFromFiles(accessoryFiles(files, part), part)
+          const partId = await addStagePartFromFiles(accessoryFiles(files, part), part, id)
           styleAccessory(partId, part)
         }
         // AND OUR FLOOR COMES OFF. A stage brings its own — a terrain, a plaza,
@@ -5204,9 +5296,8 @@ export default function Lab() {
         // anyone who wants a catcher under a floorless stage can turn it back.
         setSettings((s2) => (s2.ground.enabled ? { ...s2, ground: { ...s2.ground, enabled: false } } : s2))
         // AND ITS OWN LAMPS AND SUN, from the rig the converter wrote beside it.
-        // Every lamp the last stage brought goes first, file or no file: a
-        // scene has one stage, and a garden lit by a bar's lamps is the same
-        // mistake as one lit by its sky.
+        // The lamps are its own, beside every other stage's; the ones the
+        // stage it replaces brought go first, file or no file.
         const rigFile = files.find(
           (f) => relFilePath(f) === relFilePath(pmx).replace(/\.pmx$/i, "") + ".lights.json",
         )
@@ -5219,7 +5310,8 @@ export default function Lab() {
           }
         }
         const lamps = rig?.lamps ?? []
-        setLightsState((list) => [...list.filter((l) => !l.stage), ...lamps])
+        const leavingIds = new Set(leaving.map((s) => s.id))
+        setLightsState((list) => [...list.filter((l) => !l.stage || !leavingIds.has(l.stage)), ...lamps])
         // The sun, SPLIT. Its colour and strength are the stage's own — the
         // daylight its game lit it by, which the cast never takes — and stay
         // on the stage's row. Its direction and shadow are the scene's,
@@ -5227,44 +5319,11 @@ export default function Lab() {
         // that back — until someone touches the sun.
         const sun = rig?.sun
         setStageSun(id, sun && sun.color !== undefined && sun.strength !== undefined ? { color: sun.color, strength: sun.strength } : null)
-        const shared = {
-          ...(sun?.azimuth !== undefined ? { azimuth: sun.azimuth } : {}),
-          ...(sun?.elevation !== undefined ? { elevation: sun.elevation } : {}),
-          ...(sun?.shadow !== undefined ? { shadow: sun.shadow } : {}),
-        }
-        if (Object.keys(shared).length) {
-          setSettings((s2) => {
-            const own = sceneOwned(s2.sun)
-            return { ...s2, sun: { ...own, ...shared, stage: { id, before: own } } }
-          })
-        }
-        // AND THE WORLD IT WAS LIT UNDER, when the rig states one. A flat
-        // colour takes the World slot the way its .hdr would: claimed, at the
-        // strength the file says, with any sky standing there put aside — a
-        // neon stage built in a black world is lit by its lamps and its glow.
-        // An .hdr beside the PMX was installed above; a strength here rescales
-        // that claim.
-        const world = rig?.world
-        if (world) {
-          if (world.color) swapHdri(null)
-          setSettings((s2) => {
-            const own = sceneOwned(s2.world)
-            return { ...s2, world: { ...own, ...(world.color ? { color: world.color } : {}), strength: world.strength, stage: { id, before: own } } }
-          })
-        }
-        // AND THE VIEW IT WAS AUTHORED UNDER: a scene setting, not a claim —
-        // the transform and exposure the author looked at it through.
-        const view = rig?.view
-        if (view) setSettings((s2) => ({ ...s2, view: { ...s2.view, transform: view.transform, exposure: view.exposure, contrast: view.contrast } }))
-        // AND THE GRADE IT WAS GRADED WITH, which leaves with it.
-        const stageGrade = rig?.grade
-        setSettings((s2) => ({ ...s2, stageGrade: stageGrade ? { ...stageGrade, stage: id } : undefined }))
-        // AND THE AMBIENT ITS SURFACES WERE LIT BY — drawn while its world stands.
-        const stageAmbient = rig?.ambient
-        setSettings((s2) => ({ ...s2, stageAmbient: stageAmbient ? { stage: id, sh: stageAmbient } : undefined }))
-        // AND ITS FOG, which leaves with it.
-        const stageFog = rig?.fog
-        setSettings((s2) => ({ ...s2, stageFog: stageFog ? { stage: id, fog: stageFog } : undefined }))
+        // THE SCENE-WIDE HALF — the sun's direction, the world, the view, the
+        // grade, the ambient and the fog — only when this stage is the scene's
+        // first: a stage added beside it brings its geometry, its lamps and its
+        // effects, and the lighting stays the first one's.
+        if (owns) claimStageLighting(id, rig)
         // NOT ITS CAST FILL. A rig may name the light the game gives its
         // characters apart from the room, but the cast's fill is the scene's own:
         // it starts at 0 and only the person composing the scene raises it. A
@@ -5276,7 +5335,6 @@ export default function Lab() {
         // into the Effects list like any effect, once. One that names none
         // takes the last stage's with it.
         // Its water splashes the same way (POINT_EFFECTS).
-        const leavingIds = new Set(leaving.map((s) => s.id))
         for (const pe of POINT_EFFECTS) {
           if (hasPoints(id, pe.prefix)) {
             setBgEffects((list) => (list.some((e) => e.name === pe.effect) ? list : [...list, builtinEffect(pe.effect)]))
@@ -5336,6 +5394,7 @@ export default function Lab() {
           }),
         )
         setStageTab("stage")
+        setSelectedStage(id)
         // A stage folder that brought skies offers them; which one is yours.
         const own = new Set(
           (engineRef.current?.getModel(id)?.getTextures() ?? []).map((tex) =>
@@ -8473,44 +8532,82 @@ export default function Lab() {
                         )}
                         {stage && (
                           <>
-                            <CastLine
-                              text={<span className="min-w-0 flex-1 truncate text-xs">{displayName(stage.file)}</span>}
-                              actions={
-                                <>
-                                  <CastAction
-                                    icon={X}
-                                    danger
-                                    label={t.lab.aria.deleteStage(displayName(stage.file))}
-                                    onClick={() => {
-                                      // A sky the session installed goes too, whatever its name.
-                                      if (stages.some((s) => stageHdri.current === s.id)) swapHdri(null)
-                                      const lit = stages.some((s) => hasWicks(s.id))
-                                      releaseStageRig(stages)
-                                      if (lit) dropCandlesUnlessLit(new Set(stages.map((s) => s.id)))
-                                      for (const s of stages) removeModelById(s.id)
-                                    }}
-                                  />
-                                </>
-                              }
-                            />
-                            {stages.slice(1).map((part) => (
-                              <CastLine
-                                key={part.id}
-                                text={
-                                  <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                                    {displayName(part.file)}
+                            {/* ONE CHIP PER STAGE, as the props are: the scene
+                                holds several, and the pane below places the one
+                                picked. The first is where the lighting comes
+                                from. */}
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {stageRoots.map((root, n) => {
+                                const on = root.id === stage.id
+                                return (
+                                  <span
+                                    key={root.id}
+                                    className={cn(
+                                      "flex max-w-[10rem] items-center gap-1 rounded-chip py-1 pr-1 pl-2 text-xs transition-colors",
+                                      on
+                                        ? "bg-blue-400/15 text-blue-400 ring-1 ring-blue-400/40"
+                                        : "text-muted-foreground ring-1 ring-line hover:text-foreground",
+                                    )}
+                                  >
+                                    <Button
+                                      variant="bare"
+                                      onClick={() => setSelectedStage(root.id)}
+                                      title={n === 0 && stageRoots.length > 1 ? t.lab.stageLighting(displayName(root.file)) : root.file}
+                                      className="min-w-0 flex-1 cursor-pointer truncate text-left"
+                                    >
+                                      {displayName(root.file)}
+                                    </Button>
+                                    <CastAction
+                                      icon={X}
+                                      danger
+                                      compact
+                                      label={t.lab.aria.deleteStage(displayName(root.file))}
+                                      onClick={() => {
+                                        // It goes with its parts, and with what it
+                                        // brought: its lamps, its effects, and the
+                                        // lighting if it held it — which the next
+                                        // stage then takes.
+                                        const group = stages.filter((s) => s.id === root.id || s.partOf === root.id)
+                                        const next = n === 0 ? stageRoots[1] : undefined
+                                        if (group.some((s) => stageHdri.current === s.id)) swapHdri(null)
+                                        const lit = group.some((s) => hasWicks(s.id))
+                                        releaseStageRig(group)
+                                        if (lit) dropCandlesUnlessLit(new Set(group.map((s) => s.id)))
+                                        for (const s of group) removeModelById(s.id)
+                                        if (next) void promoteStage(next.id)
+                                      }}
+                                    />
                                   </span>
-                                }
-                                actions={
-                                  <CastAction
-                                    icon={X}
-                                    danger
-                                    label={t.lab.aria.deleteStage(displayName(part.file))}
-                                    onClick={() => removeModelById(part.id)}
-                                  />
-                                }
-                              />
-                            ))}
+                                )
+                              })}
+                            </div>
+                            {stageRoots.length > 1 && (
+                              <p className="mt-1.5 text-2xs text-muted-foreground">{t.lab.stageLighting(displayName(stageRoots[0].file))}</p>
+                            )}
+                            {stages
+                              .filter((s) => s.partOf === stage.id)
+                              .map((part) => (
+                                <CastLine
+                                  key={part.id}
+                                  text={
+                                    <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                                      {displayName(part.file)}
+                                    </span>
+                                  }
+                                  actions={
+                                    <CastAction
+                                      icon={X}
+                                      danger
+                                      label={t.lab.aria.deleteStage(displayName(part.file))}
+                                      onClick={() => {
+                                        releaseStageRig([part])
+                                        removeModelById(part.id)
+                                      }}
+                                    />
+                                  }
+                                />
+                              ))}
+                            <div className="mt-2" />
                             <SliderRow
                               label={t.lab.ctl.scale}
                               value={stage.transform.scale}
@@ -8569,9 +8666,8 @@ export default function Lab() {
                             author's .blend and every other .glb in the folder
                             into the scene, then asked which .pmx to load.
 
-                            ALWAYS HERE, because an upload IS the replacement: a
-                            scene holds one stage, and picking another swaps it.
-                            There is no separate replace to find. */}
+                            ALWAYS HERE: an upload ADDS a stage beside the ones
+                            there, and the same file again replaces its own. */}
                         <div className={cn("flex", (stage || nativeStage) && "mt-2")}>
                           <Button
                             variant="ghost"

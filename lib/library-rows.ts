@@ -21,6 +21,8 @@ export async function presetRows(where: ReturnType<typeof and>) {
       // than a string. Joined here because `author` is denormalised onto the row
       // and an image is the one thing about a person that is not.
       authorImage: user.image,
+      // Beside it, the check for a maker we vouch for — for the same reason.
+      authorVerified: user.verified,
     })
     .from(schema.libraryItems)
     .leftJoin(user, eq(schema.libraryItems.ownerId, user.id))
