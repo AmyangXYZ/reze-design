@@ -29,6 +29,7 @@ const sceneRow = (id: string) =>
           author: schema.libraryItems.author,
           description: schema.libraryItems.description,
           credits: schema.libraryItems.credits,
+          video: schema.libraryItems.video,
           payload: schema.libraryItems.payload,
           likeCount: schema.libraryItems.likeCount,
           createdAt: schema.libraryItems.createdAt,
@@ -109,6 +110,7 @@ export default async function ScenePage({ params }: { params: Promise<{ user: st
       verified={row.verified ?? false}
       description={row.description}
       credits={row.credits}
+      video={row.video}
       likeCount={row.likeCount}
       publishedAt={row.createdAt}
       displayOnly={row.displayOnly}

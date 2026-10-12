@@ -18,6 +18,7 @@ import type { Visibility } from "@/lib/db/schema"
 import { cacheImmutably, deleteReplacedBundle, ownsBundleKey } from "@/lib/bundle-owner"
 import { presetRows } from "@/lib/library-rows"
 import { publicJson } from "@/lib/cdn"
+import { parseVideoLink } from "@/lib/video-link"
 
 const KINDS: LibraryKind[] = ["grade", "graph", "effect", "scene"]
 const MAX_NAME = 60
@@ -241,6 +242,7 @@ async function galleryPage(
       // Sent with the list rather than fetched on selection: a second round trip
       // to Singapore to read a credit is how a credit ends up unread.
       credits: schema.libraryItems.credits,
+      video: schema.libraryItems.video,
       tags: schema.libraryItems.tags,
       likeCount: schema.libraryItems.likeCount,
       posterKey: schema.libraryItems.posterKey,
@@ -344,7 +346,7 @@ export async function POST(request: Request) {
 
   // No `changelog`: it described what a new VERSION changed, and there are no
   // versions to describe. A client still sending one is simply ignored.
-  const { id, kind, name, description, tags, payload, credits, bundleKey, bundleBytes, posterKey, forkedFromId, uses, visibility, nsfw, displayOnly } =
+  const { id, kind, name, description, tags, payload, credits, video, bundleKey, bundleBytes, posterKey, forkedFromId, uses, visibility, nsfw, displayOnly } =
     (body ?? {}) as Record<string, unknown>
   // Public unless asked otherwise: publishing is a public act, and the dialog
   // says so. A client sending nothing gets what it always got.
@@ -362,6 +364,12 @@ export async function POST(request: Request) {
   // the community's own norm for that, so it is required rather than encouraged.
   if (kind === "scene" && (typeof credits !== "string" || !credits.trim())) {
     return NextResponse.json({ error: "credits are required" }, { status: 400 })
+  }
+  // A scene's video, when it names one, is on one of the allowed sites; what is
+  // stored is the checked link, never the text that was sent.
+  const videoLink = typeof video === "string" && video.trim() ? parseVideoLink(video) : null
+  if (kind === "scene" && typeof video === "string" && video.trim() && !videoLink) {
+    return NextResponse.json({ error: "invalid video link" }, { status: 400 })
   }
 
   const text = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "")
@@ -455,6 +463,9 @@ export async function POST(request: Request) {
       ...common,
       kind: "scene" as const,
       credits: text(credits, MAX_CREDITS),
+      // Set and cleared by every publish that says; an older client that sends
+      // nothing leaves it as it was.
+      ...(typeof video === "string" || !replacing ? { video: videoLink?.url ?? "" } : {}),
       visibility: nextVisibility,
       ...(hasBundle || !replacing
         ? { bundleKey: hasBundle ? (bundleKey as string) : null, bundleBytes: typeof bundleBytes === "number" ? bundleBytes : 0 }

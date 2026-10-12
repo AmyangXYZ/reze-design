@@ -11,7 +11,8 @@ import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { TagsInput } from "@/components/editor/tags-input"
-import { VisibilityPicker, type Visibility } from "@/components/editor/library-shell"
+import { VisibilitySwitch, visibilityLocked, type Visibility } from "@/components/editor/library-shell"
+import { PublishSwitches } from "@/components/editor/publish-switch"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { toast } from "sonner"
 import { usePublish } from "@/hooks/use-publish"
@@ -40,7 +41,7 @@ export const PUBLISH_HEAD = "shrink-0 px-4 pt-4 pr-11"
  *  centre line and the body's right edge. */
 export const PUBLISH_CLOSE = "top-4 right-4 flex h-5 items-center"
 export const PUBLISH_FORM = "flex min-h-0 flex-1 flex-col"
-export const PUBLISH_BODY = "flex min-h-0 flex-col gap-3.5 overflow-y-auto px-4 pt-4 pb-1"
+export const PUBLISH_BODY = "flex min-h-0 flex-col gap-3 overflow-y-auto px-4 pt-3 pb-1"
 export const PUBLISH_FOOT = "flex shrink-0 flex-col gap-2 px-4 pt-3 pb-4"
 export const PUBLISH_INPUT = "mt-0.5 h-8 border-line-strong bg-white/5 text-xs md:text-xs"
 export const PUBLISH_TEXTAREA = "mt-0.5 max-h-40 border-line-strong bg-white/5 px-2.5 py-2 text-xs leading-relaxed md:text-xs"
@@ -195,7 +196,14 @@ export function PublishButton({
               </span>
               <TagsInput value={tags} onChange={setTags} max={MAX_TAGS} placeholder={t.library.publishTagsHint} />
             </label>
-            <VisibilityPicker value={visibility} onChange={setVisibility} current={currentVisibility} />
+            <div>
+              <PublishSwitches>
+                <VisibilitySwitch value={visibility} onChange={setVisibility} current={currentVisibility} />
+              </PublishSwitches>
+              {visibilityLocked(currentVisibility) && (
+                <p className="mt-1.5 text-2xs leading-relaxed text-muted-foreground">{t.library.visLocked}</p>
+              )}
+            </div>
           </div>
           <div className={PUBLISH_FOOT}>
             {failed && <div className="text-2xs text-red-400">{t.gradeLibrary.publishFailed}</div>}

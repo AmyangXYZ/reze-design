@@ -34,6 +34,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { SignInDialog } from "@/components/editor/account-panel"
 import { useI18n, useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
+import { VideoLink } from "@/components/video-link"
 import { Button } from "@/components/ui/button"
 import { VerifiedBadge } from "@/components/verified-badge"
 
@@ -48,6 +49,8 @@ type ViewerProps = {
   /** 借物表 — who the model, motion and music came from. Required at publish, so
    *  it should be readable here rather than only enforced there. */
   credits: string
+  /** The video its maker posted, or empty. */
+  video?: string
   likeCount: number
   /** When it was published, ISO. Printed under the author. */
   publishedAt: string
@@ -287,6 +290,8 @@ export function SceneViewer(props: ViewerProps) {
               </p>
             </>
           )}
+          {/* The maker's own render, under what they wrote about it. */}
+          <VideoLink url={props.video} className="mt-2.5" />
           {props.credits && (
             <div className="mt-2.5 border-t border-line pt-2.5">
               {/* Phone, folded: one row — the label and the first credit. A tap

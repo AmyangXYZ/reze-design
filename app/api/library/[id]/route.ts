@@ -51,6 +51,7 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
       // correct it gets back everything they wrote rather than a blank form.
       posterKey: schema.libraryItems.posterKey,
       credits: schema.libraryItems.credits,
+      video: schema.libraryItems.video,
       nsfw: schema.libraryItems.nsfw,
       displayOnly: schema.libraryItems.displayOnly,
     })

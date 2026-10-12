@@ -92,6 +92,10 @@ export const libraryItems = pgTable(
     /** 借物表 — free text, required at publish. A scene redistributes other
      *  people's models and motions; this is where that is acknowledged. */
     credits: text("credits").notNull().default(""),
+    /** The video its maker posted the render to — one link, on one of the
+     *  sites lib/video-link allows, stored as that check returned it. Empty
+     *  for none. */
+    video: text("video").notNull().default(""),
     /** Derived from someone else's item — a scene opened from a share link, or a
      *  preset edited out of the library. Recorded automatically; there is no fork
      *  button, publishing IS the fork. */

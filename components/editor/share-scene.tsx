@@ -6,12 +6,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { Check, Copy, ExternalLink, GalleryThumbnails, Globe, ImagePlus, Loader2 } from "lucide-react"
+import { Check, Copy, ExternalLink, Eye, GalleryThumbnails, Globe, ImagePlus, Loader2, TriangleAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Switch } from "@/components/ui/switch"
 import { TagsInput } from "@/components/editor/tags-input"
 import {
   PUBLISH_BODY,
@@ -23,7 +22,8 @@ import {
   PUBLISH_INPUT,
   PUBLISH_TEXTAREA,
 } from "@/components/editor/publish-button"
-import { VisibilityPicker, type Visibility } from "@/components/editor/library-shell"
+import { VisibilitySwitch, type Visibility } from "@/components/editor/library-shell"
+import { PublishSwitch, PublishSwitches } from "@/components/editor/publish-switch"
 import { noteScenePublished, type GalleryScene } from "@/components/editor/scene-gallery"
 import { buildZip, type BundleEntry } from "@/lib/bundle"
 import { isSealedBundle, sealBundle, sealedName } from "@/lib/bundle-cipher"
@@ -35,6 +35,7 @@ import { useSession } from "@/lib/auth-client"
 import type { UnpublishedUse } from "@/lib/refs"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
+import { MAX_VIDEO_URL, parseVideoLink, VIDEO_PLATFORM_NAMES } from "@/lib/video-link"
 
 const MAX_TAGS = 5
 // Generous: an untouched Retina screenshot is routinely past 10MB.
@@ -46,7 +47,7 @@ const MAX_POSTER_BYTES = 20 * 1024 * 1024
 // coming back to a blank form after composing a description and a credits list is
 // the kind of small loss that stops people publishing at all. Per scene, so two
 // scenes in two tabs don't overwrite each other's drafts.
-type Draft = { description: string; tags: string[]; credits: string; nsfw?: boolean; displayOnly?: boolean }
+type Draft = { description: string; tags: string[]; credits: string; video?: string; nsfw?: boolean; displayOnly?: boolean; visibility?: Visibility }
 
 /** What a publish just said about the scene, handed back so the next publish in
  *  the same session starts from it rather than from a blank form. */
@@ -66,9 +67,11 @@ function readDraft(sceneId: string): Draft {
       description: typeof d.description === "string" ? d.description : "",
       tags: Array.isArray(d.tags) ? d.tags.filter((x): x is string => typeof x === "string") : [],
       credits: typeof d.credits === "string" ? d.credits : "",
+      ...(typeof d.video === "string" ? { video: d.video } : {}),
       // Absent when the draft never touched it, so the published flag stands.
       ...(typeof d.nsfw === "boolean" ? { nsfw: d.nsfw } : {}),
       ...(typeof d.displayOnly === "boolean" ? { displayOnly: d.displayOnly } : {}),
+      ...(d.visibility === "public" || d.visibility === "private" ? { visibility: d.visibility } : {}),
     }
   } catch {
     return empty
@@ -206,8 +209,10 @@ function ShareSceneForm({
       description: local.description || updatesMeta.description,
       tags: local.tags.length ? local.tags : updatesMeta.tags,
       credits: local.credits || updatesMeta.credits,
+      video: local.video ?? updatesMeta.video,
       nsfw: local.nsfw ?? updatesMeta.nsfw,
       displayOnly: local.displayOnly ?? updatesMeta.displayOnly,
+      ...(local.visibility ? { visibility: local.visibility } : {}),
     }
   })
   // Recomputed when the picker moves, NOT read once: a look that is fine for a
@@ -217,9 +222,16 @@ function ShareSceneForm({
   const [description, setDescription] = useState(draft.description)
   const [tags, setTags] = useState<string[]>(draft.tags)
   const [credits, setCredits] = useState(draft.credits)
+  const [video, setVideo] = useState(draft.video ?? "")
+  // Checked as it is typed: a link to anywhere else is said so here, not
+  // refused by the server after the bundle has uploaded.
+  const videoLink = video.trim() ? parseVideoLink(video) : null
+  const videoBad = video.trim() !== "" && !videoLink
   // Publishing a scene is a public act by default; the picker is where you say
   // otherwise, and private here means the link works for nobody but you.
-  const [visibility, setVisibility] = useState<Visibility>("public")
+  // Kept with the draft like the rest, so leaving for a screenshot does not
+  // quietly turn a private scene back to public.
+  const [visibility, setVisibility] = useState<Visibility>(draft.visibility ?? "public")
   // Off unless the author says so; an edit starts from what the scene already is.
   const [nsfw, setNsfw] = useState(draft.nsfw ?? false)
   const [displayOnly, setDisplayOnly] = useState(draft.displayOnly ?? false)
@@ -241,11 +253,11 @@ function ShareSceneForm({
   // going away to a screenshot tool, which fires no close handler.
   useEffect(() => {
     if (step === "done") return
-    const draft: Draft = { description, tags, credits, nsfw, displayOnly }
+    const draft: Draft = { description, tags, credits, video, nsfw, displayOnly, ...(visibility === "private" ? { visibility } : {}) }
     const key = draftKey(sceneId)
-    if (!description && !tags.length && !credits && !nsfw && !displayOnly) window.localStorage.removeItem(key)
+    if (!description && !tags.length && !credits && !video && !nsfw && !displayOnly && visibility === "public") window.localStorage.removeItem(key)
     else window.localStorage.setItem(key, JSON.stringify(draft))
-  }, [sceneId, description, tags, credits, nsfw, displayOnly, step])
+  }, [sceneId, description, tags, credits, video, nsfw, displayOnly, visibility, step])
   // Whatever origin this is — localhost while testing, reze.design in production.
   // Hard-coding the production host meant a link you could not follow from a dev
   // build, and one you could not verify before it was real.
@@ -333,6 +345,7 @@ function ShareSceneForm({
           payload: { doc },
           description: description.trim(),
           credits: credits.trim(),
+          video: videoLink?.url ?? "",
           bundleKey,
           bundleBytes,
           posterKey,
@@ -365,6 +378,7 @@ function ShareSceneForm({
         author: item.author,
         description: item.description ?? "",
         credits: credits.trim(),
+        video: videoLink?.url ?? "",
         tags: item.tags ?? [],
         likeCount: 0,
         poster: item.poster ?? null,
@@ -379,6 +393,7 @@ function ShareSceneForm({
         description: description.trim(),
         tags,
         credits: credits.trim(),
+        video: videoLink?.url ?? "",
         nsfw,
         displayOnly: visibility === "public" && displayOnly,
         poster: item.poster ?? null,
@@ -598,41 +613,63 @@ function ShareSceneForm({
               </span>
               <TagsInput value={tags} onChange={setTags} max={MAX_TAGS} placeholder={t.library.publishTagsHint} />
             </label>
+            {/* The maker's own render, wherever they posted it — optional, and
+                only to the sites lib/video-link knows. */}
             <label className="block">
-              <span className="text-xs text-muted-foreground">{t.share.credits}</span>
-              {/* The one thing in this dialog a publisher must actually read. */}
-              <p className="mt-0.5 text-xs leading-snug text-amber-400">{t.share.creditsWhy}</p>
+              {/* A fixed height: the note on the right is smaller type, and on a
+                  baseline row its arrival grew the row by a pixel. */}
+              <span className="flex h-4 items-center justify-between gap-2">
+                <span className="shrink-0 text-xs text-muted-foreground">{t.share.video}</span>
+                {/* What it read as, or why not, on the label's own row as the
+                    credits' note is — so a warning appearing moves nothing. */}
+                {videoBad ? (
+                  <span className="min-w-0 truncate text-2xs text-red-400">{t.share.videoInvalid}</span>
+                ) : (
+                  videoLink && <span className="min-w-0 truncate text-2xs text-muted-foreground">{VIDEO_PLATFORM_NAMES[videoLink.platform]}</span>
+                )}
+              </span>
+              <Input
+                value={video}
+                onChange={(e) => setVideo(e.target.value)}
+                maxLength={MAX_VIDEO_URL * 2}
+                placeholder={t.share.videoHint}
+                inputMode="url"
+                spellCheck={false}
+                // The border turns red and nothing else: the input's own invalid
+                // styling adds a ring, which made the field look as if it grew.
+                className={cn(PUBLISH_INPUT, videoBad && "border-red-400/60 focus-visible:border-red-400/60 focus-visible:ring-red-400/20")}
+              />
+            </label>
+            <label className="block">
+              {/* The one thing in this dialog a publisher must actually read, on
+                  the label's own row so it costs no line of its own. */}
+              <span className="flex items-baseline justify-between gap-2">
+                <span className="shrink-0 text-xs text-muted-foreground">{t.share.credits}</span>
+                <span className="min-w-0 truncate text-2xs text-amber-400">{t.share.creditsWhy}</span>
+              </span>
               <Textarea
                 value={credits}
                 onChange={(e) => setCredits(e.target.value)}
                 maxLength={4000}
-                rows={4}
+                rows={3}
                 placeholder={t.share.creditsHint}
-                className={PUBLISH_TEXTAREA + " mt-1 min-h-[5.5rem] max-h-48"}
+                className={PUBLISH_TEXTAREA + " min-h-[4.5rem] max-h-48"}
               />
             </label>
-            {/* Its own row, apart from the tags: tags are how a scene is found,
-                this is how it is shown. */}
-            <label className="flex cursor-pointer items-center justify-between gap-3">
-              <span className="text-xs text-muted-foreground">{t.nsfw.publish}</span>
-              <Switch checked={nsfw} onCheckedChange={setNsfw} />
-            </label>
-            <VisibilityPicker value={visibility} onChange={setVisibility} />
-            {/* After the picker it qualifies: who may fork a PUBLIC scene.
-                Inert, not hidden, while private, so the form keeps its shape. */}
-            <label
-              className={cn(
-                "flex cursor-pointer items-center justify-between gap-3",
-                visibility !== "public" && "pointer-events-none opacity-40",
-              )}
-            >
-              <span className="text-xs text-muted-foreground">{t.share.displayOnly}</span>
-              <Switch
+            {/* Who sees it, then who may fork it — display only qualifies a PUBLIC
+                scene, so it sits beside visibility and is inert while private —
+                then how it is shown. */}
+            <PublishSwitches>
+              <VisibilitySwitch value={visibility} onChange={setVisibility} />
+              <PublishSwitch
+                icon={Eye}
+                label={t.share.displayOnly}
                 checked={visibility === "public" && displayOnly}
                 onCheckedChange={setDisplayOnly}
                 disabled={visibility !== "public"}
               />
-            </label>
+              <PublishSwitch icon={TriangleAlert} label={t.nsfw.publish} checked={nsfw} onCheckedChange={setNsfw} tone="amber" />
+            </PublishSwitches>
             </div>
             <div className={PUBLISH_FOOT}>
             {error && (
@@ -647,6 +684,7 @@ function ShareSceneForm({
                 busy ||
                 blocking.length > 0 ||
                 !sceneName.trim() ||
+                videoBad ||
                 !description.trim() ||
                 tags.length === 0 ||
                 !credits.trim() ||

@@ -2243,6 +2243,7 @@ export default function Lab() {
     description: string
     tags: string[]
     credits: string
+    video?: string
     nsfw: boolean
     displayOnly: boolean
   } | null>(null)
@@ -6560,6 +6561,7 @@ export default function Lab() {
             description?: string | null
             tags?: string[] | null
             credits?: string | null
+            video?: string | null
             nsfw?: boolean
             displayOnly?: boolean
           }
@@ -6576,6 +6578,7 @@ export default function Lab() {
             description: item.description ?? "",
             tags: item.tags ?? [],
             credits: item.credits ?? "",
+            video: item.video ?? "",
             nsfw: item.nsfw === true,
             displayOnly: item.displayOnly === true,
           })

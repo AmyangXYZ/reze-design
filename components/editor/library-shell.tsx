@@ -16,6 +16,7 @@
 import { trendScore } from "@/lib/trend"
 import { Stamp } from "@/components/stamp"
 import { Button } from "@/components/ui/button"
+import { PublishSwitch } from "@/components/editor/publish-switch"
 import { STAGE_BOUND_TAG } from "@/lib/effects"
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react"
 import { Check, ChevronDown, ChevronLeft, Globe, Heart, LayoutGrid, List, Lock, PenLine, Search } from "lucide-react"
@@ -642,43 +643,29 @@ export function useVisibilityLabels() {
   }
 }
 
-/** The three-way choice a publish dialog shows. */
-export function VisibilityPicker({
+/** Whether something at `current` can no longer be made private. */
+export const visibilityLocked = (current?: Visibility) => !canBecome("private", current)
+
+/**
+ * Visibility in a publish dialog: one switch among the dialog's others
+ * (PublishSwitches), since there are only two answers. ON is public, the
+ * default, and the label names what it is — Public with the globe, Private
+ * with the lock — so the state reads from the words, not only the switch.
+ * Something already public cannot go back, so its switch is held on and the
+ * dialog says why (visibilityLocked).
+ */
+export function VisibilitySwitch({
   value, onChange, current,
 }: { value: Visibility; onChange: (v: Visibility) => void; current?: Visibility }) {
-  const t = useT()
   const { label } = useVisibilityLabels()
-  const locked = !canBecome("private", current)
   return (
-    <div>
-      <span className="text-xs text-muted-foreground">{t.library.visibility}</span>
-      <div className="mt-1 flex gap-0.5 rounded-interior border border-line-strong bg-white/5 p-0.5">
-        {VISIBILITIES.map((v) => {
-          const Icon = VISIBILITY_ICON[v]
-          const disabled = !canBecome(v, current)
-          return (
-            <Button variant="bare"
-              key={v}
-              type="button"
-              disabled={disabled}
-              aria-pressed={value === v}
-              onClick={() => onChange(v)}
-              className={cn(
-                "flex flex-1 items-center justify-center gap-1.5 rounded-chip py-1.5 text-xs transition-colors",
-                value === v ? "bg-blue-400/15 text-blue-400" : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
-                disabled && "cursor-not-allowed opacity-40 hover:bg-transparent hover:text-muted-foreground",
-              )}
-            >
-              <Icon className="size-3.5" />
-              {label[v]}
-            </Button>
-          )
-        })}
-      </div>
-      {locked && (
-        <p className="mt-1.5 text-2xs leading-relaxed text-muted-foreground">{t.library.visLocked}</p>
-      )}
-    </div>
+    <PublishSwitch
+      icon={VISIBILITY_ICON[value]}
+      label={label[value]}
+      checked={value === "public"}
+      onCheckedChange={(on) => onChange(on ? "public" : "private")}
+      disabled={visibilityLocked(current)}
+    />
   )
 }
 

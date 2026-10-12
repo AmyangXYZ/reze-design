@@ -41,6 +41,7 @@ import { useSession } from "@/lib/auth-client"
 import { useZOrder } from "@/hooks/use-z-order"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
+import { VideoLink } from "@/components/video-link"
 import { SceneCover } from "@/components/nsfw"
 import { Switch } from "@/components/ui/switch"
 import { setShowNsfw, useShowNsfw } from "@/lib/nsfw-pref"
@@ -51,6 +52,8 @@ export type GalleryScene = {
   author: string
   description: string
   credits: string
+  /** The video its maker posted, or empty. */
+  video?: string
   tags: string[]
   likeCount: number
   poster: string | null
@@ -776,6 +779,9 @@ function GalleryContent({
                   <p className="mt-2 text-xs leading-relaxed text-muted-foreground select-text">{selected.description}</p>
                 )}
                 <LibraryTags tags={selected.tags} lead={selected.displayOnly ? <DisplayOnlyTag /> : undefined} />
+                {/* The maker's own render, under the tags and before the 借物表,
+                    as the scene page shows it. */}
+                <VideoLink url={selected.video} className="mt-3" />
                 {/* Who made the model, the motion and the music — the thing the
                     community actually asks to see before anyone reuses anything. */}
                 {selected.credits && (

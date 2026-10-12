@@ -30,6 +30,7 @@ const EXCEPTIONS = {
   "components/graph/reze-node.tsx": { grey: "a node card is canvas content that must stand off the dark canvas", hex: "socket colours are Blender's data-type code" },
   "components/editor/wgsl-editor.tsx": { hex: "the code view's own ground and gutter, matched to its syntax theme" },
   "components/scene/anim-player.tsx": { radius: "the transport's 20px corner clamps to a pill when collapsed — explained where it is set" },
+  "components/video-link.tsx": { hex: "a scene's video link wears its site's brand colour (Bilibili pink, YouTube red…), so it reads as that site at a glance" },
 }
 /** Classes allowed anywhere, and why. */
 const ANYWHERE = new Map([

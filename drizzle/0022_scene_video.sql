@@ -1,0 +1,1 @@
+ALTER TABLE "library_items" ADD COLUMN "video" text DEFAULT '' NOT NULL;
