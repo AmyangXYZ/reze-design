@@ -8,13 +8,19 @@ import { cn } from "@/lib/utils"
 
 /** Each site in its own colour — a soft fill of it, the label in it — so the
  *  link reads as that site at a glance. Lightened where the brand's own is too
- *  dark or too harsh on the chrome's dark ground (YouTube's red, X's black). A deliberate palette: see scripts/check-chrome.mjs. */
+ *  dark or too harsh on the chrome's dark ground (YouTube's red, X's black),
+ *  and no two sites share a hue but TikTok and its Chinese app Douyin. A deliberate palette: see scripts/check-chrome.mjs. */
 const SITE_COLOR: Record<VideoPlatform, string> = {
-  bilibili: "bg-[#FB7299]/15 text-[#FB7299] hover:bg-[#FB7299]/25",
+  // Bilibili's logo blue, not its pink: as soft tints the pink and YouTube's
+  // red read as the same chip.
+  bilibili: "bg-[#00AEEC]/15 text-[#00AEEC] hover:bg-[#00AEEC]/25",
   youtube: "bg-[#FF4E45]/15 text-[#FF4E45] hover:bg-[#FF4E45]/25",
+  // One brand, one colour: Douyin is TikTok's Chinese app, and its red-pink
+  // was YouTube's red again.
   tiktok: "bg-[#25F4EE]/15 text-[#25F4EE] hover:bg-[#25F4EE]/25",
-  douyin: "bg-[#FE2C55]/15 text-[#FE2C55] hover:bg-[#FE2C55]/25",
-  x: "bg-[#1D9BF0]/15 text-[#1D9BF0] hover:bg-[#1D9BF0]/25",
+  douyin: "bg-[#25F4EE]/15 text-[#25F4EE] hover:bg-[#25F4EE]/25",
+  // X's own black and white, as light grey: Twitter's blue was Bilibili's.
+  x: "bg-[#E7E9EA]/15 text-[#E7E9EA] hover:bg-[#E7E9EA]/25",
 }
 
 /**
