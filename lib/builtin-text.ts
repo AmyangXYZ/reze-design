@@ -67,6 +67,7 @@ const EFFECTS: Record<string, Zh> = {
   "Floating Stars": { name: "漂浮星光", description: "围绕角色漂浮的发光光点。" },
   "Candy Stars": { name: "糖果星光", description: "围绕角色漂浮的糖果色星星、圆点和闪光，中心明亮，带柔和光晕。" },
   "Rain on Lens": { name: "镜头雨滴", description: "雨滴沿着镜头玻璃滑落，在薄雾中划出清晰的水痕。改编自 Martijn Steinrucken（BigWings）的 “Heartfelt”，CC BY-NC-SA 3.0。" },
+  "Live Room": { name: "直播间", description: "贴在画面上的头部主播直播间：主播头像、榜单观众、彩色评论、飘心、会抖动的礼物按钮，还有踩着节拍出现的礼物——兰博基尼、私人飞机、高铁、游轮、玫瑰雨、烟花，以及落在她脸上的墨镜。" },
   Fireworks: { name: "烟花", description: "循环绽放的烟花。移植自 Gatomoi。" },
   "Hand Ribbon": { name: "手部丝带", description: "跟随双手轨迹的霓虹丝带，伴有火花。" },
   "Divine Ribbon": { name: "神圣丝带", description: "跟随双手轨迹的金色光点。" },
