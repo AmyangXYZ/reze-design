@@ -154,7 +154,7 @@ async function turn({ target, messages, system, tools, send, signal }: TurnArgs)
         tools: tools.map((t) => ({ type: "function" as const, name: t.name, description: t.description, parameters: t.parameters, strict: false })),
         // Summaries of the reasoning, for the panel's progress line.
         reasoning: { effort: "medium", summary: "auto" },
-        max_output_tokens: 32000,
+        max_output_tokens: 64000,
         // The browser keeps the conversation; nothing needs to live on OpenAI's side.
         store: false,
         stream: true,

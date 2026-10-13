@@ -84,7 +84,9 @@ async function turn({ target, messages, system, tools, send, signal }: TurnArgs)
     const reply = c.beta.messages.stream(
       {
         model: target.model,
-        max_tokens: 32000,
+        // Thinking counts against this too: at 32k a long think plus a whole
+        // effect's WGSL ran out mid-call, and the cut-off call is never run.
+        max_tokens: 64000,
         system: [{ type: "text", text: system }],
         tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters as Anthropic.Beta.BetaTool.InputSchema })),
         messages: ownHistory([...messages.slice(0, -1), last]),
