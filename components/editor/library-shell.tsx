@@ -25,6 +25,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import type { LibraryFacet, LibraryKind, LibraryOwner } from "@/lib/library"
 import { RailRow, RailSection, RailTags } from "@/components/editor/library-rail"
+import { SCROLL_FADE, useScrollFade } from "@/components/editor/scroll-fade"
 import { authorImage, authorVerified, builtinAuthor } from "@/lib/community-store"
 import { UserAvatar } from "@/components/user-avatar"
 import { VerifiedBadge } from "@/components/verified-badge"
@@ -390,39 +391,27 @@ export function AuthorLink({ name, draft = false, className }: { name: string; d
 
 
 /**
- * The rail: what to look at, never where it came from.
+ * The rail: what to look at, never where it came from. A host can pin links
+ * to its bottom with `footer`.
  *
  * MAKERS is the addition, and it is the point. It is how provenance survives
  * losing its shelf, it credits the people whose work fills the library, and it is
  * the same query a profile page runs.
  */
-export function LibraryRailFilters<T extends BrowseItem>({ browse }: { browse: Browse<T> }) {
+export function LibraryRailFilters<T extends BrowseItem>({ browse, footer }: { browse: Browse<T>; footer?: React.ReactNode }) {
   const t = useT()
   const { counts, makers, tags, facet, setFacet, maker, setMaker, tag, setTag, filtered, clear } = browse
+  const [tagsRef, tagsMore] = useScrollFade<HTMLDivElement>()
 
   return (
-    <div className="hidden w-50 shrink-0 flex-col border-r border-line-strong p-2 md:flex">
+    <div className="hidden min-h-0 w-50 shrink-0 flex-col border-r border-line-strong p-2 md:flex">
       <RailSection title={t.rail.browse}>
-        <div className="flex flex-col gap-0.5">
-          <RailRow label={t.rail.all} count={counts.all} active={facet === "all"} onClick={() => setFacet("all")} />
+        <div className="flex flex-col gap-0.5 pb-2">
+          {/* All is also the way back from every filter: it drops the maker
+              and the tag along with the facet. */}
+          <RailRow label={t.rail.all} count={counts.all} active={!filtered} onClick={clear} />
           <RailRow label={t.rail.yours} count={counts.yours} active={facet === "yours"} onClick={() => setFacet("yours")} />
           <RailRow label={t.rail.liked} count={counts.liked} active={facet === "liked"} onClick={() => setFacet("liked")} />
-          {/* Always rendered. A control that appears when it becomes relevant
-              moves everything under it, and the rail is a thing you aim at. */}
-          <Button variant="bare"
-            type="button"
-            onClick={clear}
-            aria-hidden={!filtered}
-            tabIndex={filtered ? 0 : -1}
-            className={cn(
-              "mt-0.5 ml-2 text-left text-2xs underline underline-offset-2 transition-colors",
-              filtered
-                ? "cursor-pointer text-muted-foreground hover:text-foreground"
-                : "pointer-events-none text-transparent",
-            )}
-          >
-            {t.rail.clearFilters}
-          </Button>
         </div>
       </RailSection>
 
@@ -447,8 +436,16 @@ export function LibraryRailFilters<T extends BrowseItem>({ browse }: { browse: B
         </RailSection>
       )}
 
-      {/* The cloud, as it was: nine hues, frequency first, counts on the chip. */}
-      <RailTags counts={tags} tag={tag} onTagChange={setTag} />
+      {/* The cloud, as it was: nine hues, frequency first, counts on the chip.
+          It takes what the rail has left and scrolls, its bottom edge fading
+          while there are more tags, so the last row in view reads as "scroll"
+          rather than as cut off by what sits under it. */}
+      <div ref={tagsRef} className={cn("no-scrollbar min-h-0 flex-1 overflow-y-auto", tagsMore && SCROLL_FADE)}>
+        <RailTags counts={tags} tag={tag} onTagChange={setTag} />
+      </div>
+
+      {/* Places to go from here, not filters: their own slot at the bottom. */}
+      {footer && <div className="flex shrink-0 flex-col gap-1.5 border-t border-line pt-2">{footer}</div>}
     </div>
   )
 }

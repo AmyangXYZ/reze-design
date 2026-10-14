@@ -41,6 +41,9 @@ export type ExportAnalysis = {
   /** Every item that reached either, carrying both counts so the switch is a
    *  choice of which to read rather than a second query. */
   items: ItemRank[]
+  /** Exports shared and scenes published, per day (YYYY-MM-DD), oldest first,
+   *  days with neither left out. */
+  days: { day: string; exports: number; scenes: number }[]
 }
 
 const EMPTY: ExportAnalysis = {
@@ -52,6 +55,7 @@ const EMPTY: ExportAnalysis = {
   exportModels: [],
   sceneModels: [],
   items: [],
+  days: [],
 }
 
 /**
@@ -93,7 +97,7 @@ async function splitBy(column: "aspect" | "quality" | "look"): Promise<Slice[]> 
 }
 
 export async function exportAnalysis(): Promise<ExportAnalysis> {
-  const [[exports], [scenes], aspect, quality, look, exportModelRows, sceneModelRows, items, usage] =
+  const [[exports], [scenes], aspect, quality, look, exportModelRows, sceneModelRows, items, usage, dayRows] =
     await Promise.all([
       db.select({ n: sql<number>`count(*)::int` }).from(schema.exportStats),
       db
@@ -146,6 +150,21 @@ export async function exportAnalysis(): Promise<ExportAnalysis> {
       // incremented at publish and never decremented — this is what stays true
       // after a scene is taken down.
       sceneUsage(),
+      // One row per day either source has, so the page can draw both over one
+      // time axis. A scene counts on the day it was first published.
+      db.execute<{ day: string; exports: number; scenes: number }>(sql`
+        select to_char(d, 'YYYY-MM-DD') as day, sum(e)::int as exports, sum(s)::int as scenes
+        from (
+          select day as d, count(*) as e, 0 as s from ${schema.exportStats} group by day
+          union all
+          select (created_at at time zone 'UTC')::date as d, 0 as e, count(*) as s
+          from ${schema.libraryItems}
+          where kind = 'scene' and visibility = 'public' and deleted_at is null
+          group by 1
+        ) t
+        group by d
+        order by d
+      `),
     ])
 
   return {
@@ -159,6 +178,7 @@ export async function exportAnalysis(): Promise<ExportAnalysis> {
     items: items
       .map((r) => ({ ...r, scenes: usage.get(r.id) ?? 0 }))
       .filter((r) => r.exports > 0 || r.scenes > 0),
+    days: dayRows.rows.map((r) => ({ day: r.day, exports: Number(r.exports), scenes: Number(r.scenes) })),
   }
 }
 

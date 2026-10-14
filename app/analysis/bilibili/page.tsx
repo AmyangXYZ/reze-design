@@ -4,7 +4,7 @@
 
 import type { Metadata } from "next"
 import { hasDatabase } from "@/lib/db"
-import { publicVideos } from "@/lib/db/bili"
+import { countedAt, publicVideos, serverNow } from "@/lib/db/bili"
 import { BilibiliView } from "./view"
 
 export const metadata: Metadata = {
@@ -17,6 +17,6 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic"
 
 export default async function BilibiliPage() {
-  const videos = hasDatabase ? await publicVideos() : []
-  return <BilibiliView videos={videos} />
+  const [videos, updated] = hasDatabase ? await Promise.all([publicVideos(), countedAt()]) : [[], null]
+  return <BilibiliView videos={videos} updated={updated} now={serverNow()} />
 }

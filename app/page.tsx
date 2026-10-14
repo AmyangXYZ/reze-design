@@ -88,6 +88,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { AccountButton, HandleDialog, type LibraryDoor } from "@/components/editor/account-panel"
 import { SceneGallery, prefetchGallery } from "@/components/editor/scene-gallery"
+import { SCROLL_FADE, useScrollFade } from "@/components/editor/scroll-fade"
 import { prefetchLibraryStats } from "@/hooks/use-library-stats"
 import { AnimPlayer, type Scrub } from "@/components/scene/anim-player"
 import { MaterialsPanel } from "@/components/scene/material-sidebar"
@@ -3993,6 +3994,8 @@ export default function Lab() {
   // real state and the dock does not open and then shut. Same private-mode
   // tolerance as everywhere else here — storage that throws just means the
   // preference does not stick.
+  // The stack's body, faded at its bottom edge while it scrolls further.
+  const [dockBodyRef, dockMore] = useScrollFade<HTMLDivElement>()
   const [expanded, setExpanded] = useState(() => {
     if (typeof window === "undefined") return true
     try {
@@ -8052,14 +8055,15 @@ export default function Lab() {
       {mounted && expanded && (
         <Surface
           placement="float"
-          // Hugs its rows, capped at the viewport minus its own insets. The old
-          // 5.5rem reserve cleared a transport that CENTRED under the dock; the
-          // timeline's side insets ended that overlap, so the reserve was only
-          // clipping rows short — a half-visible Physics row at the bottom edge.
+          // Hugs its rows, capped at the viewport minus its own insets and the
+          // gallery pill's slot under it (a 2.5rem pill and a 0.75rem gap). A
+          // capped stack scrolls, and its body fades at the bottom edge while
+          // there is more, so a row cut by the cap reads as "scroll", not as
+          // broken.
           // On a phone it hangs below the top bar at full width, and stops short
           // of the transport so the canvas stays in view under it.
           className={cn(
-            "top-3 left-3 flex max-h-[calc(100%-1.5rem)] w-[16rem] flex-col overflow-hidden text-xs",
+            "top-3 left-3 flex max-h-[calc(100%-4.75rem)] w-[16rem] flex-col overflow-hidden text-xs",
             COMPACT_SHEET,
             // The stack and the agent are where a phone spends its time, so they
             // run down to the transport rather than stopping at the sheet's cap.
@@ -8151,7 +8155,7 @@ export default function Lab() {
               controls) the stack is genuinely taller than the viewport, and
               without the pad Physics sat flush in the corner radius and read as
               broken rather than as scrollable. */}
-          <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <div ref={dockBodyRef} className={cn("no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain", dockMore && SCROLL_FADE)}>
             <StackGroup
               label={t.lab.groups.cast}
               domId="group-cast"
@@ -10579,6 +10583,22 @@ export default function Lab() {
             />
           </div>
         </Surface>
+      )}
+
+      {/* The scene gallery, one click from the canvas, in the bottom-left
+          corner. The dock stops short of it (the stack's max-h) and the
+          unfolded timeline starts 17.5rem in (OPEN_TIMELINE_W), so it sits clear
+          of both. On a phone the dock is a sheet over this corner, so the logo
+          menu stays the way in there. */}
+      {mounted && (
+        <Button
+          variant="bare"
+          onClick={() => openGallery()}
+          className={cn(PILL, "absolute bottom-3 left-3 flex h-10 cursor-pointer items-center gap-2 px-3.5 text-xs font-medium text-foreground transition-colors hover:bg-white/10 compact:hidden")}
+        >
+          <GalleryThumbnails className="size-4 shrink-0 text-muted-foreground" />
+          {t.gallery.door}
+        </Button>
       )}
 
       {/* A running export, folded to a pill while its panel is hidden. Click

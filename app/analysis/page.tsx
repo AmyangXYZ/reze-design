@@ -11,6 +11,7 @@
 
 import type { Metadata } from "next"
 import { hasDatabase } from "@/lib/db"
+import { serverNow } from "@/lib/db/bili"
 import { EMPTY_ANALYSIS, exportAnalysis } from "@/lib/db/export-analysis"
 import { AnalysisView } from "./view"
 
@@ -36,5 +37,5 @@ export const dynamic = "force-dynamic"
 
 export default async function AnalysisPage() {
   const data = hasDatabase ? await exportAnalysis() : EMPTY_ANALYSIS
-  return <AnalysisView data={data} />
+  return <AnalysisView data={data} now={serverNow()} />
 }

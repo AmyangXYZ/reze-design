@@ -25,7 +25,7 @@ export function AnalysisTabs() {
           aria-current={path === tab.href ? "page" : undefined}
           className={cn(
             "rounded-chip px-2.5 py-1 text-xs transition-colors",
-            path === tab.href ? "bg-white/10 text-foreground" : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
+            path === tab.href ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
           )}
         >
           {tab.label}

@@ -34,8 +34,10 @@ import { createHash } from "node:crypto"
 const EXCLUDED_MIDS = new Set([2011395850])
 
 /** "Reze Design" or the site's address, or the owner credited by name for the
- *  render or the effects ("渲染：黯灭小羊", "MME：黯灭小羊"). */
-const CREDIT = /reze[\s._-]*design|reze\.one|(?:渲染|MME)\s*[:：][^\n]*黯灭小羊/i
+ *  software, the render or the effects ("软件：…", "渲染：黯灭小羊", "MME：黯灭小羊",
+ *  "原作者：@黯灭小羊"). The owner named for a model or a motion is not a credit
+ *  for the tool. */
+const CREDIT = /reze[\s._-]*design|reze\.one|(?:渲染|MME|软件|工具|原作者|software|tool|render(?:ing|er)?)\s*[:：]\s*@?[^\n]*黯灭小羊/i
 
 /** Reze Design's first release; nothing before it can credit it. */
 export const LAUNCH = Date.UTC(2026, 6, 1)
@@ -190,7 +192,7 @@ async function walkMaker(s: Session, mid: number, since: number, keep: OnFound) 
 
 /** Where search cuts a description, and the lines that name a renderer. */
 const CUT = 250
-const CREDIT_LINE = /渲染|MME|render|特效|效果/i
+const CREDIT_LINE = /渲染|MME|render|特效|效果|软件|工具|software/i
 
 type SearchHit = { bvid: string; aid: number; mid: number; author: string; title: string; description?: string; tag?: string; pubdate: number }
 

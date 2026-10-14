@@ -41,7 +41,7 @@ import { useSession } from "@/lib/auth-client"
 import { useZOrder } from "@/hooks/use-z-order"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
-import { VideoLink } from "@/components/video-link"
+import { SiteChip, VideoLink } from "@/components/video-link"
 import { SceneCover } from "@/components/nsfw"
 import { Switch } from "@/components/ui/switch"
 import { setShowNsfw, useShowNsfw } from "@/lib/nsfw-pref"
@@ -702,7 +702,14 @@ function GalleryContent({
       </DialogHeader>
 
       <div className="flex min-h-0 flex-1">
-        <LibraryRailFilters browse={browse} />
+        <LibraryRailFilters
+          browse={browse}
+          footer={
+            <SiteChip site="bilibili" href="/analysis/bilibili" className="h-8 px-2.5 text-xs">
+              {t.bilibili.title}
+            </SiteChip>
+          }
+        />
 
         {/* ONE ranked list, the same grid the presets use. Scenes were the last
             library with their own cards, their own sort and their own rail. */}

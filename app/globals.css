@@ -331,7 +331,10 @@
 /* The admin page, in light: the shadcn light values (as :root states them)
    and a light ground for the chrome tokens, inside this element only. The
    html element stays .dark, so the editor and everything else is untouched. */
-.admin-light {
+/* The admin page, and the /analysis dashboards: a light ground for reading
+   numbers, outside the editor. */
+.admin-light,
+.dash-light {
   color-scheme: light;
   --background: oklch(0.985 0 0);
   --foreground: oklch(0.145 0 0);

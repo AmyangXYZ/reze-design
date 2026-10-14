@@ -3,8 +3,8 @@ import "server-only"
 // The kept Bilibili videos (schema.biliVideos): the daily job finds new ones
 // and recounts them all; /analysis reads them.
 
-import { desc, sql } from "drizzle-orm"
-import { countVideos, findVideos, type BiliCounts, type BiliFound } from "@/lib/bilibili"
+import { desc, gte, sql } from "drizzle-orm"
+import { countVideos, findVideos, LAUNCH, type BiliCounts, type BiliFound } from "@/lib/bilibili"
 import { db, schema } from "@/lib/db"
 
 const t = schema.biliVideos
@@ -15,14 +15,41 @@ export type FindReport = { added: number; blocked: boolean; loggedIn: boolean }
 export const allVideos = () => db.select().from(t).orderBy(desc(t.likes))
 
 /** What /analysis shows of a video. */
-export type PublicVideo = { bvid: string; title: string; mid: number; author: string; published: string; plays: number; likes: number }
+export type PublicVideo = {
+  bvid: string
+  title: string
+  mid: number
+  author: string
+  published: string
+  plays: number
+  likes: number
+  coins: number
+  favorites: number
+  shares: number
+  comments: number
+}
 
-/** Every kept video, most liked first; empty before the table exists. */
+/** Every kept video from the launch on, most liked first; empty before the
+ *  table exists. A video dated before Reze Design existed cannot have been
+ *  made with it, whatever its description says. */
 export async function publicVideos(): Promise<PublicVideo[]> {
   try {
     const rows = await db
-      .select({ bvid: t.bvid, title: t.title, mid: t.mid, author: t.author, published: t.published, plays: t.plays, likes: t.likes })
+      .select({
+        bvid: t.bvid,
+        title: t.title,
+        mid: t.mid,
+        author: t.author,
+        published: t.published,
+        plays: t.plays,
+        likes: t.likes,
+        coins: t.coins,
+        favorites: t.favorites,
+        shares: t.shares,
+        comments: t.comments,
+      })
       .from(t)
+      .where(gte(t.published, new Date(LAUNCH)))
       .orderBy(desc(t.likes))
     return rows.map((r) => ({ ...r, published: r.published.toISOString() }))
   } catch {
@@ -67,3 +94,18 @@ export async function findNew(scanHours: number, budgetMs: number): Promise<Find
   })
   return { added, blocked: r.blocked, loggedIn: r.loggedIn }
 }
+
+/** When the counts were last read from Bilibili: the newest count in the
+ *  table, as ISO. Null before anything is counted. */
+export async function countedAt(): Promise<string | null> {
+  try {
+    const [row] = await db.select({ at: sql<Date | null>`max(${t.countedAt})` }).from(t)
+    return row?.at ? new Date(row.at).toISOString() : null
+  } catch {
+    return null
+  }
+}
+
+/** The server's clock, for "this week" figures. A function, so a page reads it
+ *  once per request rather than in render. */
+export const serverNow = () => Date.now()

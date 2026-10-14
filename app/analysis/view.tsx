@@ -1,187 +1,40 @@
 "use client"
 
-// The presentation half of /analysis.
+// The presentation half of /analysis, on the dashboard kit (./dash): five
+// stats; exports and published scenes per week; every model; formats; and the
+// presets that reached a video or a scene. One screen on a desktop.
+//
+// Two sources answer every question here: exports (what people rendered,
+// shared by choice) in BLUE, and published scenes (what they put here) in
+// ORANGE, stacked wherever both apply.
 //
 // Client because the locale lives in localStorage, which no server render can
-// see. Everything else here is static: one view, no modes, nothing to switch.
-//
-// Two series, one bar. A row's length is what it adds up to and its two segments
-// are where that came from — exports on the left, published scenes on the right.
-// This is the alternative to both mistakes: a single total hides the split, and a
-// mode switch makes you hold one view in your head while looking at another.
-// Stacking sums AND shows the composition, so the interesting case — used
-// constantly, published rarely — is visible without asking for it.
+// see.
 
 import Link from "next/link"
+import { useMemo, useState } from "react"
 import { useT } from "@/lib/i18n"
+import type { ExportAnalysis, Slice } from "@/lib/db/export-analysis"
+import { BarList, BLUE, Card, Columns, Key, ORANGE, Segmented, Shell, Stat, fmt } from "./dash"
 import { AnalysisTabs } from "./tabs"
-import type { ExportAnalysis, ItemRank, Slice } from "@/lib/db/export-analysis"
 
-/**
- * The two series, and the only meaning colour carries on this page.
- *
- * Validated as a categorical pair against this page's near-black surface: every
- * gate passes with no warning — CVD separation ΔE 26.7 (protan), normal-vision
- * 35.2, both inside the dark lightness band and clear of 3:1 contrast. Red and
- * blue are about as far apart as two hues get for every kind of colour vision,
- * which is what a two-series stack wants.
- */
-export const SERIES = { exports: "#3b82f6", scenes: "#ef4444" } as const
+const DAY = 86_400_000
+const WEEK = 7 * DAY
 
-/** One row's two parts. `b` is zero for the export-only splits, which then draw
- *  as a plain bar rather than a stack of one. */
-type Stack = { key: string; label: string; a: number; b: number }
-
-export function Tile({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-interior border border-line bg-surface-raised p-3">
-      <div className="text-2xs tracking-wide text-muted-foreground uppercase">{label}</div>
-      <div className="mt-1 font-mono text-xl text-foreground tabular-nums">{value}</div>
-    </div>
-  )
+/** Monday 00:00 UTC of the week holding `t`. */
+const weekOf = (t: number) => {
+  const d = new Date(t)
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - ((d.getUTCDay() + 6) % 7) * DAY
 }
 
-/**
- * The bar: total length against the largest row, split into its two sources.
- *
- * Against the TOP row rather than the total, because the question a reader has is
- * how a row compares to the leader — against a grand total every row of a long
- * tail is a stub of the same indistinguishable length.
- *
- * Only the OUTER ends are round. Two capsules with rounded inner edges read as
- * two bars that happen to be near each other; one capsule divided by a colour
- * change reads as a total made of two parts, which is what it is. The colour
- * boundary is enough to find — it does not need a gap to sit in.
- */
-export function StackBar({ a, b, top }: { a: number; b: number; top: number }) {
-  const total = a + b
-  const width = top > 0 ? Math.max(2, (total / top) * 100) : 0
-  const both = a > 0 && b > 0
-  return (
-    <div className="mt-1 h-1.5 w-full">
-      <div className="flex h-full overflow-hidden rounded-full" style={{ width: `${width}%` }}>
-        {a > 0 && (
-          <div
-            className={`h-full ${both ? "rounded-l-full" : "rounded-full"}`}
-            style={{ flex: a, backgroundColor: SERIES.exports }}
-          />
-        )}
-        {b > 0 && (
-          <div
-            className={`h-full ${both ? "rounded-r-full" : "rounded-full"}`}
-            style={{ flex: b, backgroundColor: SERIES.scenes }}
-          />
-        )}
-      </div>
-    </div>
-  )
-}
-
-export function Panel({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-surface border border-line-strong bg-surface p-4">
-      <h2 className="text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">{title}</h2>
-      {children}
-    </section>
-  )
-}
-
-/** What the file is called, without what kind of file it is. The row is a model's
- *  name to a reader; ".pmx" is the same four characters on every line and says
- *  nothing about which model this is. */
+/** What the file is called, without what kind of file it is. */
 const modelName = (file: string) => file.replace(/\.(pmx|pmd|zip)$/i, "")
 
-/**
- * One ranked list, whole — every row it has, never a preview.
- *
- * `rank` numbers the rows where position is the point (the models list, which is
- * the question this page was built to answer) and the two-column flow keeps a long
- * one readable. `share` prints each row against the total, which only means
- * something where a row IS a share of the whole: an export has one aspect ratio,
- * but it has a whole cast, so the models list shows counts alone.
- *
- * Both halves of a count are named. "12 · 5" needs the legend to decode and gets
- * decoded wrong at a glance; "12 videos · 5 scenes" is the same width in the
- * places it matters and needs nothing.
- */
-function Ranks({
-  title,
-  rows,
-  empty,
-  rank = false,
-  columns = false,
-  share,
-  videos,
-  scenes,
-}: {
-  title: string
-  rows: Stack[]
-  empty: string
-  rank?: boolean
-  columns?: boolean
-  share?: number
-  videos: (n: number) => string
-  scenes: (n: number) => string
-}) {
-  const ordered = [...rows].sort((x, y) => y.a + y.b - (x.a + x.b))
-  const top = ordered[0] ? ordered[0].a + ordered[0].b : 0
-  return (
-    <Panel title={title}>
-      {ordered.length === 0 ? (
-        <p className="mt-3 text-xs text-muted-foreground">{empty}</p>
-      ) : (
-        <ol className={`mt-3 ${columns ? "gap-x-8 sm:columns-2" : ""}`}>
-          {ordered.map((r, i) => (
-            <li key={r.key} className="mb-2 break-inside-avoid last:mb-0">
-              <div className="flex items-baseline gap-2.5">
-                {rank && (
-                  // Left-aligned, so the first digit sits on the same margin as
-                  // the panel's title. Right-aligning tidied the numerals against
-                  // each other and put every one of them out of line with the
-                  // heading directly above.
-                  <span className="w-5 shrink-0 font-mono text-2xs text-muted-foreground tabular-nums">
-                    {i + 1}
-                  </span>
-                )}
-                <span className="min-w-0 flex-1 truncate text-xs text-foreground">{r.label}</span>
-                <span className="shrink-0 font-mono text-2xs text-muted-foreground tabular-nums">
-                  {share
-                    ? `${Math.round((r.a / share) * 100)}%`
-                    : [r.a > 0 && videos(r.a), r.b > 0 && scenes(r.b)].filter(Boolean).join(" · ")}
-                </span>
-              </div>
-              {/* The total rides the bar it measures, on its own line: what a row
-                  is made of belongs beside the name, what it comes to belongs
-                  beside the length. Indented past the rank so every bar starts on
-                  one column and can be compared down. */}
-              <div className={`flex items-center gap-2.5 ${rank ? "pl-[30px]" : ""}`}>
-                <div className="min-w-0 flex-1">
-                  <StackBar a={r.a} b={r.b} top={top} />
-                </div>
-                {/* Same size as the row's other numbers, heavier: this is the
-                    figure the bar beside it draws, and weight picks it out of a
-                    column without changing the rhythm of the list. */}
-                <span className="shrink-0 font-mono text-2xs font-semibold text-foreground tabular-nums">
-                  {share ? videos(r.a) : r.a + r.b}
-                </span>
-              </div>
-            </li>
-          ))}
-        </ol>
-      )}
-    </Panel>
-  )
-}
+type Pair = { key: string; label: string; a: number; b: number }
 
-const RANKED_KINDS = ["graph", "effect", "grade"] as const
-
-/** A single-series row: the export-only splits, which have no scene half. */
-const solo = (rows: Slice[]): Stack[] => rows.map((r) => ({ key: r.label, label: r.label, a: r.n, b: 0 }))
-
-/** Model names from both sources into one row each, so a bar can show the split
- *  the same way the preset lists do. */
-function stackModels(exports: Slice[], scenes: Slice[]): Stack[] {
-  const rows = new Map<string, Stack>()
+/** Model names from both sources into one row each, most used first. */
+function stackModels(exports: Slice[], scenes: Slice[]): Pair[] {
+  const rows = new Map<string, Pair>()
   const put = (s: Slice, key: "a" | "b") => {
     const cur = rows.get(s.label) ?? { key: s.label, label: modelName(s.label), a: 0, b: 0 }
     cur[key] += s.n
@@ -189,106 +42,161 @@ function stackModels(exports: Slice[], scenes: Slice[]): Stack[] {
   }
   for (const s of exports) put(s, "a")
   for (const s of scenes) put(s, "b")
-  return [...rows.values()]
+  return [...rows.values()].sort((x, y) => y.a + y.b - (x.a + x.b))
 }
 
-const itemStack = (r: ItemRank): Stack => ({ key: r.id, label: r.name, a: r.exports, b: r.scenes })
+type FormatKey = "aspect" | "quality" | "look"
+type KindKey = "graph" | "effect" | "grade"
 
-function Legend({ exports, scenes }: { exports: string; scenes: string }) {
-  return (
-    <div className="mt-3 flex items-center gap-4 text-2xs text-muted-foreground">
-      {[
-        [SERIES.exports, exports],
-        [SERIES.scenes, scenes],
-      ].map(([color, label]) => (
-        <span key={label} className="flex items-center gap-1.5">
-          <span className="h-1.5 w-4 rounded-full" style={{ backgroundColor: color }} />
-          {label}
-        </span>
-      ))}
-    </div>
-  )
-}
-
-export function AnalysisView({ data }: { data: ExportAnalysis }) {
+export function AnalysisView({ data, now }: { data: ExportAnalysis; now: number }) {
   const t = useT()
-  const models = stackModels(data.exportModels, data.sceneModels)
+  const a = t.analysis
+  const [format, setFormat] = useState<FormatKey>("aspect")
+  const [kind, setKind] = useState<KindKey>("graph")
+  const models = useMemo(() => stackModels(data.exportModels, data.sceneModels), [data])
+
+  // Every week from the first day either source has to this one, empty weeks
+  // included, so the columns are a time axis.
+  const weeks = useMemo(() => {
+    if (data.days.length === 0) return []
+    const by = new Map<number, { exports: number; scenes: number }>()
+    for (const d of data.days) {
+      const w = weekOf(Date.parse(d.day))
+      const cur = by.get(w) ?? { exports: 0, scenes: 0 }
+      cur.exports += d.exports
+      cur.scenes += d.scenes
+      by.set(w, cur)
+    }
+    const out: { week: number; label: string; exports: number; scenes: number }[] = []
+    for (let w = Math.min(...by.keys()); w <= weekOf(now); w += WEEK)
+      out.push({ week: w, label: new Date(w).toISOString().slice(5, 10), ...(by.get(w) ?? { exports: 0, scenes: 0 }) })
+    return out
+  }, [data.days, now])
+
+  const recent = useMemo(() => {
+    const days = data.days.filter((d) => now - Date.parse(d.day) < WEEK)
+    return { exports: days.reduce((s, d) => s + d.exports, 0), scenes: days.reduce((s, d) => s + d.scenes, 0) }
+  }, [data.days, now])
+
+  const formatRows: Slice[] = data[format]
+  const formatTotal = formatRows.reduce((s, r) => s + r.n, 0)
+  const presets = data.items.filter((i) => i.kind === kind).sort((x, y) => y.exports + y.scenes - (x.exports + x.scenes))
+  const top = models[0]
+  const legend = (
+    <>
+      <Key color={BLUE} label={a.exports} />
+      <Key color={ORANGE} label={a.scenesTile} />
+    </>
+  )
 
   return (
-    <main className="w-full flex-1 bg-black px-6 py-12 text-sm sm:px-8">
-      <div className="mx-auto w-full max-w-4xl">
-        <AnalysisTabs />
-        <h1 className="mt-6 text-lg font-semibold">{t.analysis.title}</h1>
-        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          {t.analysis.intro}{" "}
-          <Link href="/privacy" className="underline underline-offset-2 hover:text-foreground">
-            {t.render.shareStatsLink}
-          </Link>
-          .
-        </p>
-        <Legend exports={t.analysis.exports} scenes={t.analysis.scenesTile} />
-
-        <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Tile label={t.analysis.exports} value={data.exportTotal.toLocaleString()} />
-          <Tile label={t.analysis.scenesTile} value={data.sceneTotal.toLocaleString()} />
-          <Tile label={t.analysis.models} value={models.length.toLocaleString()} />
-          <Tile label={t.analysis.presets} value={data.items.length.toLocaleString()} />
-        </section>
-
-        <div className="mt-4">
-          <Ranks
-            title={t.analysis.models}
-            rows={models}
-            empty={t.analysis.empty}
-            rank
-            columns
-            videos={t.analysis.videos}
-            scenes={t.analysis.scenes}
-          />
-        </div>
-
-        <div className="mt-4 grid gap-4 sm:grid-cols-3">
-          <Ranks
-            title={t.analysis.aspect}
-            rows={solo(data.aspect)}
-            empty={t.analysis.empty}
-            share={data.exportTotal}
-            videos={t.analysis.videos}
-            scenes={t.analysis.scenes}
-          />
-          <Ranks
-            title={t.analysis.resolution}
-            rows={solo(data.quality)}
-            empty={t.analysis.empty}
-            share={data.exportTotal}
-            videos={t.analysis.videos}
-            scenes={t.analysis.scenes}
-          />
-          <Ranks
-            title={t.analysis.style}
-            rows={solo(data.look)}
-            empty={t.analysis.empty}
-            share={data.exportTotal}
-            videos={t.analysis.videos}
-            scenes={t.analysis.scenes}
-          />
-        </div>
-
-        <div className="mt-4 grid gap-4 sm:grid-cols-3">
-          {RANKED_KINDS.map((kind) => (
-            <Ranks
-              key={kind}
-              title={t.analysis.kinds[kind]}
-              rows={data.items.filter((i) => i.kind === kind).map(itemStack)}
-              empty={t.analysis.emptyItems}
-              rank
-              videos={t.analysis.videos}
-              scenes={t.analysis.scenes}
-            />
-          ))}
-        </div>
-
+    <Shell
+      header={
+        <>
+          <AnalysisTabs />
+          <div className="min-w-0">
+            <h1 className="text-base font-semibold">{a.title}</h1>
+            <p className="truncate text-xs text-muted-foreground">
+              {a.intro}{" "}
+              <Link href="/privacy" className="underline underline-offset-2 hover:text-foreground">
+                {t.render.shareStatsLink}
+              </Link>
+            </p>
+          </div>
+        </>
+      }
+    >
+      <div className="grid shrink-0 grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+        <Stat label={a.exports} value={fmt(data.exportTotal)} sub={a.thisWeek(recent.exports)} spark={weeks.map((w) => w.exports)} />
+        <Stat label={a.scenesTile} value={fmt(data.sceneTotal)} sub={a.thisWeek(recent.scenes)} spark={weeks.map((w) => w.scenes)} color={ORANGE} />
+        <Stat label={a.models} value={fmt(models.length)} sub={a.modelsSub} />
+        <Stat label={a.presets} value={fmt(data.items.length)} sub={a.presetsSub} />
+        <Stat label={a.topModel} value={top ? top.label : "—"} sub={top ? [top.a > 0 && a.videos(top.a), top.b > 0 && a.scenes(top.b)].filter(Boolean).join(" · ") : undefined} />
       </div>
-    </main>
+
+      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-12 lg:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">
+        <Card title={a.perWeek} aside={legend} className="lg:col-span-8">
+          <Columns
+            label={a.perWeek}
+            bars={weeks.map((w) => ({ key: String(w.week), label: w.label, a: w.exports, b: w.scenes, title: a.weekOf(w.label), body: a.weekTip(w.exports, w.scenes) }))}
+          />
+        </Card>
+
+        <Card title={a.models} aside={legend} className="h-[32rem] lg:col-span-4 lg:row-span-2 lg:h-auto">
+          {models.length === 0 ? (
+            <p className="px-4 text-xs text-muted-foreground">{a.empty}</p>
+          ) : (
+            <BarList
+              rows={models.map((m) => ({
+                key: m.key,
+                label: m.label,
+                title: [m.a > 0 && a.videos(m.a), m.b > 0 && a.scenes(m.b)].filter(Boolean).join(" · "),
+                a: m.a,
+                b: m.b,
+                value: fmt(m.a + m.b),
+              }))}
+            />
+          )}
+        </Card>
+
+        <Card
+          title={a.formats}
+          aside={
+            <Segmented
+              value={format}
+              onChange={setFormat}
+              options={[
+                { key: "aspect", label: a.aspect },
+                { key: "quality", label: a.resolution },
+                { key: "look", label: a.style },
+              ]}
+            />
+          }
+          className="lg:col-span-4"
+        >
+          {formatRows.length === 0 ? (
+            <p className="px-4 text-xs text-muted-foreground">{a.empty}</p>
+          ) : (
+            <BarList
+              rank={false}
+              rows={formatRows.map((r) => ({
+                key: r.label,
+                label: r.label,
+                a: r.n,
+                note: a.videos(r.n),
+                value: `${Math.round((r.n / Math.max(1, formatTotal)) * 100)}%`,
+              }))}
+            />
+          )}
+        </Card>
+
+        <Card
+          title={a.presets}
+          aside={
+            <Segmented
+              value={kind}
+              onChange={setKind}
+              options={(["graph", "effect", "grade"] as const).map((k) => ({ key: k, label: a.kinds[k] }))}
+            />
+          }
+          className="lg:col-span-4"
+        >
+          {presets.length === 0 ? (
+            <p className="px-4 text-xs text-muted-foreground">{a.emptyItems}</p>
+          ) : (
+            <BarList
+              rows={presets.map((p) => ({
+                key: p.id,
+                label: p.name,
+                title: [p.exports > 0 && a.videos(p.exports), p.scenes > 0 && a.scenes(p.scenes)].filter(Boolean).join(" · "),
+                a: p.exports,
+                b: p.scenes,
+                value: fmt(p.exports + p.scenes),
+              }))}
+            />
+          )}
+        </Card>
+      </div>
+    </Shell>
   )
 }
