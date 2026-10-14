@@ -100,8 +100,9 @@ async function session(deadline = Infinity) {
   async function get<T>(url: string, referer: string): Promise<T> {
     for (let attempt = 0; ; attempt++) {
       if (Date.now() > deadline) throw new Blocked()
-      const res = await fetch(url, { headers: { "User-Agent": UA, Cookie: cookie, Referer: referer }, cache: "no-store" })
-      if (res.status === 412) {
+      // A dropped connection is waited out like a 412.
+      const res = await fetch(url, { headers: { "User-Agent": UA, Cookie: cookie, Referer: referer }, cache: "no-store" }).catch(() => null)
+      if (!res || res.status === 412) {
         if (attempt === BACKOFF_MS.length || Date.now() + BACKOFF_MS[attempt] > deadline) throw new Blocked()
         await pause(BACKOFF_MS[attempt])
         continue
