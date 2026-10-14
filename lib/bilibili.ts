@@ -33,7 +33,9 @@ import { createHash } from "node:crypto"
  *  posts their mobile port of the source. */
 const EXCLUDED_MIDS = new Set([2011395850])
 
-const CREDIT = /reze[\s._-]*design|reze\.one/i
+/** "Reze Design" or the site's address, or the owner credited by name for the
+ *  render or the effects ("渲染：黯灭小羊", "MME：黯灭小羊"). */
+const CREDIT = /reze[\s._-]*design|reze\.one|(?:渲染|MME)\s*[:：][^\n]*黯灭小羊/i
 
 /** Reze Design's first release; nothing before it can credit it. */
 export const LAUNCH = Date.UTC(2026, 6, 1)
@@ -142,6 +144,13 @@ async function session(deadline = Infinity) {
 
 type Session = Awaited<ReturnType<typeof session>>
 
+/** A video's whole description; listings and search carry only its start. */
+async function fullDescription(s: Session, bvid: string): Promise<string> {
+  const d = await s.get<string>(`https://api.bilibili.com/x/web-interface/archive/desc?bvid=${bvid}`, `https://www.bilibili.com/video/${bvid}`)
+  await pause(PAUSE_MS)
+  return d
+}
+
 type Upload = { bvid: string; aid: number; mid: number; author: string; title: string; description: string; created: number }
 
 /** A maker's credited uploads published at or after `since`, newest first. */
@@ -165,7 +174,9 @@ async function walkMaker(s: Session, mid: number, since: number, keep: (v: BiliF
     const list = data.list.vlist
     for (const v of list) {
       if (v.created * 1000 < since) continue
-      const f = credited(v, v.created)
+      // The listing cuts descriptions short, and a credit usually sits at the
+      // end of one; an upload that does not match yet is read in full.
+      const f = credited(v, v.created) ?? credited({ ...v, description: await fullDescription(s, v.bvid) }, v.created)
       if (f) keep(f)
     }
     await pause(PAUSE_MS)
