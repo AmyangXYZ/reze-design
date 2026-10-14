@@ -1,3 +1,0 @@
-{
-  "crons": [{ "path": "/api/cron/bilibili", "schedule": "0 20 * * *" }]
-}

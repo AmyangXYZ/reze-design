@@ -19,7 +19,8 @@
     "db:users": "node --env-file=.env.local scripts/db-users.mjs",
     "db:seed": "node --env-file=.env.local scripts/db-seed.mjs",
     "db:refresh": "node --env-file=.env.local scripts/db-refresh.mjs",
-    "db:swap-scene": "node --env-file=.env.local scripts/db-swap-scene-content.mjs"
+    "db:swap-scene": "node --env-file=.env.local scripts/db-swap-scene-content.mjs",
+    "bili:daily": "esbuild scripts/bili-daily.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --packages=external --alias:server-only=./scripts/server-only-stub.mjs --outfile=node_modules/.cache/bili-daily.mjs --log-level=warning && node --env-file=.env.local node_modules/.cache/bili-daily.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.132.0",

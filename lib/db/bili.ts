@@ -1,7 +1,8 @@
 import "server-only"
 
-// The kept Bilibili videos (schema.biliVideos): the daily job finds new ones
-// and recounts them all; /analysis reads them.
+// The kept Bilibili videos (schema.biliVideos): the daily job
+// (scripts/bili-daily.ts) finds new ones and recounts them all; /analysis
+// reads them.
 
 import { desc, gte, sql } from "drizzle-orm"
 import { countVideos, findVideos, LAUNCH, type BiliCounts, type BiliFound } from "@/lib/bilibili"

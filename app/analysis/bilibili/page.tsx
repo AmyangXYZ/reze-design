@@ -1,5 +1,5 @@
 // /analysis/bilibili: the videos people posted on Bilibili that credit Reze
-// Design. The daily job (app/api/cron/bilibili) finds and counts them; this
+// Design. The daily job (scripts/bili-daily.ts) finds and counts them; this
 // page only reads the table.
 
 import type { Metadata } from "next"
