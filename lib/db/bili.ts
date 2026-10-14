@@ -46,12 +46,12 @@ export async function recount(aids: number[]) {
     where ${t.aid} = v.aid`)
 }
 
-/** Keep the videos not seen before, and count them. Returns how many. */
-async function keep(found: BiliFound[]): Promise<number> {
-  if (found.length === 0) return 0
-  const inserted = await db.insert(t).values(found).onConflictDoNothing({ target: t.bvid }).returning({ aid: t.aid })
-  if (inserted.length) await recount(inserted.map((r) => r.aid))
-  return inserted.length
+/** Keep a video not seen before, and count it, the moment it is found.
+ *  True when it was new. */
+export async function keepVideo(v: BiliFound): Promise<boolean> {
+  const [row] = await db.insert(t).values(v).onConflictDoNothing({ target: t.bvid }).returning({ aid: t.aid })
+  if (row) await recount([row.aid])
+  return !!row
 }
 
 /**
@@ -61,6 +61,9 @@ async function keep(found: BiliFound[]): Promise<number> {
 export async function findNew(scanHours: number, budgetMs: number): Promise<FindReport> {
   const known = await db.selectDistinctOn([t.mid], { mid: t.mid, author: t.author }).from(t)
   const now = Date.now()
-  const r = await findVideos(new Map(known.map((k) => [k.mid, k.author])), now - 7 * DAY, now - scanHours * 3_600_000, now + budgetMs)
-  return { added: await keep(r.found), blocked: r.blocked, loggedIn: r.loggedIn }
+  let added = 0
+  const r = await findVideos(new Map(known.map((k) => [k.mid, k.author])), now - 7 * DAY, now - scanHours * 3_600_000, now + budgetMs, async (v) => {
+    if (await keepVideo(v)) added++
+  })
+  return { added, blocked: r.blocked, loggedIn: r.loggedIn }
 }

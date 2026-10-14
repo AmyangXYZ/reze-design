@@ -154,7 +154,10 @@ async function fullDescription(s: Session, bvid: string): Promise<string> {
 type Upload = { bvid: string; aid: number; mid: number; author: string; title: string; description: string; created: number }
 
 /** A maker's credited uploads published at or after `since`, newest first. */
-async function walkMaker(s: Session, mid: number, since: number, keep: (v: BiliFound) => void) {
+/** Called once per credited video, as soon as it is seen. */
+export type OnFound = (v: BiliFound) => Promise<void>
+
+async function walkMaker(s: Session, mid: number, since: number, keep: OnFound) {
   for (let pn = 1; pn <= 20; pn++) {
     const query = s.sign({
       mid,
@@ -177,7 +180,7 @@ async function walkMaker(s: Session, mid: number, since: number, keep: (v: BiliF
       // The listing cuts descriptions short, and a credit usually sits at the
       // end of one; an upload that does not match yet is read in full.
       const f = credited(v, v.created) ?? credited({ ...v, description: await fullDescription(s, v.bvid) }, v.created)
-      if (f) keep(f)
+      if (f) await keep(f)
     }
     await pause(PAUSE_MS)
     if (list.length < 50 || list[list.length - 1].created * 1000 < since) return
@@ -191,7 +194,7 @@ const CREDIT_LINE = /渲染|MME|render|特效|效果/i
 type SearchHit = { bvid: string; aid: number; mid: number; author: string; title: string; description?: string; tag?: string; pubdate: number }
 
 /** Every upload matching "MMD" published in [from, to], in seconds. */
-async function scanWindow(s: Session, from: number, to: number, keep: (v: BiliFound) => void): Promise<void> {
+async function scanWindow(s: Session, from: number, to: number, keep: OnFound): Promise<void> {
   const page = (pn: number) =>
     s.get<{ numResults: number; numPages: number; result?: SearchHit[] }>(
       `https://api.bilibili.com/x/web-interface/search/type?search_type=video&keyword=MMD&order=pubdate&page=${pn}&pubtime_begin_s=${from}&pubtime_end_s=${to}`,
@@ -214,7 +217,7 @@ async function scanWindow(s: Session, from: number, to: number, keep: (v: BiliFo
       // or effects line could show is read in full (about 7% of uploads,
       // measured 2026-10-14); one that shows them and names someone else is not.
       const f = credited(h, h.pubdate) ?? (short.length >= CUT && !CREDIT_LINE.test(short) ? credited({ ...h, description: await fullDescription(s, h.bvid) }, h.pubdate) : null)
-      if (f) keep(f)
+      if (f) await keep(f)
     }
     if (hits.length < 20 || pn >= data.numPages) return
     data = await page(pn + 1)
@@ -222,37 +225,43 @@ async function scanWindow(s: Session, from: number, to: number, keep: (v: BiliFo
   }
 }
 
-export type FindResult = { found: BiliFound[]; blocked: boolean; loggedIn: boolean }
+export type FindResult = { found: number; blocked: boolean; loggedIn: boolean }
 
-/** Every credited MMD upload published in [from, to] (epoch ms), for a
- *  backfill that runs window by window. */
-export async function scanUploads(from: number, to: number, deadline: number): Promise<FindResult> {
+/** Every credited MMD upload published in [from, to] (epoch ms), handed to
+ *  `onFound` as it is seen. For a backfill that runs window by window. */
+export async function scanUploads(from: number, to: number, deadline: number, onFound: OnFound): Promise<FindResult> {
   const s = await session(deadline)
-  const found = new Map<string, BiliFound>()
+  let found = 0
   try {
-    await scanWindow(s, Math.floor(from / 1000), Math.floor(to / 1000), (v) => found.set(v.bvid, v))
+    await scanWindow(s, Math.floor(from / 1000), Math.floor(to / 1000), async (v) => {
+      found++
+      await onFound(v)
+    })
   } catch (e) {
     if (!(e instanceof Blocked)) throw e
-    return { found: [...found.values()], blocked: true, loggedIn: s.loggedIn }
+    return { found, blocked: true, loggedIn: s.loggedIn }
   }
-  return { found: [...found.values()], blocked: false, loggedIn: s.loggedIn }
+  return { found, blocked: false, loggedIn: s.loggedIn }
 }
 
 /**
  * Walk the makers' channels back to `since`, then every MMD upload since
  * `scanSince` (both epoch ms), stopping at `deadline`. Makers come first
  * because nearly every video comes from them; the scan only adds people. A
- * maker the scan finds is walked back to the launch. Returns every credited
- * video seen, known or new, and whether the pass stopped early (blocked or
- * out of time).
+ * maker the scan finds is walked back to the launch. Every credited video goes
+ * to `onFound` the moment it is seen, so a pass cut short has already kept
+ * what it found. Returns how many it saw and whether it stopped early
+ * (blocked or out of time).
  */
-export async function findVideos(makers: Map<number, string>, since: number, scanSince: number, deadline: number): Promise<FindResult> {
+export async function findVideos(makers: Map<number, string>, since: number, scanSince: number, deadline: number, onFound: OnFound): Promise<FindResult> {
   const s = await session(deadline)
-  const found = new Map<string, BiliFound>()
+  const seen = new Set<string>()
   const todo = new Map(makers)
-  const keep = (v: BiliFound) => {
-    found.set(v.bvid, v)
+  const keep: OnFound = async (v) => {
+    if (seen.has(v.bvid)) return
+    seen.add(v.bvid)
     if (!todo.has(v.mid)) todo.set(v.mid, v.author)
+    await onFound(v)
   }
   const walked = new Set<number>()
   const walk = async () => {
@@ -268,9 +277,9 @@ export async function findVideos(makers: Map<number, string>, since: number, sca
     await walk()
   } catch (e) {
     if (!(e instanceof Blocked)) throw e
-    return { found: [...found.values()], blocked: true, loggedIn: s.loggedIn }
+    return { found: seen.size, blocked: true, loggedIn: s.loggedIn }
   }
-  return { found: [...found.values()], blocked: false, loggedIn: s.loggedIn }
+  return { found: seen.size, blocked: false, loggedIn: s.loggedIn }
 }
 
 type ResourceInfo = {
