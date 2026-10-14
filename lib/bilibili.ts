@@ -184,6 +184,10 @@ async function walkMaker(s: Session, mid: number, since: number, keep: (v: BiliF
   }
 }
 
+/** Where search cuts a description, and the lines that name a renderer. */
+const CUT = 250
+const CREDIT_LINE = /渲染|MME|render|特效|效果/i
+
 type SearchHit = { bvid: string; aid: number; mid: number; author: string; title: string; description?: string; tag?: string; pubdate: number }
 
 /** Every upload matching "MMD" published in [from, to], in seconds. */
@@ -205,7 +209,11 @@ async function scanWindow(s: Session, from: number, to: number, keep: (v: BiliFo
   for (let pn = 1, data = first; ; pn++) {
     const hits = data.result ?? []
     for (const h of hits) {
-      const f = credited(h, h.pubdate)
+      const short = h.description ?? ""
+      // Search cuts descriptions at 255 characters. One cut before any render
+      // or effects line could show is read in full (about 7% of uploads,
+      // measured 2026-10-14); one that shows them and names someone else is not.
+      const f = credited(h, h.pubdate) ?? (short.length >= CUT && !CREDIT_LINE.test(short) ? credited({ ...h, description: await fullDescription(s, h.bvid) }, h.pubdate) : null)
       if (f) keep(f)
     }
     if (hits.length < 20 || pn >= data.numPages) return
@@ -215,6 +223,20 @@ async function scanWindow(s: Session, from: number, to: number, keep: (v: BiliFo
 }
 
 export type FindResult = { found: BiliFound[]; blocked: boolean; loggedIn: boolean }
+
+/** Every credited MMD upload published in [from, to] (epoch ms), for a
+ *  backfill that runs window by window. */
+export async function scanUploads(from: number, to: number, deadline: number): Promise<FindResult> {
+  const s = await session(deadline)
+  const found = new Map<string, BiliFound>()
+  try {
+    await scanWindow(s, Math.floor(from / 1000), Math.floor(to / 1000), (v) => found.set(v.bvid, v))
+  } catch (e) {
+    if (!(e instanceof Blocked)) throw e
+    return { found: [...found.values()], blocked: true, loggedIn: s.loggedIn }
+  }
+  return { found: [...found.values()], blocked: false, loggedIn: s.loggedIn }
+}
 
 /**
  * Walk the makers' channels back to `since`, then every MMD upload since
