@@ -12,6 +12,7 @@
 
 import { sql } from "drizzle-orm"
 import {
+  bigint,
   boolean,
   date,
   index,
@@ -295,3 +296,27 @@ export const aiUsage = pgTable(
     index("ai_usage_user_at_idx").on(t.userId, t.at),
   ],
 )
+
+/**
+ * Videos on Bilibili that credit Reze Design (lib/bilibili.ts). What a video
+ * IS never changes — its id, maker, title and date are written once, when it
+ * is first found. Only the counts move, and a refresh rewrites them in place.
+ */
+export const biliVideos = pgTable("bili_videos", {
+  bvid: text("bvid").primaryKey(),
+  /** The numeric id, which the batch stats endpoint takes. */
+  aid: bigint("aid", { mode: "number" }).notNull(),
+  mid: bigint("mid", { mode: "number" }).notNull(),
+  author: text("author").notNull(),
+  title: text("title").notNull(),
+  published: timestamp("published").notNull(),
+  foundAt: timestamp("found_at").notNull().defaultNow(),
+  plays: integer("plays").notNull().default(0),
+  likes: integer("likes").notNull().default(0),
+  coins: integer("coins").notNull().default(0),
+  favorites: integer("favorites").notNull().default(0),
+  shares: integer("shares").notNull().default(0),
+  danmaku: integer("danmaku").notNull().default(0),
+  comments: integer("comments").notNull().default(0),
+  countedAt: timestamp("counted_at").notNull().defaultNow(),
+})

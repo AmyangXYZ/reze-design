@@ -1153,6 +1153,26 @@ const en = {
     sheen: "Sheen",
     sheen_tint: "Sheen Tint",
   } as Record<string, string>,
+  // The Bilibili section of /analysis: videos made with Reze Design.
+  bilibili: {
+    title: "On Bilibili",
+    intro: "Videos that credit Reze Design in their title, tags or description. Counted daily.",
+    videos: "Videos",
+    makers: "Makers",
+    plays: "Plays",
+    likes: "Likes",
+    byMaker: "Likes by maker",
+    byWeek: "Likes by week published",
+    byVideo: "Every video",
+    weekOf: (date: string) => `Week of ${date}`,
+    tip: (videos: number, plays: string, likes: string) => `${videos} videos · ${plays} plays · ${likes} likes`,
+    nVideos: (n: number) => `${n} ${n === 1 ? "video" : "videos"}`,
+    video: "Video",
+    maker: "Maker",
+    published: "Published",
+    previous: "Previous",
+    next: "Next",
+  },
 }
 
 export type Dictionary = typeof en
@@ -2173,6 +2193,25 @@ const zh: Dictionary = {
     unity_direct: "灯光高光（Unity）",
     sheen: "光泽",
     sheen_tint: "光泽染色",
+  },
+  bilibili: {
+    title: "B 站上的作品",
+    intro: "标题、标签或简介中署名 Reze Design 的视频，每天统计一次。",
+    videos: "视频",
+    makers: "作者",
+    plays: "播放",
+    likes: "点赞",
+    byMaker: "各作者点赞",
+    byWeek: "按发布周统计的点赞",
+    byVideo: "全部视频",
+    weekOf: (date: string) => `${date} 当周`,
+    tip: (videos: number, plays: string, likes: string) => `${videos} 个视频 · ${plays} 播放 · ${likes} 点赞`,
+    nVideos: (n: number) => `${n} 个视频`,
+    video: "视频",
+    maker: "作者",
+    published: "发布",
+    previous: "上一页",
+    next: "下一页",
   },
 }
 

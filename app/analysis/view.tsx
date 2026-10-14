@@ -14,6 +14,7 @@
 
 import Link from "next/link"
 import { useT } from "@/lib/i18n"
+import { AnalysisTabs } from "./tabs"
 import type { ExportAnalysis, ItemRank, Slice } from "@/lib/db/export-analysis"
 
 /**
@@ -25,13 +26,13 @@ import type { ExportAnalysis, ItemRank, Slice } from "@/lib/db/export-analysis"
  * blue are about as far apart as two hues get for every kind of colour vision,
  * which is what a two-series stack wants.
  */
-const SERIES = { exports: "#3b82f6", scenes: "#ef4444" } as const
+export const SERIES = { exports: "#3b82f6", scenes: "#ef4444" } as const
 
 /** One row's two parts. `b` is zero for the export-only splits, which then draw
  *  as a plain bar rather than a stack of one. */
 type Stack = { key: string; label: string; a: number; b: number }
 
-function Tile({ label, value }: { label: string; value: string }) {
+export function Tile({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-interior border border-line bg-surface-raised p-3">
       <div className="text-2xs tracking-wide text-muted-foreground uppercase">{label}</div>
@@ -52,7 +53,7 @@ function Tile({ label, value }: { label: string; value: string }) {
  * change reads as a total made of two parts, which is what it is. The colour
  * boundary is enough to find — it does not need a gap to sit in.
  */
-function StackBar({ a, b, top }: { a: number; b: number; top: number }) {
+export function StackBar({ a, b, top }: { a: number; b: number; top: number }) {
   const total = a + b
   const width = top > 0 ? Math.max(2, (total / top) * 100) : 0
   const both = a > 0 && b > 0
@@ -76,7 +77,7 @@ function StackBar({ a, b, top }: { a: number; b: number; top: number }) {
   )
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+export function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="rounded-surface border border-line-strong bg-surface p-4">
       <h2 className="text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">{title}</h2>
@@ -216,7 +217,8 @@ export function AnalysisView({ data }: { data: ExportAnalysis }) {
   return (
     <main className="w-full flex-1 bg-black px-6 py-12 text-sm sm:px-8">
       <div className="mx-auto w-full max-w-4xl">
-        <h1 className="text-lg font-semibold">{t.analysis.title}</h1>
+        <AnalysisTabs />
+        <h1 className="mt-6 text-lg font-semibold">{t.analysis.title}</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
           {t.analysis.intro}{" "}
           <Link href="/privacy" className="underline underline-offset-2 hover:text-foreground">
@@ -285,6 +287,7 @@ export function AnalysisView({ data }: { data: ExportAnalysis }) {
             />
           ))}
         </div>
+
       </div>
     </main>
   )

@@ -162,6 +162,13 @@
       "when": 1791776385791,
       "tag": "0022_scene_video",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791927855890,
+      "tag": "0023_bili_videos",
+      "breakpoints": true
     }
   ]
 }
