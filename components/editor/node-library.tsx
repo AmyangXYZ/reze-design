@@ -471,7 +471,7 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
                   size="sm"
                   disabled={!targetId}
                   onClick={() => onApply(selected.payload.graph, selected.name)}
-                  className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-400/90 disabled:opacity-40"
+                  className="h-8 w-full bg-blue-400 text-xs font-medium text-on-accent hover:bg-blue-400/90 disabled:opacity-40"
                 >
                   <Check className="size-3.5 shrink-0" />
                   <span className="truncate">

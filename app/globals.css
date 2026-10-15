@@ -195,7 +195,7 @@
    the native chrome. Firefox via scrollbar-*, WebKit/Blink via ::-webkit-scrollbar. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: oklch(0.37 0.01 260) transparent;
+  scrollbar-color: var(--chrome-thumb) transparent;
 }
 ::-webkit-scrollbar {
   width: 8px;
@@ -205,7 +205,7 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: oklch(0.37 0.01 260);
+  background: var(--chrome-thumb);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
@@ -253,8 +253,9 @@
 /* Heavier Figma-style drop shadow for floating panels / pills / popovers. */
 @utility shadow-float {
   box-shadow:
-    0 20px 50px -12px rgb(0 0 0 / 0.7),
-    0 8px 20px -8px rgb(0 0 0 / 0.55);
+    0 20px 50px -12px var(--chrome-shadow-far),
+    0 8px 20px -8px var(--chrome-shadow-near),
+    inset 0 1px 0 var(--chrome-sheen, transparent);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -294,6 +295,9 @@
   --color-surface: var(--chrome-surface);
   /* Anything stacked ON the ground: a menu over a panel, a dialog over both. */
   --color-surface-raised: var(--chrome-surface-raised);
+  /* Text on a solid accent (a blue-400 button). White on the default blue; a
+     palette whose accent is pale puts its own dark here. */
+  --color-on-accent: var(--chrome-on-accent);
   /* The dim behind a centred, scrimmed surface. */
   --color-scrim: oklch(0.12 0.008 260 / 0.55);
 
@@ -328,6 +332,324 @@
   --chrome-line-strong: oklch(1 0 0 / 0.12);
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   Chrome palettes — chosen from the logo menu (lib/chrome-theme.ts).
+
+   A palette is the chrome tokens above, restated; nothing at a call site
+   knows one exists. Each sets its own ground, edges, text colours and its own
+   SELECTED accent (blue-400, with text-on-accent for the text on a solid
+   accent button). Warning (amber-400) and destructive (red-400) never move:
+   they mean the same thing in every palette, so no accent sits on their hues.
+
+   Each also prints on its ground: an even FABRIC texture and two soft glows
+   across the whole screen, and a STICKER (its emblem) in each panel's corner.
+   A picture someone chooses (data-chrome-photo) replaces them, framed by each
+   panel under a veil of the palette's ground so text over it stays readable.
+
+   The admin and dashboard pages put the defaults back (.admin-light).
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  --chrome-veil: oklch(0.141 0.005 285.823 / 0.6);
+  --chrome-thumb: oklch(0.37 0.01 260);
+  --chrome-on-accent: oklch(1 0 0);
+  --chrome-shadow-far: rgb(0 0 0 / 0.7);
+  --chrome-shadow-near: rgb(0 0 0 / 0.55);
+  --chrome-sheen: transparent;
+  --chrome-fabric: none;
+  --chrome-fabric-size: auto;
+  --chrome-sticker: none;
+  --chrome-sticker-size: 0px;
+  --chrome-sticker-at: right bottom;
+  --chrome-glow-a: none;
+  --chrome-glow-b: none;
+}
+
+/* Strawberry milk: the one LIGHT palette. Pastel pink, berry text, white polka
+   dots and a pink bow, a hot-pink selection with white on it. */
+[data-chrome="strawberry"] {
+  color-scheme: light;
+  --chrome-surface: oklch(0.965 0.025 355 / 0.9);
+  --chrome-surface-raised: oklch(0.985 0.014 355 / 0.97);
+  --chrome-line: oklch(0.55 0.16 355 / 0.14);
+  --chrome-line-strong: oklch(0.55 0.16 355 / 0.28);
+  --chrome-veil: oklch(0.98 0.015 355 / 0.62);
+  --chrome-thumb: oklch(0.8 0.09 355);
+  --chrome-on-accent: oklch(1 0 0);
+  --chrome-shadow-far: oklch(0.5 0.16 355 / 0.32);
+  --chrome-shadow-near: oklch(0.5 0.16 355 / 0.2);
+  --chrome-sheen: oklch(1 0 0 / 0.9);
+  /* The chrome's two tints are white over a dark ground; on this light one
+     they are berry, at the same two strengths (overrides below). */
+  --chrome-tint: oklch(0.55 0.16 355 / 0.08);
+  --chrome-tint-strong: oklch(0.55 0.16 355 / 0.14);
+  --background: oklch(0.97 0.02 355);
+  --foreground: oklch(0.36 0.11 355);
+  --muted-foreground: oklch(0.55 0.1 355);
+  --card: oklch(0.985 0.012 355);
+  --card-foreground: oklch(0.33 0.1 355);
+  --popover: oklch(0.985 0.012 355);
+  --popover-foreground: oklch(0.33 0.1 355);
+  --primary: oklch(0.64 0.2 357);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.93 0.04 355);
+  --secondary-foreground: oklch(0.33 0.1 355);
+  --muted: oklch(0.84 0.07 355);
+  --accent: oklch(0.93 0.04 355);
+  --accent-foreground: oklch(0.33 0.1 355);
+  --border: oklch(0.55 0.16 355 / 0.16);
+  --input: oklch(0.55 0.16 355 / 0.28);
+  --ring: oklch(0.64 0.2 357);
+  --color-blue-400: oklch(0.64 0.2 357);
+  --chrome-fabric: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36'%3E%3Cg fill='%23ff9ec4' fill-opacity='.32'%3E%3Ccircle cx='9' cy='9' r='2.6'/%3E%3Ccircle cx='27' cy='27' r='2.6'/%3E%3C/g%3E%3C/svg%3E");
+  --chrome-fabric-size: 36px 36px;
+  --chrome-sticker: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='170' height='170'%3E%3Cg transform='translate(132 132) rotate(-14) scale(2.6)' fill='%23ff5c9d' fill-opacity='.5'%3E%3Cpath d='M0 0C-3-5-11-7-11 0C-11 7-3 5 0 0Z'/%3E%3Cpath d='M0 0C3-5 11-7 11 0C11 7 3 5 0 0Z'/%3E%3Cpath d='M-1 1L-4.5 8.5L-1 7.5Z'/%3E%3Cpath d='M1 1L4.5 8.5L1 7.5Z'/%3E%3Ccircle r='2.6' fill='%23ff4a90' fill-opacity='1'/%3E%3C/g%3E%3Cg fill='%23ff8fbd' fill-opacity='.5'%3E%3Cpath d='M0 4C-7-1-5-8 0-4.5C5-8 7-1 0 4Z' transform='translate(68 146) rotate(-12) scale(1.1)'/%3E%3Cpath d='M0 4C-7-1-5-8 0-4.5C5-8 7-1 0 4Z' transform='translate(118 64) rotate(18) scale(0.8)'/%3E%3Cpath d='M0 4C-7-1-5-8 0-4.5C5-8 7-1 0 4Z' transform='translate(40 112) rotate(-24) scale(0.6)'/%3E%3C/g%3E%3Cg fill='%23fff' fill-opacity='.8'%3E%3Ccircle cx='90' cy='104' r='2'/%3E%3Ccircle cx='150' cy='92' r='1.6'/%3E%3Ccircle cx='96' cy='160' r='1.4'/%3E%3C/g%3E%3C/svg%3E");
+  --chrome-sticker-size: 170px;
+  --chrome-sticker-at: right bottom;
+  --chrome-glow-a: radial-gradient(70vmax 55vmax at 0% 0%, oklch(1 0 0 / 0.7), transparent 70%);
+  --chrome-glow-b: radial-gradient(60vmax 50vmax at 100% 100%, oklch(0.86 0.1 355 / 0.45), transparent 70%);
+}
+@layer utilities {
+  /* The white tints, turned berry. Same specificity as the utilities they
+     replace and later in the layer, so a hover or state in any OTHER colour
+     still wins over them. */
+  :where([data-chrome="strawberry"]) [class~="bg-white/5"],
+  :where([data-chrome="strawberry"]) [class~="bg-white/[0.06]"],
+  :where([data-chrome="strawberry"]) [class~="hover:bg-white/5"]:hover,
+  :where([data-chrome="strawberry"]) [class~="hover:bg-white/[0.06]"]:hover,
+  :where([data-chrome="strawberry"]) [class~="focus:bg-white/5"]:focus,
+  :where([data-chrome="strawberry"]) [class~="focus:bg-white/[0.06]"]:focus,
+  :where([data-chrome="strawberry"]) [class~="data-[state=open]:bg-white/[0.06]"][data-state="open"] {
+    background-color: var(--chrome-tint);
+  }
+  :where([data-chrome="strawberry"]) [class~="bg-white/10"],
+  :where([data-chrome="strawberry"]) [class~="hover:bg-white/10"]:hover,
+  :where([data-chrome="strawberry"]) [class~="data-[state=active]:bg-white/10"][data-state="active"] {
+    background-color: var(--chrome-tint-strong);
+  }
+  :where([data-chrome="strawberry"]) [class~="hover:border-white/25"]:hover {
+    border-color: var(--chrome-line-strong);
+  }
+}
+
+/* Cyber: a rainy night city, neon-cyan edges, a skyline on the corner, magenta selection. */
+[data-chrome="cyber"] {
+  --chrome-surface: oklch(0.2 0.11 300 / 0.88);
+  --chrome-surface-raised: oklch(0.23 0.12 300 / 0.96);
+  --chrome-line: oklch(0.82 0.16 320 / 0.2);
+  --chrome-line-strong: oklch(0.88 0.16 195 / 0.75);
+  --chrome-veil: oklch(0.16 0.05 285 / 0.6);
+  --chrome-thumb: oklch(0.6 0.14 200);
+  --foreground: oklch(0.97 0.02 195);
+  --muted-foreground: oklch(0.84 0.08 260);
+  --popover: oklch(0.21 0.11 300);
+  --muted: oklch(0.3 0.12 300);
+  --accent: oklch(0.3 0.12 300);
+  --secondary: oklch(0.3 0.12 300);
+  --border: oklch(0.82 0.16 320 / 0.2);
+  --input: oklch(0.88 0.16 195 / 0.75);
+  --ring: oklch(0.74 0.24 335);
+  --color-blue-400: oklch(0.74 0.24 335);
+  --chrome-on-accent: oklch(0.15 0.05 285);
+  --chrome-fabric: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cg stroke='%23cfe9ff' stroke-opacity='.13' stroke-width='.8' stroke-linecap='round'%3E%3Cpath d='M10 2L7 14'/%3E%3Cpath d='M31 18L28 30'/%3E%3Cpath d='M44 5L41.5 15'/%3E%3Cpath d='M19 32L16 44'/%3E%3Cpath d='M40 36L37.5 46'/%3E%3Cpath d='M4 26L2 34'/%3E%3C/g%3E%3C/svg%3E");
+  --chrome-fabric-size: 48px 48px;
+  --chrome-sticker: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='220'%3E%3Cdefs%3E%3CradialGradient id='pl' cx='.38' cy='.35' r='.7'%3E%3Cstop offset='0' stop-color='%237fd4ff'/%3E%3Cstop offset='.45' stop-color='%232b5bd8'/%3E%3Cstop offset='1' stop-color='%230b1046'/%3E%3C/radialGradient%3E%3Cfilter id='glow' x='-50%' y='-50%' width='200%' height='200%'%3E%3CfeGaussianBlur stdDeviation='2.4' result='b'/%3E%3CfeMerge%3E%3CfeMergeNode in='b'/%3E%3CfeMergeNode in='b'/%3E%3CfeMergeNode in='SourceGraphic'/%3E%3C/feMerge%3E%3C/filter%3E%3Cfilter id='smear'%3E%3CfeGaussianBlur stdDeviation='3 1'/%3E%3C/filter%3E%3ClinearGradient id='street' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ff4fd8' stop-opacity='0'/%3E%3Cstop offset='1' stop-color='%233ff0ff' stop-opacity='.25'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cg opacity='.72'%3E%3Ccircle cx='150' cy='56' r='44' fill='url(%23pl)' fill-opacity='.7'/%3E%3Ccircle cx='150' cy='56' r='44' fill='none' stroke='%237fe8ff' stroke-opacity='.5' stroke-width='1.2' filter='url(%23glow)'/%3E%3Cg fill='%231a1040' fill-opacity='.8'%3E%3Crect x='96' y='96' width='26' height='124'/%3E%3Crect x='122' y='70' width='22' height='150'/%3E%3Crect x='144' y='104' width='20' height='116'/%3E%3Crect x='164' y='60' width='24' height='160'/%3E%3Crect x='188' y='88' width='18' height='132'/%3E%3Crect x='206' y='50' width='22' height='170'/%3E%3Crect x='228' y='78' width='32' height='142'/%3E%3C/g%3E%3Cg fill='%23ffe9a8' fill-opacity='.5'%3E%3Crect x='100' y='106' width='2' height='3'/%3E%3Crect x='107' y='124' width='2' height='3'/%3E%3Crect x='114' y='142' width='2' height='3'/%3E%3Crect x='133' y='80' width='2' height='3'/%3E%3Crect x='126' y='98' width='2' height='3'/%3E%3Crect x='133' y='116' width='2' height='3'/%3E%3Crect x='150' y='114' width='2' height='3'/%3E%3Crect x='157' y='132' width='2' height='3'/%3E%3Crect x='152' y='150' width='2' height='3'/%3E%3Crect x='173' y='70' width='2' height='3'/%3E%3Crect x='180' y='88' width='2' height='3'/%3E%3Crect x='171' y='106' width='2' height='3'/%3E%3Crect x='200' y='98' width='2' height='3'/%3E%3Crect x='197' y='116' width='2' height='3'/%3E%3Crect x='194' y='134' width='2' height='3'/%3E%3Crect x='217' y='60' width='2' height='3'/%3E%3Crect x='210' y='78' width='2' height='3'/%3E%3Crect x='217' y='96' width='2' height='3'/%3E%3Crect x='250' y='88' width='2' height='3'/%3E%3Crect x='233' y='106' width='2' height='3'/%3E%3Crect x='240' y='124' width='2' height='3'/%3E%3C/g%3E%3Cg fill='%2307030f' fill-opacity='.9'%3E%3Crect x='132' y='128' width='30' height='92'/%3E%3Crect x='176' y='112' width='26' height='108'/%3E%3Crect x='226' y='96' width='34' height='124'/%3E%3C/g%3E%3Cg filter='url(%23glow)'%3E%3Crect x='108' y='84' width='16' height='58' rx='2' fill='none' stroke='%23ff4fd8' stroke-width='1.6'/%3E%3Cg fill='none' stroke-width='1.4' stroke-linecap='round'%3E%3Cpath d='M112.5 90h7M116 90v4M112.5 96h7v3' stroke='%23ff4fd8'/%3E%3Cpath d='M112.5 103h7M116 103v4M112.5 109h7v3' stroke='%23ff4fd8'/%3E%3Cpath d='M112.5 116h7M116 116v4M112.5 122h7v3' stroke='%23ff4fd8'/%3E%3Cpath d='M112.5 129h7M116 129v4M112.5 135h7v3' stroke='%23ff4fd8'/%3E%3C/g%3E%3Crect x='140' y='100' width='14' height='44' rx='2' fill='none' stroke='%233ff0ff' stroke-width='1.6'/%3E%3Cg fill='none' stroke-width='1.4' stroke-linecap='round'%3E%3Cpath d='M143.5 106h7M147 106v4M143.5 112h7v3' stroke='%233ff0ff'/%3E%3Cpath d='M143.5 119h7M147 119v4M143.5 125h7v3' stroke='%233ff0ff'/%3E%3Cpath d='M143.5 132h7M147 132v4M143.5 138h7v3' stroke='%233ff0ff'/%3E%3C/g%3E%3Crect x='184' y='70' width='16' height='72' rx='2' fill='none' stroke='%23b56bff' stroke-width='1.6'/%3E%3Cg fill='none' stroke-width='1.4' stroke-linecap='round'%3E%3Cpath d='M188.5 76h7M192 76v4M188.5 82h7v3' stroke='%23b56bff'/%3E%3Cpath d='M188.5 89h7M192 89v4M188.5 95h7v3' stroke='%23b56bff'/%3E%3Cpath d='M188.5 102h7M192 102v4M188.5 108h7v3' stroke='%23b56bff'/%3E%3Cpath d='M188.5 115h7M192 115v4M188.5 121h7v3' stroke='%23b56bff'/%3E%3Cpath d='M188.5 128h7M192 128v4M188.5 134h7v3' stroke='%23b56bff'/%3E%3C/g%3E%3Crect x='234' y='64' width='18' height='58' rx='2' fill='none' stroke='%23ff4fd8' stroke-width='1.6'/%3E%3Cg fill='none' stroke-width='1.4' stroke-linecap='round'%3E%3Cpath d='M239.5 70h7M243 70v4M239.5 76h7v3' stroke='%23ff4fd8'/%3E%3Cpath d='M239.5 83h7M243 83v4M239.5 89h7v3' stroke='%23ff4fd8'/%3E%3Cpath d='M239.5 96h7M243 96v4M239.5 102h7v3' stroke='%23ff4fd8'/%3E%3Cpath d='M239.5 109h7M243 109v4M239.5 115h7v3' stroke='%23ff4fd8'/%3E%3C/g%3E%3Crect x='212' y='118' width='14' height='32' rx='2' fill='none' stroke='%233ff0ff' stroke-width='1.6'/%3E%3Cg fill='none' stroke-width='1.4' stroke-linecap='round'%3E%3Cpath d='M215.5 124h7M219 124v4M215.5 130h7v3' stroke='%233ff0ff'/%3E%3Cpath d='M215.5 137h7M219 137v4M215.5 143h7v3' stroke='%233ff0ff'/%3E%3C/g%3E%3C/g%3E%3Crect x='0' y='198' width='260' height='22' fill='url(%23street)'/%3E%3Cg filter='url(%23smear)' fill-opacity='.55'%3E%3Crect x='112' y='200' width='8' height='18' fill='%23ff4fd8'/%3E%3Crect x='143' y='202' width='7' height='16' fill='%233ff0ff'/%3E%3Crect x='188' y='200' width='8' height='18' fill='%23b56bff'/%3E%3Crect x='239' y='200' width='8' height='18' fill='%23ff4fd8'/%3E%3C/g%3E%3Cg stroke='%23cfe9ff' stroke-opacity='.3' stroke-width='.9' stroke-linecap='round'%3E%3Cpath d='M40 0l-3 13'/%3E%3Cpath d='M93 37l-3 13'/%3E%3Cpath d='M146 74l-3 13'/%3E%3Cpath d='M199 111l-3 13'/%3E%3Cpath d='M252 148l-3 13'/%3E%3Cpath d='M85 15l-3 13'/%3E%3Cpath d='M138 52l-3 13'/%3E%3Cpath d='M191 89l-3 13'/%3E%3Cpath d='M244 126l-3 13'/%3E%3Cpath d='M77 163l-3 13'/%3E%3Cpath d='M130 30l-3 13'/%3E%3Cpath d='M183 67l-3 13'/%3E%3Cpath d='M236 104l-3 13'/%3E%3Cpath d='M69 141l-3 13'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  --chrome-sticker-size: 220px;
+  --chrome-sticker-at: right bottom;
+  --chrome-sheen: oklch(0.85 0.2 330 / 0.5);
+  --chrome-glow-a: radial-gradient(70vmax 55vmax at 0% 0%, oklch(0.55 0.26 295 / 0.5), transparent 70%);
+  --chrome-glow-b: radial-gradient(60vmax 50vmax at 100% 100%, oklch(0.65 0.28 335 / 0.6), transparent 70%);
+  --chrome-shadow-far: oklch(0.75 0.2 200 / 0.28);
+  --chrome-shadow-near: oklch(0.65 0.25 335 / 0.3);
+}
+
+/* Blood: crimson, dark spatter, fresh drips from the top edge, ice-steel selection. */
+[data-chrome="blood"] {
+  --chrome-surface: oklch(0.38 0.18 27 / 0.88);
+  --chrome-surface-raised: oklch(0.41 0.185 27 / 0.96);
+  --chrome-line: oklch(0.9 0.08 25 / 0.18);
+  --chrome-line-strong: oklch(0.9 0.08 25 / 0.32);
+  --chrome-veil: oklch(0.32 0.15 27 / 0.55);
+  --chrome-thumb: oklch(0.62 0.17 27);
+  --foreground: oklch(0.98 0.01 25);
+  --muted-foreground: oklch(0.87 0.06 25);
+  --popover: oklch(0.38 0.18 27);
+  --muted: oklch(0.47 0.18 27);
+  --accent: oklch(0.47 0.18 27);
+  --secondary: oklch(0.47 0.18 27);
+  --border: oklch(0.9 0.08 25 / 0.18);
+  --input: oklch(0.9 0.08 25 / 0.32);
+  --ring: oklch(0.86 0.06 230);
+  --color-blue-400: oklch(0.86 0.06 230);
+  --chrome-on-accent: oklch(0.25 0.1 25);
+  --chrome-fabric: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cg fill='%231a0005' fill-opacity='.3'%3E%3Ccircle cx='14' cy='20' r='2.2'/%3E%3Ccircle cx='19' cy='24' r='0.9'/%3E%3Ccircle cx='70' cy='12' r='1.2'/%3E%3Ccircle cx='96' cy='58' r='2.8'/%3E%3Ccircle cx='102' cy='52' r='1'/%3E%3Ccircle cx='90' cy='64' r='0.8'/%3E%3Ccircle cx='36' cy='78' r='1.6'/%3E%3Ccircle cx='60' cy='104' r='1'/%3E%3Ccircle cx='110' cy='100' r='1.4'/%3E%3Ccircle cx='8' cy='108' r='0.9'/%3E%3C/g%3E%3C/svg%3E");
+  --chrome-fabric-size: 120px 120px;
+  --chrome-sticker: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cg fill='%233d0008' fill-opacity='.6'%3E%3Cpath d='M24 0H220V8C200 11 182 5 160 9C138 13 120 6 98 10C76 13 56 6 24 0Z'/%3E%3Crect x='200' y='0' width='12' height='52' rx='6'/%3E%3Ccircle cx='206' cy='49.6' r='8.100000000000001'/%3E%3Crect x='176' y='0' width='8' height='30' rx='4'/%3E%3Ccircle cx='180' cy='28.4' r='5.4'/%3E%3Crect x='144.5' y='0' width='11' height='78' rx='5.5'/%3E%3Ccircle cx='150' cy='75.8' r='7.425000000000001'/%3E%3Crect x='118.5' y='0' width='7' height='22' rx='3.5'/%3E%3Ccircle cx='122' cy='20.6' r='4.7250000000000005'/%3E%3Crect x='91.5' y='0' width='9' height='44' rx='4.5'/%3E%3Ccircle cx='96' cy='42.2' r='6.075'/%3E%3Crect x='61' y='0' width='6' height='16' rx='3'/%3E%3Ccircle cx='64' cy='14.8' r='4.050000000000001'/%3E%3Ccircle cx='150' cy='104' r='3'/%3E%3Ccircle cx='96' cy='64' r='2.2'/%3E%3Ccircle cx='206' cy='76' r='2.6'/%3E%3Ccircle cx='180' cy='46' r='1.6'/%3E%3C/g%3E%3Cg fill='%23fff' fill-opacity='.22'%3E%3Ccircle cx='148' cy='70' r='1.4'/%3E%3Ccircle cx='204' cy='46' r='1.2'/%3E%3Ccircle cx='94' cy='38' r='1'/%3E%3C/g%3E%3C/svg%3E");
+  --chrome-sticker-size: 220px;
+  --chrome-sticker-at: right top;
+  --chrome-sheen: oklch(0.82 0.15 25 / 0.32);
+  --chrome-glow-a: radial-gradient(70vmax 55vmax at 0% 0%, oklch(0.62 0.24 28 / 0.45), transparent 70%);
+  --chrome-glow-b: radial-gradient(60vmax 50vmax at 100% 100%, oklch(0.2 0.08 20 / 0.5), transparent 70%);
+}
+
+/* Sakura: blossoms on plum-rose, candy-pink selection, a peach glow. */
+[data-chrome="sakura"] {
+  --chrome-surface: oklch(0.44 0.13 355 / 0.84);
+  --chrome-surface-raised: oklch(0.47 0.13 355 / 0.96);
+  --chrome-line: oklch(0.95 0.05 350 / 0.16);
+  --chrome-line-strong: oklch(0.95 0.05 350 / 0.3);
+  --chrome-veil: oklch(0.4 0.12 355 / 0.55);
+  --chrome-thumb: oklch(0.72 0.11 355);
+  --foreground: oklch(0.99 0.008 350);
+  --muted-foreground: oklch(0.9 0.05 350);
+  --popover: oklch(0.44 0.13 355);
+  --muted: oklch(0.53 0.12 355);
+  --accent: oklch(0.53 0.12 355);
+  --secondary: oklch(0.53 0.12 355);
+  --border: oklch(0.95 0.05 350 / 0.16);
+  --input: oklch(0.95 0.05 350 / 0.3);
+  --ring: oklch(0.84 0.12 345);
+  --color-blue-400: oklch(0.84 0.12 345);
+  --chrome-on-accent: oklch(0.3 0.1 355);
+  --chrome-fabric: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cg fill='%23ffe3ef' fill-opacity='.1'%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='translate(30 40) rotate(30) scale(0.7)'/%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='translate(110 30) rotate(150) scale(0.55)'/%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='translate(70 110) rotate(-40) scale(0.65)'/%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='translate(140 130) rotate(80) scale(0.5)'/%3E%3C/g%3E%3C/svg%3E");
+  --chrome-fabric-size: 160px 160px;
+  --chrome-sticker: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='190' height='190'%3E%3Cg fill='none' stroke='%23ffd2e6' stroke-opacity='.38' stroke-linecap='round'%3E%3Cpath d='M196 140C164 140 128 152 100 194' stroke-width='3.5'/%3E%3Cpath d='M150 144C144 126 132 114 114 108' stroke-width='2'/%3E%3C/g%3E%3Cg fill='%23ffe3ef' fill-opacity='.42'%3E%3Cg transform='translate(160 138) rotate(10) scale(1.7)'%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='rotate(0)'/%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='rotate(72)'/%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='rotate(144)'/%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='rotate(216)'/%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='rotate(288)'/%3E%3Ccircle r='2.2' fill='%23ff8fbd'/%3E%3C/g%3E%3Cg transform='translate(114 108) rotate(40) scale(1.25)'%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='rotate(0)'/%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='rotate(72)'/%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='rotate(144)'/%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='rotate(216)'/%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='rotate(288)'/%3E%3Ccircle r='2.2' fill='%23ff8fbd'/%3E%3C/g%3E%3Cg transform='translate(112 170) rotate(-20) scale(1.4)'%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='rotate(0)'/%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='rotate(72)'/%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='rotate(144)'/%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='rotate(216)'/%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='rotate(288)'/%3E%3Ccircle r='2.2' fill='%23ff8fbd'/%3E%3C/g%3E%3Cg transform='translate(178 186) rotate(60) scale(1.2)'%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='rotate(0)'/%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='rotate(72)'/%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='rotate(144)'/%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='rotate(216)'/%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='rotate(288)'/%3E%3Ccircle r='2.2' fill='%23ff8fbd'/%3E%3C/g%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='translate(70 128) rotate(40) scale(1)'/%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='translate(86 84) rotate(160) scale(0.8)'/%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='translate(146 74) rotate(-30) scale(0.7)'/%3E%3Cpath d='M0 0C-4.6-2.6-5.6-8.2-2.7-10.8L0-9.3L2.7-10.8C5.6-8.2 4.6-2.6 0 0Z' transform='translate(44 170) rotate(100) scale(0.75)'/%3E%3C/g%3E%3C/svg%3E");
+  --chrome-sticker-size: 190px;
+  --chrome-sticker-at: right bottom;
+  --chrome-sheen: oklch(0.96 0.05 350 / 0.32);
+  --chrome-glow-a: radial-gradient(70vmax 55vmax at 0% 0%, oklch(0.85 0.12 350 / 0.32), transparent 70%);
+  --chrome-glow-b: radial-gradient(60vmax 50vmax at 100% 100%, oklch(0.84 0.1 55 / 0.24), transparent 70%);
+}
+
+/* Dark Moon: a cold indigo night under a full pale moon, moonlight selection. */
+[data-chrome="moon"] {
+  --chrome-surface: oklch(0.21 0.07 262 / 0.88);
+  --chrome-surface-raised: oklch(0.24 0.075 262 / 0.96);
+  --chrome-line: oklch(0.85 0.06 245 / 0.14);
+  --chrome-line-strong: oklch(0.86 0.08 245 / 0.3);
+  --chrome-veil: oklch(0.18 0.06 262 / 0.6);
+  --chrome-thumb: oklch(0.55 0.08 250);
+  --foreground: oklch(0.97 0.012 245);
+  --muted-foreground: oklch(0.8 0.05 245);
+  --popover: oklch(0.22 0.07 262);
+  --muted: oklch(0.31 0.08 262);
+  --accent: oklch(0.31 0.08 262);
+  --secondary: oklch(0.31 0.08 262);
+  --border: oklch(0.85 0.06 245 / 0.14);
+  --input: oklch(0.86 0.08 245 / 0.3);
+  --ring: oklch(0.86 0.08 235);
+  --color-blue-400: oklch(0.86 0.08 235);
+  --chrome-on-accent: oklch(0.22 0.07 262);
+  --chrome-fabric: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cg fill='%23e6eeff'%3E%3Ccircle cx='14' cy='18' r='0.9' fill-opacity='0.42'/%3E%3Ccircle cx='52' cy='8' r='0.6' fill-opacity='0.3'/%3E%3Ccircle cx='96' cy='30' r='1.1' fill-opacity='0.48'/%3E%3Ccircle cx='128' cy='12' r='0.5' fill-opacity='0.24'/%3E%3Ccircle cx='30' cy='64' r='0.7' fill-opacity='0.3'/%3E%3Ccircle cx='74' cy='56' r='0.5' fill-opacity='0.21'/%3E%3Ccircle cx='118' cy='78' r='0.8' fill-opacity='0.36'/%3E%3Ccircle cx='8' cy='104' r='0.6' fill-opacity='0.27'/%3E%3Ccircle cx='58' cy='112' r='1' fill-opacity='0.42'/%3E%3Ccircle cx='100' cy='128' r='0.5' fill-opacity='0.24'/%3E%3Ccircle cx='134' cy='108' r='0.6' fill-opacity='0.3'/%3E%3Ccircle cx='40' cy='134' r='0.5' fill-opacity='0.21'/%3E%3C/g%3E%3C/svg%3E");
+  --chrome-fabric-size: 140px 140px;
+  --chrome-sticker: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cdefs%3E%3CradialGradient id='halo' cx='0' cy='0' r='140.8' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='.44' stop-color='%23a8d8ff' stop-opacity='.42'/%3E%3Cstop offset='.6' stop-color='%234f86d8' stop-opacity='.14'/%3E%3Cstop offset='1' stop-color='%234f86d8' stop-opacity='0'/%3E%3C/radialGradient%3E%3CradialGradient id='body' cx='-8' cy='-8' r='76' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%232a6cba'/%3E%3Cstop offset='.6' stop-color='%233a80ca'/%3E%3Cstop offset='.82' stop-color='%236eaee4'/%3E%3Cstop offset='.95' stop-color='%23c4e6ff'/%3E%3Cstop offset='1' stop-color='%23eaf8ff'/%3E%3C/radialGradient%3E%3CradialGradient id='limb' cx='0' cy='0' r='64' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='.72' stop-color='%23ffffff' stop-opacity='0'/%3E%3Cstop offset='.93' stop-color='%23e6f6ff' stop-opacity='.55'/%3E%3Cstop offset='1' stop-color='%23ffffff' stop-opacity='.9'/%3E%3C/radialGradient%3E%3CclipPath id='disc'%3E%3Ccircle r='64'/%3E%3C/clipPath%3E%3Cfilter id='soft' x='-10%' y='-10%' width='120%' height='120%'%3E%3CfeGaussianBlur stdDeviation='1.8'/%3E%3C/filter%3E%3Cfilter id='bleed' x='-30%' y='-30%' width='160%' height='160%'%3E%3CfeGaussianBlur stdDeviation='4'/%3E%3C/filter%3E%3Cfilter id='grain' x='0' y='0' width='100%' height='100%'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 1.6 0 -.9'/%3E%3C/filter%3E%3Cfilter id='frost' x='-20%' y='-20%' width='140%' height='140%'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='1' seed='5' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='4.5' result='d'/%3E%3CfeGaussianBlur in='SourceGraphic' stdDeviation='2.4' result='g'/%3E%3CfeMerge%3E%3CfeMergeNode in='g'/%3E%3CfeMergeNode in='d'/%3E%3C/feMerge%3E%3C/filter%3E%3C/defs%3E%3Cg transform='translate(198 128)'%3E%3Ccircle r='140.8' fill='url(%23halo)'/%3E%3Cg opacity='.86'%3E%3Ccircle r='64' fill='url(%23body)'/%3E%3Cg clip-path='url(%23disc)'%3E%3Cg fill='%235fd8cf' fill-opacity='.38' filter='url(%23bleed)'%3E%3Cellipse cx='24' cy='6' rx='16' ry='12'/%3E%3Cellipse cx='-36' cy='22' rx='12' ry='16'/%3E%3C/g%3E%3Cg fill='%230a2a5e' fill-opacity='.5' filter='url(%23soft)'%3E%3Cpath d='M-50-20C-58 0-52 30-34 40C-22 46-14 30-20 14C-26 0-18-14-28-26C-36-34-46-30-50-20Z'/%3E%3Cpath d='M-30-26C-30-38-14-42-2-36C6-30 2-14-8-10C-18-6-30-14-30-26Z'/%3E%3Cpath d='M4-30C10-36 24-34 26-24C27-16 18-12 10-14C2-16 0-24 4-30Z'/%3E%3Cpath d='M8-10C22-14 34-6 32 6C30 16 16 18 10 10C4 4 2-6 8-10Z'/%3E%3Cpath d='M34-20C40-24 49-20 48-12C47-6 39-6 35-10C32-13 31-17 34-20Z'/%3E%3Cpath d='M28 6C34 2 40 8 40 16C40 24 33 28 29 22C26 17 25 10 28 6Z'/%3E%3Cpath d='M-24 22C-14 18-4 24-8 34C-12 40-24 38-26 30C-27 26-27 24-24 22Z'/%3E%3C/g%3E%3Cg stroke='%23eaf6ff' stroke-opacity='.22' stroke-width='.6' stroke-linecap='round'%3E%3Cpath d='M-4 44L-23.1 33.0'/%3E%3Cpath d='M-4 44L-23.5 10.2'/%3E%3Cpath d='M-4 44L-6.6 14.1'/%3E%3Cpath d='M-4 44L12.1 -0.2'/%3E%3Cpath d='M-4 44L25.1 19.6'/%3E%3Cpath d='M-4 44L24.0 36.5'/%3E%3Cpath d='M-4 44L40.4 55.9'/%3E%3Cpath d='M-4 44L24.3 67.8'/%3E%3Cpath d='M-4 44L5.6 70.3'/%3E%3Cpath d='M-4 44L-11.8 88.3'/%3E%3Cpath d='M-4 44L-29.5 69.5'/%3E%3Cpath d='M-4 44L-30.1 51.0'/%3E%3Cpath d='M-4 44L-45.3 29.0'/%3E%3Cpath d='M-4 44L-24.1 15.3'/%3E%3Cpath d='M-4 44L-8.5 18.4'/%3E%3Cpath d='M-4 44L10.7 3.6'/%3E%3Cpath d='M-4 44L22.0 22.1'/%3E%3C/g%3E%3Ccircle cx='-4' cy='44' r='2.6' fill='%23f4fbff' fill-opacity='.9'/%3E%3Cg fill='%230a2a5e' fill-opacity='.25' stroke='%23e6f4ff' stroke-opacity='.32' stroke-width='.6'%3E%3Ccircle cx='-26' cy='6' r='3.2'/%3E%3Ccircle cx='22' cy='-34' r='1.8'/%3E%3Ccircle cx='-40' cy='18' r='1.6'/%3E%3Ccircle cx='16' cy='30' r='1.4'/%3E%3Ccircle cx='44' cy='2' r='1.5'/%3E%3Ccircle cx='-10' cy='-46' r='1.6'/%3E%3Ccircle cx='-46' cy='-6' r='1.2'/%3E%3Ccircle cx='30' cy='-4' r='1.1'/%3E%3Ccircle cx='0' cy='18' r='1.2'/%3E%3C/g%3E%3Crect x='-64' y='-64' width='128' height='128' filter='url(%23grain)' opacity='.22'/%3E%3Ccircle r='64' fill='url(%23limb)'/%3E%3C/g%3E%3Ccircle r='64' fill='none' stroke='%23ffffff' stroke-width='2' filter='url(%23frost)'/%3E%3C/g%3E%3C/g%3E%3Cg fill='%23eaf4ff'%3E%3Ccircle cx='96' cy='58' r='1.1' fill-opacity='.8'/%3E%3Ccircle cx='62' cy='120' r='.8' fill-opacity='.6'/%3E%3Ccircle cx='110' cy='206' r='1' fill-opacity='.7'/%3E%3Ccircle cx='48' cy='40' r='.7' fill-opacity='.5'/%3E%3Ccircle cx='130' cy='30' r='.6' fill-opacity='.5'/%3E%3C/g%3E%3C/svg%3E");
+  --chrome-sticker-size: 240px;
+  --chrome-sticker-at: right top;
+  --chrome-sheen: oklch(0.9 0.06 240 / 0.28);
+  --chrome-glow-a: radial-gradient(70vmax 55vmax at 0% 0%, oklch(0.5 0.12 265 / 0.35), transparent 70%);
+  --chrome-glow-b: radial-gradient(60vmax 50vmax at 100% 100%, oklch(0.35 0.1 280 / 0.4), transparent 70%);
+}
+
+/* Ramune: soda-bottle blue, bubbles, mint selection, a pink glow. */
+[data-chrome="ramune"] {
+  --chrome-surface: oklch(0.52 0.11 235 / 0.84);
+  --chrome-surface-raised: oklch(0.55 0.11 235 / 0.96);
+  --chrome-line: oklch(0.97 0.03 220 / 0.2);
+  --chrome-line-strong: oklch(0.97 0.03 220 / 0.34);
+  --chrome-veil: oklch(0.48 0.1 235 / 0.55);
+  --chrome-thumb: oklch(0.8 0.07 220);
+  --foreground: oklch(0.99 0.008 220);
+  --muted-foreground: oklch(0.93 0.035 220);
+  --popover: oklch(0.52 0.11 235);
+  --muted: oklch(0.6 0.1 235);
+  --accent: oklch(0.6 0.1 235);
+  --secondary: oklch(0.6 0.1 235);
+  --border: oklch(0.97 0.03 220 / 0.2);
+  --input: oklch(0.97 0.03 220 / 0.34);
+  --ring: oklch(0.92 0.11 170);
+  --color-blue-400: oklch(0.92 0.11 170);
+  --chrome-on-accent: oklch(0.36 0.1 240);
+  --chrome-fabric: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96'%3E%3Cg fill='none' stroke='%23fff' stroke-opacity='.12' stroke-width='1'%3E%3Ccircle cx='18' cy='24' r='3'/%3E%3Ccircle cx='70' cy='14' r='1.8'/%3E%3Ccircle cx='48' cy='62' r='2.4'/%3E%3Ccircle cx='84' cy='78' r='1.5'/%3E%3Ccircle cx='14' cy='84' r='1.6'/%3E%3C/g%3E%3C/svg%3E");
+  --chrome-fabric-size: 96px 96px;
+  --chrome-sticker: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='170' height='170'%3E%3Cg fill='none' stroke='%23fff' stroke-opacity='.42' stroke-width='1.4'%3E%3Ccircle cx='146' cy='150' r='18'/%3E%3Cpath d='M136.1 147.3A10.799999999999999 10.799999999999999 0 0 1 144.2 139.2' stroke-linecap='round'/%3E%3Ccircle cx='112' cy='126' r='9'/%3E%3Cpath d='M107.05 124.65A5.3999999999999995 5.3999999999999995 0 0 1 111.1 120.6' stroke-linecap='round'/%3E%3Ccircle cx='156' cy='106' r='7'/%3E%3Cpath d='M152.15 104.95A4.2 4.2 0 0 1 155.3 101.8' stroke-linecap='round'/%3E%3Ccircle cx='126' cy='88' r='5'/%3E%3Cpath d='M123.25 87.25A3 3 0 0 1 125.5 85' stroke-linecap='round'/%3E%3Ccircle cx='146' cy='62' r='3.5'/%3E%3Cpath d='M144.075 61.475A2.1 2.1 0 0 1 145.65 59.9' stroke-linecap='round'/%3E%3Ccircle cx='98' cy='160' r='6'/%3E%3Cpath d='M94.7 159.1A3.5999999999999996 3.5999999999999996 0 0 1 97.4 156.4' stroke-linecap='round'/%3E%3Ccircle cx='118' cy='46' r='2.5'/%3E%3Cpath d='M116.625 45.625A1.5 1.5 0 0 1 117.75 44.5' stroke-linecap='round'/%3E%3Ccircle cx='80' cy='116' r='3'/%3E%3Cpath d='M78.35 115.55A1.7999999999999998 1.7999999999999998 0 0 1 79.7 114.2' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
+  --chrome-sticker-size: 170px;
+  --chrome-sticker-at: right bottom;
+  --chrome-sheen: oklch(1 0 0 / 0.22);
+  --chrome-glow-a: radial-gradient(70vmax 55vmax at 0% 0%, oklch(0.93 0.07 200 / 0.34), transparent 70%);
+  --chrome-glow-b: radial-gradient(60vmax 50vmax at 100% 100%, oklch(0.82 0.12 350 / 0.26), transparent 70%);
+}
+
+/* Matcha: green-tea gingham, strawberry-daifuku pink selection. */
+[data-chrome="matcha"] {
+  --chrome-surface: oklch(0.46 0.1 150 / 0.84);
+  --chrome-surface-raised: oklch(0.49 0.1 150 / 0.96);
+  --chrome-line: oklch(0.96 0.04 125 / 0.18);
+  --chrome-line-strong: oklch(0.96 0.04 125 / 0.32);
+  --chrome-veil: oklch(0.42 0.08 145 / 0.55);
+  --chrome-thumb: oklch(0.74 0.08 140);
+  --foreground: oklch(0.99 0.01 120);
+  --muted-foreground: oklch(0.91 0.04 120);
+  --popover: oklch(0.46 0.1 150);
+  --muted: oklch(0.55 0.09 150);
+  --accent: oklch(0.55 0.09 150);
+  --secondary: oklch(0.55 0.09 150);
+  --border: oklch(0.96 0.04 125 / 0.18);
+  --input: oklch(0.96 0.04 125 / 0.32);
+  --ring: oklch(0.88 0.08 350);
+  --color-blue-400: oklch(0.88 0.08 350);
+  --chrome-on-accent: oklch(0.32 0.07 150);
+  --chrome-fabric: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Cg fill='%23fff' fill-opacity='.07'%3E%3Crect width='32' height='16'/%3E%3Crect width='16' height='32'/%3E%3C/g%3E%3C/svg%3E");
+  --chrome-fabric-size: 32px 32px;
+  --chrome-sticker: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cg fill='%23f1ffe6' fill-opacity='.38'%3E%3Cg transform='translate(128 128) scale(2.4)'%3E%3Cpath d='M0 4C-7-1-5-8 0-4.5C5-8 7-1 0 4Z' transform='translate(0 -5) rotate(180) scale(1)'/%3E%3Cpath d='M0 4C-7-1-5-8 0-4.5C5-8 7-1 0 4Z' transform='translate(-4.3 2.5) rotate(300) scale(1)'/%3E%3Cpath d='M0 4C-7-1-5-8 0-4.5C5-8 7-1 0 4Z' transform='translate(4.3 2.5) rotate(60) scale(1)'/%3E%3C/g%3E%3Cg transform='translate(84 148) rotate(-20) scale(1.3)'%3E%3Cpath d='M0 4C-7-1-5-8 0-4.5C5-8 7-1 0 4Z' transform='translate(0 -5) rotate(180) scale(1)'/%3E%3Cpath d='M0 4C-7-1-5-8 0-4.5C5-8 7-1 0 4Z' transform='translate(-4.3 2.5) rotate(300) scale(1)'/%3E%3Cpath d='M0 4C-7-1-5-8 0-4.5C5-8 7-1 0 4Z' transform='translate(4.3 2.5) rotate(60) scale(1)'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M128 134C130 146 138 156 150 162' fill='none' stroke='%23f1ffe6' stroke-opacity='.38' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  --chrome-sticker-size: 160px;
+  --chrome-sticker-at: right bottom;
+  --chrome-sheen: oklch(1 0 0 / 0.22);
+  --chrome-glow-a: radial-gradient(70vmax 55vmax at 0% 0%, oklch(0.93 0.09 120 / 0.26), transparent 70%);
+  --chrome-glow-b: radial-gradient(60vmax 50vmax at 100% 100%, oklch(0.86 0.07 350 / 0.22), transparent 70%);
+}
+
+/* Every surface wears the fabric and the glows, fixed to the viewport so they
+   run on unbroken from a panel into its header. A FLOATING surface (it casts
+   the float shadow, or has the surface radius) also wears the sticker in its
+   own corner, moving with it.
+
+   Only a PANEL wears a sticker or a picture: a pill or the transport would
+   show a cut-off scrap of either. CSS cannot ask an element its height, but a
+   background size can: (100% - 120px) * 99, clamped, is zero on anything
+   under 120px tall and the full size on anything over it. */
+[data-chrome] :is(.bg-surface, .bg-surface-raised) {
+  background-image: var(--chrome-fabric), var(--chrome-glow-a), var(--chrome-glow-b);
+  background-size: var(--chrome-fabric-size), auto, auto;
+  background-attachment: fixed;
+}
+[data-chrome] :is(.bg-surface, .bg-surface-raised):is(.shadow-float, .rounded-surface) {
+  background-image: var(--chrome-sticker), var(--chrome-fabric), var(--chrome-glow-a), var(--chrome-glow-b);
+  background-size:
+    auto clamp(0px, (100% - 120px) * 99, var(--chrome-sticker-size)),
+    var(--chrome-fabric-size), auto, auto;
+  background-position: var(--chrome-sticker-at), 0 0, 0 0, 0 0;
+  background-repeat: no-repeat, repeat, repeat, repeat;
+  background-attachment: scroll, fixed, fixed, fixed;
+}
+/* A picture is framed by each panel on its own: cover-fit, held a little
+   above centre where a face usually is, so every panel shows the picture's
+   subject rather than whichever slice of the screen it covers. A surface too
+   short to frame it is covered by its own ground instead (the same gate, the
+   other way round), and what sits inside a panel shows the panel's picture
+   through its own tint. */
+html[data-chrome-photo] :is(.bg-surface, .bg-surface-raised) {
+  background-image: none;
+}
+html[data-chrome-photo] :is(.bg-surface, .bg-surface-raised):is(.shadow-float, .rounded-surface) {
+  background-image:
+    linear-gradient(var(--chrome-surface-raised), var(--chrome-surface-raised)),
+    linear-gradient(var(--chrome-veil), var(--chrome-veil)),
+    var(--chrome-photo);
+  background-size: 100% clamp(0px, (120px - 100%) * 99, 100%), auto, cover;
+  background-position: top, center, center 30%;
+  background-repeat: no-repeat;
+  background-attachment: scroll;
+}
+
 /* The admin page, in light: the shadcn light values (as :root states them)
    and a light ground for the chrome tokens, inside this element only. The
    html element stays .dark, so the editor and everything else is untouched. */
@@ -357,4 +679,15 @@
   --chrome-surface-raised: oklch(1 0 0);
   --chrome-line: oklch(0 0 0 / 0.08);
   --chrome-line-strong: oklch(0 0 0 / 0.14);
+  /* Out of the chrome palettes' reach: the default accent, no motif, no picture. */
+  --color-blue-400: oklch(70.7% 0.165 254.624);
+  --chrome-on-accent: oklch(1 0 0);
+  --chrome-shadow-far: rgb(0 0 0 / 0.7);
+  --chrome-shadow-near: rgb(0 0 0 / 0.55);
+  --chrome-fabric: none;
+  --chrome-sticker: none;
+  --chrome-glow-a: none;
+  --chrome-glow-b: none;
+  --chrome-veil: transparent;
+  --chrome-photo: none;
 }

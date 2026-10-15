@@ -424,7 +424,7 @@ function HandleField({ current }: { current: string }) {
           type="submit"
           size="sm"
           disabled={!valid || state === "saving"}
-          className="h-7 shrink-0 bg-blue-400 px-2 text-xs text-white hover:bg-blue-400/90 disabled:opacity-40"
+          className="h-7 shrink-0 bg-blue-400 px-2 text-xs text-on-accent hover:bg-blue-400/90 disabled:opacity-40"
         >
           {t.account.handleSave}
         </Button>

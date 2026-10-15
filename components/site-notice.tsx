@@ -57,7 +57,7 @@ export function SiteNotice() {
                 {t.notice.open}
               </a>
             </Button>
-            <Button size="sm" className="bg-blue-400 text-white hover:bg-blue-400/90" onClick={() => setDismissed(true)}>
+            <Button size="sm" className="bg-blue-400 text-on-accent hover:bg-blue-400/90" onClick={() => setDismissed(true)}>
               {t.notice.dismiss}
             </Button>
           </DialogFooter>

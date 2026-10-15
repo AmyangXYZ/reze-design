@@ -692,7 +692,7 @@ function ShareSceneForm({
                 // re-publishing to fix a stage does not mean re-framing a shot.
                 (!poster && !updatesId)
               }
-              className="h-9 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-400/90 disabled:opacity-50"
+              className="h-9 w-full bg-blue-400 text-xs font-medium text-on-accent hover:bg-blue-400/90 disabled:opacity-50"
             >
               {busy ? (
                 <>

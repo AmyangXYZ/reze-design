@@ -836,7 +836,7 @@ export const RenderPanel = memo(function RenderPanel({
               size="sm"
               disabled={!canRender}
               onClick={() => void start()}
-              className="h-8 flex-1 gap-1.5 rounded-l-none bg-blue-400 text-xs font-medium text-white hover:bg-blue-400/90 disabled:opacity-40"
+              className="h-8 flex-1 gap-1.5 rounded-l-none bg-blue-400 text-xs font-medium text-on-accent hover:bg-blue-400/90 disabled:opacity-40"
             >
               <Clapperboard className="size-3.5" />
               {t.render.renderVideo}

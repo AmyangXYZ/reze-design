@@ -63,7 +63,7 @@ export function ConfirmDialog({
             variant={tone === "destructive" ? "destructive" : "default"}
             size="sm"
             autoFocus
-            className={tone === "accent" ? "bg-blue-400 text-white hover:bg-blue-400/90" : undefined}
+            className={tone === "accent" ? "bg-blue-400 text-on-accent hover:bg-blue-400/90" : undefined}
             onClick={() => {
               onOpenChange(false)
               onConfirm()

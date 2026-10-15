@@ -423,7 +423,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                 <Button
                   size="sm"
                   onClick={apply}
-                  className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-400/90"
+                  className="h-8 w-full bg-blue-400 text-xs font-medium text-on-accent hover:bg-blue-400/90"
                 >
                   <Check className="size-3.5" />
                   {t.gradeLibrary.apply}

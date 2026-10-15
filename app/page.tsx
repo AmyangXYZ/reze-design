@@ -7352,7 +7352,7 @@ export default function Lab() {
                 // The narrowest phones keep the button and lose the word: the
                 // brand row beside it cannot give up any more.
                 aria-label={t.lab.share}
-                className="h-7 shrink-0 rounded-interior bg-blue-400 px-2 text-xs font-medium text-white hover:bg-blue-400/90 max-[24rem]:w-7 max-[24rem]:px-0"
+                className="h-7 shrink-0 rounded-interior bg-blue-400 px-2 text-xs font-medium text-on-accent hover:bg-blue-400/90 max-[24rem]:w-7 max-[24rem]:px-0"
               >
                 <Share2 className="hidden size-3.5 max-[24rem]:block" />
                 <span className="max-[24rem]:hidden">{t.lab.share}</span>

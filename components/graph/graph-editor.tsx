@@ -878,7 +878,7 @@ export function GraphEditor({
               )}
 
               {previewId && (
-                <div className="absolute top-2 right-2 z-10 rounded-chip bg-blue-400 px-2.5 py-1 text-xs text-white">
+                <div className="absolute top-2 right-2 z-10 rounded-chip bg-blue-400 px-2.5 py-1 text-xs text-on-accent">
                   {t.graph.previewing(previewId)}
                   <Button variant="link" className="ml-2 h-auto cursor-pointer p-0 text-xs text-foreground underline" onClick={() => setPreviewId(null)}>
                     {t.graph.exit}

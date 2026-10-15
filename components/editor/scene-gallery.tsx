@@ -818,7 +818,7 @@ function GalleryContent({
                 <Button
                   asChild
                   size="sm"
-                  className="h-8 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-400/90"
+                  className="h-8 w-full bg-blue-400 text-xs font-medium text-on-accent hover:bg-blue-400/90"
                 >
                   {/* A real link: plain click navigates in this tab, cmd-click
                       still gets a new one for anyone who wants it. */}

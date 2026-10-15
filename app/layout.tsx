@@ -1,5 +1,6 @@
 import { SiteNotice } from "@/components/site-notice"
 import { BootGuardScript } from "@/components/boot-guard"
+import { ChromeThemeScript } from "@/components/chrome-theme-script"
 import { BootSlowNote } from "@/components/boot-note"
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
@@ -79,12 +80,16 @@ export default function RootLayout({
       // Belt and braces with the notranslate meta above: Chrome honours the
       // attribute, and the class is what older/other translators look for.
       translate="no"
+      // The chrome palette's boot script sets data-chrome on this element
+      // before React hydrates it (components/chrome-theme-script).
+      suppressHydrationWarning
       className={`dark notranslate ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
         {/* Before any of the app's code: recovers a page whose chunks did not
             arrive, and says so when the connection is slow (boot-guard). */}
         <BootGuardScript />
+        <ChromeThemeScript />
       </head>
       <body
         className="min-h-full flex flex-col text-foreground"

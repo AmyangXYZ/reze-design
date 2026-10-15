@@ -335,7 +335,7 @@ export function SceneViewer(props: ViewerProps) {
               size="xs"
               onClick={requestFork}
               disabled={forking}
-              className="bg-blue-400 font-medium text-white hover:bg-blue-400/90"
+              className="bg-blue-400 font-medium text-on-accent hover:bg-blue-400/90"
             >
               <GitFork />
               {t.share.fork}

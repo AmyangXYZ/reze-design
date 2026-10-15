@@ -211,7 +211,7 @@ export function PublishButton({
             <Button
               type="submit"
               disabled={publishing || !!clash || !name.trim() || !description.trim() || tags.length === 0}
-              className="h-9 w-full bg-blue-400 text-xs font-medium text-white hover:bg-blue-400/90 disabled:opacity-50"
+              className="h-9 w-full bg-blue-400 text-xs font-medium text-on-accent hover:bg-blue-400/90 disabled:opacity-50"
             >
               {publishing ? t.account.working : t.gradeLibrary.publish}
             </Button>

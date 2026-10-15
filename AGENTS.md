@@ -79,6 +79,15 @@ A new one belongs in `scripts/check-chrome.mjs` with its reason.
 accepted; the decision is recorded on `--color-surface` in `app/globals.css`.
 If the blur ever has to go, drop it there, not per surface.
 
+**Palettes restate the tokens, nothing else.** The logo menu switches the
+chrome between palettes (`lib/chrome-theme.ts`, "Chrome palettes" in
+`app/globals.css`) and can put a picture behind the docks. A palette retints
+`--chrome-*`, the two text colours and the selected accent (`blue-400`), and
+prints a motif on `bg-surface`/`bg-surface-raised`. Amber and red never move.
+Text on a solid accent button is `text-on-accent`, never `text-white`: a pale
+palette accent needs dark text. This only works while call sites use the
+tokens: a hardcoded grey or blue is the one thing a palette cannot reach.
+
 **Placement carries meaning.** A scrim means the canvas is not part of this
 task (publish, export setup). No scrim means you are watching the canvas while
 you work (materials, editors, libraries). Wanting a scrim on a side panel means
