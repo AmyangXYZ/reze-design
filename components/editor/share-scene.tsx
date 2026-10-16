@@ -536,7 +536,7 @@ function ShareSceneForm({
                     <ul className="mt-1.5 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 text-2xs text-amber-400">
                       {rows.map((u) => (
                         <li key={`${u.kind}:${u.name}`} className="col-span-3 grid min-h-5 grid-cols-subgrid items-center">
-                          <span className="justify-self-start rounded-chip bg-amber-400/15 px-1.5 leading-5">
+                          <span className="justify-self-start rounded-chip bg-amber-400/15 px-1.5 leading-[18px]">
                             {t.share.unpublishedKind[u.kind]}
                           </span>
                           <span className="truncate font-mono">{u.name}</span>
