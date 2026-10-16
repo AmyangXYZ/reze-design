@@ -1,0 +1,28 @@
+Reze Design
+Copyright (C) 2025-2026 AmyangXYZ <amyang.xyz@gmail.com>
+
+This program is licensed under the GNU Affero General Public License,
+version 3 or later (see LICENSE), with the following additional terms
+under section 7 of that license. They apply to every version of this
+program released on or after 16 October 2026, and to every work based on
+one.
+
+1. Attribution (section 7(b)). Every copy you convey, modified or not,
+   must show users, in its interface, the line "Based on Reze Design by
+   AmyangXYZ" with a link to https://github.com/AmyangXYZ/reze-design,
+   and must keep every notice and attribution this program displays to
+   its users, shown as this program shows it.
+
+2. Marking (section 7(c)). A modified version, or any copy distributed
+   other than from https://reze.design or the repository above, must
+   state in its interface and in its listing, wherever it is offered,
+   that it is not the official Reze Design and is not maintained by
+   AmyangXYZ.
+
+3. Names and marks (sections 7(d) and 7(e)). This license grants no
+   right to use the name "Reze Design", its logo or its icons, or the
+   name of AmyangXYZ, as or in the name, title, icon or listing of
+   another program, or to suggest that AmyangXYZ endorses it.
+
+The reze-engine package this program depends on is a separate work under
+its own license.

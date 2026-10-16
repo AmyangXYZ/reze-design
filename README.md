@@ -37,4 +37,6 @@ One piece of the **Reze MMD family**, covering the whole MMD workflow on the web
 
 ## License
 
-[AGPL-3.0-or-later](LICENSE).
+[AGPL-3.0-or-later](LICENSE), with the additional terms in [NOTICE](NOTICE):
+copies keep the attribution and notices, modified copies say they are not the
+official Reze Design, and the name and logo are not licensed.
