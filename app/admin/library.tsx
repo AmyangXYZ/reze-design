@@ -5,7 +5,7 @@
 
 import { Stamp } from "@/components/stamp"
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Check, Copy, ExternalLink, Search } from "lucide-react"
+import { Check, ChevronDown, ChevronUp, Copy, ExternalLink, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -43,20 +43,22 @@ function Toolbar({ query, setQuery, sort, setSort, sorts, count }: { query: stri
         <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, author or id" className="h-8 pl-8 text-[13px] md:text-[13px]" />
       </div>
       <span className="font-mono text-[13px] text-muted-foreground">{count}</span>
-      <div className="ml-auto flex items-center gap-1 text-[13px] text-muted-foreground" role="group" aria-label="Sort">
-        Sort
-        {sorts.map((s) => (
-          <Button
-            key={s}
-            size="xs"
-            variant="ghost"
-            onClick={() => setSort(s)}
-            className={cn("h-7 rounded-chip px-2.5 text-[13px]", sort === s ? "bg-accent text-foreground" : "text-muted-foreground")}
-          >
-            {s === "new" ? "Newest" : s === "likes" ? "Most liked" : "Most used"}
-          </Button>
-        ))}
-      </div>
+      {sorts.length > 0 && (
+        <div className="ml-auto flex items-center gap-1 text-[13px] text-muted-foreground" role="group" aria-label="Sort">
+          Sort
+          {sorts.map((s) => (
+            <Button
+              key={s}
+              size="xs"
+              variant="ghost"
+              onClick={() => setSort(s)}
+              className={cn("h-7 rounded-chip px-2.5 text-[13px]", sort === s ? "bg-accent text-foreground" : "text-muted-foreground")}
+            >
+              {s === "new" ? "Newest" : s === "likes" ? "Most liked" : "Most used"}
+            </Button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -141,29 +143,62 @@ export function ScenesView() {
   )
 }
 
+/** The items table's columns, and what each sorts by. */
+const COLUMNS: { key: string; header: string; title?: string; value?: (r: ItemRow) => string | number }[] = [
+  { key: "name", header: "Name", value: (r) => r.name },
+  { key: "author", header: "Author", value: (r) => r.author },
+  { key: "likes", header: "Likes", value: (r) => r.likeCount },
+  { key: "scenes", header: "In scenes", title: "Published scenes that use it", value: (r) => r.usedInScenes },
+  { key: "exports", header: "In exports", title: "Videos exported with it, from those who share export stats", value: (r) => r.exportedIn },
+  { key: "visibility", header: "Visibility", value: (r) => r.visibility },
+  { key: "created", header: "Created", value: (r) => Date.parse(r.createdAt) },
+  { key: "actions", header: "" },
+]
+
 /** Effects, grades or shader graphs: a table, since there is no picture to show. */
 export function ItemsView({ kind, noun }: { kind: Exclude<KindKey, "scene">; noun: string }) {
   const { rows, error, reload } = useItems(kind)
   const [query, setQuery] = useState("")
-  const [sort, setSort] = useState<Sort>("new")
-  const shown = useShown(rows, query, sort)
+  const [sort, setSort] = useState<{ key: string; desc: boolean }>({ key: "created", desc: true })
+  const filtered = useShown(rows, query, "new")
+  const shown = useMemo(() => {
+    const get = COLUMNS.find((c) => c.key === sort.key)?.value
+    if (!get) return filtered
+    return [...filtered].sort((a, b) => {
+      const [x, y] = [get(a), get(b)]
+      const cmp = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y))
+      return sort.desc ? -cmp : cmp
+    })
+  }, [filtered, sort])
   if (error) return <p className="text-[13px] text-amber-600">{error}</p>
   if (!rows) return <p className="text-[13px] text-muted-foreground">Loading…</p>
   return (
     <div className="space-y-4">
-      <Toolbar query={query} setQuery={setQuery} sort={sort} setSort={setSort} sorts={["new", "likes", "used"]} count={shown.length} />
+      <Toolbar query={query} setQuery={setQuery} sort="new" setSort={() => {}} sorts={[]} count={shown.length} />
       <div className="overflow-hidden rounded-surface border border-line">
         <table className="w-full text-[13px]">
           <thead className="text-muted-foreground">
             <tr className="border-b border-line text-left">
-              <th className="px-3.5 py-2.5 font-medium">Name</th>
-              <th className="px-3.5 py-2.5 font-medium">Author</th>
-              <th className="px-3.5 py-2.5 font-medium">Likes</th>
-              <th className="px-3.5 py-2.5 font-medium" title="Published scenes that use it">In scenes</th>
-              <th className="px-3.5 py-2.5 font-medium" title="Videos exported with it, from those who share export stats">In exports</th>
-              <th className="px-3.5 py-2.5 font-medium">Visibility</th>
-              <th className="px-3.5 py-2.5 font-medium">Created</th>
-              <th className="px-3.5 py-2.5 font-medium" />
+              {COLUMNS.map((c) => {
+                const active = sort.key === c.key
+                return (
+                  <th key={c.key} className="px-3.5 py-2.5 font-medium" title={c.title} aria-sort={active ? (sort.desc ? "descending" : "ascending") : undefined}>
+                    {c.value ? (
+                      <Button
+                        variant="bare"
+                        // Text starts A→Z; counts and dates start with the most.
+                        onClick={() => setSort((s) => (s.key === c.key ? { key: c.key, desc: !s.desc } : { key: c.key, desc: c.key !== "name" && c.key !== "author" && c.key !== "visibility" }))}
+                        className={cn("inline-flex items-center gap-1 font-medium hover:text-foreground", active ? "text-foreground" : "text-muted-foreground")}
+                      >
+                        {c.header}
+                        {active && (sort.desc ? <ChevronDown className="size-3" /> : <ChevronUp className="size-3" />)}
+                      </Button>
+                    ) : (
+                      c.header
+                    )}
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody>
