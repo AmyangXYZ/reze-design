@@ -4,9 +4,10 @@
 
 import { memo, useEffect, useMemo, useRef, useState } from "react"
 import type { StyleGroup } from "reze-engine"
-import { ChevronDown, ChevronRight, Circle, Eye, EyeOff, FolderPlus, Pencil, Trash2, Workflow } from "lucide-react"
+import { Bookmark, BookmarkCheck, ChevronDown, ChevronRight, Circle, Eye, EyeOff, FolderPlus, Pencil, Trash2, Workflow } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -54,6 +55,8 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   onEditGroupGraph,
   onMoveMaterial,
   onPickGraph,
+  looksSaved,
+  onToggleSavedLooks,
   dense,
 }: {
   /** All loaded models — the strip only renders with 2+. The panel body always shows the ACTIVE */
@@ -81,6 +84,11 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   onMoveMaterial: (material: string, targetId: string | null) => void
   /** Apply a library shader graph to a style group by name */
   onPickGraph: (groupId: string, graphName: string) => void
+  /** The model's grouping is the one saved for it in this browser (lib/model-looks). */
+  looksSaved?: boolean
+  /** Save the grouping for this model's next upload, or forget it when it is
+   *  the saved one. Optional: a host without saved looks hides the button. */
+  onToggleSavedLooks?: () => void
   /** Trim the outer vertical padding. The default 3.5 rhythm exists to line the
    *  panel up with the Scene tab inside the dock; a panel that is a surface of
    *  its own already has the header's rule and its own rounded edge doing that
@@ -291,6 +299,25 @@ export const MaterialsPanel = memo(function MaterialsPanel({
           <span className="truncate">{t.materials.newGroup}</span>
           <FolderPlus />
         </Button>
+        {onToggleSavedLooks && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon-xs"
+                onClick={onToggleSavedLooks}
+                aria-label={looksSaved ? t.materials.looksSaved : t.materials.saveLooks}
+                className={cn(
+                  "shrink-0 border-line-strong bg-surface-raised hover:bg-white/5 [&_svg:not([class*='size-'])]:size-3.5",
+                  looksSaved ? "text-blue-400" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {looksSaved ? <BookmarkCheck /> : <Bookmark />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">{looksSaved ? t.materials.looksSaved : t.materials.saveLooks}</TooltipContent>
+          </Tooltip>
+        )}
         <span className="flex-1" />
         {/* Library at the right end, matching Grade and Background. Last to give up
             room: the label is what tells the three doors apart. */}

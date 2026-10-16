@@ -174,7 +174,8 @@ import { buildZip } from "@/lib/bundle"
 import { resolveSceneRefs } from "@/lib/resolve-refs"
 import { effectRef, gradeRef, graphRef, unpublishedUses } from "@/lib/refs"
 import { ShareSceneDialog, type ScenePublishSource } from "@/components/editor/share-scene"
-import { clearLocalBundle, loadCastPalette, loadLocalBundle, saveCastPalette, saveLocalBundle } from "@/lib/asset-store"
+import { clearLocalBundle, loadCastPalette, loadLocalBundle, loadModelLooks, saveCastPalette, saveLocalBundle, saveModelLooks } from "@/lib/asset-store"
+import { modelLooksKey, sameLooks, savableLooks } from "@/lib/model-looks"
 import { dictionaries, LOCALES, LOCALE_LABELS, useI18n, useT, type Dictionary, type Locale } from "@/lib/i18n"
 import { builtinName, localGroupLabel } from "@/lib/builtin-text"
 import { type BundleFile, bundleFileOf, expandUploadFiles, holdBundle, openZip, releaseBundle } from "@/lib/uploads"
@@ -4319,6 +4320,35 @@ export default function Lab() {
     () => (inspectedId ? (groupsByModel[inspectedId] ?? []) : []),
     [groupsByModel, inspectedId],
   )
+  // The looks saved in this browser for the inspected model (lib/model-looks):
+  // what its next upload wears in place of the auto-styling.
+  const inspectedLooksKey = useMemo(() => {
+    const model = inspected && engineRef.current?.getModel(inspected.id)
+    return model ? modelLooksKey(model) : null
+  }, [inspected, engineRef])
+  const [savedLooks, setSavedLooks] = useState<{ key: string; groups: StyleGroup[] | null } | null>(null)
+  useEffect(() => {
+    if (!inspectedLooksKey) return
+    let live = true
+    void loadModelLooks(inspectedLooksKey).then((groups) => {
+      if (live) setSavedLooks({ key: inspectedLooksKey, groups })
+    })
+    return () => {
+      live = false
+    }
+  }, [inspectedLooksKey])
+  const looksSaved =
+    !!savedLooks?.groups && savedLooks.key === inspectedLooksKey && sameLooks(savedLooks.groups, inspectedGroups)
+  const toggleSavedLooks = useCallback(async () => {
+    if (!inspectedLooksKey) return
+    const next = looksSaved ? null : savableLooks(inspectedGroups)
+    if (!(await saveModelLooks(inspectedLooksKey, next))) {
+      toast.error(t.materials.looksSaveFailed)
+      return
+    }
+    setSavedLooks({ key: inspectedLooksKey, groups: next })
+    toast.success(next ? t.materials.looksSavedToast : t.materials.looksForgotToast)
+  }, [inspectedLooksKey, looksSaved, inspectedGroups, t])
   const inspectGroupsApply = useCallback(
     (next: StyleGroup[]) => {
       if (inspectedId) void applyGroups(inspectedId, next)
@@ -10415,6 +10445,8 @@ export default function Lab() {
               onEditGroupGraph={touch ? undefined : editGroupGraph}
               onMoveMaterial={inspectMoveMaterial}
               onPickGraph={inspectPickGraph}
+              looksSaved={looksSaved}
+              onToggleSavedLooks={inspectedLooksKey ? toggleSavedLooks : undefined}
             />
           </div>
         </Surface>

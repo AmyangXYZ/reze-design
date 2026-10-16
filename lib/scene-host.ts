@@ -16,7 +16,8 @@ import { loadLookPref } from "@/lib/look-pref"
 import { CHARACTER_GROUPS, autoStyleModel, modelIsFigure } from "@/lib/auto-style"
 import { idbBundleId, modelPmxUrl, type AssetRef, type Scene, type SceneAttach, type SceneCamera, type SceneParentKey, type SceneStageTransform, type StageSun } from "@/lib/scene"
 import { type BundleFile, heldBundle, mimeForPath, openZip, readBundleFiles } from "@/lib/uploads"
-import { loadLocalBundle } from "@/lib/asset-store"
+import { loadLocalBundle, loadModelLooks } from "@/lib/asset-store"
+import { fitLooks, modelLooksKey } from "@/lib/model-looks"
 import { sceneFiles } from "@/lib/scene-files"
 import { clearMaterialMaps, loadMaterialMaps, withMaterialMaps } from "@/lib/material-maps"
 import { loadParticleTextures } from "@/lib/effect-textures"
@@ -792,7 +793,8 @@ export function named(list: StyleGroup[]): StyleGroup[] {
 }
 
 /**
- * Auto-style a model on the engine: lib/auto-style's one classifier over its
+ * Auto-style a model on the engine: the looks saved for it when there are any
+ * (lib/model-looks), otherwise lib/auto-style's one classifier over its
  * materials, the role groups in the preferred pack, applied and reported.
  *
  * The preferred pack, so a second character loaded into a scene switched to
@@ -802,7 +804,16 @@ export function named(list: StyleGroup[]): StyleGroup[] {
  * `existing` untouched when nothing matched.
  */
 export async function autoStyleOnEngine(engine: Engine, modelId: string, existing: StyleGroup[]): Promise<StyleGroup[]> {
-  const next = autoStyleModel(engine.getModel(modelId), existing, loadLookPref())
+  const model = engine.getModel(modelId)
+  // Looks the person saved for this model (lib/model-looks) come before the classifier.
+  const key = model && modelLooksKey(model)
+  const saved = key ? await loadModelLooks(key) : null
+  if (model && saved) {
+    const groups = fitLooks(saved, model)
+    reportGroups("saved looks", await engine.applyStyleGroups(modelId, withMaterialMaps(modelId, groups)))
+    return groups
+  }
+  const next = autoStyleModel(model, existing, loadLookPref())
   if (!next) return existing
   reportGroups(
     "auto-style",

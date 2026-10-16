@@ -19,6 +19,7 @@
 // so a caller must treat "gone" as normal — the scene boots without those files and the
 // user re-uploads.
 
+import type { StyleGroup } from "reze-engine"
 import type { BundleEntry } from "@/lib/bundle"
 import { storageKey } from "@/lib/storage"
 import { type BundleFile, bundleFileOf, openZip, ZipEntry } from "@/lib/uploads"
@@ -29,13 +30,17 @@ const DB_NAME = "reze-design"
 // code needs never exists, and every transaction throws — silently, through the
 // failure-tolerant wrappers. The bump forces the upgrade on browsers that ran it.
 // v3: adds the palette store below.
-const DB_VERSION = 3
+// v4: adds the model looks store.
+const DB_VERSION = 4
 const STORE = "local-bundle"
 const KEY = storageKey("local-bundle")
 /** Extracted cast colours, keyed by a model's own source path. Its own store
  *  rather than a second shape in the bundle's: these outlive any one scene,
  *  and clearing a scene's bytes must not throw its colours away. */
 const PALETTE_STORE = "cast-palette"
+/** Style groups a person saved for a model, keyed by its fingerprint
+ *  (lib/model-looks). Outlives every scene, like the palettes. */
+const LOOKS_STORE = "model-looks"
 
 /**
  * A file the record keeps inside one of its zips: `zip` indexes `zips`, and
@@ -124,6 +129,7 @@ function open(): Promise<IDBDatabase | null> {
     req.onupgradeneeded = () => {
       if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE)
       if (!req.result.objectStoreNames.contains(PALETTE_STORE)) req.result.createObjectStore(PALETTE_STORE)
+      if (!req.result.objectStoreNames.contains(LOOKS_STORE)) req.result.createObjectStore(LOOKS_STORE)
       // Left behind by the reverted first attempt; its records are unreadable garbage.
       if (req.result.objectStoreNames.contains("local-scene")) req.result.deleteObjectStore("local-scene")
     }
@@ -304,6 +310,44 @@ export async function saveCastPalette(key: string, palette: string): Promise<voi
       tx.onabort = () => resolve()
     } catch {
       resolve()
+    } finally {
+      db.close()
+    }
+  })
+}
+
+/** The style groups saved for a model fingerprint, or null. */
+export async function loadModelLooks(key: string): Promise<StyleGroup[] | null> {
+  const db = await open()
+  if (!db) return null
+  return new Promise((resolve) => {
+    try {
+      const req = db.transaction(LOOKS_STORE, "readonly").objectStore(LOOKS_STORE).get(key)
+      req.onsuccess = () => resolve(Array.isArray(req.result) ? (req.result as StyleGroup[]) : null)
+      req.onerror = () => resolve(null)
+    } catch {
+      resolve(null)
+    } finally {
+      db.close()
+    }
+  })
+}
+
+/** Saves `groups` for a model fingerprint, or forgets it with null. True once written. */
+export async function saveModelLooks(key: string, groups: StyleGroup[] | null): Promise<boolean> {
+  const db = await open()
+  if (!db) return false
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(LOOKS_STORE, "readwrite")
+      const store = tx.objectStore(LOOKS_STORE)
+      if (groups) store.put(groups, key)
+      else store.delete(key)
+      tx.oncomplete = () => resolve(true)
+      tx.onerror = () => resolve(false)
+      tx.onabort = () => resolve(false)
+    } catch {
+      resolve(false)
     } finally {
       db.close()
     }

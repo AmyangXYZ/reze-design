@@ -219,6 +219,11 @@ const en = {
   // Shared column / metadata field labels (materials inspector + library table).
   materials: {
     newGroup: "New group",
+    saveLooks: "Save these looks for this model",
+    looksSaved: "Saved for this model. Click to forget",
+    looksSavedToast: "Saved. This model wears these looks the next time you upload it.",
+    looksForgotToast: "Forgotten. This model is auto-styled again on upload.",
+    looksSaveFailed: "Couldn't save in this browser.",
     moveTo: "Move to",
     ungrouped: "Ungrouped",
     hide: "Hide",
@@ -1377,6 +1382,11 @@ const zh: Dictionary = {
   },
   materials: {
     newGroup: "新建组",
+    saveLooks: "为此模型保存这些外观",
+    looksSaved: "已为此模型保存，点击取消",
+    looksSavedToast: "已保存。下次上传此模型时将使用这些外观。",
+    looksForgotToast: "已取消。此模型上传时将重新自动分配外观。",
+    looksSaveFailed: "无法保存到此浏览器。",
     moveTo: "移动到",
     ungrouped: "未分组",
     hide: "隐藏",

@@ -7,7 +7,8 @@ import { EFFECTS } from "@/lib/effects"
 import { Engine, parseLRC, parseMidi, Vec3, type ApplyStyleGroupResult, type CompileOptions, type StyleGroup, type LyricLine } from "reze-engine"
 import { rasterizeLyrics } from "@/lib/lyrics-raster"
 import { modelKey, type Scene, type SceneAttach, type SceneCamera, type SceneParentKey, type StageSun } from "@/lib/scene"
-import { sweepRetiredBundles } from "@/lib/asset-store"
+import { loadModelLooks, sweepRetiredBundles } from "@/lib/asset-store"
+import { fitLooks, modelLooksKey } from "@/lib/model-looks"
 import { referencedFiles, relFilePath, sceneFiles } from "@/lib/scene-files"
 import { clearMaterialMaps, materialMapPaths, withMaterialMaps } from "@/lib/material-maps"
 import { createMediaFollower, type MediaFollower } from "@/lib/media-clock"
@@ -606,12 +607,20 @@ export function useEngine(
     // the stage by hand exactly as they would a character.
     let groups = withSpecialGroups(engine.getStyleGroups(id))
     const names = new Set(model.getMaterials().map((m) => m.name))
+    const looksKey = modelLooksKey(model)
+    const saved = looksKey ? await loadModelLooks(looksKey) : null
     if (kept && kept.groups.some((g) => g.materials.length > 0)) {
       groups = kept.groups.map((g) => ({ ...g, materials: g.materials.filter((n) => names.has(n)) }))
       reportGroups(
         "keep stage looks",
         await engine.applyStyleGroups(id, withMaterialMaps(id, groups.filter((g) => g.materials.length > 0))),
       )
+    } else if (saved) {
+      // Looks saved for this stage (lib/model-looks). Holding materials, they
+      // also keep the stage classifier in app/page.tsx off it.
+      const fitted = fitLooks(saved, model)
+      reportGroups("saved looks", await engine.applyStyleGroups(id, withMaterialMaps(id, fitted)))
+      groups = withSpecialGroups(fitted)
     }
     const hidden = (kept?.hidden ?? []).filter((n) => names.has(n))
     for (const name of hidden) engine.toggleMaterialVisible(id, name)
