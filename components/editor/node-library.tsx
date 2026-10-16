@@ -2,6 +2,7 @@
 
 // Shader-graph library — the shared library shell (facet rail · thumbnail grid · slim inspector).
 
+import { toast } from "sonner"
 import { Stamp } from "@/components/stamp"
 import { useCallback, useMemo, useState } from "react"
 import { DEFAULT_GRAPH, type ShaderGraph } from "reze-engine"
@@ -9,7 +10,6 @@ import { Check, Plus, SquarePen, Workflow, X } from "lucide-react"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Input } from "@/components/ui/input"
 import { GraphMinimap } from "@/components/editor/graph-minimap"
 import { GRAPH_LIBRARY } from "@/lib/materials"
 import { LIBRARY_DETAIL_BODY, LIBRARY_SHELL, LibraryItemStats, LibraryTags } from "@/components/editor/library-rail"
@@ -27,6 +27,7 @@ import {
   useMakePublic,
   AuthorLink,
   itemState,
+  RenameField,
 } from "@/components/editor/library-shell"
 import { conflictingName, nameKey, normalizeName, type GraphItem } from "@/lib/library"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
@@ -40,7 +41,6 @@ import {
   isMine,
   removeCommunityItem,
   setCommunityVisibility,
-  renameCommunityItem,
 } from "@/lib/community-store"
 import { useDrafts } from "@/hooks/use-drafts"
 import { noteItemPublished, useLibraryStats } from "@/hooks/use-library-stats"
@@ -178,24 +178,13 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
       // Stays in edit mode with the message attached, so the fix is one keystroke
       // away rather than a rename that silently did something else.
       setRenameError(t.library.nameTakenBy(clash))
+      toast.error(t.library.nameTakenBy(clash))
       return
     }
     setRenamingId(null)
     setRenameError(null)
     const name = wanted
-    if (item.owner === "local") updateDraft(item.id, { name, payload: { graph: { ...item.payload.graph, name } } })
-    else {
-      // Published: the server owns the row, and rejects a name you already used.
-      void fetch(`/api/library/${item.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name }),
-      }).then(async (res) => {
-        // Awaited: the row keeps its old name until the server takes the new
-        // one, so a refused rename never flashes as accepted.
-        if (await report(Promise.resolve(res), t.library.renamed)) renameCommunityItem(item.id, name)
-      })
-    }
+    updateDraft(item.id, { name, payload: { graph: { ...item.payload.graph, name } } })
     onRenamed?.(item.name, name)
   }
 
@@ -221,23 +210,15 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
     applied: isCurrent(r),
     nameNode:
       renamingId === r.id ? (
-        <Input
-          autoFocus
-          defaultValue={r.name}
-          className={cn(
-            "h-5 min-w-0 flex-1 border-line-strong bg-white/5 px-1 text-xs md:text-xs",
-            renameError && "border-red-400/60",
-          )}
-          onClick={(ev) => ev.stopPropagation()}
-          onChange={() => renameError && setRenameError(null)}
-          onBlur={(ev) => commitRename(r, ev.target.value)}
-          onKeyDown={(ev) => {
-            if (ev.key === "Enter") (ev.target as HTMLInputElement).blur()
-            if (ev.key === "Escape") {
-              setRenameError(null)
-              setRenamingId(null)
-            }
+        <RenameField
+          name={r.name}
+          error={!!renameError}
+          onCommit={(value) => commitRename(r, value)}
+          onCancel={() => {
+            setRenameError(null)
+            setRenamingId(null)
           }}
+          onEdit={() => renameError && setRenameError(null)}
         />
       ) : undefined,
   })
@@ -252,7 +233,7 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
       <ContextMenuTrigger asChild>
         <div>{node}</div>
       </ContextMenuTrigger>
-        <ContextMenuContent className="w-40">
+        <ContextMenuContent className="w-40" onCloseAutoFocus={(e) => e.preventDefault()}>
           {onEdit && (
             <ContextMenuItem onSelect={() => onEdit(r.id, r.name, r.payload.graph)}>{t.library.editGraph}</ContextMenuItem>
           )}
@@ -276,9 +257,6 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
             >
               {inUse(r) ? t.library.deleteInUse : t.library.deleteDraft}
             </ContextMenuItem>
-          )}
-          {!isDraft && mine && (
-            <ContextMenuItem onSelect={() => setRenamingId(r.id)}>{t.graph.rename}</ContextMenuItem>
           )}
           {!isDraft && mine && (
             <VisibilityMenu

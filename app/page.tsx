@@ -8070,6 +8070,15 @@ export default function Lab() {
               visibility,
             )
           }
+          // Published from that list under another name: the scene follows, the
+          // same re-pointing a rename in the library does.
+          onLookPublished={(kind, oldName, newName) => {
+            if (kind === "grade")
+              setSettings((s2) => (s2.grade.preset === oldName ? { ...s2, grade: { ...s2.grade, preset: newName } } : s2))
+            else if (kind === "effect")
+              setBgEffects((list) => list.map((e) => (e.name === oldName ? { ...e, name: newName } : e)))
+            else renameGroupLooks(oldName, newName)
+          }}
         />
       )}
       {mounted && <HandleDialog />}

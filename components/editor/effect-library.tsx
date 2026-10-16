@@ -10,12 +10,12 @@
 // document's own `settings.background.effect` keeps its name — that shape is frozen
 // once scenes are in the wild, and it is still literally where the effect is layered.
 
+import { toast } from "sonner"
 import { Stamp } from "@/components/stamp"
 import { useCallback, useMemo, useState } from "react"
 import { Check, Plus, Sparkles, SquarePen, X } from "lucide-react"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import {
   applyDefaults,
   EFFECTS,
@@ -38,6 +38,7 @@ import {
   useMakePublic,
   AuthorLink,
   itemState,
+  RenameField,
 } from "@/components/editor/library-shell"
 import { conflictingName, normalizeName, type EffectItem } from "@/lib/library"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
@@ -51,7 +52,6 @@ import {
   isMine,
   removeCommunityItem,
   setCommunityVisibility,
-  renameCommunityItem,
 } from "@/lib/community-store"
 import { useDrafts } from "@/hooks/use-drafts"
 import { noteItemPublished, useLibraryStats } from "@/hooks/use-library-stats"
@@ -170,25 +170,13 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
     )
     if (clash) {
       setRenameError(t.library.nameTakenBy(clash))
+      toast.error(t.library.nameTakenBy(clash))
       return
     }
     setRenamingId(null)
     setRenameError(null)
     const name = wanted
-    if (item.owner === "local") updateDraft(item.id, { name })
-    else {
-      // Published: the server owns the row, and rejects a name you already used.
-      void fetch(`/api/library/${item.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name }),
-      }).then(async (res) => {
-        // Awaited so the row keeps its old name until the server agrees to the
-        // new one — a rename shown before it is accepted is a rename that
-        // reverts under the reader a moment later.
-        if (await report(Promise.resolve(res), t.library.renamed)) renameCommunityItem(item.id, name)
-      })
-    }
+    updateDraft(item.id, { name })
     onRenamed?.(item.name, name)
   }
 
@@ -208,23 +196,15 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
     applied: applied.some((a) => a.id === e.id),
     nameNode:
       renamingId === e.id ? (
-        <Input
-          autoFocus
-          defaultValue={e.name}
-          className={cn(
-            "h-5 min-w-0 flex-1 border-line-strong bg-white/5 px-1 text-xs md:text-xs",
-            renameError && "border-red-400/60",
-          )}
-          onClick={(ev) => ev.stopPropagation()}
-          onChange={() => renameError && setRenameError(null)}
-          onBlur={(ev) => commitRename(e, ev.target.value)}
-          onKeyDown={(ev) => {
-            if (ev.key === "Enter") (ev.target as HTMLInputElement).blur()
-            if (ev.key === "Escape") {
-              setRenameError(null)
-              setRenamingId(null)
-            }
+        <RenameField
+          name={e.name}
+          error={!!renameError}
+          onCommit={(value) => commitRename(e, value)}
+          onCancel={() => {
+            setRenameError(null)
+            setRenamingId(null)
           }}
+          onEdit={() => renameError && setRenameError(null)}
         />
       ) : undefined,
   })
@@ -243,11 +223,11 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
         <ContextMenuTrigger asChild>
           <div>{node}</div>
         </ContextMenuTrigger>
-        <ContextMenuContent className="w-40">
+        <ContextMenuContent className="w-40" onCloseAutoFocus={(e) => e.preventDefault()}>
           {onEdit && (
             <ContextMenuItem onSelect={() => onEdit(seedDraft(e, applied)!)}>{t.effectLibrary.editShader}</ContextMenuItem>
           )}
-          {(isDraft || mine) && <ContextMenuItem onSelect={startRename}>{t.graph.rename}</ContextMenuItem>}
+          {isDraft && <ContextMenuItem onSelect={startRename}>{t.graph.rename}</ContextMenuItem>}
           {isDraft && (
             <ContextMenuItem
               variant="danger"

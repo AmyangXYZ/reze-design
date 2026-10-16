@@ -21,7 +21,11 @@ import {
   PUBLISH_HEAD,
   PUBLISH_INPUT,
   PUBLISH_TEXTAREA,
+  PublishButton,
 } from "@/components/editor/publish-button"
+import { addCommunityItem } from "@/lib/community-store"
+import { noteItemPublished } from "@/hooks/use-library-stats"
+import { draftOrigin, removeDraft } from "@/lib/drafts"
 import { VisibilitySwitch, type Visibility } from "@/components/editor/library-shell"
 import { PublishSwitch, PublishSwitches } from "@/components/editor/publish-switch"
 import { noteScenePublished, type GalleryScene } from "@/components/editor/scene-gallery"
@@ -145,6 +149,8 @@ export function ShareSceneDialog(props: {
   onPublished?: (id: string, meta: PublishedMeta) => void
   collect: () => Promise<ScenePublishSource>
   unpublished: (visibility: Visibility) => UnpublishedUse[]
+  /** A look this scene wears was published from here under `newName`. */
+  onLookPublished: (kind: UnpublishedUse["kind"], oldName: string, newName: string) => void
   /** Closes this dialog and opens the gallery — offered once the scene is up. */
   onGallery: () => void
 }) {
@@ -169,6 +175,7 @@ function ShareSceneForm({
   onPublished,
   collect,
   unpublished,
+  onLookPublished,
   onGallery,
 }: {
   /** The working scene's client-minted id. Keys the saved draft — the upload gets
@@ -194,6 +201,7 @@ function ShareSceneForm({
    *  about to be published with. Publishing is blocked while this is non-empty
    *  — see lib/refs.ts for why. */
   unpublished: (visibility: Visibility) => UnpublishedUse[]
+  onLookPublished: (kind: UnpublishedUse["kind"], oldName: string, newName: string) => void
   onGallery: () => void
 }) {
   const t = useT()
@@ -235,7 +243,13 @@ function ShareSceneForm({
   // Off unless the author says so; an edit starts from what the scene already is.
   const [nsfw, setNsfw] = useState(draft.nsfw ?? false)
   const [displayOnly, setDisplayOnly] = useState(draft.displayOnly ?? false)
-  const blocking = useMemo(() => unpublished(visibility), [unpublished, visibility])
+  // Bumped when a look is published from the list below, so the list asks again.
+  const [looksPublished, setLooksPublished] = useState(0)
+  const blocking = useMemo(
+    () => unpublished(visibility),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- looksPublished is the recompute trigger
+    [unpublished, visibility, looksPublished],
+  )
   // Chosen by the author, not grabbed from the canvas: the frame that happens to
   // be showing at publish is rarely the one they would pick to represent the work.
   const [poster, setPoster] = useState<File | null>(null)
@@ -517,10 +531,40 @@ function ShareSceneForm({
                     <p className="mt-0.5 text-2xs leading-snug text-amber-400">
                       {reason === "missing" ? t.share.unpublishedBlurb : t.share.privateUseBlurb}
                     </p>
-                    <ul className="mt-1.5 space-y-0.5">
+                    {/* One grid for every row: the kind column is as wide as its
+                        longest label, so the names start on one line. */}
+                    <ul className="mt-1.5 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 text-2xs text-amber-400">
                       {rows.map((u) => (
-                        <li key={`${u.kind}:${u.name}`} className="font-mono text-2xs text-amber-400">
-                          {t.share.unpublishedKind[u.kind as "graph" | "grade" | "effect"]} · {u.name}
+                        <li key={`${u.kind}:${u.name}`} className="col-span-3 grid min-h-5 grid-cols-subgrid items-center">
+                          <span className="justify-self-start rounded-chip bg-amber-400/15 px-1.5 leading-4">
+                            {t.share.unpublishedKind[u.kind]}
+                          </span>
+                          <span className="truncate font-mono">{u.name}</span>
+                          {reason === "missing" && (
+                            // The look's own publish form, right here. React carries
+                            // its submit up through the portal, and this form's
+                            // onSubmit publishes the scene — so it stops here.
+                            <span className="shrink-0" onSubmit={(e) => e.stopPropagation()}>
+                              <PublishButton
+                                kind={u.kind}
+                                defaultName={u.draft?.name ?? u.name}
+                                defaultDescription={u.draft?.description}
+                                defaultTags={u.draft?.tags}
+                                payload={() => u.draft?.payload ?? u.payload}
+                                itemId={u.draft ? (draftOrigin(u.kind, u.draft.id).sourceId ?? u.draft.id) : undefined}
+                                forkedFromId={u.draft ? draftOrigin(u.kind, u.draft.id).forkedFromId : undefined}
+                                className="h-5 border border-amber-400/30 bg-transparent px-2 text-2xs text-amber-400 hover:bg-amber-400/10 [&_svg]:hidden"
+                                onPublished={(item) => {
+                                  // The libraries' own promotion: the draft now lives on the server.
+                                  addCommunityItem(item)
+                                  noteItemPublished(item.id)
+                                  if (u.draft) removeDraft(u.kind, u.draft.id)
+                                  if (item.name !== u.name) onLookPublished(u.kind, u.name, item.name)
+                                  setLooksPublished((n) => n + 1)
+                                }}
+                              />
+                            </span>
+                          )}
                         </li>
                       ))}
                     </ul>

@@ -14,7 +14,7 @@ import { stageLightSheetGraph, stagePbrGraph, stageSheetGraph } from "@/lib/gltf
 import { communityItems } from "@/lib/community-store"
 import type { EffectItem, GradeItem, GraphItem, LibraryKind } from "@/lib/library"
 import type { ItemRef } from "@/lib/scene"
-import { loadDrafts } from "@/lib/drafts"
+import { loadDrafts, type Draft, type DraftPayload } from "@/lib/drafts"
 
 /** Built-ins first: they ship in the bundle, so a pin to one resolves offline. */
 function candidates<T>(kind: LibraryKind, builtins: T[]): T[] {
@@ -62,7 +62,16 @@ export function gradeRef(spec: GradeSpec): ItemRef | undefined {
 /** What a scene uses that the people who can open it would not be able to
  *  resolve. `missing` is in no library at all; `private` IS published, just not
  *  where a public scene's audience can reach it. */
-export type UnpublishedUse = { kind: LibraryKind; name: string; reason: "missing" | "private" }
+export type UnpublishedUse = {
+  kind: "grade" | "graph" | "effect"
+  name: string
+  reason: "missing" | "private"
+  /** What the scene wears, as a library payload: what publishing it from the
+   *  scene's own publish dialog sends. */
+  payload: DraftPayload
+  /** The draft holding this look, when one does. Publishing promotes it. */
+  draft?: Draft
+}
 
 /**
  * Could everyone who can open this scene resolve this pin?
@@ -146,9 +155,13 @@ export function unpublishedUses(
   visibility: "public" | "private",
 ): UnpublishedUse[] {
   const out: UnpublishedUse[] = []
+  const drafts = loadDrafts()
   const grade = gradeMatch(scene.gradeSpec)
-  if (!grade) out.push({ kind: "grade", name: scene.gradeName, reason: "missing" })
-  else if (!reachable(grade, visibility)) out.push({ kind: "grade", name: scene.gradeName, reason: "private" })
+  const gradeUse = { kind: "grade" as const, name: scene.gradeName, payload: { spec: scene.gradeSpec } }
+  if (!grade) {
+    const draft = drafts.grade.find((d) => sameGradeLook((d.payload as { spec: GradeSpec }).spec, scene.gradeSpec))
+    out.push({ ...gradeUse, reason: "missing", draft })
+  } else if (!reachable(grade, visibility)) out.push({ ...gradeUse, reason: "private" })
   // WHAT A STAGE BROUGHT IS THE STAGE'S — one rule for every kind, never a list
   // per stage. A converted stage arrives with looks and effects the app made
   // from its file (its water, its sky, its particle systems, whatever the next
@@ -158,17 +171,17 @@ export function unpublishedUses(
   // says so by being worn by a stage model — unless it is some library item or
   // draft the scene's readers could not reach, which is someone's own work put
   // on the stage, and blocks as anywhere else.
-  const drafts = loadDrafts()
-  const isDraftGraph = (g: ShaderGraph) =>
-    drafts.graph.some((d) => {
+  const draftGraph = (g: ShaderGraph) =>
+    drafts.graph.find((d) => {
       const own = (d.payload as { graph?: ShaderGraph }).graph
       return !!own && sameGraphLook(own, g)
     })
   for (const e of scene.effects) {
     if (e.stage) continue
     const hit = effectMatch(e.wgsl)
-    if (!hit) out.push({ kind: "effect", name: e.name, reason: "missing" })
-    else if (!reachable(hit, visibility)) out.push({ kind: "effect", name: e.name, reason: "private" })
+    const use = { kind: "effect" as const, name: e.name, payload: { wgsl: e.wgsl } }
+    if (!hit) out.push({ ...use, reason: "missing", draft: drafts.effect.find((d) => (d.payload as { wgsl: string }).wgsl === e.wgsl) })
+    else if (!reachable(hit, visibility)) out.push({ ...use, reason: "private" })
   }
   const seen = new Set<string>()
   for (const [modelId, list] of Object.entries(scene.groups)) {
@@ -176,7 +189,7 @@ export function unpublishedUses(
       if (!g.graph) continue
       const hit = graphMatch(g.graph)
       if (hit && reachable(hit, visibility)) continue
-      if (!hit && scene.stageModels?.has(modelId) && !isDraftGraph(g.graph)) continue
+      if (!hit && scene.stageModels?.has(modelId) && !draftGraph(g.graph)) continue
       // The engine's own presets are not drafts. The neutral base is what every
       // new group starts on and what an ungrouped material already renders;
       // Unlit is what the APP puts on a media plane, a .x accessory's unlit
@@ -192,7 +205,13 @@ export function unpublishedUses(
       // One entry per look, however many groups wear it.
       if (seen.has(g.graph.name)) continue
       seen.add(g.graph.name)
-      out.push({ kind: "graph", name: g.graph.name, reason: hit ? "private" : "missing" })
+      out.push({
+        kind: "graph",
+        name: g.graph.name,
+        reason: hit ? "private" : "missing",
+        payload: { graph: g.graph },
+        ...(hit ? {} : { draft: draftGraph(g.graph) }),
+      })
     }
   }
   return out

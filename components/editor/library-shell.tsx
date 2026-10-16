@@ -18,7 +18,7 @@ import { Stamp } from "@/components/stamp"
 import { Button } from "@/components/ui/button"
 import { PublishSwitch } from "@/components/editor/publish-switch"
 import { STAGE_BOUND_TAG } from "@/lib/effects"
-import { useCallback, useMemo, useState, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { Check, ChevronDown, ChevronLeft, Globe, Heart, LayoutGrid, List, Lock, PenLine, Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -707,6 +707,64 @@ export function VisibilityMenu({ current, onMakePublic }: { current: Visibility;
   )
 }
 
+/**
+ * A card's name while it is being renamed. The same field in every library.
+ *
+ * Focus waits a frame: the context menu that opened it is still closing, and
+ * its focus trap pulls focus back to the menu item. Taken at once, the field
+ * blurred straight away and committed the old name, so no rename ever stuck.
+ * Keys stop here because the card underneath takes Space and Enter as "select".
+ */
+export function RenameField({
+  name,
+  error,
+  onCommit,
+  onCancel,
+  onEdit,
+}: {
+  name: string
+  error: boolean
+  onCommit: (value: string) => void
+  onCancel: () => void
+  onEdit: () => void
+}) {
+  const ref = useRef<HTMLInputElement>(null)
+  const cancelled = useRef(false)
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      ref.current?.focus()
+      ref.current?.select()
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [])
+  return (
+    <Input
+      ref={ref}
+      defaultValue={name}
+      // Bare and inheriting: the label's own font and line height, so the field
+      // is exactly the label's height. The box grows outward by its padding, so
+      // the text sits exactly where the label's did.
+      variant="bare"
+      className={cn(
+        "-mx-1.5 w-[calc(100%+0.75rem)] min-w-0 rounded-chip bg-white/5 px-1.5 ring-1 ring-line-strong ring-inset",
+        error && "ring-red-400",
+      )}
+      onClick={(ev) => ev.stopPropagation()}
+      onDoubleClick={(ev) => ev.stopPropagation()}
+      onChange={onEdit}
+      onBlur={(ev) => !cancelled.current && onCommit(ev.target.value)}
+      onKeyDown={(ev) => {
+        ev.stopPropagation()
+        if (ev.key === "Enter") ev.currentTarget.blur()
+        if (ev.key === "Escape") {
+          cancelled.current = true
+          onCancel()
+        }
+      }}
+    />
+  )
+}
+
 export type CardMeta = {
   /** The thumbnail. Every kind draws its own. */
   preview: React.ReactNode
@@ -834,7 +892,7 @@ export function LibraryResults<T extends BrowseItem>({
                 )}
               >
                 <div className="h-[19px] w-[30px] overflow-hidden rounded-chip border border-line-strong">{card.preview}</div>
-                <span className="min-w-0 truncate text-xs">{card.nameNode ?? label(item)}</span>
+                <span className={cn("min-w-0 text-xs", !card.nameNode && "truncate")}>{card.nameNode ?? label(item)}</span>
                 <span className={cn("flex min-w-0 items-center gap-1.5 font-mono text-2xs transition-colors", cell)}>
                   <AuthorAvatar name={builtinAuthor(id(item), item.author)} className="size-3.5" />
                   <AuthorLink
@@ -901,7 +959,13 @@ export function LibraryResults<T extends BrowseItem>({
                 ) : null}
               </div>
               <div className="min-w-0">
-                <div className={cn("truncate text-xs leading-tight", (selectedId === id(item) || m.applied) && "text-blue-400")}>
+                <div
+                  className={cn(
+                    "text-xs leading-tight",
+                    !m.nameNode && "truncate",
+                    (selectedId === id(item) || m.applied) && "text-blue-400",
+                  )}
+                >
                   {m.nameNode ?? label(item)}
                 </div>
                 <div className="mt-0.5 flex items-center gap-1.5 font-mono text-2xs text-muted-foreground">

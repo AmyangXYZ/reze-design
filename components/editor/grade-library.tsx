@@ -2,12 +2,12 @@
 
 // Grades library — the same three-column shell as the shader-graph and background-effect libraries.
 
+import { toast } from "sonner"
 import { Stamp } from "@/components/stamp"
 import { useCallback, useMemo, useState } from "react"
 import { Check, Palette, Plus, SquarePen, X } from "lucide-react"
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { GradePreview } from "@/components/editor/grade-preview"
 import type { GradeEditorSubject } from "@/components/editor/grade-editor"
 import {
@@ -30,6 +30,7 @@ import {
   useMakePublic,
   AuthorLink,
   itemState,
+  RenameField,
 } from "@/components/editor/library-shell"
 import { conflictingName, nameKey, normalizeName, type GradeItem } from "@/lib/library"
 import { draftOrigin } from "@/lib/drafts"
@@ -40,7 +41,6 @@ import {
   isMine,
   removeCommunityItem,
   setCommunityVisibility,
-  renameCommunityItem,
 } from "@/lib/community-store"
 import { useDrafts } from "@/hooks/use-drafts"
 import { noteItemPublished, useLibraryStats } from "@/hooks/use-library-stats"
@@ -85,12 +85,15 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
   // stack closes only the topmost surface.
   const { statFor, signedIn, toggleLike } = useLibraryStats()
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, () => onOpenChange(false))
-  const [selectedId, setSelectedId] = useState<string>(grade.preset)
+  // By id, like the other libraries: keyed by name, a rename had a render where
+  // the row already wore its new name and the selection still held the old one,
+  // and the panel flashed the first grade. Null is "the grade the scene wears".
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   // Applying a grade elsewhere (the quick-pick, or the editor) moves the selection.
   const [lastPreset, setLastPreset] = useState(grade.preset)
   if (grade.preset !== lastPreset) {
     setLastPreset(grade.preset)
-    setSelectedId(grade.preset)
+    setSelectedId(null)
   }
 
   // Built-in names are UI chrome and translate by id; descriptions are AUTHOR
@@ -105,7 +108,8 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
     () => [...GRADE_PRESETS.map((i) => ({ ...i, mine: isMine(i.id) })), ...community, ...drafts],
     [community, drafts],
   )
-  const selected = all.find((g) => g.name === selectedId) ?? all[0]
+  const selected =
+    all.find((g) => g.id === selectedId) ?? all.find((g) => g.name === grade.preset) ?? all[0]
 
   const numbers = useCallback(
     (id: string) => {
@@ -143,25 +147,13 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
     )
     if (clash) {
       setRenameError(t.library.nameTakenBy(clash))
+      toast.error(t.library.nameTakenBy(clash))
       return
     }
     setRenamingId(null)
     setRenameError(null)
     const name = wanted
-    if (item.owner === "local") updateDraft(item.id, { name })
-    else {
-      // Published: the server owns the row, and rejects a name you already used.
-      void fetch(`/api/library/${item.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name }),
-      }).then(async (res) => {
-        // Awaited: the row keeps its old name until the server takes the new
-        // one, so a refused rename never flashes as accepted.
-        if (await report(Promise.resolve(res), t.library.renamed)) renameCommunityItem(item.id, name)
-      })
-    }
-    setSelectedId(name)
+    updateDraft(item.id, { name })
     onRenamed?.(item.name, name)
   }
 
@@ -171,7 +163,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
   // Browsing never touches the scene
   const detail = useLibraryDetail()
   const select = (g: GradeItem) => {
-    setSelectedId(g.name)
+    setSelectedId(g.id)
     detail.show()
   }
 
@@ -183,7 +175,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
   /** Straight into the editor, no entry created */
   const startEdit = (g: GradeItem) => {
     if (!onEdit) return
-    setSelectedId(g.name)
+    setSelectedId(g.id)
     onEdit({ id: g.id, name: g.name, spec: g.payload.spec, origin: g.owner === "builtin" ? g.name : undefined })
   }
   // Nothing is created here — the editor is a scratchpad, and the save-on-close
@@ -200,23 +192,15 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
     applied: isApplied(g),
     nameNode:
       renamingId === g.id ? (
-        <Input
-          autoFocus
-          defaultValue={g.name}
-          className={cn(
-            "h-5 min-w-0 flex-1 border-line-strong bg-white/5 px-1 text-xs md:text-xs",
-            renameError && "border-red-400/60",
-          )}
-          onClick={(ev) => ev.stopPropagation()}
-          onChange={() => renameError && setRenameError(null)}
-          onBlur={(ev) => commitRename(g, ev.target.value)}
-          onKeyDown={(ev) => {
-            if (ev.key === "Enter") (ev.target as HTMLInputElement).blur()
-            if (ev.key === "Escape") {
-              setRenameError(null)
-              setRenamingId(null)
-            }
+        <RenameField
+          name={g.name}
+          error={!!renameError}
+          onCommit={(value) => commitRename(g, value)}
+          onCancel={() => {
+            setRenameError(null)
+            setRenamingId(null)
           }}
+          onEdit={() => renameError && setRenameError(null)}
         />
       ) : undefined,
   })
@@ -231,7 +215,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
       <ContextMenuTrigger asChild>
         <div>{node}</div>
       </ContextMenuTrigger>
-        <ContextMenuContent className="w-40">
+        <ContextMenuContent className="w-40" onCloseAutoFocus={(e) => e.preventDefault()}>
           {onEdit && <ContextMenuItem onSelect={() => startEdit(g)}>{t.gradeLibrary.edit}</ContextMenuItem>}
           {isDraft && <ContextMenuItem
               onSelect={() => {
@@ -250,16 +234,6 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
               }}
             >
               {inUse(g) ? t.library.deleteInUse : t.library.deleteDraft}
-            </ContextMenuItem>
-          )}
-          {!isDraft && mine && (
-            <ContextMenuItem
-              onSelect={() => {
-                setRenameError(null)
-                setRenamingId(g.id)
-              }}
-            >
-              {t.graph.rename}
             </ContextMenuItem>
           )}
           {!isDraft && mine && (
@@ -415,7 +389,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                       addCommunityItem(item)
                       noteItemPublished(item.id)
                       removeDraft(selected.id)
-                      setSelectedId(item.name)
+                      setSelectedId(item.id)
                       onRenamed?.(selected.name, item.name)
                     }}
                   />
