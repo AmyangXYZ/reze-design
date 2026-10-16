@@ -533,10 +533,10 @@ function ShareSceneForm({
                     </p>
                     {/* One grid for every row: the kind column is as wide as its
                         longest label, so the names start on one line. */}
-                    <ul className="mt-1.5 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 text-2xs text-amber-400">
+                    <ul className="mt-1.5 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 text-2xs text-amber-400">
                       {rows.map((u) => (
                         <li key={`${u.kind}:${u.name}`} className="col-span-3 grid min-h-5 grid-cols-subgrid items-center">
-                          <span className="justify-self-start rounded-chip bg-amber-400/15 px-1.5 leading-4">
+                          <span className="justify-self-start rounded-chip bg-amber-400/15 px-1.5 leading-5">
                             {t.share.unpublishedKind[u.kind]}
                           </span>
                           <span className="truncate font-mono">{u.name}</span>
@@ -544,7 +544,7 @@ function ShareSceneForm({
                             // The look's own publish form, right here. React carries
                             // its submit up through the portal, and this form's
                             // onSubmit publishes the scene — so it stops here.
-                            <span className="shrink-0" onSubmit={(e) => e.stopPropagation()}>
+                            <span className="flex shrink-0" onSubmit={(e) => e.stopPropagation()}>
                               <PublishButton
                                 kind={u.kind}
                                 defaultName={u.draft?.name ?? u.name}
