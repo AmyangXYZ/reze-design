@@ -115,6 +115,17 @@ function fake(over: Partial<SceneToolHandles> = {}) {
     shaderLibrary: [{ name: "AG Hair", about: "" }, { name: "WuWa Hair", about: "" }],
     assignShader: (m, g, s) => (calls.push({ fn: "assignShader", args: [m, g, s] }), s === "Nope" ? "no shader" : null),
     setGroupGraph: async (m, g, graph) => (calls.push({ fn: "setGroupGraph", args: [m, g, graph] }), null),
+    materialsOf: () => [
+      { name: "h", texture: "hair.png" },
+      { name: "b", texture: "body.png" },
+      { name: "髪飾り", texture: null },
+      { name: "Ribbon", texture: "ribbon.png" },
+    ],
+    setGroups: async (m, groups) => void calls.push({ fn: "setGroups", args: [m, groups] }),
+    autoGroups: (m, existing) => (
+      calls.push({ fn: "autoGroups", args: [m, existing] }),
+      [...existing, { id: "cloth_smooth", label: "Cloth", materials: ["Ribbon"], graph: { name: "AG Cloth" } } as never]
+    ),
     applyLookPack: rec("applyLookPack"),
     musicUrl: null,
     time: () => 0,
@@ -290,6 +301,47 @@ await test("assign_shader finds the group by name and calls the editor", async (
   const r = await runSceneTool("assign_shader", { character: "reze", group: "Hair", shader: "WuWa Hair" }, h)
   assert.deepEqual(call(calls, "assignShader")[0].args, ["m1", "hair", "WuWa Hair"])
   assert.equal((r.data as { shader: string }).shader, "WuWa Hair")
+})
+
+await test("get_materials lists each material with its texture and group", async () => {
+  const { h } = fake()
+  const r = (await runSceneTool("get_materials", {}, h)).data as { materials: { name: string; texture?: string; group: string | null }[]; groups: { id: string; materials: number }[] }
+  assert.deepEqual(r.materials[0], { name: "h", texture: "hair.png", group: "hair" })
+  assert.deepEqual(r.materials[2], { name: "髪飾り", group: null })
+  assert.deepEqual(r.groups.map((g) => [g.id, g.materials]), [["hair", 1], ["body", 1]])
+})
+
+await test("set_material_groups makes a group, moves materials into it and out of their old one", async () => {
+  const { h, calls } = fake()
+  const r = (await runSceneTool("set_material_groups", { new_groups: [{ name: "Ribbons", shader: "real" }], moves: [{ materials: ["ribbon", "b"], to: "Ribbons" }, { materials: ["髪飾り"], to: "hair" }] }, h)).data as { moved: number; created: string[]; ungrouped: string[] }
+  assert.equal(r.moved, 3)
+  assert.deepEqual(r.created, ["ribbons"])
+  const [model, groups] = call(calls, "setGroups")[0].args as [string, { id: string; materials: string[]; graph: { name?: string } }[]]
+  assert.equal(model, "m1")
+  assert.deepEqual(groups.map((g) => [g.id, g.materials]), [["hair", ["h", "髪飾り"]], ["body", []], ["ribbons", ["Ribbon", "b"]]])
+  assert.deepEqual(groups[2].graph, REAL_GRAPH)
+  assert.deepEqual(r.ungrouped, [])
+})
+
+await test("set_material_groups changes nothing when a name is wrong", async () => {
+  const { h, calls } = fake()
+  const bad = (await runSceneTool("set_material_groups", { moves: [{ materials: ["h", "Skirt"], to: "body" }] }, h)).data as { error: string }
+  assert.match(bad.error, /no material named "Skirt"/)
+  const noGroup = (await runSceneTool("set_material_groups", { moves: [{ materials: ["h"], to: "skirt" }] }, h)).data as { error: string }
+  assert.match(noGroup.error, /make it with new_groups/)
+  const out = (await runSceneTool("set_material_groups", { moves: [{ materials: ["h"], to: "none" }] }, h)).data as { ungrouped: string[] }
+  assert.deepEqual(out.ungrouped, ["h", "髪飾り", "Ribbon"])
+  assert.equal(call(calls, "setGroups").length, 1)
+})
+
+await test("auto_group fills around the current groups, or redoes them from nothing", async () => {
+  const { h, calls } = fake()
+  const fill = (await runSceneTool("auto_group", {}, h)).data as { ungrouped: string[] }
+  assert.deepEqual((call(calls, "autoGroups")[0].args[1] as { id: string }[]).map((g) => g.id), ["hair", "body"])
+  assert.deepEqual(fill.ungrouped, ["髪飾り"])
+  await runSceneTool("auto_group", { mode: "redo" }, h)
+  assert.deepEqual(call(calls, "autoGroups")[1].args[1], [])
+  assert.equal(call(calls, "setGroups").length, 2)
 })
 
 await test("assign_shader names the groups when one does not exist", async () => {

@@ -59,10 +59,11 @@ export type AgentProgress =
 
 export type AgentOutcome = { messages: AgentMessage[]; ended: "done" | "stopped" | "limit" | "refused" | "error"; error?: string }
 
-/** Rounds before the loop tells the model to wrap up. Twelve covers change,
- *  look, fix and look again several times over; 24 let one request run to
- *  well over a million tokens of re-read history. */
-export const MAX_ROUNDS = 12
+/** Rounds before the loop tells the model to wrap up. Twenty covers reading a
+ *  guide and a source, writing, fixing what the compiler said and looking at
+ *  the result, with room to adjust; twelve cut that work off mid-fix. The
+ *  condensed history (compact) keeps a long request's cost in bounds. */
+export const MAX_ROUNDS = 20
 
 /** How a note FROM THE LOOP starts — the scene it attaches to a request, the
  *  wrap-up at the round limit, the nudge to look before finishing. They ride
@@ -85,6 +86,7 @@ const ATTEMPTS = 3
 export const CHANGES = new Set([
   "set_settings", "set_grade", "set_camera", "frame_shot", "assign_shader", "apply_look_pack", "set_shader_inputs",
   "add_effect", "update_effect", "remove_effect", "add_lamp", "update_lamp", "remove_lamp", "set_visibility", "reset_to_default",
+  "set_material_groups", "auto_group",
 ])
 const LOOKS = new Set(["capture", "filmstrip"])
 
@@ -115,8 +117,20 @@ export function toolResultBlock(id: string, result: ToolResult): Anthropic.Beta.
 /** Messages whose inline pictures are re-sent; earlier ones are mentioned. */
 const KEEP_PICTURES = 3
 
-/** Rounds of the current request whose tool results go in full. */
+/** Rounds of the current request whose measurements go in full. */
 const FULL_ROUNDS = 3
+/** Tools whose results are what the model works FROM — a guide, a source, a
+ *  graph, a library, the song, a model's materials. They stay true while the
+ *  request runs and its later work is built on them, so they go in full for
+ *  the whole request. Measurements (capture, probe_light, get_scene…) go
+ *  stale with the next change and keep the FULL_ROUNDS window. */
+const REFERENCE = new Set([
+  "read_authoring_guide", "read_effect_source", "read_shader_graph", "get_shader_inputs", "list_effects", "list_shaders",
+  "get_music", "get_effects", "get_lamps", "get_visibility", "get_materials",
+])
+/** A result this short goes whole wherever it is: its summary would save
+ *  little and lose the values (what was applied, what was clamped). */
+const SHORT_RESULT = 1500
 /** A string in an earlier request's tool call longer than this — a whole
  *  effect's WGSL, a shader graph — goes as its opening and its length. */
 const LONG_INPUT = 600
@@ -134,9 +148,10 @@ const isRequest = (m: AgentMessage) =>
  *
  * - Scene snapshots: only the newest goes. Each request attaches one, and
  *   the older ones describe a scene that no longer exists.
- * - Tool results: in full for the last few rounds of the current request,
- *   as their one-line summary (lib/ai/agent-summary, what the panel shows)
- *   before that. The model can call the tool again for the full data.
+ * - Tool results: short ones always in full; references (REFERENCE) in full
+ *   for the whole current request; measurements for its last few rounds.
+ *   Anything else goes as its one-line summary (lib/ai/agent-summary, what
+ *   the panel shows), and the model can call the tool again for the data.
  * - Tool calls from earlier requests: long strings (code it wrote) shortened.
  *
  * Deterministic, so a message once condensed reads the same every round and
@@ -162,9 +177,11 @@ export function compact(messages: AgentMessage[]): AgentMessage[] {
     if (Array.isArray(m.content) && m.content.some((b) => b.type === "text" && b.text.startsWith(LOOP_NOTE + SNAPSHOT))) snapshot = i
   })
 
-  const condensed = (id: string, text: string): string => {
+  const condensed = (id: string, text: string, i: number): string => {
+    if (text.length <= SHORT_RESULT) return text
     const call = calls.get(id)
-    if (!call) return text.length > LONG_INPUT ? `${text.slice(0, 200)}… (earlier result, condensed)` : text
+    if (!call) return `${text.slice(0, 200)}… (earlier result, condensed)`
+    if (i > request && REFERENCE.has(call.name)) return text
     let data: unknown
     try {
       data = JSON.parse(text)
@@ -196,7 +213,7 @@ export function compact(messages: AgentMessage[]): AgentMessage[] {
       if (b.type === "text" && i !== snapshot && b.text.startsWith(LOOP_NOTE + SNAPSHOT))
         return { type: "text", text: `${LOOP_NOTE}(An earlier scene snapshot, superseded by a later one.)` }
       if (b.type !== "tool_result" || keepResults) return b
-      if (typeof b.content === "string") return { ...b, content: condensed(b.tool_use_id, b.content) }
+      if (typeof b.content === "string") return { ...b, content: condensed(b.tool_use_id, b.content, i) }
       if (!Array.isArray(b.content)) return b
       // The data is the first text block (toolResultBlock). Image labels and
       // pictures after it are left for sendable's picture window.
@@ -204,7 +221,7 @@ export function compact(messages: AgentMessage[]): AgentMessage[] {
       const inner = b.content.map((x) => {
         if (x.type !== "text" || !first) return x
         first = false
-        return { ...x, text: condensed(b.tool_use_id, x.text) }
+        return { ...x, text: condensed(b.tool_use_id, x.text, i) }
       })
       return { ...b, content: inner }
     })

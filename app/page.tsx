@@ -238,6 +238,7 @@ import {
 } from "@/lib/materials"
 import { shaderLookFor, stageLookFor, SURFACE_LOOKS } from "@/lib/stage-style"
 import { autoStyleModel } from "@/lib/auto-style"
+import { isFigureModel, withSpecialGroups } from "@/lib/scene-host"
 import {
   compileGraph,
   DEFAULT_GRAPH,
@@ -6030,6 +6031,19 @@ export default function Lab() {
       if (updated.materials.length) void upsertGroup(modelId, updated)
       else void applyGroups(modelId, list.map((g) => (g.id === groupId ? updated : g)))
       return null
+    },
+    materialsOf: (modelId) => {
+      const model = engineRef.current?.getModel(modelId)
+      if (!model) return []
+      const textures = model.getTextures()
+      return model.getMaterials().map((m) => ({ name: m.name, texture: textures[m.diffuseTextureIndex]?.name ?? null }))
+    },
+    setGroups: (modelId, next) => applyGroups(modelId, next),
+    autoGroups: (modelId, existing) => {
+      const engine = engineRef.current
+      if (!engine) return existing
+      const next = autoStyleModel(engine.getModel(modelId), existing, loadLookPref()) ?? existing
+      return withSpecialGroups(next, { character: isFigureModel(engine, modelId) })
     },
     setGroupGraph: async (modelId, groupId, graph) => {
       const list = groupsByModel[modelId] ?? []

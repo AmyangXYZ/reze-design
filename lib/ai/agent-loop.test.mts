@@ -347,10 +347,29 @@ await test("the current request's last three rounds go in full, older ones as th
   for (const m of results.slice(2)) assert.match(resultText(m), /x{2000}/)
 })
 
+await test("what the model works from stays whole for the whole request; short results stay whole", () => {
+  const h: AgentMessage[] = [request("write a rain effect", "{}")]
+  round(h, "g", "read_authoring_guide", { guide: "G".repeat(9000) }, { topic: "effects" })
+  round(h, "src", "read_effect_source", { name: "Rain", wgsl: "W".repeat(9000) }, { effect: "Rain" })
+  round(h, "s", "set_settings", { applied: { bloom: { intensity: 0.4 } }, clamped: [] })
+  for (let k = 0; k < 5; k++) round(h, `c${k}`, "capture", { views: [{ label: "front", regions: "r".repeat(4000) }] })
+  const sent = JSON.stringify(compact(h))
+  assert.match(sent, /G{9000}/)
+  assert.match(sent, /W{9000}/)
+  assert.match(sent, /\\"intensity\\":0.4/)
+  assert.equal((sent.match(/r{4000}/g) ?? []).length, 3)
+  // The next request reads them again if it needs them.
+  h.push({ role: "assistant", content: [text("done")] as never })
+  h.push(request("now snow", "{}"))
+  const later = JSON.stringify(compact(h))
+  assert.doesNotMatch(later, /G{9000}/)
+  assert.match(later, /Earlier result, condensed — Read the effects guide/)
+})
+
 await test("an earlier request's results are condensed and its long tool inputs shortened", () => {
   const wgsl = "fn background() -> vec4f { ".padEnd(5000, "/")
   const h: AgentMessage[] = [request("make rain", "{}")]
-  round(h, "w", "write_effect", { saved: "Rain" }, { name: "Rain", wgsl })
+  round(h, "w", "write_effect", { saved: "Rain", pad: "p".repeat(2000) }, { name: "Rain", wgsl })
   h.push({ role: "assistant", content: [text("done")] as never })
   h.push(request("now snow", "{}"))
   round(h, "w2", "write_effect", { saved: "Snow" }, { name: "Snow", wgsl })
@@ -380,7 +399,7 @@ await test("a message once condensed reads the same every later round (the cache
   const h: AgentMessage[] = [request("go", "{}")]
   const seen = new Map<number, string>()
   for (let k = 0; k < 8; k++) {
-    round(h, `s${k}`, "probe_light", { reze: { "face (toward camera)": { sun: "lit", sources: [{ name: "sun", share: 0.8 }] } }, pad: "y".repeat(1000) })
+    round(h, `s${k}`, "probe_light", { reze: { "face (toward camera)": { sun: "lit", sources: [{ name: "sun", share: 0.8 }] } }, pad: "y".repeat(2000) })
     compact(h).forEach((m, i) => {
       const t = JSON.stringify(m)
       if (!t.includes("Earlier result, condensed")) return

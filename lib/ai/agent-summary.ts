@@ -116,6 +116,19 @@ export function summarizeStep(name: string, input: Record<string, unknown>, data
       return { title: `Put ${input.shader} on ${input.group}` }
     case "apply_look_pack":
       return { title: `Switched to the ${input.pack} look` }
+    case "get_materials": {
+      const mats = (Array.isArray(d.materials) ? d.materials : []) as { group: string | null }[]
+      const loose = mats.filter((m) => !m.group).length
+      return { title: `Read ${d.character ?? "her"}'s materials`, detail: [plural(mats.length, "material"), loose ? `${loose} ungrouped` : null].filter(Boolean).join(" · ") }
+    }
+    case "set_material_groups": {
+      const created = Array.isArray(d.created) && d.created.length ? ` · made ${list(d.created as string[])}` : ""
+      return { title: `Regrouped ${d.character ?? "her"}'s materials`, detail: `${plural(Number(d.moved) || 0, "material")} moved${created}` }
+    }
+    case "auto_group": {
+      const loose = Array.isArray(d.ungrouped) ? d.ungrouped.length : 0
+      return { title: d.mode === "redo" ? `Re-sorted ${d.character ?? "her"}'s materials` : `Sorted ${d.character ?? "her"}'s loose materials`, detail: loose ? `${loose} left ungrouped` : "all grouped" }
+    }
     case "get_shader_inputs":
       return { title: `Opened the ${input.group} shader`, detail: Array.isArray(d.nodes) ? plural(d.nodes.length, "tunable node") : undefined }
     case "set_shader_inputs": {
@@ -190,6 +203,9 @@ export function doingOf(name: string | null): string | null {
     list_shaders: "Browsing shaders",
     assign_shader: "Swapping a shader",
     apply_look_pack: "Restyling the scene",
+    get_materials: "Reading materials",
+    set_material_groups: "Regrouping materials",
+    auto_group: "Sorting materials",
     get_shader_inputs: "Opening a shader",
     set_shader_inputs: "Tuning a shader",
     get_music: "Listening to the music",

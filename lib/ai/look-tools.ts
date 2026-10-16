@@ -9,7 +9,7 @@ import { specOf } from "@/lib/grade"
 import { loadDrafts } from "@/lib/drafts"
 import type { GradeItem } from "@/lib/library"
 import { LOOK_PACKS, LOOK_PACK_ORDER, sameGraphLook, type LookPack } from "@/lib/materials"
-import { NODE_REGISTRY, compileGraph, type ShaderGraph, type StyleGroup } from "reze-engine"
+import { DEFAULT_GRAPH, NODE_REGISTRY, compileGraph, type ShaderGraph, type StyleGroup } from "reze-engine"
 import type { SceneTool, SceneToolHandles } from "@/lib/ai/scene-tools"
 
 const clamp = (v: unknown, lo: number, hi: number, d: number) =>
@@ -36,14 +36,53 @@ const RANGE_SCHEMA = {
   },
 }
 
+/** A character from the agent's words, by id or name; the first when omitted. */
+const characterOf = (h: SceneToolHandles, character: unknown) =>
+  h.cast.find((m) => m.id === character || m.name.toLowerCase() === String(character ?? "").toLowerCase()) ?? h.cast[0]
+
+/** A group in `list` by id or name, either case. */
+const findGroup = (list: StyleGroup[], word: unknown) => {
+  const g = String(word ?? "").toLowerCase()
+  return list.find((x) => x.id.toLowerCase() === g || (x.label ?? "").toLowerCase() === g)
+}
+
 /** A character and one of her groups from the agent's words, or what is wrong. */
 function groupOf(h: SceneToolHandles, character: unknown, group: unknown): { id: string; name: string; group: StyleGroup } | { error: string } {
-  const c = h.cast.find((m) => m.id === character || m.name.toLowerCase() === String(character ?? "").toLowerCase()) ?? h.cast[0]
+  const c = characterOf(h, character)
   if (!c) return { error: "no character" }
-  const g = String(group ?? "").toLowerCase()
-  const found = (h.groups[c.id] ?? []).find((x) => x.id.toLowerCase() === g || (x.label ?? "").toLowerCase() === g)
+  const found = findGroup(h.groups[c.id] ?? [], group)
   if (!found) return { error: `no group "${group}" on ${c.name} — groups are ${(h.groups[c.id] ?? []).map((x) => x.id).join(", ")}` }
   return { id: c.id, name: c.name, group: found }
+}
+
+/** A character's groups as the agent reads them, with their materials. */
+const groupsOut = (list: StyleGroup[]) =>
+  list.map((g) => ({
+    id: g.id,
+    name: g.label ?? g.id,
+    shader: g.graph.name ?? null,
+    ...(g.renderClass && g.renderClass !== "auto" ? { pass: g.renderClass } : {}),
+    materials: g.materials,
+  }))
+
+/** Materials no group holds. */
+const ungroupedOf = (h: SceneToolHandles, modelId: string, list: StyleGroup[]) => {
+  const grouped = new Set(list.flatMap((g) => g.materials))
+  return h.materialsOf(modelId).flatMap((m) => (grouped.has(m.name) ? [] : [m.name]))
+}
+
+/** A fresh group id from a name: kebab, unique in `list` (the panel's own). */
+function newGroupId(name: string, list: StyleGroup[]): string {
+  const base =
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "group"
+  const ids = new Set(list.map((g) => g.id))
+  if (!ids.has(base)) return base
+  let i = 1
+  while (ids.has(`${base}-${i}`)) i++
+  return `${base}-${i}`
 }
 
 type SocketValue = number | number[]
@@ -187,6 +226,125 @@ export const LOOK_TOOLS: SceneTool[] = [
       if ("error" in found) return { data: found }
       const error = h.assignShader(found.id, found.group.id, String(args.shader ?? ""))
       return { data: error ? { error } : { character: found.name, group: found.group.id, shader: args.shader } }
+    },
+  },
+  {
+    name: "get_materials",
+    description:
+      "One character's materials and how they are grouped: each material with its texture file and the group it is in (null: ungrouped, on the neutral default look), and each group with its shader and render pass. A group is what a shader goes on, so this is where hair, skin, face, eyes and clothes are sorted. Material names are often Japanese or Chinese (髪 hair, 肌 skin, 顔 face, 目/瞳 eye, 服 clothes); the texture name helps when a material is called 材質12.",
+    parameters: { type: "object", properties: { character: { type: "string", description: "Character name or id." } } },
+    run: async (args, h) => {
+      const c = characterOf(h, args.character)
+      if (!c) return { data: { error: "no character" } }
+      const list = h.groups[c.id] ?? []
+      const owner = new Map(list.flatMap((g) => g.materials.map((m) => [m, g.id] as const)))
+      return {
+        data: {
+          character: c.name,
+          groups: groupsOut(list).map(({ materials, ...g }) => ({ ...g, materials: materials.length })),
+          materials: h.materialsOf(c.id).map((m) => ({ name: m.name, ...(m.texture ? { texture: m.texture } : {}), group: owner.get(m.name) ?? null })),
+        },
+      }
+    },
+  },
+  {
+    name: "set_material_groups",
+    description:
+      "Regroup one character's materials: move materials into a group, or out of every group with to \"none\". `new_groups` makes groups first (each on a library shader, or the neutral default), which `moves` can then fill. A material is in one group at most; moving it takes it out of the one it was in. Hair materials go in the hair group and eyes in the eye group: those draw in their own passes. Everything is checked before anything moves. Lands in undo like the materials panel.",
+    parameters: {
+      type: "object",
+      properties: {
+        character: { type: "string", description: "Character name or id." },
+        new_groups: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string", description: "e.g. Ribbons, Skirt." },
+              shader: { type: "string", description: "A shader from list_shaders; the neutral default when omitted." },
+            },
+            required: ["name"],
+          },
+        },
+        moves: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              materials: { type: "array", items: { type: "string" }, description: "Material names, as get_materials lists them." },
+              to: { type: "string", description: "Group id or name, or \"none\" to ungroup." },
+            },
+            required: ["materials", "to"],
+          },
+        },
+      },
+    },
+    run: async (args, h) => {
+      const c = characterOf(h, args.character)
+      if (!c) return { data: { error: "no character" } }
+      let list = (h.groups[c.id] ?? []).map((g) => ({ ...g, materials: [...g.materials] }))
+      const created: string[] = []
+      for (const want of (Array.isArray(args.new_groups) ? args.new_groups : []) as { name?: unknown; shader?: unknown }[]) {
+        const name = String(want?.name ?? "").trim()
+        if (!name) return { data: { error: "a new group needs a name" } }
+        if (findGroup(list, name)) continue
+        const shader = typeof want.shader === "string" && want.shader ? h.graphSource(want.shader) : null
+        if (want.shader && !shader) return { data: { error: `no shader named "${want.shader}" — see list_shaders` } }
+        const id = newGroupId(name, list)
+        list = [...list, { id, label: name, materials: [], graph: structuredClone(shader ?? DEFAULT_GRAPH), renderClass: "auto" }]
+        created.push(id)
+      }
+      // Names as the model knows them; a case slip still finds its material.
+      const known = h.materialsOf(c.id).map((m) => m.name)
+      const exact = new Set(known)
+      const lower = new Map(known.map((n) => [n.toLowerCase(), n]))
+      const moves: { materials: string[]; to: StyleGroup | null }[] = []
+      const unknown: string[] = []
+      for (const m of (Array.isArray(args.moves) ? args.moves : []) as { materials?: unknown; to?: unknown }[]) {
+        const to = String(m?.to ?? "").toLowerCase() === "none" ? null : findGroup(list, m?.to)
+        if (to === undefined) return { data: { error: `no group "${m?.to}" on ${c.name} — groups are ${list.map((g) => g.id).join(", ")}; make it with new_groups` } }
+        const names = (Array.isArray(m.materials) ? m.materials : []).map(String).map((n) => (exact.has(n) ? n : (lower.get(n.toLowerCase()) ?? (unknown.push(n), n))))
+        moves.push({ materials: names, to })
+      }
+      if (unknown.length) return { data: { error: `no material named ${unknown.map((n) => `"${n}"`).join(", ")} on ${c.name} — see get_materials` } }
+      if (!moves.length && !created.length) return { data: { error: "nothing to do: pass moves or new_groups" } }
+      let moved = 0
+      for (const { materials, to } of moves) {
+        const set = new Set(materials)
+        for (const g of list) g.materials = g.materials.filter((x) => !set.has(x))
+        if (to) list.find((g) => g.id === to.id)!.materials.push(...materials)
+        moved += materials.length
+      }
+      await h.setGroups(c.id, list)
+      return {
+        data: {
+          character: c.name,
+          moved,
+          ...(created.length ? { created } : {}),
+          groups: groupsOut(list).map(({ materials, ...g }) => ({ ...g, materials: materials.length })),
+          ungrouped: ungroupedOf(h, c.id, list),
+        },
+      }
+    },
+  },
+  {
+    name: "auto_group",
+    description:
+      "Sort one character's materials into groups by the editor's own classifier: material names matched against a keyword table (hair, eye, face, skin, socks, stockings, metal, cloth; glass, wood… by what they are made of), each group on the current style's shader. `fill` (default) sorts only the ungrouped materials and leaves every group as it is. `redo` throws the current grouping away and sorts from scratch — a big move, only when asked. Returns the grouping and what is still ungrouped: names the table does not know, for you to sort with set_material_groups.",
+    parameters: {
+      type: "object",
+      properties: {
+        character: { type: "string", description: "Character name or id." },
+        mode: { type: "string", enum: ["fill", "redo"] },
+      },
+    },
+    run: async (args, h) => {
+      const c = characterOf(h, args.character)
+      if (!c) return { data: { error: "no character" } }
+      const redo = args.mode === "redo"
+      const list = h.autoGroups(c.id, redo ? [] : (h.groups[c.id] ?? []))
+      await h.setGroups(c.id, list)
+      return { data: { character: c.name, mode: redo ? "redo" : "fill", groups: groupsOut(list), ungrouped: ungroupedOf(h, c.id, list) } }
     },
   },
   {

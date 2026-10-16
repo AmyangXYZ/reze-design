@@ -67,6 +67,15 @@ export type SceneToolHandles = {
   /** Replace a group's shader graph (its values tuned) and wait for it to
    *  compile; resolves to an error to report, or null. */
   setGroupGraph: (modelId: string, groupId: string, graph: ShaderGraph) => Promise<string | null>
+  /** A model's materials in PMX order, each with its diffuse texture's file
+   *  name — what tells two materials apart when their names say nothing. */
+  materialsOf: (modelId: string) => { name: string; texture: string | null }[]
+  /** Replace a model's whole set of groups (materials moved, groups made),
+   *  the materials panel's own path; resolves once applied. */
+  setGroups: (modelId: string, groups: StyleGroup[]) => Promise<void>
+  /** The auto-style classifier (lib/auto-style) folded into `existing`, with
+   *  a character's pinned groups seeded: the set to apply. */
+  autoGroups: (modelId: string, existing: StyleGroup[]) => StyleGroup[]
   applyLookPack: (pack: LookPack) => void
   musicUrl: string | null
   /** Scene time in seconds, and its length. */
@@ -215,7 +224,7 @@ const CORE_TOOLS: SceneTool[] = [
   {
     name: "get_scene",
     description:
-      "Read the scene: every look setting you can change (with current values), the camera, the characters and their material groups, effects, and the timeline. Each request already arrives with this; call it only for fresh state partway through a run.",
+      "Read the scene: every look setting you can change (with current values), the camera, the characters and their material groups (get_materials lists which materials are in each), effects, and the timeline. Each request already arrives with this; call it only for fresh state partway through a run.",
     parameters: { type: "object", properties: {} },
     run: async (_args, h) => ({
       data: {
