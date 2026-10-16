@@ -11,7 +11,7 @@
 // takes a minute reads as a minute of visible work, not a frozen box. The
 // canvas changes beside it; the panel has no scrim for that reason.
 
-import { useEffect, useRef, useState, type ReactNode } from "react"
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { Square, ArrowDown, ArrowUp, ImagePlus, X, Undo2, Redo2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -321,6 +321,82 @@ function LiveThought({ latest, full }: { latest: string; full: string }) {
   )
 }
 
+/**
+ * The conversation so far, drawn once per change of it. Memoized so a keystroke
+ * in the prompt, or the run's clock ticking, does not re-read every tool result
+ * and re-parse every reply: that cost grew with the conversation, and typing
+ * slowed down as it did.
+ */
+const Transcript = memo(function Transcript({
+  lines,
+  busy,
+  worked,
+}: {
+  lines: Line[]
+  busy: boolean
+  worked: AgentPanelText["worked"]
+}) {
+  const renderLine = (l: Line, i: number): ReactNode =>
+          l.kind === "user" ? (
+            // A request opens a turn: on its own tinted bar, the way a coding
+            // agent sets the prompt apart from the work it set off — the
+            // prompt mark, their words in the stronger weight.
+            <Row
+              key={i}
+              mark={<Prompt />}
+              className={cn("-mx-1.5 rounded-interior bg-white/5 px-1.5 py-1", i > 0 && "mt-4")}
+            >
+              {l.images?.length ? (
+                <div className="mb-1.5 flex flex-wrap gap-1.5">
+                  {l.images.map((src, k) => (
+                    // eslint-disable-next-line @next/next/no-img-element -- a local data URL, nothing to optimise
+                    <img key={k} src={src} alt="" className="h-14 max-w-full rounded-chip border border-line object-cover" />
+                  ))}
+                </div>
+              ) : null}
+              <div className="font-medium whitespace-pre-wrap">{l.text}</div>
+            </Row>
+          ) : l.kind === "reply" ? (
+            // A reply that opens with a list is marked by its first dash; the dot
+            // would be a second marker beside it.
+            <Row key={i} mark={/^\s*(?:[-*•]|\d+[.)])\s/.test(l.text) ? undefined : <span className="size-1.5 rounded-full bg-foreground" />}>
+              <Reply text={l.text} />
+            </Row>
+          ) : l.kind === "note" ? (
+            <Note key={i} text={l.text} />
+          ) : (
+            <Step key={i} summary={l.summary} running={busy && !l.done} />
+          )
+
+  // A finished request folds its working — the steps and the reasoning
+  // between them — into one line, and keeps its answer in view, so a long
+  // conversation reads as requests and replies. The latest request stays open.
+  const requestAt = lines.flatMap((l, i) => (l.kind === "user" ? [i] : []))
+  const transcript: ReactNode[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i]
+    const next = requestAt.find((r) => r > i)
+    if (l.kind !== "user" || next === undefined) {
+      transcript.push(renderLine(l, i))
+      continue
+    }
+    transcript.push(renderLine(l, i))
+    const work: ReactNode[] = []
+    const answers: ReactNode[] = []
+    let steps = 0
+    for (let j = i + 1; j < next; j++) {
+      const x = lines[j]
+      if (x.kind === "step") steps++
+      ;(x.kind === "step" || x.kind === "note" ? work : answers).push(renderLine(x, j))
+    }
+    if (steps > 0) transcript.push(<Fold key={`fold-${i}`} label={worked(steps)}>{work}</Fold>)
+    else answers.unshift(...work)
+    transcript.push(...answers)
+    i = next - 1
+  }
+  return <>{transcript}</>
+})
+
 export function AgentPanel({
   messages,
   thumbs,
@@ -399,7 +475,7 @@ export function AgentPanel({
   }, [open, conversationId, onSetup])
   const [now, setNow] = useState(() => Date.now())
   const scroller = useRef<HTMLDivElement>(null)
-  const lines = linesOf(messages, thumbs)
+  const lines = useMemo(() => linesOf(messages, thumbs), [messages, thumbs])
 
   // Up to four pictures a request, from the button, a paste or a drop.
   const attach = async (files: Iterable<File>) => {
@@ -465,64 +541,6 @@ export function AgentPanel({
   // The latest line of reasoning, while it is still forming.
   const thought = live.thinking.trim().split("\n").filter(Boolean).pop() ?? ""
 
-  const renderLine = (l: Line, i: number): ReactNode =>
-          l.kind === "user" ? (
-            // A request opens a turn: on its own tinted bar, the way a coding
-            // agent sets the prompt apart from the work it set off — the
-            // prompt mark, their words in the stronger weight.
-            <Row
-              key={i}
-              mark={<Prompt />}
-              className={cn("-mx-1.5 rounded-interior bg-white/5 px-1.5 py-1", i > 0 && "mt-4")}
-            >
-              {l.images?.length ? (
-                <div className="mb-1.5 flex flex-wrap gap-1.5">
-                  {l.images.map((src, k) => (
-                    // eslint-disable-next-line @next/next/no-img-element -- a local data URL, nothing to optimise
-                    <img key={k} src={src} alt="" className="h-14 max-w-full rounded-chip border border-line object-cover" />
-                  ))}
-                </div>
-              ) : null}
-              <div className="font-medium whitespace-pre-wrap">{l.text}</div>
-            </Row>
-          ) : l.kind === "reply" ? (
-            // A reply that opens with a list is marked by its first dash; the dot
-            // would be a second marker beside it.
-            <Row key={i} mark={/^\s*(?:[-*•]|\d+[.)])\s/.test(l.text) ? undefined : <span className="size-1.5 rounded-full bg-foreground" />}>
-              <Reply text={l.text} />
-            </Row>
-          ) : l.kind === "note" ? (
-            <Note key={i} text={l.text} />
-          ) : (
-            <Step key={i} summary={l.summary} running={busy && !l.done} />
-          )
-
-  // A finished request folds its working — the steps and the reasoning
-  // between them — into one line, and keeps its answer in view, so a long
-  // conversation reads as requests and replies. The latest request stays open.
-  const requestAt = lines.flatMap((l, i) => (l.kind === "user" ? [i] : []))
-  const transcript: ReactNode[] = []
-  for (let i = 0; i < lines.length; i++) {
-    const l = lines[i]
-    const next = requestAt.find((r) => r > i)
-    if (l.kind !== "user" || next === undefined) {
-      transcript.push(renderLine(l, i))
-      continue
-    }
-    transcript.push(renderLine(l, i))
-    const work: ReactNode[] = []
-    const answers: ReactNode[] = []
-    let steps = 0
-    for (let j = i + 1; j < next; j++) {
-      const x = lines[j]
-      if (x.kind === "step") steps++
-      ;(x.kind === "step" || x.kind === "note" ? work : answers).push(renderLine(x, j))
-    }
-    if (steps > 0) transcript.push(<Fold key={`fold-${i}`} label={text.worked(steps)}>{work}</Fold>)
-    else answers.unshift(...work)
-    transcript.push(...answers)
-    i = next - 1
-  }
 
   return (
     <div
@@ -561,7 +579,7 @@ export function AgentPanel({
       >
         <div ref={content} className="space-y-2">
         {lines.length === 0 && !busy && <p className="text-muted-foreground">{text.empty}</p>}
-        {transcript}
+        <Transcript lines={lines} busy={busy} worked={text.worked} />
         {busy && live.text && (
           <Row>
             <Reply text={live.text} />
