@@ -1004,6 +1004,7 @@ const en = {
       body: "It leaves this scene. The file you uploaded is not touched.",
       confirm: "Delete",
       cancel: "Cancel",
+      snooze: "Don't ask again for 7 days",
     },
     aria: {
       upload: (kind: string, of?: string) => `Upload ${kind}${of ? ` for ${of}` : ""}`,
@@ -2087,6 +2088,7 @@ const zh: Dictionary = {
       body: "它将从此场景中移除，你上传的文件不受影响。",
       confirm: "删除",
       cancel: "取消",
+      snooze: "7 天内不再询问",
     },
     aria: {
       upload: (kind: string, of?: string) => `上传${of ? `${of} 的` : ""}${kind}`,

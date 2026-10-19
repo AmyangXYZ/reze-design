@@ -11,7 +11,10 @@
 // making it awaitable would hide the fact that the surface stays mounted and
 // interactive underneath.
 
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
+import { storageKey } from "@/lib/storage"
 import {
   Dialog,
   DialogContent,
@@ -20,6 +23,31 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+
+// "Don't ask again for 7 days": per question, by key, in this browser.
+const SNOOZE = storageKey("confirm-snooze")
+const SNOOZE_MS = 7 * 24 * 60 * 60 * 1000
+
+function snoozes(): Record<string, number> {
+  try {
+    return JSON.parse(window.localStorage.getItem(SNOOZE) ?? "{}") as Record<string, number>
+  } catch {
+    return {}
+  }
+}
+
+/** Whether the question under `key` is snoozed: the caller then acts at once. */
+export function confirmSnoozed(key: string): boolean {
+  return (snoozes()[key] ?? 0) > Date.now()
+}
+
+function snooze(key: string): void {
+  try {
+    window.localStorage.setItem(SNOOZE, JSON.stringify({ ...snoozes(), [key]: Date.now() + SNOOZE_MS }))
+  } catch {
+    // Storage blocked: it simply asks again next time.
+  }
+}
 
 export function ConfirmDialog({
   open,
@@ -30,6 +58,8 @@ export function ConfirmDialog({
   cancelLabel,
   onConfirm,
   tone = "destructive",
+  snoozeKey,
+  snoozeLabel,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -42,7 +72,12 @@ export function ConfirmDialog({
    *  a step that is permanent without removing anything, such as making an
    *  item public. Red keeps its one meaning. */
   tone?: "destructive" | "accent"
+  /** Offers "don't ask again" for this question, remembered under this key for
+   *  7 days. The caller checks `confirmSnoozed(key)` before opening. */
+  snoozeKey?: string
+  snoozeLabel?: string
 }) {
+  const [snoozing, setSnoozing] = useState(false)
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* No close X: the two buttons ARE the choice, and a third way out that
@@ -52,26 +87,41 @@ export function ConfirmDialog({
           <DialogTitle className="text-sm">{title}</DialogTitle>
           {body ? <DialogDescription className="text-xs">{body}</DialogDescription> : null}
         </DialogHeader>
-        <DialogFooter>
-          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
-            {cancelLabel}
-          </Button>
-          {/* Destructive, and it is the one that carries the colour: red is
-              reserved for "this removes something", which is exactly what is
-              being asked about. */}
-          <Button
-            variant={tone === "destructive" ? "destructive" : "default"}
-            size="sm"
-            autoFocus
-            className={tone === "accent" ? "bg-blue-400 text-on-accent hover:bg-blue-400/90" : undefined}
-            onClick={() => {
-              onOpenChange(false)
-              onConfirm()
-            }}
-          >
-            {confirmLabel}
-          </Button>
-        </DialogFooter>
+        {/* The checkbox rides with the buttons it qualifies, closer than the
+            dialog's own 16px gap. */}
+        <div className="grid gap-2">
+          {snoozeKey && snoozeLabel ? (
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Checkbox
+                checked={snoozing}
+                onCheckedChange={(v) => setSnoozing(v === true)}
+                className="border-line-strong data-[state=checked]:border-blue-400 data-[state=checked]:bg-blue-400 data-[state=checked]:text-on-accent dark:data-[state=checked]:bg-blue-400"
+              />
+              {snoozeLabel}
+            </label>
+          ) : null}
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+              {cancelLabel}
+            </Button>
+            {/* Destructive, and it is the one that carries the colour: red is
+                reserved for "this removes something", which is exactly what is
+                being asked about. */}
+            <Button
+              variant={tone === "destructive" ? "destructive" : "default"}
+              size="sm"
+              autoFocus
+              className={tone === "accent" ? "bg-blue-400 text-on-accent hover:bg-blue-400/90" : undefined}
+              onClick={() => {
+                if (snoozeKey && snoozing) snooze(snoozeKey)
+                onOpenChange(false)
+                onConfirm()
+              }}
+            >
+              {confirmLabel}
+            </Button>
+          </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   )

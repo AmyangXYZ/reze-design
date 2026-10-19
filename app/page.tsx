@@ -129,7 +129,7 @@ import { useFootstepSource, useFootsteps } from "@/hooks/use-footsteps"
 import { CUSTOM_FOOTSTEP_MAX_BYTES, CUSTOM_FOOTSTEP_MAX_SECONDS, FOOTSTEP_SOUNDS, checkFootstepFile, footstepSoundOf } from "@/lib/footsteps"
 import { Dopesheet } from "@/components/scene/dopesheet"
 import { ClipBridge } from "@/components/scene/clip-bridge"
-import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { ConfirmDialog, confirmSnoozed } from "@/components/ui/confirm-dialog"
 import { ClipAutosave } from "@/components/scene/clip-autosave"
 import { ClipHistory } from "@/components/scene/clip-history"
 import { ClipInspector } from "@/components/scene/clip-inspector"
@@ -1794,7 +1794,7 @@ function ClipRow({
                     danger
                     disabled={!clip}
                     label={t.lab.aria.delete(kind, of)}
-                    onClick={() => setConfirming(true)}
+                    onClick={() => (confirmSnoozed("delete-clip") ? onRemove() : setConfirming(true))}
                   />
                 </>
                 )
@@ -1809,6 +1809,8 @@ function ClipRow({
             confirmLabel={t.lab.deleteClip.confirm}
             cancelLabel={t.lab.deleteClip.cancel}
             onConfirm={onRemove}
+            snoozeKey="delete-clip"
+            snoozeLabel={t.lab.deleteClip.snooze}
           />
         </div>
       </PopoverAnchor>
