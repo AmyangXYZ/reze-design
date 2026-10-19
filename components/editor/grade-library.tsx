@@ -350,13 +350,14 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                 <div className="mt-1 flex items-center gap-1.5 font-mono text-2xs text-muted-foreground">
                   <AuthorAvatar name={builtinAuthor(selected.id, selected.author)} className="size-3.5" />
                   <AuthorLink name={builtinAuthor(selected.id, selected.author)} draft={itemState(selected) === "draft"} className="truncate select-text" />
-                  {/* When it went public, the same fact the gallery's panel shows. */}
-                  {selected.createdAt && (
-                    <span className="shrink-0">
-                      · <Stamp iso={selected.createdAt} show="words" locale={locale} />
-                    </span>
-                  )}
                 </div>
+                {/* When it went public, the same fact the gallery's panel shows — on its
+                    own line, so a long name never pushes it out of view. */}
+                {selected.createdAt && (
+                  <div className="mt-1 flex h-3.5 items-center font-mono text-2xs text-muted-foreground">
+                    <Stamp iso={selected.createdAt} show="words" locale={locale} />
+                  </div>
+                )}
                 {selected.description && (
                   <p className="mt-2 text-xs leading-relaxed text-muted-foreground select-text">{builtinDescription("grade", selected, locale)}</p>
                 )}
