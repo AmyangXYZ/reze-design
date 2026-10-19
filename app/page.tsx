@@ -138,7 +138,7 @@ import { FPS } from "@/lib/clip"
 import { ClipEditor, type ClipEditKind } from "@/context/clip-editor"
 import { primeClipDensity, useAudioPeaks } from "@/hooks/use-lane-graphs"
 import { useEngine } from "@/hooks/use-engine"
-import { isTouch, useCompact, useTouch } from "@/lib/device"
+import { isMobileAgent, isTouch, useCompact, useTouch } from "@/lib/device"
 import { useRenderFraming } from "@/hooks/use-render-framing"
 import { useSceneCast, useSceneSync } from "@/hooks/use-scene-sync"
 import { seedMusic, useSceneMedia, type BgSlot } from "@/hooks/use-scene-media"
@@ -4006,8 +4006,21 @@ export default function Lab() {
     } catch {
       // private mode — fall through to the device default
     }
-    return !isTouch()
+    return !isTouch() && !isMobileAgent()
   })
+  // On a phone the pill flexes to whatever the right cluster leaves, and the
+  // stack hanging under it takes the same width, so the two read as one column.
+  // Measured rather than restated: the cluster's width is its buttons'.
+  const [pillWidth, setPillWidth] = useState(0)
+  const pillObserver = useRef<ResizeObserver | null>(null)
+  const pillRef = useCallback((el: HTMLDivElement | null) => {
+    pillObserver.current?.disconnect()
+    pillObserver.current = null
+    if (!el) return
+    const ro = new ResizeObserver(() => setPillWidth(el.offsetWidth))
+    ro.observe(el)
+    pillObserver.current = ro
+  }, [])
   /** Set when a phone panel pushed the stack away, so closing it brings the
    *  stack back. */
   const dockReturns = useRef(false)
@@ -4386,14 +4399,15 @@ export default function Lab() {
     [inspectedGroups, inspectGroupsApply],
   )
   const inspectMoveMaterial = useCallback(
-    (material: string, targetId: string | null) => {
+    (materials: string[], targetId: string | null) => {
+      const moving = new Set(materials)
       const next = inspectedGroups.map((g) => ({
         ...g,
-        materials: g.materials.filter((m) => m !== material),
+        materials: g.materials.filter((m) => !moving.has(m)),
       }))
       if (targetId) {
         const target = next.find((g) => g.id === targetId)
-        if (target) target.materials = [...target.materials, material]
+        if (target) target.materials = [...target.materials, ...materials]
       }
       inspectGroupsApply(next)
     },
@@ -7268,7 +7282,7 @@ export default function Lab() {
           {/* On a phone the pill stays while the stack is open: the stack hangs
               below the top bar there, so the pill is its header. */}
           {(!expanded || compact) && (
-            <div className={cn(PILL, "pointer-events-auto flex h-10 w-[16rem] items-center gap-1.5 pr-1.5 pl-2 compact:w-auto compact:min-w-0 compact:flex-1 compact:gap-0.5 compact:pr-1 compact:pl-1")}>
+            <div ref={pillRef} className={cn(PILL, "pointer-events-auto flex h-10 w-[16rem] items-center gap-1.5 pr-1.5 pl-2 compact:w-auto compact:min-w-0 compact:flex-1 compact:gap-0.5 compact:pr-1 compact:pl-1")}>
               {/* The logo is the menu, in both of its homes — scene-file-menu.tsx
                   for why. The stack is not on screen here, so this pill's logo is
                   the only door to the file operations. */}
@@ -8113,16 +8127,18 @@ export default function Lab() {
           // capped stack scrolls, and its body fades at the bottom edge while
           // there is more, so a row cut by the cap reads as "scroll", not as
           // broken.
-          // On a phone it hangs below the top bar at full width, and stops short
-          // of the transport so the canvas stays in view under it.
+          // On a phone it hangs below the top bar at the pill's width (see
+          // pillWidth), against the left edge rather than across the screen, so
+          // the canvas stays in view beside it, and stops short of the transport.
           className={cn(
             "top-3 left-3 flex max-h-[calc(100%-4.75rem)] w-[16rem] flex-col overflow-hidden text-xs",
             COMPACT_SHEET,
+            "compact:right-auto compact:w-[16rem] compact:max-w-[calc(100%-1.5rem)]",
             // The stack and the agent are where a phone spends its time, so they
             // run down to the transport rather than stopping at the sheet's cap.
             "compact:max-h-[calc(100dvh-8rem)]",
           )}
-          style={{ zIndex: dockZ.z }}
+          style={{ zIndex: dockZ.z, ...(compact && pillWidth ? { width: pillWidth } : {}) }}
           onPointerDownCapture={dockZ.onPointerDownCapture}
           onFocusCapture={dockZ.onFocusCapture}
         >

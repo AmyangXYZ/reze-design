@@ -80,8 +80,10 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   /** Open the node-graph editor on a group's shader graph. Optional — hosts
    *  without the floating editor hide the edit affordances. */
   onEditGroupGraph?: (id: string) => void
-  /** Reassign a material to a group (target=null → ungroup). */
-  onMoveMaterial: (material: string, targetId: string | null) => void
+  /** Reassign materials to a group (target=null → ungroup). A list, applied
+   *  as one change: moving a selection one call at a time would have each
+   *  call rebuild the grouping from the same stale snapshot. */
+  onMoveMaterial: (materials: string[], targetId: string | null) => void
   /** Apply a library shader graph to a style group by name */
   onPickGraph: (groupId: string, graphName: string) => void
   /** The model's grouping is the one saved for it in this browser (lib/model-looks). */
@@ -180,6 +182,61 @@ export const MaterialsPanel = memo(function MaterialsPanel({
     [groups, locale],
   )
 
+  /**
+   * Long-press on a finger, standing in for the right-click.
+   *
+   * Rows can't be dragged on touch (a drag would swallow the scroll), so the
+   * menu is the only way to move a material there, and Radix's own long-press
+   * never got it open. It is cancelled by ANY pointermove, and a held finger
+   * jitters. Even when it fired, it opened without a target, because iOS sends
+   * no contextmenu event for the row's handler to aim the menu with. This one
+   * allows a few pixels of drift and then sends the row the contextmenu event a
+   * mouse would, so the row aims the menu and Radix opens it, the same path as
+   * a right-click. Radix's timer is turned off by the preventDefault (it skips
+   * a handled pointerdown).
+   */
+  const pressRef = useRef<{ timer: number; x: number; y: number } | null>(null)
+  // The tap that ends a long-press is not a tap: on a group row it would fold
+  // the group the menu just opened over. Cleared by the next press either way.
+  const pressedLongRef = useRef(false)
+  const endPress = () => {
+    if (pressRef.current) window.clearTimeout(pressRef.current.timer)
+    pressRef.current = null
+  }
+  const pressHandlers = {
+    onPointerDown: (e: React.PointerEvent) => {
+      if (e.pointerType === "mouse") return
+      endPress()
+      pressedLongRef.current = false
+      const target = e.target as HTMLElement
+      // A field keeps its own touch behaviour (caret, selection).
+      if (target.closest("input, textarea")) return
+      e.preventDefault()
+      const row = target.closest<HTMLElement>("[data-ctx]")
+      if (!row) return
+      const { clientX: x, clientY: y } = e
+      const timer = window.setTimeout(() => {
+        pressRef.current = null
+        pressedLongRef.current = true
+        row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: x, clientY: y }))
+      }, 500)
+      pressRef.current = { timer, x, y }
+    },
+    onPointerMove: (e: React.PointerEvent) => {
+      const p = pressRef.current
+      if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 8) endPress()
+    },
+    onPointerUp: endPress,
+    onPointerCancel: endPress,
+    onClickCapture: (e: React.MouseEvent) => {
+      if (!pressedLongRef.current) return
+      pressedLongRef.current = false
+      e.preventDefault()
+      e.stopPropagation()
+    },
+  }
+  useEffect(() => endPress, [])
+
   const toggleCollapse = (id: string) =>
     setCollapsed((prev) => {
       const next = new Set(prev)
@@ -187,12 +244,46 @@ export const MaterialsPanel = memo(function MaterialsPanel({
       else next.add(id)
       return next
     })
+  /**
+   * Picking several materials — desktop only. Ctrl-click (cmd on a Mac)
+   * toggles a row in or out; a plain click on a row, or Escape, lets the
+   * selection go. Rows keep their own drag, so grabbing a selected row, or
+   * right-clicking it, moves the whole selection.
+   */
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  // Names that left the panel (another model, a reload) drop out by themselves.
+  const selection = useMemo(() => new Set([...selected].filter((n) => byName.has(n))), [selected, byName])
+  const groupOf = useMemo(() => new Map(groups.flatMap((g) => g.materials.map((m) => [m, g.id] as const))), [groups])
+  /** What a drag or a Move to on this row carries: the selection when the row
+   *  is part of it, the row alone when it is not. */
+  const movingWith = (name: string) => (selection.has(name) ? sortedNames([...selection]) : [name])
+  const hasSelection = selection.size > 0
+  useEffect(() => {
+    if (!hasSelection) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelected(new Set())
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [hasSelection])
+  const clickRow = (e: React.MouseEvent, name: string) => {
+    if (coarse) return
+    if (e.ctrlKey || e.metaKey) {
+      setSelected((prev) => {
+        const next = new Set(prev)
+        if (next.has(name)) next.delete(name)
+        else next.add(name)
+        return next
+      })
+    } else if (hasSelection) setSelected(new Set())
+  }
+
   const endDrag = () => {
     setDragMat(null)
     setDropTarget(null)
   }
   const onDropTo = (targetId: string | null) => {
-    if (dragMat) onMoveMaterial(dragMat, targetId)
+    if (dragMat) onMoveMaterial(movingWith(dragMat), targetId)
     endDrag()
   }
   // Shared drop-zone handlers for a group (id) or the ungrouped section (UNGROUPED).
@@ -226,15 +317,24 @@ export const MaterialsPanel = memo(function MaterialsPanel({
         onDragEnd={endDrag}
         onContextMenu={() => setMenuTarget({ kind: "material", name: m.name, groupId: currentGroupId })}
         className={cn(
-          "group/row flex h-6 cursor-grab items-center gap-1.5 rounded-chip pr-0.5 pl-1 transition-colors hover:bg-white/[0.05] active:cursor-grabbing",
+          "group/row flex h-6 cursor-grab items-center select-none gap-1.5 rounded-chip pr-0.5 pl-1 transition-colors hover:bg-white/[0.05] active:cursor-grabbing",
           !m.visible && "opacity-45",
-          dragMat === m.name && "opacity-40",
+          selection.has(m.name) && "bg-blue-400/10 hover:bg-blue-400/10",
+          dragMat !== null && movingWith(dragMat).includes(m.name) && "opacity-40",
         )}
+        onClick={(e) => clickRow(e, m.name)}
         onMouseEnter={() => onHover(m.name)}
         onMouseLeave={() => onHover(null)}
       >
         <Circle className="size-1.5 shrink-0 fill-current text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground group-hover/row:text-foreground">{m.name}</span>
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate text-xs text-muted-foreground group-hover/row:text-foreground",
+            selection.has(m.name) && "text-foreground",
+          )}
+        >
+          {m.name}
+        </span>
         <Button variant="bare"
           className={cn("shrink-0 text-muted-foreground hover:text-foreground", m.visible && "opacity-0 group-hover/row:opacity-100 pointer-coarse:opacity-100")}
           onClick={(e) => {
@@ -341,6 +441,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
               dense ? "pb-2" : "pb-3.5",
             )}
             onMouseLeave={() => onHover(null)}
+            {...pressHandlers}
             onContextMenuCapture={(e) => {
               if (!(e.target as HTMLElement).closest("[data-ctx]")) {
                 e.preventDefault()
@@ -393,7 +494,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                       ) : (
                         <span
                           className={cn(
-                            "min-w-0 flex-1 truncate text-xs font-medium",
+                            "min-w-0 flex-1 truncate text-xs font-medium select-none",
                             isActive ? "text-blue-400" : "text-foreground",
                           )}
                         >
@@ -508,22 +609,27 @@ export const MaterialsPanel = memo(function MaterialsPanel({
               // Live lookup — visibility may have changed since the menu was aimed.
               const m = byName.get(menuTarget.name)
               const visible = m?.visible ?? true
+              // A selection can span groups: a group is only left off the list
+              // when everything moving is already in it.
+              const moving = movingWith(menuTarget.name)
+              const from = new Set(moving.map((n) => groupOf.get(n) ?? null))
+              const onlyIn = from.size === 1 ? [...from][0] : undefined
               return (
                 <>
                   <ContextMenuSub>
                     <ContextMenuSubTrigger>{t.materials.moveTo}</ContextMenuSubTrigger>
                     <ContextMenuSubContent>
                       {ordered
-                        .filter((g) => g.id !== menuTarget.groupId)
+                        .filter((g) => g.id !== onlyIn)
                         .map((g) => (
-                          <ContextMenuItem key={g.id} onSelect={() => onMoveMaterial(menuTarget.name, g.id)}>
+                          <ContextMenuItem key={g.id} onSelect={() => onMoveMaterial(moving, g.id)}>
                             {shownLabel(g)}
                           </ContextMenuItem>
                         ))}
-                      {menuTarget.groupId && (
+                      {onlyIn !== null && (
                         <>
                           <ContextMenuSeparator />
-                          <ContextMenuItem onSelect={() => onMoveMaterial(menuTarget.name, null)}>{t.materials.ungrouped}</ContextMenuItem>
+                          <ContextMenuItem onSelect={() => onMoveMaterial(moving, null)}>{t.materials.ungrouped}</ContextMenuItem>
                         </>
                       )}
                     </ContextMenuSubContent>

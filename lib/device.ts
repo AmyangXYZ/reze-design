@@ -29,6 +29,18 @@ const subscribeTouch = subscribe(TOUCH_QUERY)
 export const isCompact = () => window.matchMedia(COMPACT_QUERY).matches
 export const isTouch = () => window.matchMedia(TOUCH_QUERY).matches
 
+/**
+ * A phone or tablet by its agent — the one question asked of it, for defaults
+ * on a first visit, where a wrong guess costs one tap. An iPad that calls
+ * itself a Mac gives itself away by its touch points.
+ */
+export function isMobileAgent(): boolean {
+  const d = (navigator as { userAgentData?: { mobile?: boolean } }).userAgentData
+  if (d?.mobile) return true
+  const u = navigator.userAgent
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(u) || (/Macintosh/.test(u) && navigator.maxTouchPoints > 1)
+}
+
 /** Server render answers false: the editor renders on the client. */
 export function useCompact(): boolean {
   return useSyncExternalStore(subscribeCompact, isCompact, () => false)
