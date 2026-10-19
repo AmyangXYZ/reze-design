@@ -516,6 +516,8 @@ const en = {
     loopOff: "Loop off",
     eyesOn: "Eyes on camera",
     eyesOff: "Eyes as animated",
+    hideUi: "Hide UI (H)",
+    showUi: "Show UI",
     scrub: "Scrub the timeline",
   },
   graph: {
@@ -1066,6 +1068,7 @@ const en = {
       outlineOff: "Turn off outline",
       eyesOn: "Turn on eyes on camera",
       eyesOff: "Turn off eyes on camera",
+      hideUi: "Hide UI",
       jellyOn: "Turn on jelly eyes",
       jellyOff: "Turn off jelly eyes",
       resetPhysics: "Reset physics",
@@ -1669,6 +1672,8 @@ const zh: Dictionary = {
     loopOff: "循环关",
     eyesOn: "眼神看镜头",
     eyesOff: "眼神随动作",
+    hideUi: "隐藏界面 (H)",
+    showUi: "显示界面",
     scrub: "拖动时间轴",
   },
   graph: {
@@ -2141,6 +2146,7 @@ const zh: Dictionary = {
       outlineOff: "关闭描边",
       eyesOn: "开启眼神看镜头",
       eyesOff: "关闭眼神看镜头",
+      hideUi: "隐藏界面",
       jellyOn: "开启果冻眼",
       jellyOff: "关闭果冻眼",
       resetPhysics: "重置物理",

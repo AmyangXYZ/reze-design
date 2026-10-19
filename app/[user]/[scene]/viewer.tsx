@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, GalleryThumbnails, GitFork, Heart, WandSparkles } from "lucide-react"
+import { ArrowLeft, GalleryThumbnails, GitFork, Heart, Minimize2, WandSparkles } from "lucide-react"
 import { LogoMenu, Row as MenuRow } from "@/components/editor/scene-file-menu"
 import { DisplayOnlyTag, SceneGallery } from "@/components/editor/scene-gallery"
 import { AnimPlayer } from "@/components/scene/anim-player"
@@ -20,6 +20,7 @@ import { useAudioClock, useTrackAudio } from "@/hooks/use-audio-clock"
 import { useFootstepSource, useFootsteps } from "@/hooks/use-footsteps"
 import { useMediaBackdrop } from "@/hooks/use-media-backdrop"
 import { SceneBackdrop } from "@/components/scene/scene-backdrop"
+import { ShowUiButton, useHideUi } from "@/components/scene/hide-ui"
 import { specOf } from "@/lib/grade"
 import { libraryGraph } from "@/lib/materials"
 import { newSceneId, parseSceneDoc, type Scene, type SceneDoc } from "@/lib/scene"
@@ -36,6 +37,7 @@ import { useI18n, useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { VideoLink } from "@/components/video-link"
 import { Button } from "@/components/ui/button"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { VerifiedBadge } from "@/components/verified-badge"
 
 type ViewerProps = {
@@ -134,6 +136,8 @@ export function SceneViewer(props: ViewerProps) {
   }
   const [logoMenu, setLogoMenu] = useState(false)
   const [galleryOpen, setGalleryOpen] = useState(false)
+  // The editor's switch: everything but the scene, off and back.
+  const [uiHidden, setUiHidden] = useHideUi()
 
   /**
    * Park the assets, then go.
@@ -173,7 +177,7 @@ export function SceneViewer(props: ViewerProps) {
   }, [session])
 
   return (
-    <main className="fixed inset-0 overflow-hidden bg-background select-none">
+    <main className="fixed inset-0 overflow-hidden bg-background select-none" data-ui-hidden={uiHidden || undefined}>
       {/* The scene, under the chrome — its own component so `useEngine` never
           runs conditionally. Until it exists there is a pill, and the text
           around it is already readable. */}
@@ -254,7 +258,25 @@ export function SceneViewer(props: ViewerProps) {
             wraps anywhere — a pasted URL is one unbroken word, and without that
             it pushed the card sideways into a horizontal scrollbar. */}
         <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-2.5 [overflow-wrap:anywhere]">
-          <div className="truncate text-sm font-semibold tracking-tight text-foreground">{props.title}</div>
+          {/* The title row ends in Hide UI (H does the same), on the card that
+              names what you are watching. The way back is at the top edge. */}
+          <div className="flex min-w-0 items-center gap-1">
+            <div className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight text-foreground">{props.title}</div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setUiHidden(true)}
+                  aria-label={t.transport.hideUi}
+                  className="-mr-1 size-6 shrink-0 rounded-chip text-muted-foreground hover:text-foreground"
+                >
+                  <Minimize2 className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">{t.transport.hideUi}</TooltipContent>
+            </Tooltip>
+          </div>
           <div className="mt-0.5 flex min-w-0 items-center gap-1 font-mono text-2xs text-muted-foreground">
             <Link href={`/${props.author}`} className="truncate transition-colors hover:text-foreground hover:underline">
               @{props.author}
@@ -367,6 +389,7 @@ export function SceneViewer(props: ViewerProps) {
         tone="accent"
         onConfirm={() => void openInEditor()}
       />
+      {uiHidden && <ShowUiButton onShow={() => setUiHidden(false)} />}
     </main>
   )
 }
@@ -625,7 +648,7 @@ function SceneStage({
         videoRef={bgVideoRef}
         className="absolute inset-0 h-full w-full object-cover"
       />
-      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none object-contain" />
+      <canvas data-keep ref={canvasRef} className="absolute inset-0 h-full w-full touch-none object-contain" />
 
       {!ready && !error && <LoadingPill label={loadingLabel} />}
       {error && <LoadError error={error} failure={downloadFailure} onRetry={() => window.location.reload()} />}

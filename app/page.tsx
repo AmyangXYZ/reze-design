@@ -79,6 +79,7 @@ import {
   Hand,
   Shapes,
   Eye,
+  Minimize2,
   Search,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -144,6 +145,7 @@ import { useSceneCast, useSceneSync } from "@/hooks/use-scene-sync"
 import { seedMusic, useSceneMedia, type BgSlot } from "@/hooks/use-scene-media"
 import { useSceneClips } from "@/hooks/use-scene-clips"
 import { SceneBackdrop } from "@/components/scene/scene-backdrop"
+import { ShowUiButton, useHideUi } from "@/components/scene/hide-ui"
 import { useBrowseSurface } from "@/hooks/use-browse-surface"
 import { useStoredRect } from "@/hooks/use-stored-rect"
 import { useDockSlot } from "@/hooks/use-dock-slot"
@@ -1285,6 +1287,15 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       label: l.cmd.eyesOn,
       altLabels: [alt.cmd.eyesOn, l.cmd.eyesOff, alt.cmd.eyesOff],
       keywords: ["eyes", "gaze", "look at camera", "eye contact", "eyeline", "眼神", "视线", "目线", "看镜头", "眼睛"],
+    },
+    // Hide UI — H, reachable by name.
+    {
+      id: "hideUi",
+      section: "command",
+      icon: Minimize2,
+      label: l.cmd.hideUi,
+      altLabels: [alt.cmd.hideUi],
+      keywords: ["hide ui", "clean", "zen", "focus", "record", "screenshot", "chrome", "隐藏", "界面", "纯净", "录屏"],
     },
     // Jelly eyes: palette-only, like eyes on camera above.
     {
@@ -5832,6 +5843,10 @@ export default function Lab() {
     }
   }, [sessionUserId])
 
+  // Every control but the scene, off and back (H, or the palette). See
+  // components/scene/hide-ui.tsx.
+  const [uiHidden, setUiHidden] = useHideUi()
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -7086,6 +7101,7 @@ export default function Lab() {
         })
       else if (item.id === "grade-lib") openBrowse({ kind: "grade" })
       else if (item.id === "outline") patch("outline", { enabled: !outlineRef.current })
+      else if (item.id === "hideUi") setUiHidden(true)
       else if (item.id === "eyes") setSettings((s2) => ({ ...s2, eyes: { enabled: !s2.eyes.enabled } }))
       else if (item.id === "jelly") setSettings((s2) => ({ ...s2, jelly: { enabled: !s2.jelly.enabled } }))
       // Nothing to undo and nothing to store: the bodies are re-seeded onto the
@@ -7141,6 +7157,7 @@ export default function Lab() {
       openGallery,
       activeGroupId,
       openEffectEditor,
+      setUiHidden,
       // A ref object, so it never changes and costs this memo nothing — listed
       // because reset-physics reaches through it and the rule here is that
       // everything read is named.
@@ -7151,6 +7168,7 @@ export default function Lab() {
   return (
     <main
       className="relative h-dvh w-screen overflow-hidden select-none"
+      data-ui-hidden={uiHidden || undefined}
       // The scene's own colour, so the ground under the canvas is the colour the
       // canvas is about to paint — no flash from a chrome default to the scene on
       // first load. A compositing handoff keeps the neutral: green and alpha are
@@ -7179,6 +7197,7 @@ export default function Lab() {
           shot is dark" and "the shot is a hole" is the whole point of the mode. */}
       {framing.liveBackground === "alpha" && (
         <div
+          data-keep
           className={cn("absolute", !frameRect && "inset-0 h-full w-full")}
           style={{ ...frameStyle, ...CHECKERBOARD }}
         />
@@ -7195,6 +7214,7 @@ export default function Lab() {
         style={frameStyle}
       />
       <canvas
+        data-keep
         ref={canvasRef}
         className={cn("absolute touch-none object-contain", !frameRect && "inset-0 h-full w-full")}
         style={frameStyle}
@@ -10936,6 +10956,7 @@ export default function Lab() {
           canvas rather than in place of it, because a validation error leaves
           the scene running. */}
       <GpuErrorNotice />
+      {uiHidden && <ShowUiButton onShow={() => setUiHidden(false)} />}
     </main>
   )
 }

@@ -693,3 +693,18 @@ html[data-chrome-photo] :is(.bg-surface, .bg-surface-raised):is(.shadow-float, .
   --chrome-veil: transparent;
   --chrome-photo: none;
 }
+
+/* Hide UI (components/scene/hide-ui.tsx): every child of the page but what is
+   marked to stay. Visibility, so nothing unmounts or re-measures and a hidden
+   control takes no clicks. A tooltip open on the button that hid it portals
+   outside the page, and goes with it. */
+[data-ui-hidden] > :not([data-keep]),
+body:has([data-ui-hidden]) [data-radix-popper-content-wrapper] {
+  visibility: hidden;
+}
+/* All at once: a control that animates its own visibility (the AI pill, over
+   300ms) would otherwise trail the rest out. */
+[data-ui-hidden] > :not([data-keep]),
+[data-ui-hidden] > :not([data-keep]) * {
+  transition: none !important;
+}

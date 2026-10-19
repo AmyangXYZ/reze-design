@@ -28,13 +28,15 @@ export function SceneBackdrop({
   className?: string
   style?: CSSProperties
 }) {
+  // data-keep on whatever renders: the backdrop is scene, and stays when the UI
+  // is hidden (components/scene/hide-ui.tsx).
   if (!media) return null
   if (media.kind === "image")
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={media.url} alt="" className={className} style={style} />
+    return <img data-keep src={media.url} alt="" className={className} style={style} />
   // A gif/webp/apng, painted per frame by the clip's clock — an <img> would
   // animate on the browser's clock instead, and an export would freeze it.
-  if (moving) return <canvas ref={canvasRef} className={className} style={style} />
+  if (moving) return <canvas data-keep ref={canvasRef} className={className} style={style} />
   if (media.kind === "video")
     return (
       // Played natively — the compositor handles the frames, which is what holds
@@ -44,6 +46,7 @@ export function SceneBackdrop({
       // it fullscreen. loop matches the follower's wrap: a clip longer than the
       // video seeks INSIDE it, never past its end.
       <video
+        data-keep
         key={media.url}
         ref={videoRef}
         src={media.url}
