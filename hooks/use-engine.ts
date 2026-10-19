@@ -1537,6 +1537,8 @@ export function useEngine(
       setDownloadFailure(null)
       return null
     } catch (e) {
+      // The caller gets the message only; the stack, which names the line, is here.
+      console.error("[swap]", e)
       const message = e instanceof Error ? e.message : String(e)
       if (!stale()) {
         setError(message)
