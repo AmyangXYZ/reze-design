@@ -8497,6 +8497,7 @@ export default function Lab() {
                 kind={t.lab.kinds.music}
                 onPick={() => musicInput.current?.click()}
                 onRemove={removeMusic}
+                onDownload={() => downloadClip(sceneFiles.audio ?? musicClip?.url, musicClip?.name ?? "music")}
                 volume={audio.volume}
                 onVolume={(v) => patch("audio", { volume: v })}
               />
@@ -8508,6 +8509,7 @@ export default function Lab() {
                   kind={t.lab.kinds.midi}
                   onPick={() => midiInput.current?.click()}
                   onRemove={clearMidi}
+                  onDownload={() => downloadClip(sceneFiles.score ?? scene.assets.midi?.url, midiClip)}
                 />
               )}
               {lyricsClip && (
@@ -8518,6 +8520,7 @@ export default function Lab() {
                   kind={t.lab.kinds.lyrics}
                   onPick={() => lyricsInput.current?.click()}
                   onRemove={clearLyrics}
+                  onDownload={() => downloadClip(sceneFiles.lyrics ?? scene.assets.lyrics?.url, lyricsClip)}
                 />
               )}
               {footstepsOn && (
