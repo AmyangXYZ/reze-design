@@ -181,6 +181,29 @@ type SaveHandle = {
   getFile(): Promise<File>
 }
 
+/**
+ * Somewhere on disk for a browser with no save picker — Safari, and so every
+ * iPhone.
+ *
+ * Without one the muxer buffered the whole file in memory and then copied it
+ * into a Blob, twice the video at the peak. iOS kills a tab that does that, and
+ * a killed tab comes back as a page reload. The origin's private storage takes
+ * the same chunked stream the picked file does, and the File read back from it
+ * is backed by disk. One name per container, truncated by the next export:
+ * deleting it after the download would pull the bytes out from under a save
+ * sheet that is still open. Null where the browser cannot write there, which
+ * leaves the old in-memory path.
+ */
+async function scratchFile(ext: string): Promise<SaveHandle | null> {
+  try {
+    const root = await navigator.storage.getDirectory()
+    const handle = await root.getFileHandle(`export.${ext}`, { create: true })
+    return "createWritable" in handle ? (handle as unknown as SaveHandle) : null
+  } catch {
+    return null
+  }
+}
+
 /** Live framing state the page mirrors into the viewport while this tab is open */
 export type FramePreview = { aspect: number; watermark: boolean }
 
@@ -493,6 +516,9 @@ export const RenderPanel = memo(function RenderPanel({
     let directory: FileSystemDirectoryHandle | undefined
     // What the user actually called it, which can differ from our suggestion.
     let pickedName: string | undefined
+    // Streamed to private storage rather than to a file the user picked — it
+    // still has to be handed over as a download at the end.
+    let scratch = false
     if (target === "png") {
       // A sequence has no in-memory fallback: thousands of 4K PNGs have to go
       // to disk as they are made, so a browser without the picker cannot do
@@ -538,6 +564,17 @@ export const RenderPanel = memo(function RenderPanel({
         if (e instanceof DOMException && e.name === "AbortError") return
         // Picker unavailable/failed for another reason — fall back to memory.
         fileStream = undefined
+      }
+    } else {
+      const handle = await scratchFile(ext)
+      if (handle) {
+        try {
+          fileStream = await handle.createWritable()
+          fileHandle = handle
+          scratch = true
+        } catch {
+          fileStream = undefined
+        }
       }
     }
 
@@ -585,10 +622,16 @@ export const RenderPanel = memo(function RenderPanel({
         await fileStream.close().catch(() => {})
         // Only true once the writable is closed, and truer than anything the
         // muxer could report: it is what the filesystem actually holds.
-        bytes = await fileHandle
-          ?.getFile()
-          .then((f) => f.size)
-          .catch(() => bytes) ?? bytes
+        if (scratch && fileHandle) {
+          const file = await fileHandle.getFile()
+          download(file, filename)
+          bytes = file.size
+        } else {
+          bytes = await fileHandle
+            ?.getFile()
+            .then((f) => f.size)
+            .catch(() => bytes) ?? bytes
+        }
       } else if (out.blob) {
         download(out.blob, filename)
       }

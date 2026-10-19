@@ -82,11 +82,18 @@ export function sceneZipFileName(name: string): string {
  * is concerned, which is why scene export failed there while video export, whose
  * own copy of this used ten seconds, did not.
  *
- * Ten seconds is arbitrary and generous; the cost of being wrong the other way
- * is one blob held slightly too long in a session that is about to be replaced.
+ * No timer is long enough, which is why there is no timer. Ten seconds held for
+ * a zip on the desktop and not for a video on iOS: Safari asks before it saves,
+ * the sheet waits on the user, and a few hundred MB take a while to resolve, so
+ * a finished export came back "not found". The URL lives until the next
+ * download replaces it. Every caller hands over one file at a time, and the
+ * cost is one blob held for the rest of the session.
  */
+let lastDownloadUrl: string | null = null
 export function downloadBlob(blob: Blob, filename: string): void {
+  if (lastDownloadUrl) URL.revokeObjectURL(lastDownloadUrl)
   const url = URL.createObjectURL(blob)
+  lastDownloadUrl = url
   const a = document.createElement("a")
   a.href = url
   a.download = filename
@@ -94,7 +101,6 @@ export function downloadBlob(blob: Blob, filename: string): void {
   document.body.appendChild(a)
   a.click()
   a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
 
 export async function readSceneFile(file: File): Promise<Partial<SceneConfig> | null> {
