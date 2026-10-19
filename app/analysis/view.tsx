@@ -13,19 +13,13 @@
 
 import Link from "next/link"
 import { useMemo, useState } from "react"
+import { calendarWeek, weekEndingAt, type WeekOf } from "@/lib/bili-groups"
 import { useT } from "@/lib/i18n"
 import type { ExportAnalysis, Slice } from "@/lib/db/export-analysis"
 import { BarList, BLUE, Card, Columns, Key, ORANGE, Segmented, Shell, Stat, fmt } from "./dash"
 import { AnalysisTabs } from "./tabs"
 
-const DAY = 86_400_000
-const WEEK = 7 * DAY
-
-/** Monday 00:00 UTC of the week holding `t`. */
-const weekOf = (t: number) => {
-  const d = new Date(t)
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - ((d.getUTCDay() + 6) % 7) * DAY
-}
+const WEEK = 7 * 86_400_000
 
 /** What the file is called, without what kind of file it is. */
 const modelName = (file: string) => file.replace(/\.(pmx|pmd|zip)$/i, "")
@@ -45,6 +39,24 @@ function stackModels(exports: Slice[], scenes: Slice[]): Pair[] {
   return [...rows.values()].sort((x, y) => y.a + y.b - (x.a + x.b))
 }
 
+/** Every week from the first day either source has to the one holding `now`,
+ *  empty weeks included, so the columns are a time axis. */
+function weekly(days: ExportAnalysis["days"], weekOf: WeekOf, now: number) {
+  if (days.length === 0) return []
+  const by = new Map<number, { exports: number; scenes: number }>()
+  for (const d of days) {
+    const w = weekOf(Date.parse(d.day))
+    const cur = by.get(w) ?? { exports: 0, scenes: 0 }
+    cur.exports += d.exports
+    cur.scenes += d.scenes
+    by.set(w, cur)
+  }
+  const out: { week: number; label: string; exports: number; scenes: number }[] = []
+  for (let w = Math.min(...by.keys()); w <= weekOf(now); w += WEEK)
+    out.push({ week: w, label: new Date(w).toISOString().slice(5, 10), ...(by.get(w) ?? { exports: 0, scenes: 0 }) })
+  return out
+}
+
 type FormatKey = "aspect" | "quality" | "look"
 type KindKey = "graph" | "effect" | "grade"
 
@@ -55,23 +67,10 @@ export function AnalysisView({ data, now }: { data: ExportAnalysis; now: number 
   const [kind, setKind] = useState<KindKey>("graph")
   const models = useMemo(() => stackModels(data.exportModels, data.sceneModels), [data])
 
-  // Every week from the first day either source has to this one, empty weeks
-  // included, so the columns are a time axis.
-  const weeks = useMemo(() => {
-    if (data.days.length === 0) return []
-    const by = new Map<number, { exports: number; scenes: number }>()
-    for (const d of data.days) {
-      const w = weekOf(Date.parse(d.day))
-      const cur = by.get(w) ?? { exports: 0, scenes: 0 }
-      cur.exports += d.exports
-      cur.scenes += d.scenes
-      by.set(w, cur)
-    }
-    const out: { week: number; label: string; exports: number; scenes: number }[] = []
-    for (let w = Math.min(...by.keys()); w <= weekOf(now); w += WEEK)
-      out.push({ week: w, label: new Date(w).toISOString().slice(5, 10), ...(by.get(w) ?? { exports: 0, scenes: 0 }) })
-    return out
-  }, [data.days, now])
+  // Calendar weeks for the chart; seven-day windows ending today for the
+  // sparklines beside the "this week" figures.
+  const weeks = useMemo(() => weekly(data.days, calendarWeek, now), [data.days, now])
+  const rolling = useMemo(() => weekly(data.days, weekEndingAt(now), now), [data.days, now])
 
   const recent = useMemo(() => {
     const days = data.days.filter((d) => now - Date.parse(d.day) < WEEK)
@@ -107,8 +106,8 @@ export function AnalysisView({ data, now }: { data: ExportAnalysis; now: number 
       }
     >
       <div className="grid shrink-0 grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-        <Stat label={a.exports} value={fmt(data.exportTotal)} sub={a.thisWeek(recent.exports)} spark={weeks.map((w) => w.exports)} />
-        <Stat label={a.scenesTile} value={fmt(data.sceneTotal)} sub={a.thisWeek(recent.scenes)} spark={weeks.map((w) => w.scenes)} color={ORANGE} />
+        <Stat label={a.exports} value={fmt(data.exportTotal)} sub={a.thisWeek(recent.exports)} spark={rolling.map((w) => w.exports)} />
+        <Stat label={a.scenesTile} value={fmt(data.sceneTotal)} sub={a.thisWeek(recent.scenes)} spark={rolling.map((w) => w.scenes)} color={ORANGE} />
         <Stat label={a.models} value={fmt(models.length)} sub={a.modelsSub} />
         <Stat label={a.presets} value={fmt(data.items.length)} sub={a.presetsSub} />
         <Stat label={a.topModel} value={top ? top.label : "—"} sub={top ? [top.a > 0 && a.videos(top.a), top.b > 0 && a.scenes(top.b)].filter(Boolean).join(" · ") : undefined} />

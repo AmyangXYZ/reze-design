@@ -1,20 +1,36 @@
 // How the Bilibili videos are summed for a chart: by maker, and by the week
-// they were published. Shared by the admin view and /analysis.
+// they were published. The week helpers are shared with /analysis.
 
 export type GroupVideo = { mid: number; author: string; published: string; plays: number; likes: number; favorites: number }
 export type Group = { key: string; label: string; videos: number; plays: number; likes: number; favorites: number }
 
 const DAY = 86_400_000
 
-/** Monday 00:00 UTC of the week holding `t`. */
-const weekOf = (t: number) => {
+const WEEK = 7 * DAY
+
+/** 00:00 UTC of the day holding `t`. */
+const dayOf = (t: number) => {
   const d = new Date(t)
-  const day = (d.getUTCDay() + 6) % 7
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - day * DAY
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
+}
+
+/** The start of a week: a function from a time to the first moment of the
+ *  week holding it. */
+export type WeekOf = (t: number) => number
+
+/** Calendar weeks: Monday 00:00 UTC of the week holding `t`. */
+export const calendarWeek: WeekOf = (t) => dayOf(t) - ((new Date(t).getUTCDay() + 6) % 7) * DAY
+
+/** Seven-day windows that end with the day holding `now` and step back from
+ *  it, so the newest is always a whole week and a sparkline beside a "this
+ *  week" figure slides a day at a time instead of dropping on Monday. */
+export const weekEndingAt = (now: number): WeekOf => {
+  const end = dayOf(now) + DAY
+  return (t: number) => end - Math.ceil((end - t) / WEEK) * WEEK
 }
 
 /** Reze Design's first release went out in July 2026; the weeks start there. */
-const FIRST_WEEK = weekOf(Date.UTC(2026, 6, 1))
+const LAUNCH = Date.UTC(2026, 6, 1)
 
 const md = (t: number) => new Date(t).toISOString().slice(5, 10)
 
@@ -34,19 +50,17 @@ export function byMaker(videos: GroupVideo[]): Group[] {
   return [...by.values()].sort((a, b) => b.likes - a.likes)
 }
 
-/** One group per week, every week from July to the newest video's, empty
- *  weeks included. Labelled by the Monday, as MM-DD. */
-export function byWeek(videos: GroupVideo[]): Group[] {
+/** One group per week as `weekOf` cuts them, every week from July to the one
+ *  holding `now`, empty weeks included. Labelled by the first day, as MM-DD. */
+export function byWeek(videos: GroupVideo[], weekOf: WeekOf, now: number): Group[] {
   if (videos.length === 0) return []
   const by = new Map<string, Group>()
-  let last = FIRST_WEEK
   for (const v of videos) {
     const w = weekOf(Date.parse(v.published))
-    last = Math.max(last, w)
     add(by, String(w), md(w), v)
   }
   const out: Group[] = []
-  for (let w = FIRST_WEEK; w <= last; w += 7 * DAY) out.push(by.get(String(w)) ?? { key: String(w), label: md(w), videos: 0, plays: 0, likes: 0, favorites: 0 })
+  for (let w = weekOf(LAUNCH); w <= weekOf(now); w += WEEK) out.push(by.get(String(w)) ?? { key: String(w), label: md(w), videos: 0, plays: 0, likes: 0, favorites: 0 })
   return out
 }
 

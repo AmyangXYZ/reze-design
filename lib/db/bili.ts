@@ -84,13 +84,18 @@ export async function keepVideo(v: BiliFound): Promise<boolean> {
 
 /**
  * New uploads from every known maker over the past week, and every MMD upload
- * over the past `scanHours`, for at most `budgetMs`.
+ * from `scanHours` before the newest kept video, for at most `budgetMs`. A run
+ * that was blocked keeps nothing new, so the next one reaches back over the
+ * days it missed, up to a week.
  */
 export async function findNew(scanHours: number, budgetMs: number): Promise<FindReport> {
   const known = await db.selectDistinctOn([t.mid], { mid: t.mid, author: t.author }).from(t)
+  const [newest] = await db.select({ at: sql<Date | null>`max(${t.published})` }).from(t)
   const now = Date.now()
+  const overlap = scanHours * 3_600_000
+  const scanSince = Math.max(now - 7 * DAY, Math.min(now, newest?.at ? new Date(newest.at).getTime() : 0) - overlap)
   let added = 0
-  const r = await findVideos(new Map(known.map((k) => [k.mid, k.author])), now - 7 * DAY, now - scanHours * 3_600_000, now + budgetMs, async (v) => {
+  const r = await findVideos(new Map(known.map((k) => [k.mid, k.author])), now - 7 * DAY, scanSince, now + budgetMs, async (v) => {
     if (await keepVideo(v)) added++
   })
   return { added, blocked: r.blocked, loggedIn: r.loggedIn }

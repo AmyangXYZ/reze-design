@@ -5,7 +5,7 @@
 // video or maker in a searchable table. One screen on a desktop.
 
 import { useMemo, useState } from "react"
-import { byMaker, byWeek, cumulative } from "@/lib/bili-groups"
+import { byMaker, byWeek, calendarWeek, cumulative, weekEndingAt } from "@/lib/bili-groups"
 import type { PublicVideo } from "@/lib/db/bili"
 import { useT } from "@/lib/i18n"
 import { Stamp } from "@/components/stamp"
@@ -24,7 +24,8 @@ export function BilibiliView({ videos, updated, now }: { videos: PublicVideo[]; 
   const t = useT().bilibili
   const [tab, setTab] = useState<"videos" | "makers">("videos")
   const makers = useMemo(() => byMaker(videos), [videos])
-  const weeks = useMemo(() => byWeek(videos), [videos])
+  const weeks = useMemo(() => byWeek(videos, calendarWeek, now), [videos, now])
+  const rolling = useMemo(() => byWeek(videos, weekEndingAt(now), now), [videos, now])
   const days = useMemo(() => cumulative(videos), [videos])
 
   const stats = useMemo(() => {
@@ -101,11 +102,11 @@ export function BilibiliView({ videos, updated, now }: { videos: PublicVideo[]; 
       }
     >
       <div className="grid shrink-0 grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-        <Stat label={t.videos} value={fmt(videos.length)} sub={t.thisWeek(fmt(stats.recent.length))} spark={weeks.map((w) => w.videos)} />
+        <Stat label={t.videos} value={fmt(videos.length)} sub={t.thisWeek(fmt(stats.recent.length))} spark={rolling.map((w) => w.videos)} />
         <Stat label={t.makers} value={fmt(makers.length)} sub={t.newMakers(stats.newMakers)} />
-        <Stat label={t.plays} value={fmt(stats.plays)} sub={t.thisWeek(fmt(stats.recent.reduce((a, v) => a + v.plays, 0)))} spark={weeks.map((w) => w.plays)} />
-        <Stat label={t.likes} value={fmt(stats.likes)} sub={t.thisWeek(fmt(stats.recent.reduce((a, v) => a + v.likes, 0)))} spark={weeks.map((w) => w.likes)} />
-        <Stat label={t.favorites} value={fmt(stats.favorites)} sub={t.thisWeek(fmt(stats.recent.reduce((a, v) => a + v.favorites, 0)))} spark={weeks.map((w) => w.favorites)} />
+        <Stat label={t.plays} value={fmt(stats.plays)} sub={t.thisWeek(fmt(stats.recent.reduce((a, v) => a + v.plays, 0)))} spark={rolling.map((w) => w.plays)} />
+        <Stat label={t.likes} value={fmt(stats.likes)} sub={t.thisWeek(fmt(stats.recent.reduce((a, v) => a + v.likes, 0)))} spark={rolling.map((w) => w.likes)} />
+        <Stat label={t.favorites} value={fmt(stats.favorites)} sub={t.thisWeek(fmt(stats.recent.reduce((a, v) => a + v.favorites, 0)))} spark={rolling.map((w) => w.favorites)} />
       </div>
 
       <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-12 lg:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -123,7 +124,7 @@ export function BilibiliView({ videos, updated, now }: { videos: PublicVideo[]; 
               columns={videoColumns}
               rowKey={(v) => v.bvid}
               text={(v) => `${v.title} ${v.author}`}
-              initialSort="likes"
+              initialSort="published"
               placeholder={t.search}
               head={tabs}
             />

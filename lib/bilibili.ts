@@ -9,8 +9,8 @@
 // FINDING reads uploads and checks each one's title, description and tags
 // against the credit, from two directions:
 //
-// - Makers' channels. Once someone has credited Reze Design, their channel is
-//   walked for new uploads. This is where nearly every video comes from: a
+// - Makers' feeds. Once someone has credited Reze Design, their feed (the
+//   space's dynamics, where every upload is posted) is walked for new uploads. This is where nearly every video comes from: a
 //   keyword search misses a credit at the end of a long description, and most
 //   credits are there (Aileen_71's 44 videos, none found by searching "reze
 //   design").
@@ -19,15 +19,14 @@
 //   most 1000 results a query, and a day holds more MMD uploads than that, so a
 //   window that fills up is halved until it fits.
 //
-// Both run as the owner's Bilibili account (BILIBILI_SESSDATA): signed out, the
-// channel API answers 412 after a few requests. It can still answer 412 to a
-// burst; a pass that keeps hitting it, or runs out of time, stops and keeps
-// what it found.
+// Both run as the owner's Bilibili account (BILIBILI_SESSDATA). The feed
+// answered every request while the channel listing (x/space/wbi/arc/search)
+// answered 412 for ten minutes straight, logged in (2026-10-17). Anything can
+// still answer 412 to a burst; a pass that keeps hitting it, or runs out of
+// time, stops and keeps what it found.
 //
 // COUNTING goes through the batch endpoint behind Bilibili's playlists, which
 // takes 20 videos a request.
-
-import { createHash } from "node:crypto"
 
 /** Accounts whose credits are about Reze Design rather than made with it: 溺疼
  *  posts their mobile port of the source. */
@@ -44,8 +43,10 @@ export const LAUNCH = Date.UTC(2026, 6, 1)
 
 const PAUSE_MS = 1000
 const BATCH = 20
+/** Where search cuts a description. */
+const CUT = 250
 /** Waits after a 412, in turn, before the pass gives up. */
-const BACKOFF_MS = [15_000, 45_000]
+const BACKOFF_MS = [15_000, 60_000, 180_000, 300_000]
 
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
@@ -90,8 +91,8 @@ function credited(v: { bvid: string; aid: number; mid: number; author: string; t
   return { bvid: v.bvid, aid: v.aid, mid: v.mid, author: v.author, title, published: new Date(at * 1000) }
 }
 
-/** A session against Bilibili's web API: the visitor cookie, the owner's login
- *  when there is one, and the keys that sign channel requests. Past
+/** A session against Bilibili's web API: the visitor cookie and the owner's
+ *  login when there is one. Past
  *  `deadline` (epoch ms) every request stops the pass, as a 412 would. */
 async function session(deadline = Infinity) {
   const home = await fetch("https://www.bilibili.com/", { headers: { "User-Agent": UA }, cache: "no-store" })
@@ -116,33 +117,15 @@ async function session(deadline = Infinity) {
     }
   }
 
-  // WBI: the channel API wants its query signed with keys the nav endpoint
-  // hands out (bilibili-API-collect, docs/misc/sign/wbi.md). Read raw: signed
-  // out, nav answers -101 and still carries the keys.
+  // Signed out, nav answers -101; read raw for isLogin.
   const navRes = await fetch("https://api.bilibili.com/x/web-interface/nav", {
     headers: { "User-Agent": UA, Cookie: cookie, Referer: "https://www.bilibili.com/" },
     cache: "no-store",
   })
   if (!navRes.ok) throw new Error(`Bilibili answered HTTP ${navRes.status}`)
-  const navData = ((await navRes.json()) as { data: { isLogin: boolean; wbi_img: { img_url: string; sub_url: string } } }).data
-  const key = (u: string) => u.split("/").pop()!.split(".")[0]
-  const raw = key(navData.wbi_img.img_url) + key(navData.wbi_img.sub_url)
-  const MIXIN = [46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52]
-  const mixin = MIXIN.map((i) => raw[i])
-    .join("")
-    .slice(0, 32)
-  const sign = (params: Record<string, string | number>) => {
-    const p: Record<string, string | number> = { ...params, wts: Math.floor(Date.now() / 1000) }
-    const q = Object.keys(p)
-      .sort()
-      .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(String(p[k]).replace(/[!'()*]/g, ""))}`)
-      .join("&")
-    return `${q}&w_rid=${createHash("md5")
-      .update(q + mixin)
-      .digest("hex")}`
-  }
+  const navData = ((await navRes.json()) as { data: { isLogin: boolean } }).data
 
-  return { get, sign, loggedIn: navData.isLogin }
+  return { get, loggedIn: navData.isLogin }
 }
 
 type Session = Awaited<ReturnType<typeof session>>
@@ -154,44 +137,51 @@ async function fullDescription(s: Session, bvid: string): Promise<string> {
   return d
 }
 
-type Upload = { bvid: string; aid: number; mid: number; author: string; title: string; description: string; created: number }
-
-/** A maker's credited uploads published at or after `since`, newest first. */
 /** Called once per credited video, as soon as it is seen. */
 export type OnFound = (v: BiliFound) => Promise<void>
 
-async function walkMaker(s: Session, mid: number, since: number, keep: OnFound) {
-  for (let pn = 1; pn <= 20; pn++) {
-    const query = s.sign({
-      mid,
-      ps: 50,
-      pn,
-      order: "pubdate",
-      platform: "web",
-      web_location: 1550101,
-      // The browser fingerprint fields a real channel page sends; without them
-      // the endpoint answers 412 after a request or two.
-      dm_img_list: "[]",
-      dm_img_str: "V2ViR0wgMS4wIChPcGVuR0wgRVMgMi4wIENocm9taXVtKQ",
-      dm_cover_img_str: "QU5HTEUgKEFwcGxlLCBBTkdMRSBNZXRhbCBSZW5kZXJlcjogQXBwbGUgTTEgUHJvLCBVbnNwZWNpZmllZCBWZXJzaW9uKUdvb2dsZSBJbmMuIChBcHBsZS",
-      dm_img_inter: '{"ds":[],"wh":[0,0,0],"of":[0,0,0]}',
-    })
-    const data = await s.get<{ list: { vlist: Upload[] } }>(`https://api.bilibili.com/x/space/wbi/arc/search?${query}`, `https://space.bilibili.com/${mid}/video`)
-    const list = data.list.vlist
-    for (const v of list) {
-      if (v.created * 1000 < since) continue
-      // The listing cuts descriptions short, and a credit usually sits at the
-      // end of one; an upload that does not match yet is read in full.
-      const f = credited(v, v.created) ?? credited({ ...v, description: await fullDescription(s, v.bvid) }, v.created)
-      if (f) await keep(f)
-    }
-    await pause(PAUSE_MS)
-    if (list.length < 50 || list[list.length - 1].created * 1000 < since) return
+type FeedItem = {
+  type: string
+  modules: {
+    module_author: { mid: number; name: string; pub_ts: number | string }
+    module_tag?: { text: string }
+    module_dynamic: { major?: { archive?: { aid: string; bvid: string; title: string; desc: string } } }
   }
 }
 
-/** Where search cuts a description, and the lines that name a renderer. */
-const CUT = 250
+/** A maker's credited uploads published at or after `since`, newest first,
+ *  read from their feed. A pinned post can be old, so it never ends the walk. */
+async function walkMaker(s: Session, mid: number, since: number, keep: OnFound) {
+  let offset = ""
+  for (let page = 0; page < 40; page++) {
+    const data = await s.get<{ items: FeedItem[]; has_more: boolean; offset: string }>(
+      `https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space?host_mid=${mid}&offset=${offset}`,
+      `https://space.bilibili.com/${mid}/dynamic`,
+    )
+    let older = false
+    for (const item of data.items) {
+      const { module_author: a, module_tag: tag, module_dynamic: d } = item.modules
+      const at = Number(a.pub_ts)
+      if (at * 1000 < since) {
+        if (!tag) older = true
+        continue
+      }
+      const v = item.type === "DYNAMIC_TYPE_AV" ? d.major?.archive : undefined
+      if (!v) continue
+      const upload = { bvid: v.bvid, aid: Number(v.aid), mid: Number(a.mid), author: a.name, title: v.title, description: v.desc }
+      // The feed carries whole descriptions, credits at the end included
+      // (checked 2026-10-17). One as long as search's cut is read in full in
+      // case the feed cuts there too; the full read is what 412s first.
+      const f = credited(upload, at) ?? (v.desc.length >= CUT ? credited({ ...upload, description: await fullDescription(s, v.bvid) }, at) : null)
+      if (f) await keep(f)
+    }
+    await pause(PAUSE_MS)
+    if (older || !data.has_more) return
+    offset = data.offset
+  }
+}
+
+/** The lines that name a renderer. */
 const CREDIT_LINE = /渲染|MME|render|特效|效果|软件|工具|software/i
 
 type SearchHit = { bvid: string; aid: number; mid: number; author: string; title: string; description?: string; tag?: string; pubdate: number }
