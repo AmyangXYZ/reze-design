@@ -790,16 +790,32 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
             >
               Reze Design
             </Link>
-            <h1 className="font-mono text-2xs font-medium tracking-wide text-muted-foreground uppercase">{t.gallery.title}</h1>
+            {/* The gallery's own name is its home: every shelf, no narrowing,
+                back at the top — what All was, so All is not said twice. */}
+            <h1>
+              <Button
+                variant="bare"
+                onClick={() => {
+                  browse.clear()
+                  browse.setQuery("")
+                  scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" })
+                }}
+                className={cn(
+                  "relative py-1 font-mono text-2xs font-medium tracking-wide uppercase after:absolute after:inset-x-2 after:bottom-0 after:h-[1.5px]",
+                  narrowed ? "text-muted-foreground hover:text-foreground" : "text-foreground after:bg-blue-400",
+                )}
+              >
+                {t.gallery.title}
+              </Button>
+            </h1>
           </div>
-          {facetWord("all", t.rail.all)}
           {session && facetWord("yours", t.rail.yours)}
           {session && facetWord("liked", t.rail.liked)}
           <SiteChip site="bilibili" href="/bilibili" className="h-6 px-2 text-xs compact:hidden">
             {t.bilibili.title}
           </SiteChip>
           <span className="flex-1" />
-          <label className="relative flex h-8 w-52 items-center gap-2 px-3 text-muted-foreground after:absolute after:inset-0 after:rounded-interior after:border after:border-line-strong compact:hidden">
+          <label className="relative flex h-8 w-52 items-center gap-2 px-3 text-muted-foreground after:absolute after:inset-0 after:rounded-interior after:border after:border-line-strong after:transition-colors focus-within:after:border-foreground compact:hidden">
             <Search className="size-3.5 shrink-0" strokeWidth={1.5} />
             <Input
               variant="bare"
