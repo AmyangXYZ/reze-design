@@ -99,13 +99,12 @@ export function LogoMenu({
 export function SceneFileMenu({
   trigger,
   align,
-  footer,
   onNew,
   onGallery,
   onExport,
   onImport,
   onReset,
-}: SceneMenuHandlers & { trigger: ReactNode; align?: "start" | "center"; footer?: ReactNode }) {
+}: SceneMenuHandlers & { trigger: ReactNode; align?: "start" | "center" }) {
   const t = useT()
   const [open, setOpen] = useState(false)
   const input = useRef<HTMLInputElement>(null)
@@ -148,7 +147,6 @@ export function SceneFileMenu({
             <Row icon={GalleryThumbnails} label={t.gallery.door} onClick={run(onGallery)} />
           </div>
         )}
-        {footer && <div className="mt-1 border-t border-line pt-1">{footer}</div>}
       </LogoMenu>
     </>
   )

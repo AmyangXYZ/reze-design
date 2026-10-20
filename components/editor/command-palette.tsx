@@ -16,7 +16,7 @@
 // invocations.
 
 import { Button } from "@/components/ui/button"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { Search } from "lucide-react"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -26,6 +26,8 @@ import { cn } from "@/lib/utils"
 
 export function CommandPalette({
   anchor,
+  paper,
+  onClosed,
   open,
   onOpenChange,
   items,
@@ -35,7 +37,12 @@ export function CommandPalette({
 }: {
   /** Where the search bar it opens out of stands (the panel's top-left, in
    *  the viewport). Without one it takes the top of the window. */
-  anchor?: { x: number; y: number } | null
+  /** The search bar's box, in the viewport: the panel starts as it. */
+  anchor?: { x: number; y: number; w: number; h: number } | null
+  /** Laid on the cover as paper (globals.css, "PAPER"): the sheet's side. */
+  paper?: { side: "light" | "dark" } | null
+  /** Once the closing motion has finished and the panel is gone. */
+  onClosed?: () => void
   open: boolean
   onOpenChange: (open: boolean) => void
   items: PaletteItem[]
@@ -143,32 +150,68 @@ export function CommandPalette({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    // Out of the bar it is a dropdown, not a dialog: the scene stays live
+    // under it (a drag orbits the camera, and that click closes it).
+    <Dialog open={open} onOpenChange={onOpenChange} modal={!anchor}>
       <DialogContent
         showCloseButton={false}
         // Out of the search bar, as a dropdown: no scrim, grown from the bar's
         // corner, its input on the bar's line. Without a bar, the top of the
         // window — centring reads as an alert.
         overlay={!anchor}
-        style={anchor ? { left: anchor.x, top: anchor.y } : undefined}
-        className={cn(
-          "max-w-[29rem] gap-0 overflow-hidden rounded-surface border-line-strong bg-surface p-0 shadow-float backdrop-blur-xs",
+        data-paper={paper?.side}
+        style={
           anchor
-            ? "w-[29rem] origin-top-left translate-x-0 translate-y-0 data-[state=open]:slide-in-from-top-1"
-            : "top-[14%] translate-y-0 compact:top-[3.75rem]",
+            ? ({
+                left: anchor.x,
+                top: anchor.y,
+                ...(paper && { "--paper-w": `${anchor.w}px`, "--paper-h": `${anchor.h}px` }),
+              } as CSSProperties)
+            : undefined
+        }
+        className={cn(
+          "max-w-[29rem] gap-0 overflow-hidden rounded-surface p-0",
+          // Paper brings its own motion, which replaces the zoom, and its own
+          // ground: a layer that grows with it (globals.css, "PAPER").
+          paper ? "border-0 bg-transparent shadow-none" : "border-line-strong bg-surface shadow-float backdrop-blur-xs",
+          anchor ? "w-[24rem] translate-x-0 translate-y-0" : "top-[14%] translate-y-0 compact:top-[3.75rem]",
         )}
         onKeyDown={onKeyDown}
+        // Escape is the palette's own: it closes the palette and nothing
+        // under it (hooks/use-z-order.ts closes panels on the same key).
+        onEscapeKeyDown={(e) => e.stopPropagation()}
+        // Orbiting the scene is not leaving the palette: a press on the canvas
+        // keeps it open; anything else outside closes it.
+        onInteractOutside={(e) => {
+          if (anchor && (e.target as Element | null)?.closest?.("canvas")) e.preventDefault()
+        }}
+        onAnimationEnd={(e) => {
+          if (!open && e.target === e.currentTarget) onClosed?.()
+        }}
       >
         <DialogTitle className="sr-only">{label.title}</DialogTitle>
+        {paper && (
+          <div
+            aria-hidden
+            data-paper-ground
+            className="absolute top-0 left-0 size-full rounded-surface border border-line-strong bg-surface"
+          />
+        )}
 
-        <div className="flex items-center gap-2.5 px-3">
-          <Search className="size-4 shrink-0 text-muted-foreground" />
+        <div data-paper-content={paper ? "" : undefined} className="contents data-[paper-content]:relative data-[paper-content]:block">
+        {/* Anchored, the input row is the search bar itself: the same icon,
+            gap and size, on the same spot, so only the list moves. */}
+        <div className={cn("relative flex items-center px-3", anchor ? "h-8 gap-2" : "gap-2.5")}>
+          <Search className={cn("shrink-0 text-muted-foreground", anchor ? "size-3.5" : "size-4")} strokeWidth={anchor ? 1.5 : undefined} />
           <Input
             autoFocus
             value={query}
             onChange={(e) => setQueryAndReset(e.target.value)}
             placeholder={anchor ? t.lab.find : label.placeholder}
-            className="h-11 border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0 dark:bg-transparent"
+            className={cn(
+              "border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 dark:bg-transparent",
+              anchor ? "h-8 text-xs md:text-xs" : "h-11 text-sm",
+            )}
           />
           {anchor && (
             <kbd className="flex h-5 shrink-0 items-center rounded-chip border border-line px-1.5 font-mono text-2xs text-muted-foreground">
@@ -178,17 +221,23 @@ export function CommandPalette({
         </div>
 
         {/* 22rem = 9 rows (2rem) + 2 section headers (1.75rem) + this box's own
-            py-1 (0.5rem). The padding is the point: max-height bounds the BORDER
+            py-1 (0.5rem); out of the bar, 21rem = 10 rows (1.75rem) + 2
+            headers (1.5rem) + 0.5rem. The padding is the point: max-height bounds the BORDER
             box, so the old 21.5rem — content-only arithmetic — spent half a rem
             on padding and clipped the ninth row in half. Landing on a row
             boundary is what stops the list ending mid-row. Generous because this
             is the main entrance to everything the app can do, not a dropdown. */}
-        <div ref={listRef} className="max-h-[22rem] overflow-y-auto border-t border-line py-1">
-          {flat.length === 0 && <p className="px-3.5 py-4 text-sm text-muted-foreground">{label.empty}</p>}
+        <div ref={listRef} className={cn("no-scrollbar relative overflow-y-auto border-t border-line py-1", anchor ? "max-h-[21rem]" : "max-h-[22rem]")}>
+          {flat.length === 0 && <p className={cn("px-3.5 py-4 text-muted-foreground", anchor ? "text-xs" : "text-sm")}>{label.empty}</p>}
 
           {groups.map((g) => (
             <div key={g.key}>
-              <div className="flex h-7 items-end px-3.5 pb-1 font-mono text-xs tracking-[0.14em] text-muted-foreground uppercase">
+              <div
+                className={cn(
+                  "flex items-end px-3.5 pb-1 font-mono text-2xs font-semibold tracking-wide text-muted-foreground uppercase",
+                  anchor ? "h-6" : "h-7",
+                )}
+              >
                 {g.label}
               </div>
               {g.items.map((item, k) => {
@@ -200,12 +249,18 @@ export function CommandPalette({
                     onMouseMove={() => setActive(i)}
                     onClick={() => run(item)}
                     className={cn(
-                      "flex h-8 w-[calc(100%-0.5rem)] items-center gap-2.5 rounded-interior px-2.5 text-left text-sm",
-                      i === active ? "mx-1 bg-white/[0.08]" : "mx-1",
+                      "mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2.5 rounded-interior px-2.5 text-left",
+                      anchor ? "h-7 text-xs" : "h-8 text-sm",
+                      // On paper the row under the keys takes a breath of ink.
+                      i === active && (paper ? "bg-foreground/[0.07]" : "bg-white/[0.08]"),
                     )}
                   >
                     <item.icon
-                      className={cn("size-4 shrink-0", item.deep ? "text-pink-400" : "text-muted-foreground")}
+                      className={cn(
+                        "shrink-0",
+                        anchor ? "size-3.5" : "size-4",
+                        "text-muted-foreground",
+                      )}
                     />
                     <span className="min-w-0 truncate">{item.label}</span>
                     {/* ONE annotation per row, and the value wins where there is
@@ -220,7 +275,13 @@ export function CommandPalette({
                         "environment" still finds everything in that row, it just
                         no longer spends the width saying so. */}
                     {(item.value ?? item.hint) && (
-                      <span className="ml-auto max-w-[10rem] shrink-0 truncate text-xs text-muted-foreground">
+                      <span
+                        className={cn(
+                          "ml-auto max-w-[10rem] shrink-0 truncate",
+                          paper ? "font-mono text-2xs" : "text-xs",
+                          "text-muted-foreground",
+                        )}
+                      >
                         {item.value ?? item.hint}
                       </span>
                     )}
@@ -231,6 +292,7 @@ export function CommandPalette({
           ))}
         </div>
 
+        </div>
       </DialogContent>
     </Dialog>
   )

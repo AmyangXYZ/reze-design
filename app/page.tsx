@@ -28,6 +28,7 @@ import {
   type ComponentType,
   type ReactNode,
   type SetStateAction,
+  useLayoutEffect,
 } from "react"
 import {
   Atom,
@@ -97,7 +98,7 @@ import { GithubMark, MaterialSphereIcon } from "@/components/scene/slot-icons"
 import { RenderPanel } from "@/components/editor/render-panel"
 import { CommandPalette } from "@/components/editor/command-palette"
 import { RECENT_DEPTH, type PaletteItem, type SceneGap } from "@/lib/command-search"
-import { Row, SceneFileMenu } from "@/components/editor/scene-file-menu"
+import { SceneFileMenu } from "@/components/editor/scene-file-menu"
 import { SceneName } from "@/components/editor/scene-name"
 import { COMPACT_SHEET, Surface } from "@/components/editor/surface"
 import { LayerRow, StackGroup } from "@/components/editor/layer-row"
@@ -2723,21 +2724,30 @@ export default function Lab() {
           // sheet's 3.75rem + 60dvh, see COMPACT_SHEET) and the transport.
           // A fixed band rather than the panel's measured edge, so the frame
           // does not move as the panel's own lines come and go.
-          const vw = framing.frameVp.w
+          //
+          // On a desktop the frame takes the space the cover's chrome leaves
+          // free, 2rem clear of it — right of the console (25rem), left of
+          // the export column (18rem at right-7), under the top row and over
+          // the transport (4rem each) — so every word stands on the black
+          // matte and none straddles the frame's edge. The preview is only
+          // drawn smaller: the export renders at its own resolution.
           const rem = 16
-          const top = compact && exportOpen ? 3.75 * rem + 0.6 * framing.frameVp.h + 0.5 * rem : 0
-          const bottom = compact && exportOpen ? framing.frameVp.h - 4.25 * rem : framing.frameVp.h
+          const left = compact ? 0 : 27 * rem
+          const right = compact ? framing.frameVp.w : framing.frameVp.w - 21.75 * rem
+          const top = compact ? (exportOpen ? 3.75 * rem + 0.6 * framing.frameVp.h + 0.5 * rem : 0) : 4 * rem
+          const bottom = compact ? (exportOpen ? framing.frameVp.h - 4.25 * rem : framing.frameVp.h) : framing.frameVp.h - 4 * rem
+          const vw = right - left
           const vh = bottom - top
           const va = vw / vh
           const a = framing.activeFrame.aspect
           // Within a hair of the band's own shape, take the whole band:
           // shrinking the canvas by a percent to honour a rounding difference
           // costs pixels and buys nothing anybody can see.
-          if (a <= va * FRAME_ASPECT_TOL && a >= va / FRAME_ASPECT_TOL) return { x: 0, y: top, w: vw, h: vh }
+          if (a <= va * FRAME_ASPECT_TOL && a >= va / FRAME_ASPECT_TOL) return { x: left, y: top, w: vw, h: vh }
           const w = a < va ? vh * a : vw
           const h = a < va ? vh : vw / a
           return {
-            x: (vw - w) / 2,
+            x: left + (vw - w) / 2,
             y: top + (vh - h) / 2,
             w,
             h,
@@ -2760,6 +2770,8 @@ export default function Lab() {
   // this object is rebuilt every render, and the effect must not be.
   const frameW = frameRect?.w ?? 0
   const frameH = frameRect?.h ?? 0
+  const frameX = frameRect?.x ?? 0
+  const frameY = frameRect?.y ?? 0
   useEffect(() => {
     const engine = engineRef.current
     if (!engine || !ready) return
@@ -5755,7 +5767,18 @@ export default function Lab() {
   // bar's word was. Null where there is no bar (the phone), and the palette
   // takes its own place.
   const searchBarRef = useRef<HTMLButtonElement>(null)
-  const [paletteAnchor, setPaletteAnchor] = useState<{ x: number; y: number } | null>(null)
+  const [paletteAnchor, setPaletteAnchor] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+  // Up from the open until the panel has finished shrinking back: the bar
+  // stays hidden all that time, so the two are never on screen together.
+  const [paletteUp, setPaletteUp] = useState(false)
+  // A close that plays no motion (reduced motion) reports no end: the bar
+  // comes back regardless, a moment after the motion would have finished.
+  useEffect(() => {
+    if (paletteOpen || !paletteUp) return
+    const back = window.setTimeout(() => setPaletteUp(false), 400)
+    return () => clearTimeout(back)
+  }, [paletteOpen, paletteUp])
+  const [palettePaper, setPalettePaper] = useState<{ side: "light" | "dark" } | null>(null)
 
   const openPalette = useCallback(() => {
     // Commit the pending order BEFORE the dialog is on screen. Applying it at
@@ -5768,10 +5791,13 @@ export default function Lab() {
     // Same rule for any row that prints its own state: catch the label up here,
     // never at run time.
     setValuesShown(valuesRef.current)
-    // The panel's input row (h-11, px-3) centred on the bar's line, its icon
-    // on the bar's icon.
+    // The panel starts as the bar's own box and grows out of it.
     const bar = searchBarRef.current?.getBoundingClientRect()
-    setPaletteAnchor(bar && bar.width > 0 ? { x: bar.left - 12, y: bar.top + bar.height / 2 - 22 } : null)
+    setPaletteAnchor(bar && bar.width > 0 ? { x: bar.left, y: bar.top, w: bar.width, h: bar.height } : null)
+    setPaletteUp(true)
+    // Paper in the bar's ink: white under black type, black under white.
+    const zone = searchBarRef.current?.closest<HTMLElement>("[data-ink]")
+    setPalettePaper(bar && bar.width > 0 && zone ? { side: zone.dataset.ink === "light" ? "dark" : "light" } : null)
     setPaletteSession((n) => n + 1)
     setPaletteOpen(true)
   }, [setPaletteOpen])
@@ -7286,6 +7312,33 @@ export default function Lab() {
   // preview's chrome.
   const coverRef = useRef<HTMLElement>(null)
   const exportingRef = useRef(false)
+  // The picture EASES into and out of an export frame rather than jumping:
+  // the layers that follow the frame (.frame-layer) are laid out at once at
+  // their new rect, so the engine resizes once, and drawn from the old rect
+  // back to their own with a transform over the one duration — the matte
+  // (main's background) and the ink fade alongside. A window resize with no
+  // frame is not a change of shape and does not animate.
+  const lastFrame = useRef<{ x: number; y: number; w: number; h: number } | null>(null)
+  useLayoutEffect(() => {
+    const main = coverRef.current
+    if (!main) return
+    const now = frameW > 0 ? { x: frameX, y: frameY, w: frameW, h: frameH } : null
+    const was = lastFrame.current
+    lastFrame.current = now
+    if (!was && !now) return
+    const full = { x: 0, y: 0, w: main.clientWidth, h: main.clientHeight }
+    const a = was ?? full
+    const b = now ?? full
+    if (a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h) return
+    if (framing.exporting || matchMedia("(prefers-reduced-motion: reduce)").matches) return
+    const from = `translate(${a.x - b.x}px, ${a.y - b.y}px) scale(${a.w / b.w}, ${a.h / b.h})`
+    for (const el of main.querySelectorAll<HTMLElement>(".frame-layer")) {
+      el.animate([{ transform: from, transformOrigin: "0 0" }, { transform: "none", transformOrigin: "0 0" }], {
+        duration: 233,
+        easing: "cubic-bezier(0.32, 0.72, 0, 1)",
+      })
+    }
+  }, [frameX, frameY, frameW, frameH, framing.exporting])
   useEffect(() => {
     exportingRef.current = framing.exporting
   })
@@ -7295,12 +7348,38 @@ export default function Lab() {
     if (!mounted || !main || !canvas) return
     const W = 48
     const H = 32
-    const probe = document.createElement("canvas")
+    let probe = document.createElement("canvas")
     probe.width = W
     probe.height = H
-    const g = probe.getContext("2d", { willReadFrequently: true })
+    let g = probe.getContext("2d", { willReadFrequently: true })
     if (!g) return
+    // What stands behind the type is the whole stack, not the canvas alone: the
+    // page's ground, a picture or video behind a see-through canvas, then the
+    // canvas. A picture served without CORS would taint the probe for good, so
+    // on the first refusal the probe is made again and the stack read without it.
+    let media = true
+    const compose = (ctx: CanvasRenderingContext2D) => {
+      ctx.fillStyle = getComputedStyle(main).backgroundColor
+      ctx.fillRect(0, 0, W, H)
+      if (media) {
+        for (const el of main.querySelectorAll<HTMLElement>(".frame-layer")) {
+          if (el === canvas) continue
+          if (el instanceof HTMLImageElement || el instanceof HTMLVideoElement || el instanceof HTMLCanvasElement) {
+            try {
+              ctx.drawImage(el, 0, 0, W, H)
+            } catch {}
+          }
+        }
+      }
+      ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, W, H)
+    }
     const lin = (c: number) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+    // Where the canvas IS laid out, without the transform that eases it there.
+    const frameBox = () => {
+      const left = canvas.offsetLeft
+      const top = canvas.offsetTop
+      return { left, top, right: left + canvas.offsetWidth, bottom: top + canvas.offsetHeight, width: canvas.offsetWidth, height: canvas.offsetHeight }
+    }
     let raf = 0
     let timer = 0
     // Read in a frame queued from a timer: the engine queues its next frame
@@ -7317,18 +7396,42 @@ export default function Lab() {
     // The frame changing shape (an export's aspect, the window) moves what
     // stands behind every zone at once: look again at the next frame rather
     // than at the next half-second.
-    const resized = new ResizeObserver(() => next(0))
+    // A matte comes or goes as the frame eases (above), and the zones it now
+    // holds start turning at once — geometry needs no pixels — fading with it.
+    const resized = new ResizeObserver(() => {
+      const cr = frameBox()
+      for (const el of main.querySelectorAll<HTMLElement>("[data-ink-zone]")) {
+        const r = el.getBoundingClientRect()
+        if (r.width === 0 || r.height === 0) continue
+        const over =
+          Math.max(0, Math.min(r.right, cr.right) - Math.max(r.left, cr.left)) *
+          Math.max(0, Math.min(r.bottom, cr.bottom) - Math.max(r.top, cr.top))
+        if (over < (r.width * r.height) / 2) {
+          el.dataset.ink = "light"
+          el.style.setProperty("--scene-bg", "rgb(0 0 0)")
+        }
+      }
+      next(0)
+    })
     resized.observe(canvas)
     const tick = () => {
       next()
       if (document.hidden || exportingRef.current || !canvas.width) return
+      let d: Uint8ClampedArray
       try {
-        g.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, W, H)
+        compose(g!)
+        d = g!.getImageData(0, 0, W, H).data
       } catch {
+        if (!media) return
+        media = false
+        probe = document.createElement("canvas")
+        probe.width = W
+        probe.height = H
+        g = probe.getContext("2d", { willReadFrequently: true })
         return
       }
-      const d = g.getImageData(0, 0, W, H).data
-      const cr = canvas.getBoundingClientRect()
+      const cr = frameBox()
+      let read = false
       for (const el of main.querySelectorAll<HTMLElement>("[data-ink-zone]")) {
         const r = el.getBoundingClientRect()
         if (r.width === 0 || r.height === 0) continue
@@ -7362,6 +7465,7 @@ export default function Lab() {
           }
         }
         if (px.length === 0) continue
+        read = true
         px.sort((a, b) => a.l - b.l)
         const mid = px[px.length >> 1].l
         const was = el.dataset.ink ?? main.dataset.ink
@@ -7382,9 +7486,19 @@ export default function Lab() {
         const n = hi - lo
         el.style.setProperty("--scene-bg", `rgb(${Math.round(rr / n)} ${Math.round(gg / n)} ${Math.round(bb / n)})`)
       }
+      // The chrome comes up once its ink has been read off a real frame, so
+      // it never shows in a guessed ink first (globals.css, "The cover").
+      if (read || !main.querySelector("[data-ink-zone]")) main.dataset.inked = ""
+
     }
+    // A scene that never gives a frame to read (nothing drawn yet, a picture
+    // behind a transparent canvas) still gets its chrome, in the guessed ink.
+    const giveUp = window.setTimeout(() => {
+      main.dataset.inked = ""
+    }, 2500)
     next()
     return () => {
+      clearTimeout(giveUp)
       resized.disconnect()
       clearTimeout(timer)
       cancelAnimationFrame(raf)
@@ -7400,7 +7514,7 @@ export default function Lab() {
   return (
     <main
       ref={coverRef}
-      className="cover relative h-dvh w-screen overflow-hidden select-none"
+      className="cover relative h-dvh w-screen overflow-hidden transition-[background-color] select-none"
       data-ui-hidden={uiHidden || undefined}
       data-ink={coverInk(sceneGround)}
       // The scene's own colour, so the ground under the canvas is the colour the
@@ -7432,7 +7546,7 @@ export default function Lab() {
       {framing.liveBackground === "alpha" && (
         <div
           data-keep
-          className={cn("absolute", !frameRect && "inset-0 h-full w-full")}
+          className={cn("frame-layer absolute", !frameRect && "inset-0 h-full w-full")}
           style={{ ...frameStyle, ...CHECKERBOARD }}
         />
       )}
@@ -7444,13 +7558,13 @@ export default function Lab() {
         moving={mediaBackdrop.moving}
         canvasRef={mediaBackdrop.canvasRef}
         videoRef={bgVideoRef}
-        className={cn("absolute object-cover", !frameRect && "inset-0 h-full w-full")}
+        className={cn("frame-layer absolute object-cover", !frameRect && "inset-0 h-full w-full")}
         style={frameStyle}
       />
       <canvas
         data-keep
         ref={canvasRef}
-        className={cn("absolute touch-none object-contain", !frameRect && "inset-0 h-full w-full")}
+        className={cn("frame-layer absolute touch-none object-contain", !frameRect && "inset-0 h-full w-full")}
         style={frameStyle}
       />
 
@@ -7538,33 +7652,34 @@ export default function Lab() {
               ways out on the left, Export and Share on the right. */}
           {!compact && (
             <>
-              <div className="cover-type pointer-events-auto flex h-8 items-center gap-5 text-xs">
+              <div className="cover-type pointer-events-auto flex h-8 items-center gap-7 text-xs">
                 <SceneFileMenu
                   align="start"
                   onNew={newScene}
                   onExport={exportScene}
                   onImport={importScene}
                   onReset={resetSceneDefaults}
-                  footer={
-                    <Row
-                      icon={GithubMark}
-                      label={`GitHub · ${VERSION_LABEL}`}
-                      onClick={() => window.open(REPO_URL, "_blank", "noreferrer")}
-                    />
-                  }
                   // Instrument Serif has one weight; a stroke in its own colour
                   // gives the masthead a little more.
                   trigger={
                     // The version stands by the wordmark, as an issue number
                     // stands by a magazine's masthead.
-                    <span className="flex items-baseline gap-2 py-1">
+                    <span className="flex items-center gap-4 py-1">
                       <span className="font-display text-masthead tracking-[0.45em] text-foreground uppercase [-webkit-text-stroke:0.3px_currentColor]">
                         Reze Design
                       </span>
-                      <span className="font-mono text-2xs text-muted-foreground">v{VERSION_LABEL}</span>
+                      <span className="font-mono text-2xs text-foreground">v{VERSION_LABEL}</span>
                     </span>
                   }
                 />
+                {/* The source, by the version it is the source of. */}
+                <Button
+                  variant="bare"
+                  onClick={() => window.open(REPO_URL, "_blank", "noreferrer")}
+                  className="text-foreground"
+                >
+                  GitHub
+                </Button>
                 <Button
                   variant="bare"
                   onClick={() => openGallery()}
@@ -7572,14 +7687,24 @@ export default function Lab() {
                 >
                   {t.lab.gallery}
                 </Button>
-                {/* A search bar drawn as a hairline: the palette opens out of it.
-                    The rule takes no room, so its words sit on the row's line. */}
+                {/* A search box drawn as a hairline frame, the palette's own: the
+                    palette grows out of it. The frame takes no room, so the
+                    words sit where the palette's input will. The row's gaps
+                    set it past the console's pane, so the palette opens clear
+                    of it. */}
                 <Button
                   ref={searchBarRef}
+                  data-search-bar
                   variant="bare"
                   onClick={openPalette}
                   aria-label={t.lab.searchCommands}
-                  className="relative flex h-8 w-52 items-center gap-2 text-muted-foreground after:absolute after:inset-x-0 after:bottom-0.5 after:h-px after:bg-line"
+                  // While the palette is up its own input stands here, on the
+                  // same pixels; the bar is back only once the palette has
+                  // shrunk into it and gone (globals.css, "PAPER").
+                  className={cn(
+                    "relative flex h-8 w-52 items-center gap-2 px-3 text-muted-foreground after:absolute after:inset-0 after:rounded-surface after:border after:border-line-strong",
+                    (paletteOpen || paletteUp) && "invisible",
+                  )}
                 >
                   <Search className="size-3.5 shrink-0" strokeWidth={1.5} />
                   <span className="flex-1 text-left">{t.lab.find}</span>
@@ -7761,13 +7886,15 @@ export default function Lab() {
           // otherwise, which rings the first row and arms Enter on it — an
           // answer the dialog just finished asking you for.
           onOpenAutoFocus={(e) => e.preventDefault()}
+          paper
+          showCloseButton={false}
           className={cn(
             "rounded-surface border-line-strong bg-surface-raised backdrop-blur-xs",
-            shownUpload?.kind === "sky" ? "sm:max-w-2xl" : "max-w-sm",
+            shownUpload?.kind === "sky" ? "sm:max-w-2xl data-[paper]:w-[36rem] data-[paper]:max-w-[36rem]" : "max-w-sm",
           )}
         >
-          <DialogHeader>
-            <DialogTitle className="text-sm">
+          <DialogHeader className="relative flex h-8 flex-row items-center justify-between px-3">
+            <DialogTitle className="font-mono text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
               {shownUpload?.kind === "pick"
                 ? t.lab.whichModel
                 : shownUpload?.kind === "sky"
@@ -7776,7 +7903,7 @@ export default function Lab() {
             </DialogTitle>
           </DialogHeader>
           {shownUpload?.kind === "sky" ? (
-            <ChoiceList className="grid max-h-[60vh] grid-cols-3 gap-2 space-y-0 overflow-y-auto overscroll-contain">
+            <ChoiceList className="no-scrollbar relative grid max-h-[60vh] grid-cols-3 gap-2 space-y-0 overflow-y-auto overscroll-contain border-t border-line p-2">
               {shownUpload.skies.map((sky) => (
                 <Button
                   key={sky.path}
@@ -7796,11 +7923,11 @@ export default function Lab() {
               ))}
             </ChoiceList>
           ) : shownUpload?.kind === "pick" ? (
-            <ChoiceList className="max-h-64 overflow-y-auto overscroll-contain">
+            <ChoiceList className="no-scrollbar relative max-h-64 space-y-0 overflow-y-auto overscroll-contain border-t border-line py-1">
               {shownUpload.paths.map((path) => (
                 <Button variant="bare"
                   key={path}
-                  className="block w-full cursor-pointer truncate rounded-interior px-3 py-2 text-left text-sm transition-colors hover:bg-white/5 hover:text-foreground"
+                  className={cn("relative mx-1 flex h-7 w-[calc(100%-0.5rem)] cursor-pointer items-center justify-between gap-2.5 rounded-interior px-2.5 text-left text-xs hover:bg-foreground/[0.07] focus-visible:bg-foreground/[0.07]", "block truncate leading-7")}
                   onClick={() => {
                     const pmx = shownUpload.files.find((f) => relFilePath(f) === path)
                     if (pmx) void loadPicked(shownUpload.files, pmx, shownUpload.target)
@@ -7815,7 +7942,7 @@ export default function Lab() {
               ))}
             </ChoiceList>
           ) : (
-            <p className="text-xs text-muted-foreground">{shownUpload?.kind === "notice" ? shownUpload.message : null}</p>
+            <p className="relative border-t border-line px-3 py-3 text-xs text-muted-foreground select-text">{shownUpload?.kind === "notice" ? shownUpload.message : null}</p>
           )}
         </DialogContent>
       </Dialog>
@@ -7826,12 +7953,14 @@ export default function Lab() {
       <Dialog open={styleOpen} onOpenChange={setStyleOpen}>
         <DialogContent
           onOpenAutoFocus={(e) => e.preventDefault()}
+          paper
+          showCloseButton={false}
           className="max-w-sm rounded-surface border-line-strong bg-surface-raised backdrop-blur-xs"
         >
-          <DialogHeader>
-            <DialogTitle className="text-sm">{t.brand.style}</DialogTitle>
+          <DialogHeader className="relative flex h-8 flex-row items-center justify-between px-3">
+            <DialogTitle className="font-mono text-2xs font-semibold tracking-wide text-muted-foreground uppercase">{t.brand.style}</DialogTitle>
           </DialogHeader>
-          <ChoiceList>
+          <ChoiceList className="relative space-y-0 border-t border-line py-1">
             {LOOK_PACK_ORDER.map((pack) => (
               <Button variant="bare"
                 key={pack}
@@ -7844,13 +7973,10 @@ export default function Lab() {
                   setStyleOpen(false)
                   applyLookPack(pack)
                 }}
-                className={cn(
-                  "flex w-full cursor-pointer items-center justify-between rounded-interior px-3 py-2 text-left text-sm transition-colors hover:bg-white/5",
-                  pack === activePack ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-                )}
+                className={cn("relative mx-1 flex h-7 w-[calc(100%-0.5rem)] cursor-pointer items-center justify-between gap-2.5 rounded-interior px-2.5 text-left text-xs hover:bg-foreground/[0.07] focus-visible:bg-foreground/[0.07]", pack === activePack ? "text-foreground" : "text-muted-foreground")}
               >
                 {t.brand.styles[pack]}
-                {pack === activePack && <Check className="size-3.5 shrink-0 text-blue-400" />}
+                {pack === activePack && <Check className="size-3.5 shrink-0" />}
               </Button>
             ))}
           </ChoiceList>
@@ -7860,14 +7986,16 @@ export default function Lab() {
       <Dialog open={langOpen} onOpenChange={setLangOpen}>
         <DialogContent
           onOpenAutoFocus={(e) => e.preventDefault()}
+          paper
+          showCloseButton={false}
           className="max-w-sm rounded-surface border-line-strong bg-surface-raised backdrop-blur-xs"
         >
-          <DialogHeader>
-            {/* Both languages in the title, so the dialog identifies itself to
-                whichever reader opened it. */}
-            <DialogTitle className="text-sm">Language · 语言</DialogTitle>
+          {/* Both languages in the title, so the dialog identifies itself to
+              whichever reader opened it. */}
+          <DialogHeader className="relative flex h-8 flex-row items-center justify-between px-3">
+            <DialogTitle className="font-mono text-2xs font-semibold tracking-wide text-muted-foreground uppercase">Language · 语言</DialogTitle>
           </DialogHeader>
-          <ChoiceList>
+          <ChoiceList className="relative space-y-0 border-t border-line py-1">
             {LOCALES.map((code) => (
               <Button variant="bare"
                 key={code}
@@ -7881,13 +8009,10 @@ export default function Lab() {
                   pendingLocale.current = code
                   setLangOpen(false)
                 }}
-                className={cn(
-                  "flex w-full cursor-pointer items-center justify-between rounded-interior px-3 py-2 text-left text-sm transition-colors hover:bg-white/5",
-                  code === locale ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-                )}
+                className={cn("relative mx-1 flex h-7 w-[calc(100%-0.5rem)] cursor-pointer items-center justify-between gap-2.5 rounded-interior px-2.5 text-left text-xs hover:bg-foreground/[0.07] focus-visible:bg-foreground/[0.07]", code === locale ? "text-foreground" : "text-muted-foreground")}
               >
                 {LOCALE_LABELS[code]}
-                {code === locale && <Check className="size-3.5 text-blue-400" />}
+                {code === locale && <Check className="size-3.5 shrink-0" />}
               </Button>
             ))}
           </ChoiceList>
@@ -8434,6 +8559,8 @@ export default function Lab() {
       <CommandPalette
         key={paletteSession}
         anchor={paletteAnchor}
+        paper={palettePaper}
+        onClosed={() => setPaletteUp(false)}
         open={paletteOpen}
         onOpenChange={setPaletteOpen}
         items={paletteItems}
@@ -10768,19 +10895,17 @@ export default function Lab() {
             data-edge="right"
             className={cn(
               "cover-type absolute top-20 right-7 flex max-h-[calc(100%-10rem)] w-[18rem] flex-col pl-5 text-xs",
-              // Fades in, but leaves at once: closing hands the canvas back its
-              // full window in the same instant, and a column still fading over
-              // a picture that has already moved reads as the layout drifting.
-              exportOpen
-                ? "transition-[opacity,translate,visibility] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]"
-                : "invisible translate-x-2 opacity-0",
+              "transition-[opacity,translate,visibility] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
+              !exportOpen && "invisible translate-x-2 opacity-0",
             )}
             style={{ zIndex: exportZ.z }}
             onPointerDownCapture={exportZ.onPointerDownCapture}
             onFocusCapture={exportZ.onFocusCapture}
           >
             <div data-ink-zone className="flex min-h-0 flex-1 flex-col">
-            <span aria-hidden className="absolute top-2.5 bottom-0 left-0 w-px bg-line-strong" />
+            {/* As the art director's: from the title row's middle to the last
+                control's (Render, h-8 over the panel's pb-3). */}
+            <span aria-hidden className="absolute top-2.5 bottom-7 left-0 w-px bg-line-strong" />
             <Cover>
               <div data-ink-zone className="flex h-5 shrink-0 items-center gap-4 px-4">
                 <span className="min-w-0 flex-1 truncate font-mono text-2xs tracking-wide uppercase">{t.lab.exportPanel}</span>
@@ -10930,8 +11055,6 @@ export default function Lab() {
                 modelNames={modelNames}
                 timeline={timeline}
                 hasCamera={cameraClip !== null}
-                eyes={settings.eyes.enabled}
-                onEyes={(on) => patch("eyes", { enabled: on })}
                 trailing={
                   TIMELINE_EDITOR && timelineRoom ? (
                     <Button

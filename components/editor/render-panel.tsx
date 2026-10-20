@@ -684,7 +684,7 @@ export const RenderPanel = memo(function RenderPanel({
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent position="popper" align="end">
                 {/* Aspect notation is universal — no translation needed. */}
                 {ASPECTS.map((a) => (
                   <SelectItem key={a} value={a} className="tabular-nums">
@@ -699,7 +699,7 @@ export const RenderPanel = memo(function RenderPanel({
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent position="popper" align="end">
                 {QUALITIES.map((q) => (
                   <SelectItem key={q} value={q} className="tabular-nums">
                     {QUALITY_LABELS[q]}
@@ -719,7 +719,7 @@ export const RenderPanel = memo(function RenderPanel({
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent position="popper" align="end">
                 <SelectItem value="standard" className="tabular-nums">
                   {mbps("standard")} Mbps
                 </SelectItem>
@@ -739,7 +739,7 @@ export const RenderPanel = memo(function RenderPanel({
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent position="popper" align="end">
                 <SelectItem value="h264">H.264</SelectItem>
                 <SelectItem value="hevc" disabled={hevcOk === false}>
                   HEVC
@@ -788,7 +788,7 @@ export const RenderPanel = memo(function RenderPanel({
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent position="popper" align="end">
                 <SelectItem value="music" disabled={!musicUrl && !footsteps}>
                   {t.render.audioMusic}
                 </SelectItem>
@@ -814,7 +814,7 @@ export const RenderPanel = memo(function RenderPanel({
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent position="popper" align="end">
                 {MODES.map((m) => (
                   <SelectItem key={m} value={m}>
                     {t.render.modes[m]}

@@ -332,6 +332,11 @@
   --chrome-line: oklch(1 0 0 / 0.26);
   --chrome-line-strong: oklch(1 0 0 / 0.26);
 }
+/* Inside a zone the ink fades once, on the zone; a control running its own
+   colour transition on top would chase the moving ink and fall behind it. */
+.cover [data-ink-zone] :is(.transition, .transition-colors, [class*="transition-[color"]) {
+  transition-property: background-color, border-color, opacity, box-shadow, transform, translate, scale;
+}
 .cover [data-ink-zone] {
   color: var(--foreground);
   transition:
@@ -340,6 +345,122 @@
     --chrome-line var(--default-transition-duration) ease,
     --chrome-line-strong var(--default-transition-duration) ease;
 }
+/* PAPER: an overlay laid on the cover — a thin sheet in the colour opposite
+   its type: white at low alpha under black type, black at low alpha under
+   white type (the side its opener's ink zone reads), bounded by the cover's
+   hairline and the chrome skin's light blur, no shadow. An overlay takes it with data-paper="light" |
+   "dark", and every chrome token inside resolves to the sheet. */
+[data-paper] {
+  --chrome-surface-raised: var(--chrome-surface);
+  color: var(--foreground);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+[data-paper="light"] {
+  --chrome-surface: oklch(1 0 0 / 0.3);
+  --foreground: oklch(0 0 0);
+  --muted-foreground: oklch(0.38 0 0);
+  --background: oklch(1 0 0);
+  --primary: oklch(0 0 0);
+  --primary-foreground: oklch(1 0 0);
+  --input: oklch(0 0 0 / 0.18);
+  --chrome-line: oklch(0 0 0 / 0.16);
+  --chrome-line-strong: oklch(0 0 0 / 0.16);
+}
+[data-paper="dark"] {
+  --chrome-surface: oklch(0 0 0 / 0.3);
+  --foreground: oklch(1 0 0);
+  --muted-foreground: oklch(0.78 0 0);
+  --background: oklch(0 0 0);
+  --primary: oklch(1 0 0);
+  --primary-foreground: oklch(0 0 0);
+  --input: oklch(1 0 0 / 0.2);
+  --chrome-line: oklch(1 0 0 / 0.2);
+  --chrome-line-strong: oklch(1 0 0 / 0.2);
+}
+/* The sheet GROWS out of its opener, as Vercel's search does: it starts as
+   the opener's own box (--paper-w × --paper-h, set by the page; the search
+   bar is drawn as the same hairline frame, unfilled) and opens right and down
+   to its own size, its fill rising from clear. The content is revealed, never scaled, so
+   nothing inside moves; the fill and hairline are a layer behind it
+   ([data-paper-ground]) that grows in step, so the frame is whole at every
+   moment. Closing shrinks it back into the opener. */
+@keyframes paper-grow {
+  from {
+    clip-path: inset(0 calc(100% - var(--paper-w)) calc(100% - var(--paper-h)) 0 round var(--radius-surface));
+  }
+  to {
+    clip-path: inset(0 0 0 0 round var(--radius-surface));
+  }
+}
+@keyframes paper-shrink {
+  from {
+    clip-path: inset(0 0 0 0 round var(--radius-surface));
+  }
+  to {
+    clip-path: inset(0 calc(100% - var(--paper-w)) calc(100% - var(--paper-h)) 0 round var(--radius-surface));
+  }
+}
+@keyframes paper-ground-grow {
+  from {
+    width: var(--paper-w);
+    height: var(--paper-h);
+    background-color: transparent;
+  }
+  to {
+    width: 100%;
+    height: 100%;
+  }
+}
+@keyframes paper-ground-shrink {
+  from {
+    width: 100%;
+    height: 100%;
+  }
+  to {
+    width: var(--paper-w);
+    height: var(--paper-h);
+    background-color: transparent;
+  }
+}
+/* The CONTENT is clipped, never the sheet: a backdrop blur under a clipped
+   ancestor is not drawn until the clip ends, so the sheet only changes size
+   and blurs from its first frame. The sheet's own element runs a still
+   animation as long as the motion, which is what holds it on screen through
+   the closing (the dialog waits for its animation). */
+@keyframes paper-hold {
+  to {
+    opacity: 1;
+  }
+}
+[data-paper] > [data-paper-ground] {
+  backdrop-filter: blur(4px);
+}
+[data-paper][data-state="open"] {
+  animation: none;
+}
+[data-paper][data-state="open"] > [data-paper-content] {
+  animation: paper-grow var(--default-transition-duration) cubic-bezier(0.32, 0.72, 0, 1);
+}
+[data-paper][data-state="open"] > [data-paper-ground] {
+  animation: paper-ground-grow var(--default-transition-duration) cubic-bezier(0.32, 0.72, 0, 1);
+}
+[data-paper][data-state="closed"] {
+  animation: paper-hold var(--default-transition-duration) forwards;
+}
+[data-paper][data-state="closed"] > [data-paper-content] {
+  animation: paper-shrink var(--default-transition-duration) cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+[data-paper][data-state="closed"] > [data-paper-ground] {
+  animation: paper-ground-shrink var(--default-transition-duration) cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+/* While a paper chooser is up (components/ui/dialog.tsx) it stands where the
+   search box is; the box is back once the last sheet has gone. */
+[data-paper-up] [data-search-bar] {
+  visibility: hidden;
+}
+
 /* Type on the canvas: crisp, in the cover's ink. */
 @utility cover-type {
   color: var(--foreground);
@@ -544,8 +665,14 @@ body:has([data-ui-hidden]) [data-radix-popper-content-wrapper] {
 [data-ui-hidden] > :not([data-keep]) * {
   transition: visibility 0s var(--default-transition-duration) !important;
 }
-main:not([data-ui-hidden]) > :not([data-keep]) {
+main:not(.cover):not([data-ui-hidden]) > :not([data-keep]),
+main.cover[data-inked]:not([data-ui-hidden]) > :not([data-keep]) {
   animation: ui-in var(--default-transition-duration) cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+/* The editor's chrome waits for its ink to be read off the first frame
+   (data-inked), then slides in already in it. */
+main.cover:not([data-inked]) > [data-edge] {
+  visibility: hidden;
 }
 /* The way back, in Hide's corner: it slides in once Hide has slid out, so the
    two words never stand there together. */
@@ -555,7 +682,8 @@ main:not([data-ui-hidden]) > :not([data-keep]) {
 }
 @media (prefers-reduced-motion: reduce) {
   [data-ui-hidden] > :not([data-keep]),
-  main:not([data-ui-hidden]) > :not([data-keep]) {
+  main:not(.cover):not([data-ui-hidden]) > :not([data-keep]),
+  main.cover[data-inked]:not([data-ui-hidden]) > :not([data-keep]) {
     animation: none;
   }
 }

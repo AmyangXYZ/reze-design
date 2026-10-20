@@ -526,7 +526,7 @@ export const AnimPlayer = memo(function AnimPlayer({
       onClick={onClick}
       className={cn(
         "relative py-1 text-xs after:absolute after:inset-x-0 after:bottom-0.5 after:h-[1.5px] after:rounded-full",
-        on ? "font-medium text-foreground after:bg-blue-400" : "text-muted-foreground after:bg-transparent hover:text-foreground",
+        on ? "text-foreground after:bg-blue-400" : "text-muted-foreground after:bg-transparent hover:text-foreground",
       )}
     >
       {label}
