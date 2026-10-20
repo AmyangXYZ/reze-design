@@ -100,6 +100,7 @@ export function AgentMenu({
   open,
   onOpenChange,
   text,
+  word,
 }: {
   settings: AiSettings
   active: Active | null
@@ -108,14 +109,22 @@ export function AgentMenu({
   open: boolean
   onOpenChange: (open: boolean) => void
   text: AgentSettingsText
+  /** The trigger as a word, for the cover. */
+  word?: string
 }) {
   // The content mounts on open, so every open starts on the list.
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label={text.menu} className="size-5 shrink-0 rounded-chip text-muted-foreground hover:bg-white/10 hover:text-foreground">
-          <Settings className="size-3.5" />
-        </Button>
+        {word ? (
+          <Button variant="bare" aria-label={text.menu} className="h-5 shrink-0 text-xs text-muted-foreground hover:text-foreground">
+            {word}
+          </Button>
+        ) : (
+          <Button variant="ghost" size="icon" aria-label={text.menu} className="size-5 shrink-0 rounded-chip text-muted-foreground hover:bg-white/10 hover:text-foreground">
+            <Settings className="size-3.5" />
+          </Button>
+        )}
       </PopoverTrigger>
       {/* The left dock's popovers, to the pixel: radius, surface, edge, shadow. */}
       <PopoverContent align="end" className="w-64 rounded-surface border-line-strong bg-surface-raised p-2 shadow-float" onCloseAutoFocus={(e) => e.preventDefault()}>
@@ -156,7 +165,7 @@ function MenuBody({ settings, active, premium, text }: { settings: AiSettings; a
         <div key={c.id} className="mt-1 border-t border-line pt-1 first:mt-0 first:border-0 first:pt-0">
           <div className="flex items-center gap-1 pr-1">
             <p className="min-w-0 flex-1 truncate px-2 py-1 text-2xs text-muted-foreground">{connectionLabel(c)}</p>
-            <Button variant="ghost" size="icon" aria-label={text.remove} tooltip={text.remove} onClick={() => removeConnection(c)} className={cn(iconButton, "hover:text-red-400")}>
+            <Button variant="ghost" size="icon" aria-label={text.remove} onClick={() => removeConnection(c)} className={cn(iconButton, "hover:text-red-400")}>
               <Trash2 className="size-3" />
             </Button>
           </div>
@@ -169,7 +178,7 @@ function MenuBody({ settings, active, premium, text }: { settings: AiSettings; a
                   <>
                     <Verdict entry={m} text={text} />
                     {m.verdict !== "checking" && m.verdict !== "ready" && m.verdict !== "textOnly" && (
-                      <Button variant="ghost" size="icon" aria-label={text.verify} tooltip={text.verify} onClick={() => void verifyModel(c.id, m.id)} className={iconButton}>
+                      <Button variant="ghost" size="icon" aria-label={text.verify} onClick={() => void verifyModel(c.id, m.id)} className={iconButton}>
                         <RotateCw className="size-3" />
                       </Button>
                     )}
@@ -177,7 +186,6 @@ function MenuBody({ settings, active, premium, text }: { settings: AiSettings; a
                       variant="ghost"
                       size="icon"
                       aria-label={text.removeModel}
-                      tooltip={text.removeModel}
                       onClick={() => removeModel(c, m.id)}
                       className={cn(iconButton, "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100")}
                     >
@@ -264,7 +272,7 @@ function AddConnection({ text, onBack, onAdded }: { text: AgentSettingsText; onB
             onClick={() => setProvider(p.id)}
             className={cn(
               "h-7 rounded-chip border px-2 text-xs font-normal",
-              p.id === provider ? "border-blue-400 text-foreground" : "border-line text-muted-foreground hover:text-foreground",
+              p.id === provider ? "border-foreground text-foreground" : "border-line text-muted-foreground hover:text-foreground",
             )}
           >
             {p.label}

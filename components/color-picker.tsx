@@ -86,7 +86,6 @@ function Swatch({ hex, onPick, label, className }: { hex: string; onPick: (hex: 
     <Button
       variant="ghost"
       aria-label={label ?? hex}
-      tooltip={label ? `${label} ${hex}` : hex}
       className={cn(
         // A PALETTE CELL'S SIZE, not a stretch to the column: the first tab's
         // cells are ~36×20 with a hairline ring, and swatches that grew to fill
@@ -94,7 +93,7 @@ function Swatch({ hex, onPick, label, className }: { hex: string; onPick: (hex: 
         // them packs left instead of resizing with the dialog. Corners inline,
         // below the variant's, so the merge cannot keep the button's.
         SWATCH,
-        "p-0 ring-1 ring-line-strong transition-transform duration-75 hover:z-10 hover:scale-115",
+        "p-0 ring-1 ring-line-strong transition-transform duration-233 hover:z-10 hover:scale-115",
         className,
       )}
       style={{ background: hex, borderRadius: "var(--radius-xs)" }}
@@ -250,7 +249,7 @@ function ChannelPicker({
           aria-label={tc.field}
           aria-valuenow={Math.round(hsv.s * 100)}
           aria-valuetext={tc.fieldValue(Math.round(hsv.s * 100), Math.round(hsv.v * 100))}
-          className="relative aspect-square w-full max-w-56 cursor-crosshair touch-none justify-self-center rounded-interior ring-1 ring-line-strong outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+          className="relative aspect-square w-full max-w-56 cursor-crosshair touch-none justify-self-center rounded-interior ring-1 ring-line-strong outline-none focus-visible:ring-2 focus-visible:ring-foreground"
           style={{ background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, ${hueHex})` }}
           onPointerDown={(e) => {
             e.currentTarget.setPointerCapture(e.pointerId)
@@ -287,7 +286,6 @@ function ChannelPicker({
               <Button
                 variant="ghost"
                 aria-label={tc.backTo(original)}
-                tooltip={tc.backTo(original)}
                 className="h-full flex-1 rounded-none p-0"
                 style={{ background: original }}
                 onClick={() => pick(original)}
@@ -295,7 +293,7 @@ function ChannelPicker({
               <div className="h-full flex-1" style={{ background: value }} />
             </div>
             {EyeDropper && (
-              <Button variant="ghost" size="icon-xs" aria-label={tc.eyedropper} tooltip={tc.eyedropper} onClick={sample}>
+              <Button variant="ghost" size="icon-xs" aria-label={tc.eyedropper} onClick={sample}>
                 <Pipette />
               </Button>
             )}
@@ -325,7 +323,7 @@ function ChannelPicker({
       <Band label={tc.ramp}>
         <div className="flex flex-wrap gap-3">
           {ramp.map((hex, i) => (
-            <Swatch key={i} hex={hex} onPick={pick} className={cn(i === 4 && "z-10 ring-2 ring-blue-400 ring-offset-1 ring-offset-zinc-950")} />
+            <Swatch key={i} hex={hex} onPick={pick} className={cn(i === 4 && "z-10 ring-2 ring-foreground ring-offset-1 ring-offset-zinc-950")} />
           ))}
         </div>
       </Band>
@@ -384,7 +382,7 @@ export function HexField({
       value={text}
       spellCheck={false}
       className={cn(
-        "h-7 w-28 rounded-chip border border-line-strong bg-black/30 px-2 font-mono text-xs outline-none focus:border-blue-400/50",
+        "h-7 w-28 rounded-chip border border-line-strong bg-black/30 px-2 font-mono text-xs outline-none focus:border-foreground",
         className,
       )}
       onFocus={() => setFocused(true)}
@@ -551,9 +549,9 @@ export function ColorPickerDialog({
                           data-name={name}
                           data-hex={hex}
                           className={cn(
-                            "h-5 w-full cursor-pointer rounded-chip transition-transform duration-75 ease-out hover:z-10 hover:scale-115",
+                            "h-5 w-full cursor-pointer rounded-chip transition-transform duration-233 ease-out hover:z-10 hover:scale-115",
                             active === hex.toLowerCase()
-                              ? "z-10 ring-2 ring-blue-400 ring-offset-1 ring-offset-zinc-950"
+                              ? "z-10 ring-2 ring-foreground ring-offset-1 ring-offset-zinc-950"
                               : "ring-1 ring-line-strong",
                           )}
                           style={{ background: hex }}

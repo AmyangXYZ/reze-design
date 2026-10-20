@@ -36,12 +36,6 @@ const en = {
     reset: "Reset to default scene",
     badFile: "Not a Reze Design scene file",
     exportWaits: "Exporting once the scene has finished loading…",
-    palette: "Interface",
-    palettes: { night: "Night", strawberry: "Strawberry Milk", sakura: "Sakura", moon: "Dark Moon", ramune: "Ramune", matcha: "Matcha", blood: "Blood", cyber: "Cyber" },
-    picture: "Background picture",
-    removePicture: "Remove background picture",
-    pictureNotKept: "This browser could not keep the picture — it shows until you reload",
-    pictureBad: "That image could not be read",
   },
   account: {
     label: "Account",
@@ -392,13 +386,6 @@ const en = {
     watermark: "Watermark",
     /** The toggle that writes the AE script beside the video. */
     aeScript: "AE composition script",
-    /** Opt-in, off until asked for — see lib/export-consent. The note names what
-     *  is sent, because "help us improve" is what people feel misled by later. */
-    shareStats: "Share export stats",
-    shareStatsNote:
-      "Helps us improve rendering. Nothing you made leaves your machine — this reports only which settings and presets a finished video used.",
-    shareStatsLink: "What's collected",
-    shareStatsSeeLink: "Usage statistics",
     quality: "Quality",
     modes: {
       scene: "Scene · MP4",
@@ -423,32 +410,6 @@ const en = {
     encoderUnsupported: "This browser can't encode video at these settings.",
     upscaleWarn: "Backdrop is lower-resolution than the output and will be upscaled.",
   },
-  analysis: {
-    title: "Usage statistics",
-    intro: "From finished videos people chose to share, and from the scenes published on Reze Design.",
-    exports: "Exports",
-    scenesTile: "Scenes",
-    models: "Models",
-    presets: "Presets",
-    aspect: "Aspect ratio",
-    resolution: "Resolution",
-    style: "Rendering style",
-    empty: "No exports shared yet.",
-    showMore: (n: number) => `Show ${n} more`,
-    showLess: "Show fewer",
-    emptyItems: "Nothing has reached a finished video yet.",
-    scenes: (n: number) => `${n} ${n === 1 ? "scene" : "scenes"}`,
-    videos: (n: number) => `${n} ${n === 1 ? "video" : "videos"}`,
-    kinds: { graph: "Shader graphs", effect: "Effects", grade: "Colour grades" },
-    perWeek: "Exports and scenes per week",
-    weekOf: (date: string) => `Week of ${date}`,
-    weekTip: (exports: number, scenes: number) => `${exports} exports · ${scenes} published scenes`,
-    thisWeek: (n: number) => `+${n} this week`,
-    topModel: "Top model",
-    modelsSub: "in exports and published scenes",
-    presetsSub: "used in a video or a scene",
-    formats: "Formats",
-  },
   library: {
     title: "Shader graph library",
     shortTitle: "Shader graphs",
@@ -460,7 +421,6 @@ const en = {
     back: "Back",
     current: "current",
     usedInScenes: (n: number) => `Used in ${n} ${n === 1 ? "scene" : "scenes"}`,
-    usedInExports: (n: number) => `${n} ${n === 1 ? "export" : "exports"}`,
     signInToLike: "Sign in to like",
     deleteDraft: "Delete draft",
     deleteDraftConfirm: "Delete this draft? It only exists on this device.",
@@ -519,6 +479,12 @@ const en = {
     hideUi: "Hide UI (H)",
     showUi: "Show UI",
     scrub: "Scrub the timeline",
+    /** The bottom line's words: Hide UI, and the three switches. */
+    hide: "Hide",
+    show: "Show",
+    follow: "Camera",
+    loop: "Loop",
+    eyes: "Eyes",
   },
   graph: {
     generatedWgsl: "Generated WGSL",
@@ -559,6 +525,7 @@ const en = {
   // palette — the UI shows one locale, the palette matches against both.
   lab: {
     searchCommands: "Search…",
+    find: "Find",
     share: "Share",
     expandPanel: "Expand panel",
     collapsePanel: "Collapse panel",
@@ -603,6 +570,8 @@ const en = {
       title: "AI art director",
       short: "AI",
       close: "Close AI",
+      closeWord: "Close",
+      keys: "Keys",
       newChat: "New conversation",
       closeTab: "Close conversation",
       setup: "Add your AI API key to start",
@@ -736,7 +705,11 @@ const en = {
     // Dock rows — also the breadcrumb hint on every control inside them.
     rows: {
       camera: "Camera",
-      stage: "Environment",
+      /** The cast's materials and the shader graphs they wear. */
+      materials: "Materials",
+      stage: "Set",
+      background: "Background",
+      eyes: "Eyes",
       effect: "Effect",
       object: "Objects",
       post: "Post",
@@ -767,6 +740,13 @@ const en = {
     },
     // A collapsed row's value when it names a decision rather than an asset.
     summary: { follow: "Follow", orbit: "Orbit" },
+    /** The cover's facts line, under the scene's name. */
+    facts: { noCast: "No cast" },
+    /** The console's index of panes. */
+    index: "Sections",
+    /** The last line of the Clips and Music panes: opens what can be added. */
+    attach: "Add…",
+    gallery: "Gallery",
     // What a row acts on, spoken mid-sentence by the aria templates below.
     /**
      * The timeline editor: the fold, and the properties dock beside it.
@@ -855,10 +835,6 @@ const en = {
       pickBone: "Select a bone to view curves",
       pickMorph: "Select a morph to view curve",
       noKeys: (name: string) => `No keyframes — ${name}`,
-      simplifyHint: "Fit a curve through the selected bone's keys and drop the ones it does not need",
-      simplifyMorphHint: "Simplify fits bezier handles, which a morph keyframe does not have",
-      simplifyCameraHint: "Simplify applies to dense bone tracks — a camera's keys are its cuts",
-      clearHint: "Remove every keyframe on the selected track",
       insertCameraHint: "Key the camera's current pose at the playhead",
       deleteCameraHint: "Remove the camera keyframe at the playhead",
       close: "Close the timeline editor",
@@ -921,6 +897,8 @@ const en = {
       /** The plane itself, on or off. Not the same control as Opacity: a
        *  transparent ground still catches shadow and still writes depth. */
       showGround: "Show ground",
+      eyesOnCamera: "Look at camera",
+      jellyEyes: "Jelly eyes",
       opacity: "Opacity",
       shadow: "Shadow",
       /** How soft the sun's shadow edge is. A property of the light, filed with
@@ -950,6 +928,10 @@ const en = {
       preset: "Preset",
       shader: "Shader",
       addEffect: "Add effect",
+      /** The chosen effect's actions, set as words under its controls. */
+      edit: "Edit",
+      reset: "Reset",
+      remove: "Remove",
       /** The trigger when a scene layers several. One is named; several are counted,
        *  because the list below is where they are read. */
       effectsN: (n: number) => `${n} effects`,
@@ -1175,7 +1157,7 @@ const en = {
     sheen: "Sheen",
     sheen_tint: "Sheen Tint",
   } as Record<string, string>,
-  // The Bilibili section of /analysis: videos made with Reze Design.
+  // /bilibili: videos made with Reze Design.
   bilibili: {
     title: "On Bilibili",
     intro: "Videos that credit Reze Design in their title, tags or description, recounted once a day.",
@@ -1229,12 +1211,6 @@ const zh: Dictionary = {
     reset: "恢复默认场景",
     badFile: "不是 Reze Design 场景文件",
     exportWaits: "场景加载完成后导出…",
-    palette: "界面配色",
-    palettes: { night: "夜", strawberry: "草莓牛奶", sakura: "樱花", moon: "暗月", ramune: "波子汽水", matcha: "抹茶", blood: "血", cyber: "赛博朋克" },
-    picture: "背景图片",
-    removePicture: "移除背景图片",
-    pictureNotKept: "浏览器无法保存这张图片，刷新后将不再显示",
-    pictureBad: "无法读取这张图片",
   },
   account: {
     label: "账户",
@@ -1555,10 +1531,6 @@ const zh: Dictionary = {
     codec: "编码",
     watermark: "水印",
     aeScript: "AE 合成脚本",
-    shareStats: "分享导出统计",
-    shareStatsNote: "帮我们改进渲染效果。你做的东西不会离开本地电脑——只上传这次导出用了哪些设置与预设。",
-    shareStatsLink: "收集了什么",
-    shareStatsSeeLink: "使用统计",
     quality: "质量",
     modes: {
       scene: "场景 · MP4",
@@ -1582,32 +1554,6 @@ const zh: Dictionary = {
     encoderUnsupported: "当前浏览器无法按此参数编码视频。",
     upscaleWarn: "背景分辨率低于输出分辨率，将被放大。",
   },
-  analysis: {
-    title: "使用统计",
-    intro: "来自大家自愿分享的成片，以及发布在 Reze Design 的场景。",
-    exports: "成片",
-    scenesTile: "场景",
-    models: "模型",
-    presets: "预设",
-    aspect: "画面比例",
-    resolution: "分辨率",
-    style: "渲染风格",
-    empty: "还没有分享的导出。",
-    showMore: (n: number) => `展开其余 ${n} 项`,
-    showLess: "收起",
-    emptyItems: "还没有进入成片。",
-    scenes: (n: number) => `${n} 个场景`,
-    videos: (n: number) => `${n} 成片`,
-    kinds: { graph: "着色器节点图", effect: "特效", grade: "调色" },
-    perWeek: "每周成片与场景",
-    weekOf: (date: string) => `${date} 当周`,
-    weekTip: (exports: number, scenes: number) => `${exports} 个成片 · ${scenes} 个发布场景`,
-    thisWeek: (n: number) => `本周 +${n}`,
-    topModel: "最常用模型",
-    modelsSub: "出现在成片和发布场景中",
-    presetsSub: "用在成片或场景里",
-    formats: "格式",
-  },
   library: {
     title: "着色器图库",
     shortTitle: "着色器图",
@@ -1619,7 +1565,6 @@ const zh: Dictionary = {
     back: "返回",
     current: "使用中",
     usedInScenes: (n: number) => `${n} 个场景在用`,
-    usedInExports: (n: number) => `${n} 次导出`,
     signInToLike: "登录后可点赞",
     deleteDraft: "删除草稿",
     deleteDraftConfirm: "删除这个草稿？它只存在于本设备。",
@@ -1676,6 +1621,11 @@ const zh: Dictionary = {
     hideUi: "隐藏界面 (H)",
     showUi: "显示界面",
     scrub: "拖动时间轴",
+    hide: "隐藏",
+    show: "显示",
+    follow: "镜头",
+    loop: "循环",
+    eyes: "眼神",
   },
   graph: {
     generatedWgsl: "生成的 WGSL",
@@ -1714,6 +1664,7 @@ const zh: Dictionary = {
   },
   lab: {
     searchCommands: "搜索…",
+    find: "查找",
     share: "分享",
     expandPanel: "展开面板",
     collapsePanel: "收起面板",
@@ -1757,6 +1708,8 @@ const zh: Dictionary = {
       title: "AI 美术指导",
       short: "AI",
       close: "关闭 AI",
+      closeWord: "关闭",
+      keys: "密钥",
       newChat: "新对话",
       closeTab: "关闭对话",
       setup: "添加你的 AI API 密钥即可开始",
@@ -1878,7 +1831,10 @@ const zh: Dictionary = {
     groups: { cast: "角色", clips: "片段", music: "音乐", scene: "场景" },
     rows: {
       camera: "相机",
-      stage: "环境",
+      materials: "材质",
+      stage: "布景",
+      background: "背景",
+      eyes: "眼睛",
       effect: "特效",
       object: "物体",
       post: "后期",
@@ -1903,6 +1859,10 @@ const zh: Dictionary = {
       focus: "对焦",
     },
     summary: { follow: "跟随", orbit: "环绕" },
+    facts: { noCast: "无角色" },
+    index: "分区",
+    attach: "添加…",
+    gallery: "画廊",
     timeline: {
       rotation: "旋转",
       translation: "位移",
@@ -1976,10 +1936,6 @@ const zh: Dictionary = {
       pickBone: "选择一根骨骼以查看曲线",
       pickMorph: "选择一个表情以查看曲线",
       noKeys: (name: string) => `无关键帧 — ${name}`,
-      simplifyHint: "为所选骨骼拟合曲线，并删除不需要的关键帧",
-      simplifyMorphHint: "简化拟合的是贝塞尔控制柄，而表情关键帧没有",
-      simplifyCameraHint: "简化用于密集的骨骼轨道 —— 镜头的关键帧就是它的分镜",
-      clearHint: "删除所选轨道上的全部关键帧",
       insertCameraHint: "在播放头处记录镜头当前姿态",
       deleteCameraHint: "删除播放头处的镜头关键帧",
       close: "关闭时间轴编辑器",
@@ -2027,6 +1983,8 @@ const zh: Dictionary = {
       outlineRecolor: "统一颜色",
       color: "颜色",
       showGround: "显示地面",
+      eyesOnCamera: "看镜头",
+      jellyEyes: "果冻眼",
       opacity: "不透明度",
       shadow: "阴影",
       softness: "阴影柔和度",
@@ -2046,6 +2004,9 @@ const zh: Dictionary = {
       preset: "预设",
       shader: "着色器",
       addEffect: "添加特效",
+      edit: "编辑",
+      reset: "重置",
+      remove: "移除",
       effectsN: (n: number) => `${n} 个特效`,
       planesN: (n: number) => `${n} 个平面`,
       propsN: (n: number) => `${n} 个道具`,

@@ -24,7 +24,6 @@ import "@xyflow/react/dist/style.css"
 import { compileGraph, validateGraph, type CompileOptions, type Diagnostic, type ShaderGraph } from "reze-engine"
 import { Check, Code, Download, Grip, Maximize2, Minimize2, RotateCcw, Upload, Workflow, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
 import { RezeNode, RenameNodeProvider } from "@/components/graph/reze-node"
 import { WgslView } from "@/components/graph/wgsl-view"
@@ -724,48 +723,28 @@ export function GraphEditor({
         )}
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           {/* ── Tools: code view + reset ── */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn("size-6", showWgsl ? "text-blue-400" : "text-muted-foreground hover:text-foreground")}
-                onClick={() => setShowWgsl((v) => !v)}
-              >
-                <Code className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t.graph.generatedWgsl}</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="size-6 text-muted-foreground hover:text-foreground" onClick={() => loadGraph(presetGraph)}>
-                <RotateCcw className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t.graph.resetToPreset}</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="size-6 text-muted-foreground hover:text-foreground" onClick={exportGraph}>
-                <Download className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t.graph.exportJson}</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-6 text-muted-foreground hover:text-foreground"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Upload className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t.graph.importJson}</TooltipContent>
-          </Tooltip>
+          <Button aria-label={t.graph.generatedWgsl}
+            variant="ghost"
+            size="icon"
+            className={cn("size-6", showWgsl ? "text-blue-400" : "text-muted-foreground hover:text-foreground")}
+            onClick={() => setShowWgsl((v) => !v)}
+          >
+            <Code className="size-3.5" />
+          </Button>
+          <Button aria-label={t.graph.resetToPreset} variant="ghost" size="icon" className="size-6 text-muted-foreground hover:text-foreground" onClick={() => loadGraph(presetGraph)}>
+            <RotateCcw className="size-3.5" />
+          </Button>
+          <Button aria-label={t.graph.exportJson} variant="ghost" size="icon" className="size-6 text-muted-foreground hover:text-foreground" onClick={exportGraph}>
+            <Download className="size-3.5" />
+          </Button>
+          <Button aria-label={t.graph.importJson}
+            variant="ghost"
+            size="icon"
+            className="size-6 text-muted-foreground hover:text-foreground"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Upload className="size-3.5" />
+          </Button>
           <input
             ref={fileInputRef}
             type="file"
@@ -785,53 +764,38 @@ export function GraphEditor({
               is the only one that had to become a button rather than a
               consequence of typing. ⌘⏎ does the same thing, matching the WGSL
               editor's Compile. */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                disabled={!dirty || !engineReady}
-                onClick={() => void applyNow()}
-                className={cn("size-6", dirty ? "text-blue-400 hover:text-blue-400" : "text-muted-foreground hover:text-foreground")}
-              >
-                <Check className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t.graph.apply}</TooltipContent>
-          </Tooltip>
+          <Button aria-label={t.graph.apply}
+            variant="ghost"
+            size="icon"
+            disabled={!dirty || !engineReady}
+            onClick={() => void applyNow()}
+            className={cn("size-6", dirty ? "text-blue-400 hover:text-blue-400" : "text-muted-foreground hover:text-foreground")}
+          >
+            <Check className="size-3.5" />
+          </Button>
           <span className="mx-1 h-4 w-px shrink-0 bg-white/10" />
 
           {/* ── Window: fill the screen, then come back ── */}
           {onToggleFullscreen && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-6 text-muted-foreground hover:text-foreground"
-                  onClick={onToggleFullscreen}
-                >
-                  {fullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{fullscreen ? t.graph.exitFullscreen : t.graph.fullscreen}</TooltipContent>
-            </Tooltip>
+            <Button aria-label={fullscreen ? t.graph.exitFullscreen : t.graph.fullscreen}
+              variant="ghost"
+              size="icon"
+              className="size-6 text-muted-foreground hover:text-foreground"
+              onClick={onToggleFullscreen}
+            >
+              {fullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+            </Button>
           )}
 
           {/* ── Exit: close (discard) or save (keep) ── */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-6 text-muted-foreground hover:text-foreground"
-                onClick={() => void requestClose()}
-              >
-                <X className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t.graph.discardClose}</TooltipContent>
-          </Tooltip>
+          <Button aria-label={t.graph.discardClose}
+            variant="ghost"
+            size="icon"
+            className="size-6 text-muted-foreground hover:text-foreground"
+            onClick={() => void requestClose()}
+          >
+            <X className="size-3.5" />
+          </Button>
         </div>
       </header>
 

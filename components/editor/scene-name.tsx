@@ -20,20 +20,27 @@ import { Input } from "@/components/ui/input"
 import { useState } from "react"
 import { cn } from "@/lib/utils"
 
-/** Both states, so neither can drift from the other. */
-const NAME_BOX = "min-w-0 rounded-chip border px-1 text-xs leading-4"
+/** Both states, so neither can drift from the other. `display` is the cover's
+ *  title: the serif, italic, at the one display size. */
+const NAME_BOX = {
+  plain: "min-w-0 rounded-chip border px-1 text-xs leading-4",
+  display: "min-w-0 rounded-chip border px-1 font-display text-display italic",
+}
 
 const MAX = 60
 
 export function SceneName({
   name,
   onRename,
+  display = false,
   className,
 }: {
   name: string
   onRename: (name: string) => void
+  display?: boolean
   className?: string
 }) {
+  const box = NAME_BOX[display ? "display" : "plain"]
   const [editing, setEditing] = useState(false)
   const commit = (value: string) => {
     const next = value.trim()
@@ -59,9 +66,9 @@ export function SceneName({
         // field-sizing hugs the text instead of stretching to fill the row,
         // which is what pushed the toggle out to the far edge on every rename.
         className={cn(
-          NAME_BOX,
+          box,
           className,
-          "max-w-full [field-sizing:content] border-blue-400/50 bg-white/5 text-foreground outline-none",
+          "max-w-full [field-sizing:content] border-foreground bg-white/5 text-foreground outline-none",
         )}
       />
     )
@@ -70,7 +77,7 @@ export function SceneName({
     <span
       onDoubleClick={() => setEditing(true)}
       title="Double-click to rename"
-      className={cn(NAME_BOX, className, "cursor-text truncate border-transparent text-muted-foreground")}
+      className={cn(box, className, "cursor-text truncate border-transparent", display ? "block text-foreground" : "text-muted-foreground")}
     >
       {name}
     </span>

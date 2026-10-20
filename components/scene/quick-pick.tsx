@@ -11,6 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { ShelfCount } from "@/components/editor/library-rail"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
+import { useCover } from "@/components/ui/cover"
 
 export type QuickPickItem = {
   id: string
@@ -99,7 +100,9 @@ export function QuickPick({
     </Button>
   )
   // Blue whenever something is APPLIED — membership when the caller tracks a
-  // set, a single value otherwise.
+  // set, a single value otherwise. On the cover the value is ink like any
+  // other: there, violet marks a choice made among words, not a value.
+  const cover = useCover()
   const anyOn = applied ? applied.length > 0 : value !== null && value !== ""
   return (
     <Popover
@@ -114,7 +117,7 @@ export function QuickPick({
           <Button variant="bare"
             className={cn(
               "min-w-0 cursor-pointer truncate text-xs underline decoration-current/40 underline-offset-2 transition-colors hover:decoration-current",
-              anyOn ? "text-blue-400" : "text-muted-foreground",
+              cover ? "text-foreground hover:text-muted-foreground" : anyOn ? "text-blue-400" : "text-muted-foreground",
             )}
           >
             {/* `||`, not `??`: an empty label is as good as none, and falling
@@ -146,7 +149,7 @@ export function QuickPick({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t.rail.search}
-            className="h-7 border-line-strong bg-white/5 pl-7 text-xs focus-visible:border-blue-400/50 focus-visible:ring-0 md:text-xs"
+            className="h-7 border-line-strong bg-white/5 pl-7 text-xs focus-visible:border-foreground focus-visible:ring-0 md:text-xs"
           />
         </div>
         {/* Your drafts exist only on this device, so they sit apart, above the

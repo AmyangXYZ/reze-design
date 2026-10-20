@@ -561,7 +561,6 @@ function OperationsSection({
   canClear,
   canCopy,
   canPaste,
-  simplifyTitle,
   withGizmo,
 }: {
   onInsert: () => void
@@ -577,7 +576,6 @@ function OperationsSection({
   canClear: boolean
   canCopy: boolean
   canPaste: boolean
-  simplifyTitle?: string
   /** Rendered only where a bone is the subject — the gizmo is a bone tool. */
   withGizmo?: boolean
 }) {
@@ -635,7 +633,6 @@ function OperationsSection({
             className={row}
             disabled={!canSimplify}
             onClick={onSimplify}
-            tooltip={simplifyTitle ?? t.lab.timeline.simplifyHint}
           >
             {t.lab.timeline.simplify}
           </Button>
@@ -646,7 +643,6 @@ function OperationsSection({
             className={destructiveRow}
             disabled={!canClear}
             onClick={onClear}
-            tooltip={t.lab.timeline.clearHint}
           >
             {t.lab.timeline.clear}
           </Button>
@@ -1149,7 +1145,6 @@ const CameraSection = memo(function CameraSection({ onClose }: { onClose: () => 
           // this row one control wide and the whole block a different shape
           // from the bone one.
           canSimplify={false}
-          simplifyTitle={t.lab.timeline.simplifyCameraHint}
           canClear={cameraTrack.length > 0}
         />
       </div>
@@ -1308,7 +1303,6 @@ function InspectorBody({ onClose, object }: { onClose: () => void; object: Objec
             // A morph track has no curve to fit — a VMD morph frame carries a
             // weight and no interpolation at all.
             canSimplify={false}
-            simplifyTitle={t.lab.timeline.simplifyMorphHint}
             canClear={ops.canClear}
           />
         </div>

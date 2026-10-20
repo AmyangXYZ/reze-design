@@ -13,7 +13,6 @@ import { Textarea } from "@/components/ui/textarea"
 import { TagsInput } from "@/components/editor/tags-input"
 import { VisibilitySwitch, visibilityLocked, type Visibility } from "@/components/editor/library-shell"
 import { PublishSwitches } from "@/components/editor/publish-switch"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { toast } from "sonner"
 import { usePublish } from "@/hooks/use-publish"
 import { publishClash } from "@/lib/names"
@@ -122,21 +121,8 @@ export function PublishButton({
     </Button>
   )
 
-  // Signed out: the tooltip carries the reason, and the dialog never opens.
-  if (!signedIn) {
-    return (
-      <Tooltip>
-        {/* block, not the default inline: a tooltip needs a wrapper around a
-            disabled button, and an inline one sits outside the column's vertical
-            rhythm — so signed-out viewers saw a different gap here than
-            everybody else. */}
-        <TooltipTrigger asChild>
-          <span className="block">{trigger}</span>
-        </TooltipTrigger>
-        <TooltipContent>{t.gradeLibrary.publishSignIn}</TooltipContent>
-      </Tooltip>
-    )
-  }
+  // Signed out the button stays disabled, and the dialog never opens.
+  if (!signedIn) return trigger
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

@@ -6,8 +6,8 @@ import { useSyncExternalStore } from "react"
 // listed — its cover blurs behind a label, one click reveals that one card, and
 // its page asks before it loads. On, all of that steps aside.
 //
-// NOT under storageKey(), for export-consent's reason: that scheme versions the
-// key per build, and a release would quietly flip every viewer back.
+// Outside storageKey(): that scheme versions the key per build, and a release
+// would quietly flip every viewer back.
 const KEY = "reze-design.show-nsfw"
 
 let cached: boolean | null = null

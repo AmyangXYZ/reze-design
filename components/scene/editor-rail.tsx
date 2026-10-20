@@ -9,7 +9,6 @@
 
 import { Camera, Eye, Footprints, Shapes, Smile, Sparkles, type LucideIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { ClipEditKind } from "@/context/clip-editor"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -32,27 +31,22 @@ export function EditorRail({ kind, onKind }: { kind: ClipEditKind; onKind: (kind
       {items.map((item) => {
         const active = item.kind === kind
         return (
-          <Tooltip key={item.kind}>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                aria-label={item.label}
-                aria-pressed={active}
-                onClick={() => onKind(item.kind)}
-                className={cn(
-                  "transition-none",
-                  active
-                    ? "bg-blue-400/[0.08] text-blue-400 hover:bg-blue-400/12 hover:text-blue-400 dark:hover:bg-blue-400/12"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <item.icon />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">{item.label}</TooltipContent>
-          </Tooltip>
+          <Button key={item.kind}
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label={item.label}
+            aria-pressed={active}
+            onClick={() => onKind(item.kind)}
+            className={cn(
+              "transition-none",
+              active
+                ? "bg-blue-400/[0.08] text-blue-400 hover:bg-blue-400/12 hover:text-blue-400 dark:hover:bg-blue-400/12"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <item.icon />
+          </Button>
         )
       })}
     </div>

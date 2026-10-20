@@ -1,6 +1,6 @@
 "use client"
 
-// The dashboard kit both /analysis pages are built from: a one-screen shell,
+// The dashboard kit /bilibili is built from: a one-screen shell,
 // cards, stat tiles with sparklines, an area chart, columns, bar lists and a
 // searchable table.
 //
@@ -69,16 +69,6 @@ export function Card({ title, aside, className, children }: { title?: string; as
       )}
       {children}
     </section>
-  )
-}
-
-/** A swatch and its name, for a card with two series. */
-export function Key({ color, label }: { color: string; label: string }) {
-  return (
-    <span className="flex items-center gap-1.5 text-2xs text-muted-foreground">
-      <span className="size-2 rounded-full" style={{ backgroundColor: color }} />
-      {label}
-    </span>
   )
 }
 

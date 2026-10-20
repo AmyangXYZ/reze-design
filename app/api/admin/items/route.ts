@@ -39,7 +39,6 @@ export async function GET(request: Request) {
     visibility: i.visibility,
     createdAt: i.createdAt.toISOString(),
     usedInScenes: usage.get(i.id) ?? 0,
-    exportedIn: i.exportCount,
     description: i.description,
     poster: i.posterKey && process.env.R2_PUBLIC_BASE_URL ? `${process.env.R2_PUBLIC_BASE_URL}/${i.posterKey}` : null,
   }))

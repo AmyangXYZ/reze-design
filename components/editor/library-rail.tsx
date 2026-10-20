@@ -291,19 +291,15 @@ type LikeProps = { likeCount: number; liked: boolean; canLike: boolean; onToggle
  * so it does not have to out-shout a second one that looks the same.
  *
  * `canLike` is false for a signed-out visitor AND for a local draft, which has no
- * row on the server to like yet. Both keep pointer events so the title can say
- * which — the primitive's `disabled:pointer-events-none` would otherwise hide the
- * one explanation, in exactly the state that needs it.
+ * row on the server to like yet.
  */
 export function LibraryLike({ likeCount, liked, canLike, onToggle }: LikeProps) {
-  const t = useT()
   return (
     <Button
       type="button"
       variant="ghost"
       size="sm"
       disabled={!canLike}
-      tooltip={canLike ? undefined : t.library.signInToLike}
       aria-pressed={liked}
       onClick={(e) => {
         // The surface underneath may select; the heart must not also select it.
@@ -347,15 +343,12 @@ export function LibraryItemStats({
   liked,
   canLike,
   scenes,
-  exports,
   onToggle,
 }: {
   likeCount: number
   liked: boolean
   canLike: boolean
   scenes: number
-  /** Finished video exports that used this, from browsers that opted in. */
-  exports: number
   onToggle?: () => void
 }) {
   const t = useT()
@@ -371,13 +364,8 @@ export function LibraryItemStats({
     // padding, so the count lands on the same right margin as the description above
     // it and the hover fill bleeds out to the pane's edge instead of stopping short.
     <div className="mt-3 -mr-2.5 flex items-center gap-2">
-      {/* Two counts, never summed. A publish is one scene that stays and can be
-          opened; an export is one video someone made, and the same person tuning
-          one scene makes several. Adding them would hide the comparison this is
-          for — an item with few scenes and many exports is used constantly and
-          shared elsewhere, which is the thing worth seeing. */}
       <span className="min-w-0 flex-1 text-2xs leading-tight text-muted-foreground">
-        {t.library.usedInScenes(scenes)} · {t.library.usedInExports(exports)}
+        {t.library.usedInScenes(scenes)}
       </span>
       <LibraryLike likeCount={likeCount} liked={liked} canLike={canLike} onToggle={onToggle} />
     </div>

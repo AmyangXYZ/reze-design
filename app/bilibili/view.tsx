@@ -1,6 +1,6 @@
 "use client"
 
-// The presentation half of /analysis/bilibili, on the dashboard kit (../dash):
+// The presentation half of /bilibili, on the dashboard kit (./dash):
 // five stats; likes over time; likes by week and the top makers; and every
 // video or maker in a searchable table. One screen on a desktop.
 
@@ -10,8 +10,7 @@ import type { PublicVideo } from "@/lib/db/bili"
 import { useT } from "@/lib/i18n"
 import { Stamp } from "@/components/stamp"
 import { cn } from "@/lib/utils"
-import { AreaChart, BarList, Card, Columns, Segmented, Shell, SmartTable, Stat, fmt, short, type Column } from "../dash"
-import { AnalysisTabs } from "../tabs"
+import { AreaChart, BarList, Card, Columns, Segmented, Shell, SmartTable, Stat, fmt, short, type Column } from "./dash"
 
 const LINK = "hover:underline underline-offset-2"
 const space = (mid: number) => `https://space.bilibili.com/${mid}`
@@ -86,7 +85,6 @@ export function BilibiliView({ videos, updated, now }: { videos: PublicVideo[]; 
     <Shell
       header={
         <>
-          <AnalysisTabs />
           <div className="min-w-0">
             <h1 className="text-base font-semibold">{t.title}</h1>
             <p className="truncate text-xs text-muted-foreground">{t.intro}</p>

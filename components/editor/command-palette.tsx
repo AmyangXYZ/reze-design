@@ -25,6 +25,7 @@ import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 export function CommandPalette({
+  anchor,
   open,
   onOpenChange,
   items,
@@ -32,6 +33,9 @@ export function CommandPalette({
   gaps,
   onRun,
 }: {
+  /** Where the search bar it opens out of stands (the panel's top-left, in
+   *  the viewport). Without one it takes the top of the window. */
+  anchor?: { x: number; y: number } | null
   open: boolean
   onOpenChange: (open: boolean) => void
   items: PaletteItem[]
@@ -142,8 +146,17 @@ export function CommandPalette({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        // Top of the window, not the middle — centring reads as an alert.
-        className="top-[14%] max-w-[29rem] translate-y-0 compact:top-[3.75rem] gap-0 overflow-hidden rounded-surface border-line-strong bg-surface p-0 shadow-float backdrop-blur-xs"
+        // Out of the search bar, as a dropdown: no scrim, grown from the bar's
+        // corner, its input on the bar's line. Without a bar, the top of the
+        // window — centring reads as an alert.
+        overlay={!anchor}
+        style={anchor ? { left: anchor.x, top: anchor.y } : undefined}
+        className={cn(
+          "max-w-[29rem] gap-0 overflow-hidden rounded-surface border-line-strong bg-surface p-0 shadow-float backdrop-blur-xs",
+          anchor
+            ? "w-[29rem] origin-top-left translate-x-0 translate-y-0 data-[state=open]:slide-in-from-top-1"
+            : "top-[14%] translate-y-0 compact:top-[3.75rem]",
+        )}
         onKeyDown={onKeyDown}
       >
         <DialogTitle className="sr-only">{label.title}</DialogTitle>
@@ -154,9 +167,14 @@ export function CommandPalette({
             autoFocus
             value={query}
             onChange={(e) => setQueryAndReset(e.target.value)}
-            placeholder={label.placeholder}
+            placeholder={anchor ? t.lab.find : label.placeholder}
             className="h-11 border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0 dark:bg-transparent"
           />
+          {anchor && (
+            <kbd className="flex h-5 shrink-0 items-center rounded-chip border border-line px-1.5 font-mono text-2xs text-muted-foreground">
+              Esc
+            </kbd>
+          )}
         </div>
 
         {/* 22rem = 9 rows (2rem) + 2 section headers (1.75rem) + this box's own

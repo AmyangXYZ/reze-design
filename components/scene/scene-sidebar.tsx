@@ -131,7 +131,7 @@ export function SliderRow({
           "outline-none",
           dense && "w-8 text-2xs",
           editing
-            ? "border-blue-400/50 bg-white/5 text-foreground"
+            ? "border-foreground bg-white/5 text-foreground"
             : "cursor-text border-transparent text-muted-foreground select-none",
         )}
       />

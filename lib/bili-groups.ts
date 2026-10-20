@@ -1,5 +1,5 @@
 // How the Bilibili videos are summed for a chart: by maker, and by the week
-// they were published. The week helpers are shared with /analysis.
+// they were published.
 
 export type GroupVideo = { mid: number; author: string; published: string; plays: number; likes: number; favorites: number }
 export type Group = { key: string; label: string; videos: number; plays: number; likes: number; favorites: number }

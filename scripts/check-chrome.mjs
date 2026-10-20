@@ -1,6 +1,6 @@
 // The editor chrome's scales, checked. `npm run lint:chrome`.
 //
-// AGENTS.md states them: four text sizes, the two text colours and three
+// AGENTS.md states them: four text sizes and the cover's display title, the two text colours and three
 // accents, the surface/line tokens, three radii and rounded-full. Written down
 // alone they drifted — an audit found nine radius spellings and seven sizes —
 // so this reads every class string in app/ and components/ and names what is
@@ -14,7 +14,7 @@
 // says why it exists. A new one belongs in review, not in a hurry.
 
 import { execFileSync } from "node:child_process"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 
 const RULES = [
   { id: "text-size", re: /(?<![\w-])text-\[\d+(?:\.\d+)?(?:px|rem)\]/g, fix: "text-2xs · text-xs · text-sm · text-base" },
@@ -22,6 +22,8 @@ const RULES = [
   { id: "grey", re: /(?<![\w-])(?:text|bg|border|ring|fill|stroke)-(?:zinc|neutral|gray|slate|stone)-\d+(?:\/\d+)?/g, fix: "text-foreground/-muted-foreground · bg-surface/-raised/-background · border-line/-strong" },
   { id: "hex", re: /(?<![\w-])[\w:-]*-\[#[0-9a-fA-F]{3,8}\]/g, fix: "a token" },
   { id: "accent-shade", re: /(?<![\w-])(?:text|bg|border|ring)-(?:blue|amber|red)-(?:50|100|200|300|500|600|700|800|900|950)(?:\/\d+)?/g, fix: "the accent at -400 (blue-400 · amber-400 · red-400)" },
+  { id: "display", re: /(?<![\w-])text-display(?![\w-])/g, fix: "text-display is the cover's title only (SceneName display)" },
+  { id: "duration", re: /(?<![\w-])duration-(?!233(?![\w-]))(?:\d+|\[[^\]]+\])/g, fix: "duration-233, the one motion duration" },
   { id: "text-opacity", re: /(?<![\w-])text-(?:muted-)?foreground\/\d+/g, fix: "text-foreground or text-muted-foreground, no opacity" },
 ]
 
@@ -30,6 +32,7 @@ const EXCEPTIONS = {
   "components/graph/reze-node.tsx": { grey: "a node card is canvas content that must stand off the dark canvas", hex: "socket colours are Blender's data-type code" },
   "components/editor/wgsl-editor.tsx": { hex: "the code view's own ground and gutter, matched to its syntax theme" },
   "components/scene/anim-player.tsx": { radius: "the transport's 20px corner clamps to a pill when collapsed — explained where it is set" },
+  "components/editor/scene-name.tsx": { display: "the cover's title: the scene's name, the one display-size text" },
   "components/video-link.tsx": { hex: "a scene's video link wears its site's brand colour (Bilibili blue, YouTube red…), so it reads as that site at a glance" },
 }
 /** Classes allowed anywhere, and why. */
@@ -40,7 +43,7 @@ const ANYWHERE = new Map([
 
 const files = execFileSync("git", ["ls-files", "app", "components"], { encoding: "utf8" })
   .split("\n")
-  .filter((f) => f.endsWith(".tsx") && !f.startsWith("components/ui/") && !f.startsWith("app/admin/"))
+  .filter((f) => f.endsWith(".tsx") && !f.startsWith("components/ui/") && !f.startsWith("app/admin/") && existsSync(f))
 
 const LITERAL = /"[^"\n]*"|`[^`]*`|'[^'\n]*'/g
 let count = 0

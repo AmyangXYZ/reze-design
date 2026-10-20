@@ -62,11 +62,7 @@ function ActionButton({
         variant="ghost"
         disabled={disabled}
         onClick={onClick}
-        tooltip={
-          <span className="block max-w-56">
-            <span className="font-medium">{label}</span> — {tip}
-          </span>
-        }
+        title={`${label} — ${tip}`}
         aria-label={label}
         className={cn("text-muted-foreground hover:bg-accent hover:text-foreground", toneClass)}
       >
@@ -80,7 +76,7 @@ function ActionButton({
       variant="ghost"
       disabled={disabled}
       onClick={onClick}
-      tooltip={<span className="block max-w-64">{tip}</span>}
+      title={tip}
       className={cn("h-8 justify-start gap-2 rounded-interior border border-line-strong px-3 text-[13px]", toneClass)}
     >
       <Icon className="size-3.5" />

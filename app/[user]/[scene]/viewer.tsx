@@ -37,7 +37,6 @@ import { useI18n, useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { VideoLink } from "@/components/video-link"
 import { Button } from "@/components/ui/button"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { VerifiedBadge } from "@/components/verified-badge"
 
 type ViewerProps = {
@@ -262,20 +261,15 @@ export function SceneViewer(props: ViewerProps) {
               names what you are watching. The way back is at the top edge. */}
           <div className="flex min-w-0 items-center gap-1">
             <div className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight text-foreground">{props.title}</div>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setUiHidden(true)}
-                  aria-label={t.transport.hideUi}
-                  className="-mr-1 size-6 shrink-0 rounded-chip text-muted-foreground hover:text-foreground"
-                >
-                  <Minimize2 className="size-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top">{t.transport.hideUi}</TooltipContent>
-            </Tooltip>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setUiHidden(true)}
+              aria-label={t.transport.hideUi}
+              className="-mr-1 size-6 shrink-0 rounded-chip text-muted-foreground hover:text-foreground"
+            >
+              <Minimize2 className="size-3.5" />
+            </Button>
           </div>
           <div className="mt-0.5 flex min-w-0 items-center gap-1 font-mono text-2xs text-muted-foreground">
             <Link href={`/${props.author}`} className="truncate transition-colors hover:text-foreground hover:underline">

@@ -67,7 +67,7 @@ function useShown(rows: ItemRow[] | null, query: string, sort: Sort) {
   return useMemo(() => {
     const q = query.trim().toLowerCase()
     const list = (rows ?? []).filter((r) => !q || [r.name, r.author, r.id].some((f) => f.toLowerCase().includes(q)))
-    const key = (r: ItemRow) => (sort === "likes" ? r.likeCount : sort === "used" ? r.usedInScenes + r.exportedIn : Date.parse(r.createdAt))
+    const key = (r: ItemRow) => (sort === "likes" ? r.likeCount : sort === "used" ? r.usedInScenes : Date.parse(r.createdAt))
     return [...list].sort((a, b) => key(b) - key(a))
   }, [rows, query, sort])
 }
@@ -78,7 +78,7 @@ function CopyLink({ path }: { path: string }) {
     <Button
       size="icon-xs"
       variant="ghost"
-      tooltip="Copy the public link"
+      title="Copy the public link"
       aria-label="Copy the public link"
       className="text-muted-foreground hover:bg-accent hover:text-foreground"
       onClick={() =>
@@ -125,7 +125,7 @@ export function ScenesView() {
                   <Stamp iso={s.createdAt} className="block font-mono text-muted-foreground" />
                 </div>
                 <div className="flex shrink-0 gap-0.5">
-                  <Button size="icon-xs" variant="ghost" asChild tooltip="Open the public page" className="text-muted-foreground hover:bg-accent hover:text-foreground">
+                  <Button size="icon-xs" variant="ghost" asChild title="Open the public page" className="text-muted-foreground hover:bg-accent hover:text-foreground">
                     <a href={path} target="_blank" rel="noreferrer" aria-label="Open the public page">
                       <ExternalLink className="size-3.5" />
                     </a>
@@ -149,7 +149,6 @@ const COLUMNS: { key: string; header: string; title?: string; value?: (r: ItemRo
   { key: "author", header: "Author", value: (r) => r.author },
   { key: "likes", header: "Likes", value: (r) => r.likeCount },
   { key: "scenes", header: "In scenes", title: "Published scenes that use it", value: (r) => r.usedInScenes },
-  { key: "exports", header: "In exports", title: "Videos exported with it, from those who share export stats", value: (r) => r.exportedIn },
   { key: "visibility", header: "Visibility", value: (r) => r.visibility },
   { key: "created", header: "Created", value: (r) => Date.parse(r.createdAt) },
   { key: "actions", header: "" },
@@ -211,7 +210,6 @@ export function ItemsView({ kind, noun }: { kind: Exclude<KindKey, "scene">; nou
                 <td className="px-3.5 py-2.5 font-mono text-muted-foreground">@{r.author}</td>
                 <td className="px-3.5 py-2.5 font-mono">{r.likeCount}</td>
                 <td className="px-3.5 py-2.5 font-mono text-muted-foreground">{r.usedInScenes}</td>
-                <td className="px-3.5 py-2.5 font-mono text-muted-foreground">{r.exportedIn}</td>
                 <td className="px-3.5 py-2.5 text-muted-foreground">{r.visibility}</td>
                 <td className="px-3.5 py-2.5 font-mono text-muted-foreground"><Stamp iso={r.createdAt} /></td>
                 <td className="px-3.5 py-2.5 text-right">

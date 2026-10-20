@@ -401,7 +401,6 @@ function LibraryContent({ groups, targetId, onTargetChange, targetLabel, current
                   liked={statFor(selected.id).liked}
                   canLike={signedIn && selected.owner !== "local"}
                   scenes={statFor(selected.id).scenes}
-                  exports={statFor(selected.id).exports}
                   onToggle={() => void toggleLike(selected.id)}
                 />
               </div>

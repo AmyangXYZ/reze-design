@@ -114,7 +114,7 @@ export function AddNodeMenu({
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}
           placeholder={accept ? t.graph.connectTo : t.graph.addNode}
-          className="h-7 w-full rounded-chip bg-white/5 px-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-400/40"
+          className="h-7 w-full rounded-chip bg-white/5 px-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-foreground"
         />
       </div>
       <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto p-1">

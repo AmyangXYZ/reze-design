@@ -1,10 +1,8 @@
 import { SiteNotice } from "@/components/site-notice"
 import { BootGuardScript } from "@/components/boot-guard"
-import { ChromeThemeScript } from "@/components/chrome-theme-script"
 import { BootSlowNote } from "@/components/boot-note"
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { NoNativeContextMenu } from "@/components/no-native-context-menu";
 import { NoStickyFocus } from "@/components/no-sticky-focus";
@@ -25,6 +23,14 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+// The cover's display face: the scene's name, and nothing else.
+const display = Instrument_Serif({
+  variable: "--font-instrument-serif",
+  subsets: ["latin"],
+  weight: "400",
+  style: ["normal", "italic"],
 });
 
 const TITLE = "Reze Design - MMD design, rendering and sharing"
@@ -80,16 +86,12 @@ export default function RootLayout({
       // Belt and braces with the notranslate meta above: Chrome honours the
       // attribute, and the class is what older/other translators look for.
       translate="no"
-      // The chrome palette's boot script sets data-chrome on this element
-      // before React hydrates it (components/chrome-theme-script).
-      suppressHydrationWarning
-      className={`dark notranslate ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`dark notranslate ${geistSans.variable} ${geistMono.variable} ${display.variable} h-full antialiased`}
     >
       <head>
         {/* Before any of the app's code: recovers a page whose chunks did not
             arrive, and says so when the connection is slow (boot-guard). */}
         <BootGuardScript />
-        <ChromeThemeScript />
       </head>
       <body
         className="min-h-full flex flex-col text-foreground"
@@ -98,14 +100,13 @@ export default function RootLayout({
         // exists, so the first frame is already the right colour.
         style={{ backgroundColor: DEFAULT_SCENE.state.settings.background.color }}
       >
-        {/* A small delay lets hover-revealed triggers finish laying out before the tooltip opens */}
         <NoNativeContextMenu />
         <NoStickyFocus />
         {/* Capture starts here so a crash report carries what led up to it. */}
         <CrashLogCapture />
         {/* I18nProvider is client-side; it keeps <html lang> in sync post-mount. */}
         <I18nProvider>
-          <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
+          {children}
           {/* Outcomes of things that ran against the network — see the libraries
               and the publish dialog. Mounted beside the tree rather than inside
               it so a toast survives the surface that raised it closing. */}

@@ -23,7 +23,6 @@ import {
   type LucideIcon,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { useT } from "@/lib/i18n"
 import { useClipActions, useClipDocRef, useClipEngine, useClipSelector, usePlayhead, usePlayheadFrameRef, type SelectedKeyframe } from "@/context/clip-editor"
@@ -382,19 +381,14 @@ function TransportFrameSlider({
 
 export type { SelectedKeyframe } from "@/context/clip-editor"
 
-/** Which axis a zoom ruler scales, as a glyph with its name on hover. The
+/** Which axis a zoom ruler scales, as a glyph. The
  *  toolbar shares its row with the rail and the track column, and two words
  *  cost the width the channel tabs need. */
 function AxisGlyph({ icon: Icon, label, className }: { icon: LucideIcon; label: string; className?: string }) {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span aria-label={label} className={cn("flex shrink-0 items-center text-muted-foreground", className)}>
-          <Icon className="size-3" />
-        </span>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
+    <span aria-label={label} className={cn("flex shrink-0 items-center text-muted-foreground", className)}>
+      <Icon className="size-3" />
+    </span>
   )
 }
 
@@ -3235,9 +3229,9 @@ export function Timeline({
           onClick={() => setPlaying((p) => !p)}
         >
           {playing ? (
-            <Pause className="size-3.5 fill-current" strokeWidth={1.5} />
+            <Pause className="size-3.5" strokeWidth={1.5} />
           ) : (
-            <Play className="size-3.5 fill-current" strokeWidth={1.5} />
+            <Play className="size-3.5" strokeWidth={1.5} />
           )}
         </Button>
         {(

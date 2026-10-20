@@ -17,6 +17,9 @@ const nextConfig: NextConfig = {
   devIndicators: false,
   reactStrictMode: false,
   env: { NEXT_PUBLIC_APP_VERSION: version },
+  async redirects() {
+    return [{ source: "/analysis/bilibili", destination: "/bilibili", permanent: true }]
+  },
 }
 
 export default nextConfig

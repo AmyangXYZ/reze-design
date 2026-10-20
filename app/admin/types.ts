@@ -12,7 +12,6 @@ export type ItemRow = {
   visibility: string
   createdAt: string
   usedInScenes: number
-  exportedIn: number
   description: string
   /** A scene's cover, when it has one. */
   poster: string | null

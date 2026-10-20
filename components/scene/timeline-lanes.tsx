@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils"
 
 /** The transport's fold curve. Mirrored here because the fold's chrome moved in
  *  with the lanes it folds; keep the two in step if either changes. */
-const FOLD = "duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+const FOLD = "duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]"
 
 
 /** One row of the timeline. Fixed height and a fixed label column, so lanes of
@@ -302,7 +302,7 @@ export function TimelineLanes({
         <div
           className={cn(
             "relative border-t border-line pt-3 pb-4 transition-opacity ease-out",
-            open ? "opacity-100 duration-300" : "opacity-0 duration-150",
+            open ? "opacity-100 duration-233" : "opacity-0 duration-233",
           )}
         >
       {/* A motion lane even with no cast.

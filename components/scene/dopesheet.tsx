@@ -38,7 +38,7 @@ import { useT } from "@/lib/i18n";
 /** The transport's fold curve, mirrored from page.tsx's FOLD. Keep the two in
  *  step: the panel's width and this height are one motion, and two curves that
  *  are nearly the same read as the box fighting its own contents. */
-const FOLD = "duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]";
+const FOLD = "duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]";
 
 /**
  * How tall the editor is, open — the default, and the floor and ceiling a drag
@@ -467,7 +467,7 @@ export function Dopesheet({
           style={{ height }}
           className={cn(
             "relative border-t border-line transition-opacity ease-out",
-            open ? "opacity-100 duration-300" : "opacity-0 duration-150",
+            open ? "opacity-100 duration-233" : "opacity-0 duration-233",
           )}
         >
           {/* The top edge, which is already a line — so the handle is a hit area

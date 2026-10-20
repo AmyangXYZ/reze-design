@@ -338,7 +338,7 @@ function Hero({ handle, scene, ...rest }: { handle: string; scene: ProfileScene 
       {...rest}
       href={`/${handle}/${scene.id}`}
       prefetch={false}
-      className="group relative block aspect-video overflow-hidden rounded-surface bg-white/5 outline-none focus-visible:ring-2 focus-visible:ring-blue-400 sm:aspect-[21/9]"
+      className="group relative block aspect-video overflow-hidden rounded-surface bg-white/5 outline-none focus-visible:ring-2 focus-visible:ring-foreground sm:aspect-[21/9]"
     >
       {scene.poster ? (
         <SceneCover src={scene.poster} nsfw={scene.nsfw} className="absolute inset-0 h-full w-full" />
@@ -364,7 +364,7 @@ function Hero({ handle, scene, ...rest }: { handle: string; scene: ProfileScene 
           </div>
         </div>
         <span className="flex h-9 w-fit shrink-0 items-center gap-2 rounded-interior bg-white px-4 text-sm font-semibold text-zinc-950 transition-colors group-hover:bg-white/90">
-          <Play className="size-4 fill-current" />
+          <Play className="size-4" />
           {t.profile.watch}
         </span>
       </div>
@@ -387,7 +387,7 @@ function SceneCard({ handle, scene, ...rest }: { handle: string; scene: ProfileS
       prefetch={false}
       className="group block outline-none"
     >
-      <div className="relative aspect-video overflow-hidden rounded-surface bg-white/5 group-focus-visible:ring-2 group-focus-visible:ring-blue-400">
+      <div className="relative aspect-video overflow-hidden rounded-surface bg-white/5 group-focus-visible:ring-2 group-focus-visible:ring-foreground">
         {scene.poster ? (
           <SceneCover src={scene.poster} nsfw={scene.nsfw} loading="lazy" className="absolute inset-0 h-full w-full" />
         ) : (
@@ -395,7 +395,7 @@ function SceneCard({ handle, scene, ...rest }: { handle: string; scene: ProfileS
             <WandSparkles className="size-5" />
           </span>
         )}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-3 bg-gradient-to-t from-black/70 to-transparent px-3 pt-10 pb-2.5 text-sm text-white tabular-nums opacity-0 transition-opacity duration-200 group-hover:opacity-100 [@media(hover:none)]:opacity-100">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-3 bg-gradient-to-t from-black/70 to-transparent px-3 pt-10 pb-2.5 text-sm text-white tabular-nums opacity-0 transition-opacity duration-233 group-hover:opacity-100 [@media(hover:none)]:opacity-100">
           <span className="flex items-center gap-1 leading-none">
             <Heart className="size-3.5 shrink-0" />
             <span className="leading-none">{scene.likeCount}</span>

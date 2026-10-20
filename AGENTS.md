@@ -13,9 +13,12 @@ job, and nothing picked by eye at one call site. The tokens live in
 flags raw elements. Out of scope: `components/ui` (the primitives define the
 scales) and `app/admin` (its own light theme).
 
-**Four text sizes.** `text-2xs` (11px: captions, counters, chips, kbd) ·
-`text-xs` (12px: the chrome's body, fields, buttons) · `text-sm` (14px: dialog
-and panel titles) · `text-base` (16px: page headings). Never `text-[Npx]`.
+**Four text sizes, and the cover's title.** `text-2xs` (11px: captions,
+counters, chips, kbd) · `text-xs` (12px: the chrome's body, fields, buttons) ·
+`text-sm` (14px: dialog and panel titles) · `text-base` (16px: page headings).
+`text-display` (28px, `font-display` italic, Instrument Serif) is the scene's
+name on the cover and nothing else (`SceneName display`); the same face,
+upright at `text-masthead` (18px), sets the REZE DESIGN masthead. Never `text-[Npx]`.
 Weights: `font-normal` and `font-medium`; `font-semibold` for page headings
 and tiny all-caps labels.
 
@@ -25,11 +28,26 @@ inconsistently. If something needs to recede further, it probably should not
 be on screen.
 
 **Three accents, one meaning each, always at -400.** `blue-400`
-selected/active/focus · `amber-400` warning (it still works, but read this) ·
+selected/active, as a fill or an underline · `amber-400` warning (it still works, but read this) ·
 `red-400` destructive or error. A tinted box uses the accent at an alpha
 (`bg-amber-400/10 border-amber-400/30`), with text in the accent itself. No
 lighter or darker shades, including on hover: a solid accent button hovers at
-`bg-blue-400/90`.
+`bg-blue-400/90`, and its text is `text-on-accent`, never `text-white`.
+Outlines are in the ink: a focus ring, a focused field's border, a picked
+tile's or a drop target's bound are `foreground`, never an accent.
+
+**The cover.** The editor's resting chrome is type set straight on the canvas,
+no boxes: the scene's name and a mono line of facts (model · motion · music), a
+numbered index with the chosen pane beside it past a hairline, a top row of
+words with the centred wordmark as the file menu, and the transport as one line
+along the bottom. Mark such type `cover-type`; inside it, `<Cover>`
+(`components/ui/cover.tsx`) gives sliders their `hairline` look and tab bars
+their underlined words, and every overlay resets it. Its ink follows the
+scene (`data-ink` on `<main>`, "The cover" in
+`app/globals.css`): pure black over a light scene, pure white over a dark one,
+and the muted tier is that ink taken a third of the way toward the frame. No washes or glows behind it. The workbenches (timeline, node
+graph, material tree, WGSL editor, AI panel, publish) keep surfaces, and so
+does the phone, where the console is a sheet.
 
 **Surfaces and edges.** `bg-surface` for chrome, `bg-surface-raised` for
 anything stacked on it, `bg-background` for a page's own ground. Tints over
@@ -46,6 +64,10 @@ swatch). Nothing dimmer: a past review called unclear borders out by name.
 - Pills, dots and avatars use `full`.
 
 Never `rounded`, `-sm`, `-md`, `-lg` or an arbitrary radius.
+
+**One motion duration: 233ms** (`--default-transition-duration` in
+`app/globals.css`). A transition with no duration takes it, a class states it
+as `duration-233`, and CSS keyframes read the variable. No other duration.
 
 **Controls are the `components/ui` primitives.** They carry focus handling,
 disabled states and sizing. A row, tile, swatch or inline field that brings its
@@ -78,15 +100,6 @@ A new one belongs in `scripts/check-chrome.mjs` with its reason.
 `components/editor/surface.tsx`). Its cost over a live canvas was measured and
 accepted; the decision is recorded on `--color-surface` in `app/globals.css`.
 If the blur ever has to go, drop it there, not per surface.
-
-**Palettes restate the tokens, nothing else.** The logo menu switches the
-chrome between palettes (`lib/chrome-theme.ts`, "Chrome palettes" in
-`app/globals.css`) and can put a picture behind the docks. A palette retints
-`--chrome-*`, the two text colours and the selected accent (`blue-400`), and
-prints a motif on `bg-surface`/`bg-surface-raised`. Amber and red never move.
-Text on a solid accent button is `text-on-accent`, never `text-white`: a pale
-palette accent needs dark text. This only works while call sites use the
-tokens: a hardcoded grey or blue is the one thing a palette cannot reach.
 
 **Placement carries meaning.** A scrim means the canvas is not part of this
 task (publish, export setup). No scrim means you are watching the canvas while

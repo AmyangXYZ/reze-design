@@ -151,8 +151,8 @@ export const RezeNode = memo(function RezeNode({ id, data, selected }: NodeProps
       // than an accent. The card's fill stays zinc-900: it is canvas content
       // that has to stand off the dark canvas, which no chrome token does.
       className={`rounded-chip border bg-zinc-900/95 text-foreground shadow-lg min-w-44 text-xs ${
-        selected ? "border-blue-400" : isOutput ? "border-muted-foreground" : "border-line-strong"
-      }${isPreview ? " ring-2 ring-blue-400/60" : ""}`}
+        selected ? "border-foreground" : isOutput ? "border-muted-foreground" : "border-line-strong"
+      }${isPreview ? " ring-2 ring-foreground" : ""}`}
     >
       <div
         className="flex items-center gap-2 px-2 py-1 rounded-t-chip font-medium text-xs"

@@ -56,7 +56,6 @@ import {
   Mountain,
   PersonStanding,
   Plus,
-  RefreshCw,
   Languages,
   Palette,
   PenLine,
@@ -81,6 +80,7 @@ import {
   Eye,
   Minimize2,
   Search,
+  Triangle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -95,13 +95,13 @@ import { AnimPlayer, type Scrub } from "@/components/scene/anim-player"
 import { MaterialsPanel } from "@/components/scene/material-sidebar"
 import { GithubMark, MaterialSphereIcon } from "@/components/scene/slot-icons"
 import { RenderPanel } from "@/components/editor/render-panel"
-import { CastSwatch } from "@/components/editor/cast-swatch"
 import { CommandPalette } from "@/components/editor/command-palette"
 import { RECENT_DEPTH, type PaletteItem, type SceneGap } from "@/lib/command-search"
-import { SceneFileMenu } from "@/components/editor/scene-file-menu"
+import { Row, SceneFileMenu } from "@/components/editor/scene-file-menu"
 import { SceneName } from "@/components/editor/scene-name"
 import { COMPACT_SHEET, Surface } from "@/components/editor/surface"
 import { LayerRow, StackGroup } from "@/components/editor/layer-row"
+import { Cover, useCover } from "@/components/ui/cover"
 import {
   ColorRow,
   SliderRow,
@@ -176,7 +176,7 @@ import { buildZip } from "@/lib/bundle"
 import { resolveSceneRefs } from "@/lib/resolve-refs"
 import { effectRef, gradeRef, graphRef, unpublishedUses } from "@/lib/refs"
 import { ShareSceneDialog, type ScenePublishSource } from "@/components/editor/share-scene"
-import { clearLocalBundle, loadCastPalette, loadLocalBundle, loadModelLooks, saveCastPalette, saveLocalBundle, saveModelLooks } from "@/lib/asset-store"
+import { clearLocalBundle, loadLocalBundle, loadModelLooks, saveLocalBundle, saveModelLooks } from "@/lib/asset-store"
 import { modelLooksKey, sameLooks, savableLooks } from "@/lib/model-looks"
 import { dictionaries, LOCALES, LOCALE_LABELS, useI18n, useT, type Dictionary, type Locale } from "@/lib/i18n"
 import { builtinName, localGroupLabel } from "@/lib/builtin-text"
@@ -219,9 +219,6 @@ import { BACKDROP_VIDEO_RE, probeBackdrop } from "@/lib/backdrop"
 import { useMediaBackdrop } from "@/hooks/use-media-backdrop"
 import { isCompositingBackground } from "@/lib/export-background"
 import type { ExportProgress } from "@/lib/video-export"
-import { castColour } from "@/lib/model-colour"
-import { castPaletteKey, castSourceFor } from "@/lib/cast-source"
-import { NEUTRAL_PALETTE, type CastPaletteId } from "@/lib/cast-palette"
 import { relFilePath, sceneFiles } from "@/lib/scene-files"
 import { cancelDraftWrites, createDraft, isDraft, loadDrafts, updateDraft, updateDraftSoon } from "@/lib/drafts"
 import { DEFAULT_LOOK, loadLookPref, saveLookPref } from "@/lib/look-pref"
@@ -272,14 +269,33 @@ import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_M
 import { cn } from "@/lib/utils"
 import { storageKey } from "@/lib/storage"
 
+/**
+ * Which ink the cover's type takes over this ground: dark over a light scene,
+ * light over a dark one (globals.css, "The cover"). By relative luminance, with
+ * the turn where dark and white text have equal contrast.
+ */
+function coverInk(color: string): "dark" | "light" {
+  const m = /^#([0-9a-f]{6})/i.exec(color)
+  if (!m) return "light"
+  const n = parseInt(m[1], 16)
+  const lin = (c: number) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+  const y = 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255)
+  return y > 0.18 ? "dark" : "light"
+}
+
 /** Floating chrome — the 0.3.x chrome's `floating`, taken through the surface
  *  token so the pills and the panel cannot drift apart. */
 const PILL = "rounded-surface border border-line-strong bg-surface shadow-float backdrop-blur-xs"
 
+/** An action set as a line of type on the cover: a glyph and a word, muted,
+ *  ink on hover. Every button in the console wears it — no fill, no outline. */
+const LINE_ACTION =
+  "flex h-7 w-fit items-center gap-1.5 rounded-none border-0 px-0 text-xs font-normal text-muted-foreground ring-0 hover:bg-transparent hover:text-foreground"
+
 /** The iOS sheet curve — decelerating, no overshoot. Width, height and radius
  *  all ride it so the transport reads as ONE surface changing shape rather than
  *  three properties animating near each other. */
-const FOLD = "duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+const FOLD = "duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]"
 
 /**
  * How wide the open editor is allowed to get, stated in the viewport rather
@@ -451,7 +467,7 @@ function SizeRow({
           e.currentTarget.blur()
         }
       }}
-      className={cn(VALUE_BOX, "border-transparent text-muted-foreground outline-none focus:border-blue-400/50 focus:bg-white/5 focus:text-foreground")}
+      className={cn(VALUE_BOX, "border-transparent text-muted-foreground outline-none focus:border-foreground focus:bg-white/5 focus:text-foreground")}
     />
   )
   // Right-aligned like every other value in this dock: the labels run down the
@@ -551,9 +567,11 @@ const otherThan = (t: Dictionary): Dictionary => (t === dictionaries.zh ? dictio
 function layersFor(t: Dictionary) {
   return [
     { id: "camera", name: t.lab.rows.camera, icon: Camera, presets: [] },
-    // "Environment", not "Stage": the row holds Stage | Ground | Background, and
-    // a container named after one of its tabs read as filing confusion.
+    // "Set", the film word: the place the cast stands, a stage or the ground.
+    // Not "Stage", which is one of its own two tabs.
     { id: "stage", name: t.lab.rows.stage, icon: Mountain, presets: [] },
+    // What is behind the set: a colour, a picture or a sky.
+    { id: "background", name: t.lab.rows.background, icon: Image, presets: [] },
     // THE ORDER IS THE ORDER YOU WORK IN. Light follows the place it falls on,
     // because a scene is lit before it is dressed and long before it is graded —
     // and with lamps in it this row is now where most of an imported stage's
@@ -580,6 +598,9 @@ function layersFor(t: Dictionary) {
     // tab; a prop is PMX geometry that hangs off a bone. Two tabs of one row,
     // the Environment row's own pattern.
     { id: "object", name: t.lab.rows.object, icon: Shapes, presets: [] },
+    // Where the cast looks, and how their eyes give: eyes on the camera and
+    // jelly eyes, both the engine's to run.
+    { id: "eyes", name: t.lab.rows.eyes, icon: Eye, presets: [] },
   ] as const
 }
 
@@ -662,7 +683,7 @@ const DOCK_CONTROLS: {
   en: string
   zh: string
   row: string
-  stageTab?: "stage" | "ground" | "background"
+  stageTab?: "stage" | "ground"
   lightTab?: "world" | "sun"
   cameraTab?: "lens" | "focus"
   postTab?: "grade" | "tone" | "bloom" | "outline"
@@ -693,13 +714,13 @@ const DOCK_CONTROLS: {
   { id: "shadow", en: "Shadow", zh: "阴影", row: "light", lightTab: "sun", value: (v) => sw(v.settings.sun.shadow !== false, v.t) },
   { id: "showGround", en: "Show ground", zh: "显示地面", row: "stage", stageTab: "ground", value: (v) => sw(v.settings.ground.enabled, v.t) },
   { id: "grid", en: "Grid lines", zh: "网格", row: "stage", stageTab: "ground", value: (v) => sw(v.settings.ground.gridEnabled, v.t) },
-  { id: "bg-color", en: "Background color", zh: "背景颜色", row: "stage", stageTab: "background", value: (v) => v.settings.background.color },
-  { id: "bg-image", en: "Background image", zh: "背景图片", row: "stage", stageTab: "background", keywords: ["backdrop", "photo", "video", "mp4", "webm", "gif", "webp", "背景视频"], value: (v) => v.backdrop ?? v.t.lab.ctl.none },
-  { id: "bg-360", en: "Skybox", zh: "天空盒", row: "stage", stageTab: "background", keywords: ["360", "skybox", "panorama", "equirect", "全景"], value: (v) => v.dome ?? v.t.lab.ctl.none },
+  { id: "bg-color", en: "Background color", zh: "背景颜色", row: "background", value: (v) => v.settings.background.color },
+  { id: "bg-image", en: "Background image", zh: "背景图片", row: "background", keywords: ["backdrop", "photo", "video", "mp4", "webm", "gif", "webp", "背景视频"], value: (v) => v.backdrop ?? v.t.lab.ctl.none },
+  { id: "bg-360", en: "Skybox", zh: "天空盒", row: "background", keywords: ["360", "skybox", "panorama", "equirect", "全景"], value: (v) => v.dome ?? v.t.lab.ctl.none },
   // Searched for by what it DOES as much as by what it is: people look for
   // "lighting" and "environment" when they want an HDRI, and for "hdr" when
   // they have the file in hand.
-  { id: "bg-world", en: "World (HDRI)", zh: "世界（HDRI）", row: "stage", stageTab: "background", keywords: ["hdr", "hdri", "ibl", "environment", "lighting", "sky", "光照", "环境", "天空"], value: (v) => v.hdri ?? v.t.lab.ctl.none },
+  { id: "bg-world", en: "World (HDRI)", zh: "世界（HDRI）", row: "background", keywords: ["hdr", "hdri", "ibl", "environment", "lighting", "sky", "光照", "环境", "天空"], value: (v) => v.hdri ?? v.t.lab.ctl.none },
   { id: "effect", en: "Effect", zh: "特效", row: "effect", keywords: ["wgsl", "stars", "shader", "influence", "opacity", "blend", "fade", "背景特效", "影响", "过渡"], value: (v) => v.effect ?? v.t.lab.ctl.none },
   { id: "plane", en: "Planes", zh: "平面", row: "object", objectTab: "plane", keywords: ["card", "layer", "image", "video", "mp4", "gif", "板ポリ", "图层"], value: (v) => v.planes ?? v.t.lab.ctl.none },
   { id: "prop", en: "Props", zh: "道具", row: "object", objectTab: "prop", keywords: ["prop", "accessory", "hold", "hand", "attach", "bind", "bone", "道具", "アクセサリ", "外部親", "手持", "绑定"], value: (v) => v.props ?? v.t.lab.ctl.none },
@@ -743,6 +764,8 @@ function rowMetaFor(t: Dictionary): Record<string, { icon: ComponentType<{ class
   return {
     camera: { icon: Camera, name: t.lab.rows.camera },
     stage: { icon: Mountain, name: t.lab.rows.stage },
+    eyes: { icon: Eye, name: t.lab.rows.eyes },
+    background: { icon: Image, name: t.lab.rows.background },
     effect: { icon: Sparkles, name: t.lab.rows.effect },
     object: { icon: Shapes, name: t.lab.rows.object },
     post: { icon: Contrast, name: t.lab.rows.post },
@@ -1444,45 +1467,54 @@ function commandsFor(t: Dictionary): PaletteItem[] {
 /**
  * One actionable line — a cast member's name, their motion, a scene-wide clip.
  *
- * The actions OVERLAY the text instead of reserving a slot beside it, so at
- * rest the name owns the line's full width. On hover the text's tail fades out
- * under the buttons via a mask — a mask and not padding, because padding would
- * re-truncate the text and the ellipsis would jump the moment the pointer
- * arrives. The fade is the no-reflow way to yield the space.
+ * In the boxed chrome the name ends clear of the button zone (the reserve). On
+ * the cover the name owns the line's full width at rest, and on hover its tail
+ * fades out under the buttons via a mask — a mask and not padding, so the
+ * ellipsis never jumps when the pointer arrives.
  */
 function CastLine({
   text,
   actions,
-  /** Width of the button reserve. The default fits TWO actions; a row with
-   *  three (raise, lower, remove) has to say so, or the third button lands on
-   *  the name it is meant to sit clear of. */
-  reserve = "pr-12",
+  /** Width of the button zone, in rem. The default fits TWO actions; a row
+   *  with more has to say so, or the last button lands on the name. */
+  reserve = 3,
   revealed,
 }: {
   text: ReactNode
   actions: ReactNode
-  reserve?: string
+  reserve?: number
   /** Hold the actions up regardless of hover. For a button that opens something
    *  ANCHORED to it: the popover takes the pointer and the focus, so hover and
    *  focus-within both go false and the control the panel is hanging off fades
    *  out from under it. */
   revealed?: boolean
 }) {
+  const cover = useCover()
   return (
-    // -mx-1 px-1: the highlight breathes past the text without moving it.
+    // -mx-1 px-1: the highlight breathes past the text without moving it. On
+    // the cover there is no highlight: the actions arriving are the hover.
     // On touch there is no hover to reveal anything, so the actions stand in
     // the row beside the text at finger size, and the text truncates before
     // them instead of fading under them.
-    <span className="group relative -mx-1 flex h-5 items-center rounded-interior px-1 transition-colors hover:bg-white/[0.05] pointer-coarse:h-7">
+    <span
+      data-revealed={revealed || undefined}
+      className={cn("group relative -mx-1 flex h-5 items-center rounded-interior px-1 transition-colors pointer-coarse:h-7", !cover && "hover:bg-white/[0.05]")}
+    >
       {/* The reserve ends a long name clear of the button zone entirely — the
           buttons appear on empty reserve, never on text, so the row's own
           highlight is all the hover needs. (Graded dims and edge fades were
           tried on top and deleted: with a real reserve there is nothing left
           for them to fix.) */}
-      <span className={cn("flex min-w-0 flex-1 items-center", reserve, "pointer-coarse:pr-1")}>{text}</span>
+      <span
+        data-yield={cover || undefined}
+        className="flex min-w-0 flex-1 items-center pointer-coarse:pr-1!"
+        style={{ [cover ? "--yield" : "paddingRight"]: `${reserve}rem` } as React.CSSProperties}
+      >
+        {text}
+      </span>
       <span
         className={cn(
-          "absolute inset-y-0 right-0.5 flex items-center gap-0.5 transition-opacity duration-200 group-hover:opacity-100 focus-within:opacity-100",
+          "absolute inset-y-0 right-0.5 flex items-center gap-0.5 transition-opacity duration-233 group-hover:opacity-100 focus-within:opacity-100",
           revealed ? "opacity-100" : "opacity-0",
           "pointer-coarse:static pointer-coarse:shrink-0 pointer-coarse:opacity-100",
         )}
@@ -1567,11 +1599,9 @@ function UploadInvite({
   )
 }
 
-/** NO tooltip, deliberately: these sit in stacked hover rows, and a tip pops
- *  open across the cursor's travel line — hovering one row's actions physically
- *  blocked the hover path to the row beneath. They are also upload/replace/
- *  delete sitting beside the thing they act on; the context is the explanation.
- *  The aria-label keeps the words for anyone not seeing the icons.
+/** Upload/replace/delete sitting beside the thing they act on; the context is
+ *  the explanation. The aria-label keeps the words for anyone not seeing the
+ *  icons.
  *
  *  size-5 fits the line exactly — anything taller sets the row height from the
  *  buttons rather than the text. */
@@ -1583,6 +1613,7 @@ function CastAction({
   disabled,
   compact,
   iconClass = "size-3.5",
+  text,
 }: {
   icon: ComponentType<{ className?: string }>
   /** Names the target too, since a screen reader hears these out of context. */
@@ -1602,7 +1633,23 @@ function CastAction({
    *  own padding — so a shared px size does not read as a shared size. This is
    *  for putting a row's icons on the same APPARENT scale. */
   iconClass?: string
+  /** Shown beside the glyph: the action as a line of its own at the end of a
+   *  pane's list ("Add model"), rather than an icon at a row's edge. */
+  text?: string
 }) {
+  if (text) {
+    return (
+      <Button
+        variant="bare"
+        onClick={onClick}
+        disabled={disabled}
+        className="flex h-7 items-center gap-2.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+      >
+        <Icon className="size-3.5" />
+        {text}
+      </Button>
+    )
+  }
   return (
     <Button
       variant="ghost"
@@ -1668,7 +1715,7 @@ function ClipRow({
   clip: string | null
   /** What the empty slot says — "No camera motion", "No music". */
   empty: string
-  /** Names the kind for tooltips and screen readers: "camera motion", "music". */
+  /** Names the kind for screen readers: "camera motion", "music". */
   kind: string
   /** Whose clip, when several rows share a kind — aria only; the eye matches
    *  rows to the cast by order, the way the timeline lanes do. */
@@ -1711,11 +1758,11 @@ function ClipRow({
     // rather than as a panel floating off one button.
     <Popover open={volumeOpen} onOpenChange={setVolumeOpen}>
       <PopoverAnchor asChild>
-        {/* Bare size-4 icon at gap-2.5, exactly as LayerRow sets its own icon and
-            name — a clip row and a Scene row are siblings in the same column, and
-            an invisible centring box around the icon read as a wider gap. */}
+        {/* A size-3.5 icon at gap-2.5: the column of the pane's other line
+            starts (the cast's numbers, the Add action's plus), so every name in
+            the pane starts at one x. */}
         <div className="flex items-center gap-2.5 px-4 py-1">
-          <Icon className="size-4 shrink-0 text-muted-foreground" />
+          <Icon className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="flex min-w-0 flex-1 flex-col">
             {/* One differentiator, the underline: a filled name is muted plain
                 text, an empty slot is the same mute WITH an underline — the CTA
@@ -1726,7 +1773,7 @@ function ClipRow({
               // under the last one instead of ending clear of the button zone.
               // Reserved so a long filename ends clear of the buttons rather than
               // running under them. Four controls where there are four.
-              reserve={actionCount >= 4 ? "pr-[6rem]" : "pr-[4.5rem]"}
+              reserve={actionCount >= 4 ? 6 : 4.5}
               revealed={volumeOpen || menuOpen}
               text={
                 clip ? (
@@ -1868,7 +1915,6 @@ function ClipRow({
 function CastMemberRow({
   slot,
   name,
-  palette,
   inspected,
   position,
   scale,
@@ -1887,9 +1933,6 @@ function CastMemberRow({
   slot: number
   /** The .pmx name, already display-trimmed. */
   name: string
-  /** Null until the model's colours have been read — the row holds its shape
-   *  with a skeleton meanwhile. */
-  palette: CastPaletteId | null
   /** This model is the one the material panel is editing. */
   inspected: boolean
   /** Where their root stands. Absent on a scene written before it was authored,
@@ -1914,6 +1957,7 @@ function CastMemberRow({
   onRemove: () => void
 }) {
   const t = useT()
+  const cover = useCover()
   // Hover alone would hide the gear the moment the pointer reached the sliders —
   // see CastLine's `revealed`.
   const [optionsOpen, setOptionsOpen] = useState(false)
@@ -1933,19 +1977,19 @@ function CastMemberRow({
         <div
           // Not a button: materials open from the palette alone, so a whole-row
           // click target would promise an edit surface the row does not own. The
-          // tint still marks which model the open panel is editing.
-          className={cn("flex h-8 items-center gap-2.5 px-4 transition-colors", inspected && "bg-white/5")}
+          // tint still marks which model the open panel is editing; on the
+          // cover the name's weight does.
+          className={cn("flex h-8 items-center gap-2.5 px-4 transition-colors", inspected && !cover && "bg-white/5")}
         >
-          <span className="shrink-0 font-mono text-xs text-muted-foreground">{slot}</span>
-          {palette ? <CastSwatch palette={palette} /> : <Skeleton className="size-5 shrink-0 rounded-interior" />}
+          <span className="w-3.5 shrink-0 text-center font-mono text-xs text-muted-foreground">{slot}</span>
           <span className="flex min-w-0 flex-1 flex-col">
             <CastLine
               // Three buttons now, so the name ends clear of them rather than
               // running under the gear — the width a clip row reserves for three.
-              reserve="pr-[4.5rem]"
+              reserve={4.5}
               revealed={optionsOpen}
               text={
-                <span className="min-w-0 flex-1 truncate text-xs" title={name}>
+                <span className={cn("min-w-0 flex-1 truncate text-xs", inspected && cover && "font-medium")} title={name}>
                   {name}
                 </span>
               }
@@ -2082,8 +2126,11 @@ function AttachMenu({
   icon = Plus,
   onOpenChange,
   inRow,
+  text,
 }: {
   label: string
+  /** Shown beside the glyph, as CastAction's. */
+  text?: string
   items: {
     key: string
     label: string
@@ -2116,7 +2163,7 @@ function AttachMenu({
   if (disabled || items.length === 0) {
     return (
       <span className={cn("flex items-center", !inRow && "-mr-1")}>
-        <CastAction icon={icon} label={label} onClick={() => {}} disabled />
+        <CastAction icon={icon} label={label} text={text} onClick={() => {}} disabled />
       </span>
     )
   }
@@ -2126,7 +2173,7 @@ function AttachMenu({
           it lives in rows that select on click — a Trigger would never see it. */}
       <PopoverAnchor asChild>
         <span className={cn("flex items-center", !inRow && "-mr-1")}>
-          <CastAction icon={icon} label={label} onClick={() => setOpen((o) => !o)} />
+          <CastAction icon={icon} label={label} text={text} onClick={() => setOpen((o) => !o)} />
         </span>
       </PopoverAnchor>
       <PopoverContent
@@ -2159,7 +2206,6 @@ function CastRowSkeleton({ slot }: { slot: number }) {
   return (
     <div className="flex h-8 items-center gap-2.5 px-4">
       <span className="shrink-0 font-mono text-2xs text-muted-foreground">{slot}</span>
-      <Skeleton className="size-5 shrink-0 rounded-interior" />
       {/* ONE line, because the row it stands in for is one line: the motion
           moved to the Clips group, and a two-line skeleton resolving into a
           one-line row makes everything under it jump on arrival — the exact
@@ -2432,7 +2478,6 @@ export default function Lab() {
     }
     setAnimByModel(drop)
     setMorphByModel(drop)
-    setPalettes(drop)
     // An effect aimed at them is aimed at nobody now, and an effect on nobody
     // draws nothing with no sign of why. Dropping the name gives back the
     // default — everyone — rather than leaving a dark effect on the list.
@@ -2627,10 +2672,12 @@ export default function Lab() {
   const [agentOpen, setAgentOpen] = useState(false)
   const [agentRaise, setAgentRaise] = useState(0)
   const agentZ = useZOrder(agentRaise, agentOpen ? () => setAgentOpen(false) : undefined)
+  // The art director and Export share the right edge: one at a time.
   const openAgent = useCallback(() => {
+    setExportOpen(false)
     setAgentOpen(true)
     setAgentRaise((n) => n + 1)
-  }, [setAgentOpen, setAgentRaise])
+  }, [setAgentOpen, setAgentRaise, setExportOpen])
   /**
    * Bumped every time a right panel is SUMMONED, which is what raises it.
    *
@@ -3035,26 +3082,21 @@ export default function Lab() {
   // inside someone's half-finished chrome reads as a stuck panel rather than as
   // a memory. Every session opens on the same, closed, posture.
   const [openRow, setOpenRow] = useState<string | null>(null)
+  // The console shows one pane at a time: the open Scene row, or else the
+  // group last chosen in its index.
+  const [dockGroup, setDockGroup] = useState<"cast" | "clips" | "music" | "materials" | null>("cast")
+  const pane = openRow ?? dockGroup
 
   // The stages of their own (a part stands and leaves with its stage), and the
   // one the pane shows. The first holds the scene's lighting.
   const stageRoots = stages.filter((s) => !s.partOf)
   const stage = stageRoots.find((s) => s.id === selectedStage) ?? stageRoots[0] ?? null
-  // What the environment IS, in the order it reads: a stage, a backdrop, or
-  // the ground. The row's summary names it and opening the row lands on its
-  // tab, so the two never disagree.
-  const envTab: "stage" | "ground" | "background" = stage || nativeStage
-    ? "stage"
-    : bgImage
-      ? "background"
-      : "ground"
-  const stageSummary = stageRoots.length
-    ? displayName(stageRoots[0].file) + (stageRoots.length > 1 ? ` +${stageRoots.length - 1}` : "")
-    : (nativeStage?.name ?? t.lab.tabs[envTab])
+  // What the set IS: a stage, or the ground. Opening the row lands on its tab.
+  const envTab: "stage" | "ground" = stage || nativeStage ? "stage" : "ground"
   // Controlled (not key-remounted): go-to deep-links need to land on a pane —
-  // "Background" opens this row on its background tab. Where you left each one
+  // "Ground" opens this row on its ground tab. Where you left each one
   // is UI state, so it comes back from the same store the stack's own shape does.
-  const [stageTab, setStageTab] = useState<"stage" | "ground" | "background">("ground")
+  const [stageTab, setStageTab] = useState<"stage" | "ground">("ground")
   const [cameraTab, setCameraTab] = useState<"lens" | "focus">("lens")
   const [postTab, setPostTab] = useState<"grade" | "tone" | "bloom" | "outline">("grade")
   const [lightTab, setLightTab] = useState<"world" | "sun" | "lamps">("world")
@@ -3153,9 +3195,6 @@ export default function Lab() {
    * models" is not a question.
    */
   const [effectSurface, setEffectSurface] = useState<Record<string, EffectSurface>>({})
-  /** Which applied effect has its dials open, by uid. One at a time: the popover
-   *  hangs off a row, and two open would sit on top of each other. */
-  const [paramsOpen, setParamsOpen] = useState<string | null>(null)
 
   /** Move one dial. Setting it back to the shader's own default DROPS the key,
    *  so a scene records only what its author actually decided — which is what
@@ -3672,10 +3711,6 @@ export default function Lab() {
     return out
   }, [effectDrafts, bgEffects, communityEffects, t, uiLocale])
 
-  /** The row a pick should REPLACE, or null when a pick means "add". Set by a
-   *  row's replace button; both doors onto the list read it, so replacing works
-   *  from the dock picker and from the library alike. */
-  const [replaceTarget, setReplaceTarget] = useState<number | null>(null)
   const pickEffect = useCallback(
     (name: string) => {
       // Picking what is ALREADY applied takes it off — the tick is a tick you
@@ -3684,7 +3719,7 @@ export default function Lab() {
       // membership rather than replacement.
       // The raw setter, stamping where a row is new: setBgEffects is what the
       // compiler cannot keep a callback memoized around (see onEffects below).
-      if (replaceTarget === null && bgEffects.some((e) => e.name === name)) {
+      if (bgEffects.some((e) => e.name === name)) {
         setBgEffectsState((list) => list.filter((e) => e.name !== name))
         return
       }
@@ -3692,14 +3727,7 @@ export default function Lab() {
       // there. Where it belongs is the list's business, and the Background row
       // is where that gets said.
       //
-      const add = (e: AppliedEffect) =>
-        setBgEffectsState((list) => {
-          if (replaceTarget === null) return stampEffectUids([...list, e])
-          const next = [...list]
-          next[replaceTarget] = e
-          return stampEffectUids(next)
-        })
-      if (replaceTarget !== null) setReplaceTarget(null)
+      const add = (e: AppliedEffect) => setBgEffectsState((list) => stampEffectUids([...list, e]))
       // Drafts and community rows carry their own shader — they apply by value.
       const own = [...effectDrafts, ...communityEffects].find((e) => e.name === name)
       if (own) {
@@ -3711,31 +3739,8 @@ export default function Lab() {
       const def = EFFECTS.find((e) => e.name === name)
       if (def) add(applyDefaults(def))
     },
-    [effectDrafts, communityEffects, bgEffects, replaceTarget],
+    [effectDrafts, communityEffects, bgEffects],
   )
-  /**
-   * Swap the effect at one position for another, by name.
-   *
-   * Deliberately NOT pickEffect with replaceTarget set: that flag is state, and
-   * a handler that sets it and then calls pickEffect in the same tick reads the
-   * value from before the set — so the pick appended instead of replacing. The
-   * row knows its own index, which is the whole of what replacement needs.
-   */
-  const replaceEffectAt = useCallback(
-    (index: number, name: string) => {
-      const own = [...effectDrafts, ...communityEffects].find((e) => e.name === name)
-      const def = own ? null : EFFECTS.find((e) => e.name === name)
-      const next: AppliedEffect | null = own
-        ? { id: own.id, name: own.name, wgsl: own.payload.wgsl }
-        : def
-          ? applyDefaults(def)
-          : null
-      if (!next) return
-      setBgEffectsState((list) => stampEffectUids(list.map((e, k) => (k === index ? next : e))))
-    },
-    [effectDrafts, communityEffects],
-  )
-
   /** What the row, the picker and the palette all say at rest.
    *
    *  One effect is NAMED — that is the decision, and reciting a count instead
@@ -4021,19 +4026,6 @@ export default function Lab() {
     }
     return !isTouch() && !isMobileAgent()
   })
-  // On a phone the pill flexes to whatever the right cluster leaves, and the
-  // stack hanging under it takes the same width, so the two read as one column.
-  // Measured rather than restated: the cluster's width is its buttons'.
-  const [pillWidth, setPillWidth] = useState(0)
-  const pillObserver = useRef<ResizeObserver | null>(null)
-  const pillRef = useCallback((el: HTMLDivElement | null) => {
-    pillObserver.current?.disconnect()
-    pillObserver.current = null
-    if (!el) return
-    const ro = new ResizeObserver(() => setPillWidth(el.offsetWidth))
-    ro.observe(el)
-    pillObserver.current = ro
-  }, [])
   /** Set when a phone panel pushed the stack away, so closing it brings the
    *  stack back. */
   const dockReturns = useRef(false)
@@ -4054,8 +4046,6 @@ export default function Lab() {
   // raises it back. No Escape closer — Escape keeps closing the topmost
   // LIBRARY; the stack walk skips surfaces that never close.
   const dockZ = useZOrder()
-  const [inspectorRaise, setInspectorRaise] = useState(0)
-  const inspectorZ = useZOrder(inspectorRaise)
 
   // ── Inspect a cast member ──
   // Clicking a cast row selects the model and opens the right dock on ITS
@@ -4258,9 +4248,10 @@ export default function Lab() {
   /** The export panel, from anywhere. Capture and every export setting land
    *  here — the panel IS the surface for all of them. */
   const openExport = useCallback(() => {
+    setAgentOpen(false)
     setExportOpen(true)
     setExportRaise((n) => n + 1)
-  }, [setExportOpen])
+  }, [setExportOpen, setAgentOpen])
   /**
    * Uploaded this session and not styled yet.
    *
@@ -4330,13 +4321,14 @@ export default function Lab() {
   const openMaterials = useCallback(
     (id: string | null) => {
       if (!id) return
-      // Summoned, so it comes forward — even when it was already open on this
-      // model and nothing remounts.
-      setInspectorRaise((n) => n + 1)
       // Only on a genuine change: re-opening the panel on the model you are
       // already editing must not unbind the node editor you have open on it.
       if (id !== inspectedId) setActiveGroupId(null)
       setInspectedId(id)
+      // The materials live in the console's Materials pane, so every way in lands there.
+      setOpenRow(null)
+      setDockGroup("materials")
+      setExpanded(true)
       // You came and looked — the suggestion has been taken.
       noteStyled(id)
     },
@@ -5576,19 +5568,6 @@ export default function Lab() {
     }
   })
 
-  // ── Identity colour per model ──
-  // Resolved once a model is in the scene, then cached by id. Async and
-  // out-of-band on purpose: the row renders immediately on its name hash and
-  // upgrades in place when the answer lands, so nothing waits on decoding
-  // textures and nothing moves when it finishes.
-  const [palettes, setPalettes] = useState<Record<string, CastPaletteId>>({})
-  // Once per model id, tracked in a ref rather than read back from `palettes` —
-  // state in the deps made every resolution re-run the effect, and the restart
-  // raced its own in-flight pass: N models cost 2N−1 full extractions, the
-  // extras discarded. Models kick off in parallel; castColour returns the
-  // palette id directly, or null for a model it could not read (a bundled one,
-  // say), which resolves to the neutral rather than shimmering forever.
-  const castStarted = useRef(new Set<string>())
   /**
    * Replacing a model can mint a NEW id (ids come from the pmx filename), and a
    * fresh id would flash the skeleton while its colour re-extracts. Instead the
@@ -5603,8 +5582,6 @@ export default function Lab() {
    */
   const adoptReplacedModel = useCallback(
     (oldId: string, newId: string) => {
-      castStarted.current.delete(oldId)
-      castStarted.current.delete(newId)
       const clip = animRef.current[oldId]
       const expr = morphRef.current[oldId]
       setAnimByModel((prev) => {
@@ -5662,14 +5639,6 @@ export default function Lab() {
           void wearMorph()
         })
       })()
-      setPalettes((prev) => {
-        const old = prev[oldId]
-        if (!old || oldId === newId) return prev
-        const next = { ...prev }
-        delete next[oldId]
-        next[newId] = old
-        return next
-      })
       // The inspector follows the slot, not the file. Replacing the model you
       // had open is a continuation of editing THAT cast member, so the panel
       // should be looking at what replaced it — and leaving the old id behind
@@ -5709,34 +5678,8 @@ export default function Lab() {
         rebindCameraFollow(newId, next)
       }
     },
-    [loadVmdFile, loadVmdUrl, loadMorphFile, loadMorphUrl, bundleFile, engineRef, rebindCameraFollow, camera, cast],
+    [loadVmdFile, loadVmdUrl, loadMorphFile, loadMorphUrl, bundleFile, engineRef, rebindCameraFollow, camera, cast, setInspectedId],
   )
-  useEffect(() => {
-    for (const m of models) {
-      if (castStarted.current.has(m.id)) continue
-      castStarted.current.add(m.id)
-      const key = castPaletteKey(scene, m.id)
-      void (async () => {
-        // Remembered from a previous load, if this model has been seen before.
-        // Extraction decodes every texture the model carries, which is why the
-        // swatch used to arrive a beat after the row it sits in.
-        if (key) {
-          const cached = await loadCastPalette(key)
-          if (cached) {
-            setPalettes((p) => ({ ...p, [m.id]: cached as CastPaletteId }))
-            return
-          }
-        }
-        const source = castSourceFor(m.id, scene, groupsByModel[m.id], bundleFiles())
-        const palette = source ? await castColour(source) : null
-        // Unconditional: the started-set already dedupes, and a re-extraction
-        // after a model replace must be able to overwrite the transplanted
-        // colour it started from.
-        setPalettes((p) => ({ ...p, [m.id]: palette ?? NEUTRAL_PALETTE }))
-        if (key && palette) void saveCastPalette(key, palette)
-      })()
-    }
-  }, [models, scene, groupsByModel, bundleFiles])
 
   // A dialog rather than a toggle: two locales fit in a switch, but "Toggle
   // language" says a switch exists without saying where it lands. The picker
@@ -5808,6 +5751,11 @@ export default function Lab() {
   // Resetting them on CLOSE instead would re-filter a list that is still on
   // screen, which is the reshuffle-under-the-cursor this whole dance avoids.
   const [paletteSession, setPaletteSession] = useState(0)
+  // The cover's search bar: the palette opens out of it, its input where the
+  // bar's word was. Null where there is no bar (the phone), and the palette
+  // takes its own place.
+  const searchBarRef = useRef<HTMLButtonElement>(null)
+  const [paletteAnchor, setPaletteAnchor] = useState<{ x: number; y: number } | null>(null)
 
   const openPalette = useCallback(() => {
     // Commit the pending order BEFORE the dialog is on screen. Applying it at
@@ -5820,6 +5768,10 @@ export default function Lab() {
     // Same rule for any row that prints its own state: catch the label up here,
     // never at run time.
     setValuesShown(valuesRef.current)
+    // The panel's input row (h-11, px-3) centred on the bar's line, its icon
+    // on the bar's icon.
+    const bar = searchBarRef.current?.getBoundingClientRect()
+    setPaletteAnchor(bar && bar.width > 0 ? { x: bar.left - 12, y: bar.top + bar.height / 2 - 22 } : null)
     setPaletteSession((n) => n + 1)
     setPaletteOpen(true)
   }, [setPaletteOpen])
@@ -5850,11 +5802,15 @@ export default function Lab() {
   const [uiHidden, setUiHidden] = useHideUi()
 
   useEffect(() => {
+    // F finds, as H hides: not while typing, nor inside a menu or dialog,
+    // where F is a letter.
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault()
-        openPalette()
-      }
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return
+      if (e.key !== "f" && e.key !== "F") return
+      const el = e.target as HTMLElement | null
+      if (el?.closest?.("input, textarea, select, [contenteditable], [role=menu], [role=dialog], [role=listbox]")) return
+      e.preventDefault()
+      openPalette()
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
@@ -5866,7 +5822,7 @@ export default function Lab() {
     (
       target: string,
       tabs?: {
-        stage?: "stage" | "ground" | "background"
+        stage?: "stage" | "ground"
         light?: "world" | "sun"
         camera?: "lens" | "focus"
         post?: "grade" | "tone" | "bloom" | "outline"
@@ -5878,9 +5834,14 @@ export default function Lab() {
       // jumps to a control through the palette should still find it collapsed
       // next load — the toggle is the only thing that states a preference.
       setExpanded(true)
-      // A Scene row opens; a group anchor ("group-cast") only scrolls.
+      // A Scene row opens; a group anchor ("group-cast") selects its pane.
       const isRow = layers.some((l) => l.id === target)
       if (isRow) setOpenRow(target)
+      const group = target.replace(/^group-/, "")
+      if (group === "cast" || group === "clips" || group === "music") {
+        setOpenRow(null)
+        setDockGroup(group)
+      }
       if (tabs?.stage) setStageTab(tabs.stage)
       if (tabs?.light) setLightTab(tabs.light)
       if (tabs?.camera) setCameraTab(tabs.camera)
@@ -6568,12 +6529,6 @@ export default function Lab() {
     // sky it never installed.
     swapHdri(null)
     stageHdri.current = null
-    // Both halves of the cast-colour bookkeeping. Clearing only the palettes would
-    // leave the started-set claiming every id was already extracted, and a new cast
-    // would shimmer forever; clearing only the set would leave a reused id (the same
-    // .pmx under a different document) wearing the colour it had in the old scene.
-    castStarted.current.clear()
-    setPalettes({})
     // The transient surfaces are all ABOUT something the swap just removed. The
     // editors go too, baselines included: a session's "put it back" points at a
     // group, a grade or a shader belonging to the document being replaced, and
@@ -7065,7 +7020,7 @@ export default function Lab() {
           morphInput.current?.click()
         }
       } else if (item.id === "ground") gotoSection("stage", { stage: "ground" })
-      else if (item.id === "background") gotoSection("stage", { stage: "background" })
+      else if (item.id === "background") gotoSection("background")
       else if (item.id === "effect") gotoSection("effect")
       else if (item.id === "post") gotoSection("post")
       else if (item.id === "light") gotoSection("light")
@@ -7167,10 +7122,287 @@ export default function Lab() {
     ],
   )
 
+  // The Effect pane: the applied effects topmost first — the document draws
+  // in array order, so its last entry is the one nearest the viewer — and the
+  // chosen one, which falls back to the topmost.
+  const effectsTopFirst = [...bgEffects].reverse()
+  const effectFx = effectsTopFirst.find((e) => e.uid === selectedEffect) ?? effectsTopFirst[0] ?? null
+  const effectFxUid = effectFx?.uid ?? ""
+  const effectFxDecls = effectSurface[effectFxUid]?.params ?? []
+  // Who it plays to, only for an effect that reads the cast: a rain effect is
+  // handed nothing to aim.
+  const effectFxAimable = (effectSurface[effectFxUid]?.readsCast ?? false) && cast.length > 1
+  const effectMore = (
+    <div className={cn("flex flex-wrap gap-x-5", effectFx && "mt-3 border-t border-line pt-2")}>
+      {/* The picker still holds MEMBERSHIP: every applied
+          effect ticks, and a ticked row clicks off. */}
+      <QuickPick
+        value={null}
+        applied={bgEffects.map((e) => e.name)}
+        items={effectItems}
+        onPick={pickEffect}
+        placeholder={t.lab.ctl.none}
+        trigger={
+          <Button variant="bare" className={LINE_ACTION}>
+            <Plus className="size-3.5 shrink-0" />
+            <span className="truncate">{t.lab.ctl.addEffect}</span>
+          </Button>
+        }
+      />
+      <Button variant="bare" onClick={() => openBrowse({ kind: "effect" })} className={LINE_ACTION}>
+        <Sparkles className="size-3.5" />
+        {t.lab.cmd.effectLib}
+      </Button>
+    </div>
+  )
+
+  // The art director's panel body, worn by a sheet on a phone and set as a
+  // column of type on the cover everywhere else.
+  const exportBody = (
+    <RenderPanel
+      active={exportOpen}
+      engineRef={engineRef}
+      canvasRef={canvasRef}
+      modelName={masterId ?? primaryId ?? ""}
+      extraModelNames={models.filter((m) => animByModel[m.id] && m.id !== masterId).map((m) => m.id)}
+      timeline={timeline}
+      sceneName={sceneName}
+      animName={masterClipName}
+      animDuration={animDuration}
+      backdrop={bgImage && bgImage.slot !== "dome" ? bgImage : null}
+      backgroundColor={settings.background.color}
+      musicUrl={musicClip?.url ?? null}
+      musicVolume={audio.volume}
+      footsteps={footstepsOn ? { source: footstepsSource, volume: footstepsVolume } : null}
+      background={framing.background}
+      onBackgroundChange={framing.setBackground}
+      onExportingChange={(v) => {
+        framing.setExporting(v)
+        // Closes the "render" gap for the rest of the session. Set when
+        // the export STARTS: the suggestion has done its job by then,
+        // and a failed render is not a reason to keep nagging.
+        if (v) setExportedOnce(true)
+      }}
+      onFramePreviewChange={framing.handleFramePreview}
+      onProgressChange={setExportProgress}
+      rasterLyricsAt={rasterLyricsAt}
+      // Only the MOVING ones: a still card is already in its texture and
+      // has no frames to advance.
+      planes={planes.flatMap((p) => {
+        const file = sceneFiles.planes.get(p.id)
+        if (!file || (!p.video && !p.animated)) return []
+        return [
+          {
+            id: p.id,
+            file,
+            kind: p.video ? ("video" as const) : ("animated" as const),
+            frameWidth: p.frameWidth,
+            frameHeight: p.frameHeight,
+          },
+        ]
+      })}
+    />
+  )
+
+  const agentBody = (
+    <>
+            {compact ? (
+              <div className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 py-2.5">
+                <Astroid className="size-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate text-xs font-medium">{t.lab.agent.title}</span>
+                <AgentMenu
+                  settings={aiSettings}
+                  active={aiActive}
+                  premium={premium}
+                  open={aiMenuOpen}
+                  onOpenChange={setAiMenuOpen}
+                  text={t.lab.agent.settings}
+                />
+                <CastAction icon={X} label={t.lab.agent.close} onClick={() => setAgentOpen(false)} />
+              </div>
+            ) : (
+              // On the cover the column is headed like the console's byline: a
+              // mono line, its actions as words, and the tab line as its rule.
+              <div data-ink-zone className="flex h-5 shrink-0 items-center gap-4 px-4">
+                <span className="min-w-0 flex-1 truncate font-mono text-2xs tracking-wide uppercase">{t.lab.agent.title}</span>
+                <AgentMenu
+                  settings={aiSettings}
+                  active={aiActive}
+                  premium={premium}
+                  open={aiMenuOpen}
+                  onOpenChange={setAiMenuOpen}
+                  text={t.lab.agent.settings}
+                  word={t.lab.agent.keys}
+                />
+                <Button variant="bare" aria-label={t.lab.agent.close} onClick={() => setAgentOpen(false)} className="h-5 text-xs text-muted-foreground hover:text-foreground">
+                  {t.lab.agent.closeWord}
+                </Button>
+              </div>
+            )}
+            <AgentTabs
+              tabs={agent.tabs}
+              activeId={agent.activeId}
+              runningId={agent.runningId}
+              onSelect={(id) => void agent.switchTo(id)}
+              onClose={(id) => void agent.closeTab(id)}
+              onNew={() => void agent.newTab()}
+              canAdd={agent.messages.length > 0}
+              text={t.lab.agent}
+            />
+            <AgentPanel
+              messages={agent.messages}
+              thumbs={agent.thumbs}
+              live={agent.live}
+              // The run shows in its own tab; elsewhere it only locks the send.
+              busy={agent.busy && agent.activeId === agent.runningId}
+              locked={agent.busy && agent.activeId !== agent.runningId}
+              onSetup={aiActive ? undefined : () => setAiMenuOpen(true)}
+              run={agent.run}
+              notice={agent.notice}
+              usage={agent.usage}
+              conversationId={agent.activeId}
+              open={agentOpen}
+              checkpoint={agent.checkpoint}
+              onUndo={agent.undoRun}
+              onRedo={agent.redoRun}
+              onRetry={() => void agent.retry()}
+              onNewChat={() => void agent.newTab()}
+              onSend={(text, refs) => void agent.send(text, refs)}
+              onStop={agent.stop}
+              text={t.lab.agent}
+            />
+    </>
+  )
+
+  // The cover's ink follows the FRAME, not just the scene's background colour:
+  // an effect, a stage or a sky can darken the picture far from what the
+  // backdrop says. Twice a second the canvas is drawn down to 48×32, and each
+  // ink zone ([data-ink-zone]: the top row, the title, the index, a row of the
+  // export column…) is judged on what stands behind IT — so a letterboxed
+  // frame can leave the top row on the black matte and the index on a pale
+  // picture, each in its own ink (globals.css, "The cover"). Written straight onto
+  // the elements (no render). The two thresholds are apart so a frame near the
+  // turn cannot flicker the ink. Off during an export: the file outranks the
+  // preview's chrome.
+  const coverRef = useRef<HTMLElement>(null)
+  const exportingRef = useRef(false)
+  useEffect(() => {
+    exportingRef.current = framing.exporting
+  })
+  useEffect(() => {
+    const main = coverRef.current
+    const canvas = canvasRef.current
+    if (!mounted || !main || !canvas) return
+    const W = 48
+    const H = 32
+    const probe = document.createElement("canvas")
+    probe.width = W
+    probe.height = H
+    const g = probe.getContext("2d", { willReadFrequently: true })
+    if (!g) return
+    const lin = (c: number) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+    let raf = 0
+    let timer = 0
+    // Read in a frame queued from a timer: the engine queues its next frame
+    // while it renders, so this one runs AFTER that render, while the canvas
+    // still holds it. A frame of our own would run first and read an empty
+    // canvas. The timer is also the half-second pace.
+    const next = (ms = 500) => {
+      clearTimeout(timer)
+      cancelAnimationFrame(raf)
+      timer = window.setTimeout(() => {
+        raf = requestAnimationFrame(tick)
+      }, ms)
+    }
+    // The frame changing shape (an export's aspect, the window) moves what
+    // stands behind every zone at once: look again at the next frame rather
+    // than at the next half-second.
+    const resized = new ResizeObserver(() => next(0))
+    resized.observe(canvas)
+    const tick = () => {
+      next()
+      if (document.hidden || exportingRef.current || !canvas.width) return
+      try {
+        g.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, W, H)
+      } catch {
+        return
+      }
+      const d = g.getImageData(0, 0, W, H).data
+      const cr = canvas.getBoundingClientRect()
+      for (const el of main.querySelectorAll<HTMLElement>("[data-ink-zone]")) {
+        const r = el.getBoundingClientRect()
+        if (r.width === 0 || r.height === 0) continue
+        const x0 = Math.max(r.left, cr.left)
+        const x1 = Math.min(r.right, cr.right)
+        const y0 = Math.max(r.top, cr.top)
+        const y1 = Math.min(r.bottom, cr.bottom)
+        const over = Math.max(0, x1 - x0) * Math.max(0, y1 - y0)
+        // Mostly off the frame: the type stands on the black matte around it.
+        if (over < (r.width * r.height) / 2) {
+          if (el.dataset.ink !== "light") el.dataset.ink = "light"
+          el.style.setProperty("--scene-bg", "rgb(0 0 0)")
+          continue
+        }
+        const qx0 = Math.floor(((x0 - cr.left) / cr.width) * W)
+        const qx1 = Math.ceil(((x1 - cr.left) / cr.width) * W)
+        const qy0 = Math.floor(((y0 - cr.top) / cr.height) * H)
+        const qy1 = Math.ceil(((y1 - cr.top) / cr.height) * H)
+        // The type stands on what MOST of the area is, so it is judged by the
+        // median lightness (L*, as the eye sees it), not the mean: a few big
+        // stars or a lamp on a black sky must not turn the ink dark over black.
+        const px: { l: number; i: number }[] = []
+        for (let qy = qy0; qy < qy1; qy++) {
+          for (let qx = qx0; qx < qx1; qx++) {
+            const i = (qy * W + qx) * 4
+            // A transparent pixel shows what is under the canvas, which the
+            // scene's own background already speaks for.
+            if (d[i + 3] < 128) continue
+            const y = 0.2126 * lin(d[i]) + 0.7152 * lin(d[i + 1]) + 0.0722 * lin(d[i + 2])
+            px.push({ l: y > 216 / 24389 ? 116 * Math.cbrt(y) - 16 : (24389 / 27) * y, i })
+          }
+        }
+        if (px.length === 0) continue
+        px.sort((a, b) => a.l - b.l)
+        const mid = px[px.length >> 1].l
+        const was = el.dataset.ink ?? main.dataset.ink
+        const ink = was === "dark" ? (mid < 44 ? "light" : "dark") : mid > 54 ? "dark" : "light"
+        if (el.dataset.ink !== ink) el.dataset.ink = ink
+        // The tint from the middle half too, so the highlights do not colour it.
+        let rr = 0
+        let gg = 0
+        let bb = 0
+        const lo = px.length >> 2
+        const hi = Math.max(lo + 1, (px.length * 3) >> 2)
+        for (let k = lo; k < hi; k++) {
+          const i = px[k].i
+          rr += d[i]
+          gg += d[i + 1]
+          bb += d[i + 2]
+        }
+        const n = hi - lo
+        el.style.setProperty("--scene-bg", `rgb(${Math.round(rr / n)} ${Math.round(gg / n)} ${Math.round(bb / n)})`)
+      }
+    }
+    next()
+    return () => {
+      resized.disconnect()
+      clearTimeout(timer)
+      cancelAnimationFrame(raf)
+    }
+  }, [mounted, canvasRef])
+
+  const sceneGround = !mounted
+    ? DEFAULT_SCENE.state.settings.background.color
+    : isCompositingBackground(framing.liveBackground)
+      ? "#000"
+      : settings.background.color
+
   return (
     <main
-      className="relative h-dvh w-screen overflow-hidden select-none"
+      ref={coverRef}
+      className="cover relative h-dvh w-screen overflow-hidden select-none"
       data-ui-hidden={uiHidden || undefined}
+      data-ink={coverInk(sceneGround)}
       // The scene's own colour, so the ground under the canvas is the colour the
       // canvas is about to paint — no flash from a chrome default to the scene on
       // first load. A compositing handoff keeps the neutral: green and alpha are
@@ -7184,11 +7416,11 @@ export default function Lab() {
       // exactly what <body> carries — the two agree, and the restored scene's own
       // colour lands a tick later.
       style={{
-        backgroundColor: !mounted
-          ? DEFAULT_SCENE.state.settings.background.color
-          : isCompositingBackground(framing.liveBackground)
-            ? "#000"
-            : settings.background.color,
+        // Framed for an export, what lies outside the frame is a black matte.
+        backgroundColor: frameRect ? "#000" : sceneGround,
+        // The cover's ink is tinted toward it (globals.css) until the frame
+        // sampler takes over.
+        ["--scene-bg" as string]: sceneGround,
       }}
     >
       {/* Full bleed, always. Chrome floats over it; nothing ever shrinks the
@@ -7298,13 +7530,72 @@ export default function Lab() {
           stops a pill and a panel of different widths sitting on top of each
           other. */}
       {mounted && (
-        <div className="pointer-events-none absolute top-3 right-3 left-3 flex items-start gap-2 compact:gap-1.5">
+        // Type on the canvas, so its buttons wear the cover's look; the phone's
+        // pills are surfaces.
+        <Cover on={!compact}>
+        <div data-edge="top" data-ink-zone={!compact || undefined} className="pointer-events-none absolute top-5 right-6 left-7 flex items-start gap-2 compact:top-3 compact:right-3 compact:left-3 compact:gap-1.5">
+          {/* The cover's top row: the wordmark (it is the file menu) and the
+              ways out on the left, Export and Share on the right. */}
+          {!compact && (
+            <>
+              <div className="cover-type pointer-events-auto flex h-8 items-center gap-5 text-xs">
+                <SceneFileMenu
+                  align="start"
+                  onNew={newScene}
+                  onExport={exportScene}
+                  onImport={importScene}
+                  onReset={resetSceneDefaults}
+                  footer={
+                    <Row
+                      icon={GithubMark}
+                      label={`GitHub · ${VERSION_LABEL}`}
+                      onClick={() => window.open(REPO_URL, "_blank", "noreferrer")}
+                    />
+                  }
+                  // Instrument Serif has one weight; a stroke in its own colour
+                  // gives the masthead a little more.
+                  trigger={
+                    // The version stands by the wordmark, as an issue number
+                    // stands by a magazine's masthead.
+                    <span className="flex items-baseline gap-2 py-1">
+                      <span className="font-display text-masthead tracking-[0.45em] text-foreground uppercase [-webkit-text-stroke:0.3px_currentColor]">
+                        Reze Design
+                      </span>
+                      <span className="font-mono text-2xs text-muted-foreground">v{VERSION_LABEL}</span>
+                    </span>
+                  }
+                />
+                <Button
+                  variant="bare"
+                  onClick={() => openGallery()}
+                  className="text-foreground hover:text-muted-foreground"
+                >
+                  {t.lab.gallery}
+                </Button>
+                {/* A search bar drawn as a hairline: the palette opens out of it.
+                    The rule takes no room, so its words sit on the row's line. */}
+                <Button
+                  ref={searchBarRef}
+                  variant="bare"
+                  onClick={openPalette}
+                  aria-label={t.lab.searchCommands}
+                  className="relative flex h-8 w-52 items-center gap-2 text-muted-foreground after:absolute after:inset-x-0 after:bottom-0.5 after:h-px after:bg-line"
+                >
+                  <Search className="size-3.5 shrink-0" strokeWidth={1.5} />
+                  <span className="flex-1 text-left">{t.lab.find}</span>
+                  <kbd className="flex h-4 min-w-4 items-center justify-center rounded-chip border border-line px-1 font-mono text-2xs pointer-coarse:hidden">
+                    F
+                  </kbd>
+                </Button>
+              </div>
+            </>
+          )}
           {/* Same 17rem as the open panel: this is a DROPDOWN, not a sidebar —
             expanding only grows downward, so nothing ever shifts sideways. */}
           {/* On a phone the pill stays while the stack is open: the stack hangs
               below the top bar there, so the pill is its header. */}
-          {(!expanded || compact) && (
-            <div ref={pillRef} className={cn(PILL, "pointer-events-auto flex h-10 w-[16rem] items-center gap-1.5 pr-1.5 pl-2 compact:w-auto compact:min-w-0 compact:flex-1 compact:gap-0.5 compact:pr-1 compact:pl-1")}>
+          {compact && (
+            <div className={cn(PILL, "pointer-events-auto flex h-10 w-[16rem] items-center gap-1.5 pr-1.5 pl-2 compact:w-auto compact:min-w-0 compact:flex-1 compact:gap-0.5 compact:pr-1 compact:pl-1")}>
               {/* The logo is the menu, in both of its homes — scene-file-menu.tsx
                   for why. The stack is not on screen here, so this pill's logo is
                   the only door to the file operations. */}
@@ -7333,7 +7624,6 @@ export default function Lab() {
                 variant="ghost"
                 size="icon"
                 asChild
-                tooltip="GitHub"
                 className="size-7 shrink-0 rounded-interior text-foreground hover:bg-white/5 hover:text-foreground compact:size-6"
               >
                 <a href={REPO_URL} target="_blank" rel="noreferrer" aria-label="GitHub">
@@ -7373,17 +7663,18 @@ export default function Lab() {
               heights agreed only while every pill happened to hold size-7
               children — one control with a different variant height and they
               silently disagree, which is exactly what happened here. */}
-          <div className="ml-auto flex w-[16rem] shrink-0 items-start gap-2 compact:w-auto">
+          <div className={cn("ml-auto flex shrink-0 items-center gap-1 compact:items-start compact:gap-2", !compact && "cover-type")}>
             {/* The palette needs a visible door — keyboard-only would hide it
                 from exactly the people most likely to miss it, and it is the
                 only route on touch. The button IS the pill: a wrapper around a
                 single control leaves a ring of padding the hover cannot reach. */}
+            {compact && (
             <Button
               variant="ghost"
               onClick={openPalette}
               aria-label={t.lab.searchCommands}
               className={cn(
-                PILL,
+                "compact:rounded-surface compact:border compact:border-line-strong compact:bg-surface compact:shadow-float compact:backdrop-blur-xs",
                 // Left-aligned, so the word starts in the same place whatever
                 // the language.
                 //
@@ -7396,8 +7687,8 @@ export default function Lab() {
                 // control whose whole job is to be legible at a glance.
                 //
                 // A door named for what is behind it, and what is behind it is
-                // a search field. The ⌘K cap beside it says the rest.
-                "pointer-events-auto h-10 min-w-0 flex-1 justify-start gap-2 px-3 text-xs font-medium text-muted-foreground hover:bg-white/5 hover:text-foreground compact:w-10 compact:flex-none compact:justify-center compact:px-0",
+                // a search field. The F cap beside it says the rest.
+                "pointer-events-auto h-8 min-w-0 justify-start gap-2 px-2 text-xs text-muted-foreground hover:bg-transparent hover:text-foreground compact:h-10 compact:w-10 compact:flex-none compact:justify-center compact:px-0",
               )}
             >
               {/* min-w-0 + truncate, because this is the only shrinkable thing
@@ -7405,22 +7696,39 @@ export default function Lab() {
                   own min-content, the row cannot fit 16rem, and the whole
                   cluster is pushed past the right edge — which is exactly what
                   narrowing the docks from 18rem exposed. */}
-              <Search className="hidden size-4 compact:block" />
+              <Search className="size-4" strokeWidth={1.5} />
               <span className="min-w-0 truncate compact:hidden">{t.lab.searchCommands}</span>
               {/* A key cap, so it should read as one: fixed height, centred, and the
               two glyphs spaced by a real gap rather than letter-spacing — which
               adds its space AFTER the K and pushes the pair off-centre. */}
-              <kbd className="ml-auto inline-flex h-4 compact:hidden pointer-coarse:hidden min-w-[1.375rem] shrink-0 items-center justify-center gap-[3px] rounded-chip border border-line-strong bg-white/5 px-1 font-mono text-2xs leading-none text-muted-foreground">
+              <kbd className="inline-flex h-4 compact:hidden pointer-coarse:hidden shrink-0 items-center justify-center gap-[3px] font-mono text-2xs leading-none text-muted-foreground">
                 <span className="text-2xs">⌘</span>
                 <span>K</span>
               </kbd>
             </Button>
+            )}
 
             {/* The account menu hangs from this whole pill, right edges aligned. */}
             <AccountButton onOpenLibrary={openForAccount}>
               {(account) => (
-            <div className={cn(PILL, "pointer-events-auto flex h-10 shrink-0 items-center gap-2 px-1.5 compact:gap-1 compact:px-1")}>
-              {account}
+            <div className={cn("pointer-events-auto flex h-8 shrink-0 items-center gap-2 compact:h-10 compact:gap-1 compact:px-1", compact && PILL)}>
+              {/* On the cover the account is the byline under the title. */}
+              {compact && account}
+              {/* The finished file is first class, so its door stands beside
+                  Share at all times; a running export reports here. */}
+              {!compact && (
+                <Button
+                  variant="bare"
+                  onClick={openExport}
+                  className="ml-3 flex h-8 items-center gap-2 text-xs text-foreground"
+                >
+                  {framing.exporting && <span className="size-1.5 animate-pulse rounded-full bg-red-400" />}
+                  {framing.exporting ? t.lab.exporting : t.lab.exportPanel}
+                  {framing.exporting && (
+                    <span className="min-w-[4ch] text-right font-mono text-2xs tabular-nums">{exportPct !== null ? `${exportPct}%` : "…"}</span>
+                  )}
+                </Button>
+              )}
               <Button
                 size="sm"
                 onClick={() => setShareOpen(true)}
@@ -7432,7 +7740,7 @@ export default function Lab() {
                 // The narrowest phones keep the button and lose the word: the
                 // brand row beside it cannot give up any more.
                 aria-label={t.lab.share}
-                className="h-7 shrink-0 rounded-interior bg-blue-400 px-2 text-xs font-medium text-on-accent hover:bg-blue-400/90 max-[24rem]:w-7 max-[24rem]:px-0"
+                className="ml-3 h-8 shrink-0 rounded-none bg-transparent px-0 text-xs font-normal text-foreground hover:bg-transparent compact:ml-0 compact:h-7 compact:rounded-interior compact:bg-blue-400 compact:px-3 compact:font-medium compact:text-on-accent compact:hover:bg-blue-400/90 compact:hover:text-on-accent compact:ml-0 compact:h-7 compact:px-3 max-[24rem]:w-7 max-[24rem]:px-0"
               >
                 <Share2 className="hidden size-3.5 max-[24rem]:block" />
                 <span className="max-[24rem]:hidden">{t.lab.share}</span>
@@ -7442,6 +7750,7 @@ export default function Lab() {
             </AccountButton>
           </div>
         </div>
+        </Cover>
       )}
 
       {/* Which .pmx, or why it failed — the shipped editor's dialog, reused
@@ -7876,15 +8185,7 @@ export default function Lab() {
         // takes it off — the same membership rule as the dock's picker, since
         // they are two doors onto one list.
         onApply={(e) =>
-          setBgEffects((list) => {
-            if (replaceTarget !== null) {
-              const next = [...list]
-              next[replaceTarget] = e
-              setReplaceTarget(null)
-              return next
-            }
-            return list.some((x) => x.id === e.id) ? list.filter((x) => x.id !== e.id) : [...list, e]
-          })
+          setBgEffects((list) => (list.some((x) => x.id === e.id) ? list.filter((x) => x.id !== e.id) : [...list, e]))
         }
         onRemove={(id) => setBgEffects((list) => list.filter((e) => e.id !== id))}
         onRenamed={(oldName, newName) =>
@@ -7938,7 +8239,7 @@ export default function Lab() {
           className={cn(
             // The raised surface, opaque: this floats over an animating canvas,
             // which is exactly when a backdrop-filter costs the most frames.
-            "overflow-hidden rounded-surface border border-line-strong bg-surface-raised shadow-float transition-opacity duration-300",
+            "overflow-hidden rounded-surface border border-line-strong bg-surface-raised shadow-float transition-opacity duration-233",
             !drawerOpen && "pointer-events-none opacity-0",
           )}
         >
@@ -8132,6 +8433,7 @@ export default function Lab() {
 
       <CommandPalette
         key={paletteSession}
+        anchor={paletteAnchor}
         open={paletteOpen}
         onOpenChange={setPaletteOpen}
         items={paletteItems}
@@ -8140,128 +8442,150 @@ export default function Lab() {
         onRun={runCommand}
       />
 
-      {/* ── The stack ── */}
-      {mounted && expanded && (
-        <Surface
-          placement="float"
-          // Hugs its rows, capped at the viewport minus its own insets and the
-          // gallery pill's slot under it (a 2.5rem pill and a 0.75rem gap). A
-          // capped stack scrolls, and its body fades at the bottom edge while
-          // there is more, so a row cut by the cap reads as "scroll", not as
-          // broken.
-          // On a phone it hangs below the top bar at the pill's width (see
-          // pillWidth), against the left edge rather than across the screen, so
-          // the canvas stays in view beside it, and stops short of the transport.
-          className={cn(
-            "top-3 left-3 flex max-h-[calc(100%-4.75rem)] w-[16rem] flex-col overflow-hidden text-xs",
-            COMPACT_SHEET,
-            "compact:right-auto compact:w-[16rem] compact:max-w-[calc(100%-1.5rem)]",
-            // The stack and the agent are where a phone spends its time, so they
-            // run down to the transport rather than stopping at the sheet's cap.
-            "compact:max-h-[calc(100dvh-8rem)]",
-          )}
-          style={{ zIndex: dockZ.z, ...(compact && pillWidth ? { width: pillWidth } : {}) }}
-          onPointerDownCapture={dockZ.onPointerDownCapture}
-          onFocusCapture={dockZ.onFocusCapture}
-        >
-          {/* The brand block's header form: wordmark + version + toggle on one line,
-            the scene name under it. Same paddings, so the header reads as part
-            of the panel rather than a pill that wandered into it. */}
-          {/* -mt-px is not a nudge, it is the border. The collapsed pill states
-              h-10, and h-10 is border-box, so its own 1px border eats into the
-              40 and leaves 38 for the row — icon top lands 6px below the pill's
-              outer edge. Here the row derives 40 from py-1.5 around size-7 with
-              the panel's border OUTSIDE it, so the same icon lands at 7. One
-              pixel, and the wordmark visibly steps as you toggle. */}
-          <div className="-mt-px flex w-full shrink-0 flex-col leading-tight">
-            {/* Identical geometry to the collapsed pill's row — same gap-1.5, same
-              py-1.5 pl-2, same size-7 logo slot. The slot is what sets the row
-              height, so the wordmark lands on the SAME baseline whether the
-              panel is open or closed and nothing shifts as you toggle. */}
-            <div className="flex items-center gap-1.5 py-1.5 pr-1.5 pl-2 compact:hidden">
-              <SceneFileMenu
-                onNew={newScene}
-                onGallery={openGallery}
-                onExport={exportScene}
-                onImport={importScene}
-                onReset={resetSceneDefaults}
-                trigger={
-                  <span className="flex size-7 shrink-0 items-center justify-center text-pink-400">
-                    <WandSparkles className="size-4.5" />
-                  </span>
-                }
-              />
-              <span className="truncate pb-0.5 text-sm font-semibold tracking-tight text-foreground">Reze Design</span>
-              {/* Mono: it is a version, and digits that share a column read as
-                  a build stamp rather than as a word. The tracking goes with
-                  the proportional face — a mono figure already carries its own
-                  spacing, and adding more only loosens the chip. */}
-              <span className="shrink-0 rounded-full bg-blue-400/15 px-1.5 py-0.5 font-mono text-2xs leading-none font-medium text-blue-400">
-                {VERSION_LABEL}
-              </span>
-              {/* The repository, and through its README the manuals — which is
-                  why there is no separate Help entry: one link that stays
-                  current beats a second one to keep in step. Beside the version
-                  because that is the same subject — what this build is — and
-                  only in the OPEN header: collapsed is what a share link
-                  renders, and a viewer came for the scene. */}
-              <Button
-                variant="ghost"
-                size="icon"
-                asChild
-                tooltip="GitHub"
-                className="size-7 shrink-0 rounded-interior text-foreground hover:bg-white/5 hover:text-foreground"
-              >
-                <a href={REPO_URL} target="_blank" rel="noreferrer" aria-label="GitHub">
-                  <GithubMark className="size-4" />
-                </a>
-              </Button>
-              {/* Same as the timeline chevron: the glyph already shows the panel
-                  closing, so a tip repeating it is only latency. */}
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setDockExpanded(false)}
-                aria-label={t.lab.collapsePanel}
-                className="ml-auto size-7 shrink-0 rounded-interior text-muted-foreground hover:bg-white/5 hover:text-foreground"
-              >
-                <ChevronUp className="size-4" />
-              </Button>
-            </div>
-            {/* Pulled up under the wordmark past the 6px of bottom padding the
-                row above owns and cannot give back — that padding is what makes
-                its height match the collapsed pill, so it can only be cancelled
-                from here. The extra 2px eats into that row's leading, which it
-                has to spare: the wordmark is text-sm in a size-7 slot. */}
-            <div className="-mt-2 flex min-w-0 items-center pl-[calc(0.5rem+1.75rem+0.375rem)] compact:mt-0 compact:px-4 compact:pt-3">
-              {/* -ml-1 cancels the name box's own px-1, so the text still starts
-                  exactly under the wordmark while the box keeps the padding its
-                  editing state needs. */}
-              <SceneName name={sceneName} onRename={setSceneName} className="-ml-1 truncate" />
-            </div>
-          </div>
+      {/* ── The console ──
+          The cover's type, set straight on the canvas: the brand line, the
+          scene's name in the display serif with its facts under it, and a
+          numbered index of what can be changed, the chosen entry's controls
+          beside it. Its ink follows the scene (globals.css,
+          "The cover").
 
-          {/* pb-2 so the last row can clear the rounded bottom edge when you
-              scroll to the end. With a tall row open (Camera's Lens is eight
-              controls) the stack is genuinely taller than the viewport, and
-              without the pad Physics sat flush in the corner radius and read as
-              broken rather than as scrollable. */}
-          <div ref={dockBodyRef} className={cn("no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain", dockMore && SCROLL_FADE)}>
+          On a phone it is a sheet under the top bar instead: there is no
+          margin of canvas beside the figure to set type in, and the index
+          runs across the sheet's top. */}
+      {mounted && (!compact || expanded) && (
+        <>
+          <aside
+            data-edge="left"
+            className={cn(
+              "pointer-events-none absolute inset-y-0 left-0 flex w-[25rem] flex-col pt-5 pb-16 pl-7 text-xs",
+              !compact && "cover-type",
+              compact && "pointer-events-auto rounded-surface border border-line-strong bg-surface p-0 pt-3 shadow-float backdrop-blur-xs",
+              COMPACT_SHEET,
+              "compact:max-h-[calc(100dvh-8rem)]",
+            )}
+            style={{ zIndex: dockZ.z }}
+            onPointerDownCapture={dockZ.onPointerDownCapture}
+            onFocusCapture={dockZ.onFocusCapture}
+          >
+            {!compact && (
+              <>
+                <div data-ink-zone className="pointer-events-auto mt-12 pr-7">
+                  <SceneName name={sceneName} onRename={setSceneName} display className="-ml-1" />
+                  {/* The byline: who made it (the account, which is also its menu) and
+                      the day — a cover's credit and issue date. */}
+                  <p className="mt-2 flex items-center gap-2 font-mono text-2xs tracking-wide text-muted-foreground uppercase">
+                    <AccountButton byline onOpenLibrary={openForAccount} />
+                    <span>·</span>
+                    <span>{new Intl.DateTimeFormat(uiLocale === "zh" ? "zh-CN" : "en-US", { year: "numeric", month: "short", day: "numeric" }).format(new Date())}</span>
+                  </p>
+                </div>
+              </>
+            )}
+
+            {(expanded || !compact) && (
+              <div data-ink-zone={!compact || undefined} className="mt-8 flex min-h-0 flex-1 items-start compact:mt-0 compact:flex-col compact:items-stretch compact:gap-2">
+                <nav
+                  aria-label={t.lab.index}
+                  className="pointer-events-auto cover-enter flex shrink-0 flex-col gap-0.5 compact:no-scrollbar compact:w-auto compact:flex-row compact:gap-4 compact:overflow-x-auto compact:px-4"
+                >
+                  {[
+                    { id: "cast", label: t.lab.groups.cast },
+                    { id: "clips", label: t.lab.groups.clips },
+                    { id: "music", label: t.lab.groups.music },
+                    ...layers.flatMap((l) =>
+                      // The cast's materials, dressed after the shot is framed
+                      // and before the place they stand in.
+                      l.id === "camera"
+                        ? [{ id: l.id as string, label: l.name }, { id: "materials", label: t.lab.rows.materials }]
+                        : [{ id: l.id as string, label: l.name }],
+                    ),
+                  ].map((entry, i) => {
+                    const on = pane === entry.id
+                    return (
+                      <Button
+                        key={entry.id}
+                        variant="bare"
+                        aria-pressed={on}
+                        onClick={() => {
+                          // Leaving Materials puts them down: nothing is
+                          // inspected while its pane is not on screen.
+                          if (on || entry.id !== "materials") setInspectedId(null)
+                          if (on) {
+                            setOpenRow(null)
+                            setDockGroup(null)
+                          } else if (entry.id === "materials") {
+                            openMaterials(inspected?.id ?? cast[0]?.id ?? null)
+                            setOpenRow(null)
+                            setDockGroup("materials")
+                          } else if (entry.id === "cast" || entry.id === "clips" || entry.id === "music") {
+                            setOpenRow(null)
+                            setDockGroup(entry.id)
+                          } else {
+                            if (entry.id === "stage" && openRow !== entry.id) setStageTab(envTab)
+                            setOpenRow(entry.id)
+                          }
+                        }}
+                        // The whole row takes the click, out to the rule (pr-5 is
+                        // the index's gap to it); the underline stays under the words.
+                        className={cn(
+                          "group/entry flex h-7 w-full shrink-0 items-center pr-5 text-left text-xs whitespace-nowrap text-foreground compact:w-fit compact:pr-0",
+                          // Bolded by a stroke, not a weight: Geist's heavier glyphs
+                          // are wider, and a label that re-spaces on selection
+                          // reads as drifting. The stroke keeps every advance.
+                          on && "[-webkit-text-stroke:0.35px_currentColor]",
+                        )}
+                      >
+                        {/* One rule under numeral and label together, on hover. */}
+                        <span
+                          className={cn(
+                            "relative flex items-center gap-2.5 py-1 after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-current after:opacity-0",
+                            !on && "group-hover/entry:after:opacity-100",
+                          )}
+                        >
+                          <span className="font-mono text-2xs font-normal text-muted-foreground tabular-nums">
+                            {String(i + 1).padStart(2, "0")}
+                          </span>
+                          {entry.label}
+                        </span>
+                      </Button>
+                    )
+                  })}
+                </nav>
+
+                {/* The rule between the index and its page: from the first
+                    entry to the middle of the last (thirteen rows of h-7 at
+                    gap-0.5, less half a row), whatever the page holds, and 20px past
+                    its longest label — the index is as wide as its words, which
+                    in Chinese are two characters. */}
+                {!compact && pane !== null && <span aria-hidden className="h-[23.375rem] w-px shrink-0 bg-line-strong" />}
+                <div
+                  ref={dockBodyRef}
+                  className={cn(
+                    "pointer-events-auto no-scrollbar max-h-full min-w-0 flex-1 overscroll-contain",
+                    // On the cover each pane scrolls its own body under its tab
+                    // line; the phone's sheet scrolls whole.
+                    compact ? "overflow-y-auto" : "flex flex-col overflow-hidden",
+                    // pt-2 sets the pane's first line on the index's first row.
+                    !compact && "ml-2 pt-2",
+                    pane === null && "hidden",
+                    dockMore && SCROLL_FADE,
+                  )}
+                >
+                  <Cover on={!compact}>
             <StackGroup
-              label={t.lab.groups.cast}
               domId="group-cast"
+              open={pane === "cast"}
               // On the label's line rather than under the rows: a full-width
               // button is a row's worth of height spent on an action taken
               // once or twice a scene, and the dock is one column deep.
               action={
-                <span className="-mr-1 flex items-center">
-                  <CastAction
-                    icon={Plus}
-                    label={t.lab.addModel}
-                    onClick={() => pickModel({ mode: "add" })}
-                    disabled={!ready}
-                  />
-                </span>
+                <CastAction
+                  icon={Plus}
+                  label={t.lab.addModel}
+                  text={t.lab.addModel}
+                  onClick={() => pickModel({ mode: "add" })}
+                  disabled={!ready}
+                />
               }
             >
               {/* The row appears WITH the model — same commit as `models`, so
@@ -8286,7 +8610,6 @@ export default function Lab() {
                   key={m.id}
                   slot={slot + 1}
                   name={displayName(m.file)}
-                  palette={palettes[m.id] ?? null}
                   inspected={inspectedId === m.id}
                   position={m.position}
                   scale={m.scale}
@@ -8327,12 +8650,13 @@ export default function Lab() {
                 model happened to be selected would be a lie about who owns it.
                 The timeline lanes show WHEN these play; this is where they load. */}
             <StackGroup
-              label={t.lab.groups.clips}
               domId="group-clips"
+              open={pane === "clips"}
               action={
                 <AttachMenu
                   disabled={!ready}
                   label={t.lab.groups.clips}
+                  text={t.lab.attach}
                   // One item. Uploading a morph moved to the morph ROW, which
                   // now always exists, so the menu no longer needs to be that
                   // slot's only door — and a menu holding one obvious action
@@ -8361,27 +8685,18 @@ export default function Lab() {
                   chip is as wide as the name it carries and wraps to the next
                   line, where equal-width tabs would squeeze every name to fit
                   the longest one. */}
-              {cast.length > 1 && (
-                <div className="flex flex-wrap gap-1 px-4 pb-1.5">
-                  {cast.map((m, slot) => (
-                    <Button variant="bare"
-                      key={m.id}
-                      aria-pressed={m.id === clipModel?.id}
-                      onClick={() => setClipTab(m.id)}
-                      className={cn(
-                        "flex max-w-full items-center gap-1.5 rounded-chip border px-2 py-0.5 text-xs transition-colors",
-                        m.id === clipModel?.id
-                          ? "border-blue-400/40 bg-blue-400/15 text-blue-400"
-                          : "border-line-strong text-muted-foreground hover:border-white/25 hover:text-foreground",
-                      )}
-                    >
-                      <span className="shrink-0 font-mono text-xs">{slot + 1}</span>
-                      <span className="truncate" title={displayName(m.file)}>
-                        {displayName(m.file)}
-                      </span>
-                    </Button>
-                  ))}
-                </div>
+              {/* The cast heads the pane as its tabs, the way Camera's Lens and
+                  Focus do — one model is still a tab. */}
+              {cast.length > 0 && (
+                <Tabs value={clipModel?.id} onValueChange={setClipTab} className="mt-1 px-4">
+                  <TabsList className="mb-2 w-full">
+                    {cast.map((m) => (
+                      <TabsTrigger key={m.id} value={m.id} className="min-w-0">
+                        <span className="truncate">{displayName(m.file)}</span>
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
               )}
               {clipModel ? (
                 // A cast member's own clips: the motion, and the morph that
@@ -8454,12 +8769,13 @@ export default function Lab() {
             {/* The track and the two files that are only meaningful beside it.
                 Not per model: one scene, one song. */}
             <StackGroup
-              label={t.lab.groups.music}
               domId="group-music"
+              open={pane === "music"}
               action={
                 <AttachMenu
                   disabled={!ready}
                   label={t.lab.groups.music}
+                  text={t.lab.attach}
                   items={[
                     ...(midiClip
                       ? []
@@ -8562,39 +8878,147 @@ export default function Lab() {
               )}
             </StackGroup>
 
-            <StackGroup label={t.lab.groups.scene}>
+            <StackGroup domId="group-materials" open={pane === "materials"}>
+              {inspected ? (
+                // A column, not a scroller: the panel's own group list
+                // scrolls, so its model tabs and toolbar stay put above it. It
+                // ends where the index's rule ends.
+                <div className="flex max-h-[30rem] min-h-0 flex-1 flex-col">
+                  <MaterialsPanel
+                    dense
+                    modelTabs={models.map((m) => ({
+                      id: m.id,
+                      file: m.file,
+                      active: m.id === inspected.id,
+                    }))}
+                    // Through openMaterials, not setInspectedId: switching model
+                    // is the same act as opening the pane on another one, and
+                    // the node editor's binding has to be released either way.
+                    onSelectModel={openMaterials}
+                    materials={inspected.materials}
+                    groups={inspectedGroups}
+                    activeGroupId={activeGroupId}
+                    onHover={(name) => highlight(inspected.id, name)}
+                    onToggleVisible={(name) => toggleVisible(inspected.id, name)}
+                    onOpenLibrary={openGraphLibrary}
+                    onCreateGroup={inspectCreateGroup}
+                    onRenameGroup={inspectRenameGroup}
+                    onDeleteGroup={inspectDeleteGroup}
+                    onEditGroupGraph={touch ? undefined : editGroupGraph}
+                    onMoveMaterial={inspectMoveMaterial}
+                    onPickGraph={inspectPickGraph}
+                    looksSaved={looksSaved}
+                    onToggleSavedLooks={inspectedLooksKey ? toggleSavedLooks : undefined}
+                  />
+                </div>
+              ) : (
+                <p className="px-4 text-muted-foreground">{t.lab.facts.noCast}</p>
+              )}
+            </StackGroup>
+            <>
               {layers.map((l) => (
                 <LayerRow
                   key={l.id}
                   domId={`layer-${l.id}`}
-                  icon={l.icon}
-                  name={l.name}
-                  summary={
-                    l.id === "camera"
-                      ? // The DECISION, not a number: which thing is driving the
-                        // shot. A camera VMD outranks both — it is literally in
-                        // control — then whether the orbit rides a bone.
-                        (cameraClip ?? (camera.follow ? t.lab.summary.follow : t.lab.summary.orbit))
-                      : l.id === "stage"
-                        ? stageSummary
-                        : l.id === "object"
-                          ? // Nothing, not "None": an empty row already reads as
-                            // empty, and a word restating it is furniture.
-                            ([planeSummary, propSummary].filter(Boolean).join(" · ") || undefined)
-                          : l.id === "effect"
-                            ? (effectSummary ?? undefined)
-                            : l.id === "post"
-                              ? gradeLabel(grade.preset)
-                              : undefined
-                  }
-                  swatch={l.id === "light" ? world.color : undefined}
                   open={openRow === l.id}
-                  onToggle={() => {
-                    if (l.id === "stage" && openRow !== l.id) setStageTab(envTab)
-                    setOpenRow((r) => (r === l.id ? null : l.id))
-                  }}
                 >
-                  {l.id === "stage" ? (
+                  {l.id === "background" ? (
+                    // Colour, and ONE image slot that detects its own kind:
+                    // flat behind the scene, or a 360° dome at 2:1.
+                    <>
+                      <ColorRow
+                        label={t.lab.ctl.color}
+                        value={settings.background.color}
+                        onChange={(hex) => patch("background", { color: hex })}
+                      />
+                      {/* Colour, Image and 360° share one grid: mt-2.5, h-5,
+                          value flush at the right edge. The filled row's ✕ is
+                          a compact inline action, not a hover reserve — one
+                          always-relevant button does not earn 48px of blank
+                          right margin that breaks the column.
+                          Image and 360° are ONE slot in two rows: filling
+                          either empties the other, so the seat is something
+                          you SAY, never something the app guesses from the
+                          file.
+
+                          WORLD IS NOT ONE OF THEM. Those two answer "what is
+                          behind the scene" and only one can be; this answers
+                          "what is lighting it", which is true at the same
+                          time as either. They shared the 360 row and were
+                          told apart by file extension, so a studio HDRI and a
+                          chosen sky were mutually exclusive for no reason but
+                          the plumbing. */}
+                      {(
+                        [
+                          {
+                            slot: "flat",
+                            label: t.lab.ctl.image,
+                            kind: t.lab.kinds.backgroundImage,
+                            upload: t.lab.uploadImage,
+                          },
+                          // Its own invite: the slots take different things,
+                          // and one label for all of them had the 360 row
+                          // offering "media" for a slot that takes a still.
+                          {
+                            slot: "dome",
+                            label: t.lab.ctl.dome,
+                            kind: t.lab.kinds.background360,
+                            upload: t.lab.uploadSkybox,
+                          },
+                          {
+                            slot: "world",
+                            label: t.lab.ctl.world,
+                            kind: t.lab.kinds.world,
+                            upload: t.lab.uploadHdri,
+                          },
+                        ] as const
+                      ).map((row) => {
+                        const isWorld = row.slot === "world"
+                        const filled = isWorld ? hdri : bgImage?.slot === row.slot ? bgImage : null
+                        const pick = () => (row.slot === "world" ? pickHdri() : pickBgImage(row.slot))
+                        const clear = () => (isWorld ? swapHdri(null) : swapBgImage(null))
+                        return (
+                          <div key={row.label} className="mt-2.5 flex h-5 min-w-0 items-center gap-2">
+                            <span className="shrink-0 text-xs">{row.label}</span>
+                            {filled ? (
+                              <>
+                                {/* Capped rather than merely min-w-0: left to
+                                    itself the name ran up against the two
+                                    buttons, and a filename crowding a control
+                                    reads as a collision. It truncates early
+                                    and keeps the gap. */}
+                                <span className="ml-auto max-w-[7.5rem] min-w-0 truncate text-right text-xs text-muted-foreground">
+                                  {filled.name}
+                                </span>
+                                <CastAction
+                                  icon={Upload}
+                                  compact
+                                  label={t.lab.aria.replace(row.kind)}
+                                  onClick={pick}
+                                />
+                                <CastAction
+                                  icon={X}
+                                  danger
+                                  compact
+                                  label={t.lab.aria.remove(row.kind)}
+                                  onClick={clear}
+                                />
+                              </>
+                            ) : (
+                              <span className="ml-auto flex min-w-0 justify-end">
+                                <UploadInvite
+                                  label={row.upload}
+                                  onClick={pick}
+                                  aria={t.lab.aria.upload(row.kind)}
+                                  className="text-right text-xs"
+                                />
+                              </span>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </>
+                  ) : l.id === "stage" ? (
                     // Tabs NAVIGATE between the two floors — they never act.
                     // The engine owns the real rule (a stage suppresses the
                     // ground), so the ground pane greys under a stage instead
@@ -8609,9 +9033,6 @@ export default function Lab() {
                         </TabsTrigger>
                         <TabsTrigger value="ground" className="flex-1">
                           {t.lab.tabs.ground}
-                        </TabsTrigger>
-                        <TabsTrigger value="background" className="flex-1">
-                          {t.lab.tabs.background}
                         </TabsTrigger>
                       </TabsList>
                       <TabsContent value="stage">
@@ -8644,10 +9065,10 @@ export default function Lab() {
                                   <span
                                     key={root.id}
                                     className={cn(
-                                      "flex max-w-[10rem] items-center gap-1 rounded-chip py-1 pr-1 pl-2 text-xs transition-colors",
+                                      "flex max-w-[10rem] items-center gap-1 py-1 text-xs transition-colors",
                                       on
-                                        ? "bg-blue-400/15 text-blue-400 ring-1 ring-blue-400/40"
-                                        : "text-muted-foreground ring-1 ring-line hover:text-foreground",
+                                        ? "text-foreground underline decoration-blue-400 decoration-[1.5px] underline-offset-[5px]"
+                                        : "text-muted-foreground hover:text-foreground",
                                     )}
                                   >
                                     <Button
@@ -8769,18 +9190,19 @@ export default function Lab() {
 
                             ALWAYS HERE: an upload ADDS a stage beside the ones
                             there, and the same file again replaces its own. */}
-                        <div className={cn("flex", (stage || nativeStage) && "mt-2")}>
+                        <div className={cn("flex gap-5", (stage || nativeStage) && "mt-2")}>
                           <Button
-                            variant="ghost"
+                            variant="bare"
                             onClick={() => pickModel({ mode: "stage" })}
-                            className="h-8 flex-1 rounded-interior rounded-r-none border border-r-0 border-dashed border-line-strong text-xs font-normal text-muted-foreground hover:border-blue-400/50 hover:bg-transparent hover:text-blue-400"
+                            className={LINE_ACTION}
                           >
+                            <Plus className="size-3.5" />
                             {touch ? t.lab.uploadStageZip : t.lab.uploadStageFolder}
                           </Button>
                           <Button
-                            variant="ghost"
+                            variant="bare"
                             onClick={pickStageGlb}
-                            className="h-8 flex-1 rounded-interior rounded-l-none border border-dashed border-line-strong text-xs font-normal text-muted-foreground hover:border-blue-400/50 hover:bg-transparent hover:text-blue-400"
+                            className={LINE_ACTION}
                           >
                             {t.lab.uploadStageGlb}
                           </Button>
@@ -8870,325 +9292,75 @@ export default function Lab() {
                           </fieldset>
                         </fieldset>
                       </TabsContent>
-                      {/* Background is stage dressing too — that is the filing
-                          rule that puts it in this row. Colour, and ONE image
-                          slot that detects its own kind: flat behind the scene,
-                          or a 360° dome at 2:1. The WGSL effect moved to its
-                          own Effect row — it is no longer background-only. */}
-                      <TabsContent value="background">
-                        <ColorRow
-                          label={t.lab.ctl.color}
-                          value={settings.background.color}
-                          onChange={(hex) => patch("background", { color: hex })}
-                        />
-                        {/* Colour, Image and 360° share one grid: mt-2.5, h-5,
-                            value flush at the right edge. The filled row's ✕ is
-                            a compact inline action, not a hover reserve — one
-                            always-relevant button does not earn 48px of blank
-                            right margin that breaks the column.
-                            Image and 360° are ONE slot in two rows: filling
-                            either empties the other, so the seat is something
-                            you SAY, never something the app guesses from the
-                            file.
-
-                            WORLD IS NOT ONE OF THEM. Those two answer "what is
-                            behind the scene" and only one can be; this answers
-                            "what is lighting it", which is true at the same
-                            time as either. They shared the 360 row and were
-                            told apart by file extension, so a studio HDRI and a
-                            chosen sky were mutually exclusive for no reason but
-                            the plumbing. */}
-                        {(
-                          [
-                            {
-                              slot: "flat",
-                              label: t.lab.ctl.image,
-                              kind: t.lab.kinds.backgroundImage,
-                              upload: t.lab.uploadImage,
-                            },
-                            // Its own invite: the slots take different things,
-                            // and one label for all of them had the 360 row
-                            // offering "media" for a slot that takes a still.
-                            {
-                              slot: "dome",
-                              label: t.lab.ctl.dome,
-                              kind: t.lab.kinds.background360,
-                              upload: t.lab.uploadSkybox,
-                            },
-                            {
-                              slot: "world",
-                              label: t.lab.ctl.world,
-                              kind: t.lab.kinds.world,
-                              upload: t.lab.uploadHdri,
-                            },
-                          ] as const
-                        ).map((row) => {
-                          const isWorld = row.slot === "world"
-                          const filled = isWorld ? hdri : bgImage?.slot === row.slot ? bgImage : null
-                          const pick = () => (row.slot === "world" ? pickHdri() : pickBgImage(row.slot))
-                          const clear = () => (isWorld ? swapHdri(null) : swapBgImage(null))
-                          return (
-                            <div key={row.label} className="mt-2.5 flex h-5 min-w-0 items-center gap-2">
-                              <span className="shrink-0 text-xs">{row.label}</span>
-                              {filled ? (
-                                <>
-                                  {/* Capped rather than merely min-w-0: left to
-                                      itself the name ran up against the two
-                                      buttons, and a filename crowding a control
-                                      reads as a collision. It truncates early
-                                      and keeps the gap. */}
-                                  <span className="ml-auto max-w-[7.5rem] min-w-0 truncate text-right text-xs text-muted-foreground">
-                                    {filled.name}
-                                  </span>
-                                  <CastAction
-                                    icon={Upload}
-                                    compact
-                                    label={t.lab.aria.replace(row.kind)}
-                                    onClick={pick}
-                                  />
-                                  <CastAction
-                                    icon={X}
-                                    danger
-                                    compact
-                                    label={t.lab.aria.remove(row.kind)}
-                                    onClick={clear}
-                                  />
-                                </>
-                              ) : (
-                                <span className="ml-auto flex min-w-0 justify-end">
-                                  <UploadInvite
-                                    label={row.upload}
-                                    onClick={pick}
-                                    aria={t.lab.aria.upload(row.kind)}
-                                    className="text-right text-xs"
-                                  />
-                                </span>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </TabsContent>
                     </Tabs>
                   ) : l.id === "effect" ? (
-                    // A list, not a value: the rows below are what the scene
-                    // wears, and the control above them adds to it.
-                    <>
-                      {/* Adding is the common move, so it leads, full width.
-                          The picker still holds MEMBERSHIP: every applied
-                          effect ticks, and a ticked row clicks off. */}
-                      <QuickPick
-                        value={null}
-                        applied={bgEffects.map((e) => e.name)}
-                        items={effectItems}
-                        onPick={pickEffect}
-                        placeholder={t.lab.ctl.none}
-                        trigger={
-                          <Button variant="ghost" size="xs" className="w-full cursor-pointer text-muted-foreground ring-1 ring-line-strong hover:bg-transparent hover:text-blue-400 hover:ring-blue-400/50 dark:hover:bg-transparent">
-                            <Plus className="size-3.5 shrink-0" />
-                            <span className="truncate">{t.lab.ctl.addEffect}</span>
-                          </Button>
-                        }
-                      />
-                      {/* Every applied effect gets a row, from the first one:
-                          the row is where an effect is edited, swapped and
-                          removed, and a picker cannot hold three of those for
-                          three effects.
-
-                          Order still IS the composition — a full-cover backdrop
-                          drawn last erases what is under it — so the list shows
-                          it. Changing it is delete-and-add-again rather than
-                          arrows: replace covers the common case of wanting a
-                          different effect in the same place, which is most of
-                          what reordering was used for.
-
-                          TOPMOST FIRST, so the list is reversed against the
-                          document: the document draws in array order, so its
-                          LAST entry is the one nearest the viewer, and that is
-                          the one a layer stack puts at the top. Rendering the
-                          array as-is would have shown the backdrop above the
-                          things drawn over it, and then "up" would have had to
-                          mean down. */}
-                      {bgEffects.length > 0 && (
-                        <div className="mt-2 flex flex-col">
-                          {[...bgEffects].reverse().map((e, r) => {
-                            const i = bgEffects.length - 1 - r
-                            const uid = e.uid ?? ""
-                            const surface = effectSurface[uid]
-                            const decls = surface?.params ?? []
-                            // WHAT THE GEAR OPENS: an effect's dials, and who it
-                            // plays to. Either alone is enough to have a panel —
-                            // Sticker Outline declares no dial and is exactly the
-                            // effect someone wants on one dancer.
-                            const aimable = (surface?.readsCast ?? false) && cast.length > 1
-                            return (
-                              <Popover
-                                key={e.uid ?? e.id}
-                                open={paramsOpen === uid}
-                                onOpenChange={(o) => setParamsOpen(o ? uid : null)}
-                              >
-                                <PopoverAnchor asChild>
-                                  <div>
-                              <CastLine
-                                reserve="pr-[5.5rem]"
-                                revealed={paramsOpen === uid}
-                                text={
-                                  // Clicking the NAME opens this effect's strip
-                                  // below the list — the same arrangement the
-                                  // cards use, where the row is the handle and
-                                  // the controls sit under the set of them.
-                                  // Clicking the open one closes it, so the
-                                  // list can go back to being just a list.
-                                  <Button variant="bare"
-                                    onClick={() => setSelectedEffect((cur) => (cur === e.uid ? null : (e.uid ?? null)))}
-                                    title={effectLabel(e.name)}
-                                    className={cn(
-                                      "flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-xs transition-colors",
-                                      selectedEffect === e.uid ? "text-blue-400" : "hover:text-foreground",
-                                    )}
-                                  >
-                                    <span className="min-w-0 truncate">{effectLabel(e.name)}</span>
-                                  </Button>
-                                }
-                                actions={
-                                  <>
-                                    {!touch && (
-                                      <CastAction
-                                        icon={PenLine}
-                                        label={t.lab.aria.editEffect(e.name)}
-                                        onClick={() => openEffectEditor(e)}
-                                      />
-                                    )}
-                                    {/* On EVERY row, disabled where there is
-                                        nothing to turn: a control that appears
-                                        only on some rows moves the other three
-                                        under the cursor as you read down the
-                                        list. */}
-                                    <CastAction
-                                      icon={Settings}
-                                      disabled={decls.length === 0 && !aimable}
-                                      label={t.lab.aria.effectOptions(e.name)}
-                                      onClick={() => setParamsOpen((o) => (o === uid ? null : uid))}
-                                    />
-                                    {/* Swapping is a CHOICE, so it offers the
-                                        choices: the same shortlist the add
-                                        control uses, in place, with the current
-                                        effect ticked. Sending this to the
-                                        library meant a full-screen surface, a
-                                        search field and a grid of cards to
-                                        answer "the other one" — and the library
-                                        is still one row down in the popover for
-                                        when the shortlist has not got it. */}
-                                    <QuickPick
-                                      value={e.name}
-                                      label={effectLabel(e.name)}
-                                      items={effectItems}
-                                      onPick={(name) => replaceEffectAt(i, name)}
-                                      onBrowse={() => {
-                                        setReplaceTarget(i)
-                                        openBrowse({ kind: "effect" })
-                                      }}
-                                      placeholder={t.lab.ctl.none}
-                                      trigger={
-                                        <Button variant="bare"
-                                          aria-label={t.lab.aria.replaceEffect(e.name)}
-                                          // stopPropagation for the same reason
-                                          // CastAction does it: the row selects
-                                          // on click, and swapping must not also
-                                          // inspect. Styled to match CastAction
-                                          // rather than reusing it — Radix needs
-                                          // a trigger that forwards a ref.
-                                          onClick={(ev) => ev.stopPropagation()}
-                                          className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-chip text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground pointer-coarse:size-6"
-                                        >
-                                          <RefreshCw className="size-3.5" />
-                                        </Button>
-                                      }
-                                    />
-                                    <CastAction
-                                      icon={X}
-                                      danger
-                                      label={t.lab.aria.removeEffect(e.name)}
-                                      // BY INSTANCE. Filtering on id took every
-                                      // copy of the effect with it.
-                                      onClick={() => setBgEffects((list) => list.filter((x) => x.uid !== e.uid))}
-                                    />
-                                  </>
-                                }
+                    // The effects the scene wears are the pane's tabs, TOPMOST
+                    // FIRST: the document draws in array order, so its last
+                    // entry is the one nearest the viewer. The chosen one's
+                    // controls sit under the line, as Camera's do, and adding
+                    // or browsing for another closes the pane.
+                    // The effects the scene wears are the pane's tabs, TOPMOST
+                    // FIRST (effectsTopFirst); the chosen one's controls sit
+                    // under the line, as Camera's do.
+                    effectFx ? (
+                      <Tabs value={effectFxUid} onValueChange={setSelectedEffect}>
+                        <TabsList className="-mt-1 mb-2 w-full">
+                          {effectsTopFirst.map((e) => (
+                            <TabsTrigger key={e.uid ?? e.id} value={e.uid ?? ""} className="min-w-0">
+                              <span className="truncate">{effectLabel(e.name)}</span>
+                            </TabsTrigger>
+                          ))}
+                        </TabsList>
+                        <TabsContent value={effectFxUid}>
+                          {(effectFxDecls.length > 0 || effectFxAimable) && (
+                            <div className="mt-2.5">
+                              <EffectParams
+                                decls={effectFxDecls}
+                                values={effectFx.params}
+                                onChange={(name, value) => setEffectParam(effectFxUid, name, value)}
+                                cast={effectFxAimable ? castTargets : []}
+                                models={effectFx.models}
+                                onModels={(models) => patchEffect(effectFxUid, { models })}
                               />
-                                  </div>
-                                </PopoverAnchor>
-                                {/* Under the gear that opened it, at the row's
-                                    right edge — the model row's own idiom, and
-                                    the reason the dials do not push the list
-                                    around when they appear. */}
-                                <PopoverContent
-                                  align="end"
-                                  side="bottom"
-                                  sideOffset={2}
-                                  // The model row's own panel, to the pixel: same width, same
-                                  // radius, same padding. Two gears on two rows opening two
-                                  // sizes of panel is two idioms.
-                                  className="max-h-[var(--radix-popover-content-available-height,32rem)] w-56 overflow-y-auto overscroll-contain rounded-surface border-line-strong bg-surface-raised p-2 shadow-float"
-                                  onOpenAutoFocus={(ev) => ev.preventDefault()}
-                                >
-                                  <EffectParams
-                                    decls={decls}
-                                    values={e.params}
-                                    onChange={(name, value) => setEffectParam(uid, name, value)}
-                                    onReset={() => resetEffectParams(uid)}
-                                    // The cast, and only for an effect that reads
-                                    // it: the panel decides nothing itself, so a
-                                    // rain effect is handed nothing to aim.
-                                    cast={aimable ? castTargets : []}
-                                    models={e.models}
-                                    onModels={(models) => patchEffect(uid, { models })}
-                                  />
-                                </PopoverContent>
-                              </Popover>
-                            )
-                          })}
-                        </div>
-                      )}
-                      {/* The selected effect's own controls, under the set of
-                          rows rather than inside one: a strip is four lines,
-                          and four lines opening INSIDE a list pushes every row
-                          below it down the panel. Under the list, the rows stay
-                          where they are and only the space beneath changes. */}
-                      {(() => {
-                        const fx = bgEffects.find((e) => e.uid === selectedEffect)
-                        if (!fx?.uid) return null
-                        const uid = fx.uid
-                        return (
-                          <div className="mt-3.5 border-t border-line pt-3">
-                            {/* HOW MUCH, always — an effect can be dialled
-                                down without being scheduled, and the blends
-                                below ramp toward this rather than toward full.
-                                One dial for both cases instead of two that can
-                                disagree. */}
-                            <SliderRow
-                              label={t.lab.ctl.influence}
-                              value={fx.influence ?? 1}
-                              min={0}
-                              max={1}
-                              step={0.01}
-                              onChange={(v) => patchEffect(uid, { influence: v })}
-                              fmt={(v) => `${Math.round(v * 100)}%`}
-                            />
+                            </div>
+                          )}
+                          <div className="mt-2 flex flex-wrap gap-x-3">
+                            {!touch && (
+                              <Button variant="bare" onClick={() => openEffectEditor(effectFx)} className={LINE_ACTION}>
+                                <PenLine className="size-3.5" />
+                                {t.lab.ctl.edit}
+                              </Button>
+                            )}
+                            {/* Back to the shader's own numbers. Dropping the overrides rather
+                                than writing the defaults in, so a scene keeps following an effect
+                                its author retunes. Inert when nothing was moved. */}
+                            <Button
+                              variant="bare"
+                              disabled={!effectFx.params || Object.keys(effectFx.params).length === 0}
+                              onClick={() => resetEffectParams(effectFxUid)}
+                              className={cn(LINE_ACTION, "disabled:opacity-40")}
+                            >
+                              <RotateCcw className="size-3.5" />
+                              {t.lab.ctl.reset}
+                            </Button>
+                            <Button
+                              variant="bare"
+                              aria-label={t.lab.aria.removeEffect(effectFx.name)}
+                              // BY INSTANCE. Filtering on id took every copy of
+                              // the effect with it.
+                              onClick={() => setBgEffects((list) => list.filter((x) => x.uid !== effectFx.uid))}
+                              className={cn(LINE_ACTION, "hover:text-red-400")}
+                            >
+                              <X className="size-3.5" />
+                              {t.lab.ctl.remove}
+                            </Button>
                           </div>
-                        )
-                      })()}
-                      {/* The library door closes the section, as it does under
-                          Grade: add, then what the scene wears, then go deeper. */}
-                      <div className="mt-2.5 flex justify-center">
-                        <Button variant="bare"
-                          onClick={() => openBrowse({ kind: "effect" })}
-                          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-chip bg-white px-2 py-1 text-xs font-medium text-zinc-950 transition-colors hover:bg-white/90"
-                        >
-                          <Sparkles className="size-3.5" />
-                          {t.lab.cmd.effectLib}
-                        </Button>
-                      </div>
-                    </>
+                          {effectMore}
+                        </TabsContent>
+                      </Tabs>
+                    ) : (
+                      effectMore
+                    )
                   ) : l.id === "object" ? (
                     <>
                       <Tabs value={objectTab} onValueChange={(v) => setObjectTab(v as typeof objectTab)}>
@@ -9216,10 +9388,11 @@ export default function Lab() {
                           by the same wrap when the row runs to two. */}
                       {planes.length === 0 && (
                         <Button
-                          variant="ghost"
+                          variant="bare"
                           onClick={() => planeInput.current?.click()}
-                          className="h-8 w-full rounded-interior border border-dashed border-line-strong text-xs font-normal text-muted-foreground hover:border-blue-400/50 hover:bg-transparent hover:text-blue-400"
+                          className={LINE_ACTION}
                         >
+                          <Plus className="size-3.5" />
                           {t.lab.uploadPlane}
                         </Button>
                       )}
@@ -9242,10 +9415,10 @@ export default function Lab() {
                                 <span
                                   key={plane.id}
                                   className={cn(
-                                    "flex max-w-[10rem] items-center gap-1 rounded-chip py-1 pl-2 text-xs transition-colors",
+                                    "flex max-w-[10rem] items-center gap-1 py-1 text-xs transition-colors",
                                     on
-                                      ? "bg-blue-400/15 text-blue-400 ring-1 ring-blue-400/40"
-                                      : "text-muted-foreground ring-1 ring-line hover:text-foreground",
+                                      ? "text-foreground underline decoration-blue-400 decoration-[1.5px] underline-offset-[5px]"
+                                      : "text-muted-foreground hover:text-foreground",
                                     "pr-1",
                                   )}
                                 >
@@ -9277,7 +9450,7 @@ export default function Lab() {
                               onClick={() => planeInput.current?.click()}
                               aria-label={t.lab.uploadPlane}
                               title={t.lab.uploadPlane}
-                              className="ml-1.5 flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-chip border border-dashed border-line-strong text-muted-foreground transition-colors hover:border-blue-400/60 hover:text-blue-400"
+                              className="ml-1 flex size-6 shrink-0 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
                             >
                               <Plus className="size-3.5" />
                             </Button>
@@ -9382,13 +9555,14 @@ export default function Lab() {
                               kind of thing. */}
                           {props.length === 0 && (
                             <Button
-                              variant="ghost"
+                              variant="bare"
                               onClick={() => {
                                 modelTarget.current = { mode: "prop" }
                                 folderInput.current?.click()
                               }}
-                              className="h-8 w-full rounded-interior border border-dashed border-line-strong text-xs font-normal text-muted-foreground hover:border-blue-400/50 hover:bg-transparent hover:text-blue-400"
+                              className={LINE_ACTION}
                             >
+                              <Plus className="size-3.5" />
                               {t.lab.uploadProp}
                             </Button>
                           )}
@@ -9401,10 +9575,10 @@ export default function Lab() {
                                     <span
                                       key={prop.id}
                                       className={cn(
-                                        "flex max-w-[10rem] items-center gap-1 rounded-chip py-1 pl-2 text-xs transition-colors",
+                                        "flex max-w-[10rem] items-center gap-1 py-1 text-xs transition-colors",
                                         on
-                                          ? "bg-blue-400/15 text-blue-400 ring-1 ring-blue-400/40"
-                                          : "text-muted-foreground ring-1 ring-line hover:text-foreground",
+                                          ? "text-foreground underline decoration-blue-400 decoration-[1.5px] underline-offset-[5px]"
+                                          : "text-muted-foreground hover:text-foreground",
                                         "pr-1",
                                       )}
                                     >
@@ -9432,7 +9606,7 @@ export default function Lab() {
                                   }}
                                   aria-label={t.lab.uploadProp}
                                   title={t.lab.uploadProp}
-                                  className="ml-1.5 flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-chip border border-dashed border-line-strong text-muted-foreground transition-colors hover:border-blue-400/60 hover:text-blue-400"
+                                  className="ml-1 flex size-6 shrink-0 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
                                 >
                                   <Plus className="size-3.5" />
                                 </Button>
@@ -9859,9 +10033,8 @@ export default function Lab() {
                             })}
                           </div>
                           <Button
-                            variant="outline"
-                            size="xs"
-                            className="mt-2.5 w-full"
+                            variant="bare"
+                            className={cn(LINE_ACTION, "mt-1.5")}
                             onClick={() => {
                               // PLACED WHERE YOU ARE LOOKING, at the orbit
                               // centre — a lamp that arrives at the world origin
@@ -9956,10 +10129,10 @@ export default function Lab() {
                             said "Library" left position as the only thing
                             telling them apart, and a door you identify by where
                             you are standing is one you can open by mistake. */}
-                        <div className="mt-2.5 flex justify-center">
+                        <div className="mt-1 flex">
                           <Button variant="bare"
                             onClick={() => openBrowse({ kind: "grade" })}
-                            className="flex shrink-0 cursor-pointer items-center gap-1 rounded-chip bg-white px-2 py-1 text-xs font-medium text-zinc-950 transition-colors hover:bg-white/90"
+                            className={LINE_ACTION}
                           >
                             <Palette className="size-3.5" />
                             {t.lab.cmd.gradeLib}
@@ -10099,6 +10272,17 @@ export default function Lab() {
                         </div>
                       </TabsContent>
                     </Tabs>
+                  ) : l.id === "eyes" ? (
+                    <>
+                      <div className="flex h-7 items-center justify-between">
+                        <span className="text-xs">{t.lab.ctl.eyesOnCamera}</span>
+                        <Switch size="sm" checked={settings.eyes.enabled} onCheckedChange={(v) => patch("eyes", { enabled: v })} />
+                      </div>
+                      <div className="flex h-7 items-center justify-between">
+                        <span className="text-xs">{t.lab.ctl.jellyEyes}</span>
+                        <Switch size="sm" checked={settings.jelly.enabled} onCheckedChange={(v) => patch("jelly", { enabled: v })} />
+                      </div>
+                    </>
                   ) : l.id === "physics" ? (
                     // Simulating unless switched off — off sits every body on
                     // its bone, to see what the rig and the motion do alone.
@@ -10440,66 +10624,13 @@ export default function Lab() {
                   )}
                 </LayerRow>
               ))}
-            </StackGroup>
-          </div>
-        </Surface>
-      )}
-
-      {/* ── Inspector: the selected cast member's materials ── */}
-      {mounted && inspected && (
-        <Surface
-          placement="side"
-          // Starts BELOW the top-right pills (top-3 + their h-10 + 8px), capped
-          // above the transport: 100% minus 3.75rem top minus 4rem transport
-          // reserve. 16rem, symmetric with the left dock — and the same 16rem
-          // the pill cluster above states, both anchored to the same right
-          // inset, so the two left edges coincide without either measuring the
-          // other. The pills come to the column now, not the other way round.
-          className="top-[3.75rem] bottom-auto max-h-[calc(100%-7.75rem)] animate-[panel-in_0.2s_cubic-bezier(0.32,0.72,0,1)]"
-          style={{ zIndex: inspectorZ.z }}
-          onPointerDownCapture={inspectorZ.onPointerDownCapture}
-          onFocusCapture={inspectorZ.onFocusCapture}
-        >
-          {/* The command's own name, not the model's: the cast row already says
-              which character this is, the panel's model tabs say which one is
-              being edited, and a third copy with stats was the same fact three
-              times. One title, matching the palette entry that opened it. */}
-          <div className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 py-2.5">
-            <MaterialSphereIcon className="size-4 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate text-xs font-medium">{t.lab.editMaterials}</span>
-            <CastAction icon={X} label={t.lab.closeMaterials} onClick={() => setInspectedId(null)} />
-          </div>
-          {/* A column, not a scroller: the panel's own group list scrolls, so
-              its model tabs and toolbar stay put above it. */}
-          <div className="flex min-h-0 flex-1 flex-col">
-            <MaterialsPanel
-              dense
-              modelTabs={models.map((m) => ({
-                id: m.id,
-                file: m.file,
-                active: m.id === inspected.id,
-              }))}
-              // Through openMaterials, not setInspectedId: switching model here
-              // is the same act as opening the panel on another one, and the
-              // node editor's binding has to be released either way.
-              onSelectModel={openMaterials}
-              materials={inspected.materials}
-              groups={inspectedGroups}
-              activeGroupId={activeGroupId}
-              onHover={(name) => highlight(inspected.id, name)}
-              onToggleVisible={(name) => toggleVisible(inspected.id, name)}
-              onOpenLibrary={openGraphLibrary}
-              onCreateGroup={inspectCreateGroup}
-              onRenameGroup={inspectRenameGroup}
-              onDeleteGroup={inspectDeleteGroup}
-              onEditGroupGraph={touch ? undefined : editGroupGraph}
-              onMoveMaterial={inspectMoveMaterial}
-              onPickGraph={inspectPickGraph}
-              looksSaved={looksSaved}
-              onToggleSavedLooks={inspectedLooksKey ? toggleSavedLooks : undefined}
-            />
-          </div>
-        </Surface>
+            </>
+                  </Cover>
+                </div>
+              </div>
+            )}
+          </aside>
+        </>
       )}
 
       {/* ── Art director's door ──
@@ -10512,24 +10643,42 @@ export default function Lab() {
           as one thing opening and folding away. */}
       {mounted && (
         <Button
-          variant="ghost"
+          // Bare on the cover: the door is a word, with no hover fill.
+          variant={compact ? "ghost" : "bare"}
           onClick={openAgent}
           aria-label={t.lab.agent.title}
-          tabIndex={agentOpen ? -1 : undefined}
-          aria-hidden={agentOpen || undefined}
+          tabIndex={agentOpen || (!compact && exportOpen) ? -1 : undefined}
+          aria-hidden={agentOpen || (!compact && exportOpen) || undefined}
+          data-edge="right"
           className={cn(
-            PILL,
-            // The mark and "AI" on one line, in the same type as the editor's
-            // other labelled pill (the export one): 13px, foreground.
-            "pointer-events-auto absolute top-1/2 right-3 flex h-10 -translate-y-1/2 items-center gap-2 px-4 text-sm font-medium text-foreground hover:bg-white/5",
-            "transition-[opacity,scale,visibility,background-color,color] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-            agentOpen && "invisible scale-110 opacity-0",
+            // The mark and "AI" set as type on the canvas, like the console.
+            "pointer-events-auto absolute flex items-center gap-2 text-xs text-foreground hover:bg-transparent",
+            compact ? cn(PILL, "top-1/2 right-3 h-10 -translate-y-1/2 px-4 font-medium") : "cover-type top-1/2 right-7 h-8 -translate-y-1/2 px-0 hover:text-muted-foreground",
+            "transition-[opacity,scale,visibility,background-color,color] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
+            (agentOpen || (!compact && exportOpen)) && "invisible scale-110 opacity-0",
             // On a phone every panel opens over the band the pillar stands in.
             compact && (expanded || inspectedId !== null || exportOpen || gradeEditor !== null || browseOpen) && "invisible opacity-0",
           )}
         >
-          <Astroid className="size-4" />
-          <span>{t.lab.agent.short}</span>
+          {/* The ink zone is the word, not the door: the door's own fade
+              must not give way to the ink's. */}
+          <span data-ink-zone={!compact || undefined} className="flex items-center gap-2 text-foreground">
+            <Astroid className="size-3.5" />
+            {t.lab.agent.short}
+          </span>
+        </Button>
+      )}
+      {mounted && !compact && (
+        <Button
+          variant="bare"
+          data-edge="left"
+          onClick={() => setUiHidden(true)}
+          className="cover-type absolute bottom-5 left-7 flex h-8 items-center gap-1.5 text-xs text-foreground"
+        >
+          <span data-ink-zone className="flex items-center gap-1.5 text-foreground">
+            <Triangle className="size-2.5 -rotate-90" />
+            {t.transport.hide}
+          </span>
         </Button>
       )}
 
@@ -10538,67 +10687,46 @@ export default function Lab() {
           not lose the conversation or the run. No scrim — you watch the canvas
           change while it works. */}
       {mounted && (
-        <Surface
-          placement="side"
-          className={cn(
-            // One height whatever the conversation holds — a dock that grew
-            // with every message would move its own input box.
-            "top-[3.75rem] bottom-auto h-[calc(100%-7.75rem)] compact:h-[calc(100dvh-8rem)] compact:max-h-none",
-            // Grows out of the pillar: scaled from the right edge's middle,
-            // which is where the pillar stands, and folds back into it.
-            "origin-right transition-[opacity,scale,translate,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-            !agentOpen && "invisible translate-x-2 scale-x-[0.2] scale-y-[0.1] opacity-0",
-          )}
-          style={{ zIndex: agentZ.z }}
-          onPointerDownCapture={agentZ.onPointerDownCapture}
-          onFocusCapture={agentZ.onFocusCapture}
-        >
-          <div className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 py-2.5">
-            <Astroid className="size-4 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate text-xs font-medium">{t.lab.agent.title}</span>
-            <AgentMenu
-              settings={aiSettings}
-              active={aiActive}
-              premium={premium}
-              open={aiMenuOpen}
-              onOpenChange={setAiMenuOpen}
-              text={t.lab.agent.settings}
-            />
-            <CastAction icon={X} label={t.lab.agent.close} onClick={() => setAgentOpen(false)} />
-          </div>
-          <AgentTabs
-            tabs={agent.tabs}
-            activeId={agent.activeId}
-            runningId={agent.runningId}
-            onSelect={(id) => void agent.switchTo(id)}
-            onClose={(id) => void agent.closeTab(id)}
-            onNew={() => void agent.newTab()}
-            canAdd={agent.messages.length > 0}
-            text={t.lab.agent}
-          />
-          <AgentPanel
-            messages={agent.messages}
-            thumbs={agent.thumbs}
-            live={agent.live}
-            // The run shows in its own tab; elsewhere it only locks the send.
-            busy={agent.busy && agent.activeId === agent.runningId}
-            locked={agent.busy && agent.activeId !== agent.runningId}
-            onSetup={aiActive ? undefined : () => setAiMenuOpen(true)}
-            run={agent.run}
-            notice={agent.notice}
-            usage={agent.usage}
-            conversationId={agent.activeId}
-            open={agentOpen}
-            checkpoint={agent.checkpoint}
-            onUndo={agent.undoRun}
-            onRedo={agent.redoRun}
-            onRetry={() => void agent.retry()}
-            onNewChat={() => void agent.newTab()}
-            onSend={(text, refs) => void agent.send(text, refs)}
-            onStop={agent.stop}
-            text={t.lab.agent}
-          />
-        </Surface>
+        compact ? (
+          <Surface
+            placement="side"
+            className={cn(
+              // One height whatever the conversation holds — a dock that grew
+              // with every message would move its own input box.
+              "top-[3.75rem] bottom-auto h-[calc(100%-7.75rem)] compact:h-[calc(100dvh-8rem)] compact:max-h-none",
+              // Grows out of the pillar: scaled from the right edge's middle,
+              // which is where the pillar stands, and folds back into it.
+              "origin-right transition-[opacity,scale,translate,visibility] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
+              !agentOpen && "invisible translate-x-2 scale-x-[0.2] scale-y-[0.1] opacity-0",
+            )}
+            style={{ zIndex: agentZ.z }}
+            onPointerDownCapture={agentZ.onPointerDownCapture}
+            onFocusCapture={agentZ.onFocusCapture}
+          >
+            {agentBody}
+          </Surface>
+        ) : (
+          // On the cover: a column of type at the right edge past a hairline,
+          // the console's divider mirrored. It fades in where the door stands.
+          <aside
+            data-edge="right"
+            className={cn(
+              "cover-type absolute top-20 right-7 bottom-20 flex w-[18rem] flex-col pl-5 text-xs",
+              "transition-[opacity,translate,visibility] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
+              !agentOpen && "invisible translate-x-2 opacity-0",
+            )}
+            style={{ zIndex: agentZ.z }}
+            onPointerDownCapture={agentZ.onPointerDownCapture}
+            onFocusCapture={agentZ.onFocusCapture}
+          >
+            {/* A divider, standing clear of the column it divides from the
+                scene: from the title row's middle to the input row's. */}
+            <div data-ink-zone className="flex min-h-0 flex-1 flex-col">
+              <span aria-hidden className="absolute top-2.5 bottom-5 left-0 w-px bg-line-strong" />
+              <Cover>{agentBody}</Cover>
+            </div>
+          </aside>
+        )
       )}
 
       {/* ── Export ──
@@ -10607,6 +10735,7 @@ export default function Lab() {
           carries the progress; completion downloads by itself (iMovie-quiet),
           so nothing reopens. */}
       {mounted && (
+        compact ? (
         <Surface
           placement="side"
           // Starts BELOW the top-right pills (top-3 + their h-10 + 8px) and hugs
@@ -10619,7 +10748,7 @@ export default function Lab() {
             // panel resizing rather than leaving — the eye tracks the moving
             // edge, not the fading one. Nothing else in this chrome translates
             // to dismiss; the inspector simply unmounts.
-            "transition-[opacity,visibility] duration-200 ease-[cubic-bezier(0.32,0.72,0,1)]",
+            "transition-[opacity,visibility] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
             !exportOpen && "invisible opacity-0",
           )}
           style={{ zIndex: exportZ.z }}
@@ -10630,89 +10759,55 @@ export default function Lab() {
             <span className="min-w-0 flex-1 truncate text-xs font-medium">{t.lab.exportPanel}</span>
             <CastAction icon={X} label={t.lab.closeExport} onClick={() => setExportOpen(false)} />
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            <RenderPanel
-              active={exportOpen}
-              engineRef={engineRef}
-              canvasRef={canvasRef}
-              modelName={masterId ?? primaryId ?? ""}
-              extraModelNames={models.filter((m) => animByModel[m.id] && m.id !== masterId).map((m) => m.id)}
-              timeline={timeline}
-              sceneName={sceneName}
-              animName={masterClipName}
-              animDuration={animDuration}
-              backdrop={bgImage && bgImage.slot !== "dome" ? bgImage : null}
-              backgroundColor={settings.background.color}
-              musicUrl={musicClip?.url ?? null}
-              musicVolume={audio.volume}
-              footsteps={footstepsOn ? { source: footstepsSource, volume: footstepsVolume } : null}
-              background={framing.background}
-              onBackgroundChange={framing.setBackground}
-              onExportingChange={(v) => {
-                framing.setExporting(v)
-                // Closes the "render" gap for the rest of the session. Set when
-                // the export STARTS: the suggestion has done its job by then,
-                // and a failed render is not a reason to keep nagging.
-                if (v) setExportedOnce(true)
-              }}
-              onFramePreviewChange={framing.handleFramePreview}
-              onProgressChange={setExportProgress}
-              rasterLyricsAt={rasterLyricsAt}
-              // The same document Publish builds, read only to describe a
-              // finished export and only when the user opted in.
-              makeDoc={(bundle) => makeSceneDoc(collectLabSlots(), bundle)}
-              // Only the MOVING ones: a still card is already in its texture and
-              // has no frames to advance.
-              planes={planes.flatMap((p) => {
-                const file = sceneFiles.planes.get(p.id)
-                if (!file || (!p.video && !p.animated)) return []
-                return [
-                  {
-                    id: p.id,
-                    file,
-                    kind: p.video ? ("video" as const) : ("animated" as const),
-                    frameWidth: p.frameWidth,
-                    frameHeight: p.frameHeight,
-                  },
-                ]
-              })}
-            />
-          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{exportBody}</div>
         </Surface>
-      )}
-
-      {/* The scene gallery, one click from the canvas, in the bottom-left
-          corner. The dock stops short of it (the stack's max-h) and the
-          unfolded timeline starts 17.5rem in (OPEN_TIMELINE_W), so it sits clear
-          of both. On a phone the dock is a sheet over this corner, so the logo
-          menu stays the way in there. */}
-      {mounted && (
-        <Button
-          variant="bare"
-          onClick={() => openGallery()}
-          className={cn(PILL, "absolute bottom-3 left-3 flex h-10 cursor-pointer items-center gap-2 px-3.5 text-xs font-medium text-foreground transition-colors hover:bg-white/10 compact:hidden")}
-        >
-          <GalleryThumbnails className="size-4 shrink-0 text-muted-foreground" />
-          {t.gallery.door}
-        </Button>
+        ) : (
+          // On the cover: a column of type at the right edge past a hairline,
+          // where the art director stands when it is open (one at a time).
+          <aside
+            data-edge="right"
+            className={cn(
+              "cover-type absolute top-20 right-7 flex max-h-[calc(100%-10rem)] w-[18rem] flex-col pl-5 text-xs",
+              // Fades in, but leaves at once: closing hands the canvas back its
+              // full window in the same instant, and a column still fading over
+              // a picture that has already moved reads as the layout drifting.
+              exportOpen
+                ? "transition-[opacity,translate,visibility] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]"
+                : "invisible translate-x-2 opacity-0",
+            )}
+            style={{ zIndex: exportZ.z }}
+            onPointerDownCapture={exportZ.onPointerDownCapture}
+            onFocusCapture={exportZ.onFocusCapture}
+          >
+            <div data-ink-zone className="flex min-h-0 flex-1 flex-col">
+            <span aria-hidden className="absolute top-2.5 bottom-0 left-0 w-px bg-line-strong" />
+            <Cover>
+              <div data-ink-zone className="flex h-5 shrink-0 items-center gap-4 px-4">
+                <span className="min-w-0 flex-1 truncate font-mono text-2xs tracking-wide uppercase">{t.lab.exportPanel}</span>
+                <Button variant="bare" aria-label={t.lab.closeExport} onClick={() => setExportOpen(false)} className="h-5 text-xs text-muted-foreground hover:text-foreground">
+                  {t.library.close}
+                </Button>
+              </div>
+              <div className="mt-2 flex min-h-0 flex-1 flex-col">{exportBody}</div>
+            </Cover>
+            </div>
+          </aside>
+        )
       )}
 
       {/* A running export, folded to a pill while its panel is hidden. Click
           reopens; no cancel here — destructive actions stay in the panel they
           belong to, and the pill simply vanishes when the download lands. */}
-      {framing.exporting && !exportOpen && (
+      {compact && framing.exporting && !exportOpen && (
         <Button variant="bare"
           onClick={() => setExportOpen(true)}
-          className={cn(
-            PILL,
-            "absolute right-3 bottom-3 flex h-10 cursor-pointer items-center gap-2 px-4 text-sm text-foreground compact:bottom-16",
-          )}
+          className={cn(PILL, "absolute right-3 bottom-16 left-7 flex h-8 cursor-pointer items-center gap-2 px-4 text-xs text-foreground")}
         >
           <span className="size-2 animate-pulse rounded-full bg-red-400" />
           {t.lab.exporting}
           {/* Four characters wide in figures of one width, so the pill holds
               still from 0% to 100%. */}
-          <span className="min-w-[4ch] text-right tabular-nums">{exportPct !== null ? `${exportPct}%` : "…"}</span>
+          <span className="min-w-[4ch] text-right font-mono text-2xs tabular-nums">{exportPct !== null ? `${exportPct}%` : "…"}</span>
         </Button>
       )}
 
@@ -10801,7 +10896,7 @@ export default function Lab() {
               anything under a ~1080px window ate into the track until it was a
               few pixels wide. A pill floating over the canvas has never needed
               to clear the docks — it is centred, and they are not. */}
-          <div className="pointer-events-none absolute inset-x-3 bottom-3 flex justify-center">
+          <div data-edge="bottom" data-ink-zone={(!compact && !timelineUnfolded) || undefined} className="pointer-events-none absolute inset-x-3 bottom-3 flex justify-center">
             {/* max-w-fit is what returns the collapsed pill to the ORIGINAL slider
             length: the track is flex-1 with min-w-[min(16rem,30vw)], and a
             fit-content pill resolves a flex-1 child at its min-content size —
@@ -10830,16 +10925,13 @@ export default function Lab() {
               )}
             >
               <AnimPlayer
+                line={!compact}
                 engineRef={engineRef}
                 modelNames={modelNames}
                 timeline={timeline}
                 hasCamera={cameraClip !== null}
                 eyes={settings.eyes.enabled}
                 onEyes={(on) => patch("eyes", { enabled: on })}
-                // No tooltip. A chevron pointing at where the thing will go is the
-                // whole explanation, and a tip that only repeats the arrow delays a
-                // control people press repeatedly. aria-label still carries it for
-                // anyone not seeing the arrow.
                 trailing={
                   TIMELINE_EDITOR && timelineRoom ? (
                     <Button
@@ -10961,7 +11053,7 @@ export default function Lab() {
           canvas rather than in place of it, because a validation error leaves
           the scene running. */}
       <GpuErrorNotice />
-      {uiHidden && <ShowUiButton onShow={() => setUiHidden(false)} />}
+      {uiHidden && <ShowUiButton corner={!compact} onShow={() => setUiHidden(false)} />}
     </main>
   )
 }

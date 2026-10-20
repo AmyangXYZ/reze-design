@@ -77,7 +77,7 @@ left it. Nothing reaches a server until you publish.
 
 The left dock holds the scene, top to bottom: **Cast**, **Clips**, **Music**,
 then the scene rows **Camera**, **Environment**, **Light**, **Effect**, **Post**,
-**Physics** and **Objects**. The timeline sits under the viewport. **⌘K** (Ctrl+K)
+**Physics** and **Objects**. The timeline sits under the viewport. **F**
 opens the command palette, which reaches every action and setting by name.
 
 The pill at the top left carries the logo, the version and a link to GitHub. The
@@ -205,7 +205,7 @@ cast's eyes toward the lens.
 
 ## 1.7 The look
 
-**Rendering styles.** Press ⌘K and type a style name — *Aether Gazer*,
+**Rendering styles.** Press F and type a style name — *Aether Gazer*,
 *Wuthering Waves*, *Zenless Zone Zero*, *Honkai: Star Rail*. A style restyles
 every group role for role and brings the view transform, exposure and world
 light its ramps are tuned for (ZZZ also brings a sun and bloom). Your background,
@@ -283,7 +283,7 @@ toss or a lob.
 ## 1.10 Physics
 
 **Physics** switches simulation on or off and sets gravity, wind and whether hair
-and cloth collide with the floor. **Reset physics** (⌘K) restarts the simulation.
+and cloth collide with the floor. **Reset physics** (F) restarts the simulation.
 
 ## 1.11 Timeline
 
@@ -383,12 +383,6 @@ fit in memory. **AE composition script** writes an After Effects script that
 rebuilds the camera for compositing.
 
 **Capture PNG** saves the current frame — the intended way to make a thumbnail.
-
-**Share export stats** (off by default) reports what a finished video was made
-of — resolution, model filenames, effects, graphs and grade — and nothing about
-who made it. The totals are public at
-[reze.design/analysis](https://reze.design/analysis);
-[reze.design/privacy](https://reze.design/privacy) lists exactly what is sent.
 
 ## 1.15 Publishing and the library
 
@@ -991,7 +985,7 @@ Grades, effects and graphs share one lifecycle.
 | Range | `m:ss` – `m:ss`, blank = whole clip |
 | Audio | Music track, None |
 | Watermark | on / off |
-| Also | Capture PNG, AE composition script, Share export stats |
+| Also | Capture PNG, AE composition script |
 
 **Limits**
 

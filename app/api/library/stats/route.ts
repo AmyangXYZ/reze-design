@@ -1,4 +1,4 @@
-// Per-item social stats for the libraries: like count, exports, and how many
+// Per-item social stats for the libraries: like count and how many
 // published scenes use it. Whether YOU liked it is /api/library/mine.
 //
 // One request for the whole library rather than one per card — a grid of twenty
@@ -22,7 +22,7 @@ import { publicJson } from "@/lib/cdn"
 import { isDefaultLook, trendScore } from "@/lib/trend"
 
 /** Everyone's counts for an item. Whether you liked it is /api/library/mine. */
-export type SharedStats = { likeCount: number; scenes: number; exports: number; trend: number }
+export type SharedStats = { likeCount: number; scenes: number; trend: number }
 
 export async function GET() {
   // No database configured: an honest empty answer, not a 500 the client has to
@@ -48,10 +48,6 @@ const sharedStats = unstable_cache(
           tags: schema.libraryItems.tags,
           createdAt: schema.libraryItems.createdAt,
           likeCount: schema.libraryItems.likeCount,
-          // Counted, not joined: export_stats has no scene id to group by — see the
-          // table. The counter on the item IS the aggregate, which is also what
-          // lets the raw rows expire without taking the number with them.
-          exportCount: schema.libraryItems.exportCount,
         })
         .from(schema.libraryItems),
       // scene_uses, extracted from each document at publish, rather than a scan
@@ -102,7 +98,6 @@ const sharedStats = unstable_cache(
       out[i.id] = {
         likeCount: i.likeCount,
         scenes: scenesUsing.get(i.id) ?? 0,
-        exports: i.exportCount,
         trend: trendScore([i.createdAt.getTime(), ...(events.get(i.id) ?? [])]),
       }
     return out

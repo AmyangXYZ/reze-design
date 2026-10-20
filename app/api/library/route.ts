@@ -480,8 +480,7 @@ export async function POST(request: Request) {
     const [scene] = replacing
       ? await db
           .update(schema.libraryItems)
-          // NOT ownerId, createdAt, likeCount, exportCount or
-          // featuredAt: an update replaces what the author made, never what
+          // NOT ownerId, createdAt, likeCount or featuredAt: an update replaces what the author made, never what
           // anyone else did with it.
           .set({ ...values, updatedAt: new Date() })
           .where(eq(schema.libraryItems.id, replacing.id))

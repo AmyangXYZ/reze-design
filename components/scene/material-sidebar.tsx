@@ -7,7 +7,6 @@ import type { StyleGroup } from "reze-engine"
 import { Bookmark, BookmarkCheck, ChevronDown, ChevronRight, Circle, Eye, EyeOff, FolderPlus, Pencil, Trash2, Workflow } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -27,6 +26,13 @@ import type { MaterialRow } from "@/hooks/use-engine"
 import { builtinName, localGroupLabel } from "@/lib/builtin-text"
 import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
+import { useCover } from "@/components/ui/cover"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+
+/** The console's action look: a line of type, muted, ink on hover. */
+const COVER_ACTION = "h-6 w-fit gap-1.5 rounded-none border-0 bg-transparent px-0 text-xs font-normal text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground [&_svg:not([class*='size-'])]:size-3.5"
+/** Chosen on the cover: ink, stroked heavier without re-spacing the word. */
+const COVER_CHOSEN = "text-foreground [-webkit-text-stroke:0.35px_currentColor]"
 
 const UNGROUPED = "\0ungrouped" // sentinel collapse-key / drop-target id for "no group"
 
@@ -302,6 +308,8 @@ export const MaterialsPanel = memo(function MaterialsPanel({
     },
   })
 
+  const cover = useCover()
+
   // A single material row: hover highlights, drag reassigns, right-click moves it to another
   const materialRow = (m: MaterialRow, currentGroupId: string | null, reactKey: string) => {
     return (
@@ -317,20 +325,26 @@ export const MaterialsPanel = memo(function MaterialsPanel({
         onDragEnd={endDrag}
         onContextMenu={() => setMenuTarget({ kind: "material", name: m.name, groupId: currentGroupId })}
         className={cn(
-          "group/row flex h-6 cursor-grab items-center select-none gap-1.5 rounded-chip pr-0.5 pl-1 transition-colors hover:bg-white/[0.05] active:cursor-grabbing",
+          "group/row flex h-6 cursor-grab items-center select-none gap-1.5 rounded-chip pr-0.5 pl-1 transition-colors active:cursor-grabbing",
+          !cover && "hover:bg-white/[0.05]",
           !m.visible && "opacity-45",
-          selection.has(m.name) && "bg-blue-400/10 hover:bg-blue-400/10",
+          selection.has(m.name) && (cover ? "" : "bg-blue-400/10 hover:bg-blue-400/10"),
           dragMat !== null && movingWith(dragMat).includes(m.name) && "opacity-40",
         )}
         onClick={(e) => clickRow(e, m.name)}
         onMouseEnter={() => onHover(m.name)}
         onMouseLeave={() => onHover(null)}
       >
-        <Circle className="size-1.5 shrink-0 fill-current text-muted-foreground" />
+        {cover ? (
+          // A small, light mark: the list's bullet, not a status light.
+          <span className="size-[3px] shrink-0 rounded-full bg-muted-foreground" />
+        ) : (
+          <Circle className="size-1.5 shrink-0 fill-current text-muted-foreground" />
+        )}
         <span
           className={cn(
             "min-w-0 flex-1 truncate text-xs text-muted-foreground group-hover/row:text-foreground",
-            selection.has(m.name) && "text-foreground",
+            selection.has(m.name) && (cover ? COVER_CHOSEN : "text-foreground"),
           )}
         >
           {m.name}
@@ -356,7 +370,21 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   return (
     <>
       {/* ── Model strip (multi-model scenes): which model this panel edits ── */}
-      {modelTabs.length > 1 && (
+      {/* On the cover the models head the pane as its tabs, the way Camera's
+          Lens and Focus do — one model is still a tab, so the pane always
+          opens on the same line. */}
+      {cover && (
+        <Tabs value={modelTabs.find((m) => m.active)?.id} onValueChange={onSelectModel} className="mt-1 shrink-0 px-4">
+          <TabsList className="mb-2 w-full">
+            {modelTabs.map((m) => (
+              <TabsTrigger key={m.id} value={m.id} className="min-w-0">
+                <span className="truncate">{m.file.replace(/\.pmx$/i, "")}</span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      )}
+      {!cover && modelTabs.length > 1 && (
         <div className={cn("flex shrink-0 flex-wrap gap-1 px-4", dense ? "pt-2" : "pt-3.5")}>
           {modelTabs.map((m) => (
             <Button variant="bare"
@@ -378,7 +406,12 @@ export const MaterialsPanel = memo(function MaterialsPanel({
       {/* ── Section toolbar (VSCode explorer header): create + library ── */}
       {/* Same px-4 gutter and 3.5 vertical rhythm as the Scene tab, so the two panels line up */}
       <div
-        className={cn("flex shrink-0 items-center gap-1 px-4", modelTabs.length > 1 ? "pt-1.5" : dense ? "pt-2" : "pt-3.5")}
+        className={cn(
+          "flex shrink-0 items-center px-4",
+          // On the cover the toolbar is a line of words, and wraps rather
+          // than cutting the last one off.
+          cover ? "flex-wrap gap-x-4" : cn("gap-1", modelTabs.length > 1 ? "pt-1.5" : dense ? "pt-2" : "pt-3.5"),
+        )}
       >
         {/* This row used to open with STYLE GROUPS in the Scene tab's uppercase and
             carry create as a bare icon beside it. The title cost more width than it
@@ -389,42 +422,45 @@ export const MaterialsPanel = memo(function MaterialsPanel({
             Its inset matches the Library door's, so the two buttons sit on the
             same gutter from either end. */}
         <Button
-          variant="outline"
+          variant={cover ? "ghost" : "outline"}
           size="xs"
           onClick={() => setRenaming(onCreateGroup())}
-          className="min-w-0 border-line-strong bg-surface-raised text-muted-foreground hover:bg-white/5 hover:text-foreground [&_svg:not([class*='size-'])]:size-3.5"
+          className={cover ? COVER_ACTION : "min-w-0 border-line-strong bg-surface-raised text-muted-foreground hover:bg-white/5 hover:text-foreground [&_svg:not([class*='size-'])]:size-3.5"}
         >
           {/* First to give up room. Truncating a label whose glyph still says
               "folder, plus" costs less than pushing the Library door off-panel. */}
+          {cover && <FolderPlus />}
           <span className="truncate">{t.materials.newGroup}</span>
-          <FolderPlus />
+          {!cover && <FolderPlus />}
         </Button>
         {onToggleSavedLooks && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="outline"
-                size="icon-xs"
-                onClick={onToggleSavedLooks}
-                aria-label={looksSaved ? t.materials.looksSaved : t.materials.saveLooks}
-                className={cn(
-                  "shrink-0 border-line-strong bg-surface-raised hover:bg-white/5 [&_svg:not([class*='size-'])]:size-3.5",
-                  looksSaved ? "text-blue-400" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {looksSaved ? <BookmarkCheck /> : <Bookmark />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top">{looksSaved ? t.materials.looksSaved : t.materials.saveLooks}</TooltipContent>
-          </Tooltip>
+          <Button
+            variant={cover ? "ghost" : "outline"}
+            size="icon-xs"
+            onClick={onToggleSavedLooks}
+            aria-label={looksSaved ? t.materials.looksSaved : t.materials.saveLooks}
+            className={cn(
+              "shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
+              cover
+                ? "border-0 bg-transparent shadow-none hover:bg-transparent"
+                : "border-line-strong bg-surface-raised hover:bg-white/5",
+              looksSaved ? (cover ? "text-foreground" : "text-blue-400") : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {looksSaved ? <BookmarkCheck /> : <Bookmark />}
+          </Button>
         )}
-        <span className="flex-1" />
+        {!cover && <span className="flex-1" />}
         {/* Library at the right end, matching Grade and Background. Last to give up
             room: the label is what tells the three doors apart. */}
         {onOpenLibrary && (
         <Button variant="bare"
           onClick={() => onOpenLibrary(libraryTarget)}
-          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-chip bg-white py-1 pr-1.5 pl-2 text-xs font-medium text-zinc-950 transition-colors hover:bg-white/90 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-white"
+          className={
+            cover
+              ? cn(COVER_ACTION, "flex shrink-0 cursor-pointer items-center")
+              : "flex shrink-0 cursor-pointer items-center gap-1 rounded-chip bg-white py-1 pr-1.5 pl-2 text-xs font-medium text-zinc-950 transition-colors hover:bg-white/90 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-white"
+          }
         >
           <Workflow className="size-3.5" />
           {t.lab.cmd.graphLib}
@@ -437,7 +473,11 @@ export const MaterialsPanel = memo(function MaterialsPanel({
         <ContextMenuTrigger asChild>
           <div
             className={cn(
-              "no-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 pt-2",
+              "px-4 pt-2",
+              // The list scrolls under the model tabs and the toolbar. Off the
+              // cover it is contained, so a panel's end does not scroll the page.
+              "no-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto",
+              !cover && "overscroll-contain",
               dense ? "pb-2" : "pb-3.5",
             )}
             onMouseLeave={() => onHover(null)}
@@ -454,13 +494,13 @@ export const MaterialsPanel = memo(function MaterialsPanel({
             const isActive = activeGroupId === g.id
             const isDrop = dropTarget === g.id
             return (
-              <div key={g.id} className={cn("rounded-chip", isDrop && "ring-1 ring-blue-400/50 ring-inset")} {...dropZone(g.id, g.id)}>
+              <div key={g.id} className={cn("rounded-chip", isDrop && "ring-1 ring-foreground ring-inset")} {...dropZone(g.id, g.id)}>
                 {/* Group row — single-click selects/deselects; chevron toggles collapse */}
                 <div
                   data-ctx="row"
                   className={cn(
                     "group/hdr flex h-6 cursor-pointer items-center gap-1 rounded-chip pr-0.5 transition-colors",
-                    isActive ? "bg-blue-400/[0.1]" : "hover:bg-white/[0.04]",
+                    !cover && (isActive ? "bg-blue-400/[0.1]" : "hover:bg-white/[0.04]"),
                   )}
                   onClick={() => toggleCollapse(g.id)}
                   onContextMenu={() => setMenuTarget({ kind: "group", id: g.id })}
@@ -495,7 +535,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                         <span
                           className={cn(
                             "min-w-0 flex-1 truncate text-xs font-medium select-none",
-                            isActive ? "text-blue-400" : "text-foreground",
+                            isActive ? (cover ? COVER_CHOSEN : "text-blue-400") : "text-foreground",
                           )}
                         >
                           {shownLabel(g)}
@@ -545,13 +585,13 @@ export const MaterialsPanel = memo(function MaterialsPanel({
           {/* ── Ungrouped section ── */}
           {ungrouped.length > 0 && (
             <div
-              className={cn("mt-0.5 rounded-chip", dropTarget === UNGROUPED && "ring-1 ring-blue-400/50 ring-inset")}
+              className={cn("mt-0.5 rounded-chip", dropTarget === UNGROUPED && "ring-1 ring-foreground ring-inset")}
               {...dropZone(UNGROUPED, null)}
             >
               <div
                 className={cn(
                   "group/hdr flex h-6 cursor-pointer items-center gap-1 rounded-chip pr-0.5 transition-colors",
-                  "hover:bg-white/[0.04]",
+                  !cover && "hover:bg-white/[0.04]",
                 )}
                 onClick={() => toggleCollapse(UNGROUPED)}
               >
@@ -567,7 +607,11 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                 <span
                   className={cn(
                     "min-w-0 flex-1 truncate text-xs font-medium",
-                    activeGroupId === UNGROUPED ? "text-blue-400" : "text-muted-foreground group-hover/hdr:text-foreground",
+                    activeGroupId === UNGROUPED
+                      ? cover
+                        ? COVER_CHOSEN
+                        : "text-blue-400"
+                      : "text-muted-foreground group-hover/hdr:text-foreground",
                   )}
                 >
                   {t.materials.ungrouped}

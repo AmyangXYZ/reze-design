@@ -1,7 +1,7 @@
 import "server-only"
 
 // The kept Bilibili videos (schema.biliVideos): the daily job
-// (scripts/bili-daily.ts) finds new ones and recounts them all; /analysis
+// (scripts/bili-daily.ts) finds new ones and recounts them all; /bilibili
 // reads them.
 
 import { desc, gte, sql } from "drizzle-orm"
@@ -15,7 +15,7 @@ export type FindReport = { added: number; blocked: boolean; loggedIn: boolean }
 
 export const allVideos = () => db.select().from(t).orderBy(desc(t.likes))
 
-/** What /analysis shows of a video. */
+/** What /bilibili shows of a video. */
 export type PublicVideo = {
   bvid: string
   title: string

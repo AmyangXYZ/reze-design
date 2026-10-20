@@ -19,8 +19,7 @@ export function MaterialSphereIcon({ className }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden>
       <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" strokeWidth="2" />
-      <path d="M12 12V3.5A8.5 8.5 0 0 1 20.5 12Z" fill="currentColor" stroke="none" />
-      <path d="M12 12v8.5A8.5 8.5 0 0 1 3.5 12Z" fill="currentColor" stroke="none" />
+      <path d="M3.5 12a8.5 3.5 0 0 0 17 0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     </svg>
   )
 }

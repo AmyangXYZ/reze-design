@@ -69,7 +69,7 @@ const MODEL = "https://assets.reze.one/demo/reze-webp"
 
 const DEMO_SCENE_DOC: SceneDoc = {
   version: 1,
-  name: "My first scene",
+  name: "Hello Reze",
   assets: {
     models: [
       {

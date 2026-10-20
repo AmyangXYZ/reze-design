@@ -6,7 +6,6 @@ import type { ComponentType, ReactNode } from "react"
 import { Grip, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
 /** Shared button styling for anything in the actions slot, so callers can't invent their own */
@@ -24,20 +23,15 @@ export function EditorHeaderButton({
   active?: boolean
 }) {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          disabled={disabled}
-          onClick={onClick}
-          className={cn("size-6", active ? "text-pink-300 hover:text-pink-200" : "text-muted-foreground hover:text-foreground")}
-        >
-          <Icon className="size-3.5" />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
+    <Button aria-label={label}
+      variant="ghost"
+      size="icon"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn("size-6", active ? "text-pink-300 hover:text-pink-200" : "text-muted-foreground hover:text-foreground")}
+    >
+      <Icon className="size-3.5" />
+    </Button>
   )
 }
 

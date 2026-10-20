@@ -1,4 +1,4 @@
-// /analysis/bilibili: the videos people posted on Bilibili that credit Reze
+// /bilibili: the videos people posted on Bilibili that credit Reze
 // Design. The daily job (scripts/bili-daily.ts) finds and counts them; this
 // page only reads the table.
 
@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   description: "Videos on Bilibili made with Reze Design: their makers, plays and likes, counted daily.",
 }
 
-/** Per request, like /analysis. The numbers move once a day, so a `revalidate`
+/** Per request. The numbers move once a day, so a `revalidate`
  *  is the lever if this page ever draws real traffic. */
 export const dynamic = "force-dynamic"
 

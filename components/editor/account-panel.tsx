@@ -441,10 +441,14 @@ export type LibraryDoor = "grade" | "effect" | "graph" | "scene"
 
 export function AccountButton({
   asHeader = false,
+  byline = false,
   onOpenLibrary,
   children,
 }: {
   asHeader?: boolean
+  /** As the cover's byline: the handle as a word under the scene's name,
+   *  "Sign in" while signed out, with the menu opening from it. */
+  byline?: boolean
   onOpenLibrary?: (kind: LibraryDoor, facet: "yours" | "liked") => void
   /**
    * The row the button sits in, built around the trigger it is handed. Given,
@@ -462,7 +466,15 @@ export function AccountButton({
 
   const handle = session?.user.username ?? session?.user.name ?? ""
   const verified = session?.user.verified === true
-  const trigger = (
+  const trigger = byline ? (
+    <Button
+      variant="bare"
+      aria-label={t.account.label}
+      className="font-mono text-2xs tracking-wide text-muted-foreground uppercase hover:text-foreground"
+    >
+      {session ? handle : t.account.signIn}
+    </Button>
+  ) : (
     <Button
       variant="ghost"
       size="icon"
@@ -510,7 +522,7 @@ export function AccountButton({
       )}
       <PopoverContent
         side="bottom"
-        align={children ? "end" : "center"}
+        align={byline ? "start" : children ? "end" : "center"}
         sideOffset={8}
         // Opening the menu is not a request to rename yourself.
         onOpenAutoFocus={(e) => e.preventDefault()}

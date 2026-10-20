@@ -3,11 +3,13 @@
 // Right dock · Render tab — where a finished scene becomes an exported video.
 
 import { Input } from "@/components/ui/input"
-import { memo, useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react"
+import { memo, useEffect, useRef, useState, type RefObject } from "react"
 import type { Engine } from "reze-engine"
 import { toast } from "sonner"
 import { Camera, Clapperboard, Film, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { useCover } from "@/components/ui/cover"
+import { cn } from "@/lib/utils"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Switch } from "@/components/ui/switch"
 import {
@@ -36,15 +38,6 @@ import { isCompositingBackground, type ExportBackground } from "@/lib/export-bac
 import type { SceneTimeline } from "@/lib/timeline"
 import { formatBytes } from "@/lib/png-sequence"
 import { downloadBlob } from "@/lib/scene-file"
-import {
-  exportStatsAllowed,
-  exportStatsServerSnapshot,
-  setExportStatsAllowed,
-  subscribeExportStats,
-} from "@/lib/export-consent"
-import { reportExport, sceneExportStats } from "@/lib/export-stats"
-import { loadLookPref } from "@/lib/look-pref"
-import type { SceneDoc } from "@/lib/scene"
 import { useT } from "@/lib/i18n"
 
 // Minimal config, iMovie-export style
@@ -143,8 +136,11 @@ const DIMS: Record<Aspect, Record<Quality, [number, number]>> = {
 
 // min-h-6 keeps every row the height of a select trigger, so the switch row (whose control
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  // On the cover each row is an ink zone: a letterboxed frame can stand some
+  // rows on the black matte and the rest on the picture.
+  const cover = useCover()
   return (
-    <div className="mt-2.5 flex min-h-6 items-center justify-between first:mt-0">
+    <div data-ink-zone={cover || undefined} className="mt-2.5 flex min-h-6 items-center justify-between first:mt-0">
       <span className="text-xs text-muted-foreground">{label}</span>
       {children}
     </div>
@@ -172,7 +168,13 @@ const parseClock = (text: string): number | null => {
 }
 
 const rangeInputCls =
-  "h-6 w-14 rounded-chip border border-line-strong bg-white/5 px-1 text-center text-xs tabular-nums outline-none transition-colors hover:bg-white/10 focus:border-blue-400/50 placeholder:text-muted-foreground disabled:opacity-50"
+  "h-6 w-14 rounded-chip border border-line-strong bg-white/5 px-1 text-center text-xs tabular-nums outline-none transition-colors hover:bg-white/10 focus:border-foreground placeholder:text-muted-foreground disabled:opacity-50"
+/** On the cover a field is its value over a hairline. */
+const rangeInputCover =
+  "h-6 w-12 rounded-none border-0 border-b border-line bg-transparent px-0 text-center text-xs tabular-nums outline-none focus:border-foreground placeholder:text-muted-foreground disabled:opacity-50"
+/** On the cover an action is a word, like the console's. */
+const COVER_WORD =
+  "flex h-7 w-fit items-center gap-1.5 text-xs whitespace-nowrap text-muted-foreground hover:text-foreground disabled:opacity-40"
 
 /** The part of FileSystemFileHandle this panel uses. */
 type SaveHandle = {
@@ -231,7 +233,6 @@ export const RenderPanel = memo(function RenderPanel({
   onProgressChange,
   rasterLyricsAt,
   planes,
-  makeDoc,
 }: {
   /** This tab is the visible one. */
   active: boolean
@@ -280,12 +281,9 @@ export const RenderPanel = memo(function RenderPanel({
   /** Moving cards, which the export advances itself — the live clock steps them
    *  by seeking, which is far too slow offline. */
   planes?: ExportPlane[]
-  /** The scene as a document — the same builder Publish uses. Read only to
-   *  describe a finished export, and only when the user has opted in; a host
-   *  that omits it hides the stats row entirely. */
-  makeDoc?: (bundle: string | null) => SceneDoc
 }) {
   const t = useT()
+  const cover = useCover()
   // Cinemascope by default — the whole reze-* series is named for the Chainsaw Man
   // — then whatever was chosen last, which is what actually gets exported twice.
   const [prefs] = useState(readExportPrefs)
@@ -302,7 +300,6 @@ export const RenderPanel = memo(function RenderPanel({
   // stored yes here would have the server paint the switch off and the client
   // paint it on. The server snapshot is off, always, so the only value React ever
   // renders unasked is the safe one.
-  const shareStats = useSyncExternalStore(subscribeExportStats, exportStatsAllowed, exportStatsServerSnapshot)
   // Session state, not a preference: the mode repaints the live canvas, and
   // finding the viewport keyed green on a fresh load would read as a bug.
   //
@@ -653,20 +650,6 @@ export const RenderPanel = memo(function RenderPanel({
       toast.success(
         directory ? t.render.seqDone(totalFrames, savedAs, savedSize) : t.render.done(savedAs, savedSize),
       )
-      // The video exists — which is the only moment this is true, and the reason
-      // it is reported here rather than where the render starts. A cancelled or
-      // failed export made nothing, and nothing is what it should say about the
-      // presets it was going to use. Never awaited: see reportExport.
-      if (shareStats && makeDoc) {
-        reportExport({
-          aspect,
-          quality,
-          width,
-          height,
-          look: loadLookPref(),
-          ...sceneExportStats(makeDoc(null)),
-        })
-      }
     } catch (e) {
       // Discard the partial file — abort() drops everything written since createWritable
       await fileStream?.abort().catch(() => {})
@@ -692,7 +675,7 @@ export const RenderPanel = memo(function RenderPanel({
 
   return (
     <ScrollArea className="min-h-0 flex-1">
-      <div className="px-4 py-3.5">
+      <div className={cover ? "px-4 pt-1 pb-3" : "px-4 py-3.5"}>
         {/* No section title — the panel IS the output settings; a heading over
             the only content is furniture. */}
         <div className="mt-1">
@@ -776,7 +759,7 @@ export const RenderPanel = memo(function RenderPanel({
                 }}
                 placeholder="0:00"
                 disabled={exporting}
-                className={rangeInputCls}
+                className={cover ? rangeInputCover : rangeInputCls}
               />
               <span className="text-xs text-muted-foreground">–</span>
               <Input variant="bare"
@@ -789,7 +772,7 @@ export const RenderPanel = memo(function RenderPanel({
                 }}
                 placeholder={animDuration > 0 ? fmtClock(animDuration) : "-:--"}
                 disabled={exporting}
-                className={rangeInputCls}
+                className={cover ? rangeInputCover : rangeInputCls}
               />
             </div>
           </Row>
@@ -851,6 +834,20 @@ export const RenderPanel = memo(function RenderPanel({
             two below make the picture and keep the bottom of the panel. Same
             disabled rule as Render — it walks the same frames and needs the same
             clip to walk. */}
+        {cover ? (
+          // On the cover the still and the script are words; Render is the
+          // one solid thing on this edge.
+          <div data-ink-zone className="mt-4 flex flex-col">
+            <Button variant="bare" disabled={!canRender} onClick={() => void aeScript()} className={COVER_WORD}>
+              <Film className="size-3.5" />
+              {t.render.aeScript}
+            </Button>
+            <Button variant="bare" disabled={exporting} onClick={() => void capture()} className={COVER_WORD}>
+              <Camera className="size-3.5" />
+              {t.render.capturePng}
+            </Button>
+          </div>
+        ) : (
         <Button
           size="sm"
           variant="outline"
@@ -861,10 +858,12 @@ export const RenderPanel = memo(function RenderPanel({
           <Film className="size-3.5" />
           {t.render.aeScript}
         </Button>
+        )}
         {/* Two actions, one row: still and video are peers. */}
         <div className="mt-2 flex">
           {/* Same framing, one frame. Needs no animation, so it stays available on
               a still scene where Render has nothing to render. */}
+          {!cover && (
           <Button
             size="sm"
             disabled={exporting}
@@ -874,12 +873,16 @@ export const RenderPanel = memo(function RenderPanel({
             <Camera className="size-3.5" />
             {t.render.capturePng}
           </Button>
+          )}
           {!exporting ? (
             <Button
               size="sm"
               disabled={!canRender}
               onClick={() => void start()}
-              className="h-8 flex-1 gap-1.5 rounded-l-none bg-blue-400 text-xs font-medium text-on-accent hover:bg-blue-400/90 disabled:opacity-40"
+              className={cn(
+                "h-8 flex-1 gap-1.5 bg-blue-400 text-xs font-medium text-on-accent hover:bg-blue-400/90 disabled:opacity-40",
+                cover ? "rounded-chip" : "rounded-l-none",
+              )}
             >
               <Clapperboard className="size-3.5" />
               {t.render.renderVideo}
@@ -895,7 +898,7 @@ export const RenderPanel = memo(function RenderPanel({
               // button you may urgently want should look like. Red because
               // stopping throws the render away: the encoded frames are gone,
               // not paused.
-              className="h-8 flex-1 gap-1.5 rounded-l-none bg-red-400 text-xs font-medium text-white hover:bg-red-400"
+              className={cn("h-8 flex-1 gap-1.5 bg-red-400 text-xs font-medium text-white hover:bg-red-400", cover ? "rounded-chip" : "rounded-l-none")}
             >
               <Square className="size-3.5" />
               {t.render.cancel}
@@ -904,8 +907,8 @@ export const RenderPanel = memo(function RenderPanel({
         </div>
         {exporting ? (
           <div className="mt-4">
-            <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
-              <div className="h-full rounded-full bg-blue-400 transition-[width]" style={{ width: `${pct}%` }} />
+            <div className={cn("w-full overflow-hidden", cover ? "h-px bg-line-strong" : "h-1 rounded-full bg-white/10")}>
+              <div className={cn("h-full transition-[width]", cover ? "bg-foreground" : "rounded-full bg-blue-400")} style={{ width: `${pct}%` }} />
             </div>
             <div className="mt-1.5 text-center text-xs text-muted-foreground tabular-nums">
               {!progress
@@ -927,38 +930,6 @@ export const RenderPanel = memo(function RenderPanel({
               : t.render.failed(result.message ?? "")}
           </div>
         ) : null}
-        {/* Last, under the outcome of the thing it describes. The buttons and
-            what they report belong together — a result line pushed below a
-            standing preference reads as being about the preference. The rule
-            above it is what says this is a different kind of row: the settings
-            change the file, this changes what we are told about it. */}
-        {makeDoc && (
-          <div className="mt-3 border-t border-line pt-3">
-            <Row label={t.render.shareStats}>
-              <Switch
-                checked={shareStats}
-                onCheckedChange={setExportStatsAllowed}
-                disabled={exporting}
-                className="scale-75"
-              />
-            </Row>
-            {/* Amber, like the credits note in the publish dialog: the same kind of
-                line, the one thing beside a control that has to actually be read
-                before the control is touched. */}
-            <p className="mt-0.5 text-2xs leading-snug text-amber-400">
-              {t.render.shareStatsNote}{" "}
-              {/* Both halves of the answer: what is collected, and what it has
-                  added up to. The second is why anyone would say yes. */}
-              <a href="/privacy" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-foreground">
-                {t.render.shareStatsLink}
-              </a>
-              {" · "}
-              <a href="/analysis" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-foreground">
-                {t.render.shareStatsSeeLink}
-              </a>
-            </p>
-          </div>
-        )}
       </div>
     </ScrollArea>
   )

@@ -21,9 +21,12 @@ import { prepareReference, type ReferenceImage } from "@/lib/ai/reference-image"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { AstroidSpinner } from "@/components/editor/astroid-spinner"
 import { cn } from "@/lib/utils"
+import { useCover } from "@/components/ui/cover"
+
+/** On the cover, an action is a line of type: muted, ink on hover, no box. */
+const COVER_ACTION = "h-6 w-fit gap-1 rounded-none border-0 bg-transparent px-0 text-xs font-normal text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground"
 import { LOOP_NOTE, type AgentMessage, type Usage } from "@/lib/ai/agent-loop"
 import { THINKING_VERBS, doingOf, formatTokens, summarizeStep, usageParts, type StepSummary } from "@/lib/ai/agent-summary"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { AgentLive, AgentRun } from "@/hooks/use-agent"
 import type { Notice, NoticeKind } from "@/lib/ai/agent-notice"
 
@@ -336,6 +339,7 @@ const Transcript = memo(function Transcript({
   busy: boolean
   worked: AgentPanelText["worked"]
 }) {
+  const cover = useCover()
   const renderLine = (l: Line, i: number): ReactNode =>
           l.kind === "user" ? (
             // A request opens a turn: on its own tinted bar, the way a coding
@@ -344,7 +348,12 @@ const Transcript = memo(function Transcript({
             <Row
               key={i}
               mark={<Prompt />}
-              className={cn("-mx-1.5 rounded-interior bg-white/5 px-1.5 py-1", i > 0 && "mt-4")}
+              className={cn(
+                // On the cover a request is a pull quote: a hairline at its
+                // left, no tinted bar.
+                cover ? "border-l border-line pl-2.5" : "-mx-1.5 rounded-interior bg-white/5 px-1.5 py-1",
+                i > 0 && "mt-4",
+              )}
             >
               {l.images?.length ? (
                 <div className="mb-1.5 flex flex-wrap gap-1.5">
@@ -448,6 +457,7 @@ export function AgentPanel({
   onStop: () => void
   text: AgentPanelText
 }) {
+  const cover = useCover()
   const [draft, setDraft] = useState("")
   const [refs, setRefs] = useState<ReferenceImage[]>([])
   // Pictures still being prepared (resized and measured): each holds a
@@ -544,7 +554,7 @@ export function AgentPanel({
 
   return (
     <div
-      className={cn("relative flex min-h-0 flex-1 flex-col", dragging && "after:pointer-events-none after:absolute after:inset-1 after:rounded-interior after:border after:border-dashed after:border-blue-400")}
+      className={cn("relative flex min-h-0 flex-1 flex-col", dragging && "after:pointer-events-none after:absolute after:inset-1 after:rounded-interior after:border after:border-dashed after:border-foreground")}
       // Esc stops a running request — before the panel's own Escape, which
       // would close it.
       onKeyDownCapture={(e) => {
@@ -622,7 +632,7 @@ export function AgentPanel({
                 size="xs"
                 variant="ghost"
                 onClick={notice.action === "newChat" ? onNewChat : onRetry}
-                className="mt-1.5 h-6 rounded-chip border border-line-strong px-2 text-xs text-foreground hover:bg-white/5"
+                className={cn("mt-1.5", cover ? COVER_ACTION : "h-6 rounded-chip border border-line-strong px-2 text-xs text-foreground hover:bg-white/5")}
               >
                 {notice.action === "retry" ? text.retry : notice.action === "continue" ? text.continue : text.newChat}
               </Button>
@@ -637,7 +647,7 @@ export function AgentPanel({
               size="xs"
               variant="ghost"
               onClick={checkpoint.undone ? onRedo : onUndo}
-              className="h-6 gap-1 rounded-chip border border-line-strong px-2 text-xs text-foreground hover:bg-white/5"
+              className={cover ? COVER_ACTION : "h-6 gap-1 rounded-chip border border-line-strong px-2 text-xs text-foreground hover:bg-white/5"}
             >
               {checkpoint.undone ? <Redo2 className="size-3" /> : <Undo2 className="size-3" />}
               {checkpoint.undone ? text.redo : text.undo}
@@ -651,7 +661,10 @@ export function AgentPanel({
           <Button
             variant="bare"
             onClick={toLatest}
-            className="absolute bottom-2 left-1/2 flex -translate-x-1/2 cursor-pointer items-center gap-1 rounded-full border border-line-strong bg-surface-raised px-2.5 py-1 text-xs text-muted-foreground shadow-float transition-colors hover:text-foreground"
+            className={cn(
+              "absolute bottom-2 flex cursor-pointer items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground",
+              cover ? "left-4" : "left-1/2 -translate-x-1/2 rounded-full border border-line-strong bg-surface-raised px-2.5 py-1 shadow-float",
+            )}
           >
             <ArrowDown className="size-3" />
             {text.latest}
@@ -667,8 +680,23 @@ export function AgentPanel({
       {onSetup && (
         // An empty conversation: in the middle of the panel. One with history:
         // just above the input, clear of the messages.
-        <div className={cn("flex justify-center", lines.length === 0 ? "pointer-events-none absolute inset-0 items-center pb-12 [&>*]:pointer-events-auto" : "shrink-0 px-4 pb-2")}>
-          <Button size="xs" onClick={onSetup} className="h-7 w-fit rounded-chip px-3 text-xs font-medium">
+        // On the cover it is a line of type, just above the input it unlocks.
+        <div
+          className={cn(
+            "flex",
+            cover
+              ? "shrink-0 px-4 pb-2"
+              : lines.length === 0
+                ? "pointer-events-none absolute inset-0 items-center justify-center pb-12 [&>*]:pointer-events-auto"
+                : "shrink-0 justify-center px-4 pb-2",
+          )}
+        >
+          <Button
+            size="xs"
+            onClick={onSetup}
+            className={cover ? cn(COVER_ACTION, "text-foreground") : "h-7 w-fit rounded-chip px-3 text-xs font-medium"}
+          >
+            {cover && <ArrowDown className="size-3" />}
             {text.setup}
           </Button>
         </div>
@@ -679,21 +707,17 @@ export function AgentPanel({
       {usage !== undefined && (
         <div className="flex shrink-0 items-end justify-end px-4 pb-1 text-2xs leading-4 text-muted-foreground tabular-nums">
           {usage ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  <TokenCount key={conversationId ?? ""} total={usage.input + usage.output} label={text.usage.tokens} />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent className="tabular-nums">{text.usage.detail(...usageParts(usage))}</TooltipContent>
-            </Tooltip>
+            <span aria-label={text.usage.detail(...usageParts(usage))}>
+              <TokenCount key={conversationId ?? ""} total={usage.input + usage.output} label={text.usage.tokens} />
+            </span>
           ) : (
             text.usage.none
           )}
         </div>
       )}
-      <div className="shrink-0 border-t border-line px-2.5 py-1.5">
-        <div className="rounded-interior bg-white/5 px-1.5 py-1 ring-blue-400 focus-within:ring-1">
+      <div className={cn("shrink-0 border-t border-line py-1.5", cover ? "px-4" : "px-2.5")}>
+        {/* On the cover the field is the hairline above it. */}
+        <div className={cover ? "py-1" : "rounded-interior bg-white/5 px-1.5 py-1 ring-foreground focus-within:ring-1"}>
           {(refs.length > 0 || preparing > 0) && (
             <div className="mb-1.5 flex flex-wrap gap-1.5 pl-[18px]">
               {refs.map((r, k) => (
@@ -767,7 +791,6 @@ export function AgentPanel({
               variant="ghost"
               onClick={() => fileInput.current?.click()}
               disabled={busy || !!onSetup}
-              tooltip={text.attach}
               aria-label={text.attach}
               className="size-5 shrink-0 text-muted-foreground hover:bg-transparent hover:text-foreground"
             >
@@ -778,7 +801,6 @@ export function AgentPanel({
                 size="icon-xs"
                 variant="ghost"
                 onClick={onStop}
-                tooltip={text.stop}
                 aria-label={text.stop}
                 className="size-5 shrink-0 text-foreground hover:bg-transparent"
               >
@@ -790,12 +812,14 @@ export function AgentPanel({
                 variant="ghost"
                 onClick={submit}
                 disabled={locked || !!onSetup || preparing > 0 || (!draft.trim() && !refs.length)}
-                tooltip={text.send}
                 aria-label={text.send}
                 // The prompt mark, the picture and send are one size and one
                 // weight; send is told apart by colour alone — blue once there
                 // is something to send.
-                className="size-5 shrink-0 text-blue-400 hover:bg-transparent hover:text-blue-400 disabled:text-muted-foreground"
+                className={cn(
+                  "size-5 shrink-0 hover:bg-transparent disabled:text-muted-foreground",
+                  cover ? "text-foreground hover:text-muted-foreground" : "text-blue-400 hover:text-blue-400",
+                )}
               >
                 <ArrowUp className="size-3.5" />
               </Button>

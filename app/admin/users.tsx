@@ -273,7 +273,7 @@ function AccountPanel({ user: u, isSelf, onClose }: { user: UserRow; isSelf: boo
                     </div>
                   </div>
                   {i.kind === "scene" && (
-                    <Button size="icon-xs" variant="ghost" asChild tooltip="Open the scene page" className="text-muted-foreground hover:bg-accent hover:text-foreground">
+                    <Button size="icon-xs" variant="ghost" asChild title="Open the scene page" className="text-muted-foreground hover:bg-accent hover:text-foreground">
                       <a href={`/${i.author}/${i.id}`} target="_blank" rel="noreferrer" aria-label="Open the scene page">
                         <ExternalLink className="size-3.5" />
                       </a>

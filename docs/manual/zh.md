@@ -69,7 +69,7 @@ reze-engine（渲染与物理）、[Reze Studio](https://github.com/AmyangXYZ/re
 关闭标签页再回来，场景仍然在原处。发布之前不会上传任何内容。
 
 左侧面板从上到下是：**角色**、**片段**、**音乐**，然后是场景各行 **相机**、**环境**、
-**灯光**、**特效**、**后期**、**物理**、**物体**。时间轴在视图下方。**⌘K**（Ctrl+K）
+**灯光**、**特效**、**后期**、**物理**、**物体**。时间轴在视图下方。**F**
 打开命令面板，可以按名称找到所有操作和设置。
 
 左上角的标签栏包含 Logo、版本号和 GitHub 链接。Logo 菜单中有 **新建场景**、**导出场景**
@@ -173,7 +173,7 @@ reze-engine（渲染与物理）、[Reze Studio](https://github.com/AmyangXYZ/re
 
 ## 1.7 风格
 
-**渲染风格。** 按 ⌘K 输入风格名称：*Aether Gazer*（深空之眼）、*Wuthering Waves*（鸣潮）、
+**渲染风格。** 按 F 输入风格名称：*Aether Gazer*（深空之眼）、*Wuthering Waves*（鸣潮）、
 *Zenless Zone Zero*（绝区零）、*Honkai: Star Rail*（崩坏：星穹铁道）。切换风格会按角色逐一
 替换每个分组的外观，并带入该风格所需的视图变换、曝光和环境光（绝区零还会带入太阳和泛光）。
 背景、描边、调色和地面保持不变。选择会被记住，之后加载的模型也使用同一风格。
@@ -236,7 +236,7 @@ reze-engine（渲染与物理）、[Reze Studio](https://github.com/AmyangXYZ/re
 ## 1.10 物理
 
 **物理** 可以开关模拟，并设置重力、风，以及头发和衣服是否与地面碰撞。
-**重置物理**（⌘K）会重新开始模拟。
+**重置物理**（F）会重新开始模拟。
 
 ## 1.11 时间轴
 
@@ -318,10 +318,6 @@ reze-engine（渲染与物理）、[Reze Studio](https://github.com/AmyangXYZ/re
 **AE 合成脚本** 生成一个 After Effects 脚本，在 AE 中还原相机用于合成。
 
 **截取 PNG** 保存当前画面，用于制作封面。
-
-**分享导出统计**（默认关闭）会上报成品视频的组成：分辨率、模型文件名、特效、节点图和调色，
-不包含任何个人信息。汇总数据公开在 [reze.design/analysis](https://reze.design/analysis)，
-[reze.design/privacy](https://reze.design/privacy) 列出了上报的全部内容。
 
 ## 1.15 发布与素材库
 
@@ -866,7 +862,7 @@ fn gridStep(uv: vec2f, prev: vec4f, dt: f32) -> vec4f {
 | 范围 | `m:ss` – `m:ss`，留空为整段 |
 | 音频 | 音乐、无 |
 | 水印 | 开 / 关 |
-| 其他 | 截取 PNG、AE 合成脚本、分享导出统计 |
+| 其他 | 截取 PNG、AE 合成脚本 |
 
 **限制**
 

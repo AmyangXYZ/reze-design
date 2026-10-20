@@ -1,9 +1,11 @@
+"use client"
+
 import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { useCover } from "@/components/ui/cover"
 
 // The one control a raw <button> is never needed instead of. `bare` is for rows,
 // tiles, swatches and chips whose own classes are the whole look: it keeps what
@@ -11,7 +13,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 // and adds no size, padding, gap, radius or colour for the call site to fight.
 // Those fights are why the editor once grew ~90 plain <button>s.
 const BARE =
-  "outline-none transition-[color,background-color,border-color,box-shadow,opacity] focus-visible:ring-2 focus-visible:ring-blue-400/50 disabled:pointer-events-none disabled:opacity-50"
+  "outline-none transition-[color,background-color,border-color,box-shadow,opacity] focus-visible:ring-2 focus-visible:ring-foreground disabled:pointer-events-none disabled:opacity-50"
+
+// On the cover a button is type like the words around it. A ghost's hover is a
+// change of ink alone, set after the call site's classes so a tint written for
+// the boxed chrome cannot reach the canvas; keyboard focus is a thin outline in
+// the ink in place of the ring, for every variant there.
+const COVER_GHOST = "hover:bg-transparent dark:hover:bg-transparent"
+const COVER_FOCUS =
+  "focus-visible:ring-0 focus-visible:outline-1 focus-visible:outline-solid focus-visible:outline-offset-2 focus-visible:outline-foreground"
 
 const buttonVariants = cva(
   "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-chip text-sm font-medium transition-[color,background-color,border-color,box-shadow,opacity] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
@@ -59,23 +69,24 @@ function Button({
   size,
   asChild = false,
   onClick,
-  tooltip,
-  tooltipSide,
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean
-    /** A hover label, in the one tooltip style. Opt-in: some controls leave it
-     *  off on purpose (a chevron, a menu trigger whose focus returns on close). */
-    tooltip?: React.ReactNode
-    tooltipSide?: React.ComponentProps<typeof TooltipContent>["side"]
   }) {
   const Comp = asChild ? Slot : "button"
+  const cover = useCover()
+  const look =
+    variant === "bare"
+      ? cn(BARE, className)
+      : cover && variant === "ghost"
+        ? cn(buttonVariants({ variant: "bare", size }), "hover:text-foreground", className, COVER_GHOST)
+        : cn(buttonVariants({ variant, size, className }))
 
-  const button = (
+  return (
     <Comp
       data-slot="button"
-      className={variant === "bare" ? cn(BARE, className) : cn(buttonVariants({ variant, size, className }))}
+      className={cover ? cn(look, COVER_FOCUS) : look}
       onClick={(e) => {
         // A mouse click leaves the button focused, so a later Space/Enter (meant for play/pause
         if (e.detail > 0) (e.currentTarget as HTMLElement).blur()
@@ -83,13 +94,6 @@ function Button({
       }}
       {...props}
     />
-  )
-  if (!tooltip) return button
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{button}</TooltipTrigger>
-      <TooltipContent side={tooltipSide}>{tooltip}</TooltipContent>
-    </Tooltip>
   )
 }
 

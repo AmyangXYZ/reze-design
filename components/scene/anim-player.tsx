@@ -9,7 +9,7 @@ import { applyTimelineFrame, type SceneTimeline } from "@/lib/timeline"
 import type { Engine, Model } from "reze-engine"
 import { Eye, EyeOff, Orbit, Pause, Play, Repeat, RepeatOff, Video } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { Cover } from "@/components/ui/cover"
 import { useT } from "@/lib/i18n"
 
 /** A single scrub step past this reads as a teleport rather than motion. */
@@ -77,6 +77,7 @@ export const AnimPlayer = memo(function AnimPlayer({
   axisDuration = 0,
   scrubRef,
   playheadDrawRef,
+  line = false,
 }: {
   engineRef: RefObject<Engine | null>
   /** Models WITH a loaded clip, master (longest clip) first. */
@@ -162,6 +163,11 @@ export const AnimPlayer = memo(function AnimPlayer({
    */
   playheadDrawRef?: RefObject<((frame: number) => void) | null>
 
+  /** Set as a line of type on the canvas while collapsed — the cover's bottom
+   *  line: a hairline scrub, mono clocks, and the switches as words with the
+   *  chosen ones underlined. Unfolded it is a surface again, since the timeline
+   *  is a workbench. */
+  line?: boolean
   /** Live camera-VMD drive state — fires on toggle and on initial sync, so the
    *  host can enable/disable its camera controls with the ACTUAL mode. */
   onFollowingChange?: (following: boolean) => void
@@ -512,50 +518,57 @@ export const AnimPlayer = memo(function AnimPlayer({
     ? "size-5 shrink-0 rounded-chip"
     : "size-7 shrink-0 rounded-full"
   const ico = unfolded ? "size-3.5" : "size-4"
+  const bare = line && !unfolded
+  const word = (on: boolean, label: string, tip: string, onClick: () => void) => (
+    <Button aria-label={tip}
+      variant="bare"
+      aria-pressed={on}
+      onClick={onClick}
+      className={cn(
+        "relative py-1 text-xs after:absolute after:inset-x-0 after:bottom-0.5 after:h-[1.5px] after:rounded-full",
+        on ? "font-medium text-foreground after:bg-blue-400" : "text-muted-foreground after:bg-transparent hover:text-foreground",
+      )}
+    >
+      {label}
+    </Button>
+  )
+  const lineChrome = (
+    <>
+      {hasCamera && word(following, t.transport.follow, following ? t.transport.followCamera : t.transport.freeOrbit, toggleCamera)}
+      {word(loop, t.transport.loop, loop ? t.transport.loopOn : t.transport.loopOff, () => setLoop((v) => !v))}
+      {onEyes && word(!!eyes, t.transport.eyes, eyes ? t.transport.eyesOn : t.transport.eyesOff, () => onEyes(!eyes))}
+      {trailing}
+    </>
+  )
   const chrome = (
     <>
       {hasCamera && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(btn, following ? "text-blue-400" : "text-muted-foreground hover:text-foreground")}
-              onClick={toggleCamera}
-            >
-              {following ? <Video className={ico} /> : <Orbit className={ico} />}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">{following ? t.transport.followCamera : t.transport.freeOrbit}</TooltipContent>
-        </Tooltip>
+        <Button aria-label={following ? t.transport.followCamera : t.transport.freeOrbit}
+          variant="ghost"
+          size="icon"
+          className={cn(btn, following ? "text-blue-400" : "text-muted-foreground hover:text-foreground")}
+          onClick={toggleCamera}
+        >
+          {following ? <Video className={ico} /> : <Orbit className={ico} />}
+        </Button>
       )}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={cn(btn, loop ? "text-blue-400" : "text-muted-foreground hover:text-foreground")}
-            onClick={() => setLoop((v) => !v)}
-          >
-            {loop ? <Repeat className={ico} strokeWidth={2.4} /> : <RepeatOff className={ico} />}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="top">{loop ? t.transport.loopOn : t.transport.loopOff}</TooltipContent>
-      </Tooltip>
+      <Button aria-label={loop ? t.transport.loopOn : t.transport.loopOff}
+        variant="ghost"
+        size="icon"
+        className={cn(btn, loop ? "text-blue-400" : "text-muted-foreground hover:text-foreground")}
+        onClick={() => setLoop((v) => !v)}
+      >
+        {loop ? <Repeat className={ico} strokeWidth={2.4} /> : <RepeatOff className={ico} />}
+      </Button>
       {onEyes && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(btn, eyes ? "text-blue-400" : "text-muted-foreground hover:text-foreground")}
-              onClick={() => onEyes(!eyes)}
-            >
-              {eyes ? <Eye className={ico} strokeWidth={2.4} /> : <EyeOff className={ico} />}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">{eyes ? t.transport.eyesOn : t.transport.eyesOff}</TooltipContent>
-        </Tooltip>
+        <Button aria-label={eyes ? t.transport.eyesOn : t.transport.eyesOff}
+          variant="ghost"
+          size="icon"
+          className={cn(btn, eyes ? "text-blue-400" : "text-muted-foreground hover:text-foreground")}
+          onClick={() => onEyes(!eyes)}
+        >
+          {eyes ? <Eye className={ico} strokeWidth={2.4} /> : <EyeOff className={ico} />}
+        </Button>
       )}
       {trailing}
     </>
@@ -568,7 +581,9 @@ export const AnimPlayer = memo(function AnimPlayer({
         // The fold animates THROUGH the blur, which measurably costs frames —
         // the decision to keep it anyway (visual consistency with the shipped
         // chrome) is recorded on --color-surface in globals.css.
-        "border border-line-strong bg-surface shadow-float backdrop-blur-xs",
+        bare
+          ? "cover-type border border-transparent"
+          : "border border-line-strong bg-surface shadow-float backdrop-blur-xs",
         // ONE radius in both states, and deliberately not rounded-full.
         //
         // rounded-full is 9999px that the browser CLAMPS to half the box. It
@@ -587,7 +602,7 @@ export const AnimPlayer = memo(function AnimPlayer({
         // background right up to them, so without this it covers the radius and
         // the open panel reads as a rectangle. Clipping to the root is also what
         // lets the fold reveal the canvas from behind a rounded edge instead of
-        // over one. Tooltips and popovers portal out, so nothing that needs to
+        // over one. Popovers portal out, so nothing that needs to
         // escape is caught by it.
         "overflow-hidden",
       )}
@@ -605,17 +620,25 @@ export const AnimPlayer = memo(function AnimPlayer({
           open, and they reappear at the end of the editor's toolbar. */}
       <div
         className={cn(
-          "grid transition-[grid-template-rows] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
+          "grid transition-[grid-template-rows] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
           unfolded ? "grid-rows-[0fr]" : "grid-rows-[1fr]",
         )}
       >
       <div className="overflow-hidden" inert={unfolded}>
+      {/* As a line on the canvas its buttons wear the cover's look. */}
+      <Cover on={bare}>
       <div
         className={cn(
-          "flex items-center gap-2 px-3 py-1 transition-opacity ease-out",
-          unfolded ? "opacity-0 duration-150" : "opacity-100 duration-300",
+          "items-center gap-2 px-3 transition-opacity ease-out",
+          // As a line, three columns with equal outer ones, so the scrub sits
+          // on the screen's centre whatever stands either side of it.
+          bare ? "grid grid-cols-[1fr_auto_1fr]" : "flex",
+          // Room inside the clip for the halo behind each glyph.
+          bare ? "py-3" : "py-1",
+          unfolded ? "opacity-0 duration-233" : "opacity-100 duration-233",
         )}
       >
+        <span className={cn("flex items-center gap-2", bare && "justify-end")}>
         <Button
           variant="ghost"
           size="icon"
@@ -625,8 +648,9 @@ export const AnimPlayer = memo(function AnimPlayer({
         >
           {progress.playing ? <Pause className="size-4" /> : <Play className="size-4 translate-x-px" />}
         </Button>
-        <span ref={timeRef} className="shrink-0 text-xs leading-none text-muted-foreground tabular-nums">
+        <span ref={timeRef} className={cn("shrink-0 leading-none text-muted-foreground tabular-nums", bare ? "font-mono text-2xs" : "text-xs")}>
           {fmt(0)}
+        </span>
         </span>
         {/* Ref-driven bar: transform-only updates from the rAF tick — never a
             re-render. Styled identically to the ui Slider it replaced (bg-muted
@@ -645,7 +669,8 @@ export const AnimPlayer = memo(function AnimPlayer({
             // the docks was (see the transport's placement in page.tsx). Moving
             // this to a flex-basis to "let it shrink" only bought a track
             // squeezed to nothing on a mid-size window.
-            "relative mx-1 flex h-4 min-w-[min(16rem,30vw)] flex-1 touch-none items-center select-none",
+            "relative mx-1 flex h-4 touch-none items-center select-none",
+            bare ? "w-[min(22rem,34vw)]" : "min-w-[min(16rem,30vw)] flex-1",
             hasClip ? "cursor-pointer" : "opacity-50",
           )}
           onPointerDown={(e) => {
@@ -660,26 +685,38 @@ export const AnimPlayer = memo(function AnimPlayer({
           onPointerUp={() => endSeek()}
           onPointerCancel={() => endSeek()}
         >
-          <div className="relative h-1 w-full overflow-hidden rounded-full bg-muted">
+          <div className={cn("relative w-full overflow-hidden rounded-full", bare ? "h-px bg-line-strong" : "h-1 bg-muted")}>
             <div
               ref={fillRef}
-              className="absolute inset-y-0 left-0 w-full origin-left bg-primary"
+              className={cn("absolute inset-y-0 left-0 w-full origin-left", bare ? "bg-foreground" : "bg-primary")}
               style={{ transform: "scaleX(0)" }}
             />
           </div>
           <div
             ref={thumbRef}
-            className="absolute top-1/2 left-0 size-2.5 rounded-full border border-primary bg-white shadow-sm ring-ring/50 hover:ring-2"
+            className={cn(
+              "absolute top-1/2 left-0 rounded-full",
+              !bare && "size-2.5",
+              bare ? "h-3 w-0.5 bg-foreground" : "border border-primary bg-white shadow-sm ring-ring/50 hover:ring-2",
+            )}
             style={{ transform: "translate(-50%, -50%)" }}
           />
         </div>
-        <span className="shrink-0 text-xs leading-none text-muted-foreground tabular-nums">{fmt(progress.duration)}</span>
+        <span className="flex items-center gap-2">
+        <span className={cn("shrink-0 leading-none text-muted-foreground tabular-nums", bare ? "font-mono text-2xs" : "text-xs")}>{fmt(progress.duration)}</span>
         {/* Their own tighter group. The row's gap-2 is the spacing between the
             transport's PARTS — button, time, track, controls — and these are
             one part: two or three icon toggles that belong together and read as
             a cluster rather than as three more members of the row. */}
-        {!unfolded && <span className="flex shrink-0 items-center gap-0.5">{chrome}</span>}
+        {!unfolded &&
+          (bare ? (
+            <span className="ml-3 flex shrink-0 items-center gap-3">{lineChrome}</span>
+          ) : (
+            <span className="flex shrink-0 items-center gap-0.5">{chrome}</span>
+          ))}
+        </span>
       </div>
+      </Cover>
       </div>
       </div>
       {typeof below === "function"

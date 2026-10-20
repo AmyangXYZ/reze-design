@@ -705,7 +705,7 @@ function GalleryContent({
         <LibraryRailFilters
           browse={browse}
           footer={
-            <SiteChip site="bilibili" href="/analysis/bilibili" className="h-8 px-2.5 text-xs">
+            <SiteChip site="bilibili" href="/bilibili" className="h-8 px-2.5 text-xs">
               {t.bilibili.title}
             </SiteChip>
           }

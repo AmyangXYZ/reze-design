@@ -1,104 +1,35 @@
 "use client"
 
-// One row of the scene stack.
+// The panes of the cover's console.
 //
-// Collapsed it is a single line that still reports its state — but it names the
-// DECISION ("Golden hour"), not the values behind it ("205° · 21°"). Reciting
-// numbers at rest is what makes a panel read as a debug GUI, and it is the
-// difference between reading a scene in one column and parsing it.
-//
-// The summary is sans, not mono, for the same reason: a preset name is a name,
-// and monospacing it puts the readout back.
-//
-// Name bright, summary muted — always, not by open/closed state. The column is
-// meant to be read as a list of decisions, and dimming the names at rest makes
-// you hunt for the one you want instead of scanning them.
-//
-// Name and value are the SAME size. They sit on one line and are read as one
-// statement — "Background: Shining Stars" — so shrinking the right half makes it
-// read as a footnote to the row rather than as the row's answer. Colour already
-// separates them, and that is the only separation this needs.
-//
-// Only one row is open at a time — enforced by the caller, since the stack owns
-// which — so presets-then-parameters inside a row costs no ambient noise.
+// The console is a numbered index with the chosen entry's controls beside it,
+// so a pane is shown only while its entry is chosen, and it carries no title:
+// the index already names it, and its tabs already say which part is open. A
+// pane that adds to itself ("Add model") ends its list with that action.
 
 import { Button } from "@/components/ui/button"
-import type { ComponentType, ReactNode } from "react"
+import type { ReactNode } from "react"
 import { cn } from "@/lib/utils"
 
 export function LayerRow({
-  icon: Icon,
-  name,
   domId,
-  /** What this layer is SET TO. Omitted when the row has nothing to report. */
-  summary,
-  swatch,
   open,
-  onToggle,
   children,
 }: {
-  icon: ComponentType<{ className?: string }>
-  name: string
   /** Addressable for go-to: the palette scrolls a row into view by this id. */
   domId?: string
-  summary?: string | null
-  /** A row whose value IS a colour shows it: the ColorField's swatch and hex,
-   *  for reading only — the field inside the row is where it changes. */
-  swatch?: string
   open: boolean
-  onToggle: () => void
   children: ReactNode
 }) {
+  if (!open) return null
   return (
-    <div id={domId} className="border-t border-line first:border-t-0">
-      <Button variant="bare"
-        onClick={onToggle}
-        aria-expanded={open}
-        className={cn(
-          "flex w-full items-center gap-2.5 px-4 py-2 text-left transition-colors",
-          open ? "bg-white/[0.05]" : "hover:bg-white/[0.04]",
-        )}
-      >
-        <Icon className={cn("size-4 shrink-0", open ? "text-blue-400" : "text-muted-foreground")} />
-        <span className="shrink-0 text-xs text-foreground font-medium">{name}</span>
-        {/* Hidden rather than unmounted while open: the row must not reflow when
-            the body appears, and the summary is about to be redundant anyway. */}
-        {swatch ? (
-          <span className={cn("ml-auto flex items-center gap-1.5", open && "opacity-0")}>
-            <span className="size-4 shrink-0 rounded-chip ring-1 ring-line-strong" style={{ background: swatch }} />
-            <span className="font-mono text-xs text-muted-foreground">{swatch.toLowerCase()}</span>
-          </span>
-        ) : (
-          <span
-            className={cn(
-              // No transition: the body swaps instantly when rows switch, and a
-              // summary that FADES back in reads as the value arriving late.
-              "ml-auto max-w-[8.25rem] truncate text-xs text-muted-foreground",
-              open && "opacity-0",
-            )}
-          >
-            {summary}
-          </span>
-        )}
-      </Button>
-      {/* Symmetric padding, and pt has to MATCH pb rather than being the tighter
-          value that felt right in isolation. An open header carries a tint, so
-          its own py-2.5 reads as part of the header block and not as space below
-          it — the eye measures from the band's edge. With pt-1 the item sat 4px
-          under the band and 14px above the next divider, which is what made it
-          look mispositioned rather than merely close. Tighten both together or
-          not at all. */}
-      {/* text-muted-foreground on the WRAPPER: the row name above is bright and
-          every control label inside is muted, so title and items never read as
-          the same tier. Controls that mean to be bright (a selected chip, an
-          editing value) override locally.
-
-          pt one step under pb: the open header's tinted band contributes its
-          own 8px below the title, so equal paddings read as a LARGER gap above
-          the first control than below the last. Slightly smaller pt is what
-          looks symmetric. */}
-      {open && <div className="px-4 pt-2 pb-3 text-muted-foreground">{children}</div>}
-    </div>
+    // A column that shrinks to the console: a tabbed pane scrolls under its
+    // tab line (TabsContent), any other pane scrolls whole.
+    <section id={domId} className="flex min-h-0 flex-col">
+      {/* text-muted-foreground on the WRAPPER: every control label inside is
+          muted, and controls that mean to be bright override locally. */}
+      <div className="no-scrollbar cover-enter flex min-h-0 flex-col overflow-y-auto px-4 pb-3 text-muted-foreground">{children}</div>
+    </section>
   )
 }
 
@@ -138,57 +69,29 @@ export function PresetChips({
   )
 }
 
-/** A group label above a run of rows — Cast, Scene.
- *
- *  Body size, with mono + uppercase + colour carrying the difference instead of
- *  scale. Tracking eases from 0.18em to 0.12em on the way up: letter-spacing is
- *  there to keep small caps from clotting, and the amount that helps at 10px is
- *  visibly loose at 14 — spacing has to come DOWN as size goes up. */
+/** A pane of the console holding a run of rows — Cast, Clips, Music — with
+ *  the action that adds to it as the list's last line. */
 export function StackGroup({
-  label,
   domId,
-  /** Acts on the whole group — adding to it. Revealed by hovering ANYWHERE in
-   *  the group, not only the label: the rows are what you are looking at when
-   *  you decide you want another one. */
   action,
-  /** Space ABOVE the label. Groups that continue a thought sit closer (`tight`)
-   *  than groups that start a new one (`loose`) — the gap is what says whether
-   *  two blocks are one subject or two. */
-  gap = "normal",
+  open = true,
   children,
 }: {
-  label: string
   /** Addressable for go-to, like LayerRow's. */
   domId?: string
   action?: ReactNode
-  gap?: "tight" | "normal" | "loose"
+  open?: boolean
   children: ReactNode
 }) {
+  if (!open) return null
   return (
-    <div id={domId} className="group/stack">
-      {/* Tight under the label, looser above it. The whitespace has to say which
-          rows the label OWNS — a label floating equidistant between the block
-          above and the block below belongs to neither. */}
-      <div
-        className={cn(
-          "flex items-center gap-2 px-4 pb-1",
-          gap === "tight" ? "pt-0" : gap === "loose" ? "pt-6" : "pt-4",
-        )}
-      >
-        <span className="min-w-0 flex-1 truncate font-mono text-xs font-medium tracking-[0.12em] text-muted-foreground uppercase">
-          {label}
-        </span>
-        {/* The action has to fit the label's own line box, or a group that has
-            one is taller than a group that does not.
-
-            Always visible, never hover-revealed: this is how you add to the
-            group, and an intake you cannot see is one you have to already know
-            about. Hiding it saves nothing — the space is the label's line
-            either way — and costs the one person who has not used the app
-            before the ability to find it at all. */}
-        {action && <span className="flex shrink-0 items-center">{action}</span>}
+    // -mt-2: its rows are h-8, so this sets the first one's text on the
+    // index's first row, where a tabbed pane's tabs sit.
+    <section id={domId} className="group/stack -mt-2 flex min-h-0 flex-col pb-3">
+      <div className="no-scrollbar cover-enter flex min-h-0 flex-col overflow-y-auto">
+        {children}
+        {action && <div className="mx-4 mt-1 flex">{action}</div>}
       </div>
-      {children}
-    </div>
+    </section>
   )
 }

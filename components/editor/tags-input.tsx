@@ -51,7 +51,7 @@ export function TagsInput({
   return (
     <div
       className={cn(
-        "mt-0.5 flex min-h-8 flex-wrap content-start items-start gap-1.5 rounded-chip border border-line-strong bg-white/5 px-2 py-1.5 focus-within:border-blue-400/50",
+        "mt-0.5 flex min-h-8 flex-wrap content-start items-start gap-1.5 rounded-chip border border-line-strong bg-white/5 px-2 py-1.5 focus-within:border-foreground",
         className,
       )}
     >

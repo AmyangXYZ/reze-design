@@ -4,6 +4,9 @@ import * as React from "react"
 import { Slider as SliderPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+import { useCover } from "@/components/ui/cover"
+
+type SliderVariant = "default" | "hairline"
 
 function Slider({
   className,
@@ -14,8 +17,14 @@ function Slider({
   accent,
   origin,
   track,
+  variant: variantProp,
   ...props
 }: React.ComponentProps<typeof SliderPrimitive.Root> & {
+  /** `hairline`: a 1px ink rule and a slim ink tick, for rows set straight on
+   *  the canvas rather than inside a panel. The default on the cover. Its
+   *  sizes are marked important so a row's own track or thumb size cannot
+   *  thicken it. */
+  variant?: SliderVariant
   /** Paint the fill and the thumb this colour instead of the primary. For axis
    *  rows, where the hue IS the axis and a row of identical blue sliders would
    *  say nothing about which one is X. */
@@ -29,6 +38,8 @@ function Slider({
    *  would give at every point — and a fill would hide half of it. */
   track?: string
 }) {
+  const cover = useCover()
+  const variant = variantProp ?? (cover ? "hairline" : "default")
   const _values = React.useMemo(
     () =>
       Array.isArray(value)
@@ -55,7 +66,10 @@ function Slider({
       <SliderPrimitive.Track
         data-slot="slider-track"
         className={cn(
-          "relative grow overflow-hidden rounded-full bg-muted data-[orientation=horizontal]:h-1.5 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1.5"
+          "relative grow overflow-hidden rounded-full data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full",
+          variant === "hairline"
+            ? "bg-line-strong data-[orientation=horizontal]:h-px! data-[orientation=vertical]:w-px!"
+            : "bg-muted data-[orientation=horizontal]:h-1.5 data-[orientation=vertical]:w-1.5"
         )}
         style={track ? { background: track } : undefined}
       >
@@ -63,7 +77,8 @@ function Slider({
           <SliderPrimitive.Range
             data-slot="slider-range"
             className={cn(
-              "absolute bg-primary data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full"
+              "absolute data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full",
+              variant === "hairline" ? "bg-foreground" : "bg-primary"
             )}
             style={accent ? { backgroundColor: accent } : undefined}
           />
@@ -76,7 +91,7 @@ function Slider({
             data-slot="slider-range"
             className="absolute h-full"
             style={{
-              backgroundColor: accent ?? "var(--color-primary)",
+              backgroundColor: accent ?? (variant === "hairline" ? "var(--color-foreground)" : "var(--color-primary)"),
               left: `${((Math.min(_values[0] ?? origin, origin) - min) / (max - min)) * 100}%`,
               width: `${(Math.abs((_values[0] ?? origin) - origin) / (max - min)) * 100}%`,
             }}
@@ -93,7 +108,15 @@ function Slider({
           // slider whose label is a bare <span>, which is every one of ours,
           // has only this.
           aria-label={props["aria-label"]}
-          className="block size-4 shrink-0 rounded-full border border-primary bg-white shadow-sm ring-ring/50 transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50"
+          className={cn(
+            "block shrink-0 rounded-full focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50",
+            variant === "hairline"
+              // A 2×12 tick that holds its size and takes no ring while held
+              // (rows add one for the default thumb), with a 16px hit area
+              // around it so the slim mark is still easy to catch.
+              ? "relative h-3! w-0.5! bg-foreground shadow-none! ring-0! hover:ring-0! before:absolute before:-inset-x-[7px] before:-inset-y-[3px] before:content-[''] focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-foreground"
+              : "size-4 border border-primary bg-white shadow-sm ring-ring/50 transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4"
+          )}
           style={accent ? { backgroundColor: accent, borderColor: accent } : undefined}
         />
       ))}

@@ -484,7 +484,7 @@ export function LibraryToolbar<T extends BrowseItem>({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t.rail.search}
-          className="h-6 border-line-strong bg-white/5 pl-7 text-2xs focus-visible:border-blue-400/50 focus-visible:ring-0 md:text-2xs"
+          className="h-6 border-line-strong bg-white/5 pl-7 text-2xs focus-visible:border-foreground focus-visible:ring-0 md:text-2xs"
         />
       </div>
 
@@ -942,7 +942,7 @@ export function LibraryResults<T extends BrowseItem>({
               <div
                 className={cn(
                   "relative aspect-[16/10] overflow-hidden rounded-interior border transition-colors",
-                  selectedId === id(item) ? "border-blue-400 ring-1 ring-blue-400" : "border-line-strong hover:border-white/25",
+                  selectedId === id(item) ? "border-foreground ring-1 ring-foreground" : "border-line-strong hover:border-white/25",
                 )}
               >
                 {m.preview}

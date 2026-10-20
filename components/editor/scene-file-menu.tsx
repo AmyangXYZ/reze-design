@@ -9,31 +9,11 @@
 // chrome on the document's identity row.
 
 import { Button } from "@/components/ui/button"
-import { useRef, useState, useSyncExternalStore, type ReactNode } from "react"
-import { toast } from "sonner"
-import {
-  ArrowDownToLine,
-  ArrowUpFromLine,
-  Check,
-  ChevronRight,
-  FilePlus2,
-  GalleryThumbnails,
-  ImageOff,
-  ImagePlus,
-  Palette,
-  RotateCcw,
-} from "lucide-react"
+import { useRef, useState, type ReactNode } from "react"
+import { ArrowDownToLine, ArrowUpFromLine, FilePlus2, GalleryThumbnails, RotateCcw } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { useCover } from "@/components/ui/cover"
 import { useT } from "@/lib/i18n"
-import {
-  CHROME_THEMES,
-  getChrome,
-  getServerChrome,
-  setChromePhoto,
-  setChromeTheme,
-  shrinkPhoto,
-  subscribeChrome,
-} from "@/lib/chrome-theme"
 import { cn } from "@/lib/utils"
 
 export function Row({
@@ -81,25 +61,26 @@ export function LogoMenu({
   trigger,
   open,
   onOpenChange,
+  align = "start",
   children,
 }: {
   trigger: ReactNode
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Where the panel hangs from the trigger: a centred wordmark opens centred. */
+  align?: "start" | "center"
   children: ReactNode
 }) {
   const t = useT()
+  const cover = useCover()
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      {/* No tooltip. Radix hands focus back to the trigger when the menu
-          closes, which re-arms the tip and flashes it over the panel that just
-          opened — and a tip that only repeats the aria-label buys nothing on a
-          control this prominent. The label stays for screen readers. */}
       <PopoverTrigger asChild>
         <Button variant="bare"
           type="button"
           aria-label={t.sceneFile.label}
-          className="cursor-pointer rounded-chip outline-none transition-colors hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-ring/50"
+          // On the cover the wordmark's own ink is the hover.
+          className={cn("cursor-pointer rounded-chip outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50", !cover && "hover:bg-white/5")}
         >
           {trigger}
         </Button>
@@ -107,7 +88,7 @@ export function LogoMenu({
       {/* Radix returns focus to the trigger on close, and a programmatic focus counts
           as keyboard focus — so the logo kept its focus ring after every use. Same
           fix the material sidebar's context menu uses. */}
-      <PopoverContent align="start" className={MENU_SKIN} onCloseAutoFocus={(e) => e.preventDefault()}>
+      <PopoverContent align={align} className={MENU_SKIN} onCloseAutoFocus={(e) => e.preventDefault()}>
         {children}
       </PopoverContent>
     </Popover>
@@ -115,14 +96,18 @@ export function LogoMenu({
 }
 
 /** Wraps `trigger` (the logo, in either of its homes) as the opener of the scene menu. */
-export function SceneFileMenu({ trigger, onNew, onGallery, onExport, onImport, onReset }: SceneMenuHandlers & { trigger: ReactNode }) {
+export function SceneFileMenu({
+  trigger,
+  align,
+  footer,
+  onNew,
+  onGallery,
+  onExport,
+  onImport,
+  onReset,
+}: SceneMenuHandlers & { trigger: ReactNode; align?: "start" | "center"; footer?: ReactNode }) {
   const t = useT()
   const [open, setOpen] = useState(false)
-  // The tooltip is CONTROLLED so the menu can veto it. Uncontrolled, the hover
-  // that precedes a click opened the tip just as the click opened the menu, and
-  // it flashed and vanished under the popover — a label appearing at the exact
-  // moment you no longer need it. It says what the logo does; once the menu is
-  // open, the menu says that better.
   const input = useRef<HTMLInputElement>(null)
 
   const run = (fn: () => void) => () => {
@@ -148,12 +133,11 @@ export function SceneFileMenu({ trigger, onNew, onGallery, onExport, onImport, o
           if (file) onImport(file)
         }}
       />
-      <LogoMenu open={open} onOpenChange={setOpen} trigger={trigger}>
+      <LogoMenu open={open} onOpenChange={setOpen} trigger={trigger} align={align}>
         <Row icon={FilePlus2} label={t.sceneFile.newScene} onClick={run(onNew)} />
         <Row icon={ArrowUpFromLine} label={t.sceneFile.export} onClick={run(onExport)} />
         <Row icon={ArrowDownToLine} label={t.sceneFile.import} onClick={pickFile} />
         <Row icon={RotateCcw} label={t.sceneFile.reset} onClick={run(onReset)} />
-        <ChromeSection />
         {/* Its own section, under a rule. Everything above acts on the scene
             you are in — makes one, writes it out, reads one in, puts it back.
             This one LEAVES it for someone else's, which is a different kind of
@@ -164,92 +148,8 @@ export function SceneFileMenu({ trigger, onNew, onGallery, onExport, onImport, o
             <Row icon={GalleryThumbnails} label={t.gallery.door} onClick={run(onGallery)} />
           </div>
         )}
+        {footer && <div className="mt-1 border-t border-line pt-1">{footer}</div>}
       </LogoMenu>
     </>
-  )
-}
-
-/**
- * The chrome's palette and the picture behind it, as a submenu off one row. In
- * the scene menu because the logo is the app's one menu; under its own rule
- * because it changes this browser, not the scene — a shared scene opens in the
- * viewer's own palette.
- */
-function ChromeSection() {
-  const t = useT()
-  const { theme, photo } = useSyncExternalStore(subscribeChrome, getChrome, getServerChrome)
-  const [open, setOpen] = useState(false)
-  const input = useRef<HTMLInputElement>(null)
-
-  const pick = async (file: File) => {
-    try {
-      if (!setChromePhoto(await shrinkPhoto(file))) toast(t.sceneFile.pictureNotKept)
-    } catch {
-      toast.error(t.sceneFile.pictureBad)
-    }
-  }
-
-  return (
-    <div className="mt-1 border-t border-line pt-1">
-      <input
-        ref={input}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0]
-          e.target.value = ""
-          if (file) void pick(file)
-        }}
-      />
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="bare"
-            type="button"
-            className={cn("flex w-full cursor-pointer items-center gap-2 rounded-chip px-2 py-1.5 text-left text-xs transition-colors hover:bg-white/5 hover:text-foreground text-muted-foreground", open && "bg-white/5 text-foreground")}
-          >
-            <Palette className="size-3 shrink-0" />
-            <span className="flex-1">{t.sceneFile.palette}</span>
-            <ChevronRight className="size-3 shrink-0" />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent
-          side="right"
-          align="start"
-          sideOffset={6}
-          className={MENU_SKIN}
-          // Opened by pointer, so no item should arrive already ringed.
-          onOpenAutoFocus={(e) => e.preventDefault()}
-        >
-          {CHROME_THEMES.map((id) => (
-            <Button
-              key={id}
-              variant="bare"
-              type="button"
-              aria-pressed={theme === id}
-              onClick={() => setChromeTheme(id)}
-              className={cn("flex w-full cursor-pointer items-center gap-2 rounded-chip px-2 py-1.5 text-left text-xs transition-colors hover:bg-white/5 hover:text-foreground", theme === id ? "text-foreground" : "text-muted-foreground")}
-            >
-              <Check className={cn("size-3 shrink-0 text-blue-400", theme !== id && "invisible")} />
-              {t.sceneFile.palettes[id]}
-            </Button>
-          ))}
-          <div className="mt-1 border-t border-line pt-1">
-            <Row icon={ImagePlus} label={t.sceneFile.picture} onClick={() => input.current?.click()} />
-            <Button
-              variant="bare"
-              type="button"
-              disabled={!photo}
-              onClick={() => setChromePhoto(null)}
-              className="flex w-full cursor-pointer items-center gap-2 rounded-chip px-2 py-1.5 text-left text-xs transition-colors hover:bg-white/5 hover:text-foreground text-muted-foreground disabled:pointer-events-none disabled:opacity-50"
-            >
-              <ImageOff className="size-3 shrink-0" />
-              {t.sceneFile.removePicture}
-            </Button>
-          </div>
-        </PopoverContent>
-      </Popover>
-    </div>
   )
 }
