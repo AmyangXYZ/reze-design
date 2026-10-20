@@ -365,7 +365,18 @@ export function AuthorAvatar({
  * draft's name stays text. The link keeps its clicks and keys to itself: it sits
  * in cards that select on click and on Enter.
  */
-export function AuthorLink({ name, draft = false, className }: { name: string; draft?: boolean; className?: string }) {
+export function AuthorLink({
+  name,
+  draft = false,
+  at = false,
+  className,
+}: {
+  name: string
+  draft?: boolean
+  /** Written as a handle, @name — the gallery's way, as its tags are #tag. */
+  at?: boolean
+  className?: string
+}) {
   if (draft) return <span className={className}>{name}</span>
   const keep = (e: React.SyntheticEvent) => e.stopPropagation()
   // The check sits beside the link, not in it, so a long name truncates and
@@ -382,7 +393,7 @@ export function AuthorLink({ name, draft = false, className }: { name: string; d
         onKeyDown={keep}
         className={cn("underline-offset-2 transition-colors hover:text-foreground hover:underline", className)}
       >
-        {name}
+        {at ? `@${name}` : name}
       </Link>
       {authorVerified(name) && <VerifiedBadge />}
     </>

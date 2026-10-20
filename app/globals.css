@@ -496,11 +496,11 @@
   background: transparent !important;
   border-color: transparent !important;
 }
-body:has([data-paper-at="page"][data-paper="light"]) [data-slot="dialog-overlay"] {
+body:has([data-paper-at="page"][data-paper="light"]) [data-paper-scrim] {
   background: oklch(1 0 0 / 0.55);
   backdrop-filter: blur(4px);
 }
-body:has([data-paper-at="page"][data-paper="dark"]) [data-slot="dialog-overlay"] {
+body:has([data-paper-at="page"][data-paper="dark"]) [data-paper-scrim] {
   background: oklch(0 0 0 / 0.55);
   backdrop-filter: blur(4px);
 }
@@ -619,7 +619,7 @@ body:has([data-paper-at="page"][data-paper="dark"]) [data-slot="dialog-overlay"]
   background: oklch(from var(--foreground) l c h / 0.85) !important;
 }
 /* On paper what the pointer is on is in the full ink. */
-[data-paper] :is(button, [role="menuitem"], [role="option"]):hover:not(:disabled) {
+[data-paper] :is(button, [role="menuitem"], [role="option"]):hover:not(:disabled, [class*="text-red-400"]) {
   color: var(--foreground);
 }
 /* Focus on paper is a breath of ink, as hover is — not a ring. */
@@ -682,6 +682,21 @@ body:has([data-paper-at="page"][data-paper="dark"]) [data-slot="dialog-overlay"]
 [data-toast-paper] [data-sonner-toast] {
   backdrop-filter: blur(4px);
   box-shadow: none !important;
+}
+
+/* The gallery's billboard: the scene in focus fills the top of the page behind
+   the type, under fades to black at its left and foot so white type holds, and
+   arrives by fading up from a touch larger whenever the focus moves
+   (components/editor/scene-gallery). */
+@keyframes stage-arrive {
+  from {
+    opacity: 0;
+    scale: 1.03;
+  }
+}
+.stage-backdrop {
+  filter: brightness(0.75);
+  animation: stage-arrive var(--default-transition-duration) cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 /* Type on the canvas: crisp, in the cover's ink. */

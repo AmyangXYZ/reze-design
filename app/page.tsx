@@ -89,7 +89,8 @@ import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { AccountButton, HandleDialog, type LibraryDoor } from "@/components/editor/account-panel"
-import { SceneGallery, prefetchGallery } from "@/components/editor/scene-gallery"
+import { prefetchGallery } from "@/components/editor/scene-gallery"
+import { useRouter } from "next/navigation"
 import { SCROLL_FADE, useScrollFade } from "@/components/editor/scroll-fade"
 import { prefetchLibraryStats } from "@/hooks/use-library-stats"
 import { AnimPlayer, type Scrub } from "@/components/scene/anim-player"
@@ -3281,7 +3282,6 @@ export default function Lab() {
     graphLibrary: graphLib,
     gradesOpen: gradeLibOpen,
     effectsOpen: effectLibOpen,
-    galleryOpen,
   } = useBrowseSurface()
 
   // Grade: main's full selection model. Drafts and community feed both the
@@ -4345,7 +4345,7 @@ export default function Lab() {
   useDockSlot("grade", compact && gradeEditor !== null, requestCloseGradeEditor)
   // The libraries and the gallery fill the screen on a phone, so they take
   // their turn too: whatever opened last is the one on screen.
-  const browseOpen = !!graphLib || gradeLibOpen || effectLibOpen || galleryOpen
+  const browseOpen = !!graphLib || gradeLibOpen || effectLibOpen
   useDockSlot("browse", compact && browseOpen, closeBrowse)
   useEffect(() => {
     if (
@@ -4631,9 +4631,11 @@ export default function Lab() {
   const [gallerySeen, setGallerySeen] = useState(
     () => typeof window !== "undefined" && !!window.localStorage.getItem(GALLERY_SEEN_KEY),
   )
-  /** Every entrance to the gallery goes through here — the logo menu, the
+  /** Every entrance to the gallery goes through here — the top row, the
    *  palette, the account panel's scene count — so "they have been" cannot be
-   *  true through one door and false through another. */
+   *  true through one door and false through another. The gallery is its own
+   *  page; a shelf of yours rides along in the address. */
+  const router = useRouter()
   const openGallery = useCallback(
     (facet: LibraryFacet = "all") => {
       try {
@@ -4642,9 +4644,9 @@ export default function Lab() {
         // private mode — the suggestion simply keeps offering, which is harmless
       }
       setGallerySeen(true)
-      openBrowse({ kind: "gallery" }, facet)
+      router.push(facet === "yours" || facet === "liked" ? `/gallery?facet=${facet}` : "/gallery")
     },
-    [openBrowse],
+    [router],
   )
 
   /** The account panel's stat rows are doors: your scenes open the gallery, your
@@ -8588,17 +8590,6 @@ export default function Lab() {
       )}
       {mounted && <HandleDialog />}
 
-      {/* ── The gallery ──
-          In the same slot as the libraries, deliberately: it is a full-window
-          browse surface too, and it must never sit behind one. It is NOT a tab
-          among them, though — a library lends a look to the scene you are
-          making, the gallery leaves it for someone else's. */}
-      <SceneGallery
-        open={galleryOpen}
-        initialFacet={libraryFacet}
-        onOpenChange={(o) => !o && closeBrowseIf("gallery")}
-      />
-
       <CommandPalette
         key={paletteSession}
         anchor={paletteAnchor}
@@ -8639,7 +8630,7 @@ export default function Lab() {
           >
             {!compact && (
               <>
-                <div data-ink-zone className="pointer-events-auto mt-12 pr-7">
+                <div data-ink-zone className="pointer-events-auto mt-14 pr-7">
                   <SceneName name={sceneName} onRename={setSceneName} display className="-ml-1" />
                   {/* The byline: who made it (the account, which is also its menu) and
                       the day — a cover's credit and issue date. */}
@@ -8653,7 +8644,7 @@ export default function Lab() {
             )}
 
             {(expanded || !compact) && (
-              <div data-ink-zone={!compact || undefined} className="mt-8 flex min-h-0 flex-1 items-start compact:mt-0 compact:flex-col compact:items-stretch compact:gap-2">
+              <div data-ink-zone={!compact || undefined} className="mt-10 flex min-h-0 flex-1 items-start compact:mt-0 compact:flex-col compact:items-stretch compact:gap-2">
                 <nav
                   aria-label={t.lab.index}
                   className="pointer-events-auto cover-enter flex shrink-0 flex-col gap-0.5 compact:no-scrollbar compact:w-auto compact:flex-row compact:gap-4 compact:overflow-x-auto compact:px-4"
@@ -8710,7 +8701,7 @@ export default function Lab() {
                             tab's is; any other's on hover, in the ink. */}
                         <span
                           className={cn(
-                            "relative flex items-center gap-2.5 py-1 after:absolute after:-inset-x-1 after:bottom-0",
+                            "relative flex items-center gap-2.5 py-1 after:absolute after:inset-x-2 after:bottom-0",
                             on
                               ? "after:h-[1.5px] after:bg-blue-400"
                               : "after:h-px after:bg-current after:opacity-0 group-hover/entry:after:opacity-100",

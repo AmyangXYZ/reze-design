@@ -252,10 +252,10 @@ function Portfolio({
             href={`/${handle}`}
             target="_blank"
             rel="noopener"
-            className="flex w-full items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-white/5"
+            className="mx-1 flex h-7 w-[calc(100%-0.5rem)] cursor-pointer items-center gap-2.5 rounded-interior px-2.5 text-left transition-colors hover:bg-foreground/[0.07]"
           >
-            <House className="size-4 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{t.account.profile}</span>
+            <House className="size-3.5 shrink-0" />
+            <span className="min-w-0 flex-1 truncate text-xs">{t.account.profile}</span>
             <ArrowUpRight className="size-3.5 shrink-0 text-muted-foreground" />
           </Link>
         </PopoverClose>
@@ -265,11 +265,11 @@ function Portfolio({
           <Button variant="bare"
             type="button"
             onClick={c.onClick}
-            className="flex w-full cursor-pointer items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-white/5"
+            className="mx-1 flex h-7 w-[calc(100%-0.5rem)] cursor-pointer items-center gap-2.5 rounded-interior px-2.5 text-left transition-colors hover:bg-foreground/[0.07]"
           >
-            <c.icon className="size-4 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{c.label}</span>
-            <span className="shrink-0 font-mono text-xs text-foreground">{n(stats?.[c.key])}</span>
+            <c.icon className="size-3.5 shrink-0" />
+            <span className="min-w-0 flex-1 truncate text-xs">{c.label}</span>
+            <span className="shrink-0 font-mono text-2xs tabular-nums">{n(stats?.[c.key])}</span>
           </Button>
         </PopoverClose>
       ))}
@@ -280,20 +280,20 @@ function Portfolio({
         <Button variant="bare"
           type="button"
           onClick={() => onOpenLibrary?.("scene", "liked")}
-          className="flex w-full cursor-pointer items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-white/5"
+          className="mx-1 flex h-7 w-[calc(100%-0.5rem)] cursor-pointer items-center gap-2.5 rounded-interior px-2.5 text-left transition-colors hover:bg-foreground/[0.07]"
         >
-          <Heart className="size-4 shrink-0 text-muted-foreground" />
-          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{t.account.youLiked}</span>
+          <Heart className="size-3.5 shrink-0" />
+          <span className="min-w-0 flex-1 truncate text-xs">{t.account.youLiked}</span>
         </Button>
       </PopoverClose>
       {/* LIKES EARNED IS A FACT, NOT A DOOR. It totals across all four kinds, so
           there is no one shelf it could open — and a row that looks like the
           four above it but does nothing is worse than a row that plainly reads
           as a number. Its own block, under a rule, is what says so. */}
-      <div className="flex items-center gap-2.5 border-t border-line px-4 py-2">
-        <Heart className="size-4 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{t.account.likesEarned}</span>
-        <span className="shrink-0 font-mono text-xs text-foreground">{n(stats?.likes)}</span>
+      <div className="mt-1 flex h-8 items-center gap-2.5 border-t border-line px-3.5 pt-1">
+        <Heart className="size-3.5 shrink-0" />
+        <span className="min-w-0 flex-1 truncate text-xs">{t.account.likesEarned}</span>
+        <span className="shrink-0 font-mono text-2xs tabular-nums">{n(stats?.likes)}</span>
       </div>
     </div>
   )
@@ -536,7 +536,7 @@ export function AccountButton({
           <UserAvatar name={handle} image={session.user.image} className="size-9 text-xs" />
           <div className="min-w-0 flex-1 text-left">
             <div className="flex min-w-0 items-center gap-1.5">
-              <span className="truncate font-mono text-xs font-medium">{handle}</span>
+              <span className="truncate font-mono text-xs font-medium">@{handle}</span>
               {/* The same check the holder's published work carries. */}
               {verified && <VerifiedPill />}
             </div>
@@ -549,12 +549,12 @@ export function AccountButton({
           </div>
         )}
         <Portfolio handle={session.user.username ?? null} onOpenLibrary={onOpenLibrary} />
-        <div className="p-2">
+        {/* Leaving is a word in the destructive red, on a line of its own. */}
+        <div className="border-t border-line py-1">
           <Button
-            size="sm"
-            variant="ghost"
+            variant="bare"
             onClick={() => void signOut()}
-            className="h-8 w-full gap-1.5 border border-red-400/25 bg-red-400/10 text-xs text-red-400 hover:bg-red-400/20 hover:text-red-400"
+            className="mx-1 flex h-7 w-[calc(100%-0.5rem)] items-center gap-2.5 rounded-interior px-2.5 text-left text-xs text-red-400 hover:bg-foreground/[0.07] hover:text-red-400"
           >
             <LogOut className="size-3.5" />
             {t.account.signOut}

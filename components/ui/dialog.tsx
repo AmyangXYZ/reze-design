@@ -176,7 +176,17 @@ function DialogContent({
   return (
     <Cover on={false}>
       <DialogPortal data-slot="dialog-portal">
-        {overlay && (!paper || paper === "page") && <DialogOverlay />}
+        {overlay && !paper && <DialogOverlay />}
+        {/* A page of paper brings its own sheet, under the dialog whatever its
+            stacking, and blocking or not (a non-modal dialog has no overlay). */}
+        {paper === "page" && (
+          <div
+            aria-hidden
+            data-paper-scrim
+            className="fixed inset-0"
+            style={{ zIndex: typeof props.style?.zIndex === "number" ? props.style.zIndex - 1 : 49 }}
+          />
+        )}
         <DialogPrimitive.Content
           data-slot="dialog-content"
           ref={attach}

@@ -26,7 +26,6 @@ export type BrowseSurface =
   | { kind: "graph"; groupId: string | null }
   | { kind: "grade" }
   | { kind: "effect" }
-  | { kind: "gallery" }
 
 export type BrowseKind = BrowseSurface["kind"]
 
@@ -63,6 +62,5 @@ export function useBrowseSurface() {
     graphLibrary: browse?.kind === "graph" ? browse : null,
     gradesOpen: browse?.kind === "grade",
     effectsOpen: browse?.kind === "effect",
-    galleryOpen: browse?.kind === "gallery",
   }
 }

@@ -525,7 +525,7 @@ export const AnimPlayer = memo(function AnimPlayer({
       aria-pressed={on}
       onClick={onClick}
       className={cn(
-        "relative py-1 text-xs after:absolute after:inset-x-0 after:bottom-0.5 after:h-[1.5px] after:rounded-full",
+        "relative py-1 text-xs after:absolute after:inset-x-2 after:bottom-0.5 after:h-[1.5px] after:rounded-full",
         on ? "text-foreground after:bg-blue-400" : "text-muted-foreground after:bg-transparent hover:text-foreground",
       )}
     >

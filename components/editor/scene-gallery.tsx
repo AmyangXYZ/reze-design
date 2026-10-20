@@ -8,29 +8,24 @@
 // address bar should say which one you are looking at.
 
 import { Stamp } from "@/components/stamp"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { GalleryThumbnails, Loader2, X } from "lucide-react"
-import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { ChevronLeft, ChevronRight, Loader2, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { LIBRARY_DETAIL_BODY, LIBRARY_SHELL, LibraryLike, LibraryTags } from "@/components/editor/library-rail"
+import { LibraryLike } from "@/components/editor/library-rail"
 import { fetchJson, retryLater, retrySettled } from "@/lib/net"
 import { usePollWhileOpen } from "@/hooks/use-poll-while-open"
 import { readSaved, writeSaved } from "@/lib/saved"
 import { noteVerified } from "@/lib/community-store"
 import {
-  LibraryBack,
-  LibraryRailFilters,
-  LibraryResults,
-  LibraryToolbar,
   useLibraryBrowse,
-  useLibraryDetail,
   type BrowseFacet,
-  type CardMeta,
   AuthorAvatar,
   AuthorLink,
 } from "@/components/editor/library-shell"
+import { Cover } from "@/components/ui/cover"
+import { Input } from "@/components/ui/input"
 import { useLibraryStats } from "@/hooks/use-library-stats"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -38,7 +33,6 @@ import { useReport } from "@/hooks/use-report"
 import { setForkTarget } from "@/lib/fork"
 import { useSession } from "@/lib/auth-client"
 
-import { useZOrder } from "@/hooks/use-z-order"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { SiteChip, VideoLink } from "@/components/video-link"
@@ -330,29 +324,13 @@ export function noteSceneRemoved(id: string): void {
  * exist in both vocabularies; a slot asking for `all` or `builtin` has said
  * nothing about ordering, so the gallery opens the way it always does.
  */
-export function SceneGallery({
-  open,
-  initialFacet,
-  onOpenChange,
-}: {
-  open: boolean
-  initialFacet?: BrowseFacet
-  onOpenChange: (open: boolean) => void
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
-      {open && <GalleryContent initialFacet={initialFacet} onOpenChange={onOpenChange} />}
-    </Dialog>
-  )
+/** The gallery, as its own page (app/gallery). `initialFacet` is the shelf an
+ *  entrance asked for — the account panel's "your scenes" arrives on Yours. */
+export function GalleryPage({ initialFacet }: { initialFacet?: BrowseFacet }) {
+  return <GalleryContent initialFacet={initialFacet} />
 }
 
-function GalleryContent({
-  initialFacet,
-  onOpenChange,
-}: {
-  initialFacet?: BrowseFacet
-  onOpenChange: (open: boolean) => void
-}) {
+function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
   const t = useT()
   const router = useRouter()
   const { data: session } = useSession()
@@ -371,7 +349,6 @@ function GalleryContent({
    *  published this session is in the list before the snapshot refetches, and a
    *  heart reading 0 beside a scene with likes is worse than a beat of lag. */
   const likesOf = (s: GalleryScene) => (known(s.id) ? statFor(s.id).likeCount : s.likeCount)
-  const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, () => onOpenChange(false))
   const opensOn: View = initialFacet === "yours" || initialFacet === "liked" ? initialFacet : "all"
   const [view, setView] = useState<View>(opensOn)
   // Seeded from the view this opened ON, not from the default one: an entrance
@@ -523,7 +500,9 @@ function GalleryContent({
     const seen = new Set(scenes.map((s) => s.id))
     const merged =
       view === "all" ? [...scenes, ...minePrivate.filter((s) => !seen.has(s.id))] : scenes
-    return merged.map((s) => ({ ...s, kind: "scene" as const, owner: "user" as const, mine: mine(s.author) }))
+    // Once each: two pages can both hold a scene that moved between them.
+    const once = [...new Map(merged.map((s) => [s.id, s])).values()]
+    return once.map((s) => ({ ...s, kind: "scene" as const, owner: "user" as const, mine: mine(s.author) }))
   }, [scenes, minePrivate, view, mine],
   )
   const byId = useMemo(() => new Map(items.map((s) => [s.id, s])), [items])
@@ -565,7 +544,6 @@ function GalleryContent({
     makerCounts: makers ?? undefined,
     onFacetChange,
   })
-  const detail = useLibraryDetail()
 
   const loadMore = () => {
     if (!cursor) return
@@ -629,212 +607,388 @@ function GalleryContent({
     })
   }
 
-  const meta = (s: GalleryRow): CardMeta => ({
-    preview: s.poster ? (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img src={s.poster} alt="" loading="lazy" className="h-full w-full object-cover" />
-    ) : (
-      <div className="flex h-full items-center justify-center bg-white/5 text-2xs text-muted-foreground">
-        {t.gallery.noPoster}
-      </div>
-    ),
-  })
+  const scrollRef = useRef<HTMLDivElement>(null)
+  /** The nav goes solid once the page has scrolled off the billboard. */
+  const [scrolled, setScrolled] = useState(false)
+  // On the billboard: the scene chosen, or the one trending first.
+  const focus = selected ?? rows[0] ?? null
+  /** Put a scene on the billboard and bring the billboard back into view. */
+  const feature = useCallback(
+    (s: GalleryRow) => {
+      setSelectedId(s.id)
+      router.prefetch(`/${s.author}/${s.id}`)
+      scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" })
+    },
+    [router],
+  )
+  const onPageScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget
+    setScrolled(el.scrollTop > 24)
+    if (!loading && cursor && el.scrollTop + el.clientHeight > el.scrollHeight - 600) loadMore()
+  }
 
-  /** Only your own scenes get a menu: open, edit, delete. */
-  const wrap = (s: GalleryRow, node: React.ReactNode) =>
-    s.mine ? (
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <div>{node}</div>
-        </ContextMenuTrigger>
+  /** The same handoff as the viewer's "open in editor": a fork of this scene. */
+  const forkScene = (s: GalleryScene) => {
+    setForkTarget(s.id)
+    router.push("/")
+    router.refresh()
+    if (typeof window !== "undefined" && window.location.pathname === "/") window.location.reload()
+  }
+
+  // THE ROWS, from what is loaded: the ranked list, the newest, the most liked,
+  // then a row for each of the most-used tags and the most prolific makers.
+  // Narrowed (a shelf of your own, a tag, a search) the page is one wrapping
+  // grid of exactly that instead.
+  const narrowed = browse.facet !== "all" || browse.tag !== null || browse.maker !== null || browse.query.trim() !== ""
+  // Each scene stands on ONE shelf, the first it qualifies for: a small
+  // catalogue ranked three ways is three copies of the same row.
+  const shelves = useMemo(() => {
+    if (narrowed) return []
+    const used = new Set<string>()
+    const out: { key: string; title: string; href?: string; rows: GalleryRow[] }[] = []
+    const shelf = (key: string, title: string, from: GalleryRow[], cap = 18) => {
+      const fresh = from.filter((r) => !used.has(r.id)).slice(0, cap)
+      if (fresh.length < 3) return
+      for (const r of fresh) used.add(r.id)
+      // A maker's shelf is titled with their handle, and leads to their page.
+      out.push({ key, title, href: key.startsWith("maker:") ? `/${key.slice(6)}` : undefined, rows: fresh })
+    }
+    shelf("hot", t.rail.sortHot, rows, 10)
+    shelf("new", t.rail.sortNew, [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt)), 8)
+    shelf("likes", t.rail.likes, [...items].sort((a, b) => numbers(b.id).likes - numbers(a.id).likes), 8)
+    for (const [tag] of browse.tags.slice(0, 6)) shelf(`tag:${tag}`, `#${tag}`, items.filter((i) => i.tags.includes(tag)), 8)
+    for (const [maker] of browse.makers.slice(0, 4)) shelf(`maker:${maker}`, `@${maker}`, items.filter((i) => i.author === maker), 8)
+    // Whatever no shelf took, so nothing loaded is out of reach.
+    shelf("more", t.gallery.moreScenes, items, Infinity)
+    return out
+  }, [narrowed, items, rows, numbers, browse.tags, browse.makers, t])
+  // ← → step through the covers in reading order — along a shelf, on to the
+  // next — putting each on the billboard and bringing it into view in its row,
+  // the page staying where it is. Enter opens what is on the billboard. Not
+  // while typing in the search.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || !focus) return
+      if ((e.target as HTMLElement | null)?.closest?.("input, textarea, [role=listbox], [role=menu]")) return
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        e.preventDefault()
+        const order = narrowed ? rows : shelves.flatMap((sh) => sh.rows)
+        const at = order.findIndex((r) => r.id === focus.id)
+        const next = order[Math.min(order.length - 1, Math.max(0, at + (e.key === "ArrowRight" ? 1 : -1)))]
+        if (!next) return
+        setSelectedId(next.id)
+        scrollRef.current
+          ?.querySelector(`[data-card="${CSS.escape(next.id)}"]`)
+          ?.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" })
+      } else if (e.key === "Enter") {
+        if ((e.target as HTMLElement | null)?.closest?.("button, a")) return
+        e.preventDefault()
+        openScene(focus)
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  })
+  const narrowedTitle = browse.query.trim()
+    ? `“${browse.query.trim()}”`
+    : browse.tag
+      ? `#${browse.tag}`
+      : browse.maker
+        ? browse.maker
+        : browse.facet === "yours"
+          ? t.rail.yours
+          : t.rail.liked
+
+  const facetWord = (v: View, label: string) => (
+    <Button
+      key={v}
+      variant="bare"
+      onClick={() => {
+        browse.clear()
+        browse.setFacet(v)
+      }}
+      className={cn(
+        "relative py-1 text-xs after:absolute after:inset-x-2 after:bottom-0 after:h-[1.5px]",
+        browse.facet === v && !browse.tag && !browse.maker ? "text-foreground after:bg-blue-400" : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {label}
+    </Button>
+  )
+
+  /** One cover, as every row and the grid show it. Your own scenes keep their
+   *  menu: open, edit, delete. */
+  const card = (s: GalleryRow, wide?: boolean) => {
+    const node = (
+      <Button
+        key={s.id}
+        data-card={s.id}
+        variant="bare"
+        onClick={() => feature(s)}
+        onDoubleClick={() => openScene(s)}
+        className={cn(
+          "group/card flex shrink-0 flex-col gap-1.5 text-left transition-[scale] hover:z-10 hover:scale-[1.04]",
+          wide ? "w-full" : "w-60 compact:w-44",
+        )}
+      >
+        <span
+          className={cn(
+            "block aspect-video w-full overflow-hidden rounded-interior bg-white/5",
+            focus?.id === s.id && "ring-1 ring-foreground",
+          )}
+        >
+          {s.poster && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={s.poster} alt="" loading="lazy" className="size-full object-cover" />
+          )}
+        </span>
+        <span className="truncate text-xs text-foreground">{s.name}</span>
+        <span className="-mt-1 truncate font-mono text-2xs text-muted-foreground">@{s.author}</span>
+      </Button>
+    )
+    if (!s.mine) return node
+    return (
+      <ContextMenu key={s.id}>
+        <ContextMenuTrigger asChild>{node}</ContextMenuTrigger>
         <ContextMenuContent className="w-40">
           <ContextMenuItem onSelect={() => openScene(s)}>{t.gallery.open}</ContextMenuItem>
-          {/* YOUR OWN SCENE, BACK IN THE EDITOR TO CORRECT IT. Ordinary editing
-              from there on: publishing updates this row rather than making a
-              second scene, so the link keeps working and the views, likes and
-              pin stay with it. Only on your own — the menu is already only on
-              your own — because replacing is an owner's act. */}
+          {/* YOUR OWN SCENE, BACK IN THE EDITOR TO CORRECT IT: publishing from
+              there updates this row, so the link, likes and pin stay with it. */}
           <ContextMenuItem onSelect={() => editScene(s)}>{t.gallery.editPublished}</ContextMenuItem>
           <ContextMenuItem variant="danger" onSelect={() => remove(s)}>
             {t.library.deletePublished}
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
-    ) : (
-      node
     )
+  }
 
+  // THE GALLERY, as a streaming service's home: the scene in focus on a
+  // billboard filling the top of the screen and fading into the page, and
+  // shelves of covers under it, each scrolling sideways. White type on black
+  // (dark paper), the cover's controls.
   return (
-    <DialogContent
-      showCloseButton={false}
-      overlay={false}
-      onInteractOutside={(e) => e.preventDefault()}
-      onEscapeKeyDown={(e) => e.preventDefault()}
-      onOpenAutoFocus={(e) => e.preventDefault()}
-      onCloseAutoFocus={(e) => e.preventDefault()}
-      onPointerDownCapture={onPointerDownCapture}
-      onFocusCapture={onFocusCapture}
-      style={{ zIndex: z }}
-      className={LIBRARY_SHELL}
-    >
-      <DialogHeader className="flex-row items-center gap-2 space-y-0 border-b border-line px-3 py-2">
-        <DialogTitle className="flex shrink-0 items-center gap-2 text-sm font-medium">
-          <GalleryThumbnails className="size-4 text-blue-400" />
-          {/* The icon alone on a phone: the posters say what this is, and the
-              word would cost the search its room. */}
-          <span className="compact:sr-only">{t.gallery.title}</span>
-        </DialogTitle>
-        <LibraryToolbar browse={browse} />
-        <DialogClose className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-chip text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
-          <X className="size-3.5" />
-          <span className="sr-only">{t.library.close}</span>
-        </DialogClose>
-      </DialogHeader>
-
-      <div className="flex min-h-0 flex-1">
-        <LibraryRailFilters
-          browse={browse}
-          footer={
-            <SiteChip site="bilibili" href="/bilibili" className="h-8 px-2.5 text-xs">
-              {t.bilibili.title}
-            </SiteChip>
-          }
-        />
-
-        {/* ONE ranked list, the same grid the presets use. Scenes were the last
-            library with their own cards, their own sort and their own rail. */}
-        <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", detail.results)}>
-          <LibraryResults
-            watch={["gallery:", "library-stats"]}
-            browse={browse}
-            selectedId={selected?.id ?? null}
-            onSelect={(s) => {
-              setSelectedId(s.id)
-              detail.show()
-              // Warms the RSC payload so opening is a paint, not a fetch.
-              router.prefetch(sceneHref(s))
-            }}
-            onActivate={openScene}
-            meta={meta}
-            numbers={numbers}
-            wrap={wrap}
-            empty={failed ? t.gallery.failed : loading ? t.gallery.loading : t.gallery.empty}
-            footer={
-              <>
-                {loading && rows.length > 0 && (
-                  <div className="flex items-center justify-center gap-2 py-6 text-2xs text-muted-foreground">
-                    <Loader2 className="size-3.5 animate-spin" />
-                    {t.gallery.loading}
-                  </div>
-                )}
-                {!loading && cursor && (
-                  <Button variant="bare"
-                    onClick={loadMore}
-                    className="w-full cursor-pointer py-3 text-2xs text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    {t.gallery.more}
-                  </Button>
-                )}
-              </>
-            }
-          />
-        </div>
-
-        <div className={cn("flex w-[17rem] shrink-0 flex-col overflow-y-auto border-l border-line sm:w-[20rem]", detail.detail)}>
-          <LibraryBack onClick={detail.hide} />
-          {selected ? (
-            <>
-              <div className="p-3 pb-0">
-                <Button variant="bare"
-                  type="button"
-                  onClick={() => openScene(selected)}
-                  className="block aspect-video w-full cursor-pointer overflow-hidden rounded-chip border border-line-strong bg-white/5"
-                >
-                  {selected.poster ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={selected.poster} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    <span className="flex h-full items-center justify-center text-2xs text-muted-foreground">
-                      {t.gallery.noPoster}
-                    </span>
-                  )}
-                </Button>
-              </div>
-              <div className={LIBRARY_DETAIL_BODY}>
-                <div className="truncate text-sm font-semibold select-text">{selected.name}</div>
-                <div className="mt-1 flex min-w-0 items-center gap-1.5 font-mono text-xs text-muted-foreground">
-                  <AuthorAvatar
-                    name={selected.author}
-                    image={selected.authorImage}
-                    className="size-4"
-                  />
-                  <AuthorLink name={selected.author} className="truncate select-text" />
-                </div>
-                <div className="mt-1 flex h-4 items-center font-mono text-xs text-muted-foreground">
-                  <Stamp iso={selected.createdAt} show="words" />
-                </div>
-                {selected.description && (
-                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground select-text">{selected.description}</p>
-                )}
-                <LibraryTags tags={selected.tags} lead={selected.displayOnly ? <DisplayOnlyTag /> : undefined} />
-                {/* The maker's own render, under the tags and before the 借物表,
-                    as the scene page shows it. */}
-                <VideoLink url={selected.video} className="mt-3" />
-                {/* Who made the model, the motion and the music — the thing the
-                    community actually asks to see before anyone reuses anything. */}
-                {selected.credits && (
-                  <div className="mt-3 border-t border-line pt-2.5">
-                    <div className="text-2xs font-medium tracking-[0.14em] text-muted-foreground uppercase">
-                      {t.share.credits}
-                    </div>
-                    {/* The 借物表 is the one block here people copy verbatim, to
-                        carry the same names into their own credits. */}
-                    <p className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground select-text">
-                      {selected.credits}
-                    </p>
-                  </div>
-                )}
-                {/* The heart alone, flush with the text above: a scene has no
-                    second number, since nothing uses a scene. */}
-                <div className="mt-3 -ml-2.5 flex items-center gap-2">
-                  <LibraryLike
-                    likeCount={likesOf(selected)}
-                    liked={statFor(selected.id).liked}
-                    canLike={signedIn}
-                    onToggle={() => void toggleLike(selected.id)}
-                  />
-                </div>
-              </div>
-              <div className="mt-auto shrink-0 border-t border-line p-3">
-                <Button
-                  asChild
-                  size="sm"
-                  className="h-8 w-full bg-blue-400 text-xs font-medium text-on-accent hover:bg-blue-400/90"
-                >
-                  {/* A real link: plain click navigates in this tab, cmd-click
-                      still gets a new one for anyone who wants it. */}
-                  <Link href={sceneHref(selected)}>{t.gallery.open}</Link>
-                </Button>
-              </div>
-            </>
-          ) : (
-            <div className="flex flex-1 items-center justify-center p-4 text-center text-xs text-muted-foreground">
-              {rows.length === 0 ? t.gallery.empty : t.gallery.selectScene}
-            </div>
+    <main data-paper="dark" className="fixed inset-0 flex h-dvh w-screen flex-col overflow-hidden bg-black text-foreground select-none">
+      <Cover>
+        {/* The nav, fixed over the page: clear over the billboard, solid once
+            the page scrolls under it. */}
+        <div
+          className={cn(
+            // The editor's top row to the pixel (top-5, h-8, left-7), so the
+            // wordmark stands exactly where it stood in the editor.
+            "absolute inset-x-0 top-0 z-20 flex h-[4.25rem] items-start gap-7 px-7 pt-5 transition-colors compact:gap-4 compact:px-4 [&>*]:h-8 [&>*]:items-center",
+            scrolled ? "bg-black" : "bg-linear-to-b from-black/70 to-transparent",
           )}
+        >
+          {/* The house's name where a service sets its own — and, as a service's
+              logo does, the way home: back to the editor. The gallery's name
+              beside it. */}
+          <div className="flex shrink-0 items-center gap-7">
+            <Link
+              href="/"
+              className="font-display text-masthead tracking-[0.45em] text-foreground uppercase [-webkit-text-stroke:0.3px_currentColor] compact:hidden"
+            >
+              Reze Design
+            </Link>
+            <h1 className="font-mono text-2xs font-medium tracking-wide text-muted-foreground uppercase">{t.gallery.title}</h1>
+          </div>
+          {facetWord("all", t.rail.all)}
+          {session && facetWord("yours", t.rail.yours)}
+          {session && facetWord("liked", t.rail.liked)}
+          <SiteChip site="bilibili" href="/bilibili" className="h-6 px-2 text-xs compact:hidden">
+            {t.bilibili.title}
+          </SiteChip>
+          <span className="flex-1" />
+          <label className="relative flex h-8 w-52 items-center gap-2 px-3 text-muted-foreground after:absolute after:inset-0 after:rounded-interior after:border after:border-line-strong compact:hidden">
+            <Search className="size-3.5 shrink-0" strokeWidth={1.5} />
+            <Input
+              variant="bare"
+              value={browse.query}
+              onChange={(e) => browse.setQuery(e.target.value)}
+              placeholder={t.rail.search}
+              className="h-8 min-w-0 flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground"
+            />
+          </label>
         </div>
-      </div>
+
+        <div ref={scrollRef} onScroll={onPageScroll} className="no-scrollbar min-h-0 flex-1 overflow-y-auto">
+          {/* The billboard. */}
+          <section className="relative h-[78vh] min-h-[28rem] w-full overflow-hidden">
+            {focus?.poster && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img key={`backdrop:${focus.id}`} src={focus.poster} alt="" className="stage-backdrop absolute inset-0 size-full object-cover" />
+            )}
+            <div aria-hidden className="absolute inset-0 bg-linear-to-r from-black/85 via-black/35 to-transparent" />
+            <div aria-hidden className="absolute inset-x-0 bottom-0 h-2/5 bg-linear-to-t from-black to-transparent" />
+            {focus ? (
+              <div key={`spread:${focus.id}`} className="cover-enter absolute bottom-[30%] left-7 flex w-[min(32rem,45vw)] flex-col compact:left-4 compact:w-[calc(100%-2rem)]">
+                <h2 className="font-display text-display text-foreground italic select-text">{focus.name}</h2>
+                <div className="mt-3 flex min-w-0 items-center gap-2 font-mono text-2xs tracking-wide text-muted-foreground uppercase">
+                  <AuthorAvatar name={focus.author} image={focus.authorImage} className="size-4" />
+                  <AuthorLink name={focus.author} at className="truncate text-foreground normal-case select-text" />
+                  <span>·</span>
+                  <Stamp iso={focus.createdAt} show="words" />
+                </div>
+                {focus.description && (
+                  <p className="mt-3 line-clamp-3 text-xs leading-relaxed text-foreground select-text">{focus.description}</p>
+                )}
+                {(focus.tags.length > 0 || focus.displayOnly) && (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {focus.displayOnly && <DisplayOnlyTag />}
+                    {/* Once each: a scene's tags can repeat one. */}
+                    {[...new Set(focus.tags)].map((tag) => (
+                      <Button
+                        key={tag}
+                        variant="bare"
+                        onClick={() => {
+                          browse.clear()
+                          browse.setTag(tag)
+                        }}
+                        className="rounded-chip border border-line-strong px-1.5 py-0.5 text-2xs text-foreground"
+                      >
+                        {tag}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-5 flex flex-wrap items-center gap-3">
+                  <Button asChild size="sm" className="h-9 rounded-chip bg-foreground px-6 text-xs font-medium text-background hover:bg-foreground/85">
+                    {/* A real link: cmd-click still gets a new tab. */}
+                    <Link href={sceneHref(focus)}>{t.gallery.open}</Link>
+                  </Button>
+                  {!focus.displayOnly && (
+                    <Button
+                      variant="bare"
+                      onClick={() => forkScene(focus)}
+                      className="h-9 rounded-chip bg-white/20 px-5 text-xs font-medium text-foreground hover:bg-white/30"
+                    >
+                      {t.share.fork}
+                    </Button>
+                  )}
+                  <LibraryLike
+                    likeCount={likesOf(focus)}
+                    liked={statFor(focus.id).liked}
+                    canLike={signedIn}
+                    onToggle={() => void toggleLike(focus.id)}
+                  />
+                  {focus.mine && (
+                    <>
+                      <Button variant="bare" onClick={() => editScene(focus)} className="h-9 text-xs text-muted-foreground hover:text-foreground">
+                        {t.gallery.editPublished}
+                      </Button>
+                      <Button variant="bare" onClick={() => remove(focus)} className="h-9 text-xs text-muted-foreground hover:text-red-400">
+                        {t.library.deletePublished}
+                      </Button>
+                    </>
+                  )}
+                </div>
+                <VideoLink url={focus.video} className="mt-4 w-fit" />
+              </div>
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">
+                {failed ? t.gallery.failed : loading ? t.gallery.loading : t.gallery.empty}
+              </div>
+            )}
+          </section>
+
+          {/* The shelves, lifted onto the billboard's fade. */}
+          <div className="relative z-10 -mt-24 flex flex-col gap-8 pb-16">
+            {narrowed ? (
+              <section className="px-7 compact:px-4">
+                <h3 className="mb-3 text-sm font-medium text-foreground">{narrowedTitle}</h3>
+                {rows.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">{loading ? t.gallery.loading : t.rail.noMatches}</p>
+                ) : (
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-x-3 gap-y-5">{rows.map((s) => card(s, true))}</div>
+                )}
+              </section>
+            ) : (
+              shelves.map((shelf) => (
+                <Shelf key={shelf.key} title={shelf.title} href={shelf.href}>
+                  {shelf.rows.map((s) => card(s))}
+                </Shelf>
+              ))
+            )}
+            {loading && rows.length > 0 && (
+              <div className="flex justify-center text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+              </div>
+            )}
+          </div>
+        </div>
+      </Cover>
       <ConfirmDialog
         open={confirming !== null}
         onOpenChange={(o) => !o && setConfirming(null)}
         title={t.gallery.deleteTitle}
-        // Named, not "this scene": the gallery is a grid and the row that opened
-        // this is behind the dialog.
+        // Named, not "this scene": the page has moved on by the time it asks.
         body={confirming ? `${confirming.name} — ${t.gallery.deleteConfirm}` : undefined}
         confirmLabel={t.library.deleteConfirmLabel}
         cancelLabel={t.library.cancel}
         onConfirm={confirmRemove}
       />
-    </DialogContent>
+    </main>
+  )
+}
+
+/** A shelf of covers that scrolls sideways, paged by two small chevrons at the
+ *  end of its title line — shown only when the shelf runs past the screen. */
+function Shelf({ title, href, children }: { title: string; href?: string; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [more, setMore] = useState({ back: false, on: false })
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const read = () => {
+      const next = { back: el.scrollLeft > 1, on: el.scrollLeft < el.scrollWidth - el.clientWidth - 1 }
+      setMore((cur) => (cur.back === next.back && cur.on === next.on ? cur : next))
+    }
+    read()
+    el.addEventListener("scroll", read, { passive: true })
+    const ro = new ResizeObserver(read)
+    ro.observe(el)
+    return () => {
+      el.removeEventListener("scroll", read)
+      ro.disconnect()
+    }
+  }, [])
+  const page = (dir: 1 | -1) => {
+    const el = ref.current
+    if (el) el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: "smooth" })
+  }
+  return (
+    <section className="relative">
+      <div className="mb-2 flex items-center justify-between px-7 compact:px-4">
+        <h3 className="text-sm font-medium text-foreground">
+          {href ? (
+            <Link href={href} className="underline-offset-4 hover:underline">
+              {title}
+            </Link>
+          ) : (
+            title
+          )}
+        </h3>
+        {(more.back || more.on) && (
+          <span className="flex items-center gap-2 compact:hidden">
+            {([-1, 1] as const).map((dir) => (
+              <Button
+                key={dir}
+                variant="bare"
+                aria-hidden
+                tabIndex={-1}
+                disabled={dir < 0 ? !more.back : !more.on}
+                onClick={() => page(dir)}
+                className="flex size-5 items-center justify-center text-muted-foreground hover:text-foreground"
+              >
+                {dir < 0 ? <ChevronLeft className="size-4" /> : <ChevronRight className="size-4" />}
+              </Button>
+            ))}
+          </span>
+        )}
+      </div>
+      <div ref={ref} className="no-scrollbar flex gap-3 overflow-x-auto scroll-px-7 px-7 py-2 compact:px-4">
+        {children}
+      </div>
+    </section>
   )
 }

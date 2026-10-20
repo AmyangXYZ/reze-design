@@ -33,6 +33,7 @@ const EXCEPTIONS = {
   "components/editor/wgsl-editor.tsx": { hex: "the code view's own ground and gutter, matched to its syntax theme" },
   "components/scene/anim-player.tsx": { radius: "the transport's 20px corner clamps to a pill when collapsed — explained where it is set" },
   "components/editor/scene-name.tsx": { display: "the cover's title: the scene's name, the one display-size text" },
+  "components/editor/scene-gallery.tsx": { display: "the gallery stage's title: a published scene's name, set over its cover" },
   "components/video-link.tsx": { hex: "a scene's video link wears its site's brand colour (Bilibili blue, YouTube red…), so it reads as that site at a glance" },
 }
 /** Classes allowed anywhere, and why. */

@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft, GalleryThumbnails, GitFork, Heart, Minimize2, WandSparkles } from "lucide-react"
 import { LogoMenu, Row as MenuRow } from "@/components/editor/scene-file-menu"
-import { DisplayOnlyTag, SceneGallery } from "@/components/editor/scene-gallery"
+import { DisplayOnlyTag } from "@/components/editor/scene-gallery"
 import { AnimPlayer } from "@/components/scene/anim-player"
 import { builtinEffect } from "@/lib/effects"
 import { useEngine } from "@/hooks/use-engine"
@@ -134,7 +134,6 @@ export function SceneViewer(props: ViewerProps) {
     setSignInOpen(true)
   }
   const [logoMenu, setLogoMenu] = useState(false)
-  const [galleryOpen, setGalleryOpen] = useState(false)
   // The editor's switch: everything but the scene, off and back.
   const [uiHidden, setUiHidden] = useHideUi()
 
@@ -224,7 +223,7 @@ export function SceneViewer(props: ViewerProps) {
               label={t.gallery.door}
               onClick={() => {
                 setLogoMenu(false)
-                setGalleryOpen(true)
+                router.push("/gallery")
               }}
             />
           </div>
@@ -236,7 +235,6 @@ export function SceneViewer(props: ViewerProps) {
           Reze Design
         </Link>
       </div>
-      <SceneGallery open={galleryOpen} onOpenChange={setGalleryOpen} />
 
       {/* Bottom left, above the transport: title, author, caption — TikTok's
           arrangement, where the text hugs itself and the scene stays the page. */}
