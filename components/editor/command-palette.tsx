@@ -170,7 +170,8 @@ export function CommandPalette({
             : undefined
         }
         className={cn(
-          "max-w-[29rem] gap-0 overflow-hidden rounded-surface p-0",
+          "max-w-[29rem] gap-0 overflow-hidden p-0",
+          paper ? "rounded-interior" : "rounded-surface",
           // Paper brings its own motion, which replaces the zoom, and its own
           // ground: a layer that grows with it (globals.css, "PAPER").
           paper ? "border-0 bg-transparent shadow-none" : "border-line-strong bg-surface shadow-float backdrop-blur-xs",
@@ -194,7 +195,7 @@ export function CommandPalette({
           <div
             aria-hidden
             data-paper-ground
-            className="absolute top-0 left-0 size-full rounded-surface border border-line-strong bg-surface"
+            className="absolute top-0 left-0 size-full rounded-interior border border-line-strong bg-surface"
           />
         )}
 
@@ -234,7 +235,10 @@ export function CommandPalette({
             <div key={g.key}>
               <div
                 className={cn(
-                  "flex items-end px-3.5 pb-1 font-mono text-2xs font-semibold tracking-wide text-muted-foreground uppercase",
+                  "flex items-end px-3.5 pb-1 font-mono text-2xs font-semibold tracking-wide uppercase",
+                  // On paper every word is in the ink: the sheet is thin, and a
+                  // second, fainter tier over the picture would not read.
+                  paper ? "text-foreground" : "text-muted-foreground",
                   anchor ? "h-6" : "h-7",
                 )}
               >
@@ -259,7 +263,7 @@ export function CommandPalette({
                       className={cn(
                         "shrink-0",
                         anchor ? "size-3.5" : "size-4",
-                        "text-muted-foreground",
+                        paper ? "text-foreground" : "text-muted-foreground",
                       )}
                     />
                     <span className="min-w-0 truncate">{item.label}</span>
@@ -278,8 +282,7 @@ export function CommandPalette({
                       <span
                         className={cn(
                           "ml-auto max-w-[10rem] shrink-0 truncate",
-                          paper ? "font-mono text-2xs" : "text-xs",
-                          "text-muted-foreground",
+                          paper ? "font-mono text-2xs text-foreground" : "text-xs text-muted-foreground",
                         )}
                       >
                         {item.value ?? item.hint}

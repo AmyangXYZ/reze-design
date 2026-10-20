@@ -29,10 +29,9 @@ export function Avatar({ user, size = 7 }: { user: Pick<UserRow, "image" | "name
   )
 }
 
-function Pill({ tone, children, title }: { tone: "accent" | "warning" | "muted"; children: React.ReactNode; title?: string }) {
+function Pill({ tone, children }: { tone: "accent" | "warning" | "muted"; children: React.ReactNode }) {
   return (
     <span
-      title={title}
       className={cn(
         "inline-flex items-center rounded-chip border px-1.5 py-px text-xs whitespace-nowrap",
         tone === "accent" && "border-blue-500/40 text-blue-600",
@@ -151,7 +150,7 @@ export function UsersView({ users, selfId }: { users: UserRow[]; selfId: string 
                     <div className="flex flex-wrap gap-1">
                       {u.verified && <Pill tone="accent">Verified</Pill>}
                       {u.banned && (
-                        <Pill tone="warning" title={u.banReason ?? undefined}>
+                        <Pill tone="warning">
                           Suspended
                         </Pill>
                       )}
@@ -273,7 +272,7 @@ function AccountPanel({ user: u, isSelf, onClose }: { user: UserRow; isSelf: boo
                     </div>
                   </div>
                   {i.kind === "scene" && (
-                    <Button size="icon-xs" variant="ghost" asChild title="Open the scene page" className="text-muted-foreground hover:bg-accent hover:text-foreground">
+                    <Button size="icon-xs" variant="ghost" asChild className="text-muted-foreground hover:bg-accent hover:text-foreground">
                       <a href={`/${i.author}/${i.id}`} target="_blank" rel="noreferrer" aria-label="Open the scene page">
                         <ExternalLink className="size-3.5" />
                       </a>
@@ -298,7 +297,7 @@ function Fact({ label, value, mono }: { label: string; value: React.ReactNode; m
   return (
     <div className="min-w-0">
       <div className="text-muted-foreground">{label}</div>
-      <div className={cn("truncate", mono && "font-mono text-xs")} title={typeof value === "string" ? value : undefined}>
+      <div className={cn("truncate", mono && "font-mono text-xs")}>
         {value}
       </div>
     </div>

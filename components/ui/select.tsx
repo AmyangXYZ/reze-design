@@ -6,6 +6,7 @@ import { Select as SelectPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 import { Cover, useCover } from "@/components/ui/cover"
+import { layPop } from "@/components/ui/paper"
 import { preventFocusReturnOnPointer } from "@/lib/last-input"
 
 function Select({
@@ -50,7 +51,7 @@ function SelectTrigger({
     >
       {children}
       <SelectPrimitive.Icon asChild>
-        <ChevronDownIcon className="size-3 opacity-50" />
+        <ChevronDownIcon className="size-3" />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   )
@@ -61,12 +62,24 @@ function SelectContent({
   children,
   position = "item-aligned",
   align = "center",
+  ref,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
+  // Opened from the cover, it is laid as paper in its opener's ink.
+  const cover = useCover()
+  const attach = React.useCallback(
+    (el: HTMLDivElement | null) => {
+      if (el && cover) layPop(el)
+      if (typeof ref === "function") ref(el)
+      else if (ref) ref.current = el
+    },
+    [cover, ref],
+  )
   return (
     <Cover on={false}>
       <SelectPrimitive.Portal>
         <SelectPrimitive.Content
+          ref={attach}
           data-slot="select-content"
           onCloseAutoFocus={preventFocusReturnOnPointer}
           className={cn(

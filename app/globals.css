@@ -272,8 +272,8 @@
 
 /* The cover's INK follows the picture, the way a magazine sets its masthead
    dark over a pale photo and white over a dark one. The ink is pure black or
-   pure white; the secondary tier is that ink taken a third of the way toward
-   the frame (--scene-bg), so it recedes against whatever the picture is.
+   pure white, and its secondary tier a fixed grey beside it — the same two
+   pairs paper uses, so the app has two text colours in either ink.
 
    The page samples the rendered frame behind each INK ZONE ([data-ink-zone]:
    the top row, the title, the index, a row of the export column…) and gives
@@ -313,7 +313,7 @@
   --input: color-mix(in oklch, var(--foreground) 20%, transparent);
   --primary-foreground: var(--background);
   --foreground: oklch(0 0 0);
-  --muted-foreground: color-mix(in oklch, var(--scene-bg) 35%, oklch(0 0 0));
+  --muted-foreground: oklch(0.38 0 0);
   --background: color-mix(in oklch, var(--scene-bg) 25%, oklch(0.99 0 0));
   /* One hairline on the cover: a rule there divides nothing from a surface,
      so the two strengths are the same line. */
@@ -327,7 +327,7 @@
   --input: color-mix(in oklch, var(--foreground) 20%, transparent);
   --primary-foreground: var(--background);
   --foreground: oklch(1 0 0);
-  --muted-foreground: color-mix(in oklch, var(--scene-bg) 30%, oklch(1 0 0));
+  --muted-foreground: oklch(0.78 0 0);
   --background: color-mix(in oklch, var(--scene-bg) 30%, oklch(0.12 0 0));
   --chrome-line: oklch(1 0 0 / 0.26);
   --chrome-line-strong: oklch(1 0 0 / 0.26);
@@ -387,18 +387,18 @@
    moment. Closing shrinks it back into the opener. */
 @keyframes paper-grow {
   from {
-    clip-path: inset(0 calc(100% - var(--paper-w)) calc(100% - var(--paper-h)) 0 round var(--radius-surface));
+    clip-path: inset(0 calc(100% - var(--paper-w)) calc(100% - var(--paper-h)) 0 round 8px);
   }
   to {
-    clip-path: inset(0 0 0 0 round var(--radius-surface));
+    clip-path: inset(0 0 0 0 round 8px);
   }
 }
 @keyframes paper-shrink {
   from {
-    clip-path: inset(0 0 0 0 round var(--radius-surface));
+    clip-path: inset(0 0 0 0 round 8px);
   }
   to {
-    clip-path: inset(0 calc(100% - var(--paper-w)) calc(100% - var(--paper-h)) 0 round var(--radius-surface));
+    clip-path: inset(0 calc(100% - var(--paper-w)) calc(100% - var(--paper-h)) 0 round 8px);
   }
 }
 @keyframes paper-ground-grow {
@@ -439,6 +439,211 @@
 [data-paper][data-state="open"] {
   animation: none;
 }
+/* In the middle (data-paper-at="center"): no opener to grow out of, so the
+   sheet settles in from slightly smaller and leaves the same way. */
+@keyframes paper-settle {
+  from {
+    opacity: 0;
+    scale: 0.97;
+  }
+}
+@keyframes paper-leave {
+  to {
+    opacity: 0;
+    scale: 0.97;
+  }
+}
+[data-paper-at="center"][data-state="open"] {
+  animation: paper-settle var(--default-transition-duration) cubic-bezier(0.32, 0.72, 0, 1);
+}
+[data-paper-at="center"][data-state="closed"] {
+  animation: paper-leave var(--default-transition-duration) cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+[data-paper-at="center"] > [data-paper-content],
+[data-paper-at="center"] > [data-paper-ground] {
+  animation: none !important;
+}
+/* A small overlay opened from the cover — a menu, a popover, a list
+   (data-paper-at="pop", components/ui/paper.ts): the sheet and its hairline
+   in place of the chrome's box, keeping its own small motion. */
+[data-paper] {
+  --popover: var(--chrome-surface);
+  --popover-foreground: var(--foreground);
+  --accent: oklch(from var(--foreground) l c h / 0.07);
+  --accent-foreground: var(--foreground);
+}
+[data-paper-at="pop"] {
+  border-radius: 8px !important;
+  border-color: var(--chrome-line-strong) !important;
+  box-shadow: none !important;
+  backdrop-filter: blur(4px) !important;
+}
+
+/* A whole PAGE of paper (data-paper-at="page"): a task that sets the canvas
+   aside. The scrim is the sheet — the ink's paper over the whole screen, with
+   the light blur — and the dialog is type set on it: no box of its own, its
+   fields drawn as hairlines. */
+[data-paper-at="page"][data-state="open"] {
+  animation: paper-settle var(--default-transition-duration) cubic-bezier(0.32, 0.72, 0, 1);
+}
+[data-paper-at="page"][data-state="closed"] {
+  animation: paper-leave var(--default-transition-duration) cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+[data-paper-at="page"] > [data-paper-content] {
+  animation: none !important;
+}
+[data-paper-at="page"] {
+  background: transparent !important;
+  border-color: transparent !important;
+}
+body:has([data-paper-at="page"][data-paper="light"]) [data-slot="dialog-overlay"] {
+  background: oklch(1 0 0 / 0.55);
+  backdrop-filter: blur(4px);
+}
+body:has([data-paper-at="page"][data-paper="dark"]) [data-slot="dialog-overlay"] {
+  background: oklch(0 0 0 / 0.55);
+  backdrop-filter: blur(4px);
+}
+/* A COLUMN of paper (data-paper-at="column"): a task done while watching the
+   scene, set as type in the right-hand column as export is — no sheet, and a
+   hairline on its left from the shell's title row to its last control. */
+/* It sits in export's shell (page.tsx), under that shell's title row: it
+   has no arrival of its own, its rows are dealt in (cover-enter), and its own
+   title is for readers of the page only. */
+[data-paper-at="column"][data-state] {
+  animation: none !important;
+}
+[data-paper-at="column"] [data-share-head] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+[data-paper-at="column"] > [data-paper-content] {
+  animation: none !important;
+}
+[data-paper-at="column"]::before {
+  content: "";
+  position: absolute;
+  top: -1.125rem;
+  bottom: 2.125rem;
+  left: 0;
+  width: 1px;
+  background: var(--chrome-line-strong);
+  pointer-events: none;
+}
+[data-paper-at="column"] [data-publish-split] {
+  grid-template-columns: minmax(0, 1fr);
+}
+/* The column's width is its own: nothing in it may push it wider. */
+[data-paper-at="column"] > [data-paper-content],
+[data-paper-at="column"] > [data-paper-content] * {
+  min-width: 0;
+}
+/* It FITS: one column of type, no scroller — clip, not hidden, since hiding
+   one axis would make the other scroll. The body does not scroll either, the
+   cover is a wide strip, and the fields stand a little closer. */
+[data-paper-at="column"] > [data-paper-content] {
+  overflow-x: clip;
+  grid-template-columns: minmax(0, 1fr);
+}
+[data-paper-at="column"] [data-publish-body] {
+  overflow: visible;
+  padding-bottom: 0;
+}
+/* One rhythm down the column: every field is its label, 4px, then the
+   control at its content's height over the same padding to its hairline, and
+   every field stands 14px from the next, whatever box it sits in. */
+[data-paper-at="column"] :is([data-publish-body], [data-publish-split], [data-publish-split] > div) {
+  gap: 0.875rem;
+}
+[data-paper-at="column"] :is([data-slot="input"], textarea, [data-slot="tags-input"], [data-publish-thumb]) {
+  margin-top: 0.25rem;
+}
+[data-paper-at="column"] :is([data-slot="input"], textarea, [data-slot="tags-input"]) {
+  height: auto;
+  min-height: 0;
+  padding-top: 0.25rem;
+  padding-bottom: 0.375rem;
+  line-height: 1.25rem;
+}
+[data-paper-at="column"] textarea {
+  field-sizing: content;
+}
+[data-paper-at="column"] [data-slot="tags-input"] [data-slot="input"] {
+  margin-top: 0;
+  padding-block: 0;
+}
+[data-paper-at="column"] [data-publish-foot] {
+  padding-top: 0.75rem;
+}
+/* Its Close is the word in its title row (ShareHead), as export's is. */
+[data-paper-at="column"] > [data-slot="dialog-close"] {
+  display: none;
+}
+/* The form keeps its own height: Publish follows the switches rather than
+   standing at the foot of the column. */
+[data-paper-at="column"] form {
+  flex: none;
+}
+/* A pick from a list closes it at once: the answer is given, nothing to watch. */
+[data-slot="select-content"][data-state="closed"] {
+  animation: none !important;
+}
+
+/* Its frame: a hairline down each side of the form, clear of the top and the
+   bottom, as the console's divider stands. */
+[data-paper-at="page"]::before,
+[data-paper-at="page"]::after {
+  content: "";
+  position: absolute;
+  top: 2.5rem;
+  bottom: 2.5rem;
+  width: 1px;
+  background: var(--chrome-line-strong);
+  pointer-events: none;
+}
+[data-paper-at="page"]::before {
+  left: 0;
+}
+[data-paper-at="page"]::after {
+  right: 0;
+}
+/* The one solid thing on paper is ink: the sheet's opposite, no accent. */
+[data-paper] [data-paper-solid] {
+  background: var(--foreground) !important;
+  color: var(--background) !important;
+}
+[data-paper] [data-paper-solid]:hover {
+  background: oklch(from var(--foreground) l c h / 0.85) !important;
+}
+/* On paper what the pointer is on is in the full ink. */
+[data-paper] :is(button, [role="menuitem"], [role="option"]):hover:not(:disabled) {
+  color: var(--foreground);
+}
+/* Focus on paper is a breath of ink, as hover is — not a ring. */
+[data-paper] :focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+[data-paper] :focus-visible:not(input, textarea) {
+  background-color: oklch(from var(--foreground) l c h / 0.07);
+}
+/* A tag on paper is a patch of its ink, light on dark and dark on light. */
+[data-paper] [data-slot="tag"] {
+  background: oklch(from var(--foreground) l c h / 0.18);
+}
+:is([data-paper-at="page"], [data-paper-at="column"]) [data-slot="tags-input"] [data-slot="input"] {
+  border: 0;
+}
+:is([data-paper-at="page"], [data-paper-at="column"]) :is([data-slot="input"], [data-slot="tags-input"], textarea) {
+  border-width: 0 0 1px;
+  border-radius: 0;
+  background: transparent;
+  padding-inline: 0;
+  box-shadow: none;
+}
 [data-paper][data-state="open"] > [data-paper-content] {
   animation: paper-grow var(--default-transition-duration) cubic-bezier(0.32, 0.72, 0, 1);
 }
@@ -459,6 +664,24 @@
    search box is; the box is back once the last sheet has gone. */
 [data-paper-up] [data-search-bar] {
   visibility: hidden;
+}
+
+/* Toasts: on the editor, paper in the ink of their corner (data-toast-paper
+   on <html>, read off the frame by the page) — no fill, the sheet's white or
+   black at low alpha, the hairline, the light blur. */
+[data-toast-paper="light"] {
+  --toast-bg: oklch(1 0 0 / 0.3);
+  --toast-text: oklch(0 0 0);
+  --toast-border: oklch(0 0 0 / 0.16);
+}
+[data-toast-paper="dark"] {
+  --toast-bg: oklch(0 0 0 / 0.3);
+  --toast-text: oklch(1 0 0);
+  --toast-border: oklch(1 0 0 / 0.2);
+}
+[data-toast-paper] [data-sonner-toast] {
+  backdrop-filter: blur(4px);
+  box-shadow: none !important;
 }
 
 /* Type on the canvas: crisp, in the cover's ink. */

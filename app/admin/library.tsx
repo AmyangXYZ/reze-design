@@ -78,7 +78,6 @@ function CopyLink({ path }: { path: string }) {
     <Button
       size="icon-xs"
       variant="ghost"
-      title="Copy the public link"
       aria-label="Copy the public link"
       className="text-muted-foreground hover:bg-accent hover:text-foreground"
       onClick={() =>
@@ -125,7 +124,7 @@ export function ScenesView() {
                   <Stamp iso={s.createdAt} className="block font-mono text-muted-foreground" />
                 </div>
                 <div className="flex shrink-0 gap-0.5">
-                  <Button size="icon-xs" variant="ghost" asChild title="Open the public page" className="text-muted-foreground hover:bg-accent hover:text-foreground">
+                  <Button size="icon-xs" variant="ghost" asChild className="text-muted-foreground hover:bg-accent hover:text-foreground">
                     <a href={path} target="_blank" rel="noreferrer" aria-label="Open the public page">
                       <ExternalLink className="size-3.5" />
                     </a>
@@ -181,7 +180,7 @@ export function ItemsView({ kind, noun }: { kind: Exclude<KindKey, "scene">; nou
               {COLUMNS.map((c) => {
                 const active = sort.key === c.key
                 return (
-                  <th key={c.key} className="px-3.5 py-2.5 font-medium" title={c.title} aria-sort={active ? (sort.desc ? "descending" : "ascending") : undefined}>
+                  <th key={c.key} className="px-3.5 py-2.5 font-medium" aria-sort={active ? (sort.desc ? "descending" : "ascending") : undefined}>
                     {c.value ? (
                       <Button
                         variant="bare"

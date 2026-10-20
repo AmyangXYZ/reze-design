@@ -130,7 +130,7 @@ export function EffectParams({
                   on(m.id) ? "text-blue-400 hover:text-blue-400" : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                <span className="min-w-0 flex-1 truncate text-left" title={m.name}>
+                <span className="min-w-0 flex-1 truncate text-left">
                   {m.name}
                 </span>
                 {/* ALWAYS RENDERED, hidden when off. Dropping the mark hands its

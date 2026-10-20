@@ -248,9 +248,6 @@ async function galleryPage(
       posterKey: schema.libraryItems.posterKey,
       createdAt: schema.libraryItems.createdAt,
       visibility: schema.libraryItems.visibility,
-      // Sent, not filtered on: a flagged scene is still listed, with its cover
-      // blurred until the viewer asks to see it.
-      nsfw: schema.libraryItems.nsfw,
       // So the detail panel can say a scene is watch-only before it is opened.
       displayOnly: schema.libraryItems.displayOnly,
       // The author's avatar and check, as the presets carry them.
@@ -346,7 +343,7 @@ export async function POST(request: Request) {
 
   // No `changelog`: it described what a new VERSION changed, and there are no
   // versions to describe. A client still sending one is simply ignored.
-  const { id, kind, name, description, tags, payload, credits, video, bundleKey, bundleBytes, posterKey, forkedFromId, uses, visibility, nsfw, displayOnly } =
+  const { id, kind, name, description, tags, payload, credits, video, bundleKey, bundleBytes, posterKey, forkedFromId, uses, visibility, displayOnly } =
     (body ?? {}) as Record<string, unknown>
   // Public unless asked otherwise: publishing is a public act, and the dialog
   // says so. A client sending nothing gets what it always got.
@@ -473,8 +470,6 @@ export async function POST(request: Request) {
       ...(hasPoster || !replacing ? { posterKey: hasPoster ? (posterKey as string) : null } : {}),
       // The author's to set and to clear, on every publish that says; one that
       // does not (an older client) leaves the flag as it was.
-      ...(typeof nsfw === "boolean" || !replacing ? { nsfw: nsfw === true } : {}),
-      // Same rule.
       ...(typeof displayOnly === "boolean" || !replacing ? { displayOnly: displayOnly === true } : {}),
     }
     const [scene] = replacing

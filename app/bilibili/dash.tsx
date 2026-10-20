@@ -301,7 +301,7 @@ export function BarList({ rows, colors = [BLUE, ORANGE], rank = true }: { rows: 
     <div ref={ref} className={cn("no-scrollbar min-h-0 flex-1 overflow-y-auto px-4 pb-3", more && SCROLL_FADE)}>
       <ol className="flex flex-col gap-2.5 pt-1">
         {rows.map((r, i) => (
-          <li key={r.key} className="flex flex-col gap-1" title={r.title}>
+          <li key={r.key} className="flex flex-col gap-1">
             <div className="flex items-baseline gap-2 text-xs">
               {rank && <span className="w-4 shrink-0 text-2xs text-muted-foreground tabular-nums">{i + 1}</span>}
               <span className="min-w-0 flex-1 truncate text-foreground">{r.label}</span>

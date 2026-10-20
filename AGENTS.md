@@ -45,7 +45,8 @@ along the bottom. Mark such type `cover-type`; inside it, `<Cover>`
 their underlined words, and every overlay resets it. Its ink follows the
 scene (`data-ink` on `<main>`, "The cover" in
 `app/globals.css`): pure black over a light scene, pure white over a dark one,
-and the muted tier is that ink taken a third of the way toward the frame. No washes or glows behind it. The workbenches (timeline, node
+and the muted tier a fixed grey beside it (0.38 under black, 0.78 under
+white), as on paper. No washes or glows behind it. The workbenches (timeline, node
 graph, material tree, WGSL editor, AI panel, publish) keep surfaces, and so
 does the phone, where the console is a sheet.
 

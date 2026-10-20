@@ -610,7 +610,6 @@ export function EffectLanes<T extends LaneRow>({
                     onPointerMove={move}
                     onPointerUp={up}
                     onPointerCancel={up}
-                    title={`${effect.name} · ${live.start}–${live.end}`}
                     className={cn(
                       "pointer-events-auto absolute inset-y-[3px] flex touch-none cursor-grab items-center overflow-hidden rounded-chip border px-1.5 active:cursor-grabbing",
                       // Selection has to survive a band of neighbours that are

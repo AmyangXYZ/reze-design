@@ -43,7 +43,7 @@ export function BilibiliView({ videos, updated, now }: { videos: PublicVideo[]; 
       header: t.video,
       cell: (v) => (
         <>
-          <a href={watch(v.bvid)} target="_blank" rel="noreferrer" title={v.title} className={cn("block truncate text-foreground", LINK)}>
+          <a href={watch(v.bvid)} target="_blank" rel="noreferrer" className={cn("block truncate text-foreground", LINK)}>
             {v.title}
           </a>
           <a href={space(v.mid)} target="_blank" rel="noreferrer" className={cn("block truncate text-2xs text-muted-foreground", LINK)}>

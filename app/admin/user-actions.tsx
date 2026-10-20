@@ -40,7 +40,6 @@ function ActionButton({
   variant,
   icon: Icon,
   label,
-  tip,
   tone,
   disabled,
   onClick,
@@ -62,7 +61,6 @@ function ActionButton({
         variant="ghost"
         disabled={disabled}
         onClick={onClick}
-        title={`${label} — ${tip}`}
         aria-label={label}
         className={cn("text-muted-foreground hover:bg-accent hover:text-foreground", toneClass)}
       >
@@ -76,7 +74,6 @@ function ActionButton({
       variant="ghost"
       disabled={disabled}
       onClick={onClick}
-      title={tip}
       className={cn("h-8 justify-start gap-2 rounded-interior border border-line-strong px-3 text-[13px]", toneClass)}
     >
       <Icon className="size-3.5" />

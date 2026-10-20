@@ -659,6 +659,8 @@ export function VisibilitySwitch({
     <PublishSwitch
       icon={VISIBILITY_ICON[value]}
       label={label[value]}
+      // Both words' room, so the switch beside them never moves.
+      widest={[label.public, label.private]}
       checked={value === "public"}
       onCheckedChange={(on) => onChange(on ? "public" : "private")}
       disabled={visibilityLocked(current)}

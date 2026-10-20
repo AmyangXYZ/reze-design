@@ -185,7 +185,6 @@ export const RezeNode = memo(function RezeNode({ id, data, selected }: NodeProps
         ) : (
           <span
             className="cursor-text"
-            title="Double-click to rename"
             onDoubleClick={(e) => {
               e.stopPropagation() // don't also toggle preview (onNodeDoubleClick)
               ops?.setRenaming(graphNode.id)

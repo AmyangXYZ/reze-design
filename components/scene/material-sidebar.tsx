@@ -396,7 +396,6 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                   ? "border-blue-400/40 bg-blue-400/10 text-foreground"
                   : "border-line-strong text-muted-foreground hover:bg-white/5 hover:text-foreground",
               )}
-              title={m.file}
             >
               {m.file.replace(/\.pmx$/i, "")}
             </Button>

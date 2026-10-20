@@ -320,7 +320,6 @@ function EditorBody({
         {result && !result.ok && (
           <span
             className="min-w-0 flex-1 truncate text-2xs text-red-400"
-            title={result.diagnostics.join("\n")}
             style={{ fontFamily: CODE_FONT }}
           >
             {result.diagnostics[0]}
@@ -336,7 +335,6 @@ function EditorBody({
           size="sm"
           onClick={() => void compile()}
           disabled={busy}
-          title="⌘/Ctrl + Enter"
           className="h-7 bg-blue-400 px-3 text-xs font-medium text-on-accent hover:bg-blue-400/90 disabled:opacity-50"
         >
           {t.effectLibrary.compile}

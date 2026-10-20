@@ -140,7 +140,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   // rows on the black matte and the rest on the picture.
   const cover = useCover()
   return (
-    <div data-ink-zone={cover || undefined} className="mt-2.5 flex min-h-6 items-center justify-between first:mt-0">
+    <div data-ink-zone={cover || undefined} className={cn("flex min-h-6 items-center justify-between first:mt-0", cover ? "mt-1.5" : "mt-2.5")}>
       <span className="text-xs text-muted-foreground">{label}</span>
       {children}
     </div>
@@ -174,7 +174,7 @@ const rangeInputCover =
   "h-6 w-12 rounded-none border-0 border-b border-line bg-transparent px-0 text-center text-xs tabular-nums outline-none focus:border-foreground placeholder:text-muted-foreground disabled:opacity-50"
 /** On the cover an action is a word, like the console's. */
 const COVER_WORD =
-  "flex h-7 w-fit items-center gap-1.5 text-xs whitespace-nowrap text-muted-foreground hover:text-foreground disabled:opacity-40"
+  "mt-1.5 flex min-h-6 w-fit items-center gap-1.5 text-xs whitespace-nowrap text-muted-foreground first:mt-0 hover:text-foreground disabled:opacity-40"
 
 /** The part of FileSystemFileHandle this panel uses. */
 type SaveHandle = {
@@ -678,7 +678,7 @@ export const RenderPanel = memo(function RenderPanel({
       <div className={cover ? "px-4 pt-1 pb-3" : "px-4 py-3.5"}>
         {/* No section title — the panel IS the output settings; a heading over
             the only content is furniture. */}
-        <div className="mt-1">
+        <div className={cover ? "cover-enter mt-1" : "mt-1"}>
           <Row label={t.render.aspect}>
             <Select value={aspect} onValueChange={(v) => setAspect(v as Aspect)} disabled={exporting}>
               <SelectTrigger>
@@ -837,7 +837,7 @@ export const RenderPanel = memo(function RenderPanel({
         {cover ? (
           // On the cover the still and the script are words; Render is the
           // one solid thing on this edge.
-          <div data-ink-zone className="mt-4 flex flex-col">
+          <div data-ink-zone className="mt-1.5 flex flex-col">
             <Button variant="bare" disabled={!canRender} onClick={() => void aeScript()} className={COVER_WORD}>
               <Film className="size-3.5" />
               {t.render.aeScript}
@@ -880,12 +880,17 @@ export const RenderPanel = memo(function RenderPanel({
               disabled={!canRender}
               onClick={() => void start()}
               className={cn(
-                "h-8 flex-1 gap-1.5 bg-blue-400 text-xs font-medium text-on-accent hover:bg-blue-400/90 disabled:opacity-40",
-                cover ? "rounded-chip" : "rounded-l-none",
+                "h-8 flex-1 gap-1.5 text-xs font-medium disabled:opacity-40",
+                // On the cover the one solid thing is ink, as publish's is.
+                cover
+                  ? "rounded-chip bg-foreground text-background hover:bg-foreground/85"
+                  : "rounded-l-none bg-blue-400 text-on-accent hover:bg-blue-400/90",
               )}
             >
-              <Clapperboard className="size-3.5" />
-              {t.render.renderVideo}
+              {/* On the cover the column is titled Render video: the button is
+                  the verb alone. */}
+              {!cover && <Clapperboard className="size-3.5" />}
+              {cover ? t.lab.exportPanel : t.render.renderVideo}
             </Button>
           ) : (
             <Button

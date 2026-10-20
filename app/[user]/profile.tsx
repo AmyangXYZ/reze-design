@@ -33,11 +33,10 @@ import { useReport } from "@/hooks/use-report"
 import { useSession } from "@/lib/auth-client"
 import { useI18n, useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
-import { SceneCover } from "@/components/nsfw"
 
 type Published = { id: string; name: string; description: string; likeCount: number; createdAt: string }
 
-export type ProfileScene = Published & { poster: string | null; pinned: boolean; nsfw: boolean }
+export type ProfileScene = Published & { poster: string | null; pinned: boolean }
 export type ProfileEffect = Published & { wgsl: string }
 export type ProfileGraph = Published & { graph: ShaderGraph }
 export type ProfileGrade = Published & { spec: GradeSpec }
@@ -85,13 +84,12 @@ export function Profile({
   const likes = [...scenes, ...effects, ...graphs, ...grades].reduce((n, item) => n + item.likeCount, 0)
 
   // The banner: the scene the author pinned, else the one liked most among
-  // those with a picture to show and no flag on it. A flagged pin is still the
-  // banner — the author chose it — and blurs like any flagged cover.
+  // those with a picture to show.
   const hero = useMemo(
     () =>
       scenes.find((s) => s.pinned) ??
       scenes.reduce<ProfileScene | null>(
-        (best, s) => (s.poster && !s.nsfw && (!best || s.likeCount > best.likeCount) ? s : best),
+        (best, s) => (s.poster && (!best || s.likeCount > best.likeCount) ? s : best),
         null,
       ),
     [scenes],
@@ -322,7 +320,6 @@ function When({ iso, className }: { iso: string; className?: string }) {
   return (
     <time
       dateTime={iso}
-      title={inBrowser ? new Date(iso).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" }) : undefined}
       className={className}
     >
       {inBrowser ? relative(iso, locale) : iso.slice(0, 10)}
@@ -341,7 +338,8 @@ function Hero({ handle, scene, ...rest }: { handle: string; scene: ProfileScene 
       className="group relative block aspect-video overflow-hidden rounded-surface bg-white/5 outline-none focus-visible:ring-2 focus-visible:ring-foreground sm:aspect-[21/9]"
     >
       {scene.poster ? (
-        <SceneCover src={scene.poster} nsfw={scene.nsfw} className="absolute inset-0 h-full w-full" />
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={scene.poster} alt="" className="absolute inset-0 h-full w-full object-cover" />
       ) : (
         <span className="absolute inset-0 flex items-center justify-center text-muted-foreground" aria-hidden>
           <WandSparkles className="size-6" />
@@ -389,7 +387,8 @@ function SceneCard({ handle, scene, ...rest }: { handle: string; scene: ProfileS
     >
       <div className="relative aspect-video overflow-hidden rounded-surface bg-white/5 group-focus-visible:ring-2 group-focus-visible:ring-foreground">
         {scene.poster ? (
-          <SceneCover src={scene.poster} nsfw={scene.nsfw} loading="lazy" className="absolute inset-0 h-full w-full" />
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={scene.poster} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
         ) : (
           <span className="absolute inset-0 flex items-center justify-center text-muted-foreground" aria-hidden>
             <WandSparkles className="size-5" />
@@ -413,8 +412,8 @@ function SceneCard({ handle, scene, ...rest }: { handle: string; scene: ProfileS
 /** A preset the same way, smaller: its live picture, then its name and likes. */
 function PresetCard({ item, children }: { item: Published; children: React.ReactNode }) {
   return (
-    <div title={item.description || undefined}>
-      <div className="relative aspect-[16/10] overflow-hidden rounded-surface bg-white/5">{children}</div>
+    <div>
+      <div className="relative aspect-video overflow-hidden rounded-surface bg-white/5">{children}</div>
       <div className="mt-2.5 flex items-baseline justify-between gap-2">
         <div className="min-w-0 truncate text-sm text-foreground">{item.name}</div>
         <span className="flex shrink-0 items-center gap-1 self-center text-sm leading-none text-muted-foreground tabular-nums">

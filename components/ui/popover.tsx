@@ -4,7 +4,8 @@ import * as React from "react"
 import { Popover as PopoverPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
-import { Cover } from "@/components/ui/cover"
+import { Cover, useCover } from "@/components/ui/cover"
+import { layPop } from "@/components/ui/paper"
 import { preventFocusReturnOnPointer } from "@/lib/last-input"
 
 function Popover({
@@ -31,12 +32,24 @@ function PopoverContent({
   className,
   align = "center",
   sideOffset = 4,
+  ref,
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Content>) {
+  // Opened from the cover, it is laid as paper in its opener's ink.
+  const cover = useCover()
+  const attach = React.useCallback(
+    (el: HTMLDivElement | null) => {
+      if (el && cover) layPop(el)
+      if (typeof ref === "function") ref(el)
+      else if (ref) ref.current = el
+    },
+    [cover, ref],
+  )
   return (
     <Cover on={false}>
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Content
+          ref={attach}
           data-slot="popover-content"
           onCloseAutoFocus={preventFocusReturnOnPointer}
           align={align}

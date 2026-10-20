@@ -426,7 +426,7 @@ export function ColorField({
         aria-label={tc.open}
       >
         <span
-          className="size-4 shrink-0 rounded-chip ring-1 ring-line-strong transition-transform group-hover:scale-110"
+          className="size-3.5 shrink-0 rounded-chip ring-1 ring-line-strong"
           style={{ background: value }}
         />
         <span className="font-mono text-xs text-muted-foreground underline-offset-2 group-hover:text-foreground group-hover:underline">

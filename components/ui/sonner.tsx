@@ -41,11 +41,13 @@ const Toaster = ({ ...props }: ToasterProps) => {
       // landed on a half pixel, and the spinner wobbled about a fractional centre
       // instead of turning in place. Sized to the icon, it sits on whole pixels.
       toastOptions={{ ...props.toastOptions, classNames: { ...props.toastOptions?.classNames, loader: "size-4" } }}
+      // Through --toast-* so the editor can lay toasts as paper (globals.css,
+      // "Toasts"); elsewhere they are chrome stacked on chrome, as below.
       style={
         {
-          "--normal-bg": "var(--color-surface-raised)",
-          "--normal-text": "var(--color-foreground)",
-          "--normal-border": "var(--color-line-strong)",
+          "--normal-bg": "var(--toast-bg, var(--color-surface-raised))",
+          "--normal-text": "var(--toast-text, var(--color-foreground))",
+          "--normal-border": "var(--toast-border, var(--color-line-strong))",
           "--border-radius": "var(--radius-surface)",
         } as React.CSSProperties
       }

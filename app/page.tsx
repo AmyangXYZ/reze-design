@@ -284,6 +284,19 @@ function coverInk(color: string): "dark" | "light" {
   return y > 0.18 ? "dark" : "light"
 }
 
+/** A top-row word set in the room its English takes (the wider of the two
+ *  languages), so switching language moves nothing on the row. */
+function Slot({ text, mark, end }: { text: string; mark: string; end?: boolean }) {
+  return (
+    <span className={cn("grid", end ? "justify-items-end" : "justify-items-start")}>
+      <span className="col-start-1 row-start-1">{text}</span>
+      <span aria-hidden className="invisible col-start-1 row-start-1">
+        {mark}
+      </span>
+    </span>
+  )
+}
+
 /** Floating chrome — the 0.3.x chrome's `floating`, taken through the surface
  *  token so the pills and the panel cannot drift apart. */
 const PILL = "rounded-surface border border-line-strong bg-surface shadow-float backdrop-blur-xs"
@@ -1778,7 +1791,7 @@ function ClipRow({
               revealed={volumeOpen || menuOpen}
               text={
                 clip ? (
-                  <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={clipLabel(clip)}>
+                  <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
                     {clipLabel(clip)}
                   </span>
                 ) : (
@@ -1990,7 +2003,7 @@ function CastMemberRow({
               reserve={4.5}
               revealed={optionsOpen}
               text={
-                <span className={cn("min-w-0 flex-1 truncate text-xs", inspected && cover && "font-medium")} title={name}>
+                <span className={cn("min-w-0 flex-1 truncate text-xs", inspected && cover && "font-medium")}>
                   {name}
                 </span>
               }
@@ -2307,7 +2320,6 @@ export default function Lab() {
     tags: string[]
     credits: string
     video?: string
-    nsfw: boolean
     displayOnly: boolean
   } | null>(null)
   const [forkPending, setForkPending] = useState(forkOnBoot !== null)
@@ -2664,6 +2676,7 @@ export default function Lab() {
   //
   const framing = useRenderFraming()
   const [exportOpen, setExportOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
   // Layout and hit size, asked separately — lib/device.ts. On touch none of
   // the look editors (node graph, WGSL, grade) is offered, as the timeline is
   // not: a phone picks and tunes looks, it does not author them.
@@ -2676,9 +2689,16 @@ export default function Lab() {
   // The art director and Export share the right edge: one at a time.
   const openAgent = useCallback(() => {
     setExportOpen(false)
+    setShareOpen(false)
     setAgentOpen(true)
     setAgentRaise((n) => n + 1)
-  }, [setAgentOpen, setAgentRaise, setExportOpen])
+  }, [setAgentOpen, setAgentRaise, setExportOpen, setShareOpen])
+  // Publishing is done in the right-hand column too, one at a time with them.
+  const openShare = useCallback(() => {
+    setAgentOpen(false)
+    setExportOpen(false)
+    setShareOpen(true)
+  }, [setAgentOpen, setExportOpen, setShareOpen])
   /**
    * Bumped every time a right panel is SUMMONED, which is what raises it.
    *
@@ -2716,8 +2736,16 @@ export default function Lab() {
    * Now the canvas becomes the box. What you are looking at IS the export,
    * at the export's aspect, and the area around it is simply the editor.
    */
+  // Publishing frames the scene too, at a cover's shape (16:9, as a video's
+  // and the gallery's), so the shot being published is the one looked at.
+  // Export states its own frame a render after it opens; until it does (coming
+  // from publish, say) the frame on screen holds, so the picture eases from one
+  // frame to the other and never springs back to the window between them.
+  const shownFrame =
+    framing.activeFrame ?? (!compact && (shareOpen || exportOpen) ? { aspect: 16 / 9, watermark: false } : null)
+  const framed = shownFrame !== null
   const frameRect =
-    framing.activeFrame && framing.frameVp
+    shownFrame && framing.frameVp
       ? (() => {
           // On a phone the export panel hangs over the top of the screen, so
           // the frame takes the band between the panel's furthest reach (the
@@ -2726,28 +2754,30 @@ export default function Lab() {
           // does not move as the panel's own lines come and go.
           //
           // On a desktop the frame takes the space the cover's chrome leaves
-          // free, 2rem clear of it — right of the console (25rem), left of
-          // the export column (18rem at right-7), under the top row and over
-          // the transport (4rem each) — so every word stands on the black
+          // free, 2rem clear of it — right of the console's words (its 25rem
+          // less the pane rows' 1rem inset), left of the export column (18rem
+          // at right-7), under the top row and over the transport (4rem each) — so every word stands on the black
           // matte and none straddles the frame's edge. The preview is only
           // drawn smaller: the export renders at its own resolution.
           const rem = 16
-          const left = compact ? 0 : 27 * rem
+          const left = compact ? 0 : 26 * rem
           const right = compact ? framing.frameVp.w : framing.frameVp.w - 21.75 * rem
           const top = compact ? (exportOpen ? 3.75 * rem + 0.6 * framing.frameVp.h + 0.5 * rem : 0) : 4 * rem
           const bottom = compact ? (exportOpen ? framing.frameVp.h - 4.25 * rem : framing.frameVp.h) : framing.frameVp.h - 4 * rem
           const vw = right - left
           const vh = bottom - top
           const va = vw / vh
-          const a = framing.activeFrame.aspect
+          const a = shownFrame.aspect
           // Within a hair of the band's own shape, take the whole band:
           // shrinking the canvas by a percent to honour a rounding difference
           // costs pixels and buys nothing anybody can see.
           if (a <= va * FRAME_ASPECT_TOL && a >= va / FRAME_ASPECT_TOL) return { x: left, y: top, w: vw, h: vh }
           const w = a < va ? vh * a : vw
           const h = a < va ? vh : vw / a
+          // Set from the band's left edge — 26rem, the search box's — rather
+          // than centred in it, so the picture lines up under the search.
           return {
-            x: left + (vw - w) / 2,
+            x: compact ? left + (vw - w) / 2 : left,
             y: top + (vh - h) / 2,
             w,
             h,
@@ -2776,14 +2806,14 @@ export default function Lab() {
     const engine = engineRef.current
     if (!engine || !ready) return
     if (framing.exporting) return // the export pins the full output resolution itself
-    if (framing.activeFrame && !framing.frameVp) return
+    if (framed && !framing.frameVp) return
     if (frameW > 0 && frameH > 0) {
       const dpr = window.devicePixelRatio || 1
       engine.setRenderSize(Math.round(frameW * dpr), Math.round(frameH * dpr))
     } else {
       engine.setRenderSize(null)
     }
-  }, [frameW, frameH, framing.activeFrame, framing.frameVp, framing.exporting, ready, engineRef])
+  }, [frameW, frameH, framed, framing.frameVp, framing.exporting, ready, engineRef])
 
   /**
    * Re-rasterise the lyric sheet whenever the canvas changes size.
@@ -4261,9 +4291,10 @@ export default function Lab() {
    *  here — the panel IS the surface for all of them. */
   const openExport = useCallback(() => {
     setAgentOpen(false)
+    setShareOpen(false)
     setExportOpen(true)
     setExportRaise((n) => n + 1)
-  }, [setExportOpen, setAgentOpen])
+  }, [setExportOpen, setAgentOpen, setShareOpen])
   /**
    * Uploaded this session and not styled yet.
    *
@@ -4296,8 +4327,10 @@ export default function Lab() {
   const closeExport = useCallback(() => setExportOpen(false), [setExportOpen])
   // One panel in the right column, and the column decides — see use-dock-slot.
   // The pairwise clears that used to live in the two openers below are gone with
-  // it: three panels is where writing the rule per pair stops working.
-  useDockSlot("materials", inspectedId !== null, closeMaterials)
+  // it: three panels is where writing the rule per pair stops working. On a
+  // desktop the materials are the console's Materials pane, on the left, so
+  // they share the column with nothing; on a phone every panel is the sheet.
+  useDockSlot("materials", compact && inspectedId !== null, closeMaterials)
   useDockSlot("export", exportOpen, closeExport)
   // On a phone the stack and the right-hand panels open in the same place, so
   // they share the column too. A panel that pushes the stack away hands it back
@@ -4529,7 +4562,6 @@ export default function Lab() {
   // Publishing. A scrimmed dialog, not a panel: this is the one task where the
   // canvas is NOT what you are working on — you are naming and describing the
   // thing you already made.
-  const [shareOpen, setShareOpen] = useState(false)
   // Graph editor filling the screen. Session state, not stored with the rect:
   // the rect is where your window LIVES and is worth remembering, while filling
   // the screen is something you do for one dense graph and leave behind.
@@ -6621,7 +6653,6 @@ export default function Lab() {
             tags?: string[] | null
             credits?: string | null
             video?: string | null
-            nsfw?: boolean
             displayOnly?: boolean
           }
         }>(`/api/library/${handoff.scene}`)
@@ -6638,7 +6669,6 @@ export default function Lab() {
             tags: item.tags ?? [],
             credits: item.credits ?? "",
             video: item.video ?? "",
-            nsfw: item.nsfw === true,
             displayOnly: item.displayOnly === true,
           })
         }
@@ -7099,7 +7129,7 @@ export default function Lab() {
       else if (item.id === "language") setLangOpen(true)
       else if (item.id === "look") setStyleOpen(true)
       // The same dialog the Share pill opens — one publish surface, two doors.
-      else if (item.id === "publish") setShareOpen(true)
+      else if (item.id === "publish") openShare()
       else if (item.id === "gallery") openGallery()
       else if (item.id.startsWith("ctl-")) {
         const c = DOCK_CONTROLS.find((x) => `ctl-${x.id}` === item.id)
@@ -7134,6 +7164,7 @@ export default function Lab() {
       patch,
       setLangOpen,
       openExport,
+      openShare,
       openAgent,
       openGraphLibrary,
       openBrowse,
@@ -7159,7 +7190,7 @@ export default function Lab() {
   // handed nothing to aim.
   const effectFxAimable = (effectSurface[effectFxUid]?.readsCast ?? false) && cast.length > 1
   const effectMore = (
-    <div className={cn("flex flex-wrap gap-x-5", effectFx && "mt-3 border-t border-line pt-2")}>
+    <div className={cn("flex flex-wrap justify-between gap-x-5", effectFx && "mt-3 border-t border-line pt-2")}>
       {/* The picker still holds MEMBERSHIP: every applied
           effect ticks, and a ticked row clicks off. */}
       <QuickPick
@@ -7250,7 +7281,7 @@ export default function Lab() {
               // On the cover the column is headed like the console's byline: a
               // mono line, its actions as words, and the tab line as its rule.
               <div data-ink-zone className="flex h-5 shrink-0 items-center gap-4 px-4">
-                <span className="min-w-0 flex-1 truncate font-mono text-2xs tracking-wide uppercase">{t.lab.agent.title}</span>
+                <span className="min-w-0 flex-1 truncate font-mono text-2xs font-medium tracking-wide uppercase">{t.lab.agent.title}</span>
                 <AgentMenu
                   settings={aiSettings}
                   active={aiActive}
@@ -7260,8 +7291,8 @@ export default function Lab() {
                   text={t.lab.agent.settings}
                   word={t.lab.agent.keys}
                 />
-                <Button variant="bare" aria-label={t.lab.agent.close} onClick={() => setAgentOpen(false)} className="h-5 text-xs text-muted-foreground hover:text-foreground">
-                  {t.lab.agent.closeWord}
+                <Button variant="bare" aria-label={t.lab.agent.close} onClick={() => setAgentOpen(false)} className="flex size-5 items-center justify-center text-muted-foreground hover:text-foreground">
+                  <X className="size-3.5" />
                 </Button>
               </div>
             )}
@@ -7489,6 +7520,31 @@ export default function Lab() {
       // The chrome comes up once its ink has been read off a real frame, so
       // it never shows in a guessed ink first (globals.css, "The cover").
       if (read || !main.querySelector("[data-ink-zone]")) main.dataset.inked = ""
+      // The toasts' corner (bottom right) is read the same way, so a toast is
+      // laid as paper in the ink it stands on (globals.css, "Toasts").
+      {
+        const x0 = Math.max(window.innerWidth - 384, cr.left)
+        const y0 = Math.max(window.innerHeight - 160, cr.top)
+        const x1 = Math.min(window.innerWidth, cr.right)
+        const y1 = Math.min(window.innerHeight, cr.bottom)
+        const root = document.documentElement
+        let mid: number | null = null
+        if (x1 > x0 && y1 > y0) {
+          const ls: number[] = []
+          for (let qy = Math.floor(((y0 - cr.top) / cr.height) * H); qy < Math.ceil(((y1 - cr.top) / cr.height) * H); qy++) {
+            for (let qx = Math.floor(((x0 - cr.left) / cr.width) * W); qx < Math.ceil(((x1 - cr.left) / cr.width) * W); qx++) {
+              const i = (qy * W + qx) * 4
+              const y = 0.2126 * lin(d[i]) + 0.7152 * lin(d[i + 1]) + 0.0722 * lin(d[i + 2])
+              ls.push(y > 216 / 24389 ? 116 * Math.cbrt(y) - 16 : (24389 / 27) * y)
+            }
+          }
+          ls.sort((a, b) => a - b)
+          if (ls.length) mid = ls[ls.length >> 1]
+        }
+        const was = root.dataset.toastPaper
+        const side = mid === null ? "dark" : was === "light" ? (mid < 44 ? "dark" : "light") : mid > 54 ? "light" : "dark"
+        if (was !== side) root.dataset.toastPaper = side
+      }
 
     }
     // A scene that never gives a frame to read (nothing drawn yet, a picture
@@ -7602,19 +7658,6 @@ export default function Lab() {
               canvas that would not be exported, and there are no such parts:
               the canvas IS the frame. What surrounds it is the editor's own
               ground, which needs no dimming to read as not-the-shot. */}
-          {/* Capture-tool convention: amber = framed (composing), red = recording. */}
-          <div
-            className={cn(
-              "absolute rounded-chip border",
-              framing.exporting ? "border-red-400/90" : "border-amber-400/80",
-            )}
-            style={{
-              left: frameRect.x,
-              top: frameRect.y,
-              width: frameRect.w,
-              height: frameRect.h,
-            }}
-          />
           {/* The watermark, WHERE the export will put it — same layout maths as
               drawWatermark in lib/video-export.ts (size h·0.028, pad h·0.024)
               and the engine demo's own type style, so what you frame is what you
@@ -7685,7 +7728,7 @@ export default function Lab() {
                   onClick={() => openGallery()}
                   className="text-foreground hover:text-muted-foreground"
                 >
-                  {t.lab.gallery}
+                  <Slot text={t.lab.gallery} mark={dictionaries.en.lab.gallery} />
                 </Button>
                 {/* A search box drawn as a hairline frame, the palette's own: the
                     palette grows out of it. The frame takes no room, so the
@@ -7702,7 +7745,7 @@ export default function Lab() {
                   // same pixels; the bar is back only once the palette has
                   // shrunk into it and gone (globals.css, "PAPER").
                   className={cn(
-                    "relative flex h-8 w-52 items-center gap-2 px-3 text-muted-foreground after:absolute after:inset-0 after:rounded-surface after:border after:border-line-strong",
+                    "absolute top-0 left-[24.25rem] flex h-8 w-52 items-center gap-2 px-3 text-muted-foreground after:absolute after:inset-0 after:rounded-interior after:border after:border-line-strong",
                     (paletteOpen || paletteUp) && "invisible",
                   )}
                 >
@@ -7848,7 +7891,7 @@ export default function Lab() {
                   className="ml-3 flex h-8 items-center gap-2 text-xs text-foreground"
                 >
                   {framing.exporting && <span className="size-1.5 animate-pulse rounded-full bg-red-400" />}
-                  {framing.exporting ? t.lab.exporting : t.lab.exportPanel}
+                  {framing.exporting ? t.lab.exporting : <Slot text={t.lab.exportPanel} mark={dictionaries.en.lab.exportPanel} end />}
                   {framing.exporting && (
                     <span className="min-w-[4ch] text-right font-mono text-2xs tabular-nums">{exportPct !== null ? `${exportPct}%` : "…"}</span>
                   )}
@@ -7856,7 +7899,7 @@ export default function Lab() {
               )}
               <Button
                 size="sm"
-                onClick={() => setShareOpen(true)}
+                onClick={openShare}
                 // Sized to its label with tight padding, rather than to a
                 // hand-set 3.75rem. Every pixel it gives up goes to the palette
                 // beside it — that is the only flex-1 in a cluster fixed at
@@ -7868,7 +7911,9 @@ export default function Lab() {
                 className="ml-3 h-8 shrink-0 rounded-none bg-transparent px-0 text-xs font-normal text-foreground hover:bg-transparent compact:ml-0 compact:h-7 compact:rounded-interior compact:bg-blue-400 compact:px-3 compact:font-medium compact:text-on-accent compact:hover:bg-blue-400/90 compact:hover:text-on-accent compact:ml-0 compact:h-7 compact:px-3 max-[24rem]:w-7 max-[24rem]:px-0"
               >
                 <Share2 className="hidden size-3.5 max-[24rem]:block" />
-                <span className="max-[24rem]:hidden">{t.lab.share}</span>
+                <span className="max-[24rem]:hidden">
+                  <Slot text={t.lab.share} mark={dictionaries.en.lab.share} end />
+                </span>
               </Button>
             </div>
               )}
@@ -7886,7 +7931,7 @@ export default function Lab() {
           // otherwise, which rings the first row and arms Enter on it — an
           // answer the dialog just finished asking you for.
           onOpenAutoFocus={(e) => e.preventDefault()}
-          paper
+          paper="center"
           showCloseButton={false}
           className={cn(
             "rounded-surface border-line-strong bg-surface-raised backdrop-blur-xs",
@@ -7909,8 +7954,7 @@ export default function Lab() {
                   key={sky.path}
                   variant="ghost"
                   onClick={() => void chooseSky(sky)}
-                  title={sky.path}
-                  className="h-auto min-w-0 flex-col items-stretch gap-1 rounded-interior p-1 text-xs font-normal text-muted-foreground hover:text-foreground"
+                  className="h-auto min-w-0 flex-col items-stretch gap-1 rounded-interior p-1 text-xs font-normal text-foreground"
                 >
                   <span className="block aspect-[2/1] overflow-hidden rounded-chip border border-line bg-surface">
                     {skyThumbs.list === shownUpload.skies && skyThumbs.urls[sky.path] && (
@@ -7935,7 +7979,6 @@ export default function Lab() {
                   // The path is still the identity and still the tooltip: two
                   // .pmx in one archive can share a filename, and a picker that
                   // shows the same word twice is worse than a long one.
-                  title={path}
                 >
                   {pmxLabel(path, shownUpload.paths)}
                 </Button>
@@ -7973,7 +8016,7 @@ export default function Lab() {
                   setStyleOpen(false)
                   applyLookPack(pack)
                 }}
-                className={cn("relative mx-1 flex h-7 w-[calc(100%-0.5rem)] cursor-pointer items-center justify-between gap-2.5 rounded-interior px-2.5 text-left text-xs hover:bg-foreground/[0.07] focus-visible:bg-foreground/[0.07]", pack === activePack ? "text-foreground" : "text-muted-foreground")}
+                className={cn("relative mx-1 flex h-7 w-[calc(100%-0.5rem)] cursor-pointer items-center justify-between gap-2.5 rounded-interior px-2.5 text-left text-xs hover:bg-foreground/[0.07] focus-visible:bg-foreground/[0.07]", "text-foreground")}
               >
                 {t.brand.styles[pack]}
                 {pack === activePack && <Check className="size-3.5 shrink-0" />}
@@ -8009,7 +8052,7 @@ export default function Lab() {
                   pendingLocale.current = code
                   setLangOpen(false)
                 }}
-                className={cn("relative mx-1 flex h-7 w-[calc(100%-0.5rem)] cursor-pointer items-center justify-between gap-2.5 rounded-interior px-2.5 text-left text-xs hover:bg-foreground/[0.07] focus-visible:bg-foreground/[0.07]", code === locale ? "text-foreground" : "text-muted-foreground")}
+                className={cn("relative mx-1 flex h-7 w-[calc(100%-0.5rem)] cursor-pointer items-center justify-between gap-2.5 rounded-interior px-2.5 text-left text-xs hover:bg-foreground/[0.07] focus-visible:bg-foreground/[0.07]", "text-foreground")}
               >
                 {LOCALE_LABELS[code]}
                 {code === locale && <Check className="size-3.5 shrink-0" />}
@@ -8662,11 +8705,15 @@ export default function Lab() {
                           on && "[-webkit-text-stroke:0.35px_currentColor]",
                         )}
                       >
-                        {/* One rule under numeral and label together, on hover. */}
+                        {/* One rule under numeral and label together: the
+                            chosen entry's in the selected blue, as a chosen
+                            tab's is; any other's on hover, in the ink. */}
                         <span
                           className={cn(
-                            "relative flex items-center gap-2.5 py-1 after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-current after:opacity-0",
-                            !on && "group-hover/entry:after:opacity-100",
+                            "relative flex items-center gap-2.5 py-1 after:absolute after:-inset-x-1 after:bottom-0",
+                            on
+                              ? "after:h-[1.5px] after:bg-blue-400"
+                              : "after:h-px after:bg-current after:opacity-0 group-hover/entry:after:opacity-100",
                           )}
                         >
                           <span className="font-mono text-2xs font-normal text-muted-foreground tabular-nums">
@@ -9201,7 +9248,6 @@ export default function Lab() {
                                     <Button
                                       variant="bare"
                                       onClick={() => setSelectedStage(root.id)}
-                                      title={n === 0 && stageRoots.length > 1 ? t.lab.stageLighting(displayName(root.file)) : root.file}
                                       className="min-w-0 flex-1 cursor-pointer truncate text-left"
                                     >
                                       {displayName(root.file)}
@@ -9451,7 +9497,9 @@ export default function Lab() {
                               />
                             </div>
                           )}
-                          <div className="mt-2 flex flex-wrap gap-x-3">
+                          {/* The pane's actions span its row, first word to
+                              its left edge and last to its right. */}
+                          <div className="mt-2 flex flex-wrap justify-between gap-x-3">
                             {!touch && (
                               <Button variant="bare" onClick={() => openEffectEditor(effectFx)} className={LINE_ACTION}>
                                 <PenLine className="size-3.5" />
@@ -9551,7 +9599,6 @@ export default function Lab() {
                                 >
                                   <Button variant="bare"
                                     onClick={() => setSelectedPlane(plane.id)}
-                                    title={plane.file}
                                     className="min-w-0 flex-1 cursor-pointer truncate text-left"
                                   >
                                     {plane.file}
@@ -9576,7 +9623,6 @@ export default function Lab() {
                             <Button variant="bare"
                               onClick={() => planeInput.current?.click()}
                               aria-label={t.lab.uploadPlane}
-                              title={t.lab.uploadPlane}
                               className="ml-1 flex size-6 shrink-0 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
                             >
                               <Plus className="size-3.5" />
@@ -9711,7 +9757,6 @@ export default function Lab() {
                                     >
                                       <Button variant="bare"
                                         onClick={() => setSelectedProp(prop.id)}
-                                        title={prop.file}
                                         className="min-w-0 flex-1 cursor-pointer truncate text-left"
                                       >
                                         {displayName(prop.file)}
@@ -9732,7 +9777,6 @@ export default function Lab() {
                                     folderInput.current?.click()
                                   }}
                                   aria-label={t.lab.uploadProp}
-                                  title={t.lab.uploadProp}
                                   className="ml-1 flex size-6 shrink-0 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
                                 >
                                   <Plus className="size-3.5" />
@@ -9981,7 +10025,6 @@ export default function Lab() {
                                         text={
                                           <Button variant="bare"
                                             onClick={() => setLampOpen((cur) => (cur === l.id ? null : l.id))}
-                                            title={l.name}
                                             className={cn(
                                               "flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-xs transition-colors",
                                               open ? "text-blue-400" : "hover:text-foreground",
@@ -10774,15 +10817,15 @@ export default function Lab() {
           variant={compact ? "ghost" : "bare"}
           onClick={openAgent}
           aria-label={t.lab.agent.title}
-          tabIndex={agentOpen || (!compact && exportOpen) ? -1 : undefined}
-          aria-hidden={agentOpen || (!compact && exportOpen) || undefined}
+          tabIndex={agentOpen || (!compact && (exportOpen || shareOpen)) ? -1 : undefined}
+          aria-hidden={agentOpen || (!compact && (exportOpen || shareOpen)) || undefined}
           data-edge="right"
           className={cn(
             // The mark and "AI" set as type on the canvas, like the console.
             "pointer-events-auto absolute flex items-center gap-2 text-xs text-foreground hover:bg-transparent",
             compact ? cn(PILL, "top-1/2 right-3 h-10 -translate-y-1/2 px-4 font-medium") : "cover-type top-1/2 right-7 h-8 -translate-y-1/2 px-0 hover:text-muted-foreground",
             "transition-[opacity,scale,visibility,background-color,color] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
-            (agentOpen || (!compact && exportOpen)) && "invisible scale-110 opacity-0",
+            (agentOpen || (!compact && (exportOpen || shareOpen))) && "invisible scale-110 opacity-0",
             // On a phone every panel opens over the band the pillar stands in.
             compact && (expanded || inspectedId !== null || exportOpen || gradeEditor !== null || browseOpen) && "invisible opacity-0",
           )}
@@ -10838,7 +10881,7 @@ export default function Lab() {
           <aside
             data-edge="right"
             className={cn(
-              "cover-type absolute top-20 right-7 bottom-20 flex w-[18rem] flex-col pl-5 text-xs",
+              "cover-type absolute top-16 right-7 bottom-20 flex w-[18rem] flex-col pl-5 text-xs",
               "transition-[opacity,translate,visibility] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
               !agentOpen && "invisible translate-x-2 opacity-0",
             )}
@@ -10894,9 +10937,9 @@ export default function Lab() {
           <aside
             data-edge="right"
             className={cn(
-              "cover-type absolute top-20 right-7 flex max-h-[calc(100%-10rem)] w-[18rem] flex-col pl-5 text-xs",
+              "cover-type absolute top-16 right-7 flex max-h-[calc(100%-9rem)] w-[18rem] flex-col pl-5 text-xs",
               "transition-[opacity,translate,visibility] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
-              !exportOpen && "invisible translate-x-2 opacity-0",
+              !(exportOpen || shareOpen) && "invisible translate-x-2 opacity-0",
             )}
             style={{ zIndex: exportZ.z }}
             onPointerDownCapture={exportZ.onPointerDownCapture}
@@ -10904,16 +10947,29 @@ export default function Lab() {
           >
             <div data-ink-zone className="flex min-h-0 flex-1 flex-col">
             {/* As the art director's: from the title row's middle to the last
-                control's (Render, h-8 over the panel's pb-3). */}
-            <span aria-hidden className="absolute top-2.5 bottom-7 left-0 w-px bg-line-strong" />
+                control's (Render, h-8 over the panel's pb-3). Publishing draws
+                its own, from the same top to its own last control. */}
+            <span aria-hidden className={cn("absolute top-2.5 bottom-7 left-0 w-px bg-line-strong", shareOpen && "hidden")} />
             <Cover>
+              {/* The shell export and publish share: a file to keep, a scene to
+                  put online. The title row stays; the contents under it swap,
+                  their rows dealt in as the console's are. */}
               <div data-ink-zone className="flex h-5 shrink-0 items-center gap-4 px-4">
-                <span className="min-w-0 flex-1 truncate font-mono text-2xs tracking-wide uppercase">{t.lab.exportPanel}</span>
-                <Button variant="bare" aria-label={t.lab.closeExport} onClick={() => setExportOpen(false)} className="h-5 text-xs text-muted-foreground hover:text-foreground">
-                  {t.library.close}
+                <span className="min-w-0 flex-1 truncate font-mono text-2xs font-medium tracking-wide uppercase">
+                  {shareOpen ? (updatesSceneId ? t.share.updateScene : t.share.title) : t.render.renderVideo}
+                </span>
+                <Button
+                  variant="bare"
+                  aria-label={shareOpen ? t.library.close : t.lab.closeExport}
+                  onClick={() => (shareOpen ? setShareOpen(false) : setExportOpen(false))}
+                  className="flex size-5 items-center justify-center text-muted-foreground hover:text-foreground"
+                >
+                  <X className="size-3.5" />
                 </Button>
               </div>
-              <div className="mt-2 flex min-h-0 flex-1 flex-col">{exportBody}</div>
+              {/* Kept mounted under publishing (a render must survive it), and
+                  shown again it deals its rows in afresh. */}
+              <div className={cn("mt-2 flex min-h-0 flex-1 flex-col", shareOpen && "hidden")}>{exportBody}</div>
             </Cover>
             </div>
           </aside>

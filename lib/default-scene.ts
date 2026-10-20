@@ -176,7 +176,7 @@ const DEMO_SCENE_DOC: SceneDoc = {
     // freeze it against the library entry it was forked from; the demo is the
     // one place a shipped effect should be the shipped effect.
     background: {
-      color: "#f6cfff",
+      color: "#f3e8ff",
       effects: [
         { source: "Floating Stars" },
         { source: "Hand Sparks" },
@@ -184,7 +184,7 @@ const DEMO_SCENE_DOC: SceneDoc = {
       ],
     },
     grade: { preset: "Neutral", intensity: 1 },
-    ground: { enabled: true, color: "#c800de", size: 160, opacity: 0.48, grid: "#fafaf9", gridEnabled: true, fade: { start: 0.2, end: 1 } },
+    ground: { enabled: true, color: "#ed6aff", size: 160, opacity: 0.48, grid: "#fafaf9", gridEnabled: true, fade: { start: 0.2, end: 1 } },
     physics: DEFAULT_PHYSICS,
     // Her eyes follow the camera: the first thing a visitor sees should look back.
     eyes: { enabled: true },

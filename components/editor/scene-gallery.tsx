@@ -42,9 +42,6 @@ import { useZOrder } from "@/hooks/use-z-order"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { SiteChip, VideoLink } from "@/components/video-link"
-import { SceneCover } from "@/components/nsfw"
-import { Switch } from "@/components/ui/switch"
-import { setShowNsfw, useShowNsfw } from "@/lib/nsfw-pref"
 
 export type GalleryScene = {
   id: string
@@ -61,8 +58,6 @@ export type GalleryScene = {
   /** Only ever your own rows carry one; everyone else's read as public. The card
    *  badges it, and the lists below decide what they may hold by it. */
   visibility?: "public" | "private"
-  /** Flagged by its author; its cover blurs until the viewer opts in. */
-  nsfw?: boolean
   /** Its author asked that it be watched, not opened in the editor. */
   displayOnly?: boolean
   /** The author's account picture, for their avatar. */
@@ -389,7 +384,6 @@ function GalleryContent({
   })
   const [cursor, setCursor] = useState<number | null>(() => pages.get(view)?.nextCursor ?? null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const nsfwShown = useShowNsfw()
   const [tags, setTags] = useState<[string, number][]>(() => tagCounts ?? [])
   const [makers, setMakers] = useState<[string, number][] | null>(() => makerCounts)
   const [counts, setCounts] = useState<FacetCounts | null>(() => facetCounts)
@@ -637,7 +631,8 @@ function GalleryContent({
 
   const meta = (s: GalleryRow): CardMeta => ({
     preview: s.poster ? (
-      <SceneCover src={s.poster} nsfw={s.nsfw} loading="lazy" className="h-full w-full" />
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={s.poster} alt="" loading="lazy" className="h-full w-full object-cover" />
     ) : (
       <div className="flex h-full items-center justify-center bg-white/5 text-2xs text-muted-foreground">
         {t.gallery.noPoster}
@@ -690,11 +685,6 @@ function GalleryContent({
           <span className="compact:sr-only">{t.gallery.title}</span>
         </DialogTitle>
         <LibraryToolbar browse={browse} />
-        {/* One switch for every flagged cover, remembered by this browser. */}
-        <label className="ml-3 flex h-6 shrink-0 cursor-pointer items-center gap-1.5 text-2xs text-muted-foreground compact:ml-0">
-          {t.nsfw.toggle}
-          <Switch size="sm" checked={nsfwShown} onCheckedChange={setShowNsfw} />
-        </label>
         <DialogClose className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-chip text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
           <X className="size-3.5" />
           <span className="sr-only">{t.library.close}</span>
@@ -758,10 +748,11 @@ function GalleryContent({
                 <Button variant="bare"
                   type="button"
                   onClick={() => openScene(selected)}
-                  className="block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-chip border border-line-strong bg-white/5"
+                  className="block aspect-video w-full cursor-pointer overflow-hidden rounded-chip border border-line-strong bg-white/5"
                 >
                   {selected.poster ? (
-                    <SceneCover src={selected.poster} nsfw={selected.nsfw} className="h-full w-full" />
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={selected.poster} alt="" className="h-full w-full object-cover" />
                   ) : (
                     <span className="flex h-full items-center justify-center text-2xs text-muted-foreground">
                       {t.gallery.noPoster}

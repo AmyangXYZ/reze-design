@@ -7,6 +7,7 @@ import { Dialog as DialogPrimitive } from "radix-ui"
 import { cn } from "@/lib/utils"
 import { Cover } from "@/components/ui/cover"
 import { Button } from "@/components/ui/button"
+import { opener } from "@/components/ui/paper"
 
 // ONE dialog at a time. Opening a dialog closes the one that is open — unless
 // it was opened from inside that one (a "discard changes?" over its own form),
@@ -14,10 +15,6 @@ import { Button } from "@/components/ui/button"
 // "From inside" is where the last press or the focus was: a mouse click drops
 // focus (Button), so the press is the one that tells.
 const openDialogs: { close: () => void; content: () => HTMLElement | null }[] = []
-let lastPress: Element | null = null
-if (typeof document !== "undefined") {
-  document.addEventListener("pointerdown", (e) => (lastPress = e.target as Element), true)
-}
 
 function Dialog({
   open,
@@ -42,10 +39,17 @@ function Dialog({
   React.useEffect(() => {
     if (!isOpen) return
     const me = { close: () => setOpen(false), content: () => contentRef.current }
-    const from = [document.activeElement, lastPress]
+    const from = [document.activeElement, opener()]
     const top = openDialogs[openDialogs.length - 1]
     const nested = !!top && from.some((el) => el && top.content()?.contains(el))
-    if (!nested) for (const d of openDialogs.splice(0)) d.close()
+    // A column (publish) stands beside the work as export does: another
+    // dialog opening leaves it be.
+    if (!nested)
+      for (const d of [...openDialogs]) {
+        if (d.content()?.dataset.paperAt === "column") continue
+        openDialogs.splice(openDialogs.indexOf(d), 1)
+        d.close()
+      }
     openDialogs.push(me)
     return () => {
       const at = openDialogs.indexOf(me)
@@ -65,12 +69,24 @@ const DialogContentRef = React.createContext<React.RefObject<HTMLElement | null>
  *  in the ink of the zone the box stands in. Where there is no box (the
  *  phone), the dialog keeps its own place. The box hides while paper is up
  *  and comes back once the last sheet has gone. */
-function layPaper(el: HTMLElement) {
+function layPaper(el: HTMLElement, at: "bar" | "center" | "page" | "column") {
   const bar = document.querySelector<HTMLElement>("[data-search-bar]")
   const r = bar?.getBoundingClientRect()
   if (!bar || !r || r.width === 0) return false
+  // A column stands at the right edge beside the scene framed for it (the
+  // page fits the frame clear of the column), so it is always on the black
+  // matte: white type.
+  if (at === "column") {
+    el.dataset.paper = "dark"
+    el.dataset.paperAt = at
+    return true
+  }
   const zone = bar.closest<HTMLElement>("[data-ink]")
   el.dataset.paper = zone?.dataset.ink === "light" ? "dark" : "light"
+  el.dataset.paperAt = at
+  // A question that follows something else (an upload) is asked in the middle,
+  // on the same paper; only what the search box opens grows out of it.
+  if (at !== "bar") return true
   el.style.left = `${r.left}px`
   el.style.top = `${r.top}px`
   el.style.setProperty("--paper-w", `${r.width}px`)
@@ -135,8 +151,12 @@ function DialogContent({
   closeClassName?: string
   /** Render the dimming backdrop. Set false for a non-modal, coexisting panel. */
   overlay?: boolean
-  /** A small chooser on the cover: laid as paper out of the search box. */
-  paper?: boolean
+  /** Laid on the cover as paper: a small chooser out of the search box
+   *  (true) or in the middle of the screen ("center"); or a task that sets
+   *  the canvas aside ("page"), whose scrim is the paper and whose content is
+   *  type set on it; or a task done while watching the scene ("column"), set
+   *  as type in the right-hand column where export stands. */
+  paper?: boolean | "center" | "page" | "column"
 }) {
   const contentRef = React.useContext(DialogContentRef)
   const laid = React.useRef(false)
@@ -145,10 +165,10 @@ function DialogContent({
     (el: HTMLElement | null) => {
       if (contentRef) contentRef.current = el
       if (!paper) return
-      if (el && !laid.current) laid.current = layPaper(el)
+      if (el && !laid.current) laid.current = layPaper(el, paper === true ? "bar" : paper)
       else if (!el && laid.current) {
         laid.current = false
-        liftPaper()
+        if (paper === true) liftPaper()
       }
     },
     [contentRef, paper],
@@ -156,29 +176,39 @@ function DialogContent({
   return (
     <Cover on={false}>
       <DialogPortal data-slot="dialog-portal">
-        {overlay && !paper && <DialogOverlay />}
+        {overlay && (!paper || paper === "page") && <DialogOverlay />}
         <DialogPrimitive.Content
           data-slot="dialog-content"
           ref={attach}
           className={cn(
             "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] compact:max-w-[calc(100%-1.5rem)] select-none translate-x-[-50%] translate-y-[-50%] gap-4 rounded-surface border bg-background p-6 shadow-float duration-233 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
             className,
+            paper === "column" &&
+              "data-[paper-at=column]:top-[5.75rem] data-[paper-at=column]:right-7 data-[paper-at=column]:left-auto data-[paper-at=column]:max-h-[calc(100%-10.75rem)] data-[paper-at=column]:w-[18rem] data-[paper-at=column]:max-w-[18rem] data-[paper-at=column]:translate-x-0 data-[paper-at=column]:translate-y-0 data-[paper-at=column]:overflow-visible data-[paper-at=column]:rounded-none data-[paper-at=column]:border-0 data-[paper-at=column]:bg-transparent data-[paper-at=column]:pl-5 data-[paper-at=column]:shadow-none",
             // As paper the sheet is its ground layer; the content sits on it.
             paper &&
-              "data-[paper]:transition-none data-[paper]:w-[24rem] data-[paper]:max-w-[24rem] data-[paper]:translate-x-0 data-[paper]:translate-y-0 data-[paper]:gap-0 data-[paper]:overflow-hidden data-[paper]:border-0 data-[paper]:bg-transparent data-[paper]:p-0 data-[paper]:shadow-none",
+              "data-[paper]:transition-none data-[paper-at=bar]:rounded-interior data-[paper-at=center]:rounded-interior data-[paper-at=bar]:w-[24rem] data-[paper-at=bar]:max-w-[24rem] data-[paper-at=center]:w-[24rem] data-[paper-at=center]:max-w-[24rem] data-[paper-at=bar]:translate-x-0 data-[paper-at=bar]:translate-y-0 data-[paper]:gap-0 data-[paper]:overflow-hidden data-[paper]:border-0 data-[paper]:bg-transparent data-[paper]:p-0 data-[paper]:shadow-none",
           )}
           {...props}
+          // A column stands beside the work: pressing elsewhere is working,
+          // not leaving.
+          onInteractOutside={(e) => {
+            if (paper === "column") e.preventDefault()
+            props.onInteractOutside?.(e)
+          }}
         >
           {paper && (
             <div
               aria-hidden
               data-paper-ground
-              className="absolute top-0 left-0 hidden size-full rounded-surface border border-line-strong bg-surface in-data-[paper]:block"
+              className="absolute top-0 left-0 hidden size-full rounded-interior border border-line-strong bg-surface in-data-[paper-at=bar]:block in-data-[paper-at=center]:block"
             />
           )}
           {paper ? (
-            <div data-paper-content className="relative grid">
-              {children}
+            // Laid as paper, its controls are the cover's: drawn switches,
+            // hairline sliders, words for buttons (components/ui/cover.tsx).
+            <div data-paper-content className="relative grid min-w-0">
+              <Cover>{children}</Cover>
             </div>
           ) : (
             children
@@ -187,7 +217,7 @@ function DialogContent({
             <DialogPrimitive.Close
               data-slot="dialog-close"
               className={cn(
-                "absolute top-4 right-4 rounded-chip opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+                "absolute top-4 right-4 rounded-chip text-muted-foreground ring-offset-background transition-colors hover:text-foreground focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
                 closeClassName,
               )}
             >

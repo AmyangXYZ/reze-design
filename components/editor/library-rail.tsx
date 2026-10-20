@@ -219,7 +219,7 @@ export function RailTags({
                 )}
               >
                 <span className="max-w-28 truncate font-medium">{tagLabel(name, locale)}</span>
-                <span className="font-mono text-2xs font-medium opacity-70">{n}</span>
+                <span className="font-mono text-2xs font-medium text-muted-foreground">{n}</span>
               </Button>
             )
           })}

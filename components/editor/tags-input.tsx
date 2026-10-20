@@ -50,6 +50,7 @@ export function TagsInput({
 
   return (
     <div
+      data-slot="tags-input"
       className={cn(
         "mt-0.5 flex min-h-8 flex-wrap content-start items-start gap-1.5 rounded-chip border border-line-strong bg-white/5 px-2 py-1.5 focus-within:border-foreground",
         className,
@@ -58,6 +59,7 @@ export function TagsInput({
       {value.map((tag) => (
         <span
           key={tag}
+          data-slot="tag"
           className="flex items-center gap-1 rounded-chip bg-white/10 py-0.5 pr-1 pl-1.5 text-xs text-foreground"
         >
           {tag}

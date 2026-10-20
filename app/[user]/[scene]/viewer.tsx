@@ -443,7 +443,6 @@ type LikeState = ReturnType<typeof useLike>
 /** Rendered twice — as a standalone rail on mobile, inside the card on desktop —
  *  but only ever one is visible, and both read the same state. */
 function LikeButton({ like, compact, className }: { like: LikeState; compact?: boolean; className?: string }) {
-  const t = useT()
   return (
     <div className={cn("flex items-center gap-1.5", className)}>
       <Button
@@ -451,7 +450,6 @@ function LikeButton({ like, compact, className }: { like: LikeState; compact?: b
         onClick={() => void like.toggle()}
         // Not `disabled`: signed out, the title has to stay hoverable to say why.
         aria-disabled={!like.canLike}
-        title={like.canLike ? undefined : t.library.signInToLike}
         className={cn(
           // has-[>svg]:px-0 too: the default size pads any button holding an
           // icon by 12px, which p-0 does not reach and which indented the heart.

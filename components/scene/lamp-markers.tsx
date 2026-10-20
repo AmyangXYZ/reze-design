@@ -81,7 +81,6 @@ export function LampMarkers({
             }}
             variant="ghost"
             size="icon"
-            title={l.name}
             onClick={() => onPick(l.id)}
             // top/left 0 and everything through transform: the frame loop writes
             // one property, and a transform is the one the compositor can take

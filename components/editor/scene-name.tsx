@@ -76,7 +76,6 @@ export function SceneName({
   return (
     <span
       onDoubleClick={() => setEditing(true)}
-      title="Double-click to rename"
       className={cn(box, className, "cursor-text truncate border-transparent", display ? "block text-foreground" : "text-muted-foreground")}
     >
       {name}

@@ -78,7 +78,7 @@ export function AdminApp({
       <nav className="sticky top-0 flex h-screen w-56 shrink-0 flex-col gap-0.5 border-r border-line px-3 py-6">
         <div className="mb-5 px-2">
           <div className="text-base font-semibold">Admin</div>
-          <div className="truncate text-xs text-muted-foreground" title={selfEmail}>
+          <div className="truncate text-xs text-muted-foreground">
             {selfEmail}
           </div>
         </div>

@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input"
 import { useState } from "react"
 import { Slider } from "@/components/ui/slider"
 import { ColorField } from "@/components/color-picker"
-import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 /** The value column, shared by its readout and its editor so switching between
@@ -61,7 +60,6 @@ export function SliderRow({
   // it is what you reach for while judging a look — and typing is there for the
   // times you already know the number. Same gesture as renaming a scene or a
   // style group, so it needs no affordance of its own.
-  const t = useT()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState("")
   const commit = (raw: string) => {
@@ -112,7 +110,6 @@ export function SliderRow({
       <Input variant="bare"
         readOnly={!editing}
         value={editing ? draft : String(fmt ? fmt(value) : value)}
-        title={editing ? undefined : t.scene.typeValue}
         onDoubleClick={(e) => {
           if (editing) return
           setDraft(String(value))

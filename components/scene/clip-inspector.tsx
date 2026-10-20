@@ -421,7 +421,7 @@ function SubjectHeader({
           may not even be on screen to drag to. One click takes the whole name,
           hidden overflow included. `title` is the other half: the full string
           on hover, since this row is the one place it is stated. */}
-      <div className="min-w-0 flex-1 cursor-text truncate text-xs font-semibold text-foreground select-all" title={title}>
+      <div className="min-w-0 flex-1 cursor-text truncate text-xs font-semibold text-foreground select-all">
         {title}
       </div>
       <PlayheadFrameLabel frameCount={frameCount} />
@@ -530,7 +530,6 @@ function GizmoRow() {
         size="xs"
         aria-pressed={gizmoVisible}
         onClick={() => setGizmoVisible((v) => !v)}
-        title={gizmoVisible ? t.lab.timeline.gizmoHideHint : t.lab.timeline.gizmoShowHint}
         className={cn(
           "h-5 flex-1 rounded-chip border px-1 text-2xs",
           gizmoVisible

@@ -6,9 +6,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { Check, Copy, ExternalLink, Eye, GalleryThumbnails, Globe, ImagePlus, Loader2, TriangleAlert } from "lucide-react"
+import { Check, Copy, ExternalLink, Eye, GalleryThumbnails, Globe, ImagePlus, Loader2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog"
+import { useCover } from "@/components/ui/cover"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { TagsInput } from "@/components/editor/tags-input"
@@ -51,11 +52,11 @@ const MAX_POSTER_BYTES = 20 * 1024 * 1024
 // coming back to a blank form after composing a description and a credits list is
 // the kind of small loss that stops people publishing at all. Per scene, so two
 // scenes in two tabs don't overwrite each other's drafts.
-type Draft = { description: string; tags: string[]; credits: string; video?: string; nsfw?: boolean; displayOnly?: boolean; visibility?: Visibility }
+type Draft = { description: string; tags: string[]; credits: string; video?: string; displayOnly?: boolean; visibility?: Visibility }
 
 /** What a publish just said about the scene, handed back so the next publish in
  *  the same session starts from it rather than from a blank form. */
-export type PublishedMeta = Draft & { nsfw: boolean; displayOnly: boolean; poster: string | null }
+export type PublishedMeta = Draft & { displayOnly: boolean; poster: string | null }
 
 const draftKey = (sceneId: string) => `reze:publish-draft:${sceneId}`
 
@@ -72,8 +73,6 @@ function readDraft(sceneId: string): Draft {
       tags: Array.isArray(d.tags) ? d.tags.filter((x): x is string => typeof x === "string") : [],
       credits: typeof d.credits === "string" ? d.credits : "",
       ...(typeof d.video === "string" ? { video: d.video } : {}),
-      // Absent when the draft never touched it, so the published flag stands.
-      ...(typeof d.nsfw === "boolean" ? { nsfw: d.nsfw } : {}),
       ...(typeof d.displayOnly === "boolean" ? { displayOnly: d.displayOnly } : {}),
       ...(d.visibility === "public" || d.visibility === "private" ? { visibility: d.visibility } : {}),
     }
@@ -143,7 +142,7 @@ export function ShareSceneDialog(props: {
   updatesPoster?: string | null
   /** What that scene already says about itself, so an edit opens on the author's
    *  own words instead of asking them to write the blurb a second time. */
-  updatesMeta?: (Draft & { nsfw?: boolean }) | null
+  updatesMeta?: Draft | null
   /** The id a publish landed on, so a second publish in the same session
    *  updates rather than making a third scene. */
   onPublished?: (id: string, meta: PublishedMeta) => void
@@ -158,7 +157,9 @@ export function ShareSceneDialog(props: {
   // mounted, the dialog reopened onto the previous publish's success screen —
   // with the previous scene's link.
   return (
-    <Dialog open={props.open} onOpenChange={(o) => !o && props.onOpenChange(false)}>
+    // Not modal: on a desktop it is a column beside the scene, worked beside
+    // the console as export is, and only its own close or Escape ends it.
+    <Dialog open={props.open} onOpenChange={(o) => !o && props.onOpenChange(false)} modal={false}>
       {props.open && <ShareSceneForm {...props} />}
     </Dialog>
   )
@@ -192,7 +193,7 @@ function ShareSceneForm({
   /** The cover that scene already has — see the dialog's prop. */
   updatesPoster?: string | null
   /** What it already says about itself — see the dialog's prop. */
-  updatesMeta?: (Draft & { nsfw?: boolean }) | null
+  updatesMeta?: Draft | null
   /** The id a publish landed on, so a second publish in the same session
    *  updates rather than making a third scene. */
   onPublished?: (id: string, meta: PublishedMeta) => void
@@ -218,7 +219,6 @@ function ShareSceneForm({
       tags: local.tags.length ? local.tags : updatesMeta.tags,
       credits: local.credits || updatesMeta.credits,
       video: local.video ?? updatesMeta.video,
-      nsfw: local.nsfw ?? updatesMeta.nsfw,
       displayOnly: local.displayOnly ?? updatesMeta.displayOnly,
       ...(local.visibility ? { visibility: local.visibility } : {}),
     }
@@ -240,8 +240,6 @@ function ShareSceneForm({
   // Kept with the draft like the rest, so leaving for a screenshot does not
   // quietly turn a private scene back to public.
   const [visibility, setVisibility] = useState<Visibility>(draft.visibility ?? "public")
-  // Off unless the author says so; an edit starts from what the scene already is.
-  const [nsfw, setNsfw] = useState(draft.nsfw ?? false)
   const [displayOnly, setDisplayOnly] = useState(draft.displayOnly ?? false)
   // Bumped when a look is published from the list below, so the list asks again.
   const [looksPublished, setLooksPublished] = useState(0)
@@ -254,6 +252,41 @@ function ShareSceneForm({
   // be showing at publish is rarely the one they would pick to represent the work.
   const [poster, setPoster] = useState<File | null>(null)
   const [posterUrl, setPosterUrl] = useState<string | null>(null)
+  const takePoster = (f: File) => {
+    if (f.size > MAX_POSTER_BYTES) {
+      setError(t.share.thumbnailTooBig)
+      return
+    }
+    setError(null)
+    setPoster(f)
+    setPosterUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return URL.createObjectURL(f)
+    })
+  }
+  // The cover from what is on screen: publishing frames the scene at a
+  // cover's 16:9, so the frame drawn now IS the cover, saved as WebP at
+  // 1280×720. Read in a frame queued from a timer, so it runs after the
+  // engine's render while the canvas still holds it.
+  const capturePoster = () => {
+    const canvas = document.querySelector<HTMLCanvasElement>("main canvas")
+    if (!canvas || !canvas.width) return
+    window.setTimeout(() =>
+      requestAnimationFrame(() => {
+        const out = document.createElement("canvas")
+        out.width = 1280
+        out.height = 720
+        const g = out.getContext("2d")
+        if (!g) return
+        // Cover-fit: fill 16:9 from the middle of whatever shape is drawn.
+        const s = Math.max(out.width / canvas.width, out.height / canvas.height)
+        const w = canvas.width * s
+        const h = canvas.height * s
+        g.drawImage(canvas, (out.width - w) / 2, (out.height - h) / 2, w, h)
+        out.toBlob((blob) => blob && takePoster(new File([blob], "cover.webp", { type: "image/webp" })), "image/webp", 0.9)
+      }),
+    )
+  }
   const posterInputRef = useRef<HTMLInputElement>(null)
   const [step, setStep] = useState<Step>("idle")
   const [progress, setProgress] = useState(0)
@@ -267,11 +300,11 @@ function ShareSceneForm({
   // going away to a screenshot tool, which fires no close handler.
   useEffect(() => {
     if (step === "done") return
-    const draft: Draft = { description, tags, credits, video, nsfw, displayOnly, ...(visibility === "private" ? { visibility } : {}) }
+    const draft: Draft = { description, tags, credits, video, displayOnly, ...(visibility === "private" ? { visibility } : {}) }
     const key = draftKey(sceneId)
-    if (!description && !tags.length && !credits && !video && !nsfw && !displayOnly && visibility === "public") window.localStorage.removeItem(key)
+    if (!description && !tags.length && !credits && !video && !displayOnly && visibility === "public") window.localStorage.removeItem(key)
     else window.localStorage.setItem(key, JSON.stringify(draft))
-  }, [sceneId, description, tags, credits, video, nsfw, displayOnly, visibility, step])
+  }, [sceneId, description, tags, credits, video, displayOnly, visibility, step])
   // Whatever origin this is — localhost while testing, reze.design in production.
   // Hard-coding the production host meant a link you could not follow from a dev
   // build, and one you could not verify before it was real.
@@ -372,7 +405,6 @@ function ShareSceneForm({
           uses: sceneRefs(doc),
           tags,
           visibility,
-          nsfw,
           // Only a public scene has strangers to withhold the editor from.
           displayOnly: visibility === "public" && displayOnly,
         }),
@@ -397,7 +429,6 @@ function ShareSceneForm({
         likeCount: 0,
         poster: item.poster ?? null,
         createdAt: item.createdAt ?? new Date().toISOString(),
-        nsfw,
         displayOnly: visibility === "public" && displayOnly,
       })
       // Published — the draft has served its purpose.
@@ -408,7 +439,6 @@ function ShareSceneForm({
         tags,
         credits: credits.trim(),
         video: videoLink?.url ?? "",
-        nsfw,
         displayOnly: visibility === "public" && displayOnly,
         poster: item.poster ?? null,
       })
@@ -443,18 +473,11 @@ function ShareSceneForm({
       onEscapeKeyDown={(e) => busy && e.preventDefault()}
       onInteractOutside={(e) => busy && e.preventDefault()}
       aria-describedby={undefined}
+      paper="column"
       className={PUBLISH_DIALOG + " w-[34rem] sm:max-w-[34rem]"}
       closeClassName={PUBLISH_CLOSE}
     >
-        <div className={PUBLISH_HEAD}>
-          <DialogTitle className="flex h-5 items-center gap-2 text-sm font-medium">
-            <Globe className="size-4 text-blue-400" />
-            {updatesId ? t.share.updateScene : t.share.title}
-          </DialogTitle>
-          {updatesId && (
-            <p className="mt-1 text-xs leading-snug text-muted-foreground">{t.share.updateBlurb}</p>
-          )}
-        </div>
+        <ShareHead title={updatesId ? t.share.updateScene : t.share.title} blurb={updatesId ? t.share.updateBlurb : null} busy={busy} />
 
         {step === "done" && shareUrl ? (
           <div className="min-h-0 min-w-0 space-y-3 overflow-y-auto px-4 pt-4 pb-4">
@@ -512,7 +535,7 @@ function ShareSceneForm({
               if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "TEXTAREA") e.preventDefault()
             }}
           >
-            <div className={PUBLISH_BODY}>
+            <div data-publish-body className={cn(PUBLISH_BODY, "cover-enter")}>
             {/* Shown before the form rather than on submit: discovering a block after
                 writing a description, choosing tags and picking a thumbnail is the
                 worst moment to learn about it. */}
@@ -574,7 +597,7 @@ function ShareSceneForm({
             {/* Name and description beside the image, with the description
                 stretching to meet its bottom edge — pinning two short fields to
                 opposite ends left a hole in the middle instead. */}
-            <div className="grid grid-cols-[1fr_15rem] items-stretch gap-3">
+            <div data-publish-split className="grid grid-cols-[1fr_15rem] items-stretch gap-3">
               <div className="flex min-w-0 flex-col gap-2.5">
                 <label className="block">
                   <span className="text-xs text-muted-foreground">{t.library.publishName}</span>
@@ -591,13 +614,25 @@ function ShareSceneForm({
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     maxLength={500}
-                    placeholder={t.library.publishDescriptionHint}
                     className={PUBLISH_TEXTAREA + " min-h-0 flex-1 [field-sizing:fixed]"}
                   />
                 </label>
               </div>
               <label className="block">
-                <span className="text-xs text-muted-foreground">{t.share.thumbnail}</span>
+                <span className="flex items-baseline justify-between gap-2">
+                  <span className="text-xs text-muted-foreground">{t.share.thumbnail}</span>
+                  <Button
+                    type="button"
+                    variant="bare"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      capturePoster()
+                    }}
+                    className="text-2xs text-muted-foreground hover:text-foreground"
+                  >
+                    {t.share.capturePreview}
+                  </Button>
+                </span>
                 {updatesId && !poster && updatesPoster && (
                   <span className="mt-0.5 block text-2xs leading-snug text-muted-foreground">{t.share.coverKept}</span>
                 )}
@@ -609,17 +644,7 @@ function ShareSceneForm({
                   onChange={(e) => {
                     const f = e.target.files?.[0]
                     e.target.value = ""
-                    if (!f) return
-                    if (f.size > MAX_POSTER_BYTES) {
-                      setError(t.share.thumbnailTooBig)
-                      return
-                    }
-                    setError(null)
-                    setPoster(f)
-                    setPosterUrl((prev) => {
-                      if (prev) URL.revokeObjectURL(prev)
-                      return URL.createObjectURL(f)
-                    })
+                    if (f) takePoster(f)
                   }}
                 />
                 {/* The preview IS the control — a separate button beside it was two
@@ -628,7 +653,8 @@ function ShareSceneForm({
                   type="button"
                   variant="ghost"
                   onClick={() => posterInputRef.current?.click()}
-                  className="mt-0.5 block h-auto aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-interior border border-line-strong bg-white/5 p-0 font-normal transition-colors hover:border-white/25 hover:bg-white/5 dark:hover:bg-white/5"
+                  data-publish-thumb
+                  className="mt-0.5 block h-auto aspect-video w-full cursor-pointer overflow-hidden rounded-interior border border-line-strong bg-white/5 p-0 font-normal transition-colors hover:border-white/25 hover:bg-white/5 dark:hover:bg-white/5"
                 >
                   {(posterUrl ?? updatesPoster) ? (
                     // Any shape is fine: the card crops to fill, so authors aren't
@@ -685,12 +711,7 @@ function ShareSceneForm({
               />
             </label>
             <label className="block">
-              {/* The one thing in this dialog a publisher must actually read, on
-                  the label's own row so it costs no line of its own. */}
-              <span className="flex items-baseline justify-between gap-2">
-                <span className="shrink-0 text-xs text-muted-foreground">{t.share.credits}</span>
-                <span className="min-w-0 truncate text-2xs text-amber-400">{t.share.creditsWhy}</span>
-              </span>
+              <span className="text-xs text-muted-foreground">{t.share.credits}</span>
               <Textarea
                 value={credits}
                 onChange={(e) => setCredits(e.target.value)}
@@ -701,8 +722,7 @@ function ShareSceneForm({
               />
             </label>
             {/* Who sees it, then who may fork it — display only qualifies a PUBLIC
-                scene, so it sits beside visibility and is inert while private —
-                then how it is shown. */}
+                scene, so it sits beside visibility and is inert while private. */}
             <PublishSwitches>
               <VisibilitySwitch value={visibility} onChange={setVisibility} />
               <PublishSwitch
@@ -712,10 +732,9 @@ function ShareSceneForm({
                 onCheckedChange={setDisplayOnly}
                 disabled={visibility !== "public"}
               />
-              <PublishSwitch icon={TriangleAlert} label={t.nsfw.publish} checked={nsfw} onCheckedChange={setNsfw} tone="amber" />
             </PublishSwitches>
             </div>
-            <div className={PUBLISH_FOOT}>
+            <div data-publish-foot className={PUBLISH_FOOT}>
             {error && (
               <div className="rounded-interior bg-red-400/10 px-2.5 py-2 text-2xs leading-relaxed break-words text-red-400">
                 {error}
@@ -736,6 +755,7 @@ function ShareSceneForm({
                 // re-publishing to fix a stage does not mean re-framing a shot.
                 (!poster && !updatesId)
               }
+              data-paper-solid
               className="h-9 w-full bg-blue-400 text-xs font-medium text-on-accent hover:bg-blue-400/90 disabled:opacity-50"
             >
               {busy ? (
@@ -753,5 +773,38 @@ function ShareSceneForm({
           </form>
         )}
     </DialogContent>
+  )
+}
+
+/** The dialog's title row. Laid in the right-hand column (paper, so inside the
+ *  cover) it is set as the export column's is: a mono line and a Close word,
+ *  flush at the column's top. Elsewhere, the publish dialogs' own row. */
+function ShareHead({ title, blurb, busy }: { title: string; blurb: string | null; busy: boolean }) {
+  const t = useT()
+  const cover = useCover()
+  if (!cover)
+    return (
+      <div className={PUBLISH_HEAD}>
+        <DialogTitle className="flex h-5 items-center gap-2 text-sm font-medium">
+          <Globe className="size-4" />
+          {title}
+        </DialogTitle>
+        {blurb && <p className="mt-1 text-xs leading-snug text-muted-foreground">{blurb}</p>}
+      </div>
+    )
+  return (
+    <div data-share-head className="shrink-0 px-4">
+      <div className="flex h-5 items-center gap-4">
+        <DialogTitle className="min-w-0 flex-1 truncate font-mono text-2xs font-medium tracking-wide uppercase">{title}</DialogTitle>
+        {!busy && (
+          <DialogClose asChild>
+            <Button variant="bare" aria-label={t.library.close} className="flex size-5 items-center justify-center text-muted-foreground hover:text-foreground">
+              <X className="size-3.5" />
+            </Button>
+          </DialogClose>
+        )}
+      </div>
+      {blurb && <p className="mt-1 text-xs leading-snug text-muted-foreground">{blurb}</p>}
+    </div>
   )
 }

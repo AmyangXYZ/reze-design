@@ -3301,7 +3301,7 @@ export function Timeline({
               !clip && "pointer-events-none opacity-40",
             )}
           />
-          <span className="opacity-40">/</span>
+          <span className="text-muted-foreground">/</span>
           <Input variant="bare"
             type="text"
             inputMode="numeric"
