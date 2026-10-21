@@ -653,6 +653,18 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
   /** Scrolled down into All: the band takes the page and the billboard steps
    *  aside, a plain grid of covers. */
   const [inAll, setInAll] = useState(false)
+  // The wheel over the billboard moves the band below it: a shelf a gesture,
+  // as the band snaps, so a trackpad's small steps do not snap straight back.
+  const wheelHeld = useRef(0)
+  const onBillboardWheel = (e: React.WheelEvent) => {
+    const band = scrollRef.current
+    if (!band || Math.abs(e.deltaY) < Math.abs(e.deltaX) || Math.abs(e.deltaY) < 4) return
+    const now = performance.now()
+    const held = now - wheelHeld.current < 400
+    wheelHeld.current = now
+    if (held) return
+    band.scrollBy({ top: Math.sign(e.deltaY) * band.clientHeight, behavior: "smooth" })
+  }
   const onPageScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget
     const all = el.querySelector<HTMLElement>('[data-shelf="all"]')
@@ -895,7 +907,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
           </span>
           <span className="truncate text-xs text-foreground">{s.name}</span>
         </Button>
-        <span className="-mt-1 flex min-w-0 items-center font-mono text-2xs text-muted-foreground">
+        <span className="-mt-1 flex min-w-0 items-center gap-1 font-mono text-2xs text-muted-foreground">
           <AuthorLink name={s.author} at className="truncate" />
         </span>
       </div>
@@ -986,7 +998,10 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
         <div className="relative min-h-0 flex-1">
           {/* The billboard, pinned behind the shelves: picking a cover swaps it
               and the shelf stays where it was. */}
-          <section className={cn("absolute inset-0 overflow-hidden transition-opacity", grid && "pointer-events-none opacity-0")}>
+          <section
+            onWheel={onBillboardWheel}
+            className={cn("absolute inset-0 overflow-hidden transition-opacity", grid && "pointer-events-none opacity-0")}
+          >
             {backdrop.prev?.poster && (
               // eslint-disable-next-line @next/next/no-img-element
               <img
