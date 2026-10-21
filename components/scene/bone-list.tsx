@@ -48,22 +48,24 @@ const GroupRow = memo(function GroupRow({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex h-full w-full items-center gap-0 border-l-2 pl-1 pr-1.5 text-left text-2xs font-medium leading-none text-muted-foreground",
-        isSelected
-          ? "border-blue-400 bg-white/[0.03] text-blue-400 hover:bg-white/[0.05]"
-          : "border-transparent hover:bg-white/[0.03]",
+        "flex h-full w-full items-center gap-0 pl-1.5 pr-1.5 text-left text-2xs leading-none text-foreground hover:bg-white/[0.03]",
+        // Chosen: medium and underlined in the accent, as a tab is; the rest
+        // regular. The name stays ink.
+        isSelected ? "font-medium" : "font-normal",
       )}
     >
       <span className="mr-1 inline-flex size-3 shrink-0 items-center justify-center leading-none">
         <ChevronRight
           className={cn(
             "size-3 transition-transform",
-            isSelected ? "rotate-90 text-blue-400" : "text-muted-foreground",
+            isSelected && "rotate-90",
           )}
           strokeWidth={2.5}
         />
       </span>
-      <span className="min-w-0 flex-1 truncate py-[1px]">{dict.lab.timeline.boneGroups[name] ?? name}</span>
+      <span className={cn("min-w-0 flex-1 truncate py-1", isSelected && "underline decoration-blue-400 decoration-[1.5px] underline-offset-4")}>
+        {dict.lab.timeline.boneGroups[name] ?? name}
+      </span>
       {/* Right edge, in the same column as the bone rows' keyframe counts, so
           the whole picker reads as two columns rather than as text that
           sometimes ends in a number. Parentheses rather than the rows'
@@ -91,9 +93,7 @@ const BoneRow = memo(function BoneRow({
       onClick={onClick}
       className={cn(
         "flex h-full w-full items-center gap-1 pl-2 pr-1.5 text-left font-mono text-2xs font-normal leading-none",
-        isActive
-          ? "bg-blue-400/[0.08] text-blue-400 hover:bg-blue-400/12"
-          : "text-muted-foreground hover:bg-white/[0.03]",
+        "text-foreground hover:bg-white/[0.03]",
         // Unkeyed bones recede. Most of a rig is never keyed, so a flat list
         // makes you read every name to find the handful the clip actually
         // touches — the dim is what turns the picker back into a summary of the
@@ -101,9 +101,11 @@ const BoneRow = memo(function BoneRow({
         !isActive && kfCount === 0 && "opacity-45",
       )}
     >
-      <span className="min-w-0 flex-1 truncate">{name}</span>
+      {/* Chosen: medium and underlined in the accent, as a tab is; the name
+          stays ink. py-1 holds the rule inside the truncating box. */}
+      <span className={cn("min-w-0 flex-1 truncate py-1", isActive && "font-medium underline decoration-blue-400 decoration-[1.5px] underline-offset-4")}>{name}</span>
       {kfCount > 0 && (
-        <span className={cn("ml-auto shrink-0 pl-1 tabular-nums text-2xs", isActive ? "text-blue-400" : "text-muted-foreground")}>
+        <span className="ml-auto shrink-0 pl-1 text-2xs tabular-nums">
           [{kfCount}]
         </span>
       )}

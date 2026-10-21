@@ -395,11 +395,19 @@ const YAW_RANGE = { min: -180, max: 180 }
  *  component there is no wrap waiting on the other side. */
 const TRA_SLIDER_RANGE = { min: -25, max: 25 }
 
+/**
+ * The axes' colours: X red, Y green, Z blue, for every channel that has an axis
+ * (a bone's rotation and translation, the camera's rotation and target). Mid
+ * tones, so they hold on the timeline's sheet whichever side it is, light or
+ * dark. A deliberate palette (AGENTS.md).
+ */
+export const AXIS = { x: "#e5484d", y: "#2f9e5f", z: "#3b6fe0" } as const
+
 export const ROT_CHANNELS: Channel[] = [
   {
     key: "rx",
     label: "Rot.X",
-    color: "#e25555",
+    color: AXIS.x,
     group: "rot",
     get: (kf) => quatToEuler(kf.rotation).x,
     pick: (s) => s.euler.x,
@@ -412,7 +420,7 @@ export const ROT_CHANNELS: Channel[] = [
   {
     key: "ry",
     label: "Rot.Y",
-    color: "#44bb55",
+    color: AXIS.y,
     group: "rot",
     get: (kf) => quatToEuler(kf.rotation).y,
     pick: (s) => s.euler.y,
@@ -425,7 +433,7 @@ export const ROT_CHANNELS: Channel[] = [
   {
     key: "rz",
     label: "Rot.Z",
-    color: "#4477dd",
+    color: AXIS.z,
     group: "rot",
     get: (kf) => quatToEuler(kf.rotation).z,
     pick: (s) => s.euler.z,
@@ -441,7 +449,7 @@ export const TRA_CHANNELS: Channel[] = [
   {
     key: "tx",
     label: "Trans.X",
-    color: "#e2a055",
+    color: AXIS.x,
     group: "tra",
     get: (kf) => kf.translation.x,
     pick: (s) => s.translation.x,
@@ -453,7 +461,7 @@ export const TRA_CHANNELS: Channel[] = [
   {
     key: "ty",
     label: "Trans.Y",
-    color: "#55bba0",
+    color: AXIS.y,
     group: "tra",
     get: (kf) => kf.translation.y,
     pick: (s) => s.translation.y,
@@ -465,7 +473,7 @@ export const TRA_CHANNELS: Channel[] = [
   {
     key: "tz",
     label: "Trans.Z",
-    color: "#7755dd",
+    color: AXIS.z,
     group: "tra",
     get: (kf) => kf.translation.z,
     pick: (s) => s.translation.z,
@@ -515,42 +523,42 @@ export const CAMERA_CHANNELS: CameraChannel[] = [
   // Euler is stored in radians and shown in degrees — nobody authors a camera
   // angle in radians, and every other rotation readout in this app is degrees.
   {
-    key: "crx", label: "Rot.X", color: "#e25555", group: "rot", ip: 3,
+    key: "crx", label: "Rot.X", color: AXIS.x, group: "rot", ip: 3,
     get: (kf) => kf.rotation.x * RAD2DEG,
     set: (kf, v) => { kf.rotation = new Vec3(v * DEG2RAD, kf.rotation.y, kf.rotation.z) },
   },
   {
-    key: "cry", label: "Rot.Y", color: "#44bb55", group: "rot", ip: 3,
+    key: "cry", label: "Rot.Y", color: AXIS.y, group: "rot", ip: 3,
     get: (kf) => kf.rotation.y * RAD2DEG,
     set: (kf, v) => { kf.rotation = new Vec3(kf.rotation.x, v * DEG2RAD, kf.rotation.z) },
   },
   {
-    key: "crz", label: "Rot.Z", color: "#4477dd", group: "rot", ip: 3,
+    key: "crz", label: "Rot.Z", color: AXIS.z, group: "rot", ip: 3,
     get: (kf) => kf.rotation.z * RAD2DEG,
     set: (kf, v) => { kf.rotation = new Vec3(kf.rotation.x, kf.rotation.y, v * DEG2RAD) },
   },
   {
-    key: "cgx", label: "Tgt.X", color: "#e2a055", group: "tgt", ip: 0,
+    key: "cgx", label: "Tgt.X", color: AXIS.x, group: "tgt", ip: 0,
     get: (kf) => kf.target.x,
     set: (kf, v) => { kf.target = new Vec3(v, kf.target.y, kf.target.z) },
   },
   {
-    key: "cgy", label: "Tgt.Y", color: "#55bba0", group: "tgt", ip: 1,
+    key: "cgy", label: "Tgt.Y", color: AXIS.y, group: "tgt", ip: 1,
     get: (kf) => kf.target.y,
     set: (kf, v) => { kf.target = new Vec3(kf.target.x, v, kf.target.z) },
   },
   {
-    key: "cgz", label: "Tgt.Z", color: "#7755dd", group: "tgt", ip: 2,
+    key: "cgz", label: "Tgt.Z", color: AXIS.z, group: "tgt", ip: 2,
     get: (kf) => kf.target.z,
     set: (kf, v) => { kf.target = new Vec3(kf.target.x, kf.target.y, v) },
   },
   {
-    key: "cds", label: "Dist", color: "#c084fc", group: "dist", ip: 4,
+    key: "cds", label: "Dist", color: "#9333ea", group: "dist", ip: 4,
     get: (kf) => kf.distance,
     set: (kf, v) => { kf.distance = v },
   },
   {
-    key: "cfv", label: "FOV", color: "#22d3ee", group: "fov", ip: 5,
+    key: "cfv", label: "FOV", color: "#0e94b0", group: "fov", ip: 5,
     get: (kf) => kf.fov,
     set: (kf, v) => { kf.fov = Math.max(1, Math.min(150, Math.round(v))) },
   },
@@ -580,17 +588,17 @@ export function cameraChannelsForTab(tab: string): CameraChannel[] {
  *  separator, aggregate, axes, separator, scalars. */
 export const CAMERA_TABS = [
   { key: "camAllRot", label: "Rotation", color: null, sep: false },
-  { key: "camRx", label: "X", color: "#e25555", sep: false },
-  { key: "camRy", label: "Y", color: "#44bb55", sep: false },
-  { key: "camRz", label: "Z", color: "#4477dd", sep: false },
+  { key: "camRx", label: "X", color: AXIS.x, sep: false },
+  { key: "camRy", label: "Y", color: AXIS.y, sep: false },
+  { key: "camRz", label: "Z", color: AXIS.z, sep: false },
   { key: "_camSep1", label: "", color: null, sep: true },
   { key: "camAllTgt", label: "Target", color: null, sep: false },
-  { key: "camTx", label: "X", color: "#e2a055", sep: false },
-  { key: "camTy", label: "Y", color: "#55bba0", sep: false },
-  { key: "camTz", label: "Z", color: "#7755dd", sep: false },
+  { key: "camTx", label: "X", color: AXIS.x, sep: false },
+  { key: "camTy", label: "Y", color: AXIS.y, sep: false },
+  { key: "camTz", label: "Z", color: AXIS.z, sep: false },
   { key: "_camSep2", label: "", color: null, sep: true },
-  { key: "camDist", label: "Distance", color: "#c084fc", sep: false },
-  { key: "camFov", label: "FOV", color: "#22d3ee", sep: false },
+  { key: "camDist", label: "Distance", color: "#9333ea", sep: false },
+  { key: "camFov", label: "FOV", color: "#0e94b0", sep: false },
 ] as const
 
 /**

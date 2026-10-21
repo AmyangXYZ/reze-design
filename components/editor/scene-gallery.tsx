@@ -33,6 +33,7 @@ import { SignInDialog } from "@/components/editor/account-panel"
 import { useReport } from "@/hooks/use-report"
 import { setForkTarget } from "@/lib/fork"
 import { useSession } from "@/lib/auth-client"
+import { usePhone } from "@/lib/device"
 
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -335,6 +336,8 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
   const t = useT()
   const router = useRouter()
   const { data: session } = useSession()
+  // A phone watches; nothing on it edits, so it has no Fork.
+  const phone = usePhone()
   const report = useReport()
   /** The scene a delete is being confirmed for. Held whole rather than by id:
    *  the dialog names it, and looking the name up again after the list has
@@ -830,13 +833,15 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
           <div className="flex shrink-0 items-center gap-7">
             <Link
               href="/"
-              className="font-display text-masthead tracking-[0.45em] text-foreground uppercase [-webkit-text-stroke:0.3px_currentColor] compact:hidden"
+              className="font-display text-masthead tracking-[0.45em] text-foreground uppercase [-webkit-text-stroke:0.3px_currentColor] compact:tracking-[0.3em]"
             >
               Reze Design
             </Link>
             {/* The gallery's own name is its home: every shelf, no narrowing,
                 back at the top — what All was, so All is not said twice. */}
-            <h1>
+            {/* On a phone the wordmark alone heads the row; the shelves are
+                home enough. */}
+            <h1 className="compact:hidden">
               <Button
                 variant="bare"
                 onClick={() => {
@@ -859,7 +864,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
             {t.bilibili.title}
           </SiteChip>
           <span className="flex-1" />
-          <label className="relative flex h-8 w-52 items-center gap-2 px-3 text-muted-foreground after:absolute after:inset-0 after:rounded-interior after:border after:border-line-strong after:transition-colors focus-within:after:border-foreground compact:hidden">
+          <label className="relative flex h-8 w-52 compact:w-32 items-center gap-2 px-3 text-muted-foreground after:absolute after:inset-0 after:rounded-interior after:border after:border-line-strong after:transition-colors focus-within:after:border-foreground compact:hidden">
             <Search className="size-3.5 shrink-0" strokeWidth={1.5} />
             <Input
               variant="bare"
@@ -891,7 +896,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
             <div aria-hidden className="absolute inset-0 bg-linear-to-r from-black/85 via-black/35 to-transparent" />
             <div aria-hidden className="absolute inset-x-0 bottom-0 h-3/5 bg-linear-to-t from-black via-black/90 to-transparent" />
             {focus ? (
-              <div key={`spread:${focus.id}`} className="cover-enter absolute top-[20%] left-7 flex w-[min(32rem,45vw)] flex-col compact:left-4 compact:w-[calc(100%-2rem)]">
+              <div key={`spread:${focus.id}`} className="cover-enter absolute bottom-[35.5rem] left-7 flex w-[min(32rem,45vw)] flex-col compact:bottom-[31rem] compact:left-4 compact:w-[calc(100%-2rem)]">
                 <h2 className="font-display text-display text-foreground italic select-text">{focus.name}</h2>
                 <div className="mt-3 flex min-w-0 items-center gap-2 font-mono text-2xs tracking-wide text-muted-foreground uppercase">
                   <AuthorAvatar name={focus.author} image={focus.authorImage} className="size-4" />
@@ -926,7 +931,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
                     {/* A real link: cmd-click still gets a new tab. */}
                     <Link href={sceneHref(focus)}>{t.gallery.open}</Link>
                   </Button>
-                  {!focus.displayOnly && (
+                  {!focus.displayOnly && !phone && (
                     <Button
                       variant="bare"
                       onClick={() => requestFork(focus)}
@@ -962,12 +967,12 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
             )}
           </section>
 
-          {/* The shelves, one at a time in a band along the bottom: it is one
-              shelf tall and snaps, so the next shelf replaces this one whole. */}
+          {/* The shelves, two at a time in a band along the bottom: it is two
+              shelves tall and snaps shelf by shelf, so a row never shows cut. */}
           <div
             ref={scrollRef}
             onScroll={onPageScroll}
-            className="no-scrollbar absolute inset-x-0 bottom-0 z-10 flex h-[15.5rem] snap-y snap-mandatory scroll-pt-6 flex-col gap-8 overflow-y-auto pt-6 *:snap-start compact:h-[13.25rem]"
+            className="no-scrollbar absolute inset-x-0 bottom-0 z-10 flex h-[31.5rem] snap-y snap-mandatory scroll-pt-6 flex-col gap-8 overflow-y-auto pt-6 *:snap-start compact:h-[27rem]"
           >
             {narrowed ? (
               <section className="px-7 compact:px-4">

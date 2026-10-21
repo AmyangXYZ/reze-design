@@ -90,6 +90,8 @@ The last two carry an `eslint-disable` with the reason.
 **Deliberate palettes (the only colours outside the above):**
 - the avatar swatches (`library-rail.tsx`);
 - shader socket colours (Blender's data-type code, `reze-node.tsx`);
+- the axis colours, X red · Y green · Z blue (`AXIS` in `lib/animation.ts`),
+  one set for every channel with an axis, mid tones that hold on either sheet;
 - the graph node card's `zinc-900` (canvas content that must stand off the
   canvas);
 - Reze's violet brand mark (`--color-reze`);

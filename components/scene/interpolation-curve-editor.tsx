@@ -15,6 +15,7 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react"
 import { easeInOut } from "reze-engine"
 import { cn } from "@/lib/utils"
+import { AXIS } from "@/lib/animation"
 
 // 144, not studio's 160. This dock is 16rem wide and the chart shares a row
 // with eight preset chips; at 160 the chips were 58px of truncated words, and
@@ -34,7 +35,7 @@ const GH = SIZE - PAD * 2
 
 /** Main spline stroke — readable on the dock's ground without competing with
  *  the axis hues the sliders above it use. */
-const CURVE = "#22d3ee"
+const CURVE = "#0e94b0"
 /** Dashed handles from endpoints to P1/P2 — brighter than the grid so tangents
  *  read clearly. */
 const HANDLE_DASH = "rgba(255,255,255,0.42)"
@@ -202,7 +203,7 @@ export const InterpolationCurveEditor = memo(function InterpolationCurveEditor({
       // Control points, labelled with the numbers the file stores.
       const pts: [CurvePoint, CurvePoint] = [a, b]
       ;[c1, c2].forEach((pt, i) => {
-        const cpColor = i === 0 ? "#e25555" : "#44bb55"
+        const cpColor = i === 0 ? AXIS.x : AXIS.y
         ctx.fillStyle = cpColor
         ctx.fillRect(pt.x - CP_HALF, pt.y - CP_HALF, CP_RECT, CP_RECT)
         ctx.strokeStyle = "rgba(255,255,255,0.45)"

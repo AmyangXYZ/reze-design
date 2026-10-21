@@ -189,6 +189,9 @@ export function useCoverInk(
         const was = zones[0]?.dataset.ink ?? main.dataset.ink
         const ink = was === "dark" ? (mid < 44 ? "light" : "dark") : mid > 54 ? "dark" : "light"
         for (const el of zones) if (el.dataset.ink !== ink) el.dataset.ink = ink
+        // And on <main>, which a zone not yet read inherits: a dock that opens
+        // between readings comes up in this ink rather than the page's guess.
+        if (main.dataset.ink !== ink) main.dataset.ink = ink
       }
       // The chrome comes up once its ink has been read off a real frame, so
       // it never shows in a guessed ink first (globals.css, "The cover").

@@ -18,6 +18,7 @@ import { memo, useMemo, useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Slider } from "@/components/ui/slider"
 import { cn } from "@/lib/utils"
+import { VALUE_BOX } from "@/components/scene/scene-sidebar"
 
 function clamp(n: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, n))
@@ -122,18 +123,16 @@ export const AxisSliderRow = memo(function AxisSliderRow({
         {axis}
       </span>
       <Slider
-        // The left dock's slider, character for character — same thumb, same
-        // track, same hover ring. The ring came back with it: it is the only
-        // hover affordance the control has, and dropping it was an accident of
-        // shrinking the thumb rather than a decision.
-        className="min-w-0 flex-1 [&_[data-slot=slider-thumb]]:size-2.5 [&_[data-slot=slider-thumb]]:hover:ring-2 [&_[data-slot=slider-track]]:h-1"
+        // The left dock's slider: the cover's hairline in the ink. The axis
+        // hue stays on its letter, the one place it names something.
+        variant="hairline"
+        className="min-w-0 flex-1"
         // Parked at the end of the track while the value is past it, so a typed
         // number the track cannot reach does not get reported back as an edit.
         value={[clamp(shown, min, max)]}
         min={min}
         max={max}
         step={step}
-        accent={color}
         origin={clamp(origin, min, max)}
         disabled={disabled}
         aria-label={`${axis} axis`}
@@ -156,13 +155,12 @@ export const AxisSliderRow = memo(function AxisSliderRow({
         // The left dock's VALUE_BOX: borderless until it is being typed into,
         // which is what keeps a column of numbers from reading as a column of
         // input fields.
-        // A field, the way studio draws it: mono, 10px, right-aligned, on a
-        // faint ground that says it can be typed into. `dark:bg-*` is stated
-        // explicitly because the Input primitive paints `dark:bg-input/30` —
-        // a base-layer `bg-*` cannot cancel a dark-layer one, so both survive
-        // the merge and the dark one wins.
-        className="h-5 w-13 shrink-0 rounded-chip border-line bg-white/[0.04] px-1 py-0 text-right font-mono text-2xs tabular-nums shadow-none focus-visible:border-foreground focus-visible:ring-0 md:text-2xs dark:bg-white/[0.04] dark:focus-visible:bg-white/[0.07]"
-        style={{ color }}
+        // `dark:bg-*` is stated because the Input primitive paints
+        // `dark:bg-input/30`, which a base-layer `bg-*` cannot cancel.
+        className={cn(
+          VALUE_BOX,
+          "w-13 border-transparent font-mono text-foreground shadow-none outline-none focus:border-foreground focus:bg-white/5 focus-visible:ring-0 md:text-2xs dark:bg-transparent dark:focus:bg-white/5",
+        )}
         value={draft ?? (Number.isFinite(shown) ? shown.toFixed(decimals) : "")}
         onFocus={(e) => {
           setDraft(Number.isFinite(shown) ? shown.toFixed(decimals) : "")

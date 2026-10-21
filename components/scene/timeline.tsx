@@ -43,6 +43,7 @@ import {
   cameraIpPair,
   isCameraTab,
   boneDisplayLabel,
+  AXIS,
 } from "@/lib/animation"
 import { motionFrameCount } from "@/lib/clip"
 import type { AppliedEffect } from "@/lib/effects"
@@ -98,48 +99,88 @@ function bezierY(cp0: { x: number; y: number }, cp1: { x: number; y: number }, t
 // against anything bright. Alpha-white behaves the same over every backdrop,
 // which is also why the app's own --color-line tokens are white/6% and
 // white/12% rather than greys.
+// The INK the canvas draws in: the sheet's own type colour (CSS `color` on the
+// canvas), read at every draw, so the lines and labels are black on a light
+// sheet and white on a dark one. As "r,g,b".
+let INK = "255,255,255"
+const ink = (a: number) => `rgba(${INK},${a})`
+
 const C = {
   bg: "rgba(0,0,0,0)",
   curveBg: "rgba(0,0,0,0)",
   ruler: "rgba(0,0,0,0)",
-  rulerText: "#9ca3af",
-  // The same lavender-grey the unselected keyframe diamonds use. The waveform
+  get rulerText() {
+    return ink(0.9)
+  },
+  // The ink, faint, as the unselected keyframe diamonds are. The waveform
   // and the dopesheet are both reference material in the same gutter, so they
   // read as one layer — and staying neutral keeps the red playhead legible
   // where it crosses, which every saturated hue tried and failed to do.
-  audioWave: "rgba(170,170,195,0.55)",
-  rulerTick: "rgba(255,255,255,0.10)",
-  rulerMajor: "rgba(255,255,255,0.20)",
-  grid: "rgba(255,255,255,0.05)",
-  axis: "rgba(255,255,255,0.10)",
-  axisZero: "rgba(255,255,255,0.18)",
+  get audioWave() {
+    return ink(0.35)
+  },
+  get rulerTick() {
+    return ink(0.10)
+  },
+  get rulerMajor() {
+    return ink(0.20)
+  },
+  get grid() {
+    return ink(0.05)
+  },
+  get axis() {
+    return ink(0.10)
+  },
+  get axisZero() {
+    return ink(0.18)
+  },
   playhead: "#d83838",
-  diamondSel: "#5aa0f0",
-  keyDotSel: "#9ca3af",
+  diamondSel: "#60a5fa",
+  get keyDotSel() {
+    return ink(0.7)
+  },
   dopeBg: "rgba(0,0,0,0)",
-  dopeBorder: "rgba(255,255,255,0.12)",
-  dopeLabel: "#9ca3af",
-  dopeLabelNum: "#6b7280",
-  rotX: "#e25555",
-  rotY: "#44bb55",
-  rotZ: "#4477dd",
-  traX: "#e2a055",
-  traY: "#55bba0",
-  traZ: "#7755dd",
-  label: "#9ca3af",
+  get dopeBorder() {
+    return ink(0.12)
+  },
+  get dopeLabel() {
+    return ink(0.9)
+  },
+  get dopeLabelNum() {
+    return ink(0.7)
+  },
+  rotX: AXIS.x,
+  rotY: AXIS.y,
+  rotZ: AXIS.z,
+  traX: AXIS.x,
+  traY: AXIS.y,
+  traZ: AXIS.z,
+  get label() {
+    return ink(0.9)
+  },
   tabBg: "rgba(0,0,0,0)",
   tabActive: "#2a2a36",
-  tabText: "#9ca3af",
-  tabTextActive: "#9ca3af",
+  get tabText() {
+    return ink(0.9)
+  },
+  get tabTextActive() {
+    return ink(0.7)
+  },
   toolbarOnAccent: "#0f0f12",
   // Not "border". That string is not a CSS colour, so every
   // `ctx.strokeStyle = C.border` silently failed and the stroke fell back to
   // canvas's default — #000 — which is why the ruler and lane rules drew as
   // hard black lines on a translucent panel. Inherited from reze-studio, where
   // an opaque near-black ground hid the mistake.
-  border: "rgba(255,255,255,0.12)",
-  frameBadge: "rgba(255,255,255,0.06)",
-  frameBadgeText: "#9ca3af",
+  get border() {
+    return ink(0.12)
+  },
+  get frameBadge() {
+    return ink(0.06)
+  },
+  get frameBadgeText() {
+    return ink(0.7)
+  },
   sidebarBg: "rgba(0,0,0,0)",
   sidebarGroup: "#888898",
   sidebarBone: "#666672",
@@ -230,7 +271,7 @@ function getAxisConfig(tab: string) {
   }
 }
 
-const MORPH_COLOR = "#c084fc"
+const MORPH_COLOR = "#9333ea"
 
 type TabDef = { key: string; label: string; color: string | null; sep: boolean }
 
@@ -672,6 +713,7 @@ function TimelineCanvas({
     parentHolds: readonly ParentHold[] | null
     tab: string
     dragVersion: number
+    ink: string
   }>({
     w: 0,
     h: 0,
@@ -690,6 +732,7 @@ function TimelineCanvas({
     parentHolds: null,
     tab: "",
     dragVersion: 0,
+    ink: "",
   })
   /** Bumped by parent via `dragRedrawRef` while a keyframe drag is in progress.
    *  Participates in static-cache invalidation so in-place mutations repaint
@@ -773,6 +816,9 @@ function TimelineCanvas({
       h = el.clientHeight
     const backingW = Math.max(1, Math.floor(w * dpr))
     const backingH = Math.max(1, Math.floor(h * dpr))
+    // The sheet's ink, as the canvas's own CSS colour reports it.
+    const rgb = getComputedStyle(el).color.match(/\d+(\.\d+)?/g)
+    if (rgb) INK = rgb.slice(0, 3).join(",")
     const size = sizeRef.current
     let mainResized = false
     if (size.w !== backingW || size.h !== backingH || size.dpr !== dpr) {
@@ -807,7 +853,8 @@ function TimelineCanvas({
       cache.tab !== tab ||
       cache.blank !== blank ||
       cache.parentHolds !== parentHolds ||
-      cache.dragVersion !== dragVersionRef.current
+      cache.dragVersion !== dragVersionRef.current ||
+      cache.ink !== INK
 
     const ox = LABEL_W - scrollX
     // The lane is a SLOT, so it is there whether or not a track is in it. A
@@ -854,13 +901,10 @@ function TimelineCanvas({
     ctx.stroke()
 
     // ── Ruler ──
+    // No rule under it: the numbers and their ticks set the ruler apart, and
+    // a full-width line there read as a border on the sheet.
     ctx.fillStyle = C.ruler
     ctx.fillRect(0, 0, w, RULER_H)
-    ctx.strokeStyle = C.border
-    ctx.beginPath()
-    ctx.moveTo(LABEL_W, RULER_H - 0.5)
-    ctx.lineTo(w, RULER_H - 0.5)
-    ctx.stroke()
 
     const fStep = pxPerFrame >= 12 ? 1 : pxPerFrame >= 6 ? 5 : 10
     const fMajor = fStep * 10
@@ -999,7 +1043,7 @@ function TimelineCanvas({
         const left = Math.max(LABEL_W, x0)
         const right = Math.min(w, next ? toX(next.frame) : w)
         if (right <= left) continue
-        ctx.strokeStyle = hold.attached ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.35)"
+        ctx.strokeStyle = hold.attached ? ink(0.7) : ink(0.35)
         ctx.lineWidth = hold.attached ? 2 : 1.5
         ctx.setLineDash(hold.attached ? [] : [4, 4])
         ctx.beginPath()
@@ -1009,7 +1053,7 @@ function TimelineCanvas({
         ctx.setLineDash([])
         if (x0 >= LABEL_W && x0 <= w) {
           const tx = Math.round(x0) + 0.5
-          ctx.strokeStyle = "rgba(255,255,255,0.45)"
+          ctx.strokeStyle = ink(0.45)
           ctx.lineWidth = 1
           ctx.beginPath()
           ctx.moveTo(tx, midY - 7)
@@ -1020,7 +1064,7 @@ function TimelineCanvas({
         ctx.beginPath()
         ctx.rect(left + 4, curveTop, Math.max(0, right - left - 8), midY - curveTop)
         ctx.clip()
-        ctx.fillStyle = hold.attached ? "rgba(255,255,255,0.85)" : C.label
+        ctx.fillStyle = hold.attached ? ink(0.85) : C.label
         ctx.fillText(hold.label, left + 4, midY - 5)
         ctx.restore()
       }
@@ -1075,7 +1119,7 @@ function TimelineCanvas({
               // Selection is a RING, not a recolour — the channel keeps its
               // identity, and a thin white border at the keyframes' own scale
               // stays in the strip's quiet register.
-              ctx.strokeStyle = "rgba(255,255,255,0.75)"
+              ctx.strokeStyle = ink(0.75)
               ctx.lineWidth = 1.25
               ctx.stroke()
             }
@@ -1117,7 +1161,7 @@ function TimelineCanvas({
             ctx.fillStyle = MORPH_COLOR
             ctx.fill()
             if (isSel) {
-              ctx.strokeStyle = "rgba(255,255,255,0.75)"
+              ctx.strokeStyle = ink(0.75)
               ctx.lineWidth = 1.25
               ctx.stroke()
             }
@@ -1271,7 +1315,7 @@ function TimelineCanvas({
             ctx.fillStyle = ch.color
             ctx.fill()
             if (isSel) {
-              ctx.strokeStyle = "rgba(255,255,255,0.75)"
+              ctx.strokeStyle = ink(0.75)
               ctx.lineWidth = 1.25
               ctx.stroke()
             }
@@ -1363,10 +1407,10 @@ function TimelineCanvas({
       // ring here read visibly chunkier than the curve dots' matching stroke,
       // which straddles the circle it just filled rather than growing past it.
       const sz = isSel ? DIAMOND + 1 : DIAMOND
-      ctx.fillStyle = isSel ? C.diamondSel : `rgba(170,170,195,${intensity})`
+      ctx.fillStyle = isSel ? C.diamondSel : ink(intensity)
       ctx.fillRect(-sz / 2, -sz / 2, sz, sz)
       if (isSel) {
-        ctx.strokeStyle = "rgba(255,255,255,0.75)"
+        ctx.strokeStyle = ink(0.75)
         ctx.lineWidth = 1
         ctx.strokeRect(-sz / 2, -sz / 2, sz, sz)
       }
@@ -1476,6 +1520,7 @@ function TimelineCanvas({
       cache.blank = blank
       cache.parentHolds = parentHolds
       cache.dragVersion = dragVersionRef.current
+      cache.ink = INK
     }
 
     // ── Composite cached static layer onto the visible canvas ──
@@ -1582,6 +1627,23 @@ function TimelineCanvas({
   useLayoutEffect(() => {
     drawRef2.current = draw
   }, [draw])
+  // The sheet flips with the cover's ink (data-ink on <main>) and nothing in
+  // React changes: repaint then, and again once the 233ms colour fade lands.
+  useEffect(() => {
+    const cover = canvasRef.current?.closest(".cover")
+    if (!cover) return
+    let settle = 0
+    const watch = new MutationObserver(() => {
+      requestAnimationFrame(() => drawRef2.current?.())
+      clearTimeout(settle)
+      settle = window.setTimeout(() => drawRef2.current?.(), 260)
+    })
+    watch.observe(cover, { attributes: true, attributeFilter: ["data-ink"] })
+    return () => {
+      watch.disconnect()
+      clearTimeout(settle)
+    }
+  }, [])
 
   // Layout-phase paint: `useEffect`+nested rAF ran after browser paint → playhead lagged 1–2 frames behind transport.
   // `currentFrame` is in deps (not in `draw`'s deps) so scrubbing + throttled

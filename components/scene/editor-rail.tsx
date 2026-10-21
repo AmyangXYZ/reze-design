@@ -38,11 +38,10 @@ export function EditorRail({ kind, onKind }: { kind: ClipEditKind; onKind: (kind
             aria-label={item.label}
             aria-pressed={active}
             onClick={() => onKind(item.kind)}
+            // Chosen: underlined, as a tab on the cover is; the icon stays ink.
             className={cn(
-              "transition-none",
-              active
-                ? "bg-blue-400/[0.08] text-blue-400 hover:bg-blue-400/12 hover:text-blue-400 dark:hover:bg-blue-400/12"
-                : "text-muted-foreground hover:text-foreground",
+              "relative text-foreground transition-none after:absolute after:inset-x-1 after:-bottom-1 after:h-[1.5px] after:rounded-full",
+              active ? "after:bg-blue-400" : "after:bg-transparent",
             )}
           >
             <item.icon />

@@ -546,7 +546,7 @@ export const AnimPlayer = memo(function AnimPlayer({
         <Button aria-label={following ? t.transport.followCamera : t.transport.freeOrbit}
           variant="ghost"
           size="icon"
-          className={cn(btn, following ? "text-blue-400" : "text-muted-foreground hover:text-foreground")}
+          className={cn(btn, "text-foreground")}
           onClick={toggleCamera}
         >
           {following ? <Video className={ico} /> : <Orbit className={ico} />}
@@ -555,7 +555,7 @@ export const AnimPlayer = memo(function AnimPlayer({
       <Button aria-label={loop ? t.transport.loopOn : t.transport.loopOff}
         variant="ghost"
         size="icon"
-        className={cn(btn, loop ? "text-blue-400" : "text-muted-foreground hover:text-foreground")}
+        className={cn(btn, "text-foreground")}
         onClick={() => setLoop((v) => !v)}
       >
         {loop ? <Repeat className={ico} strokeWidth={2.4} /> : <RepeatOff className={ico} />}
@@ -564,7 +564,7 @@ export const AnimPlayer = memo(function AnimPlayer({
         <Button aria-label={eyes ? t.transport.eyesOn : t.transport.eyesOff}
           variant="ghost"
           size="icon"
-          className={cn(btn, eyes ? "text-blue-400" : "text-muted-foreground hover:text-foreground")}
+          className={cn(btn, "text-foreground")}
           onClick={() => onEyes(!eyes)}
         >
           {eyes ? <Eye className={ico} strokeWidth={2.4} /> : <EyeOff className={ico} />}
@@ -577,6 +577,10 @@ export const AnimPlayer = memo(function AnimPlayer({
   return (
     <div
       ref={rootRef}
+      // Open on the cover, it is PAPER (globals.css), on the side opposite the
+      // cover's ink; the dopesheet draws in the sheet's ink.
+      data-paper={line && unfolded ? "auto" : undefined}
+      data-paper-at={line && unfolded ? "timeline" : undefined}
       className={cn(
         // The fold animates THROUGH the blur, which measurably costs frames —
         // the decision to keep it anyway (visual consistency with the shipped

@@ -41,6 +41,40 @@ export function isMobileAgent(): boolean {
   return /Android|iPhone|iPad|iPod|Mobile/i.test(u) || (/Macintosh/.test(u) && navigator.maxTouchPoints > 1)
 }
 
+/**
+ * A PHONE: the editor gives it the scene and the transport, and the gallery
+ * and viewer play without Fork; nothing on it edits.
+ *
+ * Asked of the HARDWARE, which an agent string cannot fake: no fine pointer at
+ * all (no mouse, no trackpad — `any-pointer`, so an iPad with its keyboard and
+ * trackpad on is a computer), a finger for the pointer, and a small screen; or
+ * on a larger touch screen, held upright or turned into a strip wider than 2:1.
+ * The agent may add a phone (one that reports itself so) but never removes one,
+ * so "request desktop site" changes nothing.
+ */
+export function isPhone(): boolean {
+  const mm = (q: string) => window.matchMedia(q).matches
+  const d = (navigator as { userAgentData?: { mobile?: boolean } }).userAgentData
+  const agent = !!d?.mobile || /iPhone|iPod|Android.*Mobile|Windows Phone/i.test(navigator.userAgent)
+  if (mm("(any-pointer: fine)")) return agent && navigator.maxTouchPoints > 0
+  if (!mm("(pointer: coarse) and (hover: none)")) return agent
+  const ratio = window.innerWidth / Math.max(1, window.innerHeight)
+  const short = Math.min(window.screen.width, window.screen.height)
+  return agent || short < 600 || ratio < 1 || ratio > 2
+}
+function subscribePhone(onChange: () => void) {
+  const queries = ["(pointer: coarse) and (hover: none)", "(any-pointer: fine)"].map((q) => window.matchMedia(q))
+  window.addEventListener("resize", onChange)
+  for (const mq of queries) mq.addEventListener("change", onChange)
+  return () => {
+    window.removeEventListener("resize", onChange)
+    for (const mq of queries) mq.removeEventListener("change", onChange)
+  }
+}
+export function usePhone(): boolean {
+  return useSyncExternalStore(subscribePhone, isPhone, () => false)
+}
+
 /** Server render answers false: the editor renders on the client. */
 export function useCompact(): boolean {
   return useSyncExternalStore(subscribeCompact, isCompact, () => false)

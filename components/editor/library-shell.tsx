@@ -606,7 +606,7 @@ export function LibraryDock<T extends BrowseItem>({
         "absolute flex flex-col gap-3",
         compact
           ? "top-[3.75rem] right-3 left-3 max-h-[60dvh] rounded-surface border border-line-strong bg-surface p-3 shadow-float backdrop-blur-xs"
-          : "cover-type dock-backing top-16 right-7 bottom-16 w-[18rem] pl-5",
+          : "cover-type dock-backing top-16 right-7 bottom-16 w-[18rem] pl-6",
       )}
     >
       {/* The AI column's divider: a hairline clear of the column, from the
@@ -849,9 +849,13 @@ export function LibraryCards<T extends BrowseItem>({
                       {t.rail.states[st]}
                     </span>
                   )}
-                  <span className="flex max-w-[45%] shrink-0 items-center gap-1.5 font-mono text-2xs text-muted-foreground">
-                    {st !== "draft" && <AuthorLink name={item.author} at className="min-w-0 truncate" />}
-                  </span>
+                  {/* A draft has no maker to show: no empty slot, so its label
+                      stands at the end like a maker would. */}
+                  {st !== "draft" && (
+                    <span className="flex max-w-[45%] shrink-0 items-center gap-1.5 font-mono text-2xs text-muted-foreground">
+                      <AuthorLink name={item.author} at className="min-w-0 truncate" />
+                    </span>
+                  )}
                 </div>
               ) : (
                 <>

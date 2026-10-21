@@ -299,7 +299,8 @@ export const MaterialsPanel = memo(function MaterialsPanel({
         onDragEnd={endDrag}
         onContextMenu={() => setMenuTarget({ kind: "material", name: m.name, groupId: currentGroupId })}
         className={cn(
-          "group/row flex h-6 cursor-grab items-center select-none gap-1.5 rounded-chip pr-0.5 pl-1 transition-colors active:cursor-grabbing",
+          "group/row flex cursor-grab items-center select-none gap-1.5 rounded-chip pr-0.5 pl-1 transition-colors active:cursor-grabbing",
+          cover ? "h-7" : "h-6",
           !cover && "hover:bg-white/[0.05]",
           !m.visible && "opacity-45",
           selection.has(m.name) && (cover ? "" : "bg-blue-400/10 hover:bg-blue-400/10"),
@@ -458,7 +459,8 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                 <div
                   data-ctx="row"
                   className={cn(
-                    "group/hdr flex h-6 cursor-pointer items-center gap-1 rounded-chip pr-0.5 transition-colors",
+                    "group/hdr flex cursor-pointer items-center gap-1 rounded-chip pr-0.5 transition-colors",
+                    cover ? "h-7" : "h-6",
                     !cover && (isActive ? "bg-blue-400/[0.1]" : "hover:bg-white/[0.04]"),
                   )}
                   onClick={() => {
@@ -548,7 +550,8 @@ export const MaterialsPanel = memo(function MaterialsPanel({
             >
               <div
                 className={cn(
-                  "group/hdr flex h-6 cursor-pointer items-center gap-1 rounded-chip pr-0.5 transition-colors",
+                  "group/hdr flex cursor-pointer items-center gap-1 rounded-chip pr-0.5 transition-colors",
+                    cover ? "h-7" : "h-6",
                   !cover && "hover:bg-white/[0.04]",
                 )}
                 onClick={() => toggleCollapse(UNGROUPED)}

@@ -484,7 +484,7 @@ export function Dopesheet({
             onPointerCancel={onResizeUp}
             className="group absolute inset-x-0 -top-[3px] z-10 h-1.5 cursor-ns-resize touch-none"
           >
-            <div className="mt-[2px] h-px w-full bg-transparent transition-colors group-hover:bg-blue-400/60 group-active:bg-blue-400" />
+            <div className="mt-[2px] h-px w-full bg-transparent transition-colors group-hover:bg-foreground/60 group-active:bg-foreground" />
           </div>
           {/* Picker beside the editor, not above it: both are about the same
               clip and reading across is how you work — pick a bone on the left,

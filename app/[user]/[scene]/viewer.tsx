@@ -37,7 +37,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { SignInDialog } from "@/components/editor/account-panel"
 import { useI18n, useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
-import { useCompact } from "@/lib/device"
+import { useCompact, usePhone } from "@/lib/device"
 import { useCoverInk } from "@/hooks/use-cover-ink"
 import { VideoLink } from "@/components/video-link"
 import { Button } from "@/components/ui/button"
@@ -147,6 +147,8 @@ export function SceneViewer(props: ViewerProps) {
   // scene, its ink read off the frame (hooks/use-cover-ink). A phone keeps the
   // card, as the editor keeps its sheet.
   const compact = useCompact()
+  // A phone watches; nothing on it edits, so it has no Fork.
+  const phone = usePhone()
   const mainRef = useRef<HTMLElement>(null)
 
   /**
@@ -249,7 +251,7 @@ export function SceneViewer(props: ViewerProps) {
               <div className="mt-6 flex items-center gap-5">
                 {props.displayOnly ? (
                   <DisplayOnlyTag />
-                ) : (
+                ) : phone ? null : (
                   <Button
                     onClick={requestFork}
                     disabled={forking}
@@ -455,7 +457,7 @@ export function SceneViewer(props: ViewerProps) {
           {/* Where the fork would be, the reason it is not. */}
           {props.displayOnly ? (
             <DisplayOnlyTag />
-          ) : (
+          ) : phone ? null : (
             <Button
               size="xs"
               onClick={requestFork}

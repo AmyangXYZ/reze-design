@@ -279,9 +279,9 @@
    the top row, the title, the index, a row of the export column…) together
    and gives every zone the same side (data-ink): one ink for the whole cover,
    never black type beside white. A zone carries the colours and its type
-   inherits them. Until a zone
-   has been sampled, and for type in no zone, <main>'s data-ink (from the
-   scene's background colour) speaks. Only type set on the canvas changes:
+   inherits them. A zone not yet
+   sampled, and type in no zone, take <main>'s data-ink: the last reading,
+   and the scene's background colour's guess before the first. Only type set on the canvas changes:
    surfaces keep the chrome's colours.
 
    The colours are registered so a zone changing sides fades rather than
@@ -382,7 +382,7 @@
 .cover .dock-backing::before {
   content: "";
   position: absolute;
-  inset: var(--backing-inset, -0.5rem -1rem calc(var(--shelf-spare, 0px) - 0.5rem) 0.25rem);
+  inset: var(--backing-inset, -0.5rem -1rem calc(var(--shelf-spare, 0px) - 0.5rem) 0.5rem);
   z-index: -1;
   border-radius: var(--radius-surface);
   background: rgb(0 0 0 / var(--cover-backing, 0));
@@ -410,7 +410,10 @@
   box-shadow: none;
   backdrop-filter: none;
 }
-[data-paper="light"] {
+/* "auto" (the open timeline, its bone panel): stays open while the scene
+   changes, so it takes the side opposite the cover's ink as that moves. */
+[data-paper="light"],
+.cover[data-ink="dark"] [data-paper="auto"] {
   --chrome-surface: oklch(1 0 0 / 0.15);
   --foreground: oklch(0 0 0);
   --muted-foreground: var(--foreground);
@@ -422,7 +425,8 @@
   --chrome-line: oklch(0 0 0 / 0.16);
   --chrome-line-strong: oklch(0 0 0 / 0.16);
 }
-[data-paper="dark"] {
+[data-paper="dark"],
+.cover[data-ink="light"] [data-paper="auto"] {
   --chrome-surface: oklch(0 0 0 / 0.15);
   --foreground: oklch(1 0 0);
   --muted-foreground: var(--foreground);
@@ -433,6 +437,12 @@
   --input: oklch(1 0 0 / 0.2);
   --chrome-line: oklch(1 0 0 / 0.2);
   --chrome-line-strong: oklch(1 0 0 / 0.2);
+}
+/* The open timeline is paper, a dialog's sheet: the same fill, hairline, blur
+   and corner, on the side its ink calls for. */
+[data-paper-at="timeline"] {
+  border-radius: 8px;
+  backdrop-filter: blur(2px);
 }
 /* The sheet GROWS out of its opener, as Vercel's search does: it starts as
    the opener's own box (--paper-w × --paper-h, set by the page; the search
@@ -925,6 +935,13 @@ body:has([data-paper-at="page"][data-paper="dark"]) [data-paper-scrim] {
   --chrome-surface-raised: oklch(1 0 0);
   --chrome-line: oklch(0 0 0 / 0.08);
   --chrome-line-strong: oklch(0 0 0 / 0.14);
+}
+
+/* PHONE (usePhone, lib/device): the editor is the scene and its transport,
+   play only. Everything else on the page is gone, not hidden: there is
+   nothing to set on a phone. */
+main[data-phone] > :not([data-keep], [data-edge="bottom"]) {
+  display: none !important;
 }
 
 /* Hide UI (components/scene/hide-ui.tsx): every child of the page but what is

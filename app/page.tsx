@@ -140,10 +140,11 @@ import { ClipInspector } from "@/components/scene/clip-inspector"
 import { holdsOf } from "@/lib/prop-throw"
 import { timelineOf, type VisibilityWindow } from "@/lib/timeline"
 import { FPS } from "@/lib/clip"
+import Link from "next/link"
 import { ClipEditor, type ClipEditKind } from "@/context/clip-editor"
 import { primeClipDensity, useAudioPeaks } from "@/hooks/use-lane-graphs"
 import { useEngine } from "@/hooks/use-engine"
-import { isMobileAgent, isTouch, useCompact, useTouch } from "@/lib/device"
+import { isMobileAgent, isTouch, useCompact, usePhone, useTouch } from "@/lib/device"
 import { useRenderFraming } from "@/hooks/use-render-framing"
 import { useSceneCast, useSceneSync } from "@/hooks/use-scene-sync"
 import { seedMusic, servedUrl, useSceneMedia, type BgSlot } from "@/hooks/use-scene-media"
@@ -2701,6 +2702,8 @@ function Lab() {
   // not: a phone picks and tunes looks, it does not author them.
   const compact = useCompact()
   const touch = useTouch()
+  // A phone gets the scene and its transport, play only (globals.css, "Phone").
+  const phone = usePhone()
   // The art director: a side panel, canvas live — you watch it work.
   const [agentOpen, setAgentOpen] = useState(false)
   const [agentRaise, setAgentRaise] = useState(0)
@@ -2965,6 +2968,9 @@ function Lab() {
    * the timeline back exactly as it was left.
    */
   const timelineUnfolded = timelineOpen && timelineRoom
+  // Open, the timeline is a surface like the docks: it comes to the front when
+  // it opens or is touched, and Escape folds it when it is on top.
+  const timelineZ = useZOrder(timelineUnfolded, timelineUnfolded ? () => setTimelineOpen(false) : undefined)
   // The scene document's cameraAnimation slot. Seeded from the document like the
   // motion rows: useEngine has already handed the clip to the engine by the time
   // the chrome renders, so the name is known and there is nothing to wait for.
@@ -4333,11 +4339,26 @@ function Lab() {
   // the scene wears and what it applies to; the library beside it is where
   // another comes from. One right-hand column at a time, so a library opened
   // on its own, or the render, publish or AI column, takes the place first.
-  const besidePane = !compact && !browseOpen && !exportOpen && !shareOpen && !agentOpen
+  const besidePane = !compact && !browseOpen && !exportOpen && !shareOpen && !agentOpen && !timelineUnfolded
   const graphBeside = besidePane && pane === "materials" && inspectedId !== null
   const effectBeside = besidePane && pane === "effect"
   const gradeBeside = besidePane && pane === "post" && postTab === "grade"
   const libraryUp = browseOpen || graphBeside || effectBeside || gradeBeside
+  // The open timeline takes the right-hand column too (its bone panel lands
+  // there): opening one side puts the other away, the newest winning. A render
+  // in flight keeps its column, which reports it.
+  const rightOpen = browseOpen || agentOpen || shareOpen || exportOpen
+  const [seenSides, setSeenSides] = useState({ right: rightOpen, timeline: timelineUnfolded })
+  if (rightOpen !== seenSides.right || timelineUnfolded !== seenSides.timeline) {
+    setSeenSides({ right: rightOpen, timeline: timelineUnfolded })
+    if (rightOpen && !seenSides.right && timelineUnfolded) setTimelineOpen(false)
+    else if (timelineUnfolded && !seenSides.timeline && rightOpen) {
+      closeBrowse()
+      setAgentOpen(false)
+      setShareOpen(false)
+      if (!framing.exporting) setExportOpen(false)
+    }
+  }
   // The newest column wins: going to a pane that brings a library puts the
   // art director away. Render and publish keep theirs: the frame is fitted to
   // them and they hold the job in hand, so a pane opened then works alone.
@@ -7364,6 +7385,7 @@ function Lab() {
       ref={coverRef}
       className="cover relative h-dvh w-screen overflow-hidden transition-[background-color] select-none"
       data-ui-hidden={uiHidden || undefined}
+      data-phone={phone || undefined}
       data-backed={backing > 0 || undefined}
       data-ink={coverInk(sceneGround)}
       // The scene's own colour, so the ground under the canvas is the colour the
@@ -10684,7 +10706,7 @@ function Lab() {
           <aside
             data-edge="right"
             className={cn(
-              "cover-type dock-backing absolute top-[5.75rem] right-7 flex h-[min(32rem,calc(100%-10rem))] w-[18rem] flex-col pl-5 text-xs",
+              "cover-type dock-backing absolute top-[5.75rem] right-7 flex h-[min(32rem,calc(100%-10rem))] w-[18rem] flex-col pl-6 text-xs",
               "transition-[opacity,translate,visibility] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
               !agentOpen && "invisible translate-x-2 opacity-0",
             )}
@@ -10740,7 +10762,7 @@ function Lab() {
           <aside
             data-edge="right"
             className={cn(
-              "cover-type dock-backing absolute top-16 right-7 flex max-h-[calc(100%-9rem)] w-[18rem] flex-col pl-5 text-xs",
+              "cover-type dock-backing absolute top-16 right-7 flex max-h-[calc(100%-9rem)] w-[18rem] flex-col pl-6 text-xs",
               "transition-[opacity,translate,visibility] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
               !(exportOpen || shareOpen) && "invisible translate-x-2 opacity-0",
             )}
@@ -10793,6 +10815,25 @@ function Lab() {
               still from 0% to 100%. */}
           <span className="min-w-[4ch] text-right font-mono text-2xs tabular-nums">{exportPct !== null ? `${exportPct}%` : "…"}</span>
         </Button>
+      )}
+
+      {/* A phone's top row: the masthead, and its one way out, the gallery,
+          where scenes play. Nothing here edits on a phone (globals.css,
+          "Phone"). */}
+      {phone && (
+        <div
+          data-keep
+          data-ink-zone
+          data-edge="top"
+          className="cover-type pointer-events-none absolute inset-x-4 top-4 z-10 flex h-8 items-center justify-between"
+        >
+          <span className="font-display text-masthead tracking-[0.45em] text-foreground uppercase [-webkit-text-stroke:0.3px_currentColor]">
+            Reze Design
+          </span>
+          <Link href="/gallery" className="pointer-events-auto text-xs text-foreground">
+            {t.lab.gallery}
+          </Link>
+        </div>
       )}
 
       {/* ── Transport ──
@@ -10880,7 +10921,14 @@ function Lab() {
               anything under a ~1080px window ate into the track until it was a
               few pixels wide. A pill floating over the canvas has never needed
               to clear the docks — it is centred, and they are not. */}
-          <div data-edge="bottom" data-ink-zone={(!compact && !timelineUnfolded) || undefined} className="pointer-events-none absolute inset-x-3 bottom-3 flex justify-center">
+          <div
+            data-edge="bottom"
+            data-ink-zone={((!compact || phone) && !timelineUnfolded) || undefined}
+            className="pointer-events-none absolute inset-x-3 bottom-3 flex justify-center"
+            style={timelineUnfolded ? { zIndex: timelineZ.z } : undefined}
+            onPointerDownCapture={timelineZ.onPointerDownCapture}
+            onFocusCapture={timelineZ.onFocusCapture}
+          >
             {/* max-w-fit is what returns the collapsed pill to the ORIGINAL slider
             length: the track is flex-1 with min-w-[min(16rem,30vw)], and a
             fit-content pill resolves a flex-1 child at its min-content size —
@@ -10909,13 +10957,13 @@ function Lab() {
               )}
             >
               <AnimPlayer
-                line={!compact}
+                line={!compact || phone}
                 engineRef={engineRef}
                 modelNames={modelNames}
                 timeline={timeline}
                 hasCamera={cameraClip !== null}
                 trailing={
-                  TIMELINE_EDITOR && timelineRoom ? (
+                  TIMELINE_EDITOR && timelineRoom && !phone ? (
                     <Button
                       variant="ghost"
                       size="icon"

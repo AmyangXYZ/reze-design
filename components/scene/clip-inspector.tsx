@@ -1365,7 +1365,7 @@ function LiveMorphSlider({
   return (
     <AxisSliderRow
       axis="W"
-      color="#c084fc"
+      color="#9333ea"
       value={weight ?? 0}
       min={0}
       max={1}
@@ -1419,6 +1419,10 @@ function ClipInspectorSurface({ onClose, object }: { onClose: () => void; object
       // belongs to the CLIP, not to whichever half of the editor you happen to
       // have clicked into last.
       data-undo-scope={CLIP_UNDO_SCOPE}
+      // The timeline's sheet: paper opposite the cover's ink, as the open
+      // timeline is.
+      data-paper="auto"
+      data-paper-at="timeline"
       // Starts BELOW the top-right pills, exactly like the materials dock, so
       // the two never disagree about where this column begins.
       //
