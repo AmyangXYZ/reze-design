@@ -665,6 +665,12 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
   // Narrowed (a shelf of your own, a tag, a search) the page is one wrapping
   // grid of exactly that instead.
   const narrowed = browse.facet !== "all" || browse.tag !== null || browse.maker !== null || browse.query.trim() !== ""
+  // A different view is a different list: it starts at its top, not at the
+  // shelf the last one was scrolled to.
+  const viewKey = `${browse.facet}|${browse.tag ?? ""}|${browse.maker ?? ""}|${browse.query.trim()}`
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 })
+  }, [viewKey])
   // Each scene stands on ONE shelf, the first it qualifies for: a small
   // catalogue ranked three ways is three copies of the same row. The shelves
   // are laid out once; later pages join the end of "more", so scrolling down
