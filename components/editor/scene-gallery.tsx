@@ -653,17 +653,24 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
   /** Scrolled down into All: the band takes the page and the billboard steps
    *  aside, a plain grid of covers. */
   const [inAll, setInAll] = useState(false)
-  // The wheel over the billboard moves the band below it: a shelf a gesture,
-  // as the band snaps, so a trackpad's small steps do not snap straight back.
-  const wheelHeld = useRef(0)
+  // The wheel over the billboard moves the band below it, one shelf a
+  // gesture, as the band snaps. A gesture ends when the wheel rests 150ms; a
+  // trackpad's momentum only ever decays, so a delta rising sharply inside one
+  // is a new swipe or notch, and steps again once the last shelf has arrived.
+  const wheel = useRef({ armed: true, at: 0, stepped: 0, last: 0 })
   const onBillboardWheel = (e: React.WheelEvent) => {
     const band = scrollRef.current
-    if (!band || Math.abs(e.deltaY) < Math.abs(e.deltaX) || Math.abs(e.deltaY) < 4) return
+    if (!band || Math.abs(e.deltaY) < Math.abs(e.deltaX)) return
+    const w = wheel.current
     const now = performance.now()
-    const held = now - wheelHeld.current < 400
-    wheelHeld.current = now
-    if (held) return
+    const mag = Math.abs(e.deltaY)
+    if (now - w.at > 150 || (now - w.stepped > 250 && mag >= 20 && mag > w.last * 1.5)) w.armed = true
+    w.at = now
+    w.last = mag
+    if (!w.armed || mag < 4) return
     band.scrollBy({ top: Math.sign(e.deltaY) * band.clientHeight, behavior: "smooth" })
+    w.armed = false
+    w.stepped = now
   }
   const onPageScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget
