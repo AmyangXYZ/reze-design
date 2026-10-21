@@ -23,9 +23,9 @@ export function LayerRow({
     // A column that shrinks to the console: a tabbed pane scrolls under its
     // tab line (TabsContent), any other pane scrolls whole.
     <section id={domId} className="flex min-h-0 flex-col">
-      {/* text-muted-foreground on the WRAPPER: every control label inside is
-          muted, and controls that mean to be bright override locally. */}
-      <div className="no-scrollbar cover-enter flex min-h-0 flex-col overflow-y-auto px-4 pb-3 text-muted-foreground">{children}</div>
+      {/* The pane's labels in the ink itself: the muted tier is kept for what
+          is secondary (a maker, a count), not for the controls. */}
+      <div className="no-scrollbar cover-enter flex min-h-0 flex-col overflow-y-auto px-4 pb-3 text-foreground">{children}</div>
     </section>
   )
 }

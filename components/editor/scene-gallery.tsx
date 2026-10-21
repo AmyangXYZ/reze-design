@@ -29,6 +29,7 @@ import { Input } from "@/components/ui/input"
 import { useLibraryStats } from "@/hooks/use-library-stats"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { SignInDialog } from "@/components/editor/account-panel"
 import { useReport } from "@/hooks/use-report"
 import { setForkTarget } from "@/lib/fork"
 import { useSession } from "@/lib/auth-client"
@@ -628,6 +629,17 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
     if (!loading && cursor && el.scrollTop + el.clientHeight > el.scrollHeight - 600) loadMore()
   }
 
+  // Forking is where someone's files become yours to export, so it asks for an
+  // account and says whose files they are, as the scene page does.
+  const [forkAsk, setForkAsk] = useState<GalleryScene | null>(null)
+  const [signInOpen, setSignInOpen] = useState(false)
+  const forkAfterSignIn = useRef<GalleryScene | null>(null)
+  const requestFork = (s: GalleryScene) => {
+    if (session) return setForkAsk(s)
+    forkAfterSignIn.current = s
+    setSignInOpen(true)
+  }
+
   /** The same handoff as the viewer's "open in editor": a fork of this scene. */
   const forkScene = (s: GalleryScene) => {
     setForkTarget(s.id)
@@ -635,6 +647,15 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
     router.refresh()
     if (typeof window !== "undefined" && window.location.pathname === "/") window.location.reload()
   }
+  // Signed in from the fork's own dialog, which already said whose files they
+  // are: carry on to the editor.
+  useEffect(() => {
+    const s = forkAfterSignIn.current
+    if (!session || !s) return
+    forkAfterSignIn.current = null
+    forkScene(s)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session])
 
   // THE ROWS, from what is loaded: the ranked list, the newest, the most liked,
   // then a row for each of the most-used tags and the most prolific makers.
@@ -908,7 +929,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
                   {!focus.displayOnly && (
                     <Button
                       variant="bare"
-                      onClick={() => forkScene(focus)}
+                      onClick={() => requestFork(focus)}
                       className="h-7 rounded-chip bg-white/20 px-3.5 text-xs font-medium text-foreground hover:bg-white/30"
                     >
                       {t.share.fork}
@@ -981,6 +1002,25 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
         confirmLabel={t.library.deleteConfirmLabel}
         cancelLabel={t.library.cancel}
         onConfirm={confirmRemove}
+      />
+      <SignInDialog
+        open={signInOpen && !session}
+        onOpenChange={(o) => {
+          setSignInOpen(o)
+          if (!o) forkAfterSignIn.current = null
+        }}
+        title={t.share.forkSignIn}
+        blurb={t.share.forkNotice}
+      />
+      <ConfirmDialog
+        open={forkAsk !== null}
+        onOpenChange={(o) => !o && setForkAsk(null)}
+        title={t.share.fork}
+        body={t.share.forkNotice}
+        confirmLabel={t.share.fork}
+        cancelLabel={t.library.cancel}
+        tone="accent"
+        onConfirm={() => forkAsk && forkScene(forkAsk)}
       />
     </main>
   )

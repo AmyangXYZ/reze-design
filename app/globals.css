@@ -275,11 +275,11 @@
    pure white, and its secondary tier a fixed grey beside it — the same two
    pairs paper uses, so the app has two text colours in either ink.
 
-   The page samples the rendered frame behind each INK ZONE ([data-ink-zone]:
-   the top row, the title, the index, a row of the export column…) and gives
-   each its own side (data-ink), so a letterboxed frame can leave the top row
-   on the black matte and the index on a pale picture. The zone carries the
-   colours and its type inherits them, so the nearest zone wins. Until a zone
+   The page samples the rendered frame behind the INK ZONES ([data-ink-zone]:
+   the top row, the title, the index, a row of the export column…) together
+   and gives every zone the same side (data-ink): one ink for the whole cover,
+   never black type beside white. A zone carries the colours and its type
+   inherits them. Until a zone
    has been sampled, and for type in no zone, <main>'s data-ink (from the
    scene's background colour) speaks. Only type set on the canvas changes:
    surfaces keep the chrome's colours.
@@ -313,7 +313,8 @@
   --input: color-mix(in oklch, var(--foreground) 20%, transparent);
   --primary-foreground: var(--background);
   --foreground: oklch(0 0 0);
-  --muted-foreground: oklch(0.44 0 0);
+  --muted-foreground: var(--foreground);
+  --ink-disabled: oklch(0.44 0 0);
   --ink-shadow: 0 1px 1px oklch(0 0 0 / 0.15);
   --background: color-mix(in oklch, var(--scene-bg) 25%, oklch(0.99 0 0));
   /* One hairline on the cover: a rule there divides nothing from a surface,
@@ -328,7 +329,8 @@
   --input: color-mix(in oklch, var(--foreground) 20%, transparent);
   --primary-foreground: var(--background);
   --foreground: oklch(1 0 0);
-  --muted-foreground: oklch(0.88 0 0);
+  --muted-foreground: var(--foreground);
+  --ink-disabled: oklch(0.78 0 0);
   --ink-shadow: 0 0 2px oklch(0 0 0 / 0.75), 0 1px 3px oklch(0 0 0 / 0.75);
   --background: color-mix(in oklch, var(--scene-bg) 30%, oklch(0.12 0 0));
   --chrome-line: oklch(1 0 0 / 0.26);
@@ -341,6 +343,12 @@
 .cover .cover-type,
 .cover [data-ink-zone] {
   text-shadow: var(--ink-shadow);
+}
+/* ONE ink on the cover: the muted tier is the ink itself (above), and grey is
+   kept for what cannot be used. A disabled control greys rather than fading. */
+.cover :is(.cover-type, [data-ink-zone]) :is(:disabled, [aria-disabled="true"], [data-disabled]) {
+  color: var(--ink-disabled);
+  opacity: 1;
 }
 /* The browser sets buttons and fields to no shadow; on the cover they are type. */
 .cover :is(.cover-type, [data-ink-zone]) :is(button, input, textarea, select) {
@@ -374,7 +382,7 @@
   backdrop-filter: none;
 }
 [data-paper="light"] {
-  --chrome-surface: oklch(1 0 0 / 0.3);
+  --chrome-surface: oklch(1 0 0 / 0.15);
   --foreground: oklch(0 0 0);
   --muted-foreground: oklch(0.38 0 0);
   --background: oklch(1 0 0);
@@ -385,7 +393,7 @@
   --chrome-line-strong: oklch(0 0 0 / 0.16);
 }
 [data-paper="dark"] {
-  --chrome-surface: oklch(0 0 0 / 0.3);
+  --chrome-surface: oklch(0 0 0 / 0.15);
   --foreground: oklch(1 0 0);
   --muted-foreground: oklch(0.78 0 0);
   --background: oklch(0 0 0);

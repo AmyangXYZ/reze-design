@@ -1,9 +1,9 @@
 "use client"
 
 // The cover's ink, read off the frame behind it (app/globals.css, "The cover"):
-// for each ink zone ([data-ink-zone]) under `main`, which side — black type or
-// white — the picture behind it calls for, and its colour there; plus the
-// toasts' corner. Twice a second, and at once when the frame changes shape.
+// which side — black type or white — the picture behind all the ink zones
+// ([data-ink-zone]) under `main` calls for, ONE side for every zone, and each
+// zone's colour there; plus the toasts' corner. Twice a second, and at once when the frame changes shape.
 // The editor and the scene viewer both set type over a live canvas.
 
 import { useEffect, type RefObject } from "react"
@@ -81,23 +81,7 @@ export function useCoverInk(
     // The frame changing shape (an export's aspect, the window) moves what
     // stands behind every zone at once: look again at the next frame rather
     // than at the next half-second.
-    // A matte comes or goes as the frame eases (above), and the zones it now
-    // holds start turning at once — geometry needs no pixels — fading with it.
-    const resized = new ResizeObserver(() => {
-      const cr = frameBox()
-      for (const el of main.querySelectorAll<HTMLElement>("[data-ink-zone]")) {
-        const r = el.getBoundingClientRect()
-        if (r.width === 0 || r.height === 0) continue
-        const over =
-          Math.max(0, Math.min(r.right, cr.right) - Math.max(r.left, cr.left)) *
-          Math.max(0, Math.min(r.bottom, cr.bottom) - Math.max(r.top, cr.top))
-        if (over < (r.width * r.height) / 2) {
-          el.dataset.ink = "light"
-          el.style.setProperty("--scene-bg", "rgb(0 0 0)")
-        }
-      }
-      next(0)
-    })
+    const resized = new ResizeObserver(() => next(0))
     resized.observe(canvas)
     // The frame, shrunk on the GPU; the stack composed over it; the pixels
     // from the worker. Nothing here waits for the GPU.
@@ -139,7 +123,12 @@ export function useCoverInk(
       if (!d || gone) return
       const cr = frameBox()
       let read = false
-      for (const el of main.querySelectorAll<HTMLElement>("[data-ink-zone]")) {
+      // ONE ink for the whole cover: every zone's pixels go into one reading,
+      // and every zone takes its answer. Zones that each read their own patch
+      // set the top row black and the title white over a checkered floor.
+      const zones = [...main.querySelectorAll<HTMLElement>("[data-ink-zone]")]
+      const all: number[] = []
+      for (const el of zones) {
         const r = el.getBoundingClientRect()
         if (r.width === 0 || r.height === 0) continue
         const x0 = Math.max(r.left, cr.left)
@@ -147,9 +136,11 @@ export function useCoverInk(
         const y0 = Math.max(r.top, cr.top)
         const y1 = Math.min(r.bottom, cr.bottom)
         const over = Math.max(0, x1 - x0) * Math.max(0, y1 - y0)
-        // Mostly off the frame: the type stands on the black matte around it.
+        // Mostly off the frame: the type stands on the black matte around it,
+        // which reads as that much black.
         if (over < (r.width * r.height) / 2) {
-          if (el.dataset.ink !== "light") el.dataset.ink = "light"
+          const cells = Math.max(1, Math.round(((r.width * r.height) / (cr.width * cr.height)) * W * H))
+          for (let k = 0; k < cells; k++) all.push(0)
           el.style.setProperty("--scene-bg", "rgb(0 0 0)")
           continue
         }
@@ -157,9 +148,6 @@ export function useCoverInk(
         const qx1 = Math.ceil(((x1 - cr.left) / cr.width) * W)
         const qy0 = Math.floor(((y0 - cr.top) / cr.height) * H)
         const qy1 = Math.ceil(((y1 - cr.top) / cr.height) * H)
-        // The type stands on what MOST of the area is, so it is judged by the
-        // median lightness (L*, as the eye sees it), not the mean: a few big
-        // stars or a lamp on a black sky must not turn the ink dark over black.
         const px: { l: number; i: number }[] = []
         for (let qy = qy0; qy < qy1; qy++) {
           for (let qx = qx0; qx < qx1; qx++) {
@@ -174,10 +162,7 @@ export function useCoverInk(
         if (px.length === 0) continue
         read = true
         px.sort((a, b) => a.l - b.l)
-        const mid = px[px.length >> 1].l
-        const was = el.dataset.ink ?? main.dataset.ink
-        const ink = was === "dark" ? (mid < 44 ? "light" : "dark") : mid > 54 ? "dark" : "light"
-        if (el.dataset.ink !== ink) el.dataset.ink = ink
+        for (const p of px) all.push(p.l)
         // The tint from the middle half too, so the highlights do not colour it.
         let rr = 0
         let gg = 0
@@ -192,6 +177,16 @@ export function useCoverInk(
         }
         const n = hi - lo
         el.style.setProperty("--scene-bg", `rgb(${Math.round(rr / n)} ${Math.round(gg / n)} ${Math.round(bb / n)})`)
+      }
+      // The type stands on what MOST of the area is, so it is judged by the
+      // median lightness (L*, as the eye sees it), not the mean: a few big stars
+      // or a lamp on a black sky must not turn the ink dark over black.
+      if (all.length) {
+        all.sort((a, b) => a - b)
+        const mid = all[all.length >> 1]
+        const was = zones[0]?.dataset.ink ?? main.dataset.ink
+        const ink = was === "dark" ? (mid < 44 ? "light" : "dark") : mid > 54 ? "dark" : "light"
+        for (const el of zones) if (el.dataset.ink !== ink) el.dataset.ink = ink
       }
       // The chrome comes up once its ink has been read off a real frame, so
       // it never shows in a guessed ink first (globals.css, "The cover").

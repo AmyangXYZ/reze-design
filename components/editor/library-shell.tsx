@@ -588,7 +588,7 @@ export function LibraryDock<T extends BrowseItem>({
       onClick={onClick}
       className={cn(
         "relative flex shrink-0 items-center gap-1 py-1 text-xs whitespace-nowrap after:absolute after:inset-x-0 after:bottom-0 after:h-[1.5px]",
-        on ? "text-foreground after:bg-blue-400" : "text-muted-foreground hover:text-foreground",
+        on ? "text-foreground after:bg-blue-400" : "text-foreground",
       )}
     >
       {label}
