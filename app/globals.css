@@ -556,7 +556,7 @@
   }
 }
 [data-paper] > [data-paper-ground] {
-  backdrop-filter: blur(6px);
+  backdrop-filter: blur(var(--blur-xs));
 }
 [data-paper][data-state="open"] {
   animation: none;
@@ -598,7 +598,7 @@
   border-radius: 8px !important;
   border-color: var(--chrome-line-strong) !important;
   box-shadow: none !important;
-  backdrop-filter: blur(6px) !important;
+  backdrop-filter: blur(var(--blur-xs)) !important;
 }
 
 /* A whole PAGE of paper (data-paper-at="page"): a task that sets the canvas
