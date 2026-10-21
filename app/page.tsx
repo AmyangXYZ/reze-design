@@ -10827,12 +10827,20 @@ function Lab() {
           data-edge="top"
           className="cover-type pointer-events-none absolute inset-x-4 top-4 z-10 flex h-8 items-center justify-between"
         >
-          <span className="font-display text-masthead tracking-[0.45em] text-foreground uppercase [-webkit-text-stroke:0.3px_currentColor]">
-            Reze Design
+          <span className="flex items-center gap-1.5">
+            <span className="font-display text-masthead tracking-[0.45em] text-foreground uppercase [-webkit-text-stroke:0.3px_currentColor]">
+              Reze Design
+            </span>
+            <span className="font-mono text-2xs text-foreground">v{VERSION_LABEL}</span>
           </span>
-          <Link href="/gallery" className="pointer-events-auto text-xs text-foreground">
-            {t.lab.gallery}
-          </Link>
+          <span className="pointer-events-auto flex items-center gap-2.5">
+            <a href={REPO_URL} target="_blank" rel="noreferrer" aria-label="GitHub" className="flex size-6 items-center justify-center text-foreground">
+              <GithubMark className="size-4" />
+            </a>
+            <Link href="/gallery" className="text-xs text-foreground">
+              {t.lab.gallery}
+            </Link>
+          </span>
         </div>
       )}
 
