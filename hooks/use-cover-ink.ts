@@ -72,15 +72,20 @@ export function useCoverInk(
     }
     let raf = 0
     let timers: number[] = []
+    let last = 0
     // Read in a frame queued from a timer: the engine queues its next frame
     // while it renders, so this one runs AFTER that render, while the canvas
     // still holds it. A frame of our own would run first and read an empty
-    // canvas. Twice: once the change has drawn, and again once its textures
-    // have come in.
+    // canvas. At once, so the type turns with the scene (at most every 250ms
+    // while a dial is dragged); again once the change has settled; and once
+    // more after its textures have come in.
     const look = () => {
       for (const t of timers) clearTimeout(t)
       cancelAnimationFrame(raf)
-      timers = [250, 1500].map((ms) =>
+      const now = performance.now()
+      const lead = now - last >= 250
+      if (lead) last = now
+      timers = [...(lead ? [0] : []), 250, 1500].map((ms) =>
         window.setTimeout(() => {
           raf = requestAnimationFrame(tick)
         }, ms),

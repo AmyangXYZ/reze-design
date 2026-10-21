@@ -143,7 +143,7 @@ const DEMO_SCENE_DOC: SceneDoc = {
       fov: Math.PI / 4,
     },
     world: { color: "#ed6aff", strength: 0.66 },
-    sun: { color: "#ffffff", strength: 0.64, azimuth: 205, elevation: 21 },
+    sun: { color: "#ffffff", strength: 0.64, azimuth: 205, elevation: 21, softness: 0.15 },
     // The game's bloom, in the demo's pink.
     bloom: { ...DEFAULT_BLOOM, color: "#ffc9c9" },
     dof: DEFAULT_DOF,
@@ -217,7 +217,7 @@ export const EMPTY_SCENE_DOC: SceneDoc = {
     // turn on once there is someone to follow.
     camera: { ...DEMO_SCENE_DOC.settings.camera, follow: null },
     world: { color: "#ffffff", strength: 0.35 },
-    sun: { color: "#ffffff", strength: 0.64, azimuth: 205, elevation: 21 },
+    sun: { color: "#ffffff", strength: 0.64, azimuth: 205, elevation: 21, softness: 0.15 },
     bloom: DEFAULT_BLOOM,
     dof: DEFAULT_DOF,
     outline: DEFAULT_OUTLINE,

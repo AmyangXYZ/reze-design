@@ -284,28 +284,7 @@
    and the scene's background colour's guess before the first. Only type set on the canvas changes:
    surfaces keep the chrome's colours.
 
-   The colours are registered so a zone changing sides fades rather than
-   flashes. */
-@property --foreground {
-  syntax: "<color>";
-  inherits: true;
-  initial-value: black;
-}
-@property --muted-foreground {
-  syntax: "<color>";
-  inherits: true;
-  initial-value: black;
-}
-@property --chrome-line {
-  syntax: "<color>";
-  inherits: true;
-  initial-value: transparent;
-}
-@property --chrome-line-strong {
-  syntax: "<color>";
-  inherits: true;
-  initial-value: transparent;
-}
+   A change of side is instant: the type turns with the scene. */
 .cover[data-ink="dark"] .cover-type:not([data-ink-zone], [data-ink-zone] *),
 .cover[data-ink="dark"] [data-ink-zone]:not([data-ink]),
 .cover [data-ink-zone][data-ink="dark"] {
@@ -359,18 +338,14 @@
 .cover [data-paper] {
   text-shadow: none;
 }
-/* Inside a zone the ink fades once, on the zone; a control running its own
-   colour transition on top would chase the moving ink and fall behind it. */
-.cover [data-ink-zone] :is(.transition, .transition-colors, [class*="transition-[color"]) {
-  transition-property: background-color, border-color, opacity, box-shadow, transform, translate, scale;
-}
 .cover [data-ink-zone] {
   color: var(--foreground);
-  transition:
-    --foreground var(--default-transition-duration) ease,
-    --muted-foreground var(--default-transition-duration) ease,
-    --chrome-line var(--default-transition-duration) ease,
-    --chrome-line-strong var(--default-transition-duration) ease;
+}
+/* The ink turns at once everywhere: a control's own colour transition would
+   leave it fading behind the type around it. */
+.cover :is(.cover-type, [data-ink-zone]) :is(.transition, .transition-colors, [class*="transition-[color"]),
+.cover :is(.cover-type, [data-ink-zone]):is(.transition, .transition-colors, [class*="transition-[color"]) {
+  transition-property: background-color, border-color, opacity, box-shadow, transform, translate, scale;
 }
 /* The BACKING (hooks/use-panel-backing): a black overlay behind each of the
    cover's columns, as deep as the person set it in the palette; none by

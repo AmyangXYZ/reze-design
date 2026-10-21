@@ -9754,7 +9754,7 @@ function Lab() {
                               setLampOpen(id)
                             }}
                           >
-                            <Plus />
+                            <Plus className="size-3.5" />
                             {t.lab.lamp.add}
                           </Button>
                         </TabsContent>
