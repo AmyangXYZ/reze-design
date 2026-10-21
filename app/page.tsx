@@ -7428,13 +7428,13 @@ function Lab() {
               // same pixels; the bar is back only once the palette has
               // shrunk into it and gone (globals.css, "PAPER").
               className={cn(
-                "absolute top-0 left-[24.25rem] flex h-8 w-52 items-center gap-2 px-3 text-muted-foreground after:absolute after:inset-0 after:rounded-interior after:border after:border-line-strong",
+                "absolute top-0 left-[24.25rem] flex h-8 w-52 items-center gap-2 px-3 text-muted-foreground after:absolute after:inset-0 after:rounded-interior after:border after:border-line-strong after:[filter:var(--ink-line-shadow)]",
                 (paletteOpen || paletteUp) && "invisible",
               )}
             >
               <Search className="size-3.5 shrink-0" strokeWidth={1.5} />
               <span className="flex-1 text-left">{t.lab.find}</span>
-              <kbd className="flex h-4 min-w-4 items-center justify-center rounded-chip border border-line px-1 font-mono text-2xs">
+              <kbd className="flex h-4 min-w-4 items-center justify-center rounded-chip border border-line px-1 font-mono text-2xs [text-shadow:none] [filter:var(--ink-line-shadow)]">
                 F
               </kbd>
             </Button>

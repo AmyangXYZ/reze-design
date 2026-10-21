@@ -295,6 +295,7 @@
   --muted-foreground: var(--foreground);
   --ink-disabled: oklch(0.44 0 0);
   --ink-shadow: 0 1px 1px oklch(0 0 0 / 0.15);
+  --ink-line-shadow: drop-shadow(0 1px 0.5px oklch(0 0 0 / 0.15));
   --background: color-mix(in oklch, var(--scene-bg) 25%, oklch(0.99 0 0));
   /* One hairline on the cover: a rule there divides nothing from a surface,
      so the two strengths are the same line. */
@@ -311,12 +312,14 @@
   --muted-foreground: var(--foreground);
   --ink-disabled: oklch(0.78 0 0);
   --ink-shadow: 0 0 2px oklch(0 0 0 / 0.75), 0 1px 3px oklch(0 0 0 / 0.75);
+  --ink-line-shadow: drop-shadow(0 0 1px oklch(0 0 0 / 0.75)) drop-shadow(0 1px 1.5px oklch(0 0 0 / 0.75));
   --background: color-mix(in oklch, var(--scene-bg) 30%, oklch(0.12 0 0));
   --chrome-line: oklch(1 0 0 / 0.26);
   --chrome-line-strong: oklch(1 0 0 / 0.26);
 }
 /* Every character carries a dark shadow, so a stroke of the picture running
-   through a letter cannot take its edge. White type: an edge and a drop at
+   through a letter cannot take its edge; a drawn line (a frame, a key's
+   outline) takes the same as a filter, --ink-line-shadow. White type: an edge and a drop at
    0.75. Black type: one tight drop at 0.15 — a blur around black glyphs reads
    as soft type. Overlays reset it. */
 .cover .cover-type,
