@@ -144,10 +144,13 @@ export async function GET(request: Request) {
     const facet = url.searchParams.get("facet")
     const before = Number(url.searchParams.get("before")) || null
     const limit = Math.min(Number(url.searchParams.get("limit")) || 24, 48)
+    // A tag's or a maker's own list, for their shelves in the public gallery.
+    const tag = url.searchParams.get("tag")
+    const maker = url.searchParams.get("maker")
 
     // The public pages are cached for everyone; only the personal facets read a
     // session, and those go to the database.
-    if (!facet) return publicJson(await publicGalleryPage(sort, before, limit))
+    if (!facet) return publicJson(await publicGalleryPage(sort, before, limit, tag, maker))
     const viewer = await auth.api.getSession({ headers: request.headers })
     if (!viewer || (facet !== "yours" && facet !== "liked")) return NextResponse.json({ scenes: [], nextCursor: null })
     return NextResponse.json(await galleryPage(sort, before, limit, { facet, viewerId: viewer.user.id }))
@@ -209,7 +212,8 @@ const galleryCount = unstable_cache(
 
 /** A page of the public gallery, cached per sort and cursor like the tags. */
 const publicGalleryPage = unstable_cache(
-  (sort: string, before: number | null, limit: number) => galleryPage(sort, before, limit, null),
+  (sort: string, before: number | null, limit: number, tag: string | null, maker: string | null) =>
+    galleryPage(sort, before, limit, null, { tag, maker }),
   ["gallery-page"],
   { tags: [LIBRARY_TAG] },
 )
@@ -220,6 +224,7 @@ async function galleryPage(
   before: number | null,
   limit: number,
   shelf: { facet: "yours" | "liked"; viewerId: string } | null,
+  only: { tag: string | null; maker: string | null } = { tag: null, maker: null },
 ) {
   // Trending is lib/trend.ts's score — the publish and every like, each halving
   // every TREND_HALF_LIFE — summed in SQL so the gallery pages by it. On the
@@ -276,6 +281,8 @@ async function galleryPage(
         yours ? undefined : eq(schema.libraryItems.visibility, "public"),
         isNull(schema.libraryItems.deletedAt),
         yours ? eq(schema.libraryItems.ownerId, shelf.viewerId) : undefined,
+        only.tag ? sql`${only.tag} = any(${schema.libraryItems.tags})` : undefined,
+        only.maker ? eq(schema.libraryItems.author, only.maker) : undefined,
         // THE CURSOR IS THE SORT KEY, or it is not a cursor. Ranked by `hot`
         // while paging by date, page two asked for "everything older than the
         // last row shown, ranked by hot" — and the last row in hot order is

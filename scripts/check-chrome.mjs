@@ -23,6 +23,7 @@ const RULES = [
   { id: "hex", re: /(?<![\w-])[\w:-]*-\[#[0-9a-fA-F]{3,8}\]/g, fix: "a token" },
   { id: "accent-shade", re: /(?<![\w-])(?:text|bg|border|ring)-(?:blue|amber|red)-(?:50|100|200|300|500|600|700|800|900|950)(?:\/\d+)?/g, fix: "the accent at -400 (blue-400 · amber-400 · red-400)" },
   { id: "display", re: /(?<![\w-])text-display(?![\w-])/g, fix: "text-display is the cover's title only (SceneName display)" },
+  { id: "billboard", re: /(?<![\w-])text-billboard(?![\w-])/g, fix: "text-billboard is the gallery billboard's title only" },
   { id: "duration", re: /(?<![\w-])duration-(?!233(?![\w-]))(?:\d+|\[[^\]]+\])/g, fix: "duration-233, the one motion duration" },
   { id: "text-opacity", re: /(?<![\w-])text-(?:muted-)?foreground\/\d+/g, fix: "text-foreground or text-muted-foreground, no opacity" },
 ]
@@ -33,7 +34,10 @@ const EXCEPTIONS = {
   "components/editor/wgsl-editor.tsx": { hex: "the code view's own ground and gutter, matched to its syntax theme" },
   "components/scene/anim-player.tsx": { radius: "the transport's 20px corner clamps to a pill when collapsed — explained where it is set" },
   "components/editor/scene-name.tsx": { display: "the cover's title: the scene's name, the one display-size text" },
-  "components/editor/scene-gallery.tsx": { display: "the gallery stage's title: a published scene's name, set over its cover" },
+  "components/editor/scene-gallery.tsx": {
+    display: "the gallery stage's title on a phone: a published scene's name, set over its cover",
+    billboard: "the gallery billboard's title: a published scene's name, set over its cover filling the page",
+  },
   "app/[user]/[scene]/viewer.tsx": { display: "the viewer's title: the scene's name, set over the scene as the editor's cover sets it" },
   "components/video-link.tsx": { hex: "a scene's video link wears its site's brand colour (Bilibili blue, YouTube red…), so it reads as that site at a glance" },
 }

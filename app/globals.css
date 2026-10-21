@@ -750,9 +750,8 @@ body:has([data-paper-at="page"][data-paper="dark"]) [data-paper-scrim] {
   box-shadow: none !important;
 }
 
-/* The gallery's billboard: the scene in focus fills the top of the page behind
-   the type, under fades to black at its left and foot so white type holds, and
-   arrives by fading up from a touch larger whenever the focus moves
+/* The gallery's billboard: the scene in focus fills the page behind the type,
+   a touch dimmed, under a falloff at its left and foot, and arrives by fading up from a touch larger whenever the focus moves
    (components/editor/scene-gallery). */
 @keyframes stage-arrive {
   from {
@@ -762,7 +761,7 @@ body:has([data-paper-at="page"][data-paper="dark"]) [data-paper-scrim] {
 }
 .stage-backdrop,
 .stage-backdrop-held {
-  filter: brightness(0.75);
+  filter: brightness(0.85);
 }
 .stage-backdrop {
   animation: stage-arrive var(--default-transition-duration) cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -883,6 +882,10 @@ body:has([data-paper-at="page"][data-paper="dark"]) [data-paper-scrim] {
      REZE DESIGN wordmark, upright at base), and nothing else. */
   --text-display: 28px;
   --text-display--line-height: 1;
+  /* The same title on the gallery's billboard, where the scene fills the
+     page: the display serif at its largest, and nowhere else. */
+  --text-billboard: 44px;
+  --text-billboard--line-height: 1.05;
   /* The REZE DESIGN masthead, in the display serif, upright. */
   --text-masthead: 18px;
   --text-masthead--line-height: 1;

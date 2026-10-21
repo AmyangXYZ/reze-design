@@ -102,7 +102,12 @@ type View = "all" | "yours" | "liked"
 export type GalleryRow = GalleryScene & { kind: "scene"; owner: "user"; mine: boolean }
 type Page = { scenes: GalleryScene[]; nextCursor: number | null }
 
-const isFacet = (v: View) => v === "yours" || v === "liked"
+/** A cached list: a view, or one of the public lists the shelves are drawn
+ *  from, one query per shelf: `newest` for Latest, `top` for the most liked,
+ *  and a tag's or a maker's own. */
+type Key = View | "newest" | "top" | `tag:${string}` | `maker:${string}`
+
+const isFacet = (v: Key) => v === "yours" || v === "liked"
 
 // Session-lived, in memory only, and never emptied.
 //
@@ -111,13 +116,13 @@ const isFacet = (v: View) => v === "yours" || v === "liked"
 // delete broke that — the next open had nothing to paint and put a spinner over
 // an empty grid — so those events patch the cached lists instead, and the quiet
 // refresh that follows every open reconciles them with the server.
-const pages = new Map<View, Page>()
+const pages = new Map<Key, Page>()
 
 // Requests in flight, keyed by view. A gallery opened while the boot-time
 // prefetch is still out joins that request rather than firing a second one and
 // waiting behind its own spinner — the window where that happens is exactly the
 // first few seconds, which is when someone is most likely to go looking.
-const inflight = new Map<View, Promise<Page>>()
+const inflight = new Map<Key, Promise<Page>>()
 
 // Open galleries repaint when the cache is patched from elsewhere — the same
 // relay the community libraries use.
@@ -178,12 +183,14 @@ function hydrateSaved() {
  * the string "all" — not a sort at all. It fell through to the server's default
  * and happened to match, by luck rather than by intent.
  */
-const sortFor = (v: View): "hot" | "new" => (isFacet(v) ? "new" : "hot")
+const sortFor = (v: Key): "hot" | "new" | "top" => (v === "top" ? "top" : v === "newest" || isFacet(v) ? "new" : "hot")
 
-async function firstPage(v: View): Promise<Page> {
+async function firstPage(v: Key): Promise<Page> {
   const params = new URLSearchParams({ kind: "scene", sort: sortFor(v) })
   // Only a narrowing needs a session; `all` stays one public query.
   if (isFacet(v)) params.set("facet", v)
+  if (v.startsWith("tag:")) params.set("tag", v.slice(4))
+  if (v.startsWith("maker:")) params.set("maker", v.slice(6))
   return fetchJson<Page>(`/api/library?${params}`)
 }
 
@@ -202,7 +209,7 @@ function merge(old: Page | undefined, fresh: Page): Page {
 
 /** The first page of a view, merged into what we already had. Shared with anyone
  *  already waiting on the same view. */
-function loadPage(v: View): Promise<Page> {
+function loadPage(v: Key): Promise<Page> {
   hydrateSaved()
   const held = inflight.get(v)
   if (held) return held
@@ -285,6 +292,7 @@ export function prefetchGallery(signedIn = false): void {
   hydrateSaved()
   // Always asked, saved copy or not: the saved one is to paint with, not to keep.
   void loadPage("all").catch(() => {})
+  void loadPage("newest").catch(() => {})
   if (!countsFresh) void loadTags().catch(() => {})
   if (!facetCounts) void loadFacetCounts().catch(() => {})
   // The two personal shelves, and the reason this takes an argument at all.
@@ -305,7 +313,10 @@ export function noteScenePublished(scene: GalleryScene): void {
     // "all" is the public gallery. A private scene belongs only under "yours",
     // and putting it in both is how a scene nobody else can open still appears
     // in the list of what everybody can.
-    if (v === "all" && scene.visibility === "private") continue
+    if (v !== "yours" && scene.visibility === "private") continue
+    // A tag's or a maker's list takes only what it is the list of.
+    if (v.startsWith("tag:") && !scene.tags.includes(v.slice(4))) continue
+    if (v.startsWith("maker:") && scene.author !== v.slice(6)) continue
     pages.set(v, { ...page, scenes: [scene, ...page.scenes.filter((s) => s.id !== scene.id)] })
   }
   // Its tags moved the cloud.
@@ -364,6 +375,10 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
     return pages.get(opensOn)?.scenes ?? cachedFallback(opensOn, session?.user.username)
   })
   const [cursor, setCursor] = useState<number | null>(() => pages.get(view)?.nextCursor ?? null)
+  /** The newest public scenes, merged into `all` for the Latest shelf. */
+  const [newest, setNewest] = useState<GalleryScene[]>(() => pages.get("newest")?.scenes ?? [])
+  /** The tag and maker lists asked for so far, merged into `all` the same way. */
+  const [lists, setLists] = useState<Partial<Record<Key, GalleryScene[]>>>({})
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [tags, setTags] = useState<[string, number][]>(() => tagCounts ?? [])
   const [makers, setMakers] = useState<[string, number][] | null>(() => makerCounts)
@@ -412,6 +427,10 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
         // Either way, keep asking while the gallery is open.
         cancelRetry = retryLater(`gallery:${view}`, () => setAttempt((n) => n + 1))
       })
+    if (view === "all")
+      loadPage("newest")
+        .then((page) => !stale && setNewest(page.scenes))
+        .catch(() => {})
     return () => {
       stale = true
       cancelRetry()
@@ -429,6 +448,8 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
     const relay = () => {
       const page = pages.get(view)
       if (page) setScenes(page.scenes)
+      setNewest(pages.get("newest")?.scenes ?? [])
+      setLists((cur) => Object.fromEntries(Object.keys(cur).map((k) => [k, pages.get(k as Key)?.scenes ?? []])))
       setCacheV((n) => n + 1)
     }
     listeners.add(relay)
@@ -501,13 +522,11 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
   /** The page, as rows the shared grid understands. A scene has no payload and
    *  the grid never asks for one. */
   const items = useMemo<GalleryRow[]>(() => {
-    const seen = new Set(scenes.map((s) => s.id))
-    const merged =
-      view === "all" ? [...scenes, ...minePrivate.filter((s) => !seen.has(s.id))] : scenes
+    const merged = view === "all" ? [...scenes, ...newest, ...Object.values(lists).flatMap((l) => l ?? []), ...minePrivate] : scenes
     // Once each: two pages can both hold a scene that moved between them.
     const once = [...new Map(merged.map((s) => [s.id, s])).values()]
     return once.map((s) => ({ ...s, kind: "scene" as const, owner: "user" as const, mine: mine(s.author) }))
-  }, [scenes, minePrivate, view, mine],
+  }, [scenes, newest, lists, minePrivate, view, mine],
   )
   const byId = useMemo(() => new Map(items.map((s) => [s.id, s])), [items])
   const numbers = useCallback(
@@ -627,8 +646,14 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
     },
     [router],
   )
+  /** Scrolled down into All: the band takes the page and the billboard steps
+   *  aside, a plain grid of covers. */
+  const [inAll, setInAll] = useState(false)
   const onPageScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget
+    const all = el.querySelector<HTMLElement>('[data-shelf="all"]')
+    // All has arrived when its title reaches the band's top.
+    setInAll(!!all && el.scrollTop >= all.offsetTop - 2)
     if (!loading && cursor && el.scrollTop + el.clientHeight > el.scrollHeight - 600) loadMore()
   }
 
@@ -668,13 +693,16 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
   // A different view is a different list: it starts at its top, not at the
   // shelf the last one was scrolled to.
   const viewKey = `${browse.facet}|${browse.tag ?? ""}|${browse.maker ?? ""}|${browse.query.trim()}`
+  // A grid of covers (All, or a narrowed view) has the whole page; the shelves
+  // share it with the billboard.
+  const grid = narrowed || inAll
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 0 })
   }, [viewKey])
-  // Each scene stands on ONE shelf, the first it qualifies for: a small
-  // catalogue ranked three ways is three copies of the same row. The shelves
-  // are laid out once; later pages join the end of "more", so scrolling down
-  // never reshuffles the rows above.
+  // Each scene stands on ONE of these shelves, the first it qualifies for: a
+  // small catalogue ranked three ways is three copies of the same row. The
+  // shelves are laid out once, so scrolling down never reshuffles the rows
+  // above; All closes the page with every scene, paging on as the band scrolls.
   type Laid = { key: string; title: string; href?: string; ids: string[] }[]
   const layShelves = (): Laid => {
     const used = new Set<string>()
@@ -686,33 +714,61 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
       // A maker's shelf is titled with their handle, and leads to their page.
       out.push({ key, title, href: key.startsWith("maker:") ? `/${key.slice(6)}` : undefined, ids: fresh.map((r) => r.id) })
     }
+    // Latest takes its pick first, so it runs day by day with nothing skipped;
+    // Trending ranks what is left, and still stands first on the page.
+    // Each shelf reads its own query, in that query's order.
+    const list = (k: Key) => (k === "newest" ? newest : (lists[k] ?? [])).flatMap((s) => byId.get(s.id) ?? [])
+    shelf("new", t.rail.sortNew, list("newest"), 8)
     shelf("hot", t.rail.sortHot, rows, 10)
-    shelf("new", t.rail.sortNew, [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt)), 8)
-    shelf("likes", t.rail.likes, [...items].sort((a, b) => numbers(b.id).likes - numbers(a.id).likes), 8)
-    for (const [tag] of browse.tags.slice(0, 6)) shelf(`tag:${tag}`, `#${tag}`, items.filter((i) => i.tags.includes(tag)), 8)
-    for (const [maker] of browse.makers.slice(0, 4)) shelf(`maker:${maker}`, `@${maker}`, items.filter((i) => i.author === maker), 8)
-    // Whatever no shelf took, so nothing loaded is out of reach.
-    shelf("more", t.gallery.moreScenes, items, Infinity)
+    out.sort((a, b) => Number(b.key === "hot") - Number(a.key === "hot"))
+    shelf("likes", t.rail.likes, list("top"), 8)
+    for (const [tag] of browse.tags.slice(0, 6)) shelf(`tag:${tag}`, `#${tag}`, list(`tag:${tag}`), 8)
+    for (const [maker] of browse.makers.slice(0, 4)) shelf(`maker:${maker}`, `@${maker}`, list(`maker:${maker}`), 8)
     return out
   }
-  const [laid, setLaid] = useState<{ lang: string; shelves: Laid } | null>(null)
+  // The lists the page draws from beyond the ranked window: a shelf for each of
+  // the top tags and makers, or the one tag or maker being browsed.
+  const wanted: Key[] =
+    view !== "all"
+      ? []
+      : browse.tag
+        ? [`tag:${browse.tag}`]
+        : browse.maker
+          ? [`maker:${browse.maker}`]
+          : narrowed
+            ? []
+            : ["top", ...browse.tags.slice(0, 6).map(([x]) => `tag:${x}` as const), ...browse.makers.slice(0, 4).map(([x]) => `maker:${x}` as const)]
+  const wantedKey = wanted.join("|")
+  useEffect(() => {
+    if (!wantedKey) return
+    let stale = false
+    for (const k of wantedKey.split("|") as Key[]) {
+      loadPage(k)
+        .then((page) => !stale && setLists((cur) => ({ ...cur, [k]: page.scenes })))
+        .catch(() => {})
+    }
+    return () => {
+      stale = true
+    }
+  }, [wantedKey, attempt])
+  const [laid, setLaid] = useState<{ lang: string; latest: string; shelves: Laid } | null>(null)
+  // The extra lists land on their own; when they bring scenes, the shelves are
+  // laid again.
+  const latest = [newest.slice(0, 8).map((s) => s.id).join(), ...Object.entries(lists).map(([k, v]) => `${k}:${v?.length}`)].join("|")
   // Laid afresh when there is nothing laid yet, the language changed, or what
   // is loaded no longer holds what was laid (another view, a refresh).
-  if (!narrowed && items.length > 0 && (!laid || laid.lang !== t.gallery.moreScenes || laid.shelves.some((sh) => sh.ids.some((id) => !byId.has(id))))) {
-    setLaid({ lang: t.gallery.moreScenes, shelves: layShelves() })
+  if (!narrowed && items.length > 0 && (!laid || laid.lang !== t.rail.all || laid.latest !== latest || laid.shelves.some((sh) => sh.ids.some((id) => !byId.has(id))))) {
+    setLaid({ lang: t.rail.all, latest, shelves: layShelves() })
   }
   const shelves = useMemo(() => {
     if (narrowed || !laid) return []
-    const placed = new Set(laid.shelves.flatMap((sh) => sh.ids))
-    const out = laid.shelves.map((sh) => ({ ...sh, rows: sh.ids.flatMap((id) => byId.get(id) ?? []) }))
-    const later = items.filter((i) => !placed.has(i.id))
-    if (later.length > 0) {
-      const more = out.find((sh) => sh.key === "more")
-      if (more) more.rows = [...more.rows, ...later]
-      else out.push({ key: "more", title: t.gallery.moreScenes, ids: [], rows: later })
-    }
+    const out: { key: string; title: string; href?: string; rows: GalleryRow[] }[] = laid.shelves.map((sh) => ({
+      ...sh,
+      rows: sh.ids.flatMap((id) => byId.get(id) ?? []),
+    }))
+    out.push({ key: "all", title: t.rail.all, rows })
     return out
-  }, [narrowed, laid, items, byId, t])
+  }, [narrowed, laid, rows, byId, t])
   // ← → step through the covers in reading order — along a shelf, on to the
   // next — putting each on the billboard and bringing it into view in its row,
   // the page staying where it is. Enter opens what is on the billboard. Not
@@ -775,11 +831,12 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
         key={s.id}
         data-card={s.id}
         variant="bare"
-        onClick={() => feature(s)}
+        // On the billboard from a shelf; opened from the grid, which has none.
+        onClick={() => (grid ? openScene(s) : feature(s))}
         onDoubleClick={() => openScene(s)}
         className={cn(
           "group/card flex shrink-0 flex-col gap-1.5 text-left transition-[scale] hover:z-10 hover:scale-[1.04]",
-          wide ? "w-full" : "w-60 compact:w-44",
+          wide ? "w-full" : "w-44",
         )}
       >
         <span
@@ -787,7 +844,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
             "block aspect-video w-full overflow-hidden rounded-interior bg-white/5",
             // Held off the picture by a gap of the page's black, so it reads on
             // a white cover as on a dark one.
-            focus?.id === s.id && "ring-2 ring-foreground ring-offset-2 ring-offset-black",
+            !grid && focus?.id === s.id && "ring-2 ring-foreground ring-offset-2 ring-offset-black",
           )}
         >
           {s.poster && (
@@ -885,7 +942,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
         <div className="relative min-h-0 flex-1">
           {/* The billboard, pinned behind the shelves: picking a cover swaps it
               and the shelf stays where it was. */}
-          <section className="absolute inset-0 overflow-hidden">
+          <section className={cn("absolute inset-0 overflow-hidden transition-opacity", grid && "pointer-events-none opacity-0")}>
             {backdrop.prev?.poster && (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -899,13 +956,20 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
               // eslint-disable-next-line @next/next/no-img-element
               <img key={`backdrop:${backdrop.cur.id}`} src={backdrop.cur.poster} alt="" className="stage-backdrop absolute inset-0 size-full object-cover" />
             )}
-            <div aria-hidden className="absolute inset-0 bg-linear-to-r from-black/85 via-black/35 to-transparent" />
-            <div aria-hidden className="absolute inset-x-0 bottom-0 h-3/5 bg-linear-to-t from-black via-black/90 to-transparent" />
+            {/* A lens's falloff at the side the type stands on and at the foot
+                under the shelf. */}
+            <div aria-hidden className="absolute inset-0 bg-linear-to-r from-black/75 via-black/30 to-transparent" />
+            <div aria-hidden className="absolute inset-x-0 bottom-0 h-2/5 bg-linear-to-t from-black via-black/45 to-transparent" />
             {focus ? (
-              <div key={`spread:${focus.id}`} className="cover-enter absolute top-[22%] left-10 flex w-[min(32rem,45vw)] flex-col compact:top-[16%] compact:left-5 compact:w-[calc(100%-2.5rem)]">
-                <h2 className="font-display text-display text-foreground italic select-text">{focus.name}</h2>
-                <div className="mt-3 flex min-w-0 items-center gap-2 font-mono text-2xs tracking-wide text-muted-foreground uppercase">
-                  <AuthorAvatar name={focus.author} image={focus.authorImage} className="size-4" />
+              <div
+                key={`spread:${focus.id}`}
+                // White type with the cover's soft dark edge on every
+                // character, so a bright picture cannot take it.
+                className="cover-enter absolute top-[22%] left-10 flex [text-shadow:0_0_2px_oklch(0_0_0/0.75),0_1px_3px_oklch(0_0_0/0.75)] [&_button]:[text-shadow:inherit] w-[min(32rem,45vw)] flex-col compact:top-[16%] compact:left-5 compact:w-[calc(100%-2.5rem)]"
+              >
+                <h2 className="font-display text-billboard text-foreground italic select-text compact:text-display">{focus.name}</h2>
+                <div className="mt-4 flex min-w-0 items-center gap-2 font-mono text-xs tracking-wide text-muted-foreground uppercase compact:mt-3 compact:text-2xs">
+                  <AuthorAvatar name={focus.author} image={focus.authorImage} className="size-5 compact:size-4" />
                   <AuthorLink name={focus.author} at className="truncate text-foreground normal-case select-text" />
                   <span>·</span>
                   <Stamp iso={focus.createdAt} show="words" />
@@ -973,29 +1037,44 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
             )}
           </section>
 
-          {/* The shelves, one at a time in a band along the bottom (two on a
-              phone held upright, which has the height): it snaps shelf by
-              shelf, so a shelf is never shown cut. */}
+          {/* The shelves, one at a time in a band along the bottom over the
+              billboard's foot (two on a phone held upright, which has the
+              height). Each shelf is exactly one slot of the band and it snaps
+              shelf by shelf, so a stop never shows a piece of its neighbour. */}
           <div
             ref={scrollRef}
             onScroll={onPageScroll}
-            className="no-scrollbar absolute inset-x-0 bottom-0 z-10 flex h-[15.5rem] snap-y snap-mandatory scroll-pt-6 flex-col gap-8 overflow-y-auto pt-6 *:snap-start compact:h-[13.25rem] compact:portrait:h-[27rem]"
+            className={cn(
+              "no-scrollbar absolute inset-x-0 bottom-0 z-10 flex snap-y snap-mandatory flex-col overflow-y-auto transition-[height] *:snap-start",
+              grid ? "h-[calc(100%-4.25rem)]" : "h-[12.5rem] compact:portrait:h-[25rem]",
+            )}
           >
             {narrowed ? (
-              <section className="px-7 compact:px-4">
-                <h3 className="mb-3 text-sm font-medium text-foreground">{narrowedTitle}</h3>
+              <section className="px-7 pt-3 compact:px-4">
+                <h3 className="mb-1 text-sm font-medium text-foreground">{narrowedTitle}</h3>
                 {rows.length === 0 ? (
                   <p className="text-xs text-muted-foreground">{loading ? t.gallery.loading : t.rail.noMatches}</p>
                 ) : (
-                  <div className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-x-3 gap-y-5">{rows.map((s) => card(s, true))}</div>
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-x-2.5 gap-y-2 py-1.5 *:snap-start">{rows.map((s) => card(s, true))}</div>
                 )}
               </section>
             ) : (
-              shelves.map((shelf) => (
-                <Shelf key={shelf.key} title={shelf.title} href={shelf.href}>
-                  {shelf.rows.map((s) => card(s))}
-                </Shelf>
-              ))
+              shelves.map((shelf) =>
+                // All is the whole gallery, a grid growing down the band row
+                // by row, each row snapping like a shelf.
+                shelf.key === "all" ? (
+                  <section key="all" data-shelf="all" className="px-7 pt-3 compact:px-4">
+                    <h3 className="mb-1 text-sm font-medium text-foreground">{shelf.title}</h3>
+                    <div className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-x-2.5 gap-y-2 py-1.5 *:snap-start">
+                      {shelf.rows.map((s) => card(s, true))}
+                    </div>
+                  </section>
+                ) : (
+                  <Shelf key={shelf.key} title={shelf.title} href={shelf.href}>
+                    {shelf.rows.map((s) => card(s))}
+                  </Shelf>
+                ),
+              )
             )}
             {loading && rows.length > 0 && (
               <div className="flex justify-center text-muted-foreground">
@@ -1064,8 +1143,9 @@ function Shelf({ title, href, children }: { title: string; href?: string; childr
     if (el) el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: "smooth" })
   }
   return (
-    <section className="relative">
-      <div className="mb-2 flex items-center justify-between px-7 compact:px-4">
+    // One slot of the shelf band, whatever the shelf holds.
+    <section className="relative h-[12.5rem] shrink-0 pt-3">
+      <div className="mb-1 flex items-center justify-between px-7 compact:px-4">
         <h3 className="text-sm font-medium text-foreground">
           {href ? (
             <Link href={href} className="underline-offset-4 hover:underline">
@@ -1093,7 +1173,7 @@ function Shelf({ title, href, children }: { title: string; href?: string; childr
           </span>
         )}
       </div>
-      <div ref={ref} className="no-scrollbar flex gap-3 overflow-x-auto scroll-px-7 px-7 py-2 compact:px-4">
+      <div ref={ref} className="no-scrollbar flex gap-2.5 overflow-x-auto scroll-px-7 px-7 py-1.5 compact:px-4">
         {children}
       </div>
     </section>

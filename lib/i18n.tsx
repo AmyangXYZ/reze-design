@@ -78,7 +78,6 @@ const en = {
   gallery: {
     title: "Gallery",
     back: "Back to editor",
-    moreScenes: "More scenes",
     // The DOOR's name, in the top bar and in the palette — one name for one
     // place. The dialog's own header stays "Gallery": inside it, where you
     // plainly are, the word "scene" is the thing every tile already is.
@@ -1240,7 +1239,6 @@ const zh: Dictionary = {
   gallery: {
     title: "画廊",
     back: "返回编辑器",
-    moreScenes: "更多场景",
     door: "场景画廊",
     more: "加载更多",
     loading: "正在获取场景…",
