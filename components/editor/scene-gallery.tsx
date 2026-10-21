@@ -379,7 +379,10 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
   const [newest, setNewest] = useState<GalleryScene[]>(() => pages.get("newest")?.scenes ?? [])
   /** The tag and maker lists asked for so far, merged into `all` the same way. */
   const [lists, setLists] = useState<Partial<Record<Key, GalleryScene[]>>>({})
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  /** The cover picked, as WHERE it stands — `<shelf>|<scene id>` — since one
+   *  scene can stand on a shelf and again in All, and the ring and the arrow
+   *  keys go by the card, not the scene. */
+  const [place, setPlace] = useState<string | null>(null)
   const [tags, setTags] = useState<[string, number][]>(() => tagCounts ?? [])
   const [makers, setMakers] = useState<[string, number][] | null>(() => makerCounts)
   const [counts, setCounts] = useState<FacetCounts | null>(() => facetCounts)
@@ -593,6 +596,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
 
   const rows = browse.rows
   // No fallback to the first row: nothing is selected until something is clicked.
+  const selectedId = place && place.slice(place.lastIndexOf("|") + 1)
   const selected = rows.find((s) => s.id === selectedId) ?? null
 
   const sceneHref = (s: GalleryScene) => `/${s.author}/${s.id}`
@@ -638,10 +642,10 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
   // Kept in state and moved on during render, when the focus changes.
   const [backdrop, setBackdrop] = useState<{ cur: GalleryRow | null; prev: GalleryRow | null }>({ cur: null, prev: null })
   if ((focus?.id ?? null) !== (backdrop.cur?.id ?? null)) setBackdrop({ cur: focus, prev: backdrop.cur })
-  /** Put a scene on the billboard. It stands behind the shelves, so nothing scrolls. */
+  /** Pick a cover: on the billboard, or in a grid's detail strip. Nothing scrolls. */
   const feature = useCallback(
-    (s: GalleryRow) => {
-      setSelectedId(s.id)
+    (s: GalleryRow, at: string) => {
+      setPlace(`${at}|${s.id}`)
       router.prefetch(`/${s.author}/${s.id}`)
     },
     [router],
@@ -769,24 +773,51 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
     out.push({ key: "all", title: t.rail.all, rows })
     return out
   }, [narrowed, laid, rows, byId, t])
+  // Every card's place in reading order, and the one ringed: the pick, or on
+  // the shelves before any pick, the billboard's scene where it first stands.
+  const places = narrowed ? rows.map((r) => `grid|${r.id}`) : shelves.flatMap((sh) => sh.rows.map((r) => `${sh.key}|${r.id}`))
+  // A grid always has a pick, its first cover until another is chosen, so its
+  // panel is never empty and never arrives to reflow the grid.
+  const current =
+    place && places.includes(place)
+      ? place
+      : grid
+        ? (places.find((p) => narrowed || p.startsWith("all|")) ?? null)
+        : (places.find((p) => p.endsWith(`|${focus?.id}`)) ?? null)
+  /** A grid's pick, which its panel describes (the grid has no billboard). */
+  const picked = grid && current ? (rows.find((r) => current.endsWith(`|${r.id}`)) ?? null) : null
   // ← → step through the covers in reading order — along a shelf, on to the
-  // next — putting each on the billboard and bringing it into view in its row,
-  // the page staying where it is. Enter opens what is on the billboard. Not
-  // while typing in the search.
+  // next — and ↑ ↓ move a row, as a TV does, onto the cover nearest the same
+  // spot across. Each puts its cover on the billboard and brings it into view.
+  // Enter opens what is on the billboard. Not while typing in the search.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || !focus) return
       if ((e.target as HTMLElement | null)?.closest?.("input, textarea, [role=listbox], [role=menu]")) return
       if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
         e.preventDefault()
-        const order = narrowed ? rows : shelves.flatMap((sh) => sh.rows)
-        const at = order.findIndex((r) => r.id === focus.id)
-        const next = order[Math.min(order.length - 1, Math.max(0, at + (e.key === "ArrowRight" ? 1 : -1)))]
+        const at = places.indexOf(current ?? "")
+        const next = places[Math.min(places.length - 1, Math.max(0, at + (e.key === "ArrowRight" ? 1 : -1)))]
         if (!next) return
-        setSelectedId(next.id)
+        setPlace(next)
         scrollRef.current
-          ?.querySelector(`[data-card="${CSS.escape(next.id)}"]`)
+          ?.querySelector(`[data-place="${CSS.escape(next)}"]`)
           ?.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" })
+      } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault()
+        const cards = [...(scrollRef.current?.querySelectorAll<HTMLElement>("[data-place]") ?? [])].map((el) => ({ el, box: el.getBoundingClientRect() }))
+        const here = cards.find((c) => c.el.dataset.place === current) ?? (current ? undefined : cards[0])
+        if (!here) return
+        const down = e.key === "ArrowDown"
+        // The row next in that direction: the nearest top past this one's.
+        const beyond = cards.filter((c) => (down ? c.box.top > here.box.bottom - 4 : c.box.bottom < here.box.top + 4))
+        if (!beyond.length) return
+        const edge = down ? Math.min(...beyond.map((c) => c.box.top)) : Math.max(...beyond.map((c) => c.box.top))
+        const row = beyond.filter((c) => Math.abs(c.box.top - edge) < 8)
+        const x = here.box.left + here.box.width / 2
+        const next = row.reduce((a, b) => (Math.abs(b.box.left + b.box.width / 2 - x) < Math.abs(a.box.left + a.box.width / 2 - x) ? b : a))
+        setPlace(next.el.dataset.place!)
+        next.el.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" })
       } else if (e.key === "Enter") {
         if ((e.target as HTMLElement | null)?.closest?.("button, a")) return
         e.preventDefault()
@@ -825,36 +856,49 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
 
   /** One cover, as every row and the grid show it. Your own scenes keep their
    *  menu: open, edit, delete. */
-  const card = (s: GalleryRow, wide?: boolean) => {
+  const card = (s: GalleryRow, at: string, wide?: boolean) => {
+    const here = `${at}|${s.id}`
     const node = (
-      <Button
+      // The frame stands forward on hover or on the billboard; inside it the
+      // picture and name are the button, and the maker under them a link to
+      // their page, so the two never nest.
+      <div
         key={s.id}
-        data-card={s.id}
-        variant="bare"
-        // On the billboard from a shelf; opened from the grid, which has none.
-        onClick={() => (grid ? openScene(s) : feature(s))}
-        onDoubleClick={() => openScene(s)}
+        data-place={here}
         className={cn(
-          "group/card flex shrink-0 flex-col gap-1.5 text-left transition-[scale] hover:z-10 hover:scale-[1.04]",
+          "group/card flex shrink-0 flex-col gap-1.5 transition-[scale] hover:z-10 hover:scale-[1.04]",
           wide ? "w-full" : "w-44",
+          // The one on the billboard stands forward as a hovered one does, so
+          // stepping with the arrows reads the same as pointing.
+          current === here && "z-10 scale-[1.04]",
         )}
       >
-        <span
-          className={cn(
-            "block aspect-video w-full overflow-hidden rounded-interior bg-white/5",
-            // Held off the picture by a gap of the page's black, so it reads on
-            // a white cover as on a dark one.
-            !grid && focus?.id === s.id && "ring-2 ring-foreground ring-offset-2 ring-offset-black",
-          )}
+        <Button
+          variant="bare"
+          // A phone has no panel beside a grid, so a tap there opens.
+          onClick={() => (grid && phone ? openScene(s) : feature(s, at))}
+          onDoubleClick={() => openScene(s)}
+          className="flex flex-col gap-1.5 text-left"
         >
-          {s.poster && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={s.poster} alt="" loading="lazy" className="size-full object-cover" />
-          )}
+          <span
+            className={cn(
+              "block aspect-video w-full overflow-hidden rounded-interior bg-white/5",
+              // Held off the picture by a gap of the page's black, so it reads on
+              // a white cover as on a dark one.
+              current === here && "ring-2 ring-foreground ring-offset-2 ring-offset-black",
+            )}
+          >
+            {s.poster && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={s.poster} alt="" loading="lazy" className="size-full object-cover" />
+            )}
+          </span>
+          <span className="truncate text-xs text-foreground">{s.name}</span>
+        </Button>
+        <span className="-mt-1 flex min-w-0 items-center font-mono text-2xs text-muted-foreground">
+          <AuthorLink name={s.author} at className="truncate" />
         </span>
-        <span className="truncate text-xs text-foreground">{s.name}</span>
-        <span className="-mt-1 truncate font-mono text-2xs text-muted-foreground">@{s.author}</span>
-      </Button>
+      </div>
     )
     if (!s.mine) return node
     return (
@@ -965,7 +1009,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
                 key={`spread:${focus.id}`}
                 // White type with the cover's soft dark edge on every
                 // character, so a bright picture cannot take it.
-                className="cover-enter absolute top-[22%] left-10 flex [text-shadow:0_0_2px_oklch(0_0_0/0.75),0_1px_3px_oklch(0_0_0/0.75)] [&_button]:[text-shadow:inherit] w-[min(32rem,45vw)] flex-col compact:top-[16%] compact:left-5 compact:w-[calc(100%-2.5rem)]"
+                className="cover-enter absolute top-[22%] left-16 flex [text-shadow:0_0_2px_oklch(0_0_0/0.75),0_1px_3px_oklch(0_0_0/0.75)] [&_button]:[text-shadow:inherit] w-[min(48rem,55vw)] flex-col compact:top-[16%] compact:left-5 compact:w-[calc(100%-2.5rem)]"
               >
                 <h2 className="font-display text-billboard text-foreground italic select-text compact:text-display">{focus.name}</h2>
                 <div className="mt-4 flex min-w-0 items-center gap-2 font-mono text-xs tracking-wide text-muted-foreground uppercase compact:mt-3 compact:text-2xs">
@@ -975,7 +1019,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
                   <Stamp iso={focus.createdAt} show="words" />
                 </div>
                 {focus.description && (
-                  <p className="mt-3 line-clamp-3 text-xs leading-relaxed text-foreground select-text">{focus.description}</p>
+                  <p className="mt-3 line-clamp-3 max-w-[32rem] text-xs leading-relaxed text-foreground select-text">{focus.description}</p>
                 )}
                 {(focus.tags.length > 0 || focus.displayOnly) && (
                   <div className="mt-3 flex flex-wrap gap-1.5">
@@ -1046,7 +1090,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
             onScroll={onPageScroll}
             className={cn(
               "no-scrollbar absolute inset-x-0 bottom-0 z-10 flex snap-y snap-mandatory flex-col overflow-y-auto transition-[height] *:snap-start",
-              grid ? "h-[calc(100%-4.25rem)]" : "h-[12.5rem] compact:portrait:h-[25rem]",
+              grid ? "right-[22rem] h-[calc(100%-4.25rem)] compact:right-0" : "h-[12.5rem] compact:portrait:h-[25rem]",
             )}
           >
             {narrowed ? (
@@ -1055,7 +1099,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
                 {rows.length === 0 ? (
                   <p className="text-xs text-muted-foreground">{loading ? t.gallery.loading : t.rail.noMatches}</p>
                 ) : (
-                  <div className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-x-2.5 gap-y-2 py-1.5 *:snap-start">{rows.map((s) => card(s, true))}</div>
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-x-2.5 gap-y-2 py-1.5 *:snap-start">{rows.map((s) => card(s, "grid", true))}</div>
                 )}
               </section>
             ) : (
@@ -1066,12 +1110,12 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
                   <section key="all" data-shelf="all" className="px-7 pt-3 compact:px-4">
                     <h3 className="mb-1 text-sm font-medium text-foreground">{shelf.title}</h3>
                     <div className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-x-2.5 gap-y-2 py-1.5 *:snap-start">
-                      {shelf.rows.map((s) => card(s, true))}
+                      {shelf.rows.map((s) => card(s, "all", true))}
                     </div>
                   </section>
                 ) : (
                   <Shelf key={shelf.key} title={shelf.title} href={shelf.href}>
-                    {shelf.rows.map((s) => card(s))}
+                    {shelf.rows.map((s) => card(s, shelf.key))}
                   </Shelf>
                 ),
               )
@@ -1082,6 +1126,67 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
               </div>
             )}
           </div>
+          {/* A grid's pick, in a slim panel beside it: the library's own
+              arrangement, grid and inspector. What the billboard says on the
+              shelves, with the cover whole. */}
+          {picked && (
+            <aside className="absolute top-[4.25rem] right-0 bottom-0 z-10 flex w-[22rem] flex-col overflow-y-auto border-l border-line px-6 pt-3 pb-6 compact:hidden">
+              <span className="block aspect-video w-full shrink-0 overflow-hidden rounded-interior bg-white/5">
+                {picked.poster && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={picked.poster} alt="" className="size-full object-cover" />
+                )}
+              </span>
+              <h2 className="mt-4 text-base font-medium text-foreground select-text">{picked.name}</h2>
+              <div className="mt-2 flex min-w-0 items-center gap-2 font-mono text-2xs tracking-wide text-muted-foreground uppercase">
+                <AuthorAvatar name={picked.author} image={picked.authorImage} className="size-4" />
+                <AuthorLink name={picked.author} at className="truncate text-foreground normal-case select-text" />
+                <span>·</span>
+                <Stamp iso={picked.createdAt} show="words" />
+              </div>
+              {picked.description && <p className="mt-3 text-xs leading-relaxed text-foreground select-text">{picked.description}</p>}
+              {(picked.tags.length > 0 || picked.displayOnly) && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {picked.displayOnly && <DisplayOnlyTag />}
+                  {[...new Set(picked.tags)].map((tag) => (
+                    <Button
+                      key={tag}
+                      variant="bare"
+                      onClick={() => {
+                        browse.clear()
+                        browse.setTag(tag)
+                      }}
+                      className="rounded-chip border border-line-strong px-1.5 py-0.5 text-2xs text-foreground"
+                    >
+                      {tag}
+                    </Button>
+                  ))}
+                </div>
+              )}
+              <div className="mt-4 flex flex-wrap items-center gap-2.5">
+                <Button asChild size="sm" className="h-7 rounded-chip bg-foreground px-4 text-xs font-medium text-background hover:bg-foreground/85">
+                  <Link href={sceneHref(picked)}>{t.gallery.open}</Link>
+                </Button>
+                {!picked.displayOnly && (
+                  <Button
+                    variant="bare"
+                    onClick={() => requestFork(picked)}
+                    className="h-7 rounded-chip bg-white/20 px-3.5 text-xs font-medium text-foreground hover:bg-white/30"
+                  >
+                    {t.share.fork}
+                  </Button>
+                )}
+                <LibraryLike
+                  large
+                  likeCount={likesOf(picked)}
+                  liked={statFor(picked.id).liked}
+                  canLike={signedIn}
+                  onToggle={() => void toggleLike(picked.id)}
+                />
+              </div>
+              <VideoLink url={picked.video} className="mt-3 h-7 w-fit px-2.5 text-xs [&_svg]:size-3.5" />
+            </aside>
+          )}
         </div>
       </Cover>
       <ConfirmDialog
@@ -1173,7 +1278,7 @@ function Shelf({ title, href, children }: { title: string; href?: string; childr
           </span>
         )}
       </div>
-      <div ref={ref} className="no-scrollbar flex gap-2.5 overflow-x-auto scroll-px-7 px-7 py-1.5 compact:px-4">
+      <div ref={ref} className="no-scrollbar flex gap-2.5 overflow-x-auto scroll-px-7 px-7 py-2.5 compact:px-4">
         {children}
       </div>
     </section>

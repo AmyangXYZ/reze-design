@@ -884,7 +884,7 @@ body:has([data-paper-at="page"][data-paper="dark"]) [data-paper-scrim] {
   --text-display--line-height: 1;
   /* The same title on the gallery's billboard, where the scene fills the
      page: the display serif at its largest, and nowhere else. */
-  --text-billboard: 44px;
+  --text-billboard: 38px;
   --text-billboard--line-height: 1.05;
   /* The REZE DESIGN masthead, in the display serif, upright. */
   --text-masthead: 18px;
