@@ -35,10 +35,6 @@ import { cn } from "@/lib/utils";
 import { useTimelineView } from "@/hooks/use-timeline-view";
 import { useT } from "@/lib/i18n";
 
-/** The transport's fold curve, mirrored from page.tsx's FOLD. Keep the two in
- *  step: the panel's width and this height are one motion, and two curves that
- *  are nearly the same read as the box fighting its own contents. */
-const FOLD = "duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]";
 
 /**
  * How tall the editor is, open — the default, and the floor and ceiling a drag
@@ -56,10 +52,7 @@ const FOLD = "duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]";
  * being redrawn at a different scale sixty times on the way open.
  *
  * Fixing the height means the canvas lays out ONCE, at its final size, and the
- * fold becomes a pure clip — the parent's grid row grows and reveals a picture
- * that was already correct. Which is also exactly what the iOS-style expand
- * looks like: content that was always there, uncovered, rather than content
- * that inflates into place.
+ * fold is a fade of a picture that was already correct.
  *
  * Being DRAGGABLE does not break that. What the fold must not do is animate
  * through heights on its own; a drag is the user asking for each of those sizes
@@ -432,43 +425,24 @@ export function Dopesheet({
   }, []);
 
   return (
-    // grid-rows 0fr→1fr animates to the inner element's height without anyone
-    // measuring it. The inner element owns overflow-hidden; the row animates.
+    // Closed, the row is zero tall; the fold itself is the page's fade.
     <div
       data-undo-scope={CLIP_UNDO_SCOPE}
-      className={cn(
-        "grid min-w-0 transition-[grid-template-rows]",
-        FOLD,
-        open ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
-      )}
+      className={cn("grid min-w-0", open ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}
     >
-      {/* w-0 min-w-full is what stops the editor sizing the PANEL.
-          The pill's open/closed width transitions out of `max-w-fit`, and
-          fit-content is resolved against the widest thing inside — which, once
-          this subtree exists, is a toolbar of nowrap shrink-0 controls and a
-          canvas. So the transition began at that intrinsic width and travelled
-          DOWN to the cap: the panel flashing to full screen and then pulling
-          back. Zero base width means this contributes nothing to the parent's
-          intrinsic size while min-w-full still makes it fill the row, so
-          fit-content stays what it always was — the collapsed pill. */}
+      {/* w-0 min-w-full is what stops the editor sizing the PANEL: closed,
+          the pill is `max-w-fit`, resolved against the widest thing inside,
+          and this subtree is a toolbar of nowrap controls and a canvas. Zero
+          base width adds nothing to the pill's intrinsic size while
+          min-w-full still makes it fill the open row. */}
       <div className="w-0 min-w-full overflow-hidden" inert={!open}>
-        {/* Border on the INNER element, so it folds away with the editor rather
-            than drawing a line under a closed pill.
-
-            The fade is asymmetric on purpose. The fold only CLIPS — the content
-            stays fully opaque under the shrinking edge, so the last visible
-            strip used to vanish in one frame, a flash right at the end of the
-            close. Fading out over half the fold means the fold closes over
-            something already gone; opening gets the full duration, since content
-            arriving with the fold is what a fold should look like. */}
+        {/* Border on the INNER element, so it goes with the editor rather
+            than drawing a line under a closed pill. */}
         <div
           // An inline height, not a class: Tailwind scans source for whole class
           // names, so a computed `h-[${n}px]` produces no CSS at all.
           style={{ height }}
-          className={cn(
-            "relative transition-opacity ease-out",
-            open ? "opacity-100 duration-233" : "opacity-0 duration-233",
-          )}
+          className="relative"
         >
           {/* The top edge, a hit area rather than another piece of furniture:
               a line shows there on hover and while dragging, which is the whole

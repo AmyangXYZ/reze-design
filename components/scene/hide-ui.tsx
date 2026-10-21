@@ -10,7 +10,7 @@
 // Never remembered. A page that opens with no controls on it reads as broken.
 
 import { useEffect, useRef, useState } from "react"
-import { Maximize2, Triangle } from "lucide-react"
+import { ChevronsRight, Maximize2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -139,7 +139,7 @@ export function ShowUiButton({ onShow, corner }: { onShow: () => void; corner?: 
         )}
       >
         <span data-ink-zone className="flex items-center gap-1.5 text-foreground">
-          <Triangle className="size-2.5 rotate-90" />
+          <ChevronsRight className="size-3.5" />
           {t.transport.show}
         </span>
       </Button>

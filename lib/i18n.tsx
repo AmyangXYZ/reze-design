@@ -457,18 +457,15 @@ const en = {
   transport: {
     followCamera: "Following camera — click to free-orbit",
     freeOrbit: "Free orbit — click to follow camera",
-    loopOn: "Loop on",
-    loopOff: "Loop off",
     eyesOn: "Eyes on camera",
     eyesOff: "Eyes as animated",
     hideUi: "Hide UI (H)",
     showUi: "Show UI",
     scrub: "Scrub the timeline",
-    /** The bottom line's words: Hide UI, and the three switches. */
+    /** The bottom line's words: Hide UI, and the switches. */
     hide: "Hide",
     show: "Show",
     follow: "Camera",
-    loop: "Loop",
     eyes: "Eyes",
   },
   graph: {
@@ -1584,8 +1581,6 @@ const zh: Dictionary = {
   transport: {
     followCamera: "跟随相机 —— 点击自由环绕",
     freeOrbit: "自由环绕 —— 点击跟随相机",
-    loopOn: "循环开",
-    loopOff: "循环关",
     eyesOn: "眼神看镜头",
     eyesOff: "眼神随动作",
     hideUi: "隐藏界面 (H)",
@@ -1594,7 +1589,6 @@ const zh: Dictionary = {
     hide: "隐藏",
     show: "显示",
     follow: "镜头",
-    loop: "循环",
     eyes: "眼神",
   },
   graph: {

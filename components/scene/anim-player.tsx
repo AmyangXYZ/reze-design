@@ -1,13 +1,13 @@
 "use client"
 
-// Persistent bottom transport: play/pause · scrub · time · loop.
+// Persistent bottom transport: play/pause · scrub · time.
 
 import { memo, useEffect, useRef, useState, type ReactNode, type RefObject } from "react"
 import { cn } from "@/lib/utils"
 import { FPS } from "@/lib/clip"
 import { applyTimelineFrame, type SceneTimeline } from "@/lib/timeline"
 import type { Engine, Model } from "reze-engine"
-import { Eye, EyeOff, Orbit, Pause, Play, Repeat, RepeatOff, Video } from "lucide-react"
+import { Eye, EyeOff, Orbit, Pause, Play, Video } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Cover } from "@/components/ui/cover"
 import { useT } from "@/lib/i18n"
@@ -54,7 +54,7 @@ export type Scrub = {
  * last frame. A second copy of that would be correct until one of them changed.
  */
 export type TransportSlot = {
-  /** Camera follow, loop and the host's `trailing`, or null while collapsed —
+  /** Camera follow, eyes and the host's `trailing`, or null while collapsed —
    *  the pill still has a row of its own to show them in. */
   chrome: ReactNode
   /** What the ENGINE is doing, not what anything asked for. */
@@ -72,6 +72,7 @@ export const AnimPlayer = memo(function AnimPlayer({
   onEyes,
   onFollowingChange,
   trailing,
+  fold,
   below,
   unfolded,
   axisDuration = 0,
@@ -95,18 +96,21 @@ export const AnimPlayer = memo(function AnimPlayer({
   timeline?: SceneTimeline
   /** A camera VMD is loaded — show the Follow/Free toggle. */
   hasCamera: boolean
-  /** Eyes on the camera — the scene's setting and its switch. Beside Loop:
+  /** Eyes on the camera — the scene's setting and its switch. Beside Camera:
    *  it is a property of the playback you are watching, like following is. */
   eyes?: boolean
   onEyes?: (on: boolean) => void
-  /** Extra controls at the right end of the row, after Loop. */
+  /** Extra controls at the right end of the row, after Eyes. */
   trailing?: ReactNode
+  /** The fold's own button: on the line, beside the duration as play stands
+   *  beside the time; open, at the end of the editor's toolbar. */
+  fold?: ReactNode
   /**
    * Beneath the row — the timeline the transport IS when expanded. Kept MOUNTED
    * while closed so the caller can fold it open; it is the caller's job to give
    * it zero height, not this component's to unmount it.
    *
-   * Given a function, it receives this transport's CHROME — camera follow, loop
+   * Given a function, it receives this transport's CHROME — camera follow, eyes
    * and whatever `trailing` holds — to place inside itself. That is how the row
    * above can go away entirely when open: the three controls that still mean
    * something once there is an editor move into the editor's own toolbar, and
@@ -168,11 +172,6 @@ export const AnimPlayer = memo(function AnimPlayer({
 }) {
   const t = useT()
   const [progress, setProgress] = useState<Progress>({ current: 0, duration: 0, playing: false, paused: false })
-  const [loop, setLoop] = useState(true)
-  const loopRef = useRef(loop)
-  useEffect(() => {
-    loopRef.current = loop
-  })
   // The bar is driven OUTSIDE React: the rAF tick writes transform-only DOM
   // updates (fill scaleX, thumb translateX) — smooth 60fps without a single
   // re-render, which is what iOS Safari needs with a blurred pane over the
@@ -257,7 +256,7 @@ export const AnimPlayer = memo(function AnimPlayer({
     // They must align with the TRACK, not with the panel: the gutter to its left
     // holds a play button and a running time whose width moves with the locale
     // and with the clip's length, and the one to its right holds the duration,
-    // loop and fold. Neither is a constant, so both are measured — a hardcoded
+    // the switches and fold. Neither is a constant, so both are measured — a hardcoded
     // inset is right for exactly one language and one clip.
     //
     // Custom properties for the same reason --playhead is one: the fold reads
@@ -364,7 +363,7 @@ export const AnimPlayer = memo(function AnimPlayer({
         currentRef.current = p.current
         paintBar(p.current, p.duration)
       }
-      if (loopRef.current && !p.playing && !p.paused && p.duration > 0 && p.current >= p.duration - AT_END_EPS) {
+      if (!p.playing && !p.paused && p.duration > 0 && p.current >= p.duration - AT_END_EPS) {
         // Restart the whole cast together — end → frame 0 teleports every bone,
         // so re-seed the bodies onto the new pose rather than letting them
         // stretch across the discontinuity.
@@ -504,7 +503,7 @@ export const AnimPlayer = memo(function AnimPlayer({
   })
 
   const hasClip = modelNames.length > 0
-  // Camera follow, loop, and whatever the host appended. Built once and placed
+  // Camera follow, eyes, and whatever the host appended. Built once and placed
   // in whichever row is actually on screen: the pill's, when collapsed, or the
   // editor's toolbar, when open. `btn` is the only thing that differs — a
   // size-7 pill button is taller than the 26px toolbar it would land in.
@@ -532,7 +531,6 @@ export const AnimPlayer = memo(function AnimPlayer({
   const lineChrome = (
     <>
       {hasCamera && word(following, t.transport.follow, following ? t.transport.followCamera : t.transport.freeOrbit, toggleCamera)}
-      {word(loop, t.transport.loop, loop ? t.transport.loopOn : t.transport.loopOff, () => setLoop((v) => !v))}
       {onEyes && word(!!eyes, t.transport.eyes, eyes ? t.transport.eyesOn : t.transport.eyesOff, () => onEyes(!eyes))}
       {trailing}
     </>
@@ -549,14 +547,6 @@ export const AnimPlayer = memo(function AnimPlayer({
           {following ? <Video className={ico} /> : <Orbit className={ico} />}
         </Button>
       )}
-      <Button aria-label={loop ? t.transport.loopOn : t.transport.loopOff}
-        variant="ghost"
-        size="icon"
-        className={cn(btn, "text-foreground")}
-        onClick={() => setLoop((v) => !v)}
-      >
-        {loop ? <Repeat className={ico} strokeWidth={2.4} /> : <RepeatOff className={ico} />}
-      </Button>
       {onEyes && (
         <Button aria-label={eyes ? t.transport.eyesOn : t.transport.eyesOff}
           variant="ghost"
@@ -568,6 +558,7 @@ export const AnimPlayer = memo(function AnimPlayer({
         </Button>
       )}
       {trailing}
+      {fold}
     </>
   )
 
@@ -575,56 +566,33 @@ export const AnimPlayer = memo(function AnimPlayer({
     <div
       ref={rootRef}
       // Open on the cover, it is PAPER (globals.css), on the side opposite the
-      // cover's ink; the dopesheet draws in the sheet's ink.
+      // cover's ink; the dopesheet draws in the sheet's ink. The sheet itself,
+      // its fill and blur, is the page's layer behind this one ([data-fold]),
+      // so the fold can clip this content without hiding the blur.
       data-paper={unfolded ? "auto" : undefined}
-      data-paper-at={unfolded ? "timeline" : undefined}
       className={cn(
-        // The fold animates THROUGH the blur, which measurably costs frames —
-        // the decision to keep it anyway (visual consistency with the shipped
-        // chrome) is recorded on --color-surface in globals.css.
-        bare
-          ? "cover-type border border-transparent"
-          : "border border-line-strong bg-surface shadow-float backdrop-blur-xs",
-        // ONE radius in both states, and deliberately not rounded-full.
-        //
-        // rounded-full is 9999px that the browser CLAMPS to half the box. It
-        // renders as a pill, but animating it to a panel radius interpolates the
-        // real number: 9999 → 16 only drops under half the height in the last
-        // fraction of a percent, so the corner stays fully round for the whole
-        // transition and then snaps at the end. That is the "big round shape
-        // first, wrapper after" — the radius was not following the box.
-        //
-        // 20px is just over half the COLLAPSED row (py-1 around size-7, plus
-        // borders = 38), so it clamps to a perfect pill there and is simply a
-        // 20px corner once open. Track the collapsed padding if that changes, or
-        // the pill turns back into a rounded rectangle.
-        "rounded-[1.25rem]",
+        "relative border border-transparent",
+        bare && "cover-type",
+        // Closed, 20px: just over half the line's height, so it clamps to a pill.
+        bare ? "rounded-[1.25rem]" : "rounded-interior",
         // The editor inside has square corners and its toolbar paints a solid
         // background right up to them, so without this it covers the radius and
-        // the open panel reads as a rectangle. Clipping to the root is also what
-        // lets the fold reveal the canvas from behind a rounded edge instead of
-        // over one. Popovers portal out, so nothing that needs to
-        // escape is caught by it.
+        // the open panel reads as a rectangle. Popovers portal out, so nothing
+        // that needs to escape is caught by it.
         "overflow-hidden",
       )}
     >
       {/* The pill's own row, and it exists only while the pill does.
           Open, every control in it is either duplicated by the editor's toolbar
           (play, step, the frame readout) or meaningless at that scale (a
-          whole-scene scrub bar sitting above a frame-accurate one), so rather
-          than hide four things individually the row folds away as one — same
-          0fr→1fr grid trick and the same curve as the editor opening below it,
-          so the two read as ONE box changing shape instead of a row leaving
-          while a panel arrives.
+          whole-scene scrub bar sitting above a frame-accurate one), so the row
+          goes as one. The fold is a fade, never a change of size: the page
+          fades the open panel in and out (app/page.tsx), and the line fades
+          back in once it has gone.
 
-          Its chrome does not go with it: camera and loop still mean something
+          Its chrome does not go with it: camera and eyes still mean something
           open, and they reappear at the end of the editor's toolbar. */}
-      <div
-        className={cn(
-          "grid transition-[grid-template-rows] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
-          unfolded ? "grid-rows-[0fr]" : "grid-rows-[1fr]",
-        )}
-      >
+      <div className={cn("grid", unfolded ? "grid-rows-[0fr]" : "grid-rows-[1fr]")}>
       <div className="overflow-hidden" inert={unfolded}>
       {/* As a line on the canvas its buttons wear the cover's look. */}
       <Cover on={bare}>
@@ -707,6 +675,7 @@ export const AnimPlayer = memo(function AnimPlayer({
         </div>
         <span className="flex items-center gap-2">
         <span className={cn("shrink-0 leading-none text-muted-foreground tabular-nums", bare ? "font-mono text-2xs" : "text-xs")}>{fmt(progress.duration)}</span>
+        {!unfolded && fold}
         {/* Their own tighter group. The row's gap-2 is the spacing between the
             transport's PARTS — button, time, track, controls — and these are
             one part: two or three icon toggles that belong together and read as

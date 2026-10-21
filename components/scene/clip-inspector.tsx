@@ -1378,7 +1378,16 @@ function LiveMorphSlider({
   )
 }
 
-export function ClipInspector({ onClose, object = null }: { onClose: () => void; object?: ObjectEditing | null }) {
+export function ClipInspector({
+  onClose,
+  object = null,
+  leaving = false,
+}: {
+  onClose: () => void
+  object?: ObjectEditing | null
+  /** Closed and fading out where it stands, with the timeline. */
+  leaving?: boolean
+}) {
   // Nothing selected, nothing to inspect, no panel.
   //
   // The alternative was a panel holding one line telling you to go and select
@@ -1392,10 +1401,18 @@ export function ClipInspector({ onClose, object = null }: { onClose: () => void;
   const trackSubject = useClipSelector((s) => s.cameraSelected || s.selectedBone != null || s.selectedMorph != null)
   const parentSubject = useClipSelector((s) => s.parentSelected)
   if (!trackSubject && !(parentSubject && object)) return null
-  return <ClipInspectorSurface onClose={onClose} object={object} />
+  return <ClipInspectorSurface onClose={onClose} object={object} leaving={leaving} />
 }
 
-function ClipInspectorSurface({ onClose, object }: { onClose: () => void; object: ObjectEditing | null }) {
+function ClipInspectorSurface({
+  onClose,
+  object,
+  leaving,
+}: {
+  onClose: () => void
+  object: ObjectEditing | null
+  leaving: boolean
+}) {
   const z = useZOrder(undefined, onClose)
   const { setSelectedBone, setSelectedMorph, setCameraSelected, setParentSelected } = useClipActions()
   // The right column holds one panel, and this one arrives with a subject and
@@ -1432,7 +1449,10 @@ function ClipInspectorSurface({ onClose, object }: { onClose: () => void; object
       // it. The cap is the same arithmetic read downwards (3.75rem above,
       // 0.75rem below), and only bites on a short window, where the body
       // scrolls instead.
-      className="top-[3.75rem] bottom-auto max-h-[calc(100%-4.5rem)] animate-[panel-in_0.2s_cubic-bezier(0.32,0.72,0,1)]"
+      className={cn(
+        "top-[3.75rem] bottom-auto max-h-[calc(100%-4.5rem)] animate-[panel-in_var(--default-transition-duration)_cubic-bezier(0.32,0.72,0,1)]",
+        leaving && "pointer-events-none translate-x-2 opacity-0 transition-[opacity,translate] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
+      )}
       style={{ zIndex: z.z }}
       onPointerDownCapture={z.onPointerDownCapture}
       onFocusCapture={z.onFocusCapture}

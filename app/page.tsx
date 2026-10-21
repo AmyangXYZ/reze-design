@@ -44,6 +44,7 @@ import {
   Clapperboard,
   Code2,
   ChevronDown,
+  ChevronsLeft,
   ChevronUp,
   Contrast,
   Image,
@@ -81,7 +82,6 @@ import {
   Eye,
   Minimize2,
   Search,
-  Triangle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -92,6 +92,8 @@ import { AccountButton, HandleDialog, type LibraryDoor } from "@/components/edit
 import { prefetchGallery } from "@/components/editor/scene-gallery"
 import { useRouter } from "next/navigation"
 import { useCoverInk } from "@/hooks/use-cover-ink"
+import { useLeaving } from "@/hooks/use-leaving"
+import { FpsReadout } from "@/components/scene/fps-readout"
 import { SCROLL_FADE, useScrollFade } from "@/components/editor/scroll-fade"
 import { prefetchLibraryStats } from "@/hooks/use-library-stats"
 import { AnimPlayer, type Scrub } from "@/components/scene/anim-player"
@@ -303,10 +305,6 @@ function Slot({ text, mark, end }: { text: string; mark: string; end?: boolean }
 const LINE_ACTION =
   "flex h-7 w-fit items-center gap-1.5 rounded-none border-0 px-0 text-xs font-normal text-muted-foreground ring-0 hover:bg-transparent hover:text-foreground"
 
-/** The iOS sheet curve — decelerating, no overshoot. Width, height and radius
- *  all ride it so the transport reads as ONE surface changing shape rather than
- *  three properties animating near each other. */
-const FOLD = "duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]"
 
 /**
  * How wide the open editor is allowed to get, stated in the viewport rather
@@ -2930,6 +2928,24 @@ function Lab() {
    * the timeline back exactly as it was left.
    */
   const timelineUnfolded = timelineOpen && timelineRoom
+  // The open timeline and its inspector fade out where they stand before the
+  // line returns, as the AI panel does.
+  const { shown: timelineShown, leaving: timelineLeaving } = useLeaving(timelineUnfolded)
+  // The closed line's size, which the open timeline grows out of and shrinks
+  // back into (globals.css, "The timeline's fold"). Read while it is the line.
+  const foldObserver = useRef<ResizeObserver | null>(null)
+  const foldRef = useCallback((el: HTMLDivElement | null) => {
+    foldObserver.current?.disconnect()
+    foldObserver.current = null
+    if (!el) return
+    const ro = new ResizeObserver(() => {
+      if (el.dataset.fold) return
+      el.style.setProperty("--paper-w", `${el.offsetWidth}px`)
+      el.style.setProperty("--paper-h", `${el.offsetHeight}px`)
+    })
+    ro.observe(el)
+    foldObserver.current = ro
+  }, [])
   // Open, the timeline is a surface like the docks: it comes to the front when
   // it opens or is touched, and Escape folds it when it is on top.
   const timelineZ = useZOrder(timelineUnfolded, timelineUnfolded ? () => setTimelineOpen(false) : undefined)
@@ -10354,11 +10370,12 @@ function Lab() {
           className="cover-type absolute bottom-5 left-7 flex h-8 items-center gap-1.5 text-xs text-foreground"
         >
           <span data-ink-zone className="flex items-center gap-1.5 text-foreground">
-            <Triangle className="size-2.5 -rotate-90" />
+            <ChevronsLeft className="size-3.5" />
             {t.transport.hide}
           </span>
         </Button>
       )}
+      {mounted && !exportOpen && !shareOpen && !framing.exporting && <FpsReadout engineRef={engineRef} />}
 
       {/* ── Art director ──
           MOUNTED while closed, like export: closing the panel mid-request must
@@ -10550,9 +10567,9 @@ function Lab() {
               to clear the docks — it is centred, and they are not. */}
           <div
             data-edge="bottom"
-            data-ink-zone={!timelineUnfolded || undefined}
+            data-ink-zone={!timelineShown || undefined}
             className="pointer-events-none absolute inset-x-3 bottom-3 flex justify-center"
-            style={timelineUnfolded ? { zIndex: timelineZ.z } : undefined}
+            style={timelineShown ? { zIndex: timelineZ.z } : undefined}
             onPointerDownCapture={timelineZ.onPointerDownCapture}
             onFocusCapture={timelineZ.onFocusCapture}
           >
@@ -10563,8 +10580,10 @@ function Lab() {
             swaps the cap to 100% and flex-1 absorbs the growth, so the track is
             the only thing that stretches.
 
-            interpolate-size lets the keyword cap animate (Chrome; Safari snaps
-            between correct layouts, which this dev route accepts).
+            The fold changes no layout: the box switches at once, and the open
+            timeline grows out of the line and shrinks back into it, its content
+            uncovered by a clip and its sheet a layer behind that grows in step,
+            so the blur is whole on every frame.
 
             Open caps at the WORKING AREA rather than at 100%. The number is
             OPEN_TIMELINE_W, stated in viewport units with its arithmetic
@@ -10577,18 +10596,21 @@ function Lab() {
             window too narrow for the editor anyway; it keeps the open timeline
             from resolving to zero width there. */}
             <div
+              ref={foldRef}
+              data-fold={timelineLeaving ? "leaving" : timelineUnfolded ? "open" : undefined}
               className={cn(
-                "pointer-events-auto w-full transition-[max-width] [interpolate-size:allow-keywords]",
-                FOLD,
-                timelineUnfolded ? OPEN_TIMELINE_W : "max-w-fit",
+                "pointer-events-auto relative w-full",
+                timelineShown ? OPEN_TIMELINE_W : "max-w-fit",
+                timelineLeaving && "pointer-events-none",
               )}
             >
+              {timelineShown && <div aria-hidden data-fold-sheet data-paper="auto" data-paper-at="timeline" className="bg-surface" />}
               <AnimPlayer
                 engineRef={engineRef}
                 modelNames={modelNames}
                 timeline={timeline}
                 hasCamera={cameraClip !== null}
-                trailing={
+                fold={
                   TIMELINE_EDITOR && timelineRoom && !phone ? (
                     <Button
                       variant="ghost"
@@ -10602,7 +10624,7 @@ function Lab() {
                     </Button>
                   ) : undefined
                 }
-                unfolded={timelineUnfolded}
+                unfolded={timelineShown}
                 // No axisDuration. It exists only to publish `--playhead` for a
                 // `below` that positions itself in CSS, and `below` here is the
                 // dopesheet, which takes the frame straight off the tick through
@@ -10631,7 +10653,7 @@ function Lab() {
                       playheadDrawRef={dopePlayheadRef}
                       audioPeaks={musicPeaks}
                       audioDuration={animDuration}
-                      open={timelineUnfolded}
+                      open={timelineShown}
                       kind={editingKind}
                       onKind={switchEditKind}
                       objects={props.map((p) => ({ id: p.id, label: displayName(p.file) }))}
@@ -10687,8 +10709,9 @@ function Lab() {
               costs no space to make room for, either: the open timeline is
               already capped at `100vw - 35rem` so it stops clear of both
               columns, and this lands in the one on the right. */}
-          {timelineUnfolded && (
+          {timelineShown && (
             <ClipInspector
+              leaving={timelineLeaving}
               onClose={() => setTimelineOpen(false)}
               object={
                 editingProp

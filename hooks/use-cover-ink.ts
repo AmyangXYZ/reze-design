@@ -70,26 +70,29 @@ export function useCoverInk(
       const top = canvas.offsetTop
       return { left, top, right: left + canvas.offsetWidth, bottom: top + canvas.offsetHeight, width: canvas.offsetWidth, height: canvas.offsetHeight }
     }
-    let raf = 0
     let timers: number[] = []
+    let leadTimer = 0
     let last = 0
     // Read in a frame queued from a timer: the engine queues its next frame
     // while it renders, so this one runs AFTER that render, while the canvas
     // still holds it. A frame of our own would run first and read an empty
     // canvas. At once, so the type turns with the scene (at most every 250ms
     // while a dial is dragged); again once the change has settled; and once
-    // more after its textures have come in.
+    // more after its textures have come in. A change arriving in several parts
+    // (the frame's shape, then its place) pushes back only the later readings:
+    // the first one stands.
+    const read = () => requestAnimationFrame(tick)
     const look = () => {
       for (const t of timers) clearTimeout(t)
-      cancelAnimationFrame(raf)
       const now = performance.now()
-      const lead = now - last >= 250
-      if (lead) last = now
-      timers = [...(lead ? [0] : []), 250, 1500].map((ms) =>
-        window.setTimeout(() => {
-          raf = requestAnimationFrame(tick)
-        }, ms),
-      )
+      if (!leadTimer && now - last >= 250) {
+        last = now
+        leadTimer = window.setTimeout(() => {
+          leadTimer = 0
+          read()
+        }, 0)
+      }
+      timers = [250, 1500].map((ms) => window.setTimeout(read, ms))
     }
     lookRef.current = look
     // The frame changing shape (an export's aspect, the window) moves what
@@ -127,7 +130,7 @@ export function useCoverInk(
       })
     }
     const tick = async () => {
-      if (busy || document.hidden || pausedRef?.current || !canvas.width) return
+      if (gone || busy || document.hidden || pausedRef?.current || !canvas.width) return
       busy = true
       let d: Uint8ClampedArray | null = null
       try {
@@ -254,7 +257,7 @@ export function useCoverInk(
       resized.disconnect()
       document.removeEventListener("visibilitychange", shown)
       for (const t of timers) clearTimeout(t)
-      cancelAnimationFrame(raf)
+      clearTimeout(leadTimer)
     }
   }, [ready, mainRef, canvasRef, pausedRef])
   useEffect(() => {

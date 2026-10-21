@@ -335,6 +335,11 @@
 .cover :is(.cover-type, [data-ink-zone]) :is(button, input, textarea, select) {
   text-shadow: inherit;
 }
+/* A filled control is its own ground: the type on it carries no shadow. */
+.cover :is(.cover-type, [data-ink-zone]) :is(.bg-primary, .bg-secondary, .bg-destructive, .bg-blue-400),
+.cover :is(.cover-type, [data-ink-zone]) :is(.bg-primary, .bg-secondary, .bg-destructive, .bg-blue-400) * {
+  text-shadow: none;
+}
 .cover [data-paper] {
   text-shadow: none;
 }
@@ -519,6 +524,46 @@
   to {
     opacity: 1;
   }
+}
+/* The timeline's fold (app/page.tsx): the open timeline grows out of the
+   transport's line (--paper-w × --paper-h, bottom centre) and shrinks back
+   into it. Its content is uncovered by a clip; its sheet is a layer behind,
+   never under the clip, that grows in step, so it blurs from the first frame. */
+@keyframes fold-reveal {
+  from {
+    clip-path: inset(calc(100% - var(--paper-h)) calc(50% - var(--paper-w) / 2) 0 round 8px);
+  }
+  to {
+    clip-path: inset(0 0 0 0 round 8px);
+  }
+}
+@keyframes fold-conceal {
+  from {
+    clip-path: inset(0 0 0 0 round 8px);
+  }
+  to {
+    clip-path: inset(calc(100% - var(--paper-h)) calc(50% - var(--paper-w) / 2) 0 round 8px);
+  }
+}
+[data-fold] > [data-fold-sheet] {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  translate: -50% 0;
+  width: 100%;
+  height: 100%;
+}
+[data-fold="open"] > [data-fold-sheet] {
+  animation: paper-ground-grow var(--default-transition-duration) cubic-bezier(0.32, 0.72, 0, 1);
+}
+[data-fold="leaving"] > [data-fold-sheet] {
+  animation: paper-ground-shrink var(--default-transition-duration) cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+[data-fold="open"] > :not([data-fold-sheet]) {
+  animation: fold-reveal var(--default-transition-duration) cubic-bezier(0.32, 0.72, 0, 1);
+}
+[data-fold="leaving"] > :not([data-fold-sheet]) {
+  animation: fold-conceal var(--default-transition-duration) cubic-bezier(0.32, 0.72, 0, 1) forwards;
 }
 [data-paper] > [data-paper-ground] {
   backdrop-filter: blur(var(--blur-xs));

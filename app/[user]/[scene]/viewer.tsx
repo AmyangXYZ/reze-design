@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, GalleryThumbnails, GitFork, Heart, Minimize2, Triangle, WandSparkles } from "lucide-react"
+import { ArrowLeft, ChevronsLeft, GalleryThumbnails, GitFork, Heart, Minimize2, WandSparkles } from "lucide-react"
 import { LogoMenu, Row as MenuRow } from "@/components/editor/scene-file-menu"
 import { DisplayOnlyTag } from "@/components/editor/scene-gallery"
 import { AnimPlayer } from "@/components/scene/anim-player"
@@ -284,7 +284,7 @@ export function SceneViewer(props: ViewerProps) {
             className="cover-type absolute bottom-5 left-7 flex h-8 items-center text-xs"
           >
             <span data-ink-zone className="flex items-center gap-1.5 text-foreground">
-              <Triangle className="size-2.5 -rotate-90" />
+              <ChevronsLeft className="size-3.5" />
               {t.transport.hide}
             </span>
           </Button>
