@@ -11,6 +11,8 @@
 // The FFT is written here rather than imported: it is forty lines, and this
 // repo's engine ports Bullet physics sooner than it takes a dependency.
 
+import { fetchMedia } from "./net"
+
 export type AudioAnalysis = {
   /** frames × (2 + bands): level, ONSET, then the band magnitudes, all 0..1. */
   data: Float32Array
@@ -78,7 +80,7 @@ function p95(values: Float32Array): number {
 async function analyze(url: string): Promise<AudioAnalysis | null> {
   const ac = new AudioContext()
   try {
-    const buf = await ac.decodeAudioData(await (await fetch(url)).arrayBuffer())
+    const buf = await ac.decodeAudioData(await (await fetchMedia(url)).arrayBuffer())
     // Channel 0 alone, like every other analysis in the app: a stereo pass costs
     // a second walk of the buffer to move a handful of values a few percent.
     const samples = buf.getChannelData(0)

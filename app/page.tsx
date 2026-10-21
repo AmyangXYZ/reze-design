@@ -145,7 +145,7 @@ import { useEngine } from "@/hooks/use-engine"
 import { isMobileAgent, isTouch, useCompact, useTouch } from "@/lib/device"
 import { useRenderFraming } from "@/hooks/use-render-framing"
 import { useSceneCast, useSceneSync } from "@/hooks/use-scene-sync"
-import { seedMusic, useSceneMedia, type BgSlot } from "@/hooks/use-scene-media"
+import { seedMusic, servedUrl, useSceneMedia, type BgSlot } from "@/hooks/use-scene-media"
 import { useSceneClips } from "@/hooks/use-scene-clips"
 import { SceneBackdrop } from "@/components/scene/scene-backdrop"
 import { ShowUiButton, useHideUi } from "@/components/scene/hide-ui"
@@ -264,7 +264,7 @@ import { effectTexturesFor, loadParticleTextures } from "@/lib/effect-textures"
 import { findSkies, isStageOwnSky, skyThumbnail, type SkyCandidate } from "@/lib/stage-skies"
 import { GpuErrorNotice } from "@/components/gpu-error-notice"
 import { toast } from "sonner"
-import { fetchJson } from "@/lib/net"
+import { fetchJson, fetchMedia } from "@/lib/net"
 import { lipSyncVmdFile } from "@/lib/lipsync"
 import { FOLLOW_BONE, FOLLOW_OFFSET_DEFAULT, GROUND_FADE, TARGET_DEFAULT, WIND_MAX, hexToLinearVec3, windFreqFromSlider, windSliderFromFreq, sceneOwned, NO_FILL, VIEW_TRANSFORMS, type SceneSettings } from "@/lib/scene-settings"
 import { cn } from "@/lib/utils"
@@ -3077,6 +3077,17 @@ export default function Lab() {
   useEffect(() => {
     const el = audioRef.current
     if (!el || !musicClip) return
+    //
+    // A download that fails reports the same "not supported" code as a format
+    // the browser refuses, so a served track is fetched before anything is said:
+    // if the bytes arrive, the failure was the network and the element tries
+    // again, once; if they do not, the toast says so.
+    let cancelled = false
+    let retried = false
+    const report = (why: string) => {
+      toast.error(musicClip.name, { description: why, duration: 12000 })
+      console.error(`[audio] ${musicClip.name} failed to load: code ${el.error?.code ?? "?"} ${el.error?.message ?? ""}`)
+    }
     const onError = () => {
       const code = el.error?.code
       const why =
@@ -3085,11 +3096,22 @@ export default function Lab() {
           : code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
             ? t.lab.audioFormatUnsupported
             : (el.error?.message ?? "")
-      toast.error(musicClip.name, { description: why, duration: 12000 })
-      console.error(`[audio] ${musicClip.name} failed to load: code ${code ?? "?"} ${el.error?.message ?? ""}`)
+      if (retried || !servedUrl(musicClip.url) || code === MediaError.MEDIA_ERR_DECODE) return report(why)
+      retried = true
+      fetchMedia(musicClip.url).then(
+        () => {
+          if (!cancelled) el.load()
+        },
+        () => {
+          if (!cancelled) report(t.lab.audioDownloadFailed)
+        },
+      )
     }
     el.addEventListener("error", onError)
-    return () => el.removeEventListener("error", onError)
+    return () => {
+      cancelled = true
+      el.removeEventListener("error", onError)
+    }
   }, [musicClip, t])
   // Taking the track away has to be TOLD to the element. React drops the `src`
   // attribute, and dropping it is not the same as setting it: the media load

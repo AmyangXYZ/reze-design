@@ -40,10 +40,34 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
  * Only for reads: a POST is retried as well, so it has to be one that asks
  * rather than changes (a lookup like /api/library/resolve).
  */
-export async function fetchJson<T>(
+export function fetchJson<T>(
   url: string,
   init?: RequestInit,
   { attempts = 4, timeoutMs = 15_000 }: { attempts?: number; timeoutMs?: number } = {},
+): Promise<T> {
+  return read(url, init, (res) => res.json() as Promise<T>, attempts, timeoutMs)
+}
+
+/**
+ * A media file's bytes (a track, a picture), retried like `fetchJson`, with a
+ * timeout sized for a whole file.
+ *
+ * Past the browser's cache: an `<audio>` or `<img>` loads the same URL without
+ * CORS, and the asset host answers that with no `Access-Control-Allow-Origin`
+ * and caches it for a year. A fetch that reuses that copy fails CORS, as
+ * "Failed to fetch". Going to the network replaces it with one that carries the
+ * header.
+ */
+export function fetchMedia(url: string): Promise<Blob> {
+  return read(url, { cache: "reload" }, (res) => res.blob(), 4, 120_000)
+}
+
+async function read<T>(
+  url: string,
+  init: RequestInit | undefined,
+  body: (res: Response) => Promise<T>,
+  attempts: number,
+  timeoutMs: number,
 ): Promise<T> {
   for (let i = 0; ; i++) {
     const abort = new AbortController()
@@ -51,7 +75,7 @@ export async function fetchJson<T>(
     try {
       const res = await fetch(url, { ...init, signal: abort.signal })
       if (!res.ok) throw new HttpError(res.status)
-      return (await res.json()) as T
+      return await body(res)
     } catch (e) {
       const retryable = !(e instanceof HttpError) || transient(e.status)
       if (!retryable || i + 1 >= attempts) throw e

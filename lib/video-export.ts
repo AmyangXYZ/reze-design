@@ -21,6 +21,7 @@ import { mixFootsteps, footstepsNow, type Footstep, type FootstepSource } from "
 import { visibilityAt } from "./timeline/visibility"
 import { aeScript, type CastSample, type ShotSample } from "./ae-script"
 import { FPS } from "./clip"
+import { fetchMedia } from "./net"
 import { applyTimelineFrame, type SceneTimeline } from "./timeline"
 
 /**
@@ -704,7 +705,7 @@ async function buildMusicAudio(
   exportDuration: number,
   volume: number,
 ): Promise<AudioBuffer | null> {
-  const data = await (await fetch(url)).arrayBuffer()
+  const data = await (await fetchMedia(url)).arrayBuffer()
   const ac = new AudioContext()
   try {
     const decoded = await ac.decodeAudioData(data)

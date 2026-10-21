@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { probeBackdrop, releaseBackdrop, type BackdropMedia } from "@/lib/backdrop"
 import type { Scene } from "@/lib/scene"
+import { fetchMedia } from "@/lib/net"
 
 /** Which seat the scene's one background picture is in: `flat` behind the
  *  scene, or `dome`, the 360 skybox. */
@@ -214,6 +215,6 @@ async function resolveFile(
   const packed = await bundleFile(ref.url)
   if (packed) return packed
   if (!servedUrl(ref.url)) return null
-  const blob = await (await fetch(ref.url)).blob()
+  const blob = await fetchMedia(ref.url)
   return new File([blob], ref.name, { type: blob.type })
 }

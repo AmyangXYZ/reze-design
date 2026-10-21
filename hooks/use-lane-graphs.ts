@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useSyncExternalStore, type RefObject } from "react"
 import type { Engine } from "reze-engine"
+import { fetchMedia } from "@/lib/net"
 
 /** Columns in a lane graph. Fine enough to show phrasing, coarse enough that a
  *  four-minute clip is still one cheap pass and a handful of SVG path commands.
@@ -301,7 +302,7 @@ export function primeAudioPeaks(url: string): Promise<void> {
       // in a Worker, which is why this stays here.
       const ac = new AudioContext()
       try {
-        const buf = await ac.decodeAudioData(await (await fetch(url)).arrayBuffer())
+        const buf = await ac.decodeAudioData(await (await fetchMedia(url)).arrayBuffer())
         const cols = new Array<number>(PEAK_COLUMNS).fill(0)
         const per = Math.max(1, Math.floor(buf.length / PEAK_COLUMNS))
         // Channel 0 alone. A stereo pass would cost a second walk of the whole
