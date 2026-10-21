@@ -10,21 +10,17 @@
 //     moderation status — never leave the database and can be added freely.
 //
 // EVERY item has a permanent uuid, and it is the only identity that matters.
-// Built-ins carry theirs in content/*.json (authored once, never regenerated —
-// otherwise a reseed would orphan every like and usage stat pointing at one);
-// drafts mint one at creation and keep it through publishing, so a preset is the
-// same entity before and after it becomes public. Names are display only: they
+// Drafts mint one at creation and keep it through publishing, so a preset is the
+// same entity before and after it becomes public. Built-ins are rows like any
+// other, owned by the built-in account (lib/builtins). Names are display only: they
 // are unique per author for that author's sanity, and they can change freely.
 
 import type { MaterialPreset, ShaderGraph } from "reze-engine"
 import type { GradeSpec } from "@/lib/grade"
 import type { SceneDoc } from "@/lib/scene"
-import builtinDates from "@/content/builtin-dates.json"
 
 // A published SCENE is a library item too — same envelope, same table, same
-// permissions, and the gallery is just a facet query. Scenes ship no built-ins,
-// so `content/` has no scenes.json; the kind exists so the server side is one
-// shape rather than two.
+// permissions, and the gallery is just a facet query.
 export type LibraryKind = "grade" | "graph" | "effect" | "scene"
 
 /** Nested rather than flat so a kind can grow a second field (a grade gaining a
@@ -65,6 +61,10 @@ export type LibraryItem<K extends LibraryKind = LibraryKind, P = unknown> = {
   /** Display name, denormalized so a snapshot needs no join to render. */
   author: string
   description: string
+  /** The name and description in Chinese, when the row has them. Shown in
+   *  their place to a zh reader (lib/builtin-text). */
+  nameZh?: string
+  descriptionZh?: string
   tags: string[]
   owner: LibraryOwner
   /** Server-supplied, and only for rows YOU own — everyone else's arrive without
@@ -73,8 +73,7 @@ export type LibraryItem<K extends LibraryKind = LibraryKind, P = unknown> = {
    *  where private means lost. */
   visibility?: "public" | "private"
   /** When it was published, as an ISO string. The library ranks and sorts by it,
-   *  and both the list and the detail panel show it. Built-ins carry none: they
-   *  ship in the bundle and are older than any row. */
+   *  and both the list and the detail panel show it. */
   createdAt?: string
   payload: P
 }
@@ -165,23 +164,6 @@ export function matchesQuery(item: LibraryItem, query: string, displayName = ite
   )
 }
 
-/** Stamp repo content as builtin at load — the JSON files stay lean. */
-const BUILTIN_DATES = builtinDates as Record<string, string | undefined>
-
-export function asBuiltins<T extends LibraryItem>(items: Omit<T, "owner">[]): T[] {
-  if (process.env.NODE_ENV !== "production") {
-    for (const key of ["id", "name"] as const) {
-      const dupes = items.map((i) => i[key]).filter((v, x, a) => a.indexOf(v) !== x)
-      if (dupes.length) throw new Error(`duplicate builtin ${key}: ${dupes.join(", ")}`)
-    }
-  }
-  // A built-in has no row, so it has no createdAt of its own — and the library
-  // ranks and sorts by that. The repo knows the answer: the date is the last
-  // commit that changed the item, recovered by scripts/builtin-dates.mjs and
-  // checked in beside the content it describes.
-  return items.map((i) => ({ ...i, owner: "builtin", createdAt: BUILTIN_DATES[i.id] }) as T)
-}
-
 /**
  * What belongs in a quick-switch list, as opposed to the full library.
  *
@@ -197,8 +179,7 @@ export function quickPickItems<T extends LibraryItem>(
   appliedId: string | null,
   maxDrafts = 4,
 ): T[] {
-  // Built-ins lead (name order — content file order), drafts follow in creation
-  // order, so a new draft appears at the end rather than reshuffling the list.
+  // Built-ins lead in shelf order, drafts follow in creation order, so a new draft appears at the end rather than reshuffling the list.
   const list = [...builtins, ...drafts.slice(-maxDrafts)]
   if (appliedId && !list.some((i) => i.id === appliedId)) {
     const applied = drafts.find((i) => i.id === appliedId)

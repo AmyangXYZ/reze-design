@@ -14,7 +14,7 @@ import { fold } from "@/lib/command-search"
  * authored in (and pinyin, which is how a rip from a Chinese game names its
  * materials).
  *
- * Every look is the game's stage model (Game PBR, see content/stage-graphs.json)
+ * Every look is the game's stage model (Game PBR, a built-in graph)
  * with defaults measured from Aether Gazer's own materials
  * (docs/ag-material-survey.md §5), or one of its special shaders: Glass,
  * Water, Foliage. Looks with no game counterpart are gone: leather, rubber and

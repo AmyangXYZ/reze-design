@@ -7,7 +7,6 @@ import { useCallback, useMemo, useState } from "react"
 import { DEFAULT_GRAPH, type ShaderGraph } from "reze-engine"
 import { PenLine } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { GRAPH_LIBRARY } from "@/lib/materials"
 import {
   DETAIL_ACTION,
   LibraryDock,
@@ -27,9 +26,9 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useReport } from "@/hooks/use-report"
 import { draftOrigin } from "@/lib/drafts"
 import { useCommunity } from "@/hooks/use-community"
+import { useBuiltins } from "@/hooks/use-builtins"
 import {
   addCommunityItem,
-  builtinAuthor,
   isMine,
   removeCommunityItem,
   setCommunityVisibility,
@@ -90,11 +89,12 @@ function LibraryContent({ targetId, targetLabel, currentGraphName, usedNames = [
   // stack closes only the topmost surface.
   const { drafts, update: updateDraft, remove: removeDraft } = useDrafts<GraphItem>("graph")
   // Built-ins lead in name order; drafts follow in creation order.
+  const builtins = useBuiltins("graph")
   const community = useCommunity<GraphItem>("graph")
   const ROWS = useMemo(
-    // Bundled items carry no idea who is asking; the fetched rows do.
-    () => [...GRAPH_LIBRARY.map((i) => ({ ...i, mine: isMine(i.id) })), ...community, ...drafts],
-    [community, drafts],
+    // Built-ins carry no idea who is asking; the fetched rows do.
+    () => [...builtins.map((i) => ({ ...i, mine: isMine(i.id) })), ...community, ...drafts],
+    [builtins, community, drafts],
   )
   const { statFor } = useLibraryStats()
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, onClose)
@@ -166,7 +166,7 @@ function LibraryContent({ targetId, targetLabel, currentGraphName, usedNames = [
     }
     const clash = conflictingName(
       wanted,
-      [...GRAPH_LIBRARY, ...community, ...drafts].filter((x) => x.id !== item.id).map((x) => x.name),
+      [...builtins, ...community, ...drafts].filter((x) => x.id !== item.id).map((x) => x.name),
     )
     if (clash) {
       // Stays in edit mode with the message attached, so the fix is one keystroke
@@ -304,7 +304,7 @@ function LibraryContent({ targetId, targetLabel, currentGraphName, usedNames = [
         selected && (
           <LibraryDetail
             name={displayName(selected)}
-            author={builtinAuthor(selected.id, selected.author)}
+            author={selected.author}
             draft={itemState(selected) === "draft"}
             description={selected.description ? builtinDescription("graph", selected, locale) : undefined}
             actions={

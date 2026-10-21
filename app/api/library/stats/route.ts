@@ -5,9 +5,8 @@
 // items should not make twenty round trips, especially to Singapore.
 //
 // Keyed by the item's permanent uuid. It used to be `kind:name`, from when
-// builtins were assumed to carry no stored id — they do, authored in
-// content/*.json and seeded under that same uuid, so the name key bought nothing
-// and cost correctness twice. Names are unique per AUTHOR now, so two people
+// builtins were assumed to carry no stored id. Every item has one, so the name
+// key bought nothing and cost correctness twice. Names are unique per AUTHOR now, so two people
 // publishing a "Neon" grade collapsed into one entry: one of them showed the
 // other's likes, and liking it liked the other's row. And a scene records what it
 // uses by id, so a name-keyed usage count could not be joined to anyway.

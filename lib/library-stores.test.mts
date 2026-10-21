@@ -9,11 +9,12 @@
 // edit survives the next merge, and a failed load keeps what was there and
 // recovers on its own.
 
+import "@/lib/test-builtins.mts"
 import assert from "node:assert/strict"
 import { cache, communityItems, isMine, load, removeCommunityItem, renameCommunityItem, settled, subscribe } from "@/lib/community-store"
 import { likedIds, mineRows, noteLike, syncMine } from "@/lib/mine-store"
 import { isFailing, retryNow } from "@/lib/net"
-import { EFFECTS } from "@/lib/effects"
+import { builtinEffects } from "@/lib/builtins"
 
 let failed = 0
 async function test(name: string, fn: () => Promise<void> | void) {
@@ -45,7 +46,7 @@ const row = (id: string, name: string, extra: object = {}) => ({
   createdAt: "2026-10-01T00:00:00.000Z",
   ...extra,
 })
-const builtin = EFFECTS[0]
+const builtin = builtinEffects()[0]
 let publicRows = [row("p1", "Theirs"), row("p2", "Mine, public"), row(builtin.id, builtin.name)]
 const ownRows = [{ ...row("p2", "Mine, public"), mine: true }, { ...row("v1", "Mine, private", { visibility: "private" }), mine: true }]
 const liked = ["p1"]

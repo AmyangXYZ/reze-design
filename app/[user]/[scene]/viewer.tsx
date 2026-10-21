@@ -30,6 +30,8 @@ import type { BundleFile } from "@/lib/uploads"
 import { setForkTarget } from "@/lib/fork"
 import { LoadError, LoadingPill, useLoadingLabel } from "@/components/editor/loading-pill"
 import { resolveSceneRefs, resolveSceneRefsSync } from "@/lib/resolve-refs"
+import { installBuiltins } from "@/lib/builtins"
+import type { LibraryItem } from "@/lib/library"
 import { useSession } from "@/lib/auth-client"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { SignInDialog } from "@/components/editor/account-panel"
@@ -43,6 +45,8 @@ import { VerifiedBadge } from "@/components/verified-badge"
 
 type ViewerProps = {
   doc: SceneDoc
+  /** The built-ins the document names (lib/builtin-rows builtinRowsFor). */
+  builtins: LibraryItem[]
   sceneId: string
   title: string
   author: string
@@ -100,10 +104,11 @@ export function SceneViewer(props: ViewerProps) {
   // and shows both, each scrolling past five lines.
   const [captionOpen, setCaptionOpen] = useState(false)
   const [creditsOpen, setCreditsOpen] = useState(false)
-  // Synchronously when every pin is bundled — the common case. Then the canvas
-  // is in the first render and the engine starts on mount, instead of after a
-  // resolve round trip and a second pass.
+  // Synchronously when every pin is a built-in — the common case. The server
+  // sent those rows, so the canvas is in the first render and the engine starts
+  // on mount, instead of after a resolve round trip and a second pass.
   const [scene, setScene] = useState<Scene | null>(() => {
+    installBuiltins(props.builtins, { whole: false })
     const resolve = resolveSceneRefsSync(props.doc)
     return resolve ? parseSceneDoc(props.doc, builtinEffect, libraryGraph, resolve) : null
   })

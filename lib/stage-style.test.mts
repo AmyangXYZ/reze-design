@@ -1,6 +1,7 @@
 // Stage looks: the keyword and shader tables point at looks that exist, and a
 // converted stage keeps its own values. Run:
-//   npx esbuild lib/stage-style.test.mts --bundle --platform=node --format=esm --outfile=$TEMP/x.mjs && node $TEMP/x.mjs
+//   npx esbuild lib/stage-style.test.mts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --outfile=/tmp/t.mjs && node /tmp/t.mjs
+import "@/lib/test-builtins.mts"
 import assert from "node:assert/strict"
 import { compileGraph } from "reze-engine"
 import { LOOK_STATE, SHADER_LOOKS, STAGE_MATERIAL_RULES, STAGE_SURFACE, lookFor } from "./stage-style"

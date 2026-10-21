@@ -15,7 +15,6 @@ import { PenLine } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   applyDefaults,
-  EFFECTS,
   NEW_EFFECT_TEMPLATE,
   type AppliedEffect,
 } from "@/lib/effects"
@@ -39,9 +38,10 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useReport } from "@/hooks/use-report"
 import { draftOrigin } from "@/lib/drafts"
 import { useCommunity } from "@/hooks/use-community"
+import { useBuiltins } from "@/hooks/use-builtins"
+import { builtinEffects } from "@/lib/builtins"
 import {
   addCommunityItem,
-  builtinAuthor,
   isMine,
   removeCommunityItem,
   setCommunityVisibility,
@@ -93,7 +93,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   // stack closes only the topmost surface.
   const { statFor } = useLibraryStats()
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, () => onOpenChange(false))
-  const [selectedId, setSelectedId] = useState<string | null>(focusId ?? applied[0]?.id ?? EFFECTS[0]?.id ?? null)
+  const [selectedId, setSelectedId] = useState<string | null>(focusId ?? applied[0]?.id ?? builtinEffects()[0]?.id ?? null)
   // Follow a layer when one is ADDED — creating or editing one should move the
   // selection with it, rather than leaving the ring on the previous entry. A
   // removal lets go (pick, below), and the pane's focus moving on to another
@@ -114,11 +114,12 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
 
   const { drafts, update: updateDraft, remove: removeDraft } = useDrafts<EffectItem>("effect")
   // Built-ins lead in name order; drafts follow in creation order.
+  const builtins = useBuiltins("effect")
   const community = useCommunity<EffectItem>("effect")
   const all = useMemo(
-    // Bundled items carry no idea who is asking; the fetched rows do.
-    () => [...EFFECTS.map((i) => ({ ...i, mine: isMine(i.id) })), ...community, ...drafts],
-    [community, drafts],
+    // Built-ins carry no idea who is asking; the fetched rows do.
+    () => [...builtins.map((i) => ({ ...i, mine: isMine(i.id) })), ...community, ...drafts],
+    [builtins, community, drafts],
   )
   const selected: EffectItem | null = useMemo(() => all.find((e) => e.id === selectedId) ?? null, [all, selectedId])
   // Draft = what Apply applies for the current selection.
@@ -163,7 +164,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
     // Refused, not silently suffixed — see the graph library's commitRename.
     const clash = conflictingName(
       wanted,
-      [...EFFECTS, ...community, ...drafts].filter((x) => x.id !== item.id).map((x) => x.name),
+      [...builtins, ...community, ...drafts].filter((x) => x.id !== item.id).map((x) => x.name),
     )
     if (clash) {
       setRenameError(t.library.nameTakenBy(clash))
@@ -291,7 +292,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
         draft && (
           <LibraryDetail
             name={displayName(selected)}
-            author={builtinAuthor(selected.id, selected.author)}
+            author={selected.author}
             draft={itemState(selected) === "draft"}
             description={builtinDescription("effect", selected, locale)}
             actions={

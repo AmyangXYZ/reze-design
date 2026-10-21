@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { GradePreview } from "@/components/editor/grade-preview"
 import type { GradeEditorSubject } from "@/components/editor/grade-editor"
 import {
-  GRADE_PRESETS,
+  NEUTRAL_NAME,
   NEW_GRADE_SPEC,
   type GradeSettings,
 } from "@/lib/grade"
@@ -29,9 +29,9 @@ import {
 import { conflictingName, nameKey, normalizeName, type GradeItem } from "@/lib/library"
 import { draftOrigin } from "@/lib/drafts"
 import { useCommunity } from "@/hooks/use-community"
+import { useBuiltins } from "@/hooks/use-builtins"
 import {
   addCommunityItem,
-  builtinAuthor,
   isMine,
   removeCommunityItem,
   setCommunityVisibility,
@@ -90,11 +90,12 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
 
   const { drafts, update: updateDraft, remove: removeDraft } = useDrafts<GradeItem>("grade")
   // Drafts first: what you're working on is what you came back for.
+  const builtins = useBuiltins("grade")
   const community = useCommunity<GradeItem>("grade")
   const all = useMemo(
-    // Bundled items carry no idea who is asking; the fetched rows do.
-    () => [...GRADE_PRESETS.map((i) => ({ ...i, mine: isMine(i.id) })), ...community, ...drafts],
-    [community, drafts],
+    // Built-ins carry no idea who is asking; the fetched rows do.
+    () => [...builtins.map((i) => ({ ...i, mine: isMine(i.id) })), ...community, ...drafts],
+    [builtins, community, drafts],
   )
   const selected =
     all.find((g) => g.id === selectedId) ?? all.find((g) => g.name === grade.preset) ?? all[0]
@@ -131,7 +132,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
     // Refused, not silently suffixed — see the graph library's commitRename.
     const clash = conflictingName(
       wanted,
-      [...GRADE_PRESETS, ...community, ...drafts].filter((x) => x.id !== item.id).map((x) => x.name),
+      [...builtins, ...community, ...drafts].filter((x) => x.id !== item.id).map((x) => x.name),
     )
     if (clash) {
       setRenameError(t.library.nameTakenBy(clash))
@@ -151,7 +152,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
   // PICKING IS TRYING: a picked grade goes on the scene, so browsing is
   // watching the canvas take each one. Clicking the grade the scene wears takes
   // it off, back to Neutral.
-  const neutral = GRADE_PRESETS[0].name
+  const neutral = NEUTRAL_NAME
   const select = (g: GradeItem) => {
     if (grade.preset === g.name) {
       if (g.name !== neutral) onApplyPreset(neutral)
@@ -267,7 +268,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
         selected && (
           <LibraryDetail
             name={nameOf(selected)}
-            author={builtinAuthor(selected.id, selected.author)}
+            author={selected.author}
             draft={itemState(selected) === "draft"}
             description={selected.description ? builtinDescription("grade", selected, locale) : undefined}
             actions={

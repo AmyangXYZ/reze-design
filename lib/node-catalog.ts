@@ -290,8 +290,7 @@ export function makeGraphNode(type: string, id: string, position: { x: number; y
   return { id, type, inputs, ui: { position: { x: Math.round(position.x), y: Math.round(position.y) } } }
 }
 
-// Dev-time drift guard. This THROWS rather than warns, the way asBuiltins does
-// for a duplicate id: it warned for an entire release while the editor offered 40
+// Dev-time drift guard. This THROWS rather than warns: it warned for an entire release while the editor offered 40
 // of the registry's 145 nodes, which is exactly the failure a warning is bad at —
 // nothing looks broken, there is simply no way to reach two thirds of the
 // vocabulary. A node added to the engine is not usable until it is named here.

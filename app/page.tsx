@@ -153,7 +153,9 @@ import { useBrowseSurface } from "@/hooks/use-browse-surface"
 import { useStoredRect } from "@/hooks/use-stored-rect"
 import { useDockSlot } from "@/hooks/use-dock-slot"
 import { useZOrder } from "@/hooks/use-z-order"
-import { DEFAULT_SCENE, DEMO_SCENE, EMPTY_SCENE } from "@/lib/default-scene"
+import { DEFAULT_SCENE_DOC, defaultScene, demoScene, EMPTY_SCENE } from "@/lib/default-scene"
+import { builtinEffects, builtinGrades, builtinGraphs } from "@/lib/builtins"
+import { useBuiltinsWhole } from "@/hooks/use-builtins"
 import {
   assetsDocOf,
   CAMERA_DEFAULT_FOV,
@@ -184,7 +186,7 @@ import { modelLooksKey, sameLooks, savableLooks } from "@/lib/model-looks"
 import { dictionaries, LOCALES, LOCALE_LABELS, useI18n, useT, type Dictionary, type Locale } from "@/lib/i18n"
 import { builtinName, localGroupLabel } from "@/lib/builtin-text"
 import { type BundleFile, bundleFileOf, expandUploadFiles, holdBundle, openZip, releaseBundle } from "@/lib/uploads"
-import { GRADE_PRESETS, gradeSpec, NEUTRAL_SPEC, sameGradeLook, NEW_GRADE_SPEC, recallIntensity, rememberIntensity } from "@/lib/grade"
+import { gradeSpec, NEUTRAL_SPEC, sameGradeLook, NEW_GRADE_SPEC, recallIntensity, rememberIntensity } from "@/lib/grade"
 import {
   communityQuickPickItems,
   nameKey,
@@ -210,7 +212,6 @@ import type { SceneSnapshot } from "@/lib/scene-history"
 import { freeName } from "@/lib/names"
 import {
   effectParams,
-  EFFECTS,
   builtinEffect,
   NEW_EFFECT_TEMPLATE,
   type AppliedEffect,
@@ -228,13 +229,12 @@ import {
   activeLookPack,
   graphRole,
   groupLabel,
-  GRAPH_LIBRARY,
   libraryGraph,
   LOOK_PACK_ORDER,
   LOOK_PACKS,
   packGraph,
   sameGraphLook,
-  SLOT_GRAPHS,
+  slotGraphs,
   type LookPack,
 } from "@/lib/materials"
 import { shaderLookFor, stageLookFor, SURFACE_LOOKS } from "@/lib/stage-style"
@@ -2270,7 +2270,13 @@ const NO_COOKIE = "__none"
  *  deriving once rather than eyeballing, since it is what the inner ring means. */
 const HALF_POWER = Math.sqrt(1 - Math.SQRT1_2)
 
-export default function Lab() {
+/** The editor waits for the built-ins: auto-style, the look packs and the scene
+ *  it opens on all name them (lib/builtins). */
+export default function Page() {
+  return useBuiltinsWhole() ? <Lab /> : null
+}
+
+function Lab() {
   const { t, locale: uiLocale } = useI18n()
   // The dock's tables in the reader's language. Rebuilt only when the locale
   // does — the ids inside them never move, so everything keyed on an id
@@ -2323,7 +2329,7 @@ export default function Lab() {
     displayOnly: boolean
   } | null>(null)
   const [forkPending, setForkPending] = useState(forkOnBoot !== null)
-  const [scene, setScene] = useState(() => (forkOnBoot ? EMPTY_SCENE : hydrateScene(DEFAULT_SCENE)))
+  const [scene, setScene] = useState(() => (forkOnBoot ? EMPTY_SCENE : hydrateScene(defaultScene())))
   const [sceneName, setSceneName] = useState(scene.state.name)
   const {
     canvasRef,
@@ -3375,7 +3381,7 @@ export default function Lab() {
   // An applied effect's shown name: a built-in's translates, anything else is
   // its author's (an effect is a built-in when the library ships one by that name).
   const effectLabel = useCallback(
-    (name: string) => (EFFECTS.some((x) => x.name === name) ? builtinName("effect", { name }, uiLocale) : name),
+    (name: string) => (builtinEffects().some((x) => x.name === name) ? builtinName("effect", { name }, uiLocale) : name),
     [uiLocale],
   )
   const pickGrade = useCallback(
@@ -3414,7 +3420,7 @@ export default function Lab() {
       // lists hold the same set, so a different order between them means hunting
       // for a name in a place it was not a moment ago.
       ...quickPickItems(
-        [...GRADE_PRESETS].sort((a, b) => gradeLabel(a.name).localeCompare(gradeLabel(b.name))),
+        [...builtinGrades()].sort((a, b) => gradeLabel(a.name).localeCompare(gradeLabel(b.name))),
         gradeDrafts,
         appliedGradeDraftId,
       ).map((g) => ({
@@ -3475,7 +3481,7 @@ export default function Lab() {
   /** The BUILT-IN spec an edit descends from — what "back to preset" reverts to.
    *  Neutral, never the authoring starting point: revert means back to no grade. */
   const gradeAncestor = (subject?: GradeEditorSubject) =>
-    GRADE_PRESETS.find((g) => g.name === (subject?.origin ?? subject?.name))?.payload.spec ?? NEUTRAL_SPEC
+    builtinGrades().find((g) => g.name === (subject?.origin ?? subject?.name))?.payload.spec ?? NEUTRAL_SPEC
   const requestCloseGradeEditor = () => {
     if (!gradeEditor) return
     const { subject, opened } = gradeEditor
@@ -4559,8 +4565,8 @@ export default function Lab() {
   // group's graph came from, never the group's live graph — which would make
   // Reset restore the state you were trying to leave.
   const presetGraph = activeGroup
-    ? (GRAPH_LIBRARY.find((e) => e.name === activeGroup.graph?.name)?.payload.graph ??
-      SLOT_GRAPHS[activeGroup.id as MaterialPreset] ??
+    ? (builtinGraphs().find((e) => e.name === activeGroup.graph?.name)?.payload.graph ??
+      slotGraphs()[activeGroup.id as MaterialPreset] ??
       DEFAULT_GRAPH)
     : null
   /** The editor's onApply: compile the edited graph onto the bound group. This
@@ -6033,7 +6039,7 @@ export default function Lab() {
     groups: groupsByModel,
     hidden: hiddenByModel,
     effects: documentEffects,
-    effectLibrary: [...EFFECTS, ...communityEffects, ...effectDrafts].map((e) => ({
+    effectLibrary: [...builtinEffects(), ...communityEffects, ...effectDrafts].map((e) => ({
       id: e.id,
       name: e.name,
       description: e.description ?? "",
@@ -6059,12 +6065,12 @@ export default function Lab() {
       visibility: m.visibility ?? [],
     })),
     setVisibility: (id, windows) => setCastVisibility(id, windows),
-    shaderLibrary: [...GRAPH_LIBRARY, ...communityItems("graph"), ...loadDrafts().graph].map((g) => ({
+    shaderLibrary: [...builtinGraphs(), ...communityItems("graph"), ...loadDrafts().graph].map((g) => ({
       name: g.name,
       about: g.description ?? "",
     })),
     assignShader: (modelId, groupId, shader) => {
-      const entry = [...loadDrafts().graph, ...communityItems("graph"), ...GRAPH_LIBRARY].find(
+      const entry = [...loadDrafts().graph, ...communityItems("graph"), ...builtinGraphs()].find(
         (e) => e.name.toLowerCase() === shader.toLowerCase(),
       ) as GraphItem | undefined
       if (!entry) return `no shader named "${shader}" — see list_shaders`
@@ -6119,12 +6125,12 @@ export default function Lab() {
     backdrop: bgImage && bgImage.slot !== "dome" ? bgImage : null,
     backgroundColor: settings.background.color,
     aspect: framing.activeFrame?.aspect ?? 16 / 9,
-    defaults: {
-      settings: DEFAULT_SCENE.state.settings,
-      camera: DEFAULT_SCENE.state.camera,
-      effects: DEFAULT_SCENE.state.backgroundEffects,
-      lamps: DEFAULT_SCENE.state.lights,
-    },
+    defaults: (({ state }) => ({
+      settings: state.settings,
+      camera: state.camera,
+      effects: state.backgroundEffects,
+      lamps: state.lights,
+    }))(defaultScene()),
     replaceEffects: (list) => setBgEffectsState(stampEffectUids(list)),
     authorEffect: async (wanted, wgsl, replaceRef) => {
       const engine = engineRef.current
@@ -6173,7 +6179,7 @@ export default function Lab() {
     },
     graphSource: (name) => {
       const key = name.toLowerCase()
-      const hit = [...loadDrafts().graph, ...communityItems("graph"), ...GRAPH_LIBRARY].find((g) => g.name.toLowerCase() === key) as GraphItem | undefined
+      const hit = [...loadDrafts().graph, ...communityItems("graph"), ...builtinGraphs()].find((g) => g.name.toLowerCase() === key) as GraphItem | undefined
       return hit ? { ...hit.payload.graph, name: hit.name } : null
     },
     saveGraphDraft: (wanted, graph) => {
@@ -6625,7 +6631,7 @@ export default function Lab() {
         // Watch, don't fork — unless it is the author reopening their own.
         if (item.displayOnly && !handoff.edit) {
           setUpload({ kind: "notice", message: t.share.displayOnlyRefused })
-          await applyLabScene(hydrateScene(DEFAULT_SCENE))
+          await applyLabScene(hydrateScene(defaultScene()))
           return
         }
         if (handoff.edit) {
@@ -6659,7 +6665,7 @@ export default function Lab() {
         // persisted while the fork was pending, so stored state is still the
         // scene that was there before — this restores it without a refresh
         // rather than leaving the editor blank.
-        await applyLabScene(hydrateScene(DEFAULT_SCENE))
+        await applyLabScene(hydrateScene(defaultScene()))
       } finally {
         // Spent either way: a fork that failed to load will fail again on refresh,
         // and leaving it armed traps the editor on someone else's scene.
@@ -6702,10 +6708,11 @@ export default function Lab() {
     // standing in a scene that no longer names them.
     clearPlanes()
     void clearLocalBundle()
-    saveSceneAssets(scene.state.id, assetsDocOf(DEMO_SCENE.assets))
+    const demo = demoScene()
+    saveSceneAssets(scene.state.id, assetsDocOf(demo.assets))
     void applyLabScene({
-      ...DEMO_SCENE,
-      state: { ...DEMO_SCENE.state, id: scene.state.id },
+      ...demo,
+      state: { ...demo.state, id: scene.state.id },
     })
   }
 
@@ -7330,7 +7337,7 @@ export default function Lab() {
   useCoverInk(coverRef, canvasRef, mounted, exportingRef)
 
   const sceneGround = !mounted
-    ? DEFAULT_SCENE.state.settings.background.color
+    ? DEFAULT_SCENE_DOC.settings.background.color
     : isCompositingBackground(framing.liveBackground)
       ? "#000"
       : settings.background.color
@@ -7350,7 +7357,7 @@ export default function Lab() {
       // Gated on `mounted` for the reason the audio element's src is: the scene
       // comes from storage the server cannot read, so the first client pass has
       // to emit what the server did or hydration reports a mismatch and gives up
-      // on the attribute. Before mount that is DEFAULT_SCENE's colour, which is
+      // on the attribute. Before mount that is the default scene's colour, which is
       // exactly what <body> carries — the two agree, and the restored scene's own
       // colour lands a tick later.
       style={{

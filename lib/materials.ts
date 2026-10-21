@@ -1,23 +1,14 @@
 import { DEFAULT_BLOOM, DEFAULT_VIEW, type SceneSettings } from "@/lib/scene-settings"
 import { NODE_REGISTRY, type MaterialPreset, type ShaderGraph } from "reze-engine"
-import graphs from "@/content/graphs.json"
-import stageGraphs from "@/content/stage-graphs.json"
-import { asBuiltins, type GraphItem } from "@/lib/library"
+import { builtinGraphs, builtinsVersion, subscribeBuiltins } from "@/lib/builtins"
+import type { GraphItem } from "@/lib/library"
 
-// Pinned SNAPSHOTS of the engine's presets rather than live imports. The library
-// presents these with authors and dates, so retuning a preset upstream shouldn't
-// silently rewrite what a user sees.
-//
-// Two files, one shelf. The character set answers to a ROLE (body, hair, eye) and
-// the engine's auto-classifier fills those slots; the stage set answers to a
-// MATERIAL (tile, wood, glass) and nothing fills it automatically until someone
-// loads a stage. They are tagged apart — every stage entry carries `stage` — so
-// the rail can narrow to one or the other, and they share every other mechanism:
-// browse, apply, fork, publish.
-export const GRAPH_LIBRARY = asBuiltins<GraphItem>([
-  ...(graphs as unknown as Omit<GraphItem, "owner">[]),
-  ...(stageGraphs as unknown as Omit<GraphItem, "owner">[]),
-])
+// The built-in looks are two sets on one shelf. The character set answers to a
+// ROLE (body, hair, eye) and the engine's auto-classifier fills those slots; the
+// stage set answers to a MATERIAL (tile, wood, glass) and nothing fills it
+// automatically until someone loads a stage. They are tagged apart — every stage
+// entry carries `stage` — so the rail can narrow to one or the other, and they
+// share every other mechanism: browse, apply, fork, publish.
 
 // Dev-time drift guard for the LOOKS, the sibling of node-catalog's guard for
 // the palette. A link naming a socket the node does not have compiles to
@@ -28,10 +19,10 @@ export const GRAPH_LIBRARY = asBuiltins<GraphItem>([
 //
 // Sockets are what drift: `normal_map` outputs `normal`, and a link written
 // against `vector` — the name every OTHER vector node uses — is wrong in a way
-// no type checks, since a graph is data.
-if (process.env.NODE_ENV !== "production") {
+// no type checks, since a graph is data. Checked each time the shelf arrives.
+function checkGraphs() {
   const problems: string[] = []
-  for (const item of GRAPH_LIBRARY) {
+  for (const item of builtinGraphs()) {
     const graph = item.payload?.graph
     if (!graph) continue
     const types = new Map(graph.nodes.map((n) => [n.id, n.type]))
@@ -55,22 +46,38 @@ if (process.env.NODE_ENV !== "production") {
     const out = socket(graph.output?.node, graph.output?.socket ?? "", "outputs")
     if (out) problems.push(out)
   }
-  if (problems.length) throw new Error(`built-in looks do not match NODE_REGISTRY:\n  ${problems.join("\n  ")}`)
+  if (problems.length) console.error(`built-in looks do not match NODE_REGISTRY:\n  ${problems.join("\n  ")}`)
+}
+if (process.env.NODE_ENV !== "production") subscribeBuiltins(checkGraphs)
+
+/** Derived from the shelf, and rebuilt only when it changes. */
+function onShelf<T>(derive: () => T): () => T {
+  let at = -1
+  let value: T
+  return () => {
+    if (at !== builtinsVersion()) {
+      value = derive()
+      at = builtinsVersion()
+    }
+    return value
+  }
 }
 
 /** Role → graph, for the slots that ship with a default look. */
-export const SLOT_GRAPHS = Object.fromEntries(
-  GRAPH_LIBRARY.filter((g) => g.payload.role).map((g) => [g.payload.role, g.payload.graph]),
-) as Partial<Record<MaterialPreset, GraphItem["payload"]["graph"]>>
+export const slotGraphs = onShelf(
+  () =>
+    Object.fromEntries(
+      builtinGraphs()
+        .filter((g) => g.payload.role)
+        .map((g) => [g.payload.role, g.payload.graph]),
+    ) as Partial<Record<MaterialPreset, GraphItem["payload"]["graph"]>>,
+)
 
-/** A scene's `graph: "<name>"` → the graph itself. Built-ins only, deliberately:
- *  use-community builds its built-in name set from GRAPH_LIBRARY at module
- *  scope, so reaching back into it from here is a cycle, and materials is still
- *  initialising when community reads from it. Community graphs need no entry
- *  anyway — they travel as pins, and an EDITED one is saved as a local draft
- *  by whatever edited it (the graph editor's save, the AI's tools). */
+/** A scene's `graph: "<name>"` → the graph itself. Built-ins only: community
+ *  graphs travel as pins, and an EDITED one is saved as a local draft by
+ *  whatever edited it (the graph editor's save, the AI's tools). */
 export function libraryGraph(name: string): GraphItem["payload"]["graph"] | undefined {
-  return GRAPH_LIBRARY.find((g) => g.name === name)?.payload.graph
+  return builtinGraphs().find((g) => g.name === name)?.payload.graph
 }
 
 /**
@@ -80,9 +87,13 @@ export function libraryGraph(name: string): GraphItem["payload"]["graph"] | unde
  * second list of names could disagree with the library about the same thing
  * ("Skin" in one place, "Body" in the other). Deriving leaves one name per role.
  */
-export const SLOT_LABELS = Object.fromEntries(
-  GRAPH_LIBRARY.filter((g) => g.payload.role).map((g) => [g.payload.role, g.name]),
-) as Record<MaterialPreset, string>
+const slotLabels = onShelf(
+  () =>
+    Object.fromEntries(builtinGraphs().filter((g) => g.payload.role).map((g) => [g.payload.role, g.name])) as Record<
+      MaterialPreset,
+      string
+    >,
+)
 
 /**
  * What to call a style group.
@@ -92,7 +103,7 @@ export const SLOT_LABELS = Object.fromEntries(
  * carry their own label and pass straight through.
  */
 export function groupLabel(group: { id: string; label?: string }): string {
-  return group.label ?? SLOT_LABELS[group.id as MaterialPreset] ?? group.id
+  return group.label ?? slotLabels()[group.id as MaterialPreset] ?? group.id
 }
 
 /**
@@ -274,7 +285,7 @@ export function graphRole(graph: ShaderGraph): string | undefined {
 export function packGraph(pack: LookPack, role: string | undefined): ShaderGraph | undefined {
   if (!role || role === "default") return undefined
   const { tag } = LOOK_PACKS[pack]
-  const inPack = GRAPH_LIBRARY.filter((g) => g.tags.includes(tag))
+  const inPack = builtinGraphs().filter((g) => g.tags.includes(tag))
   const find = (r: string) => inPack.find((g) => graphRole(g.payload.graph) === r)?.payload.graph
   return find(role) ?? find(ROLE_FALLBACK[role] ?? "")
 }
@@ -295,7 +306,7 @@ export function activeLookPack(graphs: ShaderGraph[]): LookPack | null {
     const role = graphRole(g)
     if (!role || !packGraph("ag", role)) continue
     const name = g.name
-    const hit = LOOK_PACK_ORDER.find((p) => GRAPH_LIBRARY.some((i) => i.name === name && i.tags.includes(LOOK_PACKS[p].tag)))
+    const hit = LOOK_PACK_ORDER.find((p) => builtinGraphs().some((i) => i.name === name && i.tags.includes(LOOK_PACKS[p].tag)))
     if (!hit) return null
     packs.add(hit)
   }

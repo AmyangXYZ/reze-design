@@ -11,6 +11,7 @@
 // field, a repack that keeps the scene.json's word for the stage and loses the
 // files it names.
 
+import "@/lib/test-builtins.mts"
 import assert from "node:assert/strict"
 import { parseSceneDoc, serializeSceneDoc, assetsDocOf, parseAssetsDoc, type SceneDoc } from "@/lib/scene"
 import { EMPTY_SCENE_DOC } from "@/lib/default-scene"

@@ -11,6 +11,7 @@
 // invisible in the editor, where the value never left React state: it shows up
 // as a published scene that opens unlit.
 
+import "@/lib/test-builtins.mts"
 import assert from "node:assert/strict"
 import { parseSceneDoc, serializeSceneDoc, stageLightsFromFile, type SceneLight, type SceneDoc } from "@/lib/scene"
 import { EMPTY_SCENE_DOC } from "@/lib/default-scene"

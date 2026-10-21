@@ -11,7 +11,8 @@ import { I18nProvider } from "@/lib/i18n";
 import "./globals.css";
 import { Analytics } from "@vercel/analytics/next"
 import { preload } from "react-dom";
-import { DEFAULT_SCENE } from "@/lib/default-scene";
+import { DEFAULT_SCENE_DOC } from "@/lib/default-scene";
+import { parseAssetsDoc } from "@/lib/scene";
 import { modelPmxUrl } from "@/lib/scene";
 
 
@@ -74,7 +75,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   // Start the demo scene's heavy assets downloading at HTML parse instead of after the JS
-  for (const entry of DEFAULT_SCENE.assets.models) {
+  for (const entry of parseAssetsDoc(DEFAULT_SCENE_DOC.assets).models) {
     const pmx = modelPmxUrl(entry.model);
     if (pmx) preload(encodeURI(pmx), { as: "fetch", crossOrigin: "anonymous" });
     if (entry.animation) preload(encodeURI(entry.animation.url), { as: "fetch", crossOrigin: "anonymous" });
@@ -96,9 +97,9 @@ export default function RootLayout({
       <body
         className="min-h-full flex flex-col text-foreground"
         // The colour this build boots into — the demo's, or the empty scene's,
-        // whichever DEFAULT_SCENE resolves to. Painted before a line of React
+        // whichever DEFAULT_SCENE_DOC resolves to. Painted before a line of React
         // exists, so the first frame is already the right colour.
-        style={{ backgroundColor: DEFAULT_SCENE.state.settings.background.color }}
+        style={{ backgroundColor: DEFAULT_SCENE_DOC.settings.background.color }}
       >
         <NoNativeContextMenu />
         <NoStickyFocus />

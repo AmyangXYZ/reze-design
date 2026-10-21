@@ -1,8 +1,8 @@
 // Color grading — the LOOK layer, and the clearest example of this app's posture
 
-import presets from "@/content/grades.json"
 import { storageKey } from "@/lib/storage"
-import { asBuiltins, type GradeItem } from "@/lib/library"
+import { builtinGrades } from "@/lib/builtins"
+import type { GradeItem } from "@/lib/library"
 
 export function hslToHex(h: number, s: number, l: number): string {
   const a = s * Math.min(l, 1 - l)
@@ -65,21 +65,26 @@ export type GradeSettings = {
   from?: { id: string }
 }
 
-// Presets live in content/grades.json — data, not code, in the same envelope a
-// contributed grade will arrive in once the library is server-backed. File order
-// is the display order: Neutral first as the scene default, the rest by name.
-// Tune them by SIMULATING the engine's CDL over sample pixels and fitting to a
+// The built-in grades are rows on the shelf (lib/builtins), in the envelope
+// every grade wears. Tune them by SIMULATING the engine's CDL over sample pixels and fitting to a
 // reference frame; eyeballing hue/sat numbers has never once landed.
 // Judge DETAIL on a grey ramp (a shaded white dress is one): sum the per-step
 // channel change. A preset that reads "flat" is one whose ramp bunches. Colour
 // belongs in `contrast` + `saturation`; pushing it through midtone/highlight
 // saturation instead drives slope and power apart until channels pin at 0/255,
 // which is what actually destroys shading.
-// JSON widens the range tuples to number[], so re-narrow on the way in — one
-// cast at the boundary keeps every consumer strongly typed.
-export const GRADE_PRESETS = asBuiltins<GradeItem>(presets as unknown as Omit<GradeItem, "owner">[])
 
-export const NEUTRAL_SPEC: GradeSpec = GRADE_PRESETS[0].payload.spec
+/** The built-in grade that is no grade, and what a new scene wears. */
+export const NEUTRAL_NAME = "Neutral"
+
+/** No grade at all: the CDL's identity, and what an unresolvable name reads as. */
+export const NEUTRAL_SPEC: GradeSpec = {
+  shadows: [0, 0],
+  midtones: [0, 0],
+  highlights: [0, 0],
+  contrast: 1,
+  saturation: 1,
+}
 
 /** Editor starting point — visibly a grade rather than a no-op, so a new author sees */
 export const NEW_GRADE_SPEC: GradeSpec = {
@@ -146,7 +151,7 @@ export function sameGradeLook(a: GradeSpec, b: GradeSpec): boolean {
  *  ungraded rather than wrongly graded. */
 export function gradeSpec(name: string, drafts: GradeItem[] = []): GradeSpec {
   return (
-    (GRADE_PRESETS.find((p) => p.name === name) ?? drafts.find((d) => d.name === name))?.payload.spec ?? NEUTRAL_SPEC
+    (builtinGrades().find((p) => p.name === name) ?? drafts.find((d) => d.name === name))?.payload.spec ?? NEUTRAL_SPEC
   )
 }
 

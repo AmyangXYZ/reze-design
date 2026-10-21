@@ -9,6 +9,7 @@
 // than stack on them. Those are the failures guarded here, with the plain merge
 // rules (null clears, absent keeps, objects merge) beside them.
 
+import "@/lib/test-builtins.mts"
 import assert from "node:assert/strict"
 import { parseSceneDoc, type SceneDoc } from "@/lib/scene"
 import { EMPTY_SCENE_DOC } from "@/lib/default-scene"

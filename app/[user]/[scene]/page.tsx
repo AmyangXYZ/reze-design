@@ -9,6 +9,7 @@ import { db, hasDatabase, schema } from "@/lib/db"
 import { user } from "@/lib/db/auth-schema"
 import type { ScenePayload } from "@/lib/library"
 import { ITEMS_TAG, itemTag } from "@/lib/public-pages"
+import { builtinRowsFor } from "@/lib/builtin-rows"
 import { SceneViewer } from "./viewer"
 
 // A published scene at reze.design/<handle>/<shortId> — the address the Share
@@ -102,6 +103,7 @@ export default async function ScenePage({ params }: { params: Promise<{ user: st
   return (
     <SceneViewer
       doc={doc}
+      builtins={await builtinRowsFor(doc)}
       sceneId={row.id}
       title={row.name}
       author={row.handle ?? row.author}

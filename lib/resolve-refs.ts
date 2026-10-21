@@ -1,13 +1,11 @@
 // Turning a document's pins into content, in two tiers.
 //
-// Built-ins ship in the app bundle, so a pin to one costs nothing and works with
-// no database — that is what keeps a clone of this repo running. Everything else
-// is fetched in a single request, whatever the document pins.
+// Built-ins are on the shelf (lib/builtins) before any scene opens, so a pin to
+// one costs nothing. Everything else is fetched in a single request, whatever
+// the document pins.
 
 import type { ShaderGraph } from "reze-engine"
-import { EFFECTS } from "@/lib/effects"
-import { GRADE_PRESETS } from "@/lib/grade"
-import { GRAPH_LIBRARY } from "@/lib/materials"
+import { builtinEffects, builtinGrades, builtinGraphs, builtinsVersion } from "@/lib/builtins"
 import type { ItemRef, SceneDoc } from "@/lib/scene"
 import { sceneRefs } from "@/lib/scene"
 import { fetchJson } from "@/lib/net"
@@ -19,34 +17,39 @@ type Payload = { graph?: ShaderGraph; wgsl?: string; spec?: unknown }
  *  nameless effect leaves the picker with nothing to show. */
 type Resolved = Payload & { name: string }
 
-const bundled = new Map<string, Resolved>()
-for (const i of [...GRAPH_LIBRARY, ...EFFECTS, ...GRADE_PRESETS]) {
-  bundled.set(i.id, { ...(i.payload as Payload), name: i.name })
+let shelfAt = -1
+let shelf = new Map<string, Resolved>()
+/** The shelf by id, rebuilt when it changes. */
+function onShelf(): Map<string, Resolved> {
+  if (shelfAt !== builtinsVersion()) {
+    shelf = new Map()
+    for (const i of [...builtinGraphs(), ...builtinEffects(), ...builtinGrades()]) {
+      shelf.set(i.id, { ...(i.payload as Payload), name: i.name })
+    }
+    shelfAt = builtinsVersion()
+  }
+  return shelf
 }
 
-/** Pins this document has that the app bundle does not carry.
- *
- *  A built-in is now always a hit: the pin means "this item", the bundle ships
- *  the item, and there is no version left for the two to disagree about. That
- *  disagreement was the only reason a scene pinned to a built-in ever went to
- *  the network — and it is what made a retuned built-in keep rendering its old
- *  self in every scene already using it. */
+/** Pins this document has that the shelf does not hold. */
 function missingRefs(doc: SceneDoc): ItemRef[] {
-  return sceneRefs(doc).filter((r) => !bundled.has(r.id))
+  const held = onShelf()
+  return sceneRefs(doc).filter((r) => !held.has(r.id))
 }
 
 /**
  * The resolver WITHOUT the request — null when this document needs one.
  *
- * A scene wearing only built-in looks pins nothing the app has not already
- * shipped, which is the common case. Saying so synchronously lets a host parse
+ * A scene wearing only built-in looks pins nothing the shelf does not already
+ * hold, which is the common case. Saying so synchronously lets a host parse
  * its document during the first render, so the canvas is in that render and the
  * engine starts on mount: no awaited tick, no second pass, and nothing to show
  * in the meantime.
  */
 export function resolveSceneRefsSync(doc: SceneDoc): ((ref: ItemRef) => Resolved | undefined) | null {
   if (missingRefs(doc).length > 0) return null
-  return (ref) => bundled.get(ref.id)
+  const held = onShelf()
+  return (ref) => held.get(ref.id)
 }
 
 /** A resolver for every pin in the document, built with one request at most. */
@@ -67,5 +70,6 @@ export async function resolveSceneRefs(doc: SceneDoc): Promise<(ref: ItemRef) =>
     }
   }
 
-  return (ref) => bundled.get(ref.id) ?? remote.get(ref.id)
+  const held = onShelf()
+  return (ref) => held.get(ref.id) ?? remote.get(ref.id)
 }

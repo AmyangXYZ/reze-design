@@ -10,7 +10,7 @@
 // again after a reload: the source comes back from the document, the pictures
 // from the stage's own files.
 
-import effects from "@/content/effects.json"
+import { builtinEffects, subscribeBuiltins } from "@/lib/builtins"
 
 type EffectTexture = { source: ImageBitmap; srgb: boolean } | null
 
@@ -34,20 +34,19 @@ export function subscribeEffectTextures(cb: () => void): () => void {
   return () => listeners.delete(cb)
 }
 
-// A BUILT-IN THAT DRAWS PICTURES carries them in its entry (content/effects.json,
-// `payload.textures`, data URIs: Sakura Drift's petal is the game's own), so it
-// needs no stage to bring them. They load the first time the effect asks, and
-// the version bump installs it again with them, as a stage's do.
+// A BUILT-IN THAT DRAWS PICTURES carries them in its payload (`textures`, data
+// URIs: Sakura Drift's petal is the game's own), so it needs no stage to bring
+// them. They load the first time the effect asks, and the version bump installs
+// it again with them, as a stage's do.
 type PictureSpec = { url: string; srgb?: boolean } | null
-const builtinPictures = new Map<string, PictureSpec[]>(
-  (effects as { payload?: { wgsl?: unknown; textures?: unknown } }[])
-    .filter((e) => typeof e.payload?.wgsl === "string" && Array.isArray(e.payload.textures))
-    .map((e) => [e.payload!.wgsl as string, e.payload!.textures as PictureSpec[]]),
-)
+const builtinPictures = (wgsl: string): PictureSpec[] | undefined => {
+  const payload = builtinEffects().find((e) => e.payload.wgsl === wgsl)?.payload as { textures?: unknown } | undefined
+  return Array.isArray(payload?.textures) ? (payload.textures as PictureSpec[]) : undefined
+}
 const loading = new Set<string>()
 
 function startBuiltin(wgsl: string): void {
-  const specs = builtinPictures.get(wgsl)
+  const specs = builtinPictures(wgsl)
   if (!specs || loading.has(wgsl) || typeof createImageBitmap !== "function") return
   loading.add(wgsl)
   void loadBuiltinPictures(wgsl, specs)
@@ -79,10 +78,14 @@ export function effectTexturesFor(wgsl: string): EffectTexture[] | undefined {
   return undefined
 }
 
-// AT ONCE, in the browser: an install that runs before its pictures have
-// decoded goes out white and waits for the version bump to rebind, so loading
-// them up front (Sakura Drift's 43 KB petal) makes the first install the right one.
-if (typeof window !== "undefined") for (const wgsl of builtinPictures.keys()) startBuiltin(wgsl)
+// AS SOON AS THE SHELF ARRIVES, in the browser: an install that runs before
+// its pictures have decoded goes out white and waits for the version bump to
+// rebind, so loading them up front (Sakura Drift's 43 KB petal) makes the first
+// install the right one.
+if (typeof window !== "undefined")
+  subscribeBuiltins(() => {
+    for (const e of builtinEffects()) startBuiltin(e.payload.wgsl)
+  })
 
 /**
  * Decode the particle pictures a stage names in its `<Name>.lights.json` and

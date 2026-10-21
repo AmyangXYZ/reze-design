@@ -5,10 +5,8 @@
 // `payload`. That means one publish path, one permissions model, and a gallery
 // that is a filtered query rather than a fourth code path.
 //
-// Built-ins are seeded here like anything else — they are simply presets authored
-// by the admin account. They also ship in content/*.json, so a clone with no
-// database still renders and a reference resolves offline; the uuid is the same on
-// both sides, so the two merge with no dedup.
+// Built-ins live here like anything else: they are the presets the built-in
+// account owns (lib/admin BUILTIN_EMAIL).
 
 import { sql } from "drizzle-orm"
 import {
@@ -55,6 +53,10 @@ export const libraryItems = pgTable(
     /** Denormalised so rendering a snapshot needs no join. */
     author: text("author").notNull(),
     description: text("description").notNull().default(""),
+    /** The name and description in Chinese, empty for none. The UI shows them
+     *  in place of the author's own words when the reader's locale is zh. */
+    nameZh: text("name_zh").notNull().default(""),
+    descriptionZh: text("description_zh").notNull().default(""),
     tags: text("tags").array().notNull().default([]),
     /** The content, and the whole of it: publishing over an item you own
      *  replaces this in place, and every scene pinning the item follows. */
@@ -134,7 +136,7 @@ export const libraryItems = pgTable(
 // existed to undo exactly that, by hand, against the promise this table made.
 //
 // What the number cost was real. It had to agree across the repo's
-// content/*.json, the item row and the version rows, and it drifted in every
+// repo's content/*.json, the item row and the version rows, and it drifted in every
 // direction it could — a re-seed rewinding the item's counter, a publish dying
 // on a primary key, pinned rows nobody could reach without another script.
 //

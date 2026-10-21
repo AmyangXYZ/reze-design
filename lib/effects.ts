@@ -1,4 +1,4 @@
-// Curated WGSL effects — the built-in shelf of the effects library.
+// WGSL effects: what a scene applies, and the built-in shelf (lib/builtins).
 //
 // The TYPE names dropped "Background" with the library; the FIELD names did
 // not. `SceneState.backgroundEffects` is read out of exported scene files and
@@ -10,9 +10,9 @@
 // files: nobody hand-edits these (they're authored in the app's editor or with
 // an AI), and one shape for every library kind beats one convenient one.
 
-import effects from "@/content/effects.json"
 import { parseDirectives, type EffectParamDecl, type EffectParamValue } from "reze-engine"
-import { asBuiltins, type EffectItem } from "@/lib/library"
+import { builtinEffects } from "@/lib/builtins"
+import type { EffectItem } from "@/lib/library"
 import type { EffectWindow } from "@/lib/effect-schedule"
 
 /** What a scene stores when an effect is applied */
@@ -141,7 +141,7 @@ export const applyDefaults = (def: EffectItem): AppliedEffect => ({
 
 /** A built-in effect as an applied snapshot, by name — how scene documents refer to it. */
 export function builtinEffect(name: string): AppliedEffect {
-  const def = EFFECTS.find((e) => e.name === name)
+  const def = builtinEffects().find((e) => e.name === name)
   if (!def) throw new Error(`unknown background effect: ${name}`)
   return applyDefaults(def)
 }
@@ -350,20 +350,15 @@ fn noise2(p: vec2f) -> f32 {
 }
 `
 
-export const EFFECTS = asBuiltins<EffectItem>(effects as Omit<EffectItem, "owner">[])
-
-// A CARD WITHOUT THE STAND-IN, by the effect's source — `payload.preview.cast`
-// false in its entry. The preview puts one sphere on every card so an effect
-// that reads the cast has somebody to read, but an effect that cuts the cast
-// INTO something — Stained Glass leads her into its windows — draws that sphere
-// as a hole in the glass, and its card is better as the windows alone. Keyed by
-// source, as effect-textures keys a built-in's pictures, so an applied copy of
-// the built-in previews the same way.
-const NO_CAST_PREVIEW = new Set(
-  (effects as { payload?: { wgsl?: unknown; preview?: { cast?: unknown } } }[])
-    .filter((e) => typeof e.payload?.wgsl === "string" && e.payload.preview?.cast === false)
-    .map((e) => e.payload!.wgsl as string),
-)
-
+// A CARD WITHOUT THE STAND-IN — `payload.preview.cast` false on the built-in.
+// The preview puts one sphere on every card so an effect that reads the cast
+// has somebody to read, but an effect that cuts the cast INTO something —
+// Stained Glass leads her into its windows — draws that sphere as a hole in the
+// glass, and its card is better as the windows alone. Matched by source, as
+// effect-textures matches a built-in's pictures, so an applied copy of the
+// built-in previews the same way.
 /** Does this effect's card show the stand-in cast? */
-export const previewHasCast = (wgsl: string) => !NO_CAST_PREVIEW.has(wgsl)
+export const previewHasCast = (wgsl: string) =>
+  !builtinEffects().some(
+    (e) => e.payload.wgsl === wgsl && (e.payload as { preview?: { cast?: unknown } }).preview?.cast === false,
+  )

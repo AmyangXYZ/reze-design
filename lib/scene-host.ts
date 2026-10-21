@@ -6,10 +6,10 @@
 // two from growing separate ideas of what a scene means, which is exactly how
 // the editor and the viewer drifted apart once before.
 
-import { Engine, NODE_REGISTRY, parseLRC, parseMidi, Quat, Vec3, type GizmoDragEvent, type Model, type RenderClass, type ShaderGraph, type StyleGroup } from "reze-engine"
+import { Engine, NODE_REGISTRY, parseLRC, parseMidi, Quat, Vec3, type GizmoDragEvent, type MaterialPreset, type Model, type RenderClass, type ShaderGraph, type StyleGroup } from "reze-engine"
 import { clipTrimmedToMotion } from "@/lib/clip"
 import { rasterizeLyrics } from "@/lib/lyrics-raster"
-import { SLOT_GRAPHS, libraryGraph } from "@/lib/materials"
+import { slotGraphs, libraryGraph } from "@/lib/materials"
 import { graphLibraryName } from "@/lib/refs"
 import { graphRole, packGraph } from "@/lib/materials"
 import { loadLookPref } from "@/lib/look-pref"
@@ -843,9 +843,9 @@ export function withSpecialGroups(list: StyleGroup[], opts?: { character?: boole
   if (opts?.character) {
     const has = (c: (typeof CHARACTER_GROUPS)[number]) =>
       list.some((g) => g.id === c.id || graphRole(g.graph) === c.id || (c.renderClass !== "auto" && g.renderClass === c.renderClass))
-    const seeds = CHARACTER_GROUPS.filter((c) => !has(c) && SLOT_GRAPHS[c.id as keyof typeof SLOT_GRAPHS]).map(
+    const seeds = CHARACTER_GROUPS.filter((c) => !has(c) && slotGraphs()[c.id as MaterialPreset]).map(
       (c): StyleGroup => {
-        const base = SLOT_GRAPHS[c.id as keyof typeof SLOT_GRAPHS]!
+        const base = slotGraphs()[c.id as MaterialPreset]!
         return {
           id: c.id,
           label: c.label,
@@ -860,7 +860,7 @@ export function withSpecialGroups(list: StyleGroup[], opts?: { character?: boole
   }
   const seeds = SPECIAL_GROUPS.filter((s) => !list.some((g) => (g.renderClass ?? "auto") === s.renderClass)).map(
     (s): StyleGroup => {
-      const base = SLOT_GRAPHS[s.preset]!
+      const base = slotGraphs()[s.preset]!
       return {
         id: s.id,
         label: s.label,

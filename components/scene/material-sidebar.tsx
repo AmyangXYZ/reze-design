@@ -17,7 +17,8 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
-import { GRAPH_LIBRARY, groupLabel, sameGraphLook } from "@/lib/materials"
+import { groupLabel, sameGraphLook } from "@/lib/materials"
+import { builtinGraphs } from "@/lib/builtins"
 import { type GraphItem } from "@/lib/library"
 import { useCommunity } from "@/hooks/use-community"
 import type { MaterialRow } from "@/hooks/use-engine"
@@ -140,7 +141,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
       // Community entries count too — a group built on someone's published graph
       // could never read as edited while only built-ins were consulted.
       const lib =
-        GRAPH_LIBRARY.find((e) => e.name === g.graph?.name) ??
+        builtinGraphs().find((e) => e.name === g.graph?.name) ??
         communityGraphs.find((e) => e.name === g.graph?.name)
       if (lib && !sameGraphLook(g.graph, lib.payload.graph)) out.add(g.id)
     }
@@ -515,7 +516,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                       >
                         {g.graph.name === ENGINE_DEFAULT_GRAPH
                           ? t.materials.defaultGraph
-                          : GRAPH_LIBRARY.some((e) => e.name === g.graph.name)
+                          : builtinGraphs().some((e) => e.name === g.graph.name)
                             ? builtinName("graph", g.graph, locale)
                             : g.graph.name}
                         {editedGroups.has(g.id) && ` · ${t.scene.edited}`}

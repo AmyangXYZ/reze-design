@@ -21,7 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { Globe, Lock, PenLine, Plus, Search, X } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import type { LibraryFacet, LibraryKind, LibraryOwner } from "@/lib/library"
-import { authorImage, authorVerified, builtinAuthor } from "@/lib/community-store"
+import { authorImage, authorVerified } from "@/lib/community-store"
 import { UserAvatar } from "@/components/user-avatar"
 import { VerifiedBadge } from "@/components/verified-badge"
 import Link from "next/link"
@@ -846,7 +846,7 @@ export function LibraryCards<T extends BrowseItem>({
                     </span>
                   )}
                   <span className="flex max-w-[45%] shrink-0 items-center gap-1.5 font-mono text-2xs text-muted-foreground">
-                    {st !== "draft" && <AuthorLink name={builtinAuthor(item.id, item.author)} at className="min-w-0 truncate" />}
+                    {st !== "draft" && <AuthorLink name={item.author} at className="min-w-0 truncate" />}
                   </span>
                 </div>
               ) : (
@@ -866,7 +866,7 @@ export function LibraryCards<T extends BrowseItem>({
                     </span>
                   </div>
                   <div className="-mt-2 flex h-4 min-w-0 items-center gap-1.5 font-mono text-2xs text-muted-foreground">
-                    {st !== "draft" && <AuthorLink name={builtinAuthor(item.id, item.author)} at className="min-w-0 truncate" />}
+                    {st !== "draft" && <AuthorLink name={item.author} at className="min-w-0 truncate" />}
                   </div>
                 </>
               )}

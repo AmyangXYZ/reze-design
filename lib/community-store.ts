@@ -11,20 +11,11 @@
 // page.tsx) — a module-level cache, because six components each fetching the
 // same list is how a library gets six spinners.
 //
-// Built-ins are excluded here even though the seed mirrors them into the
-// database: the repo is the authority for their content, and showing the mirror
-// would double every builtin card.
-//
-// Matched by ID, not by name. A name is the human key and it changes — a preset
-// gets renamed, or retired from the repo entirely — and the moment it does, its
-// mirror row stops matching and comes back as somebody's community item. Worse,
-// built-ins are seeded to the ADMIN account, so for that account the stray rows
-// also land under "Yours" and inflate the count. An id is minted once and never
-// moves, which is the whole reason ids exist alongside names here.
+// Built-ins are their own shelf (lib/builtins). The public list leaves them
+// out, and your own rows — which for the built-in account are the built-ins —
+// drop them here by id, so no card appears twice.
 
-import { EFFECTS } from "@/lib/effects"
-import { GRADE_PRESETS } from "@/lib/grade"
-import { GRAPH_LIBRARY } from "@/lib/materials"
+import { builtinEffects, builtinGrades, builtinGraphs, isBuiltin, subscribeBuiltins } from "@/lib/builtins"
 import type { LibraryItem, LibraryKind } from "@/lib/library"
 import { fetchJson, retryLater, retrySettled } from "@/lib/net"
 import { readSaved, writeSaved } from "@/lib/saved"
@@ -33,12 +24,6 @@ import { editMine, mineRows, subscribeMine } from "@/lib/mine-store"
 /** `authorImage` is the account's avatar and `authorVerified` its check;
  *  `createdAt` and `visibility` ride on the envelope itself. */
 export type CommunityItem = LibraryItem & { mine: boolean; authorImage?: string | null; authorVerified?: boolean }
-
-const BUILTIN_IDS: Partial<Record<LibraryKind, Set<string>>> = {
-  grade: new Set(GRADE_PRESETS.map((i) => i.id)),
-  effect: new Set(EFFECTS.map((i) => i.id)),
-  graph: new Set(GRAPH_LIBRARY.map((i) => i.id)),
-}
 
 /** @internal — the hooks read this through a live binding. */
 export let cache: CommunityItem[] | null = null
@@ -54,12 +39,9 @@ export let settled = false
 let loadedAt = 0
 /** @internal */
 export const listeners = new Set<() => void>()
-// The seed mirrors builtins with the ADMIN ACCOUNT's live handle as author —
-// the repo JSON can't know it, so display resolves through this map.
-const builtinAuthors = new Map<string, string>()
 // Avatars by AUTHOR NAME rather than by item id. Every row the server sends
-// carries one, built-in mirrors included, so a rail that groups by maker can
-// show the person without each library threading an image through its own list.
+// carries one, built-ins included, so a rail that groups by maker can show the
+// person without each library threading an image through its own list.
 const authorImages = new Map<string, string>()
 // The makers we vouch for, by name like the avatars: the newest answer any row
 // gave about each. Verified belongs to the MAKER, not the row — the gallery keeps
@@ -73,9 +55,8 @@ const verifiedAuthors = new Map<string, boolean>()
 export function noteVerified(rows: Iterable<{ author: string; authorVerified?: boolean }>) {
   for (const r of rows) if (typeof r.authorVerified === "boolean") verifiedAuthors.set(r.author, r.authorVerified)
 }
-// Bundled items the signed-in user owns. Built-ins are simply presets authored by
-// the admin account, so for THAT account they belong under "Yours" like anything
-// else they published — the bundle just can't know who is asking.
+// Items the signed-in user owns. For the built-in account that includes the
+// built-ins, which belong under "Yours" like anything else it published.
 let mineIds = new Set<string>()
 
 type PublicRow = Omit<CommunityItem, "mine">
@@ -87,7 +68,7 @@ let hydrating = false
 
 /**
  * The cache is ONE merge: everyone's rows plus yours (lib/mine-store), yours
- * winning, built-ins left out (the repo is their authority), newest first.
+ * winning, built-ins left out (they are lib/builtins'), newest first.
  * Rebuilt whenever either side changes, so neither can overwrite the other.
  */
 function rebuild() {
@@ -96,20 +77,19 @@ function rebuild() {
   const byId = new Map<string, CommunityItem>()
   for (const r of publicRows ?? []) byId.set(r.id, { ...r, mine: mineIds.has(r.id) })
   for (const r of own) byId.set(r.id, r)
-  for (const i of byId.values()) {
-    if (BUILTIN_IDS[i.kind]?.has(i.id)) builtinAuthors.set(i.id, i.author)
-    if (i.authorImage) authorImages.set(i.author, i.authorImage)
-  }
-  noteVerified(byId.values())
+  const builtins = [...builtinGraphs(), ...builtinEffects(), ...builtinGrades()] as PublicRow[]
+  for (const i of [...builtins, ...byId.values()]) if (i.authorImage) authorImages.set(i.author, i.authorImage)
+  noteVerified([...builtins, ...byId.values()])
   cache =
     publicRows === null && own.length === 0
       ? null
       : [...byId.values()]
-          .filter((i) => !BUILTIN_IDS[i.kind]?.has(i.id))
+          .filter((i) => !isBuiltin(i.id))
           .sort((a, b) => ((a.createdAt ?? "") < (b.createdAt ?? "") ? 1 : (a.createdAt ?? "") > (b.createdAt ?? "") ? -1 : 0))
   for (const l of listeners) l()
 }
 subscribeMine(rebuild)
+subscribeBuiltins(rebuild)
 
 // Which request is the current one. Only the newest response may write the
 // rows, so two in flight (a library opening while the boot fetch is still out)
@@ -171,16 +151,9 @@ export function preloadCommunity(): void {
   void load()
 }
 
-/** Does the signed-in user own this bundled item? Matched by uuid, which the
- *  bundle and the database now share. */
+/** Does the signed-in user own this built-in? */
 export function isMine(id: string): boolean {
   return mineIds.has(id)
-}
-
-/** The live author to display for a built-in (the admin account's handle), or
- *  the repo's fallback when the mirror hasn't been fetched. */
-export function builtinAuthor(id: string, fallback: string): string {
-  return builtinAuthors.get(id) ?? fallback
 }
 
 /** The avatar for an author, once the library has been fetched. Null is the

@@ -169,6 +169,13 @@
       "when": 1791927855890,
       "tag": "0023_bili_videos",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792595427905,
+      "tag": "0024_builtin_zh",
+      "breakpoints": true
     }
   ]
 }

@@ -6,10 +6,7 @@
 // across thirty shaders it is one missed rename away from a shader that compiles
 // and reads a stale constant.
 //
-// Shared by the two callers that need it — the repo's built-ins in
-// content/effects.json, and published rows in the database — because they must
-// transform source the SAME way. Two copies of a rename this precise is two
-// copies that drift, and the second one is the one nobody tests.
+// Used by scripts/expose-params.mjs.
 
 /** A const another const is BUILT FROM cannot become a param: `params.X` is a
  *  uniform read, not a const-expression, so a module-scope const initialised

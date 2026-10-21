@@ -11,7 +11,7 @@
 // Reports, never writes. Anything it flags is fixed by a deliberate patch script.
 import { Pool, neonConfig } from "@neondatabase/serverless"
 import ws from "ws"
-import { readFileSync } from "node:fs"
+import { builtinRows } from "./lib/builtins-db.mjs"
 // reze-engine's dist uses extensionless relative imports, so it resolves under a
 // bundler and NOT under plain node — the app never noticed because Next resolves
 // them. A resolve hook puts the extension back, which keeps this script a
@@ -34,10 +34,7 @@ const { compileGraph } = await import("reze-engine")
 neonConfig.webSocketConstructor = ws
 const pool = new Pool({ connectionString: process.env.DATABASE_URL })
 
-const builtins = [
-  ...JSON.parse(readFileSync(new URL("../content/graphs.json", import.meta.url), "utf8")),
-  ...JSON.parse(readFileSync(new URL("../content/stage-graphs.json", import.meta.url), "utf8")),
-]
+const builtins = await builtinRows(pool, "graph")
 const builtinById = new Map(builtins.map((b) => [b.id, b]))
 const builtinNames = new Set(builtins.map((b) => b.name))
 

@@ -6,8 +6,7 @@
 // Prefetched while the page is idle, so by the time anyone opens one it is there.
 //
 // Looked up by the item's permanent uuid — the only identity that matters (see
-// lib/library.ts). Built-ins author theirs in content/*.json and are seeded under
-// it, drafts mint one at creation and keep it through publishing, and a scene
+// lib/library.ts). Drafts mint one at creation and keep it through publishing, and a scene
 // records what it uses by id. A draft simply has no row on the server yet, which
 // is why its heart is inert rather than a special case here.
 

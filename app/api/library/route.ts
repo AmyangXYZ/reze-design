@@ -1,7 +1,6 @@
 // Publishing: the only route into the library.
 //
-// Built-ins ship in the repo and never come from here. A row appears when
-// someone publishes, which is also the moment content acquires an owner, a
+// A row appears when someone publishes, which is also the moment content acquires an owner, a
 // stable id and a name under which others will see it.
 
 import { NextResponse, after } from "next/server"
@@ -16,7 +15,7 @@ import { LIBRARY_TAG, refreshLibrary, refreshMakerPages } from "@/lib/public-pag
 import { normalizeName, withGraphName, type LibraryKind } from "@/lib/library"
 import type { Visibility } from "@/lib/db/schema"
 import { cacheImmutably, deleteReplacedBundle, ownsBundleKey } from "@/lib/bundle-owner"
-import { presetRows } from "@/lib/library-rows"
+import { NOT_BUILTIN, presetRows } from "@/lib/library-rows"
 import { publicJson } from "@/lib/cdn"
 import { parseVideoLink } from "@/lib/video-link"
 
@@ -317,7 +316,8 @@ async function galleryPage(
 }
 
 /** Every public preset, cached like the gallery. */
-const publicPresets = unstable_cache(() => presetRows(eq(schema.libraryItems.visibility, "public")), ["public-presets"], {
+// Built-ins have their own route (/api/library/builtins), which the editor waits on.
+const publicPresets = unstable_cache(() => presetRows(and(eq(schema.libraryItems.visibility, "public"), NOT_BUILTIN)), ["public-presets"], {
   tags: [LIBRARY_TAG],
 })
 

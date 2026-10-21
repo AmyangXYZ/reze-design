@@ -124,12 +124,24 @@ scrolling body and a footer holding the submit, all capped at the viewport.
 - Tests are plain `*.test.mts` files under `lib/`, with no test runner. Each
   says how to run it at the top, always in this form:
   `npx esbuild <file> --bundle --platform=node --format=esm --tsconfig=tsconfig.json --outfile=/tmp/t.mjs && node /tmp/t.mjs`
+  A test that needs built-ins imports `@/lib/test-builtins.mts` first; it
+  reads them from the database in `.env.local`.
 
 # The library: built-ins, community items, drafts
 
-Grades, shader graphs and effects come from three places: built-ins (in the
-bundle), community items (published rows) and local drafts (`lib/drafts.ts`,
-in localStorage, never on the server).
+Grades, shader graphs and effects come from three places: built-ins, community
+items (published rows) and local drafts (`lib/drafts.ts`, in localStorage,
+never on the server).
+
+**Built-ins are rows too**: every public grade, graph and effect owned by the
+first of `ADMIN_EMAILS` (`lib/builtin-rows.ts`). The editor waits for the whole
+shelf from `/api/library/builtins` before it starts (`lib/builtins.ts`,
+`hooks/use-builtins.ts`); a scene page gets the rows its document names from
+the server. Read them through `builtinGraphs()`, `builtinEffects()` and
+`builtinGrades()`, never at module scope. Change one by publishing over it as
+that account, or with a script (`scripts/lib/builtins-db.mjs`) followed by
+`npm run db:refresh`. Chinese names and descriptions are the row's `name_zh`
+and `description_zh`.
 
 **A scene recognises published work by VALUE, not by bookkeeping**
 (`lib/refs.ts`). A look that equals a published item is pinned by id. Anything

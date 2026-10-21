@@ -241,8 +241,9 @@ export const EMPTY_SCENE: Scene = parseSceneDoc(EMPTY_SCENE_DOC, builtinEffect, 
  * "reset to default" names the scene that was designed, and a build that boots
  * empty still has one.
  */
-export const DEMO_SCENE: Scene = parseSceneDoc(DEMO_SCENE_DOC, builtinEffect, libraryGraph)
+export const demoScene = (): Scene => parseSceneDoc(DEMO_SCENE_DOC, builtinEffect, libraryGraph)
 
 /** The scene this build opens on. */
 export const DEFAULT_SCENE_DOC: SceneDoc = USE_DEFAULT_SCENE ? DEMO_SCENE_DOC : EMPTY_SCENE_DOC
-export const DEFAULT_SCENE: Scene = parseSceneDoc(DEFAULT_SCENE_DOC, builtinEffect, libraryGraph)
+/** Parsed on call: the demo names built-ins, so it reads the shelf (lib/builtins). */
+export const defaultScene = (): Scene => parseSceneDoc(DEFAULT_SCENE_DOC, builtinEffect, libraryGraph)

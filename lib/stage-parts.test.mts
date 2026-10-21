@@ -3,6 +3,7 @@
 //
 //   npx esbuild lib/stage-parts.test.mts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --outfile=/tmp/sp.mjs && node /tmp/sp.mjs
 
+import "@/lib/test-builtins.mts"
 import assert from "node:assert/strict"
 import { parseSceneDoc, type SceneDoc } from "@/lib/scene"
 import { withStageParts, type StageInfo } from "@/lib/scene-host"

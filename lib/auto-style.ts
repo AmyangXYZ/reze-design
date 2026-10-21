@@ -29,7 +29,7 @@
 // figure roles for scenery. The role table below follows the engine's.
 
 import type { RenderClass, StyleGroup } from "reze-engine"
-import { SLOT_GRAPHS, libraryGraph, packGraph, type LookPack } from "@/lib/materials"
+import { slotGraphs, libraryGraph, packGraph, type LookPack } from "@/lib/materials"
 import { LOOK_STATE, STAGE_SURFACE, lookFor } from "@/lib/stage-style"
 
 export type Role = "eye" | "face" | "hair" | "body" | "stockings" | "metal" | "cloth_smooth" | "cloth_rough"
@@ -181,7 +181,7 @@ export function autoStyle(
       merge(at, names)
       continue
     }
-    const graph = packGraph(opts.pack, id) ?? SLOT_GRAPHS[id]
+    const graph = packGraph(opts.pack, id) ?? slotGraphs()[id]
     if (!graph) continue
     taken.add(id)
     // Labelled as the seeded drop targets are, so builtin-text translates it.
