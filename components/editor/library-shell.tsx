@@ -761,7 +761,7 @@ export function LibraryCards<T extends BrowseItem>({
   }
 
   return (
-    <div ref={shelf} className={cn("no-scrollbar min-h-0 flex-1 overflow-y-auto pt-1", asRows ? "-mx-2" : "-mx-1 px-1")}>
+    <div ref={shelf} className={cn("no-scrollbar min-h-0 flex-1 overflow-y-auto", asRows ? "-mx-2 pt-1" : "-mx-1.5 px-1.5 pt-1.5")}>
       <div className={cn("grid pb-2", asRows ? "grid-cols-1 gap-0.5" : "grid-cols-2 gap-x-2.5 gap-y-3")}>
         {rows.map((item) => {
           const m = meta(item)
@@ -791,7 +791,7 @@ export function LibraryCards<T extends BrowseItem>({
               {!asRows && (
                 <div
                   className={cn(
-                    "relative aspect-[16/10] overflow-hidden rounded-interior bg-white/5 outline-1 outline-offset-2 transition-[outline-color]",
+                    "relative aspect-[16/10] overflow-hidden rounded-interior bg-white/5 outline-2 outline-offset-2 transition-[outline-color]",
                     picked ? "outline-foreground" : "outline-transparent",
                   )}
                 >
@@ -821,7 +821,17 @@ export function LibraryCards<T extends BrowseItem>({
               ) : (
                 <>
                   <div className="flex min-w-0 items-center gap-1.5 text-xs leading-tight">
-                    <span className={cn("min-w-0", !m.nameNode && "truncate")}>{m.nameNode ?? displayName?.(item) ?? item.name}</span>
+                    {/* On the scene: the name underlined in the accent, as the
+                        chosen group is in Materials. */}
+                    <span
+                      className={cn(
+                        "min-w-0 pb-0.5",
+                        !m.nameNode && "truncate",
+                        m.applied && "underline decoration-blue-400 decoration-[1.5px] underline-offset-3",
+                      )}
+                    >
+                      {m.nameNode ?? displayName?.(item) ?? item.name}
+                    </span>
                   </div>
                   <div className="-mt-0.5 flex h-4 min-w-0 items-center gap-1.5 font-mono text-2xs text-muted-foreground">
                     {st !== "draft" && <AuthorLink name={builtinAuthor(item.id, item.author)} at className="min-w-0 truncate" />}

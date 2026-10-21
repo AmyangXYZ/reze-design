@@ -264,25 +264,13 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
     )
   }
 
-  // PICKING IS TRYING: a card you pick goes on the scene, and the next one you
-  // pick takes its place, so browsing is watching the canvas. What was on the
-  // scene before the library opened stays put; clicking the picked card again
-  // takes it off.
-  const [trying, setTrying] = useState<string | null>(null)
+  // A pick puts the card on the scene, beside what is already there, so
+  // stacking is clicking several. A card on the scene is chosen by its first
+  // click and taken off by the next.
   const pick = (e: EffectItem) => {
-    // Clicking the picked card again takes it off.
-    if (applied.some((a) => a.id === e.id)) {
-      if (selectedId === e.id) {
-        if (trying === e.id) setTrying(null)
-        onRemove(e.id)
-      }
-      setSelectedId(e.id)
-      return
-    }
     setSelectedId(e.id)
-    if (trying && trying !== e.id && applied.some((a) => a.id === trying)) onRemove(trying)
-    onApply(seedDraft(e, applied)!)
-    setTrying(e.id)
+    if (!applied.some((a) => a.id === e.id)) onApply(seedDraft(e, applied)!)
+    else if (selectedId === e.id) onRemove(e.id)
   }
 
   return (
