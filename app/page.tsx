@@ -8863,12 +8863,11 @@ export default function Lab() {
               )}
             </StackGroup>
             <>
-              {layers.map((l) => (
-                <LayerRow
-                  key={l.id}
-                  domId={`layer-${l.id}`}
-                  open={openRow === l.id}
-                >
+              {/* Only the open pane is built: the closed ones' controls (a
+                  follow-bone list holds every bone in the scene) cost a render
+                  each time anything changes. */}
+              {layers.filter((l) => l.id === openRow).map((l) => (
+                <LayerRow key={l.id} domId={`layer-${l.id}`}>
                   {l.id === "background" ? (
                     // Colour, and ONE image slot that detects its own kind:
                     // flat behind the scene, or a 360° dome at 2:1.

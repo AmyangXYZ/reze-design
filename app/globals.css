@@ -313,7 +313,8 @@
   --input: color-mix(in oklch, var(--foreground) 20%, transparent);
   --primary-foreground: var(--background);
   --foreground: oklch(0 0 0);
-  --muted-foreground: oklch(0.38 0 0);
+  --muted-foreground: oklch(0.44 0 0);
+  --ink-shadow: 0 1px 1px oklch(0 0 0 / 0.15);
   --background: color-mix(in oklch, var(--scene-bg) 25%, oklch(0.99 0 0));
   /* One hairline on the cover: a rule there divides nothing from a surface,
      so the two strengths are the same line. */
@@ -327,10 +328,26 @@
   --input: color-mix(in oklch, var(--foreground) 20%, transparent);
   --primary-foreground: var(--background);
   --foreground: oklch(1 0 0);
-  --muted-foreground: oklch(0.78 0 0);
+  --muted-foreground: oklch(0.88 0 0);
+  --ink-shadow: 0 0 2px oklch(0 0 0 / 0.75), 0 1px 3px oklch(0 0 0 / 0.75);
   --background: color-mix(in oklch, var(--scene-bg) 30%, oklch(0.12 0 0));
   --chrome-line: oklch(1 0 0 / 0.26);
   --chrome-line-strong: oklch(1 0 0 / 0.26);
+}
+/* Every character carries a dark shadow, so a stroke of the picture running
+   through a letter cannot take its edge. White type: an edge and a drop at
+   0.75. Black type: one tight drop at 0.15 — a blur around black glyphs reads
+   as soft type. Overlays reset it. */
+.cover .cover-type,
+.cover [data-ink-zone] {
+  text-shadow: var(--ink-shadow);
+}
+/* The browser sets buttons and fields to no shadow; on the cover they are type. */
+.cover :is(.cover-type, [data-ink-zone]) :is(button, input, textarea, select) {
+  text-shadow: inherit;
+}
+.cover [data-paper] {
+  text-shadow: none;
 }
 /* Inside a zone the ink fades once, on the zone; a control running its own
    colour transition on top would chase the moving ink and fall behind it. */

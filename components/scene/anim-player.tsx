@@ -670,7 +670,9 @@ export const AnimPlayer = memo(function AnimPlayer({
             // this to a flex-basis to "let it shrink" only bought a track
             // squeezed to nothing on a mid-size window.
             "relative mx-1 flex h-4 touch-none items-center select-none",
-            bare ? "w-[min(22rem,34vw)]" : "min-w-[min(16rem,30vw)] flex-1",
+            // Collapsed, the line stops short of the right-hand column on a
+            // 1280px window (a 2560×1600 screen at 2×).
+            bare ? "w-[min(18rem,26vw)]" : "min-w-[min(16rem,30vw)] flex-1",
             hasClip ? "cursor-pointer" : "opacity-50",
           )}
           onPointerDown={(e) => {

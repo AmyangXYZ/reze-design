@@ -13,15 +13,12 @@ import { cn } from "@/lib/utils"
 
 export function LayerRow({
   domId,
-  open,
   children,
 }: {
   /** Addressable for go-to: the palette scrolls a row into view by this id. */
   domId?: string
-  open: boolean
   children: ReactNode
 }) {
-  if (!open) return null
   return (
     // A column that shrinks to the console: a tabbed pane scrolls under its
     // tab line (TabsContent), any other pane scrolls whole.

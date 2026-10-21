@@ -149,10 +149,16 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
   const inUse = (g: GradeItem) => g.owner === "local" && nameKey(g.name) === nameKey(grade.preset)
 
   // PICKING IS TRYING: a picked grade goes on the scene, so browsing is
-  // watching the canvas take each one.
+  // watching the canvas take each one. Clicking the grade the scene wears takes
+  // it off, back to Neutral.
+  const neutral = GRADE_PRESETS[0].name
   const select = (g: GradeItem) => {
+    if (grade.preset === g.name) {
+      if (g.name !== neutral) onApplyPreset(neutral)
+      return
+    }
     setSelectedId(g.id)
-    if (grade.preset !== g.name) onApplyPreset(g.name)
+    onApplyPreset(g.name)
   }
 
   /** Straight into the editor, no entry created */

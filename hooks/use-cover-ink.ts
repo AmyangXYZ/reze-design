@@ -21,17 +21,29 @@ export function useCoverInk(
     if (!ready || !main || !canvas) return
     const W = 48
     const H = 32
-    let probe = document.createElement("canvas")
-    probe.width = W
-    probe.height = H
-    let g = probe.getContext("2d", { willReadFrequently: true })
+    // The stack is composed here, on the GPU, and READ in a worker: reading
+    // pixels that came from the GPU waits for the GPU, and a heavy scene froze
+    // the page on that wait twice a second (cover-ink.worker.ts).
+    const makeProbe = () => {
+      const c = document.createElement("canvas")
+      c.width = W
+      c.height = H
+      return c
+    }
+    let probe = makeProbe()
+    let g = probe.getContext("2d")
     if (!g) return
+    const worker = new Worker(new URL("./cover-ink.worker.ts", import.meta.url), { type: "module" })
+    let answer: ((d: Uint8ClampedArray) => void) | null = null
+    worker.onmessage = (e: MessageEvent<Uint8ClampedArray>) => answer?.(e.data)
     // What stands behind the type is the whole stack, not the canvas alone: the
     // page's ground, a picture or video behind a see-through canvas, then the
     // canvas. A picture served without CORS would taint the probe for good, so
     // on the first refusal the probe is made again and the stack read without it.
     let media = true
-    const compose = (ctx: CanvasRenderingContext2D) => {
+    let gone = false
+    let busy = false
+    const compose = (ctx: CanvasRenderingContext2D, frame: ImageBitmap) => {
       ctx.fillStyle = getComputedStyle(main).backgroundColor
       ctx.fillRect(0, 0, W, H)
       if (media) {
@@ -44,7 +56,7 @@ export function useCoverInk(
           }
         }
       }
-      ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, W, H)
+      ctx.drawImage(frame, 0, 0)
     }
     const lin = (c: number) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
     // Where the canvas IS laid out, without the transform that eases it there.
@@ -87,22 +99,44 @@ export function useCoverInk(
       next(0)
     })
     resized.observe(canvas)
-    const tick = () => {
-      next()
-      if (document.hidden || pausedRef?.current || !canvas.width) return
-      let d: Uint8ClampedArray
+    // The frame, shrunk on the GPU; the stack composed over it; the pixels
+    // from the worker. Nothing here waits for the GPU.
+    const sample = async (): Promise<Uint8ClampedArray | null> => {
+      const frame = await createImageBitmap(canvas, { resizeWidth: W, resizeHeight: H, resizeQuality: "low" })
       try {
-        compose(g!)
-        d = g!.getImageData(0, 0, W, H).data
-      } catch {
-        if (!media) return
-        media = false
-        probe = document.createElement("canvas")
-        probe.width = W
-        probe.height = H
-        g = probe.getContext("2d", { willReadFrequently: true })
-        return
+        compose(g!, frame)
+      } finally {
+        frame.close()
       }
+      let shot: ImageBitmap
+      try {
+        shot = await createImageBitmap(probe)
+      } catch {
+        // Tainted by a picture: read without pictures from now on.
+        if (!media) return null
+        media = false
+        probe = makeProbe()
+        g = probe.getContext("2d")
+        return null
+      }
+      return new Promise((resolve) => {
+        answer = resolve
+        worker.postMessage(shot, [shot])
+      })
+    }
+    const tick = async () => {
+      next()
+      if (busy || document.hidden || pausedRef?.current || !canvas.width) return
+      busy = true
+      let d: Uint8ClampedArray | null = null
+      try {
+        d = await sample()
+      } catch {
+        // A frame not there to take (the canvas between sizes): the next read.
+      } finally {
+        busy = false
+      }
+      if (!d || gone) return
       const cr = frameBox()
       let read = false
       for (const el of main.querySelectorAll<HTMLElement>("[data-ink-zone]")) {
@@ -196,6 +230,8 @@ export function useCoverInk(
     }, 2500)
     next()
     return () => {
+      gone = true
+      worker.terminate()
       clearTimeout(giveUp)
       resized.disconnect()
       clearTimeout(timer)

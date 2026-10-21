@@ -109,7 +109,9 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   // On touch devices HTML5-draggable rows swallow swipes (drag starts instead of
   // scroll). Read at init — this panel only ever renders inside a mounted dock.
   const [coarse] = useState(() => typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches)
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  // Groups start folded, but the chosen one: a stage brings hundreds of
+  // materials, and mounting a row for each made the pane slow to open.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(activeGroupId ? [activeGroupId] : []))
   const [renaming, setRenaming] = useState<string | null>(null)
   // Focus + select the rename input once it mounts.
   const renameRef = useRef<HTMLInputElement>(null)
@@ -215,7 +217,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   useEffect(() => endPress, [])
 
   const toggleCollapse = (id: string) =>
-    setCollapsed((prev) => {
+    setExpanded((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -446,7 +448,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
             }}
           >
           {ordered.map((g) => {
-            const open = !collapsed.has(g.id)
+            const open = expanded.has(g.id)
             const isActive = activeGroupId === g.id
             const isDrop = dropTarget === g.id
             return (
@@ -557,7 +559,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                     toggleCollapse(UNGROUPED)
                   }}
                 >
-                  {collapsed.has(UNGROUPED) ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                  {expanded.has(UNGROUPED) ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
                 </Button>
                 <span
                   className={cn(
@@ -572,7 +574,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                   {t.materials.ungrouped}
                 </span>
               </div>
-              {!collapsed.has(UNGROUPED) && (
+              {expanded.has(UNGROUPED) && (
                 <div className="ml-[10px] border-l border-line pl-1">{ungrouped.map((m, i) => materialRow(m, null, m.name + "#" + i))}</div>
               )}
             </div>

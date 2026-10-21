@@ -96,9 +96,10 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   const [selectedId, setSelectedId] = useState<string | null>(focusId ?? applied[0]?.id ?? EFFECTS[0]?.id ?? null)
   // Follow a layer when one is ADDED — creating or editing one should move the
   // selection with it, rather than leaving the ring on the previous entry. A
-  // removal leaves the selection where it is: the detail stays on what you
-  // just took off, ready to put back.
+  // removal lets go (pick, below), and the pane's focus moving on to another
+  // layer because of it is not followed either.
   const [lastApplied, setLastApplied] = useState(() => applied.map((a) => a.id))
+  const removed = applied.length < lastApplied.length
   if (applied.length !== lastApplied.length || applied.some((a, i) => a.id !== lastApplied[i])) {
     setLastApplied(applied.map((a) => a.id))
     const added = applied.findLast((a) => !lastApplied.includes(a.id))
@@ -108,7 +109,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   const [seenFocus, setSeenFocus] = useState(focusId)
   if (focusId !== seenFocus) {
     setSeenFocus(focusId)
-    if (focusId) setSelectedId(focusId)
+    if (focusId && !removed) setSelectedId(focusId)
   }
 
   const { drafts, update: updateDraft, remove: removeDraft } = useDrafts<EffectItem>("effect")
@@ -264,13 +265,16 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
     )
   }
 
-  // A pick puts the card on the scene, beside what is already there, so
-  // stacking is clicking several. A card on the scene is chosen by its first
-  // click and taken off by the next.
+  // One click toggles: a card goes on the scene, beside what is already there,
+  // and is chosen; a card on the scene comes off and is let go.
   const pick = (e: EffectItem) => {
+    if (applied.some((a) => a.id === e.id)) {
+      onRemove(e.id)
+      setSelectedId(null)
+      return
+    }
     setSelectedId(e.id)
-    if (!applied.some((a) => a.id === e.id)) onApply(seedDraft(e, applied)!)
-    else if (selectedId === e.id) onRemove(e.id)
+    onApply(seedDraft(e, applied)!)
   }
 
   return (
@@ -326,6 +330,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
       }
       cards={
         <LibraryCards
+          dense
           watch={["community", "library-stats"]}
           browse={browse}
           selectedId={selectedId}

@@ -606,7 +606,7 @@ export function LibraryDock<T extends BrowseItem>({
         "absolute flex flex-col gap-3",
         compact
           ? "top-[3.75rem] right-3 left-3 max-h-[60dvh] rounded-surface border border-line-strong bg-surface p-3 shadow-float backdrop-blur-xs"
-          : "cover-type top-[5.75rem] right-7 bottom-16 w-[20rem] pl-5",
+          : "cover-type top-16 right-7 bottom-16 w-[18rem] pl-5",
       )}
     >
       {/* The AI column's divider: a hairline clear of the column, from the
@@ -626,7 +626,7 @@ export function LibraryDock<T extends BrowseItem>({
       </div>
       {context !== undefined && <p className="-mt-2 h-4 truncate font-mono text-2xs text-muted-foreground">{context}</p>}
       {/* One height, picked or not, so the shelf below never moves. */}
-      <div className="-mb-1 min-h-[5.25rem] shrink-0">{detail}</div>
+      <div className="-mt-1.5 -mb-1 min-h-[4.75rem] shrink-0">{detail}</div>
       <label className="relative flex h-7 shrink-0 items-center gap-1.5 text-muted-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-line-strong focus-within:after:bg-foreground">
         <Search className="size-3.5 shrink-0" strokeWidth={1.5} />
         <Input
@@ -698,8 +698,8 @@ export function LibraryDetail({
         ref={para}
         onClick={() => (open || clipped) && setOpen(!open)}
         className={cn(
-          "mt-1 text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]",
-          open ? "" : "line-clamp-2 h-10",
+          "mt-1 text-xs leading-4 text-muted-foreground [overflow-wrap:anywhere]",
+          open ? "" : "line-clamp-2 h-8",
           (open || clipped) && "cursor-pointer hover:text-foreground",
         )}
       >
@@ -720,6 +720,7 @@ export function LibraryCards<T extends BrowseItem>({
   empty,
   watch,
   rows: asRows = false,
+  dense = false,
   reveal = null,
 }: {
   browse: Browse<T>
@@ -736,6 +737,8 @@ export function LibraryCards<T extends BrowseItem>({
   /** Rows of words instead of pictures, for a kind whose look only shows on
    *  the scene (a shader graph): the canvas is its picture. */
   rows?: boolean
+  /** A long shelf of pictures (effects): the rows closer, so more fit. */
+  dense?: boolean
   /** A card to bring into view, when its pane chose it (a group's graph, the
    *  pane's effect). Picking in the shelf itself never scrolls it. */
   reveal?: string | null
@@ -745,6 +748,32 @@ export function LibraryCards<T extends BrowseItem>({
   const t = useT()
   const { rows } = browse
   const shelf = useRef<HTMLDivElement>(null)
+  const room = useRef<HTMLDivElement>(null)
+  // The shelf is as tall as the rows that fit WHOLE in the room it has: a row
+  // cut through its name read as broken, and where the cut fell moved with the
+  // window. Set on the element, so a resize does not render the library.
+  const empty0 = rows.length === 0
+  useEffect(() => {
+    const box = room.current
+    const el = shelf.current
+    const grid = el?.firstElementChild as HTMLElement | null
+    if (!box || !el || !grid) return
+    const fit = () => {
+      const card = grid.firstElementChild as HTMLElement | null
+      if (!card) return
+      const gap = parseFloat(getComputedStyle(grid).rowGap) || 0
+      const top = parseFloat(getComputedStyle(el).paddingTop) || 0
+      // Room under the last row for a picked card's outline (2px, 2px out).
+      const outline = 4
+      const h = card.offsetHeight
+      const n = Math.max(1, Math.floor((box.clientHeight - top - outline + gap) / (h + gap)))
+      el.style.height = `${top + n * h + (n - 1) * gap + outline}px`
+    }
+    const watch = new ResizeObserver(fit)
+    watch.observe(box)
+    watch.observe(grid)
+    return () => watch.disconnect()
+  }, [empty0])
   useEffect(() => {
     if (!reveal) return
     shelf.current
@@ -761,8 +790,9 @@ export function LibraryCards<T extends BrowseItem>({
   }
 
   return (
-    <div ref={shelf} className={cn("no-scrollbar min-h-0 flex-1 overflow-y-auto", asRows ? "-mx-2 pt-1" : "-mx-1.5 px-1.5 pt-1.5")}>
-      <div className={cn("grid pb-2", asRows ? "grid-cols-1 gap-0.5" : "grid-cols-2 gap-x-2.5 gap-y-3")}>
+    <div ref={room} className="flex min-h-0 flex-1 flex-col">
+    <div ref={shelf} className={cn("no-scrollbar max-h-full min-h-0 shrink-0 overflow-y-auto", asRows ? "-mx-2 pt-1" : "-mx-1.5 px-3 pt-1.5")}>
+      <div className={cn("grid pb-2", asRows ? "grid-cols-1 gap-0.5" : dense ? "grid-cols-2 gap-x-5 gap-y-2" : "grid-cols-2 gap-x-5 gap-y-4")}>
         {rows.map((item) => {
           const m = meta(item)
           const st = itemState(item)
@@ -791,8 +821,9 @@ export function LibraryCards<T extends BrowseItem>({
               {!asRows && (
                 <div
                   className={cn(
-                    "relative aspect-[16/10] overflow-hidden rounded-interior bg-white/5 outline-2 outline-offset-2 transition-[outline-color]",
-                    picked ? "outline-foreground" : "outline-transparent",
+                    "relative overflow-hidden rounded-interior bg-white/5 outline-2 outline-offset-2 transition-[outline-color]",
+                    "aspect-video",
+                    m.applied ? "outline-foreground" : "outline-transparent",
                   )}
                 >
                   {m.preview}
@@ -821,19 +852,20 @@ export function LibraryCards<T extends BrowseItem>({
               ) : (
                 <>
                   <div className="flex min-w-0 items-center gap-1.5 text-xs leading-tight">
-                    {/* On the scene: the name underlined in the accent, as the
+                    {/* On the scene: the outline above. Chosen, its detail
+                        showing: the name underlined in the accent, as the
                         chosen group is in Materials. */}
                     <span
                       className={cn(
                         "min-w-0 pb-0.5",
                         !m.nameNode && "truncate",
-                        m.applied && "underline decoration-blue-400 decoration-[1.5px] underline-offset-3",
+                        picked && "underline decoration-blue-400 decoration-[1.5px] underline-offset-3",
                       )}
                     >
                       {m.nameNode ?? displayName?.(item) ?? item.name}
                     </span>
                   </div>
-                  <div className="-mt-0.5 flex h-4 min-w-0 items-center gap-1.5 font-mono text-2xs text-muted-foreground">
+                  <div className="-mt-2 flex h-4 min-w-0 items-center gap-1.5 font-mono text-2xs text-muted-foreground">
                     {st !== "draft" && <AuthorLink name={builtinAuthor(item.id, item.author)} at className="min-w-0 truncate" />}
                   </div>
                 </>
@@ -844,6 +876,7 @@ export function LibraryCards<T extends BrowseItem>({
         })}
       </div>
       {offline && <OfflineLine watch={watch} />}
+    </div>
     </div>
   )
 }
