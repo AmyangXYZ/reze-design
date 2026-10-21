@@ -1,4 +1,3 @@
-import { SiteNotice } from "@/components/site-notice"
 import { BootGuardScript } from "@/components/boot-guard"
 import { BootSlowNote } from "@/components/boot-note"
 import type { Metadata, Viewport } from "next";
@@ -112,7 +111,6 @@ export default function RootLayout({
               and the publish dialog. Mounted beside the tree rather than inside
               it so a toast survives the surface that raised it closing. */}
           <Toaster />
-          <SiteNotice />
         </I18nProvider>
         <BootSlowNote />
         <Analytics/>
