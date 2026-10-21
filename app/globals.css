@@ -414,7 +414,7 @@
    changes, so it takes the side opposite the cover's ink as that moves. */
 [data-paper="light"],
 .cover[data-ink="dark"] [data-paper="auto"] {
-  --chrome-surface: oklch(1 0 0 / 0.72);
+  --chrome-surface: oklch(1 0 0 / 0.6);
   --foreground: oklch(0 0 0);
   --muted-foreground: var(--foreground);
   --ink-disabled: oklch(0.44 0 0);
@@ -427,7 +427,7 @@
 }
 [data-paper="dark"],
 .cover[data-ink="light"] [data-paper="auto"] {
-  --chrome-surface: oklch(0 0 0 / 0.62);
+  --chrome-surface: oklch(0 0 0 / 0.6);
   --foreground: oklch(1 0 0);
   --muted-foreground: var(--foreground);
   --ink-disabled: oklch(0.78 0 0);
@@ -446,9 +446,8 @@
   border-radius: 8px;
   backdrop-filter: blur(2px);
 }
-/* The timeline is a wide sheet over the scene's foot: a little lighter than a
-   dialog's, so the scene still shows under it, dense enough for its thin
-   curves and marks. */
+/* The timeline is a wide sheet over the scene's foot, dense enough for its
+   thin curves and marks. */
 [data-paper="light"][data-paper-at="timeline"],
 .cover[data-ink="dark"] [data-paper="auto"][data-paper-at="timeline"] {
   --chrome-surface: oklch(1 0 0 / 0.55);
@@ -557,7 +556,7 @@
   }
 }
 [data-paper] > [data-paper-ground] {
-  backdrop-filter: blur(2px);
+  backdrop-filter: blur(6px);
 }
 [data-paper][data-state="open"] {
   animation: none;
@@ -599,7 +598,7 @@
   border-radius: 8px !important;
   border-color: var(--chrome-line-strong) !important;
   box-shadow: none !important;
-  backdrop-filter: blur(2px) !important;
+  backdrop-filter: blur(6px) !important;
 }
 
 /* A whole PAGE of paper (data-paper-at="page"): a task that sets the canvas
