@@ -1041,7 +1041,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
                   </div>
                 )}
                 <div className="mt-4 flex flex-wrap items-center gap-2.5">
-                  <Button asChild size="sm" className="h-7 rounded-chip bg-foreground px-4 text-xs font-medium text-background hover:bg-foreground/85">
+                  <Button asChild size="sm" className="h-7 rounded-chip bg-foreground px-4 text-xs font-medium text-background [text-shadow:none] hover:bg-foreground/85">
                     {/* A real link: cmd-click still gets a new tab. */}
                     <Link href={sceneHref(focus)}>{t.gallery.open}</Link>
                   </Button>
@@ -1164,7 +1164,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
                 </div>
               )}
               <div className="mt-4 flex flex-wrap items-center gap-2.5">
-                <Button asChild size="sm" className="h-7 rounded-chip bg-foreground px-4 text-xs font-medium text-background hover:bg-foreground/85">
+                <Button asChild size="sm" className="h-7 rounded-chip bg-foreground px-4 text-xs font-medium text-background [text-shadow:none] hover:bg-foreground/85">
                   <Link href={sceneHref(picked)}>{t.gallery.open}</Link>
                 </Button>
                 {!picked.displayOnly && (

@@ -339,8 +339,8 @@
   text-shadow: inherit;
 }
 /* A filled control is its own ground: the type on it carries no shadow. */
-.cover :is(.cover-type, [data-ink-zone]) :is(.bg-primary, .bg-secondary, .bg-destructive, .bg-blue-400),
-.cover :is(.cover-type, [data-ink-zone]) :is(.bg-primary, .bg-secondary, .bg-destructive, .bg-blue-400) * {
+.cover :is(.cover-type, [data-ink-zone]) :is(.bg-foreground, .bg-white, .bg-primary, .bg-secondary, .bg-destructive, .bg-blue-400, .bg-red-400),
+.cover :is(.cover-type, [data-ink-zone]) :is(.bg-foreground, .bg-white, .bg-primary, .bg-secondary, .bg-destructive, .bg-blue-400, .bg-red-400) * {
   text-shadow: none;
 }
 .cover [data-paper] {
