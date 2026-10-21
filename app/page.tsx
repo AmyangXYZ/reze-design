@@ -74,7 +74,6 @@ import {
   Upload,
   Sparkles,
   SportShoe,
-  WandSparkles,
   Astroid,
   X,
   Hand,
@@ -103,7 +102,6 @@ import { CommandPalette } from "@/components/editor/command-palette"
 import { RECENT_DEPTH, type PaletteItem, type SceneGap } from "@/lib/command-search"
 import { SceneFileMenu } from "@/components/editor/scene-file-menu"
 import { SceneName } from "@/components/editor/scene-name"
-import { COMPACT_SHEET, Surface } from "@/components/editor/surface"
 import { LayerRow, StackGroup } from "@/components/editor/layer-row"
 import { Cover, useCover } from "@/components/ui/cover"
 import {
@@ -144,7 +142,7 @@ import Link from "next/link"
 import { ClipEditor, type ClipEditKind } from "@/context/clip-editor"
 import { primeClipDensity, useAudioPeaks } from "@/hooks/use-lane-graphs"
 import { useEngine } from "@/hooks/use-engine"
-import { isMobileAgent, isTouch, useCompact, usePhone, useTouch } from "@/lib/device"
+import { usePhone } from "@/lib/device"
 import { useRenderFraming } from "@/hooks/use-render-framing"
 import { useSceneCast, useSceneSync } from "@/hooks/use-scene-sync"
 import { seedMusic, servedUrl, useSceneMedia, type BgSlot } from "@/hooks/use-scene-media"
@@ -300,10 +298,6 @@ function Slot({ text, mark, end }: { text: string; mark: string; end?: boolean }
   )
 }
 
-/** Floating chrome — the 0.3.x chrome's `floating`, taken through the surface
- *  token so the pills and the panel cannot drift apart. */
-const PILL = "rounded-surface border border-line-strong bg-surface shadow-float backdrop-blur-xs"
-
 /** An action set as a line of type on the cover: a glyph and a word, muted,
  *  ink on hover. Every button in the console wears it — no fill, no outline. */
 const LINE_ACTION =
@@ -383,9 +377,8 @@ const OPEN_TIMELINE_W = "min-w-[20rem] max-w-[calc(100vw_-_35rem)]"
 const TIMELINE_EDITOR = true
 
 /** Where the collapsed transport plus the lanes stop leaving the canvas a usable
- *  share of the window. A coarse pointer is short by definition once the
- *  keyboard or the browser chrome is up, so it counts whatever the height says. */
-const TIMELINE_ROOM_QUERY = "(pointer: coarse), (max-height: 40rem)"
+ *  share of the window. */
+const TIMELINE_ROOM_QUERY = "(max-height: 40rem)"
 const subscribeTimelineRoom = (onChange: () => void) => {
   const mq = window.matchMedia(TIMELINE_ROOM_QUERY)
   mq.addEventListener("change", onChange)
@@ -516,16 +509,6 @@ const RECENTS_KEY = storageKey("palette-recents")
  */
 const GALLERY_SEEN_KEY = storageKey("gallerySeen")
 
-/**
- * Whether the left dock is open.
- *
- * The ROOT toggle only — which rows inside it are open stays per-session, because
- * a row is where you happen to be working and the dock as a whole is how much of
- * the screen you want the app to take. Someone who works collapsed on a laptop
- * re-collapses it every single time the page loads otherwise, which is a click
- * that means "you already knew this".
- */
-const DOCK_OPEN_KEY = storageKey("dockOpen")
 
 /** The repository. It is also where the manuals live, linked from the README —
  *  so the app carries ONE outbound link rather than a help menu that has to be
@@ -1521,12 +1504,9 @@ function CastLine({
   return (
     // -mx-1 px-1: the highlight breathes past the text without moving it. On
     // the cover there is no highlight: the actions arriving are the hover.
-    // On touch there is no hover to reveal anything, so the actions stand in
-    // the row beside the text at finger size, and the text truncates before
-    // them instead of fading under them.
     <span
       data-revealed={revealed || undefined}
-      className={cn("group relative -mx-1 flex h-5 items-center rounded-interior px-1 transition-colors pointer-coarse:h-7", !cover && "hover:bg-white/[0.05]")}
+      className={cn("group relative -mx-1 flex h-5 items-center rounded-interior px-1 transition-colors", !cover && "hover:bg-white/[0.05]")}
     >
       {/* The reserve ends a long name clear of the button zone entirely — the
           buttons appear on empty reserve, never on text, so the row's own
@@ -1535,7 +1515,7 @@ function CastLine({
           for them to fix.) */}
       <span
         data-yield={cover || undefined}
-        className="flex min-w-0 flex-1 items-center pointer-coarse:pr-1!"
+        className="flex min-w-0 flex-1 items-center"
         style={{ [cover ? "--yield" : "paddingRight"]: `${reserve}rem` } as React.CSSProperties}
       >
         {text}
@@ -1544,7 +1524,6 @@ function CastLine({
         className={cn(
           "absolute inset-y-0 right-0.5 flex items-center gap-0.5 transition-opacity duration-233 group-hover:opacity-100 focus-within:opacity-100",
           revealed ? "opacity-100" : "opacity-0",
-          "pointer-coarse:static pointer-coarse:shrink-0 pointer-coarse:opacity-100",
         )}
       >
         {actions}
@@ -1582,17 +1561,17 @@ function draftOriginOf(community: { id: string; mine: boolean }[], editedId: str
 // keys the shipped editor writes: it is one panel per kind, and dragging the
 // node editor somewhere on one route only to find it back in the middle on the
 // other would be the layout forgetting something it plainly knows.
-const GRAPH_PANEL_KEY = storageKey("graphPanel")
-const GRADE_PANEL_KEY = storageKey("gradePanel")
-const WGSL_PANEL_KEY = storageKey("wgslPanel")
+const GRAPH_PANEL_KEY = storageKey("graphPanel.v2")
+const GRADE_PANEL_KEY = storageKey("gradePanel.v2")
+const WGSL_PANEL_KEY = storageKey("wgslPanel.v2")
 
-/** First-open default: bottom-centred, clear of both docks and the transport. */
+/** First-open default: centred on the screen, clear of both docks. */
 function defaultPanelRect(): Rect {
   const vw = window.innerWidth
   const vh = window.innerHeight
   const w = Math.max(360, Math.min(vw - 648, 1200, vw - 48))
-  const h = Math.min(460, vh - 96)
-  return { x: Math.round((vw - w) / 2), y: Math.max(8, vh - h - 76), w, h }
+  const h = Math.min(560, vh - 160)
+  return { x: Math.round((vw - w) / 2), y: Math.max(8, Math.round((vh - h) / 2)), w, h }
 }
 
 /** The empty file-slot invitation — muted, underlined, and ITSELF the button.
@@ -1693,7 +1672,6 @@ function CastAction({
       className={cn(
         "shrink-0 rounded-chip text-muted-foreground hover:bg-white/10",
         compact ? "size-4" : "size-5",
-        "pointer-coarse:size-6",
         danger ? "hover:text-red-400" : "hover:text-foreground",
       )}
     >
@@ -1766,9 +1744,6 @@ function ClipRow({
   menu?: { label: string; items: { key: string; label: string; checked?: boolean; onPick: () => void }[] }
 }) {
   const t = useT()
-  // On touch the actions are always on screen, so an empty slot shows none:
-  // its own invite is the upload, and the rest would be disabled.
-  const touch = useTouch()
   // Deleting a clip asks first. Not window.confirm — see ConfirmDialog.
   const [confirming, setConfirming] = useState(false)
   // The level's popover hangs off a button that hover alone would hide the
@@ -1813,7 +1788,6 @@ function ClipRow({
                 )
               }
               actions={
-                touch && !clip ? null : (
                 <>
                   {/* Upload, edit, delete — the order the row is used in. Putting a
                       file here is what an empty row is FOR, editing needs one, and
@@ -1872,7 +1846,6 @@ function ClipRow({
                     onClick={() => (confirmSnoozed("delete-clip") ? onRemove() : setConfirming(true))}
                   />
                 </>
-                )
               }
             />
           </span>
@@ -2697,12 +2670,8 @@ function Lab() {
   const framing = useRenderFraming()
   const [exportOpen, setExportOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
-  // Layout and hit size, asked separately — lib/device.ts. On touch none of
-  // the look editors (node graph, WGSL, grade) is offered, as the timeline is
-  // not: a phone picks and tunes looks, it does not author them.
-  const compact = useCompact()
-  const touch = useTouch()
-  // A phone gets the scene and its transport, play only (globals.css, "Phone").
+  // A phone (or a tablet) gets the scene and its transport, play only
+  // (globals.css, "Phone"; lib/device.ts).
   const phone = usePhone()
   // The art director: a side panel, canvas live — you watch it work.
   const [agentOpen, setAgentOpen] = useState(false)
@@ -2764,28 +2733,22 @@ function Lab() {
   // from publish, say) the frame on screen holds, so the picture eases from one
   // frame to the other and never springs back to the window between them.
   const shownFrame =
-    framing.activeFrame ?? (!compact && (shareOpen || exportOpen) ? { aspect: 16 / 9, watermark: false } : null)
+    framing.activeFrame ?? (shareOpen || exportOpen ? { aspect: 16 / 9, watermark: false } : null)
   const framed = shownFrame !== null
   const frameRect =
     shownFrame && framing.frameVp
       ? (() => {
-          // On a phone the export panel hangs over the top of the screen, so
-          // the frame takes the band between the panel's furthest reach (the
-          // sheet's 3.75rem + 60dvh, see COMPACT_SHEET) and the transport.
-          // A fixed band rather than the panel's measured edge, so the frame
-          // does not move as the panel's own lines come and go.
-          //
-          // On a desktop the frame takes the space the cover's chrome leaves
+          // The frame takes the space the cover's chrome leaves
           // free, 2rem clear of it — right of the console's words (its 25rem
           // less the pane rows' 1rem inset), left of the export column (18rem
           // at right-7), under the top row and over the transport (4rem each) — so every word stands on the black
           // matte and none straddles the frame's edge. The preview is only
           // drawn smaller: the export renders at its own resolution.
           const rem = 16
-          const left = compact ? 0 : 26 * rem
-          const right = compact ? framing.frameVp.w : framing.frameVp.w - 21.75 * rem
-          const top = compact ? (exportOpen ? 3.75 * rem + 0.6 * framing.frameVp.h + 0.5 * rem : 0) : 4 * rem
-          const bottom = compact ? (exportOpen ? framing.frameVp.h - 4.25 * rem : framing.frameVp.h) : framing.frameVp.h - 4 * rem
+          const left = 26 * rem
+          const right = framing.frameVp.w - 21.75 * rem
+          const top = 4 * rem
+          const bottom = framing.frameVp.h - 4 * rem
           const vw = right - left
           const vh = bottom - top
           const va = vw / vh
@@ -2799,7 +2762,7 @@ function Lab() {
           // Set from the band's left edge — 26rem, the search box's — rather
           // than centred in it, so the picture lines up under the search.
           return {
-            x: compact ? left + (vw - w) / 2 : left,
+            x: left,
             y: top + (vh - h) / 2,
             w,
             h,
@@ -2947,13 +2910,12 @@ function Lab() {
   /**
    * Whether there is room to unfold the timeline at all.
    *
-   * The lanes are a HEIGHT: unfolded they take a third of a desktop window and
-   * all of a phone, which leaves the canvas — the thing being edited — as a
-   * strip. A control that can only make the view worse is not a choice, so on a
-   * coarse pointer or a short window the chevron is simply not there.
+   * The lanes are a HEIGHT: unfolded they take a third of the window, and in a
+   * short one they leave the canvas — the thing being edited — as a strip. A
+   * control that can only make the view worse is not a choice, so in a short
+   * window the chevron is simply not there.
    *
-   * Subscribed rather than read once: a phone rotating and a window dragged
-   * shorter are the same event to this. Through useSyncExternalStore because
+   * Subscribed rather than read once: a window dragged shorter changes it. Through useSyncExternalStore because
    * that is what it is — the browser holds the value, React reads it — and it
    * has a server snapshot, so the markup does not disagree with itself the way
    * a matchMedia call in a state initializer would.
@@ -4033,44 +3995,8 @@ function Lab() {
     const id = setTimeout(() => setMounted(true), 0)
     return () => clearTimeout(id)
   }, [])
-  // Restored from storage — the ROOT toggle, not the row and tab selections
-  // below, which stay per-session. Collapsing the dock is a standing preference
-  // about how much screen the app gets, and re-collapsing it on every load is a
-  // click that tells you nothing. Only ever set by the toggle itself, so the
-  // stored value is always something the person chose.
-  //
-  // Nothing stored yet falls back to the device rule: a coarse pointer starts
-  // collapsed. Read lazily rather than in an effect, so the first paint is the
-  // real state and the dock does not open and then shut. Same private-mode
-  // tolerance as everywhere else here — storage that throws just means the
-  // preference does not stick.
   // The stack's body, faded at its bottom edge while it scrolls further.
   const [dockBodyRef, dockMore] = useScrollFade<HTMLDivElement>()
-  const [expanded, setExpanded] = useState(() => {
-    if (typeof window === "undefined") return true
-    try {
-      const stored = window.localStorage.getItem(DOCK_OPEN_KEY)
-      if (stored === "0" || stored === "1") return stored === "1"
-    } catch {
-      // private mode — fall through to the device default
-    }
-    return !isTouch() && !isMobileAgent()
-  })
-  /** Set when a phone panel pushed the stack away, so closing it brings the
-   *  stack back. */
-  const dockReturns = useRef(false)
-  /** The dock's only way in or out, so the preference cannot be written by one
-   *  caller and skipped by another. */
-  const setDockExpanded = useCallback((next: boolean) => {
-    // Your own toggle outranks a pending hand-back (see the dock's slot below).
-    dockReturns.current = false
-    setExpanded(next)
-    try {
-      window.localStorage.setItem(DOCK_OPEN_KEY, next ? "1" : "0")
-    } catch {
-      // private mode — the dock still opens, it just forgets by the next load
-    }
-  }, [])
   // The dock joins the desktop stack the libraries already live in: clicking
   // (or tabbing into) it raises it over an open library, clicking the library
   // raises it back. No Escape closer — Escape keeps closing the topmost
@@ -4296,50 +4222,18 @@ function Lab() {
   const noteArrival = useCallback((id: string) => setUnstyled((prev) => (prev.includes(id) ? prev : [...prev, id])), [])
   const noteStyled = useCallback((id: string) => setUnstyled((prev) => prev.filter((x) => x !== id)), [])
 
-  /**
-   * Give up the right column, without handing the timeline to somebody else.
-   *
-   * `editingModelId` falls back to `inspectedId`, so dropping the inspector
-   * while the fold is open moves the dopesheet onto another character — which
-   * is the one thing a panel closing must not do, and it became reachable the
-   * moment selecting a bone started evicting this panel. Pinning what the fold
-   * is ALREADY editing makes the fallback moot; an explicit target set by a
-   * clip row's edit button is left exactly as it is.
-   */
-  const closeMaterials = useCallback(() => {
-    if (timelineUnfolded && editingModelId) {
-      setEditTarget((t) => t ?? { modelId: editingModelId, kind: editingKind })
-    }
-    setInspectedId(null)
-  }, [timelineUnfolded, editingModelId, editingKind, setEditTarget, setInspectedId])
   const closeExport = useCallback(() => setExportOpen(false), [setExportOpen])
   // One panel in the right column, and the column decides — see use-dock-slot.
-  // The pairwise clears that used to live in the two openers below are gone with
-  // it: three panels is where writing the rule per pair stops working. On a
-  // desktop the materials are the console's Materials pane, on the left, so
-  // they share the column with nothing; on a phone every panel is the sheet.
-  useDockSlot("materials", compact && inspectedId !== null, closeMaterials)
+  // The materials are the console's Materials pane, on the left, so they share
+  // the column with nothing.
   useDockSlot("export", exportOpen, closeExport)
-  // On a phone the stack and the right-hand panels open in the same place, so
-  // they share the column too. A panel that pushes the stack away hands it back
-  // when it closes: you went to materials FROM the stack, and closing them
-  // should land you where you were.
-  useDockSlot("dock", compact && expanded, () => {
-    dockReturns.current = true
-    setExpanded(false)
-  })
-  useDockSlot("agent", compact && agentOpen, () => setAgentOpen(false))
-  // Through the editor's own close, so unsaved work is still asked about.
-  useDockSlot("grade", compact && gradeEditor !== null, requestCloseGradeEditor)
-  // The libraries and the gallery fill the screen on a phone, so they take
-  // their turn too: whatever opened last is the one on screen.
   const browseOpen = !!graphLib || gradeLibOpen || effectLibOpen
   // A LIBRARY STANDS BESIDE ITS PANE on the cover: Materials brings the shader
   // graphs, Effect the effects, Post's Grade tab the grades. The pane holds what
   // the scene wears and what it applies to; the library beside it is where
   // another comes from. One right-hand column at a time, so a library opened
   // on its own, or the render, publish or AI column, takes the place first.
-  const besidePane = !compact && !browseOpen && !exportOpen && !shareOpen && !agentOpen && !timelineUnfolded
+  const besidePane = !browseOpen && !exportOpen && !shareOpen && !agentOpen && !timelineUnfolded
   const graphBeside = besidePane && pane === "materials" && inspectedId !== null
   const effectBeside = besidePane && pane === "effect"
   const gradeBeside = besidePane && pane === "post" && postTab === "grade"
@@ -4362,29 +4256,13 @@ function Lab() {
   // The newest column wins: going to a pane that brings a library puts the
   // art director away. Render and publish keep theirs: the frame is fitted to
   // them and they hold the job in hand, so a pane opened then works alone.
-  const libraryPane = !compact && (pane === "materials" || pane === "effect" || (pane === "post" && postTab === "grade"))
+  const libraryPane = (pane === "materials" || pane === "effect" || (pane === "post" && postTab === "grade"))
   const [seenLibraryPane, setSeenLibraryPane] = useState(libraryPane ? `${pane}:${postTab}` : null)
   const libraryPaneKey = libraryPane ? `${pane}:${postTab}` : null
   if (libraryPaneKey !== seenLibraryPane) {
     setSeenLibraryPane(libraryPaneKey)
     if (libraryPaneKey && agentOpen) setAgentOpen(false)
   }
-  useDockSlot("browse", compact && browseOpen, closeBrowse)
-  useEffect(() => {
-    if (
-      !expanded &&
-      dockReturns.current &&
-      compact &&
-      inspectedId === null &&
-      !exportOpen &&
-      !agentOpen &&
-      gradeEditor === null &&
-      !browseOpen
-    ) {
-      dockReturns.current = false
-      setExpanded(true)
-    }
-  }, [compact, expanded, inspectedId, exportOpen, agentOpen, gradeEditor, browseOpen])
 
   const openMaterials = useCallback(
     (id: string | null) => {
@@ -4396,7 +4274,6 @@ function Lab() {
       // The materials live in the console's Materials pane, so every way in lands there.
       setOpenRow(null)
       setDockGroup("materials")
-      setExpanded(true)
       // You came and looked — the suggestion has been taken.
       noteStyled(id)
     },
@@ -4630,7 +4507,6 @@ function Lab() {
     },
     [inspectedId, inspectedGroups],
   )
-  const openGraphLibrary = useCallback((groupId: string | null) => openBrowse({ kind: "graph", groupId }), [openBrowse])
 
   const [gallerySeen, setGallerySeen] = useState(
     () => typeof window !== "undefined" && !!window.localStorage.getItem(GALLERY_SEEN_KEY),
@@ -4873,12 +4749,9 @@ function Lab() {
   // One path, so the two can never drift.
   type ModelTarget = { mode: "add" } | { mode: "replace"; id: string } | { mode: "stage" } | { mode: "prop" }
   const modelTarget = useRef<ModelTarget>({ mode: "add" })
-  // A folder with a mouse, a zip on touch — phones have no directory picker.
-  // One shape per device, so add and replace always agree about what an upload
-  // is. An input carrying `webkitdirectory` can only pick a directory, hence two
-  // elements.
+  // A folder: add and replace pick the same shape, so they always agree about
+  // what an upload is.
   const folderInput = useRef<HTMLInputElement>(null)
-  const zipInput = useRef<HTMLInputElement>(null)
   /** A GLB stage is ONE file, so it gets an input that takes one — and an input
    *  carrying `webkitdirectory` can only take a directory, which is why this is
    *  a second element rather than a second accept. Picking the folder instead
@@ -4892,7 +4765,7 @@ function Lab() {
 
   const pickModel = (target: ModelTarget) => {
     modelTarget.current = target
-    ;(isTouch() ? zipInput : folderInput).current?.click()
+    folderInput.current?.click()
   }
 
   /** The same upload, from the one file a Blender stage is. */
@@ -5804,8 +5677,7 @@ function Lab() {
   // screen, which is the reshuffle-under-the-cursor this whole dance avoids.
   const [paletteSession, setPaletteSession] = useState(0)
   // The cover's search bar: the palette opens out of it, its input where the
-  // bar's word was. Null where there is no bar (the phone), and the palette
-  // takes its own place.
+  // bar's word was.
   const searchBarRef = useRef<HTMLButtonElement>(null)
   const [paletteAnchor, setPaletteAnchor] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   // Up from the open until the panel has finished shrinking back: the bar
@@ -5895,11 +5767,6 @@ function Lab() {
         object?: "plane" | "prop"
       },
     ) => {
-      // Not setDockExpanded: a goto opens the dock to show you somewhere, which
-      // is not the same as asking for it open. Someone who works collapsed and
-      // jumps to a control through the palette should still find it collapsed
-      // next load — the toggle is the only thing that states a preference.
-      setExpanded(true)
       // A Scene row opens; a group anchor ("group-cast") selects its pane.
       const isRow = layers.some((l) => l.id === target)
       if (isRow) setOpenRow(target)
@@ -5963,7 +5830,6 @@ function Lab() {
           // The camera belongs to the SCENE, so it needs no cast; a motion and
           // an expression belong to a character.
           if (c.id === "edit-motion" || c.id === "edit-morph") return timelineRoom && cast.length > 0
-          if (c.id === "graph-new" || c.id === "wgsl-new" || c.id === "grade-new") return !touch
           return true
         })
         .map((c) => {
@@ -6008,7 +5874,7 @@ function Lab() {
           const value = DOCK_CONTROLS.find((x) => `ctl-${x.id}` === c.id)?.value?.(valuesShown)
           return value ? { ...c, value } : c
         }),
-    [commands, valuesShown, t, cast.length, timelineRoom, timelineUnfolded, touch, backing],
+    [commands, valuesShown, t, cast.length, timelineRoom, timelineUnfolded, backing],
   )
 
   // ── Undo / redo for the scene's configuration ──
@@ -7109,30 +6975,21 @@ function Lab() {
       // one place.
       else if (item.id === "graph-new") openGraphLibEdit("", t.library.newGraph, structuredClone(DEFAULT_GRAPH))
       // The libraries stand beside their panes, so on the cover each opens its pane.
-      else if (item.id === "graph-lib") {
-        if (compact) openGraphLibrary(activeGroupId)
-        else openMaterials(inspected?.id ?? primaryId)
-      }
+      else if (item.id === "graph-lib") openMaterials(inspected?.id ?? primaryId)
       else if (item.id === "wgsl-new")
         openEffectEditor({
           id: "",
           name: t.effectLibrary.newEffect,
           wgsl: NEW_EFFECT_TEMPLATE,
         })
-      else if (item.id === "effect-lib") {
-        if (compact) openBrowse({ kind: "effect" })
-        else gotoSection("effect")
-      }
+      else if (item.id === "effect-lib") gotoSection("effect")
       else if (item.id === "grade-new")
         cmdRef.current.openGradeEditor({
           id: "",
           name: t.gradeLibrary.newGrade,
           spec: NEW_GRADE_SPEC,
         })
-      else if (item.id === "grade-lib") {
-        if (compact) openBrowse({ kind: "grade" })
-        else gotoSection("post", { post: "grade" })
-      }
+      else if (item.id === "grade-lib") gotoSection("post", { post: "grade" })
       else if (item.id === "outline") patch("outline", { enabled: !outlineRef.current })
       else if (item.id === "hideUi") setUiHidden(true)
       else if (item.id === "eyes") setSettings((s2) => ({ ...s2, eyes: { enabled: !s2.eyes.enabled } }))
@@ -7173,7 +7030,6 @@ function Lab() {
       // string to be forgotten.
       t,
       recentIds,
-      compact,
       gotoSection,
       openMaterials,
       // The RESOLVED id, not the raw one — the raw id can name a model that has
@@ -7188,10 +7044,7 @@ function Lab() {
       openExport,
       openShare,
       openAgent,
-      openGraphLibrary,
-      openBrowse,
       openGallery,
-      activeGroupId,
       openEffectEditor,
       setUiHidden,
       // A ref object, so it never changes and costs this memo nothing — listed
@@ -7212,8 +7065,7 @@ function Lab() {
   // handed nothing to aim.
   const effectFxAimable = (effectSurface[effectFxUid]?.readsCast ?? false) && cast.length > 1
 
-  // The art director's panel body, worn by a sheet on a phone and set as a
-  // column of type on the cover everywhere else.
+  // The render panel's body, set as a column of type on the cover.
   const exportBody = (
     <RenderPanel
       active={exportOpen}
@@ -7262,39 +7114,23 @@ function Lab() {
 
   const agentBody = (
     <>
-            {compact ? (
-              <div className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 py-2.5">
-                <Astroid className="size-4 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate text-xs font-medium">{t.lab.agent.title}</span>
-                <AgentMenu
-                  settings={aiSettings}
-                  active={aiActive}
-                  premium={premium}
-                  open={aiMenuOpen}
-                  onOpenChange={setAiMenuOpen}
-                  text={t.lab.agent.settings}
-                />
-                <CastAction icon={X} label={t.lab.agent.close} onClick={() => setAgentOpen(false)} />
-              </div>
-            ) : (
-              // On the cover the column is headed like the console's byline: a
-              // mono line, its actions as words, and the tab line as its rule.
-              <div data-ink-zone className="flex h-5 shrink-0 items-center gap-4 px-4">
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">{t.lab.agent.title}</span>
-                <AgentMenu
-                  settings={aiSettings}
-                  active={aiActive}
-                  premium={premium}
-                  open={aiMenuOpen}
-                  onOpenChange={setAiMenuOpen}
-                  text={t.lab.agent.settings}
-                  word={t.lab.agent.keys}
-                />
-                <Button variant="bare" aria-label={t.lab.agent.close} onClick={() => setAgentOpen(false)} className="flex size-5 items-center justify-center text-muted-foreground hover:text-foreground">
-                  <X className="size-3.5" />
-                </Button>
-              </div>
-            )}
+            {/* Headed like the console's byline: a mono line, its actions as
+                words, and the tab line as its rule. */}
+            <div data-ink-zone className="flex h-5 shrink-0 items-center gap-4 px-4">
+              <span className="min-w-0 flex-1 truncate text-sm font-medium">{t.lab.agent.title}</span>
+              <AgentMenu
+                settings={aiSettings}
+                active={aiActive}
+                premium={premium}
+                open={aiMenuOpen}
+                onOpenChange={setAiMenuOpen}
+                text={t.lab.agent.settings}
+                word={t.lab.agent.keys}
+              />
+              <Button variant="bare" aria-label={t.lab.agent.close} onClick={() => setAgentOpen(false)} className="flex size-5 items-center justify-center text-muted-foreground hover:text-foreground">
+                <X className="size-3.5" />
+              </Button>
+            </div>
             <AgentTabs
               tabs={agent.tabs}
               activeId={agent.activeId}
@@ -7504,233 +7340,97 @@ function Lab() {
           stops a pill and a panel of different widths sitting on top of each
           other. */}
       {mounted && (
-        // Type on the canvas, so its buttons wear the cover's look; the phone's
-        // pills are surfaces.
-        <Cover on={!compact}>
-        <div data-edge="top" data-ink-zone={!compact || undefined} className="pointer-events-none absolute top-5 right-6 left-7 flex items-start gap-2 compact:top-3 compact:right-3 compact:left-3 compact:gap-1.5">
+        // Type on the canvas, so its buttons wear the cover's look.
+        <Cover>
+        <div data-edge="top" data-ink-zone className="pointer-events-none absolute top-5 right-6 left-7 flex items-start gap-2">
           {/* The cover's top row: the wordmark (it is the file menu) and the
               ways out on the left, Export and Share on the right. */}
-          {!compact && (
-            <>
-              <div className="cover-type pointer-events-auto flex h-8 items-center gap-7 text-xs">
-                {/* The version stands by the wordmark, as an issue number
-                    stands by a magazine's masthead; only the wordmark is the menu. */}
-                <span className="flex items-center gap-4">
-                  <SceneFileMenu
-                    align="start"
-                    onNew={newScene}
-                    onExport={exportScene}
-                    onImport={importScene}
-                    onReset={resetSceneDefaults}
-                    // Instrument Serif has one weight; a stroke in its own colour
-                    // gives the masthead a little more.
-                    trigger={
-                      <span className="flex items-center py-1 font-display text-masthead tracking-[0.45em] text-foreground uppercase [-webkit-text-stroke:0.3px_currentColor]">
-                        Reze Design
-                      </span>
-                    }
-                  />
-                  <span className="font-mono text-2xs text-foreground">v{VERSION_LABEL}</span>
-                </span>
-                {/* The source, by the version it is the source of. */}
-                <Button
-                  variant="bare"
-                  onClick={() => window.open(REPO_URL, "_blank", "noreferrer")}
-                  className="text-foreground"
-                >
-                  GitHub
-                </Button>
-                <Button
-                  variant="bare"
-                  onClick={() => openGallery()}
-                  className="text-foreground hover:text-muted-foreground"
-                >
-                  <Slot text={t.lab.gallery} mark={dictionaries.en.lab.gallery} />
-                </Button>
-                {/* A search box drawn as a hairline frame, the palette's own: the
-                    palette grows out of it. The frame takes no room, so the
-                    words sit where the palette's input will. The row's gaps
-                    set it past the console's pane, so the palette opens clear
-                    of it. */}
-                <Button
-                  ref={searchBarRef}
-                  data-search-bar
-                  variant="bare"
-                  onClick={openPalette}
-                  aria-label={t.lab.searchCommands}
-                  // While the palette is up its own input stands here, on the
-                  // same pixels; the bar is back only once the palette has
-                  // shrunk into it and gone (globals.css, "PAPER").
-                  className={cn(
-                    "absolute top-0 left-[24.25rem] flex h-8 w-52 items-center gap-2 px-3 text-muted-foreground after:absolute after:inset-0 after:rounded-interior after:border after:border-line-strong",
-                    (paletteOpen || paletteUp) && "invisible",
-                  )}
-                >
-                  <Search className="size-3.5 shrink-0" strokeWidth={1.5} />
-                  <span className="flex-1 text-left">{t.lab.find}</span>
-                  <kbd className="flex h-4 min-w-4 items-center justify-center rounded-chip border border-line px-1 font-mono text-2xs pointer-coarse:hidden">
-                    F
-                  </kbd>
-                </Button>
-              </div>
-            </>
-          )}
-          {/* Same 17rem as the open panel: this is a DROPDOWN, not a sidebar —
-            expanding only grows downward, so nothing ever shifts sideways. */}
-          {/* On a phone the pill stays while the stack is open: the stack hangs
-              below the top bar there, so the pill is its header. */}
-          {compact && (
-            <div className={cn(PILL, "pointer-events-auto flex h-10 w-[16rem] items-center gap-1.5 pr-1.5 pl-2 compact:w-auto compact:min-w-0 compact:flex-1 compact:gap-0.5 compact:pr-1 compact:pl-1")}>
-              {/* The logo is the menu, in both of its homes — scene-file-menu.tsx
-                  for why. The stack is not on screen here, so this pill's logo is
-                  the only door to the file operations. */}
+          <div className="cover-type pointer-events-auto flex h-8 items-center gap-7 text-xs">
+            {/* The version stands by the wordmark, as an issue number
+                stands by a magazine's masthead; only the wordmark is the menu. */}
+            <span className="flex items-center gap-4">
               <SceneFileMenu
+                align="start"
                 onNew={newScene}
-                onGallery={openGallery}
                 onExport={exportScene}
                 onImport={importScene}
                 onReset={resetSceneDefaults}
+                // Instrument Serif has one weight; a stroke in its own colour
+                // gives the masthead a little more.
                 trigger={
-                  <span className="flex size-7 shrink-0 items-center justify-center text-pink-400">
-                    <WandSparkles className="size-4.5" />
+                  <span className="flex items-center py-1 font-display text-masthead tracking-[0.45em] text-foreground uppercase [-webkit-text-stroke:0.3px_currentColor]">
+                    Reze Design
                   </span>
                 }
               />
-              <span className="whitespace-nowrap pb-0.5 text-sm font-semibold tracking-tight text-foreground">
-                Reze Design
-              </span>
-              {/* The same row as the open stack's header, so nothing moves as you
-                  toggle; the scene name lives in the open stack. Tighter on a
-                  phone, where the row shares the bar with search and Share. */}
-              <span className="shrink-0 rounded-full bg-blue-400/15 px-1.5 py-0.5 font-mono text-2xs leading-none font-medium text-blue-400 compact:px-1">
-                {VERSION_LABEL}
-              </span>
-              <Button
-                variant="ghost"
-                size="icon"
-                asChild
-                className="size-7 shrink-0 rounded-interior text-foreground hover:bg-white/5 hover:text-foreground compact:size-6"
-              >
-                <a href={REPO_URL} target="_blank" rel="noreferrer" aria-label="GitHub">
-                  <GithubMark className="size-4" />
-                </a>
-              </Button>
-              {/* Chevron, not a panel icon: it points where the content will go,
-                the same law as the timeline's toggle. */}
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setDockExpanded(!expanded)}
-                aria-label={expanded ? t.lab.collapsePanel : t.lab.expandPanel}
-                className="ml-auto size-7 shrink-0 rounded-interior text-muted-foreground hover:bg-white/5 hover:text-foreground compact:size-6"
-              >
-                {expanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
-              </Button>
-            </div>
-          )}
-
-          {/* ── The right cluster ──
-              EXACTLY 16rem, the width of the panels below it. Both are anchored
-              to the same right inset, so the two left edges are the same edge by
-              construction — where a ResizeObserver used to measure the pills and
-              hand the panels a pixel value. Fixing the column and letting the
-              pills fill it is the same alignment with none of the arithmetic,
-              and nothing to re-derive when a label is translated or the account
-              chip changes with sign-in state.
-
-              The palette takes the slack (flex-1) rather than the account pill:
-              slack inside that pill would open a hole between the avatar and
-              Share, while a wider search pill is just a wider search pill. It
-              lands at 10.75rem, a quarter of a rem off the width it was hand-set
-              to — which is the check that the number was right.
-
-              All pills state h-10 rather than deriving it from contents. Derived
-              heights agreed only while every pill happened to hold size-7
-              children — one control with a different variant height and they
-              silently disagree, which is exactly what happened here. */}
-          <div className={cn("ml-auto flex shrink-0 items-center gap-1 compact:items-start compact:gap-2", !compact && "cover-type")}>
-            {/* The palette needs a visible door — keyboard-only would hide it
-                from exactly the people most likely to miss it, and it is the
-                only route on touch. The button IS the pill: a wrapper around a
-                single control leaves a ring of padding the hover cannot reach. */}
-            {compact && (
+              <span className="font-mono text-2xs text-foreground">v{VERSION_LABEL}</span>
+            </span>
+            {/* The source, by the version it is the source of. */}
             <Button
-              variant="ghost"
+              variant="bare"
+              onClick={() => window.open(REPO_URL, "_blank", "noreferrer")}
+              className="text-foreground"
+            >
+              GitHub
+            </Button>
+            <Button
+              variant="bare"
+              onClick={() => openGallery()}
+              className="text-foreground hover:text-muted-foreground"
+            >
+              <Slot text={t.lab.gallery} mark={dictionaries.en.lab.gallery} />
+            </Button>
+            {/* A search box drawn as a hairline frame, the palette's own: the
+                palette grows out of it. The frame takes no room, so the
+                words sit where the palette's input will. The row's gaps
+                set it past the console's pane, so the palette opens clear
+                of it. */}
+            <Button
+              ref={searchBarRef}
+              data-search-bar
+              variant="bare"
               onClick={openPalette}
               aria-label={t.lab.searchCommands}
+              // While the palette is up its own input stands here, on the
+              // same pixels; the bar is back only once the palette has
+              // shrunk into it and gone (globals.css, "PAPER").
               className={cn(
-                "compact:rounded-surface compact:border compact:border-line-strong compact:bg-surface compact:shadow-float compact:backdrop-blur-xs",
-                // Left-aligned, so the word starts in the same place whatever
-                // the language.
-                //
-                // ONE word, in both. The label had been written to fill this
-                // pill — "Search commands", and a zh label sized to match it —
-                // which only worked while the pill was as wide as it was drawn
-                // at. It is the only flex-1 in a cluster fixed at 16rem, so it
-                // absorbs every change around it, and it ended up ~10px short
-                // of its own label: "Search comm…", a truncation in the one
-                // control whose whole job is to be legible at a glance.
-                //
-                // A door named for what is behind it, and what is behind it is
-                // a search field. The F cap beside it says the rest.
-                "pointer-events-auto h-8 min-w-0 justify-start gap-2 px-2 text-xs text-foreground hover:bg-transparent compact:h-10 compact:w-10 compact:flex-none compact:justify-center compact:px-0",
+                "absolute top-0 left-[24.25rem] flex h-8 w-52 items-center gap-2 px-3 text-muted-foreground after:absolute after:inset-0 after:rounded-interior after:border after:border-line-strong",
+                (paletteOpen || paletteUp) && "invisible",
               )}
             >
-              {/* min-w-0 + truncate, because this is the only shrinkable thing
-                  in a fixed-width cluster. Without it the button floors at its
-                  own min-content, the row cannot fit 16rem, and the whole
-                  cluster is pushed past the right edge — which is exactly what
-                  narrowing the docks from 18rem exposed. */}
-              <Search className="size-4" strokeWidth={1.5} />
-              <span className="min-w-0 truncate compact:hidden">{t.lab.searchCommands}</span>
-              {/* A key cap, so it should read as one: fixed height, centred, and the
-              two glyphs spaced by a real gap rather than letter-spacing — which
-              adds its space AFTER the K and pushes the pair off-centre. */}
-              <kbd className="inline-flex h-4 compact:hidden pointer-coarse:hidden shrink-0 items-center justify-center gap-[3px] font-mono text-2xs leading-none text-foreground">
-                <span className="text-2xs">⌘</span>
-                <span>K</span>
+              <Search className="size-3.5 shrink-0" strokeWidth={1.5} />
+              <span className="flex-1 text-left">{t.lab.find}</span>
+              <kbd className="flex h-4 min-w-4 items-center justify-center rounded-chip border border-line px-1 font-mono text-2xs">
+                F
               </kbd>
             </Button>
-            )}
-
-            {/* The account menu hangs from this whole pill, right edges aligned. */}
+          </div>
+          <div className="cover-type ml-auto flex shrink-0 items-center gap-1">
+            {/* The account menu hangs from this whole row, right edges aligned. */}
             <AccountButton onOpenLibrary={openForAccount}>
-              {(account) => (
-            <div className={cn("pointer-events-auto flex h-8 shrink-0 items-center gap-2 compact:h-10 compact:gap-1 compact:px-1", compact && PILL)}>
-              {/* On the cover the account is the byline under the title. */}
-              {compact && account}
+              {() => (
+            <div className="pointer-events-auto flex h-8 shrink-0 items-center gap-2">
               {/* The finished file is first class, so its door stands beside
                   Share at all times; a running export reports here. */}
-              {!compact && (
-                <Button
-                  variant="bare"
-                  onClick={openExport}
-                  className="ml-3 flex h-8 items-center gap-2 text-xs text-foreground"
-                >
-                  {framing.exporting && <span className="size-1.5 animate-pulse rounded-full bg-red-400" />}
-                  {framing.exporting ? t.lab.exporting : <Slot text={t.lab.exportPanel} mark={dictionaries.en.lab.exportPanel} end />}
-                  {framing.exporting && (
-                    <span className="min-w-[4ch] text-right font-mono text-2xs tabular-nums">{exportPct !== null ? `${exportPct}%` : "…"}</span>
-                  )}
-                </Button>
-              )}
+              <Button
+                variant="bare"
+                onClick={openExport}
+                className="ml-3 flex h-8 items-center gap-2 text-xs text-foreground"
+              >
+                {framing.exporting && <span className="size-1.5 animate-pulse rounded-full bg-red-400" />}
+                {framing.exporting ? t.lab.exporting : <Slot text={t.lab.exportPanel} mark={dictionaries.en.lab.exportPanel} end />}
+                {framing.exporting && (
+                  <span className="min-w-[4ch] text-right font-mono text-2xs tabular-nums">{exportPct !== null ? `${exportPct}%` : "…"}</span>
+                )}
+              </Button>
               <Button
                 size="sm"
                 onClick={openShare}
-                // Sized to its label with tight padding, rather than to a
-                // hand-set 3.75rem. Every pixel it gives up goes to the palette
-                // beside it — that is the only flex-1 in a cluster fixed at
-                // 16rem — so the pair still measures exactly what it did, with
-                // more of it spent on the control that has words to show.
-                // The narrowest phones keep the button and lose the word: the
-                // brand row beside it cannot give up any more.
                 aria-label={t.lab.share}
-                className="ml-3 h-8 shrink-0 rounded-none bg-transparent px-0 text-xs font-normal text-foreground hover:bg-transparent compact:ml-0 compact:h-7 compact:rounded-interior compact:bg-blue-400 compact:px-3 compact:font-medium compact:text-on-accent compact:hover:bg-blue-400/90 compact:hover:text-on-accent compact:ml-0 compact:h-7 compact:px-3 max-[24rem]:w-7 max-[24rem]:px-0"
+                className="ml-3 h-8 shrink-0 rounded-none bg-transparent px-0 text-xs font-normal text-foreground hover:bg-transparent"
               >
-                <Share2 className="hidden size-3.5 max-[24rem]:block" />
-                <span className="max-[24rem]:hidden">
-                  <Slot text={t.lab.share} mark={dictionaries.en.lab.share} end />
-                </span>
+                <Slot text={t.lab.share} mark={dictionaries.en.lab.share} end />
               </Button>
             </div>
               )}
@@ -7927,17 +7627,6 @@ function Lab() {
         // @ts-expect-error — non-standard, and the only way to pick a directory.
         webkitdirectory=""
         directory=""
-        className="hidden"
-        onChange={(e) => {
-          void onModelPicked(Array.from(e.target.files ?? []))
-          e.target.value = ""
-        }}
-      />
-
-      <input
-        ref={zipInput}
-        type="file"
-        accept=".zip,application/zip"
         className="hidden"
         onChange={(e) => {
           void onModelPicked(Array.from(e.target.files ?? []))
@@ -8193,7 +7882,7 @@ function Lab() {
         onRenamed={(oldName, newName) =>
           setSettings((s2) => (s2.grade.preset === oldName ? { ...s2, grade: { ...s2.grade, preset: newName } } : s2))
         }
-        onEdit={touch ? undefined : openGradeEditor}
+        onEdit={openGradeEditor}
       />
 
       <EffectLibrary
@@ -8220,7 +7909,7 @@ function Lab() {
         onRenamed={(oldName, newName) =>
           setBgEffects((list) => list.map((e) => (e.name === oldName ? { ...e, name: newName } : e)))
         }
-        onEdit={touch ? undefined : openEffectEditor}
+        onEdit={openEffectEditor}
       />
 
       {/* ── Shader-graph library ──
@@ -8247,7 +7936,7 @@ function Lab() {
         usedNames={usedLookNames}
         onRenamed={renameGroupLooks}
         onApply={applyGraphLibrary}
-        onEdit={touch ? undefined : openGraphLibEdit}
+        onEdit={openGraphLibEdit}
       />
 
       {/* ── Node editor ──
@@ -8265,8 +7954,6 @@ function Lab() {
           onEscape={drawerOpen ? requestCloseGraphDrawer : undefined}
           fullscreen={graphFull}
           className={cn(
-            // The raised surface, opaque: this floats over an animating canvas,
-            // which is exactly when a backdrop-filter costs the most frames.
             "overflow-hidden rounded-surface border border-line-strong bg-surface-raised shadow-float transition-opacity duration-233",
             !drawerOpen && "pointer-events-none opacity-0",
           )}
@@ -8466,46 +8153,31 @@ function Lab() {
           scene's name in the display serif with its facts under it, and a
           numbered index of what can be changed, the chosen entry's controls
           beside it. Its ink follows the scene (globals.css,
-          "The cover").
-
-          On a phone it is a sheet under the top bar instead: there is no
-          margin of canvas beside the figure to set type in, and the index
-          runs across the sheet's top. */}
-      {mounted && (!compact || expanded) && (
+          "The cover"). */}
+      {mounted && (
         <>
           <aside
             data-edge="left"
-            className={cn(
-              "pointer-events-none absolute top-0 left-0 flex max-h-full w-[25rem] flex-col pt-5 pb-16 pl-7 text-xs",
-              !compact && "cover-type dock-backing",
-              compact && "pointer-events-auto rounded-surface border border-line-strong bg-surface p-0 pt-3 shadow-float backdrop-blur-xs",
-              COMPACT_SHEET,
-              "compact:max-h-[calc(100dvh-8rem)]",
-            )}
+            className="cover-type dock-backing pointer-events-none absolute top-0 left-0 flex max-h-full w-[25rem] flex-col pt-5 pb-16 pl-7 text-xs"
             style={{ zIndex: dockZ.z }}
             onPointerDownCapture={dockZ.onPointerDownCapture}
             onFocusCapture={dockZ.onFocusCapture}
           >
-            {!compact && (
-              <>
-                <div data-ink-zone className="pointer-events-auto mt-14 pr-7">
-                  <SceneName name={sceneName} onRename={setSceneName} display className="-ml-1" />
-                  {/* The byline: who made it (the account, which is also its menu) and
-                      the day — a cover's credit and issue date. */}
-                  <p className="mt-2 flex items-center gap-2 font-mono text-2xs tracking-wide text-muted-foreground uppercase">
-                    <AccountButton byline onOpenLibrary={openForAccount} />
-                    <span>·</span>
-                    <span>{new Intl.DateTimeFormat(uiLocale === "zh" ? "zh-CN" : "en-US", { year: "numeric", month: "short", day: "numeric" }).format(new Date())}</span>
-                  </p>
-                </div>
-              </>
-            )}
+            <div data-ink-zone className="pointer-events-auto mt-14 pr-7">
+              <SceneName name={sceneName} onRename={setSceneName} display className="-ml-1" />
+              {/* The byline: who made it (the account, which is also its menu) and
+                  the day — a cover's credit and issue date. */}
+              <p className="mt-2 flex items-center gap-2 font-mono text-2xs tracking-wide text-muted-foreground uppercase">
+                <AccountButton byline onOpenLibrary={openForAccount} />
+                <span>·</span>
+                <span>{new Intl.DateTimeFormat(uiLocale === "zh" ? "zh-CN" : "en-US", { year: "numeric", month: "short", day: "numeric" }).format(new Date())}</span>
+              </p>
+            </div>
 
-            {(expanded || !compact) && (
-              <div data-ink-zone={!compact || undefined} className="mt-10 flex min-h-0 flex-1 items-start compact:mt-0 compact:flex-col compact:items-stretch compact:gap-2">
+              <div data-ink-zone className="mt-10 flex min-h-0 flex-1 items-start">
                 <nav
                   aria-label={t.lab.index}
-                  className="pointer-events-auto cover-enter flex shrink-0 flex-col gap-0.5 compact:no-scrollbar compact:w-auto compact:flex-row compact:gap-4 compact:overflow-x-auto compact:px-4"
+                  className="pointer-events-auto cover-enter flex shrink-0 flex-col gap-0.5"
                 >
                   {[
                     { id: "cast", label: t.lab.groups.cast },
@@ -8547,7 +8219,7 @@ function Lab() {
                         // The whole row takes the click, out to the rule (pr-5 is
                         // the index's gap to it); the underline stays under the words.
                         className={cn(
-                          "group/entry flex h-7 w-full shrink-0 items-center pr-5 text-left text-xs whitespace-nowrap text-foreground compact:w-fit compact:pr-0",
+                          "group/entry flex h-7 w-full shrink-0 items-center pr-5 text-left text-xs whitespace-nowrap text-foreground",
                           // Bolded by a stroke, not a weight: Geist's heavier glyphs
                           // are wider, and a label that re-spaces on selection
                           // reads as drifting. The stroke keeps every advance.
@@ -8580,21 +8252,18 @@ function Lab() {
                     gap-0.5, less half a row), whatever the page holds, and 20px past
                     its longest label — the index is as wide as its words, which
                     in Chinese are two characters. */}
-                {!compact && pane !== null && <span aria-hidden className="h-[23.375rem] w-px shrink-0 bg-line-strong" />}
+                {pane !== null && <span aria-hidden className="h-[23.375rem] w-px shrink-0 bg-line-strong" />}
                 <div
                   ref={dockBodyRef}
                   className={cn(
-                    "pointer-events-auto no-scrollbar max-h-full min-w-0 flex-1 overscroll-contain",
-                    // On the cover each pane scrolls its own body under its tab
-                    // line; the phone's sheet scrolls whole.
-                    compact ? "overflow-y-auto" : "flex flex-col overflow-hidden",
-                    // pt-2 sets the pane's first line on the index's first row.
-                    !compact && "ml-2 pt-2",
+                    // Each pane scrolls its own body under its tab line; pt-2
+                    // sets the pane's first line on the index's first row.
+                    "pointer-events-auto no-scrollbar ml-2 flex max-h-full min-w-0 flex-1 flex-col overflow-hidden overscroll-contain pt-2",
                     pane === null && "hidden",
                     dockMore && SCROLL_FADE,
                   )}
                 >
-                  <Cover on={!compact}>
+                  <Cover>
             <StackGroup
               domId="group-cast"
               open={pane === "cast"}
@@ -8927,7 +8596,7 @@ function Lab() {
                     onCreateGroup={inspectCreateGroup}
                     onRenameGroup={inspectRenameGroup}
                     onDeleteGroup={inspectDeleteGroup}
-                    onEditGroupGraph={touch ? undefined : editGroupGraph}
+                    onEditGroupGraph={editGroupGraph}
                     onMoveMaterial={inspectMoveMaterial}
                     looksSaved={looksSaved}
                     onToggleSavedLooks={inspectedLooksKey ? toggleSavedLooks : undefined}
@@ -9217,7 +8886,7 @@ function Lab() {
                             className={LINE_ACTION}
                           >
                             <Plus className="size-3.5" />
-                            {touch ? t.lab.uploadStageZip : t.lab.uploadStageFolder}
+                            {t.lab.uploadStageFolder}
                           </Button>
                           <Button
                             variant="bare"
@@ -10111,7 +9780,7 @@ function Lab() {
                             // Always available: a scene is always wearing SOME
                             // grade, Neutral included, and editing Neutral is
                             // how a look gets made from nothing.
-                            onEdit={touch ? undefined : editCurrentGrade}
+                            onEdit={editCurrentGrade}
                             editLabel={t.gradeLibrary.edit}
                             placeholder={gradeLabel(grade.preset)}
                           />
@@ -10623,7 +10292,6 @@ function Lab() {
                   </Cover>
                 </div>
               </div>
-            )}
           </aside>
         </>
       )}
@@ -10639,31 +10307,29 @@ function Lab() {
       {mounted && (
         <Button
           // Bare on the cover: the door is a word, with no hover fill.
-          variant={compact ? "ghost" : "bare"}
+          variant="bare"
           onClick={openAgent}
           aria-label={t.lab.agent.title}
-          tabIndex={agentOpen || (!compact && (exportOpen || shareOpen)) ? -1 : undefined}
-          aria-hidden={agentOpen || (!compact && (exportOpen || shareOpen || libraryUp)) || undefined}
+          tabIndex={agentOpen || exportOpen || shareOpen ? -1 : undefined}
+          aria-hidden={agentOpen || exportOpen || shareOpen || libraryUp || undefined}
           data-edge="right"
           className={cn(
             // The mark and "AI" set as type on the canvas, like the console.
             "pointer-events-auto absolute flex items-center gap-2 text-xs text-foreground hover:bg-transparent",
-            compact ? cn(PILL, "top-1/2 right-3 h-10 -translate-y-1/2 px-4 font-medium") : "cover-type top-[calc(5.75rem+min(16rem,50%-5rem))] right-7 h-8 -translate-y-1/2 px-0 hover:text-muted-foreground",
+            "cover-type top-[calc(5.75rem+min(16rem,50%-5rem))] right-7 h-8 -translate-y-1/2 px-0 hover:text-muted-foreground",
             "transition-[opacity,scale,visibility,background-color,color] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
-            (agentOpen || (!compact && (exportOpen || shareOpen || libraryUp))) && "invisible scale-110 opacity-0",
-            // On a phone every panel opens over the band the pillar stands in.
-            compact && (expanded || inspectedId !== null || exportOpen || gradeEditor !== null || browseOpen) && "invisible opacity-0",
+            (agentOpen || exportOpen || shareOpen || libraryUp) && "invisible scale-110 opacity-0",
           )}
         >
           {/* The ink zone is the word, not the door: the door's own fade
               must not give way to the ink's. */}
-          <span data-ink-zone={!compact || undefined} className="flex items-center gap-2 text-foreground">
+          <span data-ink-zone className="flex items-center gap-2 text-foreground">
             <Astroid className="size-3.5" />
             {t.lab.agent.short}
           </span>
         </Button>
       )}
-      {mounted && !compact && (
+      {mounted && (
         <Button
           variant="bare"
           data-edge="left"
@@ -10682,46 +10348,26 @@ function Lab() {
           not lose the conversation or the run. No scrim — you watch the canvas
           change while it works. */}
       {mounted && (
-        compact ? (
-          <Surface
-            placement="side"
-            className={cn(
-              // One height whatever the conversation holds — a dock that grew
-              // with every message would move its own input box.
-              "top-[3.75rem] bottom-auto h-[calc(100%-7.75rem)] compact:h-[calc(100dvh-8rem)] compact:max-h-none",
-              // Grows out of the pillar: scaled from the right edge's middle,
-              // which is where the pillar stands, and folds back into it.
-              "origin-right transition-[opacity,scale,translate,visibility] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
-              !agentOpen && "invisible translate-x-2 scale-x-[0.2] scale-y-[0.1] opacity-0",
-            )}
-            style={{ zIndex: agentZ.z }}
-            onPointerDownCapture={agentZ.onPointerDownCapture}
-            onFocusCapture={agentZ.onFocusCapture}
-          >
-            {agentBody}
-          </Surface>
-        ) : (
-          // On the cover: a column of type at the right edge past a hairline,
-          // the console's divider mirrored. It fades in where the door stands.
-          <aside
-            data-edge="right"
-            className={cn(
-              "cover-type dock-backing absolute top-[5.75rem] right-7 flex h-[min(32rem,calc(100%-10rem))] w-[18rem] flex-col pl-6 text-xs",
-              "transition-[opacity,translate,visibility] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
-              !agentOpen && "invisible translate-x-2 opacity-0",
-            )}
-            style={{ zIndex: agentZ.z }}
-            onPointerDownCapture={agentZ.onPointerDownCapture}
-            onFocusCapture={agentZ.onFocusCapture}
-          >
-            {/* A divider, standing clear of the column it divides from the
-                scene: from the title row's middle to the input row's. */}
-            <div data-ink-zone className="flex min-h-0 flex-1 flex-col">
-              <span aria-hidden data-divider className="absolute top-2.5 bottom-5 left-0 w-px bg-line-strong" />
-              <Cover>{agentBody}</Cover>
-            </div>
-          </aside>
-        )
+        // On the cover: a column of type at the right edge past a hairline,
+        // the console's divider mirrored. It fades in where the door stands.
+        <aside
+          data-edge="right"
+          className={cn(
+            "cover-type dock-backing absolute top-[5.75rem] right-7 flex h-[min(32rem,calc(100%-10rem))] w-[18rem] flex-col pl-6 text-xs",
+            "transition-[opacity,translate,visibility] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
+            !agentOpen && "invisible translate-x-2 opacity-0",
+          )}
+          style={{ zIndex: agentZ.z }}
+          onPointerDownCapture={agentZ.onPointerDownCapture}
+          onFocusCapture={agentZ.onFocusCapture}
+        >
+          {/* A divider, standing clear of the column it divides from the
+              scene: from the title row's middle to the input row's. */}
+          <div data-ink-zone className="flex min-h-0 flex-1 flex-col">
+            <span aria-hidden data-divider className="absolute top-2.5 bottom-5 left-0 w-px bg-line-strong" />
+            <Cover>{agentBody}</Cover>
+          </div>
+        </aside>
       )}
 
       {/* ── Export ──
@@ -10730,91 +10376,47 @@ function Lab() {
           carries the progress; completion downloads by itself (iMovie-quiet),
           so nothing reopens. */}
       {mounted && (
-        compact ? (
-        <Surface
-          placement="side"
-          // Starts BELOW the top-right pills (top-3 + their h-10 + 8px) and hugs
-          // its content like the left dock, capped above the transport: 100%
-          // minus 3.75rem top minus 4rem transport reserve.
+        // On the cover: a column of type at the right edge past a hairline,
+        // where the art director stands when it is open (one at a time).
+        <aside
+          data-edge="right"
           className={cn(
-            "top-[3.75rem] bottom-auto max-h-[calc(100%-7.75rem)]",
-            // Fade only. It used to slide 8px right on the way out, and against
-            // a panel whose left edge is the column's edge that reads as the
-            // panel resizing rather than leaving — the eye tracks the moving
-            // edge, not the fading one. Nothing else in this chrome translates
-            // to dismiss; the inspector simply unmounts.
-            "transition-[opacity,visibility] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
-            !exportOpen && "invisible opacity-0",
+            "cover-type dock-backing absolute top-16 right-7 flex max-h-[calc(100%-9rem)] w-[18rem] flex-col pl-6 text-xs",
+            "transition-[opacity,translate,visibility] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
+            !(exportOpen || shareOpen) && "invisible translate-x-2 opacity-0",
           )}
           style={{ zIndex: exportZ.z }}
           onPointerDownCapture={exportZ.onPointerDownCapture}
           onFocusCapture={exportZ.onFocusCapture}
         >
-          <div className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 py-2.5">
-            <span className="min-w-0 flex-1 truncate text-xs font-medium">{t.lab.exportPanel}</span>
-            <CastAction icon={X} label={t.lab.closeExport} onClick={() => setExportOpen(false)} />
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{exportBody}</div>
-        </Surface>
-        ) : (
-          // On the cover: a column of type at the right edge past a hairline,
-          // where the art director stands when it is open (one at a time).
-          <aside
-            data-edge="right"
-            className={cn(
-              "cover-type dock-backing absolute top-16 right-7 flex max-h-[calc(100%-9rem)] w-[18rem] flex-col pl-6 text-xs",
-              "transition-[opacity,translate,visibility] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
-              !(exportOpen || shareOpen) && "invisible translate-x-2 opacity-0",
-            )}
-            style={{ zIndex: exportZ.z }}
-            onPointerDownCapture={exportZ.onPointerDownCapture}
-            onFocusCapture={exportZ.onFocusCapture}
-          >
-            <div data-ink-zone className="flex min-h-0 flex-1 flex-col">
-            {/* As the art director's: from the title row's middle to the last
-                control's (Render, h-8 over the panel's pb-3). Publishing draws
-                its own, from the same top to its own last control. */}
-            <span aria-hidden data-divider className={cn("absolute top-2.5 bottom-7 left-0 w-px bg-line-strong", shareOpen && "hidden")} />
-            <Cover>
-              {/* The shell export and publish share: a file to keep, a scene to
-                  put online. The title row stays; the contents under it swap,
-                  their rows dealt in as the console's are. */}
-              <div data-ink-zone className="flex h-5 shrink-0 items-center gap-4 px-4">
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                  {shareOpen ? (updatesSceneId ? t.share.updateScene : t.share.title) : t.render.renderVideo}
-                </span>
-                <Button
-                  variant="bare"
-                  aria-label={shareOpen ? t.library.close : t.lab.closeExport}
-                  onClick={() => (shareOpen ? setShareOpen(false) : setExportOpen(false))}
-                  className="flex size-5 items-center justify-center text-muted-foreground hover:text-foreground"
-                >
-                  <X className="size-3.5" />
-                </Button>
-              </div>
-              {/* Kept mounted under publishing (a render must survive it), and
-                  shown again it deals its rows in afresh. */}
-              <div className={cn("mt-2 flex min-h-0 flex-1 flex-col", shareOpen && "hidden")}>{exportBody}</div>
-            </Cover>
+          <div data-ink-zone className="flex min-h-0 flex-1 flex-col">
+          {/* As the art director's: from the title row's middle to the last
+              control's (Render, h-8 over the panel's pb-3). Publishing draws
+              its own, from the same top to its own last control. */}
+          <span aria-hidden data-divider className={cn("absolute top-2.5 bottom-7 left-0 w-px bg-line-strong", shareOpen && "hidden")} />
+          <Cover>
+            {/* The shell export and publish share: a file to keep, a scene to
+                put online. The title row stays; the contents under it swap,
+                their rows dealt in as the console's are. */}
+            <div data-ink-zone className="flex h-5 shrink-0 items-center gap-4 px-4">
+              <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                {shareOpen ? (updatesSceneId ? t.share.updateScene : t.share.title) : t.render.renderVideo}
+              </span>
+              <Button
+                variant="bare"
+                aria-label={shareOpen ? t.library.close : t.lab.closeExport}
+                onClick={() => (shareOpen ? setShareOpen(false) : setExportOpen(false))}
+                className="flex size-5 items-center justify-center text-muted-foreground hover:text-foreground"
+              >
+                <X className="size-3.5" />
+              </Button>
             </div>
-          </aside>
-        )
-      )}
-
-      {/* A running export, folded to a pill while its panel is hidden. Click
-          reopens; no cancel here — destructive actions stay in the panel they
-          belong to, and the pill simply vanishes when the download lands. */}
-      {compact && framing.exporting && !exportOpen && (
-        <Button variant="bare"
-          onClick={() => setExportOpen(true)}
-          className={cn(PILL, "absolute right-3 bottom-16 left-7 flex h-8 cursor-pointer items-center gap-2 px-4 text-xs text-foreground")}
-        >
-          <span className="size-2 animate-pulse rounded-full bg-red-400" />
-          {t.lab.exporting}
-          {/* Four characters wide in figures of one width, so the pill holds
-              still from 0% to 100%. */}
-          <span className="min-w-[4ch] text-right font-mono text-2xs tabular-nums">{exportPct !== null ? `${exportPct}%` : "…"}</span>
-        </Button>
+            {/* Kept mounted under publishing (a render must survive it), and
+                shown again it deals its rows in afresh. */}
+            <div className={cn("mt-2 flex min-h-0 flex-1 flex-col", shareOpen && "hidden")}>{exportBody}</div>
+          </Cover>
+          </div>
+        </aside>
       )}
 
       {/* A phone's top row: the masthead, and its one way out, the gallery,
@@ -10931,7 +10533,7 @@ function Lab() {
               to clear the docks — it is centred, and they are not. */}
           <div
             data-edge="bottom"
-            data-ink-zone={((!compact || phone) && !timelineUnfolded) || undefined}
+            data-ink-zone={!timelineUnfolded || undefined}
             className="pointer-events-none absolute inset-x-3 bottom-3 flex justify-center"
             style={timelineUnfolded ? { zIndex: timelineZ.z } : undefined}
             onPointerDownCapture={timelineZ.onPointerDownCapture}
@@ -10965,7 +10567,6 @@ function Lab() {
               )}
             >
               <AnimPlayer
-                line={!compact || phone}
                 engineRef={engineRef}
                 modelNames={modelNames}
                 timeline={timeline}
@@ -11091,7 +10692,7 @@ function Lab() {
           canvas rather than in place of it, because a validation error leaves
           the scene running. */}
       <GpuErrorNotice />
-      {uiHidden && <ShowUiButton corner={!compact} onShow={() => setUiHidden(false)} />}
+      {uiHidden && <ShowUiButton corner onShow={() => setUiHidden(false)} />}
     </main>
   )
 }

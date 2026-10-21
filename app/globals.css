@@ -2,8 +2,8 @@
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
-/* A phone-width screen: layout changes (what fits beside what). Whether the
-   pointer is a finger is the separate pointer-coarse: variant. */
+/* A phone-width screen, for the pages that play there (the gallery, the scene
+   viewer). */
 @custom-variant compact (@media (width < 40rem));
 
 @keyframes panel-in {
@@ -438,11 +438,68 @@
   --chrome-line: oklch(1 0 0 / 0.2);
   --chrome-line-strong: oklch(1 0 0 / 0.2);
 }
-/* The open timeline is paper, a dialog's sheet: the same fill, hairline, blur
-   and corner, on the side its ink calls for. */
+/* The open timeline is paper, a dialog's sheet: the same fill, blur and
+   corner, on the side its ink calls for, and no edge: the sheet is its own
+   bound. */
 [data-paper-at="timeline"] {
+  border-color: transparent;
   border-radius: 8px;
   backdrop-filter: blur(2px);
+}
+/* Denser than a dialog's: the timeline is a wide sheet over the scene's foot,
+   which can be dark where the cover's type stands on light (or the reverse),
+   and its curves and marks are thin. The sheet carries its own contrast. */
+[data-paper="light"][data-paper-at="timeline"],
+.cover[data-ink="dark"] [data-paper="auto"][data-paper-at="timeline"] {
+  --chrome-surface: oklch(1 0 0 / 0.55);
+}
+[data-paper="dark"][data-paper-at="timeline"],
+.cover[data-ink="light"] [data-paper="auto"][data-paper-at="timeline"] {
+  --chrome-surface: oklch(0 0 0 / 0.45);
+}
+/* The floating editors (graph, WGSL, grade) are workbenches: the dark paper's
+   ink and hairline on a solid black ground, so a dense graph or a page of code
+   never competes with the scene. */
+[data-paper][data-paper-at="editor"] {
+  --chrome-surface: oklch(0.1 0 0);
+  border-color: var(--chrome-line-strong);
+  border-radius: 8px;
+  backdrop-filter: none;
+}
+/* The node graph drawn in the sheet's ink: no ground of its own, dots, links
+   and controls in the ink. */
+[data-paper-at="editor"] .react-flow {
+  --xy-background-color: transparent;
+  --xy-background-pattern-color: color-mix(in oklch, var(--foreground) 22%, transparent);
+  --xy-edge-stroke: color-mix(in oklch, var(--foreground) 55%, transparent);
+  --xy-edge-stroke-selected: var(--foreground);
+  --xy-connectionline-stroke: var(--foreground);
+  --xy-minimap-background-color: transparent;
+  --xy-minimap-mask-background-color: color-mix(in oklch, var(--foreground) 8%, transparent);
+  --xy-minimap-node-background-color: color-mix(in oklch, var(--foreground) 35%, transparent);
+  --xy-controls-box-shadow: none;
+  --xy-controls-button-background-color: transparent;
+  --xy-controls-button-background-color-hover: color-mix(in oklch, var(--foreground) 10%, transparent);
+  --xy-controls-button-color: var(--foreground);
+  --xy-controls-button-color-hover: var(--foreground);
+  --xy-controls-button-border-color: var(--chrome-line);
+}
+/* What keeps a dark ground of its own on any sheet — a node card (zinc-900),
+   the code view (its syntax theme's ground) — keeps the dark chrome's tokens
+   with it. */
+[data-paper] :is(.react-flow__node, [data-ground="code"]) {
+  --foreground: oklch(0.985 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --ink-disabled: oklch(0.556 0 0);
+  --chrome-surface: oklch(0.141 0.005 285.823 / 0.7);
+  --chrome-surface-raised: oklch(0.141 0.005 285.823 / 0.95);
+  --chrome-line: oklch(1 0 0 / 0.06);
+  --chrome-line-strong: oklch(1 0 0 / 0.12);
+  --input: oklch(1 0 0 / 0.15);
+  color: var(--foreground);
+}
+[data-ground="code"] {
+  background: #101014;
 }
 /* The sheet GROWS out of its opener, as Vercel's search does: it starts as
    the opener's own box (--paper-w × --paper-h, set by the page; the search
@@ -776,11 +833,6 @@ body:has([data-paper-at="page"][data-paper="dark"]) [data-paper-scrim] {
    fades out under them, so at rest the name has the whole line. */
 .group:is(:hover, :focus-within, [data-revealed]) > [data-yield] {
   mask-image: linear-gradient(to right, black calc(100% - var(--yield) - 1rem), transparent calc(100% - var(--yield)));
-}
-@media (pointer: coarse) {
-  .group > [data-yield] {
-    mask-image: none;
-  }
 }
 
 /* A list arriving: its rows slide in one after another, the way a game's

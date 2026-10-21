@@ -10,6 +10,7 @@ import { EditorHeader, EditorHeaderButton } from "@/components/editor/editor-hea
 import { GradePreview } from "@/components/editor/grade-preview"
 import { ColorWheel } from "@/components/editor/color-wheel"
 import { SliderRow } from "@/components/scene/scene-sidebar"
+import { Cover } from "@/components/ui/cover"
 import { applySplit, isGradeSpec, readSplit, resolveSpec, type GradeSpec, type Range } from "@/lib/grade"
 import { slug } from "@/lib/scene-file"
 import { useT } from "@/lib/i18n"
@@ -57,11 +58,8 @@ export function GradeEditorPanel({
       onEscape={onClose}
       minW={520}
       minH={330}
-      fit
       // z-50 like the other editors: above the docks and the non-modal library.
-      // A flex column on a phone, so the body can shrink to the sheet's cap and
-      // scroll its controls.
-      className="overflow-hidden rounded-surface border border-line-strong bg-surface-raised shadow-float compact:flex compact:flex-col"
+      className="overflow-hidden rounded-surface border border-line-strong bg-surface-raised shadow-float"
     >
       <EditorBody key={sessionId} subject={subject} origin={origin} onChange={onChange} onClose={onClose} />
     </FloatingPanel>
@@ -124,7 +122,6 @@ function EditorBody({
     <div className="flex h-full min-h-0 flex-col" {...scopeProps}>
       <EditorHeader
         icon={Palette}
-        iconClassName="text-blue-400"
         title={name || t.gradeLibrary.untitled}
         closeLabel={t.library.close}
         onClose={onClose}
@@ -154,7 +151,8 @@ function EditorBody({
       />
 
       <div className="flex min-h-0 flex-1">
-        {/* ── Controls column ── */}
+        {/* ── Controls column, on the sheet: its sliders are the cover's hairlines. ── */}
+        <Cover>
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3">
           {importError && (
             <div className="mb-2 rounded-chip border border-red-400/30 bg-red-400/10 px-2 py-1 text-2xs text-red-400">
@@ -212,9 +210,9 @@ function EditorBody({
             />
           </div>
         </div>
-        {/* Preview column, on the RIGHT. Not on a phone: the canvas under the
-            panel is the preview there. */}
-        <div className="flex min-w-0 flex-[0_0_42%] flex-col border-l border-line p-3 compact:hidden">
+        </Cover>
+        {/* Preview column, on the RIGHT. */}
+        <div className="flex min-w-0 flex-[0_0_42%] flex-col border-l border-line p-3">
           <div className="min-h-0 flex-1 overflow-hidden rounded-chip border border-line-strong bg-white/5">
             <GradePreview spec={spec} />
           </div>

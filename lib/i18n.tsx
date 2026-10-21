@@ -347,7 +347,6 @@ const en = {
   stage: {
     title: "Stage",
     uploadStageFolder: "Upload stage folder (PMX / GLB)",
-    uploadStageZip: "Upload stage zip",
     placement: "Placement",
     position: "Pos",
     rotation: "Rot",
@@ -473,7 +472,6 @@ const en = {
     eyes: "Eyes",
   },
   graph: {
-    generatedWgsl: "Generated WGSL",
     apply: "Apply to the scene",
     fullscreen: "Fill the screen",
     exitFullscreen: "Back to a window",
@@ -648,7 +646,6 @@ const en = {
     uploadLyrics: "Upload lyrics",
     uploadStageFolder: "PMX folder",
     uploadStageGlb: "GLB file",
-    uploadStageZip: "PMX zip",
     uploadStagePmx: "Upload stage (PMX / GLB)",
     uploadPropPmx: "Upload prop PMX",
     rayConverting: (done: number, total: number) => `Converting ray-mmd maps ${done}/${total}`,
@@ -1482,7 +1479,6 @@ const zh: Dictionary = {
   stage: {
     title: "舞台",
     uploadStageFolder: "上传舞台文件夹（PMX / GLB）",
-    uploadStageZip: "上传舞台压缩包",
     placement: "位置",
     position: "位置",
     rotation: "旋转",
@@ -1602,7 +1598,6 @@ const zh: Dictionary = {
     eyes: "眼神",
   },
   graph: {
-    generatedWgsl: "生成的 WGSL",
     apply: "应用到场景",
     fullscreen: "铺满屏幕",
     exitFullscreen: "恢复窗口",
@@ -1769,7 +1764,6 @@ const zh: Dictionary = {
     uploadLyrics: "上传歌词",
     uploadStageFolder: "PMX 文件夹",
     uploadStageGlb: "GLB 文件",
-    uploadStageZip: "PMX 压缩包",
     uploadStagePmx: "上传舞台（PMX / GLB）",
     uploadPropPmx: "上传道具 PMX",
     rayConverting: (done: number, total: number) => `正在转换 ray-mmd 贴图 ${done}/${total}`,

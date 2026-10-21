@@ -20,13 +20,12 @@ import {
   type OnConnectStart,
   type ReactFlowInstance,
 } from "@xyflow/react"
+import { ON_MARK } from "@/components/editor/editor-header"
 import "@xyflow/react/dist/style.css"
 import { compileGraph, validateGraph, type CompileOptions, type Diagnostic, type ShaderGraph } from "reze-engine"
-import { Check, Code, Download, Grip, Maximize2, Minimize2, RotateCcw, Upload, Workflow, X } from "lucide-react"
+import { Check, Download, Grip, Maximize2, Minimize2, RotateCcw, Upload, Workflow, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
 import { RezeNode, RenameNodeProvider } from "@/components/graph/reze-node"
-import { WgslView } from "@/components/graph/wgsl-view"
 import { AddNodeMenu } from "@/components/graph/add-node-menu"
 import { NodeContextMenu, type MenuAction } from "@/components/graph/node-context-menu"
 import { makeGraphNode, uniqueNodeId } from "@/lib/node-catalog"
@@ -106,8 +105,6 @@ export function GraphEditor({
   const [edges, setEdges] = useState<Edge[]>(initial.edges)
   const [previewId, setPreviewId] = useState<string | null>(null)
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([])
-  const [fsBody, setFsBody] = useState("")
-  const [showWgsl, setShowWgsl] = useState(false)
   const [applyState, setApplyStateRaw] = useState<"ok" | "error" | "compiling">("compiling")
 
   const onApplyStateChangeRef = useRef(onApplyStateChange)
@@ -607,7 +604,6 @@ export function GraphEditor({
     if (engineError) return
     const timer = setTimeout(() => {
       const local = compileGraph(currentGraph, previewOpts)
-      setFsBody(local.fsBody)
       setDiagnostics(local.diagnostics)
       const behind = JSON.stringify([currentGraph, previewId]) !== appliedRef.current
       setDirty(behind)
@@ -698,10 +694,9 @@ export function GraphEditor({
       {/* The whole header is the window drag surface (buttons still work */}
       <header
         data-drag-handle
-        // Solid (opaque, no backdrop)
         className={cn(
-          // border-b (not a separate <Separator>) so the divider is part of the solid header's box
-          "relative flex shrink-0 items-center gap-2 border-b border-line bg-surface-raised pt-1 pb-1 pr-2 pl-3",
+          // border-b (not a separate <Separator>) so the divider is part of the header's box
+          "relative flex shrink-0 items-center gap-2 border-b border-line pt-1 pb-1 pr-2 pl-3",
           // Filling the screen, there is nowhere to drag TO — the same rule the
           // shared EditorHeader follows, so the grab cursor never promises a
           // move the panel will refuse.
@@ -711,36 +706,28 @@ export function GraphEditor({
         <Workflow
           className={cn(
             "size-3.5",
-            applyState === "error" ? "text-red-400" : "text-muted-foreground",
+            applyState === "error" ? "text-red-400" : "text-foreground",
             applyState === "compiling" && "animate-pulse",
           )}
         />
         <span className="min-w-0 truncate text-xs font-medium text-foreground">{slotLabel}</span>
         {!fullscreen && (
-          <span className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-muted-foreground">
+          <span className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-foreground">
             <Grip className="size-4" />
           </span>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          {/* ── Tools: code view + reset ── */}
-          <Button aria-label={t.graph.generatedWgsl}
-            variant="ghost"
-            size="icon"
-            className={cn("size-6", showWgsl ? "text-blue-400" : "text-muted-foreground hover:text-foreground")}
-            onClick={() => setShowWgsl((v) => !v)}
-          >
-            <Code className="size-3.5" />
-          </Button>
-          <Button aria-label={t.graph.resetToPreset} variant="ghost" size="icon" className="size-6 text-muted-foreground hover:text-foreground" onClick={() => loadGraph(presetGraph)}>
+          {/* ── Tools: reset, the graph as a file ── */}
+          <Button aria-label={t.graph.resetToPreset} variant="ghost" size="icon" className="size-6 text-foreground" onClick={() => loadGraph(presetGraph)}>
             <RotateCcw className="size-3.5" />
           </Button>
-          <Button aria-label={t.graph.exportJson} variant="ghost" size="icon" className="size-6 text-muted-foreground hover:text-foreground" onClick={exportGraph}>
+          <Button aria-label={t.graph.exportJson} variant="ghost" size="icon" className="size-6 text-foreground" onClick={exportGraph}>
             <Download className="size-3.5" />
           </Button>
           <Button aria-label={t.graph.importJson}
             variant="ghost"
             size="icon"
-            className="size-6 text-muted-foreground hover:text-foreground"
+            className="size-6 text-foreground"
             onClick={() => fileInputRef.current?.click()}
           >
             <Upload className="size-3.5" />
@@ -769,18 +756,18 @@ export function GraphEditor({
             size="icon"
             disabled={!dirty || !engineReady}
             onClick={() => void applyNow()}
-            className={cn("size-6", dirty ? "text-blue-400 hover:text-blue-400" : "text-muted-foreground hover:text-foreground")}
+            className={cn("size-6 text-foreground", dirty && ON_MARK)}
           >
             <Check className="size-3.5" />
           </Button>
-          <span className="mx-1 h-4 w-px shrink-0 bg-white/10" />
+          <span className="mx-1 h-4 w-px shrink-0 bg-line" />
 
           {/* ── Window: fill the screen, then come back ── */}
           {onToggleFullscreen && (
             <Button aria-label={fullscreen ? t.graph.exitFullscreen : t.graph.fullscreen}
               variant="ghost"
               size="icon"
-              className="size-6 text-muted-foreground hover:text-foreground"
+              className="size-6 text-foreground"
               onClick={onToggleFullscreen}
             >
               {fullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
@@ -791,7 +778,7 @@ export function GraphEditor({
           <Button aria-label={t.graph.discardClose}
             variant="ghost"
             size="icon"
-            className="size-6 text-muted-foreground hover:text-foreground"
+            className="size-6 text-foreground"
             onClick={() => void requestClose()}
           >
             <X className="size-3.5" />
@@ -799,164 +786,145 @@ export function GraphEditor({
         </div>
       </header>
 
-      {/* ── Graph canvas + optional WGSL pane ── */}
+      {/* ── Graph canvas ── */}
       <div className="min-h-0 flex-1">
-        <ResizablePanelGroup orientation="horizontal">
-          <ResizablePanel defaultSize="70" minSize="40">
-            <div
-              ref={flowHostRef}
-              className="relative h-full"
-              onMouseMove={(e) => (lastPointer.current = { x: e.clientX, y: e.clientY })}
+        <div
+          ref={flowHostRef}
+          className="relative h-full"
+          onMouseMove={(e) => (lastPointer.current = { x: e.clientX, y: e.clientY })}
+        >
+          {flowSized && (
+            <RenameNodeProvider value={nodeRenameOps}>
+            <ReactFlow
+            onInit={(inst) => (rfRef.current = inst)}
+            nodes={displayNodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onConnectStart={onConnectStart}
+            onConnectEnd={onConnectEnd}
+            isValidConnection={isValidConnection}
+            onReconnectStart={onReconnectStart}
+            onReconnect={onReconnect}
+            onReconnectEnd={onReconnectEnd}
+            onNodeDoubleClick={(_, n) => setPreviewId((prev) => (prev === n.id ? null : n.id))}
+            onPaneContextMenu={openAddMenu}
+            onNodeContextMenu={openNodeMenu}
+            onEdgeContextMenu={openEdgeMenu}
+            deleteKeyCode={["Backspace", "Delete"]}
+            colorMode="dark"
+            defaultViewport={{ x: 24, y: 24, zoom: 0.7 }}
+            minZoom={0.2}
+              proOptions={{ hideAttribution: true }}
             >
-              {flowSized && (
-                <RenameNodeProvider value={nodeRenameOps}>
-                <ReactFlow
-                onInit={(inst) => (rfRef.current = inst)}
-                nodes={displayNodes}
-                edges={edges}
-                nodeTypes={nodeTypes}
-                onNodesChange={onNodesChange}
-                onEdgesChange={onEdgesChange}
-                onConnect={onConnect}
-                onConnectStart={onConnectStart}
-                onConnectEnd={onConnectEnd}
-                isValidConnection={isValidConnection}
-                onReconnectStart={onReconnectStart}
-                onReconnect={onReconnect}
-                onReconnectEnd={onReconnectEnd}
-                onNodeDoubleClick={(_, n) => setPreviewId((prev) => (prev === n.id ? null : n.id))}
-                onPaneContextMenu={openAddMenu}
-                onNodeContextMenu={openNodeMenu}
-                onEdgeContextMenu={openEdgeMenu}
-                deleteKeyCode={["Backspace", "Delete"]}
-                colorMode="dark"
-                defaultViewport={{ x: 24, y: 24, zoom: 0.7 }}
-                minZoom={0.2}
-                  proOptions={{ hideAttribution: true }}
-                >
-                  <Background gap={24} />
-                  <Controls showInteractive={false} />
-                  <MiniMap pannable zoomable style={{ width: 120, height: 80 }} bgColor="transparent" />
-                </ReactFlow>
-                </RenameNodeProvider>
-              )}
-
-              {previewId && (
-                <div className="absolute top-2 right-2 z-10 rounded-chip bg-blue-400 px-2.5 py-1 text-xs text-on-accent">
-                  {t.graph.previewing(previewId)}
-                  <Button variant="link" className="ml-2 h-auto cursor-pointer p-0 text-xs text-foreground underline" onClick={() => setPreviewId(null)}>
-                    {t.graph.exit}
-                  </Button>
-                </div>
-              )}
-
-              {diagnostics.length > 0 && (
-                <div className="absolute bottom-2 left-1/2 z-10 max-w-[70%] -translate-x-1/2 space-y-0.5 rounded-chip border border-line-strong bg-surface-raised px-3 py-2 text-xs">
-                  {errors.length > 0 && (
-                    <div className="font-medium text-red-400">{errors.length} error(s) — previous look kept</div>
-                  )}
-                  {diagnostics.map((d, i) => (
-                    <div key={i} className={d.severity === "error" ? "text-red-400" : "text-amber-400"}>
-                      {d.nodeId && <span className="text-muted-foreground">[{d.nodeId}] </span>}
-                      {d.message}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {addMenu && (
-                <AddNodeMenu
-                  x={addMenu.x}
-                  y={addMenu.y}
-                  accept={connectAccept}
-                  onPick={addNode}
-                  onClose={() => setAddMenu(null)}
-                />
-              )}
-
-              {nodeMenu &&
-                (() => {
-                  const node = nodes.find((n) => n.id === nodeMenu.nodeId)
-                  if (!node) return null
-                  // openNodeMenu guarantees the clicked node is selected
-                  const sel = nodes.filter((n) => n.selected).map((n) => n.id)
-                  const targets = sel.length ? sel : [nodeMenu.nodeId]
-                  const single = targets.length === 1
-                  const isOutput = base.output.node === nodeMenu.nodeId
-                  const isPreview = previewId === nodeMenu.nodeId
-                  const hasOutput = socketsOf(node.data.graphNode.type).outputs.length > 0
-                  const plural = single ? "" : ` ${targets.length}`
-                  const actions: (MenuAction | "separator")[] = [
-                    // Output/preview are single-node concepts — hidden in a multi-select.
-                    ...(single
-                      ? ([
-                          {
-                            label: t.graph.rename,
-                            onSelect: () => setRenamingId(nodeMenu.nodeId),
-                          },
-                          {
-                            label: t.graph.setAsOutput,
-                            checked: isOutput,
-                            disabled: isOutput || !hasOutput,
-                            onSelect: () => setOutputNode(nodeMenu.nodeId),
-                          },
-                          {
-                            label: isPreview ? t.graph.stopPreview : t.graph.previewOutput,
-                            disabled: !hasOutput,
-                            onSelect: () => setPreviewId(isPreview ? null : nodeMenu.nodeId),
-                          },
-                          "separator",
-                        ] as (MenuAction | "separator")[])
-                      : []),
-                    { label: `${t.graph.copy}${plural}`, shortcut: "⌘C", onSelect: () => copyNodes(targets) },
-                    { label: `${t.graph.duplicate}${plural}`, shortcut: "⇧D", onSelect: () => duplicateNodes(targets) },
-                    { label: t.graph.disconnect, onSelect: () => disconnectNodes(targets) },
-                    "separator",
-                    { label: `${t.graph.deleteNode}${plural}`, shortcut: "⌫", danger: true, onSelect: () => deleteNodes(targets) },
-                  ]
-                  return (
-                    <NodeContextMenu
-                      x={nodeMenu.x}
-                      y={nodeMenu.y}
-                      actions={actions}
-                      onClose={() => setNodeMenu(null)}
-                    />
-                  )
-                })()}
-
-              {edgeMenu && (
-                <NodeContextMenu
-                  x={edgeMenu.x}
-                  y={edgeMenu.y}
-                  actions={[
-                    {
-                      label: t.graph.deleteLink,
-                      shortcut: "⌫",
-                      danger: true,
-                      onSelect: () => setEdges((cur) => cur.filter((el) => el.id !== edgeMenu.edgeId)),
-                    },
-                  ]}
-                  onClose={() => setEdgeMenu(null)}
-                />
-              )}
-            </div>
-          </ResizablePanel>
-          {showWgsl && (
-            <>
-              <ResizableHandle className="bg-white/5" />
-              <ResizablePanel defaultSize="30" minSize="15">
-                <div className="flex h-full flex-col">
-                  <h3 className="shrink-0 border-b border-line px-3 py-1.5 text-xs tracking-wide text-muted-foreground uppercase">
-                    Generated WGSL · fs body
-                  </h3>
-                  <div className="flex-1 cursor-text overflow-auto select-text">
-                    {fsBody ? <WgslView code={fsBody} /> : <p className="p-3 text-muted-foreground">—</p>}
-                  </div>
-                </div>
-              </ResizablePanel>
-            </>
+              <Background gap={24} />
+              <Controls showInteractive={false} />
+              <MiniMap pannable zoomable style={{ width: 120, height: 80 }} bgColor="transparent" />
+            </ReactFlow>
+            </RenameNodeProvider>
           )}
-        </ResizablePanelGroup>
+
+          {previewId && (
+            <div className="absolute top-2 right-2 z-10 rounded-chip bg-blue-400 px-2.5 py-1 text-xs text-on-accent">
+              {t.graph.previewing(previewId)}
+              <Button variant="link" className="ml-2 h-auto cursor-pointer p-0 text-xs text-foreground underline" onClick={() => setPreviewId(null)}>
+                {t.graph.exit}
+              </Button>
+            </div>
+          )}
+
+          {diagnostics.length > 0 && (
+            <div className="absolute bottom-2 left-1/2 z-10 max-w-[70%] -translate-x-1/2 space-y-0.5 rounded-chip border border-line-strong bg-surface-raised px-3 py-2 text-xs">
+              {errors.length > 0 && (
+                <div className="font-medium text-red-400">{errors.length} error(s) — previous look kept</div>
+              )}
+              {diagnostics.map((d, i) => (
+                <div key={i} className={d.severity === "error" ? "text-red-400" : "text-amber-400"}>
+                  {d.nodeId && <span className="text-muted-foreground">[{d.nodeId}] </span>}
+                  {d.message}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {addMenu && (
+            <AddNodeMenu
+              x={addMenu.x}
+              y={addMenu.y}
+              accept={connectAccept}
+              onPick={addNode}
+              onClose={() => setAddMenu(null)}
+            />
+          )}
+
+          {nodeMenu &&
+            (() => {
+              const node = nodes.find((n) => n.id === nodeMenu.nodeId)
+              if (!node) return null
+              // openNodeMenu guarantees the clicked node is selected
+              const sel = nodes.filter((n) => n.selected).map((n) => n.id)
+              const targets = sel.length ? sel : [nodeMenu.nodeId]
+              const single = targets.length === 1
+              const isOutput = base.output.node === nodeMenu.nodeId
+              const isPreview = previewId === nodeMenu.nodeId
+              const hasOutput = socketsOf(node.data.graphNode.type).outputs.length > 0
+              const plural = single ? "" : ` ${targets.length}`
+              const actions: (MenuAction | "separator")[] = [
+                // Output/preview are single-node concepts — hidden in a multi-select.
+                ...(single
+                  ? ([
+                      {
+                        label: t.graph.rename,
+                        onSelect: () => setRenamingId(nodeMenu.nodeId),
+                      },
+                      {
+                        label: t.graph.setAsOutput,
+                        checked: isOutput,
+                        disabled: isOutput || !hasOutput,
+                        onSelect: () => setOutputNode(nodeMenu.nodeId),
+                      },
+                      {
+                        label: isPreview ? t.graph.stopPreview : t.graph.previewOutput,
+                        disabled: !hasOutput,
+                        onSelect: () => setPreviewId(isPreview ? null : nodeMenu.nodeId),
+                      },
+                      "separator",
+                    ] as (MenuAction | "separator")[])
+                  : []),
+                { label: `${t.graph.copy}${plural}`, shortcut: "⌘C", onSelect: () => copyNodes(targets) },
+                { label: `${t.graph.duplicate}${plural}`, shortcut: "⇧D", onSelect: () => duplicateNodes(targets) },
+                { label: t.graph.disconnect, onSelect: () => disconnectNodes(targets) },
+                "separator",
+                { label: `${t.graph.deleteNode}${plural}`, shortcut: "⌫", danger: true, onSelect: () => deleteNodes(targets) },
+              ]
+              return (
+                <NodeContextMenu
+                  x={nodeMenu.x}
+                  y={nodeMenu.y}
+                  actions={actions}
+                  onClose={() => setNodeMenu(null)}
+                />
+              )
+            })()}
+
+          {edgeMenu && (
+            <NodeContextMenu
+              x={edgeMenu.x}
+              y={edgeMenu.y}
+              actions={[
+                {
+                  label: t.graph.deleteLink,
+                  shortcut: "⌫",
+                  danger: true,
+                  onSelect: () => setEdges((cur) => cur.filter((el) => el.id !== edgeMenu.edgeId)),
+                },
+              ]}
+              onClose={() => setEdgeMenu(null)}
+            />
+          )}
+        </div>
       </div>
     </div>
   )

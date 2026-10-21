@@ -175,7 +175,7 @@ export function CommandPalette({
           // Paper brings its own motion, which replaces the zoom, and its own
           // ground: a layer that grows with it (globals.css, "PAPER").
           paper ? "border-0 bg-transparent shadow-none" : "border-line-strong bg-surface shadow-float backdrop-blur-xs",
-          anchor ? "w-[24rem] translate-x-0 translate-y-0" : "top-[14%] translate-y-0 compact:top-[3.75rem]",
+          anchor ? "w-[24rem] translate-x-0 translate-y-0" : "top-[14%] translate-y-0",
         )}
         onKeyDown={onKeyDown}
         // Escape is the palette's own: it closes the palette and nothing

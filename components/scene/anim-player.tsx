@@ -77,7 +77,6 @@ export const AnimPlayer = memo(function AnimPlayer({
   axisDuration = 0,
   scrubRef,
   playheadDrawRef,
-  line = false,
 }: {
   engineRef: RefObject<Engine | null>
   /** Models WITH a loaded clip, master (longest clip) first. */
@@ -163,11 +162,6 @@ export const AnimPlayer = memo(function AnimPlayer({
    */
   playheadDrawRef?: RefObject<((frame: number) => void) | null>
 
-  /** Set as a line of type on the canvas while collapsed — the cover's bottom
-   *  line: a hairline scrub, mono clocks, and the switches as words with the
-   *  chosen ones underlined. Unfolded it is a surface again, since the timeline
-   *  is a workbench. */
-  line?: boolean
   /** Live camera-VMD drive state — fires on toggle and on initial sync, so the
    *  host can enable/disable its camera controls with the ACTUAL mode. */
   onFollowingChange?: (following: boolean) => void
@@ -518,7 +512,10 @@ export const AnimPlayer = memo(function AnimPlayer({
     ? "size-5 shrink-0 rounded-chip"
     : "size-7 shrink-0 rounded-full"
   const ico = unfolded ? "size-3.5" : "size-4"
-  const bare = line && !unfolded
+  // Folded, it is a line of type on the canvas — the cover's bottom line: a
+  // hairline scrub, mono clocks, and the switches as words with the chosen
+  // ones underlined. Unfolded it is paper.
+  const bare = !unfolded
   const word = (on: boolean, label: string, tip: string, onClick: () => void) => (
     <Button aria-label={tip}
       variant="bare"
@@ -579,8 +576,8 @@ export const AnimPlayer = memo(function AnimPlayer({
       ref={rootRef}
       // Open on the cover, it is PAPER (globals.css), on the side opposite the
       // cover's ink; the dopesheet draws in the sheet's ink.
-      data-paper={line && unfolded ? "auto" : undefined}
-      data-paper-at={line && unfolded ? "timeline" : undefined}
+      data-paper={unfolded ? "auto" : undefined}
+      data-paper-at={unfolded ? "timeline" : undefined}
       className={cn(
         // The fold animates THROUGH the blur, which measurably costs frames —
         // the decision to keep it anyway (visual consistency with the shipped

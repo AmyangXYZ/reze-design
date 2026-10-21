@@ -29,7 +29,6 @@ import { ContextMenuItem } from "@/components/ui/context-menu"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { storageKey } from "@/lib/storage"
 import { useT } from "@/lib/i18n"
-import { useCompact } from "@/lib/device"
 import { cn } from "@/lib/utils"
 import { failingVersion, isFailing, retryNow, watchFailing } from "@/lib/net"
 
@@ -539,9 +538,6 @@ function OfflineLine({ watch, empty }: { watch: readonly string[]; empty?: boole
 // canvas beside it is the preview: picking a card puts it on the scene. From
 // the top: what is picked; the words that narrow the shelf; the shelf, two
 // cards across.
-//
-// A phone has no canvas to spare beside it, so there the dock is a sheet on
-// the chrome's surface, in the place every phone panel takes.
 
 /** The detail's actions: small words at the end of the name's line, since
  *  picking is what applies, and editing or publishing is the rarer errand. */
@@ -578,7 +574,6 @@ export function LibraryDock<T extends BrowseItem>({
   children?: React.ReactNode
 }) {
   const t = useT()
-  const compact = useCompact()
   const { facet, setFacet, filtered, clear, query, setQuery, sort, chooseSort } = browse
 
   const word = (on: boolean, label: React.ReactNode, onClick: () => void, key?: string) => (
@@ -598,20 +593,17 @@ export function LibraryDock<T extends BrowseItem>({
   return (
     <section
       data-edge="right"
-      data-ink-zone={compact ? undefined : ""}
+      data-ink-zone
       style={{ zIndex: z }}
       onPointerDownCapture={onPointerDownCapture}
       onFocusCapture={onFocusCapture}
       className={cn(
-        "absolute flex flex-col gap-3",
-        compact
-          ? "top-[3.75rem] right-3 left-3 max-h-[60dvh] rounded-surface border border-line-strong bg-surface p-3 shadow-float backdrop-blur-xs"
-          : "cover-type dock-backing top-16 right-7 bottom-16 w-[18rem] pl-6",
+        "cover-type dock-backing absolute top-16 right-7 bottom-16 flex w-[18rem] flex-col gap-3 pl-6",
       )}
     >
       {/* The AI column's divider: a hairline clear of the column, from the
           title row's middle to the shelf's foot. */}
-      {!compact && <span aria-hidden data-divider className="absolute top-2.5 bottom-5 left-0 w-px bg-line-strong" />}
+      <span aria-hidden data-divider className="absolute top-2.5 bottom-5 left-0 w-px bg-line-strong" />
       <div className="flex h-6 shrink-0 items-center gap-3">
         <h2 className="min-w-0 flex-1 truncate text-sm font-medium">{title}</h2>
         {onNew && (

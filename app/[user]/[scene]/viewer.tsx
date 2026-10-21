@@ -191,7 +191,7 @@ export function SceneViewer(props: ViewerProps) {
   return (
     <main
       ref={mainRef}
-      className={cn("fixed inset-0 overflow-hidden bg-background select-none", !compact && "cover")}
+      className="cover fixed inset-0 overflow-hidden bg-background select-none"
       data-ink="dark"
       data-ui-hidden={uiHidden || undefined}
     >
@@ -199,7 +199,7 @@ export function SceneViewer(props: ViewerProps) {
           runs conditionally. Until it exists there is a pill, and the text
           around it is already readable. */}
       {scene ? (
-        <SceneStage {...props} scene={scene} bundleFilesRef={bundleFilesRef} mainRef={mainRef} line={!compact} />
+        <SceneStage {...props} scene={scene} bundleFilesRef={bundleFilesRef} mainRef={mainRef} />
       ) : (
         <LoadingPill />
       )}
@@ -595,14 +595,11 @@ function SceneStage({
   scene,
   bundleFilesRef,
   mainRef,
-  line,
 }: ViewerProps & {
   scene: Scene
   bundleFilesRef: RefObject<() => BundleFile[]>
   /** The page, whose type takes its ink from this canvas. */
   mainRef: RefObject<HTMLElement | null>
-  /** The transport as the cover's one line (off a phone). */
-  line: boolean
 }) {
   const {
     canvasRef,
@@ -636,7 +633,7 @@ function SceneStage({
   }, [bundleFilesRef, bundleFiles])
 
   // The cover's ink, from what this stage draws (the page's type sits over it).
-  useCoverInk(mainRef, canvasRef, line)
+  useCoverInk(mainRef, canvasRef, true)
 
   const loadingLabel = useLoadingLabel({
     scene,
@@ -775,10 +772,9 @@ function SceneStage({
         // absolutely positioned pill has nothing to size against, so on a phone
         // it ran off both edges. inset-x-3 gives it the viewport minus the same
         // gutter the bottom uses, and the transport shrinks into it.
-        <div data-edge="bottom" data-ink-zone={line || undefined} className="pointer-events-none absolute inset-x-3 bottom-3 flex justify-center">
+        <div data-edge="bottom" data-ink-zone className="pointer-events-none absolute inset-x-3 bottom-3 flex justify-center">
           <div className="pointer-events-auto max-w-full">
             <AnimPlayer
-              line={line}
               engineRef={engineRef}
               modelNames={animated}
               timeline={timeline}

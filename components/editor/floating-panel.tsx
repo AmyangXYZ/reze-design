@@ -5,7 +5,6 @@
 import { useRef, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { useZOrder } from "@/hooks/use-z-order"
-import { useCompact } from "@/lib/device"
 import { cn } from "@/lib/utils"
 
 export type Rect = { x: number; y: number; w: number; h: number }
@@ -39,7 +38,6 @@ export function FloatingPanel({
   fullscreen,
   minW = 360,
   minH = 240,
-  fit,
   className,
   raiseKey,
   onEscape,
@@ -50,9 +48,6 @@ export function FloatingPanel({
   fullscreen: boolean
   minW?: number
   minH?: number
-  /** On a phone, hug the content (up to the sheet's cap) instead of taking the
-   *  sheet's full height — for a panel of controls rather than a canvas. */
-  fit?: boolean
   className?: string
   /** Changing this raises the panel */
   raiseKey?: unknown
@@ -61,10 +56,7 @@ export function FloatingPanel({
   children: ReactNode
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  // On a phone there is no room to float: the panel takes the one place every
-  // panel takes there (COMPACT_SHEET in surface.tsx), fixed, like fullscreen.
-  const compact = useCompact()
-  const pinned = fullscreen || compact
+  const pinned = fullscreen
   const drag = useRef<{ mode: Mode; sx: number; sy: number; start: Rect } | null>(null)
   const latest = useRef<Rect>(rect)
 
@@ -140,14 +132,7 @@ export function FloatingPanel({
     begin("move", e)
   }
 
-  const style = compact
-    ? {
-        left: FULL_PAD,
-        top: "3.75rem",
-        width: `calc(100vw - ${FULL_PAD * 2}px)`,
-        ...(fit ? { maxHeight: "60dvh" } : { height: "60dvh" }),
-      }
-    : fullscreen
+  const style = fullscreen
     ? {
         left: FULL_PAD,
         top: FULL_PAD,
@@ -165,6 +150,10 @@ export function FloatingPanel({
   return createPortal(
     <div
       ref={ref}
+      // Every floating editor: a solid black sheet in the dark paper's ink and
+      // hairline, whatever the scene (globals.css, data-paper-at="editor").
+      data-paper="dark"
+      data-paper-at="editor"
       className={cn("fixed", className)}
       // Stacking is dynamic (useZOrder), so it has to beat any z-* the caller passes
       style={{ ...style, zIndex: z }}

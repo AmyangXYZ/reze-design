@@ -117,7 +117,7 @@ const C = {
   // read as one layer — and staying neutral keeps the red playhead legible
   // where it crosses, which every saturated hue tried and failed to do.
   get audioWave() {
-    return ink(0.35)
+    return ink(0.12)
   },
   get rulerTick() {
     return ink(0.10)
@@ -816,9 +816,17 @@ function TimelineCanvas({
       h = el.clientHeight
     const backingW = Math.max(1, Math.floor(w * dpr))
     const backingH = Math.max(1, Math.floor(h * dpr))
-    // The sheet's ink, as the canvas's own CSS colour reports it.
-    const rgb = getComputedStyle(el).color.match(/\d+(\.\d+)?/g)
-    if (rgb) INK = rgb.slice(0, 3).join(",")
+    // The sheet's ink, from the sheet's side itself — "auto" is the side
+    // opposite the cover's ink — so it is right the moment the scene flips,
+    // not a reading of the colour mid-fade. Off paper, the CSS colour.
+    const paper = el.closest<HTMLElement>("[data-paper]")?.dataset.paper
+    const side = paper === "auto" ? (el.closest<HTMLElement>(".cover")?.dataset.ink === "dark" ? "light" : "dark") : paper
+    if (side === "light") INK = "0,0,0"
+    else if (side === "dark") INK = "255,255,255"
+    else {
+      const rgb = getComputedStyle(el).color.match(/\d+(\.\d+)?/g)
+      if (rgb) INK = rgb.slice(0, 3).join(",")
+    }
     const size = sizeRef.current
     let mainResized = false
     if (size.w !== backingW || size.h !== backingH || size.dpr !== dpr) {
@@ -1395,7 +1403,7 @@ function TimelineCanvas({
       const x = toX(frame)
       if (x < LABEL_W - DIAMOND || x > w + DIAMOND) continue
       const isSel = selectedKeyframes.some((s) => s.frame === frame && s.type === "dope")
-      const intensity = selectedBone ? 0.85 : 0.4 + 0.6 * (count / maxCount)
+      const intensity = selectedBone ? 0.55 : 0.2 + 0.35 * (count / maxCount)
 
       ctx.save()
       ctx.translate(x, dopeMid)
@@ -1628,21 +1636,13 @@ function TimelineCanvas({
     drawRef2.current = draw
   }, [draw])
   // The sheet flips with the cover's ink (data-ink on <main>) and nothing in
-  // React changes: repaint then, and again once the 233ms colour fade lands.
+  // React changes: repaint then.
   useEffect(() => {
     const cover = canvasRef.current?.closest(".cover")
     if (!cover) return
-    let settle = 0
-    const watch = new MutationObserver(() => {
-      requestAnimationFrame(() => drawRef2.current?.())
-      clearTimeout(settle)
-      settle = window.setTimeout(() => drawRef2.current?.(), 260)
-    })
+    const watch = new MutationObserver(() => requestAnimationFrame(() => drawRef2.current?.()))
     watch.observe(cover, { attributes: true, attributeFilter: ["data-ink"] })
-    return () => {
-      watch.disconnect()
-      clearTimeout(settle)
-    }
+    return () => watch.disconnect()
   }, [])
 
   // Layout-phase paint: `useEffect`+nested rAF ran after browser paint → playhead lagged 1–2 frames behind transport.

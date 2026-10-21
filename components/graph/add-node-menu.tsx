@@ -104,6 +104,7 @@ export function AddNodeMenu({
     <div
       ref={ref}
       style={{ left: pos.left, top: pos.top, opacity: pos.ready ? 1 : 0 }}
+      data-paper-at="pop"
       className="fixed z-50 flex max-h-[360px] w-56 flex-col overflow-hidden rounded-surface border border-line-strong bg-surface-raised shadow-float backdrop-blur-xs"
       onContextMenu={(e) => e.preventDefault()}
     >
@@ -139,7 +140,7 @@ export function AddNodeMenu({
                   onClick={() => pick(item)}
                   className={cn(
                     "flex w-full items-center rounded-chip px-2 py-1 text-left text-xs transition-colors",
-                    on ? "bg-blue-400/[0.12] text-blue-400" : "text-foreground hover:bg-white/5",
+                    on ? "bg-accent font-medium text-foreground" : "text-foreground hover:bg-accent",
                   )}
                 >
                   {t.nodeLabel[item.type] ?? item.label}

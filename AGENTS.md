@@ -50,9 +50,13 @@ scene (`data-ink` on `<main>`, "The cover" in
 each character with a dark shadow (a soft edge under white type, one tight
 drop under black). The cover and paper (`data-paper`: dialogs, the palette,
 the gallery) have ONE ink: `text-muted-foreground` resolves to it there, and
-grey (0.44 under black, 0.78 under white) is kept for disabled controls. No washes or glows behind it. The workbenches (timeline, node
-graph, material tree, WGSL editor, AI panel, publish) keep surfaces, and so
-does the phone, where the console is a sheet.
+grey (0.44 under black, 0.78 under white) is kept for disabled controls. No washes or glows behind it. The open timeline is
+paper too, on the side opposite the cover's ink, with no edge. The floating
+editors (graph, WGSL, grade) are solid black in the dark paper's ink and
+hairline, whatever the scene; the code view keeps its own ground
+(`data-ground="code"`). The material tree, AI panel and publish keep surfaces.
+A device with no mouse or trackpad (a phone or a tablet) only plays: the
+editor shows it the scene, the masthead, the gallery and the transport.
 
 **Surfaces and edges.** `bg-surface` for chrome, `bg-surface-raised` for
 anything stacked on it, `bg-background` for a page's own ground. Tints over

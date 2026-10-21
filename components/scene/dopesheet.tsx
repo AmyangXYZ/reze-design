@@ -466,14 +466,14 @@ export function Dopesheet({
           // names, so a computed `h-[${n}px]` produces no CSS at all.
           style={{ height }}
           className={cn(
-            "relative border-t border-line transition-opacity ease-out",
+            "relative transition-opacity ease-out",
             open ? "opacity-100 duration-233" : "opacity-0 duration-233",
           )}
         >
-          {/* The top edge, which is already a line — so the handle is a hit area
-              over it rather than another piece of furniture. It brightens on
-              hover and while dragging, which is the whole affordance: a grip
-              texture on a 6px strip is decoration at this size. */}
+          {/* The top edge, a hit area rather than another piece of furniture:
+              a line shows there on hover and while dragging, which is the whole
+              affordance; a grip texture on a 6px strip is decoration at this
+              size. */}
           <div
             role="separator"
             aria-orientation="horizontal"

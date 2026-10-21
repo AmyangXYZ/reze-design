@@ -139,7 +139,7 @@ export function AgentTabs({
                     "size-4 rounded-chip text-muted-foreground hover:text-foreground",
                     // On the cover the × follows the title; in a chip it sits inside its end.
                     cover ? "ml-1 shrink-0 hover:bg-transparent" : "absolute right-0.5 hover:bg-white/10",
-                    open ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
+                    open ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
                   )}
                 >
                   <X className="size-3" />

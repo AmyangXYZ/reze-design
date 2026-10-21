@@ -107,9 +107,6 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   // A default group's label and a built-in graph's name translate on screen;
   // what is stored stays English (lib/builtin-text).
   const shownLabel = (g: StyleGroup) => localGroupLabel(groupLabel(g), locale)
-  // On touch devices HTML5-draggable rows swallow swipes (drag starts instead of
-  // scroll). Read at init — this panel only ever renders inside a mounted dock.
-  const [coarse] = useState(() => typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches)
   // Groups start folded, but the chosen one: a stage brings hundreds of
   // materials, and mounting a row for each made the pane slow to open.
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(activeGroupId ? [activeGroupId] : []))
@@ -162,61 +159,6 @@ export const MaterialsPanel = memo(function MaterialsPanel({
     [groups, locale],
   )
 
-  /**
-   * Long-press on a finger, standing in for the right-click.
-   *
-   * Rows can't be dragged on touch (a drag would swallow the scroll), so the
-   * menu is the only way to move a material there, and Radix's own long-press
-   * never got it open. It is cancelled by ANY pointermove, and a held finger
-   * jitters. Even when it fired, it opened without a target, because iOS sends
-   * no contextmenu event for the row's handler to aim the menu with. This one
-   * allows a few pixels of drift and then sends the row the contextmenu event a
-   * mouse would, so the row aims the menu and Radix opens it, the same path as
-   * a right-click. Radix's timer is turned off by the preventDefault (it skips
-   * a handled pointerdown).
-   */
-  const pressRef = useRef<{ timer: number; x: number; y: number } | null>(null)
-  // The tap that ends a long-press is not a tap: on a group row it would fold
-  // the group the menu just opened over. Cleared by the next press either way.
-  const pressedLongRef = useRef(false)
-  const endPress = () => {
-    if (pressRef.current) window.clearTimeout(pressRef.current.timer)
-    pressRef.current = null
-  }
-  const pressHandlers = {
-    onPointerDown: (e: React.PointerEvent) => {
-      if (e.pointerType === "mouse") return
-      endPress()
-      pressedLongRef.current = false
-      const target = e.target as HTMLElement
-      // A field keeps its own touch behaviour (caret, selection).
-      if (target.closest("input, textarea")) return
-      e.preventDefault()
-      const row = target.closest<HTMLElement>("[data-ctx]")
-      if (!row) return
-      const { clientX: x, clientY: y } = e
-      const timer = window.setTimeout(() => {
-        pressRef.current = null
-        pressedLongRef.current = true
-        row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: x, clientY: y }))
-      }, 500)
-      pressRef.current = { timer, x, y }
-    },
-    onPointerMove: (e: React.PointerEvent) => {
-      const p = pressRef.current
-      if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 8) endPress()
-    },
-    onPointerUp: endPress,
-    onPointerCancel: endPress,
-    onClickCapture: (e: React.MouseEvent) => {
-      if (!pressedLongRef.current) return
-      pressedLongRef.current = false
-      e.preventDefault()
-      e.stopPropagation()
-    },
-  }
-  useEffect(() => endPress, [])
-
   const toggleCollapse = (id: string) =>
     setExpanded((prev) => {
       const next = new Set(prev)
@@ -225,7 +167,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
       return next
     })
   /**
-   * Picking several materials — desktop only. Ctrl-click (cmd on a Mac)
+   * Picking several materials. Ctrl-click (cmd on a Mac)
    * toggles a row in or out; a plain click on a row, or Escape, lets the
    * selection go. Rows keep their own drag, so grabbing a selected row, or
    * right-clicking it, moves the whole selection.
@@ -247,7 +189,6 @@ export const MaterialsPanel = memo(function MaterialsPanel({
     return () => window.removeEventListener("keydown", onKey)
   }, [hasSelection])
   const clickRow = (e: React.MouseEvent, name: string) => {
-    if (coarse) return
     if (e.ctrlKey || e.metaKey) {
       setSelected((prev) => {
         const next = new Set(prev)
@@ -291,7 +232,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
         key={reactKey}
         data-ctx="row"
         data-material={m.name}
-        draggable={!coarse}
+        draggable
         onDragStart={(e) => {
           setDragMat(m.name)
           e.dataTransfer.effectAllowed = "move"
@@ -325,7 +266,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
           {m.name}
         </span>
         <Button variant="bare"
-          className={cn("shrink-0 text-muted-foreground hover:text-foreground", m.visible && "opacity-0 group-hover/row:opacity-100 pointer-coarse:opacity-100")}
+          className={cn("shrink-0 text-muted-foreground hover:text-foreground", m.visible && "opacity-0 group-hover/row:opacity-100")}
           onClick={(e) => {
             e.stopPropagation()
             onToggleVisible(m.name)
@@ -441,7 +382,6 @@ export const MaterialsPanel = memo(function MaterialsPanel({
               dense ? "pb-2" : "pb-3.5",
             )}
             onMouseLeave={() => onHover(null)}
-            {...pressHandlers}
             onContextMenuCapture={(e) => {
               if (!(e.target as HTMLElement).closest("[data-ctx]")) {
                 e.preventDefault()

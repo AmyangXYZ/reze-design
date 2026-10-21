@@ -66,12 +66,13 @@ export function NodeContextMenu({
     <div
       ref={ref}
       style={{ left: pos.left, top: pos.top, opacity: pos.ready ? 1 : 0 }}
+      data-paper-at="pop"
       className="fixed z-50 w-44 rounded-surface border border-line-strong bg-surface-raised p-1 shadow-float backdrop-blur-xs"
       onContextMenu={(e) => e.preventDefault()}
     >
       {actions.map((a, i) =>
         a === "separator" ? (
-          <div key={`sep-${i}`} className="my-1 h-px bg-white/10" />
+          <div key={`sep-${i}`} className="my-1 h-px bg-line" />
         ) : (
           <Button variant="bare"
             key={a.label}
@@ -86,10 +87,10 @@ export function NodeContextMenu({
                 ? "cursor-default text-muted-foreground"
                 : a.danger
                   ? "text-red-400 hover:bg-red-400/10"
-                  : "text-foreground hover:bg-white/5",
+                  : "text-foreground hover:bg-accent",
             )}
           >
-            {a.checked ? <Check className="size-3 shrink-0 text-blue-400" /> : <span className="size-3 shrink-0" />}
+            {a.checked ? <Check className="size-3 shrink-0 text-foreground" /> : <span className="size-3 shrink-0" />}
             <span className="flex-1">{a.label}</span>
             {a.shortcut && <span className="text-2xs text-muted-foreground">{a.shortcut}</span>}
           </Button>

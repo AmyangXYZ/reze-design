@@ -270,7 +270,7 @@ function EditorBody({
       />
 
       {/* ── Code: one scroller, three layers (sticky gutter · highlight · textarea). ── */}
-      <div className="min-h-0 flex-1 overflow-auto bg-[#101014]">
+      <div data-ground="code" className="min-h-0 flex-1 overflow-auto">
         <div className="flex min-h-full w-max min-w-full">
           <div
             aria-hidden

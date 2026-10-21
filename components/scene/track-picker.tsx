@@ -319,13 +319,13 @@ function TrackRow({
       className={cn(
         "h-5 w-full justify-start gap-1 rounded-none px-2 text-left text-2xs font-normal leading-none transition-none",
         mono && "font-mono",
-        active
-          ? "bg-blue-400/[0.08] text-blue-400 hover:bg-blue-400/12 hover:text-blue-400 dark:hover:bg-blue-400/12"
-          : "text-muted-foreground hover:bg-white/[0.03] hover:text-foreground",
+        // Chosen: medium and underlined in the accent, as the bone panel's
+        // chosen bone is; the rest regular, in the ink.
+        active ? "font-medium text-foreground" : "text-foreground hover:bg-white/[0.03]",
         className,
       )}
     >
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className={cn("min-w-0 flex-1 truncate py-1", active && "underline decoration-blue-400 decoration-[1.5px] underline-offset-4")}>{label}</span>
       {count > 0 && <span className="shrink-0 text-2xs tabular-nums">[{count}]</span>}
     </Button>
   )

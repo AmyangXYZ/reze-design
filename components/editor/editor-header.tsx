@@ -28,15 +28,19 @@ export function EditorHeaderButton({
       size="icon"
       disabled={disabled}
       onClick={onClick}
-      className={cn("size-6", active ? "text-pink-300 hover:text-pink-200" : "text-muted-foreground hover:text-foreground")}
+      className={cn("size-6 text-foreground", active && ON_MARK)}
     >
       <Icon className="size-3.5" />
     </Button>
   )
 }
 
+/** An icon that is ON (a pane shown, an edit waiting to apply): the accent's
+ *  underline under it, as a chosen tab carries. */
+export const ON_MARK = "relative after:absolute after:inset-x-1 after:-bottom-0.5 after:h-[1.5px] after:bg-blue-400"
+
 export function EditorHeaderSeparator() {
-  return <Separator orientation="vertical" className="mx-1 h-4 bg-white/10" />
+  return <Separator orientation="vertical" className="mx-1 h-4 bg-line" />
 }
 
 export function EditorHeader({
@@ -62,14 +66,14 @@ export function EditorHeader({
     <header
       data-drag-handle
       className={cn(
-        "relative flex shrink-0 items-center gap-2 border-b border-line bg-surface-raised py-1 pr-2 pl-3",
+        "relative flex shrink-0 items-center gap-2 border-b border-line py-1 pr-2 pl-3",
         !fullscreen && "cursor-grab active:cursor-grabbing",
       )}
     >
-      <Icon className={cn("size-3.5 shrink-0 text-muted-foreground", iconClassName)} />
+      <Icon className={cn("size-3.5 shrink-0 text-foreground", iconClassName)} />
       <span className="min-w-0 truncate text-xs font-medium text-foreground">{title}</span>
       {!fullscreen && (
-        <span className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-muted-foreground compact:hidden">
+        <span className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-foreground">
           <Grip className="size-4" />
         </span>
       )}

@@ -401,7 +401,7 @@ const TRA_SLIDER_RANGE = { min: -25, max: 25 }
  * tones, so they hold on the timeline's sheet whichever side it is, light or
  * dark. A deliberate palette (AGENTS.md).
  */
-export const AXIS = { x: "#e5484d", y: "#2f9e5f", z: "#3b6fe0" } as const
+export const AXIS = { x: "#ef4444", y: "#22c55e", z: "#3b82f6" } as const
 
 export const ROT_CHANNELS: Channel[] = [
   {
