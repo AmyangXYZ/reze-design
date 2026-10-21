@@ -606,12 +606,12 @@ export function LibraryDock<T extends BrowseItem>({
         "absolute flex flex-col gap-3",
         compact
           ? "top-[3.75rem] right-3 left-3 max-h-[60dvh] rounded-surface border border-line-strong bg-surface p-3 shadow-float backdrop-blur-xs"
-          : "cover-type top-16 right-7 bottom-16 w-[18rem] pl-5",
+          : "cover-type dock-backing top-16 right-7 bottom-16 w-[18rem] pl-5",
       )}
     >
       {/* The AI column's divider: a hairline clear of the column, from the
           title row's middle to the shelf's foot. */}
-      {!compact && <span aria-hidden className="absolute top-2.5 bottom-5 left-0 w-px bg-line-strong" />}
+      {!compact && <span aria-hidden data-divider className="absolute top-2.5 bottom-5 left-0 w-px bg-line-strong" />}
       <div className="flex h-6 shrink-0 items-center gap-3">
         <h2 className="min-w-0 flex-1 truncate text-sm font-medium">{title}</h2>
         {onNew && (
@@ -767,7 +767,11 @@ export function LibraryCards<T extends BrowseItem>({
       const outline = 4
       const h = card.offsetHeight
       const n = Math.max(1, Math.floor((box.clientHeight - top - outline + gap) / (h + gap)))
-      el.style.height = `${top + n * h + (n - 1) * gap + outline}px`
+      const fitted = top + n * h + (n - 1) * gap + outline
+      el.style.height = `${fitted}px`
+      // What the rows leave unused at the column's foot: a backing ends at the
+      // last row rather than there (globals.css, "The backing").
+      el.closest<HTMLElement>(".dock-backing")?.style.setProperty("--shelf-spare", `${Math.max(0, box.clientHeight - fitted)}px`)
     }
     const watch = new ResizeObserver(fit)
     watch.observe(box)

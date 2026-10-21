@@ -58,6 +58,7 @@ import {
   PersonStanding,
   Plus,
   Languages,
+  Blend,
   Palette,
   PenLine,
   RotateCcw,
@@ -153,6 +154,7 @@ import { useBrowseSurface } from "@/hooks/use-browse-surface"
 import { useStoredRect } from "@/hooks/use-stored-rect"
 import { useDockSlot } from "@/hooks/use-dock-slot"
 import { useZOrder } from "@/hooks/use-z-order"
+import { BACKING_MAX, usePanelBacking } from "@/hooks/use-panel-backing"
 import { DEFAULT_SCENE_DOC, defaultScene, demoScene, EMPTY_SCENE } from "@/lib/default-scene"
 import { builtinEffects, builtinGrades, builtinGraphs } from "@/lib/builtins"
 import { useBuiltinsWhole } from "@/hooks/use-builtins"
@@ -1300,6 +1302,17 @@ function commandsFor(t: Dictionary): PaletteItem[] {
       label: l.cmd.language,
       altLabels: [alt.cmd.language],
       keywords: ["english", "中文", "chinese", "translate", "locale", "切换语言"],
+    },
+    // A viewing preference, kept in this browser: a black overlay behind the
+    // docks for a scene too busy to read type over.
+    {
+      id: "backing",
+      repeatable: true,
+      section: "command",
+      icon: Blend,
+      label: l.cmd.backing,
+      altLabels: [alt.cmd.backing],
+      keywords: ["ui", "transparency", "transparent", "opacity", "background", "panel", "dock", "backing", "legibility", "界面", "透明", "透明度", "不透明度", "底色", "背景", "面板"],
     },
     // Deliberately palette-only: outlines are a preference most scenes never
     // touch, and a dock row for them would cost every user attention to serve a
@@ -5703,6 +5716,8 @@ function Lab() {
   // the same shape as "Which model?" in the upload flow.
   const { locale, setLocale } = useI18n()
   const [langOpen, setLangOpen] = useState(false)
+  const [backing, setBacking] = usePanelBacking()
+  const [backingOpen, setBackingOpen] = useState(false)
   const [styleOpen, setStyleOpen] = useState(false)
   const pendingLocale = useRef<Locale | null>(null)
   useEffect(() => {
@@ -5956,6 +5971,7 @@ function Lab() {
               label: timelineUnfolded ? t.lab.cmd.timelineHide : t.lab.cmd.timelineShow,
             }
           if (c.id === "language") return { ...c, hint: LOCALE_LABELS[valuesShown.locale] }
+          if (c.id === "backing") return { ...c, hint: backing ? `${backing}%` : t.lab.cmd.backingOff }
           // Same as language: the row says what it is SET TO, so the palette
           // answers "which style am I on" without opening anything.
           if (c.id === "look")
@@ -5971,7 +5987,7 @@ function Lab() {
           const value = DOCK_CONTROLS.find((x) => `ctl-${x.id}` === c.id)?.value?.(valuesShown)
           return value ? { ...c, value } : c
         }),
-    [commands, valuesShown, t, cast.length, timelineRoom, timelineUnfolded, touch],
+    [commands, valuesShown, t, cast.length, timelineRoom, timelineUnfolded, touch, backing],
   )
 
   // ── Undo / redo for the scene's configuration ──
@@ -7110,6 +7126,7 @@ function Lab() {
       else if (item.id === "edit-morph") editClipRef.current(clipTargetRef.current, "morph")
       else if (item.id === "edit-camera") editClipRef.current(clipTargetRef.current, "camera")
       else if (item.id === "language") setLangOpen(true)
+      else if (item.id === "backing") setBackingOpen(true)
       else if (item.id === "look") setStyleOpen(true)
       // The same dialog the Share pill opens — one publish surface, two doors.
       else if (item.id === "publish") openShare()
@@ -7347,6 +7364,7 @@ function Lab() {
       ref={coverRef}
       className="cover relative h-dvh w-screen overflow-hidden transition-[background-color] select-none"
       data-ui-hidden={uiHidden || undefined}
+      data-backed={backing > 0 || undefined}
       data-ink={coverInk(sceneGround)}
       // The scene's own colour, so the ground under the canvas is the colour the
       // canvas is about to paint — no flash from a chrome default to the scene on
@@ -7366,6 +7384,8 @@ function Lab() {
         // The cover's ink is tinted toward it (globals.css) until the frame
         // sampler takes over.
         ["--scene-bg" as string]: sceneGround,
+        // The docks' backing (globals.css, "The backing"), 0 to 1.
+        ["--cover-backing" as string]: backing / 100,
       }}
     >
       {/* Full bleed, always. Chrome floats over it; nothing ever shrinks the
@@ -7631,7 +7651,7 @@ function Lab() {
                 //
                 // A door named for what is behind it, and what is behind it is
                 // a search field. The F cap beside it says the rest.
-                "pointer-events-auto h-8 min-w-0 justify-start gap-2 px-2 text-xs text-muted-foreground hover:bg-transparent hover:text-foreground compact:h-10 compact:w-10 compact:flex-none compact:justify-center compact:px-0",
+                "pointer-events-auto h-8 min-w-0 justify-start gap-2 px-2 text-xs text-foreground hover:bg-transparent compact:h-10 compact:w-10 compact:flex-none compact:justify-center compact:px-0",
               )}
             >
               {/* min-w-0 + truncate, because this is the only shrinkable thing
@@ -7644,7 +7664,7 @@ function Lab() {
               {/* A key cap, so it should read as one: fixed height, centred, and the
               two glyphs spaced by a real gap rather than letter-spacing — which
               adds its space AFTER the K and pushes the pair off-centre. */}
-              <kbd className="inline-flex h-4 compact:hidden pointer-coarse:hidden shrink-0 items-center justify-center gap-[3px] font-mono text-2xs leading-none text-muted-foreground">
+              <kbd className="inline-flex h-4 compact:hidden pointer-coarse:hidden shrink-0 items-center justify-center gap-[3px] font-mono text-2xs leading-none text-foreground">
                 <span className="text-2xs">⌘</span>
                 <span>K</span>
               </kbd>
@@ -7713,8 +7733,8 @@ function Lab() {
             shownUpload?.kind === "sky" ? "sm:max-w-2xl data-[paper]:w-[36rem] data-[paper]:max-w-[36rem]" : "max-w-sm",
           )}
         >
-          <DialogHeader className="relative flex h-8 flex-row items-center justify-between px-3">
-            <DialogTitle className="font-mono text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
+          <DialogHeader className="relative flex h-8 flex-row items-center justify-between px-3.5">
+            <DialogTitle className="font-mono text-2xs font-semibold tracking-wide text-foreground uppercase">
               {shownUpload?.kind === "pick"
                 ? t.lab.whichModel
                 : shownUpload?.kind === "sky"
@@ -7775,8 +7795,8 @@ function Lab() {
           showCloseButton={false}
           className="max-w-sm rounded-surface border-line-strong bg-surface-raised backdrop-blur-xs"
         >
-          <DialogHeader className="relative flex h-8 flex-row items-center justify-between px-3">
-            <DialogTitle className="font-mono text-2xs font-semibold tracking-wide text-muted-foreground uppercase">{t.brand.style}</DialogTitle>
+          <DialogHeader className="relative flex h-8 flex-row items-center justify-between px-3.5">
+            <DialogTitle className="font-mono text-2xs font-semibold tracking-wide text-foreground uppercase">{t.brand.style}</DialogTitle>
           </DialogHeader>
           <ChoiceList className="relative space-y-0 border-t border-line py-1">
             {LOOK_PACK_ORDER.map((pack) => (
@@ -7810,8 +7830,8 @@ function Lab() {
         >
           {/* Both languages in the title, so the dialog identifies itself to
               whichever reader opened it. */}
-          <DialogHeader className="relative flex h-8 flex-row items-center justify-between px-3">
-            <DialogTitle className="font-mono text-2xs font-semibold tracking-wide text-muted-foreground uppercase">Language · 语言</DialogTitle>
+          <DialogHeader className="relative flex h-8 flex-row items-center justify-between px-3.5">
+            <DialogTitle className="font-mono text-2xs font-semibold tracking-wide text-foreground uppercase">Language · 语言</DialogTitle>
           </DialogHeader>
           <ChoiceList className="relative space-y-0 border-t border-line py-1">
             {LOCALES.map((code) => (
@@ -7834,6 +7854,32 @@ function Lab() {
               </Button>
             ))}
           </ChoiceList>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={backingOpen} onOpenChange={setBackingOpen}>
+        <DialogContent
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          paper
+          showCloseButton={false}
+          className="max-w-sm rounded-surface border-line-strong bg-surface-raised backdrop-blur-xs"
+        >
+          <DialogHeader className="relative flex h-8 flex-row items-center justify-between px-3.5">
+            <DialogTitle className="font-mono text-2xs font-semibold tracking-wide text-foreground uppercase">{t.lab.cmd.backing}</DialogTitle>
+          </DialogHeader>
+          {/* Live: the docks behind the dialog deepen as it moves. */}
+          <div className="relative flex items-center gap-3 border-t border-line px-3.5 py-3">
+            <Slider
+              value={[backing]}
+              min={0}
+              max={BACKING_MAX}
+              step={5}
+              onValueChange={([v]) => setBacking(v)}
+              aria-label={t.lab.cmd.backing}
+              className="flex-1"
+            />
+            <span className="w-9 shrink-0 text-right font-mono text-2xs tabular-nums">{backing ? `${backing}%` : t.lab.cmd.backingOff}</span>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -8408,8 +8454,8 @@ function Lab() {
           <aside
             data-edge="left"
             className={cn(
-              "pointer-events-none absolute inset-y-0 left-0 flex w-[25rem] flex-col pt-5 pb-16 pl-7 text-xs",
-              !compact && "cover-type",
+              "pointer-events-none absolute top-0 left-0 flex max-h-full w-[25rem] flex-col pt-5 pb-16 pl-7 text-xs",
+              !compact && "cover-type dock-backing",
               compact && "pointer-events-auto rounded-surface border border-line-strong bg-surface p-0 pt-3 shadow-float backdrop-blur-xs",
               COMPACT_SHEET,
               "compact:max-h-[calc(100dvh-8rem)]",
@@ -10638,7 +10684,7 @@ function Lab() {
           <aside
             data-edge="right"
             className={cn(
-              "cover-type absolute top-[5.75rem] right-7 flex h-[min(32rem,calc(100%-10rem))] w-[18rem] flex-col pl-5 text-xs",
+              "cover-type dock-backing absolute top-[5.75rem] right-7 flex h-[min(32rem,calc(100%-10rem))] w-[18rem] flex-col pl-5 text-xs",
               "transition-[opacity,translate,visibility] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
               !agentOpen && "invisible translate-x-2 opacity-0",
             )}
@@ -10649,7 +10695,7 @@ function Lab() {
             {/* A divider, standing clear of the column it divides from the
                 scene: from the title row's middle to the input row's. */}
             <div data-ink-zone className="flex min-h-0 flex-1 flex-col">
-              <span aria-hidden className="absolute top-2.5 bottom-5 left-0 w-px bg-line-strong" />
+              <span aria-hidden data-divider className="absolute top-2.5 bottom-5 left-0 w-px bg-line-strong" />
               <Cover>{agentBody}</Cover>
             </div>
           </aside>
@@ -10694,7 +10740,7 @@ function Lab() {
           <aside
             data-edge="right"
             className={cn(
-              "cover-type absolute top-16 right-7 flex max-h-[calc(100%-9rem)] w-[18rem] flex-col pl-5 text-xs",
+              "cover-type dock-backing absolute top-16 right-7 flex max-h-[calc(100%-9rem)] w-[18rem] flex-col pl-5 text-xs",
               "transition-[opacity,translate,visibility] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
               !(exportOpen || shareOpen) && "invisible translate-x-2 opacity-0",
             )}
@@ -10706,7 +10752,7 @@ function Lab() {
             {/* As the art director's: from the title row's middle to the last
                 control's (Render, h-8 over the panel's pb-3). Publishing draws
                 its own, from the same top to its own last control. */}
-            <span aria-hidden className={cn("absolute top-2.5 bottom-7 left-0 w-px bg-line-strong", shareOpen && "hidden")} />
+            <span aria-hidden data-divider className={cn("absolute top-2.5 bottom-7 left-0 w-px bg-line-strong", shareOpen && "hidden")} />
             <Cover>
               {/* The shell export and publish share: a file to keep, a scene to
                   put online. The title row stays; the contents under it swap,

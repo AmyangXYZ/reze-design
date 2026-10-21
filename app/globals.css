@@ -344,9 +344,11 @@
 .cover [data-ink-zone] {
   text-shadow: var(--ink-shadow);
 }
-/* ONE ink on the cover: the muted tier is the ink itself (above), and grey is
-   kept for what cannot be used. A disabled control greys rather than fading. */
-.cover :is(.cover-type, [data-ink-zone]) :is(:disabled, [aria-disabled="true"], [data-disabled]) {
+/* ONE ink on the cover and on paper: the muted tier is the ink itself (above,
+   and in [data-paper]), and grey is kept for what cannot be used. A disabled
+   control greys rather than fading. */
+.cover :is(.cover-type, [data-ink-zone]) :is(:disabled, [aria-disabled="true"], [data-disabled]),
+[data-paper] :is(:disabled, [aria-disabled="true"], [data-disabled]) {
   color: var(--ink-disabled);
   opacity: 1;
 }
@@ -370,6 +372,33 @@
     --chrome-line var(--default-transition-duration) ease,
     --chrome-line-strong var(--default-transition-duration) ease;
 }
+/* The BACKING (hooks/use-panel-backing): a black overlay behind each of the
+   cover's columns, as deep as the person set it in the palette; none by
+   default. Behind the column's own content, so the type above is untouched,
+   and counted by the ink sampler as darkening what the type stands on. */
+.cover .dock-backing {
+  isolation: isolate;
+}
+.cover .dock-backing::before {
+  content: "";
+  position: absolute;
+  inset: var(--backing-inset, -0.5rem -1rem calc(var(--shelf-spare, 0px) - 0.5rem) 0.25rem);
+  z-index: -1;
+  border-radius: var(--radius-surface);
+  background: rgb(0 0 0 / var(--cover-backing, 0));
+  pointer-events: none;
+  transition: background-color var(--default-transition-duration) ease;
+}
+/* On a backing, a column's hairline would stand outside it: the backing's
+   edge is the division. */
+.cover[data-backed] .dock-backing [data-divider] {
+  display: none;
+}
+/* The left column is as tall as what it holds; its backing starts above the
+   title (under the top row, which stays bare) and ends below the pane. */
+.cover aside.dock-backing {
+  --backing-inset: 4rem 0 3.25rem 0.75rem;
+}
 /* PAPER: an overlay laid on the cover — a thin sheet in the colour opposite
    its type: white at low alpha under black type, black at low alpha under
    white type (the side its opener's ink zone reads), bounded by the cover's
@@ -384,7 +413,8 @@
 [data-paper="light"] {
   --chrome-surface: oklch(1 0 0 / 0.15);
   --foreground: oklch(0 0 0);
-  --muted-foreground: oklch(0.38 0 0);
+  --muted-foreground: var(--foreground);
+  --ink-disabled: oklch(0.44 0 0);
   --background: oklch(1 0 0);
   --primary: oklch(0 0 0);
   --primary-foreground: oklch(1 0 0);
@@ -395,7 +425,8 @@
 [data-paper="dark"] {
   --chrome-surface: oklch(0 0 0 / 0.15);
   --foreground: oklch(1 0 0);
-  --muted-foreground: oklch(0.78 0 0);
+  --muted-foreground: var(--foreground);
+  --ink-disabled: oklch(0.78 0 0);
   --background: oklch(0 0 0);
   --primary: oklch(1 0 0);
   --primary-foreground: oklch(0 0 0);
@@ -459,7 +490,7 @@
   }
 }
 [data-paper] > [data-paper-ground] {
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(2px);
 }
 [data-paper][data-state="open"] {
   animation: none;
@@ -501,7 +532,7 @@
   border-radius: 8px !important;
   border-color: var(--chrome-line-strong) !important;
   box-shadow: none !important;
-  backdrop-filter: blur(4px) !important;
+  backdrop-filter: blur(2px) !important;
 }
 
 /* A whole PAGE of paper (data-paper-at="page"): a task that sets the canvas
@@ -523,11 +554,11 @@
 }
 body:has([data-paper-at="page"][data-paper="light"]) [data-paper-scrim] {
   background: oklch(1 0 0 / 0.55);
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(2px);
 }
 body:has([data-paper-at="page"][data-paper="dark"]) [data-paper-scrim] {
   background: oklch(0 0 0 / 0.55);
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(2px);
 }
 /* A COLUMN of paper (data-paper-at="column"): a task done while watching the
    scene, set as type in the right-hand column as export is — no sheet, and a

@@ -127,6 +127,8 @@ export function useCoverInk(
       // and every zone takes its answer. Zones that each read their own patch
       // set the top row black and the title white over a checkered floor.
       const zones = [...main.querySelectorAll<HTMLElement>("[data-ink-zone]")]
+      // The docks' backing darkens what the type stands on (hooks/use-panel-backing).
+      const dim = 1 - (parseFloat(getComputedStyle(main).getPropertyValue("--cover-backing")) || 0)
       const all: number[] = []
       for (const el of zones) {
         const r = el.getBoundingClientRect()
@@ -155,7 +157,7 @@ export function useCoverInk(
             // A transparent pixel shows what is under the canvas, which the
             // scene's own background already speaks for.
             if (d[i + 3] < 128) continue
-            const y = 0.2126 * lin(d[i]) + 0.7152 * lin(d[i + 1]) + 0.0722 * lin(d[i + 2])
+            const y = (0.2126 * lin(d[i]) + 0.7152 * lin(d[i + 1]) + 0.0722 * lin(d[i + 2])) * dim
             px.push({ l: y > 216 / 24389 ? 116 * Math.cbrt(y) - 16 : (24389 / 27) * y, i })
           }
         }
