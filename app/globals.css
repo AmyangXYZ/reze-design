@@ -444,17 +444,7 @@
 [data-paper-at="timeline"] {
   border-color: transparent;
   border-radius: 8px;
-  backdrop-filter: blur(2px);
-}
-/* The timeline is a wide sheet over the scene's foot, dense enough for its
-   thin curves and marks. */
-[data-paper="light"][data-paper-at="timeline"],
-.cover[data-ink="dark"] [data-paper="auto"][data-paper-at="timeline"] {
-  --chrome-surface: oklch(1 0 0 / 0.55);
-}
-[data-paper="dark"][data-paper-at="timeline"],
-.cover[data-ink="light"] [data-paper="auto"][data-paper-at="timeline"] {
-  --chrome-surface: oklch(0 0 0 / 0.45);
+  backdrop-filter: blur(var(--blur-xs));
 }
 /* The floating editors (graph, WGSL, grade) are workbenches: the dark paper's
    ink and hairline on a solid black ground, so a dense graph or a page of code
