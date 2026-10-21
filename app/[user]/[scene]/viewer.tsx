@@ -633,7 +633,7 @@ function SceneStage({
   }, [bundleFilesRef, bundleFiles])
 
   // The cover's ink, from what this stage draws (the page's type sits over it).
-  useCoverInk(mainRef, canvasRef, true)
+  useCoverInk(mainRef, canvasRef, true, [ready, stageReady, bundleReady, stages.length, models.length].join("|"))
 
   const loadingLabel = useLoadingLabel({
     scene,

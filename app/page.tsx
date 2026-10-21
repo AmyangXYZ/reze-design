@@ -7208,13 +7208,30 @@ function Lab() {
   useEffect(() => {
     exportingRef.current = framing.exporting
   })
-  useCoverInk(coverRef, canvasRef, mounted, exportingRef)
-
   const sceneGround = !mounted
     ? DEFAULT_SCENE_DOC.settings.background.color
     : isCompositingBackground(framing.liveBackground)
       ? "#000"
       : settings.background.color
+  useCoverInk(
+    coverRef,
+    canvasRef,
+    mounted,
+    [
+      ready,
+      sceneGround,
+      bgImage ? `${bgImage.slot}:${bgImage.url}` : "",
+      hdri?.name ?? "",
+      bgEffects.map((e) => `${e.uid}:${e.influence ?? 1}:${JSON.stringify(e.params ?? {})}`).join(","),
+      JSON.stringify(settings.grade),
+      stages.map((s) => s.id).join(","),
+      models.length,
+      backing,
+      frameX,
+      frameY,
+    ].join("|"),
+    exportingRef,
+  )
 
   return (
     <main

@@ -3,18 +3,23 @@
 // The cover's ink, read off the frame behind it (app/globals.css, "The cover"):
 // which side — black type or white — the picture behind all the ink zones
 // ([data-ink-zone]) under `main` calls for, ONE side for every zone, and each
-// zone's colour there; plus the toasts' corner. Twice a second, and at once when the frame changes shape.
+// zone's colour there; plus the toasts' corner. Read when what stands behind
+// the type changes (the backdrop, the frame's shape), never on a clock: a
+// reading waits for the GPU on iOS, and the camera moving is not a reason.
 // The editor and the scene viewer both set type over a live canvas.
 
-import { useEffect, type RefObject } from "react"
+import { useEffect, useRef, type RefObject } from "react"
 
 export function useCoverInk(
   mainRef: RefObject<HTMLElement | null>,
   canvasRef: RefObject<HTMLCanvasElement | null>,
   ready: boolean,
+  /** What stands behind the type, as one string: a change reads the ink again. */
+  backdrop: string,
   /** True while the reading should rest (an export renders). */
   pausedRef?: RefObject<boolean>,
 ): void {
+  const lookRef = useRef<(() => void) | null>(null)
   useEffect(() => {
     const main = mainRef.current
     const canvas = canvasRef.current
@@ -66,23 +71,31 @@ export function useCoverInk(
       return { left, top, right: left + canvas.offsetWidth, bottom: top + canvas.offsetHeight, width: canvas.offsetWidth, height: canvas.offsetHeight }
     }
     let raf = 0
-    let timer = 0
+    let timers: number[] = []
     // Read in a frame queued from a timer: the engine queues its next frame
     // while it renders, so this one runs AFTER that render, while the canvas
     // still holds it. A frame of our own would run first and read an empty
-    // canvas. The timer is also the half-second pace.
-    const next = (ms = 500) => {
-      clearTimeout(timer)
+    // canvas. Twice: once the change has drawn, and again once its textures
+    // have come in.
+    const look = () => {
+      for (const t of timers) clearTimeout(t)
       cancelAnimationFrame(raf)
-      timer = window.setTimeout(() => {
-        raf = requestAnimationFrame(tick)
-      }, ms)
+      timers = [250, 1500].map((ms) =>
+        window.setTimeout(() => {
+          raf = requestAnimationFrame(tick)
+        }, ms),
+      )
     }
+    lookRef.current = look
     // The frame changing shape (an export's aspect, the window) moves what
-    // stands behind every zone at once: look again at the next frame rather
-    // than at the next half-second.
-    const resized = new ResizeObserver(() => next(0))
+    // stands behind every zone at once.
+    const resized = new ResizeObserver(look)
     resized.observe(canvas)
+    // A reading skipped while the tab was hidden is taken on its return.
+    const shown = () => {
+      if (!document.hidden) look()
+    }
+    document.addEventListener("visibilitychange", shown)
     // The frame, shrunk on the GPU; the stack composed over it; the pixels
     // from the worker. Nothing here waits for the GPU.
     const sample = async (): Promise<Uint8ClampedArray | null> => {
@@ -109,7 +122,6 @@ export function useCoverInk(
       })
     }
     const tick = async () => {
-      next()
       if (busy || document.hidden || pausedRef?.current || !canvas.width) return
       busy = true
       let d: Uint8ClampedArray | null = null
@@ -228,14 +240,19 @@ export function useCoverInk(
     const giveUp = window.setTimeout(() => {
       main.dataset.inked = ""
     }, 2500)
-    next()
+    look()
     return () => {
       gone = true
+      lookRef.current = null
       worker.terminate()
       clearTimeout(giveUp)
       resized.disconnect()
-      clearTimeout(timer)
+      document.removeEventListener("visibilitychange", shown)
+      for (const t of timers) clearTimeout(t)
       cancelAnimationFrame(raf)
     }
   }, [ready, mainRef, canvasRef, pausedRef])
+  useEffect(() => {
+    lookRef.current?.()
+  }, [backdrop])
 }
