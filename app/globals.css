@@ -306,7 +306,7 @@
   inherits: true;
   initial-value: transparent;
 }
-.cover[data-ink="dark"] .cover-type:not([data-ink-zone] *),
+.cover[data-ink="dark"] .cover-type:not([data-ink-zone], [data-ink-zone] *),
 .cover[data-ink="dark"] [data-ink-zone]:not([data-ink]),
 .cover [data-ink-zone][data-ink="dark"] {
   --primary: var(--foreground);
@@ -320,7 +320,7 @@
   --chrome-line: color-mix(in oklch, var(--foreground) 26%, transparent);
   --chrome-line-strong: color-mix(in oklch, var(--foreground) 26%, transparent);
 }
-.cover[data-ink="light"] .cover-type:not([data-ink-zone] *),
+.cover[data-ink="light"] .cover-type:not([data-ink-zone], [data-ink-zone] *),
 .cover[data-ink="light"] [data-ink-zone]:not([data-ink]),
 .cover [data-ink-zone][data-ink="light"] {
   --primary: var(--foreground);
@@ -694,8 +694,11 @@ body:has([data-paper-at="page"][data-paper="dark"]) [data-paper-scrim] {
     scale: 1.03;
   }
 }
-.stage-backdrop {
+.stage-backdrop,
+.stage-backdrop-held {
   filter: brightness(0.75);
+}
+.stage-backdrop {
   animation: stage-arrive var(--default-transition-duration) cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 

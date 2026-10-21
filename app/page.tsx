@@ -91,6 +91,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { AccountButton, HandleDialog, type LibraryDoor } from "@/components/editor/account-panel"
 import { prefetchGallery } from "@/components/editor/scene-gallery"
 import { useRouter } from "next/navigation"
+import { useCoverInk } from "@/hooks/use-cover-ink"
 import { SCROLL_FADE, useScrollFade } from "@/components/editor/scroll-fade"
 import { prefetchLibraryStats } from "@/hooks/use-library-stats"
 import { AnimPlayer, type Scrub } from "@/components/scene/anim-player"
@@ -208,14 +209,12 @@ import { resolveActive, useAiSettings, viaOf } from "@/lib/ai/connections"
 import type { SceneSnapshot } from "@/lib/scene-history"
 import { freeName } from "@/lib/names"
 import {
-  applyDefaults,
   effectParams,
   EFFECTS,
   builtinEffect,
   NEW_EFFECT_TEMPLATE,
   type AppliedEffect,
   type EffectSurface,
-  STAGE_BOUND_TAG,
 } from "@/lib/effects"
 import { BACKDROP_VIDEO_RE, probeBackdrop } from "@/lib/backdrop"
 import { useMediaBackdrop } from "@/hooks/use-media-backdrop"
@@ -3276,13 +3275,27 @@ export default function Lab() {
   // land as one panel changing contents.
   const {
     facet: libraryFacet,
-    open: openBrowse,
+    open: openBrowseSlot,
     close: closeBrowse,
     closeIf: closeBrowseIf,
     graphLibrary: graphLib,
     gradesOpen: gradeLibOpen,
     effectsOpen: effectLibOpen,
   } = useBrowseSurface()
+  // The libraries are a right-hand column too, so they take turns with the
+  // render, publish and art-director columns: opening one closes the others.
+  const openBrowse = useCallback(
+    (...args: Parameters<typeof openBrowseSlot>) => {
+      setExportOpen(false)
+      setShareOpen(false)
+      setAgentOpen(false)
+      openBrowseSlot(...args)
+    },
+    [openBrowseSlot, setAgentOpen, setExportOpen, setShareOpen],
+  )
+  useEffect(() => {
+    if (exportOpen || shareOpen || agentOpen) closeBrowse()
+  }, [exportOpen, shareOpen, agentOpen, closeBrowse])
 
   // Grade: main's full selection model. Drafts and community feed both the
   // quick list and NAME RESOLUTION — a scene applying a community grade must
@@ -3708,81 +3721,9 @@ export default function Lab() {
     engine.setOverlay("lights", marks)
   }, [lights, lampOpen, ready, engineRef, editingLamps])
 
-  // Effects: the same selection model as grade, one library over.
+  // Effects: drafts and community rows, for resolving what the scene wears.
   const { drafts: effectDrafts } = useDrafts<EffectItem>("effect")
   const communityEffects = useCommunity<EffectItem>("effect")
-  // "Edited" means the APPLIED shader differs from its saved source, built-in or
-  // draft. An editor session applies as you type, so the row says so while the
-  // session runs and stops saying it the moment you save or discard — the list
-  // and the canvas never disagree about what is on screen. An unsaved NEW effect
-  // is in no list at all, so it gets a transient row: without one the trigger
-  // falls through to its placeholder and the dock reads "None" while an effect
-  // is plainly running.
-  const effectItems = useMemo(() => {
-    const items = [
-      // By name, matching the effect library's own ordering — see the grade list.
-      ...quickPickItems(
-        // the stage-bound ones (they draw only on a converted game stage) last
-        [...EFFECTS].sort(
-          (a, b) =>
-            Number(a.tags.includes(STAGE_BOUND_TAG)) - Number(b.tags.includes(STAGE_BOUND_TAG)) ||
-            a.name.localeCompare(b.name),
-        ),
-        effectDrafts,
-        null,
-      ).map((e) => ({
-        id: e.name,
-        label: e.owner === "local" ? e.name : builtinName("effect", e, uiLocale),
-        section: e.owner === "local" ? ("local" as const) : ("builtin" as const),
-      })),
-      ...communityQuickPickItems(communityEffects),
-    ]
-    // Every applied effect that is no longer identical to any library entry gets
-    // the "edited" hint, and one that is in no list at all gets a row of its
-    // own — otherwise the scene wears a shader the picker cannot show.
-    const known = [...EFFECTS, ...effectDrafts, ...communityEffects]
-    let out = items
-    for (const applied of bgEffects) {
-      const pristine = known.some((e) => e.name === applied.name && e.payload.wgsl === applied.wgsl)
-      if (pristine) continue
-      if (!out.some((i) => i.id === applied.name)) {
-        out = [...out, { id: applied.name, label: applied.name, section: "local" as const }]
-      }
-      out = out.map((i) => (i.id === applied.name ? { ...i, hint: t.scene.edited } : i))
-    }
-    return out
-  }, [effectDrafts, bgEffects, communityEffects, t, uiLocale])
-
-  const pickEffect = useCallback(
-    (name: string) => {
-      // Picking what is ALREADY applied takes it off — the tick is a tick you
-      // can click off, which is also what spares the list a permanent "None"
-      // row at the top. With several applied it is per effect, so this is now
-      // membership rather than replacement.
-      // The raw setter, stamping where a row is new: setBgEffects is what the
-      // compiler cannot keep a callback memoized around (see onEffects below).
-      if (bgEffects.some((e) => e.name === name)) {
-        setBgEffectsState((list) => list.filter((e) => e.name !== name))
-        return
-      }
-      // APPENDED, so a newly picked effect lands on top of what is already
-      // there. Where it belongs is the list's business, and the Background row
-      // is where that gets said.
-      //
-      const add = (e: AppliedEffect) => setBgEffectsState((list) => stampEffectUids([...list, e]))
-      // Drafts and community rows carry their own shader — they apply by value.
-      const own = [...effectDrafts, ...communityEffects].find((e) => e.name === name)
-      if (own) {
-        add({ id: own.id, name: own.name, wgsl: own.payload.wgsl })
-        return
-      }
-      // Straight from the definition — round-tripping a built-in through the
-      // by-name lookup with its id is what made every built-in "unknown".
-      const def = EFFECTS.find((e) => e.name === name)
-      if (def) add(applyDefaults(def))
-    },
-    [effectDrafts, communityEffects, bgEffects],
-  )
   /** What the row, the picker and the palette all say at rest.
    *
    *  One effect is NAMED — that is the decision, and reciting a count instead
@@ -4346,6 +4287,26 @@ export default function Lab() {
   // The libraries and the gallery fill the screen on a phone, so they take
   // their turn too: whatever opened last is the one on screen.
   const browseOpen = !!graphLib || gradeLibOpen || effectLibOpen
+  // A LIBRARY STANDS BESIDE ITS PANE on the cover: Materials brings the shader
+  // graphs, Effect the effects, Post's Grade tab the grades. The pane holds what
+  // the scene wears and what it applies to; the library beside it is where
+  // another comes from. One right-hand column at a time, so a library opened
+  // on its own, or the render, publish or AI column, takes the place first.
+  const besidePane = !compact && !browseOpen && !exportOpen && !shareOpen && !agentOpen
+  const graphBeside = besidePane && pane === "materials" && inspectedId !== null
+  const effectBeside = besidePane && pane === "effect"
+  const gradeBeside = besidePane && pane === "post" && postTab === "grade"
+  const libraryUp = browseOpen || graphBeside || effectBeside || gradeBeside
+  // The newest column wins: going to a pane that brings a library puts the
+  // art director away. Render and publish keep theirs: the frame is fitted to
+  // them and they hold the job in hand, so a pane opened then works alone.
+  const libraryPane = !compact && (pane === "materials" || pane === "effect" || (pane === "post" && postTab === "grade"))
+  const [seenLibraryPane, setSeenLibraryPane] = useState(libraryPane ? `${pane}:${postTab}` : null)
+  const libraryPaneKey = libraryPane ? `${pane}:${postTab}` : null
+  if (libraryPaneKey !== seenLibraryPane) {
+    setSeenLibraryPane(libraryPaneKey)
+    if (libraryPaneKey && agentOpen) setAgentOpen(false)
+  }
   useDockSlot("browse", compact && browseOpen, closeBrowse)
   useEffect(() => {
     if (
@@ -4516,25 +4477,6 @@ export default function Lab() {
       saveLookPref(pack)
     },
     [groupsByModel, applyGroups],
-  )
-  const inspectPickGraph = useCallback(
-    (groupId: string, graphName: string) => {
-      if (!inspectedId) return
-      const entry = [...loadDrafts().graph, ...communityItems("graph"), ...GRAPH_LIBRARY].find(
-        (e) => e.name === graphName,
-      ) as GraphItem | undefined
-      const group = inspectedGroups.find((g) => g.id === groupId)
-      if (!entry || !group) return
-      const updated: StyleGroup = {
-        ...group,
-        graph: { ...entry.payload.graph, name: entry.name },
-      }
-      // Grouped materials recompile through upsert; an EMPTY group has nothing
-      // to compile and just records the choice — main's own split.
-      if (updated.materials.length) void upsertGroup(inspectedId, updated)
-      else inspectGroupsApply(inspectedGroups.map((x) => (x.id === groupId ? updated : x)))
-    },
-    [inspectedId, inspectedGroups, inspectGroupsApply, upsertGroup],
   )
 
   // ── The shader-graph library and the node editor ──
@@ -4824,7 +4766,7 @@ export default function Lab() {
   }
   /** Apply a library graph to the group the library was opened from. */
   const applyGraphLibrary = (graph: ShaderGraph, name: string) => {
-    const group = inspectedGroups.find((g) => g.id === graphLib?.groupId)
+    const group = libGroup
     if (!inspectedId || !group) return
     const updated: StyleGroup = { ...group, graph: { ...graph, name } }
     // The same split inspectPickGraph makes: grouped materials recompile through
@@ -4833,7 +4775,6 @@ export default function Lab() {
     else inspectGroupsApply(inspectedGroups.map((x) => (x.id === group.id ? updated : x)))
     setActiveGroupId(group.id)
     setLibVersion((v) => v + 1)
-    closeBrowseIf("graph")
   }
   // A draft renamed in the library takes the groups wearing it along. A group
   // holds its look BY VALUE, so without this the scene goes on calling the look
@@ -4862,7 +4803,8 @@ export default function Lab() {
       ] as string[],
     [groupsByModel],
   )
-  const libGroup = inspectedGroups.find((g) => g.id === graphLib?.groupId) ?? null
+  // The group the library dresses: the one chosen in the Materials pane.
+  const libGroup = inspectedGroups.find((g) => g.id === (graphLib ? graphLib.groupId : activeGroupId)) ?? null
   // ── Model upload ──
   // "Replace" is an upload too — same picker, same parsing, only the target
   // differs: a new slot, or an existing one that keeps its position and clip.
@@ -7100,21 +7042,31 @@ export default function Lab() {
       // template the library's own New button uses, so the two doors lead to
       // one place.
       else if (item.id === "graph-new") openGraphLibEdit("", t.library.newGraph, structuredClone(DEFAULT_GRAPH))
-      else if (item.id === "graph-lib") openGraphLibrary(activeGroupId)
+      // The libraries stand beside their panes, so on the cover each opens its pane.
+      else if (item.id === "graph-lib") {
+        if (compact) openGraphLibrary(activeGroupId)
+        else openMaterials(inspected?.id ?? primaryId)
+      }
       else if (item.id === "wgsl-new")
         openEffectEditor({
           id: "",
           name: t.effectLibrary.newEffect,
           wgsl: NEW_EFFECT_TEMPLATE,
         })
-      else if (item.id === "effect-lib") openBrowse({ kind: "effect" })
+      else if (item.id === "effect-lib") {
+        if (compact) openBrowse({ kind: "effect" })
+        else gotoSection("effect")
+      }
       else if (item.id === "grade-new")
         cmdRef.current.openGradeEditor({
           id: "",
           name: t.gradeLibrary.newGrade,
           spec: NEW_GRADE_SPEC,
         })
-      else if (item.id === "grade-lib") openBrowse({ kind: "grade" })
+      else if (item.id === "grade-lib") {
+        if (compact) openBrowse({ kind: "grade" })
+        else gotoSection("post", { post: "grade" })
+      }
       else if (item.id === "outline") patch("outline", { enabled: !outlineRef.current })
       else if (item.id === "hideUi") setUiHidden(true)
       else if (item.id === "eyes") setSettings((s2) => ({ ...s2, eyes: { enabled: !s2.eyes.enabled } }))
@@ -7154,6 +7106,7 @@ export default function Lab() {
       // string to be forgotten.
       t,
       recentIds,
+      compact,
       gotoSection,
       openMaterials,
       // The RESOLVED id, not the raw one — the raw id can name a model that has
@@ -7191,29 +7144,6 @@ export default function Lab() {
   // Who it plays to, only for an effect that reads the cast: a rain effect is
   // handed nothing to aim.
   const effectFxAimable = (effectSurface[effectFxUid]?.readsCast ?? false) && cast.length > 1
-  const effectMore = (
-    <div className={cn("flex flex-wrap justify-between gap-x-5", effectFx && "mt-3 border-t border-line pt-2")}>
-      {/* The picker still holds MEMBERSHIP: every applied
-          effect ticks, and a ticked row clicks off. */}
-      <QuickPick
-        value={null}
-        applied={bgEffects.map((e) => e.name)}
-        items={effectItems}
-        onPick={pickEffect}
-        placeholder={t.lab.ctl.none}
-        trigger={
-          <Button variant="bare" className={LINE_ACTION}>
-            <Plus className="size-3.5 shrink-0" />
-            <span className="truncate">{t.lab.ctl.addEffect}</span>
-          </Button>
-        }
-      />
-      <Button variant="bare" onClick={() => openBrowse({ kind: "effect" })} className={LINE_ACTION}>
-        <Sparkles className="size-3.5" />
-        {t.lab.cmd.effectLib}
-      </Button>
-    </div>
-  )
 
   // The art director's panel body, worn by a sheet on a phone and set as a
   // column of type on the cover everywhere else.
@@ -7283,7 +7213,7 @@ export default function Lab() {
               // On the cover the column is headed like the console's byline: a
               // mono line, its actions as words, and the tab line as its rule.
               <div data-ink-zone className="flex h-5 shrink-0 items-center gap-4 px-4">
-                <span className="min-w-0 flex-1 truncate font-mono text-2xs font-medium tracking-wide uppercase">{t.lab.agent.title}</span>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">{t.lab.agent.title}</span>
                 <AgentMenu
                   settings={aiSettings}
                   active={aiActive}
@@ -7375,193 +7305,7 @@ export default function Lab() {
   useEffect(() => {
     exportingRef.current = framing.exporting
   })
-  useEffect(() => {
-    const main = coverRef.current
-    const canvas = canvasRef.current
-    if (!mounted || !main || !canvas) return
-    const W = 48
-    const H = 32
-    let probe = document.createElement("canvas")
-    probe.width = W
-    probe.height = H
-    let g = probe.getContext("2d", { willReadFrequently: true })
-    if (!g) return
-    // What stands behind the type is the whole stack, not the canvas alone: the
-    // page's ground, a picture or video behind a see-through canvas, then the
-    // canvas. A picture served without CORS would taint the probe for good, so
-    // on the first refusal the probe is made again and the stack read without it.
-    let media = true
-    const compose = (ctx: CanvasRenderingContext2D) => {
-      ctx.fillStyle = getComputedStyle(main).backgroundColor
-      ctx.fillRect(0, 0, W, H)
-      if (media) {
-        for (const el of main.querySelectorAll<HTMLElement>(".frame-layer")) {
-          if (el === canvas) continue
-          if (el instanceof HTMLImageElement || el instanceof HTMLVideoElement || el instanceof HTMLCanvasElement) {
-            try {
-              ctx.drawImage(el, 0, 0, W, H)
-            } catch {}
-          }
-        }
-      }
-      ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, W, H)
-    }
-    const lin = (c: number) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
-    // Where the canvas IS laid out, without the transform that eases it there.
-    const frameBox = () => {
-      const left = canvas.offsetLeft
-      const top = canvas.offsetTop
-      return { left, top, right: left + canvas.offsetWidth, bottom: top + canvas.offsetHeight, width: canvas.offsetWidth, height: canvas.offsetHeight }
-    }
-    let raf = 0
-    let timer = 0
-    // Read in a frame queued from a timer: the engine queues its next frame
-    // while it renders, so this one runs AFTER that render, while the canvas
-    // still holds it. A frame of our own would run first and read an empty
-    // canvas. The timer is also the half-second pace.
-    const next = (ms = 500) => {
-      clearTimeout(timer)
-      cancelAnimationFrame(raf)
-      timer = window.setTimeout(() => {
-        raf = requestAnimationFrame(tick)
-      }, ms)
-    }
-    // The frame changing shape (an export's aspect, the window) moves what
-    // stands behind every zone at once: look again at the next frame rather
-    // than at the next half-second.
-    // A matte comes or goes as the frame eases (above), and the zones it now
-    // holds start turning at once — geometry needs no pixels — fading with it.
-    const resized = new ResizeObserver(() => {
-      const cr = frameBox()
-      for (const el of main.querySelectorAll<HTMLElement>("[data-ink-zone]")) {
-        const r = el.getBoundingClientRect()
-        if (r.width === 0 || r.height === 0) continue
-        const over =
-          Math.max(0, Math.min(r.right, cr.right) - Math.max(r.left, cr.left)) *
-          Math.max(0, Math.min(r.bottom, cr.bottom) - Math.max(r.top, cr.top))
-        if (over < (r.width * r.height) / 2) {
-          el.dataset.ink = "light"
-          el.style.setProperty("--scene-bg", "rgb(0 0 0)")
-        }
-      }
-      next(0)
-    })
-    resized.observe(canvas)
-    const tick = () => {
-      next()
-      if (document.hidden || exportingRef.current || !canvas.width) return
-      let d: Uint8ClampedArray
-      try {
-        compose(g!)
-        d = g!.getImageData(0, 0, W, H).data
-      } catch {
-        if (!media) return
-        media = false
-        probe = document.createElement("canvas")
-        probe.width = W
-        probe.height = H
-        g = probe.getContext("2d", { willReadFrequently: true })
-        return
-      }
-      const cr = frameBox()
-      let read = false
-      for (const el of main.querySelectorAll<HTMLElement>("[data-ink-zone]")) {
-        const r = el.getBoundingClientRect()
-        if (r.width === 0 || r.height === 0) continue
-        const x0 = Math.max(r.left, cr.left)
-        const x1 = Math.min(r.right, cr.right)
-        const y0 = Math.max(r.top, cr.top)
-        const y1 = Math.min(r.bottom, cr.bottom)
-        const over = Math.max(0, x1 - x0) * Math.max(0, y1 - y0)
-        // Mostly off the frame: the type stands on the black matte around it.
-        if (over < (r.width * r.height) / 2) {
-          if (el.dataset.ink !== "light") el.dataset.ink = "light"
-          el.style.setProperty("--scene-bg", "rgb(0 0 0)")
-          continue
-        }
-        const qx0 = Math.floor(((x0 - cr.left) / cr.width) * W)
-        const qx1 = Math.ceil(((x1 - cr.left) / cr.width) * W)
-        const qy0 = Math.floor(((y0 - cr.top) / cr.height) * H)
-        const qy1 = Math.ceil(((y1 - cr.top) / cr.height) * H)
-        // The type stands on what MOST of the area is, so it is judged by the
-        // median lightness (L*, as the eye sees it), not the mean: a few big
-        // stars or a lamp on a black sky must not turn the ink dark over black.
-        const px: { l: number; i: number }[] = []
-        for (let qy = qy0; qy < qy1; qy++) {
-          for (let qx = qx0; qx < qx1; qx++) {
-            const i = (qy * W + qx) * 4
-            // A transparent pixel shows what is under the canvas, which the
-            // scene's own background already speaks for.
-            if (d[i + 3] < 128) continue
-            const y = 0.2126 * lin(d[i]) + 0.7152 * lin(d[i + 1]) + 0.0722 * lin(d[i + 2])
-            px.push({ l: y > 216 / 24389 ? 116 * Math.cbrt(y) - 16 : (24389 / 27) * y, i })
-          }
-        }
-        if (px.length === 0) continue
-        read = true
-        px.sort((a, b) => a.l - b.l)
-        const mid = px[px.length >> 1].l
-        const was = el.dataset.ink ?? main.dataset.ink
-        const ink = was === "dark" ? (mid < 44 ? "light" : "dark") : mid > 54 ? "dark" : "light"
-        if (el.dataset.ink !== ink) el.dataset.ink = ink
-        // The tint from the middle half too, so the highlights do not colour it.
-        let rr = 0
-        let gg = 0
-        let bb = 0
-        const lo = px.length >> 2
-        const hi = Math.max(lo + 1, (px.length * 3) >> 2)
-        for (let k = lo; k < hi; k++) {
-          const i = px[k].i
-          rr += d[i]
-          gg += d[i + 1]
-          bb += d[i + 2]
-        }
-        const n = hi - lo
-        el.style.setProperty("--scene-bg", `rgb(${Math.round(rr / n)} ${Math.round(gg / n)} ${Math.round(bb / n)})`)
-      }
-      // The chrome comes up once its ink has been read off a real frame, so
-      // it never shows in a guessed ink first (globals.css, "The cover").
-      if (read || !main.querySelector("[data-ink-zone]")) main.dataset.inked = ""
-      // The toasts' corner (bottom right) is read the same way, so a toast is
-      // laid as paper in the ink it stands on (globals.css, "Toasts").
-      {
-        const x0 = Math.max(window.innerWidth - 384, cr.left)
-        const y0 = Math.max(window.innerHeight - 160, cr.top)
-        const x1 = Math.min(window.innerWidth, cr.right)
-        const y1 = Math.min(window.innerHeight, cr.bottom)
-        const root = document.documentElement
-        let mid: number | null = null
-        if (x1 > x0 && y1 > y0) {
-          const ls: number[] = []
-          for (let qy = Math.floor(((y0 - cr.top) / cr.height) * H); qy < Math.ceil(((y1 - cr.top) / cr.height) * H); qy++) {
-            for (let qx = Math.floor(((x0 - cr.left) / cr.width) * W); qx < Math.ceil(((x1 - cr.left) / cr.width) * W); qx++) {
-              const i = (qy * W + qx) * 4
-              const y = 0.2126 * lin(d[i]) + 0.7152 * lin(d[i + 1]) + 0.0722 * lin(d[i + 2])
-              ls.push(y > 216 / 24389 ? 116 * Math.cbrt(y) - 16 : (24389 / 27) * y)
-            }
-          }
-          ls.sort((a, b) => a - b)
-          if (ls.length) mid = ls[ls.length >> 1]
-        }
-        const was = root.dataset.toastPaper
-        const side = mid === null ? "dark" : was === "light" ? (mid < 44 ? "dark" : "light") : mid > 54 ? "light" : "dark"
-        if (was !== side) root.dataset.toastPaper = side
-      }
-
-    }
-    // A scene that never gives a frame to read (nothing drawn yet, a picture
-    // behind a transparent canvas) still gets its chrome, in the guessed ink.
-    const giveUp = window.setTimeout(() => {
-      main.dataset.inked = ""
-    }, 2500)
-    next()
-    return () => {
-      clearTimeout(giveUp)
-      resized.disconnect()
-      clearTimeout(timer)
-      cancelAnimationFrame(raf)
-    }
-  }, [mounted, canvasRef])
+  useCoverInk(coverRef, canvasRef, mounted, exportingRef)
 
   const sceneGround = !mounted
     ? DEFAULT_SCENE.state.settings.background.color
@@ -7698,25 +7442,25 @@ export default function Lab() {
           {!compact && (
             <>
               <div className="cover-type pointer-events-auto flex h-8 items-center gap-7 text-xs">
-                <SceneFileMenu
-                  align="start"
-                  onNew={newScene}
-                  onExport={exportScene}
-                  onImport={importScene}
-                  onReset={resetSceneDefaults}
-                  // Instrument Serif has one weight; a stroke in its own colour
-                  // gives the masthead a little more.
-                  trigger={
-                    // The version stands by the wordmark, as an issue number
-                    // stands by a magazine's masthead.
-                    <span className="flex items-center gap-4 py-1">
-                      <span className="font-display text-masthead tracking-[0.45em] text-foreground uppercase [-webkit-text-stroke:0.3px_currentColor]">
+                {/* The version stands by the wordmark, as an issue number
+                    stands by a magazine's masthead; only the wordmark is the menu. */}
+                <span className="flex items-center gap-4">
+                  <SceneFileMenu
+                    align="start"
+                    onNew={newScene}
+                    onExport={exportScene}
+                    onImport={importScene}
+                    onReset={resetSceneDefaults}
+                    // Instrument Serif has one weight; a stroke in its own colour
+                    // gives the masthead a little more.
+                    trigger={
+                      <span className="flex items-center py-1 font-display text-masthead tracking-[0.45em] text-foreground uppercase [-webkit-text-stroke:0.3px_currentColor]">
                         Reze Design
                       </span>
-                      <span className="font-mono text-2xs text-foreground">v{VERSION_LABEL}</span>
-                    </span>
-                  }
-                />
+                    }
+                  />
+                  <span className="font-mono text-2xs text-foreground">v{VERSION_LABEL}</span>
+                </span>
                 {/* The source, by the version it is the source of. */}
                 <Button
                   variant="bare"
@@ -8335,9 +8079,18 @@ export default function Lab() {
           onOpenChange(false) from the library that just LOST the slot would
           otherwise close its replacement. */}
       <GradeLibrary
-        open={gradeLibOpen}
+        open={gradeLibOpen || gradeBeside}
         initialFacet={libraryFacet}
-        onOpenChange={(o) => !o && closeBrowseIf("grade")}
+        onOpenChange={(o) => {
+          if (o) return
+          closeBrowseIf("grade")
+          // Beside its pane, the two close together, and the console with
+          // them, as closing its index entry does.
+          if (gradeBeside) {
+            setOpenRow(null)
+            setDockGroup(null)
+          }
+        }}
         grade={grade}
         onApplyPreset={pickGrade}
         onRenamed={(oldName, newName) =>
@@ -8347,10 +8100,19 @@ export default function Lab() {
       />
 
       <EffectLibrary
-        open={effectLibOpen}
+        open={effectLibOpen || effectBeside}
         initialFacet={libraryFacet}
-        onOpenChange={(o) => !o && closeBrowseIf("effect")}
+        onOpenChange={(o) => {
+          if (o) return
+          closeBrowseIf("effect")
+          if (effectBeside) {
+            setOpenRow(null)
+            setDockGroup(null)
+          }
+        }}
         applied={bgEffects}
+        // The effect chosen in the pane beside it is the one it shows.
+        focusId={effectFx?.id ?? null}
         // Applying from the library APPENDS, and applying what is already on
         // takes it off — the same membership rule as the dock's picker, since
         // they are two doors onto one list.
@@ -8368,22 +8130,21 @@ export default function Lab() {
           Non-modal and no scrim, like the other two: the canvas behind it is
           the preview for everything it applies. */}
       <NodeLibrary
-        open={graphLib !== null}
+        open={graphLib !== null || graphBeside}
         initialFacet={libraryFacet}
         freshDraftId={freshGraphDraft}
         onOpenChange={(o) => {
           if (o) return
           closeBrowseIf("graph")
+          if (graphBeside) {
+            setInspectedId(null)
+            setDockGroup(null)
+          }
           // Spent on close, not on open: the library reads it while mounting, and
           // clearing it any earlier would select the original again.
           setFreshGraphDraft(null)
         }}
-        // The library picks its own target, so it opens from anywhere — the
-        // group row, the command palette, the stack — without a group having
-        // been chosen first.
-        groups={inspectedGroups.map((g) => ({ id: g.id, label: localGroupLabel(groupLabel(g), uiLocale) }))}
         targetId={libGroup?.id ?? null}
-        onTargetChange={(id) => openBrowse({ kind: "graph", groupId: id }, libraryFacet)}
         targetLabel={libGroup ? localGroupLabel(groupLabel(libGroup), uiLocale) : null}
         currentGraphName={libGroup?.graph.name ?? null}
         usedNames={usedLookNames}
@@ -8701,7 +8462,7 @@ export default function Lab() {
                             tab's is; any other's on hover, in the ink. */}
                         <span
                           className={cn(
-                            "relative flex items-center gap-2.5 py-1 after:absolute after:inset-x-2 after:bottom-0",
+                            "relative flex items-center gap-2.5 py-1 after:absolute after:inset-x-0 after:bottom-0",
                             on
                               ? "after:h-[1.5px] after:bg-blue-400"
                               : "after:h-px after:bg-current after:opacity-0 group-hover/entry:after:opacity-100",
@@ -9063,15 +8824,14 @@ export default function Lab() {
                     materials={inspected.materials}
                     groups={inspectedGroups}
                     activeGroupId={activeGroupId}
+                    onSelectGroup={setActiveGroupId}
                     onHover={(name) => highlight(inspected.id, name)}
                     onToggleVisible={(name) => toggleVisible(inspected.id, name)}
-                    onOpenLibrary={openGraphLibrary}
                     onCreateGroup={inspectCreateGroup}
                     onRenameGroup={inspectRenameGroup}
                     onDeleteGroup={inspectDeleteGroup}
                     onEditGroupGraph={touch ? undefined : editGroupGraph}
                     onMoveMaterial={inspectMoveMaterial}
-                    onPickGraph={inspectPickGraph}
                     looksSaved={looksSaved}
                     onToggleSavedLooks={inspectedLooksKey ? toggleSavedLooks : undefined}
                   />
@@ -9491,12 +9251,6 @@ export default function Lab() {
                           {/* The pane's actions span its row, first word to
                               its left edge and last to its right. */}
                           <div className="mt-2 flex flex-wrap justify-between gap-x-3">
-                            {!touch && (
-                              <Button variant="bare" onClick={() => openEffectEditor(effectFx)} className={LINE_ACTION}>
-                                <PenLine className="size-3.5" />
-                                {t.lab.ctl.edit}
-                              </Button>
-                            )}
                             {/* Back to the shader's own numbers. Dropping the overrides rather
                                 than writing the defaults in, so a scene keeps following an effect
                                 its author retunes. Inert when nothing was moved. */}
@@ -9521,11 +9275,10 @@ export default function Lab() {
                               {t.lab.ctl.remove}
                             </Button>
                           </div>
-                          {effectMore}
                         </TabsContent>
                       </Tabs>
                     ) : (
-                      effectMore
+                      <p className="text-muted-foreground">{t.lab.ctl.none}</p>
                     )
                   ) : l.id === "object" ? (
                     <>
@@ -10284,21 +10037,6 @@ export default function Lab() {
                             fmt={(v) => v.toFixed(2)}
                           />
                         </div>
-                        {/* Main's own library-door pill, centred as the body's
-                            deliberate final action. It NAMES the library it
-                            opens, in the palette's words: three doors that all
-                            said "Library" left position as the only thing
-                            telling them apart, and a door you identify by where
-                            you are standing is one you can open by mistake. */}
-                        <div className="mt-1 flex">
-                          <Button variant="bare"
-                            onClick={() => openBrowse({ kind: "grade" })}
-                            className={LINE_ACTION}
-                          >
-                            <Palette className="size-3.5" />
-                            {t.lab.cmd.gradeLib}
-                          </Button>
-                        </div>
                       </TabsContent>
                       <TabsContent value="tone">
                         {/* The view transform is its own tab, next to Grade and in front
@@ -10809,14 +10547,14 @@ export default function Lab() {
           onClick={openAgent}
           aria-label={t.lab.agent.title}
           tabIndex={agentOpen || (!compact && (exportOpen || shareOpen)) ? -1 : undefined}
-          aria-hidden={agentOpen || (!compact && (exportOpen || shareOpen)) || undefined}
+          aria-hidden={agentOpen || (!compact && (exportOpen || shareOpen || libraryUp)) || undefined}
           data-edge="right"
           className={cn(
             // The mark and "AI" set as type on the canvas, like the console.
             "pointer-events-auto absolute flex items-center gap-2 text-xs text-foreground hover:bg-transparent",
-            compact ? cn(PILL, "top-1/2 right-3 h-10 -translate-y-1/2 px-4 font-medium") : "cover-type top-1/2 right-7 h-8 -translate-y-1/2 px-0 hover:text-muted-foreground",
+            compact ? cn(PILL, "top-1/2 right-3 h-10 -translate-y-1/2 px-4 font-medium") : "cover-type top-[calc(5.75rem+min(16rem,50%-5rem))] right-7 h-8 -translate-y-1/2 px-0 hover:text-muted-foreground",
             "transition-[opacity,scale,visibility,background-color,color] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
-            (agentOpen || (!compact && (exportOpen || shareOpen))) && "invisible scale-110 opacity-0",
+            (agentOpen || (!compact && (exportOpen || shareOpen || libraryUp))) && "invisible scale-110 opacity-0",
             // On a phone every panel opens over the band the pillar stands in.
             compact && (expanded || inspectedId !== null || exportOpen || gradeEditor !== null || browseOpen) && "invisible opacity-0",
           )}
@@ -10872,7 +10610,7 @@ export default function Lab() {
           <aside
             data-edge="right"
             className={cn(
-              "cover-type absolute top-16 right-7 bottom-20 flex w-[18rem] flex-col pl-5 text-xs",
+              "cover-type absolute top-[5.75rem] right-7 flex h-[min(32rem,calc(100%-10rem))] w-[18rem] flex-col pl-5 text-xs",
               "transition-[opacity,translate,visibility] duration-233 ease-[cubic-bezier(0.32,0.72,0,1)]",
               !agentOpen && "invisible translate-x-2 opacity-0",
             )}
@@ -10946,7 +10684,7 @@ export default function Lab() {
                   put online. The title row stays; the contents under it swap,
                   their rows dealt in as the console's are. */}
               <div data-ink-zone className="flex h-5 shrink-0 items-center gap-4 px-4">
-                <span className="min-w-0 flex-1 truncate font-mono text-2xs font-medium tracking-wide uppercase">
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">
                   {shareOpen ? (updatesSceneId ? t.share.updateScene : t.share.title) : t.render.renderVideo}
                 </span>
                 <Button

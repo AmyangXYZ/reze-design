@@ -1,7 +1,6 @@
 "use client"
 
-// Effects library — the shared three-column shell (facet rail · thumbnail grid · slim
-// inspector).
+// Effects library — the shared dock on the right of the cover (library-shell).
 //
 // Named for what the items ARE, not for where the first ones happened to sit. The
 // kind has been `effect` in the envelope, the database and the publish route since
@@ -11,10 +10,8 @@
 // once scenes are in the wild, and it is still literally where the effect is layered.
 
 import { toast } from "sonner"
-import { Stamp } from "@/components/stamp"
 import { useCallback, useMemo, useState } from "react"
-import { Check, Plus, Sparkles, SquarePen, X } from "lucide-react"
-import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { PenLine } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   applyDefaults,
@@ -23,20 +20,16 @@ import {
   type AppliedEffect,
 } from "@/lib/effects"
 import { EffectPreview } from "@/components/editor/effect-preview"
-import { LIBRARY_DETAIL_BODY, LIBRARY_SHELL, LibraryItemStats, LibraryTags } from "@/components/editor/library-rail"
 import {
-  LibraryBack,
-  LibraryRailFilters,
-  LibraryResults,
-  LibraryToolbar,
+  DETAIL_ACTION,
+  LibraryDock,
+  LibraryCards,
+  LibraryDetail,
   useLibraryBrowse,
-  useLibraryDetail,
   type BrowseFacet,
   type CardMeta,
-  AuthorAvatar,
   VisibilityMenu,
   useMakePublic,
-  AuthorLink,
   itemState,
   RenameField,
 } from "@/components/editor/library-shell"
@@ -59,7 +52,6 @@ import { useZOrder } from "@/hooks/use-z-order"
 import { PublishButton } from "@/components/editor/publish-button"
 import { builtinDescription, builtinName, builtinSearchText } from "@/lib/builtin-text"
 import { useI18n } from "@/lib/i18n"
-import { cn } from "@/lib/utils"
 
 type LibraryProps = {
   open: boolean
@@ -73,6 +65,8 @@ type LibraryProps = {
   /** A draft was renamed — re-point anything applied by the old name. */
   onRenamed?: (oldName: string, newName: string) => void
   onRemove: (id: string) => void
+  /** The effect chosen in the Effect pane beside the library: shown when it changes. */
+  focusId?: string | null
   /** Open the page-level floating WGSL editor on this effect (independent panel, same idiom
    *  as the graph editor). Optional: a host without the editor omits it, and
    *  every edit/new affordance hides rather than sitting there doing nothing. */
@@ -80,13 +74,8 @@ type LibraryProps = {
 }
 
 export function EffectLibrary(props: LibraryProps) {
-  return (
-    // Non-modal + no overlay, mirroring the shader-graph library
-    <Dialog open={props.open} onOpenChange={props.onOpenChange} modal={false}>
-      {/* Mounted fresh per open: browsing state (query/facet/selection/draft) seeds itself */}
-      {props.open && <LibraryContent {...props} />}
-    </Dialog>
-  )
+  // Mounted fresh per open: browsing state (query/facet/selection/draft) seeds itself.
+  return props.open ? <LibraryContent {...props} /> : null
 }
 
 /** Seed the inspector's param draft */
@@ -97,21 +86,29 @@ const appliedById = (applied: AppliedEffect[], id: string | undefined) => applie
 const seedDraft = (selected: EffectItem | null, applied: AppliedEffect[]): AppliedEffect | null =>
   selected ? ({ ...(appliedById(applied, selected.id) ?? applyDefaults(selected)) }) : null
 
-function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove, onRenamed, onEdit }: LibraryProps) {
+function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove, onRenamed, onEdit, focusId = null }: LibraryProps) {
   const { t, locale } = useI18n()
   // Desktop-style stacking: clicking a library raises it over any editor.
   // Radix would close on Escape whatever is stacked above it; the z-order
   // stack closes only the topmost surface.
-  const { statFor, signedIn, toggleLike } = useLibraryStats()
+  const { statFor } = useLibraryStats()
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, () => onOpenChange(false))
-  const [selectedId, setSelectedId] = useState<string | null>(applied[0]?.id ?? EFFECTS[0]?.id ?? null)
-  // Follow the TOP applied layer when the list changes — creating or editing one should move
-  // the selection with it, rather than leaving the ring on the previous entry.
-  const [lastApplied, setLastApplied] = useState(applied.at(-1)?.id ?? null)
-  if ((applied.at(-1)?.id ?? null) !== lastApplied) {
-    setLastApplied(applied.at(-1)?.id ?? null)
-    const top = applied.at(-1)
-    if (top) setSelectedId(top.id)
+  const [selectedId, setSelectedId] = useState<string | null>(focusId ?? applied[0]?.id ?? EFFECTS[0]?.id ?? null)
+  // Follow a layer when one is ADDED — creating or editing one should move the
+  // selection with it, rather than leaving the ring on the previous entry. A
+  // removal leaves the selection where it is: the detail stays on what you
+  // just took off, ready to put back.
+  const [lastApplied, setLastApplied] = useState(() => applied.map((a) => a.id))
+  if (applied.length !== lastApplied.length || applied.some((a, i) => a.id !== lastApplied[i])) {
+    setLastApplied(applied.map((a) => a.id))
+    const added = applied.findLast((a) => !lastApplied.includes(a.id))
+    if (added) setSelectedId(added.id)
+  }
+
+  const [seenFocus, setSeenFocus] = useState(focusId)
+  if (focusId !== seenFocus) {
+    setSeenFocus(focusId)
+    if (focusId) setSelectedId(focusId)
   }
 
   const { drafts, update: updateDraft, remove: removeDraft } = useDrafts<EffectItem>("effect")
@@ -145,7 +142,6 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   const displayName = useCallback((e: EffectItem) => builtinName("effect", e, locale), [locale])
   const searchText = useCallback((e: EffectItem) => builtinSearchText("effect", e), [])
   const browse = useLibraryBrowse(all, numbers, { initialFacet, displayName, searchText })
-  const detail = useLibraryDetail()
   const [renamingId, setRenamingId] = useState<string | null>(null)
   // A typed name that is already in use — see the graph library's commitRename.
   const [renameError, setRenameError] = useState<string | null>(null)
@@ -183,7 +179,6 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   // The applied effect cannot be deleted — see the graph library's `inUse`.
   const inUse = (e: EffectItem) => e.owner === "local" && applied.some((a) => a.id === e.id)
 
-  const isAppliedSelected = selected !== null && applied.some((a) => a.id === selected.id)
 
   // "New effect": open the floating editor on the template. Nothing is created —
   // the editor is a scratchpad, and save-on-close is what makes a draft.
@@ -269,120 +264,52 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
     )
   }
 
+  // PICKING IS TRYING: a card you pick goes on the scene, and the next one you
+  // pick takes its place, so browsing is watching the canvas. What was on the
+  // scene before the library opened stays put; clicking the picked card again
+  // takes it off.
+  const [trying, setTrying] = useState<string | null>(null)
+  const pick = (e: EffectItem) => {
+    // Clicking the picked card again takes it off.
+    if (applied.some((a) => a.id === e.id)) {
+      if (selectedId === e.id) {
+        if (trying === e.id) setTrying(null)
+        onRemove(e.id)
+      }
+      setSelectedId(e.id)
+      return
+    }
+    setSelectedId(e.id)
+    if (trying && trying !== e.id && applied.some((a) => a.id === trying)) onRemove(trying)
+    onApply(seedDraft(e, applied)!)
+    setTrying(e.id)
+  }
+
   return (
-      <DialogContent
-        showCloseButton={false}
-        overlay={false}
-        onInteractOutside={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
-      // Don't pull focus into the search field — it made Escape land in a text
-      // input the moment the library opened.
-      onOpenAutoFocus={(e) => e.preventDefault()}
-        // Don't return focus to the opener on close
-        onCloseAutoFocus={(e) => e.preventDefault()}
-        // Same footprint as the shader-graph library.
-        style={{ zIndex: z }}
-        onPointerDownCapture={onPointerDownCapture}
-        onFocusCapture={onFocusCapture}
-        className={LIBRARY_SHELL}
-      >
-        <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-line bg-surface-raised px-4 py-2 text-left compact:gap-2 compact:px-3">
-          <DialogTitle className="flex shrink-0 items-center gap-2 text-sm font-medium">
-            <Sparkles className="size-4 text-blue-400" />
-            {t.effectLibrary.title}
-          </DialogTitle>
-          <LibraryToolbar browse={browse} usedLabel={t.rail.used} />
-          {/* Creation lives in the header. Just "New": the dialog's own title
-              already says what kind of thing this makes. */}
-          {onEdit && (
-            <Button variant="bare"
-              onClick={startNew}
-              className="flex h-6 shrink-0 items-center gap-1 rounded-chip border border-line-strong bg-white/5 px-2 text-2xs font-medium transition-colors hover:bg-white/10"
-            >
-              <Plus className="size-3" />
-              {t.library.new}
-            </Button>
-          )}
-          <DialogClose className="flex size-6 shrink-0 items-center justify-center rounded-chip text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
-            <X className="size-3.5" />
-            <span className="sr-only">{t.library.close}</span>
-          </DialogClose>
-        </DialogHeader>
-
-        <div className="flex min-h-0 flex-1">
-          <LibraryRailFilters browse={browse} />
-
-          {/* ONE ranked list. No shelves: a built-in is a preset the admin
-              account published, so splitting the grid by provenance was sorting
-              by who rather than by what, and it put community work below the
-              fold. The rail still filters by maker, which is where provenance
-              belongs. */}
-          <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden", detail.results)}>
-            <LibraryResults
-              watch={["community", "library-stats"]}
-              browse={browse}
-              selectedId={selectedId}
-              onSelect={(e) => {
-                setSelectedId(e.id)
-                detail.show()
-              }}
-              onActivate={(e) => onEdit?.(seedDraft(e, applied)!)}
-              meta={meta}
-              numbers={numbers}
-              displayName={displayName}
-              wrap={wrap}
-              usedLabel={t.rail.used}
-              empty={browse.query ? t.library.noMatch(browse.query) : t.rail.yoursEmpty}
-            />
-          </div>
-
-          {/* Inspector: preview · meta · params · Apply (pinned, but the column scrolls */}
-          <div className={cn("flex w-[15rem] shrink-0 flex-col overflow-y-auto border-l border-line sm:w-[17rem]", detail.detail)}>
-            <LibraryBack onClick={detail.hide} />
-            {selected && draft ? (
+    <LibraryDock
+      title={t.effectLibrary.title}
+      browse={browse}
+      onClose={() => onOpenChange(false)}
+      onNew={onEdit && startNew}
+      z={z}
+      onPointerDownCapture={onPointerDownCapture}
+      onFocusCapture={onFocusCapture}
+      detail={
+        selected &&
+        draft && (
+          <LibraryDetail
+            name={displayName(selected)}
+            author={builtinAuthor(selected.id, selected.author)}
+            draft={itemState(selected) === "draft"}
+            description={builtinDescription("effect", selected, locale)}
+            actions={
               <>
-                <div className="p-3 pb-0">
-                  {/* The preview IS the edit affordance, exactly like the graph library */}
-                  <Button variant="bare"
-                    type="button"
-                    disabled={!onEdit}
-                    onClick={() => onEdit?.(draft)}
-                    className="group/prev relative block aspect-[16/10] w-full overflow-hidden rounded-chip border border-line-strong"
-                  >
-                    {/* The draft's code, not the def's — a forked/edited effect previews as forked. */}
-                    <EffectPreview wgsl={draft.wgsl} />
-                    <div className="absolute inset-0 flex items-center justify-center gap-1.5 bg-surface text-xs font-medium text-foreground opacity-0 transition-opacity group-hover/prev:opacity-100">
-                      <SquarePen className="size-4" />
-                      {t.effectLibrary.editShader}
-                    </div>
+                {onEdit && (
+                  <Button variant="bare" onClick={() => onEdit(draft)} className={DETAIL_ACTION}>
+                    <PenLine />
+                    {t.lab.ctl.edit}
                   </Button>
-                </div>
-                <div className={LIBRARY_DETAIL_BODY}>
-                  <div className="truncate text-sm font-semibold select-text">{displayName(selected)}</div>
-                  <div className="mt-1 flex items-center gap-1.5 font-mono text-2xs text-muted-foreground">
-                    <AuthorAvatar name={builtinAuthor(selected.id, selected.author)} className="size-3.5" />
-                    <AuthorLink name={builtinAuthor(selected.id, selected.author)} draft={itemState(selected) === "draft"} className="truncate select-text" />
-                  </div>
-                  {/* When it went public, the same fact the gallery's panel shows — on its
-                      own line, so a long name never pushes it out of view. */}
-                  {selected.createdAt && (
-                    <div className="mt-1 flex h-3.5 items-center font-mono text-2xs text-muted-foreground">
-                      <Stamp iso={selected.createdAt} show="words" locale={locale} />
-                    </div>
-                  )}
-                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground select-text">{builtinDescription("effect", selected, locale)}</p>
-                  <LibraryTags tags={selected.tags} />
-                  <LibraryItemStats
-                    likeCount={statFor(selected.id).likeCount}
-                    liked={statFor(selected.id).liked}
-                    canLike={signedIn && selected.owner !== "local"}
-                    scenes={statFor(selected.id).scenes}
-                    onToggle={() => void toggleLike(selected.id)}
-                  />
-                </div>
-
-                {/* Pinned action: red destructive Remove when applied (the counterpart of the blue Apply) */}
-                <div className="mt-auto shrink-0 space-y-1.5 border-t border-line p-3">
+                )}
                 {selected.owner === "local" && (
                   <PublishButton
                     kind="effect"
@@ -391,9 +318,9 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                     defaultTags={selected.tags}
                     payload={() => selected.payload}
                     currentVisibility={selected.visibility}
-                  itemId={draftOrigin("effect", selected.id).sourceId ?? selected.id}
+                    itemId={draftOrigin("effect", selected.id).sourceId ?? selected.id}
                     forkedFromId={draftOrigin("effect", selected.id).forkedFromId}
-                    className="h-8 w-full"
+                    className={DETAIL_ACTION}
                     onPublished={(item) => {
                       // Promotion: the draft's content now lives on the server —
                       // keeping the local copy would show the same thing twice.
@@ -404,60 +331,44 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
                     }}
                   />
                 )}
-                  {isAppliedSelected ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => selected && onRemove(selected.id)}
-                      className="h-8 w-full border-line-strong bg-white/5 text-xs font-medium hover:bg-white/10"
-                    >
-                      <X className="size-3.5" />
-                      {t.effectLibrary.remove}
-                    </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        onApply(draft)
-                        onOpenChange(false) // show the scene — it IS the result
-                      }}
-                      className="h-8 w-full bg-blue-400 text-xs font-medium text-on-accent hover:bg-blue-400/90"
-                    >
-                      <Check className="size-3.5" />
-                      {t.effectLibrary.apply}
-                    </Button>
-                  )}
-                </div>
               </>
-            ) : (
-              <div className="flex flex-1 items-center justify-center p-4 text-center text-xs text-muted-foreground">
-                {t.library.selectGraph}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {makePublic.dialog}
-
-        <ConfirmDialog
-          open={confirming !== null}
-          onOpenChange={(o) => !o && setConfirming(null)}
-          title={confirming?.draft ? t.library.deleteDraft : t.library.deletePublished}
-          body={confirming?.draft ? t.library.deleteDraftConfirm : t.library.deletePublishedConfirm}
-          confirmLabel={t.library.deleteConfirmLabel}
-          cancelLabel={t.library.cancel}
-          onConfirm={() => {
-            const target = confirming
-            setConfirming(null)
-            if (!target) return
-            // A draft lives on this device only, so there is nothing to report
-            // and nothing that can refuse.
-            if (target.draft) return removeDraft(target.id)
-            void report(fetch(`/api/library/${target.id}`, { method: "DELETE" }), t.library.deleted).then(
-              (ok) => ok && removeCommunityItem(target.id),
-            )
-          }}
+            }
+          />
+        )
+      }
+      cards={
+        <LibraryCards
+          watch={["community", "library-stats"]}
+          browse={browse}
+          selectedId={selectedId}
+          onSelect={pick}
+          meta={meta}
+          displayName={displayName}
+          wrap={wrap}
+          empty={browse.query ? t.library.noMatch(browse.query) : t.rail.yoursEmpty}
         />
-      </DialogContent>
+      }
+    >
+      {makePublic.dialog}
+      <ConfirmDialog
+        open={confirming !== null}
+        onOpenChange={(o) => !o && setConfirming(null)}
+        title={confirming?.draft ? t.library.deleteDraft : t.library.deletePublished}
+        body={confirming?.draft ? t.library.deleteDraftConfirm : t.library.deletePublishedConfirm}
+        confirmLabel={t.library.deleteConfirmLabel}
+        cancelLabel={t.library.cancel}
+        onConfirm={() => {
+          const target = confirming
+          setConfirming(null)
+          if (!target) return
+          // A draft lives on this device only, so there is nothing to report
+          // and nothing that can refuse.
+          if (target.draft) return removeDraft(target.id)
+          void report(fetch(`/api/library/${target.id}`, { method: "DELETE" }), t.library.deleted).then(
+            (ok) => ok && removeCommunityItem(target.id),
+          )
+        }}
+      />
+    </LibraryDock>
   )
 }

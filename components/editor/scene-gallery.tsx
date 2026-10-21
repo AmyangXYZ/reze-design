@@ -608,22 +608,23 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
   }
 
   const scrollRef = useRef<HTMLDivElement>(null)
-  /** The nav goes solid once the page has scrolled off the billboard. */
-  const [scrolled, setScrolled] = useState(false)
   // On the billboard: the scene chosen, or the one trending first.
   const focus = selected ?? rows[0] ?? null
-  /** Put a scene on the billboard and bring the billboard back into view. */
+  // The billboard's picture crossfades: the one going stays under the one
+  // arriving until it has faded up, so the change never passes through black.
+  // Kept in state and moved on during render, when the focus changes.
+  const [backdrop, setBackdrop] = useState<{ cur: GalleryRow | null; prev: GalleryRow | null }>({ cur: null, prev: null })
+  if ((focus?.id ?? null) !== (backdrop.cur?.id ?? null)) setBackdrop({ cur: focus, prev: backdrop.cur })
+  /** Put a scene on the billboard. It stands behind the shelves, so nothing scrolls. */
   const feature = useCallback(
     (s: GalleryRow) => {
       setSelectedId(s.id)
       router.prefetch(`/${s.author}/${s.id}`)
-      scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" })
     },
     [router],
   )
   const onPageScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget
-    setScrolled(el.scrollTop > 24)
     if (!loading && cursor && el.scrollTop + el.clientHeight > el.scrollHeight - 600) loadMore()
   }
 
@@ -641,17 +642,19 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
   // grid of exactly that instead.
   const narrowed = browse.facet !== "all" || browse.tag !== null || browse.maker !== null || browse.query.trim() !== ""
   // Each scene stands on ONE shelf, the first it qualifies for: a small
-  // catalogue ranked three ways is three copies of the same row.
-  const shelves = useMemo(() => {
-    if (narrowed) return []
+  // catalogue ranked three ways is three copies of the same row. The shelves
+  // are laid out once; later pages join the end of "more", so scrolling down
+  // never reshuffles the rows above.
+  type Laid = { key: string; title: string; href?: string; ids: string[] }[]
+  const layShelves = (): Laid => {
     const used = new Set<string>()
-    const out: { key: string; title: string; href?: string; rows: GalleryRow[] }[] = []
+    const out: Laid = []
     const shelf = (key: string, title: string, from: GalleryRow[], cap = 18) => {
       const fresh = from.filter((r) => !used.has(r.id)).slice(0, cap)
       if (fresh.length < 3) return
       for (const r of fresh) used.add(r.id)
       // A maker's shelf is titled with their handle, and leads to their page.
-      out.push({ key, title, href: key.startsWith("maker:") ? `/${key.slice(6)}` : undefined, rows: fresh })
+      out.push({ key, title, href: key.startsWith("maker:") ? `/${key.slice(6)}` : undefined, ids: fresh.map((r) => r.id) })
     }
     shelf("hot", t.rail.sortHot, rows, 10)
     shelf("new", t.rail.sortNew, [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt)), 8)
@@ -661,7 +664,25 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
     // Whatever no shelf took, so nothing loaded is out of reach.
     shelf("more", t.gallery.moreScenes, items, Infinity)
     return out
-  }, [narrowed, items, rows, numbers, browse.tags, browse.makers, t])
+  }
+  const [laid, setLaid] = useState<{ lang: string; shelves: Laid } | null>(null)
+  // Laid afresh when there is nothing laid yet, the language changed, or what
+  // is loaded no longer holds what was laid (another view, a refresh).
+  if (!narrowed && items.length > 0 && (!laid || laid.lang !== t.gallery.moreScenes || laid.shelves.some((sh) => sh.ids.some((id) => !byId.has(id))))) {
+    setLaid({ lang: t.gallery.moreScenes, shelves: layShelves() })
+  }
+  const shelves = useMemo(() => {
+    if (narrowed || !laid) return []
+    const placed = new Set(laid.shelves.flatMap((sh) => sh.ids))
+    const out = laid.shelves.map((sh) => ({ ...sh, rows: sh.ids.flatMap((id) => byId.get(id) ?? []) }))
+    const later = items.filter((i) => !placed.has(i.id))
+    if (later.length > 0) {
+      const more = out.find((sh) => sh.key === "more")
+      if (more) more.rows = [...more.rows, ...later]
+      else out.push({ key: "more", title: t.gallery.moreScenes, ids: [], rows: later })
+    }
+    return out
+  }, [narrowed, laid, items, byId, t])
   // ← → step through the covers in reading order — along a shelf, on to the
   // next — putting each on the billboard and bringing it into view in its row,
   // the page staying where it is. Enter opens what is on the billboard. Not
@@ -734,7 +755,9 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
         <span
           className={cn(
             "block aspect-video w-full overflow-hidden rounded-interior bg-white/5",
-            focus?.id === s.id && "ring-1 ring-foreground",
+            // Held off the picture by a gap of the page's black, so it reads on
+            // a white cover as on a dark one.
+            focus?.id === s.id && "ring-2 ring-foreground ring-offset-2 ring-offset-black",
           )}
         >
           {s.poster && (
@@ -777,7 +800,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
             // The editor's top row to the pixel (top-5, h-8, left-7), so the
             // wordmark stands exactly where it stood in the editor.
             "absolute inset-x-0 top-0 z-20 flex h-[4.25rem] items-start gap-7 px-7 pt-5 transition-colors compact:gap-4 compact:px-4 [&>*]:h-8 [&>*]:items-center",
-            scrolled ? "bg-black" : "bg-linear-to-b from-black/70 to-transparent",
+            "bg-linear-to-b from-black/70 to-transparent",
           )}
         >
           {/* The house's name where a service sets its own — and, as a service's
@@ -827,17 +850,27 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
           </label>
         </div>
 
-        <div ref={scrollRef} onScroll={onPageScroll} className="no-scrollbar min-h-0 flex-1 overflow-y-auto">
-          {/* The billboard. */}
-          <section className="relative h-[78vh] min-h-[28rem] w-full overflow-hidden">
-            {focus?.poster && (
+        <div className="relative min-h-0 flex-1">
+          {/* The billboard, pinned behind the shelves: picking a cover swaps it
+              and the shelf stays where it was. */}
+          <section className="absolute inset-0 overflow-hidden">
+            {backdrop.prev?.poster && (
               // eslint-disable-next-line @next/next/no-img-element
-              <img key={`backdrop:${focus.id}`} src={focus.poster} alt="" className="stage-backdrop absolute inset-0 size-full object-cover" />
+              <img
+                key={`backdrop:${backdrop.prev.id}`}
+                src={backdrop.prev.poster}
+                alt=""
+                className="stage-backdrop-held absolute inset-0 size-full object-cover"
+              />
+            )}
+            {backdrop.cur?.poster && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img key={`backdrop:${backdrop.cur.id}`} src={backdrop.cur.poster} alt="" className="stage-backdrop absolute inset-0 size-full object-cover" />
             )}
             <div aria-hidden className="absolute inset-0 bg-linear-to-r from-black/85 via-black/35 to-transparent" />
-            <div aria-hidden className="absolute inset-x-0 bottom-0 h-2/5 bg-linear-to-t from-black to-transparent" />
+            <div aria-hidden className="absolute inset-x-0 bottom-0 h-3/5 bg-linear-to-t from-black via-black/90 to-transparent" />
             {focus ? (
-              <div key={`spread:${focus.id}`} className="cover-enter absolute bottom-[30%] left-7 flex w-[min(32rem,45vw)] flex-col compact:left-4 compact:w-[calc(100%-2rem)]">
+              <div key={`spread:${focus.id}`} className="cover-enter absolute top-[20%] left-7 flex w-[min(32rem,45vw)] flex-col compact:left-4 compact:w-[calc(100%-2rem)]">
                 <h2 className="font-display text-display text-foreground italic select-text">{focus.name}</h2>
                 <div className="mt-3 flex min-w-0 items-center gap-2 font-mono text-2xs tracking-wide text-muted-foreground uppercase">
                   <AuthorAvatar name={focus.author} image={focus.authorImage} className="size-4" />
@@ -867,8 +900,8 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
                     ))}
                   </div>
                 )}
-                <div className="mt-5 flex flex-wrap items-center gap-3">
-                  <Button asChild size="sm" className="h-9 rounded-chip bg-foreground px-6 text-xs font-medium text-background hover:bg-foreground/85">
+                <div className="mt-4 flex flex-wrap items-center gap-2.5">
+                  <Button asChild size="sm" className="h-7 rounded-chip bg-foreground px-4 text-xs font-medium text-background hover:bg-foreground/85">
                     {/* A real link: cmd-click still gets a new tab. */}
                     <Link href={sceneHref(focus)}>{t.gallery.open}</Link>
                   </Button>
@@ -876,12 +909,13 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
                     <Button
                       variant="bare"
                       onClick={() => forkScene(focus)}
-                      className="h-9 rounded-chip bg-white/20 px-5 text-xs font-medium text-foreground hover:bg-white/30"
+                      className="h-7 rounded-chip bg-white/20 px-3.5 text-xs font-medium text-foreground hover:bg-white/30"
                     >
                       {t.share.fork}
                     </Button>
                   )}
                   <LibraryLike
+                    large
                     likeCount={likesOf(focus)}
                     liked={statFor(focus.id).liked}
                     canLike={signedIn}
@@ -889,16 +923,16 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
                   />
                   {focus.mine && (
                     <>
-                      <Button variant="bare" onClick={() => editScene(focus)} className="h-9 text-xs text-muted-foreground hover:text-foreground">
+                      <Button variant="bare" onClick={() => editScene(focus)} className="h-7 text-xs text-muted-foreground hover:text-foreground">
                         {t.gallery.editPublished}
                       </Button>
-                      <Button variant="bare" onClick={() => remove(focus)} className="h-9 text-xs text-muted-foreground hover:text-red-400">
+                      <Button variant="bare" onClick={() => remove(focus)} className="h-7 text-xs text-muted-foreground hover:text-red-400">
                         {t.library.deletePublished}
                       </Button>
                     </>
                   )}
                 </div>
-                <VideoLink url={focus.video} className="mt-4 w-fit" />
+                <VideoLink url={focus.video} className="mt-3 h-7 w-fit px-2.5 text-xs [&_svg]:size-3.5" />
               </div>
             ) : (
               <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">
@@ -907,8 +941,13 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
             )}
           </section>
 
-          {/* The shelves, lifted onto the billboard's fade. */}
-          <div className="relative z-10 -mt-24 flex flex-col gap-8 pb-16">
+          {/* The shelves, one at a time in a band along the bottom: it is one
+              shelf tall and snaps, so the next shelf replaces this one whole. */}
+          <div
+            ref={scrollRef}
+            onScroll={onPageScroll}
+            className="no-scrollbar absolute inset-x-0 bottom-0 z-10 flex h-[15.5rem] snap-y snap-mandatory scroll-pt-6 flex-col gap-8 overflow-y-auto pt-6 *:snap-start compact:h-[13.25rem]"
+          >
             {narrowed ? (
               <section className="px-7 compact:px-4">
                 <h3 className="mb-3 text-sm font-medium text-foreground">{narrowedTitle}</h3>

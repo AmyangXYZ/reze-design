@@ -17,11 +17,9 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
-import { QuickPick } from "@/components/scene/quick-pick"
 import { GRAPH_LIBRARY, groupLabel, sameGraphLook } from "@/lib/materials"
-import { communityQuickPickItems, quickPickItems, type GraphItem } from "@/lib/library"
+import { type GraphItem } from "@/lib/library"
 import { useCommunity } from "@/hooks/use-community"
-import { useDrafts } from "@/hooks/use-drafts"
 import type { MaterialRow } from "@/hooks/use-engine"
 import { builtinName, localGroupLabel } from "@/lib/builtin-text"
 import { useI18n } from "@/lib/i18n"
@@ -33,6 +31,11 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 const COVER_ACTION = "h-6 w-fit gap-1.5 rounded-none border-0 bg-transparent px-0 text-xs font-normal text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground [&_svg:not([class*='size-'])]:size-3.5"
 /** Chosen on the cover: ink, stroked heavier without re-spacing the word. */
 const COVER_CHOSEN = "text-foreground [-webkit-text-stroke:0.35px_currentColor]"
+/** The chosen GROUP, the one the library beside the pane dresses: the index's
+ *  own mark, the selected blue as a rule under its name. */
+/** The chosen GROUP: the index's own mark, the selected blue as a rule under
+ *  its name. py-1: the name truncates, which clips, so its box holds the rule. */
+const COVER_GROUP_CHOSEN = "py-1 text-foreground underline decoration-blue-400 decoration-[1.5px] underline-offset-4"
 
 const UNGROUPED = "\0ungrouped" // sentinel collapse-key / drop-target id for "no group"
 
@@ -52,15 +55,14 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   materials,
   groups,
   activeGroupId,
+  onSelectGroup,
   onHover,
   onToggleVisible,
-  onOpenLibrary,
   onCreateGroup,
   onRenameGroup,
   onDeleteGroup,
   onEditGroupGraph,
   onMoveMaterial,
-  onPickGraph,
   looksSaved,
   onToggleSavedLooks,
   dense,
@@ -72,13 +74,11 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   groups: StyleGroup[]
   /** The group the graph editor is currently bound */
   activeGroupId: string | null
+  /** Choose the group the library beside the pane applies to. */
+  onSelectGroup?: (id: string) => void
   /** Hover a material to highlight it on the model (null clears). */
   onHover: (name: string | null) => void
   onToggleVisible: (name: string) => void
-  /** Open the shader-graph library for a style group (browse / apply / edit its
-   *  graph). Optional: a host without the library hides the door; the per-group
-   *  QuickPick still assigns looks. */
-  onOpenLibrary?: (groupId: string | null) => void
   /** Creates the group and returns its id — the panel opens rename mode on it. */
   onCreateGroup: () => string
   onRenameGroup: (id: string, label: string) => void
@@ -90,8 +90,6 @@ export const MaterialsPanel = memo(function MaterialsPanel({
    *  as one change: moving a selection one call at a time would have each
    *  call rebuild the grouping from the same stale snapshot. */
   onMoveMaterial: (materials: string[], targetId: string | null) => void
-  /** Apply a library shader graph to a style group by name */
-  onPickGraph: (groupId: string, graphName: string) => void
   /** The model's grouping is the one saved for it in this browser (lib/model-looks). */
   looksSaved?: boolean
   /** Save the grouping for this model's next upload, or forget it when it is
@@ -128,22 +126,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   // Kept (stale) after close on purpose
   const [menuTarget, setMenuTarget] = useState<MenuTarget | null>(null)
 
-  // Every library graph, flat — the quick-switch list beside the full browser.
-  // Community belongs here as much as it does for grades and effects; it was
-  // simply never wired, so published graphs were invisible outside the browser.
-  const graphDrafts = useDrafts<GraphItem>("graph").drafts
   const communityGraphs = useCommunity<GraphItem>("graph")
-  const graphItems = useMemo(
-    () => [
-      ...quickPickItems(GRAPH_LIBRARY, graphDrafts, null).map((e) => ({
-        id: e.name,
-        label: e.owner === "local" ? e.name : builtinName("graph", e, locale),
-        section: e.owner === "local" ? ("local" as const) : ("builtin" as const),
-      })),
-      ...communityQuickPickItems(communityGraphs),
-    ],
-    [graphDrafts, communityGraphs, locale],
-  )
   // A group reads `edited` only when its graph actually DIFFERS from the library
   // entry it came from. Compared without `name`, which the group rewrites to the
   // entry's label on apply, and without each node's `ui` — opening the editor
@@ -161,17 +144,6 @@ export const MaterialsPanel = memo(function MaterialsPanel({
     }
     return out
   }, [groups, communityGraphs])
-  const itemsForGroup = (g: StyleGroup) => {
-    // The applied graph is always present — a selector that cannot show what is
-    // selected is broken. Listed as local, not community: what falls through
-    // here is a look carried by the scene, which the editor adopts as a draft,
-    // and calling someone's unpublished work "community" was simply wrong.
-    const base = graphItems.some((i) => i.id === g.graph.name)
-      ? graphItems
-      : [...graphItems, { id: g.graph.name, label: g.graph.name, section: "local" as const }]
-    return editedGroups.has(g.id) ? base.map((i) => (i.id === g.graph.name ? { ...i, hint: t.scene.edited } : i)) : base
-  }
-
   const byName = useMemo(() => new Map(materials.map((m) => [m.name, m])), [materials])
   const grouped = useMemo(() => new Set(groups.flatMap((g) => g.materials)), [groups])
   const ungrouped = useMemo(
@@ -181,7 +153,6 @@ export const MaterialsPanel = memo(function MaterialsPanel({
   // Materials within a group render alphabetically, so a drop lands in a deterministic spot
   const sortedNames = (names: string[]) => [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
   // Display order: alphabetical by name.
-  const libraryTarget = groups.some((g) => g.id === activeGroupId) ? activeGroupId : null
   const ordered = useMemo(
     () => [...groups].sort((a, b) => shownLabel(a).localeCompare(shownLabel(b), undefined, { sensitivity: "base" })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -402,7 +373,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
           ))}
         </div>
       )}
-      {/* ── Section toolbar (VSCode explorer header): create + library ── */}
+      {/* ── Section toolbar (VSCode explorer header): create, and the saved-looks switch ── */}
       {/* Same px-4 gutter and 3.5 vertical rhythm as the Scene tab, so the two panels line up */}
       <div
         className={cn(
@@ -432,6 +403,8 @@ export const MaterialsPanel = memo(function MaterialsPanel({
           <span className="truncate">{t.materials.newGroup}</span>
           {!cover && <FolderPlus />}
         </Button>
+        {/* At the right end: the toolbar's one switch, apart from its one action. */}
+        <span className="flex-1" />
         {onToggleSavedLooks && (
           <Button
             variant={cover ? "ghost" : "outline"}
@@ -448,22 +421,6 @@ export const MaterialsPanel = memo(function MaterialsPanel({
           >
             {looksSaved ? <BookmarkCheck /> : <Bookmark />}
           </Button>
-        )}
-        {!cover && <span className="flex-1" />}
-        {/* Library at the right end, matching Grade and Background. Last to give up
-            room: the label is what tells the three doors apart. */}
-        {onOpenLibrary && (
-        <Button variant="bare"
-          onClick={() => onOpenLibrary(libraryTarget)}
-          className={
-            cover
-              ? cn(COVER_ACTION, "flex shrink-0 cursor-pointer items-center")
-              : "flex shrink-0 cursor-pointer items-center gap-1 rounded-chip bg-white py-1 pr-1.5 pl-2 text-xs font-medium text-zinc-950 transition-colors hover:bg-white/90 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-white"
-          }
-        >
-          <Workflow className="size-3.5" />
-          {t.lab.cmd.graphLib}
-        </Button>
         )}
       </div>
 
@@ -501,7 +458,12 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                     "group/hdr flex h-6 cursor-pointer items-center gap-1 rounded-chip pr-0.5 transition-colors",
                     !cover && (isActive ? "bg-blue-400/[0.1]" : "hover:bg-white/[0.04]"),
                   )}
-                  onClick={() => toggleCollapse(g.id)}
+                  onClick={() => {
+                    // The chosen group is what the library beside the pane
+                    // dresses; choosing opens it, so its materials show.
+                    onSelectGroup?.(g.id)
+                    if (!open) toggleCollapse(g.id)
+                  }}
                   onContextMenu={() => setMenuTarget({ kind: "group", id: g.id })}
                 >
                       <Button variant="bare"
@@ -534,33 +496,27 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                         <span
                           className={cn(
                             "min-w-0 flex-1 truncate text-xs font-medium select-none",
-                            isActive ? (cover ? COVER_CHOSEN : "text-blue-400") : "text-foreground",
+                            isActive ? (cover ? COVER_GROUP_CHOSEN : "text-blue-400") : "text-foreground",
                           )}
                         >
                           {shownLabel(g)}
                         </span>
                       )}
 
-                      {/* The group's shader graph, switchable in place. */}
+                      {/* What the group wears. The library beside the pane is
+                          where another comes from. */}
                       <span
-                        className="flex min-w-0 max-w-[58%] justify-end"
-                        // Reaching for the graph shouldn't fold the group away.
-                        onClick={(e) => e.stopPropagation()}
+                        className={cn(
+                          "min-w-0 max-w-[58%] truncate text-right text-xs",
+                          "text-muted-foreground",
+                        )}
                       >
-                        <QuickPick
-                          value={g.graph.name}
-                          label={
-                            g.graph.name === ENGINE_DEFAULT_GRAPH
-                              ? t.materials.defaultGraph
-                              : GRAPH_LIBRARY.some((e) => e.name === g.graph.name)
-                                ? builtinName("graph", g.graph, locale)
-                                : undefined
-                          }
-                          items={itemsForGroup(g)}
-                          onPick={(name) => onPickGraph(g.id, name)}
-                          onEdit={onEditGroupGraph ? () => onEditGroupGraph(g.id) : undefined}
-                          placeholder={g.graph.name}
-                        />
+                        {g.graph.name === ENGINE_DEFAULT_GRAPH
+                          ? t.materials.defaultGraph
+                          : GRAPH_LIBRARY.some((e) => e.name === g.graph.name)
+                            ? builtinName("graph", g.graph, locale)
+                            : g.graph.name}
+                        {editedGroups.has(g.id) && ` · ${t.scene.edited}`}
                       </span>
 
                 </div>
@@ -608,7 +564,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                     "min-w-0 flex-1 truncate text-xs font-medium",
                     activeGroupId === UNGROUPED
                       ? cover
-                        ? COVER_CHOSEN
+                        ? COVER_GROUP_CHOSEN
                         : "text-blue-400"
                       : "text-muted-foreground group-hover/hdr:text-foreground",
                   )}
@@ -636,6 +592,12 @@ export const MaterialsPanel = memo(function MaterialsPanel({
               const locked = !g || isProtected(g)
               return (
                 <>
+                  {onEditGroupGraph && g && (
+                    <ContextMenuItem onSelect={() => onEditGroupGraph(g.id)}>
+                      <Workflow className="size-3.5" />
+                      {t.materials.editGraph}
+                    </ContextMenuItem>
+                  )}
                   <ContextMenuItem disabled={locked} onSelect={() => setRenaming(menuTarget.id)}>
                     <Pencil className="size-3.5" />
                     {t.materials.rename}

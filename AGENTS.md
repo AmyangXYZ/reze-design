@@ -17,8 +17,8 @@ scales) and `app/admin` (its own light theme).
 counters, chips, kbd) · `text-xs` (12px: the chrome's body, fields, buttons) ·
 `text-sm` (14px: dialog and panel titles) · `text-base` (16px: page headings).
 `text-display` (28px, `font-display` italic, Instrument Serif) is a scene's
-name over its picture and nothing else: the cover's (`SceneName display`) and
-the gallery stage's; the same face,
+name over its picture and nothing else: the cover's (`SceneName display`), the
+gallery stage's and the scene viewer's; the same face,
 upright at `text-masthead` (18px), sets the REZE DESIGN masthead. Never `text-[Npx]`.
 Weights: `font-normal` and `font-medium`; `font-semibold` for page headings
 and tiny all-caps labels.
@@ -86,7 +86,7 @@ element. Raw elements that remain on purpose:
 The last two carry an `eslint-disable` with the reason.
 
 **Deliberate palettes (the only colours outside the above):**
-- the library tag hues (`library-rail.tsx`);
+- the avatar swatches (`library-rail.tsx`);
 - shader socket colours (Blender's data-type code, `reze-node.tsx`);
 - the graph node card's `zinc-900` (canvas content that must stand off the
   canvas);

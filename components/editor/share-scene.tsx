@@ -795,7 +795,7 @@ function ShareHead({ title, blurb, busy }: { title: string; blurb: string | null
   return (
     <div data-share-head className="shrink-0 px-4">
       <div className="flex h-5 items-center gap-4">
-        <DialogTitle className="min-w-0 flex-1 truncate font-mono text-2xs font-medium tracking-wide uppercase">{title}</DialogTitle>
+        <DialogTitle className="min-w-0 flex-1 truncate text-sm font-medium">{title}</DialogTitle>
         {!busy && (
           <DialogClose asChild>
             <Button variant="bare" aria-label={t.library.close} className="flex size-5 items-center justify-center text-muted-foreground hover:text-foreground">

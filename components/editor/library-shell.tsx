@@ -14,18 +14,13 @@
 // being the structure.
 
 import { trendScore } from "@/lib/trend"
-import { Stamp } from "@/components/stamp"
 import { Button } from "@/components/ui/button"
 import { PublishSwitch } from "@/components/editor/publish-switch"
 import { STAGE_BOUND_TAG } from "@/lib/effects"
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
-import { Check, ChevronDown, ChevronLeft, Globe, Heart, LayoutGrid, List, Lock, PenLine, Search } from "lucide-react"
+import { Globe, Lock, PenLine, Plus, Search, X } from "lucide-react"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import type { LibraryFacet, LibraryKind, LibraryOwner } from "@/lib/library"
-import { RailRow, RailSection, RailTags } from "@/components/editor/library-rail"
-import { SCROLL_FADE, useScrollFade } from "@/components/editor/scroll-fade"
 import { authorImage, authorVerified, builtinAuthor } from "@/lib/community-store"
 import { UserAvatar } from "@/components/user-avatar"
 import { VerifiedBadge } from "@/components/verified-badge"
@@ -72,7 +67,6 @@ function matchesQuery(i: BrowseItem, query: string, displayName?: string, extra?
 }
 
 export type SortKey = "hot" | "new" | "name" | "maker" | "state" | "likes" | "used"
-export type Density = "grid" | "list"
 /** Provenance is gone as a shelf; as a filter it is All · Yours · Liked. */
 export type BrowseFacet = LibraryFacet
 
@@ -118,48 +112,7 @@ function tally<T>(items: T[], pick: (i: T) => string[]): [string, number][] {
   return [...m].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
 }
 
-// ── Density ──────────────────────────────────────────────────────────────────
-//
-// ONE setting for every library, and it survives the session.
-//
-// It is a preference about how you read a list, not a fact about effects or
-// grades — so choosing rows in one library and finding thumbnails in the next is
-// the app forgetting something you just told it. A module-level store rather
-// than state per dialog, so all four agree, and localStorage so the answer
-// outlives the tab.
-const DENSITY_KEY = storageKey("library-density")
-
-function readDensity(): Density {
-  if (typeof window === "undefined") return "grid"
-  try {
-    return window.localStorage.getItem(DENSITY_KEY) === "list" ? "list" : "grid"
-  } catch {
-    // Private mode, or storage blocked. A preference is a convenience.
-    return "grid"
-  }
-}
-
-let densityValue: Density = readDensity()
-const densityListeners = new Set<() => void>()
-
-function writeDensity(next: Density) {
-  densityValue = next
-  try {
-    window.localStorage.setItem(DENSITY_KEY, next)
-  } catch {
-    // Unwritable storage still changes the view; it just will not be remembered.
-  }
-  for (const l of densityListeners) l()
-}
-
-function subscribeDensity(l: () => void) {
-  densityListeners.add(l)
-  return () => {
-    densityListeners.delete(l)
-  }
-}
-
-// HOW THE LIST IS ORDERED, shared and remembered — density's argument exactly.
+// HOW THE LIST IS ORDERED, shared and remembered.
 //
 // Trending or New is a reading preference, not a fact about effects: someone who
 // browses by what is new wants that in all four libraries, and having each
@@ -246,8 +199,6 @@ export function useLibraryBrowse<T extends BrowseItem>(
   const [tag, setTag] = useState<string | null>(null)
   const [maker, setMaker] = useState<string | null>(null)
   const { key: sort, dir } = useSyncExternalStore(subscribeSort, () => sortValue, () => SORT_SERVER)
-  const density = useSyncExternalStore(subscribeDensity, () => densityValue, () => "grid" as Density)
-  const setDensity = writeDensity
 
   /** One click sorts by a column; a second reverses it. */
   const setSort = useCallback((key: SortKey) => {
@@ -333,7 +284,7 @@ export function useLibraryBrowse<T extends BrowseItem>(
   return {
     rows, counts, makers, tags, filtered, clear,
     query, setQuery, facet, setFacet, tag, setTag, maker, setMaker,
-    sort, dir, setSort, chooseSort, density, setDensity,
+    sort, dir, setSort, chooseSort,
   }
 }
 
@@ -377,7 +328,7 @@ export function AuthorLink({
   at?: boolean
   className?: string
 }) {
-  if (draft) return <span className={className}>{name}</span>
+  if (draft) return <span className={className}>{at ? `@${name}` : name}</span>
   const keep = (e: React.SyntheticEvent) => e.stopPropagation()
   // The check sits beside the link, not in it, so a long name truncates and
   // the check stays. Every caller lays the name out in a flex row.
@@ -400,233 +351,6 @@ export function AuthorLink({
   )
 }
 
-
-/**
- * The rail: what to look at, never where it came from. A host can pin links
- * to its bottom with `footer`.
- *
- * MAKERS is the addition, and it is the point. It is how provenance survives
- * losing its shelf, it credits the people whose work fills the library, and it is
- * the same query a profile page runs.
- */
-export function LibraryRailFilters<T extends BrowseItem>({ browse, footer }: { browse: Browse<T>; footer?: React.ReactNode }) {
-  const t = useT()
-  const { counts, makers, tags, facet, setFacet, maker, setMaker, tag, setTag, filtered, clear } = browse
-  const [tagsRef, tagsMore] = useScrollFade<HTMLDivElement>()
-
-  return (
-    <div className="hidden min-h-0 w-50 shrink-0 flex-col border-r border-line-strong p-2 md:flex">
-      <RailSection title={t.rail.browse}>
-        <div className="flex flex-col gap-0.5 pb-2">
-          {/* All is also the way back from every filter: it drops the maker
-              and the tag along with the facet. */}
-          <RailRow label={t.rail.all} count={counts.all} active={!filtered} onClick={clear} />
-          <RailRow label={t.rail.yours} count={counts.yours} active={facet === "yours"} onClick={() => setFacet("yours")} />
-          <RailRow label={t.rail.liked} count={counts.liked} active={facet === "liked"} onClick={() => setFacet("liked")} />
-        </div>
-      </RailSection>
-
-      {/* Makers. This is where provenance went when the shelves came out: the
-          library credits the people who filled it, and browsing by one of them is
-          the same query a profile page runs. Shown even at one maker, because who
-          made the library is worth saying whether or not it filters anything. */}
-      {makers.length > 0 && (
-        <RailSection title={t.rail.makers}>
-          <div className="flex flex-col gap-0.5">
-            {makers.slice(0, 6).map(([who, n]) => (
-              <RailRow
-                key={who}
-                label={who}
-                count={n}
-                active={maker === who}
-                onClick={() => setMaker(maker === who ? null : who)}
-                leading={<AuthorAvatar name={who} />}
-              />
-            ))}
-          </div>
-        </RailSection>
-      )}
-
-      {/* The cloud, as it was: nine hues, frequency first, counts on the chip.
-          It takes what the rail has left and scrolls, its bottom edge fading
-          while there are more tags, so the last row in view reads as "scroll"
-          rather than as cut off by what sits under it. */}
-      <div ref={tagsRef} className={cn("no-scrollbar min-h-0 flex-1 overflow-y-auto", tagsMore && SCROLL_FADE)}>
-        <RailTags counts={tags} tag={tag} onTagChange={setTag} />
-      </div>
-
-      {/* Places to go from here, not filters: their own slot at the bottom. */}
-      {footer && <div className="flex shrink-0 flex-col gap-1.5 border-t border-line pt-2">{footer}</div>}
-    </div>
-  )
-}
-
-/** Search, sort and density — the controls that decide what the middle column
- *  holds. Kind-specific things (title, New, close) stay with the host. */
-export function LibraryToolbar<T extends BrowseItem>({
-  browse, usedLabel = "",
-}: { browse: Browse<T>; usedLabel?: string }) {
-  const t = useT()
-  const { query, setQuery, sort, chooseSort, density, setDensity } = browse
-  // Two orderings, because those are the two the rest of the chrome cannot give
-  // you: what is good now, and what is newest. Maker and liked are rail filters,
-  // and every other column sorts by its own header in the list view — putting
-  // all seven here would be a third way to do what two surfaces already do.
-  //
-  // A column sort chosen in the list still shows here, so the control never
-  // reads blank while the grid is ordered by something.
-  const COLUMN_LABEL: Record<SortKey, string> = {
-    hot: t.rail.sortHot, new: t.rail.sortNew, name: t.rail.sortName,
-    maker: t.rail.makers, state: t.rail.state, likes: t.rail.likes, used: usedLabel,
-  }
-  const options: [SortKey, string][] = [
-    ["hot", t.rail.sortHot],
-    ["new", t.rail.sortNew],
-    ...(sort === "hot" || sort === "new" ? [] : ([[sort, COLUMN_LABEL[sort]]] as [SortKey, string][])),
-  ]
-  return (
-    <>
-      {/* Every control in this header is one height and one type size. The
-          search is the only one that grows, and it stops well short of the
-          title. */}
-      <div className="relative ml-auto w-32 max-w-[24%] compact:w-auto compact:max-w-none compact:min-w-22 compact:flex-1">
-        <Search className="pointer-events-none absolute top-1/2 left-2 size-3 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={t.rail.search}
-          className="h-6 border-line-strong bg-white/5 pl-7 text-2xs focus-visible:border-foreground focus-visible:ring-0 md:text-2xs"
-        />
-      </div>
-
-      {/* The app's own Select, not a bare one: a native dropdown renders in the
-          platform's chrome and reads as a hole in the panel. */}
-      <Select value={sort} onValueChange={(v) => chooseSort(v as SortKey)}>
-        <SelectTrigger
-          aria-label={t.rail.sort}
-          className="w-24 shrink-0 justify-between border-line-strong bg-white/5 px-2 text-2xs compact:w-20"
-        >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent position="popper" align="end" className="min-w-24">
-          {options.map(([k, label]) => (
-            <SelectItem key={k} value={k} className="text-2xs">{label}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      {/* No list on a phone: its seven columns need a desktop's width. */}
-      <div className="flex h-6 shrink-0 items-center gap-0.5 rounded-chip border border-line-strong bg-white/5 p-0.5 compact:hidden">
-        {([["grid", LayoutGrid], ["list", List]] as const).map(([d, Icon]) => (
-          <Button variant="bare"
-            key={d}
-            type="button"
-            aria-pressed={density === d}
-            aria-label={d === "grid" ? t.rail.grid : t.rail.list}
-            onClick={() => setDensity(d)}
-            className={cn(
-              "flex size-[18px] cursor-pointer items-center justify-center rounded-chip transition-colors",
-              density === d ? "bg-blue-400/15 text-blue-400" : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
-            )}
-          >
-            <Icon className="size-3" />
-          </Button>
-        ))}
-      </div>
-    </>
-  )
-}
-
-// ── Detail on a phone ────────────────────────────────────────────────────────
-//
-// A phone has no room for the inspector beside the grid, so there it REPLACES
-// the grid: picking a card opens it, Back returns. Its own flag rather than the
-// selection, because every library keeps something selected (the applied look,
-// the top effect) and would otherwise open on a detail nobody asked for.
-// Desktop never reads the flag: every class it sets is compact-only.
-
-export function useLibraryDetail() {
-  const [open, setOpen] = useState(false)
-  return {
-    show: () => setOpen(true),
-    hide: () => setOpen(false),
-    /** On the results column. */
-    results: open ? "compact:hidden" : "",
-    /** On the inspector column. */
-    detail: cn("compact:w-auto compact:flex-1 compact:border-l-0", !open && "compact:hidden"),
-  }
-}
-
-/** The top of the inspector on a phone: back to the grid. */
-export function LibraryBack({ onClick }: { onClick: () => void }) {
-  const t = useT()
-  return (
-    <Button variant="bare"
-      type="button"
-      onClick={onClick}
-      className="mx-1.5 mt-1.5 hidden h-8 shrink-0 items-center gap-1 self-start rounded-chip px-1.5 text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground compact:flex"
-    >
-      <ChevronLeft className="size-4" />
-      {t.library.back}
-    </Button>
-  )
-}
-
-// ── Results ──────────────────────────────────────────────────────────────────
-
-/**
- * One line, only while a load behind the list is failing: the rows above are
- * the saved copy, and it is being retried. Nothing while things work, nothing
- * during the in-request retries (lib/net fetchJson) that cover most blips, and
- * it goes away by itself when a retry lands. Amber, the chrome's "it still
- * works, but read this". Retry asks now instead of at the next wait.
- */
-function OfflineLine({ watch, empty }: { watch: readonly string[]; empty?: boolean }) {
-  const t = useT()
-  return (
-    <div className="flex items-center justify-center gap-1.5 px-3 py-3 text-2xs text-muted-foreground">
-      <span className="size-1.5 shrink-0 rounded-full bg-amber-400" />
-      {/* With nothing saved to show, it says what it is doing instead. */}
-      <span>{empty ? t.library.offlineEmpty : t.library.offline}</span>
-      <Button variant="bare" onClick={() => retryNow(watch)} className="text-foreground hover:underline">
-        {t.library.retry}
-      </Button>
-    </div>
-  )
-}
-
-/** One card size for every kind. A scene poster is not a bigger idea than an
- *  effect, and a grid whose track width changes per kind is four grids again.
- *  The count follows the width, so a card never shrinks to satisfy a number. */
-// Three across on a phone: two filled the screen with a handful of cards.
-const GRID =
-  "grid content-start gap-2.5 px-3.5 pt-2 pb-6 [grid-template-columns:repeat(auto-fill,minmax(118px,1fr))] compact:gap-2 compact:px-3 compact:[grid-template-columns:repeat(auto-fill,minmax(96px,1fr))]"
-const COLS = "grid items-center gap-2 [grid-template-columns:30px_minmax(0,1.4fr)_minmax(0,1.3fr)_64px_108px_46px_50px]"
-/** The same columns for a kind with no second number. */
-const COLS_NO_USED = "grid items-center gap-2 [grid-template-columns:30px_minmax(0,1.4fr)_minmax(0,1.3fr)_64px_108px_46px]"
-
-/** A sortable column heading. One click sorts by it, a second reverses. */
-function SortHeader({
-  k, sort, dir, onSort, right, children,
-}: { k: SortKey; sort: SortKey; dir: 1 | -1; onSort: (k: SortKey) => void; right?: boolean; children: React.ReactNode }) {
-  const active = sort === k
-  return (
-    <Button variant="bare"
-      type="button"
-      onClick={() => onSort(k)}
-      className={cn(
-        "-mx-1 flex items-center gap-0.5 rounded-chip px-1 py-0.5 font-mono text-2xs tracking-[0.1em] whitespace-nowrap uppercase transition-colors hover:bg-white/5",
-        right && "justify-end",
-        active ? "text-blue-400" : "text-muted-foreground hover:text-foreground",
-      )}
-    >
-      {children}
-      <ChevronDown
-        className={cn("size-2 shrink-0 transition-opacity", active ? "opacity-100" : "opacity-0", dir === 1 && "rotate-180")}
-      />
-    </Button>
-  )
-}
 
 // ── Visibility ───────────────────────────────────────────────────────────────
 //
@@ -787,222 +511,329 @@ export type CardMeta = {
   nameNode?: React.ReactNode
 }
 
-type ResultsProps<T extends BrowseItem> = {
+/**
+ * One line, only while a load behind the list is failing: the rows above are
+ * the saved copy, and it is being retried. Nothing while things work, nothing
+ * during the in-request retries (lib/net fetchJson) that cover most blips, and
+ * it goes away by itself when a retry lands. Amber, the chrome's "it still
+ * works, but read this". Retry asks now instead of at the next wait.
+ */
+function OfflineLine({ watch, empty }: { watch: readonly string[]; empty?: boolean }) {
+  const t = useT()
+  return (
+    <div className="flex items-center justify-center gap-1.5 px-3 py-3 text-2xs text-muted-foreground">
+      <span className="size-1.5 shrink-0 rounded-full bg-amber-400" />
+      {/* With nothing saved to show, it says what it is doing instead. */}
+      <span>{empty ? t.library.offlineEmpty : t.library.offline}</span>
+      <Button variant="bare" onClick={() => retryNow(watch)} className="text-foreground hover:underline">
+        {t.library.retry}
+      </Button>
+    </div>
+  )
+}
+
+// ── The dock ─────────────────────────────────────────────────────────────────
+//
+// A library is a column on the right of the cover, where the render, publish
+// and AI columns stand, set as type past a hairline like the AI's, and the
+// canvas beside it is the preview: picking a card puts it on the scene. From
+// the top: what is picked; the words that narrow the shelf; the shelf, two
+// cards across.
+//
+// A phone has no canvas to spare beside it, so there the dock is a sheet on
+// the chrome's surface, in the place every phone panel takes.
+
+/** The detail's actions: small words at the end of the name's line, since
+ *  picking is what applies, and editing or publishing is the rarer errand. */
+export const DETAIL_ACTION =
+  "flex h-6 shrink-0 items-center gap-1 bg-transparent p-0 text-xs font-normal text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground [&_svg]:size-3.5"
+
+export function LibraryDock<T extends BrowseItem>({
+  title,
+  context,
+  browse,
+  onClose,
+  onNew,
+  z,
+  onPointerDownCapture,
+  onFocusCapture,
+  detail,
+  cards,
+  children,
+}: {
+  title: string
+  /** A line under the title: what a pick applies to. */
+  context?: string
+  browse: Browse<T>
+  onClose: () => void
+  onNew?: () => void
+  z: number
+  onPointerDownCapture: React.PointerEventHandler
+  onFocusCapture: React.FocusEventHandler
+  /** What is picked (LibraryDetail). */
+  detail: React.ReactNode
+  /** The shelf (LibraryCards). */
+  cards: React.ReactNode
+  /** Its dialogs: delete and make-public confirmations. */
+  children?: React.ReactNode
+}) {
+  const t = useT()
+  const compact = useCompact()
+  const { facet, setFacet, filtered, clear, query, setQuery, sort, chooseSort } = browse
+
+  const word = (on: boolean, label: React.ReactNode, onClick: () => void, key?: string) => (
+    <Button
+      key={key}
+      variant="bare"
+      onClick={onClick}
+      className={cn(
+        "relative flex shrink-0 items-center gap-1 py-1 text-xs whitespace-nowrap after:absolute after:inset-x-0 after:bottom-0 after:h-[1.5px]",
+        on ? "text-foreground after:bg-blue-400" : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {label}
+    </Button>
+  )
+
+  return (
+    <section
+      data-edge="right"
+      data-ink-zone={compact ? undefined : ""}
+      style={{ zIndex: z }}
+      onPointerDownCapture={onPointerDownCapture}
+      onFocusCapture={onFocusCapture}
+      className={cn(
+        "absolute flex flex-col gap-3",
+        compact
+          ? "top-[3.75rem] right-3 left-3 max-h-[60dvh] rounded-surface border border-line-strong bg-surface p-3 shadow-float backdrop-blur-xs"
+          : "cover-type top-[5.75rem] right-7 bottom-16 w-[20rem] pl-5",
+      )}
+    >
+      {/* The AI column's divider: a hairline clear of the column, from the
+          title row's middle to the shelf's foot. */}
+      {!compact && <span aria-hidden className="absolute top-2.5 bottom-5 left-0 w-px bg-line-strong" />}
+      <div className="flex h-6 shrink-0 items-center gap-3">
+        <h2 className="min-w-0 flex-1 truncate text-sm font-medium">{title}</h2>
+        {onNew && (
+          <Button variant="bare" onClick={onNew} className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+            <Plus className="size-3.5" />
+            {t.library.new}
+          </Button>
+        )}
+        <Button variant="bare" onClick={onClose} aria-label={t.library.close} className="-mr-1 flex size-6 shrink-0 items-center justify-center text-muted-foreground hover:text-foreground">
+          <X className="size-4" />
+        </Button>
+      </div>
+      {context !== undefined && <p className="-mt-2 h-4 truncate font-mono text-2xs text-muted-foreground">{context}</p>}
+      {/* One height, picked or not, so the shelf below never moves. */}
+      <div className="-mb-1 min-h-[5.25rem] shrink-0">{detail}</div>
+      <label className="relative flex h-7 shrink-0 items-center gap-1.5 text-muted-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-line-strong focus-within:after:bg-foreground">
+        <Search className="size-3.5 shrink-0" strokeWidth={1.5} />
+        <Input
+          variant="bare"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t.rail.search}
+          className="h-7 min-w-0 flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground"
+        />
+      </label>
+      <div className="flex shrink-0 items-center gap-4">
+        {word(!filtered, t.rail.all, clear)}
+        {word(facet === "yours", t.rail.yours, () => setFacet(facet === "yours" ? "all" : "yours"))}
+        {word(facet === "liked", t.rail.liked, () => setFacet(facet === "liked" ? "all" : "liked"))}
+        <span className="flex-1" />
+        {word(sort === "hot", t.rail.sortHot, () => chooseSort("hot"))}
+        {word(sort === "new", t.rail.sortNew, () => chooseSort("new"))}
+      </div>
+      {cards}
+      {children}
+    </section>
+  )
+}
+
+/**
+ * What is picked, set as type: its name, who made it and when, what it is,
+ * its tags, and what it can do. The tags narrow the shelf below it.
+ */
+export function LibraryDetail({
+  name,
+  author,
+  draft,
+  description,
+  actions,
+}: {
+  name: string
+  author: string
+  draft: boolean
+  description?: string
+  actions: React.ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  const [clipped, setClipped] = useState(false)
+  const para = useRef<HTMLParagraphElement>(null)
+  // Folded again for every new pick.
+  const [shown, setShown] = useState(name)
+  if (shown !== name) {
+    setShown(name)
+    setOpen(false)
+  }
+  useEffect(() => {
+    const el = para.current
+    if (el && !open) setClipped(el.scrollHeight > el.clientHeight + 1)
+  }, [description, open])
+  return (
+    // Every line holds its height whether or not it is filled, so picking
+    // another card changes the words and nothing moves.
+    <div className="flex min-w-0 flex-col">
+      <div className="flex h-6 min-w-0 items-center gap-3">
+        <h3 className="min-w-0 flex-1 truncate text-xs font-medium select-text">{name}</h3>
+        {actions}
+      </div>
+      {/* A draft is your own and unpublished: no maker to name. */}
+      <div className="flex h-4 min-w-0 items-center gap-1.5 font-mono text-2xs text-muted-foreground">
+        {!draft && <AuthorLink name={author} at className="truncate select-text" />}
+      </div>
+      {/* Two lines, and the rest on a click: the one place the dock may move. */}
+      <p
+        ref={para}
+        onClick={() => (open || clipped) && setOpen(!open)}
+        className={cn(
+          "mt-1 text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]",
+          open ? "" : "line-clamp-2 h-10",
+          (open || clipped) && "cursor-pointer hover:text-foreground",
+        )}
+      >
+        {description}
+      </p>
+    </div>
+  )
+}
+
+/** The shelf: two cards across, scrolling down the dock. */
+export function LibraryCards<T extends BrowseItem>({
+  browse,
+  selectedId,
+  onSelect,
+  meta,
+  displayName,
+  wrap,
+  empty,
+  watch,
+  rows: asRows = false,
+  reveal = null,
+}: {
   browse: Browse<T>
   selectedId: string | null
   onSelect: (item: T) => void
-  onActivate?: (item: T) => void
   meta: (item: T) => CardMeta
-  numbers: (id: string) => ItemNumbers
   displayName?: (item: T) => string
   /** Wraps a card in the kind's context menu. Identity by default. */
   wrap?: (item: T, node: React.ReactNode) => React.ReactNode
-  /** The heading of the second number's column; a kind without one has no column. */
-  usedLabel?: string
   empty: React.ReactNode
-  /** Below the rows, inside the same scroller: paging, spinners, errors. */
-  footer?: React.ReactNode
-  /** The loads behind this list (lib/net keys, by prefix). While one is
-   *  failing, a single quiet line under the rows says so. */
+  /** The loads behind this shelf (lib/net keys, by prefix). While one is
+   *  failing, a single quiet line under the cards says so. */
   watch?: readonly string[]
-}
-
-export function LibraryResults<T extends BrowseItem>({
-  browse, selectedId, onSelect, onActivate, meta, numbers, displayName, wrap, usedLabel, empty, footer: rowsFooter, watch,
-}: ResultsProps<T>) {
+  /** Rows of words instead of pictures, for a kind whose look only shows on
+   *  the scene (a shader graph): the canvas is its picture. */
+  rows?: boolean
+  /** A card to bring into view, when its pane chose it (a group's graph, the
+   *  pane's effect). Picking in the shelf itself never scrolls it. */
+  reveal?: string | null
+}) {
   useSyncExternalStore(watchFailing, failingVersion, failingVersion)
   const offline = !!watch && isFailing(watch)
-  const footer =
-    rowsFooter || offline ? (
-      <>
-        {rowsFooter}
-        {offline && <OfflineLine watch={watch} />}
-      </>
-    ) : null
   const t = useT()
-  const compact = useCompact()
-  const { rows, sort, dir, setSort } = browse
-  // A list chosen on a desktop is remembered; a phone still gets the grid.
-  const density = compact ? "grid" : browse.density
+  const { rows } = browse
+  const shelf = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!reveal) return
+    shelf.current
+      ?.querySelector(`[data-card="${CSS.escape(reveal)}"]`)
+      ?.scrollIntoView({ block: "nearest", behavior: "smooth" })
+  }, [reveal])
 
   if (rows.length === 0) {
     return (
-      <div className="flex flex-1 flex-col">
-        {/* Failing with nothing to show: the line takes the empty state's
-            place, rather than a "no results" that is not true. */}
-        {offline ? (
-          <div className="flex flex-1 items-center justify-center p-10">
-            <OfflineLine watch={watch} empty />
-          </div>
-        ) : (
-          <div className="flex flex-1 items-center justify-center p-10 text-center text-xs text-muted-foreground">{empty}</div>
-        )}
-        {rowsFooter}
+      <div className="flex min-h-0 flex-1 items-center justify-center text-center text-xs text-muted-foreground">
+        {offline ? <OfflineLine watch={watch} empty /> : empty}
       </div>
-    )
-  }
-
-  const id = (i: T) => i.id
-  const label = (i: T) => displayName?.(i) ?? i.name
-
-  if (density === "list") {
-    const cols = usedLabel ? COLS : COLS_NO_USED
-    const th = (k: SortKey, children: React.ReactNode, right?: boolean) => (
-      <SortHeader k={k} sort={sort} dir={dir} onSort={setSort} right={right}>{children}</SortHeader>
-    )
-    return (
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="px-2 pb-5">
-          <div className={cn(cols, "sticky top-0 z-10 border-b border-line bg-surface-raised px-1.5 py-1.5")}>
-            <span />
-            {th("name", t.rail.name)}
-            {th("maker", t.rail.makers)}
-            {th("state", t.rail.state)}
-            {/* The publish date IS the "new" ordering, so the column and the
-                menu drive one sort rather than two that agree by accident. */}
-            {th("new", t.rail.published)}
-            {th("likes", t.rail.likes, true)}
-            {usedLabel && th("used", usedLabel, true)}
-          </div>
-          {rows.map((item) => {
-            const st = itemState(item)
-            const Icon = STATE_ICON[st]
-            const n = numbers(id(item))
-            const card = meta(item)
-            const isApplied = card.applied === true
-            const isSelected = selectedId === id(item)
-            // Applied and selected are the SAME blue at two strengths — a wash
-            // and blue text, deeper for the row you are on.
-            //
-            // Both are "active", which is the one thing blue means here, so they
-            // belong to one colour. What was tried and rejected: amber, which
-            // resolves to olive over a near-black ground at every alpha; an inset
-            // left bar, a hard saturated edge on every applied row; and an
-            // outline, which reads as a second kind of border next to the real
-            // ones already in the grid.
-            const lit = isSelected || isApplied
-            const tone = lit ? "text-blue-400" : ""
-            const cell = tone || "text-muted-foreground group-hover:text-foreground"
-            const row = (
-              <div
-                role="button"
-                tabIndex={0}
-                aria-pressed={isSelected}
-                onClick={() => onSelect(item)}
-                onDoubleClick={() => onActivate?.(item)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(item) }
-                }}
-                className={cn(
-                  cols,
-                  "group cursor-default rounded-chip px-1.5 py-1 transition-colors",
-                  tone,
-                  isSelected
-                    ? "bg-blue-400/20"
-                    : isApplied
-                      ? "bg-blue-400/10 hover:bg-blue-400/16"
-                      : "hover:bg-white/5",
-                )}
-              >
-                <div className="h-[19px] w-[30px] overflow-hidden rounded-chip border border-line-strong">{card.preview}</div>
-                <span className={cn("min-w-0 text-xs", !card.nameNode && "truncate")}>{card.nameNode ?? label(item)}</span>
-                <span className={cn("flex min-w-0 items-center gap-1.5 font-mono text-2xs transition-colors", cell)}>
-                  <AuthorAvatar name={builtinAuthor(id(item), item.author)} className="size-3.5" />
-                  <AuthorLink
-                    name={builtinAuthor(id(item), item.author)}
-                    draft={st === "draft"}
-                    className="truncate"
-                  />
-                </span>
-                <span className={cn("flex items-center gap-1 truncate font-mono text-2xs transition-colors", cell)}>
-                  <Icon className="size-2.5 shrink-0" />
-                  {t.rail.states[st]}
-                </span>
-                <Stamp iso={item.createdAt} className={cn("font-mono text-2xs tabular-nums transition-colors", cell)} />
-                <span className={cn("text-right font-mono text-2xs tabular-nums transition-colors", cell)}>{n.likes}</span>
-                {usedLabel && (
-                  <span className={cn("text-right font-mono text-2xs tabular-nums transition-colors", cell)}>{n.uses}</span>
-                )}
-              </div>
-            )
-            return <div key={id(item)}>{wrap ? wrap(item, row) : row}</div>
-          })}
-          {footer}
-        </div>
-      </ScrollArea>
     )
   }
 
   return (
-    <ScrollArea className="min-h-0 flex-1">
-      <div className={GRID}>
+    <div ref={shelf} className={cn("no-scrollbar min-h-0 flex-1 overflow-y-auto pt-1", asRows ? "-mx-2" : "-mx-1 px-1")}>
+      <div className={cn("grid pb-2", asRows ? "grid-cols-1 gap-0.5" : "grid-cols-2 gap-x-2.5 gap-y-3")}>
         {rows.map((item) => {
           const m = meta(item)
           const st = itemState(item)
           const Icon = STATE_ICON[st]
+          const picked = selectedId === item.id
           const card = (
             <div
+              data-card={item.id}
               role="button"
               tabIndex={0}
-              aria-pressed={selectedId === id(item)}
+              aria-pressed={picked}
               onClick={() => onSelect(item)}
-              onDoubleClick={() => onActivate?.(item)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(item) }
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault()
+                  onSelect(item)
+                }
               }}
-              className="flex cursor-default flex-col gap-1.5 text-left"
+              className={cn(
+                "flex min-w-0 cursor-default flex-col text-left",
+                asRows
+                  ? cn("rounded-chip px-2 py-1.5 outline-1 -outline-offset-1 transition-[outline-color,background-color]", picked ? "outline-foreground" : "outline-transparent hover:bg-white/5")
+                  : "gap-1.5",
+              )}
             >
-              <div
-                className={cn(
-                  "relative aspect-[16/10] overflow-hidden rounded-interior border transition-colors",
-                  selectedId === id(item) ? "border-foreground ring-1 ring-foreground" : "border-line-strong hover:border-white/25",
-                )}
-              >
-                {m.preview}
-                {m.applied ? (
-                  <span className="absolute top-1 left-1 flex items-center gap-1 rounded-chip border border-blue-400/50 bg-surface-raised px-1 py-px font-mono text-2xs text-blue-400">
-                    <Check className="size-2.5" />
-                    {t.effectLibrary.applied}
-                  </span>
-                ) : st !== "public" ? (
-                  <span className="absolute top-1 left-1 flex items-center gap-1 rounded-chip border border-line-strong bg-surface-raised px-1 py-px font-mono text-2xs text-muted-foreground">
-                    <Icon className="size-2.5" />
-                    {t.rail.states[st]}
-                  </span>
-                ) : null}
-              </div>
-              <div className="min-w-0">
+              {!asRows && (
                 <div
                   className={cn(
-                    "text-xs leading-tight",
-                    !m.nameNode && "truncate",
-                    (selectedId === id(item) || m.applied) && "text-blue-400",
+                    "relative aspect-[16/10] overflow-hidden rounded-interior bg-white/5 outline-1 outline-offset-2 transition-[outline-color]",
+                    picked ? "outline-foreground" : "outline-transparent",
                   )}
                 >
-                  {m.nameNode ?? label(item)}
+                  {m.preview}
+                  {st !== "public" && (
+                    <span className="absolute top-1 left-1 flex items-center gap-1 rounded-chip bg-black/60 px-1 py-px font-mono text-2xs text-white">
+                      <Icon className="size-2.5" />
+                      {t.rail.states[st]}
+                    </span>
+                  )}
                 </div>
-                <div className="mt-0.5 flex items-center gap-1.5 font-mono text-2xs text-muted-foreground">
-                  <AuthorAvatar name={builtinAuthor(id(item), item.author)} className="size-3.5" />
-                  <AuthorLink
-                    name={builtinAuthor(id(item), item.author)}
-                    draft={st === "draft"}
-                    className="min-w-0 truncate"
-                  />
-                  {/* leading-none, and the count in its own span — see LibraryStats: a bare
-                      text node is as tall as the inherited line-height, and
-                      centring the heart against that box leaves the digits low. */}
-                  <span className="ml-auto flex shrink-0 items-center gap-1 leading-none tabular-nums">
-                    <Heart className="size-3 shrink-0" />
-                    <span className="leading-none">{numbers(id(item)).likes}</span>
+              )}
+              {asRows ? (
+                // One line: the name, and its maker at the right end.
+                <div className="flex h-5 min-w-0 items-center gap-3 text-xs">
+                  <span className={cn("min-w-0 flex-1", !m.nameNode && "truncate")}>{m.nameNode ?? displayName?.(item) ?? item.name}</span>
+                  {st !== "public" && (
+                    <span className="flex shrink-0 items-center gap-1 font-mono text-2xs text-muted-foreground">
+                      <Icon className="size-2.5" />
+                      {t.rail.states[st]}
+                    </span>
+                  )}
+                  <span className="flex max-w-[45%] shrink-0 items-center gap-1.5 font-mono text-2xs text-muted-foreground">
+                    {st !== "draft" && <AuthorLink name={builtinAuthor(item.id, item.author)} at className="min-w-0 truncate" />}
                   </span>
                 </div>
-              </div>
+              ) : (
+                <>
+                  <div className="flex min-w-0 items-center gap-1.5 text-xs leading-tight">
+                    <span className={cn("min-w-0", !m.nameNode && "truncate")}>{m.nameNode ?? displayName?.(item) ?? item.name}</span>
+                  </div>
+                  <div className="-mt-0.5 flex h-4 min-w-0 items-center gap-1.5 font-mono text-2xs text-muted-foreground">
+                    {st !== "draft" && <AuthorLink name={builtinAuthor(item.id, item.author)} at className="min-w-0 truncate" />}
+                  </div>
+                </>
+              )}
             </div>
           )
-          return <div key={id(item)}>{wrap ? wrap(item, card) : card}</div>
+          return <div key={item.id}>{wrap ? wrap(item, card) : card}</div>
         })}
-        {footer && <div className="col-span-full">{footer}</div>}
       </div>
-    </ScrollArea>
+      {offline && <OfflineLine watch={watch} />}
+    </div>
   )
 }

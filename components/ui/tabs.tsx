@@ -43,7 +43,7 @@ function TabsTrigger({ className, ...props }: React.ComponentProps<typeof TabsPr
         "inline-flex h-5 items-center justify-center rounded-chip px-2 text-xs whitespace-nowrap text-muted-foreground transition-colors",
         "focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
         "group-data-[cover]/tabs:relative group-data-[cover]/tabs:flex-none group-data-[cover]/tabs:px-0 group-data-[cover]/tabs:hover:text-foreground",
-        "group-data-[cover]/tabs:after:absolute group-data-[cover]/tabs:after:inset-x-2 group-data-[cover]/tabs:after:-bottom-0.5 group-data-[cover]/tabs:after:h-[1.5px] group-data-[cover]/tabs:after:rounded-full",
+        "group-data-[cover]/tabs:after:absolute group-data-[cover]/tabs:after:inset-x-0 group-data-[cover]/tabs:after:-bottom-0.5 group-data-[cover]/tabs:after:h-[1.5px] group-data-[cover]/tabs:after:rounded-full",
         // The chosen tab is stroked heavier rather than set in a heavier weight,
         // so its word keeps its spacing (the index does the same).
         "group-data-[cover]/tabs:data-[state=active]:[-webkit-text-stroke:0.35px_currentColor] group-data-[cover]/tabs:data-[state=active]:text-foreground group-data-[cover]/tabs:data-[state=active]:after:bg-blue-400",

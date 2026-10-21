@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, GalleryThumbnails, GitFork, Heart, Minimize2, WandSparkles } from "lucide-react"
+import { ArrowLeft, GalleryThumbnails, GitFork, Heart, Minimize2, Triangle, WandSparkles } from "lucide-react"
 import { LogoMenu, Row as MenuRow } from "@/components/editor/scene-file-menu"
 import { DisplayOnlyTag } from "@/components/editor/scene-gallery"
 import { AnimPlayer } from "@/components/scene/anim-player"
@@ -35,6 +35,8 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { SignInDialog } from "@/components/editor/account-panel"
 import { useI18n, useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
+import { useCompact } from "@/lib/device"
+import { useCoverInk } from "@/hooks/use-cover-ink"
 import { VideoLink } from "@/components/video-link"
 import { Button } from "@/components/ui/button"
 import { VerifiedBadge } from "@/components/verified-badge"
@@ -136,6 +138,11 @@ export function SceneViewer(props: ViewerProps) {
   const [logoMenu, setLogoMenu] = useState(false)
   // The editor's switch: everything but the scene, off and back.
   const [uiHidden, setUiHidden] = useHideUi()
+  // Off a phone the page is the editor's cover: type set straight on the
+  // scene, its ink read off the frame (hooks/use-cover-ink). A phone keeps the
+  // card, as the editor keeps its sheet.
+  const compact = useCompact()
+  const mainRef = useRef<HTMLElement>(null)
 
   /**
    * Park the assets, then go.
@@ -175,16 +182,113 @@ export function SceneViewer(props: ViewerProps) {
   }, [session])
 
   return (
-    <main className="fixed inset-0 overflow-hidden bg-background select-none" data-ui-hidden={uiHidden || undefined}>
+    <main
+      ref={mainRef}
+      className={cn("fixed inset-0 overflow-hidden bg-background select-none", !compact && "cover")}
+      data-ink="dark"
+      data-ui-hidden={uiHidden || undefined}
+    >
       {/* The scene, under the chrome — its own component so `useEngine` never
           runs conditionally. Until it exists there is a pill, and the text
           around it is already readable. */}
-      {scene ? <SceneStage {...props} scene={scene} bundleFilesRef={bundleFilesRef} /> : <LoadingPill />}
+      {scene ? (
+        <SceneStage {...props} scene={scene} bundleFilesRef={bundleFilesRef} mainRef={mainRef} line={!compact} />
+      ) : (
+        <LoadingPill />
+      )}
+
+      {!compact && (
+        <>
+          {/* The editor's top row, to the pixel: the wordmark home to the
+              editor, and the gallery. */}
+          <div data-edge="top" data-ink-zone className="cover-type pointer-events-none absolute top-5 right-6 left-7 flex h-8 items-center gap-7 text-xs">
+            <Link
+              href="/"
+              className="pointer-events-auto font-display text-masthead tracking-[0.45em] uppercase [-webkit-text-stroke:0.3px_currentColor]"
+            >
+              Reze Design
+            </Link>
+            <Link href="/gallery" className="pointer-events-auto text-foreground hover:text-muted-foreground">
+              {t.gallery.title}
+            </Link>
+          </div>
+
+          {/* The scene's cover, where the editor sets its own: the name in the
+              display serif, whose and when, what its maker wrote, the 借物表,
+              then what you can do with it. */}
+          <aside data-edge="left" className="cover-type pointer-events-none absolute top-0 bottom-16 left-0 flex w-[25rem] flex-col pt-5 pr-7 pl-7 text-xs">
+            <div data-ink-zone className="pointer-events-auto mt-14">
+              <h1 className="font-display text-display italic select-text">{props.title}</h1>
+              <p className="mt-2 flex min-w-0 items-center gap-2 font-mono text-2xs tracking-wide text-muted-foreground uppercase">
+                <Link href={`/${props.author}`} className="truncate text-foreground normal-case hover:underline">
+                  @{props.author}
+                </Link>
+                {props.verified && <VerifiedBadge />}
+                <span>·</span>
+                <PublishedAt iso={props.publishedAt} />
+              </p>
+            </div>
+            <div data-ink-zone className="no-scrollbar pointer-events-auto mt-8 flex min-h-0 flex-col overflow-y-auto">
+              {props.description && (
+                <p className="leading-relaxed whitespace-pre-wrap text-foreground select-text [overflow-wrap:anywhere]">{props.description}</p>
+              )}
+              <VideoLink url={props.video} className="mt-3 w-fit" />
+              {props.credits && (
+                <div className="mt-5">
+                  <div className="font-mono text-2xs font-medium tracking-wide text-muted-foreground uppercase">{t.share.credits}</div>
+                  <p className="mt-1.5 font-mono text-2xs leading-relaxed whitespace-pre-wrap text-muted-foreground select-text [overflow-wrap:anywhere]">
+                    {props.credits}
+                  </p>
+                </div>
+              )}
+              <div className="mt-6 flex items-center gap-5">
+                {props.displayOnly ? (
+                  <DisplayOnlyTag />
+                ) : (
+                  <Button
+                    onClick={requestFork}
+                    disabled={forking}
+                    className="h-7 rounded-chip bg-foreground px-4 text-xs font-medium text-background hover:bg-foreground/85"
+                  >
+                    {t.share.fork}
+                  </Button>
+                )}
+                <Button
+                  variant="bare"
+                  onClick={() => void like.toggle()}
+                  aria-disabled={!like.canLike}
+                  className={cn(
+                    "flex h-8 items-center gap-1.5 font-mono text-xs",
+                    like.liked ? "text-red-400" : "text-foreground",
+                    like.canLike ? "hover:text-red-400" : "cursor-default",
+                  )}
+                >
+                  <Heart className={cn("size-4", like.liked && "fill-current")} />
+                  {like.count}
+                </Button>
+              </div>
+            </div>
+          </aside>
+
+          <Button
+            variant="bare"
+            data-edge="left"
+            onClick={() => setUiHidden(true)}
+            className="cover-type absolute bottom-5 left-7 flex h-8 items-center text-xs"
+          >
+            <span data-ink-zone className="flex items-center gap-1.5 text-foreground">
+              <Triangle className="size-2.5 -rotate-90" />
+              {t.transport.hide}
+            </span>
+          </Button>
+        </>
+      )}
 
       {/* Top left: whose site this is. A shared link is often someone's first
           contact with the product, and nothing else on the page says its name.
           The logo is a menu, as in the editor: back to it, or on to another
           scene without going through it. */}
+      {compact && (
       <div
         // The editor's collapsed brand pill, box model and all: same top-3/left-3
         // origin, same 1px border, same pl-2/pr-1.5, same size-7 icon well. Only
@@ -235,6 +339,7 @@ export function SceneViewer(props: ViewerProps) {
           Reze Design
         </Link>
       </div>
+      )}
 
       {/* Bottom left, above the transport: title, author, caption — TikTok's
           arrangement, where the text hugs itself and the scene stays the page. */}
@@ -249,6 +354,7 @@ export function SceneViewer(props: ViewerProps) {
           that footer and nothing else, so the two cases are one card.
           Editor chrome: bg-surface without blur (it floats over the canvas,
           which a blur would re-sample every frame), two text colours. */}
+      {compact && (
       <div className="absolute bottom-16 left-4 flex max-h-[32dvh] w-[min(10.5rem,44vw)] flex-col overflow-hidden rounded-surface border border-line-strong bg-surface md:top-3 md:right-3 md:bottom-auto md:left-auto md:max-h-[50dvh] md:w-64">
         {/* Everything, always: crediting only counts if people can read it
             without knowing to ask. Long text scrolls DOWN inside the panel and
@@ -358,9 +464,11 @@ export function SceneViewer(props: ViewerProps) {
         </div>
       </div>
 
+      )}
+
       {/* Mobile keeps TikTok's standalone rail, thumb-reachable and clear of the
           transport; desktop shows it inside the card instead. */}
-      <LikeButton like={like} className="absolute right-5 bottom-16 flex-col md:hidden" />
+      {compact && <LikeButton like={like} className="absolute right-5 bottom-16 flex-col md:hidden" />}
 
       <SignInDialog
         open={signInOpen && !session}
@@ -381,7 +489,7 @@ export function SceneViewer(props: ViewerProps) {
         tone="accent"
         onConfirm={() => void openInEditor()}
       />
-      {uiHidden && <ShowUiButton onShow={() => setUiHidden(false)} />}
+      {uiHidden && <ShowUiButton corner={!compact} onShow={() => setUiHidden(false)} />}
     </main>
   )
 }
@@ -479,7 +587,16 @@ function LikeButton({ like, compact, className }: { like: LikeState; compact?: b
 function SceneStage({
   scene,
   bundleFilesRef,
-}: ViewerProps & { scene: Scene; bundleFilesRef: RefObject<() => BundleFile[]> }) {
+  mainRef,
+  line,
+}: ViewerProps & {
+  scene: Scene
+  bundleFilesRef: RefObject<() => BundleFile[]>
+  /** The page, whose type takes its ink from this canvas. */
+  mainRef: RefObject<HTMLElement | null>
+  /** The transport as the cover's one line (off a phone). */
+  line: boolean
+}) {
   const {
     canvasRef,
     engineRef,
@@ -510,6 +627,9 @@ function SceneStage({
   useEffect(() => {
     bundleFilesRef.current = bundleFiles
   }, [bundleFilesRef, bundleFiles])
+
+  // The cover's ink, from what this stage draws (the page's type sits over it).
+  useCoverInk(mainRef, canvasRef, line)
 
   const loadingLabel = useLoadingLabel({
     scene,
@@ -636,9 +756,9 @@ function SceneStage({
         moving={drawnBackdrop.moving}
         canvasRef={drawnBackdrop.canvasRef}
         videoRef={bgVideoRef}
-        className="absolute inset-0 h-full w-full object-cover"
+        className="frame-layer absolute inset-0 h-full w-full object-cover"
       />
-      <canvas data-keep ref={canvasRef} className="absolute inset-0 h-full w-full touch-none object-contain" />
+      <canvas data-keep ref={canvasRef} className="frame-layer absolute inset-0 h-full w-full touch-none object-contain" />
 
       {!ready && !error && <LoadingPill label={loadingLabel} />}
       {error && <LoadError error={error} failure={downloadFailure} onRetry={() => window.location.reload()} />}
@@ -648,9 +768,10 @@ function SceneStage({
         // absolutely positioned pill has nothing to size against, so on a phone
         // it ran off both edges. inset-x-3 gives it the viewport minus the same
         // gutter the bottom uses, and the transport shrinks into it.
-        <div className="pointer-events-none absolute inset-x-3 bottom-3 flex justify-center">
+        <div data-edge="bottom" data-ink-zone={line || undefined} className="pointer-events-none absolute inset-x-3 bottom-3 flex justify-center">
           <div className="pointer-events-auto max-w-full">
             <AnimPlayer
+              line={line}
               engineRef={engineRef}
               modelNames={animated}
               timeline={timeline}

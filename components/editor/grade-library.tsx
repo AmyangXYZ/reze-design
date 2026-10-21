@@ -1,12 +1,10 @@
 "use client"
 
-// Grades library — the same three-column shell as the shader-graph and background-effect libraries.
+// Grades library — the shared dock on the right of the cover (library-shell).
 
 import { toast } from "sonner"
-import { Stamp } from "@/components/stamp"
 import { useCallback, useMemo, useState } from "react"
-import { Check, Palette, Plus, SquarePen, X } from "lucide-react"
-import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { PenLine } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { GradePreview } from "@/components/editor/grade-preview"
 import type { GradeEditorSubject } from "@/components/editor/grade-editor"
@@ -15,20 +13,16 @@ import {
   NEW_GRADE_SPEC,
   type GradeSettings,
 } from "@/lib/grade"
-import { LIBRARY_DETAIL_BODY, LIBRARY_SHELL, LibraryItemStats, LibraryTags } from "@/components/editor/library-rail"
 import {
-  LibraryBack,
-  LibraryRailFilters,
-  LibraryResults,
-  LibraryToolbar,
+  DETAIL_ACTION,
+  LibraryDock,
+  LibraryCards,
+  LibraryDetail,
   useLibraryBrowse,
-  useLibraryDetail,
   type BrowseFacet,
   type CardMeta,
-  AuthorAvatar,
   VisibilityMenu,
   useMakePublic,
-  AuthorLink,
   itemState,
   RenameField,
 } from "@/components/editor/library-shell"
@@ -51,7 +45,6 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useReport } from "@/hooks/use-report"
 import { builtinDescription, builtinName, builtinSearchText } from "@/lib/builtin-text"
 import { useI18n } from "@/lib/i18n"
-import { cn } from "@/lib/utils"
 
 type Props = {
   open: boolean
@@ -70,12 +63,7 @@ type Props = {
 }
 
 export function GradeLibrary(props: Props) {
-  return (
-    // Non-modal, no overlay — the docks stay live and the scene stays undimmed, because the scene
-    <Dialog open={props.open} onOpenChange={props.onOpenChange} modal={false}>
-      {props.open && <LibraryContent {...props} />}
-    </Dialog>
-  )
+  return props.open ? <LibraryContent {...props} /> : null
 }
 
 function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRenamed, onEdit }: Props) {
@@ -83,7 +71,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
   // Desktop-style stacking: clicking a library raises it over any editor.
   // Radix would close on Escape whatever is stacked above it; the z-order
   // stack closes only the topmost surface.
-  const { statFor, signedIn, toggleLike } = useLibraryStats()
+  const { statFor } = useLibraryStats()
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, () => onOpenChange(false))
   // By id, like the other libraries: keyed by name, a rename had a render where
   // the row already wore its new name and the selection still held the old one,
@@ -160,16 +148,11 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
   // The applied grade cannot be deleted — see the graph library's `inUse`.
   const inUse = (g: GradeItem) => g.owner === "local" && nameKey(g.name) === nameKey(grade.preset)
 
-  // Browsing never touches the scene
-  const detail = useLibraryDetail()
+  // PICKING IS TRYING: a picked grade goes on the scene, so browsing is
+  // watching the canvas take each one.
   const select = (g: GradeItem) => {
     setSelectedId(g.id)
-    detail.show()
-  }
-
-  const apply = () => {
-    onApplyPreset(selected.name)
-    onOpenChange(false)
+    if (grade.preset !== g.name) onApplyPreset(g.name)
   }
 
   /** Straight into the editor, no entry created */
@@ -185,7 +168,6 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
   /** Is this entry what the scene is currently showing? The scene stores the name. */
   const isApplied = (g: GradeItem) => grade.preset === g.name
 
-  const shownSpec = selected?.payload.spec
 
   const meta = (g: GradeItem): CardMeta => ({
     preview: <GradePreview spec={g.payload.spec} />,
@@ -267,111 +249,29 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
   }
 
   return (
-    <DialogContent
-      showCloseButton={false}
-      overlay={false}
-      onInteractOutside={(e) => e.preventDefault()}
-      onEscapeKeyDown={(e) => e.preventDefault()}
-      // Don't pull focus into the search field — it made Escape land in a text
-      // input the moment the library opened.
-      onOpenAutoFocus={(e) => e.preventDefault()}
-      onCloseAutoFocus={(e) => e.preventDefault()}
-      style={{ zIndex: z }}
-        onPointerDownCapture={onPointerDownCapture}
-        onFocusCapture={onFocusCapture}
-        className={LIBRARY_SHELL}
-    >
-      <DialogHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-line bg-surface-raised px-4 py-2 text-left compact:gap-2 compact:px-3">
-        <DialogTitle className="flex shrink-0 items-center gap-2 text-sm font-medium">
-          <Palette className="size-4 text-blue-400" />
-          {t.scene.grade}
-        </DialogTitle>
-        <LibraryToolbar browse={browse} usedLabel={t.rail.used} />
-        {onEdit && (
-          <Button variant="bare"
-            onClick={startNew}
-            className="flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-chip border border-line-strong bg-white/5 px-2 text-2xs font-medium transition-colors hover:bg-white/10"
-          >
-            <Plus className="size-3" />
-            {t.library.new}
-          </Button>
-        )}
-        <DialogClose className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-chip text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none">
-          <X className="size-3.5" />
-          <span className="sr-only">{t.library.close}</span>
-        </DialogClose>
-      </DialogHeader>
-
-      <div className="flex min-h-0 flex-1">
-        <LibraryRailFilters browse={browse} />
-
-        {/* ONE ranked list. No shelves: a built-in is a preset the admin
-            account published, so splitting the grid by provenance sorted by who
-            rather than by what. The rail still filters by maker. */}
-        <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden", detail.results)}>
-          <LibraryResults
-            watch={["community", "library-stats"]}
-            browse={browse}
-            selectedId={selected?.id ?? null}
-            onSelect={select}
-            onActivate={startEdit}
-            meta={meta}
-            numbers={numbers}
-            displayName={displayName}
-            wrap={wrap}
-            usedLabel={t.rail.used}
-            empty={browse.query ? t.library.noMatch(browse.query) : t.rail.yoursEmpty}
-          />
-        </div>
-
-        {/* ── Inspector, doubling as the editor for user grades ── */}
-        <div className={cn("flex w-[15rem] shrink-0 flex-col overflow-y-auto border-l border-line sm:w-[17rem]", detail.detail)}>
-          <LibraryBack onClick={detail.hide} />
-          {selected && shownSpec && (
-            <>
-              <div className="p-3 pb-0">
-                {/* The preview IS the edit affordance, exactly like the other two libraries */}
-                <Button variant="bare"
-                  type="button"
-                  disabled={!onEdit}
-                  onClick={() => startEdit(selected)}
-                  className="group/prev relative block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-chip border border-line-strong"
-                >
-                  <GradePreview spec={shownSpec} />
-                  <div className="absolute inset-0 flex items-center justify-center gap-1.5 bg-surface text-xs font-medium text-foreground opacity-0 transition-opacity group-hover/prev:opacity-100">
-                    <SquarePen className="size-4" />
-                    {t.gradeLibrary.edit}
-                  </div>
-                </Button>
-              </div>
-
-              <div className={LIBRARY_DETAIL_BODY}>
-                <div className="truncate text-sm font-semibold select-text">{nameOf(selected)}</div>
-                <div className="mt-1 flex items-center gap-1.5 font-mono text-2xs text-muted-foreground">
-                  <AuthorAvatar name={builtinAuthor(selected.id, selected.author)} className="size-3.5" />
-                  <AuthorLink name={builtinAuthor(selected.id, selected.author)} draft={itemState(selected) === "draft"} className="truncate select-text" />
-                </div>
-                {/* When it went public, the same fact the gallery's panel shows — on its
-                    own line, so a long name never pushes it out of view. */}
-                {selected.createdAt && (
-                  <div className="mt-1 flex h-3.5 items-center font-mono text-2xs text-muted-foreground">
-                    <Stamp iso={selected.createdAt} show="words" locale={locale} />
-                  </div>
+    <LibraryDock
+      title={t.scene.grade}
+      browse={browse}
+      onClose={() => onOpenChange(false)}
+      onNew={onEdit && startNew}
+      z={z}
+      onPointerDownCapture={onPointerDownCapture}
+      onFocusCapture={onFocusCapture}
+      detail={
+        selected && (
+          <LibraryDetail
+            name={nameOf(selected)}
+            author={builtinAuthor(selected.id, selected.author)}
+            draft={itemState(selected) === "draft"}
+            description={selected.description ? builtinDescription("grade", selected, locale) : undefined}
+            actions={
+              <>
+                {onEdit && (
+                  <Button variant="bare" onClick={() => startEdit(selected)} className={DETAIL_ACTION}>
+                    <PenLine />
+                    {t.lab.ctl.edit}
+                  </Button>
                 )}
-                {selected.description && (
-                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground select-text">{builtinDescription("grade", selected, locale)}</p>
-                )}
-                <LibraryTags tags={selected.tags} />
-                <LibraryItemStats
-                  likeCount={statFor(selected.id).likeCount}
-                  liked={statFor(selected.id).liked}
-                  canLike={signedIn && selected.owner !== "local"}
-                  scenes={statFor(selected.id).scenes}
-                  onToggle={() => void toggleLike(selected.id)}
-                />
-              </div>
-
-              <div className="mt-auto shrink-0 space-y-1.5 border-t border-line p-3">
                 {selected.owner === "local" && (
                   <PublishButton
                     kind="grade"
@@ -380,9 +280,9 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                     defaultTags={selected.tags}
                     payload={() => selected.payload}
                     currentVisibility={selected.visibility}
-                  itemId={draftOrigin("grade", selected.id).sourceId ?? selected.id}
+                    itemId={draftOrigin("grade", selected.id).sourceId ?? selected.id}
                     forkedFromId={draftOrigin("grade", selected.id).forkedFromId}
-                    className="h-8 w-full"
+                    className={DETAIL_ACTION}
                     onPublished={(item) => {
                       // Promotion: the draft's content now lives on the server —
                       // keeping the local copy would show the same thing twice.
@@ -394,19 +294,24 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
                     }}
                   />
                 )}
-                <Button
-                  size="sm"
-                  onClick={apply}
-                  className="h-8 w-full bg-blue-400 text-xs font-medium text-on-accent hover:bg-blue-400/90"
-                >
-                  <Check className="size-3.5" />
-                  {t.gradeLibrary.apply}
-                </Button>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
+              </>
+            }
+          />
+        )
+      }
+      cards={
+        <LibraryCards
+          watch={["community", "library-stats"]}
+          browse={browse}
+          selectedId={selected?.id ?? null}
+          onSelect={select}
+          meta={meta}
+          displayName={displayName}
+          wrap={wrap}
+          empty={browse.query ? t.library.noMatch(browse.query) : t.rail.yoursEmpty}
+        />
+      }
+    >
       {makePublic.dialog}
       <ConfirmDialog
         open={confirming !== null}
@@ -426,6 +331,6 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
           )
         }}
       />
-    </DialogContent>
+    </LibraryDock>
   )
 }
