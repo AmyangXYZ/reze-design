@@ -676,17 +676,18 @@ export const AnimPlayer = memo(function AnimPlayer({
         </div>
         <span className="flex items-center gap-2">
         <span className={cn("shrink-0 leading-none text-muted-foreground tabular-nums", bare ? "font-mono text-2xs" : "text-xs")}>{fmt(progress.duration)}</span>
-        {!unfolded && fold}
         {/* Their own tighter group. The row's gap-2 is the spacing between the
             transport's PARTS — button, time, track, controls — and these are
-            one part: two or three icon toggles that belong together and read as
-            a cluster rather than as three more members of the row. */}
+            one part: two or three toggles that belong together and read as a
+            cluster rather than as three more members of the row. The fold
+            ends the line after them, so it stands in one place. */}
         {!unfolded &&
           (bare ? (
-            <span className="ml-3 flex shrink-0 items-center gap-3">{lineChrome}</span>
+            <span className="ml-1 flex shrink-0 items-center gap-3 empty:hidden">{lineChrome}</span>
           ) : (
             <span className="flex shrink-0 items-center gap-0.5">{chrome}</span>
           ))}
+        {!unfolded && fold}
         </span>
       </div>
       </Cover>

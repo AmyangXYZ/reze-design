@@ -434,7 +434,7 @@
 }
 [data-paper="dark"],
 .cover[data-ink="light"] [data-paper="auto"] {
-  --chrome-surface: oklch(0 0 0 / 0.6);
+  --chrome-surface: oklch(0 0 0 / 0.45);
   --foreground: oklch(1 0 0);
   --muted-foreground: var(--foreground);
   --ink-disabled: oklch(0.78 0 0);
