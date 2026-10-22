@@ -1411,6 +1411,7 @@ function Spotlight({
   const t = useT()
   const [at, setAt] = useState(0)
   const [held, setHeld] = useState(false)
+  const swipe = useRef<{ x: number; y: number } | null>(null)
   const s = feat[Math.min(at, feat.length - 1)]
   useEffect(() => {
     if (held || feat.length < 2) return
@@ -1421,6 +1422,19 @@ function Spotlight({
     <section
       onMouseEnter={() => setHeld(true)}
       onMouseLeave={() => setHeld(false)}
+      // A swipe across it turns to the next or the last, as a phone expects.
+      onTouchStart={(e) => {
+        swipe.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+      }}
+      onTouchEnd={(e) => {
+        const from = swipe.current
+        swipe.current = null
+        if (!from || feat.length < 2) return
+        const dx = e.changedTouches[0].clientX - from.x
+        const dy = e.changedTouches[0].clientY - from.y
+        if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy)) return
+        setAt((i) => (i + (dx < 0 ? 1 : feat.length - 1)) % feat.length)
+      }}
       className="relative h-[min(56.25vw,80vh)] min-h-[28rem] overflow-hidden compact:h-[70vh]"
     >
       {feat.map((f, i) => (
@@ -1486,7 +1500,7 @@ function Spotlight({
         </div>
       </div>
       {feat.length > 1 && (
-        <div className="absolute right-12 bottom-14 z-10 flex gap-2 compact:hidden">
+        <div className="absolute right-12 bottom-14 z-10 flex gap-2 compact:right-4 compact:bottom-12 compact:gap-1.5">
           {feat.map((f, i) => (
             <Button
               key={f.id}
@@ -1494,7 +1508,7 @@ function Spotlight({
               aria-label={f.name}
               onClick={() => setAt(i)}
               className={cn(
-                "block aspect-video w-24 overflow-hidden rounded-chip outline-offset-2 transition-[opacity,translate] duration-233",
+                "block aspect-video w-24 overflow-hidden rounded-chip outline-offset-2 transition-[opacity,translate] duration-233 compact:w-12",
                 i === at ? "-translate-y-0.5 opacity-100 outline-[1.5px] outline-foreground" : "opacity-45 outline-transparent hover:opacity-80",
               )}
             >

@@ -56,8 +56,11 @@ paper too, on the side opposite the cover's ink, with no edge. The floating
 editors (graph, WGSL, grade) are solid black in the dark paper's ink and
 hairline, whatever the scene; the code view keeps its own ground
 (`data-ground="code"`). The material tree, AI panel and publish keep surfaces.
-A device with no mouse or trackpad (a phone or a tablet) only plays: the
-editor shows it the scene, the masthead, the gallery and the transport.
+A device with no mouse or trackpad (a phone or a tablet) gets the lite
+editor (`components/mobile/mobile-studio.tsx`): the scene full screen, the
+masthead, the gallery and the transport, and behind ☰ a white-paper card of
+nested lists to pick, apply and tune. Phone features are sections of that
+card; the desktop chrome never branches for a phone.
 
 **Surfaces and edges.** `bg-surface` for chrome, `bg-surface-raised` for
 anything stacked on it, `bg-background` for a page's own ground. Tints over

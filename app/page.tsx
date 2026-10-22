@@ -95,6 +95,8 @@ import { useCoverInk } from "@/hooks/use-cover-ink"
 import { useLeaving } from "@/hooks/use-leaving"
 import { WORDMARK } from "@/components/wordmark"
 import { FpsReadout } from "@/components/scene/fps-readout"
+import { MobileStudio } from "@/components/mobile/mobile-studio"
+import { MenuMark } from "@/components/mobile/menu-mark"
 import { SCROLL_FADE, useScrollFade } from "@/components/editor/scroll-fade"
 import { prefetchLibraryStats } from "@/hooks/use-library-stats"
 import { AnimPlayer, type Scrub } from "@/components/scene/anim-player"
@@ -215,6 +217,7 @@ import { resolveActive, useAiSettings, viaOf } from "@/lib/ai/connections"
 import type { SceneSnapshot } from "@/lib/scene-history"
 import { freeName } from "@/lib/names"
 import {
+  applyDefaults,
   effectParams,
   builtinEffect,
   NEW_EFFECT_TEMPLATE,
@@ -476,7 +479,7 @@ function SizeRow({
           e.currentTarget.blur()
         }
       }}
-      className={cn(VALUE_BOX, "border-transparent text-muted-foreground outline-none focus:border-foreground focus:bg-white/5 focus:text-foreground")}
+      className={cn(VALUE_BOX, "border-transparent text-muted-foreground outline-none focus:border-foreground focus:text-foreground")}
     />
   )
   // Right-aligned like every other value in this dock: the labels run down the
@@ -494,6 +497,8 @@ function SizeRow({
 }
 
 const FRAME_ASPECT_TOL = 1.03
+/** What a phone's render panel tells the frame: nothing. */
+const noFramePreview = () => {}
 
 /** Palette recents, persisted — Suggestions should remember across sessions. */
 const RECENTS_KEY = storageKey("palette-recents")
@@ -2408,6 +2413,43 @@ function Lab() {
     animTarget.current = id
     vmdInput.current?.click()
   }, [])
+  /** A .vmd onto a model: its motion, or a notice when the file is a camera's
+   *  or holds nothing for a character. The motion picker and a phone both. */
+  const loadMotionFile = (id: string, file: File) => {
+    void file.arrayBuffer().then((buf) => {
+      // A camera VMD carries no bone or morph frames, so loading it on a
+      // model builds a clip of zero length: the row fills in with the file
+      // name and the transport reads 0:00, which looks exactly like a file
+      // that failed to parse. It parsed perfectly — it is simply not a
+      // motion for a character, and the scene has a Camera slot that wants
+      // it. Say so rather than accept a clip that can never play.
+      //
+      // Not auto-routed: the camera slot may already hold someone's shot,
+      // and silently overwriting it to be helpful is the worse surprise.
+      let usable = 0
+      let cameraFrames = 0
+      try {
+        usable = VMDLoader.loadFromBuffer(buf).length
+        cameraFrames = VMDLoader.loadCameraFromBuffer(buf).length
+      } catch {
+        // Unreadable: let loadVmdFile run and report the failure it finds.
+      }
+      if (usable === 0) {
+        setUpload({
+          kind: "notice",
+          message: cameraFrames > 0 ? t.lab.cameraVmd : t.lab.emptyVmd,
+        })
+        return
+      }
+      void loadVmdFile(id, file).then((name) => {
+        if (name)
+          setAnimByModel((prev) => ({
+            ...prev,
+            [id]: { name, src: file },
+          }))
+      })
+    })
+  }
   const removeAnimation = (id: string) => {
     stopAnimation(id)
     setAnimByModel((prev) => {
@@ -2638,6 +2680,8 @@ function Lab() {
   // A phone (or a tablet) gets the scene and its transport, play only
   // (globals.css, "Phone"; lib/device.ts).
   const phone = usePhone()
+  /** The phone's tools, open on their side sheet (components/mobile/mobile-studio). */
+  const [phoneEdit, setPhoneEdit] = useState(false)
   // The art director: a side panel, canvas live — you watch it work.
   const [agentOpen, setAgentOpen] = useState(false)
   const [agentRaise, setAgentRaise] = useState(0)
@@ -2697,8 +2741,10 @@ function Lab() {
   // Export states its own frame a render after it opens; until it does (coming
   // from publish, say) the frame on screen holds, so the picture eases from one
   // frame to the other and never springs back to the window between them.
+  // Not on a phone: its scene stays full screen whatever is open, the render's
+  // settings on its options card.
   const shownFrame =
-    framing.activeFrame ?? (shareOpen || exportOpen ? { aspect: 16 / 9, watermark: false } : null)
+    framing.activeFrame ?? (!phone && (shareOpen || exportOpen) ? { aspect: 16 / 9, watermark: false } : null)
   const framed = shownFrame !== null
   const frameRect =
     shownFrame && framing.frameVp
@@ -2932,6 +2978,15 @@ function Lab() {
    *  group blank — the tab is a view, not a second source of truth. */
   const clipModel = cast.find((m) => m.id === clipTab) ?? cast[0] ?? null
   const cameraInput = useRef<HTMLInputElement | null>(null)
+  /** A camera .vmd into the scene's camera slot. */
+  const loadCameraFile = (file: File) => {
+    // Kept for the persist/publish repack, like every other upload.
+    sceneFiles.camera = file
+    void file.arrayBuffer().then((buf) => {
+      engineRef.current?.loadCameraVmdFromBuffer(buf)
+      setCameraClip(file.name)
+    })
+  }
   const removeCamera = () => {
     sceneFiles.camera = null
     engineRef.current?.clearCameraVmd()
@@ -4686,6 +4741,16 @@ function Lab() {
     setDrawerOpen(false)
   }
   /** Apply a library graph to the group the library was opened from. */
+  /** A look onto one model's group, from a list (a phone): the same split
+   *  applyGraphLibrary makes, for a model and group named outright. */
+  const applyGraphTo = (modelId: string, groupId: string, graph: ShaderGraph, name: string) => {
+    const groups = groupsByModel[modelId] ?? []
+    const group = groups.find((g) => g.id === groupId)
+    if (!group) return
+    const updated: StyleGroup = { ...group, graph: { ...graph, name } }
+    if (updated.materials.length) void upsertGroup(modelId, updated)
+    else void applyGroups(modelId, groups.map((x) => (x.id === groupId ? updated : x)))
+  }
   const applyGraphLibrary = (graph: ShaderGraph, name: string) => {
     const group = libGroup
     if (!inspectedId || !group) return
@@ -7075,7 +7140,8 @@ function Lab() {
         // and a failed render is not a reason to keep nagging.
         if (v) setExportedOnce(true)
       }}
-      onFramePreviewChange={framing.handleFramePreview}
+      // A phone keeps its scene full screen while the render is set up.
+      onFramePreviewChange={phone ? noFramePreview : framing.handleFramePreview}
       onProgressChange={setExportProgress}
       rasterLyricsAt={rasterLyricsAt}
       // Only the MOVING ones: a still card is already in its texture and
@@ -7731,13 +7797,7 @@ function Lab() {
         onChange={(e) => {
           const file = e.target.files?.[0]
           e.target.value = ""
-          if (!file) return
-          // Kept for the persist/publish repack, like every other upload.
-          sceneFiles.camera = file
-          void file.arrayBuffer().then((buf) => {
-            engineRef.current?.loadCameraVmdFromBuffer(buf)
-            setCameraClip(file.name)
-          })
+          if (file) loadCameraFile(file)
         }}
       />
 
@@ -7825,39 +7885,7 @@ function Lab() {
           const id = animTarget.current
           e.target.value = ""
           if (!file || !id) return
-          void file.arrayBuffer().then((buf) => {
-            // A camera VMD carries no bone or morph frames, so loading it on a
-            // model builds a clip of zero length: the row fills in with the file
-            // name and the transport reads 0:00, which looks exactly like a file
-            // that failed to parse. It parsed perfectly — it is simply not a
-            // motion for a character, and the scene has a Camera slot that wants
-            // it. Say so rather than accept a clip that can never play.
-            //
-            // Not auto-routed: the camera slot may already hold someone's shot,
-            // and silently overwriting it to be helpful is the worse surprise.
-            let usable = 0
-            let cameraFrames = 0
-            try {
-              usable = VMDLoader.loadFromBuffer(buf).length
-              cameraFrames = VMDLoader.loadCameraFromBuffer(buf).length
-            } catch {
-              // Unreadable: let loadVmdFile run and report the failure it finds.
-            }
-            if (usable === 0) {
-              setUpload({
-                kind: "notice",
-                message: cameraFrames > 0 ? t.lab.cameraVmd : t.lab.emptyVmd,
-              })
-              return
-            }
-            void loadVmdFile(id, file).then((name) => {
-              if (name)
-                setAnimByModel((prev) => ({
-                  ...prev,
-                  [id]: { name, src: file },
-                }))
-            })
-          })
+          loadMotionFile(id, file)
         }}
       />
 
@@ -10379,8 +10407,8 @@ function Lab() {
           MOUNTED even while closed: the export runs inside RenderPanel, and
           unmounting would kill a render in flight. Close hides; the pill below
           carries the progress; completion downloads by itself (iMovie-quiet),
-          so nothing reopens. */}
-      {mounted && (
+          so nothing reopens. A phone renders from its own Export section. */}
+      {mounted && !phone && (
         // On the cover: a column of type at the right edge past a hairline,
         // where the art director stands when it is open (one at a time).
         <aside
@@ -10425,30 +10453,130 @@ function Lab() {
       )}
 
       {/* A phone's top row: the masthead, and its one way out, the gallery,
-          where scenes play. Nothing here edits on a phone (globals.css,
-          "Phone"). */}
+          where scenes play. */}
       {phone && (
         <div
           data-keep
           data-ink-zone
           data-edge="top"
-          className="cover-type pointer-events-none absolute inset-x-4 top-4 z-10 flex h-8 items-center justify-between"
+          // The editor's top row, to the pixel: 20px down, 28px in.
+          className="cover-type pointer-events-none absolute top-5 right-6 left-7 z-10 flex h-8 items-center justify-between"
         >
-          <span className="flex items-center gap-1.5">
-            <span className="font-display text-masthead tracking-[0.45em] text-foreground uppercase [-webkit-text-stroke:0.3px_currentColor]">
-              Reze Design
-            </span>
-            <span className="font-mono text-2xs text-foreground">v{VERSION_LABEL}</span>
-          </span>
+          {/* The wordmark with the source beside it; the ways on at the end. */}
           <span className="pointer-events-auto flex items-center gap-2.5">
+            <span className={WORDMARK}>Reze Design</span>
             <a href={REPO_URL} target="_blank" rel="noreferrer" aria-label="GitHub" className="flex size-6 items-center justify-center text-foreground">
               <GithubMark className="size-4" />
             </a>
+          </span>
+          <span className="pointer-events-auto flex items-center gap-4">
             <Link href="/gallery" className="text-xs text-foreground">
               {t.lab.gallery}
             </Link>
+            {/* The way into the phone's options: the account and every tool. Held
+                on its side, a phone only plays. */}
+            <Button
+              variant="bare"
+              aria-label={t.mobile.edit}
+              aria-expanded={phoneEdit}
+              onClick={() => setPhoneEdit((v) => !v)}
+              className="flex size-6 items-center justify-center text-foreground"
+            >
+              <MenuMark open={phoneEdit} />
+            </Button>
           </span>
         </div>
+      )}
+
+      {/* The editor on a phone, lite: the sections and their sheet, inside the
+          phone shell (components/mobile/mobile-studio). */}
+      {phone && mounted && (
+        <MobileStudio
+          open={phoneEdit}
+          onOpenChange={setPhoneEdit}
+          cast={cast.map((m) => ({ id: m.id, name: displayName(m.file) }))}
+          onAddModel={(files) => {
+            modelTarget.current = { mode: "add" }
+            void onModelPicked(files)
+          }}
+          onReplaceModel={(id, files) => {
+            modelTarget.current = { mode: "replace", id }
+            void onModelPicked(files)
+          }}
+          onRemoveModel={removeCastMember}
+          motion={
+            cast[0]
+              ? {
+                  name: animByModel[cast[0].id]?.name ?? null,
+                  onPick: (file) => loadMotionFile(cast[0].id, file),
+                  onRemove: () => removeAnimation(cast[0].id),
+                }
+              : null
+          }
+          camera={{ name: cameraClip, onPick: loadCameraFile, onRemove: removeCamera }}
+          music={{ name: musicClip?.name ?? null, onPick: setMusicFile, onRemove: removeMusic }}
+          background={{
+            color: settings.background.color,
+            onColor: (hex) => patch("background", { color: hex }),
+            image: {
+              name: bgImage && bgImage.slot !== "dome" ? bgImage.name : null,
+              onPick: (file) => {
+                bgImageSlot.current = "flat"
+                void onBgImagePicked(file)
+              },
+              onRemove: () => swapBgImage(null),
+            },
+          }}
+          ground={{
+            enabled: settings.ground.enabled,
+            onEnabled: (on) => patch("ground", { enabled: on }),
+            color: settings.ground.color,
+            onColor: (hex) => patch("ground", { color: hex }),
+          }}
+          effects={{
+            items: builtinEffects().map((e) => ({ id: e.id, label: builtinName("effect", e, uiLocale) })),
+            applied: (id) => bgEffects.some((x) => x.id === id),
+            onToggle: (id) => {
+              const e = builtinEffects().find((x) => x.id === id)
+              if (e) setBgEffects((list) => (list.some((x) => x.id === id) ? list.filter((x) => x.id !== id) : [...list, applyDefaults(e)]))
+            },
+            tune: (id) => {
+              const e = bgEffects.find((x) => x.id === id)
+              const uid = e?.uid
+              const decls = uid ? (effectSurface[uid]?.params ?? []) : []
+              if (!e || !uid || decls.length === 0) return null
+              return {
+                decls,
+                values: e.params,
+                onChange: (name, value) => setEffectParam(uid, name, value),
+                onReset: () => resetEffectParams(uid),
+              }
+            },
+          }}
+          materials={{
+            groups: (cast[0] ? (groupsByModel[cast[0].id] ?? []) : []).map((g) => {
+              const look = builtinGraphs().find((x) => x.name === g.graph?.name)
+              return { id: g.id, label: localGroupLabel(groupLabel(g), uiLocale), look: look ? builtinName("graph", look, uiLocale) : (g.graph?.name ?? "—") }
+            }),
+            looks: builtinGraphs().map((x) => ({ name: x.name, label: builtinName("graph", x, uiLocale) })),
+            onPick: (groupId, name) => {
+              const look = builtinGraphs().find((x) => x.name === name)
+              if (cast[0] && look) applyGraphTo(cast[0].id, groupId, look.payload.graph, name)
+            },
+          }}
+          grades={{
+            items: builtinGrades().map((g) => ({ name: g.name, label: builtinName("grade", g, uiLocale) })),
+            current: settings.grade.preset,
+            onPick: pickGrade,
+            intensity: settings.grade.intensity,
+            onIntensity: (v) => {
+              patch("grade", { intensity: v })
+              rememberIntensity(settings.grade.preset, v)
+            },
+          }}
+          exportPane={exportBody}
+          onExportOpen={(on) => (on ? openExport() : setExportOpen(false))}
+        />
       )}
 
       {/* ── Transport ──
@@ -10571,7 +10699,7 @@ function Lab() {
               data-fold={timelineLeaving ? "leaving" : timelineUnfolded ? "open" : undefined}
               className={cn(
                 "pointer-events-auto relative w-full",
-                timelineShown ? OPEN_TIMELINE_W : "max-w-fit compact:max-w-full",
+                timelineShown ? OPEN_TIMELINE_W : "max-w-fit compact:max-w-xs",
                 timelineLeaving && "pointer-events-none",
               )}
             >

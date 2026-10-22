@@ -673,7 +673,7 @@ function SceneStage({
         // gutter the bottom uses, and the transport shrinks into it.
         // Above the phone's shade, which darkens the scene and not the controls.
         <div data-edge="bottom" data-ink-zone className="pointer-events-none absolute inset-x-3 bottom-3 z-10 flex justify-center">
-          <div className="pointer-events-auto max-w-full compact:w-full">
+          <div className="pointer-events-auto max-w-full compact:w-full compact:max-w-xs">
             <AnimPlayer
               engineRef={engineRef}
               modelNames={animated}

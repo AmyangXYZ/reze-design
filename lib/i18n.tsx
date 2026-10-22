@@ -74,6 +74,20 @@ const en = {
     // what you gave theirs. Two different sets, so two different rows.
     handleFixed: "Your name is set and can't be changed.",
   },
+  /** The editor on a phone, lite (components/mobile/mobile-studio). */
+  mobile: {
+    soon: "Set on a computer.",
+    /** What a phone sends as a model: it cannot pick a folder. */
+    modelFiles: ".zip / .pmx",
+    motion: "Motion",
+    picture: "Picture",
+    ground: "Ground",
+    /** The phone's menu: the account and every tool, behind ☰. */
+    edit: "Options",
+    /** The foot of the phone's menu: what this is, and where the rest is. */
+    lite: { what: "This is the lite mobile version, with limited tools.", before: "For everything, visit ", after: " on a computer." },
+    strength: "Strength",
+  },
   gallery: {
     title: "Gallery",
     back: "Back to editor",
@@ -1230,6 +1244,16 @@ const zh: Dictionary = {
     profile: "个人主页",
     likesEarned: "获赞",
     handleFixed: "用户名已设置，无法更改。",
+  },
+  mobile: {
+    soon: "在电脑上设置。",
+    modelFiles: ".zip / .pmx",
+    motion: "动作",
+    picture: "图片",
+    ground: "地面",
+    edit: "选项",
+    lite: { what: "这是功能有限的移动端轻量版。", before: "完整功能请在电脑上访问 ", after: "。" },
+    strength: "强度",
   },
   gallery: {
     title: "画廊",

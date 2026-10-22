@@ -600,6 +600,14 @@
 }
 /* In the middle (data-paper-at="center"): no opener to grow out of, so the
    sheet settles in from slightly smaller and leaves the same way. */
+/* A phone's menu going one level in (components/mobile/mobile-studio): the
+   level slides in from the right, as a phone's own settings do. */
+@keyframes ios-push {
+  from {
+    opacity: 0;
+    translate: 24px 0;
+  }
+}
 @keyframes paper-settle {
   from {
     opacity: 0;
