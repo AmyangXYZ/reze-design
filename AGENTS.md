@@ -47,8 +47,8 @@ along the bottom. Mark such type `cover-type`; inside it, `<Cover>`
 their underlined words, and every overlay resets it. Its ink follows the
 scene (`data-ink` on `<main>`, "The cover" in
 `app/globals.css`): pure black over a light scene, pure white over a dark one,
-each character with a dark shadow (a soft edge under white type, one tight
-drop under black). The cover and paper (`data-paper`: dialogs, the palette,
+white type with a soft dark edge on each character and line; black type
+with none. The cover and paper (`data-paper`: dialogs, the palette,
 the gallery) have ONE ink: `text-muted-foreground` resolves to it there, and
 grey (0.44 under black, 0.78 under white) is kept for disabled controls. No washes or glows behind it. The open timeline is
 paper too, on the side opposite the cover's ink, with no edge. The floating

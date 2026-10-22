@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Popover, PopoverAnchor, PopoverClose, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Cover } from "@/components/ui/cover"
 import { GithubMark, GoogleMark } from "@/components/icons"
 import { authClient, signIn, signOut, useSession } from "@/lib/auth-client"
 import { useI18n, useT } from "@/lib/i18n"
@@ -273,19 +274,6 @@ function Portfolio({
           </Button>
         </PopoverClose>
       ))}
-      {/* Every library has a Liked shelf and nothing in the product opened one.
-          Scenes, because that is where likes mostly land and the gallery is the
-          surface that can page them. */}
-      <PopoverClose asChild>
-        <Button variant="bare"
-          type="button"
-          onClick={() => onOpenLibrary?.("scene", "liked")}
-          className="mx-1 flex h-7 w-[calc(100%-0.5rem)] cursor-pointer items-center gap-2.5 rounded-interior px-2.5 text-left transition-colors hover:bg-foreground/[0.07]"
-        >
-          <Heart className="size-3.5 shrink-0" />
-          <span className="min-w-0 flex-1 truncate text-xs">{t.account.youLiked}</span>
-        </Button>
-      </PopoverClose>
       {/* LIKES EARNED IS A FACT, NOT A DOOR. It totals across all four kinds, so
           there is no one shelf it could open — and a row that looks like the
           four above it but does nothing is worse than a row that plainly reads
@@ -472,7 +460,7 @@ export function AccountButton({
       aria-label={t.account.label}
       className="font-mono text-2xs tracking-wide text-muted-foreground uppercase hover:text-foreground"
     >
-      {session ? handle : t.account.signIn}
+      {session ? `@${handle}` : t.account.signIn}
     </Button>
   ) : (
     <Button
@@ -514,6 +502,9 @@ export function AccountButton({
   }
 
   return (
+    // Opened from the cover, so it is laid as paper in its opener's ink, as
+    // every menu there is.
+    <Cover>
     <Popover>
       {children ? (
         <PopoverAnchor asChild>{children(<PopoverTrigger asChild>{trigger}</PopoverTrigger>)}</PopoverAnchor>
@@ -562,5 +553,6 @@ export function AccountButton({
         </div>
       </PopoverContent>
     </Popover>
+    </Cover>
   )
 }

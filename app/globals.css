@@ -294,8 +294,8 @@
   --foreground: oklch(0 0 0);
   --muted-foreground: var(--foreground);
   --ink-disabled: oklch(0.44 0 0);
-  --ink-shadow: 0 1px 1px oklch(0 0 0 / 0.15);
-  --ink-line-shadow: drop-shadow(0 1px 0.5px oklch(0 0 0 / 0.15));
+  --ink-shadow: none;
+  --ink-line-shadow: none;
   --background: color-mix(in oklch, var(--scene-bg) 25%, oklch(0.99 0 0));
   /* One hairline on the cover: a rule there divides nothing from a surface,
      so the two strengths are the same line. */
@@ -317,11 +317,11 @@
   --chrome-line: oklch(1 0 0 / 0.26);
   --chrome-line-strong: oklch(1 0 0 / 0.26);
 }
-/* Every character carries a dark shadow, so a stroke of the picture running
-   through a letter cannot take its edge; a drawn line (a frame, a key's
-   outline) takes the same as a filter, --ink-line-shadow. White type: an edge and a drop at
-   0.75. Black type: one tight drop at 0.15 — a blur around black glyphs reads
-   as soft type. Overlays reset it. */
+/* White type carries a dark shadow, so a stroke of the picture running
+   through a letter cannot take its edge: an edge and a drop at 0.75, and a
+   drawn line (a frame, a key's outline) the same as a filter,
+   --ink-line-shadow. Black type carries none: a shadow under black glyphs
+   only blurs them. Overlays reset it. */
 .cover .cover-type,
 .cover [data-ink-zone] {
   text-shadow: var(--ink-shadow);
@@ -607,6 +607,11 @@
   --accent: oklch(from var(--foreground) l c h / 0.07);
   --accent-foreground: var(--foreground);
 }
+/* A menu's rows on paper light in the sheet's accent, which reads on either
+   side; the chrome's white tint vanishes on the light one. */
+[data-paper] [data-slot^="context-menu-"]:is(:focus, [data-state="open"]):not(.text-red-400) {
+  background-color: var(--accent);
+}
 [data-paper-at="pop"] {
   border-radius: 8px !important;
   border-color: var(--chrome-line-strong) !important;
@@ -841,11 +846,6 @@ body:has([data-paper-at="page"][data-paper="dark"]) [data-paper-scrim] {
   color: var(--foreground);
 }
 
-/* A cover line's actions arrive over its name (CastLine): the name's tail
-   fades out under them, so at rest the name has the whole line. */
-.group:is(:hover, :focus-within, [data-revealed]) > [data-yield] {
-  mask-image: linear-gradient(to right, black calc(100% - var(--yield) - 1rem), transparent calc(100% - var(--yield)));
-}
 
 /* A list arriving: its rows slide in one after another, the way a game's
    menu deals its lines. On whatever mounts with the list (a pane opening, a

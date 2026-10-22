@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button"
 import { PublishSwitch } from "@/components/editor/publish-switch"
 import { STAGE_BOUND_TAG } from "@/lib/effects"
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
-import { Globe, Lock, PenLine, Plus, Search, X } from "lucide-react"
+import { Globe, Heart, Lock, PenLine, Plus, Search, X } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import type { LibraryFacet, LibraryKind, LibraryOwner } from "@/lib/library"
 import { authorImage, authorVerified } from "@/lib/community-store"
@@ -539,10 +539,10 @@ function OfflineLine({ watch, empty }: { watch: readonly string[]; empty?: boole
 // the top: what is picked; the words that narrow the shelf; the shelf, two
 // cards across.
 
-/** The detail's actions: small words at the end of the name's line, since
- *  picking is what applies, and editing or publishing is the rarer errand. */
+/** The detail's actions: small words on their own line under what it is, so
+ *  the name never shares its line with them. */
 export const DETAIL_ACTION =
-  "flex h-6 shrink-0 items-center gap-1 bg-transparent p-0 text-xs font-normal text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground [&_svg]:size-3.5"
+  "flex h-5 shrink-0 items-center gap-1 bg-transparent p-0 text-xs font-normal text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground [&_svg]:size-3.5"
 
 export function LibraryDock<T extends BrowseItem>({
   title,
@@ -559,7 +559,7 @@ export function LibraryDock<T extends BrowseItem>({
 }: {
   title: string
   /** A line under the title: what a pick applies to. */
-  context?: string
+  context?: React.ReactNode
   browse: Browse<T>
   onClose: () => void
   onNew?: () => void
@@ -618,7 +618,7 @@ export function LibraryDock<T extends BrowseItem>({
       </div>
       {context !== undefined && <p className="-mt-2 h-4 truncate font-mono text-2xs text-muted-foreground">{context}</p>}
       {/* One height, picked or not, so the shelf below never moves. */}
-      <div className="-mt-1.5 -mb-1 min-h-[4.75rem] shrink-0">{detail}</div>
+      <div className="-mt-1.5 -mb-4 min-h-[6.625rem] shrink-0">{detail}</div>
       <label className="relative flex h-7 shrink-0 items-center gap-1.5 text-muted-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-line-strong focus-within:after:bg-foreground">
         <Search className="size-3.5 shrink-0" strokeWidth={1.5} />
         <Input
@@ -653,12 +653,15 @@ export function LibraryDetail({
   draft,
   description,
   actions,
+  like,
 }: {
   name: string
   author: string
   draft: boolean
   description?: string
   actions: React.ReactNode
+  /** Its likes, and yours: a word among the actions. A draft has none. */
+  like?: { count: number; liked: boolean; canLike: boolean; onToggle: () => void }
 }) {
   const [open, setOpen] = useState(false)
   const [clipped, setClipped] = useState(false)
@@ -675,14 +678,30 @@ export function LibraryDetail({
   }, [description, open])
   return (
     // Every line holds its height whether or not it is filled, so picking
-    // another card changes the words and nothing moves.
+    // another card changes the words and nothing moves. One job a line: the
+    // name and its likes; who made it; what it is; what you can do with it.
     <div className="flex min-w-0 flex-col">
       <div className="flex h-6 min-w-0 items-center gap-3">
         <h3 className="min-w-0 flex-1 truncate text-xs font-medium select-text">{name}</h3>
-        {actions}
+        {like && (
+          <Button
+            variant="bare"
+            disabled={!like.canLike}
+            aria-pressed={like.liked}
+            onClick={like.onToggle}
+            className={cn(
+              "flex shrink-0 items-center gap-1 font-mono text-xs disabled:cursor-default disabled:text-muted-foreground",
+              like.liked ? "text-red-400" : "text-muted-foreground",
+              like.canLike && "hover:text-red-400",
+            )}
+          >
+            <Heart className={cn("size-3.5", like.liked && "fill-current")} />
+            {like.count}
+          </Button>
+        )}
       </div>
-      {/* A draft is your own and unpublished: no maker to name. */}
-      <div className="flex h-4 min-w-0 items-center gap-1.5 font-mono text-2xs text-muted-foreground">
+      {/* A draft is your own and unpublished: no maker to name, no likes. */}
+      <div className="flex h-5 min-w-0 items-center gap-1.5 font-mono text-2xs text-muted-foreground">
         {!draft && <AuthorLink name={author} at className="truncate select-text" />}
       </div>
       {/* Two lines, and the rest on a click: the one place the dock may move. */}
@@ -697,6 +716,7 @@ export function LibraryDetail({
       >
         {description}
       </p>
+      <div className="mt-1.5 flex h-5 min-w-0 items-center justify-end gap-4">{actions}</div>
     </div>
   )
 }
@@ -706,6 +726,7 @@ export function LibraryCards<T extends BrowseItem>({
   browse,
   selectedId,
   onSelect,
+  onActivate,
   meta,
   displayName,
   wrap,
@@ -718,6 +739,8 @@ export function LibraryCards<T extends BrowseItem>({
   browse: Browse<T>
   selectedId: string | null
   onSelect: (item: T) => void
+  /** A double-click: the kind's own act on a card (an effect goes on). */
+  onActivate?: (item: T) => void
   meta: (item: T) => CardMeta
   displayName?: (item: T) => string
   /** Wraps a card in the kind's context menu. Identity by default. */
@@ -801,6 +824,7 @@ export function LibraryCards<T extends BrowseItem>({
               tabIndex={0}
               aria-pressed={picked}
               onClick={() => onSelect(item)}
+              onDoubleClick={onActivate && (() => onActivate(item))}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault()

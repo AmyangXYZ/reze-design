@@ -72,7 +72,6 @@ const en = {
     likesEarned: "likes",
     // Distinct from `likesEarned`: that is what others gave YOUR work, this is
     // what you gave theirs. Two different sets, so two different rows.
-    youLiked: "liked by you",
     handleFixed: "Your name is set and can't be changed.",
   },
   gallery: {
@@ -318,7 +317,8 @@ const en = {
   effectLibrary: {
     title: "Effects",
     applied: "Applied",
-    apply: "Apply effect",
+    /** The picked effect's word that puts it on the scene. */
+    apply: "Apply",
     remove: "Remove effect",
     editShader: "Edit shader",
     compile: "Compile",
@@ -431,7 +431,8 @@ const en = {
     editGraph: "Edit graph",
     apply: "Apply graph",
     applyTo: (name: string) => `Apply to ${name}`,
-    onGroup: (name: string) => `On ${name}`,
+    /** Before the chosen group's name, which follows underlined. */
+    onGroup: "On",
     chooseGroupLeft: "Choose a material group on the left first",
     nameTaken: "That name is taken. Pick another.",
     nameTakenBy: (name: string) => `“${name}” already exists. Pick another name.`,
@@ -1227,7 +1228,6 @@ const zh: Dictionary = {
     graphs: "着色器",
     profile: "个人主页",
     likesEarned: "获赞",
-    youLiked: "我赞过的",
     handleFixed: "用户名已设置，无法更改。",
   },
   gallery: {
@@ -1447,7 +1447,7 @@ const zh: Dictionary = {
   effectLibrary: {
     title: "特效",
     applied: "已应用",
-    apply: "应用特效",
+    apply: "应用",
     remove: "移除特效",
     editShader: "编辑着色器",
     compile: "编译",
@@ -1556,7 +1556,7 @@ const zh: Dictionary = {
     editGraph: "编辑图",
     apply: "应用着色器",
     applyTo: (name: string) => `应用到 ${name}`,
-    onGroup: (name: string) => `用于 ${name}`,
+    onGroup: "用于",
     chooseGroupLeft: "先在左侧选择一个材质组",
     nameTaken: "该名称已被使用，请换一个。",
     nameTakenBy: (name: string) => `“${name}”已存在，请换一个名称。`,

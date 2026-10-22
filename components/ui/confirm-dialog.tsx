@@ -13,6 +13,7 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 import { Checkbox } from "@/components/ui/checkbox"
 import { storageKey } from "@/lib/storage"
 import {
@@ -82,7 +83,15 @@ export function ConfirmDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* No close X: the two buttons ARE the choice, and a third way out that
           means "cancel" without saying so is a third thing to read. */}
-      <DialogContent showCloseButton={false} className="sm:max-w-xs">
+      {/* On the cover it is paper in the middle, and its buttons are words: the
+          confirming one in its accent, the other plain. Off the cover, the
+          dialog's own box. */}
+      <DialogContent
+        showCloseButton={false}
+        paper="center"
+        className="sm:max-w-xs data-[paper]:w-[20rem] data-[paper]:max-w-[20rem]"
+      >
+        <div className="grid gap-4 in-data-[paper]:p-5">
         <DialogHeader>
           <DialogTitle className="text-sm">{title}</DialogTitle>
           {body ? <DialogDescription className="text-xs">{body}</DialogDescription> : null}
@@ -100,8 +109,8 @@ export function ConfirmDialog({
               {snoozeLabel}
             </label>
           ) : null}
-          <DialogFooter>
-            <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+          <DialogFooter className="in-data-[paper]:gap-5">
+            <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} className="in-data-[paper]:h-6 in-data-[paper]:px-0">
               {cancelLabel}
             </Button>
             {/* Destructive, and it is the one that carries the colour: red is
@@ -111,7 +120,12 @@ export function ConfirmDialog({
               variant={tone === "destructive" ? "destructive" : "default"}
               size="sm"
               autoFocus
-              className={tone === "accent" ? "bg-blue-400 text-on-accent hover:bg-blue-400/90" : undefined}
+              className={cn(
+                tone === "accent" && "bg-blue-400 text-on-accent hover:bg-blue-400/90",
+                // The variant's own fill (dark: included) gives way on paper.
+                "in-data-[paper]:h-6 in-data-[paper]:bg-transparent! in-data-[paper]:px-0 in-data-[paper]:hover:bg-transparent! in-data-[paper]:hover:underline in-data-[paper]:underline-offset-4",
+                tone === "accent" ? "in-data-[paper]:text-blue-400!" : "in-data-[paper]:text-red-400!",
+              )}
               onClick={() => {
                 if (snoozeKey && snoozing) snooze(snoozeKey)
                 onOpenChange(false)
@@ -121,6 +135,7 @@ export function ConfirmDialog({
               {confirmLabel}
             </Button>
           </DialogFooter>
+        </div>
         </div>
       </DialogContent>
     </Dialog>

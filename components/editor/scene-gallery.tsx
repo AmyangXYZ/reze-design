@@ -722,18 +722,22 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 0 })
   }, [viewKey])
-  // Each scene stands on ONE of these shelves, the first it qualifies for: a
-  // small catalogue ranked three ways is three copies of the same row. The
-  // shelves are laid out once, so scrolling down never reshuffles the rows
-  // above; All closes the page with every scene, paging on as the band scrolls.
+  // The three rankings of the whole catalogue (Latest, Trending, Most liked)
+  // never repeat a scene: a small catalogue ranked three ways is three copies
+  // of the same row. A tag's or a maker's shelf is its own list, whole, as a
+  // streaming service repeats a title under each of its categories. Each takes
+  // enough to fill a wide screen's row. The shelves are laid out once, so
+  // scrolling down never reshuffles the rows above; All closes the page with
+  // every scene, paging on as the band scrolls.
   type Laid = { key: string; title: string; href?: string; ids: string[] }[]
   const layShelves = (): Laid => {
     const used = new Set<string>()
     const out: Laid = []
-    const shelf = (key: string, title: string, from: GalleryRow[], cap = 18) => {
-      const fresh = from.filter((r) => !used.has(r.id)).slice(0, cap)
+    const CAP = 18
+    const shelf = (key: string, title: string, from: GalleryRow[], ranked: boolean) => {
+      const fresh = (ranked ? from.filter((r) => !used.has(r.id)) : from).slice(0, CAP)
       if (fresh.length < 3) return
-      for (const r of fresh) used.add(r.id)
+      if (ranked) for (const r of fresh) used.add(r.id)
       // A maker's shelf is titled with their handle, and leads to their page.
       out.push({ key, title, href: key.startsWith("maker:") ? `/${key.slice(6)}` : undefined, ids: fresh.map((r) => r.id) })
     }
@@ -741,12 +745,12 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
     // Trending ranks what is left, and still stands first on the page.
     // Each shelf reads its own query, in that query's order.
     const list = (k: Key) => (k === "newest" ? newest : (lists[k] ?? [])).flatMap((s) => byId.get(s.id) ?? [])
-    shelf("new", t.rail.sortNew, list("newest"), 8)
-    shelf("hot", t.rail.sortHot, rows, 10)
+    shelf("new", t.rail.sortNew, list("newest"), true)
+    shelf("hot", t.rail.sortHot, rows, true)
     out.sort((a, b) => Number(b.key === "hot") - Number(a.key === "hot"))
-    shelf("likes", t.rail.likes, list("top"), 8)
-    for (const [tag] of browse.tags.slice(0, 6)) shelf(`tag:${tag}`, `#${tag}`, list(`tag:${tag}`), 8)
-    for (const [maker] of browse.makers.slice(0, 4)) shelf(`maker:${maker}`, `@${maker}`, list(`maker:${maker}`), 8)
+    shelf("likes", t.rail.likes, list("top"), true)
+    for (const [tag] of browse.tags.slice(0, 6)) shelf(`tag:${tag}`, `#${tag}`, list(`tag:${tag}`), false)
+    for (const [maker] of browse.makers.slice(0, 4)) shelf(`maker:${maker}`, `@${maker}`, list(`maker:${maker}`), false)
     return out
   }
   // The lists the page draws from beyond the ranked window: a shelf for each of

@@ -96,7 +96,7 @@ function LibraryContent({ targetId, targetLabel, currentGraphName, usedNames = [
     () => [...builtins.map((i) => ({ ...i, mine: isMine(i.id) })), ...community, ...drafts],
     [builtins, community, drafts],
   )
-  const { statFor } = useLibraryStats()
+  const { statFor, signedIn, toggleLike } = useLibraryStats()
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, onClose)
   const isCurrent = (r: GraphItem) => r.name === currentGraphName || r.payload.graph.name === currentGraphName
   // Opened FROM a group, the group's own graph is selected — that is the thing
@@ -295,7 +295,16 @@ function LibraryContent({ targetId, targetLabel, currentGraphName, usedNames = [
       browse={browse}
       onClose={onClose}
       // What a pick lands on, or where to choose it: the Materials pane.
-      context={targetLabel ? t.library.onGroup(targetLabel) : t.library.chooseGroupLeft}
+      context={
+        targetLabel ? (
+          <>
+            {t.library.onGroup}{" "}
+            <span className="underline decoration-blue-400 decoration-[1.5px] underline-offset-3">{targetLabel}</span>
+          </>
+        ) : (
+          t.library.chooseGroupLeft
+        )
+      }
       onNew={onEdit && (() => onEdit("", t.library.newGraph, structuredClone(DEFAULT_GRAPH)))}
       z={z}
       onPointerDownCapture={onPointerDownCapture}
@@ -306,6 +315,16 @@ function LibraryContent({ targetId, targetLabel, currentGraphName, usedNames = [
             name={displayName(selected)}
             author={selected.author}
             draft={itemState(selected) === "draft"}
+            like={
+              itemState(selected) === "draft"
+                ? undefined
+                : {
+                    count: statFor(selected.id).likeCount,
+                    liked: statFor(selected.id).liked,
+                    canLike: signedIn,
+                    onToggle: () => void toggleLike(selected.id),
+                  }
+            }
             description={selected.description ? builtinDescription("graph", selected, locale) : undefined}
             actions={
               <>

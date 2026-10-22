@@ -29,7 +29,7 @@ import { useCover } from "@/components/ui/cover"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 /** The console's action look: a line of type, muted, ink on hover. */
-const COVER_ACTION = "h-6 w-fit gap-1.5 rounded-none border-0 bg-transparent px-0 text-xs font-normal text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground [&_svg:not([class*='size-'])]:size-3.5"
+const COVER_ACTION = "h-6 w-fit gap-1.5 rounded-none border-0 bg-transparent px-0 has-[>svg]:px-0 text-xs font-normal text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground [&_svg:not([class*='size-'])]:size-3.5"
 /** Chosen on the cover: ink, stroked heavier without re-spacing the word. */
 const COVER_CHOSEN = "text-foreground [-webkit-text-stroke:0.35px_currentColor]"
 /** The chosen GROUP, the one the library beside the pane dresses: the index's
@@ -412,7 +412,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                   onContextMenu={() => setMenuTarget({ kind: "group", id: g.id })}
                 >
                       <Button variant="bare"
-                        className="flex h-full shrink-0 items-center px-0.5 text-muted-foreground hover:text-foreground"
+                        className={cn("flex h-full shrink-0 items-center text-muted-foreground hover:text-foreground", cover ? "-ml-1 px-0" : "px-0.5")}
                         onClick={(e) => {
                           e.stopPropagation() // chevron only collapses; don't toggle selection
                           toggleCollapse(g.id)
@@ -497,7 +497,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                 onClick={() => toggleCollapse(UNGROUPED)}
               >
                 <Button variant="bare"
-                  className="flex h-full shrink-0 items-center px-0.5 text-muted-foreground hover:text-foreground"
+                  className={cn("flex h-full shrink-0 items-center text-muted-foreground hover:text-foreground", cover ? "-ml-1 px-0" : "px-0.5")}
                   onClick={(e) => {
                     e.stopPropagation()
                     toggleCollapse(UNGROUPED)

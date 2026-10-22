@@ -773,7 +773,7 @@ function SceneStage({
         // it ran off both edges. inset-x-3 gives it the viewport minus the same
         // gutter the bottom uses, and the transport shrinks into it.
         <div data-edge="bottom" data-ink-zone className="pointer-events-none absolute inset-x-3 bottom-3 flex justify-center">
-          <div className="pointer-events-auto max-w-full">
+          <div className="pointer-events-auto max-w-full compact:w-full">
             <AnimPlayer
               engineRef={engineRef}
               modelNames={animated}

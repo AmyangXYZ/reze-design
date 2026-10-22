@@ -71,7 +71,7 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
   // Desktop-style stacking: clicking a library raises it over any editor.
   // Radix would close on Escape whatever is stacked above it; the z-order
   // stack closes only the topmost surface.
-  const { statFor } = useLibraryStats()
+  const { statFor, signedIn, toggleLike } = useLibraryStats()
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, () => onOpenChange(false))
   // By id, like the other libraries: keyed by name, a rename had a render where
   // the row already wore its new name and the selection still held the old one,
@@ -270,6 +270,16 @@ function LibraryContent({ onOpenChange, initialFacet, grade, onApplyPreset, onRe
             name={nameOf(selected)}
             author={selected.author}
             draft={itemState(selected) === "draft"}
+            like={
+              itemState(selected) === "draft"
+                ? undefined
+                : {
+                    count: statFor(selected.id).likeCount,
+                    liked: statFor(selected.id).liked,
+                    canLike: signedIn,
+                    onToggle: () => void toggleLike(selected.id),
+                  }
+            }
             description={selected.description ? builtinDescription("grade", selected, locale) : undefined}
             actions={
               <>

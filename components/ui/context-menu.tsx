@@ -6,23 +6,31 @@ import { ChevronRight } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { preventFocusReturnOnPointer } from "@/lib/last-input"
+import { layPop } from "@/components/ui/paper"
 
 const ContextMenu = ContextMenuPrimitive.Root
 const ContextMenuTrigger = ContextMenuPrimitive.Trigger
 const ContextMenuSub = ContextMenuPrimitive.Sub
 
 const menuSurface =
-  "z-50 min-w-36 overflow-hidden rounded-surface border border-line-strong bg-surface-raised p-1 text-xs shadow-float backdrop-blur-xs " +
+  "z-50 min-w-36 overflow-hidden rounded-surface border border-line-strong bg-surface-raised p-0.5 text-xs shadow-float backdrop-blur-xs " +
   "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
 
 const itemBase =
-  "flex cursor-pointer items-center gap-2 rounded-chip px-2 py-1.5 text-foreground outline-none select-none " +
+  "flex cursor-pointer items-center gap-2 rounded-chip px-1.5 py-1 text-foreground outline-none select-none " +
   "focus:bg-white/[0.06] data-[state=open]:bg-white/[0.06] data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
+
+// Opened from the cover (the element pressed stands in an ink zone), a menu is
+// laid as paper in that ink; anywhere else layPop leaves it a surface.
+const laid = (el: HTMLDivElement | null) => {
+  if (el) layPop(el)
+}
 
 function ContextMenuContent({ className, ...props }: React.ComponentProps<typeof ContextMenuPrimitive.Content>) {
   return (
     <ContextMenuPrimitive.Portal>
       <ContextMenuPrimitive.Content
+        ref={laid}
         data-slot="context-menu-content"
         onCloseAutoFocus={preventFocusReturnOnPointer}
         className={cn(menuSurface, className)}
@@ -59,6 +67,7 @@ function ContextMenuSubContent({ className, ...props }: React.ComponentProps<typ
   return (
     <ContextMenuPrimitive.Portal>
       <ContextMenuPrimitive.SubContent
+        ref={laid}
         data-slot="context-menu-sub-content"
         className={cn(menuSurface, "max-h-64 overflow-y-auto", className)}
         {...props}
@@ -68,7 +77,7 @@ function ContextMenuSubContent({ className, ...props }: React.ComponentProps<typ
 }
 
 function ContextMenuSeparator({ className, ...props }: React.ComponentProps<typeof ContextMenuPrimitive.Separator>) {
-  return <ContextMenuPrimitive.Separator data-slot="context-menu-separator" className={cn("my-1 h-px bg-white/10", className)} {...props} />
+  return <ContextMenuPrimitive.Separator data-slot="context-menu-separator" className={cn("my-1 h-px bg-line", className)} {...props} />
 }
 
 export {

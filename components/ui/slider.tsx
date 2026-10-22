@@ -59,10 +59,11 @@ function Slider({
       max={max}
       className={cn(
         "relative flex w-full touch-none items-center select-none data-[disabled]:opacity-50 data-[orientation=vertical]:h-full data-[orientation=vertical]:min-h-44 data-[orientation=vertical]:w-auto data-[orientation=vertical]:flex-col",
-        // A 1px rule is no target: the whole 24px band around it takes the
-        // press, so clicking near the line jumps there.
-        // The hand says so, as the timeline's track does.
-        variant === "hairline" && "cursor-pointer data-[orientation=horizontal]:h-6 data-[disabled]:cursor-default",
+        // A 1px rule is no target: the 16px band around it takes the press, so
+        // clicking near the line jumps there. As tall as a row's value box, so
+        // the band adds no height to the row. The hand says so, as the
+        // timeline's track does.
+        variant === "hairline" && "cursor-pointer data-[orientation=horizontal]:h-4 data-[disabled]:cursor-default",
         className
       )}
       {...props}

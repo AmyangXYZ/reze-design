@@ -11,7 +11,7 @@
 
 import { toast } from "sonner"
 import { useCallback, useMemo, useState } from "react"
-import { PenLine } from "lucide-react"
+import { Minus, PenLine, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   applyDefaults,
@@ -91,7 +91,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
   // Desktop-style stacking: clicking a library raises it over any editor.
   // Radix would close on Escape whatever is stacked above it; the z-order
   // stack closes only the topmost surface.
-  const { statFor } = useLibraryStats()
+  const { statFor, signedIn, toggleLike } = useLibraryStats()
   const { z, onPointerDownCapture, onFocusCapture } = useZOrder(undefined, () => onOpenChange(false))
   const [selectedId, setSelectedId] = useState<string | null>(focusId ?? applied[0]?.id ?? builtinEffects()[0]?.id ?? null)
   // Follow a layer when one is ADDED — creating or editing one should move the
@@ -266,17 +266,16 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
     )
   }
 
-  // One click toggles: a card goes on the scene, beside what is already there,
-  // and is chosen; a card on the scene comes off and is let go.
-  const pick = (e: EffectItem) => {
-    if (applied.some((a) => a.id === e.id)) {
-      onRemove(e.id)
-      setSelectedId(null)
-      return
-    }
+  // A click only picks: an effect can be heavy, and looking at one must not
+  // build and run it. Add in the header (or a double-click) puts it on the
+  // scene beside what is there; on the scene, the same word takes it off.
+  const pick = (e: EffectItem) => setSelectedId(e.id)
+  const toggle = (e: EffectItem) => {
     setSelectedId(e.id)
-    onApply(seedDraft(e, applied)!)
+    if (applied.some((a) => a.id === e.id)) onRemove(e.id)
+    else onApply(seedDraft(e, applied)!)
   }
+  const selectedOn = !!selected && applied.some((a) => a.id === selected.id)
 
   return (
     <LibraryDock
@@ -294,9 +293,23 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
             name={displayName(selected)}
             author={selected.author}
             draft={itemState(selected) === "draft"}
+            like={
+              itemState(selected) === "draft"
+                ? undefined
+                : {
+                    count: statFor(selected.id).likeCount,
+                    liked: statFor(selected.id).liked,
+                    canLike: signedIn,
+                    onToggle: () => void toggleLike(selected.id),
+                  }
+            }
             description={builtinDescription("effect", selected, locale)}
             actions={
               <>
+                <Button variant="bare" onClick={() => toggle(selected)} className={DETAIL_ACTION}>
+                  {selectedOn ? <Minus /> : <Plus />}
+                  {selectedOn ? t.lab.ctl.remove : t.effectLibrary.apply}
+                </Button>
                 {onEdit && (
                   <Button variant="bare" onClick={() => onEdit(draft)} className={DETAIL_ACTION}>
                     <PenLine />
@@ -336,6 +349,7 @@ function LibraryContent({ onOpenChange, initialFacet, applied, onApply, onRemove
           browse={browse}
           selectedId={selectedId}
           onSelect={pick}
+          onActivate={toggle}
           meta={meta}
           displayName={displayName}
           wrap={wrap}

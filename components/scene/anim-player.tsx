@@ -600,8 +600,9 @@ export const AnimPlayer = memo(function AnimPlayer({
         className={cn(
           "items-center gap-2 px-3 transition-opacity ease-out",
           // As a line, three columns with equal outer ones, so the scrub sits
-          // on the screen's centre whatever stands either side of it.
-          bare ? "grid grid-cols-[1fr_auto_1fr]" : "flex",
+          // on the screen's centre whatever stands either side of it; on a
+          // phone the line takes all the room between them instead.
+          bare ? "grid grid-cols-[1fr_auto_1fr] compact:flex" : "flex",
           // Room inside the clip for the halo behind each glyph.
           bare ? "py-3" : "py-1",
           unfolded ? "opacity-0 duration-233" : "opacity-100 duration-233",
@@ -641,7 +642,7 @@ export const AnimPlayer = memo(function AnimPlayer({
             "relative mx-1 flex h-4 touch-none items-center select-none",
             // Collapsed, the line stops short of the right-hand column on a
             // 1280px window (a 2560×1600 screen at 2×).
-            bare ? "w-[min(18rem,26vw)]" : "min-w-[min(16rem,30vw)] flex-1",
+            bare ? "w-[min(24rem,26vw)] compact:w-auto compact:min-w-0 compact:flex-1" : "min-w-[min(16rem,30vw)] flex-1",
             hasClip ? "cursor-pointer" : "opacity-50",
           )}
           onPointerDown={(e) => {

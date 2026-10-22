@@ -1487,45 +1487,22 @@ function CastLine({
   /** Width of the button zone, in rem. The default fits TWO actions; a row
    *  with more has to say so, or the last button lands on the name. */
   reserve = 3,
-  revealed,
 }: {
   text: ReactNode
   actions: ReactNode
   reserve?: number
-  /** Hold the actions up regardless of hover. For a button that opens something
-   *  ANCHORED to it: the popover takes the pointer and the focus, so hover and
-   *  focus-within both go false and the control the panel is hanging off fades
-   *  out from under it. */
-  revealed?: boolean
 }) {
   const cover = useCover()
   return (
     // -mx-1 px-1: the highlight breathes past the text without moving it. On
-    // the cover there is no highlight: the actions arriving are the hover.
-    <span
-      data-revealed={revealed || undefined}
-      className={cn("group relative -mx-1 flex h-5 items-center rounded-interior px-1 transition-colors", !cover && "hover:bg-white/[0.05]")}
-    >
-      {/* The reserve ends a long name clear of the button zone entirely — the
-          buttons appear on empty reserve, never on text, so the row's own
-          highlight is all the hover needs. (Graded dims and edge fades were
-          tried on top and deleted: with a real reserve there is nothing left
-          for them to fix.) */}
-      <span
-        data-yield={cover || undefined}
-        className="flex min-w-0 flex-1 items-center"
-        style={{ [cover ? "--yield" : "paddingRight"]: `${reserve}rem` } as React.CSSProperties}
-      >
+    // the cover there is no highlight.
+    <span className={cn("relative -mx-1 flex h-5 items-center rounded-interior px-1 transition-colors", !cover && "hover:bg-white/[0.05]")}>
+      {/* The actions are always up, in the room the reserve keeps clear at the
+          row's end, so a long name ends before them. */}
+      <span className="flex min-w-0 flex-1 items-center" style={{ paddingRight: `${reserve}rem` }}>
         {text}
       </span>
-      <span
-        className={cn(
-          "absolute inset-y-0 right-0.5 flex items-center gap-0.5 transition-opacity duration-233 group-hover:opacity-100 focus-within:opacity-100",
-          revealed ? "opacity-100" : "opacity-0",
-        )}
-      >
-        {actions}
-      </span>
+      <span className="absolute inset-y-0 right-0.5 flex items-center gap-0.5">{actions}</span>
     </span>
   )
 }
@@ -1744,10 +1721,7 @@ function ClipRow({
   const t = useT()
   // Deleting a clip asks first. Not window.confirm — see ConfirmDialog.
   const [confirming, setConfirming] = useState(false)
-  // The level's popover hangs off a button that hover alone would hide the
-  // moment the pointer reaches the slider — see CastLine's `revealed`.
   const [volumeOpen, setVolumeOpen] = useState(false)
-  const [menuOpen, setMenuOpen] = useState(false)
   // Four fit the wide reserve; three fit the narrow one. Counted rather than
   // inferred from which optional props are present, so a row that gains a
   // control cannot silently outgrow the space its name is kept clear of.
@@ -1775,7 +1749,6 @@ function ClipRow({
               // Reserved so a long filename ends clear of the buttons rather than
               // running under them. Four controls where there are four.
               reserve={actionCount >= 4 ? 6 : 4.5}
-              revealed={volumeOpen || menuOpen}
               text={
                 clip ? (
                   <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
@@ -1809,7 +1782,7 @@ function ClipRow({
                   {onEdit && <CastAction icon={PenLine} label={t.lab.aria.edit(kind, of)} onClick={onEdit} />}
                   {/* Left of the level: what plays, then how loud. */}
                   {menu && (
-                    <AttachMenu icon={Settings} label={menu.label} items={menu.items} onOpenChange={setMenuOpen} inRow />
+                    <AttachMenu icon={Settings} label={menu.label} items={menu.items} inRow />
                   )}
                   {/* Beside the edit, because that is what it is: the one thing
                       about a track this app can change without touching the file.
@@ -1876,6 +1849,7 @@ function ClipRow({
           // and withholds it from a pointer, which is what last-input is for.
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
+          <Cover>
           {/* No label and no icon: the speaker directly above states both, and
               at this width every pixel one took would come off the track. */}
           <Slider
@@ -1892,6 +1866,7 @@ function ClipRow({
           <span className={cn(VALUE_BOX, "w-8 border-transparent text-muted-foreground")}>
             {Math.round((volume ?? 1) * 100)}%
           </span>
+          </Cover>
         </PopoverContent>
       )}
     </Popover>
@@ -1957,8 +1932,6 @@ function CastMemberRow({
 }) {
   const t = useT()
   const cover = useCover()
-  // Hover alone would hide the gear the moment the pointer reached the sliders —
-  // see CastLine's `revealed`.
   const [optionsOpen, setOptionsOpen] = useState(false)
   const at = position ?? [0, 0, 0]
   const turn = rotation ?? [0, 0, 0]
@@ -1986,7 +1959,6 @@ function CastMemberRow({
               // Three buttons now, so the name ends clear of them rather than
               // running under the gear — the width a clip row reserves for three.
               reserve={4.5}
-              revealed={optionsOpen}
               text={
                 <span className={cn("min-w-0 flex-1 truncate text-xs", inspected && cover && "font-medium")}>
                   {name}
@@ -2021,6 +1993,7 @@ function CastMemberRow({
         // which would open the panel with a ring already on it.
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
+        <Cover>
         {/* A header line: what the panel is on the left, its one action on the
             right. The effect params panel's own header, to the class — two
             popovers that read alike must behave alike, or the one you learn
@@ -2099,6 +2072,7 @@ function CastMemberRow({
           <span className="text-2xs">{t.lab.ctl.shadow}</span>
           <Switch size="sm" checked={castShadow} onCheckedChange={onCastShadow} />
         </div>
+        </Cover>
       </PopoverContent>
     </Popover>
   )
@@ -2123,7 +2097,6 @@ function AttachMenu({
   items,
   disabled,
   icon = Plus,
-  onOpenChange,
   inRow,
   text,
 }: {
@@ -2140,9 +2113,6 @@ function AttachMenu({
   }[]
   /** The button's glyph: + where the list adds things, a gear where it sets one. */
   icon?: ComponentType<{ className?: string }>
-  /** Told when the list opens and closes — a row that shows its controls only
-   *  on hover keeps them up while this is open. */
-  onOpenChange?: (open: boolean) => void
   /** Among a row's own controls rather than at a group header's edge: no
    *  margin, so it keeps the row's spacing. */
   inRow?: boolean
@@ -2152,13 +2122,7 @@ function AttachMenu({
    *  silently does nothing. */
   disabled?: boolean
 }) {
-  const [open, setOpenState] = useState(false)
-  const setOpen = (next: boolean | ((o: boolean) => boolean)) =>
-    setOpenState((o) => {
-      const v = typeof next === "function" ? next(o) : next
-      onOpenChange?.(v)
-      return v
-    })
+  const [open, setOpen] = useState(false)
   if (disabled || items.length === 0) {
     return (
       <span className={cn("flex items-center", !inRow && "-mr-1")}>
@@ -2176,16 +2140,18 @@ function AttachMenu({
         </span>
       </PopoverAnchor>
       <PopoverContent
-        align="end"
-        sideOffset={6}
-        className="w-44 rounded-surface border-line-strong bg-surface-raised p-1 shadow-float backdrop-blur-xs"
+        // From a row's gear at its end, the list hangs back under the row; from
+        // an add word at a list's start, it opens out to the right.
+        align={inRow ? "end" : "start"}
+        sideOffset={2}
+        className="w-44 rounded-surface border-line-strong bg-surface-raised p-0.5 shadow-float backdrop-blur-xs"
       >
         <ChoiceList>
           {items.map((i) => (
             <Button variant="bare"
               key={i.key}
               disabled={i.disabled}
-              className="flex w-full cursor-pointer items-center gap-2 rounded-interior px-2 py-1.5 text-left text-xs text-muted-foreground disabled:pointer-events-none disabled:opacity-40 transition-colors hover:bg-white/5 hover:text-foreground"
+              className="flex w-full cursor-pointer items-center gap-2 rounded-chip px-1.5 py-1 text-left text-xs text-muted-foreground disabled:pointer-events-none disabled:opacity-40 transition-colors hover:bg-accent hover:text-foreground"
               onClick={() => {
                 setOpen(false)
                 i.onPick()
@@ -9563,7 +9529,6 @@ function Lab() {
                                   <PopoverAnchor asChild>
                                     <div>
                                       <CastLine
-                                        revealed={open}
                                         text={
                                           <Button variant="bare"
                                             onClick={() => setLampOpen((cur) => (cur === l.id ? null : l.id))}
@@ -9617,6 +9582,7 @@ function Lab() {
                                     className="max-h-[var(--radix-popover-content-available-height,32rem)] w-56 overflow-y-auto overscroll-contain rounded-surface border-line-strong bg-surface-raised p-2 shadow-float"
                                     onOpenAutoFocus={(ev) => ev.preventDefault()}
                                   >
+                                    <Cover>
                                     {/* The effect panel's own metrics: dense
                                         rows and a 4.75rem label column. Two
                                         gears on two rows opening two rhythms is
@@ -9739,6 +9705,7 @@ function Lab() {
                                         />
                                       ))}
                                     </fieldset>
+                                    </Cover>
                                   </PopoverContent>
                                 </Popover>
                               )
@@ -10600,7 +10567,7 @@ function Lab() {
               data-fold={timelineLeaving ? "leaving" : timelineUnfolded ? "open" : undefined}
               className={cn(
                 "pointer-events-auto relative w-full",
-                timelineShown ? OPEN_TIMELINE_W : "max-w-fit",
+                timelineShown ? OPEN_TIMELINE_W : "max-w-fit compact:max-w-full",
                 timelineLeaving && "pointer-events-none",
               )}
             >
