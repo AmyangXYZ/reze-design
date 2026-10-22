@@ -93,6 +93,7 @@ import { prefetchGallery } from "@/components/editor/scene-gallery"
 import { useRouter } from "next/navigation"
 import { useCoverInk } from "@/hooks/use-cover-ink"
 import { useLeaving } from "@/hooks/use-leaving"
+import { WORDMARK } from "@/components/wordmark"
 import { FpsReadout } from "@/components/scene/fps-readout"
 import { SCROLL_FADE, useScrollFade } from "@/components/editor/scroll-fade"
 import { prefetchLibraryStats } from "@/hooks/use-library-stats"
@@ -7019,6 +7020,7 @@ function Lab() {
       // resolution changes, not when the stale string happens to.
       inspected?.id,
       primaryId,
+      models,
       lyricsClip,
       generateLipSync,
       patch,
@@ -7357,7 +7359,7 @@ function Lab() {
                 // Instrument Serif has one weight; a stroke in its own colour
                 // gives the masthead a little more.
                 trigger={
-                  <span className="flex items-center py-1 font-display text-masthead tracking-[0.45em] text-foreground uppercase [-webkit-text-stroke:0.3px_currentColor]">
+                  <span className={cn("flex items-center py-1", WORDMARK)}>
                     Reze Design
                   </span>
                 }

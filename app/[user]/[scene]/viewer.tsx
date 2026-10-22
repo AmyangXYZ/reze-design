@@ -7,8 +7,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, ChevronsLeft, GalleryThumbnails, GitFork, Heart, Minimize2, WandSparkles } from "lucide-react"
-import { LogoMenu, Row as MenuRow } from "@/components/editor/scene-file-menu"
+import { ChevronsLeft, GitFork, Heart, ScrollText } from "lucide-react"
 import { DisplayOnlyTag } from "@/components/editor/scene-gallery"
 import { AnimPlayer } from "@/components/scene/anim-player"
 import { builtinEffect } from "@/lib/effects"
@@ -39,7 +38,9 @@ import { useI18n, useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { useCompact, usePhone } from "@/lib/device"
 import { useCoverInk } from "@/hooks/use-cover-ink"
-import { VideoLink } from "@/components/video-link"
+import { WORDMARK } from "@/components/wordmark"
+import { SITE_SOLID, SiteLogo, VideoLink } from "@/components/video-link"
+import { parseVideoLink, VIDEO_PLATFORM_NAMES } from "@/lib/video-link"
 import { Button } from "@/components/ui/button"
 import { VerifiedBadge } from "@/components/verified-badge"
 
@@ -99,6 +100,8 @@ export function SceneViewer(props: ViewerProps) {
   const t = useT()
   const router = useRouter()
   const like = useLike(props.sceneId, props.likeCount)
+  /** The maker's own render of it, for the phone's rail. */
+  const video = props.video ? parseVideoLink(props.video) : null
   // Phone only: the caption and the 借物表 start folded to one line each, as
   // TikTok's overlay does, and a tap opens them in place. Desktop has the room
   // and shows both, each scrolling past five lines.
@@ -140,7 +143,6 @@ export function SceneViewer(props: ViewerProps) {
     forkAfterSignIn.current = true
     setSignInOpen(true)
   }
-  const [logoMenu, setLogoMenu] = useState(false)
   // The editor's switch: everything but the scene, off and back.
   const [uiHidden, setUiHidden] = useHideUi()
   // Off a phone the page is the editor's cover: type set straight on the
@@ -211,10 +213,7 @@ export function SceneViewer(props: ViewerProps) {
           {/* The editor's top row, to the pixel: the wordmark home to the
               editor, and the gallery. */}
           <div data-edge="top" data-ink-zone className="cover-type pointer-events-none absolute top-5 right-6 left-7 flex h-8 items-center gap-7 text-xs">
-            <Link
-              href="/"
-              className="pointer-events-auto font-display text-masthead tracking-[0.45em] uppercase [-webkit-text-stroke:0.3px_currentColor]"
-            >
+            <Link href="/" className={`pointer-events-auto ${WORDMARK}`}>
               Reze Design
             </Link>
             <Link href="/gallery" className="pointer-events-auto text-foreground hover:text-muted-foreground">
@@ -255,9 +254,10 @@ export function SceneViewer(props: ViewerProps) {
                   <DisplayOnlyTag />
                 ) : phone ? null : (
                   <Button
+                    variant="bare"
                     onClick={requestFork}
                     disabled={forking}
-                    className="h-7 rounded-chip bg-foreground px-4 text-xs font-medium text-background hover:bg-foreground/85"
+                    className="h-7 rounded-chip border border-foreground/60 px-4 text-xs font-medium text-foreground hover:bg-white/10"
                   >
                     {t.share.fork}
                   </Button>
@@ -293,191 +293,129 @@ export function SceneViewer(props: ViewerProps) {
         </>
       )}
 
-      {/* Top left: whose site this is. A shared link is often someone's first
-          contact with the product, and nothing else on the page says its name.
-          The logo is a menu, as in the editor: back to it, or on to another
-          scene without going through it. */}
+      {/* A phone, TikTok's way: the wordmark where the editor sets it and the
+          gallery at the row's other end; a soft shade up from the foot; the
+          scene's words at the bottom left in white whatever the picture; and
+          the rail of what you can do on the right, within the thumb's reach. */}
       {compact && (
+      <>
       <div
-        // The editor's collapsed brand pill, box model and all: same top-3/left-3
-        // origin, same 1px border, same pl-2/pr-1.5, same size-7 icon well. Only
-        // the pill's surface is missing, so the mark and wordmark land on the exact
-        // pixels they occupy in the editor and nothing shifts between the two.
-        //
-        // h-10, NOT py-1.5. The editor's pill states its height, and h-10 is
-        // border-box: its own 1px border eats into the 40, leaving 38 to centre
-        // a size-7 well in. Built from padding instead, this box came out 42 tall
-        // and put the mark one pixel lower — a step you see the moment you open a
-        // scene from the editor, which is the one journey this pill exists for.
-        className="absolute top-3 left-3 flex h-10 items-center gap-1.5 rounded-surface border border-transparent pr-1.5 pl-2"
+        data-edge="top"
+        data-ink-zone
+        className="cover-type pointer-events-none absolute top-5 right-6 left-7 flex h-8 items-center justify-between gap-4 text-xs"
       >
-        {/* The editor's trigger exactly — the mark is the menu, not the pill —
-            so the panel opens on the same pixels on both pages. */}
-        <LogoMenu
-          open={logoMenu}
-          onOpenChange={setLogoMenu}
-          trigger={
-            <span className="flex size-7 shrink-0 items-center justify-center text-pink-400">
-              <WandSparkles className="size-4.5" />
-            </span>
-          }
-        >
-          <MenuRow
-            icon={ArrowLeft}
-            label={t.share.backToEditor}
-            onClick={() => {
-              setLogoMenu(false)
-              router.push("/")
-            }}
-          />
-          <div className="mt-1 border-t border-line pt-1">
-            <MenuRow
-              icon={GalleryThumbnails}
-              label={t.gallery.door}
-              onClick={() => {
-                setLogoMenu(false)
-                router.push("/gallery")
-              }}
-            />
-          </div>
-        </LogoMenu>
-        <Link
-          href="/"
-          className="whitespace-nowrap pb-0.5 text-sm font-semibold tracking-tight text-foreground transition-colors hover:text-white"
-        >
+        <Link href="/" className={`pointer-events-auto flex h-8 items-center whitespace-nowrap ${WORDMARK}`}>
           Reze Design
         </Link>
+        <Link href="/gallery" className="pointer-events-auto flex h-8 items-center text-foreground hover:text-muted-foreground">
+          {t.gallery.title}
+        </Link>
       </div>
-      )}
-
-      {/* Bottom left, above the transport: title, author, caption — TikTok's
-          arrangement, where the text hugs itself and the scene stays the page. */}
-      {/* Desktop: top-3/right-3, the editor's own inset for its top-right
-          cluster — so the scene panel here and the pills there sit on one line
-          and one right edge. It was top-4/right-4, four pixels off in both,
-          which reads as a slip rather than a difference. Mobile keeps its
-          bottom-left home above the transport. */}
-      {/* The gallery inspector's order, so a scene reads the same in both
-          places: what it is, who and when, the caption, the 借物表 — then what
-          you can do with it, in a footer. Display only drops the button from
-          that footer and nothing else, so the two cases are one card.
-          Editor chrome: bg-surface without blur (it floats over the canvas,
-          which a blur would re-sample every frame), two text colours. */}
-      {compact && (
-      <div className="absolute bottom-16 left-4 flex max-h-[32dvh] w-[min(10.5rem,44vw)] flex-col overflow-hidden rounded-surface border border-line-strong bg-surface md:top-3 md:right-3 md:bottom-auto md:left-auto md:max-h-[50dvh] md:w-64">
-        {/* Everything, always: crediting only counts if people can read it
-            without knowing to ask. Long text scrolls DOWN inside the panel and
-            wraps anywhere — a pasted URL is one unbroken word, and without that
-            it pushed the card sideways into a horizontal scrollbar. */}
-        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-2.5 [overflow-wrap:anywhere]">
-          {/* The title row ends in Hide UI (H does the same), on the card that
-              names what you are watching. The way back is at the top edge. */}
-          <div className="flex min-w-0 items-center gap-1">
-            <div className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight text-foreground">{props.title}</div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setUiHidden(true)}
-              aria-label={t.transport.hideUi}
-              className="-mr-1 size-6 shrink-0 rounded-chip text-muted-foreground hover:text-foreground"
-            >
-              <Minimize2 className="size-3.5" />
-            </Button>
-          </div>
-          <div className="mt-0.5 flex min-w-0 items-center gap-1 font-mono text-2xs text-muted-foreground">
-            <Link href={`/${props.author}`} className="truncate transition-colors hover:text-foreground hover:underline">
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-[45%] bg-linear-to-t from-black/60 via-black/25 to-transparent" />
+      <div
+        data-edge="left"
+        data-paper="dark"
+        className="pointer-events-none absolute right-20 bottom-20 left-4 text-xs [text-shadow:var(--white-ink-shadow)]! [&_button]:[text-shadow:inherit]!"
+      >
+        <div className="no-scrollbar pointer-events-auto flex max-h-[45dvh] flex-col overflow-y-auto">
+          <p className="flex min-w-0 items-center gap-1.5">
+            <Link href={`/${props.author}`} className="truncate text-sm font-semibold text-foreground">
               @{props.author}
             </Link>
             {props.verified && <VerifiedBadge />}
-            <span className="shrink-0">
-              {"· "}
-              <PublishedAt iso={props.publishedAt} />
+            <span className="shrink-0 font-mono text-2xs text-foreground">
+              · <PublishedAt iso={props.publishedAt} />
             </span>
-          </div>
+          </p>
+          <h1 className="mt-1 line-clamp-2 text-sm text-foreground select-text">{props.title}</h1>
           {props.description && (
-            <>
-              {/* Phone: one line and an ellipsis until tapped, as TikTok's. */}
-              <Button
-                variant="ghost"
-                onClick={() => setCaptionOpen((v) => !v)}
-                aria-expanded={captionOpen}
-                className="mt-2 block h-auto w-full rounded-none p-0 text-left font-normal whitespace-normal hover:bg-transparent has-[>svg]:px-0 md:hidden dark:hover:bg-transparent"
-              >
-                <span
-                  className={cn(
-                    "block text-xs leading-relaxed whitespace-pre-wrap text-foreground",
-                    !captionOpen && "line-clamp-1",
-                  )}
-                >
-                  {props.description}
-                </span>
-              </Button>
-              {/* Desktop: plain text — selectable, wheel-scrollable past five
-                  lines, so a long caption never pushes the credits away. */}
-              <p className="mt-2 hidden max-h-[5lh] overflow-y-auto overscroll-contain whitespace-pre-wrap text-xs leading-relaxed text-foreground md:block">
-                {props.description}
-              </p>
-            </>
-          )}
-          {/* The maker's own render, under what they wrote about it. */}
-          <VideoLink url={props.video} className="mt-2.5" />
-          {props.credits && (
-            <div className="mt-2.5 border-t border-line pt-2.5">
-              {/* Phone, folded: one row — the label and the first credit. A tap
-                  opens the whole 借物表; it stays one tap away because it is what
-                  people check before reusing anything. Desktop: always open. */}
-              <Button
-                variant="ghost"
-                onClick={() => setCreditsOpen((v) => !v)}
-                aria-expanded={creditsOpen}
-                className="flex h-auto w-full min-w-0 justify-start gap-1 rounded-none p-0 text-left font-normal hover:bg-transparent has-[>svg]:px-0 md:cursor-default dark:hover:bg-transparent"
-              >
-                <span className="shrink-0 text-xs font-medium text-foreground">{t.share.credits}</span>
-                {!creditsOpen && (
-                  <span className="min-w-0 truncate text-xs text-muted-foreground md:hidden">
-                    · {props.credits.split("\n").find((l) => l.trim()) ?? ""}
-                  </span>
-                )}
-              </Button>
-              {/* Its own scroll on desktop, as in the gallery panel. */}
-              <p
-                className={cn(
-                  "mt-1 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground md:block md:max-h-[5lh] md:overflow-y-auto md:overscroll-contain",
-                  creditsOpen ? "block" : "hidden",
-                )}
-              >
-                {props.credits}
-              </p>
-            </div>
-          )}
-        </div>
-        {/* Desktop footer. The like keeps its left place either way; the fork
-            sits right, and a display-only scene simply has none. Mobile keeps
-            its standalone like rail instead (below). */}
-        <div className="hidden h-10 shrink-0 items-center justify-between gap-2 border-t border-line px-3 md:flex">
-          <LikeButton like={like} compact />
-          {/* Where the fork would be, the reason it is not. */}
-          {props.displayOnly ? (
-            <DisplayOnlyTag />
-          ) : phone ? null : (
             <Button
-              size="xs"
-              onClick={requestFork}
-              disabled={forking}
-              className="bg-blue-400 font-medium text-on-accent hover:bg-blue-400/90"
+              variant="bare"
+              onClick={() => setCaptionOpen((v) => !v)}
+              aria-expanded={captionOpen}
+              className="mt-1 block w-full text-left font-normal whitespace-normal"
             >
-              <GitFork />
-              {t.share.fork}
+              <span className={cn("block leading-relaxed whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]", !captionOpen && "line-clamp-2")}>
+                {props.description}
+              </span>
             </Button>
           )}
+          {/* The 借物表: whole on its sheet on a computer, which has the room; on
+              a phone TikTok's sound line, one credit, and the list at a tap. */}
+          {props.credits &&
+            (creditsOpen ? (
+              <Button
+                variant="bare"
+                data-paper-at="pop"
+                onClick={() => setCreditsOpen(false)}
+                aria-expanded
+                className="mt-2.5 block w-full rounded-interior border border-line-strong bg-surface px-3 py-2.5 text-left font-normal whitespace-normal [text-shadow:none]!"
+              >
+                <span className="flex items-center gap-1.5 font-mono text-2xs font-medium tracking-wide text-foreground uppercase">
+                  <ScrollText className="size-3.5" />
+                  {t.share.credits}
+                </span>
+                <span className="mt-1.5 block font-mono text-2xs leading-relaxed whitespace-pre-wrap text-foreground select-text [overflow-wrap:anywhere]">
+                  {props.credits}
+                </span>
+              </Button>
+            ) : (
+              <Button
+                variant="bare"
+                onClick={() => setCreditsOpen(true)}
+                aria-expanded={false}
+                className="mt-2 flex w-full min-w-0 items-center gap-1.5 text-left font-normal text-foreground"
+              >
+                <ScrollText className="size-3.5 shrink-0" />
+                <span className="min-w-0 truncate">{props.credits.split("\n").find((l) => l.trim()) ?? ""}</span>
+              </Button>
+            ))}
+          {props.displayOnly && <DisplayOnlyTag className="mt-2.5 w-fit" />}
         </div>
       </div>
-
+      <div
+        data-paper="dark"
+        className="absolute right-3 bottom-24 flex flex-col items-center gap-5 text-foreground [&_svg]:[filter:var(--white-ink-line-shadow)] [text-shadow:var(--white-ink-shadow)]!"
+      >
+        <Button
+          variant="bare"
+          onClick={() => void like.toggle()}
+          aria-pressed={like.liked}
+          aria-disabled={!like.canLike}
+          className="flex flex-col items-center gap-1 text-xs font-medium [text-shadow:inherit]!"
+        >
+          <Heart className={cn("size-8", like.liked ? "fill-red-400 text-red-400" : "fill-white text-white")} />
+          {like.count}
+        </Button>
+        {/* Fork on a computer; a phone watches. */}
+        {!props.displayOnly && !phone && (
+          <Button
+            variant="bare"
+            onClick={requestFork}
+            disabled={forking}
+            className="flex flex-col items-center gap-1 text-xs font-medium [text-shadow:inherit]!"
+          >
+            <span className="flex size-7 items-center justify-center rounded-full border-[1.5px] border-white">
+              <GitFork className="size-3.5" />
+            </span>
+            {t.share.fork}
+          </Button>
+        )}
+        {video && (
+          <Link
+            href={video.url}
+            target="_blank"
+            rel="noopener noreferrer nofollow ugc"
+            aria-label={VIDEO_PLATFORM_NAMES[video.platform]}
+            // The heart's drawn size, not its box: a glyph fills about 5/6 of it.
+            className={cn("flex size-7 items-center justify-center rounded-full", SITE_SOLID[video.platform])}
+          >
+            <SiteLogo site={video.platform} className="size-3.5" />
+          </Link>
+        )}
+      </div>
+      </>
       )}
-
-      {/* Mobile keeps TikTok's standalone rail, thumb-reachable and clear of the
-          transport; desktop shows it inside the card instead. */}
-      {compact && <LikeButton like={like} className="absolute right-5 bottom-16 flex-col md:hidden" />}
 
       <SignInDialog
         open={signInOpen && !session}
@@ -553,44 +491,6 @@ function useLike(sceneId: string, initial: number) {
   return { liked, count, toggle, canLike: !!session }
 }
 
-type LikeState = ReturnType<typeof useLike>
-
-/** Rendered twice — as a standalone rail on mobile, inside the card on desktop —
- *  but only ever one is visible, and both read the same state. */
-function LikeButton({ like, compact, className }: { like: LikeState; compact?: boolean; className?: string }) {
-  return (
-    <div className={cn("flex items-center gap-1.5", className)}>
-      <Button
-        variant="ghost"
-        onClick={() => void like.toggle()}
-        // Not `disabled`: signed out, the title has to stay hoverable to say why.
-        aria-disabled={!like.canLike}
-        className={cn(
-          // has-[>svg]:px-0 too: the default size pads any button holding an
-          // icon by 12px, which p-0 does not reach and which indented the heart.
-          "size-auto p-0 transition-transform hover:bg-transparent dark:hover:bg-transparent has-[>svg]:px-0",
-          like.canLike ? "cursor-pointer hover:scale-110 active:scale-90" : "cursor-default",
-        )}
-      >
-        {/* Bare glyph, no button chrome — a drop shadow is enough to hold it
-            against a bright scene, and the scene stays the page. */}
-        <Heart
-          className={cn(
-            "text-white [filter:var(--white-ink-line-shadow)] transition-colors",
-            // In the card footer it sits beside a button; on the mobile rail it is
-            // the only thing there and needs the presence.
-            compact ? "size-[18px]" : "size-7",
-            like.liked && "fill-red-400 text-red-400",
-          )}
-        />
-      </Button>
-      <span className={cn("leading-none font-semibold text-foreground tabular-nums [text-shadow:var(--ink-shadow)]", compact ? "text-xs" : "text-sm")}>
-        {like.count}
-      </span>
-    </div>
-  )
-}
-
 /** The scene layer: canvas, backdrop, transport, audio. Everything that has to
  *  wait on bytes — and nothing that doesn't, which all lives in the page above. */
 function SceneStage({
@@ -664,9 +564,6 @@ function SceneStage({
   // The cast — everything that is not a stage or a prop — for the settings
   // that apply per character: the same list the editor hands over.
   const { castIds, stageSuns } = useSceneCast(models, stages, props)
-  // Eyes on the camera start where the author left them and are the visitor's to
-  // switch — a property of watching, like following the camera. Never saved. Every
-  // other section keeps its identity, so the sync re-applies only the eyes.
   /**
    * The scene's timeline — who is on stage when, among the rest.
    *
@@ -682,8 +579,8 @@ function SceneStage({
     () => timelineOf({ models, props, effects: scene.state.backgroundEffects }),
     [models, props, scene.state.backgroundEffects],
   )
-  const [eyes, setEyes] = useState(scene.state.settings.eyes.enabled)
-  const settings = useMemo(() => ({ ...scene.state.settings, eyes: { enabled: eyes } }), [scene.state.settings, eyes])
+  // The scene as its maker published it, eyes included: the viewer plays it.
+  const settings = scene.state.settings
   useSceneSync({
     engineRef,
     ready: stageReady,
@@ -774,15 +671,15 @@ function SceneStage({
         // absolutely positioned pill has nothing to size against, so on a phone
         // it ran off both edges. inset-x-3 gives it the viewport minus the same
         // gutter the bottom uses, and the transport shrinks into it.
-        <div data-edge="bottom" data-ink-zone className="pointer-events-none absolute inset-x-3 bottom-3 flex justify-center">
+        // Above the phone's shade, which darkens the scene and not the controls.
+        <div data-edge="bottom" data-ink-zone className="pointer-events-none absolute inset-x-3 bottom-3 z-10 flex justify-center">
           <div className="pointer-events-auto max-w-full compact:w-full">
             <AnimPlayer
               engineRef={engineRef}
               modelNames={animated}
               timeline={timeline}
-              hasCamera={!!scene.assets.cameraAnimation}
-              eyes={eyes}
-              onEyes={setEyes}
+              // No camera switch: the scene plays as its maker shot it.
+              hasCamera={false}
             />
           </div>
         </div>

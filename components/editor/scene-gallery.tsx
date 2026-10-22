@@ -39,6 +39,7 @@ import { usePhone } from "@/lib/device"
 
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
+import { WORDMARK } from "@/components/wordmark"
 import { SiteChip, VideoLink } from "@/components/video-link"
 
 export type GalleryScene = {
@@ -698,6 +699,10 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
   // one list: a ranking seen whole (Latest, Trending), or a
   // narrowing (yours, liked, a tag, a maker, a search).
   const [rank, setRank] = useState<"hot" | "new" | null>(null)
+  /** On a phone the search folds to its glass; typing in it, or a query held,
+   *  keeps it open across the sections' line. */
+  const [searching, setSearching] = useState(false)
+  const searchOpen = searching || browse.query.trim() !== ""
   const narrowed = browse.facet !== "all" || browse.tag !== null || browse.maker !== null || browse.query.trim() !== ""
   const home = !narrowed && rank === null
   // A different list starts at its top.
@@ -729,8 +734,8 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
     shelf("new", t.rail.sortNew, list("newest"), true)
     shelf("hot", t.rail.sortHot, rows, true)
     out.sort((a, b) => Number(b.key === "hot") - Number(a.key === "hot"))
-    for (const [tag] of browse.tags.slice(0, 6)) shelf(`tag:${tag}`, `#${tag}`, list(`tag:${tag}`), false)
-    for (const [maker] of browse.makers.slice(0, 4)) shelf(`maker:${maker}`, `@${maker}`, list(`maker:${maker}`), false)
+    for (const [tag] of browse.tags.slice(0, TAG_ROWS)) shelf(`tag:${tag}`, `#${tag}`, list(`tag:${tag}`), false)
+    for (const [maker] of browse.makers.slice(0, MAKER_ROWS)) shelf(`maker:${maker}`, `@${maker}`, list(`maker:${maker}`), false)
     return out
   }
   // The lists the page draws from beyond the ranked window: a shelf for each of
@@ -744,7 +749,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
           ? [`maker:${browse.maker}`]
           : narrowed
             ? []
-            : [...browse.tags.slice(0, 6).map(([x]) => `tag:${x}` as const), ...browse.makers.slice(0, 4).map(([x]) => `maker:${x}` as const)]
+            : [...browse.tags.slice(0, TAG_ROWS).map(([x]) => `tag:${x}` as const), ...browse.makers.slice(0, MAKER_ROWS).map(([x]) => `maker:${x}` as const)]
   const wantedKey = wanted.join("|")
   useEffect(() => {
     if (!wantedKey) return
@@ -830,7 +835,8 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
   const [solid, setSolid] = useState(false)
 
   // Keys, as a TV's: arrows move across the covers (along a row, between rows),
-  // the focused one previews, Enter opens it; / goes to search; Esc lets go.
+  // the focused one previews, Enter opens it; F goes to search, as in the
+  // editor; Esc lets go.
   const searchRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -842,7 +848,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
         return
       }
       if (typing) return
-      if (e.key === "/") {
+      if (e.key === "f" || e.key === "F") {
         e.preventDefault()
         searchRef.current?.focus()
         return
@@ -895,12 +901,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
           }}
           className="block aspect-video w-full overflow-hidden rounded-interior bg-white/5 outline-none focus-visible:ring-2 focus-visible:ring-foreground"
         >
-          {s.poster && (
-            // Framed as the preview frames it, so the hand-off between them
-            // is the same picture.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={s.poster} alt="" loading="lazy" decoding="async" className="size-full object-cover object-[50%_20%]" />
-          )}
+          {s.poster && <CardCover src={s.poster} root={scrollRef} />}
         </Link>
         {/* Its name, and who made it under that. */}
         <div className="flex min-w-0 flex-col gap-0.5">
@@ -950,28 +951,47 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
         {/* The bar: clear over the spotlight, a dark sheet once the page scrolls. */}
         <div
           className={cn(
-            "absolute inset-x-0 top-0 z-30 flex h-16 items-center gap-7 px-12 transition-[background-color] compact:h-auto compact:flex-wrap compact:gap-x-4 compact:gap-y-2.5 compact:px-4 compact:py-3",
+            // The editor's top row, to the pixel: 20px down, 28px in from the
+            // left and 24px from the right, a 32px line, so the wordmark stands
+            // where it stands in the editor.
+            "absolute inset-x-0 top-0 z-30 flex h-[4.25rem] items-start gap-7 pt-5 pr-6 pl-7 text-xs transition-[background-color] compact:h-auto compact:flex-wrap compact:gap-x-4 compact:gap-y-0 compact:pb-2",
             solid || !home ? "bg-black/80 backdrop-blur-md" : "bg-linear-to-b from-black/60 to-transparent",
           )}
         >
-          <Link
-            href="/"
-            className="shrink-0 font-display text-masthead tracking-[0.45em] text-foreground uppercase [-webkit-text-stroke:0.3px_currentColor] compact:tracking-[0.3em]"
-          >
+          <Link href="/" className={cn("flex h-8 shrink-0 items-center", WORDMARK)}>
             Reze Design
           </Link>
           {/* On a phone, a line of its own under the wordmark and search. */}
-          <nav className="flex items-center gap-5 compact:no-scrollbar compact:order-last compact:w-full compact:gap-4 compact:overflow-x-auto">
+          {/* On a phone the wordmark has its line to itself; the sections and
+              the search share the next one, and an open search takes it. */}
+          <span aria-hidden className="hidden compact:block compact:h-0 compact:basis-full" />
+          <nav
+            className={cn(
+              "flex h-8 items-center gap-5 compact:no-scrollbar compact:min-w-0 compact:flex-1 compact:gap-4 compact:overflow-x-auto",
+              searchOpen && "compact:hidden",
+            )}
+          >
             {sectionWord("home", t.gallery.title)}
             {sectionWord("new", t.rail.sortNew)}
             {session && sectionWord("yours", t.rail.yours)}
             {session && sectionWord("liked", t.rail.liked)}
           </nav>
-          <SiteChip site="bilibili" href="/bilibili" className="h-6 px-2 text-xs compact:hidden">
+          <SiteChip site="bilibili" href="/bilibili" className="mt-1 h-6 px-2 text-xs compact:hidden">
             {t.bilibili.title}
           </SiteChip>
-          <span className="flex-1" />
-          <label className="relative flex h-8 w-64 items-center gap-2 px-3 text-muted-foreground transition-[width] duration-233 after:absolute after:inset-0 after:rounded-interior after:border after:border-line-strong after:transition-colors focus-within:w-80 focus-within:after:border-foreground compact:w-36 compact:focus-within:w-44">
+          <span className="flex-1 compact:hidden" />
+          <label
+            // Folded to its glass on a phone until it is wanted.
+            onClick={() => {
+              if (searchOpen) return
+              setSearching(true)
+              requestAnimationFrame(() => searchRef.current?.focus())
+            }}
+            className={cn(
+              "relative flex h-8 w-64 items-center gap-2 px-3 text-muted-foreground transition-[width] duration-233 after:absolute after:inset-0 after:rounded-interior after:border after:border-line-strong after:transition-colors focus-within:w-80 focus-within:after:border-foreground",
+              searchOpen ? "compact:w-auto compact:flex-1 compact:focus-within:w-auto" : "compact:w-8 compact:justify-center compact:px-0 compact:after:border-transparent",
+            )}
+          >
             <Search className="size-3.5 shrink-0" strokeWidth={1.5} />
             <Input
               ref={searchRef}
@@ -981,10 +1001,12 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
                 setRank(null)
                 browse.setQuery(e.target.value)
               }}
+              onFocus={() => setSearching(true)}
+              onBlur={() => setSearching(false)}
               placeholder={t.rail.search}
-              className="h-8 min-w-0 flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground"
+              className={cn("h-8 min-w-0 flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground", !searchOpen && "compact:hidden")}
             />
-            <kbd className="flex h-4 min-w-4 items-center justify-center rounded-chip border border-line px-1 font-mono text-2xs compact:hidden">/</kbd>
+            <kbd className="flex h-4 min-w-4 items-center justify-center rounded-chip border border-line px-1 font-mono text-2xs compact:hidden">F</kbd>
           </label>
         </div>
 
@@ -1195,7 +1217,9 @@ function PreviewLayer({
     if (!cur || !pop || !content) return
     const r = cur.card.getBoundingClientRect()
     const box = content.getBoundingClientRect()
-    const w = Math.min(window.innerWidth - 32, Math.max(360, r.width * 1.5))
+    // A phone's covers are already large: there it opens to a little past its
+    // card rather than to the desktop's 360px floor.
+    const w = Math.min(window.innerWidth - 32, touch ? r.width * 1.4 : Math.max(360, r.width * 1.5))
     const imgH = (w * 9) / 16
     // Its cover centred on the card's, kept on screen.
     const left = Math.max(16, Math.min(window.innerWidth - w - 16, r.left + r.width / 2 - w / 2))
@@ -1216,7 +1240,7 @@ function PreviewLayer({
     // Whole on screen: if its foot falls below the window, the page comes up.
     const below = top + pop.offsetHeight + 16 - window.innerHeight
     if (below > 0) scrollRef.current?.scrollBy({ top: below, behavior: "smooth" })
-  }, [cur, contentRef, scrollRef])
+  }, [cur, contentRef, scrollRef, touch])
 
   // On a phone a tap elsewhere lets it go: there is no pointer to leave it.
   useEffect(() => {
@@ -1253,18 +1277,20 @@ function PreviewLayer({
       onMouseLeave={leave}
       className="gallery-pop absolute z-20 overflow-hidden rounded-interior"
     >
-      <Link href={href(s)} className="block aspect-video overflow-hidden">
+      {/* A picture, not a door: Open is the one way into the scene. */}
+      <div className="aspect-video overflow-hidden">
         {s.poster && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={s.poster} alt="" className="size-full object-cover object-[50%_20%]" />
         )}
-      </Link>
+      </div>
       <div data-pop-body className="px-3.5 pt-3 pb-3.5">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button asChild size="sm" className="h-8 rounded-interior bg-foreground px-4 text-xs font-medium text-background hover:bg-foreground/85">
             <Link href={href(s)}>{t.gallery.open}</Link>
           </Button>
-          {!s.displayOnly && (
+          {/* A phone watches; nothing on it edits, so it has no Fork. */}
+          {!s.displayOnly && !touch && (
             <Button
               variant="bare"
               onClick={() => onFork(s)}
@@ -1306,8 +1332,51 @@ function PreviewLayer({
     </div>
   )
 }
+/**
+ * A card's cover, fetched once it nears the screen and faded up once it has
+ * arrived. Its own observer rather than the browser's lazy loading: Safari's
+ * never wakes for an image in a row that scrolls inside a page that scrolls,
+ * which left every cover blank there. Framed as the preview frames it, so the
+ * hand-off between them is the same picture.
+ */
+function CardCover({ src, root }: { src: string; root: React.RefObject<HTMLDivElement | null> }) {
+  const ref = useRef<HTMLImageElement>(null)
+  const [near, setNear] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    // Watched against the page's own scroller, which clips the rows: against
+    // the window, a cover just below the fold would wait until it was on screen.
+    const io = new IntersectionObserver(
+      ([e]) => {
+        if (!e.isIntersecting) return
+        setNear(true)
+        io.disconnect()
+      },
+      { root: root.current, rootMargin: "600px" },
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [root])
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      ref={ref}
+      src={near ? src : undefined}
+      alt=""
+      decoding="async"
+      onLoad={(e) => e.currentTarget.setAttribute("data-loaded", "")}
+      className="size-full object-cover object-[50%_20%] opacity-0 transition-opacity duration-233 data-loaded:opacity-100"
+    />
+  )
+}
+
 /** How long each scene holds the spotlight. */
 const SPOT_MS = 8000
+/** The home's rows beyond Trending and Latest: the most used tags and the
+ *  most prolific makers, a few of each. */
+const TAG_ROWS = 3
+const MAKER_ROWS = 2
 
 /**
  * The top of the page: the five trending scenes in turn, each crossfading in
@@ -1367,7 +1436,7 @@ function Spotlight({
       <div aria-hidden className="absolute inset-x-0 bottom-0 h-1/2 bg-linear-to-t from-black via-black/50 via-20% to-transparent" />
       <div
         key={s.id}
-        className="cover-enter absolute top-[42%] left-12 flex w-[min(68rem,72vw)] -translate-y-1/2 flex-col [text-shadow:var(--white-ink-shadow)] compact:top-auto compact:bottom-24 compact:left-4 compact:w-[calc(100%-2rem)] compact:translate-y-0"
+        className="cover-enter absolute top-[42%] left-12 flex w-[min(68rem,72vw)] -translate-y-1/2 flex-col [text-shadow:var(--white-ink-shadow)] compact:top-auto compact:bottom-[26%] compact:left-4 compact:w-[calc(100%-2rem)] compact:translate-y-0"
       >
         <h2 className="font-display text-billboard text-foreground italic select-text compact:text-display">{s.name}</h2>
         <div className="mt-4 flex min-w-0 items-center gap-2 font-mono text-xs tracking-wide text-muted-foreground compact:text-2xs">
@@ -1391,6 +1460,8 @@ function Spotlight({
             ))}
           </div>
         )}
+        {/* The maker's own render, on a line of its own above the actions. */}
+        <VideoLink url={s.video} className="mt-4 w-fit" />
         <div className="mt-6 flex flex-wrap items-center gap-2.5 [text-shadow:none]">
           <Button asChild size="sm" className="h-9 gap-2 rounded-interior bg-foreground px-5 text-xs font-medium text-background hover:bg-foreground/85">
             {/* A real link: cmd-click still gets a new tab. */}
@@ -1402,7 +1473,6 @@ function Spotlight({
             </Button>
           )}
           <LibraryLike large likeCount={likesOf(s)} liked={liked(s.id)} canLike={canLike} onToggle={() => onLike(s.id)} />
-          <VideoLink url={s.video} className="h-9 px-3 text-xs [&_svg]:size-3.5" />
           {s.mine && (
             <>
               <Button variant="bare" onClick={() => onEdit(s)} className="h-9 text-xs text-muted-foreground hover:text-foreground">
@@ -1430,7 +1500,7 @@ function Spotlight({
             >
               {f.poster && (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={f.poster} alt="" loading="lazy" decoding="async" className="size-full object-cover object-[50%_20%]" />
+                <img src={f.poster} alt="" decoding="async" className="size-full object-cover object-[50%_20%]" />
               )}
             </Button>
           ))}
@@ -1442,8 +1512,7 @@ function Spotlight({
 
 /** A row of covers that scrolls sideways under its title. The title opens the
  *  row whole; two small chevrons at the end of its line page it, shown only
- *  when it runs past the screen. Built only once it nears the screen
- *  (content-visibility), so a long page stays light. */
+ *  when it runs past the screen. */
 function Row({ title, onMore, onScroll, children }: { title: string; onMore: () => void; onScroll: () => void; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
   const [more, setMore] = useState({ back: false, on: false })
@@ -1468,7 +1537,7 @@ function Row({ title, onMore, onScroll, children }: { title: string; onMore: () 
     if (el) el.scrollBy({ left: dir * el.clientWidth * 0.9, behavior: "smooth" })
   }
   return (
-    <section className="mt-8 [contain-intrinsic-size:auto_16rem] [content-visibility:auto]">
+    <section className="mt-8">
       <div className="flex items-center justify-between px-12 compact:px-4">
         <h2>
           <Button variant="bare" onClick={onMore} className="text-base font-semibold text-foreground underline-offset-4 hover:underline">

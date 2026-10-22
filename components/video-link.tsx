@@ -22,6 +22,17 @@ const SITE_COLOR: Record<VideoPlatform, string> = {
   x: "bg-[#E7E9EA]/15 text-[#E7E9EA] hover:bg-[#E7E9EA]/25",
 }
 
+/** A video link's own fill: the site's colour, solid, its words in white or
+ *  black, whichever that colour carries. A soft tint washed out over a cover. */
+export const SITE_SOLID: Record<VideoPlatform, string> = {
+  bilibili: "bg-[#00AEEC] text-white hover:bg-[#00AEEC]/90",
+  youtube: "bg-[#FF4E45] text-white hover:bg-[#FF4E45]/90",
+  // Its mark's own ground: white on black (the cyan and red are the mark's).
+  tiktok: "bg-black text-white hover:bg-black/85",
+  douyin: "bg-black text-white hover:bg-black/85",
+  x: "bg-[#E7E9EA] text-black hover:bg-[#E7E9EA]/90",
+}
+
 /** Each site's mark, from Simple Icons (simpleicons.org, CC0), on a 24-unit
  *  box. Douyin wears TikTok's: one brand. */
 const SITE_LOGO: Record<VideoPlatform, string> = {
@@ -32,10 +43,24 @@ const SITE_LOGO: Record<VideoPlatform, string> = {
   x: "M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z",
 }
 
+/** TikTok's note wears its two offset echoes, cyan above and red below, as
+ *  the brand draws it. Inline, so it stands over any shadow the type around
+ *  it would lend; every other mark is drawn plain. */
+const SITE_LOGO_FILTER: Partial<Record<VideoPlatform, string>> = {
+  tiktok: "drop-shadow(-1px -1px 0 #25F4EE) drop-shadow(1px 1px 0 #FE2C55)",
+  douyin: "drop-shadow(-1px -1px 0 #25F4EE) drop-shadow(1px 1px 0 #FE2C55)",
+}
+
 /** A site's mark at the size of the text beside it, in that text's colour. */
 export function SiteLogo({ site, className }: { site: VideoPlatform; className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden className={cn("size-3 shrink-0", className)}>
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden
+      className={cn("size-3 shrink-0", className)}
+      style={{ filter: SITE_LOGO_FILTER[site] ?? "none" }}
+    >
       <path d={SITE_LOGO[site]} />
     </svg>
   )
@@ -73,8 +98,9 @@ export function VideoLink({ url, className }: { url: string | null | undefined; 
         // A fixed height and no leading, so the label's line box is the glyphs
         // themselves and centres on the logo — a line-height taller than the
         // text sat it below the logo's middle.
-        "inline-flex h-5 max-w-full items-center gap-1.5 rounded-chip px-3 text-2xs leading-none font-medium transition-colors",
-        SITE_COLOR[video.platform],
+        // Its own ground, so no ink shadow from the type around it.
+        "inline-flex h-6 max-w-full items-center gap-1.5 rounded-chip px-2.5 text-2xs leading-none font-medium transition-colors [text-shadow:none]!",
+        SITE_SOLID[video.platform],
         className,
       )}
     >
