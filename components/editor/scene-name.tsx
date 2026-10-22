@@ -2,10 +2,10 @@
 
 // The scene's name, and the gesture for changing it.
 //
-// Label and input share ONE box — same padding, same border, same line height —
+// Label and input share ONE box — same padding, same rule, same line height —
 // so entering rename cannot shift the text or change the row's height. The
-// border is present in BOTH states and merely transparent on the label; without
-// it the text jumps by a pixel the moment it becomes editable.
+// field is an underline, no box: present in BOTH states and merely transparent
+// on the label; without it the text jumps by a pixel the moment it is editable.
 //
 // Double-click, the same gesture as renaming a style group or a node and as
 // typing a slider's value, so it needs no affordance of its own.
@@ -25,10 +25,10 @@ import { cn } from "@/lib/utils"
 const NAME_BOX = {
   // py-0 in BOTH: an <input> brings the browser's own top and bottom padding,
   // which the label does not have, and the text dropped a pixel on rename.
-  plain: "min-w-0 rounded-chip border px-1 py-0 text-xs leading-4",
+  plain: "min-w-0 rounded-none border-0 border-b px-1 py-0 text-xs leading-4",
   // A line a little taller than the type, so the serif's italics are whole in
   // the field as on the label.
-  display: "min-w-0 rounded-chip border px-1 py-0 font-display text-display leading-[1.15] italic",
+  display: "min-w-0 rounded-none border-0 border-b px-1 py-0 font-display text-display leading-[1.15] italic",
 }
 
 const MAX = 60
@@ -72,7 +72,7 @@ export function SceneName({
         className={cn(
           box,
           className,
-          "max-w-full [field-sizing:content] border-foreground bg-white/5 text-foreground outline-none",
+          "max-w-full [field-sizing:content] border-foreground bg-transparent text-foreground outline-none",
         )}
       />
     )

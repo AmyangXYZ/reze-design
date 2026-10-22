@@ -152,14 +152,15 @@ export const AxisSliderRow = memo(function AxisSliderRow({
         type="text"
         inputMode="decimal"
         disabled={disabled}
-        // The left dock's VALUE_BOX: borderless until it is being typed into,
+        // The left dock's VALUE_BOX: no rule until it is being typed into, then
+        // an underline,
         // which is what keeps a column of numbers from reading as a column of
         // input fields.
         // `dark:bg-*` is stated because the Input primitive paints
         // `dark:bg-input/30`, which a base-layer `bg-*` cannot cancel.
         className={cn(
           VALUE_BOX,
-          "w-13 border-transparent font-mono text-foreground shadow-none outline-none focus:border-foreground focus:bg-white/5 focus-visible:ring-0 md:text-2xs dark:bg-transparent dark:focus:bg-white/5",
+          "w-13 border-transparent font-mono text-foreground shadow-none outline-none focus:border-foreground focus-visible:ring-0 md:text-2xs dark:bg-transparent",
         )}
         value={draft ?? (Number.isFinite(shown) ? shown.toFixed(decimals) : "")}
         onFocus={(e) => {
