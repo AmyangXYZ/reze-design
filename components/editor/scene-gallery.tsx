@@ -377,6 +377,9 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
   const [cursor, setCursor] = useState<number | null>(() => pages.get(view)?.nextCursor ?? null)
   /** The newest public scenes, merged into `all` for the Latest shelf. */
   const [newest, setNewest] = useState<GalleryScene[]>(() => pages.get("newest")?.scenes ?? [])
+  // Where Latest goes on: All closes the page newest first and pages on down
+  // that list, so what arrives is older than everything above it.
+  const [newestCursor, setNewestCursor] = useState<number | null>(() => pages.get("newest")?.nextCursor ?? null)
   /** The tag and maker lists asked for so far, merged into `all` the same way. */
   const [lists, setLists] = useState<Partial<Record<Key, GalleryScene[]>>>({})
   /** The cover picked, as WHERE it stands — `<shelf>|<scene id>` — since one
@@ -432,7 +435,11 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
       })
     if (view === "all")
       loadPage("newest")
-        .then((page) => !stale && setNewest(page.scenes))
+        .then((page) => {
+          if (stale) return
+          setNewest(page.scenes)
+          setNewestCursor(page.nextCursor)
+        })
         .catch(() => {})
     return () => {
       stale = true
@@ -452,6 +459,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
       const page = pages.get(view)
       if (page) setScenes(page.scenes)
       setNewest(pages.get("newest")?.scenes ?? [])
+      setNewestCursor(pages.get("newest")?.nextCursor ?? null)
       setLists((cur) => Object.fromEntries(Object.keys(cur).map((k) => [k, pages.get(k as Key)?.scenes ?? []])))
       setCacheV((n) => n + 1)
     }
@@ -571,7 +579,30 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
     onFacetChange,
   })
 
+  // The next page of what the band ends on: All pages on down Latest; a
+  // narrowed view, down its own list.
+  const moreCursor = view === "all" ? newestCursor : cursor
   const loadMore = () => {
+    if (view === "all") {
+      if (!newestCursor) return
+      setLoading(true)
+      const params = new URLSearchParams({ kind: "scene", sort: "new", before: String(newestCursor) })
+      fetchJson<Page>(`/api/library?${params}`)
+        .then((page) => {
+          noteVerified(page.scenes)
+          const held = pages.get("newest")
+          const next = { scenes: [...(held?.scenes ?? []), ...page.scenes], nextCursor: page.nextCursor }
+          pages.set("newest", next)
+          setNewest(next.scenes)
+          setNewestCursor(page.nextCursor)
+          setLoading(false)
+        })
+        .catch(() => {
+          setFailed(true)
+          setLoading(false)
+        })
+      return
+    }
     if (!cursor) return
     setLoading(true)
     const params = new URLSearchParams({ kind: "scene", sort: sortFor(view), before: String(cursor) })
@@ -677,7 +708,7 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
     const all = el.querySelector<HTMLElement>('[data-shelf="all"]')
     // All has arrived when its title reaches the band's top.
     setInAll(!!all && el.scrollTop >= all.offsetTop - 2)
-    if (!loading && cursor && el.scrollTop + el.clientHeight > el.scrollHeight - 600) loadMore()
+    if (!loading && moreCursor && el.scrollTop + el.clientHeight > el.scrollHeight - 600) loadMore()
   }
 
   // Forking is where someone's files become yours to export, so it asks for an
@@ -793,7 +824,8 @@ function GalleryContent({ initialFacet }: { initialFacet?: BrowseFacet }) {
       ...sh,
       rows: sh.ids.flatMap((id) => byId.get(id) ?? []),
     }))
-    out.push({ key: "all", title: t.rail.all, rows })
+    // All, newest first: every scene the page holds, by the day it was published.
+    out.push({ key: "all", title: t.rail.all, rows: [...rows].sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0)) })
     return out
   }, [narrowed, laid, rows, byId, t])
   // Every card's place in reading order, and the one ringed: the pick, or on

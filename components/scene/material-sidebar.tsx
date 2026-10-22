@@ -445,6 +445,8 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                           )}
                         >
                           {shownLabel(g)}
+                          {/* Groups open closed: the count says what is inside. */}
+                          <span className="font-normal tabular-nums"> ({g.materials.length})</span>
                         </span>
                       )}
 
@@ -516,6 +518,7 @@ export const MaterialsPanel = memo(function MaterialsPanel({
                   )}
                 >
                   {t.materials.ungrouped}
+                  <span className="font-normal tabular-nums"> ({ungrouped.length})</span>
                 </span>
               </div>
               {expanded.has(UNGROUPED) && (
