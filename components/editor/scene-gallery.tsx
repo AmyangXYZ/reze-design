@@ -1323,7 +1323,7 @@ function PreviewLayer({
                 }}
                 className="rounded-full border border-line-strong px-2 py-0.5 text-2xs text-foreground hover:bg-white/10"
               >
-                #{tag}
+                {tag}
               </Button>
             ))}
           </div>
@@ -1455,7 +1455,7 @@ function Spotlight({
                 onClick={() => onTag(tag)}
                 className="rounded-full border border-line-strong px-2 py-0.5 text-2xs text-foreground hover:bg-white/10"
               >
-                #{tag}
+                {tag}
               </Button>
             ))}
           </div>
