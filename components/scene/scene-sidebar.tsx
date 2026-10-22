@@ -110,11 +110,19 @@ export function SliderRow({
       <Input variant="bare"
         readOnly={!editing}
         value={editing ? draft : String(fmt ? fmt(value) : value)}
-        onDoubleClick={(e) => {
-          if (editing) return
+        // The second press of a double-click, before the browser selects the
+        // word in the read-only field on its own: the edit begins, and the
+        // underline and the selection arrive in the same frame.
+        onMouseDown={(e) => {
+          if (editing || e.detail !== 2) return
+          e.preventDefault()
+          const el = e.currentTarget
           setDraft(String(value))
           setEditing(true)
-          requestAnimationFrame(() => (e.target as HTMLInputElement).select())
+          requestAnimationFrame(() => {
+            el.focus()
+            el.select()
+          })
         }}
         onChange={(e) => editing && setDraft(e.target.value)}
         onBlur={() => editing && commit(draft)}
