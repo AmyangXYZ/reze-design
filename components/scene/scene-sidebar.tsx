@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils"
  *  the plane row's size boxes are the same control in a different arrangement,
  *  and a second definition of it would drift on the first tweak. */
 export const VALUE_BOX =
-  "block h-4 w-10 shrink-0 rounded-chip border bg-transparent p-0 text-right text-2xs leading-4 tabular-nums"
+  "block h-4 w-9 shrink-0 rounded-chip border bg-transparent p-0 text-right text-2xs leading-4 tabular-nums"
 
 export function SliderRow({
   label,

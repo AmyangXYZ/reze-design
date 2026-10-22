@@ -23,8 +23,12 @@ import { cn } from "@/lib/utils"
 /** Both states, so neither can drift from the other. `display` is the cover's
  *  title: the serif, italic, at the one display size. */
 const NAME_BOX = {
-  plain: "min-w-0 rounded-chip border px-1 text-xs leading-4",
-  display: "min-w-0 rounded-chip border px-1 font-display text-display italic",
+  // py-0 in BOTH: an <input> brings the browser's own top and bottom padding,
+  // which the label does not have, and the text dropped a pixel on rename.
+  plain: "min-w-0 rounded-chip border px-1 py-0 text-xs leading-4",
+  // A line a little taller than the type, so the serif's italics are whole in
+  // the field as on the label.
+  display: "min-w-0 rounded-chip border px-1 py-0 font-display text-display leading-[1.15] italic",
 }
 
 const MAX = 60
